@@ -4819,6 +4819,10 @@ const directoryHooks = {
     const current = indexesCurrent();
     const gone = directoryWindow ? directoryWindow.forget(realmId, key)
       : store.delete(key);
+    if (directoryWindow) {
+      // Its container's held count is stale now (dropCountsAbove()).
+      directoryWindow.dropCountsAbove(realmId, key);
+    }
     if (gone) {
       // In the row's realm, for applyEntry()'s reason (#352), and BY ITS DN,
       // AND THE INDEXES KEPT (#351): this is every OTHER process applying a
@@ -4907,6 +4911,10 @@ const directoryHooks = {
     // otherwise have to treat every person another process made as a group
     // it could not see.
     const after = row && row.dn ? row : null;
+    if (directoryWindow) {
+      // Its container's held count is stale now (dropCountsAbove()).
+      directoryWindow.dropCountsAbove(realmId, key);
+    }
     realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
       if (directoryWindow && !keep) {
         directoryWindow.forget(realmId, key);

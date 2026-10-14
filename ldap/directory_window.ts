@@ -1697,6 +1697,38 @@ class DirectoryWindow {
     return n;
   }
 
+  // A CHANGE FROM ANOTHER PROCESS DROPS THE COUNTS ABOVE IT (2026-10-14).
+  // The ten seconds above held a container's count across another
+  // process's create or delete that this process had already APPLIED: the
+  // read barrier serves a request only after the writes before it are
+  // applied, and the count then still answered from before them
+  // (sts_devices section 6, cluster on ccf5741a: a device removed through
+  // one node, `total` read as 2 through the other). Since #618 the store's
+  // count is a primary-key read, so dropping the held reading for every
+  // container above the key — and the next `recentCountUnder()` asking
+  // again — costs one round trip per container and only after a change.
+  /**
+   * Drops the held count of every container above a key another process
+   * just created, changed or deleted.
+   *
+   * @param realmId - the realm id
+   * @param key - the changed entry's normalised DN
+   */
+  dropCountsAbove(realmId: string, key: string): void {
+    log.debug("Entering DirectoryWindow.dropCountsAbove().");
+    const prefix = realmId + '\n';
+    for (const cck of Array.from(this.containerCounts.keys())) {
+      if (cck.indexOf(prefix) !== 0) {
+        continue;
+      }
+      const base = cck.slice(prefix.length);
+      if (key.endsWith(',' + base)) {
+        this.containerCounts.delete(cck);
+      }
+    }
+    log.debug("Leaving DirectoryWindow.dropCountsAbove().");
+  }
+
   /**
    * A realm's count read from the store now, for `ldap.maxEntries` and for
    * a report.

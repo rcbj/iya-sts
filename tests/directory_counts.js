@@ -169,6 +169,19 @@ function theWindow(t) {
           'B7. recentCountUnder() reads the same');
   t.equal(o.w.capCount('default'), 200001001,
           'B8. and capCount() moves with it at once');
+  // ANOTHER PROCESS'S CHANGE DROPS THE HELD COUNT (2026-10-14): the store
+  // moves (a device removed elsewhere), the held reading stays for ten
+  // seconds — unless the applier says a key under the container changed.
+  counters.set(DEVICES + '|', 999);
+  t.equal(o.w.recentCountUnder('default', DEVICES), 1000,
+          'B10. a held count does not see the store move by itself');
+  o.w.dropCountsAbove('default', 'cn=elsewhere,ou=groups,dc=example,dc=com');
+  o.w.dropCountsAbove('other', 'cn=d1,' + DEVICES);
+  t.equal(o.w.recentCountUnder('default', DEVICES), 1000,
+          'B11. a change in another container or another realm keeps it');
+  o.w.dropCountsAbove('default', 'cn=d1,' + DEVICES);
+  t.equal(o.w.recentCountUnder('default', DEVICES), 999,
+          'B12. a change under the container drops it, and it is read again');
   t.check(o.asked.every(function (one) {
     return !/count\(/i.test(one.text);
   }), 'B9. NO QUESTION THE WINDOW ASKED WAS A COUNT', String(o.asked.length));
