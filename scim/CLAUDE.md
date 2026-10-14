@@ -1153,3 +1153,16 @@ drives the placement in process with the routing and the channel stubbed.
 ## The description page is a static surface's shell (#584, 2026-10-12)
 
 `GET /scim` is this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `scim/web_scim_description.ts` from the `describeScim` catalogs, with `/scim/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. The JSON form is the description document, to the byte as before; the shell's view adds whether the realm verifies a credential (per mode, #543 round 2) and the SCIM base path. `/scim/v2/*` is SCIM's and unchanged. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.
+
+## `userName eq` asks the name index, and HOBA asks the key's holders (#616)
+
+Where the directory is a window onto the store (`ldap.directoryIsWindowed()`),
+`GET /scim/v2/Users` with a filter made only of `userName eq "…"` terms (an
+`or` of them, at most sixteen) asks `existingUserEntry()` for each name rather
+than building a resource for every person — the question a provisioning
+client asks before every create — and still applies the filter to what it
+found, so the answer is the walk's. **Any other filter still lists everybody**,
+and `tests/no_full_directory_walk_in_requests.js` records it as owed, with
+what would remove it. `entryForHobaKid()` reads only the people holding
+`hobaPublicKey` (`ldap.personsHolding()`), where it read everybody on each
+HOBA-authenticated request.
