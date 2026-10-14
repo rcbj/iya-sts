@@ -521,6 +521,41 @@ class VcVerifier {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  // ---------------------------------------------------------------------------
+  // THE PRESENTATION IS KEPT AS ITS DIGEST (#614). A verdict carried the
+  // whole `vp_token` presentation — an SD-JWT with every disclosure and its
+  // Key Binding JWT, a VP JWT, or an ldp_vc VP — and the only readers were
+  // `GET /admin-api/verifications?state=` and the log. A transaction is
+  // journalled and replicated into every process (up to
+  // `oid4vp.maxTransactions` per realm), and a presentation is a credential
+  // somebody else could present again wherever the audience and nonce are
+  // not checked. What a verdict is FOR is what was decided — the checks, the
+  // claims that verified, the claim names disclosed — so that stays, and the
+  // presentation is named by `presentationDigest`: enough to tell two answers
+  // apart, or to match one against a copy the wallet kept, and nothing a
+  // reader of the store can present. The log says the same.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the digest a verdict names a presentation by: the credential
+   * digest of the string as it arrived, or of the JSON of an object (an
+   * ldp_vc VP).
+   *
+   * @param presentation - the presentation as it arrived
+   * @returns its SHA-256, base64url, or '' for none
+   */
+  static presentationDigestOf(presentation: unknown): string {
+    helpers.log.debug("Entering VcVerifier.presentationDigestOf().");
+    if (presentation === undefined || presentation === null ||
+        presentation === '') {
+      helpers.log.debug("Leaving VcVerifier.presentationDigestOf(). None.");
+      return '';
+    }
+    const text = typeof presentation === 'string' ? presentation :
+                 JSON.stringify(presentation);
+    helpers.log.debug("Leaving VcVerifier.presentationDigestOf().");
+    return stsCrypto.credentialDigest(text);
+  }
+
   /**
    * Returns the dependencies built from the real modules.
    *
@@ -2753,8 +2788,11 @@ class VcVerifier {
     // Named as the source check in tests/revocation_status.js reads it.
     const verifyIssuerSignatureAsync =
         this.verifyIssuerSignatureAsync.bind(this);
+    // By its digest (#614): the VP JWT carries the credential, and the log
+    // is not a place to keep one. What each check found is on the verdict.
     logArtifact('OID4VP Verifiable Presentation (jwt_vc_json)', 'as received',
-                presentation);
+                { presentationDigest:
+                    VcVerifier.presentationDigestOf(presentation) });
     const checks = [];
     const result: any = { ok: false, checks: checks, claims: {}, disclosed: [],
                      vct: '', sub: '',
@@ -2999,7 +3037,13 @@ class VcVerifier {
     // Named as the source check in tests/revocation_status.js reads it.
     const verifyIssuerSignatureAsync =
         this.verifyIssuerSignatureAsync.bind(this);
-    logArtifact('OID4VP Verifiable Presentation', 'as received', presentation);
+    // By its digest and its shape (#614), never the SD-JWT: its disclosures
+    // and Key Binding JWT are a presentation somebody could make again. The
+    // KB-JWT's decoded header and payload are logged below.
+    logArtifact('OID4VP Verifiable Presentation', 'as received',
+                { presentationDigest:
+                    VcVerifier.presentationDigestOf(presentation),
+                  parts: String(presentation || '').split('~').length });
     const checks = [];
     const result: any = { ok: false, checks: checks, claims: {}, disclosed: [],
                      vct: '', sub: '' };
@@ -4008,7 +4052,8 @@ class VcVerifier {
       vct: verified.vct,
       sub: verified.sub,
       format: answer.format,
-      presentation: answer.presentation
+      // Its digest, never the presentation (#614): presentationDigestOf().
+      presentationDigest: VcVerifier.presentationDigestOf(answer.presentation)
     };
     const outcome = this.signInOutcome(verified, answer);
     record.signIn.outcome = outcome;
@@ -4099,7 +4144,7 @@ class VcVerifier {
       if (outcome.ok) {
         responseCode = this.deps.randomId(24);
         record.signIn.responseCodeHash =
-          stsCrypto.digest('sha256', responseCode, 'base64url');
+          stsCrypto.credentialDigest(responseCode);
       } else if (idv.ok) {
         log.info(errorCodes.tag(outcome.errorCode) + 'oid4vp: a ' +
                  'self-issued ID Token verified and signs nobody in: ' +
@@ -4534,7 +4579,7 @@ class VcVerifier {
         if (outcome.ok) {
           responseCode = this.deps.randomId(24);
           record.signIn.responseCodeHash =
-            stsCrypto.digest('sha256', responseCode, 'base64url');
+            stsCrypto.credentialDigest(responseCode);
           vpTransactions.set(state, record);  // through the store, as above
         }
       } else {
@@ -4548,7 +4593,9 @@ class VcVerifier {
           requested: record.requested || [],
           vct: verified.vct,
           sub: verified.sub,
-          presentation: answer.presentation
+          // Its digest, never the presentation (#614).
+          presentationDigest: VcVerifier.presentationDigestOf(
+            answer.presentation)
         };
         vpTransactions.set(state, record);  // through the store, as above
       }
