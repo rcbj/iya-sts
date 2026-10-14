@@ -223,6 +223,11 @@ RFC 4178's NegTokenResp can carry a context handle, so:
   exactly one, because it is keyed by that negotiation's session key. A MIC
   that fits none deletes nothing — the address key let one bad token from
   behind the same NAT delete somebody else's negotiation;
+* the key is `door|credentialDigest(id)` and the row's `id` is that digest
+  (#614): the cookie value is the negotiation's bearer and the store only
+  looks it up and spends it. No new require — `spnego_exchange.js` already
+  had `common/crypto.js`, so the parent's COPY closure is unchanged. The
+  initiator and acceptor keys stay whole: the MIC is verified with them;
 * the row holds its keys and mechanism list as HEX: the store was persisted
   already, and a `Uint8Array` through JSON comes back as `{"0":…}`, so a
   negotiation that reached another process could never have verified;

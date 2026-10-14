@@ -236,6 +236,54 @@ still holding a resolved artifact is refused, the same restore against an empty
 claim store resolves (the control), a store that throws refuses, and two
 concurrent resolutions answer once.
 
+### The artifact stores keep digests, are bounded, and refuse when full (2026-10-13, #614)
+
+* **The key is `credentialDigest(artifact)`** (`common/crypto.js`), in both
+  `saml2_sso.artifacts` and `saml11_sso.artifacts`, computed in
+  `stashArtifact()` and again where the artifact is presented. The
+  MessageHandle / AssertionHandle is the bearer secret and the store only
+  looks it up and spends it, so no copy of it is in the map, a heap
+  snapshot, an `sts_minted` row or an `sts_changes` name. **The VALUE stays
+  whole** — resolution hands the message (2.0) or the assertion (1.1) back.
+  No migration: a row under the old key is not found and expires.
+* **What still sees the artifact**: the 303 to the service provider (that is
+  the binding), the cluster claim (`cluster_claims.digestOf()` digests it), the
+  first twelve base64 characters on the info/warn lines (TypeCode,
+  EndpointIndex and the start of the SourceID — public, no handle byte), and
+  the debug-level whole-message log of the ArtifactResolve, which logs the
+  ASSERTIONS themselves at the same level by design.
+* **`saml2.maxArtifacts` / `saml11.maxArtifacts` (10000 per realm)**: the
+  expired go first, then `cacheRegistry.makeRoom(..., { policy: 'refuse' })`.
+  A store full of live artifacts REFUSES the next one rather than evict an
+  unresolved one — `used_assertions`' stance: an artifact dropped before its
+  party resolved it is a sign-in lost after it succeeded. **The refusal is a
+  503 page (`samlError()`), `STS-SAML-0110`, and nothing goes to the service
+  provider**: a Responder `<samlp:Response>` (section 3.2.2) would itself have
+  to travel as an artifact on that binding, and switching to another binding
+  at an endpoint declared for HTTP-Artifact is not the identity provider's
+  choice. SAML 1.1's browser profiles have no failure message at all.
+* **Expired is refused AT THE READ** in both resolvers (`STS-SAML-0018`,
+  `0037`) and deleted. Until #614 only the sweep in `stashArtifact()` removed
+  one, so an artifact past its lifetime resolved until the next stash.
+* **Both are on `/admin/caches`** (`saml2.artifacts`, `saml11.artifacts`,
+  kind `replay`, keys drawn by `digestKey()`), with an `eject` on the
+  `caches.eject-expired` scheduler job.
+* **A resolved artifact is deleted on every node already**: the delete
+  journals the digest key, the minted flush DELETEs the `sts_minted` row and
+  logs a change, and every other process's `persistence_minted.applyChange()`
+  finds the row gone and calls the store's `remove()` (`persistence/CLAUDE.md`,
+  *A MINTED WRITE ASKS FOR A FLUSH*). Nothing needed changing; `tombstone`
+  was not added, because nothing writes an artifact's key a second time.
+* **`saml11_sso.assertionsById` holds `{ xml, expires }`** and expires at the
+  assertion's `<saml:Conditions NotOnOrAfter>` — or `saml11.assertionCacheTtlS`
+  (3600) after it was kept when it carries none, which no assertion this
+  service builds does. Checked at the read (`STS-SAML-0038`, and the entry is
+  deleted), ejected by the scheduler job, still capped by
+  `saml11.assertionCacheMax`. A row of the old shape (a bare string) is not
+  found.
+
+`tests/saml_artifact_digests.js` holds all of it.
+
 ---
 
 ## `buildSamlAssertion()` GREW SEVEN OPTIONS AND IS STILL ONE BUILDER
@@ -883,7 +931,9 @@ unregistered `shire` has no mock fallback.
 `saml2.requestTtlMin` (10), `saml2.mockSpContextTtlMin` (30, deleted with the
 mock service provider by #592),
 `saml2.redirectWarnLength` (8000), `saml2.spMetadataMaxBytes` (524288),
-`saml11.requestTtlMin` (10), `saml11.assertionCacheMax` (500),
+`saml11.requestTtlMin` (10), `saml11.assertionCacheMax` (500) — and, new
+rather than converted, `saml2.maxArtifacts` / `saml11.maxArtifacts` (10000) and
+`saml11.assertionCacheTtlS` (3600) (#614, above),
 `saml.organizationName` / `saml.organizationDisplayName` / `saml.organizationUrl`
 — an emptied name OMITS `<md:Organization>` in either mode, because half an
 Organization is schema-invalid and a setting silently ignored in one mode would
