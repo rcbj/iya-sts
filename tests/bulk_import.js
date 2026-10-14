@@ -24,8 +24,8 @@
 //   E. AGAINST A pg DOUBLE (#637): a role that does not own the table is
 //      issued no gin_clean_pending_list(), ANALYZE or table lock; MAINTAIN
 //      analyzes (17+); a batch seals and inserts outside the lock and
-//      checks against every other row under it, and a name another import
-//      committed first is deleted again before the commit.
+//      checks again under it on a second connection, and a name another
+//      import committed first is deleted again before the commit.
 //   D. AGAINST A REAL POSTGRES, when STS_TEST_POSTGRES_URL names one the test
 //      may create a database in (an owner; STS_TEST_POSTGRES_CA for its CA):
 //      a database of its own, the service started once in a child to seed
@@ -270,14 +270,10 @@ function statements(t) {
           'C4. the check and the insert are one transaction holding the ' +
           'realm\'s import lock: an advisory lock (#637), never a table ' +
           'lock, which cancels a running autovacuum');
-  t.check(/AND NOT \(dn_key = ANY\(\$4::text\[\]\)\)$/.test(s.OTHER_RDNS) &&
-          /AND NOT \(dn_key = ANY\(\$4::text\[\]\)\)$/
-            .test(s.OTHER_NAME_KEYS) &&
-          s.OTHER_RDNS.replace(/ AND NOT .*$/, '') === s.HELD_RDNS &&
-          /^DELETE FROM sts_ldap_entries WHERE realm = \$1 AND dn_key = ANY\(\$2::text\[\]\)$/
-            .test(s.DROP_OWN),
-          'C8. the check under the lock asks byName()\'s two lookups of ' +
-          'every row but the batch\'s own, and deletes only its own');
+  t.check(/^DELETE FROM sts_ldap_entries WHERE realm = \$1 AND dn_key = ANY\(\$2::text\[\]\)$/
+    .test(s.DROP_OWN),
+          'C8. what the check under the lock finds taken is deleted again, ' +
+          'the batch\'s own rows by DN and nothing else');
   t.check(/coalesce\(sum\(n\), 0\)/.test(s.REALM_COUNT),
           'C6. the realm\'s count is the SUM of its counter shards (#630)');
   t.check(/^ANALYZE \(SKIP_LOCKED\) sts_ldap_entries$/.test(s.ANALYZE) &&
@@ -301,14 +297,15 @@ function statements(t) {
 // ---------------------------------------------------------------------------
 
 // A pg double: every statement, in order, as `[where, text, params]`;
-// `answer(text, params)` gives the rows. `where` is 'pool' or 'client'.
+// `answer(text, params)` gives the rows. `where` is 'pool' or 'client<n>',
+// the nth connection taken.
 function pgDouble(answer) {
   log.debug("Entering pgDouble().");
   const seen = [];
   const query = function (where) {
     return function (text, params) {
       seen.push([where, String(text), params || []]);
-      const rows = answer(String(text), params || []);
+      const rows = answer(String(text), params || [], where);
       if (rows instanceof Error) {
         return Promise.reject(rows);
       }
@@ -316,9 +313,12 @@ function pgDouble(answer) {
         .length });
     };
   };
+  let clients = 0;
   const db = { seen: seen, query: query('pool'), connect: function () {
-    return Promise.resolve({ query: query('client'), release: function () {
-      seen.push(['client', 'RELEASE', []]);
+    clients += 1;
+    const name = 'client' + clients;
+    return Promise.resolve({ query: query(name), release: function () {
+      seen.push([name, 'RELEASE', []]);
     } });
   } };
   log.debug("Leaving pgDouble().");
@@ -438,13 +438,17 @@ async function batchOrder(t, dir) {
     parts.push(gen.recordOf('e', i, BASE));
   }
   fs.writeFileSync(file, parts.join('\n'));
+  // The lock is the connection's that took it, until that one ends.
   let locked = false;
+  let holder = '';
   const events = [];
-  const db = pgDouble(function (text, params) {
+  const db = pgDouble(function (text, params, where) {
     if (text === s.LOCK) {
       locked = true;
+      holder = where;
       events.push('lock');
-    } else if (text === 'COMMIT' || text === 'ROLLBACK') {
+    } else if ((text === 'COMMIT' || text === 'ROLLBACK') &&
+               where === holder) {
       locked = false;
     }
     if (text === s.LIVE_READERS) {
@@ -456,11 +460,8 @@ async function batchOrder(t, dir) {
     }
     if (text === s.HELD_RDNS) {
       events.push('look' + (locked ? ' locked' : ''));
-      return [];
-    }
-    if (text === s.OTHER_RDNS) {
-      events.push('check' + (locked ? ' locked' : ''));
-      return [{ rdn_value: 'load-e-2' }];
+      // Under the lock, load-e-2 is held: another import committed it.
+      return locked ? [{ rdn_value: 'load-e-2' }] : [];
     }
     if (text === s.INSERT) {
       events.push('insert' + (locked ? ' locked' : ''));
@@ -514,11 +515,10 @@ async function batchOrder(t, dir) {
     }
   });
   const order = events.join(',');
-  t.check(/^look,seal(,seal)*,settle,insert,lock,check locked,count locked,drop uid=load-e-2,ou=users,dc=example,dc=com locked$/
+  t.check(/^look,seal(,seal)*,settle,insert,lock,look locked,count locked,drop uid=load-e-2,ou=users,dc=example,dc=com locked$/
     .test(order),
           'E5. a batch is looked up, SEALED, SETTLED AND INSERTED OUTSIDE ' +
-          'THE LOCK, then checked against every other row, counted and ' +
-          'cut under it', order);
+          'THE LOCK, then checked again, counted and cut under it', order);
   const inserted = db.seen.filter(function (one) {
     return one[1] === s.INSERT;
   })[0];
@@ -536,16 +536,25 @@ async function batchOrder(t, dir) {
           'caught under the lock and its row deleted before the commit; ' +
           'the insert is in DN order', JSON.stringify(report)
             .slice(0, 1500));
-  const checked = db.seen.filter(function (one) {
-    return one[1] === s.OTHER_RDNS || one[1] === s.OTHER_NAME_KEYS;
-  });
-  t.check(checked.length === 2 && checked.every(function (one) {
-    return JSON.stringify(one[2][3].slice(0).sort()) === JSON.stringify(
-      sorted);
-  }), 'E6. the check under the lock leaves out exactly the batch\'s own ' +
-     'rows', JSON.stringify(checked.map(function (one) {
-       return one[2][3];
-     })));
+  const whereOf = function (text, after) {
+    const at = db.seen.findIndex(function (one, i) {
+      return i > after && one[1] === text;
+    });
+    return { at: at, where: at >= 0 ? db.seen[at][0] : '' };
+  };
+  const ins = whereOf(s.INSERT, -1);
+  const lock = whereOf(s.LOCK, -1);
+  const check = whereOf(s.HELD_NAME_KEYS, lock.at);
+  t.check(ins.where === lock.where && check.where !== ins.where &&
+          check.at > lock.at && db.seen.slice(check.at).some(function (one) {
+            return one[0] === ins.where && one[1] === 'COMMIT';
+          }),
+          'E6. the check under the lock runs on a SECOND connection, which ' +
+          'cannot see the batch\'s own uncommitted rows, while the batch\'s ' +
+          'transaction holds the lock', JSON.stringify(db.seen.map(
+            function (one) {
+              return one[0] + ' ' + one[1].slice(0, 30);
+            })).slice(0, 2500));
   t.check(texts(db).every(function (one) {
     return !/LOCK TABLE|gin_clean_pending_list|^ANALYZE/i.test(one);
   }) && db.seen.some(function (one) {

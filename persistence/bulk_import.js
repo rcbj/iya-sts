@@ -320,28 +320,22 @@ const HELD_NAME_KEYS =
   'sts_ldap_entries WHERE name_keys @> ANY($3::jsonb[])) ' +
   'SELECT name_keys FROM hit WHERE realm = $1 AND parent_key = $2';
 
-// Who holds a name, for the report (the first twenty only); $5 the batch's
-// own rows, which hold it too once inserted.
+// Who holds a name, for the report (the first twenty only).
 const HOLDER =
   'SELECT e.dn FROM sts_ldap_entries e WHERE e.realm = $1 AND ' +
   'e.parent_key = $2 AND (e.name_keys @> jsonb_build_array($3::text) OR ' +
-  'e.rdn_value = $4) AND NOT (e.dn_key = ANY($5::text[])) ORDER BY ' +
-  'e.dn_key LIMIT 1';
+  'e.rdn_value = $4) ORDER BY e.dn_key LIMIT 1';
 
-// THE CHECK UNDER THE LOCK, AFTER THE INSERT (#637): HELD_RDNS and
-// HELD_NAME_KEYS asked of every row BUT the batch's own ($4, the DNs it
-// inserted, visible to its own transaction and to nobody else's yet). What
-// they find is a name another import committed first; those rows of the
-// batch are deleted again (DROP_OWN) before the commit.
-const OTHER_RDNS =
-  'SELECT rdn_value FROM sts_ldap_entries WHERE realm = $1 AND ' +
-  'parent_key = $2 AND rdn_value = ANY($3::text[]) AND NOT (dn_key = ' +
-  'ANY($4::text[]))';
-const OTHER_NAME_KEYS =
-  'WITH hit AS MATERIALIZED (SELECT realm, parent_key, dn_key, name_keys ' +
-  'FROM sts_ldap_entries WHERE name_keys @> ANY($3::jsonb[])) ' +
-  'SELECT name_keys FROM hit WHERE realm = $1 AND parent_key = $2 AND ' +
-  'NOT (dn_key = ANY($4::text[]))';
+// THE CHECK UNDER THE LOCK, AFTER THE INSERT (#637), IS THE SAME THREE
+// STATEMENTS ON A SECOND CONNECTION. It cannot see the batch's own rows (not
+// committed) and sees every other import's committed rows (each commits
+// before it releases the lock this batch now holds). Asked in the batch's
+// own transaction the lookups found the batch's own rows — each of its
+// thousands of digests matched its own row — and the name check alone took
+// ~580 ms a batch under the lock where it takes ~60 ms finding nothing
+// (measured, postgres 18, 5,000 a batch). What it finds is a name another
+// import committed first; those rows of the batch are deleted again
+// (DROP_OWN) before the commit.
 const DROP_OWN =
   'DELETE FROM sts_ldap_entries WHERE realm = $1 AND dn_key = ANY($2::text[])';
 
@@ -349,8 +343,9 @@ const DROP_OWN =
 // authoritative check to the commit. The batch is INSERTED FIRST, without
 // it — the insert, the indexes' upkeep, is most of a batch's time in the
 // database, and several imports insert side by side — and then, under the
-// lock, its names are checked against every row but its own, the losers
-// deleted, and the transaction committed. Every import of the realm commits
+// lock, its names are checked on a second connection (which sees every
+// committed row and not the batch's own), the losers deleted, and the
+// transaction committed. Every import of the realm commits
 // that way, ONE AT A TIME, and a commit becomes visible before its lock is
 // released, so each check sees every other import's committed rows: two
 // files that overlap cannot both admit a name (`docs/bulk-import.md`,
@@ -394,11 +389,11 @@ const INSERT =
  * @param usersKey - its `ou=users`, normalised
  * @param fresh - the candidates, each with `c.dnKey`, `c.names` and
  *   `digests`
- * @param own - under the lock, the DNs the batch inserted: asked of every
- *   row but those, and no DN asked
+ * @param inserted - true under the lock, after the insert: the DN needs no
+ *   asking
  * @returns a promise of `{ present: Set<index>, taken: Set<index> }`
  */
-async function classify(db, realmId, usersKey, fresh, own) {
+async function classify(db, realmId, usersKey, fresh, inserted) {
   log.debug("Entering classify(). " + fresh.length);
   const out = { present: new Set(), taken: new Set() };
   if (!fresh.length) {
@@ -413,14 +408,11 @@ async function classify(db, realmId, usersKey, fresh, own) {
       digests.push(JSON.stringify([one.digests[j]]));
     });
   });
-  // Under the lock (`own`, the batch's inserted DNs) the DN needs no asking:
-  // the primary key settled it at the insert.
-  const keys = own ? { rows: [] } : await db.query(PRESENT_KEYS, [realmId,
-    fresh.map(function (one) { return one.c.dnKey; })]);
-  const rdns = await db.query(own ? OTHER_RDNS : HELD_RDNS,
-    [realmId, usersKey, names].concat(own ? [own] : []));
-  const held = await db.query(own ? OTHER_NAME_KEYS : HELD_NAME_KEYS,
-    [realmId, usersKey, digests].concat(own ? [own] : []));
+  // After the insert the DN needs no asking: the primary key settled it.
+  const keys = inserted ? { rows: [] } : await db.query(PRESENT_KEYS,
+    [realmId, fresh.map(function (one) { return one.c.dnKey; })]);
+  const rdns = await db.query(HELD_RDNS, [realmId, usersKey, names]);
+  const held = await db.query(HELD_NAME_KEYS, [realmId, usersKey, digests]);
   const presentKeys = new Set((keys.rows || []).map(function (row) {
     return row.dn_key;
   }));
@@ -657,9 +649,9 @@ async function importFile(options) {
   // THE STORE'S ANSWER FOR A LIST OF CANDIDATES: each the store holds by DN
   // is present, each whose name it holds is taken (counted and, the first
   // EXAMPLES, named with who holds it), and the rest come back.
-  const sortOut = async function (db, list, own) {
+  const sortOut = async function (db, list, inserted) {
     log.debug("Entering sortOut(). " + list.length);
-    const found = await classify(db, realmId, usersKey, list, own);
+    const found = await classify(db, realmId, usersKey, list, inserted);
     const free = [];
     for (let i = 0; i < list.length; i++) {
       const one = list[i];
@@ -672,7 +664,7 @@ async function importFile(options) {
           for (let j = 0; j < one.c.names.length && !holder; j++) {
             const h = await db.query(HOLDER, [realmId, usersKey,
                                               one.digests[j],
-                                              one.c.names[j], own || []]);
+                                              one.c.names[j]]);
             holder = ((h.rows || [])[0] || {}).dn || '';
           }
         }
@@ -715,6 +707,30 @@ async function importFile(options) {
       }
     });
     log.debug("Leaving sealAll().");
+  };
+  // THE CHECK UNDER THE LOCK, on a connection of its own (DROP_OWN above
+  // says why), in a transaction of its own for the planner setting.
+  const checkElsewhere = async function (list) {
+    log.debug("Entering checkElsewhere(). " + list.length);
+    const checker = await o.db.connect();
+    try {
+      await checker.query('BEGIN');
+      await checker.query('SET LOCAL enable_seqscan = off');
+      const free = await sortOut(checker, list, true);
+      await checker.query('COMMIT');
+      log.debug("Leaving checkElsewhere().");
+      return free;
+    } catch (e) {
+      log.debug("Caught in checkElsewhere(): " + ((e && e.message) || e));
+      await checker.query('ROLLBACK').catch(function (r) {
+        log.debug("Caught in checkElsewhere()'s rollback: " +
+                  ((r && r.message) || r));
+      });
+      log.debug("Leaving checkElsewhere(). Failed.");
+      throw e;
+    } finally {
+      checker.release();
+    }
   };
   const flushBatch = async function () {
     log.debug("Entering flushBatch(). " + pending.length);
@@ -763,10 +779,10 @@ async function importFile(options) {
     // before anything is sealed, so that a re-run seals nothing; the seal,
     // which is most of a batch's CPU; the INSERT, which is most of its time
     // in the database — all three side by side with other imports. Then,
-    // UNDER THE LOCK, the check that counts: the batch's names against
-    // every row but its own, which sees every other import's committed
-    // rows; a row whose name another import committed first is deleted
-    // again, the ceiling is applied, and the batch commits.
+    // UNDER THE LOCK, the check that counts, on a second connection: it
+    // sees every other import's committed rows and not the batch's own; a
+    // row whose name another import committed first is deleted again, the
+    // ceiling is applied, and the batch commits.
     const client = await o.db.connect();
     let cut = false;
     try {
@@ -826,10 +842,7 @@ async function importFile(options) {
         if (o.liveCheck !== false) {
           await refuseWhileRunning(client);
         }
-        const own = mine.map(function (one) {
-          return one.c.dnKey;
-        });
-        const free = mine.length ? await sortOut(client, mine, own) : [];
+        const free = mine.length ? await checkElsewhere(mine) : [];
         // THE CEILING, read in the realm as an add reads it, against the
         // realm's counter rows, under the lock: every other import's batch
         // is either committed and in the count or not yet committed.
@@ -1401,7 +1414,6 @@ module.exports = {
                 HELD_NAME_KEYS: HELD_NAME_KEYS, LOCK: LOCK, INSERT: INSERT,
                 HOLDER: HOLDER,
                 REALM_COUNT: REALM_COUNT, LIVE_READERS: LIVE_READERS,
-                OTHER_RDNS: OTHER_RDNS, OTHER_NAME_KEYS: OTHER_NAME_KEYS,
                 DROP_OWN: DROP_OWN,
                 TABLE_OWNERSHIP: TABLE_OWNERSHIP,
                 TABLE_MAINTAIN: TABLE_MAINTAIN, GIN_INDEXES: GIN_INDEXES,
