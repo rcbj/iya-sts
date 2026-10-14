@@ -428,6 +428,73 @@ async function refuseWhileRunning(db) {
   log.debug("Leaving refuseWhileRunning().");
 }
 
+// ---------------------------------------------------------------------------
+// THE NAME INDEX'S PENDING LIST, MERGED AFTER EVERY BATCH WHERE IT HAS ONE.
+//
+// Schema version 17 builds `sts_ldap_entries_names` with GIN's default
+// `fastupdate = on`: an insert goes to an unsorted pending list that EVERY
+// probe of the index reads whole. The check above probes once a name, so a
+// 5,000-name batch read the list 5,000 times — 25.8 s against 25,000
+// entries, where the same probes with the list merged took 13 ms — and the
+// import slowed batch by batch to 400 a second. Version 18 (#618) builds the
+// index with `fastupdate = off` and there is nothing to merge. On 17 the
+// merge needs the table's owner or MAINTAIN: refused, it is said once
+// (STS-LDAP-0161) and the import goes on, slowly — run it as the owner.
+// ---------------------------------------------------------------------------
+const NAME_INDEX_OPTIONS =
+  'SELECT coalesce(array_to_string(c.reloptions, \',\'), \'\') AS o FROM ' +
+  'pg_class c WHERE c.oid = to_regclass(\'sts_ldap_entries_names\')';
+
+/**
+ * Returns the function that merges the name index's pending list after a
+ * batch: a no-op where the index has none to merge, or once refused.
+ *
+ * @param db - something with `query()`
+ * @returns a promise of `{ merge, mode }`, `merge()` a promise of pages
+ */
+async function namePendingMerger(db) {
+  log.debug("Entering namePendingMerger().");
+  const r = await db.query(NAME_INDEX_OPTIONS);
+  const row = (r.rows || [])[0];
+  if (!row || /fastupdate=(off|false)/i.test(String(row.o))) {
+    log.debug("Leaving namePendingMerger(). Nothing to merge.");
+    return { mode: row ? 'fastupdate off' : 'no index',
+             merge: function () {
+               log.debug("Entering merge(). Nothing to merge.");
+               log.debug("Leaving merge().");
+               return Promise.resolve(0);
+             } };
+  }
+  let refused = false;
+  const out = { mode: 'merged after every batch', merge: async function () {
+    log.debug("Entering merge().");
+    if (refused) {
+      log.debug("Leaving merge(). Refused before.");
+      return 0;
+    }
+    try {
+      const m = await db.query('SELECT gin_clean_pending_list(' +
+        'to_regclass(\'sts_ldap_entries_names\'))::bigint AS n');
+      log.debug("Leaving merge().");
+      return Number(((m.rows || [])[0] || {}).n) || 0;
+    } catch (e) {
+      log.debug("Caught in merge(): " + ((e && e.message) || e));
+      refused = true;
+      out.mode = 'refused: ' + ((e && e.message) || e);
+      log.warn(errorCodes.tag('STS-LDAP-0161') + 'bulk_import: the name ' +
+               'index\'s pending list cannot be merged by this role (' +
+               ((e && e.message) || e) + '), so every batch\'s name check ' +
+               'reads it whole and the import slows as it grows. Run the ' +
+               'import as the table\'s owner, or on schema version 18, ' +
+               'whose index has fastupdate off.');
+      log.debug("Leaving merge(). Refused.");
+      return 0;
+    }
+  } };
+  log.debug("Leaving namePendingMerger().");
+  return out;
+}
+
 /**
  * Imports the people of an LDIF file into one realm's `ou=users`.
  *
@@ -614,6 +681,9 @@ async function importFile(options) {
         ') to resume.');
     } finally {
       client.release();
+    }
+    if (o.afterBatch) {
+      await o.afterBatch();
     }
     report.batches += 1;
     if (cut) {
@@ -999,6 +1069,7 @@ async function main(argv) {
     const sealing = inRealm(function () {
       return keystore.persists() && keystore.sealed();
     });
+    const merger = await namePendingMerger(pool);
     const report = await importFile({
       db: pool, realmId: realm.record.id, usersDn: usersDn,
       file: options.file, batch: options.batch, skip: options.skip,
@@ -1018,6 +1089,7 @@ async function main(argv) {
         });
       },
       seal: inRealm,
+      afterBatch: merger.merge,
       settle: function () {
         log.debug("Entering settle().");
         log.debug("Leaving settle().");
@@ -1027,6 +1099,7 @@ async function main(argv) {
         return require('../common/crypto').randomUuid();
       }
     });
+    report.nameIndex = merger.mode;
     if (report.imported > 0) {
       report.indexes = await settleIndexes(pool);
     }
@@ -1086,6 +1159,7 @@ module.exports = {
   main: main,
   importFile: importFile,
   settleIndexes: settleIndexes,
+  namePendingMerger: namePendingMerger,
   candidateOf: candidateOf,
   storedOf: storedOf,
   normalizeDn: normalizeDn,

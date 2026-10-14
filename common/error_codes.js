@@ -12864,11 +12864,13 @@ const CODES = [
       'entry per person rule, as STS-LDAP-0005 refuses an add.',
     spec: 'none — an operator tool' },
   { code: 'STS-LDAP-0161',
-    summary: 'The bulk import finished, and could not merge the directory\'s ' +
-      'GIN pending lists (gin_clean_pending_list) or ANALYZE the table: both ' +
-      'need its owner or MAINTAIN, which the application role may not hold. ' +
-      'Nothing is lost; until an autovacuum or the owner\'s VACUUM (ANALYZE) ' +
-      'sts_ldap_entries does it, lookups scan the pending lists.',
+    summary: 'The bulk import could not merge a GIN pending list ' +
+      '(gin_clean_pending_list) or ANALYZE the table: both need its owner ' +
+      'or MAINTAIN, which the application role may not hold. After a batch ' +
+      '(schema 17, whose name index has fastupdate on) the import goes on, ' +
+      'slowing as the list grows; at the end nothing is lost, and lookups ' +
+      'scan the lists until an autovacuum or the owner\'s VACUUM (ANALYZE) ' +
+      'sts_ldap_entries.',
     spec: 'none — an operator tool' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
