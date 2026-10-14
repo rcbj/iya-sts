@@ -2820,8 +2820,18 @@ function userRecord(identity) {
 // the store and the change log. `/admin/users` has read the DIRECTORY's
 // people itself since #610 (`peopleRows()`), so a restored person is listed
 // as `directory` without a record here. What calls this now is a door that
-// CREATED somebody, and the appliers of another process's create. `restored`
-// is still understood: a record persisted by an earlier build carries it.
+// CREATED somebody, and nothing else. `restored` is still understood: a
+// record persisted by an earlier build carries it.
+//
+// **AND SINCE #618 PHASE 2 (2026-10-14) NOT THE APPLIERS OF ANOTHER
+// PROCESS'S CREATE EITHER.** `ldap_server.js`'s `applyEntry()` and
+// `forgetEntry()` noted every replicated person here, in every process, so
+// one add cost every OTHER process a journalled note and, past `MAX_USERS`,
+// a journalled eviction and a `usersForgotten` bump — about four of the 9.7
+// change rows each LDAP add wrote on 8081. The creating process's own record
+// reaches every other process through the fan-in (`everyUserRecord()`), so
+// `knownBy` reads the same whichever process answers, and
+// `tests/change_rows_per_add.js` holds the bound.
 // ---------------------------------------------------------------------------
 /**
  * Adds a person who exists but has not authenticated in this process, such as

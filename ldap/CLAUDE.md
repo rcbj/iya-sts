@@ -628,10 +628,17 @@ ldif or multi-cell service is unchanged.
   2026-10-13; rcbj's 2026-09-29 rule that it was is reversed by the issue).
   `replaceRealm()` filled it from the store in a windowed worker, a page of
   NAMES at a time through the synchronous bridge, and that pass is gone
-  (*Restoring*, below). `forgetEntry()`, handed the row the applier read,
-  still notes a person another process made as `created`, as `applyEntry()`
-  does. Section K of the test compares the two modes: the same register,
-  with no restored person in either.
+  (*Restoring*, below). **Since #618 phase 2 (2026-10-14) neither
+  `forgetEntry()` nor `applyEntry()` notes a person another process made**:
+  that note cost every other process a journalled `admin_stats.users` row
+  and, past `MAX_USERS`, a journalled eviction and a `usersForgotten` bump
+  for every add anywhere (about 3 of the 9.7 change rows an LDAP add wrote
+  on 8081). The register is `merge: 'own'`, so the CREATING process's
+  `created` record reaches every other process through the fan-in
+  (`everyUserRecord()`), and `/admin/users` lists the directory's people
+  itself (#610). Section K of the test compares the two modes: the same
+  register, with neither a restored nor a replicated person in either;
+  `tests/change_rows_per_add.js` counts the rows.
 * **The hooks** use `adopt()` (a row the store holds, not a write) in
   `applyEntry()` and `replaceRealm()`, `forget()` in `removeEntry()`;
   `realmEntries()` and `entryAt()` answer the RESIDENT half only, so the write
