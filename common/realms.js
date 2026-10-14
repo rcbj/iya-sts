@@ -2629,6 +2629,20 @@ function declareHandle(options, shape, accessors) {
     expiresAt: typeof options.expiresAt === 'function' ? options.expiresAt
       : null,
     // ---------------------------------------------------------------------
+    // `restoreInWorkers: false` (#617, 2026-10-14): a REQUEST WORKER does not
+    // read this store's rows back at its start. For a store nothing a worker
+    // answers reads whole — its only readers are pinned to the front process
+    // (`common/request_pool.js`, NEVER_DISPATCHED), which restores it as
+    // every process did. A worker still writes its own rows (merged with the
+    // stored row at flush, as always) and still applies what the change log
+    // brings from the moment it starts, so it never answers from less than
+    // what arrived since then; it only skips the history. `scheduler.runs`
+    // is the one store that says so: 42,740 of the 52,234 rows each of
+    // 8081's processes read back at every start, and read by nothing but
+    // /admin/scheduler and its API.
+    // ---------------------------------------------------------------------
+    restoreInWorkers: options.restoreInWorkers !== false,
+    // ---------------------------------------------------------------------
     // THE ACCESSORS LIVE ON THE REGISTRY ROW AND NOT ON THE STORE, and that is
     // the whole reason this is a registry at all. Two of the three shapes are
     // Proxies over a real Array and a real Object, and a `persistRead` member

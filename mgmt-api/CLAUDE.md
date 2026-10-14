@@ -2227,6 +2227,27 @@ safe", and not by giving an operation a components table of its own. A
 second shared copy costs 170 KB once; a per-validator one costs it 363
 times, in every process (#339).
 
+## THE VALIDATORS ARE COMPILED ON FIRST USE (#617, 2026-10-14)
+
+Compiling all of them was the bulk of what the management API cost every
+process at start: about 3 s between the console modules' banners and this
+API's on 8081, of which **`compileRequestSchemas()` was 1,144 ms** in the tests
+image against 4 ms for `buildRoutes()` and 2 ms for the closed sets — for 363
+validators (427 with the action rows) a given process mostly never reaches.
+`wire()` now only RECORDS each schema under its validator key, and
+`validatorFor()` compiles one the first time a request reaches its operation
+and keeps it (a schema that will not compile is remembered as null, logged
+once). The components copy above is made with the first validator. **What
+did not move:** the gate and every route are registered where they were (rule
+1), the console's closed sets are registered at wiring as before, and what a
+validator accepts and refuses — and the words — are unchanged. **What did:**
+STS-API-0010 for a broken schema is said at that operation's first request
+rather than at start, so `compileAllRequestSchemas()` compiles the lot on
+demand and `tests/admin_api_lazy_validators.js` holds that wiring compiles
+none, a request compiles its own and is held to it, and every schema still
+compiles. The OpenAPI document was already built per request
+(`admin_api_spec.ts`) and is not part of this.
+
 ## `updateApplicationFields` — THE FIELD GRID'S SAVE (2026-09-30)
 
 `POST /admin-api/applications/update-fields`, body `{ application, fields,

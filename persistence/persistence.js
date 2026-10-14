@@ -2437,9 +2437,18 @@ function adoptStableOrigin() {
   if (typeof driver.setOriginLost === 'function') {
     driver.setOriginLost(originLost);
   }
+  // WHICH MEMBERSHIP THIS PROCESS IS PART OF (#617): the id its front
+  // process joins the cluster under — chosen here, before the join, for a
+  // front, and inherited by a worker — so a claim its predecessor's
+  // membership took, and that membership has since left, is taken over at
+  // once rather than waited out (the driver's `adoptOrigin()` argues it).
+  // '' with clustering off, where nothing is taken over.
+  const nodeId = slot && cluster.mode() !== 'off' ? cluster.plannedNodeId()
+                                                    : '';
   log.debug("Leaving adoptStableOrigin().");
   return driver.adoptOrigin({ name: name, ttlMs: ORIGIN_TTL_MS,
-                              waitMs: ORIGIN_WAIT_MS }).then(function (a) {
+                              waitMs: ORIGIN_WAIT_MS,
+                              nodeId: nodeId }).then(function (a) {
     originAdoption = a;
     if (!a.adopted) {
       log.warn(errorCodes.tag('STS-STORE-0060') + 'persistence: this ' +
@@ -2450,6 +2459,8 @@ function adoptStableOrigin() {
       return;
     }
     log.info('persistence: this process writes as origin ' + a.origin +
+             (a.tookOverFrom ? ', taken over from ' + a.tookOverFrom +
+              ', whose node membership has left or expired' : '') +
              (a.waitedMs > 1000 ? ', after waiting ' +
               Math.round(a.waitedMs / 1000) + ' s for the previous ' +
               'holder\'s claim to lapse' : '') + '; what that origin wrote ' +
@@ -3196,6 +3207,53 @@ function primeShadow(loadedRealmIds) {
   });
   log.debug('Leaving primeShadow(). ' + shadow.size + ' realm(s), ' +
             fromStore.length + ' of them read back from the store.');
+}
+
+// ---------------------------------------------------------------------------
+// A REQUEST WORKER'S ORIGIN, GIVEN BACK AS IT EXITS (#617, 2026-10-14).
+//
+// `stop()` below gives the origin back at a clean stop, and only the front
+// process ever called it: a request worker drained its server and exited,
+// holding its claim, so the worker that replaced it after a container
+// restart found the claim live and waited for it to lapse (2 s on 8081, up to
+// the claim's 30 s). `common/request_worker.ts` calls this once its server
+// has closed: what this process still owes is written first — the directory's
+// and the minted journal, which commit-before-answer has normally already
+// written — and then the claim is released, so nothing is written under the
+// origin after it is given back. The worker exits straight afterwards.
+// Never rejects; a failure leaves the claim to lapse, as before.
+// ---------------------------------------------------------------------------
+/**
+ * Writes what this process owes and releases its origin claim, for a request
+ * worker about to exit.
+ *
+ * @returns a promise of true when a claim was released
+ */
+function releaseOrigin() {
+  log.debug("Entering releaseOrigin().");
+  if (originTimer) {
+    clearInterval(originTimer);
+    originTimer = null;
+  }
+  if (!enabled() || !driver || typeof driver.releaseOrigin !== 'function') {
+    log.debug("Leaving releaseOrigin(). The store has no origins.");
+    return Promise.resolve(false);
+  }
+  log.debug("Leaving releaseOrigin().");
+  return Promise.resolve().then(function () {
+    return flush();
+  }).then(function () {
+    return minted.flush();
+  }).then(function () {
+    return driver.releaseOrigin();
+  }).then(function (released) {
+    log.debug('persistence: this process gave back origin ' + originId() +
+              (released ? '' : ' (it held no claim)') + '.');
+    return !!released;
+  }).catch(function (err) {
+    log.debug("Caught in releaseOrigin(): " + ((err && err.message) || err));
+    return false;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -4358,6 +4416,7 @@ module.exports = {
   },
   start: start,
   stop: stop,
+  releaseOrigin: releaseOrigin,
   flush: flush,
   directoryChanged: directoryChanged,
   realmsChanged: realmsChanged,

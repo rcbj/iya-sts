@@ -1339,9 +1339,16 @@ function publishSoon(scopeId, caId) {
   log.debug("Leaving publishSoon().");
 }
 
+// **AND IT YIELDS BETWEEN LISTS (#617, 2026-10-14)**, which since #617 it
+// does while the listener is answering. The signature itself is WebCrypto
+// and already gave the loop a turn; the directory write after it is
+// synchronous — the containers, the entry, its change-log journal — so a
+// `setImmediate()` between lists makes sure a request, the heartbeat or the
+// origin-claim renewal waits for at most ONE list's write, whatever a list's
+// signature does. The total is unchanged.
 /**
  * Builds and publishes the CRL of every authority in the given scopes, and
- * the Root's, into the directory.
+ * the Root's, into the directory, yielding to the event loop between lists.
  *
  * @param scopeIds - the scopes to publish
  * @returns how many CRLs were published; 0 when there is no directory
@@ -1356,6 +1363,11 @@ async function publishAll(scopeIds) {
   let done = 0;
   for (let i = 0; i < all.length; i++) {
     const one = all[i];
+    if (i > 0) {
+      await new Promise(function (resolve) {
+        setImmediate(resolve);
+      });
+    }
     try {
       const made = await buildCrl(one.scope, one.ca);
       if (made.ok && directory.publishCrl(one.scope, one.ca, made.der)) {
