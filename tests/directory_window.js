@@ -1498,5 +1498,8 @@ module.exports = {
             'routing, writes and in-place edits, the flush\'s answers, ' +
             'scans and size, other processes, persistence.js over a pg ' +
             'double, the refusal, and collect(named) looking keys up',
-  run: run
+  run: run,
+  // The synchronous stand-in for the bridge, for another test's windowed
+  // child (`tests/group_index_clock.js`, #618).
+  fakeBridge: fakeBridge
 };

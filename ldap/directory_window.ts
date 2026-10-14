@@ -576,6 +576,36 @@ class DirectoryWindow {
     return slot && slot.entry ? slot.entry : null;
   }
 
+  // Hot path (every write of the directory, through `touchDirectory()`): no
+  // Entering/Leaving pair, the exception the code style allows, stated as it
+  // requires.
+  /**
+   * What this process holds at a key, WITHOUT asking the store (#618): the
+   * group index's question "is the entry just written a group", which must
+   * never cost a round trip. A resident key is always known (the Map is
+   * the whole truth); a windowed key is known when the window, what was
+   * handed out since the last flush, or an evicted entry a caller still
+   * holds has it — an absence held counts — and is NOT known otherwise.
+   *
+   * @param realmId - the realm id
+   * @param key - the normalised DN
+   * @returns `{ known, entry }`; `entry` null for none
+   */
+  heldIn(realmId: string, key: string): { known: boolean;
+                                          entry: Entry | null } {
+    if (!this.isWindowed(realmId, key)) {
+      return { known: true,
+               entry: this.residentOf(realmId).get(key) || null };
+    }
+    const ck = slotKey(realmId, key);
+    const slot = this.lru.peek(ck) || this.touched.get(ck) ||
+      this.liveGhost(ck);
+    if (!slot) {
+      return { known: false, entry: null };
+    }
+    return { known: true, entry: slot.entry };
+  }
+
   /**
    * Whether anything is under a key.
    *

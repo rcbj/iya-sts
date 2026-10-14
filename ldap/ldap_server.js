@@ -1364,6 +1364,32 @@ function inRealmOf(dn, fn) {
 let directoryVersion = 0;
 
 // ---------------------------------------------------------------------------
+// THE GROUP INDEX'S OWN CLOCK (#618, 2026-10-14): moved by a write that may
+// have changed a GROUP, and by nothing else.
+//
+// `groupIndexNow()` was keyed on `directoryVersion`, which every write moves,
+// so the add's own authorization (`rolesOf()` -> `groupsOfUser()`) rebuilt
+// the index on every LDAP add — about 5 s of every 30 s in a request worker
+// of the 1M load on 8081 — and every person another process made did the
+// same in every other process. The stamps that kept it across a put
+// (`noteGroupIndexPut()`, 2026-09-07) covered only `putEntry()` and the
+// whole-directory applier, not the windowed one, and they were WRONG for an
+// overwrite of a group by a non-group: a group that stopped being one stayed
+// in the index.
+//
+// The rule now lives in `touchDirectory()` — `noteGroupsTouched()` — so
+// every writer is covered without being hooked: a write naming no DN moves
+// this clock; a write naming one moves it when the entry WAS a group when the
+// index was built (`byDn` has it) or IS one now, or when what is there now
+// cannot be known without asking the store (a windowed key this process does
+// not hold). A write to anything else cannot have changed the index — a
+// non-group contributes to neither of its maps, and a person's own `memberOf`
+// is read live by `groupsOfUser()` — so the index survives it, and its
+// answers are the ones a rebuild would give (`tests/group_index_clock.js`).
+// ---------------------------------------------------------------------------
+let groupsVersion = 0;
+
+// ---------------------------------------------------------------------------
 // A NUL BYTE IN A DIRECTORY VALUE, WHICH IS THE ONE THING THIS SOCKET REFUSES
 // ABOUT WHAT A VALUE CONTAINS (2026-09-06).
 //
@@ -1427,9 +1453,13 @@ function refuseNulValues(type, values) {
   return null;
 }
 
-function touchDirectory(dn) {
+// `after`, when the caller has it, is the entry now at `dn` (null for none):
+// the change-log applier of a windowed key holds the store's row and nothing
+// in the window. Left out, the entry is looked up where it is held.
+function touchDirectory(dn, after) {
   log.debug("Entering touchDirectory().");
   directoryVersion++;
+  noteGroupsTouched(dn, after);
   // WHERE IT LANDED, when the caller said so. See subtreeClocks() below: a
   // caller that names the DN it wrote lets a listing of some OTHER container
   // survive this write, and a caller that says nothing invalidates every
@@ -2319,15 +2349,23 @@ function usernameIndexIsCurrent() {
 
 // ---------------------------------------------------------------------------
 // THE GROUP INDEX'S CACHE IS DECLARED HERE RATHER THAN BESIDE ITS BUILDER, and
-// the reason is a temporal dead zone rather than tidiness: `putEntry()` keeps
-// it current (see noteGroupIndexPut() below), `putEntry()` is called while this
+// the reason is a temporal dead zone rather than tidiness: `touchDirectory()`
+// reads it (see noteGroupsTouched() below), `putEntry()` calls that while this
 // module is still loading — the seeding does it — and a `const` declared
 // further down the file would not exist yet when the first seeded entry was
 // written. `buildGroupIndex()`, `groupIndexNow()` and everything else about it
 // stay where they are, with a pointer.
+//
+// `version` is the `groupsVersion` it was built at (#618); `usersDn` and
+// `groupsDn` the two containers the build resolved against — a `memberUid`
+// is read as a DN under the first, and an entry under the second is a group
+// by placement — because a settings change moves them and moves no clock.
+// `seen` and `size` are the net beside the builder: `directoryVersion` and
+// `entries.size` at the last read.
 // ---------------------------------------------------------------------------
 const groupIndexes = realms.keyed(function () {
-  return { index: null, version: -1, size: -1, builds: 0 };
+  return { index: null, version: -1, usersDn: '', groupsDn: '', seen: -1,
+           size: -1, builds: 0 };
 });
 
 const NO_GROUPS = new Map();
@@ -2345,51 +2383,75 @@ function groupIndexIsCurrent() {
   log.debug("Entering groupIndexIsCurrent().");
   const cache = groupIndexes();
   log.debug("Leaving groupIndexIsCurrent().");
-  return !!cache.index && cache.version === directoryVersion &&
-    cache.size === entries.size;
+  return !!cache.index && cache.version === groupsVersion &&
+    cache.usersDn === normalizeDn(usersDn()) &&
+    cache.groupsDn === normalizeDn(groupsDn());
 }
 
 // ---------------------------------------------------------------------------
-// A WRITE THAT CANNOT HAVE CHANGED THE GROUP INDEX, kept rather than rebuilt.
+// WHETHER A WRITE MAY HAVE CHANGED THE GROUP INDEX (#618), called by
+// `touchDirectory()` for every write; see `groupsVersion` for the design.
 //
-// **THE INVARIANT THIS RESTS ON IS NARROW AND HAS TO BE STATED**, because it is
-// the only thing making this safe: `buildGroupIndex()` calls `groupRuleFor()`
+// **THE INVARIANT THIS RESTS ON IS NARROW AND HAS TO BE STATED**, because it
+// is the only thing making it safe: `buildGroupIndex()` calls `groupRuleFor()`
 // on every entry and RETURNS EARLY on a falsy one, so a non-group entry
 // contributes nothing to either half of that index. A person's own `memberOf`
 // is not in there either — `groupsOfUser()` reads it live off the entry and
-// looks the value up in `byDn` — so writing a person cannot change it by that
-// route. **If either of those ever stops being true, this stamp has to go.**
+// looks the value up in `byDn`. **If either of those ever stops being true,
+// this function has to move the clock for every write.**
 //
-// Why it is worth having: `groupIndexNow()` rebuilds on ANY write, which is
-// right when reads are rare relative to writes and quadratic when they are
-// not. A SCIM User resource carries `groups`, so a bulk create asks for this
-// index once per person and invalidated it once per person — 0.379ms at the
-// 500th and 2.567ms at the 3,000th, measured in process, on top of a create
-// that is now flat. The LDAP door never showed it because an `add` builds no
-// SCIM resource.
+// So the question about one DN is "was it a group, or is it one now". WAS is
+// the index's own `byDn` — exact while the index is current, and when it is
+// not the clock has already moved and nothing said here matters. IS is the
+// entry where this process holds it: the realm's Map, or in a windowed
+// process the window WITHOUT asking the store (`heldIn()`) — a windowed key
+// this process does not hold is not known, and moves the clock. A write
+// naming no DN, and any write while the module is still loading (before
+// `groupRuleFor()`'s classes exist), moves it as well. A name the caller
+// passes rather than the one where it is held, `after`, is the change-log
+// applier's: the store's row of a windowed key it does not hold.
 //
-// The size is stamped as well as the version. That check is described where
-// the builder is as a second line of defence against a writer that forgot to
-// bump the version, and leaving it alone would have made this stamp a no-op:
-// a create changes `entries.size` by definition.
+// Per write it is one Map lookup in `byDn` and one held lookup — never a
+// walk, never a store question — which is what lets an LDAP add, and every
+// person another process adds, keep the index (the 2026-09-07 stamps,
+// `noteGroupIndexPut()`, are gone: this covers what they covered, every
+// other writer besides, and the overwrite of a group by a non-group they got
+// wrong).
 // ---------------------------------------------------------------------------
-function noteGroupIndexPut(stored, wasCurrent) {
-  log.debug('Entering noteGroupIndexPut().');
+function noteGroupsTouched(dn, after) {
+  log.debug('Entering noteGroupsTouched().');
+  if (!moduleLoaded || dn === undefined || dn === null || dn === '') {
+    groupsVersion++;
+    log.debug('Leaving noteGroupsTouched(). Anywhere; the clock moves.');
+    return;
+  }
+  const key = normalizeDn(dn);
   const cache = groupIndexes();
-  if (!wasCurrent || !cache.index) {
-    log.debug('Leaving noteGroupIndexPut(). Left to be rebuilt.');
+  if (cache.index && cache.index.byDn.has(key)) {
+    groupsVersion++;
+    log.debug('Leaving noteGroupsTouched(). It was a group.');
     return;
   }
-  if (groupRuleFor(stored)) {
-    // A group, by placement or by object class. This genuinely changes the
-    // index, so it is left to rebuild — which is the ordinary path and the
-    // one every membership write takes.
-    log.debug('Leaving noteGroupIndexPut(). It is a group; left to rebuild.');
+  let now = after;
+  if (now === undefined) {
+    if (directoryWindow) {
+      const held = directoryWindow.heldIn(realms.currentId(), key);
+      if (!held.known) {
+        groupsVersion++;
+        log.debug('Leaving noteGroupsTouched(). Not held; the clock moves.');
+        return;
+      }
+      now = held.entry;
+    } else {
+      now = entries.get(key) || null;
+    }
+  }
+  if (now && groupRuleFor(now)) {
+    groupsVersion++;
+    log.debug('Leaving noteGroupsTouched(). It is a group.');
     return;
   }
-  cache.version = directoryVersion;
-  cache.size = entries.size;
-  log.debug('Leaving noteGroupIndexPut(). Still current.');
+  log.debug('Leaving noteGroupsTouched(). Not a group; the index stands.');
 }
 
 // THE NAMING CONTEXTS THIS SOCKET SERVES: the root, and one per defined realm.
@@ -3715,7 +3777,6 @@ function putEntry(dn, attributes, options) {
   // "was the index current a moment ago" is no longer a question the cache can
   // answer about itself. See noteUsernameIndexPut().
   const usernameIndexWasCurrent = usernameIndexIsCurrent();
-  const groupIndexWasCurrent = groupIndexIsCurrent();
   const uuidIndexWasCurrent = indexesCurrent().uuid;
   // The names the entry at this DN answered to BEFORE this write, so that an
   // overwrite can take out the ones it no longer answers to. Read here because
@@ -3752,7 +3813,7 @@ function putEntry(dn, attributes, options) {
   entries.set(normalizeDn(dn), stored);
   touchDirectory(stored.dn);
   noteUsernameIndexPut(stored, hadNames, usernameIndexWasCurrent);
-  noteGroupIndexPut(stored, groupIndexWasCurrent);
+  // The group index needs no note: `touchDirectory()` above decided (#618).
   noteUuidIndexPut(stored, uuidIndexWasCurrent);
   // A group's members, told per person (#145). `previous` is the entry this
   // write replaced — putEntry() builds a fresh object, so it is a true before.
@@ -4670,7 +4731,6 @@ const directoryHooks = {
     // answer the question about itself.
     // ---------------------------------------------------------------------
     const usernameWasCurrent = usernameIndexIsCurrent();
-    const groupWasCurrent = groupIndexIsCurrent();
     const uuidWasCurrent = indexesCurrent().uuid;
     // An entry REPLACED here may carry other UUIDs than the one it replaces
     // (a create race reconciled — see above), so the UUID index follows only
@@ -4700,7 +4760,6 @@ const directoryHooks = {
       touchDirectory(stored.dn);
     });
     noteUsernameIndexRefresh(stored, usernameWasCurrent);
-    noteGroupIndexPut(stored, groupWasCurrent);
     noteUuidIndexPut(stored, uuidWasCurrent && !replaced);
     // AN ANCHOR ANOTHER PROCESS ADDED reaches this process's listeners here:
     // the entry is in the store now, and the truststore array is what a
@@ -4841,10 +4900,24 @@ const directoryHooks = {
   // windowed worker must list who another process just made.
   forgetEntry: function (realmId, key, row, keep) {
     log.debug('Entering forgetEntry(). realmId=' + realmId + ', key=' + key);
-    if (directoryWindow && !keep) {
-      directoryWindow.forget(realmId, key);
-      touchDirectory(key);
-    }
+    // In the row's realm, for applyEntry()'s reason (#352), and with the row
+    // the store now holds as the entry at the key (#618): the window holds
+    // nothing there once it has forgotten it, and `noteGroupsTouched()` would
+    // otherwise have to treat every person another process made as a group
+    // it could not see.
+    const after = row && row.dn ? row : null;
+    realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
+      if (directoryWindow && !keep) {
+        directoryWindow.forget(realmId, key);
+        touchDirectory(key, after);
+      } else if (directoryWindow) {
+        // BUSY HERE: the key is kept until this process's own flush lets it
+        // go (markStale()), and nothing is touched — but a GROUP another
+        // process changed must not leave this index current, so the group
+        // clock is asked on its own.
+        noteGroupsTouched(key, after);
+      }
+    });
     if (row && row.dn && row.origin !== 'seed') {
       realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
         if (isPersonEntry(row)) {
@@ -7190,7 +7263,6 @@ function applyVcAttributes(stored, key) {
   const added = [];
   // Read before the first mutation — see usernameIndexIsCurrent().
   const usernameIndexWasCurrent = usernameIndexIsCurrent();
-  const groupIndexWasCurrent = groupIndexIsCurrent();
   Object.keys(generated).forEach(function (attribute) {
     const have = stored.attributes[attribute] || [];
     if (have.length) {
@@ -7232,7 +7304,6 @@ function applyVcAttributes(stored, key) {
   // ---------------------------------------------------------------------
   touchDirectory(stored.dn);
   noteUsernameIndexRefresh(stored, usernameIndexWasCurrent);
-  noteGroupIndexPut(stored, groupIndexWasCurrent);
   log.debug('ldap: ' + stored.dn + ' gained ' + added.join(', ') +
             ' so that an issued credential has something to assert.');
   log.debug('Leaving applyVcAttributes(). ' + added.length + ' attribute(s) ' +
@@ -8229,9 +8300,9 @@ function groupsFor(dn) {
 // token.** That is the whole reason group_claims.js reads the membership per
 // token and caches nothing, and it is the thing somebody came to a mock
 // directory to watch. This is not a time-based cache and there is no staleness
-// window — `directoryVersion` is bumped by every writer (see touchDirectory()
-// beside the store), and a bumped version rebuilds on the next read, before it
-// answers. What was rejected was a cache with a TTL, which would have bought
+// window — every writer calls touchDirectory() beside the store, which moves
+// `groupsVersion` for any write that may have touched a group (#618), and a
+// moved clock rebuilds on the next read, before it answers. What was rejected was a cache with a TTL, which would have bought
 // the same speed and broken exactly that.
 //
 // Two maps, because the membership is asserted from two ends and this service
@@ -8272,7 +8343,9 @@ function groupsFor(dn) {
 // The cache itself is declared beside the username index, up by the store —
 // see the note there. Everything else about it is here.
 
-function buildGroupIndex() {
+// `uncounted`: a build for comparison (`groupIndexState()`), not kept and
+// not counted among the builds.
+function buildGroupIndex(uncounted) {
   log.debug('Entering buildGroupIndex().');
   const byMember = new Map();
   const byDn = new Map();
@@ -8326,30 +8399,88 @@ function buildGroupIndex() {
       });
     });
   });
-  groupIndexes().builds++;
+  if (!uncounted) {
+    groupIndexes().builds++;
+  }
   log.debug('Leaving buildGroupIndex(). ' + byDn.size + ' group(s) and ' +
             byMember.size + ' member name(s), built ' + groupIndexes().builds +
             ' time(s) so far.');
   return { byMember: byMember, byDn: byDn };
 }
 
-// The index, rebuilt if anything has been written since it was made. See the
-// block above for why the size is checked as well as the version.
+// The index, rebuilt if a GROUP may have been written since it was made
+// (#618: `groupsVersion`, moved by `noteGroupsTouched()`), or if either
+// container it resolved against has moved.
+//
+// THE SIZE NET, outside a window: `entries.size` changed while
+// `directoryVersion` did not means a writer replaced or removed an entry
+// without calling `touchDirectory()` — the block above — and the index is
+// rebuilt rather than trusted. In a windowed process the size is the store's
+// count, which another process's writes move without any write here, so the
+// net is not cast there; the clock is the whole rule.
 function groupIndexNow() {
   log.debug("Entering groupIndexNow().");
   const cache = groupIndexes();
-  if (cache.index && cache.version === directoryVersion &&
-      cache.size === entries.size) {
+  const size = directoryWindow ? -1 : entries.size;
+  const unannounced = !directoryWindow && cache.seen === directoryVersion &&
+    cache.size !== size;
+  if (groupIndexIsCurrent() && !unannounced) {
+    cache.seen = directoryVersion;
+    cache.size = size;
     groupIndexCount.hit();
     log.debug("Leaving groupIndexNow().");
     return cache.index;
   }
   groupIndexCount.miss();
+  // The clock and the containers as they are BEFORE the build: a write the
+  // build could race (none today — it is synchronous) would then rebuild.
+  const version = groupsVersion;
+  const users = normalizeDn(usersDn());
+  const groups = normalizeDn(groupsDn());
   cache.index = buildGroupIndex();
-  cache.version = directoryVersion;
-  cache.size = entries.size;
+  cache.version = version;
+  cache.usersDn = users;
+  cache.groupsDn = groups;
+  cache.seen = directoryVersion;
+  cache.size = size;
   log.debug("Leaving groupIndexNow().");
   return cache.index;
+}
+
+// The index as plain data, in a fixed order, so two can be compared.
+function groupIndexData(index) {
+  log.debug("Entering groupIndexData().");
+  const byDn = Array.from(index.byDn.keys()).sort().map(function (key) {
+    const group = index.byDn.get(key);
+    return [key, group.dn, group.cn, group.rule];
+  });
+  const byMember = Array.from(index.byMember.keys()).sort()
+    .map(function (member) {
+      const groups = index.byMember.get(member);
+      return [member, Array.from(groups.keys()).sort().map(function (key) {
+        return [key, groups.get(key).slice(0)];
+      })];
+    });
+  log.debug("Leaving groupIndexData().");
+  return { byDn: byDn, byMember: byMember };
+}
+
+// What the group index has done in the ambient realm, for
+// `tests/group_index_clock.js` (#618): how many times it was built, the
+// clock it is current for, and the clock now. With `compare`, the index held
+// now and one built afresh (not kept, not counted), each as plain data: the
+// test's "the answers a rebuild gives".
+function groupIndexState(compare) {
+  log.debug("Entering groupIndexState().");
+  const cache = groupIndexes();
+  const out = { builds: cache.builds, version: cache.version,
+                groupsVersion: groupsVersion, current: groupIndexIsCurrent() };
+  if (compare) {
+    out.held = cache.index ? groupIndexData(cache.index) : null;
+    out.fresh = groupIndexData(buildGroupIndex(true));
+  }
+  log.debug("Leaving groupIndexState().");
+  return out;
 }
 
 /**
@@ -20685,8 +20816,8 @@ function logBatchDangling(batch) {
 // would build again — unless two entries claimed one name or UUID (a
 // directory built by hand over the raw socket), which each index counts as it
 // is built; then it is left to rebuild, as before. A person is not a group,
-// so the group index loses nothing (noteGroupIndexPut()'s invariant); it is
-// re-stamped with the size it now has.
+// so the group index loses nothing — and since #618 needs no stamp:
+// `touchDirectory()` moves its clock only for a group.
 // ---------------------------------------------------------------------------
 function indexesCurrent() {
   log.debug('Entering indexesCurrent().');
@@ -20752,11 +20883,6 @@ function noteIndexesDelete(stored, current) {
     // Another entry may hold one of these UUIDs without the slot; a miss
     // must look.
     uuids.dirty = true;
-  }
-  const groups = groupIndexes();
-  if (current.group && groups.index && !groupRuleFor(stored)) {
-    groups.version = directoryVersion;
-    groups.size = entries.size;
   }
   log.debug('Leaving noteIndexesDelete().');
 }
@@ -22781,10 +22907,9 @@ function describeDirectoryCaches() {
             ' time(s)',
           validUntil: null,
           valid: inRealmById(id, function () {
-            return cache.version === directoryVersion &&
-              cache.size === entries.size;
+            return groupIndexIsCurrent();
           }),
-          basis: 'directory version'
+          basis: 'group version (#618)'
         });
       });
       return out;
@@ -23126,6 +23251,8 @@ module.exports = {
   objectFor: objectFor,
   groupsFor: groupsFor,
   groupsOfUser: groupsOfUser,
+  // The group index's builds and clock, for tests/group_index_clock.js (#618).
+  groupIndexState: groupIndexState,
   applicationsDn: applicationsDn,
   spiffeDn: spiffeDn,
   spiffeEntriesDn: spiffeEntriesDn,
