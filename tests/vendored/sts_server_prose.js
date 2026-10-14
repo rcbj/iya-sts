@@ -142,7 +142,11 @@ function shapeOf(value, path, out) {
 // node-health answer lists the processes that did not answer it, and whether
 // a worker answered differs between the two reads on a busy cluster —
 // `nodes[].view.processes.unanswered` appeared in one and not the other.
-const DATA = { "/audit": ["events"],
+// `/audit`'s `knownActors` and `byAction` are maps KEYED BY DATA — who has
+// acted, which actions ran — so a key appears between the reads whenever a
+// new actor or action does (cluster, ccf5741a: knownActors.sts-management-api
+// in one read only).
+const DATA = { "/audit": ["events", "knownActors", "byAction"],
                "/node-health": ["nodes[].view.processes.unanswered"] };
 
 // Deletes `path` (dotted, `name[]` descending into every item) from `value`.
