@@ -912,7 +912,10 @@ function keysUnder(realm, baseKey, afterKey, limit) {
 // parent_key, dn_key)` index each; a pair is DROPPED when its parent is a
 // windowed container of its realm or under one (the identity above: a key is
 // strictly under C exactly when its parent is C or under C), and the rows of
-// every pair kept are one range of the same index. The answer is the old
+// every pair kept are one range of the same index — in a LATERAL with its
+// own `ORDER BY`, which the planner cannot pull up: without it the join was
+// planned as a hash join over a sequential scan of the table, the cost this
+// exists to remove (measured on a scratch postgres:18). The answer is the old
 // statement's row for row, in the same order — orphans, entries outside the
 // realm's base, several roots, a realm nobody listed, the containers
 // themselves included — because both ask of a row only its key; only the
