@@ -170,12 +170,22 @@ function statements(t) {
     .test(r.text),
           'A4. a parent is dropped when it IS a windowed container or is ' +
           'under one, per realm', r.text);
-  t.check(/CROSS JOIN LATERAL \(SELECT realm, dn_key, dn, attrs, origin, created_at, modified_at FROM sts_ldap_entries e WHERE e\.realm = k\.realm AND e\.parent_key = k\.parent_key ORDER BY e\.dn_key\) AS x ORDER BY x\.realm, x\.dn_key$/
-    .test(r.text),
-          'A5. each kept parent\'s rows are read by parent_key in a LATERAL ' +
-          'with its own ORDER BY (which the planner cannot pull up into a ' +
-          'hash join over the table), and the answer is in (realm, dn_key) ' +
-          'order as before', r.text);
+  // #639: each kept parent's rows are a WALK of the parent index, one
+  // descent a row — `(realm, parent_key, dn_key) >` the last, LIMIT 1, the
+  // realm and the parent tested outside the LIMIT — never `e.parent_key =
+  // k.parent_key`, which the planner read off the primary key when ANALYZE
+  // saw one parent, and never a row comparison beside `realm =`, which no
+  // btree takes as a boundary.
+  t.check(/CROSS JOIN LATERAL \(WITH RECURSIVE walk AS \(\(SELECT \* FROM \(SELECT realm, dn_key, dn, attrs, origin, created_at, modified_at, e\.parent_key AS within, e\.dn_key AS at, e\.realm AS home FROM sts_ldap_entries e WHERE \(e\.realm, e\.parent_key\) >= \(k\.realm, k\.parent_key\) ORDER BY e\.realm, e\.parent_key, e\.dn_key LIMIT 1\) AS f WHERE f\.home = k\.realm AND f\.within = k\.parent_key\) UNION ALL SELECT n\.\* FROM walk w CROSS JOIN LATERAL \(SELECT \* FROM \(SELECT .* FROM sts_ldap_entries e WHERE \(e\.realm, e\.parent_key, e\.dn_key\) > \(w\.home, w\.within, w\.at\) ORDER BY e\.realm, e\.parent_key, e\.dn_key LIMIT 1\) AS m WHERE m\.home = k\.realm AND m\.within = k\.parent_key\) AS n\) SELECT realm, dn_key, dn, attrs, origin, created_at, modified_at FROM walk\) AS x ORDER BY x\.realm, x\.dn_key$/
+    .test(r.text) && !/e\.parent_key = k\.parent_key/.test(r.text) &&
+          !/e\.realm = /.test(r.text),
+          'A5. each kept parent\'s rows are a walk of the parent index in a ' +
+          'LATERAL — its first key at or after the parent, then each next ' +
+          'key after the last, one descent each, kept while the realm and ' +
+          'the parent are still the kept one\'s — and the answer is in ' +
+          '(realm, dn_key) order as before (#639)', r.text);
+  t.check(r.jitOff === true,
+          'A5b. and the restore asks to be planned without JIT (#639)');
   t.equal(JSON.stringify(r.values),
           JSON.stringify([['default', 'default', 'acme', 'acme'],
                           [USERS, DEVICES, 'ou=users,' + ACME,
@@ -193,8 +203,11 @@ function statements(t) {
               .test(text) &&
             /parent_key = \$2 OR right\(parent_key, \$5\) = ',' \|\| \$2/
               .test(text) &&
-            /e\.parent_key = u\.parent_key AND e\.dn_key > \$3 ORDER BY e\.dn_key LIMIT \$4\) AS x/
+            /\(e\.realm, e\.parent_key, e\.dn_key\) > \(\$1, u\.parent_key, \$3\) ORDER BY e\.realm, e\.parent_key, e\.dn_key LIMIT 1\) AS f WHERE f\.home = \$1 AND f\.within = u\.parent_key\)/
               .test(text) &&
+            /\(e\.realm, e\.parent_key, e\.dn_key\) > \(w\.home, w\.within, w\.at\) ORDER BY e\.realm, e\.parent_key, e\.dn_key LIMIT 1\) AS m WHERE m\.home = \$1 AND m\.within = u\.parent_key\) AS n\) SELECT .* FROM walk LIMIT \$4\) AS x/
+              .test(text) &&
+            !/e\.parent_key = u\.parent_key/.test(text) &&
             / ORDER BY dn_key LIMIT \$4$/.test(text) &&
             !/right\(dn_key/.test(text) && !/LIKE/i.test(text),
             'A7.' + (i + 1) + '. ' + pair[0] + ' reads the realm\'s ' +
@@ -215,9 +228,10 @@ function statements(t) {
           !/WITH RECURSIVE/.test(empty.text),
           'A10. the empty base keeps the old suffix (see B5)', empty.text);
   const one = queries.page('default', USERS, '', 10, { oneLevel: true });
-  t.check(/^SELECT .* WHERE realm = \$1 AND parent_key = \$2 AND dn_key > \$3 ORDER BY dn_key LIMIT \$4$/
+  t.check(/^SELECT .* FROM \(WITH RECURSIVE walk AS \(\(SELECT \* FROM \(SELECT .* WHERE \(e\.realm, e\.parent_key, e\.dn_key\) > \(\$1, \$2, \$3\) ORDER BY e\.realm, e\.parent_key, e\.dn_key LIMIT 1\) AS f WHERE f\.home = \$1 AND f\.within = \$2\) UNION ALL .* FROM walk LIMIT \$4\) AS x ORDER BY dn_key$/
     .test(one.text) && one.values.length === 4,
-          'A11. a one-level page is still parent_key, unchanged', one.text);
+          'A11. a one-level page is the same walk of the parent (#639), its ' +
+          'cursor and limit inside', one.text);
   log.debug("Leaving statements().");
 }
 
@@ -386,6 +400,22 @@ async function driverDoor(t) {
           'statement, once', JSON.stringify(statements.map(function (s) {
             return s.sql.slice(0, 60);
           })));
+  // #639: in a read-only transaction of its own, with JIT off for it alone.
+  const at = statements.indexOf(sent[0]);
+  t.check(at >= 2 && statements[at - 2].sql === 'BEGIN READ ONLY' &&
+          statements[at - 1].sql === 'SET LOCAL jit = off' &&
+          (statements[at + 1] || {}).sql === 'COMMIT',
+          'C1b. it runs between BEGIN READ ONLY and SET LOCAL jit = off, ' +
+          'and COMMIT (#639)', JSON.stringify(statements.map(function (s) {
+            return s.sql.slice(0, 30);
+          })));
+  const before = statements.length;
+  await driver.directoryQuery('page', ['default', USERS, '', 10,
+                                       { oneLevel: true }]);
+  t.check(statements.length === before + 1 &&
+          !/jit/.test(statements[before].sql),
+          'C1c. and any other directory query is one statement, JIT as the ' +
+          'server says');
   t.check(Array.isArray(answer) && answer.length === 1 &&
           answer[0].realm === 'default' && answer[0].key === BASE &&
           answer[0].entry.dn === 'dc=Example,dc=com' &&
@@ -563,9 +593,11 @@ async function realDatabase(t) {
     const full = queries.page('default', DEVICES, '', 1000);
     const planFull = await explain(full.text, full.values);
     const bFull = buffersOf(planFull);
-    t.check(planFull['Actual Rows'] === 1000 && bFull < 1000 + 400,
+    // A descent of the parent index per row since #639 (a walk, which no
+    // statistics can turn into a scan): a few buffers a row, not one.
+    t.check(planFull['Actual Rows'] === 1000 && bFull < 6 * 1000 + 400,
             'D8. a full page of 1,000 under ou=devices touched ' + bFull +
-            ' buffers: the parents and the rows answered');
+            ' buffers: the parents and a descent a row answered');
   } finally {
     await admin.query('DROP SCHEMA ' + schema + ' CASCADE').catch(
       function (e) {

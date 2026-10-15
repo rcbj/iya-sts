@@ -163,6 +163,106 @@ function parentsOf(realmAt) {
          'e.parent_key LIMIT 1) AS n)';
 }
 
+// ---------------------------------------------------------------------------
+// ONE PARENT'S ROWS ARE A WALK OF THE PARENT INDEX, ONE DESCENT A ROW (#639,
+// 2026-10-15).
+//
+// The form #638 shipped read a kept parent's rows as `e.realm = k.realm AND
+// e.parent_key = k.parent_key ORDER BY e.dn_key`. Inside a LATERAL the
+// parent is a parameter the planner cannot see, so it estimates the rows by
+// `parent_key`'s `n_distinct` — and at 50.2M entries ANALYZE's ~30,000-row
+// sample saw one parent, `n_distinct` was 1, every parent looked like the
+// whole realm, and the plan read the PRIMARY KEY `(realm, dn_key)` with
+// `parent_key` as a filter: the realm, once per parent, at every start.
+// (A parent bound as a CONSTANT is judged by the most-common-values list
+// instead, and was never wrong: `hasChild`, `byName`, `withNames`,
+// `byAttribute` keep their equality.)
+//
+// Three shapes were tried on a postgres:18 table whose sample saw one parent
+// and on one whose sample saw them all, and two failed:
+//
+//   * `ORDER BY realm, parent_key, dn_key` beside the equality: an equality
+//     makes `parent_key` a constant of the ordering, which reduces to
+//     `dn_key`, and the primary key gives that.
+//   * a RANGE of the parent index under a LIMIT — `(realm, parent_key,
+//     dn_key) > (r, p, after) … LIMIT 1000`: with a page's worth of rows
+//     estimated, sorting them is priced below reading them in order, and
+//     the planner took the realm index with an (incremental) sort, or the
+//     `(realm, parent_key, rdn_value)` index with a sort of the WHOLE
+//     parent. And a row comparison beside `realm =` is no scan boundary for
+//     a btree: the scan starts at the realm's first key and filters.
+//
+// So each row is ONE STEP, the loose index scan `parentsOf()` already
+// is: the next key of the parent index after the last one, `(realm,
+// parent_key, dn_key) > (…)`, `ORDER BY realm, parent_key, dn_key LIMIT 1`,
+// kept while it is still the realm's and the parent's (tested OUTSIDE the
+// LIMIT, which the planner may not push through, so the scan stops at one
+// row). A row comparison ALONE positions the btree exactly. For one row,
+// the parent index costs a descent and every other path costs a sort of
+// everything after the position, and no estimate makes the second cheaper —
+// short of a realm the sample never saw, which is then a realm with few
+// rows (the bulk import, the one door that writes millions, ANALYZEs after
+// it). The price is a descent per row instead of a range: about five
+// buffers a row, 9 ms for a thousand, measured.
+//
+// `postgres/schema.sql` also overrides `parent_key`'s `n_distinct` (schema
+// version 20), which puts every OTHER plan that reads a parameter parent
+// right; this form is what keeps a start from hanging where a store has not
+// had that upgrade. `tests/directory_parent_statistics.js` plans every
+// statement here on a table whose sample sees one parent, before and after.
+// ---------------------------------------------------------------------------
+/**
+ * One parent's rows after a cursor, as a parenthesised subquery: a walk of
+ * the parent index, one descent a row, in its order, at most `limit` rows.
+ *
+ * @param columns - the columns to select (unqualified)
+ * @param realm - the realm, as SQL (a parameter or an outer column)
+ * @param parent - the parent's key, as SQL
+ * @param after - the cursor, as SQL; null reads from the parent's first
+ *   row
+ * @param limit - the limit, as SQL; null for every row of the parent
+ * @returns the SQL, parenthesised, for the caller to alias
+ */
+function childrenRange(columns, realm, parent, after, limit) {
+  log.debug("Entering childrenRange().");
+  // ONE STEP: the next key of the parent index after a position, whatever
+  // parent it is under — one descent — kept only while it is still this
+  // realm's and this parent's. The test is OUTSIDE the LIMIT, which a
+  // planner may not push through, so the scan stops at one row.
+  const step = function (from, alias) {
+    return '(SELECT * FROM (SELECT ' + columns + ', e.parent_key AS ' +
+           'within, e.dn_key AS at, e.realm AS home FROM sts_ldap_entries e ' +
+           'WHERE ' + from + ' ORDER BY e.realm, e.parent_key, e.dn_key ' +
+           'LIMIT 1) AS ' + alias + ' WHERE ' + alias + '.home = ' + realm +
+           ' AND ' + alias + '.within = ' + parent + ')';
+  };
+  const first = after === null
+    ? '(e.realm, e.parent_key) >= (' + realm + ', ' + parent + ')'
+    : '(e.realm, e.parent_key, e.dn_key) > (' + realm + ', ' + parent +
+      ', ' + after + ')';
+  log.debug("Leaving childrenRange().");
+  return '(WITH RECURSIVE walk AS (' + step(first, 'f') + ' UNION ALL ' +
+         'SELECT n.* FROM walk w CROSS JOIN LATERAL ' +
+         step('(e.realm, e.parent_key, e.dn_key) > (w.home, w.within, ' +
+              'w.at)', 'm') + ' AS n) SELECT ' + columns + ' FROM walk' +
+         (limit === null ? '' : ' LIMIT ' + limit) + ')';
+}
+
+/**
+ * The parent a key's row has: `parent_key` as the column computes it —
+ * everything after the key's first comma, or '' when it has none.
+ *
+ * @param key - a normalised DN
+ * @returns the parent's key
+ */
+function parentOf(key) {
+  log.debug("Entering parentOf().");
+  const text = String(key);
+  const comma = text.indexOf(',');
+  log.debug("Leaving parentOf().");
+  return comma >= 0 ? text.slice(comma + 1) : '';
+}
+
 /**
  * One page of the rows strictly under a base (and the base itself when
  * `self`), in key order after a cursor: through the realm's parents, each
@@ -188,10 +288,9 @@ function subtreeRows(columns, at, self) {
   return parentsOf(at.realm) + ', under AS (SELECT parent_key FROM parents ' +
          'WHERE parent_key = ' + b + ' OR right(parent_key, $' + at.length +
          ') = \',\' || ' + b + ') SELECT ' + columns + ' FROM (SELECT x.* ' +
-         'FROM under u CROSS JOIN LATERAL (SELECT ' + columns + ' FROM ' +
-         'sts_ldap_entries e WHERE e.realm = ' + r + ' AND e.parent_key = ' +
-         'u.parent_key AND e.dn_key > ' + a + ' ORDER BY e.dn_key LIMIT ' +
-         n + ') AS x' + base + ') AS s ORDER BY dn_key LIMIT ' + n;
+         'FROM under u CROSS JOIN LATERAL ' +
+         childrenRange(columns, r, 'u.parent_key', a, n) + ' AS x' + base +
+         ') AS s ORDER BY dn_key LIMIT ' + n;
 }
 
 /**
@@ -418,10 +517,11 @@ function page(realm, baseKey, afterKey, limit, options) {
   log.debug("Entering page().");
   const o = options || {};
   log.debug("Leaving page().");
+  // One level is one parent's walk (#639), its cursor and limit inside.
   return { text: o.oneLevel
-             ? 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE realm = ' +
-               '$1 AND parent_key = $2 AND dn_key > $3 ORDER BY dn_key ' +
-               'LIMIT $4'
+             ? 'SELECT ' + COLUMNS + ' FROM ' +
+               childrenRange(COLUMNS, '$1', '$2', '$3', '$4') +
+               ' AS x ORDER BY dn_key'
              : subtreePage(COLUMNS, baseKey, !!o.self),
            values: o.oneLevel
              ? [String(realm), String(baseKey), String(afterKey || ''),
@@ -923,6 +1023,14 @@ function keysUnder(realm, baseKey, afterKey, limit) {
 // rows answered. A person who has children (nothing this service writes)
 // is a distinct parent, and costs one descent.
 //
+// **EACH KEPT PARENT'S ROWS ARE `childrenRange()`'s WALK (#639,
+// 2026-10-15)**: one descent of the parent index a row, so the plan cannot
+// become the primary key's whatever ANALYZE saw (see `childrenRange()`). It
+// is planned WITHOUT JIT (`jitOff`, honoured by the driver's
+// `directoryQuery()` with `SET LOCAL jit = off`): its estimate is past
+// `jit_above_cost`, and compiling it cost every process 0.1–0.2 s of its
+// start for a statement that reads about a thousand rows.
+//
 // `tests/directory_resident_walk.js` holds the statement's shape, the
 // identity on a fixture tree, and — given a database — both statements' rows
 // against each other.
@@ -930,10 +1038,11 @@ function keysUnder(realm, baseKey, afterKey, limit) {
 /**
  * Every entry EXCEPT those strictly under the given containers, for the
  * restore of a worker that holds those containers as a window: through the
- * table's distinct parents, never a test of every row.
+ * table's distinct parents, never a test of every row; each kept parent's
+ * rows a walk of the parent index (#639).
  *
  * @param windowed - `[{ realm, baseKey }]`, the containers not restored
- * @returns the statement
+ * @returns the statement; `jitOff` asks the driver to plan it without JIT
  */
 function residentOnly(windowed) {
   log.debug("Entering residentOnly().");
@@ -950,13 +1059,13 @@ function residentOnly(windowed) {
                  '(SELECT 1 FROM unnest($1::text[], $2::text[]) AS w(r, c) ' +
                  'WHERE w.r = p.realm AND (p.parent_key = w.c OR ' +
                  'right(p.parent_key, length(w.c) + 1) = \',\' || w.c))) ' +
-                 'SELECT x.* FROM kept k CROSS JOIN LATERAL (SELECT ' +
-                 COLUMNS + ' FROM sts_ldap_entries e WHERE e.realm = ' +
-                 'k.realm AND e.parent_key = k.parent_key ORDER BY ' +
-                 'e.dn_key) AS x ORDER BY x.realm, x.dn_key',
+                 'SELECT x.* FROM kept k CROSS JOIN LATERAL ' +
+                 childrenRange(COLUMNS, 'k.realm', 'k.parent_key', null,
+                               null) +
+                 ' AS x ORDER BY x.realm, x.dn_key',
            values: [list.map(function (one) { return String(one.realm); }),
-                    list.map(function (one) { return String(one.baseKey); })]
-  };
+                    list.map(function (one) { return String(one.baseKey); })],
+           jitOff: true };
 }
 
 /**
@@ -1091,6 +1200,7 @@ module.exports = {
   GROUP_CLASSES_HELD: GROUP_CLASSES_HELD,
   MAX_PAGE: MAX_PAGE,
   QUERIES: QUERIES,
+  parentOf: parentOf,
   build: build,
   answerOf: answerOf,
   rowOf: rowOf,

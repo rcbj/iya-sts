@@ -3421,9 +3421,10 @@ function replaceIfWanted(dead) {
 // task's memory limit, and it was reached only while they were starting.
 //
 // So every fork after start() goes through this gate, replacements included.
-// At most `workers.startConcurrency` workers (default 1) are between their
-// fork and their first answer. The next one is forked when one of those
-// settles: it reported ready, it reported that it could not start, its
+// At most `workers.startConcurrency` workers are between their fork and
+// their first answer (1 until #639; the default is now the automatic width
+// below, which starts the first alone). The next one is forked when one of
+// those settles: it reported ready, it reported that it could not start, its
 // channel failed, or it exited. That is `entry.settled`, which fork() already
 // resolves in each of those cases.
 //
@@ -3456,9 +3457,94 @@ function replaceIfWanted(dead) {
 let forkQueue = [];
 let startsInFlight = 0;
 
+// ---------------------------------------------------------------------------
+// AS MANY AT ONCE AS THE NODE'S MEMORY HOLDS (#639, 2026-10-15).
+//
+// The gate's reason is memory, and since #613, #617 and #638 a start no
+// longer restores the store into the worker's heap: it reads its RESIDENT
+// entries and its minted rows (about 1,200 and 11,700 on the 50.2M-entry
+// stack), and asks the store for the rest when it is asked. At one at a time
+// six workers took 17 of that stack's 23 seconds to all serve, each about
+// 2.9 s of which nothing depended on the one before. So the default,
+// `workers.startConcurrency` 0, is no longer a guess:
+//
+//   * **THE FIRST START IS MEASURED.** It goes alone, as it always did (the
+//     listener waits for it), and what it added to the PROCESS's resident set
+//     — every worker is a thread of it — between its fork and its settling is
+//     what one start costs, floored at MIN_START_BYTES.
+//   * **THE REST GO AS MANY AT ONCE AS THE ROOM LEFT HOLDS**, each priced at
+//     one and a half measured starts for the garbage a start makes and drops:
+//     the room is the container's limit (`process_memory.ts`'s budget, the
+//     cgroup's or the ECS task's) less what the process holds now and less a
+//     reserve of 15% and at least 256 MiB, or, with no limit visible,
+//     `process.availableMemory()` less the same reserve. Never fewer than
+//     one, never more than START_WIDTH_MAX. Asked again whenever a fork is
+//     due, so a node that has filled up narrows the gate itself.
+//
+// The steady state is the same either way: every worker ends up holding what
+// it holds. What the width decides is how many starts' TRANSIENT memory is
+// in the air at once, which is #342's failure, and the room is measured
+// rather than assumed. A positive setting is a fixed width, as before.
+// ---------------------------------------------------------------------------
+const MIN_START_BYTES = 128 * 1024 * 1024;
+const START_WIDTH_MAX = 64;
+const MIB = 1024 * 1024;
+// What the first start under the automatic width cost, once measured.
+let measuredStartBytes = 0;
+// The resident set at the measured start's fork, while it is starting.
+let measuringFrom = 0;
+
+/**
+ * How many starts fit at once in the room a node has: a decision over its
+ * arguments.
+ *
+ * @param m - `perStartBytes` (what one start added), `limitBytes` (the
+ *   container's limit, or 0/null for none), `rssBytes` (the process's
+ *   resident set now) and `availableBytes` (`process.availableMemory()`)
+ * @returns the width, between 1 and START_WIDTH_MAX
+ */
+function startWidthFor(m) {
+  log.debug("Entering startWidthFor().");
+  const per = Math.max(Number(m.perStartBytes) || 0, MIN_START_BYTES) * 1.5;
+  const limit = Number(m.limitBytes) || 0;
+  const reserve = Math.max(0.15 * (limit || Number(m.availableBytes) || 0),
+                           256 * MIB);
+  const room = limit > 0
+    ? limit - (Number(m.rssBytes) || 0) - reserve
+    : (Number(m.availableBytes) || 0) - reserve;
+  const width = Math.floor(room / per);
+  log.debug("Leaving startWidthFor(). " + width);
+  return Math.max(1, Math.min(START_WIDTH_MAX, width));
+}
+
+// The automatic width now: one until the first start is measured, then what
+// the room holds.
+function automaticWidth() {
+  log.debug("Entering automaticWidth().");
+  if (!measuredStartBytes) {
+    log.debug("Leaving automaticWidth(). The first start goes alone.");
+    return 1;
+  }
+  let limit = 0;
+  try {
+    limit = Number(processMemory.budget().limitBytes) || 0;
+  } catch (e) {
+    log.debug("Caught in automaticWidth(): " + ((e && e.message) || e));
+    // No budget could be derived: the available memory decides.
+    limit = 0;
+  }
+  const available = typeof process.availableMemory === 'function'
+    ? process.availableMemory() : os.freemem();
+  log.debug("Leaving automaticWidth().");
+  return startWidthFor({ perStartBytes: measuredStartBytes,
+                         limitBytes: limit,
+                         rssBytes: process.memoryUsage().rss,
+                         availableBytes: available });
+}
+
 /**
  * Reads `workers.startConcurrency`: how many workers of both pools may be
- * starting at once.
+ * starting at once. 0 (the default) is the automatic width above.
  *
  * @returns the count, at least 1; 1 with no configuration
  */
@@ -3470,11 +3556,30 @@ function startConcurrency() {
   } catch (e) {
     log.debug("Caught in startConcurrency(): " + ((e && e.message) || e));
     // No configuration at all (an in-process test): one at a time, which is
-    // the default and the conservative answer.
+    // the conservative answer.
     n = 1;
+  }
+  if (n === 0) {
+    log.debug("Leaving startConcurrency(). Automatic.");
+    return automaticWidth();
   }
   log.debug("Leaving startConcurrency().");
   return n >= 1 ? n : 1;
+}
+
+// Whether the width is the automatic one (the setting at 0).
+function automaticStarts() {
+  log.debug("Entering automaticStarts().");
+  let n = 1;
+  try {
+    n = parseInt(config.value('workers.startConcurrency'), 10);
+  } catch (e) {
+    log.debug("Caught in automaticStarts(): " + ((e && e.message) || e));
+    // No configuration: the fixed width of one.
+    n = 1;
+  }
+  log.debug("Leaving automaticStarts().");
+  return n === 0;
 }
 
 // The forks still waiting, as `{ pool, slot }`, for replacementFor()'s count.
@@ -3532,11 +3637,30 @@ function pumpForks() {
       continue;
     }
     startsInFlight++;
+    // THE START THAT IS MEASURED (#639): the first under the automatic
+    // width, alone by construction (the width is 1 until it is measured).
+    const measuring = automaticStarts() && !measuredStartBytes &&
+      !measuringFrom && startsInFlight === 1;
+    if (measuring) {
+      measuringFrom = process.memoryUsage().rss;
+    }
     log.info('request_pool: ' + next.pool + ' worker ' + entry.pid +
              ' (slot ' + next.slot + ') forked; ' + startsInFlight +
              ' starting, ' + forkQueue.length + ' queued behind it.');
     entry.settled.then(function (settled) {
       startsInFlight = Math.max(0, startsInFlight - 1);
+      if (measuring) {
+        const grew = process.memoryUsage().rss - measuringFrom;
+        measuringFrom = 0;
+        if (settled) {
+          measuredStartBytes = Math.max(grew, MIN_START_BYTES);
+          log.info('request_pool: a worker\'s start added ' +
+                   Math.round(grew / MIB) + ' MiB to this process; the ' +
+                   'rest start ' + startConcurrency() + ' at a time ' +
+                   '(workers.startConcurrency 0: as many as the node\'s ' +
+                   'memory holds, #639).');
+        }
+      }
       next.resolve(settled);
       pumpForks();
     });
@@ -6758,8 +6882,11 @@ function stats() {
     replayed: replayCount,
     // THE START GATE (#342): how many workers may start at once, how many
     // are starting, and how many wait behind them.
+    // And whether the width is the automatic one, and what a start was
+    // measured to cost (#639).
     starts: { concurrency: startConcurrency(), starting: startsInFlight,
-              queued: forkQueue.length },
+              queued: forkQueue.length, automatic: automaticStarts(),
+              measuredStartMb: Math.round(measuredStartBytes / MIB) },
     // EVERY PROCESS'S HEAP BUDGET AND THE LATEST EXITS (#341): the limit a
     // worker is forked with and where it came from, the container's
     // OOM-kill count when last read, and each exit with its cause.
@@ -6814,6 +6941,10 @@ function reset() {
   // And the start gate (#342): nothing queued, nothing counted as starting.
   dropQueuedForks();
   startsInFlight = 0;
+  // And the automatic width's measurement (#639): the next start is the
+  // first again.
+  measuredStartBytes = 0;
+  measuringFrom = 0;
   // And the memory bookkeeping (#341): the budget is read again, the real
   // OOM-kill counter is back, and no exit is remembered.
   processMemory.resetBudget();
@@ -6978,6 +7109,9 @@ module.exports = {
   // THE START GATE (#342), for the same file: a fork queued behind it, as
   // start() and a replacement queue theirs.
   queueFork: queueFork,
+  // The automatic start width as a decision over its inputs (#639), for its
+  // test.
+  startWidthFor: startWidthFor,
   startOrder: startOrder,
   // WHY A WORKER DIED (#341), for tests/process_memory.js: the decision, and
   // the OOM-kill counter reap() reads.

@@ -581,7 +581,8 @@ function inNamingContext(dn) {
 // **THE ENTRY IS A CACHE AND THE REGISTER IS THE TRUTH.** `pki_revocation.js`
 // builds and signs a CRL on demand; this writes the result down so the socket
 // can serve it. A stale entry is therefore possible — the CRL is republished
-// on every revocation and on every start — and that is the honest trade for a
+// on every revocation, and on every start whose entry is not current (#639) —
+// and that is the honest trade for a
 // protocol with no way to ask a directory to compute something.
 // ===========================================================================
 // The containers between a realm's base and one CRL entry, outermost first:
@@ -703,6 +704,23 @@ function writeCrlEntry(scopeId, caId, der, base, dn) {
     log.debug('Leaving writeCrlEntry(). It threw.');
     return false;
   }
+}
+
+// The CRL an authority's entry holds now, as DER, or null (#639): what the
+// start's publication compares with the list it would sign before signing
+// one (`pki_revocation.js`, `stillCurrent()`). Read in the realm the DN
+// names, as it is written.
+function publishedCrl(scopeId, caId) {
+  log.debug('Entering publishedCrl(). scope=' + scopeId + ' ca=' + caId);
+  const dn = pkiRevocation.crlDn(scopeId, caId);
+  log.debug('Leaving publishedCrl().');
+  return inRealmOf(dn, function () {
+    const entry = getEntry(dn);
+    const values = entry && entry.attributes &&
+      entry.attributes['certificaterevocationlist;binary'];
+    return values && values[0]
+      ? Buffer.from(String(values[0]), 'base64') : null;
+  });
 }
 
 // The base DN of whatever realm is ambient. THE function every DN below is
@@ -9150,6 +9168,7 @@ personEditor.setDirectory({
 if (typeof pkiRevocation.setDirectory === 'function') {
   pkiRevocation.setDirectory({
     publishCrl: publishCrl,
+    publishedCrl: publishedCrl,
     baseDnFor: function (scopeId) {
       log.debug("Entering baseDnFor().");
       log.debug("Leaving baseDnFor().");

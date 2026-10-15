@@ -852,6 +852,14 @@ function vaultTls() {
   if (caPath) {
     out.ca = tlsFile(caPath);
   }
+  // ONE CONNECTION FOR MANY CALLS (#639, 2026-10-15). The SDK builds one
+  // agent from these options, and without `keepAlive` it opened a new TLS
+  // connection — a handshake with the client certificate — for every call: a
+  // Transit KEK unwraps each data key with one, 204 of them at every start of
+  // every process on the 50.2M-entry stack, about a third of a second each.
+  // Kept alive, the calls reuse a few connections (`maxSockets`); an idle one
+  // closes with the server's own timeout and never holds the process open.
+  out.agentOptions = { keepAlive: true, maxSockets: 8 };
   log.debug("Leaving vaultTls().");
   return { options: out, authenticates: !!(certPath && keyPath),
            where: { cert: certPath, key: keyPath, ca: caPath } };

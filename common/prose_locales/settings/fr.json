@@ -1548,8 +1548,8 @@
     "text": "Workers de requêtes démarrant simultanément"
   },
   "workers.startConcurrency|description": {
-    "en": "a39ad8671b5baa40",
-    "text": "Combien de workers de requêtes peuvent démarrer en même temps, en comptant ensemble les pools de protocoles et de surfaces hébergées. Le worker suivant est créé lorsque l’un d’eux signale qu’il est prêt ou qu’il a échoué. La valeur par défaut, 1, les démarre l’un après l’autre. Chaque démarrage restaure tout le stockage dans la mémoire de ce worker, et les démarrer ensemble est ce qui a fait dépasser à un nœud sa limite mémoire (#342). L’écouteur se lie une fois que le premier worker de chaque pool s’est stabilisé, et les autres démarrent derrière lui. Un worker qui en remplace un autre mort attend son tour de la même façon."
+    "en": "1f1aba0f84f07864",
+    "text": "Combien de workers de requêtes peuvent démarrer en même temps, en comptant ensemble les pools des protocoles et des surfaces hébergées. Le worker suivant est lancé quand l'un d'eux signale qu'il est prêt ou qu'il a échoué. 0, la valeur par défaut, décide d'après la mémoire : le premier worker démarre seul et ce que son démarrage a ajouté au processus est mesuré, puis les autres démarrent autant à la fois que la place restante sous la limite du conteneur (ou, sans limite, la mémoire disponible) le permet, à raison d'un démarrage et demi chacun, en gardant en réserve 15 % et au moins 256 MiB (#639). Un nombre à partir de 1 fixe la largeur ; 1 les démarre l'un après l'autre, comme le faisait chaque démarrage avant #639 — les démarrer ensemble est ce qui a un jour fait dépasser à un nœud sa limite de mémoire (#342). L'écouteur se lie dès que le premier worker de chaque pool est établi, et les autres démarrent derrière lui. Un worker qui en remplace un mort attend son tour de la même manière."
   },
   "workers.startConcurrency|restartReason": {
     "en": "8b0c3a4c3f27115c",
