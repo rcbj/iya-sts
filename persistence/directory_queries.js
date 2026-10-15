@@ -105,6 +105,118 @@ function suffixLength(baseKey) {
   return String(baseKey).length + 1;
 }
 
+// ---------------------------------------------------------------------------
+// A SUBTREE IS READ THROUGH ITS PARENTS, NOT TESTED ROW BY ROW (#638,
+// 2026-10-14).
+//
+// `underClause()` — `right(dn_key, n) = ',' || base` — is true of exactly the
+// keys under a base, and no index can narrow it: the database reads the
+// realm's keys and tests each. For a base the size of the realm that is what
+// a walk costs anyway; for a SPARSE one (`ou=devices` beside fifty million
+// people, the resident containers at start) it is the whole table to answer a
+// handful of rows. #636 found it in `hasChild` and the device lookups; #638 in
+// the start of every windowed worker, `residentOnly()`, minutes at 50M.
+//
+// **WHAT IS INDEXED IS THE PARENT.** `parent_key` is everything after a key's
+// first comma, and the `(realm, parent_key, dn_key)` index orders the rows by
+// it. A key is strictly under `B` (B not '') exactly when its `parent_key`
+// is `B` or itself ends with `,B` — the comma `,B` starts at is either the
+// key's first, or one inside its parent — so "the rows under B" is "the rows
+// whose PARENT is B or under B", and the second question is asked of the
+// realm's DISTINCT parents rather than of its rows. Those are read with a
+// loose index scan (`PARENTS`, below): each step one descent of the index to
+// the first parent after the last, so the cost is the number of distinct
+// parents — the containers, and any entry that has children — never the
+// number of rows. The rows of each kept parent are then one range of the
+// same index, in key order.
+//
+// **WHY NOT A WALK DOWN FROM THE REALM'S BASE**, which is what #638 first
+// proposed: a walk reaches only what hangs from an entry that exists. An
+// entry whose parent is missing (written by hand, or by an import that
+// supplied a child before its parent), an entry outside the realm's base,
+// several roots — the old statement answered all of them, and the parents
+// scan does too, because it reads the parents the rows NAME rather than the
+// entries that exist.
+//
+// **THE ONE ASSUMPTION IS THE BASE IS NOT ''.** A key with no comma has
+// `parent_key` '' (the column's ELSE), so '' is not a container the identity
+// above holds for; `subtreeRows()` asks the old suffix for that case, which
+// no caller makes.
+// ---------------------------------------------------------------------------
+
+/**
+ * The recursive CTE `parents(parent_key)`: the realm's distinct `parent_key`
+ * values in index order, one index descent each.
+ *
+ * @param realmAt - the position of the realm in `values`
+ * @returns the SQL, starting `WITH RECURSIVE`
+ */
+function parentsOf(realmAt) {
+  log.debug("Entering parentsOf().");
+  const r = '$' + realmAt;
+  log.debug("Leaving parentsOf().");
+  return 'WITH RECURSIVE parents(parent_key) AS ((SELECT parent_key FROM ' +
+         'sts_ldap_entries WHERE realm = ' + r + ' ORDER BY parent_key ' +
+         'LIMIT 1) UNION ALL SELECT n.parent_key FROM parents p CROSS JOIN ' +
+         'LATERAL (SELECT e.parent_key FROM sts_ldap_entries e WHERE ' +
+         'e.realm = ' + r + ' AND e.parent_key > p.parent_key ORDER BY ' +
+         'e.parent_key LIMIT 1) AS n)';
+}
+
+/**
+ * One page of the rows strictly under a base (and the base itself when
+ * `self`), in key order after a cursor: through the realm's parents, each
+ * kept parent's rows one range of the parent index.
+ *
+ * @param columns - the columns to select (unqualified)
+ * @param at - the positions in `values`: `realm`, `base`, `length` (the
+ *   suffix length), `after` and `limit`
+ * @param self - true to include the base itself
+ * @returns the SQL
+ */
+function subtreeRows(columns, at, self) {
+  log.debug("Entering subtreeRows().");
+  const r = '$' + at.realm;
+  const b = '$' + at.base;
+  const a = '$' + at.after;
+  const n = '$' + at.limit;
+  const base = self
+    ? ' UNION ALL SELECT ' + columns + ' FROM sts_ldap_entries WHERE ' +
+      'realm = ' + r + ' AND dn_key = ' + b + ' AND dn_key > ' + a
+    : '';
+  log.debug("Leaving subtreeRows().");
+  return parentsOf(at.realm) + ', under AS (SELECT parent_key FROM parents ' +
+         'WHERE parent_key = ' + b + ' OR right(parent_key, $' + at.length +
+         ') = \',\' || ' + b + ') SELECT ' + columns + ' FROM (SELECT x.* ' +
+         'FROM under u CROSS JOIN LATERAL (SELECT ' + columns + ' FROM ' +
+         'sts_ldap_entries e WHERE e.realm = ' + r + ' AND e.parent_key = ' +
+         'u.parent_key AND e.dn_key > ' + a + ' ORDER BY e.dn_key LIMIT ' +
+         n + ') AS x' + base + ') AS s ORDER BY dn_key LIMIT ' + n;
+}
+
+/**
+ * The WHERE-free form a subtree page takes: through the parents for a base,
+ * and the old suffix for the base '' (see above).
+ *
+ * @param columns - the columns to select
+ * @param baseKey - the base's normalised DN
+ * @param self - true to include the base itself
+ * @returns the SQL, its values in the order realm, base, after, limit,
+ *   length
+ */
+function subtreePage(columns, baseKey, self) {
+  log.debug("Entering subtreePage().");
+  if (String(baseKey) === '') {
+    log.debug("Leaving subtreePage(). The empty base: the suffix.");
+    return 'SELECT ' + columns + ' FROM sts_ldap_entries WHERE realm = $1 ' +
+           'AND ' + underClause(2, 5, self) + ' AND dn_key > $3 ORDER BY ' +
+           'dn_key LIMIT $4';
+  }
+  log.debug("Leaving subtreePage().");
+  return subtreeRows(columns, { realm: 1, base: 2, after: 3, limit: 4,
+                                length: 5 }, self);
+}
+
 // A bound on a page, so no caller can ask for the table in one statement.
 const MAX_PAGE = 1000;
 
@@ -305,13 +417,12 @@ function equalUnder(realm, baseKey, kind, value, limit) {
 function page(realm, baseKey, afterKey, limit, options) {
   log.debug("Entering page().");
   const o = options || {};
-  const where = o.oneLevel
-    ? 'parent_key = $2'
-    : underClause(2, 5, !!o.self);
   log.debug("Leaving page().");
-  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
-                 'realm = $1 AND ' + where + ' AND dn_key > $3 ORDER BY ' +
-                 'dn_key LIMIT $4',
+  return { text: o.oneLevel
+             ? 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE realm = ' +
+               '$1 AND parent_key = $2 AND dn_key > $3 ORDER BY dn_key ' +
+               'LIMIT $4'
+             : subtreePage(COLUMNS, baseKey, !!o.self),
            values: o.oneLevel
              ? [String(realm), String(baseKey), String(afterKey || ''),
                 pageSize(limit)]
@@ -670,10 +781,7 @@ function namesUnder(realm, baseKey, afterKey, limit) {
   log.debug("Leaving namesUnder().");
   // `attrs` whole, not `attrs->'uid'`: it is a sealed blob (#391 phase 6),
   // and the `uid` is read out of it by `directory_codec.openAnswer()`.
-  return { text: 'SELECT dn_key, dn, origin, attrs ' +
-                 'FROM sts_ldap_entries WHERE realm = $1 AND ' +
-                 underClause(2, 5, false) + ' AND dn_key > $3 ORDER BY ' +
-                 'dn_key LIMIT $4',
+  return { text: subtreePage('dn_key, dn, origin, attrs', baseKey, false),
            values: [String(realm), String(baseKey), String(afterKey || ''),
                     pageSize(limit), suffixLength(baseKey)] };
 }
@@ -782,16 +890,44 @@ function originCounts(realm) {
 function keysUnder(realm, baseKey, afterKey, limit) {
   log.debug("Entering keysUnder().");
   log.debug("Leaving keysUnder().");
-  return { text: 'SELECT dn_key, dn FROM sts_ldap_entries WHERE realm = $1 ' +
-                 'AND ' + underClause(2, 5, false) + ' AND dn_key > $3 ' +
-                 'ORDER BY dn_key LIMIT $4',
+  return { text: subtreePage('dn_key, dn', baseKey, false),
            values: [String(realm), String(baseKey), String(afterKey || ''),
                     pageSize(limit), suffixLength(baseKey)] };
 }
 
+// ---------------------------------------------------------------------------
+// THE RESIDENT ENTRIES, READ THROUGH THEIR PARENTS (#638, 2026-10-14).
+//
+// A windowed worker starts by reading every entry EXCEPT those strictly under
+// its windowed containers (`persistence.js`' `loadDirectoryRows()`). It was
+// one statement: every row of the table, each tested with
+// `right(dn_key, …) = ',' || container` against the list — a suffix no
+// index narrows. At 10M entries that was seconds of an 11 s start; at 50M it
+// was minutes with nothing listening, and on the first read after a bulk
+// import it also set the hint bits of every new row. #618's rule is that a
+// start costs the same whatever the size of the directory.
+//
+// Now it is the parents scan above, over EVERY realm at once: the table's
+// distinct `(realm, parent_key)` pairs, one descent of the `(realm,
+// parent_key, dn_key)` index each; a pair is DROPPED when its parent is a
+// windowed container of its realm or under one (the identity above: a key is
+// strictly under C exactly when its parent is C or under C), and the rows of
+// every pair kept are one range of the same index. The answer is the old
+// statement's row for row, in the same order — orphans, entries outside the
+// realm's base, several roots, a realm nobody listed, the containers
+// themselves included — because both ask of a row only its key; only the
+// cost moved, from the table to the number of distinct parents plus the
+// rows answered. A person who has children (nothing this service writes)
+// is a distinct parent, and costs one descent.
+//
+// `tests/directory_resident_walk.js` holds the statement's shape, the
+// identity on a fixture tree, and — given a database — both statements' rows
+// against each other.
+// ---------------------------------------------------------------------------
 /**
  * Every entry EXCEPT those strictly under the given containers, for the
- * restore of a worker that holds those containers as a window.
+ * restore of a worker that holds those containers as a window: through the
+ * table's distinct parents, never a test of every row.
  *
  * @param windowed - `[{ realm, baseKey }]`, the containers not restored
  * @returns the statement
@@ -800,10 +936,21 @@ function residentOnly(windowed) {
   log.debug("Entering residentOnly().");
   const list = windowed || [];
   log.debug("Leaving residentOnly().");
-  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries e WHERE NOT ' +
-                 'EXISTS (SELECT 1 FROM unnest($1::text[], $2::text[]) AS ' +
-                 'w(r, c) WHERE w.r = e.realm AND right(e.dn_key, ' +
-                 'length(w.c) + 1) = \',\' || w.c) ORDER BY realm, dn_key',
+  return { text: 'WITH RECURSIVE parents(realm, parent_key) AS ((SELECT ' +
+                 'realm, parent_key FROM sts_ldap_entries ORDER BY realm, ' +
+                 'parent_key LIMIT 1) UNION ALL SELECT n.realm, ' +
+                 'n.parent_key FROM parents p CROSS JOIN LATERAL (SELECT ' +
+                 'e.realm, e.parent_key FROM sts_ldap_entries e WHERE ' +
+                 '(e.realm, e.parent_key) > (p.realm, p.parent_key) ORDER ' +
+                 'BY e.realm, e.parent_key LIMIT 1) AS n), kept AS (SELECT ' +
+                 'p.realm, p.parent_key FROM parents p WHERE NOT EXISTS ' +
+                 '(SELECT 1 FROM unnest($1::text[], $2::text[]) AS w(r, c) ' +
+                 'WHERE w.r = p.realm AND (p.parent_key = w.c OR ' +
+                 'right(p.parent_key, length(w.c) + 1) = \',\' || w.c))) ' +
+                 'SELECT x.* FROM kept k CROSS JOIN LATERAL (SELECT ' +
+                 COLUMNS + ' FROM sts_ldap_entries e WHERE e.realm = ' +
+                 'k.realm AND e.parent_key = k.parent_key ORDER BY ' +
+                 'e.dn_key) AS x ORDER BY x.realm, x.dn_key',
            values: [list.map(function (one) { return String(one.realm); }),
                     list.map(function (one) { return String(one.baseKey); })]
   };
