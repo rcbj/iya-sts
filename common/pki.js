@@ -11006,12 +11006,18 @@ async function publishStartupCrls() {
     return 0;
   }
   try {
-    const published = await require('./pki_revocation').publishAll(scopes);
-    if (published) {
+    // A LIST THE DIRECTORY ALREADY HOLDS AS IT WOULD BE SIGNED NOW IS LEFT
+    // ALONE (#639): `pki_revocation.js`, `stillCurrent()`.
+    const counts = { kept: 0 };
+    const published = await require('./pki_revocation').publishAll(scopes,
+      { unlessCurrent: true, counts: counts });
+    if (published || counts.kept) {
       log.info('pki: ' + published + ' certificate revocation ' +
                'list(s) were published into the directory, one per ' +
                'authority, at the `ldap://` address every ' +
-               'certificate this service issues names.');
+               'certificate this service issues names; ' + counts.kept +
+               ' the directory already held, current and as they would ' +
+               'be signed now, were left as they were (#639).');
     }
     log.debug("Leaving publishStartupCrls(). " + published + " list(s).");
     return published;

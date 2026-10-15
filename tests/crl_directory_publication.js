@@ -181,6 +181,75 @@ function restoreAuthority(pki, keystore, before) {
   log.debug("Leaving restoreAuthority().");
 }
 
+// G. A LIST THE DIRECTORY ALREADY HOLDS AS IT WOULD BE SIGNED NOW IS LEFT
+// ALONE AT THE START (#639), and every other is published as before: a
+// lifetime changed, another authority's list in the entry, a revocation the
+// entry does not list.
+async function stillTheList(t, all, installed) {
+  log.debug("Entering stillTheList().");
+  t.log.info('=== G. the start leaves alone a list that is still the list ' +
+             '(#639) ===');
+  const startPass = async function () {
+    const counts = { kept: 0 };
+    const published = await revocation.publishAll(pki.knownScopes(),
+      { unlessCurrent: true, counts: counts });
+    return { published: published, kept: counts.kept };
+  };
+  t.check(typeof installed.publishedCrl === 'function',
+          'G0. the directory offers the CRL an entry holds');
+  let pass = await startPass();
+  t.check(pass.published === 0 && pass.kept === all.length,
+          'G1. every list the directory holds, fresh, is kept: no signature, ' +
+          'no CRL number, no write', JSON.stringify(pass));
+  const lifetime = Number(config.value('pki.crlLifetimeMinutes'));
+  config.setOverride('pki.crlLifetimeMinutes', String(lifetime + 5));
+  try {
+    pass = await startPass();
+  } finally {
+    config.clearOverride('pki.crlLifetimeMinutes');
+  }
+  t.check(pass.published === all.length && pass.kept === 0,
+          'G2. with another lifetime in force, every list is signed again',
+          JSON.stringify(pass));
+  // Back to lists of the lifetime in force, as the refresh job writes them.
+  await revocation.publishAll(pki.knownScopes());
+  const rootList = await revocation.buildCrl(pki.SERVICE_SCOPE, 'root');
+  installed.publishCrl(REALM, 'intermediate', rootList.der);
+  pass = await startPass();
+  t.check(pass.published === 1 && pass.kept === all.length - 1,
+          'G3. an entry holding another authority\'s list is published again, ' +
+          'and only that one', JSON.stringify(pass));
+  // A revocation made while the directory was not written: the register
+  // lists it, the entry does not.
+  revocation.setDirectory({
+    publishCrl: function () {
+      log.debug("Entering publishCrl(). Not written.");
+      log.debug("Leaving publishCrl().");
+      return true;
+    },
+    baseDnFor: installed.baseDnFor,
+    publishedCrl: installed.publishedCrl
+  });
+  let revoked = null;
+  try {
+    revoked = revocation.revoke(REALM, 'intermediate',
+                                { serialHex: '0a0b0c0d639',
+                                  reason: 'keyCompromise' });
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 200);
+    });
+  } finally {
+    revocation.restoreDirectory(installed);
+  }
+  pass = await startPass();
+  t.check(revoked && revoked.ok && pass.published === 1 &&
+          pass.kept === all.length - 1,
+          'G4. a list without a revocation the register holds is published ' +
+          'again, and only that one', JSON.stringify(pass));
+  revocation.release(REALM, 'intermediate', '0a0b0c0d639');
+  log.debug("Leaving stillTheList().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const before = heldAuthority(pki, keystore);
@@ -427,6 +496,7 @@ async function run(t) {
       }
       revocation.restoreDirectory(installed);
     }
+    await stillTheList(t, all, installed);
   } finally {
     realms.remove(REALM);
     restoreAuthority(pki, keystore, before);

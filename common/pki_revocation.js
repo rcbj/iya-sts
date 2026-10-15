@@ -755,7 +755,8 @@ let directory = null;
  * Installs the directory slot, which `ldap/ldap_server.js` fills.
  *
  * Refused whole, with an error logged, unless both hooks are functions.
- * @param hooks - `{ publishCrl(scope, ca, der), baseDnFor(scope) }`
+ * @param hooks - `{ publishCrl(scope, ca, der), baseDnFor(scope) }`, and
+ *   optionally `publishedCrl(scope, ca)`, the DER an entry holds now (#639)
  * @returns true when installed, false when refused
  */
 function setDirectory(hooks) {
@@ -1339,6 +1340,114 @@ function publishSoon(scopeId, caId) {
   log.debug("Leaving publishSoon().");
 }
 
+// ---------------------------------------------------------------------------
+// A LIST ALREADY IN THE DIRECTORY THAT IS STILL THE LIST (#639, 2026-10-15).
+//
+// The start's publication (`pki.publishStartupCrls()`) signed and wrote every
+// authority's list on every start of a front process — 279 lists on the
+// 50.2M-entry stack: 279 signatures, 279 CRL numbers advanced in the store,
+// 279 directory writes and their change rows, which every request worker then
+// pulled and applied while it was starting. Most of them were the list the
+// directory already held, signed minutes earlier by the start before or by
+// the refresh job.
+//
+// It exists for the lists that are NOT: a store restored after downtime
+// longer than a list lives, a branch rebuilt or a revocation made while the
+// directory was not written, a lifetime changed. So a list is left alone
+// only when the entry holds one that is, in every respect a relying party
+// can see, what would be signed now:
+//
+//   * it verifies under the authority's CURRENT certificate (a rebuilt or
+//     reissued authority's old list does not);
+//   * it lists exactly the authority's revocations now — serial, date and
+//     reason;
+//   * it was made for the lifetime in force (`pki.crlLifetimeMinutes`), and
+//     its `nextUpdate` is more than half a lifetime and a minute away. The
+//     refresh job (`keepDirectoryCurrent()`) runs every half lifetime, so
+//     the list kept is current until that job has replaced it.
+//
+// Anything else — no entry, an entry that does not parse, a verification that
+// throws — is published as before. The refresh job publishes every list
+// whatever it finds: it is what keeps them current, and this is only the
+// start not redoing it.
+// ---------------------------------------------------------------------------
+// One revoked entry of a parsed CRL as `serial|date|reason`, the comparison
+// `stillCurrent()` makes.
+function revokedOfCrl(entry) {
+  log.debug("Entering revokedOfCrl().");
+  const serial = normalSerial(Buffer.from(
+    entry.userCertificate.valueBlock.valueHexView).toString('hex'));
+  let reasonCode = 0;
+  ((entry.crlEntryExtensions && entry.crlEntryExtensions.extensions) || [])
+    .forEach(function (one) {
+      if (one.extnID === '2.5.29.21') {
+        const parsed = asn1js.fromBER(one.extnValue.valueBlock.valueHexView)
+          .result;
+        if (parsed instanceof asn1js.Enumerated) {
+          reasonCode = Number(parsed.valueBlock.valueDec) || 0;
+        }
+      }
+    });
+  log.debug("Leaving revokedOfCrl().");
+  return serial + '|' + entry.revocationDate.value.getTime() + '|' +
+    reasonCode;
+}
+
+/**
+ * Whether the directory already holds an authority's list as it would be
+ * signed now and current until the refresh job's next run.
+ *
+ * @param one - an authority, `{ scope, ca, tier }`
+ * @param nowMs - the instant
+ * @returns a promise of true when publishing it again would change nothing
+ *   a relying party can see
+ */
+async function stillCurrent(one, nowMs) {
+  log.debug("Entering stillCurrent(). " + one.scope + "/" + one.ca);
+  if (!directory || typeof directory.publishedCrl !== 'function') {
+    log.debug("Leaving stillCurrent(). No reader.");
+    return false;
+  }
+  try {
+    const held = directory.publishedCrl(one.scope, one.ca);
+    if (!held || !held.length) {
+      log.debug("Leaving stillCurrent(). None held.");
+      return false;
+    }
+    const bytes = Buffer.from(held);
+    const crl = pkijs.CertificateRevocationList.fromBER(
+      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length));
+    const lifetime = crlLifetimeMs();
+    const thisUpdate = crl.thisUpdate.value.getTime();
+    const nextUpdate = crl.nextUpdate ? crl.nextUpdate.value.getTime() : 0;
+    if (nextUpdate - thisUpdate !== lifetime || thisUpdate > nowMs + 60000 ||
+        nextUpdate - nowMs <= lifetime / 2 + 60000) {
+      log.debug("Leaving stillCurrent(). Not fresh for long enough.");
+      return false;
+    }
+    const want = listFor(one.scope, one.ca).map(function (entry) {
+      return normalSerial(entry.serialHex) + '|' +
+        wholeSeconds(entry.revokedAt).getTime() + '|' +
+        (Number(entry.reasonCode) || 0);
+    }).sort();
+    const have = (crl.revokedCertificates || []).map(revokedOfCrl).sort();
+    if (JSON.stringify(want) !== JSON.stringify(have)) {
+      log.debug("Leaving stillCurrent(). The revocations differ.");
+      return false;
+    }
+    const issuer = pkijs.Certificate.fromBER(
+      derFromPem(one.tier.certificatePem));
+    const verified = await crl.verify({ issuerCertificate: issuer });
+    log.debug("Leaving stillCurrent(). " + (verified === true));
+    return verified === true;
+  } catch (e) {
+    log.debug("Caught in stillCurrent(): " + ((e && e.message) || e));
+    // Unreadable or unverifiable: published again, as before.
+    log.debug("Leaving stillCurrent(). It could not be read.");
+    return false;
+  }
+}
+
 // **AND IT YIELDS BETWEEN LISTS (#617, 2026-10-14)**, which since #617 it
 // does while the listener is answering. The signature itself is WebCrypto
 // and already gave the loop a turn; the directory write after it is
@@ -1351,16 +1460,21 @@ function publishSoon(scopeId, caId) {
  * the Root's, into the directory, yielding to the event loop between lists.
  *
  * @param scopeIds - the scopes to publish
+ * @param options - `unlessCurrent` to leave alone a list the directory
+ *   already holds as it would be signed now (`stillCurrent()`, #639), and
+ *   `counts`, an object given `kept` (how many were left alone)
  * @returns how many CRLs were published; 0 when there is no directory
  */
-async function publishAll(scopeIds) {
+async function publishAll(scopeIds, options) {
   log.debug('Entering publishAll().');
+  const o = options || {};
   if (!directory) {
     log.debug('Leaving publishAll(). No directory in this process.');
     return 0;
   }
   const all = authorities(scopeIds);
   let done = 0;
+  let kept = 0;
   for (let i = 0; i < all.length; i++) {
     const one = all[i];
     if (i > 0) {
@@ -1369,6 +1483,10 @@ async function publishAll(scopeIds) {
       });
     }
     try {
+      if (o.unlessCurrent && await stillCurrent(one, Date.now())) {
+        kept += 1;
+        continue;
+      }
       const made = await buildCrl(one.scope, one.ca);
       if (made.ok && directory.publishCrl(one.scope, one.ca, made.der)) {
         done += 1;
@@ -1381,7 +1499,11 @@ async function publishAll(scopeIds) {
                 e.message);
     }
   }
-  log.debug('Leaving publishAll(). ' + done + ' published.');
+  if (o.counts) {
+    o.counts.kept = kept;
+  }
+  log.debug('Leaving publishAll(). ' + done + ' published, ' + kept +
+            ' kept.');
   return done;
 }
 
