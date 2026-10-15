@@ -374,7 +374,8 @@ async function realDatabase(t) {
       });
     };
     t.check(got.rows.length === old.rows.length &&
-            JSON.stringify(keysOf(got.rows)) === JSON.stringify(keysOf(old.rows)),
+            JSON.stringify(keysOf(got.rows)) ===
+              JSON.stringify(keysOf(old.rows)),
             'E1. the restore answers #638\'s rows, in its order, a resident ' +
             'container of ' + (3 + LATE_GROUPS) + ' included (' +
             got.rows.length + ' rows)', got.rows.length + ' vs ' +

@@ -3423,8 +3423,8 @@ function replaceIfWanted(dead) {
 // So every fork after start() goes through this gate, replacements included.
 // At most `workers.startConcurrency` workers are between their fork and
 // their first answer (1 until #639; the default is now the automatic width
-// below, which starts the first alone). The next one is forked when one of those
-// settles: it reported ready, it reported that it could not start, its
+// below, which starts the first alone). The next one is forked when one of
+// those settles: it reported ready, it reported that it could not start, its
 // channel failed, or it exited. That is `entry.settled`, which fork() already
 // resolves in each of those cases.
 //

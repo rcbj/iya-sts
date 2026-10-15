@@ -891,6 +891,9 @@ module.exports = {
   serialBytes: serialBytes,
   publishSoon: publishSoon,
   publishAll: publishAll,
+  // Whether the directory's copy of a list is still the list (#639), for
+  // its test.
+  stillCurrent: stillCurrent,
   publishScopeSoon: publishScopeSoon,
   keepDirectoryCurrent: keepDirectoryCurrent,
   agreedCrlNumber: agreedCrlNumber,

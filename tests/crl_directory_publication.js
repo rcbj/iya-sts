@@ -217,8 +217,8 @@ async function stillTheList(t, all, installed) {
   installed.publishCrl(REALM, 'intermediate', rootList.der);
   pass = await startPass();
   t.check(pass.published === 1 && pass.kept === all.length - 1,
-          'G3. an entry holding another authority\'s list is published again, ' +
-          'and only that one', JSON.stringify(pass));
+          'G3. an entry holding another authority\'s list is published ' +
+          'again, and only that one', JSON.stringify(pass));
   // A revocation made while the directory was not written: the register
   // lists it, the entry does not.
   revocation.setDirectory({
@@ -247,6 +247,21 @@ async function stillTheList(t, all, installed) {
           'G4. a list without a revocation the register holds is published ' +
           'again, and only that one', JSON.stringify(pass));
   revocation.release(REALM, 'intermediate', '0a0b0c0d639');
+  // AND ONLY WHILE IT IS FRESH FOR LONGER THAN THE REFRESH JOB'S INTERVAL:
+  // the same list, asked about from just past half its lifetime, is not
+  // kept, so it cannot expire before the job's next run replaces it.
+  await revocation.publishAll(pki.knownScopes());
+  const root = all.filter(function (one) {
+    return one.ca === 'root';
+  })[0];
+  const halfLife = Number(config.value('pki.crlLifetimeMinutes')) * 30000;
+  const nowKept = await revocation.stillCurrent(root, Date.now());
+  const laterKept = await revocation.stillCurrent(root,
+                                                  Date.now() + halfLife);
+  t.check(nowKept === true && laterKept === false,
+          'G5. a list is kept only while more than half its lifetime and a ' +
+          'minute are left', JSON.stringify({ now: nowKept,
+                                              later: laterKept }));
   log.debug("Leaving stillTheList().");
 }
 
