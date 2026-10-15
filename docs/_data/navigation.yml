@@ -106,7 +106,6 @@
     - { title: The compose stack, url: /docker-compose.html }
     - { title: Persistence, url: /persistence.html }
     - { title: Bulk directory import, url: /bulk-import.html }
-    - { title: Scaling the directory, url: /directory-scaling.html }
     - { title: PostgreSQL schema, url: /postgres-schema.html }
     - { title: Encryption at rest, url: /encryption-at-rest.html }
     - { title: Caches, url: /caches.html }
