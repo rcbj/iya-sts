@@ -12904,9 +12904,11 @@ const CODES = [
       'entry per person rule, as STS-LDAP-0005 refuses an add.',
     spec: 'none — an operator tool' },
   { code: 'STS-LDAP-0161',
-    summary: 'The bulk import could not merge a GIN pending list ' +
-      '(gin_clean_pending_list) or ANALYZE the table: both need its owner ' +
-      'or MAINTAIN, which the application role may not hold. After a batch ' +
+    summary: 'The bulk import did not merge a GIN pending list ' +
+      '(gin_clean_pending_list, which needs the index\'s owner) or did not ' +
+      'ANALYZE the table (its owner, or MAINTAIN on postgres 17 and ' +
+      'later): the role it runs as may not, which it asks the catalog ' +
+      'before issuing either (#637), or the call failed. After a batch ' +
       '(schema 17, whose name index has fastupdate on) the import goes on, ' +
       'slowing as the list grows; at the end nothing is lost, and lookups ' +
       'scan the lists until an autovacuum or the owner\'s VACUUM (ANALYZE) ' +

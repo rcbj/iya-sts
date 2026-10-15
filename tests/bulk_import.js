@@ -19,7 +19,13 @@
 //      values through the service's own codec, a URL line marked; the
 //      generator's people read back as candidates.
 //   C. THE STATEMENTS: the insert is guarded by the DN and by both of
-//      `byName()`'s name lookups; the classification asks the same.
+//      `byName()`'s name lookups; the classification asks the same; the
+//      lock is the realm's advisory lock; the count sums its shards.
+//   E. AGAINST A pg DOUBLE (#637): a role that does not own the table is
+//      issued no gin_clean_pending_list(), ANALYZE or table lock; MAINTAIN
+//      analyzes (17+); a batch seals and inserts outside the lock and
+//      checks again under it on a second connection, and a name another
+//      import committed first is deleted again before the commit.
 //   D. AGAINST A REAL POSTGRES, when STS_TEST_POSTGRES_URL names one the test
 //      may create a database in (an owner; STS_TEST_POSTGRES_CA for its CA):
 //      a database of its own, the service started once in a child to seed
@@ -38,7 +44,11 @@
 //           (SCIM's id) and an LDAP search by uid on its own listener;
 //        D6 a running service (a fresh change reader) is refused
 //           (STS-LDAP-0153); `ldap.maxEntries` stops the import
-//           (STS-LDAP-0157) and a re-run with a raised ceiling resumes.
+//           (STS-LDAP-0157) and a re-run with a raised ceiling resumes;
+//        D7 two imports at once (#637): disjoint files both land whole;
+//           two files proposing the same usernames admit each once; the
+//           same people in opposite orders land once, without deadlock;
+//           no username is held twice and the counters stay exact.
 //      The database is dropped afterwards. Skipped (and said) otherwise.
 // ===========================================================================
 
@@ -256,14 +266,370 @@ function statements(t) {
     s.INSERT.split('SELECT')[0]) && !/EXISTS/.test(s.INSERT),
           'C3. the insert returns what it inserted, and never writes a ' +
           'generated column');
-  t.check(/SHARE ROW EXCLUSIVE/.test(s.LOCK),
+  t.check(/^SELECT pg_advisory_xact_lock\(629, hashtext\(\$1\)\)$/
+    .test(s.LOCK) && !/LOCK TABLE/i.test(s.LOCK),
           'C4. the check and the insert are one transaction holding the ' +
-          'table against other writers');
+          'realm\'s import lock: an advisory lock (#637), never a table ' +
+          'lock, which cancels a running autovacuum');
+  t.check(/^DELETE FROM sts_ldap_entries WHERE realm = \$1 AND dn_key = ANY\(\$2::text\[\]\)$/
+    .test(s.DROP_OWN),
+          'C8. what the check under the lock finds taken is deleted again, ' +
+          'the batch\'s own rows by DN and nothing else');
+  t.check(/coalesce\(sum\(n\), 0\)/.test(s.REALM_COUNT),
+          'C6. the realm\'s count is the SUM of its counter shards (#630)');
+  t.check(/^ANALYZE \(SKIP_LOCKED\) sts_ldap_entries$/.test(s.ANALYZE) &&
+          /pg_has_role\(current_user, c\.relowner, 'USAGE'\)/
+            .test(s.TABLE_OWNERSHIP) &&
+          /'MAINTAIN'/.test(s.TABLE_MAINTAIN),
+          'C7. ownership and MAINTAIN are asked of the catalog, and ANALYZE ' +
+          'never waits for an autovacuum (#637)');
   const byName = require('../persistence/directory_queries')
     .byName('r', 'p', 'n').text;
   t.check(/parent_key = \$2 AND \(name_keys @> \$3::jsonb OR rdn_value = \$4\)/
     .test(byName), 'C5. which is what byName() asks of one name');
   log.debug("Leaving statements().");
+}
+
+// ---------------------------------------------------------------------------
+// E. THE ORDER OF A BATCH AND WHAT A ROLE IS ASKED, AGAINST A pg DOUBLE
+// (#637): no statement the role may not run is issued, the seal is outside
+// the lock, the authoritative check and the insert under it, and a name
+// another import committed in between is not inserted.
+// ---------------------------------------------------------------------------
+
+// A pg double: every statement, in order, as `[where, text, params]`;
+// `answer(text, params)` gives the rows. `where` is 'pool' or 'client<n>',
+// the nth connection taken.
+function pgDouble(answer) {
+  log.debug("Entering pgDouble().");
+  const seen = [];
+  const query = function (where) {
+    log.debug("Entering query(). " + where);
+    log.debug("Leaving query().");
+    return function (text, params) {
+      seen.push([where, String(text), params || []]);
+      const rows = answer(String(text), params || [], where);
+      if (rows instanceof Error) {
+        return Promise.reject(rows);
+      }
+      return Promise.resolve({ rows: rows || [], rowCount: (rows || [])
+        .length });
+    };
+  };
+  let clients = 0;
+  const db = { seen: seen, query: query('pool'), connect: function () {
+    clients += 1;
+    const name = 'client' + clients;
+    return Promise.resolve({ query: query(name), release: function () {
+      seen.push([name, 'RELEASE', []]);
+    } });
+  } };
+  log.debug("Leaving pgDouble().");
+  return db;
+}
+
+function texts(db) {
+  log.debug("Entering texts().");
+  log.debug("Leaving texts().");
+  return db.seen.map(function (one) {
+    return one[1];
+  });
+}
+
+// What a role may do to sts_ldap_entries, as the catalog answers.
+function rightsAnswer(owner, version, maintain, extra) {
+  log.debug("Entering rightsAnswer().");
+  const s = importer().STATEMENTS;
+  log.debug("Leaving rightsAnswer().");
+  return function (text, params) {
+    if (text === s.TABLE_OWNERSHIP) {
+      return [{ owner: owner, version: version }];
+    }
+    if (text === s.TABLE_MAINTAIN) {
+      return [{ maintain: maintain }];
+    }
+    if (/sts_ldap_entries_names/.test(text) && /reloptions/.test(text)) {
+      return [{ o: 'fastupdate=on' }];
+    }
+    if (text === s.GIN_INDEXES) {
+      return [{ name: 'sts_ldap_entries_names' },
+              { name: 'sts_ldap_entries_values' }];
+    }
+    if (/gin_clean_pending_list|^ANALYZE|LOCK TABLE/i.test(text) &&
+        !owner && !(maintain && /^ANALYZE/.test(text))) {
+      return new Error('must be owner of index sts_ldap_entries_names');
+    }
+    if (/gin_clean_pending_list/.test(text)) {
+      return [{ n: 3 }];
+    }
+    return extra ? extra(text, params) : [];
+  };
+}
+
+async function maintenance(t) {
+  log.debug("Entering maintenance().");
+  t.log.info('=== E. maintenance and the order of a batch, against a pg ' +
+             'double ===');
+  const bi = importer();
+  const owns = /gin_clean_pending_list|^ANALYZE|LOCK TABLE|VACUUM/i;
+
+  // E1. The application role on postgres 18: neither is issued.
+  let db = pgDouble(rightsAnswer(false, 180006, false));
+  let rights = await bi.maintenanceRights(db);
+  let merger = await bi.namePendingMerger(db, rights);
+  await merger.merge();
+  let settled = await bi.settleIndexes(db, rights);
+  t.check(!rights.owner && !rights.analyze &&
+          !texts(db).some(function (one) {
+            return owns.test(one);
+          }) && /does not own/.test(merger.mode) &&
+          !settled.analyzed && settled.pagesMerged === 0 &&
+          /not merged/.test(settled.refused) &&
+          /not analyzed/.test(settled.refused),
+          'E1. a role that neither owns the table nor holds MAINTAIN is ' +
+          'issued no gin_clean_pending_list(), no ANALYZE and no table ' +
+          'lock: the catalog is asked, and both are skipped (#637)',
+          JSON.stringify(texts(db)) + ' ' + JSON.stringify(settled));
+
+  // E2. MAINTAIN on 17+: ANALYZE, and still no merge (the index's owner).
+  db = pgDouble(rightsAnswer(false, 170000, true));
+  rights = await bi.maintenanceRights(db);
+  settled = await bi.settleIndexes(db, rights);
+  t.check(rights.analyze && !rights.owner && settled.analyzed &&
+          texts(db).filter(function (one) {
+            return /gin_clean_pending_list/.test(one);
+          }).length === 0 &&
+          texts(db).indexOf('ANALYZE (SKIP_LOCKED) sts_ldap_entries') >= 0,
+          'E2. MAINTAIN (postgres 17 and later) is enough to ANALYZE, ' +
+          'SKIP_LOCKED, and not to merge', JSON.stringify(texts(db)));
+
+  // E3. Before 17 MAINTAIN is not asked at all (it is an error there).
+  db = pgDouble(rightsAnswer(false, 160004, true));
+  rights = await bi.maintenanceRights(db);
+  t.check(!rights.analyze && texts(db).indexOf(
+    bi.STATEMENTS.TABLE_MAINTAIN) < 0,
+          'E3. on postgres 16 MAINTAIN is never asked', JSON.stringify(
+    texts(db)));
+
+  // E4. The owner merges each GIN index that keeps a list, and analyzes.
+  db = pgDouble(rightsAnswer(true, 180006, false));
+  rights = await bi.maintenanceRights(db);
+  merger = await bi.namePendingMerger(db, rights);
+  const pages = await merger.merge();
+  settled = await bi.settleIndexes(db, rights);
+  t.check(rights.owner && rights.analyze && pages === 3 &&
+          settled.indexes === 2 && settled.pagesMerged === 6 &&
+          settled.analyzed && !settled.refused &&
+          !texts(db).some(function (one) {
+            return /LOCK TABLE/i.test(one);
+          }), 'E4. the owner merges after a batch and at the end, and ' +
+          'analyzes', JSON.stringify(settled));
+  log.debug("Leaving maintenance().");
+}
+
+// A batch through importFile() against a double. `heldUnderLock` names a
+// username the store holds only once the lock is taken: another import
+// committed it between the first look and the authoritative check.
+async function batchOrder(t, dir) {
+  log.debug("Entering batchOrder().");
+  const bi = importer();
+  const s = bi.STATEMENTS;
+  const file = path.join(dir, 'e.ldif');
+  const gen = require('./tools/generate-people-ldif');
+  const parts = ['version: 1', ''];
+  // In REVERSE, so that the insert's DN order is the import's doing.
+  for (let i = 6; i >= 1; i--) {
+    parts.push(gen.recordOf('e', i, BASE));
+  }
+  fs.writeFileSync(file, parts.join('\n'));
+  // The lock is the connection's that took it, until that one ends.
+  let locked = false;
+  let holder = '';
+  const events = [];
+  const db = pgDouble(function (text, params, where) {
+    if (text === s.LOCK) {
+      locked = true;
+      holder = where;
+      events.push('lock');
+    } else if ((text === 'COMMIT' || text === 'ROLLBACK') &&
+               where === holder) {
+      locked = false;
+    }
+    if (text === s.LIVE_READERS) {
+      return [{ n: 0 }];
+    }
+    if (text === s.REALM_COUNT) {
+      events.push('count' + (locked ? ' locked' : ''));
+      return [{ n: 7 }];
+    }
+    if (text === s.HELD_RDNS) {
+      events.push('look' + (locked ? ' locked' : ''));
+      // Under the lock, load-e-2 is held: another import committed it.
+      return locked ? [{ rdn_value: 'load-e-2' }] : [];
+    }
+    if (text === s.INSERT) {
+      events.push('insert' + (locked ? ' locked' : ''));
+      return params[2].map(function (k) {
+        return { dn_key: k };
+      });
+    }
+    if (text === s.DROP_OWN) {
+      events.push('drop ' + params[1].join(';') + (locked ? ' locked' : ''));
+      return params[1].map(function () {
+        return {};
+      });
+    }
+    if (text === s.HOLDER) {
+      return [{ dn: 'uid=load-e-2,' + USERS }];
+    }
+    return [];
+  });
+  const sealedFor = [];
+  const report = await bi.importFile({
+    db: db, realmId: 'default', usersDn: USERS, file: file, batch: 10,
+    codec: {
+      sealAttributes: function (realm, key) {
+        sealedFor.push(key);
+        events.push('seal' + (locked ? ' locked' : ''));
+        return '$aesgcm$sealed';
+      },
+      index: function () {
+        return { nameKeys: [], mailKeys: [], uuidKeys: [], classKeys: [],
+                 valueKeys: [], attrNames: [] };
+      },
+      dekKeys: function () {
+        return { k: 1 };
+      }
+    },
+    sealing: true, language: '', digest: function (n) {
+      return 'digest:' + n;
+    },
+    maxEntries: function () {
+      return 100;
+    },
+    seal: function (fn) {
+      return fn();
+    },
+    settle: function () {
+      events.push('settle' + (locked ? ' locked' : ''));
+      return Promise.resolve();
+    },
+    uuid: function () {
+      return '00000000-0000-4000-8000-000000000000';
+    }
+  });
+  const order = events.join(',');
+  t.check(/^look,seal(,seal)*,settle,insert,lock,look locked,count locked,drop uid=load-e-2,ou=users,dc=example,dc=com locked$/
+    .test(order),
+          'E5. a batch is looked up, SEALED, SETTLED AND INSERTED OUTSIDE ' +
+          'THE LOCK, then checked again, counted and cut under it', order);
+  const inserted = db.seen.filter(function (one) {
+    return one[1] === s.INSERT;
+  })[0];
+  const dropped = db.seen.filter(function (one) {
+    return one[1] === s.DROP_OWN;
+  });
+  const own = 'uid=load-e-2,' + USERS.toLowerCase();
+  const sorted = inserted ? inserted[2][2].slice(0).sort() : [];
+  t.check(report.imported === 5 && report.taken === 1 && inserted &&
+          inserted[2][2].length === 6 && dropped.length === 1 &&
+          JSON.stringify(dropped[0][2][1]) === JSON.stringify([own]) &&
+          sealedFor.length === 6 &&
+          JSON.stringify(sorted) === JSON.stringify(inserted[2][2]),
+          'E6. a name another import committed after the first look is ' +
+          'caught under the lock and its row deleted before the commit; ' +
+          'the insert is in DN order', JSON.stringify(report)
+            .slice(0, 1500));
+  const whereOf = function (text, after) {
+    log.debug("Entering whereOf().");
+    log.debug("Leaving whereOf().");
+    const at = db.seen.findIndex(function (one, i) {
+      return i > after && one[1] === text;
+    });
+    return { at: at, where: at >= 0 ? db.seen[at][0] : '' };
+  };
+  const ins = whereOf(s.INSERT, -1);
+  const lock = whereOf(s.LOCK, -1);
+  const check = whereOf(s.HELD_NAME_KEYS, lock.at);
+  t.check(ins.where === lock.where && check.where !== ins.where &&
+          check.at > lock.at && db.seen.slice(check.at).some(function (one) {
+            return one[0] === ins.where && one[1] === 'COMMIT';
+          }),
+          'E6. the check under the lock runs on a SECOND connection, which ' +
+          'cannot see the batch\'s own uncommitted rows, while the batch\'s ' +
+          'transaction holds the lock', JSON.stringify(db.seen.map(
+            function (one) {
+              return one[0] + ' ' + one[1].slice(0, 30);
+            })).slice(0, 2500));
+  t.check(texts(db).every(function (one) {
+    return !/LOCK TABLE|gin_clean_pending_list|^ANALYZE/i.test(one);
+  }) && db.seen.some(function (one) {
+    return one[1] === s.LOCK && one[2][0] === 'default';
+  }), 'E7. the batch takes the realm\'s advisory lock and no table lock',
+  JSON.stringify(texts(db)));
+
+  // E8. A running service, seen at the first look (nothing is sealed) and
+  // seen only under the lock (it started meanwhile: nothing is inserted).
+  for (const when of [1, 2]) {
+    let asked = 0;
+    let sealed = 0;
+    const live = pgDouble(function (text, params) {
+      if (text === s.LIVE_READERS) {
+        asked += 1;
+        return [{ n: asked >= when ? 1 : 0 }];
+      }
+      if (text === s.INSERT) {
+        return params[2].map(function (k) {
+          return { dn_key: k };
+        });
+      }
+      return [];
+    });
+    let refused = '';
+    try {
+      await bi.importFile({
+        db: live, realmId: 'default', usersDn: USERS, file: file, batch: 10,
+        codec: { sealAttributes: function () {
+          sealed += 1;
+          return '$aesgcm$sealed';
+        }, index: function () {
+          return { nameKeys: [], mailKeys: [], uuidKeys: [], classKeys: [],
+                   valueKeys: [], attrNames: [] };
+        }, dekKeys: function () {
+          return {};
+        } },
+        sealing: true, language: '', digest: function (n) {
+          return 'digest:' + n;
+        },
+        maxEntries: function () {
+          return 0;
+        },
+        seal: function (fn) {
+          return fn();
+        },
+        settle: function () {
+          return Promise.resolve();
+        },
+        uuid: function () {
+          return '00000000-0000-4000-8000-000000000000';
+        }
+      });
+    } catch (e) {
+      refused = String((e && e.message) || e);
+    }
+    const order = texts(live);
+    const at = order.indexOf(s.INSERT);
+    const committedAfter = at >= 0 && order.slice(at).indexOf('COMMIT') >= 0;
+    t.check(/STS-LDAP-0153/.test(refused) && !committedAfter &&
+            (when === 1 ? sealed === 0 && at < 0
+              : sealed === 6 && order.slice(at).indexOf('ROLLBACK') >= 0),
+            'E8. a service seen running ' + (when === 1
+              ? 'before the batch is refused before anything is sealed'
+              : 'only once the lock is held is refused before the insert') +
+            ' (STS-LDAP-0153), and nothing is committed', refused +
+            ' sealed ' + sealed + ' ' + JSON.stringify(order).slice(0, 800));
+  }
+  log.debug("Leaving batchOrder().");
 }
 
 // ---------------------------------------------------------------------------
@@ -352,6 +718,54 @@ function runChild(part, env, args) {
            stderr: String(result.stderr || '') + String(result.stdout || '') };
 }
 
+// An import in a child that runs ALONGSIDE others: runChild()'s import,
+// spawned rather than waited for.
+function importAsync(env, args) {
+  log.debug("Entering importAsync().");
+  const reportFile = String(args.filter(function (a) {
+    return /^--report=/.test(a);
+  })[0] || '').slice('--report='.length);
+  const childEnvironment = Object.assign({}, env, { STS_LOG_LEVEL: 'error' });
+  log.debug("Leaving importAsync().");
+  return new Promise(function (resolve) {
+    let output = '';
+    const child = childProcess.spawn(process.execPath, [path.join(ROOT,
+      'persistence/bulk_import.js')].concat(args), { env: childEnvironment,
+      cwd: ROOT });
+    child.stdout.on('data', function (d) {
+      output += d;
+    });
+    child.stderr.on('data', function (d) {
+      output += d;
+    });
+    child.on('close', function (status) {
+      let report = null;
+      try {
+        report = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
+      } catch (e) {
+        log.debug("Caught in importAsync(): " + ((e && e.message) || e));
+        report = null;
+      }
+      resolve({ status: status, report: report, stderr: output });
+    });
+  });
+}
+
+// Every username under ou=users held by more than one entry: by the RDN
+// value, or by a name digest in two entries' `name_keys`.
+async function heldTwice(db) {
+  log.debug("Entering heldTwice().");
+  const r = await db.query(
+    'SELECT (SELECT count(*) FROM (SELECT rdn_value FROM sts_ldap_entries ' +
+    'WHERE parent_key = $1 GROUP BY rdn_value HAVING count(*) > 1) a)::int ' +
+    'AS rdns, (SELECT count(*) FROM (SELECT k FROM sts_ldap_entries e ' +
+    'CROSS JOIN LATERAL jsonb_array_elements_text(e.name_keys) AS k WHERE ' +
+    'e.parent_key = $1 GROUP BY k HAVING count(*) > 1) b)::int AS names',
+    [USERS]);
+  log.debug("Leaving heldTwice().");
+  return r.rows[0].rdns + r.rows[0].names;
+}
+
 // What the store holds, counted afresh and as the counters say.
 async function tallies(db) {
   log.debug("Entering tallies().");
@@ -360,8 +774,12 @@ async function tallies(db) {
     '(WHERE e.attr_names ? \'userpassword\')::bigint AS h FROM ' +
     'sts_ldap_entries e CROSS JOIN LATERAL sts_ldap_count_bases(e.parent_key)' +
     ' AS b(base_key) GROUP BY 1, 2 ORDER BY 1, 2');
-  const kept = await db.query('SELECT realm, base_key, attribute, n FROM ' +
-                              'sts_ldap_counts WHERE n <> 0 ORDER BY 1, 2, 3');
+  // SUMMED OVER THE SHARDS (#630): a key's count is the sum of its rows,
+  // one per connection's shard that folded into it.
+  const kept = await db.query('SELECT realm, base_key, attribute, ' +
+                              'sum(n)::bigint AS n FROM sts_ldap_counts ' +
+                              'GROUP BY 1, 2, 3 HAVING sum(n) <> 0 ORDER BY ' +
+                              '1, 2, 3');
   const want = [];
   fresh.rows.forEach(function (r) {
     want.push([r.realm, r.base_key, '', String(r.n)].join('|'));
@@ -379,8 +797,9 @@ async function tallies(db) {
     'sts_ldap_entries e CROSS JOIN LATERAL jsonb_each_text(CASE WHEN ' +
     'jsonb_typeof(e.dek_keys) = \'object\' THEN e.dek_keys END) AS d GROUP ' +
     'BY 1 ORDER BY 1');
-  const dekKept = await db.query('SELECT dek_id AS k, n FROM ' +
-                                 'sts_ldap_dek_counts WHERE n <> 0 ORDER BY 1');
+  const dekKept = await db.query('SELECT dek_id AS k, sum(n)::bigint AS ' +
+                                 'n FROM sts_ldap_dek_counts GROUP BY 1 ' +
+                                 'HAVING sum(n) <> 0 ORDER BY 1');
   const deltas = await db.query('SELECT (SELECT count(*) FROM ' +
     'sts_ldap_count_deltas)::int AS a, (SELECT count(*) FROM ' +
     'sts_ldap_dek_deltas)::int AS b');
@@ -662,6 +1081,119 @@ async function realDatabase(t, dir) {
             JSON.stringify(rs).slice(0, 1500) + ' ' +
             resumed.stderr.slice(-1500));
     sameTallies(t, 'D6', await tallies(db));
+
+    // D7. SEVERAL IMPORTS AT ONCE (#637): two disjoint files side by side,
+    // then two files proposing the same usernames under different DNs.
+    const m = Math.max(10, Math.floor(n / 2));
+    const fileOf = async function (name, stampOf, uidOf) {
+      log.debug("Entering fileOf(). " + name);
+      const out = path.join(dir, name);
+      const sink = fs.createWriteStream(out);
+      if (uidOf) {
+        for (let i = 1; i <= m; i++) {
+          sink.write('dn: uid=' + stampOf + '-' + i + ',' + USERS +
+                     '\nobjectClass: inetOrgPerson\nuid: ' + stampOf + '-' +
+                     i + '\nuid: ' + uidOf + '-' + i + '\ncn: c\nsn: s\n\n');
+        }
+      } else {
+        await gen.generate({ count: m, stamp: stampOf, start: 1,
+                             base: BASE }, sink);
+      }
+      await new Promise(function (resolve) {
+        sink.end(resolve);
+      });
+      log.debug("Leaving fileOf().");
+      return out;
+    };
+    const p1 = await fileOf('p1.ldif', 'p1' + stamp);
+    const p2 = await fileOf('p2.ldif', 'p2' + stamp);
+    const before7 = (await db.query('SELECT count(*)::int AS n FROM ' +
+                                    'sts_ldap_entries')).rows[0].n;
+    const pair = await Promise.all([
+      importAsync(env, ['--file=' + p1, '--batch=97',
+                        '--report=' + path.join(dir, 'r1.json')]),
+      importAsync(env, ['--file=' + p2, '--batch=97',
+                        '--report=' + path.join(dir, 'r2.json')])]);
+    const after7 = (await db.query('SELECT count(*)::int AS n FROM ' +
+                                   'sts_ldap_entries')).rows[0].n;
+    t.check(pair.every(function (one) {
+      return one.status === 0 && one.report && one.report.imported === m;
+    }) && after7 - before7 === 2 * m && (await heldTwice(db)) === 0,
+            'D7. two imports of disjoint files at once both finish, every ' +
+            'person of each is in, and no username is held twice',
+            JSON.stringify(pair.map(function (one) {
+              return [one.status, one.report, one.stderr.slice(-1500)];
+            })).slice(0, 4000));
+    sameTallies(t, 'D7', await tallies(db));
+    const o1 = await fileOf('o1.ldif', 'oa' + stamp, 'ov' + stamp);
+    const o2 = await fileOf('o2.ldif', 'ob' + stamp, 'ov' + stamp);
+    const overlap = await Promise.all([
+      importAsync(env, ['--file=' + o1, '--batch=13',
+                        '--report=' + path.join(dir, 'r3.json')]),
+      importAsync(env, ['--file=' + o2, '--batch=13',
+                        '--report=' + path.join(dir, 'r4.json')])]);
+    const after8 = (await db.query('SELECT count(*)::int AS n FROM ' +
+                                   'sts_ldap_entries')).rows[0].n;
+    const sum = function (field) {
+      log.debug("Entering sum(). " + field);
+      log.debug("Leaving sum().");
+      return overlap.reduce(function (acc, one) {
+        return acc + Number(((one.report || {})[field]) || 0);
+      }, 0);
+    };
+    t.check(overlap.every(function (one) {
+      return one.report && (one.status === 0 || one.status === 3);
+    }) && sum('imported') === m && sum('taken') === m &&
+            after8 - after7 === m && (await heldTwice(db)) === 0,
+            'D7. two imports at once of files proposing the SAME usernames ' +
+            'admit each name once: the other record is taken ' +
+            '(STS-LDAP-0160), whichever import reached it second',
+            JSON.stringify(overlap.map(function (one) {
+              return [one.status, one.report && {
+                imported: one.report.imported, taken: one.report.taken },
+              one.stderr.slice(-1500)];
+            })).slice(0, 4000));
+    sameTallies(t, 'D7 (overlap)', await tallies(db));
+    // The SAME people in two files, one reversed: every DN in both, asked
+    // for in opposite orders — what the insert's DN order keeps from
+    // deadlocking on the primary key.
+    const same = path.join(dir, 'same.ldif');
+    const reversed = path.join(dir, 'reversed.ldif');
+    const people = [];
+    for (let i = 1; i <= m; i++) {
+      people.push(gen.recordOf('sd' + stamp, i, BASE));
+    }
+    fs.writeFileSync(same, people.join('\n'));
+    fs.writeFileSync(reversed, people.slice(0).reverse().join('\n'));
+    const after9 = (await db.query('SELECT count(*)::int AS n FROM ' +
+                                   'sts_ldap_entries')).rows[0].n;
+    const both = await Promise.all([
+      importAsync(env, ['--file=' + same, '--batch=29',
+                        '--report=' + path.join(dir, 'r5.json')]),
+      importAsync(env, ['--file=' + reversed, '--batch=29',
+                        '--report=' + path.join(dir, 'r6.json')])]);
+    const after10 = (await db.query('SELECT count(*)::int AS n FROM ' +
+                                    'sts_ldap_entries')).rows[0].n;
+    const total = function (field) {
+      log.debug("Entering total(). " + field);
+      log.debug("Leaving total().");
+      return both.reduce(function (acc, one) {
+        return acc + Number(((one.report || {})[field]) || 0);
+      }, 0);
+    };
+    t.check(both.every(function (one) {
+      return one.status === 0;
+    }) && total('imported') === m && total('present') === m &&
+            after10 - after9 === m && (await heldTwice(db)) === 0,
+            'D7. two imports at once of the same people in opposite orders ' +
+            'both finish, with no deadlock: each person is in once and ' +
+            'present for the other import', JSON.stringify(both.map(
+              function (one) {
+                return [one.status, one.report && {
+                  imported: one.report.imported,
+                  present: one.report.present }, one.stderr.slice(-1500)];
+              })).slice(0, 4000));
+    sameTallies(t, 'D7 (same people)', await tallies(db));
   } finally {
     if (db) {
       await db.end().catch(function (e) {
@@ -844,6 +1376,8 @@ async function run(t) {
     records(t);
     await streamed(t, dir);
     statements(t);
+    await maintenance(t);
+    await batchOrder(t, dir);
     await realDatabase(t, dir);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

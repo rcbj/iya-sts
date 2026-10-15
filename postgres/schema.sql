@@ -235,6 +235,20 @@ ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS dek_keys jsonb;
 -- values looked up as written (a DID, a SPIFFE ID, a federation link).
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_parent ON sts_ldap_entries (realm, parent_key, dn_key);
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_rdn ON sts_ldap_entries (realm, parent_key, rdn_value);
+
+-- HOW MANY PARENTS THE DIRECTORY HAS, SAID RATHER THAN SAMPLED (#639, schema
+-- version 20). ANALYZE reads about 30,000 rows, and with 50M of 50.2M entries
+-- under one `ou=users` its sample held one `parent_key`: `n_distinct` was 1,
+-- and a parent the planner cannot see (a LATERAL's) was estimated as the
+-- whole realm, so a windowed worker's restore read the primary key with
+-- `parent_key` as a filter, once per parent, and the start hung. The parents
+-- are containers, which do not grow with the people, so the figure is
+-- absolute; 100,000 makes an unknown parent a container's worth of rows.
+-- The ANALYZE of the one column makes it take effect now. Both are the
+-- table owner's to run; `persistence/CLAUDE.md` argues the value.
+ALTER TABLE sts_ldap_entries ALTER COLUMN parent_key SET (n_distinct=100000);
+ANALYZE sts_ldap_entries (parent_key);
+
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries USING gin (name_keys jsonb_path_ops) WITH (fastupdate = off);
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries USING gin (mail_keys jsonb_path_ops) WITH (fastupdate = off);
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries USING gin (uuid_keys jsonb_path_ops) WITH (fastupdate = off);
@@ -1053,7 +1067,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (19) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (20) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

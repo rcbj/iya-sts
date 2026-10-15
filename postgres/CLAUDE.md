@@ -218,6 +218,16 @@ with rows and counters in it, and re-run on it and on a fresh one. The
 driver's `SCHEMA_UPGRADES` holds the same statements under the same
 conditions (`persistence/CLAUDE.md`).
 
+**VERSION 20 (#639) IS ONE STATISTIC.** `parent_key`'s `n_distinct` set to
+100,000 and the one column analyzed: at 50.2M entries ANALYZE's sample saw
+one parent, and a parent the planner cannot see was estimated as the whole
+realm. The owner's to run (an `ALTER TABLE` and an `ANALYZE`); the driver's
+`SCHEMA_UPGRADES` carries it as an ADVISORY step, so a role that does not
+own the table is told (`STS-STORE-0083`) and starts — the statements a start
+runs no longer depend on it (`persistence/CLAUDE.md`, *`parent_key`'s
+`n_distinct`*). Checked on a private stack: a version 19 store with 23
+realms, re-scripted as the owner, then the service started on it.
+
 **`tests/postgres_schema.js` is what keeps `schema.sql` and the driver from
 drifting**, since the DDL is now written down twice: it fails on a `CREATE`
 either one has and the other does not, on a schema version they disagree about,

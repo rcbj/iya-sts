@@ -1548,8 +1548,8 @@
     "text": "Begärandearbetare som startar samtidigt"
   },
   "workers.startConcurrency|description": {
-    "en": "a39ad8671b5baa40",
-    "text": "Hur många begärandearbetare som får starta samtidigt, där poolerna för protokoll och värdade ytor räknas tillsammans. Nästa arbetare startas när en rapporterar att den är redo eller att den misslyckades. Standardvärdet, 1, startar dem en efter en. Varje start återställer hela lagret i den arbetarens minne, och att starta dem tillsammans var det som fick en nod att överskrida sin minnesgräns (#342). Lyssnaren binds när den första arbetaren i varje pool har kommit på plats, och resten kommer upp bakom den. En arbetare som ersätter en som dött väntar på sin tur på samma sätt."
+    "en": "1f1aba0f84f07864",
+    "text": "Hur många request-workers som får starta samtidigt, där protokollpoolen och poolen för värdade ytor räknas tillsammans. Nästa worker startas när en rapporterar att den är redo eller att den misslyckades. 0, standardvärdet, avgör utifrån minnet: den första workern startar ensam och det dess start lade till processen mäts, och resten startar så många åt gången som utrymmet som återstår under containerns gräns (eller, utan gräns, det tillgängliga minnet) rymmer, räknat som en och en halv start var, med 15 % och minst 256 MiB i reserv (#639). Ett tal från 1 och uppåt är en fast bredd; 1 startar dem en i taget, vilket varje start gjorde före #639 — att starta dem samtidigt är det som en gång fick en nod att gå över sin minnesgräns (#342). Lyssnaren binds när den första workern i varje pool har kommit på plats, och resten startar bakom den. En worker som ersätter en som dog väntar på sin tur på samma sätt."
   },
   "workers.startConcurrency|restartReason": {
     "en": "8b0c3a4c3f27115c",

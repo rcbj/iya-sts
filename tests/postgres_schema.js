@@ -286,6 +286,18 @@ function checkTheUpgradesAgree(t, sql) {
         'sts_changes carries its autovacuum parameters');
   named(/ALTER TABLE sts_ldap_entries SET \(autovacuum_vacuum_insert_scale_factor=0\.01\)/,
         'sts_ldap_entries carries its insert-vacuum parameter');
+  // #639, schema version 20: the parents' count said, not sampled, and the
+  // one column analyzed so it takes effect at once.
+  named(/ALTER TABLE sts_ldap_entries ALTER COLUMN parent_key SET \(n_distinct=100000\); ANALYZE sts_ldap_entries \(parent_key\);/,
+        'sts_ldap_entries.parent_key\'s n_distinct is set, then analyzed');
+  const parents = steps.filter(function (step) {
+    return step.name === 'sts_ldap_entries_parent_ndistinct';
+  })[0];
+  t.check(!!parents && parents.advisory === true &&
+          /pg_attribute/.test(parents.when) &&
+          /a\.attname = 'parent_key'/.test(parents.when),
+          'and the driver owes it as an advisory step, probed in the ' +
+          'column\'s attoptions', parents && parents.when);
   named(/DROP TRIGGER IF EXISTS sts_ldap_count_deltas_fold ON sts_ldap_count_deltas; DROP FUNCTION IF EXISTS sts_ldap_count_fold\(\);/,
         'the unsharded count fold is dropped before the sharded one arrives');
   named(/DROP TRIGGER IF EXISTS sts_ldap_dek_deltas_fold ON sts_ldap_dek_deltas; DROP FUNCTION IF EXISTS sts_ldap_dek_fold\(\);/,

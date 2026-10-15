@@ -35,6 +35,12 @@
 //     whose walk is only their in-memory branch, which in a windowed process
 //     ask the store an indexed question) — plus `REQUEST_BARRIERS` below,
 //     #616's.
+//   * A DIRECTORY HOOK CALLED BY ITS NAME — `this.store('<hook>', …)`,
+//     `credentials.deviceStore('<hook>', …)` — is followed as a call to that
+//     name, and a hook that is a walk is a hit (#636: both of its bugs were
+//     reached this way, the device register's walk under a person's page and
+//     a token request, and neither was seen). `common/devices.ts`' every
+//     device, `this.all()`, is a walk keyed by the function that asks.
 //   * A HIT is a reached function that NAMES one of the walks (`SINKS`: the
 //     job test's, and `personDns()`, `residentsPage()`, the window's
 //     synchronous `walk()`, and `entriesUnder()` of `usersDn()` or
@@ -75,8 +81,25 @@ const DEPTH = 8;
 
 // The walks: the job test's, and the ones a request reaches that a job
 // does not.
-const SINKS = jobs.SINKS.concat(['personDns', 'residentsPage']);
+const SINKS = jobs.SINKS.concat(['personDns', 'residentsPage',
+  'buildDeviceIndex']);
 const WINDOW_WALK = /\bdirectoryWindow\s*\.\s*walk\s*\(/;
+
+// #636: `common/devices.ts`' `all()` is every device entry, copied — in a
+// windowed process `ou=devices` paged through the synchronous bridge, whose
+// `page()` under that container costs the realm's keys past the last device
+// (the whole directory). Its callers are keyed one by one, so a new caller
+// is a new hit. And `buildDeviceIndex()` is the device index's walk, which
+// a windowed process no longer reaches (`windowedDeviceEntries()`).
+const DEVICE_REGISTER_FILE = 'common/devices.ts';
+const DEVICE_REGISTER_WALK = /\bthis\s*\.\s*all\s*\(\s*\)/;
+
+// #636: A DIRECTORY HOOK CALLED BY ITS NAME AS A STRING —
+// `this.store('listDeviceEntries')`, `credentials.deviceStore('…', [...])` —
+// is followed as a call to that name. The name is a string, which the
+// reader blanks, so it is read from the source; both bugs #636 found were
+// reached this way and neither was seen here.
+const HOOK_CALL = /\b(?:store|deviceStore)\s*\(\s*'([A-Za-z_$][\w$]*)'/g;
 const CONTAINER_WALK = /\bentriesUnder\s*\(\s*(usersDn|devicesDn)\s*\(\s*\)/;
 
 // #616's barriers: functions whose walk is only their in-memory branch, a
@@ -140,6 +163,15 @@ const EXEMPT = {
     'What would stop it: more filters mapped onto indexed questions (emails ' +
     'eq onto byMail, externalId), and the rest paged asynchronously with ' +
     'startIndex/count pushed down (#616\'s audit)' },
+  'common/devices.ts|ownedEntries|devices.all': { fallback:
+    'reached only where the directory offers no deviceEntriesOwnedBy() ' +
+    'hook (an in-process test\'s stand-in); ldap_server.js offers it, and ' +
+    'in a windowed process it is one byAttribute on owner under ' +
+    'ou=devices (#636)' },
+  'ldap/ldap_server.js|deviceEntriesOwnedBy|entriesUnder(devicesDn())': {
+    memory: 'the container\'s kept listing in memory; a windowed process ' +
+    'asks windowedDeviceEntries() first — one byAttribute on owner under ' +
+    'ou=devices — and pages nothing (#636)' },
   'ldap/ldap_server.js|ldapDevicesView|listDeviceEntries': { owed:
     '/admin-api/ldap/devices lists every device entry (ou=devices, ' +
     'windowed) to draw a page. What would stop it: the shape of ' +
@@ -170,19 +202,23 @@ function rootsIn(rel, s) {
         continue;
       }
       out.push({ file: rel, line: s.slice(0, m.index).split('\n').length,
-                 text: s.slice(open, close + 1) });
+                 start: open, text: s.slice(open, close + 1) });
     }
   });
   log.debug('Leaving rootsIn(). ' + out.length + '.');
   return out;
 }
 
-// The walks a text names directly.
-function sinksIn(text) {
+// The walks a text names directly. `rel` is the file it is in, for the
+// walks only one file's text can name.
+function sinksIn(text, rel) {
   log.debug('Entering sinksIn().');
   const out = SINKS.filter(function (name) {
     return new RegExp('\\b' + name + '\\s*\\(').test(text);
   });
+  if (rel === DEVICE_REGISTER_FILE && DEVICE_REGISTER_WALK.test(text)) {
+    out.push('devices.all');
+  }
   if (WINDOW_WALK.test(text)) {
     out.push('directoryWindow.walk');
   }
@@ -204,18 +240,23 @@ function followed(name) {
 }
 
 // Every definition the roots reach, `file|start` -> `{ def, via }`.
-function reached(roots, index, files) {
+function reached(roots, index, files, raws) {
   log.debug('Entering reached().');
   const out = new Map();
   const queue = roots.map(function (root) {
-    return { text: root.text, via: [root.file + ':' + root.line], depth: 0 };
+    return { text: root.text, via: [root.file + ':' + root.line], depth: 0,
+             raw: raws && root.start !== undefined
+               ? raws.get(root.file).slice(root.start, root.start +
+                                           root.text.length)
+               : '' };
   });
   while (queue.length) {
     const at = queue.shift();
     if (at.depth >= DEPTH) {
       continue;
     }
-    jobs.callsIn(at.text).forEach(function (name) {
+    const names = jobs.callsIn(at.text).concat(hookCallsIn(at.raw));
+    names.forEach(function (name) {
       if (!followed(name)) {
         return;
       }
@@ -234,11 +275,28 @@ function reached(roots, index, files) {
         const via = at.via.concat([d.file + ':' + name]);
         out.set(key, { def: d, via: via });
         queue.push({ text: files.get(d.file).slice(d.start, d.end + 1),
+                     raw: raws ? raws.get(d.file).slice(d.start, d.end + 1)
+                       : '',
                      via: via, depth: at.depth + 1 });
       });
     });
   }
   log.debug('Leaving reached(). ' + out.size + '.');
+  return out;
+}
+
+// The directory hooks a source text calls by name (`HOOK_CALL`).
+function hookCallsIn(raw) {
+  log.debug('Entering hookCallsIn().');
+  const out = [];
+  const g = new RegExp(HOOK_CALL.source, 'g');
+  let m;
+  while ((m = g.exec(String(raw || '')))) {
+    if (out.indexOf(m[1]) < 0 && m[1] !== 'hasHook') {
+      out.push(m[1]);
+    }
+  }
+  log.debug('Leaving hookCallsIn().');
   return out;
 }
 
@@ -305,7 +363,7 @@ function auditSources(sources) {
                    text: files.get(d.file).slice(d.start, d.end + 1) });
     });
   });
-  const reach = reached(roots, index, files);
+  const reach = reached(roots, index, files, sources);
   // The roots' own text is reached too: a handler that names a walk.
   const hits = new Map();
   const note = function (rel, at, sink, via) {
@@ -317,10 +375,11 @@ function auditSources(sources) {
   };
   const scan = function (rel, from, to, via) {
     const text = files.get(rel).slice(from, to + 1);
-    sinksIn(text).forEach(function (sink) {
+    sinksIn(text, rel).forEach(function (sink) {
       const re = sink === 'directoryWindow.walk' ? WINDOW_WALK
-        : /^entriesUnder/.test(sink) ? CONTAINER_WALK
-          : new RegExp('\\b' + sink + '\\s*\\(');
+        : sink === 'devices.all' ? DEVICE_REGISTER_WALK
+          : /^entriesUnder/.test(sink) ? CONTAINER_WALK
+            : new RegExp('\\b' + sink + '\\s*\\(');
       const g = new RegExp(re.source, 'g');
       let m;
       while ((m = g.exec(text))) {
@@ -334,6 +393,20 @@ function auditSources(sources) {
         note(rel, from + m.index, sink, via);
       }
     });
+    // A walk called as a hook by its name (#636): `store('<walk>')`.
+    const raw = sources.get(rel).slice(from, to + 1);
+    const g = new RegExp(HOOK_CALL.source, 'g');
+    let m;
+    while ((m = g.exec(raw))) {
+      if (SINKS.indexOf(m[1]) < 0) {
+        continue;
+      }
+      const d = innermost(byFile.get(rel), from + m.index);
+      if (d && d.start > from && !reach.has(rel + '|' + d.start)) {
+        continue;
+      }
+      note(rel, from + m.index, m[1], via);
+    }
   };
   reach.forEach(function (one) {
     scan(one.def.file, one.def.start, one.def.end, one.via);
@@ -397,7 +470,16 @@ function run(t) {
      'function peopleByMail(m) { return eachEntryInRealm(f); }', null],
     ['server.search(\'\', function (req, res, next) {\n' +
      '  for (const p of directoryWindow.walk(r, b)) { res.send(p); }\n});',
-     'x.js|(handler)|directoryWindow.walk']
+     'x.js|(handler)|directoryWindow.walk'],
+    // #636: a hook called by its name, and a device register's every
+    // device, each found under the function that asks.
+    ['app.get(\'/c\', function (req, res) { res.json(mine(u)); });\n' +
+     'function mine(u) { return this.store(\'listDeviceEntries\'); }',
+     'x.js|mine|listDeviceEntries'],
+    ['app.get(\'/d\', function (req, res) { res.json(viaHook(u)); });\n' +
+     'function viaHook(u) { return x.store(\'hooked\', u); }\n' +
+     'function hooked(u) { return allPersons(); }',
+     'x.js|hooked|allPersons']
   ];
   shapes.forEach(function (shape) {
     const got = auditText('x.js', shape[0]).map(function (hit) {

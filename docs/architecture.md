@@ -64,10 +64,13 @@ thread pool, so they neither freeze the listeners nor start a process of
 their own (#363; a third pool of forked processes did this until then).
 
 With the admin and request pools off, the leader answers every request itself.
-When they are on, **their workers start one at a time**
-(`workers.startConcurrency`, default 1), because each one loads the whole
-store into its own memory as it starts. The listener opens once the first
-worker of each pool is up, and the rest start behind it. **Every thread has a
+When they are on, **the first worker starts alone and the rest start as
+many at once as memory allows** (`workers.startConcurrency`, default 0): what
+the first start added to the process is measured, and the others start
+together as far as the room under the container's limit holds at one and a
+half starts each. A number from 1 up fixes the width; 1 starts them one at a
+time. The listener opens once the first worker of each pool is up, and the
+rest start behind it. **Every thread has a
 heap limit** derived from the container's memory limit and the number of
 threads (`workers.heapLimitMb`: 0 to derive, -1 for none). Each thread logs its
 memory every five minutes (the `process.memory-report` job). A worker whose
