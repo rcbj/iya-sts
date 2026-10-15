@@ -1435,9 +1435,11 @@ does four things differently. `ldap/CLAUDE.md` argues the window itself.
   keys with no comma, which the suffix kept), and the planner's estimate
   — the recursive CTE is guessed far larger than it is, so with `jit` on
   the statement can pay JIT's compile (~0.2 s measured), once a start,
-  where the scan paid minutes. On a scratch postgres:18 at 372,757 rows
-  (2,755 resident, the rest people and devices) the old statement touched
-  ~109,600 buffers and the new ~3,000 for the same rows.
+  where the scan paid minutes. On a scratch postgres:18, for the same
+  2,755 resident rows: at 372,757 rows in the table the old statement
+  touched ~109,600 buffers and the new ~3,000; at 2,072,757 rows (2.9 GB)
+  the old touched 609,459 in 1.5 s and the new 3,047 in 8 ms — 13 ms from
+  the client, ~125 ms with `jit` on.
   `persistence/directory_queries.js` (*A subtree is read through its
   parents*) argues it; `tests/directory_resident_walk.js` holds it, and
   runs both statements against a database when `STS_TEST_POSTGRES_URL`
