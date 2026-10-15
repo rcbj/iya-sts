@@ -3627,20 +3627,26 @@ const SETTINGS = [
 
   { key: 'workers.startConcurrency', group: 'Global',
     label: 'Request workers starting at once',
-    env: 'STS_WORKERS_START_CONCURRENCY', type: 'int', dflt: 1, min: 1,
+    env: 'STS_WORKERS_START_CONCURRENCY', type: 'int', dflt: 0, min: 0,
     max: 64, runtime: false, perProcess: true,
     restartReason: 'the pool forks its workers when the process starts; a ' +
                    'replacement after a crash waits behind the same gate',
     description: 'How many request workers may be starting at the same ' +
                  'time, counting the protocol and hosted-surface pools ' +
                  'together. The next worker is forked when one reports that ' +
-                 'it is ready or that it failed. The default, 1, starts them ' +
-                 'one after another. Each start restores the whole store ' +
-                 'into that worker\'s memory, and starting them together is ' +
-                 'what put a node over its memory limit (#342). The listener ' +
-                 'binds once the first worker of each pool has settled, and ' +
-                 'the rest come up behind it. A worker that replaces one ' +
-                 'that died waits its turn the same way.' },
+                 'it is ready or that it failed. 0, the default, decides ' +
+                 'from memory: the first worker starts alone and what its ' +
+                 'start added to the process is measured, and the rest ' +
+                 'start as many at once as the room left under the ' +
+                 'container\'s limit (or, with none, the memory available) ' +
+                 'holds at one and a half starts each, keeping 15% and at ' +
+                 'least 256 MiB back (#639). A number from 1 up is a fixed ' +
+                 'width; 1 starts them one after another, which is what ' +
+                 'every start did before #639 — starting them together is ' +
+                 'what once put a node over its memory limit (#342). The ' +
+                 'listener binds once the first worker of each pool has ' +
+                 'settled, and the rest come up behind it. A worker that ' +
+                 'replaces one that died waits its turn the same way.' },
 
   // ---------------------------------------------------------------------
   // WHAT IS HANDLED IN A WORKER, AND IT WAS TWO SETTINGS UNTIL 2026-09-12.

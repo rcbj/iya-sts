@@ -1154,6 +1154,19 @@ postgres driver writes and reads every entry through it.
   `parent_key` and `rdn_value` are still generated from the DN. A database
   built before version 14 is refused at open (STS-STORE-0074): #391 recreates
   rather than migrates, and the service's role may not alter the schema.
+* **`value_keys` HOLDS A DEVICE'S FOUR LOOKUPS SINCE #636 (2026-10-14)**:
+  `stsDeviceKeyThumbprint`, `stsDeviceSecretHash`, `stsDeviceCredentialId`
+  and `owner` joined `VALUE_INDEXED`, so a windowed process recognises a
+  device, and lists an owner's, with one `byAttribute` rather than a walk of
+  `ou=devices` (`ldap/CLAUDE.md`, *`ou=devices`*). `byAttribute` takes an
+  optional parent (`parent_key = $4`): `owner` is also a group's, and an
+  owner's devices are the rows directly under `ou=devices`. **`keyArgs()`
+  refuses `byAttribute` for an attribute `value_keys` does not hold**, as it
+  refuses `classesUnder` for a class `class_keys` does not: either would
+  answer "nobody" to a question that looks right. No schema version: the
+  column and its index are unchanged, only what the service writes into
+  them, and a row written before is not rewritten (it is found again once
+  next written).
 * **A QUERY IS KEYED AND OPENED ON THE THREAD THAT HOLDS THE KEYS.** The
   windowed directory's bridge thread builds a statement and shapes its rows
   with no keystore, so `persistence.js` wraps the bridge: `keyArgs()` before
@@ -1250,12 +1263,81 @@ on #629 (the comment of 2026-10-14). What a maintainer needs:
   by every probe (25.8 s for 5,000 probes at 25,000 entries, 13 ms merged),
   so it is merged after every batch where permitted (`namePendingMerger()`;
   schema 18 has `fastupdate = off` and nothing to merge).
-* **ONE TRANSACTION A BATCH UNDER `SHARE ROW EXCLUSIVE`** from the check to
-  the commit: readers go on, no other writer can make a checked name taken.
-  The insert is `INSERT … SELECT FROM unnest($n::text[]…) ON CONFLICT DO
-  NOTHING RETURNING dn_key`, and a count short of what was checked free
-  rolls back (STS-LDAP-0159). No `COPY`: the image has no COPY client, and
-  the application role cannot create a staging table.
+* **ONE TRANSACTION A BATCH, COMMITTED UNDER THE REALM'S IMPORT LOCK** —
+  `pg_advisory_xact_lock(629, hashtext(realm))` — taken AFTER the insert,
+  held through the authoritative check to the commit (see *THE INSERT AND
+  THE SEAL ARE OUTSIDE THE LOCK*, below). The insert is `INSERT … SELECT
+  FROM unnest($n::text[]…) ON CONFLICT DO NOTHING RETURNING dn_key`; a DN it
+  did not insert is one another import inserted meanwhile, and counts as
+  present. No `COPY`: the image has no COPY client, and the application
+  role cannot create a staging table.
+* **IT WAS `LOCK TABLE … SHARE ROW EXCLUSIVE` UNTIL #637, AND THAT IS WHAT
+  KEPT AUTOVACUUM OFF THE TABLE.** Every table lock mode that keeps writers
+  out conflicts with autovacuum's SHARE UPDATE EXCLUSIVE, and a lock request
+  that waits `deadlock_timeout` behind an autovacuum CANCELS it. Measured on
+  postgres 18 against a crawling autovacuum: the `LOCK TABLE` request, then
+  `ERROR: canceling autovacuum task` one second later. During a multi-file
+  import the table's autovacuum never finished (#637: 12M rows inserted
+  since the last vacuum at 22M). #637 blamed the end-of-run
+  `gin_clean_pending_list()` and `ANALYZE`; the same probe, as a role that
+  owns neither, cancelled NOTHING — neither waits on a lock autovacuum holds
+  (`ANALYZE` as a non-owner is a WARNING and a skip on 18). **Do not put
+  a table lock back** for any reason that a lock between imports serves.
+  What the table lock seemed to add — holding a RUNNING service's add out —
+  it never did: a running process decides an add against its own window
+  before its flush, so a duplicate could arise on its side with or without
+  the lock. The guard against a running service is the refusal
+  (STS-LDAP-0153), asked before every batch and again under the lock.
+* **THE INSERT AND THE SEAL ARE OUTSIDE THE LOCK (#637), SO SEVERAL IMPORTS
+  PAY.** A batch: (1) a FIRST LOOK, the three statements without the lock —
+  present and taken records dropped and reported, so a re-run still seals
+  nothing; (2) the seal and `settleDeks()`; (3) `BEGIN`, the INSERT in
+  `dn_key` order; (4) the lock; the live check; the three statements AGAIN
+  ON A SECOND CONNECTION; `DROP_OWN` of the batch's rows whose name another
+  import committed first, and of any past the ceiling; `COMMIT`. **Why it
+  holds:** every import commits under the lock and a commit is visible
+  before its lock is released, so a batch holding the lock sees every other
+  import's committed rows; their uncommitted rows will see this one's once
+  it commits. Two batches never both commit a name. **Why a second
+  connection:** it cannot see the batch's own uncommitted rows. Asked in the
+  batch's own transaction, every one of its digests matched its own row and
+  the name check took ~580 ms a batch under the lock against ~60 ms finding
+  nothing, and a WHERE `NOT (dn_key = ANY($own))` compared each own row with
+  the whole array (both measured; a lone import fell to 2,600 a second).
+  **Why `dn_key` order:** the primary key is the one unique index, so the
+  only wait between two inserts is on another import's uncommitted row of
+  the same DN (overlapping files), and two batches taking the same keys in
+  the same order cannot wait on each other in a cycle; D7 runs the same
+  people in opposite orders. **Measured** (postgres 18 with 4 cores, 5,000 a
+  batch, as a non-owner): one import 4,200 a second holding the lock 14% of
+  its run (develop's: 4,750, since it checks once); two 6,400; four 10,500;
+  six 11,800, the database the limit. Under the old table lock, with the
+  seal and the insert inside, four ran at 1.6 times one. The report's
+  `lockSeconds` and `lockWaitSeconds` say how much of a run could not
+  overlap. **Mixing builds is NOT safe**: an older import takes the table
+  lock, does not take this one, and checks before it inserts, so it and a
+  new one over overlapping files could both admit a name.
+  `docs/bulk-import.md` (*Several imports at once*) is the operator's half.
+* **WHAT ELSE SEVERAL IMPORTS SHARE, AND WHY EACH IS SAFE** (read for #637):
+  `sts_change_readers` — an import never reports there (only
+  `persistence_replication.js` does, and the import does not start it), so
+  imports never refuse one another; the #618/#623 counters — the deltas are
+  keyed by `txid` and folded at COMMIT into this connection's shard, and
+  batches of one realm commit one at a time anyway; `REALM_COUNT` — summed
+  over the sixteen shards (it read ONE shard from #630 until #637, so the
+  ceiling was checked against a fraction of the realm — D6 fails with the
+  old statement) and read under the lock, so the ceiling is exact across
+  imports, the rows past it deleted before the commit; the realm's `directory`
+  data key — two imports making the first one at once each queue a row
+  write, and `mergeKeys()` UNIONS the row under `FOR UPDATE`, so both keys
+  are kept and each process seals under its own (no key lost; the service
+  then picks one by `chooseActive()`); the digest key — made at most once at
+  `keystore.start()`, first writer wins and the loser adopts and prunes
+  before any digest is taken; `entryuuid` — `crypto.randomUUID()`, random
+  rather than process-local; `createtimestamp` — a clock reading, which
+  need not be unique; `sts_changes` — written only by a data-key row write,
+  through the `seq` sequence, which readers already treat as having holes;
+  the realm's row — read once, never written.
 * **THE #618 AND #623 COUNTERS NEED NOTHING.** Their triggers are statement
   level over transition tables, so one insert of N rows writes one delta per
   parent and per data key, folded at commit. D2/D4/D6 compare every counter
@@ -1265,10 +1347,17 @@ on #629 (the comment of 2026-10-14). What a maintainer needs:
   keystore is handed the driver's own key functions, as `persistence.js`
   hands them.
 * **AFTER THE LAST BATCH** it merges the GIN pending lists
-  (`gin_clean_pending_list()` on each GIN index of the table) and ANALYZEs
-  it: forty million rows in `fastupdate` pending lists make every lookup scan
-  them. Both need the owner or MAINTAIN; refused, it is STS-LDAP-0161 with
-  the `VACUUM (ANALYZE)` to run, and the import is still done.
+  (`gin_clean_pending_list()` on each GIN index of the table that keeps one)
+  and ANALYZEs it: forty million rows in `fastupdate` pending lists make
+  every lookup scan them. **ASKED BEFORE IT IS ISSUED (#637)**:
+  `maintenanceRights()` asks `pg_has_role(current_user, relowner, 'USAGE')`
+  (the merge needs the index's OWNER — MAINTAIN on the table is not enough,
+  measured on 18) and, from postgres 17, `has_table_privilege(…,
+  'MAINTAIN')` (enough to ANALYZE); what the role may not do is skipped with
+  one STS-LDAP-0161 line naming the owner's `VACUUM (ANALYZE)`, and the
+  import is still done. The per-batch merge on schema 17 asks the same, once.
+  `ANALYZE (SKIP_LOCKED)`, so that the owner's ANALYZE never waits for, and
+  so cancels, an autovacuum of the table already running.
 * **IT DOES NOT REQUIRE `ou=users` AS A ROW.** Every process seeds the
   containers in memory at start. **A windowed front process on an EMPTY
   store was seen to write the seed's people and not its containers** (the
@@ -1320,6 +1409,41 @@ does four things differently. `ldap/CLAUDE.md` argues the window itself.
   a time, until #613 removed that pass (`ldap/CLAUDE.md`): nothing under a
   windowed container is read at start now. A realm's seed is still built at
   require time in every process.
+* **AND THE RESTORE READS ONLY THOSE ROWS (#638, 2026-10-14).** The
+  `residentOnly` statement answered "every entry except those under the
+  windowed containers" by reading EVERY row and testing `right(dn_key, …)`
+  against the list, which no index narrows: seconds of an 11 s start at
+  10M entries, minutes with nothing listening at 50M (53 GB of heap read,
+  and every row's hint bits set on the first read after a bulk import).
+  It now reads the table's DISTINCT `(realm, parent_key)` pairs with a
+  loose index scan — a recursive CTE whose each step is one descent of the
+  `(realm, parent_key, …)` index to the next pair — drops a pair whose
+  parent is a windowed container or under one, and reads each kept pair's
+  rows as one range of that index, in a LATERAL with its own `ORDER BY`
+  (without one the planner pulled it up into a hash join over a
+  sequential scan of the table). The cost is the number of distinct
+  parents plus the rows answered; a person with children (nothing this
+  service writes) is one more parent. **The answer is the old statement's,
+  row for row and in its order**, because both ask of a row only its key:
+  a key is strictly under C exactly when its `parent_key` is C or ends
+  with `,C`. **It is NOT a walk down from each realm's base**, which is
+  what #638 proposed and would have lost every orphan (an entry whose
+  parent is missing), every entry outside the base, a second root and a
+  realm nobody lists — the parents scan reads the parents rows NAME, not
+  the entries that exist. Two things it is not proof against, stated
+  rather than found: a windowed container '' (none is; it would drop the
+  keys with no comma, which the suffix kept), and the planner's estimate
+  — the recursive CTE is guessed far larger than it is, so with `jit` on
+  the statement can pay JIT's compile (~0.2 s measured), once a start,
+  where the scan paid minutes. On a scratch postgres:18, for the same
+  2,755 resident rows: at 372,757 rows in the table the old statement
+  touched ~109,600 buffers and the new ~3,000; at 2,072,757 rows (2.9 GB)
+  the old touched 609,459 in 1.5 s and the new 3,047 in 8 ms — 13 ms from
+  the client, ~125 ms with `jit` on.
+  `persistence/directory_queries.js` (*A subtree is read through its
+  parents*) argues it; `tests/directory_resident_walk.js` holds it, and
+  runs both statements against a database when `STS_TEST_POSTGRES_URL`
+  names one.
 
 `tests/directory_window.js` section F drives all of it through this module
 over a `pg` double, including a change made here and one made there to the
@@ -1564,9 +1688,10 @@ have cost the node its membership. Four costs, and what became of each;
 | ~4–5 s per process restoring ~48K minted rows | `restore()`'s loop — open, parse and restore every row — was one synchronous `forEach` | **sliced**: `restoreInSlices()` in `persistence_minted.js` yields every 50 ms; writes between slices are kept aside like the writes made while the rows were loading, and flushed after. 48K small rows: 0.60 s in one piece before, under 60 ms at a time now. The total is unchanged and still linear in the rows (the #333 filter is what bounds the rows) |
 | ~2 s per process publishing 279 CRLs | every process signed and wrote every authority's CRL into the shared directory at start | **once a node**: a request worker publishes none (`common/pki.js`, `start()`); the front did before forking it — and since #617 after its listener binds (next section) |
 
-**The workers still start one after another** (`workers.startConcurrency`,
-default 1): #342's reason is the node's memory, not time, and it has not
-changed — each start restores the store into its own heap. With the pre-fill
+**The workers still started one after another** (`workers.startConcurrency`,
+default 1) until #639, which measures a start and starts the rest as many at
+once as memory holds (*What a start costs at fifty million entries*, below):
+#342's reason is the node's memory, not time. With the pre-fill
 and the CRLs gone a worker's start loses ~18 s, and the listener already binds
 after the first worker of each pool (`common/CLAUDE.md`, *Workers start one at
 a time*). An operator with memory to spare raises the setting.
@@ -1671,6 +1796,81 @@ listener.
 * **`audit.events`' 594 rows (13.6 MB)** decrypted into every process's fan-in
   at every start — the next-largest cost, read by the console's audit pages,
   which workers answer.
+
+## WHAT A START COSTS AT FIFTY MILLION ENTRIES, AND WHAT WAS TAKEN OUT (#639, 2026-10-15)
+
+The 50.2M-entry stack (product, postgres, the window on, OpenBao Transit
+KEK, 23 realms, 25 certificate authorities, 204 data keys, 104,138 minted
+rows, six protocol workers), develop 5a788b31 with the owner's hand fix
+(above): about 23 s from container start to all six workers serving —
+8.4 s to the listener (the front to its first fork, 5.6 s, then the first
+worker), and five more workers at about 2.9 s each, one after another.
+Nothing in a start reads the people any more (#613, #617, #638), so none
+of it grows with the directory; what it grows with is realms, keys and the
+minted rows the #333 filter keeps.
+
+**Measured again in a private stack of the same shape** — `docker-compose.yml`
+under its own project name, 23 realms, 25 authorities, 279 CRLs, 73 key rows
+(204 data keys), 10,500 minted rows, six workers — restarted three times on
+develop's image and three times on #639's, timed from the container's start
+to each log line:
+
+| Step | develop (live stack) | develop (private) | #639 (private) | What changed |
+|---|---|---|---|---|
+| front: keystore (25 CAs, 204 data keys) | 0.55 s | 0.78–0.88 s | 0.18–0.20 s | the unwraps share kept-alive connections and go eight a row, four rows at once |
+| front: to the first fork | 5.6 s | 3.5–3.6 s | 2.9–3.1 s | the keystore |
+| worker: keystore | 0.6–0.7 s | 0.80–1.0 s | 0.18–0.36 s | as the front's |
+| worker: start, alone | ~2.9 s | 2.7–3.0 s | 2.0–2.3 s | the keystore; the restore's walk |
+| **listener** | **8.4 s** | **6.0–6.6 s** | **4.9–5.3 s** | front + first worker |
+| workers 2–6 | one after another | 2.7–3.4 s each, in turn | together, 2.7–3.6 s | `workers.startConcurrency` 0 |
+| **all six serving** | **~23 s** | **19.6–21.2 s** | **8.7–9.4 s** | |
+| CRLs into the directory (after the listener) | 279 signed and written | 279 | 0 written, 279 kept | `pki_revocation.js`, `stillCurrent()` |
+
+**What each change is, and where it is argued:**
+
+* **The workers start as many at once as memory holds** — the first alone
+  and measured (389 MiB added to the process, in the private stack), the
+  rest together where the room under the container's limit, or with none
+  the available memory, holds them at one and a half measured starts each
+  (`common/CLAUDE.md`, *Workers start one at a time*). #342's reason for
+  the gate was memory, and since #613/#617/#638 a start reads its resident
+  entries and its minted rows rather than restoring the store; the steady
+  state is the same whatever the width.
+* **A start's KMS unwraps** (`common/keystore.js`, `adoptDekRow()`; and
+  `common/secrets.js`, `vaultTls()`): one network call per data key,
+  awaited one after another, each over a new TLS connection with the
+  client certificate. Now eight of a row at once, four rows at once, over
+  connections kept alive; each answer applied in the row's order, and the
+  first failure still stops the start.
+* **The CRLs the start republished** (`common/pki_revocation.js`,
+  `stillCurrent()`): a list the directory already holds that verifies
+  under the authority's current certificate, lists exactly its
+  revocations, was made for the lifetime in force and has more than half
+  of it and a minute left — so it is current until the refresh job's next
+  run — is left alone. The rest are published as before; the refresh job
+  is unchanged. It was after the listener since #617, so it cost the
+  workers rather than the socket: 279 signatures, CRL numbers, directory
+  writes and change rows each start, which every starting worker pulled.
+* **The restore's walk and no JIT** — the section above.
+
+**Left as they are, and why:**
+
+* **The front's module load and boot** (0.5 s to the first log line, ~0.9 s
+  of requires) and **a worker's** (~1.2 s): the stack's code, not its data.
+* **The minted restore** (0.3 s for 10,500 rows here; on the live stack 2.1 s
+  for 104,138 in the front and 0.5 s for 11,698 in each worker): already
+  sliced (#613), filtered (#333) and split (#617); it is linear in the rows
+  that are live, which is what it has to read.
+* **`admin_rbac`'s per-realm bootstrap** (~15 ms a realm in the front, 0.35–
+  0.5 s at 23 realms): it decides whether a realm's console window opens,
+  a behaviour, and grows with realms, not the directory.
+* **Each worker writing the default realm's certificate authority back and
+  broadcasting it** ("written to the store, encrypted", "built by worker
+  N; every process here now agrees"), which #617 also saw: a few writes and
+  messages per start, behind the listener; it is the PKI's agreement
+  between processes, and changing it wants its own ticket.
+* **The realms' seed before the restore replaces it** (0.3 s at 23 realms):
+  a realm with nothing stored keeps its seed, which is the restore's rule.
 
 ## WHAT ONE ADD WRITES TO THE CHANGE LOG (#618 phase 2, 2026-10-14)
 
@@ -2259,6 +2459,97 @@ the owner (the shards, the routines, the BRIN, the storage parameters and
 `pg_stat_statements`; the service's own role is refused at start with
 STS-STORE-0029 until then), and the compose stack's postgres restarted for
 its new server settings (`postgres/CLAUDE.md`).
+
+### `parent_key`'s `n_distinct`, said rather than sampled (#639, schema version 20)
+
+At 50.2M entries (50M people under one `ou=users`) the 30,000-row sample
+ANALYZE takes held ONE `parent_key`, so `pg_stats` said `n_distinct = 1`.
+A parent bound as a CONSTANT is judged by the most-common-values list (the
+one parent the sample saw has frequency 1, every other value the residual,
+0) and was never misplanned. A parent the planner CANNOT see — a LATERAL's
+`k.parent_key`, a generic plan's `$2` — is estimated as `rows / n_distinct`:
+the whole realm. #638's resident restore read each kept parent as
+`e.realm = k.realm AND e.parent_key = k.parent_key ORDER BY e.dn_key`, and
+the planner took the primary key `(realm, dn_key)` with `parent_key` as a
+filter (the ORDER BY made it look free): the realm, once per parent, at
+every start of every windowed process. The start hung. The owner's hand fix
+on the test stack was this step.
+
+**The step** (`SCHEMA_UPGRADES`' `sts_ldap_entries_parent_ndistinct`,
+ADVISORY): `ALTER TABLE sts_ldap_entries ALTER COLUMN parent_key SET
+(n_distinct=100000)`, then `ANALYZE sts_ldap_entries (parent_key)` so it
+takes effect at once rather than at the next autovacuum analyze. Owed
+while `pg_attribute.attoptions` lacks the value. **Why an absolute value
+and why 100,000**: the parents are containers (and any entry with
+children), which do not grow with the people, so a fraction of the rows
+(a negative `n_distinct`) would be wrong in the other direction as the
+people grow. What the figure decides is how many rows an UNKNOWN parent
+is estimated to hold, and every unknown parent a statement here reads is a
+resident container or the base of a page: 100,000 makes that a container's
+worth (502 rows at 50.2M — the hand fix's measured estimate — a handful
+below a million), and the parent index wins every such plan. The true count
+is hundreds, a few per realm; a figure at the truth would estimate a
+parent at a hundred thousand rows at 50M, near where a sort of the realm
+starts to compete. Too high costs nothing: a constant parent is the MCV
+list's business, not this figure's.
+
+**And the statements no longer depend on it.** A missed upgrade (a store
+the owner has not re-scripted, a role that cannot take an advisory step) is
+exactly how the hang would come back, so every statement that reads a
+parent's rows where the parent is not a constant reads them as a WALK:
+`directory_queries.js`' `childrenRange()`, one descent of the parent index
+a row — `(realm, parent_key, dn_key) >` the last key, `ORDER BY realm,
+parent_key, dn_key LIMIT 1`, kept while it is still the realm's and the
+parent's (tested outside the LIMIT, which the planner may not push
+through). It is the loose index scan `parentsOf()` already was, and for the
+same reason it cannot be misplanned: for one row the parent index costs a
+descent and every other path a sort of everything after the position. Two
+other shapes were tried on a postgres:18 table whose sample saw one parent
+and failed: `ORDER BY realm, parent_key, dn_key` beside the equality (an
+equality makes `parent_key` a constant of the ordering, so the primary key
+still serves it), and a RANGE of the parent index under a LIMIT of a page
+(with a page's worth of rows estimated, the planner sorts them — the realm
+index with an incremental sort, or `(realm, parent_key, rdn_value)` with a
+sort of the whole parent; and a row comparison beside `realm =` is no scan
+boundary for a btree, which then starts at the realm's first key). The
+walk costs about five buffers a row where a range costs one: 9 ms for a
+page of a thousand, measured; the resident restore at 50M reads about
+1,200 rows. The restore, a one-level page, `page`, `keysUnder` and
+`namesUnder` under a base all read through it. `hasChild`, `byName`,
+`withNames` and `byAttribute` bind the parent as a constant and keep their
+equality.
+
+**The other skewed columns**, checked: `realm` (`n_distinct` 1 at 50.2M,
+23 realms) leads every index on the table, so its estimate never chooses
+between them; a realm the sample did not see is estimated as nearly empty,
+which is true unless it was written since the last ANALYZE — and the bulk
+import (#629), the one door that writes millions, ANALYZEs after it. An
+override would not help either: a constant is judged by the residual of
+the MCV list, which `n_distinct` does not move. `origin` (2) is filtered
+only by `/admin/ldap/directory`'s `realmPage`/`realmCount`, with no index
+to choose. `rdn_value` is -1 (every value distinct), which a sample sees
+correctly. `dek_keys`, `class_keys`, `attr_names` are jsonb read through
+GIN, whose estimates come from the element statistics, not `n_distinct`.
+
+`tests/directory_parent_statistics.js` reproduces the trap on a real
+postgres (`STS_TEST_POSTGRES_URL`): 300,000 people under one container and
+about forty rows elsewhere, the two columns' statistics target at 1 (a
+300-row sample, which is 30,000 beside 50M), ANALYZE until `n_distinct` is
+1; #638's restore and subtree page ARE planned on the primary key there;
+every statement above plans through a parent-led index with no sequential
+scan, primary key or realm index, before the step and after it; after it
+`n_distinct` is 100,000 and #638's old restore is right too; and a resident
+container written after the ANALYZE, larger than a page, comes back whole.
+
+**THE RESTORE IS PLANNED WITHOUT JIT.** Its estimate passed
+`jit_above_cost` at 50M with #638's statement, and every process compiled
+it (0.1–0.2 s of its start) to read about a thousand rows.
+`residentOnly()` marks its statement `jitOff`, and the driver's
+`directoryQuery()` runs such a statement in a read-only transaction of its
+own after `SET LOCAL jit = off` (`queryWithoutJit()`). The walk's estimate
+at 50M is about 28,000, under the threshold anyway (EXPLAIN on the 50.2M
+stack); the setting is the statement's, so nothing else this service asks
+loses the compiler.
 
 ### The schema version moved to 2
 

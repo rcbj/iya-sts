@@ -1581,6 +1581,39 @@ the data — the identity register pre-fill, a re-publication of every CRL, the
 minted restore held in one piece — which `persistence/CLAUDE.md`, *What a
 start costs*, measures.
 
+**AND #639 (2026-10-15) WIDENED IT TO WHAT MEMORY HOLDS.** By then a start
+read its resident entries and its live minted rows and nothing that grew
+with the directory, and on the 50.2M-entry stack six workers one at a time
+were 17 of its 23 seconds to all serving. The default is now
+`workers.startConcurrency` **0, the automatic width** (`request_pool.js`,
+`startWidthFor()`):
+
+* **The first start is measured.** It goes alone (the width is 1 until it
+  is measured), as the listener needs it to; what it added to the
+  PROCESS's resident set between its fork and its settling — every worker
+  is a thread of it — is what one start costs, floored at 128 MiB (389 MiB
+  in a private stack shaped like the 50.2M one).
+* **The rest go as many at once as the room holds**, each priced at one and
+  a half measured starts for the garbage a start makes and drops. The room
+  is the container's limit (`process_memory.ts`'s budget: the cgroup's, or
+  the ECS task's) less the process's resident set now, less a reserve of
+  15% and at least 256 MiB; with no limit visible it is
+  `process.availableMemory()` less the same reserve. At least one, at most
+  64. It is asked again whenever a fork is due, so a node filling up
+  narrows its own gate, and a replacement after a crash goes through it.
+* **The steady state does not change**: every worker ends up holding what
+  it holds whatever the width. What the width decides is how many starts'
+  TRANSIENT memory is in the air at once — #342's failure — and that is now
+  measured rather than assumed to be one. A number from 1 up is still a
+  fixed width; 1 is what every start did before.
+
+`stats().starts` says whether the width is automatic and what a start was
+measured at; `tests/request_worker_replacement.js` holds the width as a
+decision over its inputs and the gate with stubs (the first alone, the
+rest together). On the private stack: all six serving in 8.7–9.4 s, from
+19.6–21.2 s (`persistence/CLAUDE.md`, *What a start costs at fifty million
+entries*).
+
 **EVERY PROCESS HAS A HEAP LIMIT, AND A DEATH BY MEMORY SAYS WHICH KIND (#341,
 2026-09-29).** Nothing set a V8 heap limit, so each process's heap was sized to
 the machine, and a task that ran out got an anonymous SIGKILL from the kernel:
@@ -6427,6 +6460,26 @@ KEYS* block; what a caller needs:
 
 `docs/encryption-at-rest.md` is the operator-facing half.
 
+### A START'S UNWRAPS GO TOGETHER, OVER KEPT CONNECTIONS (#639, 2026-10-15)
+
+With a KMS as the KEK every DEK is one network call at every start of every
+process, and they were awaited one after another, each on a NEW TLS
+connection: `node-vault` builds one `https.Agent` from the options
+`secrets.js` hands it, and without `keepAlive` that agent handshook — with
+the client certificate — per call. 204 data keys on the 50.2M-entry stack,
+0.55–0.9 s of each process's start. Now `vaultTls()` adds `agentOptions: {
+keepAlive: true, maxSockets: 8 }` (every Vault call reuses a few
+connections; an idle one closes on the server's timeout and holds nothing
+open), and `adoptDekRow()` unwraps a row's new DEKs `UNWRAPS_AT_ONCE` (8) at
+a time while `startOnce()` adopts `DEK_ROWS_AT_ONCE` (4) rows at once — rows
+are a scope and realm each, and nothing in one row's adoption reads
+another's. What each unwrap answered is applied afterwards in the row's own
+order, exactly as the loop applied it (a destroyed DEK stays destroyed, a
+newer wrap wins, `chooseActive()` after), and a start still stops on the
+first failure. In a private stack of that shape: the keystore's part of a
+start 0.78–1.0 s before, 0.18–0.36 s after (`persistence/CLAUDE.md`, *What a
+start costs at fifty million entries*).
+
 ### ROTATION, RE-SEALING, DESTRUCTION AND A ROTATED KEK (#391 P2)
 
 rcbj's decision: a yearly scheduled rotation of every DEK, a re-encryption job,
@@ -7194,7 +7247,14 @@ lists and responders are served at `/pki/crl/{scope}/{ca}`,
 front process once its listener is bound — `publishStartupCrls()` from
 `server.js`'s `announce()`, since #617; it was inside `pki.start()`, 4 s of
 8081's way to the socket — and by the `pki.crl-directory-refresh` job; not by
-a request worker, since #613: `pki.js`'s `start()` argues both), and named inside
+a request worker, since #613: `pki.js`'s `start()` argues both; and since
+#639 the start leaves alone a list the directory already holds that
+verifies under the authority's current certificate, lists exactly its
+revocations, was made for the lifetime in force and has more than half of it
+left, so it is current until the job's next run: `pki_revocation.js`'s
+`stillCurrent()`, read through the directory slot's optional
+`publishedCrl()`; 279 lists kept and none signed on a restart of a stack of
+23 realms), and named inside
 every certificate this service issues in TWO SCHEMES (http, ldap — it was three,
 with ldaps, until 2026-09-13; `pki_revocation.js`'s `httpBase()` argues it). A
 pane on `/admin/pki` revokes by hand with any of the nine reasons RFC 5280
@@ -10489,8 +10549,24 @@ each argued there:
   * `holdsAny()` reads `owner`. Several entries share one owner, so the
     index keeps one entry per value, and a stale hit now REBUILDS rather
     than answering "none" (`ldap/ldap_server.js`).
-  * `listForOwner()` still walks. It wants every device an owner has, and
-    its callers are pages and a Native SSO grant.
+  * **`listForOwner()` stopped walking in #636 (2026-10-14).** It read
+    every device (`all()`) to keep an owner's, and its callers are the
+    console's person page, the portal's devices, a Native SSO grant on a
+    token request and the per-owner cap. It asks the directory's
+    `deviceEntriesOwnedBy()` (`ownedEntries()`), and `list()` with an
+    `owner` does too; `all()` is left only where the directory offers no
+    such hook. **In a windowed process none of the lookups builds the
+    index**: each is one indexed question to the store
+    (`ldap/CLAUDE.md`, *`ou=devices`*), because the index was rebuilt from
+    a walk of `ou=devices` after every write there in any process — a
+    recognition is one — and that walk cost the whole directory.
+    STS-DEVICE-0029 on a token request, and `/admin-api/users?user=` 503
+    at 6.4M people. `tests/device_lookups_windowed.js`.
+  * **Still every device, on a console page**: `list()` with no owner and
+    `counts()`, for `/admin-api/devices` and its tiles, and
+    `/admin-api/ldap/devices` — `tests/no_full_directory_walk_in_requests.js`
+    does not see the first two (the names are too common to follow), and
+    they cost the realm, not the register, in a windowed process.
 
 ### Remembered browsers (#265, 2026-09-26): `browser_devices.ts`
 

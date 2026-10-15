@@ -296,7 +296,7 @@ var config = {
     startTimeoutMs: 60000,                                         // Request worker start limit (ms); restart to apply
     requestCount: 1,                                               // Request worker threads; restart to apply
     heapLimitMb: 0,                                                // Heap limit per process (MiB); restart to apply
-    startConcurrency: 1,                                           // Request workers starting at once; restart to apply
+    startConcurrency: 0,                                           // Request workers starting at once (0: as memory allows); restart to apply
     dispatch: "*",                                                 // Handled in a request worker; restart to apply
     fanout: "/scim,/xacml,/admin-api,/account-api",                // Dispatched paths with no session affinity; restart to apply
     surfaceCount: 0,                                               // Hosted-surface worker processes; restart to apply

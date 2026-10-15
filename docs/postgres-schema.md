@@ -9,7 +9,7 @@ each column, and why the tables are shaped that way. [Persistence](persistence.m
 covers turning the store on, the compose stack and what survives a restart.
 This page covers only what is in the database.
 
-**Schema version 18**: 39 tables in a schema of their own, `sts`.
+**Schema version 20**: 39 tables in a schema of their own, `sts`.
 
 ## Where the schema is written down
 
@@ -179,6 +179,32 @@ object classes in `class_keys`, so they stay in the classes index until they
 are next written; that changes no answer. The service refuses to start
 against a version 17 store whose role cannot build the new indexes, and says
 to run the script.
+
+**`parent_key`'s statistics are set, not sampled (schema version 20, #639).**
+A directory where one container holds nearly every entry — fifty million
+people under one `ou=users` — gives `ANALYZE`'s sample of about 30,000 rows
+one parent, so PostgreSQL concludes the column has one distinct value. The
+script sets the column's `n_distinct` to 100,000 and analyzes that column:
+
+```sql
+ALTER TABLE sts_ldap_entries ALTER COLUMN parent_key SET (n_distinct=100000);
+ANALYZE sts_ldap_entries (parent_key);
+```
+
+The setting survives every later `ANALYZE` and autovacuum. Check it with
+`SELECT attoptions FROM pg_attribute WHERE attrelid =
+'sts.sts_ldap_entries'::regclass AND attname = 'parent_key'` (it reads
+`{n_distinct=100000}`) and `SELECT n_distinct FROM pg_stats WHERE schemaname
+= 'sts' AND tablename = 'sts_ldap_entries' AND attname = 'parent_key'`
+(100000).
+
+**Upgrading a store from version 19.** Run `postgres/schema.sql` as the
+owner. It sets the statistic and analyzes one column (a sample, seconds at
+fifty million entries); nothing is rewritten, and neither statement blocks a reader or
+a writer. The service starts against a version 19 store without it and says
+so once per process (`STS-STORE-0083`): its own statements read a
+container's entries in a way that does not depend on the statistic, so a
+missed upgrade costs plans elsewhere, not the start.
 
 **It is the one table you can query with SQL, and that is deliberate.** An
 entry is a document without a fixed schema, and JSONB lets Postgres index into

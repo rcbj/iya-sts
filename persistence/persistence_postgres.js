@@ -247,7 +247,11 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // (`shard` in both counter tables' keys, folded by the `_sharded` routines),
 // `sts_minted_written_brin` in place of the btree `sts_minted_written`, and
 // the storage parameters of SCHEMA_UPGRADES.
-const SCHEMA_VERSION = 19;
+// 20 SINCE 2026-10-15 (#639): `sts_ldap_entries.parent_key`'s `n_distinct`
+// set by hand (SCHEMA_UPGRADES' `sts_ldap_entries_parent_ndistinct`), which
+// ANALYZE's sample cannot estimate once one container holds nearly every
+// row.
+const SCHEMA_VERSION = 20;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -1437,7 +1441,8 @@ const SCHEMA_COLUMNS = [
 // OBJECT OR COLUMN (#630, schema version 19): a primary key that takes in a
 // new column, routines replaced under new names, an index retired, and
 // storage parameters. Each step is `{ name, table, when, statements,
-// advisory? }`: `when` is a boolean SQL expression, true while the step is
+// advisory?, issue? }` (`issue` the ticket the warning names, #630's when
+// none): `when` is a boolean SQL expression, true while the step is
 // still owed, probed for every step in one query, so a store already level
 // — one `postgres/schema.sql` built or upgraded — issues none of it. Run
 // after the columns (a key over `shard` needs the column) and before the
@@ -1470,10 +1475,20 @@ const RELOPTIONS_LACK = function (table, options) {
       return '\'' + one + '\'';
     }).join(', ') + ']::text[]';
 };
+// Whether a column's attribute options lack any of `options`, as
+// `pg_attribute.attoptions` spells them. Load-time text, as above.
+const ATTOPTIONS_LACK = function (table, column, options) {
+  return 'NOT coalesce((SELECT a.attoptions FROM pg_attribute a WHERE ' +
+    'a.attrelid = to_regclass(\'' + table + '\') AND a.attname = \'' +
+    column + '\'), \'{}\'::text[]) @> ARRAY[' +
+    options.map(function (one) {
+      return '\'' + one + '\'';
+    }).join(', ') + ']::text[]';
+};
 /**
  * The upgrades a store from an earlier schema version is owed beyond a
  * missing object or column, each `{ name, table, when, statements,
- * advisory? }`, probed by `when` and run where it is true.
+ * advisory?, issue? }`, probed by `when` and run where it is true.
  */
 const SCHEMA_UPGRADES = [
   // The counters' keys take in `shard` (#630). Two statements, as the
@@ -1538,7 +1553,33 @@ const SCHEMA_UPGRADES = [
     when: RELOPTIONS_LACK('sts_ldap_entries', [
       'autovacuum_vacuum_insert_scale_factor=0.01']), statements: [
       'ALTER TABLE sts_ldap_entries SET ' +
-      '(autovacuum_vacuum_insert_scale_factor=0.01)'] }
+      '(autovacuum_vacuum_insert_scale_factor=0.01)'] },
+  // HOW MANY PARENTS THE DIRECTORY HAS, SAID RATHER THAN SAMPLED (#639,
+  // schema version 20). ANALYZE reads about 30,000 rows; with 50M of 50.2M
+  // entries under one `ou=users` its sample held one `parent_key`, so
+  // `n_distinct` was 1 and a parent the planner could not see — a LATERAL's,
+  // a generic plan's — was estimated as the whole realm. A constant is
+  // judged by the most-common-values list instead, and was never wrong.
+  // 100,000: the parents are containers, which do not grow with the people,
+  // so the figure is absolute, not a fraction of the rows; it is large, so a
+  // parameter's estimate is a container's worth of rows (502 at 50.2M, a
+  // handful below a million) and the parent index wins every such plan;
+  // and above the true count — hundreds, a few per realm — on purpose,
+  // since what it decides is how SMALL an unknown parent is, and every
+  // unknown parent a statement here reads is a resident container or the
+  // base of a page. The value the owner set by hand on 2026-10-15 and
+  // measured: Index Cond on `(realm, parent_key)`, 502 rows estimated. The
+  // ANALYZE of the one column makes it take effect now rather than at the
+  // next autovacuum analyze; an advisory step, because the statements a
+  // start runs no longer depend on it (`directory_queries.js`,
+  // `childrenRange()`).
+  { name: 'sts_ldap_entries_parent_ndistinct', table: 'sts_ldap_entries',
+    advisory: true, issue: '#639',
+    when: ATTOPTIONS_LACK('sts_ldap_entries', 'parent_key', [
+      'n_distinct=100000']), statements: [
+      'ALTER TABLE sts_ldap_entries ALTER COLUMN parent_key SET ' +
+      '(n_distinct=100000)',
+      'ANALYZE sts_ldap_entries (parent_key)'] }
 ];
 
 // THE STATEMENTS ALONE, which is what this module exported before the pairing
@@ -3793,7 +3834,8 @@ function create(options) {
         if (step.advisory && row['o' + i] !== true) {
           log.warn(errorCodes.tag('STS-STORE-0083') + 'persistence: the ' +
                    'store is owed ' + step.name + ' (schema version ' +
-                   SCHEMA_VERSION + ', #630), a tuning this role does not ' +
+                   SCHEMA_VERSION + ', ' + (step.issue || '#630') + '), a ' +
+                   'tuning this role does not ' +
                    'own ' + step.table + ' to make. Nothing is wrong ' +
                    'without it, only slower; run postgres/schema.sql as ' +
                    'the owner.');
@@ -3810,6 +3852,45 @@ function create(options) {
       });
       return chain;
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // A READ PLANNED WITHOUT JIT (#639, 2026-10-15). A statement whose estimate
+  // passes `jit_above_cost` is compiled before it runs, and the resident
+  // restore's does (`directory_queries.residentOnly()`, its `jitOff`): about
+  // 0.1–0.2 s of every process's start compiling a plan that reads a thousand
+  // rows. `SET LOCAL` reaches one transaction and no further, so the read is
+  // one: on a client of the read pool, read only, and the client given back
+  // whatever happens. The setting is the statement's, not the pool's: what
+  // else this service asks is either cheap enough to stay under the
+  // threshold or a maintenance read that may want the compiler.
+  // ---------------------------------------------------------------------------
+  async function queryWithoutJit(statement) {
+    log.debug("Entering queryWithoutJit().");
+    const client = await readPool.connect();
+    const unguard = guardClient(client, 'a read planned without JIT');
+    let failed = null;
+    try {
+      await client.query('BEGIN READ ONLY');
+      await client.query('SET LOCAL jit = off');
+      const result = await client.query(statement.text, statement.values);
+      await client.query('COMMIT');
+      log.debug("Leaving queryWithoutJit().");
+      return result;
+    } catch (e) {
+      log.debug("Caught in queryWithoutJit(): " + ((e && e.message) || e));
+      failed = e;
+      await client.query('ROLLBACK').catch(function (r) {
+        log.debug("Caught in queryWithoutJit() rolling back: " +
+                  ((r && r.message) || r));
+      });
+      log.debug("Leaving queryWithoutJit(). Failed.");
+      throw e;
+    } finally {
+      unguard();
+      // A client whose statement failed is not handed to the next caller.
+      client.release(failed || undefined);
+    }
   }
 
   async function withTransaction(fn) {
@@ -5777,7 +5858,9 @@ function create(options) {
         return Promise.reject(e);
       }
       log.debug("Leaving directoryQuery().");
-      return readPool.query(statement.text, statement.values)
+      return (statement.jitOff
+        ? queryWithoutJit(statement)
+        : readPool.query(statement.text, statement.values))
         .then(function (r) {
           return codecModule.openAnswer(entryCodec, name,
             directoryQueries.answerOf(name, r.rows || []));
