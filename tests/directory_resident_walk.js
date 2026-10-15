@@ -526,7 +526,6 @@ async function realDatabase(t) {
       ['ou=100%_off,' + BASE, '', 10, null], ['dc=ghost', '', 10, null],
       ['', '', 10, null]
     ];
-    let pageBuffers = 0;
     for (const one of cases) {
       const realm = one[0] === 'dc=ghost' ? 'ghost' : 'default';
       const built = [
@@ -545,14 +544,28 @@ async function realDatabase(t) {
                 '" answers the old statement\'s ' + o.rows.length +
                 ' row(s), in order', n.rows.length + ' vs ' + o.rows.length);
       }
-      if (one[0] === DEVICES && !one[1]) {
-        pageBuffers = buffersOf(await explain(built[0][1].text,
-                                              built[0][1].values));
-      }
     }
-    t.check(pageBuffers > 0 && pageBuffers < 400,
-            'D7. a page of 1,000 under ou=devices touched ' + pageBuffers +
-            ' buffers beside ' + total + ' rows in the table');
+    // A SPARSE PAGE: past the last device, so the answer is empty. The old
+    // statement read the realm's keys after the cursor to find that out —
+    // every person among them; the new one reads the parents and one empty
+    // range.
+    const sparse = queries.page('default', DEVICES, 'cn=d7,' + DEVICES, 500);
+    const planSparse = await explain(sparse.text, sparse.values);
+    const planSparseOld = await explain(oldPage(queries.COLUMNS, false),
+                                        sparse.values);
+    const bSparse = buffersOf(planSparse);
+    const bSparseOld = buffersOf(planSparseOld);
+    t.check(planSparse['Actual Rows'] === 0 && bSparse < 200 &&
+            bSparse * 10 < bSparseOld,
+            'D7. an empty page under ou=devices touched ' + bSparse +
+            ' buffers (the old: ' + bSparseOld + ') beside ' + total +
+            ' rows in the table');
+    const full = queries.page('default', DEVICES, '', 1000);
+    const planFull = await explain(full.text, full.values);
+    const bFull = buffersOf(planFull);
+    t.check(planFull['Actual Rows'] === 1000 && bFull < 1000 + 400,
+            'D8. a full page of 1,000 under ou=devices touched ' + bFull +
+            ' buffers: the parents and the rows answered');
   } finally {
     await admin.query('DROP SCHEMA ' + schema + ' CASCADE').catch(
       function (e) {
