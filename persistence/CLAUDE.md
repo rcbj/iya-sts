@@ -1409,6 +1409,39 @@ does four things differently. `ldap/CLAUDE.md` argues the window itself.
   a time, until #613 removed that pass (`ldap/CLAUDE.md`): nothing under a
   windowed container is read at start now. A realm's seed is still built at
   require time in every process.
+* **AND THE RESTORE READS ONLY THOSE ROWS (#638, 2026-10-14).** The
+  `residentOnly` statement answered "every entry except those under the
+  windowed containers" by reading EVERY row and testing `right(dn_key, …)`
+  against the list, which no index narrows: seconds of an 11 s start at
+  10M entries, minutes with nothing listening at 50M (53 GB of heap read,
+  and every row's hint bits set on the first read after a bulk import).
+  It now reads the table's DISTINCT `(realm, parent_key)` pairs with a
+  loose index scan — a recursive CTE whose each step is one descent of the
+  `(realm, parent_key, …)` index to the next pair — drops a pair whose
+  parent is a windowed container or under one, and reads each kept pair's
+  rows as one range of that index, in a LATERAL with its own `ORDER BY`
+  (without one the planner pulled it up into a hash join over a
+  sequential scan of the table). The cost is the number of distinct
+  parents plus the rows answered; a person with children (nothing this
+  service writes) is one more parent. **The answer is the old statement's,
+  row for row and in its order**, because both ask of a row only its key:
+  a key is strictly under C exactly when its `parent_key` is C or ends
+  with `,C`. **It is NOT a walk down from each realm's base**, which is
+  what #638 proposed and would have lost every orphan (an entry whose
+  parent is missing), every entry outside the base, a second root and a
+  realm nobody lists — the parents scan reads the parents rows NAME, not
+  the entries that exist. Two things it is not proof against, stated
+  rather than found: a windowed container '' (none is; it would drop the
+  keys with no comma, which the suffix kept), and the planner's estimate
+  — the recursive CTE is guessed far larger than it is, so with `jit` on
+  the statement can pay JIT's compile (~0.2 s measured), once a start,
+  where the scan paid minutes. On a scratch postgres:18 at 372,757 rows
+  (2,755 resident, the rest people and devices) the old statement touched
+  ~109,600 buffers and the new ~3,000 for the same rows.
+  `persistence/directory_queries.js` (*A subtree is read through its
+  parents*) argues it; `tests/directory_resident_walk.js` holds it, and
+  runs both statements against a database when `STS_TEST_POSTGRES_URL`
+  names one.
 
 `tests/directory_window.js` section F drives all of it through this module
 over a `pg` double, including a change made here and one made there to the

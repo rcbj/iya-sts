@@ -1083,6 +1083,26 @@ them is the shape of `windowedDirectoryView()` for one container —
 `parent_key` pages (one level: a device is `cn=<id>,ou=devices`) and the
 counter rows — or an index the suffix comparison can use.
 
+**A PAGE UNDER A BASE NO LONGER COSTS THE REALM (#638, 2026-10-14).**
+`page()`, `keysUnder()` and `namesUnder()` read the realm's DISTINCT
+parents through the parent index (one descent each), keep the base and
+those under it, and read at most a page of each kept parent's rows as one
+range of that index, still in key order and still every depth below the
+base (`persistence/directory_queries.js`, *A subtree is read through its
+parents*). So a page under `ou=devices` beside fifty million people costs
+the realm's containers plus a page — about 200 buffers where the suffix
+read the realm's keys — and the three listings above now cost the
+devices, not the directory. A page under the realm's BASE reads up to a
+page from every container and sorts them: bounded by containers × page,
+not by rows. What still tests a row's suffix, each narrowed first by a
+GIN index so the suffix is a filter on the few rows it answers:
+`equalUnder` (an LDAP equality search), `withAttribute` (holders, a scan
+for a name outside ASKED_ATTRIBUTES, which the log says), `classesUnder`
+(the groups under a windowed container); and `countHolding` for an
+attribute no counter keeps, which nothing asks. The empty base keeps the
+suffix (a key with no comma has `parent_key` ''), and nothing asks it.
+`tests/directory_resident_walk.js`.
+
 **`GET /admin/ldap/devices` is the NINTH container page** (#218), drawn here
 beside the other eight and handed to `admin.setDirectoryPages()` with them
 (`DIRECTORY_PAGE_NAMES` has nine): the entries attribute by attribute, and
