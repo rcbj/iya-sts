@@ -1297,13 +1297,17 @@ async function startOnce() {
   // THE DATA-KEY ROWS FIRST (#391): every other row is sealed under one of
   // their DEKs. A DEK of this process's scope that will not unwrap stops the
   // start here, for the reason the error below gives about a signing key.
-  for (const row of rows) {
-    const rowKey = String(row.realm || '');
-    if (rowKey.indexOf(DEK_ROW_PREFIX) === 0) {
-      await adoptDekRow(rowKey, row.material, true);
-      dekRows += 1;
-    }
-  }
+  // SEVERAL ROWS AT ONCE (#639): a row is one scope and realm's keys and
+  // nothing in one row's adoption reads another's, so up to DEK_ROWS_AT_ONCE
+  // go together, each unwrapping UNWRAPS_AT_ONCE at a time; the first failure
+  // still stops the start.
+  const dekRowList = rows.filter(function (row) {
+    return String(row.realm || '').indexOf(DEK_ROW_PREFIX) === 0;
+  });
+  await inBatches(dekRowList, DEK_ROWS_AT_ONCE, function (row) {
+    return adoptDekRow(String(row.realm || ''), row.material, true);
+  });
+  dekRows = dekRowList.length;
   rewrapRotated();
   // THE DIGEST KEY (#391 P2), before anything is digested: made once for the
   // service and stored, so a keyed digest survives a rotated KEK.
@@ -3313,6 +3317,9 @@ function parseDekRow(text) {
 // row of a realm's keys is one or two round trips to a KMS, few enough not
 // to queue a burst on it when every worker starts together.
 const UNWRAPS_AT_ONCE = 8;
+// And how many data-key rows a start adopts at once (#639): with the above,
+// at most 32 unwraps in flight from one process.
+const DEK_ROWS_AT_ONCE = 4;
 
 // Runs `fn` over `list` at most `size` at a time and answers its results in
 // the list's order.
