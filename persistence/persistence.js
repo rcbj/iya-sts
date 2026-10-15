@@ -3283,7 +3283,10 @@ function shadowRowOf(row) {
 // table's distinct parents through the parent index and never tests a row
 // it does not answer — it read all of them, minutes at 50M entries. The
 // rows, their order and their shape are the old statement's
-// (`persistence/directory_queries.js`, `persistence/CLAUDE.md`).
+// (`persistence/directory_queries.js`, `persistence/CLAUDE.md`). Since #639
+// each kept parent's rows are a walk of that index, one descent a row, so
+// the plan is the same whatever ANALYZE's sample saw, and the driver runs it
+// without JIT.
 // ---------------------------------------------------------------------------
 function loadDirectoryRows() {
   log.debug("Entering loadDirectoryRows().");

@@ -135,8 +135,11 @@ function builders(t) {
   t.equal(p.values[3], queries.MAX_PAGE,
           'A8. a page is bounded at ' + queries.MAX_PAGE + ' rows');
   const one = queries.page('default', users, '', 10, { oneLevel: true });
-  t.check(/parent_key = \$2/.test(one.text) && one.values.length === 4,
-          'A9. a one-level page reads parent_key', one.text);
+  t.check(/\(e\.realm, e\.parent_key, e\.dn_key\) > \(\$1, \$2, \$3\)/
+    .test(one.text) && /f\.within = \$2/.test(one.text) &&
+          one.values.length === 4,
+          'A9. a one-level page reads parent_key, as a walk of the parent ' +
+          'index (#639)', one.text);
   const self = queries.page('default', users, '', 10, { self: true });
   t.check(/AND dn_key = \$2 AND dn_key > \$3/.test(self.text),
           'A10. a page may include the base itself', self.text);
@@ -243,10 +246,10 @@ async function driverDoor(t) {
 
 async function schema(t) {
   log.debug("Entering schema().");
-  t.log.info('=== C. schema version 19 ===');
-  t.equal(postgres.SCHEMA_VERSION, 19,
-          'C1. the driver writes schema version 19 (#222, #391 phase 6, ' +
-          '#432 phase 5, #618, #623, #630)');
+  t.log.info('=== C. schema version 20 ===');
+  t.equal(postgres.SCHEMA_VERSION, 20,
+          'C1. the driver writes schema version 20 (#222, #391 phase 6, ' +
+          '#432 phase 5, #618, #623, #630, #639)');
   const table = postgres.SCHEMA_OBJECTS.filter(function (o) {
     return o.name === 'sts_ldap_entries';
   })[0];
@@ -337,8 +340,8 @@ async function schema(t) {
             return sql.slice(0, 60);
           }).join(' | '));
   t.check(statements.some(function (s) {
-    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 19;
-  }), 'C6. and records version 19');
+    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 20;
+  }), 'C6. and records version 20');
   // THE TWO INDEXES VERSION 18 REPLACED (#618) are dropped where the
   // catalogue still lists them, after the indexes that replace them.
   const retired = [];
