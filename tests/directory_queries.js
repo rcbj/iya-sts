@@ -125,7 +125,10 @@ function builders(t) {
           'A6. byAttribute asks value_keys, keeping the value as written and ' +
           'lower-casing only the attribute name', JSON.stringify(a.values));
   const p = queries.page('default', 'ou=100%_off,dc=x', 'uid=a', 50000);
-  t.check(!/LIKE/i.test(p.text) && /right\(dn_key, \$5\)/.test(p.text) &&
+  // Since #638 the suffix is asked of the realm's distinct PARENTS, not of
+  // every row (`tests/directory_resident_walk.js`).
+  t.check(!/LIKE/i.test(p.text) &&
+          /right\(parent_key, \$5\) = ',' \|\| \$2/.test(p.text) &&
           p.values[4] === 'ou=100%_off,dc=x'.length + 1,
           'A7. a subtree is compared with right(), so % and _ in a DN are ' +
           'not wildcards', p.text);
@@ -135,8 +138,8 @@ function builders(t) {
   t.check(/parent_key = \$2/.test(one.text) && one.values.length === 4,
           'A9. a one-level page reads parent_key', one.text);
   const self = queries.page('default', users, '', 10, { self: true });
-  t.check(/dn_key = \$2 OR/.test(self.text),
-          'A10. a page may include the base itself');
+  t.check(/AND dn_key = \$2 AND dn_key > \$3/.test(self.text),
+          'A10. a page may include the base itself', self.text);
   // Since #618 a count is READ from the counter the triggers keep — no
   // `count(*)`, and nothing of `sts_ldap_entries` is touched.
   const realmCount = queries.count('r', '');
