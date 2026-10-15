@@ -3309,6 +3309,26 @@ function parseDekRow(text) {
 // and the active DEK of each class chosen again. A DEK of our scope that will
 // not unwrap is the wrong key-encryption key, and `fatal` makes it stop the
 // start; otherwise it is logged and left out.
+// How many data keys a row's adoption unwraps at once (#639): enough that a
+// row of a realm's keys is one or two round trips to a KMS, few enough not
+// to queue a burst on it when every worker starts together.
+const UNWRAPS_AT_ONCE = 8;
+
+// Runs `fn` over `list` at most `size` at a time and answers its results in
+// the list's order.
+async function inBatches(list, size, fn) {
+  log.debug("Entering inBatches(). " + list.length + " item(s).");
+  const out = [];
+  for (let i = 0; i < list.length; i += size) {
+    const batch = await Promise.all(list.slice(i, i + size).map(fn));
+    batch.forEach(function (one) {
+      out.push(one);
+    });
+  }
+  log.debug("Leaving inBatches().");
+  return out;
+}
+
 async function adoptDekRow(rowKey, text, fatal) {
   log.debug("Entering adoptDekRow(). row=" + rowKey);
   let row = null;
@@ -3330,8 +3350,7 @@ async function adoptDekRow(rowKey, text, fatal) {
   }
   let adopted = 0;
   const classes = new Set();
-  // A LOOP OF AWAITS SINCE #391 P3: a key management service unwraps each
-  // DEK with a network call. One at a time, which is a handful at start.
+  const fresh = [];
   for (const one of row.deks) {
     if (!one || !DEK_ID_PATTERN.test(String(one.id || ''))) {
       continue;
@@ -3360,41 +3379,64 @@ async function adoptDekRow(rowKey, text, fatal) {
       }
       continue;
     }
-    const rec = { id: String(one.id), scope: row.scope, realm: row.realm,
-                  cls: dekClass(one.cls), createdAt: Number(one.createdAt) || 0,
-                  activateAt: Number(one.activateAt) ||
-                              Number(one.createdAt) || 0,
-                  wrappedAt: Number(one.wrappedAt) || 0,
-                  status: one.status === 'destroyed' ? 'destroyed' : 'active',
-                  wrapped: String(one.wrapped || ''), key: null,
-                  alg: one.alg === 'aes-256-siv' ? 'aes-256-siv'
-                                                 : 'aes-256-gcm',
-                  values: Number(one.values) || 0,
-                  countedAt: Number(one.countedAt) || 0,
-                  derived: false, rewrap: false };
+    fresh.push({ id: String(one.id), scope: row.scope, realm: row.realm,
+                 cls: dekClass(one.cls),
+                 createdAt: Number(one.createdAt) || 0,
+                 activateAt: Number(one.activateAt) ||
+                             Number(one.createdAt) || 0,
+                 wrappedAt: Number(one.wrappedAt) || 0,
+                 status: one.status === 'destroyed' ? 'destroyed' : 'active',
+                 wrapped: String(one.wrapped || ''), key: null,
+                 alg: one.alg === 'aes-256-siv' ? 'aes-256-siv'
+                                                : 'aes-256-gcm',
+                 values: Number(one.values) || 0,
+                 countedAt: Number(one.countedAt) || 0,
+                 derived: false, rewrap: false });
+  }
+  // THE UNWRAPS, SEVERAL AT ONCE (#639, 2026-10-15). A key management
+  // service unwraps each DEK with a network call (#391 P3), and this was a
+  // loop of awaits: 204 data keys on the 50.2M-entry stack, one round trip to
+  // the Transit engine after another, about half a second of EVERY process's
+  // start. They are independent calls, so up to UNWRAPS_AT_ONCE go together;
+  // what each answered is applied afterwards in the row's own order, exactly
+  // as the loop applied it, and a failure is what it was: fatal at start (the
+  // row's first failure is the one thrown), logged otherwise.
+  const answers = await inBatches(fresh, UNWRAPS_AT_ONCE, function (rec) {
     const wk = rec.status === 'destroyed' ? null : wrappingKeyOf(rec.scope);
-    if (wk) {
-      try {
-        rec.key = await unwrapWithRotation(rec, wk);
-        // The key's length is the truth; a row naming another cipher is
-        // corrected rather than believed.
-        rec.alg = crypto.dekAlgOf(rec.key);
-      } catch (e) {
-        const why = errorCodes.tag('STS-KEYS-0091') + 'the data encryption ' +
-          'key "' + rec.id + '" (' + rec.cls + ', "' + rec.realm + '" realm, ' +
-          rec.scope + ') could not be unwrapped. The key-encryption key is ' +
-          'almost certainly not the one it was wrapped under (provider: ' +
-          secrets.describe().provider + '): ' + e.message;
-        if (fatal) {
-          throw new Error(why + '. This service will NOT start rather than ' +
-                          'make new keys, because everything sealed under ' +
-                          'this one would stop opening.');
-        }
-        // `why` opens with its STS-KEYS-0091 tag.
-        log.error(errorCodes.tag('STS-KEYS-0091') + 'keystore: ' +
-                  why.slice(why.indexOf(']') + 1).trim() + '.');
-        continue;
+    if (!wk) {
+      return Promise.resolve({ rec: rec, key: null, error: null });
+    }
+    return unwrapWithRotation(rec, wk).then(function (key) {
+      return { rec: rec, key: key, error: null };
+    }, function (e) {
+      return { rec: rec, key: null, error: e };
+    });
+  });
+  for (const answer of answers) {
+    const rec = answer.rec;
+    if (answer.error) {
+      const e = answer.error;
+      const why = errorCodes.tag('STS-KEYS-0091') + 'the data encryption ' +
+        'key "' + rec.id + '" (' + rec.cls + ', "' + rec.realm + '" realm, ' +
+        rec.scope + ') could not be unwrapped. The key-encryption key is ' +
+        'almost certainly not the one it was wrapped under (provider: ' +
+        secrets.describe().provider + '): ' + e.message;
+      if (fatal) {
+        log.debug("Leaving adoptDekRow(). A key would not unwrap.");
+        throw new Error(why + '. This service will NOT start rather than ' +
+                        'make new keys, because everything sealed under ' +
+                        'this one would stop opening.');
       }
+      // `why` opens with its STS-KEYS-0091 tag.
+      log.error(errorCodes.tag('STS-KEYS-0091') + 'keystore: ' +
+                why.slice(why.indexOf(']') + 1).trim() + '.');
+      continue;
+    }
+    if (answer.key) {
+      rec.key = answer.key;
+      // The key's length is the truth; a row naming another cipher is
+      // corrected rather than believed.
+      rec.alg = crypto.dekAlgOf(rec.key);
     }
     // Another adoption of the same row may have finished during the await.
     if (deks.has(rec.id)) {
