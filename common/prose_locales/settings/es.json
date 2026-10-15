@@ -1548,8 +1548,8 @@
     "text": "Workers de solicitudes que arrancan a la vez"
   },
   "workers.startConcurrency|description": {
-    "en": "a39ad8671b5baa40",
-    "text": "Cuántos workers de solicitudes pueden estar arrancando al mismo tiempo, contando juntos los pools de protocolos y de superficies alojadas. El siguiente worker se crea cuando uno informa de que está listo o de que falló. El valor predeterminado, 1, los arranca uno tras otro. Cada arranque restaura todo el almacén en la memoria de ese worker, y arrancarlos juntos fue lo que hizo que un nodo superara su límite de memoria (#342). La escucha se enlaza cuando el primer worker de cada pool se ha estabilizado, y el resto se levanta detrás. Un worker que sustituye a uno que murió espera su turno de la misma forma."
+    "en": "1f1aba0f84f07864",
+    "text": "Cuántos workers de solicitudes pueden estar arrancando a la vez, contando juntos los pools de protocolos y de superficies alojadas. El siguiente worker se lanza cuando uno informa de que está listo o de que ha fallado. 0, el valor predeterminado, decide según la memoria: el primer worker arranca solo y se mide lo que su arranque añadió al proceso, y los demás arrancan tantos a la vez como quepan en el espacio que queda bajo el límite del contenedor (o, sin límite, en la memoria disponible), a razón de un arranque y medio cada uno, reservando un 15 % y al menos 256 MiB (#639). Un número a partir de 1 fija el ancho; 1 los arranca uno tras otro, como hacía todo arranque antes de #639: arrancarlos juntos es lo que una vez llevó a un nodo por encima de su límite de memoria (#342). El listener se enlaza en cuanto el primer worker de cada pool se ha asentado, y los demás arrancan detrás. Un worker que sustituye a uno que murió espera su turno de la misma manera."
   },
   "workers.startConcurrency|restartReason": {
     "en": "8b0c3a4c3f27115c",

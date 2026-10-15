@@ -1548,8 +1548,8 @@
     "text": "Mga request worker na sabay-sabay na nag-i-start"
   },
   "workers.startConcurrency|description": {
-    "en": "a39ad8671b5baa40",
-    "text": "Ilang request worker ang puwedeng sabay-sabay na nag-i-start, binibilang nang magkasama ang protocol at hosted-surface pool. Fino-fork ang susunod na worker kapag nag-ulat ang isa na handa na ito o nabigo. Ang default, 1, ay sinisimulan ang mga ito nang isa-isa. Bawat pag-start ay nire-restore ang buong store sa memory ng worker na iyon, at ang sabay-sabay na pagsisimula ang nagpalampas sa isang node sa memory limit nito (#342). Nagba-bind ang listener kapag naayos na ang unang worker ng bawat pool, at sumusunod ang iba sa likod nito. Ang worker na pumapalit sa namatay ay naghihintay din ng turn nito sa parehong paraan."
+    "en": "1f1aba0f84f07864",
+    "text": "Ilang request worker ang maaaring sabay-sabay na nagsisimula, pinagsasama ang mga pool ng protocol at ng hosted surface. Ang susunod na worker ay inilulunsad kapag may isang nag-ulat na handa na ito o na nabigo ito. Ang 0, ang default, ay nagpapasya batay sa memorya: ang unang worker ay nagsisimulang mag-isa at sinusukat kung gaano kalaki ang idinagdag ng pagsisimula nito sa proseso, at ang iba ay sabay-sabay na nagsisimula hangga't kasya sa natitirang espasyo sa ilalim ng limitasyon ng container (o, kung wala, sa magagamit na memorya), sa halagang isa't kalahating pagsisimula bawat isa, na nagtatabi ng 15% at hindi bababa sa 256 MiB (#639). Ang numerong 1 pataas ay nakapirming lapad; ang 1 ay nagsisimula sa kanila nang isa-isa, gaya ng ginagawa ng bawat pagsisimula bago ang #639 — ang sabay-sabay na pagsisimula sa kanila ang minsang nagpalampas sa isang node sa limitasyon ng memorya nito (#342). Nagbi-bind ang listener sa sandaling maayos na ang unang worker ng bawat pool, at ang iba ay nagsisimula sa likod nito. Ang worker na pumapalit sa isang namatay ay naghihintay din ng kanyang turno sa parehong paraan."
   },
   "workers.startConcurrency|restartReason": {
     "en": "8b0c3a4c3f27115c",

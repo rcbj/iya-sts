@@ -384,7 +384,7 @@ async function checkWorkersStartOneAtATime(t, stubPath) {
 
   await withStubPool(stubPath, 3, 'ok', async function () {
     t.equal(pool.stats().starts.concurrency, 1,
-            'workers.startConcurrency defaults to 1');
+            'workers.startConcurrency 1 is a gate one wide');
     const got = await forkThroughTheGate(3);
     t.equal(got.queuedNow, 2,
             'queued three: one is forked at once and two wait behind it');
@@ -430,7 +430,7 @@ async function checkWorkersStartOneAtATime(t, stubPath) {
     t.equal(peak, 1, 'and they started one at a time too');
     t.equal(pool.workerTable().length, 3,
             'the table holds exactly the configured three');
-  }, { STUB_DELAY_MS: '300' });
+  }, { STUB_DELAY_MS: '300', STS_WORKERS_START_CONCURRENCY: '1' });
 
   await withStubPool(stubPath, 4, 'ok', async function () {
     const got = await forkThroughTheGate(4);
@@ -452,6 +452,60 @@ async function checkWorkersStartOneAtATime(t, stubPath) {
   log.debug("Leaving checkWorkersStartOneAtATime().");
 }
 
+// ---------------------------------------------------------------------------
+// AS MANY AT ONCE AS THE NODE'S MEMORY HOLDS (#639): the default,
+// `workers.startConcurrency` 0. The width as a decision over its inputs,
+// then the gate with stubs: the first alone and measured, the rest together
+// (a stub's start costs next to nothing, so the floor prices it, and the
+// machine running this has room for more than three of those).
+// ---------------------------------------------------------------------------
+async function checkWorkersStartAsMemoryAllows(t, stubPath) {
+  log.debug("Entering checkWorkersStartAsMemoryAllows().");
+  t.log.info('=== workers start as many at once as memory holds (#639) ===');
+  const MiB = 1024 * 1024;
+  const width = pool.startWidthFor;
+  t.equal(width({ perStartBytes: 400 * MiB, limitBytes: 0, rssBytes: 0,
+                  availableBytes: 40 * 1024 * MiB }), 58,
+          'with no limit: the available memory less 15%, at one and a half ' +
+          'measured starts each (40 GiB, 400 MiB a start: 58)');
+  t.equal(width({ perStartBytes: 400 * MiB, limitBytes: 4096 * MiB,
+                  rssBytes: 1400 * MiB, availableBytes: 40 * 1024 * MiB }),
+          3, 'with a 4 GiB limit and 1.4 GiB held: (4096 - 1400 - 614) / ' +
+          '600 = 3, whatever the host has');
+  t.equal(width({ perStartBytes: 400 * MiB, limitBytes: 2048 * MiB,
+                  rssBytes: 1900 * MiB, availableBytes: 0 }), 1,
+          'never fewer than one, when the room is gone');
+  t.equal(width({ perStartBytes: 1, limitBytes: 0, rssBytes: 0,
+                  availableBytes: 1024 * 1024 * MiB }), 64,
+          'never more than 64, and a start is priced at 128 MiB at least');
+
+  await withStubPool(stubPath, 4, 'ok', async function () {
+    t.check(pool.stats().starts.automatic === true &&
+            pool.stats().starts.concurrency === 1,
+            'the default is the automatic width, one until a start is ' +
+            'measured', JSON.stringify(pool.stats().starts));
+    const got = await forkThroughTheGate(4);
+    t.check(got.entries.every(Boolean), 'all four came up', '');
+    t.check(got.entries[1].startedAt - got.entries[0].startedAt >= 290,
+            'the first started alone, and was measured',
+            JSON.stringify(got.entries.map(function (one) {
+              return one.startedAt;
+            })));
+    const starts = pool.stats().starts;
+    t.check(starts.measuredStartMb >= 128 && starts.concurrency >= 3,
+            'its start priced (at least the floor) and the gate widened to ' +
+            'what the memory holds', JSON.stringify(starts));
+    t.check(got.peak >= 2 && got.peak <= 3,
+            'and the other three started together', String(got.peak));
+    t.check(got.entries[3].startedAt - got.entries[1].startedAt < 200,
+            'forked within one stub\'s start of each other',
+            JSON.stringify(got.entries.map(function (one) {
+              return one.startedAt;
+            })));
+  }, { STUB_DELAY_MS: '300' });
+  log.debug("Leaving checkWorkersStartAsMemoryAllows().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   checkTheDecision(t);
@@ -463,6 +517,7 @@ async function run(t) {
     await checkStoppingReplacesNothing(t, stubPath);
     await checkAFailedStartIsBounded(t, stubPath);
     await checkWorkersStartOneAtATime(t, stubPath);
+    await checkWorkersStartAsMemoryAllows(t, stubPath);
   } finally {
     try {
       fs.unlinkSync(stubPath);
