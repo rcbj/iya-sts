@@ -446,8 +446,14 @@ class WalletFlow {
     const button = doc.getElementById && doc.getElementById('wallet-dcapi');
     if (button) {
       const nav = env.navigator;
+      // THE BROWSER'S API, OR AN EXTENSION'S (#652): the Wallet Companion
+      // extension (sirosfoundation/wallet-companion) answers
+      // `navigator.credentials.get({ digital })` in a browser without the
+      // API, and defines `window.WalletCompanion` but no
+      // `DigitalCredential`.
       const supported = !!env.window &&
-        typeof env.window.DigitalCredential !== 'undefined' && !!nav &&
+        (typeof env.window.DigitalCredential !== 'undefined' ||
+         typeof env.window.WalletCompanion !== 'undefined') && !!nav &&
         !!nav.credentials && typeof nav.credentials.get === 'function';
       if (!supported) {
         const missing = doc.getElementById('wallet-dcapi-missing');
