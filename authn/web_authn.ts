@@ -89,6 +89,10 @@ const FINGERPRINT_SCRIPT = '/authn/fingerprint.js';
 // `/authn`.
 const CONSENT_PATH = '/oauth2/consent';
 
+// How long a pressed ceremony waits before asking once more, where it was
+// refused as pending just after it aborted the autofill.
+const PENDING_RETRY_MS = 300;
+
 // THE STEPS' ACTS (#572, #573): for each page, the `action` of each of its
 // buttons, the operation under `/authn-api/mfa/{id}/` it is, and the body
 // it sends from the form's fields (and, for the mailed link, the token off
@@ -147,6 +151,14 @@ class AuthnSurface extends WebSurface {
   private autofill: boolean;
   // The conditional ceremony in flight, to abort for the button's own.
   private pendingAutofill: Json;
+  // ONE WEBAUTHN REQUEST AT A TIME (#660, 2026-10-16): a document has one pending
+  // request, a second is refused with an OperationError ("A request is
+  // already pending" in Chrome), and an aborted one is pending until its
+  // promise settles. `lastCall` settles when the last call did, and
+  // `pressed` is a button's ceremony in flight, so a second press is
+  // ignored rather than refused.
+  private lastCall: Promise<void>;
+  private pressed: boolean;
   // The RP ID of the last ceremony, for a signal.
   private rpId: string;
   // Whether the fingerprint's script is on the page.
@@ -171,6 +183,8 @@ class AuthnSurface extends WebSurface {
     this.actError = '';
     this.autofill = true;
     this.pendingAutofill = null;
+    this.lastCall = Promise.resolve();
+    this.pressed = false;
     this.rpId = '';
     this.fingerprintLoaded = false;
     this.notice = '';
@@ -231,6 +245,12 @@ class AuthnSurface extends WebSurface {
     // No username field to fill where none is asked for (#608).
     if (view.passkey && !view.usernameless && this.autofill) {
       this.armAutofill();
+    } else {
+      // THE AUTOFILL ENDS WITH ITS PAGE (#660, 2026-10-16): a page drawn in place
+      // keeps the document, so the username screen's autofill was still
+      // pending on the passkey step after a password, and the step's
+      // ceremony was refused as pending at every press.
+      this.stopAutofill();
     }
   }
 
@@ -795,36 +815,104 @@ class AuthnSurface extends WebSurface {
    * @returns nothing
    */
   async stepPasskey(key: string): Promise<void> {
-    const base = '/authn-api/mfa/' + encodeURIComponent(this.idHere());
-    const armed = await this.send(base + '/webauthn/options',
-                                  key ? { key: key } : {});
-    if (!armed.json || !armed.json.ok) {
-      await this.next(armed);
+    if (this.pressed) {
       return;
     }
-    const c = armed.json;
-    this.rpId = String(c.rpId || '');
-    const nav = this.env.navigator;
-    let credential: Json = null;
-    if (!nav || !nav.credentials) {
-      credential = { error: 'NotSupportedError',
-                     message: 'no WebAuthn in this browser' };
-    } else {
-      try {
-        credential = c.mode === 'create'
-          ? WebWebAuthn.created(await nav.credentials.create(
-              { publicKey: AuthnSurface.creationOptions(c) }))
-          : WebWebAuthn.asserted(await nav.credentials.get(
-              { publicKey: AuthnSurface.stepRequestOptions(c) }));
-      } catch (e) {
-        // The browser's error is deliberately ambiguous — no credential,
-        // declined and timed out are one — so it is reported as given.
-        credential = { error: e && e.name, message: e && e.message };
+    this.pressed = true;
+    try {
+      const aborted = this.stopAutofill();
+      const base = '/authn-api/mfa/' + encodeURIComponent(this.idHere());
+      const armed = await this.send(base + '/webauthn/options',
+                                    key ? { key: key } : {});
+      if (!armed.json || !armed.json.ok) {
+        await this.next(armed);
+        return;
       }
+      const c = armed.json;
+      this.rpId = String(c.rpId || '');
+      const nav = this.env.navigator;
+      let credential: Json = null;
+      if (!nav || !nav.credentials) {
+        credential = { error: 'NotSupportedError',
+                       message: 'no WebAuthn in this browser' };
+      } else {
+        try {
+          credential = c.mode === 'create'
+            ? WebWebAuthn.created(await this.webauthn('create',
+                { publicKey: AuthnSurface.creationOptions(c) }, aborted))
+            : WebWebAuthn.asserted(await this.webauthn('get',
+                { publicKey: AuthnSurface.stepRequestOptions(c) }, aborted));
+        } catch (e) {
+          // The browser's error is deliberately ambiguous — no credential,
+          // declined and timed out are one — so it is reported as given.
+          credential = { error: e && e.name, message: e && e.message };
+        }
+      }
+      const answer = await this.send(base + '/webauthn',
+                                     { credential: JSON.stringify(credential) });
+      await this.next(answer);
+    } finally {
+      this.pressed = false;
     }
-    const answer = await this.send(base + '/webauthn',
-                                   { credential: JSON.stringify(credential) });
-    await this.next(answer);
+  }
+
+  /**
+   * Runs one WebAuthn call once the last has settled (`lastCall`).
+   *
+   * @param kind - `get` or `create`
+   * @param ask - the call's options
+   * @param retry - whether this ceremony just aborted the autofill: Chrome
+   *   can refuse the next call as pending for a moment after an abort, so
+   *   an OperationError is asked once more
+   * @returns the credential, or null
+   */
+  async webauthn(kind: string, ask: Json, retry: boolean): Promise<Json> {
+    const nav = this.env.navigator;
+    const settled = function (): void {
+      return undefined;
+    };
+    for (let attempt = 0; ; attempt++) {
+      await this.lastCall;
+      const call = kind === 'create' ? nav.credentials.create(ask)
+                                     : nav.credentials.get(ask);
+      this.lastCall = Promise.resolve(call).then(settled, settled);
+      try {
+        return await call;
+      } catch (e) {
+        if (!retry || attempt > 0 || !e || e.name !== 'OperationError') {
+          throw e;
+        }
+      }
+      await this.pause(PENDING_RETRY_MS);
+    }
+  }
+
+  /**
+   * A promise that resolves after a while.
+   *
+   * @param ms - how long, in milliseconds
+   * @returns the promise
+   */
+  pause(ms: number): Promise<void> {
+    const win = this.env.window;
+    return new Promise(function (resolve: () => void) {
+      win.setTimeout(resolve, ms);
+    });
+  }
+
+  /**
+   * Aborts the autofill's ceremony, where one is in flight.
+   *
+   * @returns whether one was
+   */
+  stopAutofill(): boolean {
+    const pending = this.pendingAutofill;
+    if (!pending) {
+      return false;
+    }
+    this.pendingAutofill = null;
+    pending.abort();
+    return true;
   }
 
   /**
@@ -967,40 +1055,78 @@ class AuthnSurface extends WebSurface {
    * @returns nothing
    */
   async passkey(conditional: boolean): Promise<void> {
-    const nav = this.env.navigator;
-    if (!conditional && this.pendingAutofill) {
-      this.pendingAutofill.abort();
-      this.pendingAutofill = null;
-    }
-    const armed = await this.armPasskey();
-    if (!armed) {
-      return;
-    }
-    if (!nav || !nav.credentials) {
-      await this.sendPasskey({ error: 'NotSupportedError',
-                               message: 'no WebAuthn in this browser' });
-      return;
-    }
-    const ask: Json = { publicKey: AuthnSurface.requestOptions(armed) };
     if (conditional) {
-      this.pendingAutofill = new this.env.window.AbortController();
-      ask.mediation = 'conditional';
-      ask.signal = this.pendingAutofill.signal;
+      await this.autofillCeremony();
+      return;
+    }
+    if (this.pressed) {
+      return;
+    }
+    this.pressed = true;
+    try {
+      const aborted = this.stopAutofill();
+      const nav = this.env.navigator;
+      const armed = await this.armPasskey();
+      if (!armed) {
+        return;
+      }
+      if (!nav || !nav.credentials) {
+        await this.sendPasskey({ error: 'NotSupportedError',
+                                 message: 'no WebAuthn in this browser' });
+        return;
+      }
+      let credential: Json = null;
+      try {
+        const a = await this.webauthn('get',
+          { publicKey: AuthnSurface.requestOptions(armed) }, aborted);
+        credential = a ? WebWebAuthn.asserted(a) : null;
+      } catch (e) {
+        credential = { error: e && e.name, message: e && e.message };
+      }
+      if (credential) {
+        await this.sendPasskey(credential);
+      }
+    } finally {
+      this.pressed = false;
+    }
+  }
+
+  /**
+   * The username field's autofill (conditional mediation). Its controller is
+   * claimed before the first await, so a page drawn twice arms it once, and
+   * a page drawn meanwhile can abort it before it asks.
+   *
+   * @returns nothing
+   */
+  async autofillCeremony(): Promise<void> {
+    const nav = this.env.navigator;
+    const controller = new this.env.window.AbortController();
+    this.pendingAutofill = controller;
+    const self = this;
+    const mine = function (): boolean {
+      return self.pendingAutofill === controller;
+    };
+    const armed = await this.armPasskey();
+    if (!armed || !mine() || !nav || !nav.credentials) {
+      if (mine()) {
+        this.pendingAutofill = null;
+      }
+      return;
     }
     let credential: Json = null;
     try {
-      const a = await nav.credentials.get(ask);
+      const a = await this.webauthn('get', {
+        publicKey: AuthnSurface.requestOptions(armed),
+        mediation: 'conditional', signal: controller.signal }, false);
       credential = a ? WebWebAuthn.asserted(a) : null;
     } catch (e) {
       // An aborted or declined autofill is the page going on as a form.
-      if (conditional) {
-        return;
-      }
-      credential = { error: e && e.name, message: e && e.message };
+      credential = null;
     }
-    if (conditional) {
-      this.pendingAutofill = null;
+    if (!mine()) {
+      return;
     }
+    this.pendingAutofill = null;
     if (credential) {
       await this.sendPasskey(credential);
     }
