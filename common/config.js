@@ -663,17 +663,20 @@ const TYPES = {
 // each other. The enum is that module's `MODES` written out, because this file
 // requires nothing from the repository that could require it back.
 // ---------------------------------------------------------------------------
-function certificateHeaderSetting(key, group, env, label, what) {
+function certificateHeaderSetting(key, group, env, label, what, dflt) {
   log.debug("Entering certificateHeaderSetting(). key=" + key);
   log.debug("Leaving certificateHeaderSetting().");
+  const chosen = dflt || 'x5u';
   return {
     key: key, group: group, label: label, env: env, type: 'enum',
     enumValues: ['none', 'x5c', 'x5u', 'both'],
-    dflt: 'x5u', runtime: true,
-    description: what + ' `x5u` — the default — is the address of the ' +
+    dflt: chosen, runtime: true,
+    description: what + ' `x5u`' + (chosen === 'x5u' ? ' — the default —' :
+                                     '') + ' is the address of the ' +
                  'chain on this service, ' +
                  '`/pki/chain/{scope}/{sha256}.pem`, about a hundred bytes; ' +
-                 '`x5c` is the chain inline, leaf first and the service Root ' +
+                 '`x5c`' + (chosen === 'x5c' ? ' — the default —' : '') +
+                 ' is the chain inline, leaf first and the service Root ' +
                  'last, base64 DER, several kilobytes; `both` is both and ' +
                  '`none` neither. Either way it is what a relying party ' +
                  'holding only the token needs to reach every certificate\'s ' +
@@ -9903,16 +9906,26 @@ const SETTINGS = [
                  'bbs-2023 and is not affected. A credential already issued ' +
                  'keeps the algorithm it was signed with.' },
 
+  // `x5c` BY DEFAULT (2026-10-16): eudi-dev's wallet refused every
+  // credential's Token Status List with "no key to verify the status list
+  // token with", because the token named its chain by `x5u` alone. SD-JWT VC
+  // finds an issuer's key by `x5c`, by JWT VC Issuer Metadata (which needs
+  // the `iss` a Status List Token does not carry) or by a DID, never by
+  // `x5u`, and HAIP 1.0 requires `x5c` on both — so `x5u` left a wallet or
+  // verifier with nothing it was told to use.
   certificateHeaderSetting('oid4vci.credentialCertificateHeader', 'OID4VCI',
     'OID4VCI_CREDENTIAL_CERTIFICATE_HEADER', 'Credential certificate header',
-    'Whether an issued dc+sd-jwt or jwt_vc_json CREDENTIAL names the ' +
-    'certificate chain of the key that signed it. SD-JWT VC names `x5c` as ' +
-    'one of the ways a verifier may find an issuer\'s key, so a wallet or ' +
-    'verifier that never fetches this issuer\'s metadata can still check ' +
-    'the signature against a trust anchor. ldp_vc is not a JWS and is not ' +
-    'affected. The x5c here (and on a Status List Token) leaves the trust ' +
+    'Whether an issued dc+sd-jwt or jwt_vc_json CREDENTIAL, and the Token ' +
+    'Status List Token its status names, carry the certificate chain of the ' +
+    'key that signed them. SD-JWT VC names `x5c` as the X.509 way a ' +
+    'verifier finds an issuer\'s key and does not name `x5u`, and a Status ' +
+    'List Token carries no `iss` to look metadata up by, so `x5c` — the ' +
+    'default — is what lets a wallet or verifier that never fetches this ' +
+    'issuer\'s metadata check both signatures against its trust anchor. ' +
+    'ldp_vc is not a JWS and is not affected. The x5c here leaves the trust ' +
     'anchor, the service Root, off the end, as HAIP 1.0 section 6.1.1 ' +
-    'requires; HAIP also requires x5c, so a HAIP realm sets x5c.'),
+    'requires; the Root is the certificate a wallet or verifier is given ' +
+    'to trust (/pki).', 'x5c'),
 
   certificateHeaderSetting('oid4vci.signedMetadataCertificateHeader',
     'OID4VCI', 'OID4VCI_SIGNED_METADATA_CERTIFICATE_HEADER',

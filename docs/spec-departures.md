@@ -239,10 +239,12 @@ This applies to every TLS listener: the main port, LDAPS 636 and the embedded de
 
 Development fills attributes a person's entry lacks with invented values before
 signing them into a credential; product omits them. Credentials are signed RS256
-and name their chain by `x5u` by default (`oid4vci.credentialSigningAlgorithm`,
-`oid4vci.credentialCertificateHeader`), and key attestation is not required
+(`oid4vci.credentialSigningAlgorithm`), and key attestation is not required
 (`oid4vci.keyAttestationRequired`, `false`). Both are allowed by OpenID4VCI and
-SD-JWT VC, but a realm meant to meet HAIP 1.0 must set `x5c` and an ES256 key.
+SD-JWT VC, but a realm meant to meet HAIP 1.0 must set an ES256 key. Credentials
+and their Status List Tokens carry their chain in `x5c` by default
+(`oid4vci.credentialCertificateHeader`, since 2026-10-16; it was `x5u`, which
+SD-JWT VC does not name as a way to find an issuer's key), as HAIP requires.
 The Verifier refuses every presented credential that names no status that
 resolves VALID (`oid4vp.requireStatusReference`, default `all`), although the
 status reference is optional in SD-JWT VC and the VC Data Model. A wallet whose
