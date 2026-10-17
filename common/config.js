@@ -9927,6 +9927,37 @@ const SETTINGS = [
     'requires; the Root is the certificate a wallet or verifier is given ' +
     'to trust (/pki).', 'x5c'),
 
+  // THE TRUSTED LIST (2026-10-17, `oid4vc/vc_trusted_list.ts`): ETSI TS 119
+  // 602's List of Trusted Entities naming this issuer and its Root.
+  certificateHeaderSetting('oid4vci.trustedListCertificateHeader', 'OID4VCI',
+    'OID4VCI_TRUSTED_LIST_CERTIFICATE_HEADER',
+    'Trusted list certificate header',
+    'Whether the trusted list at /oid4vci/trusted-list carries the chain of ' +
+    'the key that signed it. A wallet accepts the list only when that chain ' +
+    'is in x5c and ends under a list-operator CA it holds, so `x5c` — the ' +
+    'default — or `both`: under `x5u` or `none` the list is not served ' +
+    '(503). The service Root is left off the end, as for a credential.',
+    'x5c'),
+
+  { key: 'oid4vci.trustedListTerritory', group: 'OID4VCI',
+    label: 'Trusted list scheme territory',
+    env: 'OID4VCI_TRUSTED_LIST_TERRITORY', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The SchemeTerritory of the trusted list at ' +
+                 '/oid4vci/trusted-list (ETSI TS 119 602 section 6.3.10): an ' +
+                 'ISO 3166-1 alpha-2 country code, or EU. Empty — the ' +
+                 'default — leaves it out.' },
+
+  { key: 'oid4vci.trustedListLifetimeH', group: 'OID4VCI',
+    label: 'Trusted list lifetime (hours)',
+    env: 'OID4VCI_TRUSTED_LIST_LIFETIME_H', type: 'int', dflt: 24,
+    min: 1, max: 8760, runtime: true,
+    description: 'How far after its ListIssueDateTime the trusted list\'s ' +
+                 'NextUpdate is (ETSI TS 119 602 section 6.3.15), and so how ' +
+                 'often it is signed again with the next sequence number: ' +
+                 'when it is within an hour (or a tenth of this) of ' +
+                 'NextUpdate, and whenever what it says changes.' },
+
   certificateHeaderSetting('oid4vci.signedMetadataCertificateHeader',
     'OID4VCI', 'OID4VCI_SIGNED_METADATA_CERTIFICATE_HEADER',
     'Issuer signed_metadata certificate header',

@@ -346,6 +346,8 @@ class ProtocolEndpoints {
         '/bbs/keys/:id', '/.well-known/did.json', '/did.json',
         '/.well-known/did-configuration.json', '/oid4vci/status-lists/1',
         '/oid4vci/status-lists', '/oid4vci/status-lists/bitstring/:purpose',
+        // The trusted list (ETSI TS 119 602), 2026-10-17.
+        '/oid4vci/trusted-list',
         '/oid4vp/request/:id', '/oid4vp/response',
         // The x509 Client Identifiers (#230), whose settings are here.
         '/oid4vp/verifier-certificate',

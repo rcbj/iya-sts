@@ -4964,8 +4964,32 @@
     "text": "Certificate header ng credential"
   },
   "oid4vci.credentialCertificateHeader|description": {
-    "en": "91cae7f95584d095",
-    "text": "Kung pinapangalanan ng na-issue na dc+sd-jwt o jwt_vc_json na CREDENTIAL ang certificate chain ng key na pumirma rito. Pinapangalanan ng SD-JWT VC ang `x5c` bilang isa sa mga paraan para mahanap ng verifier ang key ng isang issuer, kaya ang wallet o verifier na hindi kailanman kumukuha ng metadata ng issuer na ito ay makakapag-check pa rin ng pirma laban sa isang trust anchor. Hindi JWS ang ldp_vc at hindi ito apektado. Hindi isinasama ng x5c dito (at sa isang Status List Token) ang trust anchor, ang service Root, sa dulo, gaya ng hinihingi ng HAIP 1.0 section 6.1.1; hinihingi rin ng HAIP ang x5c, kaya nagtatakda ng x5c ang isang HAIP realm. Ang `x5u` — ang default — ay ang address ng chain sa serbisyong ito, `/pki/chain/{scope}/{sha256}.pem`, mga isandaang byte; ang `x5c` ay ang chain mismo na nakalagay sa loob, leaf ang una at ang service Root ang huli, base64 DER, ilang kilobyte; ang `both` ay pareho at ang `none` ay wala. Alinman dito, ito ang kailangan ng relying party na token lang ang hawak para maabot ang mga CRL distribution point, OCSP responder at caIssuers address ng bawat certificate. Ang key na hindi pa na-certify sa ilalim ng JOSE Issuing CA ng realm na ito, at ang HMAC na pirma, ay walang natatanggap na alinman. Hinihingi ng RFC 7515 section 4.1.5 na gumamit ng TLS ang pagkuha sa `x5u`: kapag naka-off ang global.https, `http://` ang address at tatanggi ang mahigpit na verifier na sundan ito. Hindi kailanman binibigyan nito ang mga JWE header — walang certified key ng serbisyong ito ang nag-e-encrypt ng anuman. Maitatakda kada realm."
+    "en": "250bb6d53e3ec407",
+    "text": "Kung dala ng isang inisyung dc+sd-jwt o jwt_vc_json na CREDENTIAL, at ng Token Status List Token na pinangangalanan ng status nito, ang certificate chain ng key na pumirma sa mga ito. Pinangangalanan ng SD-JWT VC ang `x5c` bilang paraan sa X.509 kung paano nahahanap ng verifier ang key ng isang issuer at hindi nito pinangangalanan ang `x5u`, at walang dalang `iss` ang Status List Token para hanapin ang metadata, kaya ang `x5c` — ang default — ang nagbibigay-daan sa isang wallet o verifier na hindi kailanman kumukuha ng metadata ng issuer na ito na suriin ang parehong signature laban sa trust anchor nito. Hindi JWS ang ldp_vc at hindi ito apektado. Inaalis ng x5c dito sa dulo ang trust anchor, ang Root ng serbisyo, gaya ng hinihingi ng HAIP 1.0 section 6.1.1; ang Root ang certificate na ibinibigay sa isang wallet o verifier upang pagkatiwalaan (/pki). Ang `x5u` ay ang address ng chain sa serbisyong ito, `/pki/chain/{scope}/{sha256}.pem`, mga isandaang byte; ang `x5c` — ang default — ay ang chain nang inline, una ang leaf at huli ang Root ng serbisyo, base64 DER, ilang kilobyte; ang `both` ay pareho at ang `none` ay wala. Alinman dito, ito ang kailangan ng isang relying party na token lang ang hawak upang maabot ang mga CRL distribution point, OCSP responder at caIssuers address ng bawat certificate. Ang key na hindi pa na-certify sa ilalim ng JOSE Issuing CA ng realm na ito, at ang HMAC na signature, ay walang natatanggap. Hinihingi ng RFC 7515 section 4.1.5 na gumamit ng TLS ang pagkuha sa `x5u`: kapag naka-off ang global.https, `http://` ang address at tatanggi itong sundan ng isang mahigpit na verifier. Hindi kailanman binibigyan ng isa ang mga JWE header — walang ine-encrypt ang anumang na-certify na key ng serbisyong ito. Maaaring itakda bawat realm."
+  },
+  "oid4vci.trustedListCertificateHeader|label": {
+    "en": "5e5d2b459a95e63d",
+    "text": "Certificate header ng trusted list"
+  },
+  "oid4vci.trustedListCertificateHeader|description": {
+    "en": "f0c703d8855dec84",
+    "text": "Kung dala ng trusted list sa /oid4vci/trusted-list ang chain ng key na pumirma rito. Tinatanggap lang ng isang wallet ang listahan kapag nasa x5c ang chain na iyon at nagtatapos sa ilalim ng isang list-operator CA na hawak nito, kaya `x5c` — ang default — o `both`: sa `x5u` o `none` hindi inihahain ang listahan (503). Inaalis sa dulo ang Root ng serbisyo, gaya sa isang credential. Ang `x5u` ay ang address ng chain sa serbisyong ito, `/pki/chain/{scope}/{sha256}.pem`, mga isandaang byte; ang `x5c` — ang default — ay ang chain nang inline, una ang leaf at huli ang Root ng serbisyo, base64 DER, ilang kilobyte; ang `both` ay pareho at ang `none` ay wala. Alinman dito, ito ang kailangan ng isang relying party na token lang ang hawak upang maabot ang mga CRL distribution point, OCSP responder at caIssuers address ng bawat certificate. Ang key na hindi pa na-certify sa ilalim ng JOSE Issuing CA ng realm na ito, at ang HMAC na signature, ay walang natatanggap. Hinihingi ng RFC 7515 section 4.1.5 na gumamit ng TLS ang pagkuha sa `x5u`: kapag naka-off ang global.https, `http://` ang address at tatanggi itong sundan ng isang mahigpit na verifier. Hindi kailanman binibigyan ng isa ang mga JWE header — walang ine-encrypt ang anumang na-certify na key ng serbisyong ito. Maaaring itakda bawat realm."
+  },
+  "oid4vci.trustedListTerritory|label": {
+    "en": "d7ee4e58b3ec36e2",
+    "text": "Teritoryo ng scheme ng trusted list"
+  },
+  "oid4vci.trustedListTerritory|description": {
+    "en": "bd18dadc2bd7bd5e",
+    "text": "Ang SchemeTerritory ng trusted list sa /oid4vci/trusted-list (ETSI TS 119 602 section 6.3.10): isang ISO 3166-1 alpha-2 na country code, o EU. Walang laman — ang default — ay inaalis ito."
+  },
+  "oid4vci.trustedListLifetimeH|label": {
+    "en": "53f55ba9239f4712",
+    "text": "Tagal ng trusted list (oras)"
+  },
+  "oid4vci.trustedListLifetimeH|description": {
+    "en": "795e14da580935eb",
+    "text": "Gaano kalayo pagkatapos ng ListIssueDateTime nito ang NextUpdate ng trusted list (ETSI TS 119 602 section 6.3.15), at kung gayon gaano kadalas itong pinipirmahan muli gamit ang susunod na sequence number: kapag nasa loob na ito ng isang oras (o ikasampu nito) bago ang NextUpdate, at tuwing nagbabago ang sinasabi nito."
   },
   "oid4vci.signedMetadataCertificateHeader|label": {
     "en": "74bcdd1bedcb52e5",

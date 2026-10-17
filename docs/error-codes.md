@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4362** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4364** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -78,7 +78,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 147
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 120
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 122
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 47
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
@@ -3474,6 +3474,8 @@ Raised from: oid4vc/.
 | `STS-VC-0121` | A W3C VC API client, or an address, made more calls than vcApi.maxPerWindow allows in one security.rateLimitWindowS window (#598). | HTTP 429 {errors} with Retry-After |
 | `STS-VC-0122` | A W3C VC API request carried an option the endpoint does not understand, or an option value of the wrong shape — refused as VCALM requires (#598). | HTTP 400 {errors} |
 | `STS-VC-0123` | A verification start named a redirect_uri (#594) that is not an absolute http(s) URL without a fragment, or — where only registered addresses are accepted — not one of the calling client's registered redirect URIs. | HTTP 400 JSON { ok: false, errors } at /admin-api/verifications/start |
+| `STS-VC-0124` | The trusted list at /oid4vci/trusted-list (ETSI TS 119 602) was not served: the service has no Root certificate authority, or no ES256 or RS256 key whose certificate chain the list could carry in x5c (oid4vci.trustedListCertificateHeader set to x5u or none, or the key not yet certified). | HTTP 503 text/plain |
+| `STS-VC-0125` | The trusted list at /oid4vci/trusted-list could not be signed: the signer threw. The message is in the log. | HTTP 500 text/plain |
 
 ## STS-SSF
 

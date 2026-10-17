@@ -79,6 +79,30 @@ trust anchor, which HAIP 1.0 sections 6.1 and 6.1.1 forbid there: a wallet or
 verifier is given the Root to trust (`/pki`), and the chain in the token
 reaches it.
 
+**The trusted list** (`GET /oid4vci/trusted-list`, 2026-10-17). A wallet in
+the EUDI ecosystem takes its anchors from a signed *List of Trusted Entities*
+(ETSI TS 119 602), not from a bare certificate. This is one, in the
+standard's JSON binding: a compact JWS (`application/jwt`) signed ES256 where
+that key is certified (else RS256), with the signer's chain in `x5c`
+(`oid4vci.trustedListCertificateHeader`, `x5c` by default, Root left off) and
+`x5t#S256`. It names this credential issuer as its one trusted entity, with
+an `…/Issuance` and an `…/Revocation` service each listing the service Root
+— the certificate a credential's `x5c` and its Status List Token's both end
+under. The scheme's URIs (list type, status determination approach,
+community rules, service types) are under the list's own URL, because none
+of the standard's Annexes D to H is a list of credential issuers. It carries
+`ListIssueDateTime`, `NextUpdate` (`oid4vci.trustedListLifetimeH`, 24 h),
+`DistributionPoints`, a pointer to itself and `SchemeTerritory` where
+`oid4vci.trustedListTerritory` is set. It is **kept**, one row per realm
+(`vc_trusted_list.state`), and signed again with the next
+`LoTESequenceNumber` only when what it says changes or `NextUpdate` is near.
+
+A wallet still has to be told once to trust the list's **operator**: the
+service Root, as a list-operator CA. For eudi-dev that is `eudi trust add-ca
+--list trusted-list-ca --ca root.pem` (or `wallet serve --trusted-list-ca`),
+after which `eudi trust add-list https://<host>/oid4vci/trusted-list` (or the
+decoder's trusted-list URL) anchors the credentials and their status lists.
+
 ### What a credential says
 
 A credential carries claims chosen from a catalogue of **LDAP attribute
@@ -381,6 +405,9 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm for `dc+sd-jwt` and `jwt_vc_json` credentials, the status lists and the Domain Linkage Credential — the default a `/portal/wallet` offer may change for its own credential. |
 | `oid4vci.credentialCertificateHeader` | `OID4VCI_CREDENTIAL_CERTIFICATE_HEADER` | `x5c` | yes | Whether a credential and its Status List Token carry their signing key's chain: `x5c` (inline, without the Root), `x5u`, `both` or `none`. |
 | `oid4vci.signedMetadataCertificateHeader` | `OID4VCI_SIGNED_METADATA_CERTIFICATE_HEADER` | `x5u` | yes | The same for the metadata's `signed_metadata`. |
+| `oid4vci.trustedListCertificateHeader` | `OID4VCI_TRUSTED_LIST_CERTIFICATE_HEADER` | `x5c` | yes | Whether the trusted list carries its signer's chain; `x5c` or `both`, or the list is not served. |
+| `oid4vci.trustedListTerritory` | `OID4VCI_TRUSTED_LIST_TERRITORY` | *(empty)* | yes | The trusted list's `SchemeTerritory` (ISO 3166-1 alpha-2, or `EU`); empty leaves it out. |
+| `oid4vci.trustedListLifetimeH` | `OID4VCI_TRUSTED_LIST_LIFETIME_H` | `24` | yes | Hours from the list's issue to its `NextUpdate`. |
 | `oid4vci.proofIatWindowS` | `OID4VCI_PROOF_IAT_WINDOW_S` | `600` | yes | How far a proof's `iat` may be from now, either way. |
 | `oid4vci.cNonceTtlS` | `OID4VCI_C_NONCE_TTL_S` | `300` | yes | How long a `c_nonce` may be quoted in a proof. |
 | `oid4vci.cNonceCacheSize` | `OID4VCI_C_NONCE_CACHE_SIZE` | `10000` | yes | How many `c_nonce` values a realm holds; past it the oldest is dropped. |

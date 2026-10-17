@@ -1299,6 +1299,10 @@
     "en": "631dece03539cd4a",
     "text": "En person skapade ett erbjudande om en legitimation till sin egen plånbok"
   },
+  "audit.actions.portal.vc.remove.label": {
+    "en": "bc144eaf5bf2222e",
+    "text": "En person tog bort ett intyg som den här sfären utfärdat till personen"
+  },
   "audit.actions.risk.feedback.label": {
     "en": "e244d70b4d5a8c39",
     "text": "Återkoppling på en riskbedömning registrerades"

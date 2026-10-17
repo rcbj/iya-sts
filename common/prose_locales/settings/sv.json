@@ -4964,8 +4964,32 @@
     "text": "Certifikathuvud för intyg"
   },
   "oid4vci.credentialCertificateHeader|description": {
-    "en": "91cae7f95584d095",
-    "text": "Om ett utfärdat dc+sd-jwt- eller jwt_vc_json-INTYG anger certifikatkedjan för nyckeln som signerade det. SD-JWT VC anger `x5c` som ett av sätten en verifierare kan hitta en utfärdares nyckel på, så att en plånbok eller verifierare som aldrig hämtar den här utfärdarens metadata ändå kan kontrollera signaturen mot ett förtroendeankare. ldp_vc är inte en JWS och påverkas inte. x5c här (och på en Status List Token) utelämnar förtroendeankaret, tjänstens Root, i slutet, som HAIP 1.0 avsnitt 6.1.1 kräver; HAIP kräver också x5c, så en HAIP-sfär ställer in x5c. `x5u` — standardvärdet — är kedjans adress på den här tjänsten, `/pki/chain/{scope}/{sha256}.pem`, omkring hundra byte; `x5c` är kedjan inbäddad, lövcertifikatet först och tjänstens Root sist, base64 DER, flera kilobyte; `both` är båda och `none` ingetdera. I båda fallen är det vad en förlitande part som bara har token behöver för att nå varje certifikats CRL-distributionspunkter, OCSP-svarare och caIssuers-adress. En nyckel som ännu inte är certifierad under den här sfärens JOSE Issuing CA, och en HMAC-signatur, får ingetdera. RFC 7515 avsnitt 4.1.5 kräver att hämtningen av `x5u` sker över TLS: med global.https avstängd är adressen `http://` och en strikt verifierare vägrar följa den. JWE-huvuden får aldrig något — ingen certifierad nyckel i den här tjänsten krypterar något. Kan ställas in per sfär."
+    "en": "250bb6d53e3ec407",
+    "text": "Om ett utfärdat dc+sd-jwt- eller jwt_vc_json-INTYG, och den Token Status List Token som dess status pekar ut, bär certifikatkedjan för nyckeln som signerade dem. SD-JWT VC anger `x5c` som det X.509-sätt på vilket en verifierare hittar en utfärdares nyckel och anger inte `x5u`, och en Status List Token bär inget `iss` att slå upp metadata med, så `x5c` — standard — är det som låter en plånbok eller verifierare som aldrig hämtar den här utfärdarens metadata kontrollera båda signaturerna mot sitt förtroendeankare. ldp_vc är inte en JWS och påverkas inte. x5c utelämnar här förtroendeankaret, tjänstens rot, i slutet, som HAIP 1.0 avsnitt 6.1.1 kräver; roten är certifikatet som en plånbok eller verifierare får att lita på (/pki). `x5u` är kedjans adress på den här tjänsten, `/pki/chain/{scope}/{sha256}.pem`, omkring hundra byte; `x5c` — standard — är kedjan inline, lövet först och tjänstens rot sist, base64 DER, flera kilobyte; `both` är båda och `none` ingen. I båda fallen är det vad en förlitande part som bara har token behöver för att nå varje certifikats CRL-distributionspunkter, OCSP-svarare och caIssuers-adress. En nyckel som ännu inte certifierats under den här sfärens JOSE-utfärdande CA, och en HMAC-signatur, får ingen. RFC 7515 avsnitt 4.1.5 kräver att hämtningen av `x5u` använder TLS: med global.https avstängt är adressen `http://` och en strikt verifierare vägrar att följa den. JWE-huvuden får aldrig någon — ingen certifierad nyckel i den här tjänsten krypterar något. Kan ställas in per sfär."
+  },
+  "oid4vci.trustedListCertificateHeader|label": {
+    "en": "5e5d2b459a95e63d",
+    "text": "Certifikathuvud för förtroendelistan"
+  },
+  "oid4vci.trustedListCertificateHeader|description": {
+    "en": "f0c703d8855dec84",
+    "text": "Om förtroendelistan på /oid4vci/trusted-list bär kedjan för nyckeln som signerade den. En plånbok godtar listan bara när kedjan finns i x5c och slutar under en CA för listoperatörer som den har, så `x5c` — standard — eller `both`: med `x5u` eller `none` serveras listan inte (503). Tjänstens rot utelämnas i slutet, som för ett intyg. `x5u` är kedjans adress på den här tjänsten, `/pki/chain/{scope}/{sha256}.pem`, omkring hundra byte; `x5c` — standard — är kedjan inline, lövet först och tjänstens rot sist, base64 DER, flera kilobyte; `both` är båda och `none` ingen. I båda fallen är det vad en förlitande part som bara har token behöver för att nå varje certifikats CRL-distributionspunkter, OCSP-svarare och caIssuers-adress. En nyckel som ännu inte certifierats under den här sfärens JOSE-utfärdande CA, och en HMAC-signatur, får ingen. RFC 7515 avsnitt 4.1.5 kräver att hämtningen av `x5u` använder TLS: med global.https avstängt är adressen `http://` och en strikt verifierare vägrar att följa den. JWE-huvuden får aldrig någon — ingen certifierad nyckel i den här tjänsten krypterar något. Kan ställas in per sfär."
+  },
+  "oid4vci.trustedListTerritory|label": {
+    "en": "d7ee4e58b3ec36e2",
+    "text": "Förtroendelistans schematerritorium"
+  },
+  "oid4vci.trustedListTerritory|description": {
+    "en": "bd18dadc2bd7bd5e",
+    "text": "SchemeTerritory för förtroendelistan på /oid4vci/trusted-list (ETSI TS 119 602 avsnitt 6.3.10): en landskod enligt ISO 3166-1 alpha-2, eller EU. Tomt — standard — utelämnar det."
+  },
+  "oid4vci.trustedListLifetimeH|label": {
+    "en": "53f55ba9239f4712",
+    "text": "Förtroendelistans livslängd (timmar)"
+  },
+  "oid4vci.trustedListLifetimeH|description": {
+    "en": "795e14da580935eb",
+    "text": "Hur långt efter sin ListIssueDateTime förtroendelistans NextUpdate ligger (ETSI TS 119 602 avsnitt 6.3.15), och därmed hur ofta den signeras på nytt med nästa sekvensnummer: när den är inom en timme (eller en tiondel av detta) från NextUpdate, och närhelst det den säger ändras."
   },
   "oid4vci.signedMetadataCertificateHeader|label": {
     "en": "74bcdd1bedcb52e5",

@@ -607,6 +607,10 @@
     "en": "0e654cb76a7429ce",
     "text": "partial: isang list bawat realm, dalawang bit bawat credential (VALID, INVALID, SUSPENDED), inihahain bilang Status List Token sa anyong JWT at CWT ayon sa Accept, may ttl at exp, isang aggregation endpoint, at ang status claim sa bawat SD-JWT VC at jwt_vc_json credential; nire-resolve ng Verifier ang list ng isang pinagkakatiwalaang dayuhang issuer at tumatanggi kapag walang pahayag na magagawa. At isang ikalawang list bawat realm para sa mga ACCESS TOKEN (#432): isang bit bawat token, kung saan ang bawat OAuth RFC 9068 access token at bawat GNAP jwt-signed at jwt-encrypted token ay may dalang status claim, ina-advertise bilang status_list_aggregation_endpoint (section 9.1) sa metadata ng authorization server. Walang historical resolution (501), walang sinusundang redirect, walang mdoc (walang ini-issue)."
   },
+  "stsmetadata.specs.etsi-ts-119-602.coverage": {
+    "en": "d648e3ad690b8900",
+    "text": "partial: isang scheme-explicit na listahan bawat realm sa /oid4vci/trusted-list, sa JSON binding, pinirmahan bilang compact JWS na nasa x5c ang chain ng pumirma (ES256 kung saan na-certify ang key na iyon, kung hindi ay RS256): ang credential issuer na ito bilang nag-iisang trusted entity nito, isang issuance at isang revocation service na kapwa pinangangalanan ang Root ng serbisyo, isang self pointer, DistributionPoints, isang sequence number na lumalaki sa bawat issue at NextUpdate. Nasa ilalim ng sariling URL ng listahan ang mga URI ng scheme, dahil wala sa Annexes D hanggang H ang listahan ng mga credential issuer. Walang postal address, walang history, walang listahan ng ibang partido."
+  },
   "stsmetadata.specs.bitstring-status-list.coverage": {
     "en": "735bcafaa36c4d9e",
     "text": "partial: mga revocation at suspension list bawat realm, inihahain bilang BitstringStatusListCredential na naka-secure bilang JWT o, ayon sa Accept, bilang JSON-LD na may eddsa-rdfc-2022 proof (#197), at isang BitstringStatusListEntry para sa bawat layunin sa bawat jwt_vc_json at ldp_vc credential; binabasa ng Verifier ang mga ito. statusSize 1 lang; walang statusMessage."
@@ -2842,6 +2846,10 @@
   "stsmetadata.endpoints./oid4vci/status-lists/bitstring/:purpose.what": {
     "en": "4f3a588acce9f5fc",
     "text": "Ang BitstringStatusListCredential ng realm na ito para sa revocation o suspension, bilang application/vc+jwt: isang GZIP bitstring ng 131,072 entry, index 0 muna, signed gamit ang credential key — o, kapag humihingi ang Accept ng JSON-LD o JSON at hindi muna ng JWT, ang parehong credential na may eddsa-rdfc-2022 proof ng Ed25519 key ng realm, ibinigay bilang did:key nito (#197)."
+  },
+  "stsmetadata.endpoints./oid4vci/trusted-list.what": {
+    "en": "2fe258726f6ba8d2",
+    "text": "Ang credential issuer ng realm na ito at ang Root ng serbisyo na pinagkakadenahan ng mga credential at Token Status List Token nito, bilang isang pinirmahang listahan ng ETSI TS 119 602 na ginagamit ng wallet upang i-anchor ang dalawa: application/jwt, nasa x5c ang chain ng pumirma. Iniingatan at pinipirmahan muli kapag nagbago ang sinasabi nito o malapit na ang NextUpdate (oid4vci.trustedListLifetimeH); 503 kapag walang Root o walang na-certify na key."
   },
   "stsmetadata.endpoints./oid4vci/deferred_credential.what": {
     "en": "e734624535a9880a",

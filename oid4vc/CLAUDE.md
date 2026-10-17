@@ -937,6 +937,20 @@ second catalogue. What is more than a number, and what
   key's grace to the credential lifetime for the CONFIGURED algorithm's key
   only: a credential signed with another may outlive its key's grace after a
   rotation.
+* **THE TRUSTED LIST** (rcbj, 2026-10-17, `vc_trusted_list.ts`): ETSI TS
+  119 602's List of Trusted Entities at `/oid4vci/trusted-list`, in the
+  standard's JSON binding and nothing wallet-specific ("reusable across
+  wallets"), naming the service Root as the anchor of both kinds of service.
+  KEPT, not rebuilt per request: the realm's row is answered while its
+  content digest matches and `NextUpdate` is not near. Its signer's `x5c` is
+  the `vci-trusted-list` certificate-header use case.
+* **NO SCANS FOR ONE PERSON** (rcbj, 2026-10-17: "lists are maintained as
+  you go"): `vc_issued.ts` indexes rows by subject and credentials by
+  `notification_id` as they are recorded and drops them where it deletes a
+  row; the reader prunes a key the size bound evicted. Still scanning, and
+  older than the indexes: `sweep()` on every `record()`, `lookupHolder()`
+  (an `ldp_vc` sign-in) and `rowsForSubject(null)` (everyone's, for a global
+  sign-out).
 * **THE KEY BINDING JWT ACCEPTS WHAT THE ISSUER BINDS TO** — every asymmetric
   non-post-quantum algorithm. It accepted four while the issuer bound credentials
   to keys of eleven, so a wallet with an EdDSA key was issued a credential and
@@ -1052,6 +1066,8 @@ value, is never found under its digest, and expires on its own `expires`.
 | `vc_offers.deferredTransactions` | keyed by the `transaction_id`'s digest; no `accessToken` | the deferred endpoint looks the id up; the token was read only to be copied onto the notification row |
 | `vc_offers.deferredAccessTokens` | keyed by the token's digest (since 2026-09-12) | membership is the only question |
 | `vc_offers.signingAlgTokens` | keyed by the token's digest (2026-10-16) | the algorithm a portal offer chose, looked up by the token |
+| `vc_issued.bySubject`, `vc_issued.byNotification` | keyed by the subject's digest, and by the `notification_id` (2026-10-17) | the issued register's two indexes, so a person's history and Remove and a wallet's notification are lookups, never scans |
+| `vc_trusted_list.state` | one row per realm (2026-10-17) | the signed trusted list, its content digest and sequence number |
 | `vc_issuer.vciNonces` | keyed by `vc_issuer.nonceKey()`, the nonce's digest | a proof's nonce is looked up and spent |
 | `vc_issuer.notificationIds` | the id WHOLE; no `accessToken` | the token was never read; the id is an identifier, like a `jti` |
 | `vc_verifier.vpTransactions` | a verdict's `presentationDigest` and verified claims; never the presentation | the presentation was read only by `?state=` and the log |

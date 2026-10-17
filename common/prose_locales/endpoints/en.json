@@ -434,6 +434,7 @@
   "endpoints.route./oid4vci/status-lists/1.name": "Token Status List",
   "endpoints.route./oid4vci/status-lists.name": "Status List Aggregation",
   "endpoints.route./oid4vci/status-lists/bitstring/:purpose.name": "Bitstring Status List credential",
+  "endpoints.route./oid4vci/trusted-list.name": "Trusted list (List of Trusted Entities)",
   "endpoints.route./oid4vci/deferred_credential.name": "Deferred credential endpoint",
   "endpoints.route./oid4vci/notification.name": "Notification endpoint",
   "endpoints.route./oid4vci/credential-offer/:id.name": "Credential Offer by reference",

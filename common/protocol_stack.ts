@@ -777,6 +777,13 @@ class ProtocolStack {
     this.build('oid4vc/siop', require('../oid4vc/siop'), 'Siop');
     this.build('oid4vc/vc_status', require('../oid4vc/vc_status'), 'VcStatus');
     this.register(app, require('../oid4vc/vc_status'), 'oid4vc/vc_status');
+    // The trusted list (2026-10-17): ETSI TS 119 602's List of Trusted
+    // Entities naming this issuer and its Root. Reads the PKI and the keys;
+    // requires neither the issuer nor the verifier.
+    this.build('oid4vc/vc_trusted_list', require('../oid4vc/vc_trusted_list'),
+               'VcTrustedList');
+    this.register(app, require('../oid4vc/vc_trusted_list'),
+                  'oid4vc/vc_trusted_list');
     // The register of credentials issued for a directory entry (#38): a
     // library both the issuer and the verifier read, built before either.
     this.build('oid4vc/vc_issued', require('../oid4vc/vc_issued'), 'VcIssued');

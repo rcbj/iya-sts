@@ -174,6 +174,9 @@ interface VcIssuedDeps {
   statusOf: (key: string) => number;
   setStatus: (key: string, value: number, via: string) => boolean;
   store: Store;
+  // THE TWO INDEXES (2026-10-17): see `bySubject` and `byNotification`.
+  subjectIndex: Store;
+  notificationIndex: Store;
   // The register's bound, `oid4vp.signInRegisterMaxEntries` (2026-09-18).
   maxRows: () => number;
 }
@@ -194,6 +197,30 @@ const MAX_PER_ROW = 64;
 // until then, which is why it is not earlier.
 const issued = realms.map({ persist: 'vc_issued.credentials',
                             expiresAt: realms.expiryField('expiresAt', 1) });
+
+// THE INDEXES THE HOLDER'S PAGE READS (rcbj, 2026-10-17: "lists are
+// maintained as you go rather than ... full table scans that do not scale").
+// `/portal/wallet`'s history and Remove asked every row for its subject, and
+// the Notification Endpoint every credential for its `notification_id`, on
+// each call; both are a lookup now.
+//
+//   * `bySubject`: digest(subject) -> { keys: [row key, ...], expiresAt }
+//   * `byNotification`: notification_id -> { key: row key, expiresAt }
+//
+// Written in `record()` and dropped where this module deletes a row
+// (`sweep()`, an expired `lookup()`, `forget()`). A row the size bound
+// evicts (`cacheRegistry.makeRoom()`) leaves a key behind, which the reader
+// prunes when it finds no row under it. `expiresAt` is the rows', for the
+// database's own expiry. Rows recorded before the indexes existed are
+// indexed once per realm (`ensureIndexed()`, marked by `INDEXED_MARK`).
+const bySubject = realms.map({ persist: 'vc_issued.bySubject',
+                               expiresAt: realms.expiryField('expiresAt', 1) });
+const byNotification = realms.map({ persist: 'vc_issued.byNotification',
+                                    expiresAt: realms.expiryField('expiresAt',
+                                                                  1) });
+// The key in `bySubject` that says the realm's rows have been indexed. Not a
+// digest, so no subject can collide with it.
+const INDEXED_MARK = '#indexed-v1';
 
 // Described to `/admin/caches` (rule 3ap, #38 follow-ups). It is not a cache:
 // it cannot be rebuilt, and a lookup that misses refuses a sign-in — which is
@@ -290,6 +317,8 @@ class VcIssued {
       statusOf: vcStatus.statusOf,
       setStatus: vcStatus.setStatus,
       store: issued,
+      subjectIndex: bySubject,
+      notificationIndex: byNotification,
       maxRows: function (): number {
         return Number(config.value('oid4vp.signInRegisterMaxEntries'));
       }
@@ -489,6 +518,7 @@ class VcIssued {
       disownedAt: before ? Number(before.disownedAt) || 0 : 0,
       disownedVia: before ? String(before.disownedVia || '') : ''
     });
+    this.indexRow(store.get(key));
     const holder = this.deps.nameForSubject(String(entry.subject));
     if (holder) {
       accountSignals.credentialChanged({ username: holder,
@@ -524,6 +554,7 @@ class VcIssued {
     }
     if (row.expiresAt && row.expiresAt <= Date.now()) {
       store.delete(key);
+      this.unindexRow(row);
       issuedCount.miss();
       log.debug("Leaving VcIssued.lookup(). Expired.");
       return null;
@@ -658,7 +689,7 @@ class VcIssued {
     log.debug("Entering VcIssued.rowsForSubject().");
     const now = Date.now();
     const out: any[] = [];
-    store.forEach((row) => {
+    const consider = (row: any): void => {
       if (!row || (subject !== null && row.subject !== String(subject)) ||
           (row.expiresAt && row.expiresAt <= now)) {
         return;
@@ -668,7 +699,14 @@ class VcIssued {
         return;
       }
       out.push(row);
-    });
+    };
+    // One person's through the index; everyone's (`null`) is every row by
+    // definition.
+    if (subject === null) {
+      store.forEach(consider);
+    } else {
+      this.rowsOfSubject(String(subject)).forEach(consider);
+    }
     log.debug("Leaving VcIssued.rowsForSubject(). " + out.length + ".");
     return out;
   }
@@ -754,10 +792,7 @@ class VcIssued {
     log.debug("Entering VcIssued.historyForSubject().");
     const now = Date.now();
     const out: HistoryEntry[] = [];
-    store.forEach((row) => {
-      if (!row || !subject || row.subject !== String(subject)) {
-        return;
-      }
+    this.rowsOfSubject(String(subject || '')).forEach((row) => {
       [].concat(row.credentials || []).forEach((c: Issued) => {
         out.push({ id: this.credentialId(row, c), format: String(row.format),
                    configId: String(row.configId || ''),
@@ -806,8 +841,8 @@ class VcIssued {
     log.debug("Entering VcIssued.removeForSubject().");
     let foundRow: any = null;
     let found: Issued | null = null;
-    store.forEach((row) => {
-      if (found || !row || !subject || row.subject !== String(subject)) {
+    this.rowsOfSubject(String(subject || '')).forEach((row) => {
+      if (found) {
         return;
       }
       [].concat(row.credentials || []).forEach((c: Issued) => {
@@ -886,27 +921,141 @@ class VcIssued {
       log.debug("Leaving VcIssued.noteWalletEvent(). No id.");
       return 0;
     }
+    this.ensureIndexed();
     const now = Date.now();
-    const changed: any[] = [];
-    store.forEach(function (row) {
-      let touched = false;
-      [].concat((row && row.credentials) || []).forEach(function (c: Issued) {
+    const entry = this.deps.notificationIndex.get(id);
+    const row = entry ? store.get(String(entry.key)) : null;
+    if (entry && !row) {
+      this.deps.notificationIndex.delete(id);
+    }
+    if (row) {
+      [].concat(row.credentials || []).forEach(function (c: Issued) {
         if (c.notificationId === id) {
           c.walletEvent = String(event || '');
           c.walletEventAt = now;
-          touched = true;
           count += 1;
         }
       });
-      if (touched) {
-        changed.push(row);
+      if (count) {
+        store.set(String(row.key), row);
       }
-    });
-    changed.forEach(function (row) {
-      store.set(String(row.key), row);
-    });
+    }
     log.debug("Leaving VcIssued.noteWalletEvent(). " + count + ".");
     return count;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE INDEXES (2026-10-17): kept as rows are written and dropped, so a
+  // person's rows and a notification's row are a lookup, never a scan.
+  // ---------------------------------------------------------------------------
+  private subjectKey(subject: string): string {
+    return stsCrypto.digest('sha256', String(subject), 'base64url');
+  }
+
+  // Files a row under its subject, and each credential's notification_id.
+  private indexRow(row: any): void {
+    const { subjectIndex, notificationIndex } = this.deps;
+    if (!row || !row.key || !row.subject) {
+      return;
+    }
+    const k = this.subjectKey(row.subject);
+    const entry = subjectIndex.get(k) || { keys: [], expiresAt: 0 };
+    const keys: string[] = [].concat(entry.keys || []);
+    if (keys.indexOf(String(row.key)) < 0) {
+      keys.push(String(row.key));
+    }
+    // The latest expiry of the rows it names, 0 while any never expires —
+    // a row's own rule (`record()`).
+    const expiresAt = !entry.keys || !entry.keys.length
+      ? Number(row.expiresAt) || 0
+      : (!entry.expiresAt || !row.expiresAt ? 0
+        : Math.max(Number(entry.expiresAt), Number(row.expiresAt)));
+    subjectIndex.set(k, { keys: keys, expiresAt: expiresAt });
+    [].concat(row.credentials || []).forEach(function (c: Issued) {
+      if (c.notificationId && !notificationIndex.get(c.notificationId)) {
+        notificationIndex.set(c.notificationId,
+                              { key: String(row.key),
+                                expiresAt: Number(c.expiresAt) || 0 });
+      }
+    });
+  }
+
+  // Takes a deleted row out of both indexes.
+  private unindexRow(row: any): void {
+    const { subjectIndex, notificationIndex } = this.deps;
+    if (!row || !row.key) {
+      return;
+    }
+    if (row.subject) {
+      const k = this.subjectKey(row.subject);
+      const entry = subjectIndex.get(k);
+      if (entry) {
+        const keys = [].concat(entry.keys || []).filter(function (one) {
+          return one !== String(row.key);
+        });
+        if (keys.length) {
+          subjectIndex.set(k, { keys: keys, expiresAt: entry.expiresAt });
+        } else {
+          subjectIndex.delete(k);
+        }
+      }
+    }
+    [].concat(row.credentials || []).forEach(function (c: Issued) {
+      const entry = c.notificationId ? notificationIndex.get(c.notificationId)
+                                     : null;
+      if (entry && entry.key === String(row.key)) {
+        notificationIndex.delete(c.notificationId);
+      }
+    });
+  }
+
+  // One person's rows through the index, pruning keys whose row is gone (a
+  // row the size bound evicted) and rows that name another subject.
+  private rowsOfSubject(subject: string): any[] {
+    const { store, subjectIndex } = this.deps;
+    if (!subject) {
+      return [];
+    }
+    this.ensureIndexed();
+    const k = this.subjectKey(subject);
+    const entry = subjectIndex.get(k);
+    if (!entry) {
+      return [];
+    }
+    const rows: any[] = [];
+    const kept: string[] = [];
+    [].concat(entry.keys || []).forEach(function (key: string) {
+      const row = store.get(key);
+      if (row && row.subject === subject) {
+        rows.push(row);
+        kept.push(key);
+      }
+    });
+    if (kept.length !== (entry.keys || []).length) {
+      if (kept.length) {
+        subjectIndex.set(k, { keys: kept, expiresAt: entry.expiresAt });
+      } else {
+        subjectIndex.delete(k);
+      }
+    }
+    return rows;
+  }
+
+  // ONCE PER REALM, the rows recorded before the indexes existed: the one
+  // scan, marked in the index's own store so no process repeats it.
+  private ensureIndexed(): void {
+    const { log, store, subjectIndex } = this.deps;
+    if (subjectIndex.get(INDEXED_MARK)) {
+      return;
+    }
+    log.debug("Entering VcIssued.ensureIndexed(). Indexing the register.");
+    let count = 0;
+    store.forEach((row) => {
+      this.indexRow(row);
+      count += 1;
+    });
+    subjectIndex.set(INDEXED_MARK, { at: Date.now(), expiresAt: 0 });
+    log.debug("Leaving VcIssued.ensureIndexed(). " + count + " row(s).");
   }
 
   // A credential's id in a person's history: a digest of its row and its
@@ -956,7 +1105,12 @@ class VcIssued {
   forget(credential: unknown): boolean {
     const { log, store } = this.deps;
     log.debug("Entering VcIssued.forget().");
-    const gone = store.delete(this.keyForJose(credential));
+    const key = this.keyForJose(credential);
+    const row = store.get(key);
+    const gone = store.delete(key);
+    if (row) {
+      this.unindexRow(row);
+    }
     log.debug("Leaving VcIssued.forget(). " + gone);
     return gone;
   }
@@ -978,14 +1132,15 @@ class VcIssued {
     const { log, store } = this.deps;
     log.debug("Entering VcIssued.sweep().");
     const now = Date.now();
-    const stale: string[] = [];
+    const stale: any[] = [];
     store.forEach(function (row, key) {
       if (row && row.expiresAt && row.expiresAt <= now) {
-        stale.push(key);
+        stale.push({ key: key, row: row });
       }
     });
-    stale.forEach(function (key) {
-      store.delete(key);
+    stale.forEach((one) => {
+      store.delete(one.key);
+      this.unindexRow(one.row);
     });
     log.debug("Leaving VcIssued.sweep(). " + stale.length + " expired.");
   }

@@ -4964,8 +4964,32 @@
     "text": "En-tête de certificat de l’attestation"
   },
   "oid4vci.credentialCertificateHeader|description": {
-    "en": "91cae7f95584d095",
-    "text": "Indique si une ATTESTATION dc+sd-jwt ou jwt_vc_json émise désigne la chaîne de certificats de la clé qui l’a signée. SD-JWT VC cite `x5c` parmi les moyens par lesquels un vérificateur peut trouver la clé d’un émetteur ; un portefeuille ou un vérificateur qui ne récupère jamais les métadonnées de cet émetteur peut donc tout de même vérifier la signature par rapport à une ancre de confiance. ldp_vc n’est pas un JWS et n’est pas concerné. Le x5c ici (et sur un Status List Token) omet à la fin l’ancre de confiance, la racine du service, comme l’exige la section 6.1.1 de HAIP 1.0 ; HAIP exige aussi x5c, si bien qu’un domaine HAIP choisit x5c. `x5u` — la valeur par défaut — est l’adresse de la chaîne sur ce service, `/pki/chain/{scope}/{sha256}.pem`, environ cent octets ; `x5c` est la chaîne en ligne, le certificat feuille en premier et la racine du service en dernier, en DER base64, plusieurs kilo-octets ; `both` donne les deux et `none` aucun. Dans tous les cas, c’est ce dont une partie de confiance qui ne détient que le jeton a besoin pour atteindre les points de distribution de CRL, le répondeur OCSP et l’adresse caIssuers de chaque certificat. Une clé pas encore certifiée sous l’autorité émettrice JOSE de ce domaine, ainsi qu’une signature HMAC, n’obtiennent ni l’un ni l’autre. La section 4.1.5 de RFC 7515 exige que la récupération de `x5u` passe par TLS : avec global.https désactivé, l’adresse est en `http://` et un vérificateur strict refusera de la suivre. Les en-têtes JWE n’en reçoivent jamais — aucune clé certifiée de ce service ne chiffre quoi que ce soit. Réglable par domaine."
+    "en": "250bb6d53e3ec407",
+    "text": "Si une ATTESTATION dc+sd-jwt ou jwt_vc_json émise, et le Token Status List Token que nomme son statut, portent la chaîne de certificats de la clé qui les a signés. SD-JWT VC nomme `x5c` comme la manière X.509 dont un vérificateur trouve la clé d'un émetteur et ne nomme pas `x5u`, et un Status List Token ne porte aucun `iss` permettant de chercher des métadonnées, donc `x5c` — la valeur par défaut — est ce qui permet à un portefeuille ou à un vérificateur qui ne récupère jamais les métadonnées de cet émetteur de vérifier les deux signatures par rapport à son ancre de confiance. ldp_vc n'est pas un JWS et n'est pas concerné. Le x5c omet à la fin l'ancre de confiance, la racine du service, comme l'exige la section 6.1.1 de HAIP 1.0 ; la racine est le certificat qu'on donne à un portefeuille ou à un vérificateur comme base de confiance (/pki). `x5u` est l'adresse de la chaîne sur ce service, `/pki/chain/{scope}/{sha256}.pem`, une centaine d'octets ; `x5c` — la valeur par défaut — est la chaîne en ligne, la feuille d'abord et la racine du service en dernier, en DER base64, plusieurs kilo-octets ; `both` est les deux et `none` aucun. Dans les deux cas, c'est ce dont une partie de confiance qui ne détient que le jeton a besoin pour atteindre les points de distribution de CRL, le répondeur OCSP et l'adresse caIssuers de chaque certificat. Une clé pas encore certifiée par l'AC émettrice JOSE de ce domaine, et une signature HMAC, n'en reçoivent aucun. La section 4.1.5 de la RFC 7515 exige que la récupération de `x5u` passe par TLS : avec global.https désactivé, l'adresse est en `http://` et un vérificateur strict refusera de la suivre. Les en-têtes JWE n'en reçoivent jamais : aucune clé certifiée de ce service ne chiffre quoi que ce soit. Réglable par domaine."
+  },
+  "oid4vci.trustedListCertificateHeader|label": {
+    "en": "5e5d2b459a95e63d",
+    "text": "En-tête de certificat de la liste de confiance"
+  },
+  "oid4vci.trustedListCertificateHeader|description": {
+    "en": "f0c703d8855dec84",
+    "text": "Si la liste de confiance de /oid4vci/trusted-list porte la chaîne de la clé qui l'a signée. Un portefeuille n'accepte la liste que si cette chaîne est dans x5c et aboutit à une AC d'opérateur de listes qu'il détient, donc `x5c` — la valeur par défaut — ou `both` : avec `x5u` ou `none`, la liste n'est pas servie (503). La racine du service est omise à la fin, comme pour une attestation. `x5u` est l'adresse de la chaîne sur ce service, `/pki/chain/{scope}/{sha256}.pem`, une centaine d'octets ; `x5c` — la valeur par défaut — est la chaîne en ligne, la feuille d'abord et la racine du service en dernier, en DER base64, plusieurs kilo-octets ; `both` est les deux et `none` aucun. Dans les deux cas, c'est ce dont une partie de confiance qui ne détient que le jeton a besoin pour atteindre les points de distribution de CRL, le répondeur OCSP et l'adresse caIssuers de chaque certificat. Une clé pas encore certifiée par l'AC émettrice JOSE de ce domaine, et une signature HMAC, n'en reçoivent aucun. La section 4.1.5 de la RFC 7515 exige que la récupération de `x5u` passe par TLS : avec global.https désactivé, l'adresse est en `http://` et un vérificateur strict refusera de la suivre. Les en-têtes JWE n'en reçoivent jamais : aucune clé certifiée de ce service ne chiffre quoi que ce soit. Réglable par domaine."
+  },
+  "oid4vci.trustedListTerritory|label": {
+    "en": "d7ee4e58b3ec36e2",
+    "text": "Territoire du schéma de la liste de confiance"
+  },
+  "oid4vci.trustedListTerritory|description": {
+    "en": "bd18dadc2bd7bd5e",
+    "text": "Le SchemeTerritory de la liste de confiance de /oid4vci/trusted-list (ETSI TS 119 602, section 6.3.10) : un code pays ISO 3166-1 alpha-2, ou EU. Vide — la valeur par défaut — l'omet."
+  },
+  "oid4vci.trustedListLifetimeH|label": {
+    "en": "53f55ba9239f4712",
+    "text": "Durée de vie de la liste de confiance (heures)"
+  },
+  "oid4vci.trustedListLifetimeH|description": {
+    "en": "795e14da580935eb",
+    "text": "L'écart entre le ListIssueDateTime de la liste de confiance et son NextUpdate (ETSI TS 119 602, section 6.3.15), et donc la fréquence à laquelle elle est signée à nouveau avec le numéro de séquence suivant : quand elle est à moins d'une heure (ou d'un dixième de cette durée) de NextUpdate, et chaque fois que ce qu'elle dit change."
   },
   "oid4vci.signedMetadataCertificateHeader|label": {
     "en": "74bcdd1bedcb52e5",

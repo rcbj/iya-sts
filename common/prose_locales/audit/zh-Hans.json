@@ -1299,6 +1299,10 @@
     "en": "631dece03539cd4a",
     "text": "某人为自己的钱包创建了凭证提供"
   },
+  "audit.actions.portal.vc.remove.label": {
+    "en": "bc144eaf5bf2222e",
+    "text": "某人移除了本领域签发给他的凭证"
+  },
   "audit.actions.risk.feedback.label": {
     "en": "e244d70b4d5a8c39",
     "text": "记录了对风险评估的反馈"

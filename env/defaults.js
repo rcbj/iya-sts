@@ -793,6 +793,9 @@ var config = {
     credentialLifetimeS: 2592000,                     // Issued credential lifetime (s)
     credentialSigningAlgorithm: "RS256",              // Algorithm credentials are signed with
     credentialCertificateHeader: "x5c",               // Credential certificate header
+    trustedListCertificateHeader: "x5c",              // Trusted list certificate header
+    trustedListTerritory: "",                         // Trusted list scheme territory
+    trustedListLifetimeH: 24,                         // Trusted list lifetime (hours)
     signedMetadataCertificateHeader: "x5u",           // Issuer signed_metadata certificate header
     proofIatWindowS: 600,                             // Proof of possession iat window (s)
     cNonceTtlS: 300,                                  // c_nonce lifetime (s)

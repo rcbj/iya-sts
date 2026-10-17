@@ -394,12 +394,13 @@ const CELL_MINTED = [
   // Each node's own listener key (2026-10-08), sealed: a node is a member of
   // one cell, and its key never leaves that cell's store.
   'tls.listenerKeys', 'tls.presentedChains',
-  'tls.sessionTicketKey', 'vc_issued.credentials',
+  'tls.sessionTicketKey', 'vc_issued.byNotification', 'vc_issued.bySubject',
+  'vc_issued.credentials',
   'vc_issuer.lastCredentialRequest', 'vc_issuer.notificationIds',
   'vc_issuer.vciNonces', 'vc_offers.credentialOffers',
   'vc_offers.deferredAccessTokens', 'vc_offers.deferredTransactions',
   'vc_offers.issuerStates', 'vc_offers.preAuthorizedCodes',
-  'vc_offers.signingAlgTokens',
+  'vc_offers.signingAlgTokens', 'vc_trusted_list.state',
   'vc_verifier.vpRequests', 'vc_verifier.vpTransactions',
   'xacml_monitor.counters'
 ];

@@ -1299,6 +1299,10 @@
     "en": "631dece03539cd4a",
     "text": "Gumawa ang isang tao ng Credential Offer para sa sarili niyang wallet"
   },
+  "audit.actions.portal.vc.remove.label": {
+    "en": "bc144eaf5bf2222e",
+    "text": "Inalis ng isang tao ang isang credential na inisyu sa kanya ng realm na ito"
+  },
   "audit.actions.risk.feedback.label": {
     "en": "e244d70b4d5a8c39",
     "text": "Naitala ang feedback sa isang risk assessment"
