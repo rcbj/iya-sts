@@ -341,7 +341,8 @@ async function boot() {
   // THE ISSUANCE, as a wallet does it. `opts.format` picks the
   // configuration; `opts.token` overrides the access token; `opts.attestation`
   // is a key attestation JWT for the proof header; `opts.proofType`
-  // `attestation` sends it as the proof itself.
+  // `attestation` sends it as the proof itself; `opts.holders` sends a proof
+  // for each of several holder keys, a batch.
   // ---------------------------------------------------------------------
   async function issue(username, holder, opts) {
     const o = opts || {};
@@ -368,9 +369,14 @@ async function boot() {
       if (o.attestation) {
         header.key_attestation = o.attestation(cNonce);
       }
-      proofs = { jwt: [jws(header,
-        { aud: base + prefix, iat: Math.floor(Date.now() / 1000),
-          nonce: cNonce }, holder)] };
+      // A BATCH (#670): `opts.holders`, one proof per key, all quoting the
+      // one c_nonce, as OpenID4VCI 1.0 section 8.2's `proofs.jwt` does.
+      const keys = o.holders || [holder];
+      proofs = { jwt: keys.map(function (one) {
+        return jws(Object.assign({}, header, { alg: one.alg, jwk: one.jwk }),
+          { aud: base + prefix, iat: Math.floor(Date.now() / 1000),
+            nonce: cNonce }, one);
+      }) };
     }
     const got = await request('POST', prefix + '/oid4vci/credential', {
       headers: { authorization: 'Bearer ' + accessToken },
