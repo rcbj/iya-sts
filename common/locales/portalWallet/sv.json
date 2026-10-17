@@ -44,6 +44,18 @@
   "remove": "Ta bort",
   "removeNote": "Att ta bort ett intyg återkallar det: en verifierare som kontrollerar dess status ser att det är återkallat, och det loggar inte längre in dig här. Det raderas inte från din plånbok. Varken OpenID for Verifiable Presentations eller OpenID for Verifiable Credential Issuance låter den här tjänsten radera ett intyg från en plånbok, så radera det själv i plånboken.",
   "doneRemoved": "Intyget är återkallat. Radera det själv från din plånbok: den här tjänsten kan inte göra det åt dig.",
+  "batchNote": "Utfärdande i omgångar är på: varje gång du lägger till ett intyg får din plånbok {size} kopior av det, var och en bunden till en annan nyckel som din plånbok har. Din plånbok kan visa en annan kopia för varje verifierare, så att dina presentationer inte kan kopplas ihop med varandra genom nyckeln. Kopiorna av ett intyg visas tillsammans nedan.",
+  "copies": "{count, plural, one {# kopia} other {# kopior}}",
+  "copyOf": "Kopia {position} av {of}",
+  "copyKey": "Bunden till din plånboks nyckel",
+  "keyNotRecorded": "Nyckeln är inte registrerad",
+  "copyStatusIndex": "Post {index} i statuslistan",
+  "stateCount": "{count} av {total}: {state}",
+  "stateRemovedShort": "Borttagen av dig",
+  "removeAll": "Ta bort alla kopior",
+  "removeCopy": "Ta bort den här kopian",
+  "doneRemovedCopy": "Den kopian är återkallad, och de andra kopiorna är oförändrade. Radera den själv från din plånbok: den här tjänsten kan inte göra det åt dig.",
+  "doneRemovedAll": "Alla kopior av intyget är återkallade. Radera dem själv från din plånbok: den här tjänsten kan inte göra det åt dig.",
   "signingAlg": "Signeringsalgoritm",
   "signingAlgSub": "Algoritmen som den här tjänsten signerar intyget med. Den konfigurerade standardalgoritmen är vald. De postkvantsäkra algoritmerna definieras i utkast, så en plånbok eller verifierare kanske inte godtar dem än."
 }

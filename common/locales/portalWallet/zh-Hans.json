@@ -44,6 +44,18 @@
   "remove": "移除",
   "removeNote": "移除凭证会将其撤销：检查其状态的验证方会看到它已被撤销，它也不能再用于在此登录。它不会从您的钱包中删除。OpenID for Verifiable Presentations 和 OpenID for Verifiable Credential Issuance 都不允许本服务从钱包中删除凭证，因此请您自己在钱包中删除它。",
   "doneRemoved": "该凭证已撤销。请您自己从钱包中删除它：本服务无法代您删除。",
+  "batchNote": "批量签发已开启：每次您添加凭证时，您的钱包都会得到它的 {size} 份副本，每份都绑定到您钱包持有的不同密钥。您的钱包可以向每个验证方出示不同的副本，因此您的出示无法通过密钥相互关联。同一凭证的副本在下方列在一起。",
+  "copies": "{count, plural, other {# 份副本}}",
+  "copyOf": "第 {position} 份，共 {of} 份",
+  "copyKey": "绑定到您的钱包密钥",
+  "keyNotRecorded": "未记录密钥",
+  "copyStatusIndex": "状态列表条目 {index}",
+  "stateCount": "{total} 份中的 {count} 份：{state}",
+  "stateRemovedShort": "已由您移除",
+  "removeAll": "移除所有副本",
+  "removeCopy": "移除此副本",
+  "doneRemovedCopy": "该副本已撤销，其他副本保持不变。请您自己从钱包中删除它：本服务无法代您删除。",
+  "doneRemovedAll": "该凭证的所有副本均已撤销。请您自己从钱包中删除它们：本服务无法代您删除。",
   "signingAlg": "签名算法",
   "signingAlgSub": "本服务签署该凭证所用的算法。已选中配置的默认算法。后量子算法由草案定义，钱包或验证方可能尚不接受。"
 }

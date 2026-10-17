@@ -21,7 +21,8 @@
 //   GET  /account-api/credentials/offerable   what this person may be offered,
 //                                             and what they were issued
 //   POST /account-api/credentials/offers      an offer, for this person
-//   POST /account-api/credentials/remove      one of their credentials removed
+//   POST /account-api/credentials/remove      one of their credentials
+//                                             removed: every copy, or one
 //
 // and the page is drawn in the browser by `web_wallet.ts`, the QR code by
 // `common/web_qr.ts`, from the offer URI the answer carries.
@@ -59,6 +60,19 @@
 // is this service's half (`removeForSubject()`: the status-list entry
 // INVALID, the issued register revoked, sign-in refused), and the page says
 // the wallet's copy must be deleted in the wallet.
+//
+// **ONE ROW PER ISSUANCE, AND ITS COPIES UNDER IT (#670, rcbj 2026-10-17).**
+// With batch issuance on (`oid4vci.batchSize`, 4 by default) a wallet takes
+// four copies of a credential in one Credential Response, each bound to a
+// different key of the wallet's so that verifiers cannot link its
+// presentations by the key; listed one per copy, one "Add to your wallet"
+// was four rows. So `issued` is `issuancesForSubject()`: one entry per
+// issuance with its copies in `copies` (each told apart by its position,
+// the RFC 7638 thumbprint of the key it is bound to or its holder's DID,
+// and its status-list index), and the page says batching is on when the
+// batch size is over one. Remove takes an issuance's id (every copy still
+// good) or a copy's (that copy) — ONE operation, argued at
+// `removeIssuedCredential` below. A page counts issuances.
 //
 // **THE SIGNING ALGORITHM IS THE PERSON'S CHOICE** (2026-10-16): each
 // configuration's `signingAlgs` (`vc_configs.ts`'s `vciSigningAlgsFor()`,
@@ -117,14 +131,19 @@ const PAGE_QUERY = vz.object({ page: PAGE_FIELD });
 
 const REMOVE_FORM = vz.object({
   id: vz.string().min(1).max(64)
-    .describe('The credential\'s `id`, from `issued` in ' +
-              '`GET /account-api/credentials/offerable`.'),
+    .describe('An issuance\'s `id`, from `issued` in ' +
+              '`GET /account-api/credentials/offerable`, which removes ' +
+              'every copy of it; or one copy\'s, from its `copies`, which ' +
+              'removes that copy alone.'),
   page: PAGE_FIELD
 });
 
 // The states a credential in the history can be in (`vc_issued.ts`).
 const STATES = ['valid', 'suspended', 'revoked', 'removed', 'signed-out',
                 'expired'];
+
+// The states a copy may still be removed in.
+const REMOVABLE = ['valid', 'suspended'];
 
 // What each algorithm is, and which document defines it for JOSE (or, for
 // bbs-2023, for Data Integrity) — drafts named as drafts. The first is drawn
@@ -202,17 +221,43 @@ const OFFERABLE_ANSWER = {
     modes: { type: 'array', items: { type: 'string', enum: MODES } },
     lifetimeSeconds: { type: 'integer' },
     wallet: { type: 'string' },
+    batchSize: { type: 'integer',
+      description: 'How many copies of a credential one issuance gives a ' +
+                   'wallet (`oid4vci.batchSize`).' },
     issued: { type: 'array', items: { type: 'object', properties: {
-      id: { type: 'string' }, configurationId: { type: 'string' },
+      id: { type: 'string',
+            description: 'The issuance\'s; removes every copy.' },
+      configurationId: { type: 'string' },
       name: { type: 'string' }, format: { type: 'string' },
       issuedAt: { type: 'string', format: 'date-time' },
       expiresAt: { type: 'string', format: 'date-time' },
-      status: { type: 'string', enum: STATES },
+      status: { type: 'string', enum: STATES.concat(['mixed']),
+                description: 'The copies\' state where they share one.' },
+      counts: { type: 'object', additionalProperties: { type: 'integer' },
+                description: 'How many copies are in each state.' },
       removable: { type: 'boolean' },
       removedAt: { type: 'string', format: 'date-time' },
       walletEvent: { type: 'string', enum: ['', 'credential_accepted',
         'credential_failure', 'credential_deleted'] },
-      walletEventAt: { type: 'string', format: 'date-time' } } } },
+      walletEventAt: { type: 'string', format: 'date-time' },
+      copies: { type: 'array', items: { type: 'object', properties: {
+        id: { type: 'string', description: 'The copy\'s; removes it.' },
+        position: { type: 'integer' }, of: { type: 'integer' },
+        issuedAt: { type: 'string', format: 'date-time' },
+        expiresAt: { type: 'string', format: 'date-time' },
+        status: { type: 'string', enum: STATES },
+        removable: { type: 'boolean' },
+        removedAt: { type: 'string', format: 'date-time' },
+        walletEvent: { type: 'string' },
+        walletEventAt: { type: 'string', format: 'date-time' },
+        keyThumbprint: { type: 'string',
+          description: 'The RFC 7638 thumbprint of the wallet key it is ' +
+                       'bound to.' },
+        holderDid: { type: 'string',
+          description: 'The holder\'s DID, for a DID-bound credential.' },
+        statusIndex: { type: 'string',
+          description: 'Its index in the realm\'s status list.' } } } }
+    } } },
     paging: { type: 'object', properties: {
       page: { type: 'integer' }, pages: { type: 'integer' },
       per: { type: 'integer' }, total: { type: 'integer' } } },
@@ -252,6 +297,10 @@ const REMOVE_ANSWER = {
   properties: {
     ok: { type: 'boolean' },
     message: { type: 'string' },
+    scope: { type: 'string', enum: ['issuance', 'copy'],
+             description: 'What the `id` named.' },
+    removed: { type: 'integer',
+               description: 'How many copies this act removed.' },
     view: { type: 'object',
             description: 'The page\'s view, `issued` showing the credential ' +
                          'removed.' }
@@ -315,8 +364,8 @@ class PortalWallet {
    * @param req - the request (the realm's metadata is built from it)
    * @param caller - the signed-in person
    * @param wanted - the page of `issued` asked for; the first when left out
-   * @returns `{ configurations, modes, lifetimeSeconds, wallet, issued,
-   *   paging }`
+   * @returns `{ configurations, modes, lifetimeSeconds, wallet, batchSize,
+   *   issued, paging }`
    */
   view(req: Json, caller: AccountCaller, wanted?: number): Json {
     const { log, loadOffers, loadConfigs, loadIssuer, loadIssued } = this.deps;
@@ -361,38 +410,57 @@ class PortalWallet {
       return ms ? new Date(ms).toISOString() : '';
     };
     // THE SUBJECT IS THE TOKEN'S (`account-api/CLAUDE.md`).
+    // ONE ENTRY PER ISSUANCE, its copies under it (#670): a page counts
+    // issuances.
     const all: Json[] = caller && caller.sub
-      ? loadIssued().historyForSubject(caller.sub) : [];
+      ? loadIssued().issuancesForSubject(caller.sub) : [];
     // Paged on the history, decorated on the page, as `/portal/claim-sources`
     // is: only the rows shown are turned into the answer's shape.
     const pages = Math.max(1, Math.ceil(all.length / PER_PAGE));
     const page = Math.min(Math.max(1, Number(wanted) || 1), pages);
     const issued = all.slice((page - 1) * PER_PAGE, page * PER_PAGE)
       .map(function (one: Json): Json {
+        const copies: Json[] = one.copies || [];
         return { id: one.id, configurationId: one.configId,
                  name: String(names[one.configId] || one.configId ||
                               one.format),
                  format: one.format, issuedAt: at(one.issuedAt),
                  expiresAt: at(one.expiresAt), status: one.status,
-                 removable: one.status === 'valid' ||
-                            one.status === 'suspended',
+                 counts: one.counts,
+                 removable: copies.some(function (c: Json): boolean {
+                   return REMOVABLE.indexOf(c.status) >= 0;
+                 }),
                  removedAt: at(one.removedAt),
                  walletEvent: one.walletEvent,
-                 walletEventAt: at(one.walletEventAt) };
+                 walletEventAt: at(one.walletEventAt),
+                 copies: copies.map(function (c: Json, i: number): Json {
+                   return { id: c.id, position: i + 1, of: copies.length,
+                            issuedAt: at(c.issuedAt),
+                            expiresAt: at(c.expiresAt), status: c.status,
+                            removable: REMOVABLE.indexOf(c.status) >= 0,
+                            removedAt: at(c.removedAt),
+                            walletEvent: c.walletEvent,
+                            walletEventAt: at(c.walletEventAt),
+                            keyThumbprint: c.keyThumbprint,
+                            holderDid: c.holderDid,
+                            statusIndex: c.statusIndex };
+                 }) };
       });
     log.debug("Leaving PortalWallet.view(). " + rows.length + ", page " +
               page + " of " + pages + " of " + all.length + " issued.");
     return { configurations: rows, modes: MODES.slice(0),
              lifetimeSeconds: Math.round(offers.offerTtlMs() / 1000),
-             wallet: offers.configuredWalletUrl(), issued: issued,
+             wallet: offers.configuredWalletUrl(),
+             batchSize: Math.max(1, Number(configs.vciBatchSize()) || 1),
+             issued: issued,
              paging: { page: page, pages: pages, per: PER_PAGE,
                        total: all.length } };
   }
 
   /**
-   * Removes one of the caller's credentials (`vc_issued.ts`'s
-   * `removeForSubject()`): revoked here, and the wallet's copy left for them
-   * to delete.
+   * Removes one of the caller's credentials — every copy of an issuance, or
+   * one copy (`vc_issued.ts`'s `removeForSubject()`): revoked here, and the
+   * wallet's copies left for them to delete.
    *
    * @param ctx - the account API's helpers
    * @param req - the request
@@ -419,17 +487,30 @@ class PortalWallet {
       summary: (result.ok ? (result.already ? 'asked again to remove'
                                             : 'removed')
                           : 'could not remove') +
+               (result.ok && result.scope === 'issuance' &&
+                result.copies > 1 ? ' every copy of' : '') +
                ' a credential this realm issued them, on /portal/wallet',
-      detail: { id: id, errors: result.ok ? undefined : [result.error] }
+      detail: { id: id, scope: result.scope || undefined,
+                removed: result.ok ? result.removed : undefined,
+                copies: result.ok ? result.copies : undefined,
+                errors: result.ok ? undefined : [result.error] }
     });
     if (!result.ok) {
       log.debug("Leaving PortalWallet.remove(). Refused.");
       return ctx.refuse(res, 400, 'STS-PORTAL-0591', String(result.error),
                         { view: this.view(req, caller, body.page) });
     }
+    // WHAT WAS REMOVED, in the person's words: one copy of several, every
+    // copy of several, or the one credential an issuance was.
+    const copies = Number(result.copies) || 0;
+    const said = result.scope === 'copy'
+      ? 'portalWallet.doneRemovedCopy'
+      : (copies > 1 ? 'portalWallet.doneRemovedAll'
+                    : 'portalWallet.doneRemoved');
     log.debug("Leaving PortalWallet.remove(). Removed.");
     return ctx.json(res, 200, { ok: true,
-      message: ctx.translatorFor(who).text('portalWallet.doneRemoved'),
+      message: ctx.translatorFor(who).text(said),
+      scope: result.scope, removed: Number(result.removed) || 0,
       view: this.view(req, caller, body.page) });
   }
 
@@ -564,14 +645,22 @@ class PortalWallet {
           '(Appendix H.2) and `deferred` (H.3). `lifetimeSeconds`: how long ' +
           'an offer and its code are honoured (`oid4vci.offerTtlS`). ' +
           '`wallet`: the configured web wallet a link opens, or empty. ' +
+          '`batchSize`: how many copies of a credential one issuance gives ' +
+          'your wallet, each bound to a different key of the wallet\'s ' +
+          '(`oid4vci.batchSize`, OpenID4VCI 1.0 section 8.2). ' +
           '`issued`: the credentials this realm still records as issued to ' +
-          'you, newest first — each one\'s `id`, configuration, when it was ' +
-          'issued and expires, its `status` (`valid`, `suspended`, ' +
-          '`revoked`, `removed` by you, `signed-out` by a global sign-out, ' +
-          '`expired`), whether you can remove it, and the last event your ' +
-          'wallet reported to the Notification Endpoint (OpenID4VCI 1.0 ' +
-          'section 11). `issued` is one page (`paging`, moved by `page`, ' +
-          '20 to a page); `paging.total` counts them all.',
+          'you, ONE PER ISSUANCE, newest first — each one\'s `id`, ' +
+          'configuration, when it was issued and expires, its `status` ' +
+          '(`valid`, `suspended`, `revoked`, `removed` by you, `signed-out` ' +
+          'by a global sign-out, `expired`, or `mixed` where its copies ' +
+          'differ, with `counts`), whether you can remove it, the last ' +
+          'event your wallet reported to the Notification Endpoint ' +
+          '(OpenID4VCI 1.0 section 11), and its `copies`: each one\'s own ' +
+          '`id`, `position` of `of`, state, the RFC 7638 thumbprint of the ' +
+          'wallet key it is bound to (`keyThumbprint`), the holder\'s DID ' +
+          'where it is DID-bound, and its `statusIndex`. `issued` is one ' +
+          'page of issuances (`paging`, moved by `page`, 20 to a page); ' +
+          '`paging.total` counts them all.',
         answer: OFFERABLE_ANSWER,
         query: PAGE_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
@@ -618,20 +707,37 @@ class PortalWallet {
         operationId: 'removeIssuedCredential', tag: 'Wallet',
         access: 'person',
         mirrors: 'POST ' + ctx.PORTAL + '/remove-wallet-credential',
-        summary: 'Removes one of the credentials issued to you',
-        description: 'The credential named by its `id` (from `issued`) is ' +
-          'revoked: its Token Status List entry is set INVALID, which is ' +
-          'final and what a verifier reads, it is marked revoked in the ' +
-          'issued register, it no longer signs you in, and your relying ' +
-          'parties are told over CAEP (credential-change, revoke). It is NOT ' +
-          'deleted from your wallet: neither OpenID4VP nor OpenID4VCI lets ' +
-          'an issuer do that, so delete it in the wallet yourself. Only a ' +
-          'credential of yours can be named; removing one already removed ' +
-          'is answered as done. The page\'s `view` is in the answer.',
+        summary: 'Removes a credential issued to you: every copy, or one',
+        // ONE OPERATION FOR BOTH (#670). The id says which: an issuance's
+        // (`issued[].id`) removes every copy still good, a copy's
+        // (`issued[].copies[].id`) removes that one, and the two are
+        // digests of different strings so neither can be the other. Both
+        // are the same act on the same resource — revoke what this realm
+        // issued you — with the same refusal, the same audit action and the
+        // same answer, and the portal's one Remove path mirrors it; a
+        // `scope` member could only restate what the id already says, and
+        // a mismatch between the two would be one more refusal to define.
+        description: 'The credential named by its `id` is revoked. An ' +
+          'issuance\'s `id` (from `issued`) names every copy of it — with ' +
+          'batch issuance one issuance gives your wallet several copies, ' +
+          'each bound to a different key — and removes each copy still ' +
+          'good; a copy\'s `id` (from that issuance\'s `copies`) removes ' +
+          'that copy alone and leaves the others as they are. Each copy ' +
+          'removed has its Token Status List entry set INVALID, which is ' +
+          'final and what a verifier reads, is marked revoked in the ' +
+          'issued register and no longer signs you in; your relying ' +
+          'parties are told once over CAEP (credential-change, revoke). It ' +
+          'is NOT deleted from your wallet: neither OpenID4VP nor ' +
+          'OpenID4VCI lets an issuer do that, so delete it in the wallet ' +
+          'yourself. Only a credential of yours can be named; removing one ' +
+          'already removed is answered as done. `scope` says what the id ' +
+          'named and `removed` how many copies this act removed; the ' +
+          'page\'s `view` is in the answer.',
         body: REMOVE_FORM,
         answer: REMOVE_ANSWER,
         statuses: {
-          400: 'No credential of yours has that id (STS-PORTAL-0591).'
+          400: 'No credential or issuance of yours has that id ' +
+               '(STS-PORTAL-0591).'
         },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {

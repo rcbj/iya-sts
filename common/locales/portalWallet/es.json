@@ -44,6 +44,18 @@
   "remove": "Eliminar",
   "removeNote": "Eliminar una credencial la revoca: un verificador que consulte su estado la verá revocada, y ya no sirve para iniciar sesión aquí. No se borra de su billetera. Ni OpenID for Verifiable Presentations ni OpenID for Verifiable Credential Issuance permiten a este servicio borrar una credencial de una billetera, así que bórrela usted mismo en su billetera.",
   "doneRemoved": "La credencial está revocada. Bórrela usted mismo de su billetera: este servicio no puede hacerlo por usted.",
+  "batchNote": "La emisión por lotes está activada: cada vez que añade una credencial, su cartera recibe {size} copias, cada una vinculada a una clave distinta que guarda su cartera. Su cartera puede mostrar una copia distinta a cada verificador, de modo que sus presentaciones no pueden vincularse entre sí por la clave. Las copias de una misma credencial aparecen juntas a continuación.",
+  "copies": "{count, plural, one {# copia} other {# copias}}",
+  "copyOf": "Copia {position} de {of}",
+  "copyKey": "Vinculada a la clave de su cartera",
+  "keyNotRecorded": "Clave no registrada",
+  "copyStatusIndex": "Entrada {index} de la lista de estado",
+  "stateCount": "{count} de {total}: {state}",
+  "stateRemovedShort": "Eliminada por usted",
+  "removeAll": "Eliminar todas las copias",
+  "removeCopy": "Eliminar esta copia",
+  "doneRemovedCopy": "Esa copia está revocada y las demás copias no cambian. Elimínela usted mismo de su cartera: este servicio no puede hacerlo por usted.",
+  "doneRemovedAll": "Todas las copias de la credencial están revocadas. Elimínelas usted mismo de su cartera: este servicio no puede hacerlo por usted.",
   "signingAlg": "Algoritmo de firma",
   "signingAlgSub": "El algoritmo con el que este servicio firma la credencial. Está seleccionado el predeterminado configurado. Los algoritmos poscuánticos se definen en borradores, así que es posible que una billetera o un verificador aún no los acepte."
 }
