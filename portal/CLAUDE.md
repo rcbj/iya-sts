@@ -1517,6 +1517,17 @@ pre-authorized offer).
   `/portal/claim-sources` are (`page`, `paging`, `kit.pageNav()`), and both
   forms carry the page they were on so the view an act answers is that
   page. `tests/portal_wallet_history.js` holds it.
+* **THE SIGNING ALGORITHM, CHOSEN PER OFFER** (rcbj, 2026-10-16). One
+  `<select name="signingAlg">` under the configuration and mode radios: every
+  configuration's `signingAlgs` (the configured default first, post-quantum
+  drafts named as drafts in `ALG_NOTES`), each option's `data-for` naming
+  its configurations and `data-default-for` those it is the default of. The
+  runtime's `wireDependentSelects()` (`data-depends-on="configuration"`)
+  shows only the checked configuration's and selects its default; the first
+  configuration's are drawn so already, for a browser without the script. A
+  value not in the configuration's list is refused (`STS-PORTAL-0592`); the
+  default is not recorded as a choice, so a change of the setting before
+  the wallet redeems still applies. `oid4vc/CLAUDE.md` has where it goes.
 
 ## `/portal/devices`: A PERSON'S OWN DEVICES (2026-09-23, #130; #164 phase 2, 2026-09-26)
 

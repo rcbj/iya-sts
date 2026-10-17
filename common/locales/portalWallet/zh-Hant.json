@@ -43,5 +43,7 @@
   "walletDeleted": "已於 {when} 刪除",
   "remove": "移除",
   "removeNote": "移除憑證會將其撤銷：檢查其狀態的驗證方會看到它已被撤銷，它也不能再用於在此登入。它不會從您的錢包中刪除。OpenID for Verifiable Presentations 與 OpenID for Verifiable Credential Issuance 都不允許本服務從錢包中刪除憑證，因此請您自行在錢包中刪除它。",
-  "doneRemoved": "該憑證已撤銷。請您自行從錢包中刪除它：本服務無法代您刪除。"
+  "doneRemoved": "該憑證已撤銷。請您自行從錢包中刪除它：本服務無法代您刪除。",
+  "signingAlg": "簽章演算法",
+  "signingAlgSub": "本服務簽署該憑證所用的演算法。已選取設定的預設演算法。後量子演算法由草案定義，錢包或驗證方可能尚不接受。"
 }

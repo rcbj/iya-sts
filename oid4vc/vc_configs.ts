@@ -299,6 +299,57 @@ class VcConfigs {
     return !!(c && c.issuerDid);
   }
 
+  // ---------------------------------------------------------------------------
+  // THE ALGORITHMS A CREDENTIAL OF THIS CONFIGURATION MAY BE SIGNED WITH
+  // (2026-10-16), the configured `oid4vci.credentialSigningAlgorithm` first:
+  // what a person may choose on `/portal/wallet`, what the credential
+  // endpoint honours, and what the metadata's
+  // `credential_signing_alg_values_supported` says.
+  //
+  //   * dc+sd-jwt and jwt_vc_json: every JWS algorithm that setting allows
+  //     (its `enumValues`, one list) — RFC 7518's RS, PS and ES, RFC 8812's
+  //     ES256K, RFC 8037's EdDSA, and the post-quantum ML-DSA, SLH-DSA and
+  //     composite drafts. SD-JWT VC and the VCDM's JWT form restrict none.
+  //   * A configuration naming its issuer by DID: the configured algorithm
+  //     and RS256 only, because the DID document publishes those two keys
+  //     (`vc_did.ts`) and a credential signed with another would name a key
+  //     its issuer's DID cannot resolve.
+  //   * ldp_vc: bbs-2023, the one cryptosuite its issuance builds — the
+  //     unlinkable derived proof a wallet sign-in rests on.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the algorithms a configuration's credentials may be signed with,
+   * the configured one first.
+   *
+   * @param configId - the configuration's id
+   * @returns the algorithms, or [] for an unknown id
+   */
+  vciSigningAlgsFor(configId: string): string[] {
+    const { log } = this.deps;
+    log.debug("Entering VcConfigs.vciSigningAlgsFor().");
+    const c = VCI_CONFIGS[configId];
+    if (!c) {
+      log.debug("Leaving VcConfigs.vciSigningAlgsFor(). Unknown.");
+      return [];
+    }
+    if (c.format === 'ldp_vc') {
+      log.debug("Leaving VcConfigs.vciSigningAlgsFor(). bbs-2023.");
+      return ['bbs-2023'];
+    }
+    const configured = String(this.deps.config.value(
+      'oid4vci.credentialSigningAlgorithm') || 'RS256');
+    const row = (config.SETTINGS as any[]).filter(function (one: any) {
+      return one && one.key === 'oid4vci.credentialSigningAlgorithm';
+    })[0];
+    const allowed: string[] = c.issuerDid ? ['RS256']
+      : [].concat((row && row.enumValues) || []);
+    const out = [configured].concat(allowed.filter(function (alg) {
+      return alg !== configured;
+    }));
+    log.debug("Leaving VcConfigs.vciSigningAlgsFor(). " + out.length + ".");
+    return out;
+  }
+
   // A credential_identifier is minted as "<configId>:<hash>", so the
   // configuration it belongs to is the part before the colon. Used to route a
   // section 8.2 identifier request to the right format.
@@ -375,5 +426,6 @@ export = {
   vciConfigIds: slot.forward('vciConfigIds'),
   vciFormatOf: slot.forward('vciFormatOf'),
   vciUsesIssuerDid: slot.forward('vciUsesIssuerDid'),
+  vciSigningAlgsFor: slot.forward('vciSigningAlgsFor'),
   configIdOfIdentifier: slot.forward('configIdOfIdentifier')
 };

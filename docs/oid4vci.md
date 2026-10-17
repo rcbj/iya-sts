@@ -143,7 +143,13 @@ means the whole configured set.
     page tells the person to delete it there. An id that is not one of the
     caller's is refused (`STS-PORTAL-0591`);
   * `POST /account-api/credentials/offers` with `{ "configuration": "…",
-    "mode": "cross-device" | "deferred" }`: a pre-authorized offer **for the
+    "mode": "cross-device" | "deferred", "signingAlg": "…" }` (`signingAlg`
+    optional: one of the configuration's `signingAlgs` from the GET — every
+    algorithm `oid4vci.credentialSigningAlgorithm` allows for `dc+sd-jwt`
+    and `jwt_vc_json`, the post-quantum ML-DSA, SLH-DSA and composite drafts
+    among them; the configured one and RS256 for a DID-named configuration;
+    `bbs-2023` for `ldp_vc` — left out, the configured default; the realm's
+    Status List Token keeps the configured one): a pre-authorized offer **for the
     token's person** (nobody else can be named), answered once — the
     Credential Offer, the offer by value (`openid-credential-offer://?credential_offer=…`)
     and by reference (`credential_offer_uri`), the configured web wallet's
@@ -372,7 +378,7 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.responseEncryptionEncValues` | `OID4VCI_RESPONSE_ENCRYPTION_ENC_VALUES` | `A128GCM,A256GCM` | yes | Content encryption algorithms offered for responses. |
 | `oid4vci.responseEncryptionRequired` | `OID4VCI_RESPONSE_ENCRYPTION_REQUIRED` | `false` | yes | Refuse a request that does not ask for an encrypted response. |
 | `oid4vci.credentialLifetimeS` | `OID4VCI_CREDENTIAL_LIFETIME_S` | `2592000` | yes | How long every minted credential is valid (thirty days). |
-| `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm for `dc+sd-jwt` and `jwt_vc_json` credentials, the status lists and the Domain Linkage Credential. |
+| `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm for `dc+sd-jwt` and `jwt_vc_json` credentials, the status lists and the Domain Linkage Credential — the default a `/portal/wallet` offer may change for its own credential. |
 | `oid4vci.credentialCertificateHeader` | `OID4VCI_CREDENTIAL_CERTIFICATE_HEADER` | `x5c` | yes | Whether a credential and its Status List Token carry their signing key's chain: `x5c` (inline, without the Root), `x5u`, `both` or `none`. |
 | `oid4vci.signedMetadataCertificateHeader` | `OID4VCI_SIGNED_METADATA_CERTIFICATE_HEADER` | `x5u` | yes | The same for the metadata's `signed_metadata`. |
 | `oid4vci.proofIatWindowS` | `OID4VCI_PROOF_IAT_WINDOW_S` | `600` | yes | How far a proof's `iat` may be from now, either way. |

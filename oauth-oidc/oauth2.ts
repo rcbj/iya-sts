@@ -15116,6 +15116,12 @@ class OAuth2Server {
         deferredAccessTokens.add(issued.access_token);
         log.debug("This access token belongs to a DEFERRED issuance.");
       }
+      // And the algorithm the offer chose for its credential (2026-10-16,
+      // `/portal/wallet`), which the credential endpoint signs with.
+      if (record.signingAlg) {
+        vcOffers.noteTokenSigningAlg(issued.access_token,
+                                     String(record.signingAlg));
+      }
       log.debug("Leaving OAuth2Server.tokenGrant().");
       return respond(issued);
     }

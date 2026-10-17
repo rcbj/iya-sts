@@ -38,6 +38,15 @@
 // portal's other lists are, and each form carries the page it was on, so
 // the page drawn from its answer is that one.
 //
+// THE SIGNING ALGORITHM (2026-10-16): one `<select name="signingAlg">`
+// holding every configuration's algorithms, each option naming in
+// `data-for` the configurations it applies to and in `data-default-for`
+// those it is the default of. The first configuration's are drawn shown
+// and its default selected, so the form is right without a script; the
+// portal runtime's `wire()` (`data-depends-on="configuration"`) shows only
+// the chosen configuration's and selects its default when another is
+// picked.
+//
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
 
@@ -171,6 +180,52 @@ class WalletPages {
   }
 
   /**
+   * The signing algorithm's one list, every configuration's algorithms in
+   * it and the first configuration's shown.
+   *
+   * @param rows - the view's `configurations`
+   * @param t - the translator
+   * @returns the HTML, '' where no configuration names an algorithm
+   */
+  static algorithmSelect(rows: Json[], t: Json): string {
+    const order: string[] = [];
+    const seen: Json = {};
+    rows.forEach(function (row: Json) {
+      (row.signingAlgs || []).forEach(function (one: Json) {
+        if (!seen[one.alg]) {
+          seen[one.alg] = { note: one, for: [], defaultFor: [] };
+          order.push(one.alg);
+        }
+        seen[one.alg].for.push(row.id);
+        if (row.defaultSigningAlg === one.alg) {
+          seen[one.alg].defaultFor.push(row.id);
+        }
+      });
+    });
+    if (!order.length) {
+      return '';
+    }
+    const first = rows[0] ? String(rows[0].id) : '';
+    const options = order.map(function (alg: string): string {
+      const one = seen[alg];
+      const shown = one.for.indexOf(first) >= 0;
+      return '<option value="' + kit.esc(alg) + '" data-for="' +
+        kit.esc(one.for.join(' ')) + '" data-default-for="' +
+        kit.esc(one.defaultFor.join(' ')) + '"' +
+        (shown ? '' : ' hidden disabled') +
+        (one.defaultFor.indexOf(first) >= 0 ? ' selected' : '') + '>' +
+        kit.esc(alg) + (one.note.what ? ' — ' + kit.esc(one.note.what) : '') +
+        (one.note.spec ? ' (' + kit.esc(one.note.spec) + ')' : '') +
+        '</option>';
+    }).join('');
+    return '<p class="sub"><label for="wallet-alg"><strong>' +
+      t.html('portalWallet.signingAlg') + '</strong></label></p>' +
+      '<p><select id="wallet-alg" name="signingAlg" ' +
+      'data-depends-on="configuration">' + options + '</select></p>' +
+      '<p class="sub">' + t.html('portalWallet.signingAlgSub') + '</p>';
+  }
+
+  /**
    * The hidden field that keeps the history's page across a form, or ''
    * on the first.
    *
@@ -210,6 +265,7 @@ class WalletPages {
         kit.esc(mode) + '"' + (i === 0 ? ' checked' : '') + '> ' +
         t.html(key) + '</label>';
     }).join('');
+    const algs = WalletPages.algorithmSelect(rows, t);
     const minutes = Math.max(1, Math.round(
       Number(view.lifetimeSeconds || 0) / 60));
     return (view.offer ? WalletPages.offer(view.offer, ctx) : '') +
@@ -220,7 +276,7 @@ class WalletPages {
           '<p class="sub"><strong>' + t.html('portalWallet.which') +
           '</strong></p>' + options +
           '<p class="sub"><strong>' + t.html('portalWallet.when') +
-          '</strong></p>' + modes +
+          '</strong></p>' + modes + algs +
           WalletPages.pageField(view) +
           '<p><button type="submit" id="wallet-make">' +
           t.html('portalWallet.make') + '</button></p>' +

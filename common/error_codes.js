@@ -20747,6 +20747,12 @@ const CODES = [
       'of theirs (an expired one is no longer recorded, and another ' +
       'person\'s is never theirs to name) (#661).',
     spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0592',
+    summary: 'A Credential Offer asked for on /portal/wallet named a signing ' +
+      'algorithm its configuration\'s credentials are not signed with: the ' +
+      'configuration\'s `signingAlgs` (vc_configs.ts vciSigningAlgsFor()) ' +
+      'are the ones it may choose.',
+    spec: 'HTTP 400 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },

@@ -190,6 +190,7 @@ interface VcIssuerDeps {
   vciConfigIds: typeof vcConfigs.vciConfigIds;
   vciFormatOf: typeof vcConfigs.vciFormatOf;
   vciUsesIssuerDid: typeof vcConfigs.vciUsesIssuerDid;
+  vciSigningAlgsFor: typeof vcConfigs.vciSigningAlgsFor;
   issuerDidFor: typeof vcDid.issuerDidFor;
   stsDid: typeof vcDid.stsDid;
   vcClaims: typeof vcClaims;
@@ -199,6 +200,7 @@ interface VcIssuerDeps {
   deferredIntervalS: typeof vcOffers.deferredIntervalS;
   deferredReadyMs: typeof vcOffers.deferredReadyMs;
   deferredAccessTokens: typeof vcOffers.deferredAccessTokens;
+  tokenSigningAlg: typeof vcOffers.tokenSigningAlg;
   deferredTransactions: typeof vcOffers.deferredTransactions;
   offerTtlMs: typeof vcOffers.offerTtlMs;
   clusterClaims: typeof clusterClaims;
@@ -509,6 +511,7 @@ class VcIssuer {
       vciConfigIds: vcConfigs.vciConfigIds,
       vciFormatOf: vcConfigs.vciFormatOf,
       vciUsesIssuerDid: vcConfigs.vciUsesIssuerDid,
+      vciSigningAlgsFor: vcConfigs.vciSigningAlgsFor,
       issuerDidFor: vcDid.issuerDidFor,
       stsDid: vcDid.stsDid,
       vcClaims: vcClaims,
@@ -518,6 +521,7 @@ class VcIssuer {
       deferredIntervalS: vcOffers.deferredIntervalS,
       deferredReadyMs: vcOffers.deferredReadyMs,
       deferredAccessTokens: vcOffers.deferredAccessTokens,
+      tokenSigningAlg: vcOffers.tokenSigningAlg,
       deferredTransactions: vcOffers.deferredTransactions,
       offerTtlMs: vcOffers.offerTtlMs,
       clusterClaims: clusterClaims,
@@ -594,21 +598,14 @@ class VcIssuer {
   // `kid` is the INTERNAL name, which `certificateHeaderFor()` finds the key
   // by; `headerKid` is what the credential's header carries, which
   // `keys.kidFormat` decides (common/jose_kid.js).
-  private credentialSignerAsync() {
+  //
+  // `chosen` (2026-10-16): the algorithm the credential's offer chose on
+  // `/portal/wallet`, or '' for the configured one.
+  private credentialSignerAsync(chosen?: string) {
     const { log, vcStatus } = this.deps;
     log.debug("Entering VcIssuer.credentialSignerAsync().");
     log.debug("Leaving VcIssuer.credentialSignerAsync().");
-    return vcStatus.signerAsync();
-  }
-
-  // The algorithm alone, for the metadata — which must not generate a key set
-  // to say which one it would use.
-  private credentialSigningAlg(): string {
-    const { log, config } = this.deps;
-    log.debug("Entering VcIssuer.credentialSigningAlg().");
-    log.debug("Leaving VcIssuer.credentialSigningAlg().");
-    return String(config.value('oid4vci.credentialSigningAlgorithm') ||
-                  'RS256');
+    return vcStatus.signerAsync(chosen || '');
   }
 
   private encValuesFrom(settingKey) {
@@ -698,7 +695,8 @@ class VcIssuer {
       scope: VCI_SCOPE,
       vct: VCI_VCT,
       cryptographic_binding_methods_supported: ['jwk'],
-      credential_signing_alg_values_supported: [this.credentialSigningAlg()],
+      credential_signing_alg_values_supported:
+        this.deps.vciSigningAlgsFor(VCI_CONFIG_ID),
       proof_types_supported:
         this.proofTypesSupported(stsCrypto.JWS_ASYMMETRIC_ALGS),
       display: [{
@@ -727,7 +725,8 @@ class VcIssuer {
       scope: VCI_JWT_SCOPE,
       credential_definition: { type: VCI_JWT_TYPES },
       cryptographic_binding_methods_supported: ['jwk'],
-      credential_signing_alg_values_supported: [this.credentialSigningAlg()],
+      credential_signing_alg_values_supported:
+        this.deps.vciSigningAlgsFor(VCI_JWT_CONFIG_ID),
       proof_types_supported:
         this.proofTypesSupported(stsCrypto.JWS_ASYMMETRIC_ALGS),
       display: [{
@@ -792,6 +791,10 @@ class VcIssuer {
       }
       const entry = JSON.parse(JSON.stringify(sibling));
       entry.scope = config.scope;
+      // ITS OWN ALGORITHMS (2026-10-16): a DID-named credential is signed
+      // only with a key the DID document publishes (`vc_configs.ts`).
+      entry.credential_signing_alg_values_supported =
+        this.deps.vciSigningAlgsFor(id);
       if (Array.isArray(entry.display) && entry.display.length) {
         entry.display[0].name = entry.display[0].name +
           ' — issuer named by DID';
@@ -1365,7 +1368,7 @@ class VcIssuer {
   }
 
   private async buildSdJwtVc(subjectClaims, holderJwk, credentialIssuer,
-                             issuerDid, status) {
+                             issuerDid, status, signingAlg?: string) {
     const { log, logArtifact, b64u, certificateHeaderFor, stsCrypto,
             VCI_VCT } = this.deps;
     // An extension, not the spec: draft-ietf-oauth-sd-jwt-vc defines no
@@ -1397,7 +1400,7 @@ class VcIssuer {
                                .concat([decoy])
                                .sort();
 
-    const signer = await this.credentialSignerAsync();
+    const signer = await this.credentialSignerAsync(signingAlg);
     const times = this.unlinkableTimes(now);
     const payload: Record<string, any> = {
       iss: issuerId,
@@ -1467,7 +1470,7 @@ class VcIssuer {
   // proves possession at presentation time is a Verifiable Presentation JWT
   // signed with that key rather than a Key Binding JWT.
   private async buildJwtVcJson(subjectClaims, holderJwk, credentialIssuer,
-                               issuerDid, status) {
+                               issuerDid, status, signingAlg?: string) {
     const { log, logArtifact, certificateHeaderFor, stsCrypto,
             VCI_JWT_TYPES, VC_CONTEXT } = this.deps;
     // As for ldp_vc, naming the issuer by DID is ordinary in a W3C credential
@@ -1486,7 +1489,7 @@ class VcIssuer {
     const rounded = this.unlinkableTimes(Math.floor(Date.now() / 1000));
     const now = rounded.nbf;
     const exp = rounded.exp;
-    const signer = await this.credentialSignerAsync();
+    const signer = await this.credentialSignerAsync(signingAlg);
     const subjectId = subjectClaims.sub ||
                       ('urn:uuid:' + stsCrypto.randomUuid());
 
@@ -1823,14 +1826,28 @@ class VcIssuer {
    * @param holderName - the holder's username
    * @param person - the subject a verified, undisowned access token named, or
    *   ''
+   * @param signingAlg - the algorithm its offer chose, or '' for the
+   *   configured one; one the configuration does not allow is refused
    * @returns `{ credential, disclosures, payload, ... }`
    */
   async buildCredentialFor(configId, subjectClaims, holderJwk,
                            credentialIssuer, issuerDid,
-                           holderName, person?: string) {
-    const { log, stats, vciFormatOf, vcStatus } = this.deps;
+                           holderName, person?: string,
+                           signingAlg?: string) {
+    const { log, stats, vciFormatOf, vcStatus, vciSigningAlgsFor } = this.deps;
     log.debug("Entering VcIssuer.buildCredentialFor(). configId=" + configId);
     const format = vciFormatOf(configId);
+    // THE ALGORITHM AN OFFER CHOSE (2026-10-16) is checked again here, at
+    // the one point every format and both endpoints meet: the portal
+    // checked it when the offer was made, and the configured algorithm may
+    // have changed since. A JOSE algorithm only — ldp_vc is bbs-2023.
+    const chosen = String(signingAlg || '');
+    if (chosen && vciSigningAlgsFor(configId).indexOf(chosen) < 0) {
+      throw new Error('the offer chose ' + chosen + ', which ' + configId +
+                      ' credentials are not signed with: ' +
+                      vciSigningAlgsFor(configId).join(', '));
+    }
+    const jwsAlg = format === 'ldp_vc' ? '' : chosen;
     // THE STATUS-LIST INDEX FIRST (vc_status.ts), because the reference is
     // signed into the credential.
     const status = await vcStatus.allocate({
@@ -1842,10 +1859,12 @@ class VcIssuer {
                                     credentialIssuer, issuerDid, status);
     } else if (format === 'jwt_vc_json') {
       built = await this.buildJwtVcJson(subjectClaims, holderJwk,
-                                        credentialIssuer, issuerDid, status);
+                                        credentialIssuer, issuerDid, status,
+                                        jwsAlg);
     } else {
       built = await this.buildSdJwtVc(subjectClaims, holderJwk,
-                                      credentialIssuer, issuerDid, status);
+                                      credentialIssuer, issuerDid, status,
+                                      jwsAlg);
     }
     // Counted here, at the one point all three formats meet. The expiry is read
     // from whichever member the format uses to state it — `exp` in the two JWT
@@ -3192,6 +3211,9 @@ class VcIssuer {
           // one that collects it — the wallet asked for a credential, and
           // postponing the answer must not change which credential it gets.
           configId: requestedConfigId,
+          // The algorithm the offer chose (2026-10-16), read off the token
+          // now for the reason holderName is.
+          signingAlg: this.deps.tokenSigningAlg(accessToken),
           // A deferred response is encrypted with the parameters given in the
           // DEFERRED request, not these — but keeping them means an issuer
           // that decides otherwise still has them. Section 9.2 is explicit that
@@ -3223,6 +3245,7 @@ class VcIssuer {
       const claims = this.subjectClaimsFrom(accessToken, requestedConfigId);
       const issuerId = this.vciMetadata(req).credential_issuer;
       const signInSubject = this.signInSubjectOf(presented);
+      const signingAlg = this.deps.tokenSigningAlg(accessToken);
       let issued;
       try {
         issued = await Promise.all(holderJwks.map((jwk) => {
@@ -3230,7 +3253,7 @@ class VcIssuer {
                                          issuerId,
                                          issuerDidFor(requestedConfigId, req),
                                          this.holderNameFrom(accessToken),
-                                         signInSubject);
+                                         signInSubject, signingAlg);
         }));
       } catch (e) {
         log.debug("Caught in the OID4VCI credential endpoint: " +
@@ -3338,7 +3361,8 @@ class VcIssuer {
                                          issuerId,
                                          issuerDidFor(deferredConfigId, req),
                                          record.holderName,
-                                         String(record.signInSubject || ''));
+                                         String(record.signInSubject || ''),
+                                         String(record.signingAlg || ''));
         }));
       } catch (e) {
         log.debug("Caught in the OID4VCI deferred credential endpoint: " +

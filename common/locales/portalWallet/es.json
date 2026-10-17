@@ -43,5 +43,7 @@
   "walletDeleted": "La borró el {when}",
   "remove": "Eliminar",
   "removeNote": "Eliminar una credencial la revoca: un verificador que consulte su estado la verá revocada, y ya no sirve para iniciar sesión aquí. No se borra de su billetera. Ni OpenID for Verifiable Presentations ni OpenID for Verifiable Credential Issuance permiten a este servicio borrar una credencial de una billetera, así que bórrela usted mismo en su billetera.",
-  "doneRemoved": "La credencial está revocada. Bórrela usted mismo de su billetera: este servicio no puede hacerlo por usted."
+  "doneRemoved": "La credencial está revocada. Bórrela usted mismo de su billetera: este servicio no puede hacerlo por usted.",
+  "signingAlg": "Algoritmo de firma",
+  "signingAlgSub": "El algoritmo con el que este servicio firma la credencial. Está seleccionado el predeterminado configurado. Los algoritmos poscuánticos se definen en borradores, así que es posible que una billetera o un verificador aún no los acepte."
 }

@@ -60,6 +60,14 @@
 // INVALID, the issued register revoked, sign-in refused), and the page says
 // the wallet's copy must be deleted in the wallet.
 //
+// **THE SIGNING ALGORITHM IS THE PERSON'S CHOICE** (2026-10-16): each
+// configuration's `signingAlgs` (`vc_configs.ts`'s `vciSigningAlgsFor()`,
+// the configured `oid4vci.credentialSigningAlgorithm` first and the default)
+// is in the view, and the offer's optional `signingAlg` must be one of its
+// configuration's (`STS-PORTAL-0592`). It rides the pre-authorized code to
+// the access token and the credential endpoint signs with it; the realm's
+// Status List Token keeps the configured algorithm.
+//
 // The same in both modes: this is the person's own credential, made for the
 // person who asked. The demo issuer that minted for `oid4vci.offerUsername`
 // for anybody left for the development companion on #594, which sends a
@@ -118,6 +126,48 @@ const REMOVE_FORM = vz.object({
 const STATES = ['valid', 'suspended', 'revoked', 'removed', 'signed-out',
                 'expired'];
 
+// What each algorithm is, and which document defines it for JOSE (or, for
+// bbs-2023, for Data Integrity) — drafts named as drafts. Shown beside the
+// algorithm's name, so a person choosing ML-DSA-44 knows it is post-quantum
+// and not yet an RFC.
+const ALG_NOTES: Json = {
+  RS256: ['RSASSA-PKCS1-v1_5, SHA-256', 'RFC 7518'],
+  RS384: ['RSASSA-PKCS1-v1_5, SHA-384', 'RFC 7518'],
+  RS512: ['RSASSA-PKCS1-v1_5, SHA-512', 'RFC 7518'],
+  PS256: ['RSASSA-PSS, SHA-256', 'RFC 7518'],
+  PS384: ['RSASSA-PSS, SHA-384', 'RFC 7518'],
+  PS512: ['RSASSA-PSS, SHA-512', 'RFC 7518'],
+  ES256: ['ECDSA, P-256', 'RFC 7518'],
+  ES384: ['ECDSA, P-384', 'RFC 7518'],
+  ES512: ['ECDSA, P-521', 'RFC 7518'],
+  ES256K: ['ECDSA, secp256k1', 'RFC 8812'],
+  EdDSA: ['EdDSA (Ed25519, or Ed448 per oauth2.eddsaCurve)', 'RFC 8037'],
+  'ML-DSA-44': ['ML-DSA (FIPS 204), post-quantum',
+                'draft-ietf-cose-dilithium'],
+  'ML-DSA-65': ['ML-DSA (FIPS 204), post-quantum',
+                'draft-ietf-cose-dilithium'],
+  'ML-DSA-87': ['ML-DSA (FIPS 204), post-quantum',
+                'draft-ietf-cose-dilithium'],
+  'SLH-DSA-SHA2-128s': ['SLH-DSA (FIPS 205), post-quantum',
+                        'draft-ietf-cose-sphincs-plus'],
+  'SLH-DSA-SHAKE-128s': ['SLH-DSA (FIPS 205), post-quantum',
+                         'draft-ietf-cose-sphincs-plus'],
+  'ML-DSA-44-ES256': ['ML-DSA-44 with ECDSA P-256, composite post-quantum',
+                      'draft-ietf-jose-pq-composite-sigs'],
+  'ML-DSA-65-ES256': ['ML-DSA-65 with ECDSA P-256, composite post-quantum',
+                      'draft-ietf-jose-pq-composite-sigs'],
+  'ML-DSA-87-ES384': ['ML-DSA-87 with ECDSA P-384, composite post-quantum',
+                      'draft-ietf-jose-pq-composite-sigs'],
+  'ML-DSA-44-Ed25519': ['ML-DSA-44 with Ed25519, composite post-quantum',
+                        'draft-ietf-jose-pq-composite-sigs'],
+  'ML-DSA-65-Ed25519': ['ML-DSA-65 with Ed25519, composite post-quantum',
+                        'draft-ietf-jose-pq-composite-sigs'],
+  'ML-DSA-87-Ed448': ['ML-DSA-87 with Ed448, composite post-quantum',
+                      'draft-ietf-jose-pq-composite-sigs'],
+  'bbs-2023': ['BBS, selective disclosure and unlinkable proofs',
+               'W3C Data Integrity BBS Cryptosuites v1.0']
+};
+
 const OFFER_FORM = vz.object({
   configuration: vz.string().min(1).max(validation.CAP.SCOPE)
     .describe('The `credential_configuration_id` to offer, one of ' +
@@ -126,6 +176,10 @@ const OFFER_FORM = vz.object({
     .describe('`cross-device` (Appendix H.2: issued as soon as the wallet ' +
               'asks) or `deferred` (H.3: the credential endpoint answers ' +
               'a `transaction_id` first).'),
+  signingAlg: vz.string().max(64).optional()
+    .describe('The algorithm the credential is signed with, one of the ' +
+              'configuration\'s `signingAlgs`; left out or empty, the ' +
+              'configured `oid4vci.credentialSigningAlgorithm`.'),
   page: PAGE_FIELD
 });
 
@@ -135,7 +189,13 @@ const OFFERABLE_ANSWER = {
   properties: {
     configurations: { type: 'array', items: { type: 'object', properties: {
       id: { type: 'string' }, format: { type: 'string' },
-      name: { type: 'string' }, issuerDid: { type: 'boolean' } } } },
+      name: { type: 'string' }, issuerDid: { type: 'boolean' },
+      signingAlgs: { type: 'array', items: { type: 'object', properties: {
+        alg: { type: 'string' }, what: { type: 'string' },
+        spec: { type: 'string' } } },
+        description: 'The algorithms its credential may be signed with, ' +
+                     'the default first.' },
+      defaultSigningAlg: { type: 'string' } } } },
     modes: { type: 'array', items: { type: 'string', enum: MODES } },
     lifetimeSeconds: { type: 'integer' },
     wallet: { type: 'string' },
@@ -164,6 +224,8 @@ const OFFER_ANSWER = {
     message: { type: 'string' },
     offer: { type: 'object', properties: {
       configurationId: { type: 'string' },
+      signingAlg: { type: 'string',
+        description: 'The algorithm the credential will be signed with.' },
       mode: { type: 'string', enum: MODES },
       credentialOffer: { type: 'object',
         description: 'The Credential Offer (OpenID4VCI section 4.1.1).' },
@@ -277,9 +339,15 @@ class PortalWallet {
       const shown = (meta.credential_metadata &&
                      meta.credential_metadata.display) || meta.display;
       const display = Array.isArray(shown) && shown[0] ? shown[0] : {};
+      const algs: string[] = configs.vciSigningAlgsFor(id);
       return { id: id, format: configs.vciFormatOf(id),
                name: String(display.name || id),
-               issuerDid: !!configs.vciUsesIssuerDid(id) };
+               issuerDid: !!configs.vciUsesIssuerDid(id),
+               signingAlgs: algs.map(function (alg: string): Json {
+                 const note = ALG_NOTES[alg] || ['', ''];
+                 return { alg: alg, what: note[0], spec: note[1] };
+               }),
+               defaultSigningAlg: algs[0] || '' };
     });
     const offers = loadOffers();
     const names: Json = {};
@@ -389,11 +457,25 @@ class PortalWallet {
                  ' a ' + body.mode + ' Credential Offer of ' +
                  configurationId + ' for their own wallet on /portal/wallet',
         detail: { configuration: configurationId, mode: body.mode,
+                  signingAlg: body.signingAlg || undefined,
                   sessionId: caller.sessionId || undefined,
                   errors: why ? [why] : undefined }
       });
       log.debug("Leaving record().");
     };
+    // THE ALGORITHM, where one was chosen: the configuration's own list.
+    const chosenAlg = String(body.signingAlg || '');
+    const allowedAlgs: string[] =
+      loadConfigs().vciSigningAlgsFor(configurationId);
+    if (chosenAlg && allowedAlgs.length &&
+        allowedAlgs.indexOf(chosenAlg) < 0) {
+      const why = configurationId + ' credentials are not signed with "' +
+        chosenAlg + '". Choose one of: ' + allowedAlgs.join(', ') + '.';
+      record('failure', 'STS-PORTAL-0592', why);
+      log.debug("Leaving PortalWallet.offer(). Unknown algorithm.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0592', why,
+                        { view: this.view(req, caller, body.page) });
+    }
     if (loadConfigs().vciConfigIds().indexOf(configurationId) < 0) {
       const why = 'This issuer offers no credential configuration "' +
         configurationId + '". GET /account-api/credentials/offerable lists ' +
@@ -423,9 +505,15 @@ class PortalWallet {
     const made = offers.makeOffer(req, {
       configurationIds: [configurationId], mode: body.mode, user: user,
       session: session, byReference: true,
-      wallet: offers.configuredWalletUrl() });
+      wallet: offers.configuredWalletUrl(),
+      // The configured one is the default, and is not recorded as a
+      // choice: a change of that setting before the wallet redeems the
+      // offer then applies to it.
+      signingAlg: chosenAlg && chosenAlg !== allowedAlgs[0] ? chosenAlg
+                                                            : '' });
     const offer = {
       configurationId: configurationId,
+      signingAlg: chosenAlg || allowedAlgs[0] || '',
       mode: made.built.mode,
       credentialOffer: made.built.offer,
       txCode: made.built.txCode,
@@ -505,12 +593,17 @@ class PortalWallet {
           'for — shown to you, never carried in the offer. The offer is ' +
           'made on the sign-on session your token was issued on, which is ' +
           'reported over CAEP as session-presented (OpenID4VCI). The same ' +
-          '`offer` is in `view`, for the page.',
+          '`offer` is in `view`, for the page. `signingAlg`, optional, is ' +
+          'the algorithm the credential is signed with — one of the ' +
+          'configuration\'s `signingAlgs` in the GET, the post-quantum ' +
+          'ML-DSA, SLH-DSA and composite drafts among them for the JOSE ' +
+          'formats; left out, the configured default.',
         body: OFFER_FORM,
         answer: OFFER_ANSWER,
         statuses: {
           400: 'The configuration is not one this issuer offers ' +
-               '(STS-PORTAL-0589).',
+               '(STS-PORTAL-0589), or its credentials are not signed with ' +
+               'the `signingAlg` asked for (STS-PORTAL-0592).',
           403: 'The sign-on session the token was issued on is no longer ' +
                'known, or continued without signing in (STS-PORTAL-0590).'
         },
