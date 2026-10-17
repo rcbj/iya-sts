@@ -30,11 +30,13 @@
 //     configured web wallet's link where there is one — none by default
 //     since 2026-10-12 — and what to do when nothing opens.
 //
-// THE CREDENTIALS ISSUED TO THE PERSON (#661, 2026-10-16), from the same answer's
-// `issued`: each one's state, what their wallet last reported, and a Remove
-// button that posts to `/portal/remove-wallet-credential` (`POST
+// THE CREDENTIALS ISSUED TO THE PERSON (#661, 2026-10-16), from the same
+// answer's `issued`: each one's state, what their wallet last reported, and
+// a Remove button that posts to `/portal/remove-wallet-credential` (`POST
 // /account-api/credentials/remove`). Remove revokes; it cannot reach the
-// wallet, and the page says so.
+// wallet, and the page says so. Paged by `kit.pageNav()` on `page`, as the
+// portal's other lists are, and each form carries the page it was on, so
+// the page drawn from its answer is that one.
 //
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
@@ -120,12 +122,14 @@ class WalletPages {
    * The credentials issued to the person, each with its state, what the
    * wallet reported, and Remove where it is still good.
    *
-   * @param issued - the view's `issued`
+   * @param view - the page's view: `issued` and `paging`
    * @param ctx - the render context
    * @returns the HTML
    */
-  static history(issued: Json[], ctx: Json): string {
+  static history(view: Json, ctx: Json): string {
     const t = ctx.t;
+    const issued: Json[] = view.issued || [];
+    const keep = WalletPages.pageField(view);
     const rows = issued.map(function (one: Json): string {
       const state = one.status === 'removed'
         ? t.html(STATE_KEYS.removed, { when: t.date(one.removedAt) })
@@ -145,7 +149,7 @@ class WalletPages {
         (one.removable
           ? '<form method="post" action="' + kit.esc(REMOVE_PATH) + '">' +
             '<input type="hidden" name="id" value="' + kit.esc(one.id) +
-            '"><button class="danger" type="submit">' +
+            '">' + keep + '<button class="danger" type="submit">' +
             t.html('portalWallet.remove') + '</button></form>'
           : '') + '</td></tr>';
     });
@@ -159,10 +163,24 @@ class WalletPages {
           t.html('portalWallet.colStatus') + '</th><th>' +
           t.html('portalWallet.colWallet') + '</th><th></th></tr>' +
           rows.join('') + '</table>' +
+          kit.pageNav(PATH, ctx.query, view.paging, 'page', t) +
           '<p class="sub" id="wallet-remove-note">' +
           t.html('portalWallet.removeNote') + '</p>'
         : '<p id="wallet-issued-none">' + t.html('portalWallet.historyNone') +
           '</p>') + '</div>';
+  }
+
+  /**
+   * The hidden field that keeps the history's page across a form, or ''
+   * on the first.
+   *
+   * @param view - the page's view
+   * @returns the HTML
+   */
+  static pageField(view: Json): string {
+    const at = Number(view.paging && view.paging.page) || 1;
+    return at > 1 ? '<input type="hidden" name="page" value="' + at + '">'
+                  : '';
   }
 
   /**
@@ -203,12 +221,13 @@ class WalletPages {
           '</strong></p>' + options +
           '<p class="sub"><strong>' + t.html('portalWallet.when') +
           '</strong></p>' + modes +
+          WalletPages.pageField(view) +
           '<p><button type="submit" id="wallet-make">' +
           t.html('portalWallet.make') + '</button></p>' +
           '<p class="sub">' + t.html('portalWallet.lifetime',
                                      { minutes: minutes }) + '</p></form>'
         : '<p id="wallet-none">' + t.html('portalWallet.none') + '</p>') +
-      '</div>' + WalletPages.history(view.issued || [], ctx);
+      '</div>' + WalletPages.history(view, ctx);
   }
 
   /**
