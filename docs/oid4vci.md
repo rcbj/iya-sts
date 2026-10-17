@@ -67,11 +67,17 @@ one issuer.
 the composites are allowed and are signed in the worker pool). `ldp_vc` is
 signed with the realm's BBS key, which is published at `/bbs/keys/{kid}` and in
 the DID document, and which rotates like any other signing key. A credential
-names the certificate chain of its signing key in `x5u` or `x5c`, as
-`oid4vci.credentialCertificateHeader` says. The `x5c` of a credential and of
-a Status List Token stops short of the service Root, the trust anchor, which
-HAIP 1.0 sections 6.1 and 6.1.1 forbid there; a HAIP deployment sets the
-header to `x5c`, because HAIP's verifier holds only the anchor.
+and the Token Status List Token its status names carry the certificate chain
+of their signing key inline, in `x5c` — `oid4vci.credentialCertificateHeader`,
+`x5c` by default since 2026-10-16. SD-JWT VC finds an issuer's key by `x5c`,
+by JWT VC Issuer Metadata or by a DID, and never by `x5u`; a Status List
+Token carries no `iss` to look metadata up by; and HAIP 1.0 requires `x5c` on
+both. Until then the default was `x5u`, and a wallet that does not follow it
+(eudi-dev's) could check neither the status list nor, without the issuer's
+metadata, the credential. The `x5c` stops short of the service Root, the
+trust anchor, which HAIP 1.0 sections 6.1 and 6.1.1 forbid there: a wallet or
+verifier is given the Root to trust (`/pki`), and the chain in the token
+reaches it.
 
 ### What a credential says
 
@@ -367,7 +373,7 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.responseEncryptionRequired` | `OID4VCI_RESPONSE_ENCRYPTION_REQUIRED` | `false` | yes | Refuse a request that does not ask for an encrypted response. |
 | `oid4vci.credentialLifetimeS` | `OID4VCI_CREDENTIAL_LIFETIME_S` | `2592000` | yes | How long every minted credential is valid (thirty days). |
 | `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm for `dc+sd-jwt` and `jwt_vc_json` credentials, the status lists and the Domain Linkage Credential. |
-| `oid4vci.credentialCertificateHeader` | `OID4VCI_CREDENTIAL_CERTIFICATE_HEADER` | `x5u` | yes | Whether a credential names its signing key's chain: `x5u`, `x5c`, `both` or `none`. |
+| `oid4vci.credentialCertificateHeader` | `OID4VCI_CREDENTIAL_CERTIFICATE_HEADER` | `x5c` | yes | Whether a credential and its Status List Token carry their signing key's chain: `x5c` (inline, without the Root), `x5u`, `both` or `none`. |
 | `oid4vci.signedMetadataCertificateHeader` | `OID4VCI_SIGNED_METADATA_CERTIFICATE_HEADER` | `x5u` | yes | The same for the metadata's `signed_metadata`. |
 | `oid4vci.proofIatWindowS` | `OID4VCI_PROOF_IAT_WINDOW_S` | `600` | yes | How far a proof's `iat` may be from now, either way. |
 | `oid4vci.cNonceTtlS` | `OID4VCI_C_NONCE_TTL_S` | `300` | yes | How long a `c_nonce` may be quoted in a proof. |

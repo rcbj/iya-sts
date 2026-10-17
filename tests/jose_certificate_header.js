@@ -447,6 +447,19 @@ function childMain() {
          '(HAIP 6.1.1: the trust anchor MUST NOT be in it)',
          (credentialHeader.x5c || []).length + ' of ' + pems.length);
     config.clearOverride('oid4vci.credentialCertificateHeader');
+    // 2026-10-16: WITH NOTHING SET, a credential and a Status List Token
+    // (`vc_status.ts` signs under the same use case) carry that x5c, and no
+    // x5u — eudi-dev's wallet could not check a Status List Token that named
+    // its chain only by x5u, which SD-JWT VC does not name.
+    const byDefault = headerOf(helpers.signJwtAs(fixed, 'RS256', null,
+      { certificateHeader: 'vci-credential' }));
+    note(Array.isArray(byDefault.x5c) &&
+         byDefault.x5c.join(',') === credentialHeader.x5c.join(',') &&
+         byDefault.x5u === undefined,
+         'C13c. by default a credential\'s and a Status List Token\'s ' +
+         'header carries the chain in x5c, without the Root, and no x5u',
+         JSON.stringify({ x5c: (byDefault.x5c || []).length,
+                          x5u: byDefault.x5u || null }));
 
     // ---- a realm ---------------------------------------------------------
     realms.run(realms.get(REALM), function () {
@@ -618,7 +631,8 @@ function run(t) {
     if (row.type !== 'enum' ||
         (row.enumValues || []).join(',') !==
         certificateHeader.MODES.join(',') ||
-        row.dflt !== certificateHeader.DEFAULT_MODE || row.runtime !== true ||
+        row.dflt !== (uc.defaultMode || certificateHeader.DEFAULT_MODE) ||
+        row.runtime !== true ||
         row.perProcess) {
       bad.push(uc.setting + ': ' + JSON.stringify({ type: row.type,
         values: row.enumValues, dflt: row.dflt, runtime: row.runtime }));
@@ -626,8 +640,13 @@ function run(t) {
   });
   t.equal(bad.join('; '), '',
           'every use case has its setting, an enum of exactly none/x5c/x5u/' +
-          'both, defaulting to x5u, runtime and so settable per realm');
+          'both, defaulting to its own default (x5u unless it names one), ' +
+          'runtime and so settable per realm');
   t.equal(certificateHeader.DEFAULT_MODE, 'x5u', 'and the default is x5u');
+  // 2026-10-16: credentials and their Status List Tokens carry x5c, which
+  // SD-JWT VC and HAIP name; x5u is no way a wallet is told to find a key.
+  t.equal(certificateHeader.useCase('vci-credential').defaultMode, 'x5c',
+          'but a credential and its Status List Token default to x5c');
   const strays = Object.keys(rows).filter(function (key) {
     return /CertificateHeader$/.test(key) &&
       !certificateHeader.USE_CASES.some(function (uc) {
