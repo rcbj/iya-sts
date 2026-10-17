@@ -43,5 +43,7 @@
   "walletDeleted": "Supprimée le {when}",
   "remove": "Retirer",
   "removeNote": "Retirer une attestation la révoque : un vérificateur qui consulte son état la voit révoquée, et elle ne vous connecte plus ici. Elle n'est pas supprimée de votre portefeuille. Ni OpenID for Verifiable Presentations ni OpenID for Verifiable Credential Issuance ne permettent à ce service de supprimer une attestation d'un portefeuille : supprimez-la vous-même dans votre portefeuille.",
-  "doneRemoved": "L'attestation est révoquée. Supprimez-la vous-même de votre portefeuille : ce service ne peut pas le faire à votre place."
+  "doneRemoved": "L'attestation est révoquée. Supprimez-la vous-même de votre portefeuille : ce service ne peut pas le faire à votre place.",
+  "signingAlg": "Algorithme de signature",
+  "signingAlgSub": "L'algorithme avec lequel ce service signe l'attestation. La valeur par défaut configurée est sélectionnée. Les algorithmes post-quantiques sont définis par des projets de normes : un portefeuille ou un vérificateur peut ne pas encore les accepter."
 }

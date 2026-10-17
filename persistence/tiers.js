@@ -399,6 +399,7 @@ const CELL_MINTED = [
   'vc_issuer.vciNonces', 'vc_offers.credentialOffers',
   'vc_offers.deferredAccessTokens', 'vc_offers.deferredTransactions',
   'vc_offers.issuerStates', 'vc_offers.preAuthorizedCodes',
+  'vc_offers.signingAlgTokens',
   'vc_verifier.vpRequests', 'vc_verifier.vpTransactions',
   'xacml_monitor.counters'
 ];

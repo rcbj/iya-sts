@@ -993,6 +993,52 @@ class PortalRuntime extends SpaClient {
     PortalWebAuthn.wire(doc, this.env.window || {}, function (form: Json) {
       self.submit(form, null);
     });
+    PortalRuntime.wireDependentSelects(doc);
+  }
+
+  // A LIST WHOSE OPTIONS FOLLOW A CHOICE (2026-10-16, `/portal/wallet`'s
+  // signing algorithm): a `<select data-depends-on="NAME">` shows only the
+  // options whose `data-for` names the checked value of the radios called
+  // NAME, and selects the one whose `data-default-for` names it. A hidden
+  // option is disabled too, so it is never sent; the page draws the first
+  // choice's already, so a browser without this script sends a right value.
+  /**
+   * Wires every `select[data-depends-on]` in the document to its radios.
+   *
+   * @param doc - the document
+   * @returns nothing
+   */
+  static wireDependentSelects(doc: Json): void {
+    const selects = doc && doc.querySelectorAll
+      ? doc.querySelectorAll('select[data-depends-on]') : [];
+    for (let i = 0; i < selects.length; i++) {
+      const select = selects[i];
+      const name = String(select.getAttribute('data-depends-on') || '');
+      const radios = doc.querySelectorAll('input[type="radio"][name="' +
+                                          name.replace(/"/g, '') + '"]');
+      const follow = function (value: string): void {
+        const options = select.options || [];
+        for (let j = 0; j < options.length; j++) {
+          const option = options[j];
+          const listed = String(option.getAttribute('data-for') || '')
+            .split(' ').indexOf(value) >= 0;
+          option.hidden = !listed;
+          option.disabled = !listed;
+          if (listed && String(option.getAttribute('data-default-for') || '')
+            .split(' ').indexOf(value) >= 0) {
+            select.value = option.value;
+          }
+        }
+      };
+      for (let k = 0; k < radios.length; k++) {
+        const radio = radios[k];
+        radio.addEventListener('change', function () {
+          if (radio.checked) {
+            follow(String(radio.value));
+          }
+        });
+      }
+    }
   }
 
   /**

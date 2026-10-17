@@ -43,5 +43,7 @@
   "walletDeleted": "Binura ito noong {when}",
   "remove": "Alisin",
   "removeNote": "Ang pag-alis ng credential ay bumabawi rito: makikita ng verifier na sumusuri sa status nito na binawi na ito, at hindi ka na nito masa-sign in dito. Hindi ito nabubura sa iyong wallet. Hindi pinapayagan ng OpenID for Verifiable Presentations o ng OpenID for Verifiable Credential Issuance ang serbisyong ito na magbura ng credential sa isang wallet, kaya ikaw mismo ang magbura nito sa iyong wallet.",
-  "doneRemoved": "Binawi na ang credential. Ikaw mismo ang magbura nito sa iyong wallet: hindi ito magagawa ng serbisyong ito para sa iyo."
+  "doneRemoved": "Binawi na ang credential. Ikaw mismo ang magbura nito sa iyong wallet: hindi ito magagawa ng serbisyong ito para sa iyo.",
+  "signingAlg": "Algorithm sa pag-sign",
+  "signingAlgSub": "Ang algorithm na ginagamit ng serbisyong ito sa pag-sign ng credential. Napili na ang naka-configure na default. Mga draft pa ang nagtatakda sa mga post-quantum na algorithm, kaya maaaring hindi pa ito tanggapin ng isang wallet o verifier."
 }

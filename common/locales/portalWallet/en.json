@@ -43,5 +43,7 @@
   "walletDeleted": "Deleted it {when}",
   "remove": "Remove",
   "removeNote": "Removing a credential revokes it: a verifier that checks its status sees it revoked, and it no longer signs you in here. It is not deleted from your wallet. Neither OpenID for Verifiable Presentations nor OpenID for Verifiable Credential Issuance lets this service delete a credential from a wallet, so delete it in your wallet yourself.",
-  "doneRemoved": "The credential is revoked. Delete it from your wallet yourself: this service cannot do that for you."
+  "doneRemoved": "The credential is revoked. Delete it from your wallet yourself: this service cannot do that for you.",
+  "signingAlg": "Signing algorithm",
+  "signingAlgSub": "The algorithm this service signs the credential with. The configured default is selected. The post-quantum algorithms are defined by drafts, so a wallet or verifier may not accept them yet."
 }

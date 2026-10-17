@@ -43,5 +43,7 @@
   "walletDeleted": "Raderade det {when}",
   "remove": "Ta bort",
   "removeNote": "Att ta bort ett intyg återkallar det: en verifierare som kontrollerar dess status ser att det är återkallat, och det loggar inte längre in dig här. Det raderas inte från din plånbok. Varken OpenID for Verifiable Presentations eller OpenID for Verifiable Credential Issuance låter den här tjänsten radera ett intyg från en plånbok, så radera det själv i plånboken.",
-  "doneRemoved": "Intyget är återkallat. Radera det själv från din plånbok: den här tjänsten kan inte göra det åt dig."
+  "doneRemoved": "Intyget är återkallat. Radera det själv från din plånbok: den här tjänsten kan inte göra det åt dig.",
+  "signingAlg": "Signeringsalgoritm",
+  "signingAlgSub": "Algoritmen som den här tjänsten signerar intyget med. Den konfigurerade standardalgoritmen är vald. De postkvantsäkra algoritmerna definieras i utkast, så en plånbok eller verifierare kanske inte godtar dem än."
 }

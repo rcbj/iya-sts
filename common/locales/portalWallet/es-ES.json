@@ -14,5 +14,6 @@
   "noApp": "Si no se abre nada, este dispositivo no tiene una aplicación de cartera para ofertas de credenciales: escanee el código QR con la cartera de su teléfono, o instale una cartera compatible con OpenID for Verifiable Credential Issuance y vuelva a intentarlo.",
   "colWallet": "Lo que informó su cartera",
   "removeNote": "Eliminar una credencial la revoca: un verificador que consulte su estado la verá revocada, y ya no sirve para iniciar sesión aquí. No se borra de su cartera. Ni OpenID for Verifiable Presentations ni OpenID for Verifiable Credential Issuance permiten a este servicio borrar una credencial de una cartera, así que bórrela usted mismo en su cartera.",
-  "doneRemoved": "La credencial está revocada. Bórrela usted mismo de su cartera: este servicio no puede hacerlo por usted."
+  "doneRemoved": "La credencial está revocada. Bórrela usted mismo de su cartera: este servicio no puede hacerlo por usted.",
+  "signingAlgSub": "El algoritmo con el que este servicio firma la credencial. Está seleccionado el predeterminado configurado. Los algoritmos poscuánticos se definen en borradores, así que es posible que una cartera o un verificador aún no los acepte."
 }

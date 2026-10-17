@@ -43,5 +43,7 @@
   "walletDeleted": "已于 {when} 删除",
   "remove": "移除",
   "removeNote": "移除凭证会将其撤销：检查其状态的验证方会看到它已被撤销，它也不能再用于在此登录。它不会从您的钱包中删除。OpenID for Verifiable Presentations 和 OpenID for Verifiable Credential Issuance 都不允许本服务从钱包中删除凭证，因此请您自己在钱包中删除它。",
-  "doneRemoved": "该凭证已撤销。请您自己从钱包中删除它：本服务无法代您删除。"
+  "doneRemoved": "该凭证已撤销。请您自己从钱包中删除它：本服务无法代您删除。",
+  "signingAlg": "签名算法",
+  "signingAlgSub": "本服务签署该凭证所用的算法。已选中配置的默认算法。后量子算法由草案定义，钱包或验证方可能尚不接受。"
 }

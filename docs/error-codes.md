@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4361** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4362** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 236
 * [Management API (`STS-API`)](#sts-api) — 84
-* [User portal (`STS-PORTAL`)](#sts-portal) — 93
+* [User portal (`STS-PORTAL`)](#sts-portal) — 94
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
 * [Registries (`STS-REG`)](#sts-reg) — 176
@@ -4782,6 +4782,7 @@ Raised from: portal/.
 | `STS-PORTAL-0589` | A Credential Offer asked for on /portal/wallet (POST /account-api/credentials/offers) named a credential configuration this realm's OpenID4VCI issuer does not offer (#589). | HTTP 400 JSON |
 | `STS-PORTAL-0590` | A Credential Offer asked for on /portal/wallet was refused because the sign-on session the portal's token was issued on is no longer known, or continued without signing in: a pre-authorized offer is made on that session's authority (#589, #240). | HTTP 403 JSON |
 | `STS-PORTAL-0591` | A credential a person asked to remove on /portal/wallet is not one this realm records as issued to them: the id names no credential of theirs (an expired one is no longer recorded, and another person's is never theirs to name) (#661). | HTTP 400 JSON |
+| `STS-PORTAL-0592` | A Credential Offer asked for on /portal/wallet named a signing algorithm its configuration's credentials are not signed with: the configuration's `signingAlgs` (vc_configs.ts vciSigningAlgsFor()) are the ones it may choose. | HTTP 400 JSON |
 
 ## STS-ACCOUNT
 

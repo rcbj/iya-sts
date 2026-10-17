@@ -920,6 +920,23 @@ second catalogue. What is more than a number, and what
   Credential uses it (and `/did/generate` did, until #594), and the Verifier's
   `verifyIssuerSignature()` finds the realm's key by `alg` and `kid` — plus
   anything in `oid4vp.trustedIssuerCertificates`, used as keys and nothing more.
+  **A PORTAL OFFER MAY CHOOSE ANOTHER** (rcbj, 2026-10-16): `/portal/wallet`'s
+  `signingAlg`, one of `vc_configs.ts`'s `vciSigningAlgsFor(configId)` — every
+  value the setting allows for a JOSE configuration, the configured one and
+  RS256 for a DID-named one (its DID document publishes only those two keys),
+  bbs-2023 alone for ldp_vc. It rides the pre-authorized code record
+  (`signingAlg`) to the token endpoint, which notes it against the access
+  token's DIGEST (`vc_offers.signingAlgTokens`, `deferredAccessTokens`'
+  arrangement — never a claim in the token, which development mode would
+  take unverified), and the credential endpoint and the deferred record pass
+  it to `buildCredentialFor()`, which checks it against the list again. The
+  metadata's `credential_signing_alg_values_supported` is that list, the
+  default first. **The Status List Token keeps the configured algorithm**,
+  so a credential signed with another names a key its list is not signed
+  with. And `signing_rotation.ts`'s `credentialUnit()` stretches a retired
+  key's grace to the credential lifetime for the CONFIGURED algorithm's key
+  only: a credential signed with another may outlive its key's grace after a
+  rotation.
 * **THE KEY BINDING JWT ACCEPTS WHAT THE ISSUER BINDS TO** — every asymmetric
   non-post-quantum algorithm. It accepted four while the issuer bound credentials
   to keys of eleven, so a wallet with an EdDSA key was issued a credential and
@@ -1034,6 +1051,7 @@ value, is never found under its digest, and expires on its own `expires`.
 | `vc_offers.credentialOffers` | keyed by the offer id's digest; the offer itself WHOLE | the id is looked up; the offer is the exception below |
 | `vc_offers.deferredTransactions` | keyed by the `transaction_id`'s digest; no `accessToken` | the deferred endpoint looks the id up; the token was read only to be copied onto the notification row |
 | `vc_offers.deferredAccessTokens` | keyed by the token's digest (since 2026-09-12) | membership is the only question |
+| `vc_offers.signingAlgTokens` | keyed by the token's digest (2026-10-16) | the algorithm a portal offer chose, looked up by the token |
 | `vc_issuer.vciNonces` | keyed by `vc_issuer.nonceKey()`, the nonce's digest | a proof's nonce is looked up and spent |
 | `vc_issuer.notificationIds` | the id WHOLE; no `accessToken` | the token was never read; the id is an identifier, like a `jti` |
 | `vc_verifier.vpTransactions` | a verdict's `presentationDigest` and verified claims; never the presentation | the presentation was read only by `?state=` and the log |
