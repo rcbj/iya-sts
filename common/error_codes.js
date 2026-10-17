@@ -15027,6 +15027,17 @@ const CODES = [
       'client\'s registered redirect URIs.',
     spec: 'HTTP 400 JSON { ok: false, errors } at ' +
       '/admin-api/verifications/start' },
+  { code: 'STS-VC-0124',
+    summary: 'The trusted list at /oid4vci/trusted-list (ETSI TS 119 602) ' +
+      'was not served: the service has no Root certificate authority, or no ' +
+      'ES256 or RS256 key whose certificate chain the list could carry in ' +
+      'x5c (oid4vci.trustedListCertificateHeader set to x5u or none, or the ' +
+      'key not yet certified).',
+    spec: 'HTTP 503 text/plain' },
+  { code: 'STS-VC-0125',
+    summary: 'The trusted list at /oid4vci/trusted-list could not be signed: ' +
+      'the signer threw. The message is in the log.',
+    spec: 'HTTP 500 text/plain' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',

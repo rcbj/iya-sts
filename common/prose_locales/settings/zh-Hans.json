@@ -4964,8 +4964,32 @@
     "text": "凭证证书头"
   },
   "oid4vci.credentialCertificateHeader|description": {
-    "en": "91cae7f95584d095",
-    "text": "签发的 dc+sd-jwt 或 jwt_vc_json 凭证是否指明签署它的密钥的证书链。SD-JWT VC 将 `x5c` 列为验证方查找颁发者密钥的方式之一，因此从不获取此颁发者元数据的钱包或验证方仍可依据信任锚检查签名。ldp_vc 不是 JWS，不受影响。此处（以及状态列表令牌上）的 x5c 按 HAIP 1.0 第 6.1.1 节的要求，在末尾省略信任锚即服务根证书；HAIP 也要求 x5c，因此 HAIP 领域会设置 x5c。`x5u`（默认值）是证书链在本服务上的地址 `/pki/chain/{scope}/{sha256}.pem`，约一百字节；`x5c` 是内联的证书链，叶证书在前、服务根证书在后，base64 DER，数 KB；`both` 表示两者都有，`none` 表示两者都没有。无论哪种，它都是仅持有令牌的依赖方访问每个证书的 CRL 分发点、OCSP 响应器和 caIssuers 地址所需的信息。尚未在此领域的 JOSE 签发 CA 下获得认证的密钥以及 HMAC 签名，两者都不会获得。RFC 7515 第 4.1.5 节要求 `x5u` 的获取使用 TLS：global.https 关闭时，地址为 `http://`，严格的验证方会拒绝跟随它。JWE 头从不带有此项——本服务没有任何经过认证的密钥用于加密。可按领域设置。"
+    "en": "250bb6d53e3ec407",
+    "text": "签发的 dc+sd-jwt 或 jwt_vc_json 凭证及其状态所指向的 Token Status List Token 是否携带签署它们的密钥的证书链。SD-JWT VC 将 `x5c` 列为验证方以 X.509 方式找到签发方密钥的途径，并未列出 `x5u`；而 Status List Token 不带可用于查找元数据的 `iss`，因此 `x5c`（默认）使从不获取本签发方元数据的钱包或验证方也能依据其信任锚核验两种签名。ldp_vc 不是 JWS，不受影响。此处的 x5c 按 HAIP 1.0 第 6.1.1 节的要求在末尾省略信任锚，即服务根证书；根证书是提供给钱包或验证方作为信任依据的证书（/pki）。 `x5u` 是证书链在本服务上的地址 `/pki/chain/{scope}/{sha256}.pem`，约一百字节；`x5c`（默认）是内联的证书链，叶证书在前、服务根证书在后，base64 DER 编码，数千字节；`both` 表示两者都有，`none` 表示都没有。无论哪种，它都是只持有令牌的依赖方访问每个证书的 CRL 分发点、OCSP 响应者和 caIssuers 地址所需的信息。尚未由本领域 JOSE 签发 CA 认证的密钥以及 HMAC 签名都不会获得任何一项。RFC 7515 第 4.1.5 节要求获取 `x5u` 时使用 TLS：关闭 global.https 时地址为 `http://`，严格的验证方会拒绝跟随。JWE 头部从不带有此项——本服务没有任何经认证的密钥用于加密。可按领域设置。"
+  },
+  "oid4vci.trustedListCertificateHeader|label": {
+    "en": "5e5d2b459a95e63d",
+    "text": "信任列表证书头"
+  },
+  "oid4vci.trustedListCertificateHeader|description": {
+    "en": "f0c703d8855dec84",
+    "text": "/oid4vci/trusted-list 处的信任列表是否携带签署它的密钥的证书链。只有当该链在 x5c 中且终止于钱包持有的列表运营方 CA 之下时，钱包才接受该列表，因此应为 `x5c`（默认）或 `both`：设为 `x5u` 或 `none` 时不提供该列表（503）。与凭证一样，末尾省略服务根证书。 `x5u` 是证书链在本服务上的地址 `/pki/chain/{scope}/{sha256}.pem`，约一百字节；`x5c`（默认）是内联的证书链，叶证书在前、服务根证书在后，base64 DER 编码，数千字节；`both` 表示两者都有，`none` 表示都没有。无论哪种，它都是只持有令牌的依赖方访问每个证书的 CRL 分发点、OCSP 响应者和 caIssuers 地址所需的信息。尚未由本领域 JOSE 签发 CA 认证的密钥以及 HMAC 签名都不会获得任何一项。RFC 7515 第 4.1.5 节要求获取 `x5u` 时使用 TLS：关闭 global.https 时地址为 `http://`，严格的验证方会拒绝跟随。JWE 头部从不带有此项——本服务没有任何经认证的密钥用于加密。可按领域设置。"
+  },
+  "oid4vci.trustedListTerritory|label": {
+    "en": "d7ee4e58b3ec36e2",
+    "text": "信任列表方案地域"
+  },
+  "oid4vci.trustedListTerritory|description": {
+    "en": "bd18dadc2bd7bd5e",
+    "text": "/oid4vci/trusted-list 处信任列表的 SchemeTerritory（ETSI TS 119 602 第 6.3.10 节）：ISO 3166-1 alpha-2 国家代码或 EU。留空（默认）则省略。"
+  },
+  "oid4vci.trustedListLifetimeH|label": {
+    "en": "53f55ba9239f4712",
+    "text": "信任列表有效期（小时）"
+  },
+  "oid4vci.trustedListLifetimeH|description": {
+    "en": "795e14da580935eb",
+    "text": "信任列表的 NextUpdate 距其 ListIssueDateTime 的时长（ETSI TS 119 602 第 6.3.15 节），也就是以下一个序列号重新签署的频率：距 NextUpdate 不足一小时（或此时长的十分之一）时，以及其内容发生变化时。"
   },
   "oid4vci.signedMetadataCertificateHeader|label": {
     "en": "74bcdd1bedcb52e5",

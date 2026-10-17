@@ -3129,6 +3129,21 @@ const SPECS: Spec[] = [
               '(section 9.1) in the authorization server metadata. No ' +
               'historical resolution (501), no redirects followed, no mdoc ' +
               '(none is issued).' },
+  { id: 'etsi-ts-119-602',
+    name: 'ETSI TS 119 602 V1.1.1, Lists of trusted entities (LoTE)',
+    where: 'ETSI',
+    url: 'https://www.etsi.org/deliver/etsi_ts/119600_119699/119602/',
+    coverage: 'partial: one scheme-explicit list per realm at ' +
+              '/oid4vci/trusted-list, in the JSON binding, signed as a ' +
+              'compact JWS with the signer\'s chain in x5c (ES256 where ' +
+              'that key is certified, else RS256): this credential issuer ' +
+              'as its one trusted entity, an issuance and a revocation ' +
+              'service each naming the service Root, a self pointer, ' +
+              'DistributionPoints, a sequence number that grows with each ' +
+              'issue and NextUpdate. The scheme\'s URIs are under the ' +
+              'list\'s own URL, since none of Annexes D to H is a ' +
+              'credential issuer list. No postal address, no history, no ' +
+              'lists of other parties.' },
   { id: 'bitstring-status-list', name: 'W3C Bitstring Status List v1.0',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-bitstring-status-list/',
     coverage: 'partial: revocation and suspension lists per realm, served ' +
@@ -8542,6 +8557,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'when Accept asks for JSON-LD or JSON and not the JWT first, the ' +
           'same credential with an eddsa-rdfc-2022 proof by the realm\'s ' +
           'Ed25519 key, issued as its did:key (#197).' },
+  { path: '/oid4vci/trusted-list', group: 'VC Issuance (OID4VCI)',
+    name: 'Trusted list (List of Trusted Entities)',
+    specs: ['etsi-ts-119-602', 'rfc7515'],
+    what: 'This realm\'s credential issuer and the service Root its ' +
+          'credentials and Token Status List Tokens chain to, as a signed ' +
+          'ETSI TS 119 602 list a wallet anchors both by: application/jwt, ' +
+          'the signer\'s chain in x5c. Kept and signed again when what it ' +
+          'says changes or NextUpdate (oid4vci.trustedListLifetimeH) draws ' +
+          'near; 503 with no Root or no certified key.' },
   { path: '/oid4vci/deferred_credential', group: 'VC Issuance (OID4VCI)',
     name: 'Deferred credential endpoint', specs: ['oid4vci', 'rfc6750'],
     what: 'Collects a credential the issuer answered 202 for, against its ' +

@@ -1739,6 +1739,10 @@
     "en": "69e5a2172fd0dff1",
     "text": "Bitstring Status List-intyg"
   },
+  "endpoints.route./oid4vci/trusted-list.name": {
+    "en": "9d8d4bfb47367165",
+    "text": "Förtroendelista (List of Trusted Entities)"
+  },
   "endpoints.route./oid4vci/deferred_credential.name": {
     "en": "b64bd315376ba1ef",
     "text": "Slutpunkt för uppskjutna intyg"

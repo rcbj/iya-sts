@@ -216,6 +216,15 @@ const USE_CASES = [
     // argues it beside the setting, whose `dflt` this must equal.
     defaultMode: 'x5c',
     withoutAnchor: true },
+  { id: 'vci-trusted-list', setting: 'oid4vci.trustedListCertificateHeader',
+    label: 'OpenID4VCI trusted list (ETSI TS 119 602)',
+    where: 'oid4vc/vc_trusted_list.ts, the List of Trusted Entities at ' +
+           '/oid4vci/trusted-list',
+    // A reader takes the list only when its signer's chain is in x5c and
+    // ends under a list-operator CA it holds — the Root, left off for
+    // HAIP's reason.
+    defaultMode: 'x5c',
+    withoutAnchor: true },
   { id: 'vci-signed-metadata',
     setting: 'oid4vci.signedMetadataCertificateHeader',
     label: 'OpenID4VCI signed issuer metadata',

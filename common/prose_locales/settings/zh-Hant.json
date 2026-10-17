@@ -4964,8 +4964,32 @@
     "text": "可驗證憑證的憑證標頭"
   },
   "oid4vci.credentialCertificateHeader|description": {
-    "en": "91cae7f95584d095",
-    "text": "簽發的 dc+sd-jwt 或 jwt_vc_json 「憑證（credential）」是否指出簽署它之金鑰的憑證鏈。SD-JWT VC 將 `x5c` 列為驗證器可找到簽發者金鑰的方式之一，因此從不擷取此簽發者中繼資料的錢包或驗證器，仍能依信任錨點檢查簽章。ldp_vc 不是 JWS，不受影響。此處（以及 Status List Token 上）的 x5c 會省略末端的信任錨點，也就是服務 Root，這是 HAIP 1.0 section 6.1.1 的要求；HAIP 也要求 x5c，因此 HAIP 領域會設定 x5c。`x5u`（預設值）是此服務上該憑證鏈的位址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c` 是內嵌的憑證鏈，葉憑證在前、服務 Root 在後，以 base64 DER 編碼，有數 KB；`both` 表示兩者皆有，`none` 表示兩者皆無。無論哪種方式，這都是僅持有該權杖的信賴方取得每張憑證的 CRL 發布點、OCSP 回應程式與 caIssuers 位址所需的資訊。尚未在此領域的 JOSE Issuing CA 下取得憑證的金鑰，以及 HMAC 簽章，兩者都不會加上。RFC 7515 section 4.1.5 要求 `x5u` 的擷取使用 TLS：若 global.https 關閉，位址會是 `http://`，嚴格的驗證器將拒絕跟隨。JWE 標頭永遠不會加上——此服務沒有任何已取得憑證的金鑰會加密任何內容。可依領域設定。"
+    "en": "250bb6d53e3ec407",
+    "text": "簽發的 dc+sd-jwt 或 jwt_vc_json 憑證及其狀態所指向的 Token Status List Token 是否攜帶簽署它們的金鑰的憑證鏈。SD-JWT VC 將 `x5c` 列為驗證方以 X.509 方式找到簽發方金鑰的途徑，並未列出 `x5u`；而 Status List Token 不帶可用於查找中繼資料的 `iss`，因此 `x5c`（預設）使從不取得本簽發方中繼資料的錢包或驗證方也能依據其信任錨核驗兩種簽章。ldp_vc 不是 JWS，不受影響。此處的 x5c 依 HAIP 1.0 第 6.1.1 節的要求在末尾省略信任錨，即服務根憑證；根憑證是提供給錢包或驗證方作為信任依據的憑證（/pki）。 `x5u` 是憑證鏈在本服務上的位址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c`（預設）是內嵌的憑證鏈，葉憑證在前、服務根憑證在後，base64 DER 編碼，數千位元組；`both` 表示兩者皆有，`none` 表示皆無。無論哪種，它都是只持有權杖的依賴方存取每張憑證的 CRL 發布點、OCSP 回應者與 caIssuers 位址所需的資訊。尚未由本領域 JOSE 簽發 CA 認證的金鑰以及 HMAC 簽章都不會獲得任何一項。RFC 7515 第 4.1.5 節要求取得 `x5u` 時使用 TLS：關閉 global.https 時位址為 `http://`，嚴格的驗證方會拒絕跟隨。JWE 標頭從不帶有此項——本服務沒有任何經認證的金鑰用於加密。可依領域設定。"
+  },
+  "oid4vci.trustedListCertificateHeader|label": {
+    "en": "5e5d2b459a95e63d",
+    "text": "信任清單憑證標頭"
+  },
+  "oid4vci.trustedListCertificateHeader|description": {
+    "en": "f0c703d8855dec84",
+    "text": "/oid4vci/trusted-list 的信任清單是否攜帶簽署它的金鑰的憑證鏈。只有當該鏈在 x5c 中且終止於錢包持有的清單營運方 CA 之下時，錢包才接受該清單，因此應為 `x5c`（預設）或 `both`：設為 `x5u` 或 `none` 時不提供該清單（503）。與憑證相同，末尾省略服務根憑證。 `x5u` 是憑證鏈在本服務上的位址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c`（預設）是內嵌的憑證鏈，葉憑證在前、服務根憑證在後，base64 DER 編碼，數千位元組；`both` 表示兩者皆有，`none` 表示皆無。無論哪種，它都是只持有權杖的依賴方存取每張憑證的 CRL 發布點、OCSP 回應者與 caIssuers 位址所需的資訊。尚未由本領域 JOSE 簽發 CA 認證的金鑰以及 HMAC 簽章都不會獲得任何一項。RFC 7515 第 4.1.5 節要求取得 `x5u` 時使用 TLS：關閉 global.https 時位址為 `http://`，嚴格的驗證方會拒絕跟隨。JWE 標頭從不帶有此項——本服務沒有任何經認證的金鑰用於加密。可依領域設定。"
+  },
+  "oid4vci.trustedListTerritory|label": {
+    "en": "d7ee4e58b3ec36e2",
+    "text": "信任清單方案地域"
+  },
+  "oid4vci.trustedListTerritory|description": {
+    "en": "bd18dadc2bd7bd5e",
+    "text": "/oid4vci/trusted-list 信任清單的 SchemeTerritory（ETSI TS 119 602 第 6.3.10 節）：ISO 3166-1 alpha-2 國家代碼或 EU。留空（預設）則省略。"
+  },
+  "oid4vci.trustedListLifetimeH|label": {
+    "en": "53f55ba9239f4712",
+    "text": "信任清單有效期（小時）"
+  },
+  "oid4vci.trustedListLifetimeH|description": {
+    "en": "795e14da580935eb",
+    "text": "信任清單的 NextUpdate 距其 ListIssueDateTime 的時長（ETSI TS 119 602 第 6.3.15 節），也就是以下一個序號重新簽署的頻率：距 NextUpdate 不足一小時（或此時長的十分之一）時，以及其內容變更時。"
   },
   "oid4vci.signedMetadataCertificateHeader|label": {
     "en": "74bcdd1bedcb52e5",

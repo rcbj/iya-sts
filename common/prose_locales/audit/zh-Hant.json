@@ -1299,6 +1299,10 @@
     "en": "631dece03539cd4a",
     "text": "某人為自己的錢包建立了憑證提供"
   },
+  "audit.actions.portal.vc.remove.label": {
+    "en": "bc144eaf5bf2222e",
+    "text": "某人移除了本領域簽發給他的憑證"
+  },
   "audit.actions.risk.feedback.label": {
     "en": "e244d70b4d5a8c39",
     "text": "記錄了對風險評估的回饋"

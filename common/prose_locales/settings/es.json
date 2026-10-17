@@ -4964,8 +4964,32 @@
     "text": "Cabecera de certificado de la credencial"
   },
   "oid4vci.credentialCertificateHeader|description": {
-    "en": "91cae7f95584d095",
-    "text": "Si una CREDENCIAL dc+sd-jwt o jwt_vc_json emitida nombra la cadena de certificados de la clave que la firmó. SD-JWT VC nombra `x5c` como una de las formas en que un verificador puede encontrar la clave de un emisor, de modo que una billetera o un verificador que nunca obtiene los metadatos de este emisor aún puede comprobar la firma contra un ancla de confianza. ldp_vc no es un JWS y no se ve afectado. El x5c aquí (y en un Status List Token) deja fuera del final el ancla de confianza, la Root del servicio, como exige HAIP 1.0 sección 6.1.1; HAIP también exige x5c, así que un dominio HAIP define x5c. `x5u` — el predeterminado — es la dirección de la cadena en este servicio, `/pki/chain/{scope}/{sha256}.pem`, de unos cien bytes; `x5c` es la cadena en línea, primero la hoja y al final la Root del servicio, DER en base64, de varios kilobytes; `both` es ambos y `none` ninguno. En cualquier caso, es lo que una parte que confía que solo tiene el token necesita para llegar a los puntos de distribución de CRL, al respondedor OCSP y a la dirección caIssuers de cada certificado. Una clave aún no certificada bajo la CA emisora JOSE de este dominio, y una firma HMAC, no reciben ninguno. RFC 7515 sección 4.1.5 exige que la obtención de `x5u` use TLS: con global.https desactivado la dirección es `http://` y un verificador estricto se negará a seguirla. A las cabeceras JWE nunca se les da una — ninguna clave certificada de este servicio cifra nada. Configurable por dominio."
+    "en": "250bb6d53e3ec407",
+    "text": "Si una CREDENCIAL dc+sd-jwt o jwt_vc_json emitida, y el Token Status List Token que nombra su estado, llevan la cadena de certificados de la clave que los firmó. SD-JWT VC nombra `x5c` como la forma X.509 en que un verificador encuentra la clave de un emisor y no nombra `x5u`, y un Status List Token no lleva `iss` con el que buscar metadatos, así que `x5c` — el predeterminado — es lo que permite a una billetera o a un verificador que nunca obtiene los metadatos de este emisor comprobar ambas firmas contra su ancla de confianza. ldp_vc no es un JWS y no se ve afectado. El x5c omite al final el ancla de confianza, la raíz del servicio, como exige la sección 6.1.1 de HAIP 1.0; la raíz es el certificado en el que se indica confiar a una billetera o a un verificador (/pki). `x5u` es la dirección de la cadena en este servicio, `/pki/chain/{scope}/{sha256}.pem`, de unos cien bytes; `x5c` — el predeterminado — es la cadena en línea, primero la hoja y al final la raíz del servicio, en DER base64, de varios kilobytes; `both` es ambos y `none` ninguno. En cualquier caso es lo que una parte que confía y que solo tiene el token necesita para llegar a los puntos de distribución de CRL, al respondedor OCSP y a la dirección caIssuers de cada certificado. Una clave aún no certificada por la CA emisora JOSE de este dominio, y una firma HMAC, no reciben ninguno. La sección 4.1.5 de RFC 7515 exige que la obtención de `x5u` use TLS: con global.https desactivado la dirección es `http://` y un verificador estricto se negará a seguirla. Las cabeceras JWE nunca reciben uno: ninguna clave certificada de este servicio cifra nada. Configurable por dominio."
+  },
+  "oid4vci.trustedListCertificateHeader|label": {
+    "en": "5e5d2b459a95e63d",
+    "text": "Cabecera de certificado de la lista de confianza"
+  },
+  "oid4vci.trustedListCertificateHeader|description": {
+    "en": "f0c703d8855dec84",
+    "text": "Si la lista de confianza de /oid4vci/trusted-list lleva la cadena de la clave que la firmó. Una billetera acepta la lista solo cuando esa cadena está en x5c y termina bajo una CA de operador de listas que tiene, así que `x5c` — el predeterminado — o `both`: con `x5u` o `none` la lista no se sirve (503). La raíz del servicio se omite al final, como para una credencial. `x5u` es la dirección de la cadena en este servicio, `/pki/chain/{scope}/{sha256}.pem`, de unos cien bytes; `x5c` — el predeterminado — es la cadena en línea, primero la hoja y al final la raíz del servicio, en DER base64, de varios kilobytes; `both` es ambos y `none` ninguno. En cualquier caso es lo que una parte que confía y que solo tiene el token necesita para llegar a los puntos de distribución de CRL, al respondedor OCSP y a la dirección caIssuers de cada certificado. Una clave aún no certificada por la CA emisora JOSE de este dominio, y una firma HMAC, no reciben ninguno. La sección 4.1.5 de RFC 7515 exige que la obtención de `x5u` use TLS: con global.https desactivado la dirección es `http://` y un verificador estricto se negará a seguirla. Las cabeceras JWE nunca reciben uno: ninguna clave certificada de este servicio cifra nada. Configurable por dominio."
+  },
+  "oid4vci.trustedListTerritory|label": {
+    "en": "d7ee4e58b3ec36e2",
+    "text": "Territorio del esquema de la lista de confianza"
+  },
+  "oid4vci.trustedListTerritory|description": {
+    "en": "bd18dadc2bd7bd5e",
+    "text": "El SchemeTerritory de la lista de confianza de /oid4vci/trusted-list (ETSI TS 119 602, sección 6.3.10): un código de país ISO 3166-1 alfa-2, o EU. Vacío — el predeterminado — lo omite."
+  },
+  "oid4vci.trustedListLifetimeH|label": {
+    "en": "53f55ba9239f4712",
+    "text": "Vigencia de la lista de confianza (horas)"
+  },
+  "oid4vci.trustedListLifetimeH|description": {
+    "en": "795e14da580935eb",
+    "text": "Cuánto después de su ListIssueDateTime está el NextUpdate de la lista de confianza (ETSI TS 119 602, sección 6.3.15), y por tanto con qué frecuencia se vuelve a firmar con el siguiente número de secuencia: cuando está a menos de una hora (o una décima parte de esto) de NextUpdate, y siempre que cambia lo que dice."
   },
   "oid4vci.signedMetadataCertificateHeader|label": {
     "en": "74bcdd1bedcb52e5",
