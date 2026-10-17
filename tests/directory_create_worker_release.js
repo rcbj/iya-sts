@@ -212,22 +212,23 @@ async function frontChild() {
     return claim.ok ? 'ok' : claim.code;
   };
   // The release is a message posted after the reply; it has arrived when the
-  // arbiter holds nothing, or not at all.
-  const settledLive = async function () {
-    for (let i = 0; i < 20 && arbiter.stats().live > 0; i += 1) {
+  // arbiter holds no more than `base` keys, or not at all. Each step counts
+  // from what was held before it, so one step's leak does not fail the next.
+  const settledLive = async function (base) {
+    for (let i = 0; i < 20 && arbiter.stats().live > base; i += 1) {
       await pause(25);
     }
-    return arbiter.stats().live;
+    return arbiter.stats().live - base;
   };
 
   // 1. A create the worker made, and the same name again.
   const first = await command('create', 'alice', WAIT_MS);
-  const liveAfter = await settledLive();
+  const liveAfter = await settledLive(0);
   const frontAfter = await frontTries('alice');
   const startedAt = Date.now();
   const again = await command('create', 'alice', WAIT_MS);
   const waited = Date.now() - startedAt;
-  const liveAgain = await settledLive();
+  const liveAgain = await settledLive(0);
   note(first === 'created' && liveAfter === 0 && frontAfter === 'ok' &&
        again === 'created' && waited < WAIT_MS && liveAgain === 0,
        '1. A CREATE A WORKER MADE GIVES ITS CLAIM BACK TO THE FRONT: ' +
@@ -238,9 +239,11 @@ async function frontChild() {
                         frontAfter: frontAfter, again: again,
                         waitedMs: waited, liveAgain: liveAgain }));
 
-  // 2. A create the worker refused (the control: this passed before #665).
+  // 2. A create the worker refused (the control: this passed before #665,
+  // and still passes with the defect put back).
+  const beforeRefusal = arbiter.stats().live;
   const refusedThen = await command('refuse', 'bob', WAIT_MS);
-  const liveRefused = await settledLive();
+  const liveRefused = await settledLive(beforeRefusal);
   const frontRefused = await frontTries('bob');
   note(refusedThen === 'refused-and-released' && liveRefused === 0 &&
        frontRefused === 'ok',
@@ -249,16 +252,19 @@ async function frontChild() {
                         front: frontRefused }));
 
   // 3. A claim still held is still refused, to the front and the worker.
+  const beforeHold = arbiter.stats().live;
   const holding = await command('hold', 'carol', WAIT_MS);
   const frontHeld = await frontTries('carol');
   const workerHeld = await command('create', 'carol', 100);
   note(holding === 'held' && frontHeld === 'STS-LDAP-0092' &&
-       workerHeld === 'STS-LDAP-0092' && arbiter.stats().live === 2,
+       workerHeld === 'STS-LDAP-0092' &&
+       arbiter.stats().live - beforeHold === 2,
        '3. a claim the worker still HOLDS is still refused, to the front and ' +
        'to the worker\'s own second create: routing the message first freed ' +
        'nothing it should not have',
        JSON.stringify({ holding: holding, front: frontHeld,
-                        worker: workerHeld, live: arbiter.stats().live }));
+                        worker: workerHeld,
+                        held: arbiter.stats().live - beforeHold }));
 
   await pool.stop(3000);
   pool.reset();
