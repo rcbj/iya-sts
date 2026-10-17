@@ -24,7 +24,10 @@
 //   5. Remove again is answered as done;
 //   6. the page draws the history, a Remove form for a credential that is
 //      still good and none for one removed, and the note that the wallet's
-//      copy must be deleted in the wallet.
+//      copy must be deleted in the wallet;
+//   7. the history is paged twenty at a time with the portal's own pager
+//      (`kit.pageNav()`), a page past the end is the last, and a form on
+//      page 2 carries it, so its answer is page 2.
 //
 // In a CHILD PROCESS, for `admin_credential_controls.js`'s reason.
 // ===========================================================================
@@ -192,6 +195,48 @@ function childMain() {
          redrawn.json.issued[0].status === 'valid',
          '6b. a new credential, newest first, has its Remove form',
          fresh.error || JSON.stringify(redrawn.json.issued || []));
+
+    // --- 7. paged ----------------------------------------------------------
+    // Two so far; nineteen more makes twenty-one, one past a page. Each is
+    // issued a millisecond apart at least, so "newest first" is an order.
+    let failed = '';
+    for (let i = 0; i < 19 && !failed; i++) {
+      const more = await w.issue(ALICE, w.holderKey());
+      failed = more.error || '';
+    }
+    const p1 = await alice.page('/portal/wallet');
+    const p2 = await alice.page('/portal/wallet', { page: 2 });
+    const past = await alice.page('/portal/wallet', { page: 9 });
+    const paging1 = (p1.json && p1.json.paging) || {};
+    const paging2 = (p2.json && p2.json.paging) || {};
+    const oldest = ((p2.json && p2.json.issued) || [])[0] || {};
+    note(!failed && (p1.json.issued || []).length === 20 &&
+         paging1.page === 1 && paging1.pages === 2 && paging1.per === 20 &&
+         paging1.total === 21 &&
+         (p2.json.issued || []).length === 1 && paging2.page === 2 &&
+         oldest.id === one.id && oldest.status === 'removed' &&
+         past.json.paging && past.json.paging.page === 2,
+         '7a. twenty to a page, newest first: the oldest, removed, is alone ' +
+         'on page 2, and a page past the end is the last',
+         failed || JSON.stringify({ p1: paging1, p2: paging2,
+                                    oldest: oldest.id === one.id }));
+    const pagedHtml = await alice.draw('/portal/wallet', { page: 2 });
+    const firstHtml = await alice.draw('/portal/wallet');
+    note(/id="pager-page"/.test(firstHtml.html) &&
+         firstHtml.html.indexOf('href="/portal/wallet?page=2"') > 0 &&
+         /id="pager-page"/.test(pagedHtml.html) &&
+         /<input type="hidden" name="page" value="2">/.test(pagedHtml.html) &&
+         !/name="page"/.test(firstHtml.html),
+         '7b. the portal\'s pager is drawn under the history, and the ' +
+         'forms on page 2 carry it', pagedHtml.html.slice(0, 300));
+    const onTwo = (p1.json.issued || [])[19] || {};
+    const removedOnTwo = await alice.act('/portal/remove-wallet-credential',
+                                         { id: onTwo.id, page: '2' });
+    const view2 = (removedOnTwo.json && removedOnTwo.json.view) || {};
+    note(removedOnTwo.status === 200 && view2.paging &&
+         view2.paging.page === 2 && (view2.issued || []).length === 1,
+         '7c. a Remove sent from page 2 answers page 2',
+         brief(removedOnTwo));
   }
 }
 

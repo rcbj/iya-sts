@@ -1513,7 +1513,10 @@ pre-authorized offer).
   person must delete it in the wallet (`wallet-remove-note`). The id is a
   digest of the row and the credential, looked up among the CALLER's rows
   only: another person's is refused as unknown (`STS-PORTAL-0591`).
-  `tests/portal_wallet_history.js` holds it.
+  The history is PAGED twenty at a time, as `/portal/sign-ins` and
+  `/portal/claim-sources` are (`page`, `paging`, `kit.pageNav()`), and both
+  forms carry the page they were on so the view an act answers is that
+  page. `tests/portal_wallet_history.js` holds it.
 
 ## `/portal/devices`: A PERSON'S OWN DEVICES (2026-09-23, #130; #164 phase 2, 2026-09-26)
 

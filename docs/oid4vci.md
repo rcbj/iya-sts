@@ -125,7 +125,8 @@ means the whole configured set.
     (`valid`, `suspended`, `revoked`, `removed`, `signed-out`, `expired`) and
     the last event their wallet sent to the Notification Endpoint with the
     Credential Response's `notification_id` (`credential_accepted`,
-    `credential_failure`, `credential_deleted`; it changes nothing else);
+    `credential_failure`, `credential_deleted`; it changes nothing else),
+    twenty to a page (`page`, and `paging` in the answer);
   * `POST /account-api/credentials/remove` with `{ "id": "…" }` (the page's
     **Remove**): that credential of the person's is revoked — its Token
     Status List entry INVALID, its issued-register row revoked, refused at

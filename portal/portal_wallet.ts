@@ -48,8 +48,9 @@
 // the strength of having identified them, and here that strength is the
 // session.
 //
-// **THE HISTORY AND REMOVE (#661, 2026-10-16).** The page lists every credential
-// `oid4vc/vc_issued.ts` still records for the person (`historyForSubject()`),
+// **THE HISTORY AND REMOVE (#661, 2026-10-16).** The page lists every
+// credential `oid4vc/vc_issued.ts` still records for the person
+// (`historyForSubject()`), 20 to a page,
 // with its state and what their wallet last reported over OpenID4VCI's
 // Notification Endpoint, and a Remove button for one that is still good.
 // Neither OpenID4VP nor OpenID4VCI lets an issuer delete a credential from a
@@ -96,10 +97,21 @@ interface PortalWalletDeps {
 // needs this page for.
 const MODES = ['cross-device', 'deferred'];
 
+// THE HISTORY IS PAGED (#662, 2026-10-16), as `/portal/sign-ins` and
+// `/portal/claim-sources` are: `page` moves it, `paging` says where it is,
+// and `web_portal_kit.ts`'s `pageNav()` draws the control.
+const PER_PAGE = 20;
+
+const PAGE_FIELD = vt.opt(vt.integer(1, 100000))
+  .describe('Which page of `issued`, newest first. Clamped to the last.');
+
+const PAGE_QUERY = vz.object({ page: PAGE_FIELD });
+
 const REMOVE_FORM = vz.object({
   id: vz.string().min(1).max(64)
     .describe('The credential\'s `id`, from `issued` in ' +
-              '`GET /account-api/credentials/offerable`.')
+              '`GET /account-api/credentials/offerable`.'),
+  page: PAGE_FIELD
 });
 
 // The states a credential in the history can be in (`vc_issued.ts`).
@@ -113,7 +125,8 @@ const OFFER_FORM = vz.object({
   mode: vt.oneOf(MODES)
     .describe('`cross-device` (Appendix H.2: issued as soon as the wallet ' +
               'asks) or `deferred` (H.3: the credential endpoint answers ' +
-              'a `transaction_id` first).')
+              'a `transaction_id` first).'),
+  page: PAGE_FIELD
 });
 
 // The answer's shape, documented.
@@ -137,6 +150,9 @@ const OFFERABLE_ANSWER = {
       walletEvent: { type: 'string', enum: ['', 'credential_accepted',
         'credential_failure', 'credential_deleted'] },
       walletEventAt: { type: 'string', format: 'date-time' } } } },
+    paging: { type: 'object', properties: {
+      page: { type: 'integer' }, pages: { type: 'integer' },
+      per: { type: 'integer' }, total: { type: 'integer' } } },
     offer: { type: 'object', description: 'Present in a POST\'s `view`.' }
   }
 };
@@ -233,9 +249,11 @@ class PortalWallet {
    *
    * @param req - the request (the realm's metadata is built from it)
    * @param caller - the signed-in person
-   * @returns `{ configurations, modes, lifetimeSeconds, wallet, issued }`
+   * @param wanted - the page of `issued` asked for; the first when left out
+   * @returns `{ configurations, modes, lifetimeSeconds, wallet, issued,
+   *   paging }`
    */
-  view(req: Json, caller: AccountCaller): Json {
+  view(req: Json, caller: AccountCaller, wanted?: number): Json {
     const { log, loadOffers, loadConfigs, loadIssuer, loadIssued } = this.deps;
     log.debug("Entering PortalWallet.view().");
     const configs = loadConfigs();
@@ -272,8 +290,13 @@ class PortalWallet {
       return ms ? new Date(ms).toISOString() : '';
     };
     // THE SUBJECT IS THE TOKEN'S (`account-api/CLAUDE.md`).
-    const issued = (caller && caller.sub
-      ? loadIssued().historyForSubject(caller.sub) : [])
+    const all: Json[] = caller && caller.sub
+      ? loadIssued().historyForSubject(caller.sub) : [];
+    // Paged on the history, decorated on the page, as `/portal/claim-sources`
+    // is: only the rows shown are turned into the answer's shape.
+    const pages = Math.max(1, Math.ceil(all.length / PER_PAGE));
+    const page = Math.min(Math.max(1, Number(wanted) || 1), pages);
+    const issued = all.slice((page - 1) * PER_PAGE, page * PER_PAGE)
       .map(function (one: Json): Json {
         return { id: one.id, configurationId: one.configId,
                  name: String(names[one.configId] || one.configId ||
@@ -286,11 +309,13 @@ class PortalWallet {
                  walletEvent: one.walletEvent,
                  walletEventAt: at(one.walletEventAt) };
       });
-    log.debug("Leaving PortalWallet.view(). " + rows.length + ", " +
-              issued.length + " issued.");
+    log.debug("Leaving PortalWallet.view(). " + rows.length + ", page " +
+              page + " of " + pages + " of " + all.length + " issued.");
     return { configurations: rows, modes: MODES.slice(0),
              lifetimeSeconds: Math.round(offers.offerTtlMs() / 1000),
-             wallet: offers.configuredWalletUrl(), issued: issued };
+             wallet: offers.configuredWalletUrl(), issued: issued,
+             paging: { page: page, pages: pages, per: PER_PAGE,
+                       total: all.length } };
   }
 
   /**
@@ -329,12 +354,12 @@ class PortalWallet {
     if (!result.ok) {
       log.debug("Leaving PortalWallet.remove(). Refused.");
       return ctx.refuse(res, 400, 'STS-PORTAL-0591', String(result.error),
-                        { view: this.view(req, caller) });
+                        { view: this.view(req, caller, body.page) });
     }
     log.debug("Leaving PortalWallet.remove(). Removed.");
     return ctx.json(res, 200, { ok: true,
       message: ctx.translatorFor(who).text('portalWallet.doneRemoved'),
-      view: this.view(req, caller) });
+      view: this.view(req, caller, body.page) });
   }
 
   /**
@@ -376,7 +401,7 @@ class PortalWallet {
       record('failure', 'STS-PORTAL-0589', why);
       log.debug("Leaving PortalWallet.offer(). Unknown configuration.");
       return ctx.refuse(res, 400, 'STS-PORTAL-0589', why,
-                        { view: this.view(req, caller) });
+                        { view: this.view(req, caller, body.page) });
     }
     // THE SESSION THE OFFER IS MADE ON. `caller.signOn` is the sign-on
     // session the token was issued on (`account-api/CLAUDE.md`, the gate's
@@ -390,7 +415,7 @@ class PortalWallet {
       record('failure', 'STS-PORTAL-0590', why);
       log.debug("Leaving PortalWallet.offer(). No sign-on session.");
       return ctx.refuse(res, 403, 'STS-PORTAL-0590', why,
-                        { view: this.view(req, caller) });
+                        { view: this.view(req, caller, body.page) });
     }
     const offers = loadOffers();
     const user = Object.assign({}, userFor(who),
@@ -414,7 +439,8 @@ class PortalWallet {
         : null
     };
     record('success');
-    const view = Object.assign(this.view(req, caller), { offer: offer });
+    const view = Object.assign(this.view(req, caller, body.page),
+                               { offer: offer });
     log.debug("Leaving PortalWallet.offer(). Offered.");
     return ctx.json(res, 200, { ok: true,
       message: ctx.translatorFor(who).text('portalWallet.doneOffered'),
@@ -453,11 +479,14 @@ class PortalWallet {
           '`revoked`, `removed` by you, `signed-out` by a global sign-out, ' +
           '`expired`), whether you can remove it, and the last event your ' +
           'wallet reported to the Notification Endpoint (OpenID4VCI 1.0 ' +
-          'section 11).',
+          'section 11). `issued` is one page (`paging`, moved by `page`, ' +
+          '20 to a page); `paging.total` counts them all.',
         answer: OFFERABLE_ANSWER,
-        handler: function (req: Json, res: Json,
-                           caller: AccountCaller): unknown {
-          return ctx.json(res, 200, self.view(req, caller));
+        query: PAGE_QUERY,
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return ctx.json(res, 200, self.view(req, caller,
+                                              input.query.page || 1));
         } },
       { method: 'POST', path: ctx.BASE + '/credentials/offers',
         operationId: 'createCredentialOffer', tag: 'Wallet',
