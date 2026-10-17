@@ -212,10 +212,10 @@ class WalletPages {
       return '<option value="' + kit.esc(alg) + '" data-for="' +
         kit.esc(one.for.join(' ')) + '" data-default-for="' +
         kit.esc(one.defaultFor.join(' ')) + '"' +
+        (one.note.spec ? ' title="' + kit.esc(one.note.spec) + '"' : '') +
         (shown ? '' : ' hidden disabled') +
         (one.defaultFor.indexOf(first) >= 0 ? ' selected' : '') + '>' +
         kit.esc(alg) + (one.note.what ? ' — ' + kit.esc(one.note.what) : '') +
-        (one.note.spec ? ' (' + kit.esc(one.note.spec) + ')' : '') +
         '</option>';
     }).join('');
     return '<p class="sub"><label for="wallet-alg"><strong>' +

@@ -127,44 +127,47 @@ const STATES = ['valid', 'suspended', 'revoked', 'removed', 'signed-out',
                 'expired'];
 
 // What each algorithm is, and which document defines it for JOSE (or, for
-// bbs-2023, for Data Integrity) — drafts named as drafts. Shown beside the
-// algorithm's name, so a person choosing ML-DSA-44 knows it is post-quantum
-// and not yet an RFC.
+// bbs-2023, for Data Integrity) — drafts named as drafts. The first is drawn
+// beside the algorithm's name and is kept to a few words (rcbj, 2026-10-17:
+// the option text ran past the pane), since the name already carries the
+// hash or the parameter set; the second is the option's tooltip and is in
+// the API's answer, so a person choosing ML-DSA-44 can still learn it is
+// not yet an RFC.
 const ALG_NOTES: Json = {
-  RS256: ['RSASSA-PKCS1-v1_5, SHA-256', 'RFC 7518'],
-  RS384: ['RSASSA-PKCS1-v1_5, SHA-384', 'RFC 7518'],
-  RS512: ['RSASSA-PKCS1-v1_5, SHA-512', 'RFC 7518'],
-  PS256: ['RSASSA-PSS, SHA-256', 'RFC 7518'],
-  PS384: ['RSASSA-PSS, SHA-384', 'RFC 7518'],
-  PS512: ['RSASSA-PSS, SHA-512', 'RFC 7518'],
-  ES256: ['ECDSA, P-256', 'RFC 7518'],
-  ES384: ['ECDSA, P-384', 'RFC 7518'],
-  ES512: ['ECDSA, P-521', 'RFC 7518'],
-  ES256K: ['ECDSA, secp256k1', 'RFC 8812'],
-  EdDSA: ['EdDSA (Ed25519, or Ed448 per oauth2.eddsaCurve)', 'RFC 8037'],
-  'ML-DSA-44': ['ML-DSA (FIPS 204), post-quantum',
+  RS256: ['RSA PKCS#1 v1.5', 'RFC 7518'],
+  RS384: ['RSA PKCS#1 v1.5', 'RFC 7518'],
+  RS512: ['RSA PKCS#1 v1.5', 'RFC 7518'],
+  PS256: ['RSA-PSS', 'RFC 7518'],
+  PS384: ['RSA-PSS', 'RFC 7518'],
+  PS512: ['RSA-PSS', 'RFC 7518'],
+  ES256: ['ECDSA P-256', 'RFC 7518'],
+  ES384: ['ECDSA P-384', 'RFC 7518'],
+  ES512: ['ECDSA P-521', 'RFC 7518'],
+  ES256K: ['ECDSA secp256k1', 'RFC 8812'],
+  EdDSA: ['EdDSA', 'RFC 8037'],
+  'ML-DSA-44': ['post-quantum',
                 'draft-ietf-cose-dilithium'],
-  'ML-DSA-65': ['ML-DSA (FIPS 204), post-quantum',
+  'ML-DSA-65': ['post-quantum',
                 'draft-ietf-cose-dilithium'],
-  'ML-DSA-87': ['ML-DSA (FIPS 204), post-quantum',
+  'ML-DSA-87': ['post-quantum',
                 'draft-ietf-cose-dilithium'],
-  'SLH-DSA-SHA2-128s': ['SLH-DSA (FIPS 205), post-quantum',
+  'SLH-DSA-SHA2-128s': ['post-quantum',
                         'draft-ietf-cose-sphincs-plus'],
-  'SLH-DSA-SHAKE-128s': ['SLH-DSA (FIPS 205), post-quantum',
+  'SLH-DSA-SHAKE-128s': ['post-quantum',
                          'draft-ietf-cose-sphincs-plus'],
-  'ML-DSA-44-ES256': ['ML-DSA-44 with ECDSA P-256, composite post-quantum',
+  'ML-DSA-44-ES256': ['composite post-quantum',
                       'draft-ietf-jose-pq-composite-sigs'],
-  'ML-DSA-65-ES256': ['ML-DSA-65 with ECDSA P-256, composite post-quantum',
+  'ML-DSA-65-ES256': ['composite post-quantum',
                       'draft-ietf-jose-pq-composite-sigs'],
-  'ML-DSA-87-ES384': ['ML-DSA-87 with ECDSA P-384, composite post-quantum',
+  'ML-DSA-87-ES384': ['composite post-quantum',
                       'draft-ietf-jose-pq-composite-sigs'],
-  'ML-DSA-44-Ed25519': ['ML-DSA-44 with Ed25519, composite post-quantum',
+  'ML-DSA-44-Ed25519': ['composite post-quantum',
                         'draft-ietf-jose-pq-composite-sigs'],
-  'ML-DSA-65-Ed25519': ['ML-DSA-65 with Ed25519, composite post-quantum',
+  'ML-DSA-65-Ed25519': ['composite post-quantum',
                         'draft-ietf-jose-pq-composite-sigs'],
-  'ML-DSA-87-Ed448': ['ML-DSA-87 with Ed448, composite post-quantum',
+  'ML-DSA-87-Ed448': ['composite post-quantum',
                       'draft-ietf-jose-pq-composite-sigs'],
-  'bbs-2023': ['BBS, selective disclosure and unlinkable proofs',
+  'bbs-2023': ['BBS, selective disclosure',
                'W3C Data Integrity BBS Cryptosuites v1.0']
 };
 
