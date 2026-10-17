@@ -30,6 +30,12 @@
 //     configured web wallet's link where there is one — none by default
 //     since 2026-10-12 — and what to do when nothing opens.
 //
+// THE CREDENTIALS ISSUED TO THE PERSON (#661, 2026-10-16), from the same answer's
+// `issued`: each one's state, what their wallet last reported, and a Remove
+// button that posts to `/portal/remove-wallet-credential` (`POST
+// /account-api/credentials/remove`). Remove revokes; it cannot reach the
+// wallet, and the page says so.
+//
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
 
@@ -40,6 +46,20 @@ type Json = any;
 type PortalPage = import('../types/account-api').PortalPage;
 
 const PATH = kit.BASE + '/wallet';
+const REMOVE_PATH = kit.BASE + '/remove-wallet-credential';
+
+// A credential's state, and the wallet's report, as the catalog says them.
+const STATE_KEYS: Json = {
+  valid: 'portalWallet.stateValid', suspended: 'portalWallet.stateSuspended',
+  revoked: 'portalWallet.stateRevoked', removed: 'portalWallet.stateRemoved',
+  'signed-out': 'portalWallet.stateSignedOut',
+  expired: 'portalWallet.stateExpired'
+};
+const WALLET_KEYS: Json = {
+  credential_accepted: 'portalWallet.walletAccepted',
+  credential_failure: 'portalWallet.walletFailure',
+  credential_deleted: 'portalWallet.walletDeleted'
+};
 
 /**
  * `/portal/wallet`. A static utility class.
@@ -97,6 +117,55 @@ class WalletPages {
   }
 
   /**
+   * The credentials issued to the person, each with its state, what the
+   * wallet reported, and Remove where it is still good.
+   *
+   * @param issued - the view's `issued`
+   * @param ctx - the render context
+   * @returns the HTML
+   */
+  static history(issued: Json[], ctx: Json): string {
+    const t = ctx.t;
+    const rows = issued.map(function (one: Json): string {
+      const state = one.status === 'removed'
+        ? t.html(STATE_KEYS.removed, { when: t.date(one.removedAt) })
+        : t.html(STATE_KEYS[one.status] || STATE_KEYS.revoked);
+      const said = WALLET_KEYS[one.walletEvent]
+        ? t.html(WALLET_KEYS[one.walletEvent],
+                 { when: t.date(one.walletEventAt) })
+        : t.html('portalWallet.walletNothing');
+      return '<tr data-credential="' + kit.esc(one.id) + '"><td>' +
+        kit.esc(one.name) + ' <span class="sub"><code>' +
+        kit.esc(one.configurationId) + '</code> &middot; ' +
+        kit.esc(one.format) + '</span></td><td>' +
+        kit.esc(t.date(one.issuedAt)) + '</td><td>' +
+        (one.expiresAt ? kit.esc(t.date(one.expiresAt))
+                       : t.html('portalWallet.noExpiry')) + '</td><td>' +
+        state + '</td><td>' + said + '</td><td>' +
+        (one.removable
+          ? '<form method="post" action="' + kit.esc(REMOVE_PATH) + '">' +
+            '<input type="hidden" name="id" value="' + kit.esc(one.id) +
+            '"><button class="danger" type="submit">' +
+            t.html('portalWallet.remove') + '</button></form>'
+          : '') + '</td></tr>';
+    });
+    return '<div class="card" id="wallet-issued"><h2>' +
+      t.html('portalWallet.historyHeading') + '</h2><p class="sub">' +
+      t.html('portalWallet.historySub') + '</p>' +
+      (issued.length
+        ? '<table><tr><th>' + t.html('portalWallet.colCredential') +
+          '</th><th>' + t.html('portalWallet.colIssued') + '</th><th>' +
+          t.html('portalWallet.colExpires') + '</th><th>' +
+          t.html('portalWallet.colStatus') + '</th><th>' +
+          t.html('portalWallet.colWallet') + '</th><th></th></tr>' +
+          rows.join('') + '</table>' +
+          '<p class="sub" id="wallet-remove-note">' +
+          t.html('portalWallet.removeNote') + '</p>'
+        : '<p id="wallet-issued-none">' + t.html('portalWallet.historyNone') +
+          '</p>') + '</div>';
+  }
+
+  /**
    * The page's body.
    *
    * @param view - `GET /account-api/credentials/offerable`'s answer, or a
@@ -139,7 +208,7 @@ class WalletPages {
           '<p class="sub">' + t.html('portalWallet.lifetime',
                                      { minutes: minutes }) + '</p></form>'
         : '<p id="wallet-none">' + t.html('portalWallet.none') + '</p>') +
-      '</div>';
+      '</div>' + WalletPages.history(view.issued || [], ctx);
   }
 
   /**

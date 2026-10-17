@@ -341,6 +341,8 @@ class ProtocolEndpoints {
         // A person's own pre-authorized offer, on the portal (#589).
         '/account-api/credentials/offerable',
         '/account-api/credentials/offers',
+        // Their issued credentials' history and Remove (#661).
+        '/account-api/credentials/remove',
         '/bbs/keys/:id', '/.well-known/did.json', '/did.json',
         '/.well-known/did-configuration.json', '/oid4vci/status-lists/1',
         '/oid4vci/status-lists', '/oid4vci/status-lists/bitstring/:purpose',

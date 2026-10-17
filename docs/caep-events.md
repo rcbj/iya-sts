@@ -572,7 +572,7 @@ session should be allowed to do next.
   | Security key | `fido2-platform` or `fido2-roaming`, with `fido2_aaguid` | enrolled at sign-in or on the portal, removed on the portal or the console |
   | Authenticator app | `app` | set up at sign-in, on the portal or at activation; removed on the portal or the console |
   | Certificate | `x509`, with `x509_issuer` and `x509_serial` | ACME, EST and SCEP issue and revoke, a TLS client certificate, an RFC 7523/7522 signing key pair, a person's certificate revoked on `/admin/pki`, and an act on the certificate authority above it (below) |
-  | Wallet credential | `verifiable-credential` | issued over OpenID4VCI, disowned by a global sign-out |
+  | Wallet credential | `verifiable-credential` | issued over OpenID4VCI, disowned by a global sign-out, removed by its holder on `/portal/wallet` |
 
   A security key is `fido2-platform` when the browser reported a platform
   authenticator at enrolment, and `fido2-roaming` otherwise. A key enrolled

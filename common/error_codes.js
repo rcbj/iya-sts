@@ -20741,6 +20741,12 @@ const CODES = [
       'no longer known, or continued without signing in: a pre-authorized ' +
       'offer is made on that session\'s authority (#589, #240).',
     spec: 'HTTP 403 JSON' },
+  { code: 'STS-PORTAL-0591',
+    summary: 'A credential a person asked to remove on /portal/wallet is not ' +
+      'one this realm records as issued to them: the id names no credential ' +
+      'of theirs (an expired one is no longer recorded, and another ' +
+      'person\'s is never theirs to name) (#661).',
+    spec: 'HTTP 400 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },

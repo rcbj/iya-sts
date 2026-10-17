@@ -18,8 +18,10 @@
 // demo: it belongs to the person's own pages, and the demo pages become
 // development-only (#585). So it is here, as two `/account-api` operations:
 //
-//   GET  /account-api/credentials/offerable   what this person may be offered
+//   GET  /account-api/credentials/offerable   what this person may be offered,
+//                                             and what they were issued
 //   POST /account-api/credentials/offers      an offer, for this person
+//   POST /account-api/credentials/remove      one of their credentials removed
 //
 // and the page is drawn in the browser by `web_wallet.ts`, the QR code by
 // `common/web_qr.ts`, from the offer URI the answer carries.
@@ -45,6 +47,17 @@
 // (`STS-PORTAL-0590`): an offer is a credential about the person, made on
 // the strength of having identified them, and here that strength is the
 // session.
+//
+// **THE HISTORY AND REMOVE (#661, 2026-10-16).** The page lists every credential
+// `oid4vc/vc_issued.ts` still records for the person (`historyForSubject()`),
+// with its state and what their wallet last reported over OpenID4VCI's
+// Notification Endpoint, and a Remove button for one that is still good.
+// Neither OpenID4VP nor OpenID4VCI lets an issuer delete a credential from a
+// wallet — OpenID4VP is a verifier ASKING for a presentation, and
+// OpenID4VCI's notification runs the other way, wallet to issuer — so Remove
+// is this service's half (`removeForSubject()`: the status-list entry
+// INVALID, the issued register revoked, sign-in refused), and the page says
+// the wallet's copy must be deleted in the wallet.
 //
 // The same in both modes: this is the person's own credential, made for the
 // person who asked. The demo issuer that minted for `oid4vci.offerUsername`
@@ -74,6 +87,7 @@ interface PortalWalletDeps {
   loadOffers(): Json;
   loadConfigs(): Json;
   loadIssuer(): Json;
+  loadIssued(): Json;
 }
 
 // The two kinds of pre-authorized offer. A SAME-DEVICE offer is not one: it
@@ -81,6 +95,16 @@ interface PortalWalletDeps {
 // person through the authorization endpoint, so it is nothing a person
 // needs this page for.
 const MODES = ['cross-device', 'deferred'];
+
+const REMOVE_FORM = vz.object({
+  id: vz.string().min(1).max(64)
+    .describe('The credential\'s `id`, from `issued` in ' +
+              '`GET /account-api/credentials/offerable`.')
+});
+
+// The states a credential in the history can be in (`vc_issued.ts`).
+const STATES = ['valid', 'suspended', 'revoked', 'removed', 'signed-out',
+                'expired'];
 
 const OFFER_FORM = vz.object({
   configuration: vz.string().min(1).max(validation.CAP.SCOPE)
@@ -102,6 +126,17 @@ const OFFERABLE_ANSWER = {
     modes: { type: 'array', items: { type: 'string', enum: MODES } },
     lifetimeSeconds: { type: 'integer' },
     wallet: { type: 'string' },
+    issued: { type: 'array', items: { type: 'object', properties: {
+      id: { type: 'string' }, configurationId: { type: 'string' },
+      name: { type: 'string' }, format: { type: 'string' },
+      issuedAt: { type: 'string', format: 'date-time' },
+      expiresAt: { type: 'string', format: 'date-time' },
+      status: { type: 'string', enum: STATES },
+      removable: { type: 'boolean' },
+      removedAt: { type: 'string', format: 'date-time' },
+      walletEvent: { type: 'string', enum: ['', 'credential_accepted',
+        'credential_failure', 'credential_deleted'] },
+      walletEventAt: { type: 'string', format: 'date-time' } } } },
     offer: { type: 'object', description: 'Present in a POST\'s `view`.' }
   }
 };
@@ -128,6 +163,17 @@ const OFFER_ANSWER = {
     view: { type: 'object',
             description: 'The page\'s view with `offer` in it, drawn in ' +
                          'place: the Transaction Code never reaches a URL.' }
+  }
+};
+
+const REMOVE_ANSWER = {
+  type: 'object',
+  properties: {
+    ok: { type: 'boolean' },
+    message: { type: 'string' },
+    view: { type: 'object',
+            description: 'The page\'s view, `issued` showing the credential ' +
+                         'removed.' }
   }
 };
 
@@ -171,6 +217,11 @@ class PortalWallet {
         helpers.log.debug("Entering loadIssuer().");
         helpers.log.debug("Leaving loadIssuer().");
         return require('../oid4vc/vc_issuer');
+      },
+      loadIssued: function (): Json {
+        helpers.log.debug("Entering loadIssued().");
+        helpers.log.debug("Leaving loadIssued().");
+        return require('../oid4vc/vc_issued');
       }
     };
   }
@@ -178,13 +229,14 @@ class PortalWallet {
   /**
    * The page's view: every credential configuration this realm's issuer
    * offers, with the name its metadata gives it, the two kinds of offer,
-   * and how long an offer lives.
+   * how long an offer lives, and the credentials the caller was issued.
    *
    * @param req - the request (the realm's metadata is built from it)
-   * @returns `{ configurations, modes, lifetimeSeconds, wallet }`
+   * @param caller - the signed-in person
+   * @returns `{ configurations, modes, lifetimeSeconds, wallet, issued }`
    */
-  view(req: Json): Json {
-    const { log, loadOffers, loadConfigs, loadIssuer } = this.deps;
+  view(req: Json, caller: AccountCaller): Json {
+    const { log, loadOffers, loadConfigs, loadIssuer, loadIssued } = this.deps;
     log.debug("Entering PortalWallet.view().");
     const configs = loadConfigs();
     // THE NAMES ARE THE METADATA'S, read off `vciMetadata()` rather than
@@ -212,10 +264,77 @@ class PortalWallet {
                issuerDid: !!configs.vciUsesIssuerDid(id) };
     });
     const offers = loadOffers();
-    log.debug("Leaving PortalWallet.view(). " + rows.length);
+    const names: Json = {};
+    rows.forEach(function (one: Json) {
+      names[one.id] = one.name;
+    });
+    const at = function (ms: number): string {
+      return ms ? new Date(ms).toISOString() : '';
+    };
+    // THE SUBJECT IS THE TOKEN'S (`account-api/CLAUDE.md`).
+    const issued = (caller && caller.sub
+      ? loadIssued().historyForSubject(caller.sub) : [])
+      .map(function (one: Json): Json {
+        return { id: one.id, configurationId: one.configId,
+                 name: String(names[one.configId] || one.configId ||
+                              one.format),
+                 format: one.format, issuedAt: at(one.issuedAt),
+                 expiresAt: at(one.expiresAt), status: one.status,
+                 removable: one.status === 'valid' ||
+                            one.status === 'suspended',
+                 removedAt: at(one.removedAt),
+                 walletEvent: one.walletEvent,
+                 walletEventAt: at(one.walletEventAt) };
+      });
+    log.debug("Leaving PortalWallet.view(). " + rows.length + ", " +
+              issued.length + " issued.");
     return { configurations: rows, modes: MODES.slice(0),
              lifetimeSeconds: Math.round(offers.offerTtlMs() / 1000),
-             wallet: offers.configuredWalletUrl() };
+             wallet: offers.configuredWalletUrl(), issued: issued };
+  }
+
+  /**
+   * Removes one of the caller's credentials (`vc_issued.ts`'s
+   * `removeForSubject()`): revoked here, and the wallet's copy left for them
+   * to delete.
+   *
+   * @param ctx - the account API's helpers
+   * @param req - the request
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @returns nothing
+   */
+  remove(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+         body: Json): unknown {
+    const { log, loadIssued } = this.deps;
+    log.debug("Entering PortalWallet.remove().");
+    const who = caller.username;
+    const id = String(body.id);
+    const result = caller.sub
+      ? loadIssued().removeForSubject(caller.sub, id,
+                                      who + ' on /portal/wallet')
+      : { ok: false, error: 'Your sign-in names no subject this service ' +
+                            'issues credentials to.' };
+    ctx.audit.record({
+      category: 'protocol', action: 'portal.vc.remove',
+      errorCode: result.ok ? undefined : 'STS-PORTAL-0591',
+      actor: who, target: who, outcome: result.ok ? 'success' : 'failure',
+      summary: (result.ok ? (result.already ? 'asked again to remove'
+                                            : 'removed')
+                          : 'could not remove') +
+               ' a credential this realm issued them, on /portal/wallet',
+      detail: { id: id, errors: result.ok ? undefined : [result.error] }
+    });
+    if (!result.ok) {
+      log.debug("Leaving PortalWallet.remove(). Refused.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0591', String(result.error),
+                        { view: this.view(req, caller) });
+    }
+    log.debug("Leaving PortalWallet.remove(). Removed.");
+    return ctx.json(res, 200, { ok: true,
+      message: ctx.translatorFor(who).text('portalWallet.doneRemoved'),
+      view: this.view(req, caller) });
   }
 
   /**
@@ -257,7 +376,7 @@ class PortalWallet {
       record('failure', 'STS-PORTAL-0589', why);
       log.debug("Leaving PortalWallet.offer(). Unknown configuration.");
       return ctx.refuse(res, 400, 'STS-PORTAL-0589', why,
-                        { view: this.view(req) });
+                        { view: this.view(req, caller) });
     }
     // THE SESSION THE OFFER IS MADE ON. `caller.signOn` is the sign-on
     // session the token was issued on (`account-api/CLAUDE.md`, the gate's
@@ -271,7 +390,7 @@ class PortalWallet {
       record('failure', 'STS-PORTAL-0590', why);
       log.debug("Leaving PortalWallet.offer(). No sign-on session.");
       return ctx.refuse(res, 403, 'STS-PORTAL-0590', why,
-                        { view: this.view(req) });
+                        { view: this.view(req, caller) });
     }
     const offers = loadOffers();
     const user = Object.assign({}, userFor(who),
@@ -295,7 +414,7 @@ class PortalWallet {
         : null
     };
     record('success');
-    const view = Object.assign(this.view(req), { offer: offer });
+    const view = Object.assign(this.view(req, caller), { offer: offer });
     log.debug("Leaving PortalWallet.offer(). Offered.");
     return ctx.json(res, 200, { ok: true,
       message: ctx.translatorFor(who).text('portalWallet.doneOffered'),
@@ -327,10 +446,18 @@ class PortalWallet {
           '`modes`: the two pre-authorized offers, `cross-device` ' +
           '(Appendix H.2) and `deferred` (H.3). `lifetimeSeconds`: how long ' +
           'an offer and its code are honoured (`oid4vci.offerTtlS`). ' +
-          '`wallet`: the configured web wallet a link opens, or empty.',
+          '`wallet`: the configured web wallet a link opens, or empty. ' +
+          '`issued`: the credentials this realm still records as issued to ' +
+          'you, newest first — each one\'s `id`, configuration, when it was ' +
+          'issued and expires, its `status` (`valid`, `suspended`, ' +
+          '`revoked`, `removed` by you, `signed-out` by a global sign-out, ' +
+          '`expired`), whether you can remove it, and the last event your ' +
+          'wallet reported to the Notification Endpoint (OpenID4VCI 1.0 ' +
+          'section 11).',
         answer: OFFERABLE_ANSWER,
-        handler: function (req: Json, res: Json): unknown {
-          return ctx.json(res, 200, self.view(req));
+        handler: function (req: Json, res: Json,
+                           caller: AccountCaller): unknown {
+          return ctx.json(res, 200, self.view(req, caller));
         } },
       { method: 'POST', path: ctx.BASE + '/credentials/offers',
         operationId: 'createCredentialOffer', tag: 'Wallet',
@@ -361,6 +488,29 @@ class PortalWallet {
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.offer(ctx, req, res, caller, input.body);
+        } },
+      { method: 'POST', path: ctx.BASE + '/credentials/remove',
+        operationId: 'removeIssuedCredential', tag: 'Wallet',
+        access: 'person',
+        mirrors: 'POST ' + ctx.PORTAL + '/remove-wallet-credential',
+        summary: 'Removes one of the credentials issued to you',
+        description: 'The credential named by its `id` (from `issued`) is ' +
+          'revoked: its Token Status List entry is set INVALID, which is ' +
+          'final and what a verifier reads, it is marked revoked in the ' +
+          'issued register, it no longer signs you in, and your relying ' +
+          'parties are told over CAEP (credential-change, revoke). It is NOT ' +
+          'deleted from your wallet: neither OpenID4VP nor OpenID4VCI lets ' +
+          'an issuer do that, so delete it in the wallet yourself. Only a ' +
+          'credential of yours can be named; removing one already removed ' +
+          'is answered as done. The page\'s `view` is in the answer.',
+        body: REMOVE_FORM,
+        answer: REMOVE_ANSWER,
+        statuses: {
+          400: 'No credential of yours has that id (STS-PORTAL-0591).'
+        },
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return self.remove(ctx, req, res, caller, input.body);
         } }
     ];
     log.debug("Leaving PortalWallet.accountOperations().");

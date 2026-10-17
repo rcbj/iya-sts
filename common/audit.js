@@ -1285,6 +1285,8 @@ const ACTIONS = [
     label: 'A person removed a self-issued subject' },
   { action: 'portal.vc.offer', category: 'protocol',
     label: 'A person made a Credential Offer for their own wallet' },
+  { action: 'portal.vc.remove', category: 'protocol',
+    label: 'A person removed a credential this realm issued them' },
   { action: 'risk.feedback', category: 'authentication',
     label: 'Feedback on a risk assessment was recorded' },
   { action: 'risk.response', category: 'authentication',

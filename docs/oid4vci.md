@@ -119,8 +119,22 @@ means the whole configured set.
   beside it, and a link that opens it in a wallet on the same device. It is
   the [account API](account-api.md)'s two operations, in both modes:
   * `GET /account-api/credentials/offerable`: the configurations this realm's
-    issuer offers, named as its metadata names them, the two modes, and how
-    long an offer lives;
+    issuer offers, named as its metadata names them, the two modes, how
+    long an offer lives, and `issued` — the credentials this realm still
+    records as issued to the person, newest first, each with its state
+    (`valid`, `suspended`, `revoked`, `removed`, `signed-out`, `expired`) and
+    the last event their wallet sent to the Notification Endpoint with the
+    Credential Response's `notification_id` (`credential_accepted`,
+    `credential_failure`, `credential_deleted`; it changes nothing else);
+  * `POST /account-api/credentials/remove` with `{ "id": "…" }` (the page's
+    **Remove**): that credential of the person's is revoked — its Token
+    Status List entry INVALID, its issued-register row revoked, refused at
+    wallet sign-in, and CAEP `credential-change` `revoke` sent. **It is not
+    deleted from the wallet**: OpenID4VP is a verifier asking for a
+    presentation and OpenID4VCI's notification runs from wallet to issuer,
+    so neither lets an issuer delete a credential from a wallet, and the
+    page tells the person to delete it there. An id that is not one of the
+    caller's is refused (`STS-PORTAL-0591`);
   * `POST /account-api/credentials/offers` with `{ "configuration": "…",
     "mode": "cross-device" | "deferred" }`: a pre-authorized offer **for the
     token's person** (nobody else can be named), answered once — the
