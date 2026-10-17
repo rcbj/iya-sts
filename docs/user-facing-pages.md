@@ -128,7 +128,7 @@ portal through single sign-on, with no screen.
 | Sign-in requests (CIBA) | `/portal/ciba` |
 | Your devices | `/portal/devices` |
 | Your self-issued IDs | `/portal/self-issued` |
-| Add a credential to your wallet | `/portal/wallet` |
+| Add a credential to your wallet, and the ones issued to you | `/portal/wallet` |
 | App passwords | `/portal/app-passwords` |
 | Kerberos | `/portal/kerberos` |
 | Recent sign-ins | `/portal/sign-ins` |

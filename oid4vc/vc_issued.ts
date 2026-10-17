@@ -72,7 +72,17 @@
 //     register's mark, read by handle, so a restore undoes it);
 //   * its status-list entry is not VALID — revoked or suspended on
 //     `/admin/vc-status` or by the two acts above, which also set the bit so
-//     a verifier elsewhere learns it (`vc_status.ts`).
+//     a verifier elsewhere learns it (`vc_status.ts`);
+//   * its HOLDER removed it on `/portal/wallet` (#661, 2026-10-16,
+//     `removeForSubject()`): that one credential, stamped removed, its
+//     status-list entry INVALID and its issued-register row revoked. The
+//     wallet's copy is the holder's to delete: no protocol lets an issuer
+//     do it.
+//
+// **WHAT THE WALLET SAID** (#661, 2026-10-16): each credential keeps the
+// `notification_id` its Credential Response carried, and the last event the
+// wallet sent to the Notification Endpoint with it (OpenID4VCI 1.0 section
+// 11, `noteWalletEvent()`), for the holder's history. It disowns nothing.
 //
 // **An ordinary sign-out disowns nothing here.** `/oauth2/logout`, SAML
 // Single Logout, WS-Federation's `wsignout1.0` and the console's and portal's
@@ -129,6 +139,28 @@ interface Issued {
   // Appendix D.2 values), or empty.
   keyStorage: string[];
   userAuthentication: string[];
+  // THE WALLET'S OWN REPORT (OpenID4VCI 1.0 section 11): the
+  // `notification_id` the Credential Response carried, and the last event
+  // the wallet sent with it, or ''.
+  notificationId?: string;
+  walletEvent?: string;
+  walletEventAt?: number;
+  // THE HOLDER REMOVED IT on /portal/wallet: when, and by whom.
+  removedAt?: number;
+  removedVia?: string;
+}
+
+// One credential of a person's history, for `/portal/wallet`.
+interface HistoryEntry {
+  id: string;
+  format: string;
+  configId: string;
+  issuedAt: number;
+  expiresAt: number;
+  status: string;
+  removedAt: number;
+  walletEvent: string;
+  walletEventAt: number;
 }
 
 interface VcIssuedDeps {
@@ -137,6 +169,8 @@ interface VcIssuedDeps {
   subjectForName: typeof helpers.subjectForName;
   jwkThumbprint: typeof stsCrypto.jwkThumbprint;
   artifactRevokedByKey: (key: string) => any;
+  artifactByKey: (key: string) => any;
+  revokeArtifact: (record: any, via: string) => boolean;
   statusOf: (key: string) => number;
   setStatus: (key: string, value: number, via: string) => boolean;
   store: Store;
@@ -251,6 +285,8 @@ class VcIssued {
       subjectForName: helpers.subjectForName,
       jwkThumbprint: stsCrypto.jwkThumbprint,
       artifactRevokedByKey: stats.artifactRevokedByKey,
+      artifactByKey: stats.artifactByKey,
+      revokeArtifact: stats.revokeArtifact,
       statusOf: vcStatus.statusOf,
       setStatus: vcStatus.setStatus,
       store: issued,
@@ -384,7 +420,8 @@ class VcIssued {
                   artifactKey?: string; statusKey?: string;
                   validFrom?: string; validUntil?: string;
                   keyStorage?: string[];
-                  userAuthentication?: string[] }): string {
+                  userAuthentication?: string[];
+                  notificationId?: string }): string {
     const { log, store, jwkThumbprint } = this.deps;
     log.debug("Entering VcIssued.record(). format=" + entry.format);
     const format = String(entry.format || '');
@@ -414,7 +451,12 @@ class VcIssued {
       validUntil: String(entry.validUntil || ''),
       expiresAt: Number(entry.expiresAt) || 0,
       keyStorage: [].concat(entry.keyStorage || []).map(String),
-      userAuthentication: [].concat(entry.userAuthentication || []).map(String)
+      userAuthentication: [].concat(entry.userAuthentication || []).map(String),
+      notificationId: String(entry.notificationId || ''),
+      walletEvent: '',
+      walletEventAt: 0,
+      removedAt: 0,
+      removedVia: ''
     };
     const ldp = format === 'ldp_vc';
     const key = ldp ? this.keyForHolder(jkt, entry.subject)
@@ -577,6 +619,10 @@ class VcIssued {
           ') disowned the credentials issued to this wallet for this ' +
           'person before ' + new Date(disownedAt).toISOString();
       }
+      if (c.removedAt) {
+        log.debug("Leaving VcIssued.disownedReason(). Removed.");
+        return 'its holder removed it (' + (c.removedVia || 'unstated') + ')';
+      }
       const mark = c.artifactKey ? artifactRevokedByKey(c.artifactKey) : null;
       if (mark) {
         log.debug("Leaving VcIssued.disownedReason(). Revoked.");
@@ -688,6 +734,218 @@ class VcIssued {
     return true;
   }
 
+  // ---------------------------------------------------------------------------
+  // ONE PERSON'S HISTORY, for `/portal/wallet` (#661, 2026-10-16): every credential
+  // still on a row of theirs, newest first, each with its state and the
+  // wallet's last report. A row goes when its last credential expires, so
+  // this is what the register still holds, not every credential ever issued.
+  //
+  // `id` is a digest of the row and the credential, never the row key: a
+  // JOSE row's key is a digest of the credential itself.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns every credential still recorded for one person, newest first.
+   *
+   * @param subject - the person's `urn:uuid:` subject
+   * @returns the history
+   */
+  historyForSubject(subject: string): HistoryEntry[] {
+    const { log, store } = this.deps;
+    log.debug("Entering VcIssued.historyForSubject().");
+    const now = Date.now();
+    const out: HistoryEntry[] = [];
+    store.forEach((row) => {
+      if (!row || !subject || row.subject !== String(subject)) {
+        return;
+      }
+      [].concat(row.credentials || []).forEach((c: Issued) => {
+        out.push({ id: this.credentialId(row, c), format: String(row.format),
+                   configId: String(row.configId || ''),
+                   issuedAt: Number(c.issuedAt) || 0,
+                   expiresAt: Number(c.expiresAt) || 0,
+                   status: this.stateOf(row, c, now),
+                   removedAt: Number(c.removedAt) || 0,
+                   walletEvent: String(c.walletEvent || ''),
+                   walletEventAt: Number(c.walletEventAt) || 0 });
+      });
+    });
+    out.sort(function (a, b) {
+      return b.issuedAt - a.issuedAt;
+    });
+    log.debug("Leaving VcIssued.historyForSubject(). " + out.length + ".");
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE HOLDER REMOVES ONE CREDENTIAL (#661, 2026-10-16). OpenID4VP and OpenID4VCI
+  // give an issuer no way to delete a credential from a wallet, so removing
+  // is this service's half: the status-list entry is set INVALID (final, and
+  // what a verifier elsewhere reads), the issued register's row is marked
+  // revoked, and the credential is stamped removed, which `disownedReason()`
+  // refuses at sign-in. Only the credential named — for an `ldp_vc` row, not
+  // its siblings, which `disown()` would take with it. The holder deletes the
+  // wallet's copy themselves.
+  //
+  // The subject is the caller's, never a parameter (`account-api/CLAUDE.md`):
+  // an id that is not on one of THEIR rows is refused as unknown, whoever's
+  // it is.
+  // ---------------------------------------------------------------------------
+  /**
+   * Removes one of a person's credentials: its status-list entry INVALID, its
+   * issued-register row revoked, and the credential refused at sign-in.
+   *
+   * @param subject - the person's `urn:uuid:` subject
+   * @param id - the credential's id, from `historyForSubject()`
+   * @param via - who removed it, and where
+   * @returns `{ ok, already }`, or `{ ok: false, error }`
+   */
+  removeForSubject(subject: string, id: string,
+                   via: string): { ok: boolean; already?: boolean;
+                                   error?: string } {
+    const { log, store, setStatus, artifactByKey, revokeArtifact } = this.deps;
+    log.debug("Entering VcIssued.removeForSubject().");
+    let foundRow: any = null;
+    let found: Issued | null = null;
+    store.forEach((row) => {
+      if (found || !row || !subject || row.subject !== String(subject)) {
+        return;
+      }
+      [].concat(row.credentials || []).forEach((c: Issued) => {
+        if (!found && this.credentialId(row, c) === String(id || '')) {
+          foundRow = row;
+          found = c;
+        }
+      });
+    });
+    const c = found as Issued | null;
+    if (!c || !foundRow) {
+      log.debug("Leaving VcIssued.removeForSubject(). Not one of theirs.");
+      return { ok: false, error: 'You have no credential with that id. The ' +
+        'list on /portal/wallet shows the ones this service still records ' +
+        'for you.' };
+    }
+    const row = foundRow;
+    if (c.removedAt) {
+      log.debug("Leaving VcIssued.removeForSubject(). Already removed.");
+      return { ok: true, already: true };
+    }
+    const why = String(via || 'unstated');
+    c.removedAt = Date.now();
+    c.removedVia = why;
+    // THROUGH THE STORE, whole, so the journal carries the row.
+    store.set(String(row.key), row);
+    if (c.statusKey) {
+      setStatus(c.statusKey, 1, why);
+    }
+    if (c.artifactKey) {
+      const artifact = artifactByKey(c.artifactKey);
+      if (artifact) {
+        revokeArtifact(artifact, why);
+      }
+    }
+    log.info('oid4vp-signin: a credential on row ' +
+             cacheRegistry.digestKey(row.key) + ' was removed by its holder (' +
+             why + ').');
+    const holder = this.deps.nameForSubject(String(row.subject || ''));
+    if (holder) {
+      accountSignals.credentialChanged({ username: holder,
+        credentialType: 'verifiable-credential', changeType: 'revoke',
+        friendlyName: String(row.configId || row.format),
+        initiatingEntity: 'user', via: why,
+        reasonAdmin: holder + ' removed a ' + String(row.configId ||
+                     row.format) + ' credential this realm issued them (' +
+                     why + ').',
+        reasonUser: 'You removed a credential this service issued to your ' +
+                    'wallet.' });
+    }
+    log.debug("Leaving VcIssued.removeForSubject(). Removed.");
+    return { ok: true, already: false };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT THE WALLET REPORTED (OpenID4VCI 1.0 section 11): stamped on every
+  // credential the Credential Response with this `notification_id` carried.
+  // It is the wallet's word and changes nothing else — a wallet that deleted
+  // its copy has not revoked anything, and one that says it accepted a
+  // credential cannot reinstate one.
+  // ---------------------------------------------------------------------------
+  /**
+   * Records a wallet's notification event on the credentials it names.
+   *
+   * @param notificationId - the Credential Response's `notification_id`
+   * @param event - `credential_accepted`, `credential_failure` or
+   *   `credential_deleted`
+   * @returns how many credentials it was recorded on
+   */
+  noteWalletEvent(notificationId: string, event: string): number {
+    const { log, store } = this.deps;
+    log.debug("Entering VcIssued.noteWalletEvent().");
+    const id = String(notificationId || '');
+    let count = 0;
+    if (!id) {
+      log.debug("Leaving VcIssued.noteWalletEvent(). No id.");
+      return 0;
+    }
+    const now = Date.now();
+    const changed: any[] = [];
+    store.forEach(function (row) {
+      let touched = false;
+      [].concat((row && row.credentials) || []).forEach(function (c: Issued) {
+        if (c.notificationId === id) {
+          c.walletEvent = String(event || '');
+          c.walletEventAt = now;
+          touched = true;
+          count += 1;
+        }
+      });
+      if (touched) {
+        changed.push(row);
+      }
+    });
+    changed.forEach(function (row) {
+      store.set(String(row.key), row);
+    });
+    log.debug("Leaving VcIssued.noteWalletEvent(). " + count + ".");
+    return count;
+  }
+
+  // A credential's id in a person's history: a digest of its row and its
+  // place on it, so it says nothing about the credential.
+  private credentialId(row: any, c: Issued): string {
+    return stsCrypto.digest('sha256', String(row.key) + '|' +
+                            String(c.issuedAt) + '|' + String(c.statusKey ||
+                            c.artifactKey || ''), 'base64url').slice(0, 22);
+  }
+
+  // A credential's state, for a person's history: `removed` (by them),
+  // `signed-out` (a global sign-out disowned it), `revoked` (an
+  // administrator, or its status entry INVALID), `suspended`, `expired` or
+  // `valid` — the first that applies.
+  private stateOf(row: any, c: Issued, now: number): string {
+    const { artifactRevokedByKey, statusOf } = this.deps;
+    if (c.removedAt) {
+      return 'removed';
+    }
+    const disownedAt = Number((row && row.disownedAt) || 0);
+    if (disownedAt && c.issuedAt <= disownedAt) {
+      return 'signed-out';
+    }
+    if (c.artifactKey && artifactRevokedByKey(c.artifactKey)) {
+      return 'revoked';
+    }
+    const status = c.statusKey ? statusOf(c.statusKey) : 0;
+    if (status === 2) {
+      return 'suspended';
+    }
+    if (status) {
+      return 'revoked';
+    }
+    if (c.expiresAt && c.expiresAt <= now) {
+      return 'expired';
+    }
+    return 'valid';
+  }
+
   // Takes one JOSE credential out of the sign-in path, for a test.
   /**
    * Takes one JOSE credential out of the sign-in path, for a test.
@@ -778,6 +1036,9 @@ export = {
   rowsForSubject: slot.forward('rowsForSubject'),
   rowByKey: slot.forward('rowByKey'),
   disown: slot.forward('disown'),
+  historyForSubject: slot.forward('historyForSubject'),
+  removeForSubject: slot.forward('removeForSubject'),
+  noteWalletEvent: slot.forward('noteWalletEvent'),
   forget: slot.forward('forget'),
   size: slot.forward('size')
 };

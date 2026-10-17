@@ -1493,6 +1493,27 @@ pre-authorized offer).
 * `tests/portal_wallet.js` holds the operations, the refusals and the page's
   round trip through the bundle; three protocol jobs make their offers here
   (`oid4vc/CLAUDE.md`).
+* **THE CREDENTIALS ISSUED TO THE PERSON, AND REMOVE** (#661, rcbj 2026-10-16).
+  The view's `issued` is `vc_issued.ts`'s `historyForSubject(caller.sub)`:
+  every credential still on one of the person's rows, newest first, with
+  its state and the last event their wallet sent to the Notification
+  Endpoint. The issuer mints the Credential Response's `notification_id`
+  BEFORE it records the credential so the two are linked; the wallet's
+  report is shown and disowns nothing. A row goes when its last credential
+  expires, so this is what the register holds, not everything ever issued.
+  **Remove** is `POST /account-api/credentials/remove` (`id`), mirrored by
+  `POST /portal/remove-wallet-credential` because `POST /portal/wallet` is
+  the offer. rcbj chose REVOKE AND KEEP IN THE HISTORY over hiding a row
+  (2026-10-16): `removeForSubject()` sets that one credential's status-list
+  entry INVALID, revokes its issued-register row and stamps it removed,
+  which `disownedReason()` refuses at sign-in — the one credential, not an
+  `ldp_vc` row's siblings, which `disown()` would take. **No protocol lets
+  an issuer delete a wallet's copy** (OpenID4VP is a verifier asking;
+  OpenID4VCI's notification runs wallet to issuer), so the page says the
+  person must delete it in the wallet (`wallet-remove-note`). The id is a
+  digest of the row and the credential, looked up among the CALLER's rows
+  only: another person's is refused as unknown (`STS-PORTAL-0591`).
+  `tests/portal_wallet_history.js` holds it.
 
 ## `/portal/devices`: A PERSON'S OWN DEVICES (2026-09-23, #130; #164 phase 2, 2026-09-26)
 

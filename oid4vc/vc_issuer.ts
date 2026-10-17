@@ -1964,7 +1964,8 @@ class VcIssuer {
   }
 
   private rememberIssued(issued: any[], holderJwks: any[], configId: string,
-                         subject: string, attestations?: any[]): void {
+                         subject: string, attestations?: any[],
+                         notificationId?: string): void {
     // ONE ROW PER CREDENTIAL FOR THE JOSE FORMATS, one row per holder key and
     // person for ldp_vc — `vc_issued.ts` argues the two kinds. Each row
     // carries the credential's issued-register handle and status-list entry,
@@ -1994,7 +1995,8 @@ class VcIssuer {
           keyStorage: (attestations && attestations[i] &&
                        attestations[i].keyStorage) || [],
           userAuthentication: (attestations && attestations[i] &&
-                               attestations[i].userAuthentication) || []
+                               attestations[i].userAuthentication) || [],
+          notificationId: notificationId || ''
         });
       } catch (e) {
         log.debug("Caught in VcIssuer.rememberIssued(): " +
@@ -3239,13 +3241,16 @@ class VcIssuer {
         return vciError(res, 500, 'server_error', 'The credential could not ' +
                         'be built: ' + e.message);
       }
+      // THE NOTIFICATION ID BEFORE THE REGISTER (#661, 2026-10-16), so what the
+      // wallet later reports with it reaches the holder's history.
+      const notificationId = this.newNotificationId();
       this.rememberIssued(issued, holderJwks, requestedConfigId,
-                          signInSubject, attestations);
+                          signInSubject, attestations, notificationId);
       const response = {
         credentials: issued.map((b) => {
           return {credential: b.credential };
         }),
-        notification_id: this.newNotificationId()
+        notification_id: notificationId
       };
       logArtifact('OID4VCI Credential Response', 'as returned', response);
       this.sendCredentialResponse(res, 200, response, encryption);
@@ -3344,14 +3349,15 @@ class VcIssuer {
         return vciError(res, 500, 'server_error', 'The credential could not ' +
                         'be built: ' + e.message);
       }
+      const notificationId = this.newNotificationId();
       this.rememberIssued(issued, holderKeys, deferredConfigId,
                           String(record.signInSubject || ''),
-                          record.attestations || []);
+                          record.attestations || [], notificationId);
       const response = {
         credentials: issued.map((b) => {
           return {credential: b.credential };
         }),
-        notification_id: this.newNotificationId()
+        notification_id: notificationId
       };
       logArtifact('OID4VCI Deferred Credential Response', 'as returned',
                   response);
@@ -3419,6 +3425,16 @@ class VcIssuer {
       // knows: `notificationIds` is `realms.map({persist})` and its journal
       // sees `set()` rather than a field stamped on the object it handed out.
       notificationIds.set(id, record);
+      // AND ON THE CREDENTIALS IT NAMES (#661, 2026-10-16), for the holder's
+      // history on /portal/wallet. The wallet's word, which disowns nothing.
+      try {
+        this.deps.vcIssued.noteWalletEvent(id, event);
+      } catch (e) {
+        log.debug("Caught in the OID4VCI notification endpoint: " +
+                  ((e && e.message) || e));
+        // The notification was received and is answered so; only the
+        // holder's history misses it.
+      }
       logArtifact('OID4VCI Notification', 'as received', {
         notification_id: id, event: event,
         event_description: record.description
