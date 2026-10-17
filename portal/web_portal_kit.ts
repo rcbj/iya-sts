@@ -224,7 +224,7 @@ const STYLE =
   // `download` is how a file leaves a page with no script on it; and the
   // install steps, one browser per fold.
   'select{padding:8px;border:1px solid #c7c7d1;border-radius:6px;' +
-  'font:inherit;background:#fff}' +
+  'font:inherit;background:#fff;max-width:100%}' +
   'a.dl{display:inline-block;background:#2c5cc5;color:#fff;' +
   'text-decoration:none;border-radius:6px;padding:9px 14px;' +
   'margin:6px 8px 0 0;font-size:.9em}a.dl.secondary{background:#5a5a68}' +
