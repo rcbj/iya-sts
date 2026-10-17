@@ -280,6 +280,20 @@ function childMain() {
          'the open-in-wallet link and what to do when nothing opens — and ' +
          'no web wallet link — in the person\'s language',
          html.slice(0, 400));
+    const withWeb = JSON.parse(JSON.stringify(made.json.view));
+    withWeb.offer.byValue = Object.assign({}, withWeb.offer.byValue,
+      { walletUrl: 'http://wallet.example/credential-offer?x=1' });
+    const webHtml = table.render('/portal/wallet', withWeb, {
+      t: t, query: {}, prefix: '', origin: base, me: me.json,
+      locale: me.json.locale, version: me.json.version,
+      here: '/portal/wallet' });
+    note(new RegExp('<a [^>]*id="open_in_web_wallet" target="_blank" ' +
+                    'rel="noopener" href="http://wallet\\.example/' +
+                    'credential-offer\\?x=1"')
+           .test(webHtml.replace(/&amp;/g, '&')),
+         '5a-ii. a configured web wallet\'s link opens in a new tab',
+         webHtml.slice(webHtml.indexOf('open_in_wallet'),
+                       webHtml.indexOf('open_in_wallet') + 400));
     const page = await alice.draw('/portal/wallet');
     note(page.status === 200 && /id="wallet-make"/.test(page.html) &&
          !/id="offer_qr"/.test(page.html),

@@ -79,9 +79,11 @@ class WalletPages {
       '<p><a class="dl" id="open_in_wallet" href="' +
       kit.esc(byValue.offerUri || scan) + '">' +
       t.html('portalWallet.openHere') + '</a>' +
+      // THE WEB WALLET IN A TAB OF ITS OWN (2026-10-16): this page keeps
+      // the Transaction Code the wallet asks for.
       (byValue.walletUrl
-        ? ' <a class="dl secondary" id="open_in_web_wallet" href="' +
-          kit.esc(byValue.walletUrl) + '">' +
+        ? ' <a class="dl secondary" id="open_in_web_wallet" target="_blank" ' +
+          'rel="noopener" href="' + kit.esc(byValue.walletUrl) + '">' +
           t.html('portalWallet.openWebWallet') + '</a>'
         : '') + '</p>' +
       // WHAT TO DO WHEN NOTHING OPENS (2026-10-12): the link is under a
