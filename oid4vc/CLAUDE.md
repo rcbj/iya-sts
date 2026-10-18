@@ -525,7 +525,10 @@ Three acts, all of them read through `vc_issued.disownedReason()`:
 * an administrator's revocation of the credential on `/admin/tokens` (the
   issued register's own mark, read by handle, so a restore undoes it);
 * a status-list entry that is not VALID — set by either of those, or by
-  `/admin/vc-status`.
+  `/admin/vc-status`;
+* its holder's Remove on `/portal/wallet` (#661), of one copy or of every
+  copy of one issuance (#670): `removeForSubject()` stamps each copy
+  removed, sets its entry INVALID and revokes its register row.
 
 **An ordinary session sign-out disowns nothing.** `/oauth2/logout`, SAML Single
 Logout, `wsignout1.0` and the console's and portal's Sign out end one session
@@ -951,6 +954,33 @@ second catalogue. What is more than a number, and what
   older than the indexes: `sweep()` on every `record()`, `lookupHolder()`
   (an `ldp_vc` sign-in) and `rowsForSubject(null)` (everyone's, for a global
   sign-out).
+* **A BATCH IS ONE ISSUANCE, ON SEVERAL ROWS** (#670, rcbj 2026-10-17).
+  With `oid4vci.batchSize` over one, a Credential Response carries one
+  credential per proof, each bound to a different holder key (OpenID4VCI
+  1.0 section 8.2) with its own status-list entry and issued-register row.
+  `rememberIssued()` records each as before, so the register holds them as
+  SEPARATE rows — a JOSE row is keyed by its credential, an `ldp_vc` row by
+  its holder key — and nothing groups them but the response's
+  `notification_id`, minted once per response (and once per deferred
+  response) and kept on every copy since #661. That is the specification's
+  own name for the credentials of one response, so it is the issuance:
+  `issuancesForSubject()` groups a person's copies by it, oldest copy
+  first; a credential recorded before #661 has none and is an issuance of
+  its own. No new field was added for the grouping. Three things followed:
+  * **the notification index names EVERY row** a response reached
+    (`keys`), because it named the first only and a wallet's report reached
+    one copy in four; an entry from before is read as a list of one;
+  * **a DID-bound copy keeps its holder's `did:jwk`** (`holderDid`); the
+    key every copy is bound to was already the row's `jkt`, the RFC 7638
+    thumbprint of the proof's key, since #38 — so every copy's key is known,
+    including those issued before #670 (`keyNotRecorded` is for a row
+    without one, which this issuer does not write);
+  * **CAEP is told once per issuance and once per removal**: `record()`
+    announces only the first copy (`announce: false` for the rest), and
+    `removeForSubject()` sends one signal however many copies it removes.
+  `removeForSubject()` takes a copy's id or an issuance's — digests of
+  different strings — and removes that copy or every copy still good.
+  `portal/CLAUDE.md` has the page.
 * **THE KEY BINDING JWT ACCEPTS WHAT THE ISSUER BINDS TO** — every asymmetric
   non-post-quantum algorithm. It accepted four while the issuer bound credentials
   to keys of eleven, so a wallet with an EdDSA key was issued a credential and

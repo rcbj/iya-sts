@@ -38,6 +38,18 @@
 // portal's other lists are, and each form carries the page it was on, so
 // the page drawn from its answer is that one.
 //
+// ONE ROW PER ISSUANCE (#670, rcbj 2026-10-17). With batch issuance on, one
+// "Add to your wallet" gives the wallet several copies, each bound to a
+// different key of its own, and `issued` lists the issuance once: its
+// state (the copies' where they agree, else how many are in each), how
+// many copies, and Remove, which removes every copy. Under it, a
+// `<details>` fold lists the copies — "Copy 2 of 4", the wallet key each is
+// bound to (the first twelve characters of its RFC 7638 thumbprint, the
+// whole of it and any holder DID as the tooltip: twelve characters of a
+// `did:jwk` would be `did:jwk:eyJ` for every key), its status-list index
+// and its own Remove. Above the list, while `batchSize` is over one, a note
+// says batching is on and why; at one it says nothing about batching.
+//
 // THE SIGNING ALGORITHM (2026-10-16): one `<select name="signingAlg">`
 // holding every configuration's algorithms, each option naming in
 // `data-for` the configurations it applies to and in `data-default-for`
@@ -66,6 +78,14 @@ const STATE_KEYS: Json = {
   'signed-out': 'portalWallet.stateSignedOut',
   expired: 'portalWallet.stateExpired'
 };
+// The order a mixed issuance's counts are said in.
+const STATE_ORDER = ['valid', 'suspended', 'revoked', 'signed-out',
+                     'removed', 'expired'];
+const STATE_SHORT_KEYS: Json = Object.assign({}, STATE_KEYS,
+  { removed: 'portalWallet.stateRemovedShort' });
+// How much of a key's thumbprint is shown: as much as the console's
+// sign-out page shows of the same key (`logout/logout.ts`).
+const KEY_SHOWN = 12;
 const WALLET_KEYS: Json = {
   credential_accepted: 'portalWallet.walletAccepted',
   credential_failure: 'portalWallet.walletFailure',
@@ -139,32 +159,51 @@ class WalletPages {
     const t = ctx.t;
     const issued: Json[] = view.issued || [];
     const keep = WalletPages.pageField(view);
-    const rows = issued.map(function (one: Json): string {
-      const state = one.status === 'removed'
-        ? t.html(STATE_KEYS.removed, { when: t.date(one.removedAt) })
-        : t.html(STATE_KEYS[one.status] || STATE_KEYS.revoked);
-      const said = WALLET_KEYS[one.walletEvent]
+    const said = function (one: Json): string {
+      return WALLET_KEYS[one.walletEvent]
         ? t.html(WALLET_KEYS[one.walletEvent],
                  { when: t.date(one.walletEventAt) })
         : t.html('portalWallet.walletNothing');
-      return '<tr data-credential="' + kit.esc(one.id) + '"><td>' +
+    };
+    const removeForm = function (id: string, label: string): string {
+      return '<form method="post" action="' + kit.esc(REMOVE_PATH) + '">' +
+        '<input type="hidden" name="id" value="' + kit.esc(id) + '">' +
+        keep + '<button class="danger" type="submit">' + t.html(label) +
+        '</button></form>';
+    };
+    const rows = issued.map(function (one: Json): string {
+      const copies: Json[] = one.copies || [];
+      const many = copies.length > 1;
+      return '<tr data-issuance="' + kit.esc(one.id) + '"><td>' +
         kit.esc(one.name) + ' <span class="sub"><code>' +
         kit.esc(one.configurationId) + '</code> &middot; ' +
         kit.esc(one.format) + '</span></td><td>' +
         kit.esc(t.date(one.issuedAt)) + '</td><td>' +
         (one.expiresAt ? kit.esc(t.date(one.expiresAt))
                        : t.html('portalWallet.noExpiry')) + '</td><td>' +
-        state + '</td><td>' + said + '</td><td>' +
+        WalletPages.issuanceState(one, t) + '</td><td>' + said(one) +
+        '</td><td>' +
         (one.removable
-          ? '<form method="post" action="' + kit.esc(REMOVE_PATH) + '">' +
-            '<input type="hidden" name="id" value="' + kit.esc(one.id) +
-            '">' + keep + '<button class="danger" type="submit">' +
-            t.html('portalWallet.remove') + '</button></form>'
-          : '') + '</td></tr>';
+          ? removeForm(one.id, many ? 'portalWallet.removeAll'
+                                    : 'portalWallet.remove')
+          : '') + '</td></tr>' +
+        (copies.length
+          ? '<tr class="copies"><td colspan="6"><details><summary>' +
+            t.html('portalWallet.copies', { count: copies.length }) +
+            '</summary><table>' + copies.map(function (c: Json): string {
+              return WalletPages.copy(c, t, many ? removeForm : null);
+            }).join('') + '</table></details></td></tr>'
+          : '');
     });
+    const batch = Number(view.batchSize) || 1;
     return '<div class="card" id="wallet-issued"><h2>' +
       t.html('portalWallet.historyHeading') + '</h2><p class="sub">' +
       t.html('portalWallet.historySub') + '</p>' +
+      // BATCHING, said while it is on (#670), and nothing about it at one.
+      (batch > 1
+        ? '<p class="sub" id="wallet-batch-note">' +
+          t.html('portalWallet.batchNote', { size: batch }) + '</p>'
+        : '') +
       (issued.length
         ? '<table><tr><th>' + t.html('portalWallet.colCredential') +
           '</th><th>' + t.html('portalWallet.colIssued') + '</th><th>' +
@@ -177,6 +216,74 @@ class WalletPages {
           t.html('portalWallet.removeNote') + '</p>'
         : '<p id="wallet-issued-none">' + t.html('portalWallet.historyNone') +
           '</p>') + '</div>';
+  }
+
+  /**
+   * One copy's state, as the catalog says it.
+   *
+   * @param one - a copy, or an issuance whose copies agree
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static state(one: Json, t: Json): string {
+    return one.status === 'removed'
+      ? t.html(STATE_KEYS.removed, { when: t.date(one.removedAt) })
+      : t.html(STATE_KEYS[one.status] || STATE_KEYS.revoked);
+  }
+
+  /**
+   * An issuance's state: its copies' where they agree, and otherwise how
+   * many of them are in each state.
+   *
+   * @param one - the issuance
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static issuanceState(one: Json, t: Json): string {
+    if (one.status !== 'mixed') {
+      return WalletPages.state(one, t);
+    }
+    const counts: Json = one.counts || {};
+    const total = (one.copies || []).length;
+    return STATE_ORDER.filter(function (state: string): boolean {
+      return Number(counts[state]) > 0;
+    }).map(function (state: string): string {
+      return t.html('portalWallet.stateCount', {
+        count: Number(counts[state]), total: total,
+        state: t.text(STATE_SHORT_KEYS[state]) });
+    }).join('<br>');
+  }
+
+  /**
+   * One copy of an issuance, in its fold: its position, the wallet key it is
+   * bound to, its status-list index, its state, and its own Remove where
+   * the issuance has others.
+   *
+   * @param c - the copy
+   * @param t - the translator
+   * @param removeForm - draws a Remove form, or null for an issuance of one
+   * @returns the HTML
+   */
+  static copy(c: Json, t: Json,
+              removeForm: ((id: string, label: string) => string) | null):
+              string {
+    const jkt = String(c.keyThumbprint || '');
+    const did = String(c.holderDid || '');
+    const key = jkt
+      ? t.html('portalWallet.copyKey') + ' <code title="' +
+        kit.esc(did ? jkt + ' · ' + did : jkt) + '">' +
+        kit.esc(jkt.slice(0, KEY_SHOWN)) +
+        (jkt.length > KEY_SHOWN ? '&hellip;' : '') + '</code>'
+      : t.html('portalWallet.keyNotRecorded');
+    return '<tr data-credential="' + kit.esc(c.id) + '"><td>' +
+      t.html('portalWallet.copyOf', { position: c.position, of: c.of }) +
+      '</td><td>' + key +
+      (c.statusIndex
+        ? '<br><span class="sub">' + t.html('portalWallet.copyStatusIndex',
+            { index: String(c.statusIndex) }) + '</span>'
+        : '') + '</td><td>' + WalletPages.state(c, t) + '</td><td>' +
+      (removeForm && c.removable
+        ? removeForm(c.id, 'portalWallet.removeCopy') : '') + '</td></tr>';
   }
 
   /**

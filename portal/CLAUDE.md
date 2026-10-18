@@ -1494,8 +1494,9 @@ pre-authorized offer).
   round trip through the bundle; three protocol jobs make their offers here
   (`oid4vc/CLAUDE.md`).
 * **THE CREDENTIALS ISSUED TO THE PERSON, AND REMOVE** (#661, rcbj 2026-10-16).
-  The view's `issued` is `vc_issued.ts`'s `historyForSubject(caller.sub)`:
-  every credential still on one of the person's rows, newest first, with
+  The view's `issued` was `vc_issued.ts`'s `historyForSubject(caller.sub)`
+  (one entry per issuance since #670, below): every credential still on one
+  of the person's rows, newest first, with
   its state and the last event their wallet sent to the Notification
   Endpoint. The issuer mints the Credential Response's `notification_id`
   BEFORE it records the credential so the two are linked; the wallet's
@@ -1517,6 +1518,43 @@ pre-authorized offer).
   `/portal/claim-sources` are (`page`, `paging`, `kit.pageNav()`), and both
   forms carry the page they were on so the view an act answers is that
   page. `tests/portal_wallet_history.js` holds it.
+* **ONE ROW PER ISSUANCE, ITS BATCH COPIES UNDER IT** (#670, rcbj
+  2026-10-17). The issuer advertises `batch_credential_issuance.batch_size`
+  (`oid4vci.batchSize`, 4), so a wallet sends four proofs and takes four
+  credentials from one Credential Response, each bound to a different key
+  of its own with its own status-list entry — and the list showed four rows
+  for one "Add to your wallet". **They were never one register row** (the
+  brief for #670 expected they would be; the code says otherwise): a JOSE
+  row is keyed by its credential
+  and an `ldp_vc` row by its holder key. What the copies share is the
+  response's `notification_id`, so `vc_issued.ts`'s `issuancesForSubject()`
+  groups by it (`oid4vc/CLAUDE.md`). The view's `issued` is one entry per
+  issuance — configuration, format, issued, its state (the copies' where
+  they agree, else `mixed` with `counts`, drawn "3 of 4: Valid"), Remove —
+  and its `copies` are drawn in a `<details>` fold under the row: "Copy 2
+  of 4", the wallet key (the first twelve characters of the RFC 7638
+  thumbprint, with the whole thumbprint and, for `ldp_vc`, the holder's
+  `did:jwk` as the tooltip — twelve characters of a `did:jwk` are
+  `did:jwk:eyJ` for every key, which is why the visible part is always the
+  thumbprint, as on the console's sign-out page), the status-list index,
+  and a Remove of its own where the issuance has more than one. While
+  `batchSize` is over one the pane says batching is on, how many copies,
+  and that it is so verifiers cannot link presentations by the key
+  (`wallet-batch-note`); at one it says nothing about batching. **A page
+  counts issuances.** **REMOVE IS STILL ONE OPERATION**:
+  `POST /account-api/credentials/remove`'s `id` is an issuance's (every copy
+  still good) or a copy's (that copy alone). The two are digests of
+  different strings and cannot collide; both are the same act on the same
+  resource, with the same refusal (`STS-PORTAL-0591`, on an id not on one of
+  the CALLER's rows), the same audit action (`portal.vc.remove`, its detail
+  saying `scope`, `removed` and `copies`) and the one portal path, so a
+  `scope` member could only restate the id and would add a mismatch to
+  refuse. The answer says `scope` and `removed`; one CAEP signal per act.
+  **The console has no list of a person's issued credentials to keep in
+  step**: its sign-out page (`logout/logout.ts`'s `wallet-credential`) lists
+  register ROWS, one per wallet key, because a global sign-out disowns a
+  row, and already shows each one's key the same twelve characters long.
+  `tests/portal_wallet_batch.js` holds it.
 * **THE SIGNING ALGORITHM, CHOSEN PER OFFER** (rcbj, 2026-10-16). One
   `<select name="signingAlg">` under the configuration and mode radios: every
   configuration's `signingAlgs` (the configured default first, post-quantum

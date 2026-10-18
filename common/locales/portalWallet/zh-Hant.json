@@ -44,6 +44,18 @@
   "remove": "移除",
   "removeNote": "移除憑證會將其撤銷：檢查其狀態的驗證方會看到它已被撤銷，它也不能再用於在此登入。它不會從您的錢包中刪除。OpenID for Verifiable Presentations 與 OpenID for Verifiable Credential Issuance 都不允許本服務從錢包中刪除憑證，因此請您自行在錢包中刪除它。",
   "doneRemoved": "該憑證已撤銷。請您自行從錢包中刪除它：本服務無法代您刪除。",
+  "batchNote": "批次簽發已開啟：每次您新增憑證時，您的錢包都會得到它的 {size} 份副本，每份都繫結到您錢包持有的不同金鑰。您的錢包可以向每個驗證方出示不同的副本，因此您的出示無法透過金鑰彼此關聯。同一憑證的副本在下方列在一起。",
+  "copies": "{count, plural, other {# 份副本}}",
+  "copyOf": "第 {position} 份，共 {of} 份",
+  "copyKey": "繫結到您的錢包金鑰",
+  "keyNotRecorded": "未記錄金鑰",
+  "copyStatusIndex": "狀態清單項目 {index}",
+  "stateCount": "{total} 份中的 {count} 份：{state}",
+  "stateRemovedShort": "已由您移除",
+  "removeAll": "移除所有副本",
+  "removeCopy": "移除此副本",
+  "doneRemovedCopy": "該副本已撤銷，其他副本保持不變。請您自己從錢包中刪除它：本服務無法代您刪除。",
+  "doneRemovedAll": "該憑證的所有副本均已撤銷。請您自己從錢包中刪除它們：本服務無法代您刪除。",
   "signingAlg": "簽章演算法",
   "signingAlgSub": "本服務簽署該憑證所用的演算法。已選取設定的預設演算法。後量子演算法由草案定義，錢包或驗證方可能尚不接受。"
 }

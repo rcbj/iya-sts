@@ -1998,8 +1998,13 @@ class VcIssuer {
       return;
     }
     const format = vciFormatOf(configId);
+    const didOf = this.deps.vcDataIntegrity.didJwkOf;
     issued.forEach(function (built, i) {
       try {
+        // A DID-BOUND COPY KEEPS ITS HOLDER'S DID (#670), for the holder's
+        // page to tell it apart by; the key is recorded either way.
+        const holderDid = format === 'ldp_vc' && holderJwks[i]
+          ? String(didOf(holderJwks[i]) || '') : '';
         vcIssued.record({
           credential: built && built.credential,
           format: format,
@@ -2015,7 +2020,11 @@ class VcIssuer {
                        attestations[i].keyStorage) || [],
           userAuthentication: (attestations && attestations[i] &&
                                attestations[i].userAuthentication) || [],
-          notificationId: notificationId || ''
+          notificationId: notificationId || '',
+          holderDid: holderDid,
+          // ONE CAEP credential-change per issuance (#670): the copies of
+          // a batch are one credential to the person.
+          announce: i === 0
         });
       } catch (e) {
         log.debug("Caught in VcIssuer.rememberIssued(): " +

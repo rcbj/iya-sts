@@ -182,7 +182,7 @@ function childMain() {
     const drawn = await alice.draw('/portal/wallet');
     note(drawn.status === 200 && /id="wallet-issued"/.test(drawn.html) &&
          /id="wallet-remove-note"/.test(drawn.html) &&
-         drawn.html.indexOf('data-credential="' + one.id + '"') > 0 &&
+         drawn.html.indexOf('data-issuance="' + one.id + '"') > 0 &&
          drawn.html.indexOf('action="/portal/remove-wallet-credential"') < 0,
          '6a. the page draws the history and the note, and no Remove for a ' +
          'removed credential', drawn.html.slice(0, 300));

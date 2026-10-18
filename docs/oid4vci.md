@@ -150,17 +150,25 @@ means the whole configured set.
   the [account API](account-api.md)'s two operations, in both modes:
   * `GET /account-api/credentials/offerable`: the configurations this realm's
     issuer offers, named as its metadata names them, the two modes, how
-    long an offer lives, and `issued` — the credentials this realm still
-    records as issued to the person, newest first, each with its state
-    (`valid`, `suspended`, `revoked`, `removed`, `signed-out`, `expired`) and
+    long an offer lives, `batchSize` (`oid4vci.batchSize`), and `issued` —
+    the credentials this realm still records as issued to the person, ONE
+    ENTRY PER ISSUANCE, newest first: with batch issuance on, one issuance
+    gives the wallet several copies, each bound to a different key of the
+    wallet's so that verifiers cannot link its presentations by the key, and
+    they are listed together in the entry's `copies` (each with its position,
+    the RFC 7638 thumbprint of the key it is bound to — and for `ldp_vc` the
+    holder's `did:jwk` — and its status-list index). Each entry has its state
+    (`valid`, `suspended`, `revoked`, `removed`, `signed-out`, `expired`, or
+    `mixed` with `counts` when its copies differ) and
     the last event their wallet sent to the Notification Endpoint with the
     Credential Response's `notification_id` (`credential_accepted`,
     `credential_failure`, `credential_deleted`; it changes nothing else),
-    twenty to a page (`page`, and `paging` in the answer);
+    twenty issuances to a page (`page`, and `paging` in the answer);
   * `POST /account-api/credentials/remove` with `{ "id": "…" }` (the page's
-    **Remove**): that credential of the person's is revoked — its Token
+    **Remove**): an issuance's `id` removes every copy of it, a copy's `id`
+    removes that copy alone. Each copy removed is revoked — its Token
     Status List entry INVALID, its issued-register row revoked, refused at
-    wallet sign-in, and CAEP `credential-change` `revoke` sent. **It is not
+    wallet sign-in — and one CAEP `credential-change` `revoke` is sent. **It is not
     deleted from the wallet**: OpenID4VP is a verifier asking for a
     presentation and OpenID4VCI's notification runs from wallet to issuer,
     so neither lets an issuer delete a credential from a wallet, and the
