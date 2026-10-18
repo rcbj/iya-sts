@@ -173,6 +173,21 @@ fail are the two 389 already had — not root, or the port taken — plus one of
 its own: no server certificate at startup (`STS-LDAP-0029`), which cannot
 happen while `global.https` is on.
 
+**A STARTING TASK IS LEFT ALONE FOR TEN MINUTES (#330).**
+`health_check_grace_period_seconds` is 600, and the container probe's
+`startPeriod` is 300 (as long as ECS allows that one to be). The listener
+binds only after the front has restored its state and, where a pool is
+configured, the first worker of each pool has settled — `workers.startTimeoutMs`
+is 300000 on globalidp and testidpna, with the front's restore in front of
+that fork. The load balancer marks a silent port unhealthy in about 30
+seconds; the scheduler ignores that, and the container probe, until the grace
+ends. A port that is still down then fails steady state, which is the
+load-bearing property above. The grace does not cover `workers.startTimeoutMs`
+at its setting maximum (900000); a deployment that raises the timeout past
+what 600 holds has to raise the grace too (`ecs.tf` says how the 600 was
+reached). A task that has already been up is outside the grace: a later
+failure of any target group still replaces it.
+
 **THE TWO SIDES OF THE PKI PORT NEED NOT MATCH, and since 2026-09-17 they do
 not** (`var.pki_listener_port`). They were one number because that is the
 arrangement that needs no thought, not because anything required it — the

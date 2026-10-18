@@ -81,6 +81,11 @@ resource "aws_lb_target_group" "nodes" {
   # answer, where a bare TCP connect only asked whether the socket accepted —
   # and on 8081 read as a failed handshake, logged once a second per node.
   # LDAP, LDAPS and Kerberos stay a TCP connect; there is nothing to GET.
+  #
+  # A starting task is not replaced because these fail (#330). The service
+  # ignores unhealthy checks for health_check_grace_period_seconds (ecs.tf)
+  # after the task starts. Every group still has to pass before the task is
+  # steady: a port that is down when that window ends fails the deploy.
   health_check {
     protocol            = each.value.health
     port                = "traffic-port"
