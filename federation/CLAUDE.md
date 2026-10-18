@@ -1787,7 +1787,13 @@ identity and what the partner sent — no invented value
 well (rcbj, 2026-09-30)**: a relationship with the switch on creates its
 newcomers even in a realm whose `ldap.autocreateUsers` is off, in either
 mode; with the switch off it creates nobody, and every other door still
-reads the realm setting (`tests/federation_provisioning.js` 7c).
+reads the realm setting (`tests/federation_provisioning.js` 7c). The name
+the testidp run refused is this shape with the username taken from the
+subject: a partner `urn:uuid:` subject is filed as `sub-<uuid>` and then
+namespaced to `<relationship>~sub-<uuid>`. A sign-in whose
+`fedUsernameSource` is `preferred_username` never makes that name.
+`tests/federation_subject_policy.js` 1n does, in both modes, with
+`ldap.autocreateUsers` off.
 
 **UNLINKING** — the console's *Federation links* panel, `POST /admin-api/users/
 federation-unlink`, SCIM, `ldapmodify` — goes through the directory's write
