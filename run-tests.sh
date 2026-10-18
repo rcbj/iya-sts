@@ -1902,6 +1902,7 @@ do
   # the job reports every module itself.
   UP_NO_ATTACH=(--no-attach openbao-tls --no-attach openbao-seed
                 --no-attach mailpit-tls --no-attach mailpit
+                --no-attach mariadb-tls
                 --no-attach test-peer)
   # The `cells` mode's one-shot cell-key writer exits 0 by design, and an
   # attached exit ends the mode (see THE TWO ONE-SHOT CONTAINERS below).
@@ -2044,7 +2045,9 @@ do
     # THE TWO ONE-SHOT CONTAINERS ARE NOT ATTACHED (2026-09-14), OR THEIR
     # FINISHING ENDS THE MODE. `openbao-tls` and `openbao-seed` exit 0 by
     # design, and so does `mailpit-tls` (#63; `mailpit` is not attached
-    # either, because its log is every message the suite sends). The `up -d
+    # either, because its log is every message the suite sends) and
+    # `mariadb-tls` (#356, the attribute-source database's certificate).
+    # The `up -d
     # sts` above already ran both; this `up` names every
     # service, so compose STARTS them again, and `--abort-on-container-exit`
     # counts an ATTACHED container's exit — any container's — as the signal
