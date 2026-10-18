@@ -234,6 +234,10 @@ function editorUrl(policy) {
 // roles.
 // ---------------------------------------------------------------------------
 const credentials = require("../tools/pep-credential.js");
+// The root this job posted. Removed when it finishes, pass or fail (#335).
+// The truststore is service-wide and holds 32; leaving the realm standing
+// does not take the anchor with it. tests/CLAUDE.md.
+const addedAnchors = [];
 const https = require("https");
 
 var xacmlUser = null;
@@ -247,6 +251,7 @@ async function mintTheCredential() {
     "Root CA this file " +
     "just built; it answered " + posted.status + ". Without the anchor the " +
     "certificate verifies against nothing and every read below is a 403.");
+  addedAnchors.push(xacmlUser.anchorPem);
   log.info("Minted an XACML_USER credential for " + xacmlUser.subject + ".");
   log.debug("Leaving mintTheCredential().");
 }
@@ -1974,7 +1979,11 @@ program
 base = String(program.opts().url || base).replace(/\/+$/, "");
 screenshotDir = program.opts().screenshotDir || "";
 
-test().catch(function (e) {
+test().then(function () {
+  return credentials.settleAnchors(base, addedAnchors, null);
+}, function (e) {
+  return credentials.settleAnchors(base, addedAnchors, e);
+}).catch(function (e) {
   log.error(e.stack || e.message);
   process.exit(1);
 });

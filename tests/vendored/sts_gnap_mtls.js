@@ -54,6 +54,10 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const gnap = require("./gnap_client.js");
 const facts = require("./service_facts.js");
+const credentials = require("../tools/pep-credential.js");
+// The foreign CA this job posts. Removed when it finishes, pass or fail
+// (#335). The truststore is service-wide and holds 32. tests/CLAUDE.md.
+const addedAnchors = [];
 
 var appconfig;
 let appconfigProblem = null;
@@ -417,6 +421,7 @@ async function test() {
   // management API token the job's preload attaches to every /admin-api call.
   await ok(h.api + "/tls/trust/add", { certificates: foreign.caPem },
            "installed the foreign authority as a client trust anchor");
+  addedAnchors.push(foreign.caPem);
   const foreignTls = { cert: foreign.pem + foreign.caPem,
                        key: foreign.keyPem };
   await register("pki-foreign", { oauthTlsClientAuthSanDns: dns });
@@ -497,7 +502,11 @@ program
                                            "needs no browser)"))
   .parse(process.argv);
 
-test().catch(function (e) {
+test().then(function () {
+  return credentials.settleAnchors(base, addedAnchors, null);
+}, function (e) {
+  return credentials.settleAnchors(base, addedAnchors, e);
+}).catch(function (e) {
   log.error(e.stack || e.message);
   process.exit(1);
 });

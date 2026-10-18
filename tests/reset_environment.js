@@ -24,7 +24,10 @@
 //   3. applications: the identifiers the jobs name per run in the default
 //      realm and sts_userinfo_protected.js's RFC 7591 registrations; never
 //      one this service seeded, a fixed identifier the next run finds again,
-//      or an operator's.
+//      or an operator's;
+//   4. trust anchors (#335): a runtime anchor whose common name is one of
+//      the suite's test CAs, never a file-source anchor, never an operator's
+//      CA, and never the fingerprint this run asked to spare.
 //
 // Requiring the script runs nothing: it acts only as `require.main`.
 // ===========================================================================
@@ -179,19 +182,102 @@ function riskVersions(t) {
   log.debug("Leaving riskVersions().");
 }
 
+// THE TRUSTSTORE (#335). The deleting needs a live service; the choice of
+// which anchor goes is what would fill the 32-anchor cap if it were wrong.
+function anchor(subject, source, fingerprint) {
+  log.debug("Entering anchor().");
+  log.debug("Leaving anchor().");
+  return { subject: subject, source: source || 'runtime',
+           fingerprint256: fingerprint };
+}
+
+function trustAnchors(t) {
+  log.debug("Entering trustAnchors().");
+  const shared = 'CN=iya-sts test Root CA,O=iya-sts tests';
+  t.check(reset.isSuiteTrustAnchor(anchor(shared, 'runtime', 'AA:BB')),
+          'the shared test Root is a suite anchor');
+  t.check(reset.isSuiteTrustAnchor(anchor(
+    'CN=mock-sts test Root CA,O=iya-sts tests', 'runtime', 'CC')),
+          'the historical mock-sts Root is a suite anchor');
+  t.check(reset.isSuiteTrustAnchor(anchor(
+    'CN=global-logout test CA for alice', 'runtime', 'DD')),
+          'a global-logout CA is a suite anchor');
+  t.check(reset.isSuiteTrustAnchor(anchor(
+    'CN=console bootstrap test CA stamp holder', 'runtime', 'EE')),
+          'a console bootstrap CA is a suite anchor');
+  t.check(reset.isSuiteTrustAnchor(anchor(
+    'CN=GNAP mTLS test CA realm', 'runtime', 'FF')),
+          'a GNAP mTLS CA is a suite anchor');
+  t.check(reset.isSuiteTrustAnchor(anchor(
+    'CN=pooling test Root stamp,O=iya-sts tests', 'runtime', '11')),
+          'a pooling Root is a suite anchor');
+  t.check(reset.isSuiteTrustAnchor(anchor(
+    'CN=admin-api-operations truststore realm', 'runtime', '22')),
+          'an admin-api truststore CA is a suite anchor');
+  t.check(reset.isSuiteTrustAnchor(anchor(
+    'CN=console-truststore-stamp,O=iya-sts tests', 'runtime', '33')),
+          'a console truststore CA is a suite anchor');
+  t.check(reset.isSuiteTrustAnchor(anchor(
+    'CN=iya-sts test Root CA\nO=iya-sts tests', 'runtime', 'AA:BB')),
+          'a subject with newlines still matches');
+  t.check(reset.isSuiteTrustAnchor(anchor(
+    'O=iya-sts tests, CN=iya-sts test Root CA', 'runtime', 'AA:BB')),
+          'a subject with the common name later still matches');
+  t.check(!reset.isSuiteTrustAnchor(anchor(shared, 'file', 'AA:BB')),
+          'a file-source anchor with the same subject is left alone');
+  t.check(!reset.isSuiteTrustAnchor(anchor(
+    'CN=operator CA,O=example', 'runtime', '99')),
+          'an operator CA is left alone');
+  t.check(!reset.isSuiteTrustAnchor(anchor(
+    'CN=iya-sts test Root CA extra,O=iya-sts tests', 'runtime', '98')),
+          'a longer common name is not the shared Root');
+  t.check(!reset.isSuiteTrustAnchor(anchor(
+    'CN=not-global-logout test CA', 'runtime', '97')),
+          'a name that merely ends with a suite prefix is left alone');
+  t.check(!reset.isSuiteTrustAnchor(anchor(
+    'CN=admin-api-operations saml2 realm', 'runtime', '96')),
+          'the admin-api SAML signing CA is not removed as a trust anchor');
+  t.check(!reset.isSuiteTrustAnchor(null),
+          'a missing anchor is left alone');
+  t.check(!reset.isSuiteTrustAnchor({ source: 'runtime' }),
+          'an anchor with no subject is left alone');
+  t.check(!reset.isSuiteTrustAnchor(anchor(shared, 'startup', 'AA:BB')),
+          'a source other than runtime is left alone');
+
+  const gone = reset.trustAnchorsToRemove([
+    anchor(shared, 'runtime', 'AA:BB'),
+    anchor(shared, 'file', 'FILE'),
+    anchor('CN=operator CA', 'runtime', 'OP'),
+    anchor('CN=iya-sts test Root CA extra', 'runtime', 'NEAR'),
+    anchor('CN=mock-sts test Root CA', 'runtime', 'MOCK'),
+    null
+  ], ['aa:bb']);
+  t.check(gone.length === 1 && gone[0].fingerprint256 === 'MOCK',
+          'a spared fingerprint stays, and only the other suite anchor goes',
+          gone.map(function (row) { return row.fingerprint256; }).join(','));
+  t.check(reset.trustAnchorsToRemove([null, undefined, {}], []).length === 0,
+          'null and missing rows are left alone');
+  t.check(reset.trustAnchorsToRemove([
+    anchor(shared, 'runtime', '')
+  ], []).length === 0,
+          'a suite anchor with no fingerprint is left alone');
+  log.debug("Leaving trustAnchors().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   bulkNames(t);
   nothingElse(t);
   applications(t);
   riskVersions(t);
+  trustAnchors(t);
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'reset_environment',
   describe: 'deploy/aws/reset-environment.js deletes the suite\'s bulk-load ' +
-            'people and groups and its applications, and nothing an ' +
-            'operator or this service made',
+            'people and groups, its applications and its runtime trust ' +
+            'anchors, and nothing an operator or this service made',
   run: run
 };

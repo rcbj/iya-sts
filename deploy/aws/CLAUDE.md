@@ -22,7 +22,7 @@ Dockerfile removes this directory from the image.
 | `runner/` | per image | the suite runner image (the tests image plus the S3 client) and the two scripts its task runs | built by CI |
 | `Dockerfile`, `entrypoint.sh` | per run | the Terraform image (AWS CLI v2, Terraform 1.16.2, node): one stack, one environment, one action — `init`, `validate`, `plan`, `apply`, `destroy`, `output`, `output-json`, `ecr-password` (`suite` was removed on 2026-09-21) — the parent project's `infra/` arrangement | the workflow, and `terraform-local.sh` |
 | `terraform-local.sh` | per run | runs that image on a developer machine, with the credentials in the environment or the AWS CLI's session | a person |
-| `reset-environment.js` | per run | removes every realm but the default one and clears the default realm's runtime overrides before a run, so an environment can be reused | both runners |
+| `reset-environment.js` | per run | removes every realm but the default one, clears the default realm's runtime overrides, and removes runtime client-certificate trust anchors a suite job added (#335), before a run, so an environment can be reused | both runners |
 | `run-suite.sh` | per run | **the whole suite against any environment, from this machine** (2026-09-18): every job runs here against the load balancer except the two the nodes must call back to, which run in an ephemeral `suite-callbacks/` task; one merged report (*Running the suite from this machine*, below). **Not a launcher since 2026-09-21, and the ONE AWS suite**: `../../run-tests.sh --target=aws:<env>` and `--target=aws-ephemeral` both run it, and so does `aws-cluster.yml` | `./run-tests.sh` |
 | `suite-callbacks/` | per run | the callback task for one `run-suite.sh` run — a subnet, a NAT gateway the load balancer admits, a task role and a task definition (credential step, remote PEP, the two callback jobs) — applied at the start of the run and DESTROYED at its end, pass, fail or interrupt; state at `environment/<env>/suite-callbacks.tfstate` | `run-suite.sh` |
 | `../../.github/workflows/aws-cluster.yml` | per run | ordered jobs — images, terraform, suite, teardown — in the Terraform image, the suite through `./run-tests.sh --target=aws:<env>` after re-applying `allowed_cidrs` with the suite runner's own address; actions `apply-and-test`, `apply`, `test`, `plan`, `destroy` | GitHub Actions (dispatch only) |
@@ -93,6 +93,12 @@ in this order:
    loads raise and leave raised, resets to the nodes' `LDAP_MAX_ENTRIES =
    ldap_max_entries` — 50,000 since 2026-09-29, one run's bulk loads beside the
    seeded population. It was 200,000 while nothing was deleted between runs.
+5. **runtime client-certificate trust anchors a suite job added (#335)**.
+   The truststore is service-wide and holds 32 (`tls/CLAUDE.md`); removing a
+   realm does not take an anchor with it. `isSuiteTrustAnchor()` names the
+   subjects. The remote PEP's anchor this run posted is kept when
+   `XACML_PEP_CA_PEM` is set, because `pep-credential.sh` adds it before this
+   script runs.
 
 Only the suite's own names go; `node deploy/aws/reset-environment.js --dry-run
 <url>` lists what would. Until #344 nothing in the default realm was deleted, so

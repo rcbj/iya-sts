@@ -897,6 +897,15 @@ Three rules that are not optional here:
   back the five `STS_PERSISTENCE_*` variables, the override it sets and the
   realm it creates, and it STOPS the store before removing the realm, so a
   scheduled flush cannot fire against a table the realm has already gone from.
+* **A CLIENT-CERTIFICATE TRUST ANCHOR IS PROCESS-WIDE, AND A REALM DOES NOT
+  TAKE IT WITH IT (#335).** The truststore holds at most 32 anchors for every
+  listener (`tls/CLAUDE.md`). A protocol job that posts a suite CA through
+  `POST /admin-api/tls/trust/add` removes that anchor by fingerprint when it
+  finishes, pass or fail — `sts_admin_api_operations.js`'s truststore section
+  is the pattern. Leaving the realm standing does not do it. A run killed
+  before that remove is what `deploy/aws/reset-environment.js` clears: runtime
+  anchors whose subject is one of the suite's test CAs, sparing the remote
+  PEP's anchor the current run just posted (`XACML_PEP_CA_PEM`).
 * **START FROM A KNOWN STATE (rcbj, 2026-10-07).** A new test, in-process
   or a protocol job, asserts only against state it created or chose itself:
   its own realm, application, person, setting or stream. It never picks up

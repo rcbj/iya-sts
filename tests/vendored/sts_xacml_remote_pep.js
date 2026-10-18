@@ -374,6 +374,10 @@ function sleep(ms) {
 // ---------------------------------------------------------------------------
 const https = require("https");
 const credentials = require("../tools/pep-credential.js");
+// Roots this job minted. Removed when it finishes, pass or fail (#335). The
+// launcher's PEP anchor is not one of them: the container stays up for the
+// task. The truststore is service-wide and holds 32. tests/CLAUDE.md.
+const addedAnchors = [];
 
 var xacmlUser = null;
 
@@ -387,6 +391,7 @@ async function mintTheCredential() {
     "just built; it answered " + posted.status + ". Without the anchor the " +
     "certificate verifies against nothing and section 3 cannot ask the PDP " +
     "anything at all.");
+  addedAnchors.push(xacmlUser.anchorPem);
   log.info("Minted an XACML_USER credential for " + xacmlUser.subject +
            " — the PDP's four endpoints want that role, where the container " +
            "holds REMOTE_PEPS.");
@@ -424,6 +429,9 @@ async function mintTheCredential() {
   // themselves has no such variable, and the container's own registration
   // will say plainly whether its certificate verifies.
   // =====================================================================
+  // NOT RECORDED FOR REMOVAL (#335). This is the launcher's anchor, and the
+  // PEP container stays up for the task. Only roots this job minted are
+  // removed when the job finishes.
   const containerAnchor = String(process.env.XACML_PEP_CA_PEM || "");
   if (containerAnchor.indexOf("BEGIN CERTIFICATE") >= 0) {
     const back = await credentials.trustAnchor(base, containerAnchor);
@@ -905,6 +913,7 @@ async function mintTheContainersCredential() {
     "anchor that container's certificate verifies against nothing, it " +
     "registers as an unauthenticated caller, and the PDP refuses it with a " +
     "403 naming REMOTE_PEPS.");
+  addedAnchors.push(cred.anchorPem);
 
   // ON DISK BECAUSE `pep.js` READS FILES, and in a directory of this job's
   // own rather than the launcher's `tests/report/pep-credential`: two runs on
@@ -3103,7 +3112,11 @@ program
   .parse(process.argv);
 base = String(program.opts().url || base).replace(/\/+$/, "");
 
-test().catch(async function (e) {
+test().then(function () {
+  return credentials.settleAnchors(base, addedAnchors, null);
+}, function (e) {
+  return credentials.settleAnchors(base, addedAnchors, e);
+}).catch(async function (e) {
   log.error(e.stack || e.message);
   // THE TEARDOWN RUNS EVEN WHEN SOMETHING THREW FROM OUTSIDE THE try/finally
   // above — a failure in the image build, in createTheRealm() or in
