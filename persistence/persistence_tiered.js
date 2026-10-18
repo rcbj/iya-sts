@@ -21,7 +21,8 @@
 // certificate authorities, the shared cluster secrets, the used-assertion
 // history and the routing index are GLOBAL. The directory is split entry by
 // entry (`tiers.directoryTierOf()`), a group into two halves. A minted row
-// goes where its store's handle says (`tiers.mintedTierOf()`). Everything
+// goes where its store's handle says (`tiers.mintedTierOf()`), and the
+// expiry purge deletes it from that same database. Everything
 // else — the cluster's membership, leases, claims and counters, risk
 // scoring, the change log this process's barrier waits on — is the CELL's,
 // because a cell is the cluster (#46) and the global tier is not.
@@ -78,7 +79,8 @@ const GLOBAL_METHODS = [
 // The methods that go to BOTH databases, whose answers are combined below.
 const BOTH_METHODS = ['open', 'close', 'loadDirectory', 'saveDirectory',
                       'readEntry', 'loadMinted', 'saveMinted', 'readMinted',
-                      'readMintedMany', 'purgeMinted', 'purgeTombstones',
+                      'readMintedMany', 'purgeMinted', 'purgeExpiredMinted',
+                      'purgeTombstones',
                       'changeRowsWritten', 'adoptOrigin', 'renewOrigin',
                       'releaseOrigin', 'setOriginLost',
                       // What is sealed under a data encryption key (#391):
@@ -779,6 +781,43 @@ function create(options) {
       .then(function (both) {
         return (Number(both[0]) || 0) + (Number(both[1]) || 0);
       });
+  };
+
+  // THE EXPIRY PURGE RUNS IN BOTH DATABASES (#360). An unlisted method is
+  // the cell driver's, so this one deleted only this cell's rows: a global
+  // store's expired rows (dpop.seenJtis, the status lists) stayed in the
+  // global table, refused wherever they were read and never deleted.
+  // 'expired' and 'orphan' name no handle — each database deletes its own
+  // rows — and 'stale' names the short-lived stores, handed to the tier
+  // that holds each one.
+  driver.purgeExpiredMinted = function (kind, options) {
+    log.debug("Entering tiered purgeExpiredMinted().");
+    const o = options || {};
+    let forGlobal = o;
+    let forCell = o;
+    if (kind === 'stale') {
+      const listed = Array.isArray(o.handles) ? o.handles : [];
+      const split = byHandleTier(listed.map(function (handle) {
+        return { handle: handle };
+      }));
+      forGlobal = Object.assign({}, o, {
+        handles: split.global.map(function (one) {
+          return one.handle;
+        })
+      });
+      forCell = Object.assign({}, o, {
+        handles: split.cell.map(function (one) {
+          return one.handle;
+        })
+      });
+    }
+    log.debug("Leaving tiered purgeExpiredMinted().");
+    return Promise.all([
+      globalDriver.purgeExpiredMinted(kind, forGlobal),
+      cellDriver.purgeExpiredMinted(kind, forCell)
+    ]).then(function (both) {
+      return (Number(both[0]) || 0) + (Number(both[1]) || 0);
+    });
   };
 
   driver.purgeTombstones = function (beforeMs) {
