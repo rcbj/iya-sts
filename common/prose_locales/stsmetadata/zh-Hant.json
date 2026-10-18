@@ -1404,8 +1404,8 @@
     "text": "非規格端點（#74）。/admin/caches 所繪製的一切，以 JSON 提供：每個已註冊的快取及其大小、有效與過期項目、上限、存留時間、設定、命中、未命中與命中率；指定 ?cache= 時為該快取的摘要以及一頁項目（page、per），每個項目附其領域、鍵與剩餘時間。未知名稱回應 200 並附 found: false。回覆中沒有任何快取值。對應 GET /admin/caches。"
   },
   "stsmetadata.endpoints./admin-api/worker-pools.what": {
-    "en": "aa9d2b625e5ba68b",
-    "text": "非規格端點（#327）。/admin/worker-pools 所繪製的一切，以 JSON 提供：此節點的請求、託管介面與後量子集區，各自的狀態、目前、忙碌、空閒、最大與初始工作程序數、當機次數、啟動與停止失敗次數，以及回應時間；每個程序的後量子集區；在叢集中則依名稱列出每個節點及總計，?node= 取得單一節點（#332）。對應 GET /admin/worker-pools。"
+    "en": "39bf096a70b38c7b",
+    "text": "非規格端點（#327）。/admin/worker-pools 所繪製的一切，以 JSON 提供：此節點的請求與託管介面集區，各自為一組工作執行緒，含狀態、目前、忙碌、空閒、最大與初始工作程序數、當機次數、啟動失敗與停止次數，以及回應時間。自 #363 起已無後量子集區。在叢集中則依名稱列出每個節點及總計，?node= 取得單一節點（#332）。對應 GET /admin/worker-pools。"
   },
   "stsmetadata.endpoints./admin-api/node-health.what": {
     "en": "8ad5e9e21c752f8d",

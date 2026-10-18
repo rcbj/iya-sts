@@ -1396,9 +1396,10 @@ class ProtocolStack {
     this.build('cluster/node_snapshots', require('../cluster/node_snapshots'),
                'NodeSnapshots');
     // 18s. THE WORKER POOLS' PAGE (#327, 2026-09-28). `/admin/worker-pools` —
-    // the request, hosted-surface and post-quantum pools of this node. 18a's
-    // placement and 18a's reason: the console's shell is here, the two pool
-    // modules are libraries it reaches lazily when a page is drawn, and
+    // the request and hosted-surface pools of this node. Worker threads
+    // since #364; no post-quantum pool since #363. 18a's placement and
+    // 18a's reason: the console's shell is here, the pool module is a
+    // library reached lazily when a page is drawn, and
     // `mgmt-api/admin_api` requires it in the ordinary direction.
     require('../admin-ui/worker_pools_admin');
     this.build('admin-ui/worker_pools_admin',

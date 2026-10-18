@@ -1404,8 +1404,8 @@
     "text": "NON-SPEC (#74). Tout ce qu’affiche /admin/caches, en JSON : chaque cache enregistré avec sa taille, ses entrées valides et expirées, sa borne, sa durée de vie, ses paramètres, ses succès, ses échecs et son taux de succès ; avec ?cache=, le résumé de ce cache et une page de ses entrées (page, per), chacune avec son domaine, sa clé et le temps restant. Un nom inconnu reçoit une réponse 200 avec found: false. Aucune valeur mise en cache ne figure dans la réponse. Reflète GET /admin/caches."
   },
   "stsmetadata.endpoints./admin-api/worker-pools.what": {
-    "en": "aa9d2b625e5ba68b",
-    "text": "NON-SPEC (#327). Tout ce qu’affiche /admin/worker-pools, en JSON : les pools de requêtes, de surfaces hébergées et post-quantiques de ce nœud, chacun avec son état, ses workers actuels, occupés, libres, maximaux et initiaux, ses plantages, démarrages et arrêts échoués, et son temps de réponse ; le pool post-quantique par processus ; en grappe, chaque nœud par son nom et les totaux, ?node= pour un seul (#332). Reflète GET /admin/worker-pools."
+    "en": "39bf096a70b38c7b",
+    "text": "NON-SPEC (#327). Tout ce qu’affiche /admin/worker-pools, en JSON : les pools de requêtes et de surfaces hébergées de ce nœud, chacun un ensemble de threads de worker, avec son état, ses workers actuels, occupés, libres, maximaux et initiaux, ses plantages, démarrages échoués et arrêts, et son temps de réponse. Il n’y a pas de pool post-quantique depuis #363. En grappe, chaque nœud par son nom et les totaux, ?node= pour un seul (#332). Reflète GET /admin/worker-pools."
   },
   "stsmetadata.endpoints./admin-api/node-health.what": {
     "en": "8ad5e9e21c752f8d",

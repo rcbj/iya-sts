@@ -2218,19 +2218,19 @@ const SECTIONS = [
                'bound it, not by a button. The figures are the answering ' +
                'process\'s own.' },
       // THE WORKER POOLS (#327, 2026-09-28), after the caches and before the
-      // scheduler: one more page whose subject is the process itself — what
-      // it has forked to do its work, and how that is going. Drawn by
-      // `admin-ui/worker_pools_admin.ts` out of the two pool modules.
+      // scheduler: one more page whose subject is the process itself — the
+      // worker threads it has started, and how that is going. Drawn by
+      // `admin-ui/worker_pools_admin.ts` from `request_pool.js`.
       { path: '/admin/worker-pools', label: 'Worker pools',
-        blurb: 'The three pools of child processes this node runs &mdash; ' +
-               'the request workers, the console and portal\'s own ' +
-               'workers, and the post-quantum workers every process forks ' +
-               'on its first post-quantum job &mdash; each with its workers ' +
-               'now, busy and free, its maximum and initial size, how many ' +
-               'crashed or never started against how many were stopped, ' +
-               'and its average response time. A pool that is off says ' +
-               'so. <strong>The figures are this node\'s</strong>, drawn ' +
-               'by its front process; no control.' },
+        blurb: 'The two pools of worker threads this node runs &mdash; ' +
+               'the request pool, and the console and portal\'s own ' +
+               'pool &mdash; each with its threads now, busy and free, ' +
+               'its maximum and initial size, how many crashed or never ' +
+               'started against how many were stopped, and its average ' +
+               'response time. A pool that is off says so. Post-quantum ' +
+               'signing and scrypt are not a pool: they run on libuv\'s ' +
+               'thread pool. <strong>The figures are this node\'s' +
+               '</strong>, drawn by its front process; no control.' },
       // NODE HEALTH (#329, 2026-09-28), beside the worker pools: the
       // container they all run in — its CPU and memory from the cgroup — and
       // the memory of every one of those processes. Drawn by
