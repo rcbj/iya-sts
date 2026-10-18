@@ -294,6 +294,7 @@ var config = {
   // --- Global ----------------------------------------------------------
   workers: {
     startTimeoutMs: 60000,                                         // Request worker start limit (ms); restart to apply
+    giveUpRetryMs: 300000,                                         // Give-up retry wait (ms)
     requestCount: 1,                                               // Request worker threads; restart to apply
     heapLimitMb: 0,                                                // Heap limit per process (MiB); restart to apply
     startConcurrency: 0,                                           // Request workers starting at once; restart to apply

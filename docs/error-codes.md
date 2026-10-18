@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4364** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4365** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -52,7 +52,7 @@ is an ordinary outcome.
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 92
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 49
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 50
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 83
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 31
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 87
@@ -272,7 +272,7 @@ Raised from: common/request_pool.js, common/request_worker.ts, common/service_st
 | `STS-WORKER-0020` | The IPC channel to a request worker failed. | — |
 | `STS-WORKER-0021` | A request worker died holding answered write requests whose flush it had not reported, so those writes may not have reached the store. | — |
 | `STS-WORKER-0022` | A request worker exited or was killed with requests in flight; each was answered 502. | — |
-| `STS-WORKER-0023` | Request workers kept exiting immediately without serving anything, so the pool stopped forking them and every request is handled in the front process. | — |
+| `STS-WORKER-0023` | Request workers kept failing to start, so the pool stopped forking them. Unless workers.giveUpRetryMs is 0 it tries one again after that wait, doubled after each failed attempt and never longer than an hour. Until a worker is ready, requests stay in the front process (the hosted surfaces stay on the protocol workers). | — |
 | `STS-WORKER-0024` | The service refused to start: workers.dispatch names paths to hand to request workers but the process is not coordinating through a store, which would make workers answer from divergent private copies. | — |
 | `STS-WORKER-0025` | Not one request worker started, so every request is being handled in the front process. | — |
 | `STS-WORKER-0026` | Only some of the configured request workers started. | — |
@@ -299,6 +299,7 @@ Raised from: common/request_pool.js, common/request_worker.ts, common/service_st
 | `STS-WORKER-0047` *(retired)* | A request worker was SIGKILLed while the container cgroup's oom_kill count rose: the kernel's OOM killer ended it because the container reached its memory limit (#341). Retired by #364: a worker is a thread, and the kernel's OOM killer ends the whole process. | — |
 | `STS-WORKER-0048` | A heap limit was due for the front process and it could not restart itself with one (no process.execve, or the call failed), so it runs without a limit; its request workers still get one (#341). | — |
 | `STS-WORKER-0049` | A part of an operation's answer that a request worker sent ahead of it (#616: an LDAP search streaming its entries) could not be handed to the caller waiting in the front process — its socket write threw. The operation itself still ends with its answer. | — |
+| `STS-WORKER-0050` | After giving up, the pool scheduled another attempt to start one worker, after workers.giveUpRetryMs (doubled after each failed attempt, and never longer than an hour). Until a worker is ready, requests stay in the front process, or the hosted surfaces stay on the protocol workers. | — |
 
 ## STS-STORE
 

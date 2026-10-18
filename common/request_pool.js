@@ -1170,6 +1170,65 @@ quickExits[SURFACE_POOL] = 0;
 const givenUp = {};
 givenUp[PROTOCOL_POOL] = false;
 givenUp[SURFACE_POOL] = false;
+// THE COOL-DOWN AFTER A GIVE-UP (#333). `attempt` is how many cool-downs
+// have already failed (the wait doubles), `at` is when the next try is due,
+// `timer` is that one wait, and `probing` is the try itself: routing still
+// treats the pool as given up, and forking is allowed again for one run of
+// QUICK_EXIT_LIMIT. See armGiveUpRetry().
+const giveUpState = {};
+giveUpState[PROTOCOL_POOL] = { attempt: 0, at: 0, timer: null,
+                               probing: false };
+giveUpState[SURFACE_POOL] = { attempt: 0, at: 0, timer: null,
+                              probing: false };
+// The longest a cool-down grows to. An hour is long enough that a broken
+// configuration is not forking, and short enough that a node which recovers
+// is not left on one thread until somebody restarts it.
+const GIVE_UP_RETRY_CAP_MS = 60 * 60 * 1000;
+
+// How long the pool waits before trying again. `attempt` 0 is the setting;
+// each failed attempt doubles it, and the cap above is the ceiling. 0 — the
+// setting, or a base that is not a positive number — means it does not try
+// again. A decision over its arguments, so a test does not wait an hour to
+// see the doubling.
+/**
+ * Returns the cool-down before the next give-up retry, in milliseconds.
+ *
+ * @param attempt - how many cool-downs have already failed
+ * @param baseMs - `workers.giveUpRetryMs`; 0 means do not retry
+ * @returns the wait, or 0 when retrying is off
+ */
+function giveUpRetryDelay(attempt, baseMs) {
+  log.debug("Entering giveUpRetryDelay().");
+  const base = Number(baseMs);
+  if (!(base > 0)) {
+    log.debug("Leaving giveUpRetryDelay(). Off.");
+    return 0;
+  }
+  const n = attempt > 0 ? Math.min(attempt, 6) : 0;
+  const delay = Math.min(base * Math.pow(2, n), GIVE_UP_RETRY_CAP_MS);
+  log.debug("Leaving giveUpRetryDelay(). " + delay + ".");
+  return delay;
+}
+
+// The setting, read when a cool-down is armed. 0 is legal and means the
+// pool stays given up, so it is not read as `value || default`.
+function giveUpRetryBaseMs() {
+  log.debug("Entering giveUpRetryBaseMs().");
+  let n = 300000;
+  try {
+    n = Number(config.value('workers.giveUpRetryMs'));
+  } catch (e) {
+    log.debug("Caught in giveUpRetryBaseMs(): " + ((e && e.message) || e));
+    // No configuration at all — an in-process job that loaded this module
+    // on its own. The default is the same five minutes the row carries.
+    n = 300000;
+  }
+  if (!(n >= 0)) {
+    n = 300000;
+  }
+  log.debug("Leaving giveUpRetryBaseMs(). " + n + ".");
+  return n;
+}
 // How many dead workers each pool has replaced, for stats(). See
 // replacementFor().
 const replaced = {};
@@ -1767,10 +1826,12 @@ function surfacePrefixes() {
 // **A POOL OF NONE IS NOT A POOL.** With `workers.surfaceCount` at 0 the
 // surfaces go to the protocol pool, which is where they always went. And a
 // surface pool that GAVE UP — workers that could not start — hands them back
-// to the protocol pool too, rather than refusing them for the life of the
-// process: it is a decision taken once, logged loudly at `STS-WORKER-0023`,
-// and stable from then on, so it is not the timing-dependent half-dispatch the
-// header at the top of this file refuses.
+// to the protocol pool too, rather than refusing them while it is given up.
+// The give-up is logged at `STS-WORKER-0023` and the routing stays on that
+// answer until a worker actually comes up (`armGiveUpRetry()`, #333), so it
+// is not the timing-dependent half-dispatch the header at the top of this
+// file refuses: a cool-down try forks while the pool is still given up, and
+// the paths move only when that worker reports ready.
 // ---------------------------------------------------------------------------
 /**
  * Chooses the pool a dispatched request goes to.
@@ -2971,6 +3032,12 @@ function fork(pool, slot) {
       if (message && message.ready) {
         entry.ready = true;
         quickExits[entry.pool] = 0;
+        // A GIVE-UP CLEARS WHEN A WORKER IS ACTUALLY UP (#333), not when the
+        // cool-down's try is forked: until this line the paths stay on the
+        // front process, and the rest of the pool is forked from here.
+        if (givenUp[entry.pool]) {
+          recoverFromGiveUp(entry.pool);
+        }
         log.info('request_pool: ' + entry.pool + ' worker ' + entry.pid +
                  ' is ready on ' + entry.socket + '. ' +
                  readyWorkers(entry.pool).length + ' of ' + size(entry.pool) +
@@ -3049,6 +3116,157 @@ function fork(pool, slot) {
   entry.settled = settled;
   log.debug('Leaving fork(). pid=' + entry.pid);
   return entry;
+}
+
+// ---------------------------------------------------------------------------
+// A GIVE-UP IS NOT FOR THE LIFE OF THE PROCESS (#333).
+//
+// Measured on testidp: three request workers each took longer than
+// `workers.startTimeoutMs` to restore the store, the pool gave up, and the
+// node served on its front process's one thread until somebody restarted
+// it. The starts were slow, not broken — the same workers come up once the
+// database is warm or the simultaneous restores are done. Forking again at
+// once would repeat the storm. Waiting for a restart leaves a healthy node
+// single-threaded.
+//
+// So the give-up arms ONE wait (`workers.giveUpRetryMs`, five minutes,
+// doubling up to an hour). When it fires, one worker is tried, and the
+// three-failure bound applies to that try alone. Routing does not change
+// for the try: `givenUp` stays set, so every dispatched path is still
+// answered here, and the try cannot be the half-dispatch the header
+// refuses. A worker that reports ready clears the give-up and the rest of
+// the pool is forked through the start gate. A try that fails waits longer.
+// `0` is the old behaviour: given up until this process restarts.
+//
+// **A RETRY DELAY, NOT A SCHEDULER JOB.** It is armed when this process's
+// pool gives up and cleared when a worker comes up or the process stops.
+// Nothing else needs it, it does not repeat on its own, and the scheduler
+// cannot fork this process's workers. The same shape as the batch lane's
+// wait. The timer is unref'd, so it does not hold a stopping process open.
+// ---------------------------------------------------------------------------
+function clearGiveUpRetry(pool) {
+  log.debug("Entering clearGiveUpRetry().");
+  const state = giveUpState[pool];
+  if (state && state.timer) {
+    clearTimeout(state.timer);
+    state.timer = null;
+  }
+  log.debug("Leaving clearGiveUpRetry().");
+}
+
+// The first free slot in the pool, counting workers and forks still queued.
+function freeSlot(pool) {
+  log.debug("Entering freeSlot().");
+  const wanted = size(pool);
+  const taken = workers.concat(queuedForks()).filter(function (one) {
+    return (one.pool || PROTOCOL_POOL) === pool;
+  }).map(function (one) {
+    return one.slot;
+  });
+  let slot = 0;
+  const limit = wanted > 0 ? wanted : 1;
+  for (let i = 0; i < limit; i++) {
+    if (taken.indexOf(i) < 0) {
+      slot = i;
+      break;
+    }
+  }
+  log.debug("Leaving freeSlot(). " + slot + ".");
+  return slot;
+}
+
+/**
+ * Arms the cool-down before the next give-up retry, or does nothing when
+ * `workers.giveUpRetryMs` is 0 or a wait is already armed.
+ *
+ * @param pool - the pool name
+ */
+function armGiveUpRetry(pool) {
+  log.debug("Entering armGiveUpRetry().");
+  const state = giveUpState[pool];
+  if (stopped || !givenUp[pool] || !state || state.timer || state.probing) {
+    log.debug("Leaving armGiveUpRetry(). Not armed.");
+    return;
+  }
+  const delay = giveUpRetryDelay(state.attempt, giveUpRetryBaseMs());
+  if (!(delay > 0)) {
+    log.debug("Leaving armGiveUpRetry(). Off.");
+    return;
+  }
+  state.at = Date.now() + delay;
+  log.error(errorCodes.tag('STS-WORKER-0050') +
+    'request_pool: the ' + pool + ' pool will try one worker again in ' +
+    Math.round(delay / 1000) + 's (workers.giveUpRetryMs, attempt ' +
+    (state.attempt + 1) + '). Until one comes up, ' +
+    (pool === SURFACE_POOL
+      ? 'the hosted surfaces stay on the protocol workers.'
+      : 'every request stays in the process that holds the sockets.'));
+  state.timer = setTimeout(function () {
+    state.timer = null;
+    state.at = 0;
+    if (stopped || !givenUp[pool]) {
+      return;
+    }
+    beginGiveUpRetry(pool);
+  }, delay);
+  if (state.timer.unref) {
+    state.timer.unref();
+  }
+  log.debug("Leaving armGiveUpRetry(). In " + delay + " ms.");
+}
+
+// The cool-down has elapsed. One worker, and the three-failure bound
+// applies to it and to the replacements reap() forks while `probing`.
+function beginGiveUpRetry(pool) {
+  log.debug("Entering beginGiveUpRetry().");
+  const state = giveUpState[pool];
+  if (stopped || !givenUp[pool] || !state) {
+    log.debug("Leaving beginGiveUpRetry(). No longer given up.");
+    return;
+  }
+  if (!(size(pool) > 0)) {
+    log.debug("Leaving beginGiveUpRetry(). The pool is sized at 0.");
+    return;
+  }
+  state.probing = true;
+  quickExits[pool] = 0;
+  const slot = freeSlot(pool);
+  log.info('request_pool: trying one ' + pool + ' worker again after the ' +
+           'give-up, in slot ' + slot + '.');
+  queueFork(pool, slot);
+  log.debug("Leaving beginGiveUpRetry().");
+}
+
+// A worker of a given-up pool reported ready. The paths may move, and the
+// slots still empty are forked. The cool-down's backoff goes back to the
+// setting: this start succeeded.
+function recoverFromGiveUp(pool) {
+  log.debug("Entering recoverFromGiveUp().");
+  if (!givenUp[pool]) {
+    log.debug("Leaving recoverFromGiveUp(). Not given up.");
+    return;
+  }
+  givenUp[pool] = false;
+  const state = giveUpState[pool];
+  state.probing = false;
+  state.attempt = 0;
+  state.at = 0;
+  clearGiveUpRetry(pool);
+  const wanted = size(pool);
+  const held = workers.filter(function (one) {
+    return (one.pool || PROTOCOL_POOL) === pool;
+  }).length + queuedForks().filter(function (one) {
+    return one.pool === pool;
+  }).length;
+  let more = 0;
+  for (let i = held; i < wanted; i++) {
+    queueFork(pool, freeSlot(pool));
+    more++;
+  }
+  log.info('request_pool: a ' + pool + ' worker came up after the pool had ' +
+           'given up, so the pool is forking again' +
+           (more ? ' (' + more + ' more).' : '.'));
+  log.debug("Leaving recoverFromGiveUp().");
 }
 
 // A worker that has gone. Unlike the computation pool there is nothing to
@@ -3159,27 +3377,45 @@ function reap(entry, code, reason) {
     log.info('request_pool: ' + pool + ' worker ' + entry.pid + ' ' + how +
              '.');
   }
-  if (quickExits[pool] >= QUICK_EXIT_LIMIT && !givenUp[pool] && !stopped) {
-    givenUp[pool] = true;
-    // WHERE THE WORK GOES NOW IS THE ONE THING THE TWO POOLS SAY DIFFERENTLY:
-    // the protocol pool's paths come back to this process, which is what
-    // workers.requestCount=0 means; the surface pool's go to the protocol
-    // pool, which is what workers.surfaceCount=0 means. See poolFor().
-    log.error(errorCodes.tag('STS-WORKER-0023') +
-      'request_pool: ' + quickExits[pool] + ' ' + pool + ' workers in a ' +
-      'row failed to start (never ready, or gone within ' + QUICK_EXIT_MS +
-      'ms without serving anything), so this service has STOPPED FORKING ' +
-      'THEM and ' +
-      (pool === SURFACE_POOL
-        ? 'is sending the hosted surfaces to the protocol workers — which ' +
-          'is what workers.surfaceCount=0 means'
-        : 'is handling every request in the process that holds the sockets ' +
-          '— which is what workers.requestCount=0 means: correct, and on ' +
-          'one thread') +
-      '. A worker that cannot start is usually a CONFIG_FILE it cannot ' +
-      'read, a port a protocol module tried to bind, or a machine out of ' +
-      'memory; ' + WORKER_MODULE + ' run by hand with a socket path says ' +
-      'which.');
+  if (quickExits[pool] >= QUICK_EXIT_LIMIT && !stopped) {
+    const retry = giveUpState[pool];
+    if (!givenUp[pool]) {
+      givenUp[pool] = true;
+      // WHERE THE WORK GOES NOW IS THE ONE THING THE TWO POOLS SAY
+      // DIFFERENTLY: the protocol pool's paths come back to this process,
+      // which is what workers.requestCount=0 means; the surface pool's go
+      // to the protocol pool, which is what workers.surfaceCount=0 means.
+      // See poolFor(). The cool-down (#333) does not move them back until
+      // a worker reports ready.
+      const again = giveUpRetryDelay(0, giveUpRetryBaseMs());
+      log.error(errorCodes.tag('STS-WORKER-0023') +
+        'request_pool: ' + quickExits[pool] + ' ' + pool + ' workers in a ' +
+        'row failed to start (never ready, or gone within ' + QUICK_EXIT_MS +
+        'ms without serving anything), so this service has STOPPED FORKING ' +
+        'THEM and ' +
+        (pool === SURFACE_POOL
+          ? 'is sending the hosted surfaces to the protocol workers — which ' +
+            'is what workers.surfaceCount=0 means'
+          : 'is handling every request in the process that holds the ' +
+            'sockets — which is what workers.requestCount=0 means: correct, ' +
+            'and on one thread') +
+        (again
+          ? '. It tries one worker again after a cool-down, and a worker ' +
+            'that comes up clears this'
+          : '. workers.giveUpRetryMs is 0, so it stays given up until this ' +
+            'process restarts') +
+        '. A worker that cannot start is usually a CONFIG_FILE it cannot ' +
+        'read, a port a protocol module tried to bind, or a machine out of ' +
+        'memory; ' + WORKER_MODULE + ' run by hand with a socket path says ' +
+        'which.');
+      armGiveUpRetry(pool);
+    } else if (retry.probing) {
+      // THIS ATTEMPT FAILED TOO. The three tries are spent, so the paths
+      // stay where the give-up put them and the next wait is longer.
+      retry.probing = false;
+      retry.attempt++;
+      armGiveUpRetry(pool);
+    }
   }
   replaceIfWanted(entry);
   log.debug('Leaving reap().');
@@ -3309,10 +3545,12 @@ function useOomCounter(fn) {
 // **NOT WHILE STOPPING, NOT AFTER GIVING UP, AND NEVER PAST THE CONFIGURED
 // SIZE.** stop() sets `stopped` before its workers exit, so a drain forks
 // nothing. A pool that has given up (QUICK_EXIT_LIMIT failed starts in a row)
-// stays given up — a worker that cannot start is a configuration or a machine
-// out of memory, and forking it for ever would turn a slow service into one
-// that does nothing but fork. And a pool already holding `size()` workers
-// forks nothing, whatever died.
+// does not keep forking — a worker that cannot start is a configuration or a
+// machine out of memory, and forking it for ever would turn a slow service
+// into one that does nothing but fork. It tries again after a cool-down
+// (#333, `armGiveUpRetry()`), and only that try (`probing`) may replace a
+// worker while the pool is still given up. And a pool already holding
+// `size()` workers forks nothing, whatever died.
 //
 // A decision over its arguments, exported for tests/request_worker_
 // replacement.js; `state` defaults to this module's own.
@@ -3320,11 +3558,12 @@ function useOomCounter(fn) {
 /**
  * Decides whether a dead worker is replaced, and in which slot.
  *
- * Not while stopping, not after the pool gave up, and never past the
- * configured size.
+ * Not while stopping, not after the pool gave up (unless that give-up is
+ * in its cool-down try), and never past the configured size.
  * @param dead - the dead worker's entry
  * @param live - the worker table
- * @param state - optional overrides `{ stopped, givenUp, wanted }`, for tests
+ * @param state - optional overrides `{ stopped, givenUp, probing, wanted }`,
+ *   for tests
  * @returns `{ replace, pool, slot }`, or `{ replace: false, pool, why }`
  */
 function replacementFor(dead, live, state) {
@@ -3333,12 +3572,14 @@ function replacementFor(dead, live, state) {
   const s = state || {};
   const isStopped = s.stopped === undefined ? stopped : s.stopped;
   const hasGivenUp = s.givenUp === undefined ? givenUp[pool] : s.givenUp;
+  const probing = s.probing === undefined ? giveUpState[pool].probing
+                                         : s.probing;
   const wanted = s.wanted === undefined ? size(pool) : s.wanted;
   if (isStopped) {
     log.debug("Leaving replacementFor(). Stopping.");
     return { replace: false, pool: pool, why: 'the pool is stopping' };
   }
-  if (hasGivenUp) {
+  if (hasGivenUp && !probing) {
     log.debug("Leaving replacementFor(). Given up.");
     return { replace: false, pool: pool,
              why: 'the ' + pool + ' pool has given up on its workers' };
@@ -3633,7 +3874,10 @@ function pumpForks() {
   log.debug("Entering pumpForks().");
   while (forkQueue.length && startsInFlight < startConcurrency()) {
     const next = forkQueue.shift();
-    if (stopped || givenUp[next.pool]) {
+    // A GIVE-UP'S OWN TRY IS FORKED (#333). Every other queued fork is
+    // dropped, so a cool-down cannot drain into a fork storm of whatever
+    // was still waiting from the failed start.
+    if (stopped || (givenUp[next.pool] && !giveUpState[next.pool].probing)) {
       log.info('request_pool: a queued ' + next.pool + ' worker (slot ' +
                next.slot + ') is not forked: ' +
                (stopped ? 'the pool is stopping'
@@ -6566,6 +6810,18 @@ function failOperations(entry) {
 function stop(timeoutMs) {
   log.debug('Entering stop().');
   stopped = true;
+  // A COOL-DOWN MUST NOT FORK DURING THE DRAIN (#333). Cleared before any
+  // worker exits, so its callback sees `stopped`, and a timer still armed
+  // never fires into the next test's reset().
+  POOLS.forEach(function (pool) {
+    const state = giveUpState[pool];
+    if (!state) {
+      return;
+    }
+    state.probing = false;
+    state.at = 0;
+    clearGiveUpRetry(pool);
+  });
   // A worker still waiting behind the start gate is never forked (#342).
   dropQueuedForks();
   const limit = timeoutMs === undefined ? 8000 : timeoutMs;
@@ -6863,11 +7119,20 @@ function stats() {
         return one.inFlight > 0;
       }).length;
       const h = history[pool];
+      // THE COOL-DOWN (#333), for Monitoring → Worker Pools. `giveUpRetryMs`
+      // is what is left of the wait, 0 when none is armed; `giveUpProbing`
+      // is the try itself, while routing still says given up.
+      const retry = giveUpState[pool];
+      const retryMs = retry && retry.timer
+        ? Math.max(0, retry.at - Date.now()) : 0;
       return { pool: pool, configured: size(pool),
                running: workers.filter(function (one) {
                  return (one.pool || PROTOCOL_POOL) === pool;
                }).length,
                ready: ready.length, gaveUp: givenUp[pool],
+               giveUpRetryMs: retryMs,
+               giveUpProbing: !!(retry && retry.probing),
+               giveUpAttempt: retry ? retry.attempt : 0,
                replaced: replaced[pool],
                affinities: affinities[pool].size,
                prefixes: pool === SURFACE_POOL ? surfacePrefixes() : [],
@@ -6951,6 +7216,13 @@ function reset() {
     quickExits[pool] = 0;
     replaced[pool] = 0;
     history[pool] = freshHistory();
+    const state = giveUpState[pool];
+    if (state) {
+      clearGiveUpRetry(pool);
+      state.probing = false;
+      state.attempt = 0;
+      state.at = 0;
+    }
   });
   workerModule = WORKER_MODULE;
   stopped = false;
@@ -7121,6 +7393,8 @@ module.exports = {
   // real fork() and reap() with a stub worker — the module a worker runs
   // and fork() itself.
   replacementFor: replacementFor,
+  // The cool-down's doubling (#333), for tests/request_worker_replacement.js.
+  giveUpRetryDelay: giveUpRetryDelay,
   useWorkerModule: useWorkerModule,
   fork: fork,
   // THE START GATE (#342), for the same file: a fork queued behind it, as

@@ -1525,7 +1525,8 @@ and made the pool give up. `loadMinted()` was a `SELECT` of the whole of
 the only filter was in JavaScript — `retain: 'age'`'s seven days of WRITE age.
 Rows of the 132 realms the suite had left behind, and every code, nonce and
 pending flow that had expired days earlier but was written within the week,
-were all read back.
+were all read back. The pool's give-up is no longer for the life of the
+process (`workers.giveUpRetryMs`); `common/CLAUDE.md` argues that half.
 
 rcbj's decision: **the startup query asks only for currently valid data in
 currently defined realms.** Four parts:
