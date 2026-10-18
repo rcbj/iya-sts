@@ -354,7 +354,9 @@ locals {
   # image pulls and the service's own start. AWS's grace period is the same
   # 600 s, and `deploy/aws/environment/ecs.tf` says what the service's start
   # has to fit (#330). A node that never answers `/healthcheck` is still
-  # replaced once the delay has passed.
+  # replaced once the delay has passed. After it, three consecutive
+  # failures of that check replace the node (lb.tf: interval 10,
+  # `unhealthy_threshold` 3). Two successes mark it healthy again.
   mig_initial_delay_sec = 600
 }
 

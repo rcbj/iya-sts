@@ -32,6 +32,11 @@
 # AWS it was (ECS requires every target group healthy). The service records
 # that failure on `GET /admin/ldap/service` either way.
 #
+# THREE CONSECUTIVE FAILURES OF THIS CHECK REPLACE THE NODE (#330), once
+# the managed instance group's initial delay has passed (nodes.tf). The
+# interval is 10 seconds and `unhealthy_threshold` is 3. Two successes mark
+# it healthy again. A node that is still starting is inside that delay.
+#
 # Every zone's node is a backend, which is AWS's cross-zone load balancing:
 # `sts_cluster_alternation` needs every node to answer.
 # ---------------------------------------------------------------------------

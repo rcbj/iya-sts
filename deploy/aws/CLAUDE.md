@@ -185,8 +185,13 @@ ends. A port that is still down then fails steady state, which is the
 load-bearing property above. The grace does not cover `workers.startTimeoutMs`
 at its setting maximum (900000); a deployment that raises the timeout past
 what 600 holds has to raise the grace too (`ecs.tf` says how the 600 was
-reached). A task that has already been up is outside the grace: a later
-failure of any target group still replaces it.
+reached). A task that has already been up is outside the grace: three
+consecutive failures of any target group replace it, about 30 seconds at
+the load balancer's interval of 10 (`unhealthy_threshold` 3). Two successes
+mark a group healthy again. GCP and Azure use the same failure count. The
+container probe is a second way ECS can replace a task, and it is not that
+count: its `retries` stay 4, and it watches only `/healthcheck` on the main
+port.
 
 **THE TWO SIDES OF THE PKI PORT NEED NOT MATCH, and since 2026-09-17 they do
 not** (`var.pki_listener_port`). They were one number because that is the

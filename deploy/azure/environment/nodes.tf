@@ -287,6 +287,10 @@ locals {
   # image is already on the host; GCP's autohealing delay is the same 600 s).
   # The extension's own grace period (below) is the ten minutes a restarted
   # service gets, the same window AWS gives the process once it is running.
+  # Once the repair grace has passed, three consecutive failures of the
+  # probe below replace the VM. The load balancer stops traffic on the same
+  # count (lb.tf). Both ask for an HTTPS GET of `/healthcheck`, so a node
+  # whose LDAPS never binds is not replaced for that.
   repair_grace = "PT30M"
 
   health_settings = jsonencode({

@@ -447,8 +447,8 @@ locals {
   # THE STARTUP PROPERTY STAYS. Every published port's target group is still
   # on the service. A task whose 636, or any other published port, is still
   # down when this window ends does not reach steady state. A task that has
-  # already been up is not in this window: a later failure of any target
-  # group still replaces it.
+  # already been up is not in this window: three consecutive failures of
+  # any target group replace it (nlb.tf: interval 10, threshold 3).
   service_common = {
     health_check_grace_period_seconds = 600
   }
