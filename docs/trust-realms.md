@@ -260,7 +260,9 @@ default realm's, already bound on `0.0.0.0`, so turning SPIFFE on used to mean
 two refused binds; and nothing here can know which addresses a host has. To
 serve a realm over TCP, set `spiffe.grpcHost` on the realm to an address of its
 own and the two ports back to `8092` / `8181` — a client configured for those
-ports then reaches every realm where it expects to.
+ports then reaches every realm where it expects to. An AWS environment
+publishes the Server API only. A workload there uses a node-local agent
+rather than TCP 8092 ([SPIFFE](spiffe.md#a-workload-agent-beside-the-workload)).
 
 **The address is the only thing a SPIFFE client can name a tenant with.** gRPC
 has a path and it is the method name — `/SpiffeWorkloadAPI/FetchX509SVID` is

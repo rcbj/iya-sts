@@ -23322,7 +23322,9 @@ class AdminApi {
                      'SPIRE Server API. These entries are a RECORD rather ' +
                      'than configuration — everything on them was written by ' +
                      'this service — which is why nothing about an agent is ' +
-                     'editable and the only write is the ban.\n\n**Node ' +
+                     'editable. The writes are the ban, the unban, forgetting ' +
+                     'one, and creating a join token for an agent that has ' +
+                     'not attested yet.\n\n**Node ' +
                      'attestation is verified or refused.** An agent here ' +
                      'attested with a type the realm accepts ' +
                      '(spiffe.nodeAttestors) and an attestor verified, and ' +
@@ -23433,7 +23435,41 @@ class AdminApi {
                 [{ agent: 'spiffe://example.org/spire/agent/k8s_psat/abc' }],
               additionalProperties: false
             },
-            responseDescription: 'That it is forgotten.' }
+            responseDescription: 'That it is forgotten.' },
+
+          { action: 'join-token', operationId: 'createSpiffeJoinToken',
+            summary: 'Mint a join token for a workload agent',
+            description: 'How an operator provisions the sidecar agent that ' +
+                         'serves the Workload API on a Unix socket next to ' +
+                         'a workload (#324). The SPIRE Server API is what ' +
+                         'the agent attests to; this is the same join-token ' +
+                         'store `CreateJoinToken` writes, reached here ' +
+                         'because there is no admin SVID until a Workload ' +
+                         'API exists to fetch one from.\n\nThe token is ' +
+                         'shown once, in `token` and in `message`, and is ' +
+                         'not recorded. `agentSpiffeId` is the identity the ' +
+                         'token will attest, which is a digest of the token ' +
+                         'and is safe to keep: parent that agent\'s ' +
+                         'workload entries on it. An optional `agentId` ' +
+                         'registers an alias the way SPIRE does, and is not ' +
+                         'the `agent` field the ban takes.',
+            requestBodyRequired: false,
+            requestBody: {
+              type: 'object',
+              properties: {
+                ttl: { type: 'number',
+                       description: 'Lifetime in seconds. Omit it to use ' +
+                                    'spiffe.joinTokenTtl.' },
+                agentId: { type: 'string',
+                           description: 'Optional alias SPIFFE ID, ' +
+                                        'registered as an entry parented on ' +
+                                        'the agent this token attests.' }
+              },
+              examples: [{ ttl: 600 }],
+              additionalProperties: false
+            },
+            responseDescription: 'The token, once, and the agent SPIFFE ID ' +
+                                 'it will attest.' }
         ] },
       // CERTIFICATE ENROLLMENT (2026-09-13). Each family's operations are
       // declared beside the family, in a file that registers no route and

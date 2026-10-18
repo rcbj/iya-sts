@@ -260,7 +260,7 @@ variable "mail_ses_domain" {
 }
 
 variable "spiffe_workload_port" {
-  description = "The default realm's SPIFFE Workload API port, the same on the load balancer and the node (spiffe.workloadPort; spiffe_default.tf)."
+  description = "Accepted and no longer published (#324). The Workload API is a local agent's Unix socket; product mode does not bind this port on AWS (#166). Kept so a plan that still passes it, and a destroy of state that published 8092, still succeed."
   type        = number
   default     = 8092
 }

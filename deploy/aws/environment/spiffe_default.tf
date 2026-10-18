@@ -2,35 +2,48 @@
 # SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
-# THE DEFAULT REALM'S SPIFFE PORTS, PART OF EVERY ENVIRONMENT (#311).
+# THE DEFAULT REALM'S SPIRE SERVER API, PART OF EVERY ENVIRONMENT (#311).
 #
-#   8092  the SPIFFE Workload API     (spiffe.workloadPort)
 #   8181  the SPIRE Server API         (spiffe.serverPort, mutual TLS)
 #
-# rcbj's decision, 2026-09-28: the default realm's SPIFFE ports are not
-# optional and not a separate stack. They were `spiffe-realm/` with
+# rcbj's decision, 2026-09-28: the default realm's SPIFFE port is not
+# optional and not a separate stack. It was `spiffe-realm/` with
 # REALM=default until this date, applied (or not) after the environment —
 # and on a build where nobody did, the suite declared SPIFFE unpublished and
 # both SPIFFE jobs skipped. `spiffe-realm/` is now for ADDITIONAL realms only,
 # and refuses `default`.
 #
+# **THE WORKLOAD API IS NOT PUBLISHED (#324).** SPIFFE's Workload Endpoint
+# permits TCP only where the network authenticates the caller by source
+# address, and product mode will not bind it otherwise (#166). A Fargate
+# task has one address, every realm binds the wildcard, and these listeners
+# do not read PROXY protocol, so the node would see the load balancer as
+# every caller. Publishing 8092 left its target group unhealthy and gave
+# the suite nothing to fetch an SVID from. A workload runs a local agent
+# (`spiffe/workload_agent.ts`): the agent attests with a join token over
+# this Server API and serves the Workload API on a Unix socket in the
+# workload's own task. `spiffe_workload_port` stays a variable so a plan
+# that still passes it, and a destroy of state that published 8092, still
+# succeed. The next apply removes that target group, listener and rules.
+#
 # **THE NODES ARE REGISTERED BY ADDRESS, BECAUSE ECS MANAGES AT MOST FIVE
 # TARGET GROUPS PER SERVICE** and `published_ports` uses all five (https,
-# ldap, ldaps, pki, kerberos). So these target groups are not on the services'
+# ldap, ldaps, pki, kerberos). So this target group is not on the services'
 # `load_balancer` blocks: this file looks the running nodes up — after every
 # service has reached steady state, which `wait_for_steady_state` makes the
 # apply wait for — and registers their private addresses. A node restarted
-# since the last apply is missing from these two ports until the next one;
+# since the last apply is missing from this port until the next one;
 # `spiffe-realm/` has always had that property, argued in deploy/aws/CLAUDE.md.
 #
 # No PROXY protocol here, unlike every other port: SPIFFE's gRPC listeners do
-# not read the header. The Workload API port stays unhealthy in product mode,
-# which is #166 working (deploy/aws/CLAUDE.md); the SPIRE Server API serves.
+# not read the header. The SPIRE Server API serves.
 # ---------------------------------------------------------------------------
 locals {
+  # Server only. `var.spiffe_workload_port` is accepted and not published
+  # (#324); it is read here so the variable stays part of the configuration.
+  spiffe_workload_port_accepted = var.spiffe_workload_port
   spiffe_default_ports = {
-    workload = var.spiffe_workload_port
-    server   = var.spiffe_server_port
+    server = var.spiffe_server_port
   }
   spiffe_default_ingress = {
     for pair in setproduct(keys(local.spiffe_default_ports), keys(local.nlb_sources)) :

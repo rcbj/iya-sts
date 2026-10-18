@@ -84,7 +84,7 @@ for GCP's reason.
 | task definition | systemd units | **The same units**, in order: `sts-disk` → `sts-registry` → `sts-secrets` → `sts-cert` → `sts-schema` (→ `sts-global-schema` in the primary cell) → `sts-node`. `sts-node` is enabled, so a reboot starts it again. | `Requires=`/`After=` is `dependsOn: SUCCESS` |
 | ECS `secrets` | `sts-secrets` from Secret Manager | `sts-secrets` from **Key Vault** over REST with the VM's managed identity, into env files on `/run` | Nothing secret is in the VM's model. The database passwords are read by the SERVICE through `common/secrets.js`'s `azure` provider (`AZURE_CLIENT_ID` names the identity), and the KEK is a Key Vault KEY it wraps with (`azure-keys`, *The key-encryption key*, below) |
 | ECR pull | `docker-credential-gcr` | `/etc/sts/registry-login.sh`: an Entra ID token from the metadata endpoint, exchanged at the registry. It runs before every start of the node. | The registry's token lasts about three hours, and systemd restarts the node long after boot |
-| NLB, PROXY v2 | passthrough NLB, no PROXY | **Standard Load Balancer**: one zone-redundant public address, one rule per port translating 443 → 8081 and 80 → 8082, one HTTPS probe of `/healthcheck` | A pass-through: the client's certificate and address reach the node, so `STS_PROXY_PROTOCOL=off`. **No register-by-address workaround for SPIFFE**: the pool follows the scale sets |
+| NLB, PROXY v2 | passthrough NLB, no PROXY | **Standard Load Balancer**: one zone-redundant public address, one rule per port translating 443 → 8081 and 80 → 8082, one HTTPS probe of `/healthcheck` | A pass-through: the client's certificate and address reach the node, so `STS_PROXY_PROTOCOL=off`. **No register-by-address workaround for SPIFFE**: the pool follows the scale sets. **8092 is still published.** #324 was applied on AWS only. Pass-through is a different fact from the declaration #166 requires |
 | NAT-free public subnets | an ephemeral external IP per VM | **The load balancer's outbound rule**, on a second address; the nodes have NO public address, and the subnet's default outbound access is off | New VNets have no default outbound access (since 2025-09-30), and a NAT gateway is zonal. The fixed outbound address is also what the service calling its own public name arrives from |
 | security groups | firewall rules by service account | **Two security groups** (nodes, private). Every rule is a resource of its own, and everything is denied at 4096 in both directions | A group's inline rules are its WHOLE list, so the global stack's rule would be deleted by the next cell apply. The deny rules sit ahead of Azure's defaults, which admit every peered VNet |
 | #311's private zone for self-calls | nothing | **An inbound rule for the outbound address** (`self`, and `cells-self` from the global stack for every cell's) | The node's packet leaves by the outbound rule and comes back through the public frontend |
@@ -401,6 +401,12 @@ AWS's latency records do.
   identity.
 * **`spiffe-realm/` for additional realms.** A realm's ports would be more
   rules on the same load balancer.
+* **Unpublishing the Workload API (#324).** `spiffe_default_ports` still
+  names `workload` (8092) beside `server` (8181). AWS stopped publishing
+  8092 (`deploy/aws/CLAUDE.md`); this stack was not rewritten, because only
+  AWS has been applied. The load balancer is a pass-through, so the client's
+  certificate and address reach the node. That is a different fact from
+  the declaration #166 requires.
 * **A GitHub workflow.** It should be a service principal with a federated
   credential (OIDC), in the deployer group.
 * **Azure cells in a MULTI-CLOUD environment.** The cells here are all

@@ -45,8 +45,9 @@ locals {
 
   # Every port the load balancer publishes, admitted from the NAT address, so
   # the jobs reach the service exactly as any client does.
-  # And the default realm's two SPIFFE ports (environment/spiffe_default.tf),
-  # which the suite's SPIFFE jobs dial (#311).
+  # And the default realm's SPIRE Server API (environment/spiffe_default.tf),
+  # which the suite's SPIFFE jobs dial (#311). The Workload API is not
+  # published (#324).
   listener_ports = merge(
     { for k, p in local.env.load_balancer_ports : k => p.listener },
     { for k, p in try(local.env.spiffe_default_ports, {}) : "spiffe-${k}" => p },
