@@ -579,11 +579,11 @@ async function scimSweep(base, scim, type, attribute, wanted, perBatch,
     }
     total = Number(r.json.totalResults) || 0;
     const rows = r.json.Resources;
-    // Past the last result there is nothing left to look at. testidp's SCIM
-    // answers a startIndex beyond totalResults with the last rows again
-    // rather than the empty page RFC 7644 section 3.4.2.4 describes, so an
-    // empty page alone never came: run 8's reset skipped the same four kept
-    // rows for good, silently. This stops on the count whatever comes back.
+    // Past the last result there is nothing left to look at. A startIndex
+    // beyond totalResults is an empty page since #354 (RFC 7644 section
+    // 3.4.2.4). Before that, testidp answered it with the last rows again,
+    // so an empty page never came and run 8 skipped the same four kept
+    // rows for good. The count stop stays: a repeated page must still end.
     if (!rows.length || skipped >= total) {
       break;
     }

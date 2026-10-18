@@ -32,7 +32,9 @@
 //      meta.lastModified does not move (RFC 7644 section 3.5.2.1) — asked
 //      across a second boundary, where the write used to show;
 //   I. scim.inventOnCreate: on, a development-mode create is filled in;
-//      off, it holds only what was sent.
+//      off, it holds only what was sent;
+//   B. a startIndex past totalResults is an empty page with itemsPerPage
+//      0, for Users, Groups and .search (#354, RFC 7644 section 3.4.2.4).
 //
 // A CHILD PROCESS, as tests/stable_subject.js runs one: the protocol stack
 // and a listener are loaded once, fresh, and nothing leaks into the runner.
@@ -308,6 +310,126 @@ function childMain() {
       note(r.status === 201 && Array.isArray(r.json.emails),
            'I2. on (the default), a development-mode create is filled in',
            r.status + ' ' + r.text.slice(0, 200));
+
+      // B. A startIndex PAST totalResults IS AN EMPTY PAGE (#354).
+      // scimmy's ListResponse returns the first rows again once startIndex
+      // is past the list; forTheWire() empties that page. An in-range page
+      // is unchanged, including itemsPerPage staying the count asked for.
+      config.setOverride('scim.inventOnCreate', 'false');
+      const SEARCH = 'urn:ietf:params:scim:api:messages:2.0:SearchRequest';
+      const pageUsers = ['sc-page-a', 'sc-page-b', 'sc-page-c', 'sc-page-d'];
+      let madeUsers = 0;
+      for (let i = 0; i < pageUsers.length; i++) {
+        r = await scim('POST', '/Users', { schemas: [USER],
+                                           userName: pageUsers[i] });
+        if (r.status === 201) {
+          madeUsers += 1;
+        }
+      }
+      note(madeUsers === 4, 'B0. the four page users were created',
+           String(madeUsers));
+      const pageFilter = encodeURIComponent('userName sw "sc-page-"');
+      const namesOf = function (response) {
+        const body = response && response.json;
+        return ((body && body.Resources) || []).map(function (one) {
+          return one.userName || one.displayName || '';
+        });
+      };
+      const pageShape = function (response) {
+        const body = response && response.json;
+        return response.status + ' total=' +
+          (body && body.totalResults) + ' start=' +
+          (body && body.startIndex) + ' per=' +
+          (body && body.itemsPerPage) + ' [' +
+          namesOf(response).join(',') + ']';
+      };
+      r = await scim('GET', '/Users?filter=' + pageFilter +
+                     '&count=1000&startIndex=1');
+      const order = namesOf(r);
+      note(r.status === 200 && r.json.totalResults === 4 &&
+           order.length === 4,
+           'B1. startIndex 1 returns the four names once',
+           pageShape(r));
+      r = await scim('GET', '/Users?filter=' + pageFilter +
+                     '&count=1000&startIndex=5');
+      note(r.status === 200 && r.json.totalResults === 4 &&
+           r.json.startIndex === 5 && namesOf(r).length === 0 &&
+           r.json.itemsPerPage === 0,
+           'B2. startIndex 5 of 4 Users is an empty page',
+           pageShape(r));
+      r = await scim('GET', '/Users?attributes=userName&filter=' +
+                     pageFilter + '&count=2&startIndex=100');
+      note(r.status === 200 && r.json.totalResults === 4 &&
+           r.json.startIndex === 100 && namesOf(r).length === 0 &&
+           r.json.itemsPerPage === 0,
+           'B3. startIndex 100 with count 2 is empty, not the first 2',
+           pageShape(r));
+      r = await scim('GET', '/Users?filter=' + pageFilter +
+                     '&count=2&startIndex=3');
+      note(r.status === 200 && r.json.totalResults === 4 &&
+           r.json.startIndex === 3 && r.json.itemsPerPage === 2 &&
+           namesOf(r).join(',') === order.slice(2).join(','),
+           'B4. startIndex 3 count 2 is the third and fourth names',
+           pageShape(r) + ' vs ' + order.slice(2).join(','));
+      r = await scim('GET', '/Users?filter=' + pageFilter +
+                     '&count=10&startIndex=3');
+      note(r.status === 200 && r.json.totalResults === 4 &&
+           r.json.startIndex === 3 && r.json.itemsPerPage === 10 &&
+           namesOf(r).join(',') === order.slice(2).join(','),
+           'B5. a short in-range page keeps the count that was asked',
+           pageShape(r));
+      r = await scim('GET', '/Users?filter=' + pageFilter +
+                     '&count=10&startIndex=4');
+      note(r.status === 200 && r.json.totalResults === 4 &&
+           r.json.startIndex === 4 && r.json.itemsPerPage === 10 &&
+           namesOf(r).length === 1 && namesOf(r)[0] === order[3],
+           'B6. startIndex equal to totalResults is the last name',
+           pageShape(r));
+      const pageGroups = ['sc-page-g1', 'sc-page-g2', 'sc-page-g3'];
+      let madeGroups = 0;
+      for (let g = 0; g < pageGroups.length; g++) {
+        r = await scim('POST', '/Groups', { schemas: [GROUP],
+                                            displayName: pageGroups[g] });
+        if (r.status === 201) {
+          madeGroups += 1;
+        }
+      }
+      note(madeGroups === 3, 'B7. the three page groups were created',
+           String(madeGroups));
+      const groupFilter = encodeURIComponent('displayName sw "sc-page-"');
+      r = await scim('GET', '/Groups?filter=' + groupFilter +
+                     '&count=2&startIndex=9');
+      note(r.status === 200 && r.json.totalResults === 3 &&
+           r.json.startIndex === 9 && namesOf(r).length === 0 &&
+           r.json.itemsPerPage === 0,
+           'B8. a Group startIndex past the end is an empty page',
+           pageShape(r));
+      r = await scim('POST', '/Users/.search', { schemas: [SEARCH],
+        filter: 'userName sw "sc-page-"', startIndex: 5, count: 1000 });
+      note(r.status === 200 && r.json.totalResults === 4 &&
+           r.json.startIndex === 5 && namesOf(r).length === 0 &&
+           r.json.itemsPerPage === 0,
+           'B9. POST /Users/.search past the end is an empty page',
+           pageShape(r));
+      r = await scim('POST', '/.search', { schemas: [SEARCH],
+                                           startIndex: 100000, count: 2 });
+      note(r.status === 200 && r.json.startIndex === 100000 &&
+           r.json.totalResults > 0 && r.json.totalResults < 100000 &&
+           namesOf(r).length === 0 && r.json.itemsPerPage === 0,
+           'B10. POST /.search past the end is empty, not the first rows',
+           pageShape(r));
+      r = await scim('GET', '/Users?filter=' +
+                     encodeURIComponent('userName eq "sc-page-nobody"') +
+                     '&count=10');
+      note(r.status === 200 && r.json.totalResults === 0 &&
+           namesOf(r).length === 0 && r.json.itemsPerPage === 0,
+           'B11. a filter that matches nobody has itemsPerPage 0',
+           pageShape(r));
+      r = await scim('GET', '/Users?filter=' + pageFilter + '&count=0');
+      note(r.status === 200 && r.json.totalResults === 4 &&
+           namesOf(r).length === 0 && r.json.itemsPerPage === 0,
+           'B12. count 0 is an empty page and the match is still counted',
+           pageShape(r));
     });
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify({ findings: findings }));
@@ -359,6 +481,7 @@ module.exports = {
   describe: 'what the SCIM conformance harnesses found (#206): the published ' +
             'schemas, the manager id, member $ref, duplicates and canonical ' +
             'types, case-insensitive filters and invalidFilter, If-Match ' +
-            '412, the SCIM 404, whole-extension PATCH, scim.inventOnCreate',
+            '412, the SCIM 404, whole-extension PATCH, scim.inventOnCreate, ' +
+            'and a startIndex past totalResults as an empty page (#354)',
   run: run
 };

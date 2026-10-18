@@ -983,6 +983,41 @@ class Scim {
   }
 
   // ---------------------------------------------------------------------------
+  // A startIndex PAST THE END IS AN EMPTY PAGE (#354, RFC 7644 3.4.2.4).
+  //
+  // scimmy's ListResponse offsets its array only when
+  // `Resources.length >= startIndex`. A startIndex past totalResults fails
+  // that test, so the page is the FIRST rows again — or the first `count`
+  // of them, when count is smaller than the list — while startIndex and
+  // totalResults say the page is past the end. A client that pages until
+  // an empty page then loops, and one that counts what it received sees
+  // the same people twice. Found on testidp: four names, startIndex 5 and
+  // 100, both answered with those four.
+  //
+  // The page past the end has no results. Resources is empty and
+  // itemsPerPage, the number returned, is 0. The requested startIndex
+  // stays, and totalResults stays the size of the match. An empty match
+  // is the same rule: nothing is at index 1, so itemsPerPage is 0 rather
+  // than the count that was asked. A startIndex on the last result is
+  // that one row, and ListResponse already sliced it. Users, Groups and
+  // every .search leave through forTheWire(), so this is the one place.
+  // ---------------------------------------------------------------------------
+  private emptyPagePastTheEnd(plain: any): void {
+    const { log } = this.deps;
+    log.debug("Entering Scim.emptyPagePastTheEnd().");
+    const start = Number(plain.startIndex);
+    const total = Number(plain.totalResults);
+    if (Number.isInteger(start) && Number.isInteger(total) &&
+        start > total) {
+      plain.Resources = [];
+      plain.itemsPerPage = 0;
+      log.debug("Leaving Scim.emptyPagePastTheEnd(). Past " + total + ".");
+      return;
+    }
+    log.debug("Leaving Scim.emptyPagePastTheEnd().");
+  }
+
+  // ---------------------------------------------------------------------------
   // EVERY USER AND GROUP LEAVES PRUNED (#206).
   //
   // The egress handlers pad every multi-valued and complex member for
@@ -1007,6 +1042,8 @@ class Scim {
       return type === 'User' || type === 'Group';
     };
     if (plain && Array.isArray(plain.Resources)) {
+      // Before the prune: a page past the end is discarded whole (#354).
+      this.emptyPagePastTheEnd(plain);
       plain.Resources = plain.Resources.map(function (one: any) {
         return isResource(one) ? scimMap.prune(one) : one;
       });
@@ -1395,6 +1432,8 @@ class Scim {
   // whatever comes back — so a handler that ignores `.filter` returns everybody
   // for every query, which looks like a working server right up until somebody
   // filters. The sort and the pagination ARE applied for us, by ListResponse.
+  // A startIndex past the end is the exception: that constructor returns
+  // the first rows, and forTheWire() empties the page (#354).
   //
   // **THE DEFECT.** `SCIMMY.Types.Filter#match()` in scimmy 1.3.5 handles a
   // nested attribute by diving into it — `new
