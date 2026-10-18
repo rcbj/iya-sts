@@ -15,7 +15,8 @@
 // key is RSA, that a curve exception excuses only the curves it names, that
 // a real handshake names the key and the curve, that any other key is
 // declined, and that the adapter retargets TLS 1.2 to the matching ECDHE
-// suite. It does not run tlsfuzzer.
+// suite. The map is tests/tlsfuzzer/sts_adapter_map.py, which this file
+// runs; the assertions stay here. It does not run tlsfuzzer.
 // ===========================================================================
 
 const childProcess = require('child_process');
@@ -233,40 +234,18 @@ async function presented(t, dir) {
   log.debug('Leaving presented().');
 }
 
+// The suite map is a program of its own, as the other jobs run Python
+// they own. It prints the map; the assertions stay in this file. The
+// adapter's checked-in bytecode is the #212 cache, so loading the source
+// must not rewrite it.
 function adapterSuites(t) {
   log.debug('Entering adapterSuites().');
-  const adapter = path.join(__dirname, 'tlsfuzzer', 'sts_adapter.py');
-  const program = [
-    'import importlib.util, json',
-    'spec = importlib.util.spec_from_file_location("sts_adapter", ' +
-      jsonPath(adapter) + ')',
-    'mod = importlib.util.module_from_spec(spec)',
-    'spec.loader.exec_module(mod)',
-    'class Suite(object):',
-    '    pass',
-    'for kex in ("RSA", "DHE_RSA", "ECDHE_RSA", "ECDHE_ECDSA"):',
-    '    for bulk in ("AES_128_CBC_SHA", "AES_128_CBC_SHA256",',
-    '                 "AES_256_CBC_SHA", "AES_256_CBC_SHA256",',
-    '                 "AES_256_CBC_SHA384", "AES_128_GCM_SHA256",',
-    '                 "AES_256_GCM_SHA384"):',
-    '        setattr(Suite, "TLS_%s_WITH_%s" % (kex, bulk),',
-    '                "TLS_%s_WITH_%s" % (kex, bulk))',
-    'Suite.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 = "ECDHE_ECDSA_128"',
-    'Suite.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 = "ECDHE_ECDSA_256"',
-    'Suite.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 = "ECDHE_RSA_128"',
-    'Suite.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 = "ECDHE_RSA_256"',
-    'ec = mod.aead_substitutes(Suite, "ec")',
-    'rsa = mod.aead_substitutes(Suite, "rsa")',
-    'print(json.dumps({',
-    '  "schemes": list(mod.ecdsa_schemes()),',
-    '  "ec_rsa_gcm": ec[Suite.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256],',
-    '  "ec_rsa_cbc": ec[Suite.TLS_RSA_WITH_AES_256_CBC_SHA],',
-    '  "rsa_ecdsa_gcm": rsa[Suite.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256],',
-    '  "rsa_rsa_gcm": rsa[Suite.TLS_RSA_WITH_AES_128_GCM_SHA256],',
-    '}))'
-  ].join('\n');
-  const ran = childProcess.spawnSync('python3', ['-c', program],
-    { encoding: 'utf8' });
+  const dir = path.join(__dirname, 'tlsfuzzer');
+  const env = Object.assign({}, process.env,
+    { PYTHONDONTWRITEBYTECODE: '1' });
+  const ran = childProcess.spawnSync('python3',
+    [path.join(dir, 'sts_adapter_map.py')],
+    { encoding: 'utf8', env: env });
   if (ran.status !== 0) {
     log.debug('Leaving adapterSuites(). python ' + ran.status);
     throw new Error('adapter map: ' + (ran.stderr || ran.stdout ||
@@ -286,18 +265,13 @@ function adapterSuites(t) {
           'ecdsa_secp521r1_sha512',
           'an ECDSA listener is offered the three NIST schemes');
   const refused = childProcess.spawnSync('python3',
-    [adapter, '--server-key', 'ed25519'], { encoding: 'utf8' });
+    [path.join(dir, 'sts_adapter.py'), '--server-key', 'ed25519'],
+    { encoding: 'utf8', env: env });
   t.equal(refused.status, 2, 'a key other than rsa or ec is refused');
   t.check((refused.stderr || '').indexOf('needs rsa or ec') >= 0,
           'the refusal names the keys the adapter accepts',
           refused.stderr);
   log.debug('Leaving adapterSuites().');
-}
-
-function jsonPath(file) {
-  log.debug('Entering jsonPath().');
-  log.debug('Leaving jsonPath().');
-  return JSON.stringify(file);
 }
 
 async function run(t) {
