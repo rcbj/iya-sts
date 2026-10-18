@@ -3498,6 +3498,30 @@ the handler), a SCIM create of a User or a Group, and `POST
     statements counted (B1 two against B2's control of four, B5 none), the
     same names raced by two node processes on one store (C) and by two
     workers on one node (D), a refused create, a failed flush, a dead worker.
+  * **A worker's release of a SUCCESSFUL create never reached the arbiter
+    until #665 (2026-10-17).** It is `{ createClaim, op: 'release',
+    committed: true }`, and `request_pool.js`'s message handler in `fork()`
+    tested `message.committed` — the read-your-write commit announcement —
+    BEFORE `message.createClaim`, so it went to `receiveCommitted()` and the
+    claim stayed held for its whole two minutes. Every create a worker made
+    (`/admin-api/users/create`, SCIM, the console's forms; an LDAP add is
+    claimed and released in the front, so it was spared) left its name
+    claimed, and the next create of it waited `CLAIM_WAIT_MS` and was
+    refused 409 `STS-LDAP-0092` where the directory should have said
+    "exists" — `sts_admin_api_operations`, `sts_console_after_root` and
+    `sts_portal_sessions` in the single-node mode, and no other mode (memory
+    claims nothing, active-active asks the store). A refused create's release
+    (`committed: false`) got through, which is why D5 passed. **The rule:
+    the `{ createClaim }` test is the FIRST in that handler** — a message
+    that names its kind goes to its owner whatever other field it carries —
+    and the wire format stayed. D could not see it: its front wired its
+    worker threads to the arbiter with a handler of its own and only READ
+    `request_pool.js`'s (D7). `tests/directory_create_worker_release.js`
+    drives the REAL handler: a front child forks a worker on that file
+    through the real `fork()`, the worker claims through the real
+    `DirectoryCreateClaims` and settles as a door does, and the front then
+    holds nothing and the name is free at once — STS-LDAP-0092 after the
+    wait before the fix.
 * **Claimed since 2026-09-14 too**: a SCIM Bulk create (in the ingress, which
   scimmy awaits — `scim/CLAUDE.md`) and the console's own forms, `POST
   /admin/users` and `/admin/users/new` and `POST /admin/groups` with

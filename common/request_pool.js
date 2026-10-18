@@ -2945,6 +2945,29 @@ function fork(pool, slot) {
 
   const settled = new Promise(function (resolve) {
     child.on('message', /** @param {any} message */ function (message) {
+      // ---------------------------------------------------------------------
+      // A DIRECTORY CREATE'S CLAIM, decided by this process for its own
+      // workers (#628): `ldap/directory_create_arbiter.ts`.
+      //
+      // **FIRST, BEFORE ANY OTHER FIELD IS LOOKED AT (#665, 2026-10-17).**
+      // This was below the `committed` test, and a worker's release of a
+      // claim whose create SUCCEEDED is `{ createClaim, op: 'release',
+      // committed: true }` — so it was taken for a commit announcement,
+      // handed to receiveCommitted(), and never reached the arbiter. Every
+      // create a worker made kept its name claimed for the claim's whole
+      // lifetime (two minutes), and the next create of that name waited five
+      // seconds and was refused 409 STS-LDAP-0092: a duplicate the
+      // directory should have called "exists" (400), or a console account a
+      // second job creates. Only a refused create's release (`committed:
+      // false`) got through. A message that names its kind goes to that
+      // kind's owner whatever else it carries. The test that drives this
+      // handler with the real arbiter and a worker thread is
+      // `tests/directory_create_worker_release.js`.
+      // ---------------------------------------------------------------------
+      if (message && message.createClaim) {
+        createArbiter().receive(entry, message);
+        return;
+      }
       if (message && message.ready) {
         entry.ready = true;
         quickExits[entry.pool] = 0;
@@ -2998,12 +3021,6 @@ function fork(pool, slot) {
       }
       if (message && message.operation) {
         receiveOperation(entry, message);
-        return;
-      }
-      // A DIRECTORY CREATE'S CLAIM, decided by this process for its own
-      // workers (#628): `ldap/directory_create_arbiter.ts`.
-      if (message && message.createClaim) {
-        createArbiter().receive(entry, message);
         return;
       }
       if (message && message.poolStatus) {
