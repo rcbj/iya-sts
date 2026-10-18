@@ -533,6 +533,10 @@ const JOBS = [
   // it, #593). `local: true`: this repository's own transmitter, in a
   // throwaway realm it leaves behind.
   { file: 'sts_ssf_conformance.js',      browser: false, local: true },
+  // CAEP INTEROPERABILITY PROFILE SCOPE NAMES (#334): ssf.manage is the
+  // write scope and includes read; ssf:write is not published, in a
+  // throwaway realm. `local: true`.
+  { file: 'sts_ssf_caep_scopes.js',      browser: false, local: true },
   // OPENID CONNECT CORE OVER THE WIRE (#118, 2026-09-22): the ID Token's
   // hashes by its alg, errors in the fragment, POST at the authorization
   // endpoint, openid/prompt/nonce rules, id_token_hint, section 5.4's claims,

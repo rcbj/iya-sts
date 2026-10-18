@@ -1294,12 +1294,16 @@ const SCHEMA = {
             'read it differently.\n\n**This service\'s own protected ' +
             'scopes** — admin:read and admin:write (/admin-api), the SCIM ' +
             'scopes (scim.scopeRead, scim.scopeWrite), the Shared Signals ' +
-            'scopes (ssf.authScopeRead, ssf.authScopeWrite) and the debugger ' +
+            'scopes (ssf.authScopeRead, ssf.authScopeWrite, and always ' +
+            'ssf:read, ssf.read and ssf.manage) and the debugger ' +
             'permission — are issued ONLY to a client that lists them, IN ' +
-            'BOTH MODES, and the resource server behind each asks again on ' +
-            'every call, so removing a value here cuts off tokens already ' +
-            'issued. An RFC 7591 registration may not declare them; an ' +
-            'administrator does, here.\n\n**Every other scope**, in ' +
+            'BOTH MODES. Listing any name of a Shared Signals permission ' +
+            'class authorizes the other names of that class; listing a ' +
+            'write name does not authorize a read name. The ' +
+            'resource server behind each asks again on every call, so ' +
+            'removing a value here cuts off tokens already issued. An RFC ' +
+            '7591 registration may not declare them; an administrator ' +
+            'does, here.\n\n**Every other scope**, in ' +
             'product mode, is issued only when listed here — or, when ' +
             'nothing is listed, when it is in the default set: openid, ' +
             'profile, email, address, phone, offline_access and this ' +

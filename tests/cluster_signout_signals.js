@@ -130,7 +130,7 @@ function childMain() {
                  presentedKey: null, replayKeys: ['proof-replay-key-1'],
                  record: { instanceId: 'gnap-instance-1', format: 'jwt',
                            rsIdentifiers: [],
-                           access: ['ssf:read', 'ssf:write'] } };
+                           access: ['ssf:read', 'ssf.manage'] } };
       }
     };
     require.cache[rsPath] = rsModule;
@@ -531,7 +531,7 @@ function childMain() {
     // asks the application a token was issued to on every call.
     require(ROOT + '/common/applications').createApplication({
       identifier: 'gnap-instance-1', protocols: ['gnap', 'ssf'],
-      fields: { oauthAllowedScope: ['ssf:read', 'ssf:write'] } });
+      fields: { oauthAllowedScope: ['ssf:read', 'ssf.manage'] } });
     store = null;
     claims.reset();
     const sync1 = ssfAuth.authenticate(gnapRequest(), 'read');

@@ -366,23 +366,46 @@ certificate chain, as `x5u` (the default), `x5c`, both, or neither.
 The metadata document lists the schemes it accepts in
 `authorization_schemes`:
 
-* **OAuth 2.0**: an access token from this service with `ssf:read` or
-  `ssf:write`. DPoP- and certificate-bound tokens are checked the same way as
-  at every other protected endpoint.
+* **OAuth 2.0**: an access token from this service with a read scope
+  (`ssf:read` or the CAEP Interoperability Profile name `ssf.read`) or the
+  write scope `ssf.manage`, which includes read. DPoP- and certificate-bound
+  tokens are checked the same way as at every other protected endpoint.
 * **HTTP Basic**: a directory person's name and password, so that a client
   that has no token flow yet can still reach every endpoint. Basic carries no
   scope, so a Basic caller gets both. `ssf.authBasic` turns the scheme off.
   In product mode a person who holds or must hold a second factor is refused
   their own password with the `401` a wrong one gets, and uses an
   [app password](authentication.md#the-password-only-doors-and-app-passwords) scoped to `ssf`.
-* **GNAP**: a key-bound GNAP access token whose access includes `ssf:read` or
-  `ssf:write`, so that a GNAP web application can own a stream itself. See
-  [GNAP](gnap.md).
+* **GNAP**: a key-bound GNAP access token whose access includes one of those
+  names, or an object of type `ssf` with the action the call needs, so that a
+  GNAP web application can own a stream itself. See [GNAP](gnap.md).
 
-`ssf:read` lets a caller read a stream, its status and the poll queue.
-`ssf:write` is needed to create, change or delete a stream, change subjects or
-status, or ask for verification. A read token that attempts a write gets a 403
-that names the scope it needs.
+`ssf:read` and `ssf.read` let a caller read a stream, its status and the poll
+queue. `ssf.manage` does too: the profile says manage includes every read
+permission, and it is the write scope. A configured write name other than
+`ssf.manage` is write and does not include read. A write scope is needed to
+create, change or delete a stream, change subjects or status, or ask for
+verification. Update, add and remove subject, and update status are writes;
+poll is a read. A read token that attempts a write gets a 403 that names
+the scope it needs.
+
+The token endpoint and GNAP issue any name of a permission class to a
+client that declares any name of that class in `oauthAllowedScope`, in the
+spelling the client asked for, in both modes. Declaring a write name does
+not authorize a read name as its own scope. A token is honoured only while
+the client still declares the class the token carries (`STS-SSF-0107`): a
+token that holds only `ssf.manage` keeps its read while a write name stays
+declared, and loses it when that declaration goes. Discovery's
+`scopes_supported` lists every published name. With the defaults that is
+`ssf:read`, `ssf.manage` and `ssf.read`. Renaming `ssf.authScopeRead` or
+`ssf.authScopeWrite` adds a name. It does not stop those three being
+accepted, and a name set as the write scope other than `ssf.manage` does
+not include read. `ssf:write` is not a Shared Signals scope unless the write
+setting is set back to it.
+
+The default access-token lifetime (`oauth2.accessTokenTtlS`, 3600 seconds)
+meets the profile's sixty-minute ceiling. These tokens have no separate cap,
+and the lifetime's own maximum stays thirty days.
 
 ### Limiting what an application's stream may carry
 
@@ -558,7 +581,7 @@ specifications, and are honoured in both modes.
 
 | | Development | Product |
 |---|---|---|
-| Credential at `/ssf/*` | required, but only a check at the door: any name and any password except `invalid` passes Basic. A token carries `ssf:read` or `ssf:write` only when its client declares them in `oauthAllowedScope` (in both modes), and is honoured only while it still does (`STS-SSF-0107`) | required, and a Basic password is checked against the person's hashed `userPassword` |
+| Credential at `/ssf/*` | required, but only a check at the door: any name and any password except `invalid` passes Basic. A token carries a read scope (`ssf:read` or `ssf.read`) or the write scope `ssf.manage` only when its client declares that permission class in `oauthAllowedScope` (in both modes), and is honoured only while it still does (`STS-SSF-0107`). `ssf.manage` includes read. A configured write name other than `ssf.manage` does not | required, and a Basic password is checked against the person's hashed `userPassword` |
 | Access tokens | verified | verified |
 | Subjects of automatic events | a person with no `mail` gets an invented `@example.com` address | a real value from the directory entry, or the issuer/subject pair. RISC's two identifier events are not sent when there is no real value |
 | Streams, queues, CAEP and RISC registers | in memory, lost on restart | persisted with other minted state (product mode on postgres) |
@@ -622,8 +645,8 @@ types from what a stream may ask for.
 | `ssf.pollMaxEvents` | `STS_SSF_POLL_MAX_EVENTS` | `20` | yes | The most SETs one poll returns, whatever the receiver asks for. |
 | `ssf.maxReceivedEvents` | `STS_SSF_MAX_RECEIVED_EVENTS` | `200` | yes | How many delivered SETs each of this service's own receivers (the console's and the portal's) keeps, per realm. |
 | `ssf.maxStreamLogEntries` | `STS_SSF_MAX_STREAM_LOG_ENTRIES` | `200` | yes | How many log lines each stream keeps. |
-| `ssf.authScopeRead` | `STS_SSF_AUTH_SCOPE_READ` | `ssf:read` | yes | The scope needed to read a stream, its status or the poll queue. |
-| `ssf.authScopeWrite` | `STS_SSF_AUTH_SCOPE_WRITE` | `ssf:write` | yes | The scope needed to change anything about a stream. |
+| `ssf.authScopeRead` | `STS_SSF_AUTH_SCOPE_READ` | `ssf:read` | yes | This service's own name for the scope that reads a stream, its status or the poll queue. `ssf:read` and the CAEP profile name `ssf.read` are always also accepted. A token carrying `ssf.manage` may read as well. A configured write name other than `ssf.manage` may not. |
+| `ssf.authScopeWrite` | `STS_SSF_AUTH_SCOPE_WRITE` | `ssf.manage` | yes | This service's own name for the scope that creates, updates or deletes a stream, changes subjects or status, or asks for verification. The default, and the name always accepted, is the CAEP profile name `ssf.manage`, which includes read. Renaming this does not move `ssf.manage`. A name set here other than `ssf.manage` is write and does not include read. |
 | `ssf.receiveRequireSignature` | `STS_SSF_RECEIVE_REQUIRE_SIGNATURE` | `false` | yes | Refuses a received SET whose signature fails, with 400 `invalid_key`, in development mode. Product mode always refuses one (#117). |
 | `ssf.actOnSignalsInDevelopment` | `STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT` | `false` | yes | The console and portal end their own sessions on a received signal in development too; product always does. |
 | `ssf.legacySubClaim` | `STS_SSF_LEGACY_SUB_CLAIM` | `false` | yes | Deliberate defect, development only: adds the deprecated `sub` claim beside `sub_id`. |

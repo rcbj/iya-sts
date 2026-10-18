@@ -330,6 +330,11 @@ class ProtocolStack {
     // the console and API, and the wallet and certificate sign-ins.
     this.build('common/identity_assurance', require('./identity_assurance'),
                'IdentityAssurance');
+    // #334: the Shared Signals scope names (the two settings, the historical
+    // colon names and the CAEP profile names). A library, built before the
+    // scope policy, which reads it while judging a request. It requires
+    // nothing in ssf/.
+    this.build('common/ssf_scopes', require('./ssf_scopes'), 'SsfScopes');
     // #110: which scopes a client may be issued. A library, asked at request
     // time by the authorization server, GNAP and the three resource servers
     // behind this service's own protected scopes.

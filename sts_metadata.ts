@@ -668,9 +668,10 @@ const SPECS: Spec[] = [
               'critical_subject_members, and section 3.5\'s jwt_id, ' +
               'saml_assertion_id and ip-addresses formats are implemented. ' +
               'Section 8 authorization is three schemes — an OAuth 2.0 ' +
-              'access token with ssf:read or ssf:write (issued only to a ' +
-              'client that declares them, and honoured only while it still ' +
-              'does), HTTP Basic and GNAP — ' +
+              'access token with a read scope (ssf:read or ssf.read) or the ' +
+              'write scope ssf.manage, which includes read, issued to a ' +
+              'client that declares that permission class and ' +
+              'honoured only while it still does, HTTP Basic and GNAP — ' +
               'published in authorization_schemes. Failed pushes are retried ' +
               'ssf.pushRetries times (0 by default, deliberately) and then ' +
               'dead-lettered, and streams are persisted in product mode. ' +
@@ -4047,8 +4048,10 @@ const ENDPOINTS: EndpointEntry[] = [
           'one (?stream_id=) or lists them all. PUT REPLACES and PATCH ' +
           'MERGES, and the difference is real: a PUT that behaved like a ' +
           'PATCH would let a receiver believe it had cleared ' +
-          'events_requested when it had not. DELETE removes it. Needs ' +
-          'ssf:write for everything but the GET.' },
+          'events_requested when it had not. DELETE removes it. Needs a ' +
+          'write scope ssf.manage for everything but the GET, which a ' +
+          'read scope satisfies as well, because ssf.manage includes ' +
+          'read.' },
   { path: '/ssf/status', group: 'Shared Signals', name: 'A stream\'s status',
     specs: ['ssf'],
     what: 'Read (GET) or set (POST) a stream\'s status: enabled, paused or ' +

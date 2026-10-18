@@ -1223,7 +1223,7 @@ const SCHEMA = {
     { name: 'fedSignalsScope', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'The scope asked for with client credentials. Empty asks for ' +
-            '`ssf:read ssf:write`.' },
+            '`ssf:read ssf.manage`.' },
     { name: 'fedSignalsBearer', kind: 'single', role: 'service-provider',
       sensitive: true, from: 'this register',
       what: 'A BEARER TOKEN THE PARTNER ISSUED, instead of client ' +
@@ -2693,7 +2693,7 @@ function signalsCredentialOf(record) {
     clientSecret: own ? openSignalsSecret(r.fedSignalsClientSecret)
       : (openSignalsSecret(r.fedSignalsClientSecret) ||
          clientSecretOf(r)),
-    scope: String(r.fedSignalsScope || '').trim() || 'ssf:read ssf:write'
+    scope: String(r.fedSignalsScope || '').trim() || 'ssf:read ssf.manage'
   };
 }
 

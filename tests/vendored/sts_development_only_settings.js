@@ -280,7 +280,7 @@ async function ssfToken(realm) {
   log.debug("Entering ssfToken().");
   const r = await call("POST", realmBase(realm) + "/oauth2/token",
     form({ grant_type: "client_credentials", client_id: SSF_APP,
-           client_secret: SECRET, scope: "ssf:read ssf:write" }),
+           client_secret: SECRET, scope: "ssf:read ssf.manage" }),
     { "Content-Type": "application/x-www-form-urlencoded" });
   assert.ok(r.json && r.json.access_token,
             "a token for " + SSF_APP + ": " + r.text.slice(0, 300));
@@ -464,7 +464,7 @@ async function theApplications() {
     identifier: SSF_APP, kind: "oauth2-client", name: SSF_APP,
     protocols: ["oauth2", "ssf"],
     fields: { oauthClientId: [SSF_APP],
-              oauthAllowedScope: ["ssf:read", "ssf:write"],
+              oauthAllowedScope: ["ssf:read", "ssf.manage"],
               oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post" } },
     "created the SSF receiver application");

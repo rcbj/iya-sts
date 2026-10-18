@@ -573,9 +573,12 @@ Why each piece is where it is:
   resource server that does not know them ignores them.
 
 **THE `ssf` ACCESS RIGHTS ARE THIS SERVICE'S OWN PROTECTED SCOPES (#110,
-2026-09-22).** `ssf:read`/`ssf:write` as reference strings, or an object of type
-`ssf` with those actions (no actions means both), are granted only to a client
-whose APPLICATION ENTRY declares them in `oauthAllowedScope` — the attribute the
+2026-09-22; the profile names, #334).** `ssf:read`, `ssf.read` and
+`ssf.manage` (and a name `ssf.authScopeRead` or `ssf.authScopeWrite` adds)
+as reference strings, or an object of type `ssf` with those actions
+(no actions means both permissions, so a write-only client is refused; a
+listed `write` does not ask for read), are granted only to a client
+whose APPLICATION ENTRY declares that permission class in `oauthAllowedScope` — the attribute the
 OAuth token endpoint reads, reused rather than twinned (`gnapAllowedAccess`
 already exists and is a narrowing an operator may add; this is not optional),
 so there is one declared vocabulary per application whatever protocol it asks
@@ -1287,8 +1290,9 @@ with it:
   already gets (`STS-GNAP-0903`) for the same reason. `request_denied` is a
   refusal by policy or by the resource owner, and neither was asked.
 * **THE ONE RESOURCE SERVER THAT NEEDS NO ENTRY IS THIS SERVICE'S SHARED
-  SIGNALS TRANSMITTER.** Its access is a reference string naming
-  `ssf.authScopeRead` / `ssf.authScopeWrite` or an object of type `ssf`, and
+  SIGNALS TRANSMITTER.** Its access is a reference string naming any
+  published Shared Signals scope (`ssf:read`, `ssf.read`, `ssf.manage`, or a
+  name a setting adds) or an object of type `ssf`, and
   it refuses a token issued for a named resource server (`STS-SSF-0079`) —
   so a right of that shape names a resource server, this service's own, and
   is not refused; its token keeps an empty audience, as it always had in

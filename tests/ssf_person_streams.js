@@ -231,12 +231,17 @@ function child() {
           dpop: { presentedAccessToken: function () {
             return { verified: true, scheme: 'bearer', claims: claims };
           } },
-          scopePolicy: { declares: function () { return true; } }
+          scopePolicy: {
+            declares: function () { return true; },
+            declaredScopes: function () {
+              return ['ssf:read', 'ssf.manage'];
+            }
+          }
         }));
       return auth.authenticate({ headers: { authorization: 'Bearer t' } },
                                'write');
     };
-    const scope = 'ssf:read ssf:write';
+    const scope = 'ssf:read ssf.manage';
     const person = decide({ typ: 'Bearer', sub: people.alice,
                             client_id: 'rp', scope: scope });
     note(person.ok && person.owner && person.owner.kind === 'person' &&

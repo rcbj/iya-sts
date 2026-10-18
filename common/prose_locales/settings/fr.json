@@ -6756,8 +6756,8 @@
     "text": "Proposer HTTP Basic"
   },
   "ssf.authBasic|description": {
-    "en": "5476ee40c62ce1bb",
-    "text": "Indique si les endpoints SSF acceptent HTTP Basic à côté des jetons d’accès OAuth 2.0, et le publient dans authorization_schemes. En développement, n’importe quel nom d’utilisateur avec n’importe quel mot de passe sauf « invalid » passe ; en mode produit, le mot de passe est vérifié par rapport au userPassword haché de la personne. Dans les deux cas, un principal Basic détient les deux portées, car Basic n’en porte aucune — un déploiement qui veut que ssf:read et ssf:write soient appliqués à chaque appelant désactive donc ce paramètre."
+    "en": "c71f34ca4ea9a564",
+    "text": "Indique si les endpoints SSF acceptent HTTP Basic à côté des jetons d’accès OAuth 2.0, et le publient dans authorization_schemes. En développement, n’importe quel nom d’utilisateur avec n’importe quel mot de passe sauf « invalid » passe ; en mode produit, le mot de passe est vérifié par rapport au userPassword haché de la personne. Dans les deux cas, un principal Basic détient les deux portées, car Basic n’en porte aucune — un déploiement qui veut que ssf:read et ssf.manage soient appliqués à chaque appelant désactive donc ce paramètre."
   },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
@@ -6856,16 +6856,16 @@
     "text": "Portée de lecture d’un flux"
   },
   "ssf.authScopeRead|description": {
-    "en": "b3c6248d5c2a3f09",
-    "text": "La portée OAuth qu’un jeton d’accès doit porter pour LIRE une configuration de flux, son statut ou la file d’interrogation. Publiée dans scopes_supported des deux documents de découverte, exactement comme les deux portées SCIM."
+    "en": "fd2022d37872b994",
+    "text": "Le nom propre de ce service pour la portée qui lit une configuration de flux, son statut ou la file d’interrogation. ssf:read et le nom du profil CAEP ssf.read sont toujours acceptés aussi, même si celui-ci est renommé. Tous sont publiés dans scopes_supported. Un jeton qui porte ssf.manage peut aussi lire. Un nom d’écriture configuré autre que ssf.manage ne le peut pas."
   },
   "ssf.authScopeWrite|label": {
     "en": "3cf63aebc7df37eb",
     "text": "Portée de modification d’un flux"
   },
   "ssf.authScopeWrite|description": {
-    "en": "ea33015fd3877e72",
-    "text": "La portée requise pour créer, mettre à jour ou supprimer un flux, ajouter ou retirer un sujet, modifier un statut ou demander un événement de vérification. Une portée de lecture ne suffit pour aucune de ces opérations ; c’est, après SCIM, le premier endroit de ce service où deux portées diffèrent dans ce qu’elles permettent."
+    "en": "ecb89997474c28f7",
+    "text": "Le nom propre de ce service pour la portée qui crée, met à jour ou supprime un flux, ajoute ou retire un sujet, modifie un statut ou demande un événement de vérification. La valeur par défaut, et le nom toujours accepté, est le nom du profil CAEP ssf.manage, qui inclut la lecture. Le renommer ne déplace pas ssf.manage. Un nom défini ici autre que ssf.manage est une portée d’écriture et n’inclut pas la lecture. Une portée de lecture ne suffit pour aucune de ces écritures."
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",

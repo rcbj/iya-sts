@@ -100,8 +100,8 @@
     "text": "full——就請求與回應而言：簡寫類別名稱、簡短資料類型名稱、從 JSON 類型推斷資料類型（包括整數／雙精度的區別，這是從原始文字讀取的，因為 JSON.parse 已經把它丟棄了）、以陣列表示 bag、義務、建議與 PolicyIdentifierList。此設定檔未定義原則語法，因此原則仍為 XML。"
   },
   "stsmetadata.specs.ssf.coverage": {
-    "en": "6c01d01ad36a35b6",
-    "text": "partial：傳送端這一半完整實作——位於 /.well-known/ssf-configuration 以及領域簽發者適用之第 7.2 節插入路徑形式的組態中繼資料、串流管理 API（建立、讀取、取代、合併、刪除）、具備全部三種狀態的狀態端點、新增與移除主體、驗證端點（回應 204 並以非同步方式傳遞，第 8.1.4.2 節）、兩種傳遞方式，以及 SSF 自己的兩種事件類型——verification（也會由傳送端主動傳送，ssf.verificationEveryS，或 /admin/ssf 上的 Verify），以及 stream updated（每次狀態變更時，在串流停止前與重新開始後傳送）。每個串流都屬於建立它的接收端（第 8 節）：其他接收端的串流回應 404，清單只列出呼叫端自己的串流，aud 為依接收端身分而定的 Transmitter-Supplied，ssf.maxStreams 以接收端為單位。已暫停的推送串流會保留其 SET，並在啟用時依序推送；失效的串流會被暫停並加以通告。inactivity_timeout（預設關閉）、每個 SET 上的 txn、帶有 \"format\": \"complex\" 及第 3.3 節七個成員外加其他成員的複合主體、critical_subject_members，以及第 3.5 節的 jwt_id、saml_assertion_id 與 ip-addresses 格式皆已實作。第 8 節的授權有三種方案——帶有 ssf:read 或 ssf:write 的 OAuth 2.0 存取權杖（只簽發給宣告這些範圍的用戶端，且只在其仍宣告時才予承認）、HTTP Basic 與 GNAP——公布於 authorization_schemes。推送失敗會重試 ssf.pushRetries 次（預設刻意為 0），之後送入無法投遞佇列，產品模式下串流會持久保存。「以及接收端這一半」（#153）：領域依簽發者註冊外部傳送端（第 7 節的文件必須指名該簽發者，以及其 jwks_uri），在那裡建立、讀取、更新與刪除自己的串流，設定其狀態，新增與移除主體並請求驗證，透過輪詢（RFC 8936，由排程器工作確認已接收的內容）或推送（RFC 8935，使用它所提供的授權標頭）接收，驗證每個 SET（以傳送端的金鑰驗證簽章、typ、iss、aud、jti 僅限一次），並透過訊號回應原則，對聯盟關係所連結的人採取行動。「未」涵蓋：對於此傳送端自己的串流所指名的主體不做任何驗證，因此串流可能指名從未來過這裡的人。"
+    "en": "0e195f2008e97ac0",
+    "text": "partial：傳送端這一半完整實作——位於 /.well-known/ssf-configuration 以及領域簽發者適用之第 7.2 節插入路徑形式的組態中繼資料、串流管理 API（建立、讀取、取代、合併、刪除）、具備全部三種狀態的狀態端點、新增與移除主體、驗證端點（回應 204 並以非同步方式傳遞，第 8.1.4.2 節）、兩種傳遞方式，以及 SSF 自己的兩種事件類型——verification（也會由傳送端主動傳送，ssf.verificationEveryS，或 /admin/ssf 上的 Verify），以及 stream updated（每次狀態變更時，在串流停止前與重新開始後傳送）。每個串流都屬於建立它的接收端（第 8 節）：其他接收端的串流回應 404，清單只列出呼叫端自己的串流，aud 為依接收端身分而定的 Transmitter-Supplied，ssf.maxStreams 以接收端為單位。已暫停的推送串流會保留其 SET，並在啟用時依序推送；失效的串流會被暫停並加以通告。inactivity_timeout（預設關閉）、每個 SET 上的 txn、帶有 \"format\": \"complex\" 及第 3.3 節七個成員外加其他成員的複合主體、critical_subject_members，以及第 3.5 節的 jwt_id、saml_assertion_id 與 ip-addresses 格式皆已實作。第 8 節的授權有三種方案——帶有讀取範圍（ssf:read 或 ssf.read）或寫入範圍 ssf.manage（包含讀取）的 OAuth 2.0 存取權杖（只簽發給宣告該權限類別的用戶端，且只在其仍宣告時才予承認）、HTTP Basic 與 GNAP——公布於 authorization_schemes。推送失敗會重試 ssf.pushRetries 次（預設刻意為 0），之後送入無法投遞佇列，產品模式下串流會持久保存。「以及接收端這一半」（#153）：領域依簽發者註冊外部傳送端（第 7 節的文件必須指名該簽發者，以及其 jwks_uri），在那裡建立、讀取、更新與刪除自己的串流，設定其狀態，新增與移除主體並請求驗證，透過輪詢（RFC 8936，由排程器工作確認已接收的內容）或推送（RFC 8935，使用它所提供的授權標頭）接收，驗證每個 SET（以傳送端的金鑰驗證簽章、typ、iss、aud、jti 僅限一次），並透過訊號回應原則，對聯盟關係所連結的人採取行動。「未」涵蓋：對於此傳送端自己的串流所指名的主體不做任何驗證，因此串流可能指名從未來過這裡的人。"
   },
   "stsmetadata.specs.rfc8417.coverage": {
     "en": "8641e83cb922bdcc",
@@ -928,8 +928,8 @@
     "text": "NON-SPEC (#584)。六個協定族說明頁面的執行環境和轉譯器，合為一個檔案，由 build-typescript.sh 建置（common/description-pages-spa.js），並以預先壓縮的形式在每個協定族自己的路徑上提供：在這裡，它根據外殼攜帶的檢視繪製 GET /ssf。"
   },
   "stsmetadata.endpoints./ssf/stream.what": {
-    "en": "2d90440012723310",
-    "text": "一個路徑與五個方法，這是規格本身的形狀：設定端點「就是」資源。POST 建立串流——本服務產生 stream_id 並設定 iss，並以 events_delivered 回應，即接收者所要求的與此傳輸器所支援的「交集」，這是最常與 events_requested 混淆的成員。GET 讀取一個（?stream_id=）或列出全部。PUT 為「取代」而 PATCH 為「合併」，兩者的差異是真實的：行為像 PATCH 的 PUT 會讓接收者以為自己已清除 events_requested，實際上卻沒有。DELETE 將其移除。除 GET 外皆需要 ssf:write。"
+    "en": "3298bd80c2734a34",
+    "text": "一個路徑與五個方法，這是規格本身的形狀：設定端點「就是」資源。POST 建立串流——本服務產生 stream_id 並設定 iss，並以 events_delivered 回應，即接收者所要求的與此傳輸器所支援的「交集」，這是最常與 events_requested 混淆的成員。GET 讀取一個（?stream_id=）或列出全部。PUT 為「取代」而 PATCH 為「合併」，兩者的差異是真實的：行為像 PATCH 的 PUT 會讓接收者以為自己已清除 events_requested，實際上卻沒有。DELETE 將其移除。除 GET 外皆需要寫入範圍 ssf.manage；讀取範圍也能滿足 GET，因為 ssf.manage 包含讀取。"
   },
   "stsmetadata.endpoints./ssf/status.what": {
     "en": "5bd5bdca5496410b",

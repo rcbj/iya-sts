@@ -907,10 +907,14 @@ API is gated unconditionally — `mode.gatesSharedSignals()`, where this was
 development: any username with any password but `invalid` passes it (in product
 mode the Basic password is verified — see *Three schemes* below). **A token's
 scope is tied to its client in both modes since #110 (2026-09-22)**: the token
-endpoint and GNAP issue `ssf:read`/`ssf:write` only to a client whose
-`oauthAllowedScope` declares them, and `undeclaredRefusal()` asks every OAuth
-and GNAP token whether its client still does (`STS-SSF-0107`), so withdrawing
-the declaration cuts off tokens already issued (`common/scope_policy.ts`).
+endpoint and GNAP issue a read name to a client whose `oauthAllowedScope`
+declares any read-class name, and a write name to one that declares any
+write-class name — the configured names, `ssf:read` and `ssf.manage`, and
+the CAEP profile name `ssf.read` (#334). Declaring a write name
+does not authorize a read name. `undeclaredRefusal()` asks every OAuth
+and GNAP token whether its client still declares the class the token carries
+(`STS-SSF-0107`), so withdrawing the declaration cuts off tokens already
+issued (`common/scope_policy.ts`).
 "A receiver created the stream" is therefore not evidence of much.
 
 ---
@@ -1313,10 +1317,29 @@ the wild. SSF names none — `authorization_schemes` is an open list of
 offers that one and HTTP Basic beside it, which exists so that a client under
 test that has not implemented a token flow yet can still reach every endpoint.
 
-**`ssf:read` and `ssf:write` differ in what they permit**, which is the second
+**`ssf:read` and `ssf.manage` differ in what they permit**, which is the second
 place in this service after SCIM where two scopes do. A read token is refused
 for every write with a 403 NAMING THE SCOPE, because a refusal a caller cannot
 act on is worse than none.
+
+**THE WRITE SCOPE IS THE CAEP PROFILE NAME (#334).** CAEP Interoperability
+Profile 1.0 section 2.7.3 names `ssf.read` and `ssf.manage`. `ssf.manage` is
+the default of `ssf.authScopeWrite` and the only write name that includes
+read. `ssf:read` and `ssf.read` read, in both modes, even when an operator
+renames a setting. `ssf:write` is not a fixed name: setting the write setting
+back to it, or to any other name, makes that name write and it does not
+include read. A configured name is an extra name of the class
+`common/ssf_scopes.ts` gives it. Issuance is per class: declaring any read
+name authorizes any read name, in the spelling asked for, and the same for
+write. Declaring write does not authorize `ssf.read` as its own scope, and
+with the defaults declaring `ssf:write` authorizes neither. The re-check
+(`STS-SSF-0107`) looks at the token: a manage-only token keeps its read while
+a write name stays declared, and loses it when that declaration goes.
+Discovery's `scopes_supported` lists every published name. The default
+access-token lifetime (`oauth2.accessTokenTtlS`, 3600 seconds) meets the
+profile's sixty-minute ceiling; these tokens have no separate cap. Operations
+the profile does not name stay where they were: update, subjects and status
+are write; poll is read.
 
 Basic grants BOTH, and says so: a scheme with no scope in it cannot express the
 difference, and returning a read-only decision would be a refusal with nothing
@@ -1331,7 +1354,10 @@ SCIM's identical grant; `ssf.authBasic` turns the scheme off (and out of
 for every caller.
 
 **A THIRD SCHEME SINCE 2026-09-12: GNAP.** `ssf_auth.ts`'s `attemptGnap()` accepts
-a key-bound GNAP access token whose access names `ssf:read` / `ssf:write`, so a
+a key-bound GNAP access token whose access names a read scope (`ssf:read`
+or `ssf.read`) or the write scope `ssf.manage` (which includes read), or an
+object of type `ssf` with
+that action, so a
 GNAP web application owns a stream as ITSELF — which is what
 `gnap/gnap_signals.ts`'s subject scope needs. It takes only the `GNAP` scheme;
 `Bearer` on these endpoints stays OAuth 2.0.

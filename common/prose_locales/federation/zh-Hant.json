@@ -324,8 +324,8 @@
     "text": "「fedSignalsClientId 的秘密」，只要金鑰持久保存就以金鑰加密金鑰「密封」，且從不顯示。空白則使用 fedClientSecret，以相同方式密封。"
   },
   "fed.schema.attributes.fedSignalsScope.what": {
-    "en": "a496c6a310b8c156",
-    "text": "以用戶端認證要求的範圍。空白則要求 `ssf:read ssf:write`。"
+    "en": "407bda87274a5574",
+    "text": "以用戶端認證要求的範圍。空白則要求 `ssf:read ssf.manage`。"
   },
   "fed.schema.attributes.fedSignalsBearer.what": {
     "en": "75ae4009add7e2d2",

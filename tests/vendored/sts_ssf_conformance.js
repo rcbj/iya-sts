@@ -130,7 +130,7 @@ function application(identifier, fields) {
            // declares them (#110).
            fields: Object.assign({ oauthClientId: [identifier],
                                    oauthAllowedScope: ["ssf:read",
-                                                       "ssf:write"],
+                                                       "ssf.manage"],
                                    oauthClientSecret: SECRET,
                                    oauthTokenEndpointAuthMethod:
                                      "client_secret_post" }, fields || {}) };
@@ -143,7 +143,7 @@ async function tokenFor(identifier) {
     body: "grant_type=client_credentials&client_id=" +
           encodeURIComponent(identifier) +
           "&client_secret=" + encodeURIComponent(SECRET) + "&scope=" +
-          encodeURIComponent("ssf:read ssf:write") });
+          encodeURIComponent("ssf:read ssf.manage") });
   const json = await r.json();
   assert.ok(json.access_token,
             "a token for " + identifier + ": " + JSON.stringify(json));

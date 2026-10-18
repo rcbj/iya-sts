@@ -89,6 +89,10 @@ import audit = require('../common/audit');
 import applications = require('../common/applications');
 import gate = require('../common/issuance_gate');
 import scopePolicy = require('../common/scope_policy');
+// The operator's Shared Signals names (#334). `declares()` is alias-aware,
+// so a string right is judged by permission class once `isProtected` says
+// the name is one of ours.
+import ssfScopes = require('../common/ssf_scopes');
 import InstanceSlot = require('../common/instance_slot');
 import catalogue = require('../oauth-oidc/authorization_details');
 // RFC 9470's ordered acr levels (#432 phase 6): whether a session meets a
@@ -261,19 +265,21 @@ class GnapRights {
   }
 
   // -------------------------------------------------------------------------
-  // THIS SERVICE'S PROTECTED SCOPES IN A RIGHT (#110): `ssf:read`/`ssf:write`
-  // as reference strings, or an object of type `ssf` with those actions (no
-  // actions means both) — the Shared Signals scopes by another spelling — and
-  // whether the client's entry declares every one it asks for. The facts the
-  // `gnap-protected-undeclared` rule reads; the scope policy's own test of
-  // what is protected and what is declared.
+  // THIS SERVICE'S PROTECTED SCOPES IN A RIGHT (#110, #334): a published
+  // Shared Signals name (`ssf:read`, `ssf.read`, `ssf.manage`,
+  // or a name a setting adds) as a reference string, or an object of type
+  // `ssf` with those actions (no actions means both — a write-only client
+  // is refused, because unrestricted means both permissions; a listed
+  // `write` action does not ask for read). `declares()` treats either
+  // spelling of a class as that class. The facts the
+  // `gnap-protected-undeclared` rule reads.
   // -------------------------------------------------------------------------
   private protectedFacts(app: Json, right: Json): Json {
-    const { log, config, scopePolicy } = this.deps;
+    const { log, scopePolicy } = this.deps;
     log.debug("Entering GnapRights.protectedFacts().");
     const identifier = String((app && app.identifier) || '');
-    const read = String(config.value('ssf.authScopeRead') || 'ssf:read');
-    const write = String(config.value('ssf.authScopeWrite') || 'ssf:write');
+    const read = ssfScopes.configuredRead();
+    const write = ssfScopes.configuredWrite();
     const name = typeof right === 'string' ? right :
       String((right && right.type) || '');
     const wanted: string[] = [];

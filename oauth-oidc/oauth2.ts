@@ -372,6 +372,9 @@ import scopeVerdicts = require('../xacml/xacml_scope_verdicts');
 // requiring only libraries this module already requires. See
 // `common/scope_policy.ts` and scopeRefusal() below.
 import scopePolicy = require('../common/scope_policy');
+// The Shared Signals scope names discovery advertises (#334): the two
+// settings and the fixed aliases. A library; called from asMetadata().
+import ssfScopes = require('../common/ssf_scopes');
 // WHO MAY ACT FOR WHOM AT THE TOKEN EXCHANGE (#108, 2026-09-23), and the
 // `may_act` claim an access token about a person carries. A library (rule 3)
 // requiring only libraries this module already requires. See
@@ -2027,15 +2030,14 @@ class OAuth2Server {
           ? [String(config.value('scim.scopeRead') || 'scim:read'),
              String(config.value('scim.scopeWrite') || 'scim:write')]
           : []).concat(
-        // The two SSF scopes, on the same terms and for the same reason: a
-        // receiver needs a token before it can create a stream, and a scope
-        // this document does not advertise is one a client has to be told
-        // about out of band. They go only where the family is on, so the
-        // promise and what is behind it stay together.
-        config.value('ssf.enabled') !== false
-          ? [String(config.value('ssf.authScopeRead') || 'ssf:read'),
-             String(config.value('ssf.authScopeWrite') || 'ssf:write')]
-          : []),
+        // The Shared Signals scopes, on the same terms and for the same
+        // reason: a receiver needs a token before it can create a stream,
+        // and a scope this document does not advertise is one a client has
+        // to be told about out of band. Both spellings (#334): the
+        // settings' names, the historical colon names and the CAEP profile
+        // names (`ssf.read`, `ssf.manage`). They go only where the family
+        // is on, so the promise and what is behind it stay together.
+        config.value('ssf.enabled') !== false ? ssfScopes.published() : []),
       // All three, and form_post is the one that was advertised here and NOT
       // implemented for a long time — every request got a 302 whatever it asked
       // for, so a client that requested form_post sat waiting for a POST that

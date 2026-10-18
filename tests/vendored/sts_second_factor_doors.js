@@ -533,14 +533,14 @@ async function test() {
     kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "ssf"],
     fields: { oauthClientId: [RECEIVER], oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post",
-              oauthAllowedScope: ["ssf:read", "ssf:write"],
+              oauthAllowedScope: ["ssf:read", "ssf.manage"],
               oauthGrantType: ["client_credentials"] } },
     "created the stream's receiver");
   await ok(realmApi + "/applications/create", { identifier: APPLIES_TO,
     name: "sfd101 relying party", protocols: ["wstrust"],
     fields: { wstrustAppliesTo: [APPLIES_TO] } },
     "registered the WS-Trust relying party");
-  const token = await tokenFor("ssf:read ssf:write");
+  const token = await tokenFor("ssf:read ssf.manage");
   const created = await send(realmBase + "/ssf/stream", { method: "POST",
     headers: { "Content-Type": "application/json",
                Authorization: "Bearer " + token },

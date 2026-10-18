@@ -583,8 +583,11 @@ records what the client has asked for.
 
 * **This service's own protected scopes** — `admin:read`, `admin:write`, the
   SCIM scopes (`scim.scopeRead`, `scim.scopeWrite`), the Shared Signals scopes
-  (`ssf.authScopeRead`, `ssf.authScopeWrite`) and the embedded debugger's
-  permission — are issued only to a client that lists them, **in both modes**.
+  (`ssf.authScopeRead`, `ssf.authScopeWrite`, and always `ssf:read`,
+  `ssf.read` and `ssf.manage`; any name of a permission class authorizes the
+  other names of that class, and `ssf.manage` includes read) and the
+  embedded debugger's permission — are issued only to a client that lists
+  them, **in both modes**.
   `/admin-api`, SCIM and Shared Signals ask again on every call, so withdrawing
   a declaration cuts off tokens already issued. A registration cannot declare
   one (`invalid_client_metadata`); an administrator does. The seeded

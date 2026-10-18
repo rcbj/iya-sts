@@ -297,7 +297,7 @@ async function receiverToken() {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form({ grant_type: "client_credentials", client_id: RECEIVER,
                  client_secret: RECEIVER_SECRET,
-                 scope: "ssf:read ssf:write" }) });
+                 scope: "ssf:read ssf.manage" }) });
   const json = await r.json();
   assert.ok(json && json.access_token,
             "a receiver token: " + JSON.stringify(json).slice(0, 300));
@@ -312,7 +312,7 @@ async function openTheStream() {
     protocols: ["oauth2", "ssf"],
     fields: { oauthClientId: [RECEIVER], oauthClientSecret: RECEIVER_SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post",
-              oauthAllowedScope: ["ssf:read", "ssf:write"],
+              oauthAllowedScope: ["ssf:read", "ssf.manage"],
               oauthGrantType: ["client_credentials"] } },
     "created the RISC receiver's application");
   const r = await fetch(realmBase() + "/ssf/stream", { method: "POST",

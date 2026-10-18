@@ -271,8 +271,9 @@ mode.
 The rights in a token request must name at least one: a reference a resource
 server registered, a location at or under a resource server's
 `gnapResourceServerUri`, or a type a resource server declares — or this
-service's own Shared Signals transmitter, by `ssf:read`, `ssf:write` or a
-right of type `ssf`. A request whose rights name none is refused
+service's own Shared Signals transmitter, by `ssf:read`, `ssf.read`,
+`ssf.manage` or a right of type `ssf`. A request whose rights
+name none is refused
 `invalid_request` (400, `STS-GNAP-0904`) before anybody is asked to approve.
 There is no default audience: until #593 such a token was audienced to a
 demonstration resource server at `/gnap/rs/resource`, which has been
@@ -736,11 +737,15 @@ with a sentence saying what was wrong.
   session is `gnap-token:<jti>`.
 * A **grant modified** sends `token-claims-change` carrying the new `access`.
 * A GNAP web application can **own a stream**: it presents its GNAP access token
-  to `/ssf/stream` with the `GNAP` scheme and a proof, with `ssf:read` or
-  `ssf:write` in the token's access. Those rights are this service's own
-  protected scopes: a grant asking for them is refused `request_denied`
-  (`STS-GNAP-0719`) unless the application's `oauthAllowedScope` declares them,
-  and the transmitter asks again on every call. The transmitter metadata lists
+  to `/ssf/stream` with the `GNAP` scheme and a proof, with a read scope
+  (`ssf:read` or `ssf.read`) or the write scope `ssf.manage` (which includes
+  read; a configured write name other than `ssf.manage` does not) in the
+  token's access,
+  or an object of type `ssf` with that action. Those rights are this
+  service's own protected scopes: a grant asking for them is refused
+  `request_denied` (`STS-GNAP-0719`) unless the application's
+  `oauthAllowedScope` declares that permission class, and the transmitter
+  asks again on every call. The transmitter metadata lists
   `urn:ietf:rfc:9635` for it.
 * A stream a GNAP web application owns is **scoped**: it hears only about
   people who approved a grant to that application.
@@ -754,8 +759,9 @@ with a sentence saying what was wrong.
   `signal-response` policy, and `ssf.signalsRevokeGrants` (on by default)
   turns it off. See [signals received](signals-received.md).
 * A **registered resource server** can own a stream the same way: its
-  application entry is a `gnap-resource-server`, and it asks for `ssf:read` /
-  `ssf:write` as a client with its own key. Its stream hears **only**
+  application entry is a `gnap-resource-server`, and it asks for a read or
+  write scope (`ssf:read`, `ssf.read` or `ssf.manage`) as a
+  client with its own key. Its stream hears **only**
   `session-revoked` for `gnap-token:<jti>` and `gnap-grant:<id>`, and only for
   tokens audienced to it. A token is audienced to it if its access resolved to
   that server, or its `aud` names the server's identifier or one of its

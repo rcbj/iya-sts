@@ -200,7 +200,7 @@ async function test() {
     kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "ssf"],
     fields: { oauthClientId: [RECEIVER], oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post",
-              oauthAllowedScope: ["ssf:read", "ssf:write"],
+              oauthAllowedScope: ["ssf:read", "ssf.manage"],
               oauthGrantType: ["client_credentials"] } },
     "created the receiver's application");
   for (const who of [TARGET, OTHER]) {
@@ -215,7 +215,7 @@ async function test() {
   }
 
   log.info("=== a. a stream that adds the application as its subject ===");
-  const token = await tokenFor("ssf:read ssf:write");
+  const token = await tokenFor("ssf:read ssf.manage");
   const auth = { Authorization: "Bearer " + token };
   const created = await postJson(realmBase + "/ssf/stream", {
     delivery: { method: POLL },

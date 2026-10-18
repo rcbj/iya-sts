@@ -653,7 +653,7 @@ get one easily; product checks it.
 | the SPIRE Server API | an X509-SVID over mutual TLS, authorized against SPIRE's per-method table |
 | `/admin` | a session and one of two roles held through directory groups |
 | `/admin-api` | an OAuth 2.0 access token audienced to it, with `admin:read` or `admin:write` |
-| the Shared Signals endpoints | an access token with `ssf:read` or `ssf:write` |
+| the Shared Signals endpoints | an access token with a read scope (`ssf:read` or `ssf.read`) or the write scope `ssf.manage`, which includes read |
 | `/xacml/*` and `POST /xacml/pip` | a verified client certificate whose entry holds `XACML_USER` or `REMOTE_PEPS` |
 | `/federation/acs/{id}` | a signature verifying against the relationship's certificate |
 | `/authn/spnego` | a Kerberos ticket verified against a real key |
@@ -818,7 +818,10 @@ console and through `/admin-api/applications/add` and `remove`.
 
 * **This service's own protected scopes**, in both modes: `admin:read` and
   `admin:write`, the SCIM scopes (`scim.scopeRead`, `scim.scopeWrite`), the
-  Shared Signals scopes (`ssf.authScopeRead`, `ssf.authScopeWrite`) and the
+  Shared Signals scopes (`ssf.authScopeRead`, `ssf.authScopeWrite`, and always
+  `ssf:read`, `ssf.read` and `ssf.manage`; listing any name of a permission
+  class authorizes the other names of that class, and listing a write name
+  does not authorize a read name; `ssf.manage` includes read) and the
   embedded debugger's permission. A client that does not list one is refused
   `invalid_scope` (`STS-OAUTH-0577`). `/admin-api`, SCIM and Shared Signals ask
   again on every call, so withdrawing a declaration cuts off tokens already

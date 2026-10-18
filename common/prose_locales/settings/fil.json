@@ -6756,8 +6756,8 @@
     "text": "Mag-alok ng HTTP Basic"
   },
   "ssf.authBasic|description": {
-    "en": "5476ee40c62ce1bb",
-    "text": "Kung tumatanggap ang mga SSF endpoint ng HTTP Basic katabi ng mga OAuth 2.0 access token, at inilalathala ito sa authorization_schemes. Sa development, pumapasa ang anumang username na may anumang password maliban sa \"invalid\"; sa product mode, vine-verify ang password laban sa naka-hash na userPassword ng tao. Alinman dito, hawak ng Basic principal ang parehong scope, dahil walang dalang scope ang Basic — kaya ang deployment na gustong ipatupad ang ssf:read at ssf:write para sa bawat caller ay ino-off ito."
+    "en": "c71f34ca4ea9a564",
+    "text": "Kung tumatanggap ang mga SSF endpoint ng HTTP Basic katabi ng mga OAuth 2.0 access token, at inilalathala ito sa authorization_schemes. Sa development, pumapasa ang anumang username na may anumang password maliban sa \"invalid\"; sa product mode, vine-verify ang password laban sa naka-hash na userPassword ng tao. Alinman dito, hawak ng Basic principal ang parehong scope, dahil walang dalang scope ang Basic — kaya ang deployment na gustong ipatupad ang ssf:read at ssf.manage para sa bawat caller ay ino-off ito."
   },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
@@ -6856,16 +6856,16 @@
     "text": "Scope para basahin ang stream"
   },
   "ssf.authScopeRead|description": {
-    "en": "b3c6248d5c2a3f09",
-    "text": "Ang OAuth scope na dapat dala ng access token para BASAHIN ang stream configuration, ang status nito o ang poll queue. Inilalathala sa scopes_supported sa parehong discovery document, gaya mismo ng dalawang SCIM scope."
+    "en": "fd2022d37872b994",
+    "text": "Ang sariling pangalan ng serbisyong ito para sa scope na nagbabasa ng stream configuration, ng status nito o ng poll queue. Palaging tinatanggap din ang ssf:read at ang pangalan ng CAEP profile na ssf.read, kahit ito ay palitan ng pangalan. Lahat ng mga ito ay inilalathala sa scopes_supported. Ang token na may ssf.manage ay maaari ring magbasa. Ang configured write name maliban sa ssf.manage ay hindi."
   },
   "ssf.authScopeWrite|label": {
     "en": "3cf63aebc7df37eb",
     "text": "Scope para baguhin ang stream"
   },
   "ssf.authScopeWrite|description": {
-    "en": "ea33015fd3877e72",
-    "text": "Ang scope na kailangan para gumawa, mag-update o mag-delete ng stream, magdagdag o mag-alis ng subject, magbago ng status o humingi ng verification event. Hindi sapat ang read scope para sa alinman sa mga iyon, na siyang unang lugar sa serbisyong ito bukod sa SCIM kung saan nagkakaiba ang dalawang scope sa pinapayagan nila."
+    "en": "ecb89997474c28f7",
+    "text": "Ang sariling pangalan ng serbisyong ito para sa scope na gumagawa, nag-a-update o nagbubura ng stream, nagdadagdag o nag-aalis ng subject, nagbabago ng status o humihingi ng verification event. Ang default, at ang pangalang palaging tinatanggap, ay ang pangalan ng CAEP profile na ssf.manage, na kasama ang pagbasa. Ang pagpapalit ng pangalan nito ay hindi naglilipat ng ssf.manage. Ang pangalang itinakda rito maliban sa ssf.manage ay write at hindi kasama ang pagbasa. Hindi sapat ang read scope para sa alinman sa mga pagsulat na iyon."
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",
