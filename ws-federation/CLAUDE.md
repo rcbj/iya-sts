@@ -231,6 +231,48 @@ whose `wtrealm` is not a registered relying party is **a 404 page,
 (`samlIssuerFor()`, which asks this route for every tier) hold it;
 `sts_metadata_anonymous.js` section 5 holds the 404.
 
+## Who may start a sign-in, and the identity-provider-initiated link (#712)
+
+rcbj's plan on #426: IdP-initiated sign-in is off until an application opts
+in, for every protocol, and runs what an SP-initiated one runs. Here that is
+two switches from #710 — `wsfed.spInitiatedSso` (on) and
+`wsfed.idpInitiatedSso` (off), each overridden per relying party through
+`applications.settingFor()` — and one route, `initiate()`:
+
+* **`GET /wsfed/initiate/{rp}`, and `GET /wsfed/initiate?wtrealm=`.** The
+  specification has no such request, so the link is ours; the query form
+  exists because a `wtrealm` is usually a URL and an encoded `%2F` in a path
+  segment is what proxies refuse. The segment is resolved by
+  `relyingPartyOfSegment()`, the metadata route's resolver, so a slug works
+  and an unregistered entry is a 404 in BOTH modes (`STS-WSFED-0024`):
+  development's leniency at `/wsfed` rests on the relying party having named
+  its own `wreply`, and nobody names one here.
+* **`wreply` is REFUSED (`STS-WSFED-0026`), not ignored.** The link is
+  followed by whoever was handed it; an address on it would be an open
+  redirect carrying a signed token. The response goes to
+  `registeredReplyOf()` — the first `wsfedReplyUrl` that is registered AND
+  not marked observed, in every mode, where `returnAddressesOf()` alone
+  believes observed ones in development. None is `STS-WSFED-0027`.
+* **ONE ISSUING PATH.** After the session check it calls
+  `notePresented()` and `issueSignInResponse()` — the gate, the mechanism
+  re-prompt, `seen()`, `session.wsfedRealms` and `noteSessionChanged()` —
+  with an `entry` argument saying where a sign-in trip returns (`/wsfed` or
+  the link) and whether a risk denial is a step-up. Nothing was copied.
+* **A risk denial is a step-up at the link only**, oauth2.ts's road
+  (`STS-RISK-0017`), with its own one-trip marker `sts_risk_retry`
+  (`RISK_MARKER`) beside `MECHANISM_MARKER`; still denied on the marked
+  return is `STS-WSFED-0029`. **`/wsfed` was left alone on purpose**: a
+  `wsignin1.0` denied on risk is still refused 403 `STS-WSFED-0011` with no
+  step-up. Giving it one is a one-line change (`riskStepUp: true` in
+  `signIn()`'s call) and a decision #712 did not ask for.
+* **`wsignin1.0` checks `wsfed.spInitiatedSso`** right after the
+  registration check (`STS-WSFED-0028`). The request is unsigned, so the
+  switch closes a door; it proves nothing about who knocked, and the
+  documentation says so.
+
+`/launch/{app}` (#713) is expected to send a WS-Federation launch to this
+link rather than to a second implementation.
+
 ## What no test covers yet
 
 `tests/saml_family_hardcoded.js` pins the 2026-09-12 changes above, and
@@ -245,7 +287,16 @@ authenticator built in the test) meeting the demand passwordless AND as a
 second factor, a forged marker refused
 `STS-WSFED-0010`, and an unknown method still `STS-WSFED-0006`. Its mutant —
 the marker ignored, so every unmet demand is refused as before — turned eight
-of its assertions red. Nothing else here is
+of its assertions red.
+`tests/wsfed_initiation.js` (#712) holds who may start a sign-in: the link
+off by default, by an entry's override and by the realm setting; the 404 for
+an unregistered relying party; a `wreply` refused; no registered reply
+address refused; the response posted to the registered address with `wctx`
+byte for byte; the realm on the session's cleanup list; the `?wtrealm=` form;
+a `wsignin1.0` refused under `wsfedSpInitiatedSso` FALSE; and the risk
+step-up sent once and refused on a marked return — with the risk put on the
+session object directly rather than scored. It does not complete a stepped-up
+sign-in (the test person holds no second factor). Nothing else here is
 tested but by `tests/vendored/sts_saml11.js`, which posts a sign-in response to
 the test peer's relying party (the mock relying party that made the rest look
 covered was deleted, #592). What a test would add is the other negatives:
