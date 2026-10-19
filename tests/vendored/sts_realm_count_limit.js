@@ -6,15 +6,28 @@
 //
 // realms.maxCount (#368) caps create. The default is 10, counting the
 // built-in default realm, and a service administrator changes it only while
-// the default realm is ambient. This job sets the cap to the live count, so
-// the next create is refused whatever the stack already holds, then raises it
-// by one and creates one realm. Lowering the cap does not remove realms. A
-// POST of the cap under another realm's prefix is refused; the default
-// realm's own row stays editable.
+// the default realm is ambient.
+//
+// EXCLUSIVE (tests/vendored/MANIFEST.js). The job holds the cap at the live
+// count, so a parallel lane's realm create would be refused STS-CORE-0161
+// for a reason that is not its own; and the count it reads must still be
+// the count when the cap is set, which only an exclusive job can promise.
+// The count is read again after every cap write and the job fails loudly if
+// it moved.
+//
+// NO REALM IS REMOVED (tests/CLAUDE.md: no job removes a realm). The job
+// raises the cap by one and creates ONE realm, which it LEAVES STANDING like
+// every other job's realm — it is the realm the in-realm lock is asked
+// under, and the successful create under the cap. Then it sets the cap to
+// the new live count and proves the refusal twice, through `/admin-api` and
+// through the console's own form (rule 7's parity), each recorded as
+// STS-CORE-0161 and adding no realm. Lowering the cap removes nothing. A
+// write of the cap under that realm's prefix is refused; the default realm's
+// own row stays editable.
 //
 // The code is recorded and is not in the body. The refusal sentence is.
-// The override is put back and the realm this job created is removed: a cap
-// left at the accumulated count would refuse every later job's create.
+// The cap is ALWAYS put back (finally): left at the live count it would
+// refuse every later job's create.
 // ===========================================================================
 
 "use strict";
@@ -22,6 +35,7 @@
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { runStamp } = require("./random_username.js");
+const consoleSignIn = require("./console_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -47,7 +61,11 @@ var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
 var base = process.env.OID4VCI_ISSUER_URL || stsUrl.replace(/\/sts\/?$/, "");
 base = String(base).replace(/\/+$/, "");
 
-const REALM = "rcl-" + runStamp();
+const STAMP = runStamp();
+const REALM = "rcl-" + STAMP;
+// The console account this job signs in as; console_signin.js grants it
+// both console roles, under a password only this process holds.
+const CONSOLE_USER = "realm-count-test";
 
 function sleep(ms) {
   log.debug("Entering sleep().");
@@ -122,9 +140,9 @@ async function sawCode(code, before) {
   return after > before;
 }
 
-async function test() {
-  log.debug("Entering test().");
-  log.info("Driving the realm cap at " + base + ".");
+// The live count, which must be a number that includes the default realm.
+async function liveCount() {
+  log.debug("Entering liveCount().");
   const listed = await api("GET", "/admin-api/realms");
   assert.strictEqual(listed.status, 200, "GET /admin-api/realms answered " +
                      listed.status + " " + listed.text.slice(0, 300));
@@ -132,6 +150,38 @@ async function test() {
   assert.ok(typeof held === "number" && held >= 1,
             "the realm count includes the default realm. Got " +
             JSON.stringify(listed.body && listed.body.count));
+  log.debug("Leaving liveCount(). " + held);
+  return held;
+}
+
+// Sets the cap and reads the count again: nothing else runs while this job
+// does (it is exclusive), so a count that moved is a broken manifest, and
+// every assertion after it would be about somebody else's create.
+async function capAt(value, expectedCount) {
+  log.debug("Entering capAt(). " + value);
+  const set = await api("POST", "/admin-api/config/set",
+                        { key: "realms.maxCount", value: value });
+  assert.strictEqual(set.status, 200, "setting realms.maxCount to " + value +
+                     " answered " + set.status + " " +
+                     set.text.slice(0, 300));
+  const now = await liveCount();
+  assert.strictEqual(now, expectedCount, "the realm count moved while the " +
+                     "cap was being set (" + expectedCount + " -> " + now +
+                     "): is this job still exclusive in MANIFEST.js?");
+  log.debug("Leaving capAt().");
+}
+
+function refusalSentence(body) {
+  log.debug("Entering refusalSentence().");
+  const out = ((body && body.errors) || []).join(" ");
+  log.debug("Leaving refusalSentence().");
+  return out;
+}
+
+async function test() {
+  log.debug("Entering test().");
+  log.info("Driving the realm cap at " + base + ".");
+  const held = await liveCount();
 
   const configBefore = await api("GET", "/admin-api/config");
   assert.strictEqual(configBefore.status, 200,
@@ -145,63 +195,70 @@ async function test() {
   assert.strictEqual(before.editRefusal, undefined,
                      "the default realm has no edit refusal");
 
-  let created = false;
-  try {
-    const capped = await api("POST", "/admin-api/config/set",
-                             { key: "realms.maxCount", value: held });
-    assert.strictEqual(capped.status, 200,
-                       "setting the cap to the live count answered " +
-                       capped.status + " " + capped.text.slice(0, 300));
+  const consoleClient = await consoleSignIn.signInToTheConsole(base,
+    CONSOLE_USER, log, { grant: "write" });
 
-    const beforeCode = await codeCount("STS-CORE-0161");
+  try {
+    // ONE CREATE UNDER THE CAP, and the realm is left standing.
+    await capAt(held + 1, held);
+    const made = await api("POST", "/admin-api/realms/create",
+                           { id: REALM, name: "Under the cap",
+                             domain: REALM + ".example.net" });
+    assert.strictEqual(made.status, 200,
+                       "a create under the cap answered " + made.status +
+                       " " + made.text.slice(0, 400));
+    const atCap = await liveCount();
+    assert.strictEqual(atCap, held + 1, "the create is in the count");
+
+    // AT THE CAP: the next create is refused, through /admin-api ...
+    await capAt(atCap, atCap);
+    let codes = await codeCount("STS-CORE-0161");
     const refused = await api("POST", "/admin-api/realms/create",
-                              { id: REALM, name: "Over the cap" });
+                              { id: REALM + "-x", name: "Over the cap" });
     assert.strictEqual(refused.status, 400,
                        "a create at the cap should be refused. Got " +
                        refused.status + " " + refused.text.slice(0, 400));
-    const sentence = ((refused.body && refused.body.errors) || []).join(" ");
+    const sentence = refusalSentence(refused.body);
     assert.ok(sentence.indexOf("realms.maxCount") >= 0 &&
-              sentence.indexOf(String(held)) >= 0,
+              sentence.indexOf(String(atCap)) >= 0,
               "the refusal names the limit and the live count. Got: " +
               sentence);
     assert.ok(!/STS-CORE-0161/.test(refused.text),
               "the code is recorded and is not in the body. Got: " +
               refused.text.slice(0, 400));
-    const still = await api("GET", "/admin-api/realms");
-    assert.strictEqual(still.body && still.body.count, held,
+    assert.strictEqual(await liveCount(), atCap,
                        "a refused create adds no realm");
-    assert.ok(await sawCode("STS-CORE-0161", beforeCode),
-              "the refusal is recorded as STS-CORE-0161");
+    assert.ok(await sawCode("STS-CORE-0161", codes),
+              "the /admin-api refusal is recorded as STS-CORE-0161");
 
-    const lowered = await api("POST", "/admin-api/config/set",
-                              { key: "realms.maxCount", value: 1 });
-    assert.strictEqual(lowered.status, 200,
-                       "lowering the cap answered " + lowered.status + " " +
-                       lowered.text.slice(0, 300));
-    const afterLower = await api("GET", "/admin-api/realms");
-    assert.strictEqual(afterLower.body && afterLower.body.count, held,
-                       "lowering the cap removes nothing");
+    // ... and through the console's own form (rule 7).
+    codes = await codeCount("STS-CORE-0161");
+    const fromConsole = await consoleClient.act("/admin/realms",
+      { action: "create", id: REALM + "-c", name: "Over the cap" });
+    assert.strictEqual(fromConsole.status, 400,
+                       "the console's create at the cap should be refused. " +
+                       "Got " + fromConsole.status + " " +
+                       String(fromConsole.text).slice(0, 400));
+    const consoleSentence = refusalSentence(fromConsole.json);
+    assert.ok(consoleSentence.indexOf("realms.maxCount") >= 0,
+              "the console's refusal names the limit. Got: " +
+              consoleSentence);
+    assert.strictEqual(await liveCount(), atCap,
+                       "a refused console create adds no realm");
+    assert.ok(await sawCode("STS-CORE-0161", codes),
+              "the console refusal is recorded as STS-CORE-0161");
+
+    // LOWERING THE CAP REMOVES NOTHING, and still refuses.
+    await capAt(1, atCap);
     const stillRefused = await api("POST", "/admin-api/realms/create",
-                                   { id: REALM + "b", name: "Still over" });
+                                   { id: REALM + "-y", name: "Still over" });
     assert.strictEqual(stillRefused.status, 400,
                        "a create under the lowered cap is still refused");
+    assert.strictEqual(await liveCount(), atCap,
+                       "lowering the cap removes nothing");
 
-    const raised = await api("POST", "/admin-api/config/set",
-                             { key: "realms.maxCount", value: held + 1 });
-    assert.strictEqual(raised.status, 200,
-                       "raising the cap by one answered " + raised.status +
-                       " " + raised.text.slice(0, 300));
-    const made = await api("POST", "/admin-api/realms/create",
-                           { id: REALM, name: "Under the cap",
-                             domain: REALM + ".example.net" });
-    assert.strictEqual(made.status, 200,
-                       "a create under the new cap answered " + made.status +
-                       " " + made.text.slice(0, 400));
-    created = true;
-    const after = await api("GET", "/admin-api/realms");
-    assert.strictEqual(after.body && after.body.count, held + 1,
-                       "the create is in the count");
-
+    // THE CAP IS SET IN THE DEFAULT REALM ONLY.
+    await capAt(atCap, atCap);
     const inside = await api("GET", "/realm/" + REALM + "/admin-api/config");
     assert.strictEqual(inside.status, 200,
                        "GET the cap from inside the realm answered " +
@@ -219,17 +276,16 @@ async function test() {
 
     const fromRealm = await api("POST", "/realm/" + REALM +
                                 "/admin-api/config/set",
-                                { key: "realms.maxCount", value: held + 2 });
+                                { key: "realms.maxCount", value: atCap + 5 });
     assert.strictEqual(fromRealm.status, 400,
                        "setting the cap from inside the realm answered " +
                        fromRealm.status + " " + fromRealm.text.slice(0, 400));
-    const lockedSentence = ((fromRealm.body && fromRealm.body.errors) || [])
-      .join(" ");
-    assert.ok(lockedSentence.indexOf("default realm") >= 0,
-              "the refusal says the default realm. Got: " + lockedSentence);
+    assert.ok(refusalSentence(fromRealm.body).indexOf("default realm") >= 0,
+              "the refusal says the default realm. Got: " +
+              refusalSentence(fromRealm.body));
     const unchanged = await api("GET", "/admin-api/config");
     const now = findSetting(unchanged.body, "realms.maxCount");
-    assert.strictEqual(now && now.value, held + 1,
+    assert.strictEqual(now && now.value, atCap,
                        "the write from inside the realm did not change the " +
                        "cap");
     assert.strictEqual(now.editable, true,
@@ -237,14 +293,8 @@ async function test() {
     assert.strictEqual(now.editRefusal, undefined,
                        "the default realm still has no edit refusal");
   } finally {
-    if (created) {
-      const gone = await api("POST", "/admin-api/realms/remove",
-                             { id: REALM });
-      if (gone.status !== 200) {
-        log.error("the realm " + REALM + " was not removed: " +
-                  gone.status + " " + gone.text.slice(0, 300));
-      }
-    }
+    // ALWAYS put the cap back, whatever failed above. The realm this job
+    // created stays: no job removes a realm (tests/CLAUDE.md).
     let restored;
     if (before && before.overridden) {
       restored = await api("POST", "/admin-api/config/set",
