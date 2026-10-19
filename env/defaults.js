@@ -764,6 +764,7 @@ var config = {
     workerDirectory: "auto",                                                                                                                    // Directory held in memory, or as a window; restart to apply
     workerCacheEntries: 10000,                                                                                                                  // Directory window size (entries)
     workerDirectoryTimeoutMs: 2000,                                                                                                             // Worker directory read timeout (ms)
+    workerDirectoryBudgetMs: 5000,                                                                                                              // Worker directory budget per request (ms)
     sizeLimit: 500,                                                                                                                             // Search size limit
     timeLimit: 30,                                                                                                                              // Search time limit (s)
     plainListener: true,                                                                                                                        // Plain LDAP listener; restart to apply

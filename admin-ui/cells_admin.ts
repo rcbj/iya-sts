@@ -331,15 +331,22 @@ class CellsAdmin {
     if (cellId && cellId === cells.id() && from && from !== cells.id() &&
         cells.get(from)) {
       try {
-        const answer = this.answerPeople({ realm: realms.currentId(),
-                                           after: String(after || ''),
-                                           limit: PEOPLE_PAGE },
-                                         { peer: from });
+        const answer = await Promise.resolve(this.answerPeople(
+          { realm: realms.currentId(), after: String(after || ''),
+            limit: PEOPLE_PAGE }, { peer: from }));
         log.debug("Leaving CellsAdmin.peopleOf(). Relayed here.");
         return Object.assign({ cell: cellId }, answer);
       } catch (err) {
+        const code = errorCodes.codeOf(err);
+        if (code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131' ||
+            code === 'STS-LDAP-0162') {
+          log.debug("Leaving CellsAdmin.peopleOf(). The store did not " +
+                    "answer.");
+          throw err;
+        }
         log.debug("Leaving CellsAdmin.peopleOf(). Refused here.");
-        return { cell: cellId, refused: String((err && err.message) || err) };
+        return { cell: cellId,
+                 refused: String((err && err.message) || err) };
       }
     }
     if (!cells.get(cellId) || cellId === cells.id()) {
@@ -362,7 +369,8 @@ class CellsAdmin {
   // The answering half of `peopleOf()`: this cell's residents, released to a
   // reader in the asking cell's jurisdiction only when the release policy
   // says so. Names and UUIDs and a display name; nothing else leaves.
-  private answerPeople(body: Json, ctx: { peer: string }): Json {
+  private async answerPeople(body: Json,
+                             ctx: { peer: string }): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering CellsAdmin.answerPeople().");
     const realm = realms.get(String(body.realm || '')) ||
@@ -384,22 +392,26 @@ class CellsAdmin {
     const limit = Math.max(1, Math.min(PEOPLE_PAGE, Number(body.limit) ||
                                                     PEOPLE_PAGE));
     const after = String(body.after || '').toLowerCase();
-    // A REAL KEYSET (#352): the directory answers the page after `after`
-    // from its sorted names and reads `limit` entries — it built every
-    // person's entry to throw all but `limit` of them away. A projection is
-    // somebody else's resident, never listed as this cell's; the directory's
-    // page leaves them out.
-    let answer: Json = { people: [], more: false };
-    realms.run(realm, function () {
-      answer = require('../ldap/ldap_server').residentsPage(after, limit);
+    // A REAL KEYSET (#352, #359): in memory, a binary search of the sorted
+    // names. In a window, one page of direct children in RDN order, asked
+    // asynchronously — the uid is sealed, so the order is the RDN's. A
+    // projection is somebody else's resident and is left out.
+    const pending = realms.run(realm, function () {
+      const ldap = require('../ldap/ldap_server');
+      return ldap.directoryIsWindowed()
+        ? ldap.residentsPageAsync(after, limit)
+        : ldap.residentsPage(after, limit);
     });
-    const out: Json[] = answer.people;
+    const answer = await Promise.resolve(pending);
+    const out: Json[] = (answer && answer.people) || [];
+    const next = answer && answer.more
+      ? (answer.next || (out.length ? out[out.length - 1].name : ''))
+      : '';
     log.info('cells: ' + out.length + ' of this cell\'s residents were ' +
              'listed for an administrator at cell "' + ctx.peer + '", which ' +
              'the release policy permits.');
     log.debug("Leaving CellsAdmin.answerPeople().");
-    return { people: out,
-             next: answer.more ? out[out.length - 1].name : '' };
+    return { people: out, next: next };
   }
 
   /**

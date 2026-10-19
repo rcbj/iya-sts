@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4364** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4365** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 115
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 116
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -2935,8 +2935,8 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0139` | GET /admin-api/ldap/directory, /admin-api/users or /admin-api/mfa in a process holding the directory as a window (#616) asked the store for its counts, its page or its first names asynchronously and the store failed to answer. The page is refused rather than drawn out of what this process happens to hold. | HTTP 503 with Retry-After |
 | `STS-LDAP-0140` | An LDAP search reached its time limit (#616) — the client's timeLimit or ldap.timeLimit, whichever is shorter — before it had considered everything under its base. The entries already sent are a partial answer and the paging of the store stops there. | RFC 4511 section 4.5.1.5: timeLimitExceeded (3) |
 | `STS-LDAP-0141` | An LDAP search read from the store asynchronously (#616) and a page of the read failed part way. The entries already sent stay sent; the search ends unavailable rather than answering as though the rest of the directory were empty. | RFC 4511: unavailable (52) |
-| `STS-LDAP-0142` | An LDAP add asked the store its questions asynchronously before its body ran (#621), and the body then threw something other than a store it could not read (which keeps STS-LDAP-0130/0131 and is answered unavailable). Thrown inside a promise, it would have left the add without a result; it is answered operationsError instead, and logged with the stack. | RFC 4511: operationsError (1) |
-| `STS-LDAP-0143` | An LDAP add or modify carrying a clear password was screened for a data breach (#622), which made it asynchronous, and its handler then threw where neither ldapjs nor a request worker could see it. The client is answered once rather than never: an operations error, or unavailable (52) when the store could not be read (STS-LDAP-0130, STS-LDAP-0131). | RFC 4511: operationsError (1) |
+| `STS-LDAP-0142` | An LDAP add asked the store its questions asynchronously before its body ran (#621), and the body then threw something other than a store it could not read (which keeps STS-LDAP-0130, STS-LDAP-0131 and STS-LDAP-0162, and is answered unavailable). Thrown inside a promise, it would have left the add without a result; it is answered operationsError instead, and logged with the stack. | RFC 4511: operationsError (1) |
+| `STS-LDAP-0143` | An LDAP add or modify carrying a clear password was screened for a data breach (#622), which made it asynchronous, and its handler then threw where neither ldapjs nor a request worker could see it. The client is answered once rather than never: an operations error, or unavailable (52) when the store could not be read (STS-LDAP-0130, STS-LDAP-0131, STS-LDAP-0162). | RFC 4511: operationsError (1) |
 | `STS-LDAP-0144` | A directory create was refused because this node's front process, which decides its own workers' create claims in memory (#628), already holds as many claims as it may. That many creates are never in flight at once, so something is not giving its claims back; logged once when the ceiling is reached (fail closed). | LDAP_UNAVAILABLE (52); HTTP 503 on /admin-api, 500 on SCIM |
 | `STS-LDAP-0145` | A directory create in a request worker was refused because the front process did not answer its create claim in time, or could not be asked (#628). A grant that arrives later is given straight back (fail closed). | LDAP_UNAVAILABLE (52); HTTP 503 on /admin-api, 500 on SCIM |
 | `STS-LDAP-0150` | The bulk import (persistence/bulk_import.js) was refused before it read anything: an unknown argument, no --file or no file there, or a --batch or --skip out of range. Nothing is changed and it exits 2. | none — an operator tool |
@@ -2951,6 +2951,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0159` | A batch of the bulk import failed in the database, or inserted fewer rows than its check found free (something else wrote the directory meanwhile), and was rolled back; the import stopped. Every batch before it is committed: run it again, with the --skip the last progress line gave, to resume. | none — an operator tool |
 | `STS-LDAP-0160` | The bulk import did not import a record because one of its usernames (its RDN value or a uid) is already held by another entry under ou=users, in the store or earlier in the file — the one entry per person rule, as STS-LDAP-0005 refuses an add. | none — an operator tool |
 | `STS-LDAP-0161` | The bulk import did not merge a GIN pending list (gin_clean_pending_list, which needs the index's owner) or did not ANALYZE the table (its owner, or MAINTAIN on postgres 17 and later): the role it runs as may not, which it asks the catalog before issuing either (#637), or the call failed. After a batch (schema 17, whose name index has fastupdate on) the import goes on, slowing as the list grows; at the end nothing is lost, and lookups scan the lists until an autovacuum or the owner's VACUUM (ANALYZE) sts_ldap_entries. | none — an operator tool |
+| `STS-LDAP-0162` | A console or management-API request (#359) had already spent ldap.workerDirectoryBudgetMs waiting on synchronous directory reads, so the next question was refused and not asked. One slow question still fails as STS-LDAP-0130 when it exceeds its own timeout first. A request outside /admin and /admin-api has no such budget. | HTTP 503 with Retry-After; an LDAP operation answers unavailable (52) |
 
 ## STS-ATTR
 

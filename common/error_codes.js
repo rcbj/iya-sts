@@ -12805,10 +12805,11 @@ const CODES = [
   { code: 'STS-LDAP-0142',
     summary: 'An LDAP add asked the store its questions asynchronously ' +
       'before its body ran (#621), and the body then threw something other ' +
-      'than a store it could not read (which keeps STS-LDAP-0130/0131 and ' +
-      'is answered unavailable). Thrown inside a promise, it would have ' +
-      'left the add without a result; it is answered operationsError ' +
-      'instead, and logged with the stack.',
+      'than a store it could not read (which keeps STS-LDAP-0130, ' +
+      'STS-LDAP-0131 and STS-LDAP-0162, and is answered unavailable). ' +
+      'Thrown inside a promise, it would have left the add without a ' +
+      'result; it is answered operationsError instead, and logged with ' +
+      'the stack.',
     spec: 'RFC 4511: operationsError (1)' },
   { code: 'STS-LDAP-0143',
     summary: 'An LDAP add or modify carrying a clear password was screened ' +
@@ -12816,7 +12817,7 @@ const CODES = [
       'handler then threw where neither ldapjs nor a request worker could ' +
       'see it. The client is answered once rather than never: an ' +
       'operations error, or unavailable (52) when the store could not be ' +
-      'read (STS-LDAP-0130, STS-LDAP-0131).',
+      'read (STS-LDAP-0130, STS-LDAP-0131, STS-LDAP-0162).',
     spec: 'RFC 4511: operationsError (1)' },
   { code: 'STS-LDAP-0144',
     summary: 'A directory create was refused because this node\'s front ' +
@@ -12914,6 +12915,15 @@ const CODES = [
       'scan the lists until an autovacuum or the owner\'s VACUUM (ANALYZE) ' +
       'sts_ldap_entries.',
     spec: 'none — an operator tool' },
+  { code: 'STS-LDAP-0162',
+    summary: 'A console or management-API request (#359) had already spent ' +
+      'ldap.workerDirectoryBudgetMs waiting on synchronous directory ' +
+      'reads, so the next question was refused and not asked. One slow ' +
+      'question still fails as STS-LDAP-0130 when it exceeds its own ' +
+      'timeout first. A request outside /admin and /admin-api has no ' +
+      'such budget.',
+    spec: 'HTTP 503 with Retry-After; an LDAP operation answers ' +
+      'unavailable (52)' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +

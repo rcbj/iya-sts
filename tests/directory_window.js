@@ -1552,6 +1552,27 @@ function refusedRequest(t) {
                                      { headersSent: false },
                                      function (e) { passed = e; });
   t.check(passed === other, 'I2. any other error is passed on unchanged');
+  const budgetAnswer = { headers: {}, statusCode: 200, body: '',
+                         headersSent: false,
+                         setHeader: function (k, v) {
+                           budgetAnswer.headers[k] = v;
+                         },
+                         end: function (b) {
+                           budgetAnswer.body = String(b || '');
+                         } };
+  passed = null;
+  const budgetErr = errorCodes.mark(new Error('the budget is spent'),
+                                    'STS-LDAP-0162');
+  RequestWorker.directoryUnavailable(budgetErr,
+    { method: 'GET', url: '/admin/ldap/devices' }, budgetAnswer,
+    function (e) { passed = e; });
+  t.check(budgetAnswer.statusCode === 503 &&
+          budgetAnswer.headers['Retry-After'] && passed === null &&
+          errorCodes.codeOf(budgetAnswer) === 'STS-LDAP-0162' &&
+          !/store/.test(budgetAnswer.body),
+          'I1b. STS-LDAP-0162 is a 503 with Retry-After too',
+          JSON.stringify({ status: budgetAnswer.statusCode,
+                           body: budgetAnswer.body }));
   log.debug("Leaving refusedRequest().");
 }
 

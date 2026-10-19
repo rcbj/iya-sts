@@ -11571,6 +11571,22 @@ const SETTINGS = [
                  'can hold one of its requests; past it the request is ' +
                  'refused (503, STS-LDAP-0130).' },
 
+  // THE BOUND ON ONE CONSOLE REQUEST'S SYNCHRONOUS WAITING (#359). One
+  // question is bounded above; a page that asks several still held a
+  // surface worker for the sum — 17 s on testidp, long enough that its
+  // origin renewal started late. Read per question.
+  { key: 'ldap.workerDirectoryBudgetMs', group: 'LDAP',
+    label: 'Worker directory budget per request (ms)',
+    env: 'LDAP_WORKER_DIRECTORY_BUDGET_MS', type: 'int', dflt: 5000,
+    min: 10, max: 20000, runtime: true,
+    description: 'With ldap.workerDirectory=postgres-lru, how long one ' +
+                 '/admin or /admin-api request may spend waiting, in ' +
+                 'all, on synchronous directory reads. A question that ' +
+                 'would pass the budget is refused (503, STS-LDAP-0162) ' +
+                 'and is not asked; one slow question still fails as ' +
+                 'STS-LDAP-0130 when it exceeds its own timeout first. ' +
+                 'Other requests have no such budget.' },
+
   { key: 'ldap.sizeLimit', group: 'LDAP', label: 'Search size limit',
     env: 'LDAP_SIZE_LIMIT', type: 'int', dflt: 500, runtime: true,
     description: 'The server-side size limit for a search, which is what ' +

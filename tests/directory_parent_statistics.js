@@ -36,13 +36,16 @@
 //      the restore, a one-level page (under a sparse container and under the
 //      big one, after a cursor), a subtree page, `keysUnder`, `namesUnder`,
 //      `hasChild` of a group and of a person, `byName`, `withNames` and
-//      `byAttribute` under a parent —
+//      `byAttribute` under a parent, an `rdnPage` (plain, after a cursor,
+//      and with a needle) and a `containerPage` (the first page and an
+//      offset) —
 //      no sequential scan, no primary key or realm index on the table; the
-//      restore's and the pages' rows through the parent index.
+//      restore's and the pages' rows through the parent index, and an
+//      `rdnPage` through `sts_ldap_entries_rdn`.
 //   D. THE UPGRADE: the driver's step run as written; `n_distinct` is
 //      100,000, the probe no longer owes it, and every statement of C — and
 //      #638's old restore, which the override alone puts right — reads the
-//      parent index.
+//      index that statement names (the parent index, or the rdn index).
 //   E. A RESIDENT CONTAINER LARGER THAN A PAGE, written after the ANALYZE
 //      (as an import leaves it): the restore answers #638's old statement's
 //      rows, in its order, and its buffers follow the rows it answers.
@@ -221,7 +224,20 @@ function statementsToPlan() {
     ['withNames under the big container',
      queries.withNames('default', USERS, ['u77', 'u78']), false],
     ['byAttribute under ou=devices',
-     queries.byAttribute('default', 'stsdeviceid', 'x', 10, DEVICES), false]
+     queries.byAttribute('default', 'stsdeviceid', 'x', 10, DEVICES), false],
+    // #359. The rdn index has no dn_key, so these must not be asked to
+    // read the parent index. `rdnCount` is a count, not a walk, and is
+    // not planned here.
+    ['rdnPage of the big container',
+     queries.rdnPage('default', USERS, '', 1000), 'rdn'],
+    ['rdnPage after a cursor',
+     queries.rdnPage('default', USERS, 'u500', 1000), 'rdn'],
+    ['rdnPage containing a needle',
+     queries.rdnPage('default', USERS, '', 100, { needle: 'u5' }), 'rdn'],
+    ['containerPage, the first page',
+     queries.containerPage('default', DEVICES, 0, 1000), true],
+    ['containerPage, an offset',
+     queries.containerPage('default', DEVICES, 50, 100), true]
   ];
 }
 
@@ -236,9 +252,13 @@ async function planAll(t, db, label) {
     t.check(scans.length > 0 && wholeRealmScans(scans).length === 0,
             label + '. ' + one[0] + ': no sequential scan, no primary key ' +
             'or realm index on the table', scans.join(', '));
-    if (one[2]) {
+    if (one[2] === true) {
       t.check(scans.indexOf('Index Scan:sts_ldap_entries_parent') >= 0,
               label + '. ' + one[0] + ': the rows through the parent index',
+              scans.join(', '));
+    } else if (one[2] === 'rdn') {
+      t.check(scans.indexOf('Index Scan:sts_ldap_entries_rdn') >= 0,
+              label + '. ' + one[0] + ': the rows through the rdn index',
               scans.join(', '));
     }
   }

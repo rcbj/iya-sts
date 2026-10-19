@@ -33,6 +33,13 @@
 // (rcbj: a worker whose miss finds the database down refuses; nothing is
 // answered out of a window that cannot say what it is missing).
 //
+// **A CONSOLE REQUEST ALSO HAS A BUDGET (#359).** One question under its
+// own bound still summed, across a page, to 17 s on a surface worker.
+// `runWithBudget()` enters an `AsyncLocalStorage` slot; each `query()`
+// waits only for the room that is left and, once the budget is spent,
+// throws `STS-LDAP-0162` without posting another question. No slot means
+// no budget. The API stays synchronous.
+//
 // **THE COUNTER, NOT A FLAG.** A flag set to 0 before each question and to 1
 // by the thread loses a wake when a LATE answer to a question that already
 // timed out lands between the reset and the wait. The thread adds one per
@@ -56,9 +63,20 @@
 import bunyan = require('bunyan');
 import path = require('path');
 import workerThreads = require('worker_threads');
+import asyncHooks = require('async_hooks');
 import errorCodes = require('./error_codes');
 
 const log = bunyan.createLogger({ name: 'sts-sync-query' });
+
+// One console request's remaining synchronous wait (#359). Module-level,
+// so a question asked from any bridge in the request shares it. No store
+// means no budget: startup, the scheduler, SCIM and an LDAP operation.
+interface BudgetSlot {
+  ms: number;
+  waited: number;
+}
+
+const directoryBudget = new asyncHooks.AsyncLocalStorage<BudgetSlot>();
 
 // What the constructor takes.
 interface SyncQueryOptions {
@@ -89,6 +107,7 @@ interface SyncQueryStats {
   failed: number;
   waitedMs: number;
   longestMs: number;
+  budgetRefused: number;
 }
 
 /**
@@ -102,7 +121,7 @@ class SyncQuery {
   private nextId = 1;
   private readonly figures: SyncQueryStats = {
     started: 0, questions: 0, timedOut: 0, failed: 0, waitedMs: 0,
-    longestMs: 0
+    longestMs: 0, budgetRefused: 0
   };
 
   /**
@@ -201,15 +220,33 @@ class SyncQuery {
    * @param args - its arguments
    * @returns the answer
    * @throws an Error marked `STS-LDAP-0130` when no answer came within the
-   *   bound, or `STS-LDAP-0131` when the store refused the question
+   *   bound, `STS-LDAP-0131` when the store refused the question, or
+   *   `STS-LDAP-0162` when this request's budget is already spent
    */
   query(name: string, args: unknown[]): unknown {
     log.debug("Entering SyncQuery.query(). " + name);
+    const slot = directoryBudget.getStore();
+    if (slot && slot.waited >= slot.ms) {
+      this.figures.budgetRefused += 1;
+      log.debug("Leaving SyncQuery.query(). The request's budget is spent.");
+      throw errorCodes.mark(new Error(errorCodes.tag('STS-LDAP-0162') +
+        'The directory could not be read: this request has already ' +
+        'waited ' + slot.waited + ' ms for the store, and its budget ' +
+        'is ' + slot.ms + ' ms.'), 'STS-LDAP-0162');
+    }
     this.ensureThread();
     const port = this.port as workerThreads.MessagePort;
     const counter = this.counter as Int32Array;
     const id = this.nextId++;
-    const bound = this.bound();
+    // THE QUESTION'S OWN BOUND, cut by whatever of the request's budget
+    // is left. The cut is not raised back to 10 ms: a few milliseconds
+    // of room is a few milliseconds of waiting, and the question that
+    // does not finish in them is the same timeout as one that used its
+    // whole bound.
+    const questionBound = this.bound();
+    const bound = slot
+      ? Math.min(questionBound, Math.max(0, slot.ms - slot.waited))
+      : questionBound;
     const started = Date.now();
     this.figures.questions += 1;
     port.postMessage({ id: id, name: String(name),
@@ -230,6 +267,9 @@ class SyncQuery {
     const waited = Date.now() - started;
     this.figures.waitedMs += waited;
     this.figures.longestMs = Math.max(this.figures.longestMs, waited);
+    if (slot) {
+      slot.waited += waited;
+    }
     if (!answer) {
       this.figures.timedOut += 1;
       log.debug("Leaving SyncQuery.query(). Timed out.");
@@ -297,6 +337,47 @@ class SyncQuery {
     log.debug("Entering SyncQuery.stats().");
     log.debug("Leaving SyncQuery.stats().");
     return Object.assign({}, this.figures);
+  }
+
+  /**
+   * Runs `fn` with a budget on the synchronous waits `query()` does
+   * inside it (#359). A non-positive or non-finite budget runs `fn`
+   * with none. The wait is cumulative across every question in the
+   * call, including one a timeout cut short.
+   *
+   * @param ms - the budget, in milliseconds
+   * @param fn - the work
+   * @returns whatever `fn` returns
+   */
+  static runWithBudget(ms: number, fn: () => unknown): unknown {
+    log.debug("Entering SyncQuery.runWithBudget().");
+    const n = Number(ms);
+    let answer: unknown;
+    if (!isFinite(n) || n <= 0) {
+      try {
+        answer = fn();
+      } catch (e) {
+        // `fn` refused. The code is the caller's to map, so it propagates
+        // after this function has recorded it and left out loud.
+        log.debug("Caught in SyncQuery.runWithBudget(): " +
+                  ((e && (e as Error).message) || e));
+        log.debug("Leaving SyncQuery.runWithBudget(). No budget.");
+        throw e;
+      }
+      log.debug("Leaving SyncQuery.runWithBudget(). No budget.");
+      return answer;
+    }
+    try {
+      answer = directoryBudget.run({ ms: n, waited: 0 }, fn);
+    } catch (e) {
+      // The same refusal, now from a question that ran under the budget.
+      log.debug("Caught in SyncQuery.runWithBudget(): " +
+                ((e && (e as Error).message) || e));
+      log.debug("Leaving SyncQuery.runWithBudget().");
+      throw e;
+    }
+    log.debug("Leaving SyncQuery.runWithBudget().");
+    return answer;
   }
 }
 

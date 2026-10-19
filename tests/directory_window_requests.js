@@ -51,7 +51,16 @@
 //      asks `byName` synchronously never; a name another add or an
 //      applied row took while it was asking still refuses it.
 //
-// A and the parent's checks run here; B–F run in a child that loads the
+//   G. THE CONSOLE PAGES THAT STILL WALKED (#359): a cell's residents are
+//      a bounded number of `rdnPage`s of `ou=users` — one when every row
+//      is a resident, and at most eight when a row is skipped (a
+//      projection, no `uid`, or a delete held here). The cursor is the
+//      last RDN shown. The device register is one `count` and one
+//      `containerPage`; the role chooser is one `count` and one `rdnPage`
+//      (a delete held here shortens the page), and a typed name not on
+//      that page is one `byName`. None of them asks `page` synchronously.
+//
+// A and the parent's checks run here; B–G run in a child that loads the
 // directory as a windowed request worker (`tests/directory_window.js`'s
 // section H arrangement).
 // ===========================================================================
@@ -94,6 +103,22 @@ function countingBridge(rows, opts) {
   const originOf = function (r) {
     return r.origin ? String(r.origin) : 'unstated';
   };
+  // A direct child's parent, and the lower-cased value of its first RDN:
+  // what `rdn_value` and `parent_key` are on the row (#359).
+  const parentOf = function (key) {
+    const comma = key.indexOf(',');
+    return comma >= 0 ? key.slice(comma + 1) : '';
+  };
+  const rdnOf = function (key) {
+    const first = key.split(',')[0];
+    const eq = first.indexOf('=');
+    return (eq >= 0 ? first.slice(eq + 1) : first).toLowerCase();
+  };
+  const pageSize = function (limit) {
+    const n = Number(limit);
+    return isFinite(n) && n >= 1 ? Math.min(n, queries.MAX_PAGE)
+                                 : queries.MAX_PAGE;
+  };
   const answer = function (name, args) {
     if (name === 'realmPage') {
       const o = args[3] || {};
@@ -130,6 +155,52 @@ function countingBridge(rows, opts) {
               String(args[3]).toLowerCase();
           });
       }).slice(0, args[4]).map(queries.rowOf);
+    }
+    // #359. Direct children only: `under()` is the subtree, and a nested
+    // person is not on these pages. The walk reads `offset + limit` rows
+    // and the statement drops the offset, capped at 100,000.
+    if (name === 'rdnPage') {
+      const needle = String((args[4] && args[4].needle) || '').toLowerCase();
+      const skip = Math.max(0, Math.min(100000,
+        Math.floor(Number(args[4] && args[4].offset) || 0)));
+      const n = pageSize(args[3]);
+      const walk = Math.min(skip + n, 100000);
+      const after = String(args[2] || '').toLowerCase();
+      const parent = String(args[1] || '').toLowerCase();
+      const matched = sorted(args[0]).filter(function (r) {
+        const rdn = rdnOf(r.dn_key);
+        return parentOf(r.dn_key) === parent && rdn > after &&
+          (!needle || rdn.indexOf(needle) >= 0);
+      }).sort(function (a, b) {
+        const x = rdnOf(a.dn_key);
+        const y = rdnOf(b.dn_key);
+        return x < y ? -1 : (x > y ? 1 : 0);
+      });
+      return matched.slice(0, walk).slice(skip, skip + n).map(function (r) {
+        const one = queries.rowOf(r);
+        one.rdn = rdnOf(r.dn_key);
+        return one;
+      });
+    }
+    if (name === 'rdnCount') {
+      const needle = String(args[2] || '').toLowerCase();
+      const parent = String(args[1] || '').toLowerCase();
+      return sorted(args[0]).filter(function (r) {
+        const rdn = rdnOf(r.dn_key);
+        return parentOf(r.dn_key) === parent &&
+          (!needle || rdn.indexOf(needle) >= 0);
+      }).length;
+    }
+    if (name === 'containerPage') {
+      const skip = Math.max(0, Math.min(100000,
+        Math.floor(Number(args[2]) || 0)));
+      const n = pageSize(args[3]);
+      const walk = Math.min(skip + n, 100000);
+      const parent = String(args[1] || '').toLowerCase();
+      const matched = sorted(args[0]).filter(function (r) {
+        return parentOf(r.dn_key) === parent && r.dn_key > '';
+      });
+      return matched.slice(0, walk).slice(skip).map(queries.rowOf);
     }
     return base.query(name, args);
   };
@@ -504,6 +575,9 @@ async function throughTheDirectory(t) {
   await censusQuestions(t, ldap, w, rows, users, bridge);
   // F. an LDAP add asks first.
   await addQuestions(t, ldap, w, rows, users, bridge);
+  // G. the console pages that still walked (#359). Rows added here are
+  // after B–F, whose captured counts stay what they were.
+  await consolePages(t, ldap, rows, users, bridge);
   log.debug('Leaving throughTheDirectory().');
 }
 
@@ -951,6 +1025,155 @@ async function streamQuestions(t, ldap, w, rows, users, add) {
   log.debug('Leaving streamQuestions().');
 }
 
+// Whether `names` are in order. A page of residents is.
+function rising(names) {
+  log.debug('Entering rising().');
+  let ok = true;
+  for (let i = 1; i < names.length; i++) {
+    if (names[i] < names[i - 1]) {
+      ok = false;
+    }
+  }
+  log.debug('Leaving rising().');
+  return ok;
+}
+
+// --- G. the console pages that still walked (#359) -------------------------
+
+async function consolePages(t, ldap, rows, users, bridge) {
+  log.debug('Entering consolePages().');
+  const proj = 'uid=zzzzproj,' + users;
+  rows.set('default\n' + proj, shared.row('default', proj, {
+    uid: ['zzzzproj'], objectclass: ['inetOrgPerson'], cn: ['Projected']
+  }));
+  rows.get('default\n' + proj).origin = 'projection:other';
+  const empty = 'cn=zzzzempty,' + users;
+  rows.set('default\n' + empty, shared.row('default', empty, {
+    cn: ['empty'], objectclass: ['groupOfNames']
+  }));
+
+  bridge.reset();
+  const first = await ldap.residentsPageAsync('', 50);
+  const firstNames = first.people.map(function (person) {
+    return person.name;
+  });
+  const rdnPages = asked(bridge.counts.async, 'rdnPage');
+  t.check(first.people.length === 50 && first.more &&
+          first.next === firstNames[firstNames.length - 1] &&
+          rising(firstNames) &&
+          firstNames.indexOf('p000013') < 0 &&
+          firstNames.indexOf('dave') < 0 &&
+          rdnPages >= 1 && rdnPages <= 3 &&
+          asked(bridge.counts.sync) === 0,
+          'G1. a cell\'s first fifty residents are a bounded number of ' +
+          'asynchronous rdnPages, projections and entries with no uid ' +
+          'left out, the cursor the last name shown', JSON.stringify({
+            next: first.next, people: first.people.length,
+            rdnPages: rdnPages, counts: bridge.counts }));
+  bridge.reset();
+  const second = await ldap.residentsPageAsync(first.next, 50);
+  const secondNames = second.people.map(function (person) {
+    return person.name;
+  });
+  const overlap = secondNames.some(function (name) {
+    return firstNames.indexOf(name) >= 0;
+  });
+  t.check(!overlap && secondNames.length === 50 && rising(secondNames) &&
+          secondNames[0] > first.next &&
+          asked(bridge.counts.async, 'rdnPage') === 1 &&
+          asked(bridge.counts.sync, 'page') === 0,
+          'G2. the next page starts after that cursor and shares nobody',
+          JSON.stringify({ first: secondNames[0],
+                           counts: bridge.counts }));
+  bridge.reset();
+  const tail = await ldap.residentsPageAsync('zzz', 20);
+  t.check(tail.people.length === 0 && tail.more === false &&
+          asked(bridge.counts.async, 'rdnPage') === 1 &&
+          asked(bridge.counts.sync) === 0,
+          'G3. a cursor past the people answers nobody: the projection ' +
+          'and the entry with no uid are not residents',
+          JSON.stringify({ people: tail.people, more: tail.more }));
+
+  const devices = 'ou=devices,' + ldap.baseDn().toLowerCase();
+  const deviceDns = [];
+  for (let i = 0; i < 40; i++) {
+    const id = 'd' + String(i).padStart(2, '0');
+    const dn = 'cn=' + id + ',' + devices;
+    deviceDns.push(dn);
+    rows.set('default\n' + dn, shared.row('default', dn, {
+      cn: [id], objectclass: ['device']
+    }));
+  }
+  bridge.reset();
+  const pending = ldap.ldapDevicesView({ query: { per: '10', page: '2' } });
+  t.check(pending && typeof pending.then === 'function',
+          'G4. /admin/ldap/devices is a promise in a windowed process');
+  const shown = (await pending).json;
+  const got = shown.entries.map(function (entry) {
+    return String(entry.dn).toLowerCase();
+  });
+  t.check(shown.count === 40 && got.length === 10 &&
+          JSON.stringify(got) === JSON.stringify(deviceDns.slice(10, 20)) &&
+          asked(bridge.counts.async, 'containerPage') === 1 &&
+          asked(bridge.counts.async, 'count') === 1 &&
+          asked(bridge.counts.sync) === 0,
+          'G5. page 2 of the device register is one count and one ' +
+          'containerPage, d10 to d19', JSON.stringify({
+            count: shown.count, got: got, counts: bridge.counts }));
+
+  bridge.reset();
+  const chooser = await ldap.candidatePageAsync(0, 20, '');
+  t.check(chooser.rows.length >= 1 && chooser.rows.length <= 20 &&
+          asked(bridge.counts.async, 'rdnPage') === 1 &&
+          asked(bridge.counts.async, 'count') === 1 &&
+          asked(bridge.counts.async, 'rdnCount') === 0 &&
+          asked(bridge.counts.sync) === 0,
+          'G6. the role chooser\'s first page is one count and one rdnPage',
+          JSON.stringify({ rows: chooser.rows.length,
+                           counts: bridge.counts }));
+  bridge.reset();
+  const narrowed = await ldap.candidatePageAsync(0, 20, 'p00001');
+  t.check(narrowed.matched > 0 && narrowed.matched < narrowed.total &&
+          narrowed.rows.length > 0 &&
+          narrowed.rows.length <= narrowed.matched &&
+          narrowed.rows.every(function (row) {
+            return row.username.indexOf('p00001') >= 0;
+          }) &&
+          asked(bridge.counts.async, 'rdnCount') === 1 &&
+          asked(bridge.counts.sync, 'page') === 0,
+          'G7. a needle is an rdnCount, and every row shown contains it',
+          JSON.stringify({ matched: narrowed.matched,
+                           total: narrowed.total,
+                           rows: narrowed.rows.length,
+                           counts: bridge.counts }));
+
+  const adminViews = require('../admin-core/admin_views');
+  bridge.reset();
+  const listed = await Promise.resolve(adminViews.rbacListJson({
+    query: {}, headers: {}
+  }));
+  const candidates = listed.json.candidates;
+  t.check(candidates.length > 0 && candidates.length <= 20 &&
+          asked(bridge.counts.sync, 'page') === 0 &&
+          asked(bridge.counts.async, 'rdnPage') === 1,
+          'G8. /admin/rbac\'s candidates are that page, and no synchronous ' +
+          'page', JSON.stringify({ candidates: candidates.length,
+                                   counts: bridge.counts }));
+  bridge.reset();
+  const picked = await Promise.resolve(adminViews.rbacListJson({
+    query: { person: 'p004999' }, headers: {}
+  }));
+  t.check(picked.json.picked && picked.json.picked.candidate &&
+          picked.json.picked.candidate.username === 'p004999' &&
+          asked(bridge.counts.async, 'byName') === 1 &&
+          asked(bridge.counts.sync, 'page') === 0 &&
+          asked(bridge.counts.async, 'rdnPage') === 1,
+          'G9. a person not on the page is one byName, and can be granted',
+          JSON.stringify({ picked: picked.json.picked,
+                           counts: bridge.counts }));
+  log.debug('Leaving consolePages().');
+}
+
 async function childMain() {
   log.debug('Entering childMain().');
   const seen = [];
@@ -1020,8 +1243,8 @@ function inChild(t, minimum) {
 async function run(t) {
   log.debug('Entering run().');
   await windowQuestions(t);
-  t.log.info('=== B–F. through the directory, as a windowed worker ===');
-  inChild(t, 42);
+  t.log.info('=== B–G. through the directory, as a windowed worker ===');
+  inChild(t, 51);
   log.debug('Leaving run().');
 }
 
@@ -1034,6 +1257,7 @@ module.exports = {
   describe: 'the requests that walked a windowed directory, counted (#616): ' +
             'the window\'s asynchronous questions, the directory page, an ' +
             'LDAP search no index narrows, the first names, the credential ' +
-            'census and an LDAP add (#621)',
+            'census and an LDAP add (#621), and the console pages that ' +
+            'still walked (#359)',
   run: run
 };

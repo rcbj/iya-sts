@@ -144,18 +144,12 @@ const EXEMPT = {
   'admin-ui/admin_rbac.ts|candidates|allPersons': { fallback:
     'reached only where the directory offers no personDns(); see the next ' +
     'entry for personDns() itself' },
-  'admin-ui/admin_rbac.ts|candidates|personDns': { owed:
-    'the role screen\'s search offers every person in the realm as a ' +
-    'candidate (/admin-api/rbac): personDns() pages ou=users synchronously ' +
-    'when its kept rows are stale. What would stop it: candidates as a ' +
-    'search — a typed prefix asked of keysUnder()/byName — rather than a ' +
-    'list of everybody, which changes the page (#616\'s audit)' },
-  'admin-ui/cells_admin.ts|answerPeople|residentsPage': { owed:
-    '/admin-api/cells?people= and the inter-cell directory-people operation ' +
-    'page a cell\'s residents by lower-cased uid after a cursor, over ' +
-    'personRows() — every person, sorted. What would stop it: the keyset ' +
-    'in SQL, which needs the uid readable to the database (it is sealed ' +
-    'since #391) or the order changed to the key\'s (#616\'s audit)' },
+  'admin-ui/admin_rbac.ts|candidates|personDns': { memory:
+    'the role screen\'s in-memory candidates; a windowed process returns ' +
+    'before personDns() and /admin/rbac asks candidatePageAsync() (#359)' },
+  'admin-ui/cells_admin.ts|answerPeople|residentsPage': { memory:
+    'the cells page\'s in-memory keyset; a windowed process asks ' +
+    'residentsPageAsync() — one rdnPage of ou=users (#359)' },
   'scim/scim.ts|declareResources|allPersons': { owed:
     'GET /scim/v2/Users with a filter other than userName eq (asked of the ' +
     'name index since #616) builds a resource for every person and filters ' +
@@ -172,11 +166,9 @@ const EXEMPT = {
     memory: 'the container\'s kept listing in memory; a windowed process ' +
     'asks windowedDeviceEntries() first — one byAttribute on owner under ' +
     'ou=devices — and pages nothing (#636)' },
-  'ldap/ldap_server.js|ldapDevicesView|listDeviceEntries': { owed:
-    '/admin-api/ldap/devices lists every device entry (ou=devices, ' +
-    'windowed) to draw a page. What would stop it: the shape of ' +
-    'windowedDirectoryView() for one container — realmPage under ' +
-    'ou=devices with the count from countUnderContainer() (#616\'s audit)' }
+  'ldap/ldap_server.js|ldapDevicesView|listDeviceEntries': { memory:
+    'the device page held in memory; a windowed process returns ' +
+    'windowedDevicesView() first — one count and one containerPage (#359)' }
 };
 
 // The handler registrations a file makes: the text of each one's arguments
