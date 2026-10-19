@@ -244,6 +244,17 @@ class ConsoleRuntime extends SpaClient {
     }
     if (!saved || saved.unreadable || !query.code ||
         query.state !== saved.state) {
+      // THE RETURN TAB of a same-device wallet holds no PKCE record. The
+      // tab that opened the console still does, and it redeems the code.
+      if (query.code && query.state &&
+          await this.handCallbackToStarter(query)) {
+        this.env.history.replaceState(null, '',
+          this.prefix + '/admin/callback');
+        this.drawProblem('Continue in your other tab',
+          'This sign-in is finishing in the tab where you opened the ' +
+          'console. You can close this one.');
+        return;
+      }
       this.drawProblem('This sign-in cannot be finished',
         'The answer from the authorization server does not belong to a ' +
         'sign-in this page started. Open the console again to sign in.');
