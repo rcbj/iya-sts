@@ -2016,19 +2016,20 @@ const SETTINGS = [
   { key: 'authn.sessionWindow', group: 'Web security',
     label: 'Bounded session window',
     env: 'STS_AUTHN_SESSION_WINDOW', type: 'enum',
-    enumValues: ['off', 'auto', 'on'], dflt: 'off',
+    enumValues: ['off', 'auto', 'on'], dflt: 'auto',
     runtime: false, perProcess: true,
     restartReason: 'a start that skips session bodies cannot put them ' +
                    'back when the window is turned off, so committed ' +
                    'sessions would be answered as absent',
     description: 'Whether one process holds every sign-on session or a ' +
-                 'bounded window of them. off, the default, keeps the full ' +
-                 'map: no miss is read and nothing is evicted. on is ' +
-                 'refused at start unless minted persistence is enabled, ' +
-                 'the service is one cell, and the minted key is a digest ' +
-                 '(STS-AUTHN-0339). auto does not turn the window on. It ' +
-                 'is a property of this process: a realm cannot carry its ' +
-                 'own value, and changing it needs a restart.' },
+                 'bounded window of them. auto, the default, holds the ' +
+                 'window when minted persistence is enabled, the service ' +
+                 'is one cell, and the minted key is a digest. Otherwise ' +
+                 'it keeps the full map and logs STS-AUTHN-0339 once at ' +
+                 'start. on is refused at start in that same state. off ' +
+                 'keeps the full map. It is a property of this process: a ' +
+                 'realm cannot carry its own value, and changing it needs ' +
+                 'a restart.' },
 
   { key: 'authn.sessionCacheEntries', group: 'Web security',
     label: 'Sessions one process holds',

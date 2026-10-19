@@ -5,9 +5,10 @@
 //
 // File: session_window.js
 //
-// authn.sessionWindow stays off unless this file forces on (#350). A miss
-// loads a sealed session. Eviction forgets the memory copy after the commit
-// and does not end the session. A read error is not absence.
+// authn.sessionWindow defaults to auto (#350). Without minted persistence
+// the full map stays. A miss loads a sealed session. Eviction forgets the
+// memory copy after the commit and does not end the session. A read error
+// is not absence.
 
 delete process.env.CONFIG_FILE;
 
@@ -176,13 +177,84 @@ function signIn(username, extra) {
 function clearSessions() {
   log.debug("Entering clearSessions().");
   const ids = [];
-  authn.sessions.forEach(function (session, id) {
+  // The facade pages the index while the window is on. This wants the
+  // rows this process actually holds, including ones the index stub
+  // never named.
+  authn.sessions.realmMap().forEach(function (session, id) {
     ids.push(id);
   });
   ids.forEach(function (id) {
     authn.sessions.delete(id);
   });
   log.debug("Leaving clearSessions().");
+}
+
+// Production code outside authn/authn.ts that still forEachs the session
+// store. While the window is on that map is a cache. A new hit is a walk
+// that can treat the cache as the whole store.
+function productionSessionWalks() {
+  log.debug("Entering productionSessionWalks().");
+  const root = path.join(__dirname, '..');
+  const skip = new RegExp('(^|/)(node_modules|tests|coverage|' +
+    'debugger/embedded|common/vendored|node-ldapjs|deploy|xacml-pep|' +
+    'docs|\\.claude|types|companion)(/|$)');
+  const hits = [];
+  function strip(text) {
+    log.debug("Entering strip().");
+    const out = String(text).replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:\\])\/\/.*$/gm, '$1');
+    log.debug("Leaving strip().");
+    return out;
+  }
+  function walk(dir) {
+    log.debug("Entering walk().");
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (e) {
+      log.debug("Caught in walk(): " + ((e && e.message) || e));
+      log.debug("Leaving walk().");
+      return;
+    }
+    entries.forEach(function (entry) {
+      const full = path.join(dir, entry.name);
+      const rel = path.relative(root, full).split(path.sep).join('/');
+      if (skip.test(rel) || rel === 'authn/authn.ts') {
+        return;
+      }
+      if (entry.isDirectory()) {
+        walk(full);
+        return;
+      }
+      if (!/\.(js|ts)$/.test(entry.name) || /\.d\.ts$/.test(entry.name)) {
+        return;
+      }
+      if (/\.js$/.test(entry.name) &&
+          fs.existsSync(full.replace(/\.js$/, '.ts'))) {
+        return;
+      }
+      let text = '';
+      try {
+        text = fs.readFileSync(full, 'utf8');
+      } catch (e) {
+        log.debug("Caught in walk(): " + ((e && e.message) || e));
+        return;
+      }
+      const source = strip(text);
+      if (/authn\.sessions\s*\.\s*forEach\s*\(/.test(source)) {
+        hits.push(rel);
+      }
+      // The console list used to walk the injected map under this name.
+      if (rel === 'admin-core/admin_views.ts' &&
+          /\bsessions\.forEach\s*\(/.test(source)) {
+        hits.push(rel + ':sessions');
+      }
+    });
+    log.debug("Leaving walk().");
+  }
+  walk(root);
+  log.debug("Leaving productionSessionWalks().");
+  return hits;
 }
 
 function cacheEntries(n) {
@@ -338,7 +410,7 @@ function offCase(t) {
     t.equal(alice ? audits('session.end', alice.id).length : 1, 0,
             'Alice has no session.end row');
     t.equal(sessionWindow.active(), false,
-            'the default off does not turn the window on');
+            'auto without minted persistence does not turn the window on');
   } finally {
     config.clearOverride('authn.maxSessions');
     clearSessions();
@@ -980,7 +1052,218 @@ async function onHalf(t) {
   await dirtyCase(t);
   await restoreCase(t);
   upgradeCase(t);
+  partialWalkCase(t);
   log.debug("Leaving onHalf().");
+}
+
+// Rows that exist only in the index stub. The realm map stays empty, so a
+// walk that reads the cache and stops cannot see them.
+function partialWalkCase(t) {
+  log.debug("Entering partialWalkCase().");
+  t.log.info('on: a partial cache still answers from the index');
+  freshWindow();
+  clearSessions();
+  const logout = require('../logout/logout');
+  const stats = require('../common/admin_stats');
+  const admin = require('../admin-ui/admin');
+  const adminViews = require('../admin-core/admin_views');
+  const HIT_SUB = 'urn:uuid:11111111-1111-1111-1111-111111111111';
+  const LIVE_SUB = 'urn:uuid:22222222-2222-2222-2222-222222222222';
+  const bodies = {};
+  function plant(id, over) {
+    log.debug("Entering plant().");
+    bodies[id] = sessionBody(id, over);
+    log.debug("Leaving plant().");
+  }
+  plant('walk-hit', {
+    subjectId: HIT_SUB,
+    user: { username: 'walk-hit', sub: HIT_SUB }
+  });
+  plant('walk-miss', { user: { username: 'walk-miss', sub: '' } });
+  plant('walk-child', {
+    derivedFrom: 'walk-parent',
+    user: { username: 'walk-child', sub: '' }
+  });
+  plant('walk-console-child', {
+    derivedFrom: 'walk-parent',
+    derivedFromRealm: REALM,
+    user: { username: 'walk-console-child', sub: '' }
+  });
+  plant('walk-keyed', {
+    credentialKey: 'fp-walk',
+    user: { username: 'walk-keyed', sub: '' }
+  });
+  plant('walk-fed', {
+    fedPartnerSession: { relationship: 'rel-walk' },
+    user: { username: 'walk-fed', sub: '' }
+  });
+  plant('walk-live', {
+    subjectId: LIVE_SUB,
+    user: { username: 'walk-live', sub: LIVE_SUB }
+  });
+  plant('walk-arrival', {
+    chosen: false,
+    subjectId: '',
+    user: { username: 'anonymous', sub: '' }
+  });
+  plant('walk-risk', {
+    risk: { level: 'low' },
+    user: { username: 'walk-risk', sub: '' }
+  });
+  const hitName = keystore.keyedDigest('session-username', 'walk-hit');
+  const localName = keystore.keyedDigest('session-username', 'walk-local');
+  const missName = keystore.keyedDigest('session-username', 'walk-miss');
+  const parentKey = keystore.keyedDigest('session-parent', 'walk-parent');
+  const seen = [];
+  let countNull = false;
+  let localNull = false;
+  queryFn = function (name, args) {
+    seen.push(name);
+    const realm = args && args[0];
+    const second = args && args[1];
+    if (name === 'session.count') {
+      if (countNull) {
+        return null;
+      }
+      return { n: 11 };
+    }
+    if (name === 'session.read') {
+      const body = bodies[second];
+      if (!body) {
+        return null;
+      }
+      return { session: body };
+    }
+    if (name === 'session.username') {
+      if (second === hitName) {
+        return ['walk-hit'];
+      }
+      if (localNull && second === localName) {
+        return null;
+      }
+      return [];
+    }
+    if (name === 'session.children') {
+      if (second !== parentKey) {
+        return [];
+      }
+      if (realm === REALM) {
+        return ['walk-child'];
+      }
+      if (realm === realms.DEFAULT_ID) {
+        return ['walk-console-child'];
+      }
+      return [];
+    }
+    if (name === 'session.credential' && realm === REALM &&
+        second === 'fp-walk') {
+      return ['walk-keyed'];
+    }
+    if (name === 'session.partner' && realm === REALM &&
+        second === 'rel-walk') {
+      return ['walk-fed'];
+    }
+    if (name === 'session.page') {
+      if (realm !== REALM || second) {
+        return [];
+      }
+      return ['walk-miss', 'walk-live', 'walk-arrival', 'walk-risk'];
+    }
+    return emptyAnswer(name);
+  };
+  try {
+    t.check(!!hitName && hitName !== 'walk-hit' && hitName !== HIT_SUB,
+            'the username key is a digest, not the urn');
+    t.check(!!missName && missName !== 'walk-miss',
+            'a miss still has a username digest');
+    seen.length = 0;
+    const hit = authn.sessionsOf('walk-hit');
+    t.equal(hit.length, 1, 'sessionsOf finds the urn subject by username');
+    t.equal(hit[0] && hit[0].subjectId, HIT_SUB,
+            'the row found is the urn subject');
+    t.equal(authn.sessions.get('walk-hit'), undefined,
+            'the username hit is not in the cache');
+    t.check(seen.indexOf('session.username') >= 0,
+            'sessionsOf asks username_key');
+    t.equal(seen.indexOf('session.page'), -1,
+            'a username hit does not page');
+    t.equal(seen.indexOf('session.subjectRows'), -1,
+            'sessionsOf does not filter subject_key');
+    seen.length = 0;
+    const miss = authn.sessionsOf('walk-miss');
+    t.equal(miss.length, 1, 'a username miss falls through to a page');
+    t.check(seen.indexOf('session.page') >= 0,
+            'the miss did page');
+    const kids = authn.derivedFrom('walk-parent').map(function (row) {
+      return row.id;
+    });
+    t.check(kids.indexOf('walk-child') >= 0,
+            'derivedFrom returns the uncached child');
+    t.check(kids.indexOf('walk-console-child') >= 0,
+            'derivedFrom returns the console child in the default realm');
+    t.equal(authn.sessions.get('walk-child'), undefined,
+            'the child is not in the cache');
+    const fed = authn.sessionsForRelationship('rel-walk');
+    t.equal(fed.length, 1, 'a federated session is still found');
+    t.equal(fed[0] && fed[0].id, 'walk-fed',
+            'the federated row is the relationship\'s');
+    t.equal(authn.sessions.realmMap().size, 0,
+            'the risk walk starts from an empty cache');
+    const riskIds = authn.sessionsForRisk().map(function (row) {
+      return row.id;
+    });
+    t.check(riskIds.indexOf('walk-risk') >= 0,
+            'sessionsForRisk sees an uncached person session');
+    const liveIds = logout.liveSessions().map(function (row) {
+      return row.id;
+    });
+    t.check(liveIds.indexOf('session:walk-live') >= 0,
+            'a chosen session that is not cached is still live');
+    t.equal(liveIds.indexOf('session:walk-arrival'), -1,
+            'an arrival is still skipped');
+    const held = stats.holderKeyOf('walk-live', LIVE_SUB);
+    const inventory = logout.inventoryFor(held);
+    t.check(inventory.sessions >= 1,
+            'sessionsByKey still hits an uncached session');
+    const listed = adminViews.signOnSessionRows().map(function (row) {
+      return row.id;
+    });
+    t.check(listed.indexOf('walk-live') >= 0,
+            'the console lists the uncached session');
+    const counted = admin.consoleJson();
+    t.equal(counted.signOnSessions, 11,
+            'signOnSessions is the index count');
+    countNull = true;
+    const unread = admin.consoleJson();
+    t.equal(unread.signOnSessions, null,
+            'a failed count stays null');
+    countNull = false;
+    seen.length = 0;
+    const local = sessionBody('walk-local', {
+      user: { username: 'walk-local', sub: '' }
+    });
+    authn.sessions.set(local.id, local);
+    localNull = true;
+    seen.length = 0;
+    const unflushed = authn.sessionsOf('walk-local');
+    t.equal(unflushed.length, 1,
+            'an unflushed row is still found when the username read fails');
+    t.equal(seen.indexOf('session.page'), -1,
+            'a failed username read is not the miss that pages');
+    authn.sessions.delete('walk-local');
+    t.equal(authn.sessions.get('walk-keyed'), undefined,
+            'the keyed row is not cached before the sign-in');
+    const detail = { key: 'fp-walk' };
+    const keyed = signIn('walk-keyed', detail);
+    t.equal(detail.refusedWith, undefined,
+            'the keyed sign-in is not refused', detail.refusedWith);
+    t.equal(keyed && keyed.id, 'walk-keyed',
+            'a keyed session is still found');
+  } finally {
+    countNull = false;
+    clearSessions();
+  }
+  log.debug("Leaving partialWalkCase().");
 }
 
 async function refusalCases(t, dir) {
@@ -1022,6 +1305,55 @@ async function refusalCases(t, dir) {
 
     sessionWindow.resetForTests();
     windowSetting('auto');
+    minted.reset();
+    t.equal(minted.enabled(), false,
+            'auto without a driver is not minted persistence');
+    const noDriver = loggedLines('STS-AUTHN-0339', function () {
+      sessionWindow.assertConfigured();
+    });
+    t.equal(noDriver.length, 1,
+            'auto without a driver logs STS-AUTHN-0339 once');
+    t.check(/not enabled/.test(noDriver[0] || ''),
+            'that log is the missing driver', noDriver[0]);
+    t.equal(sessionWindow.active(), false,
+            'auto without minted persistence keeps the full map');
+    keptWhole(t, 'auto-no-driver');
+    const noDriverAgain = loggedLines('STS-AUTHN-0339', function () {
+      sessionWindow.assertConfigured();
+    });
+    t.equal(noDriverAgain.length, 0,
+            'auto without a driver does not log again');
+
+    sessionWindow.resetForTests();
+    windowSetting('auto');
+    config.setOverride('global.mode', 'product');
+    config.setOverride('persistence.minted', true);
+    t.equal(installDriver(), true, 'the driver is back for several cells');
+    t.equal(minted.enabled(), true,
+            'minted persistence is enabled for the cell check');
+    cells.isMulti = function () {
+      return true;
+    };
+    const multi = loggedLines('STS-AUTHN-0339', function () {
+      sessionWindow.assertConfigured();
+    });
+    t.equal(multi.length, 1, 'auto in several cells logs STS-AUTHN-0339 once');
+    t.check(/several cells/.test(multi[0] || ''),
+            'that log is the cell id', multi[0]);
+    t.equal(sessionWindow.active(), false,
+            'auto in several cells keeps the full map');
+    keptWhole(t, 'auto-several');
+    const multiAgain = loggedLines('STS-AUTHN-0339', function () {
+      sessionWindow.assertConfigured();
+    });
+    t.equal(multiAgain.length, 0, 'auto in several cells does not log again');
+    cells.isMulti = savedIsMulti;
+
+    sessionWindow.resetForTests();
+    windowSetting('auto');
+    keystore.reset();
+    t.equal(minted.enabled(), true,
+            'product mode with a driver stays enabled while unsealed');
     const first = loggedLines('STS-AUTHN-0339', function () {
       sessionWindow.assertConfigured();
     });
@@ -1033,6 +1365,9 @@ async function refusalCases(t, dir) {
             'the log is the digest failure, not a missing driver',
             first[0]);
     t.equal(second.length, 0, 'a second check does not log it again');
+    t.equal(sessionWindow.active(), false,
+            'auto without a digest keeps the full map');
+    keptWhole(t, 'auto-undigested');
 
     await armKeystore(dir);
     cells.isMulti = savedIsMulti;
@@ -1045,14 +1380,16 @@ async function refusalCases(t, dir) {
     const column = minted.keyColumnOf('authn.sessions', REALM, 'probe-sid');
     t.check(!!column && column !== 'probe-sid',
             'the minted key is a digest');
-    t.equal(sessionWindow.active(), false,
-            'auto stays inactive when the three predicates hold');
+    sessionWindow.resetForTests();
+    installQuery();
+    t.equal(sessionWindow.active(), true,
+            'auto turns the window on when the three predicates hold');
     const autoRow = sessionBody('auto-row');
     authn.sessions.set(autoRow.id, autoRow);
     t.check(!!authn.sessions.get('auto-row'),
             'auto keeps the session in the map');
-    t.equal(sessionWindow.slotState(REALM, 'auto-row').cached, false,
-            'auto does not admit it to the window');
+    t.equal(sessionWindow.slotState(REALM, 'auto-row').cached, true,
+            'auto admits it to the window');
     authn.sessions.delete('auto-row');
   } finally {
     cells.isMulti = savedIsMulti;
@@ -1127,8 +1464,21 @@ async function withTempDir(fn) {
   }
 }
 
+function keptWhole(t, label) {
+  log.debug("Entering keptWhole().");
+  const row = sessionBody(label);
+  authn.sessions.set(row.id, row);
+  t.check(!!authn.sessions.get(label), label + ' stays in the map');
+  t.equal(sessionWindow.slotState(REALM, label).cached, false,
+          label + ' is not admitted');
+  authn.sessions.delete(label);
+  log.debug("Leaving keptWhole().");
+}
+
 async function body(t, dir) {
   log.debug("Entering body().");
+  t.equal(productionSessionWalks().join(', '), '',
+          'no production forEach of authn.sessions outside authn.ts');
   authn.setSessionObserver(function () {
     return null;
   });
@@ -1188,8 +1538,9 @@ async function run(t) {
 
 module.exports = {
   name: 'session_window',
-  describe: 'authn.sessionWindow is off unless forced on (#350): a miss ' +
-            'loads a sealed session, and eviction forgets memory after ' +
-            'the commit without ending the session',
+  describe: 'authn.sessionWindow defaults to auto (#350): without minted ' +
+            'persistence the full map stays, a miss loads a sealed ' +
+            'session, and eviction forgets memory after the commit ' +
+            'without ending the session',
   run: run
 };

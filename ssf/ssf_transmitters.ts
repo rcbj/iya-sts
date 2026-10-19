@@ -1413,21 +1413,24 @@ class SsfTransmitters {
                 ((e && e.message) || e));
       authn = null;
     }
-    if (authn && authn.sessions) {
-      authn.sessions.forEach(function (session: Json): void {
-        const held = session && session.fedPartnerSession;
-        if (!held || held.relationship !== record.fedId) {
-          return;
-        }
-        if (String((session.user && session.user.username) || '')
-              .toLowerCase() !== wanted) {
-          return;
-        }
-        if (sid && String(held.sid || held.sessionIndex || '') !== sid) {
-          return;
-        }
-        out.push(String(session.id));
-      });
+    if (authn) {
+      // The column narrows by relationship. The username and the partner
+      // sid are still compared on the sealed body, live or not yet swept.
+      authn.sessionsForRelationship(record.fedId).forEach(
+        function (session: Json): void {
+          const held = session && session.fedPartnerSession;
+          if (!held || held.relationship !== record.fedId) {
+            return;
+          }
+          if (String((session.user && session.user.username) || '')
+                .toLowerCase() !== wanted) {
+            return;
+          }
+          if (sid && String(held.sid || held.sessionIndex || '') !== sid) {
+            return;
+          }
+          out.push(String(session.id));
+        });
     }
     log.debug("Leaving SsfTransmitters.partnerSessionIds(). " + out.length);
     return out;
@@ -1445,23 +1448,26 @@ class SsfTransmitters {
     const logout = this.deps.logout();
     const wanted = String(username).toLowerCase();
     const matching: Json[] = [];
-    authn.sessions.forEach(function (session: Json): void {
-      const held = session && session.fedPartnerSession;
-      if (!held || held.relationship !== record.fedId) {
-        return;
-      }
-      if (String((session.user && session.user.username) || '')
-            .toLowerCase() !== wanted) {
-        return;
-      }
-      if (authn.sessionEnded(session)) {
-        return;
-      }
-      if (sid && String(held.sid || held.sessionIndex || '') !== sid) {
-        return;
-      }
-      matching.push(session);
-    });
+    // Same column, then the sealed body: lowercased username, and sid or
+    // sessionIndex. An ended row is not ended again.
+    authn.sessionsForRelationship(record.fedId).forEach(
+      function (session: Json): void {
+        const held = session && session.fedPartnerSession;
+        if (!held || held.relationship !== record.fedId) {
+          return;
+        }
+        if (String((session.user && session.user.username) || '')
+              .toLowerCase() !== wanted) {
+          return;
+        }
+        if (authn.sessionEnded(session)) {
+          return;
+        }
+        if (sid && String(held.sid || held.sessionIndex || '') !== sid) {
+          return;
+        }
+        matching.push(session);
+      });
     let ended = 0;
     matching.forEach(function (session: Json): void {
       if (logout) {

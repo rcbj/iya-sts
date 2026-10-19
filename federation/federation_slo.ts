@@ -544,12 +544,13 @@ class FederationSlo {
   // THE LIVE FEDERATED SESSIONS OF THIS RELATIONSHIP THAT `match` ACCEPTS.
   // The session store is persisted and replicated, so this is every node's
   // answer, and it is the ONE store: `fedPartnerSession` rides on the session
-  // rather than in an index beside it that could disagree with it.
+  // rather than in an index beside it that could disagree with it. The
+  // partner_relationship column only chooses which sealed bodies to open.
   private sessionsMatching(record, match) {
     const { authn, log } = this.deps;
     log.debug("Entering FederationSlo.sessionsMatching(). " + record.fedId);
     const out = [];
-    authn.sessions.forEach(function (session) {
+    authn.sessionsForRelationship(record.fedId).forEach(function (session) {
       const held = session && session.fedPartnerSession;
       if (!held || held.relationship !== record.fedId) {
         return;

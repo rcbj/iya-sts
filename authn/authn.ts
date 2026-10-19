@@ -1701,8 +1701,8 @@ class Authn {
   }
 
   // Hot path: every session read. No Entering/Leaving pair — one would
-  // drown the log. True only while authn.sessionWindow is on and the
-  // three predicates hold. auto stays off.
+  // drown the log. True for explicit on and for auto, and only while
+  // minted persistence, one cell, and a digest key all hold.
   private windowOn(): boolean {
     return sessionWindow.active();
   }
@@ -6058,7 +6058,11 @@ class Authn {
     if (extra.key) {
       const wanted = String(extra.key);
       let found = null;
-      sessions.forEach(function (held) {
+      // The realm Map, not the facade. While the window is on the facade
+      // pages the index, and this scan is the unflushed rows plus the
+      // credential_key query below. The fingerprint stays in the clear:
+      // it is not a digest.
+      sessions.realmMap().forEach(function (held) {
         if (!found && held.credentialKey === wanted &&
             !self.sessionEnded(held)) {
           found = held;
@@ -6912,55 +6916,132 @@ class Authn {
     log.debug("Entering Authn.sessionsOf(). username=" + username);
     const wanted = String(username || '');
     const out = [];
+    const seen: Record<string, boolean> = {};
+    // The username as typed. Not subject_key: a urn:uuid subject digests
+    // the sub, and not holderKeyOf, which moves when the person is renamed.
+    const take = function (session) {
+      log.debug("Entering take().");
+      if (!session || seen[session.id]) {
+        log.debug("Leaving take().");
+        return;
+      }
+      const name = (session.user && session.user.username) || '';
+      if (name !== wanted) {
+        log.debug("Leaving take().");
+        return;
+      }
+      seen[session.id] = true;
+      out.push(session);
+      log.debug("Leaving take().");
+    };
     if (this.windowOn()) {
+      const realmId = realms.currentId();
       const nameKey = keystore.keyedDigest('session-username', wanted);
+      // A missing digest is not an empty username. The filter cannot run,
+      // so the page is the walk. Returning nobody would hide the row.
+      let missed = !nameKey;
       if (!nameKey) {
         log.error(errorCodes.tag('STS-AUTHN-0338') +
                   'authn: a session could not be read: the username ' +
                   'digest is missing.');
-        log.debug("Leaving Authn.sessionsOf(). 0 session(s).");
-        return [];
+      } else {
+        const keys = sessionWindow.indexKeys('session.username',
+                                              [realmId, nameKey]);
+        // null is a failed read, already logged. It is not a miss, and
+        // it is not nobody: paging the same store does not repair it.
+        if (keys === null) {
+          missed = false;
+        } else if (!keys.length) {
+          missed = true;
+        } else {
+          keys.forEach(function (digest) {
+            const loaded = sessionWindow.loadByDigest(realmId, digest);
+            if (loaded.ok && loaded.session) {
+              take(loaded.session);
+            }
+          });
+        }
       }
-      const keys = sessionWindow.indexKeys('session.username',
-                                            [realms.currentId(), nameKey]);
-      if (keys === null) {
-        log.debug("Leaving Authn.sessionsOf(). 0 session(s).");
-        return [];
+      if (missed) {
+        const rows = this.indexedSessions(realmId, null);
+        if (rows) {
+          rows.forEach(function (row) {
+            take(row.session);
+          });
+        }
       }
-      const seen: Record<string, boolean> = {};
-      keys.forEach(function (digest) {
-        const loaded = sessionWindow.loadByDigest(realms.currentId(),
-                                                   digest);
-        if (!loaded.ok || !loaded.session) {
-          return;
-        }
-        const session = loaded.session;
-        const name = (session.user && session.user.username) || '';
-        if (name !== wanted || seen[session.id]) {
-          return;
-        }
-        seen[session.id] = true;
-        out.push(session);
-      });
-      sessions.forEach(function (session) {
-        if (!session || seen[session.id]) {
-          return;
-        }
-        if (((session.user && session.user.username) || '') === wanted) {
-          out.push(session);
-        }
+      // Unflushed rows are not in the index yet. realmMap is those rows,
+      // not the facade, whose forEach pages the index.
+      sessions.realmMap().forEach(function (session) {
+        take(session);
       });
     } else {
       sessions.forEach(function (session) {
-        if (((session.user && session.user.username) || '') === wanted) {
-          out.push(session);
-        }
+        take(session);
       });
     }
     out.sort(function (a, b) {
       return (b.authTime || 0) - (a.authTime || 0);
     });
     log.debug("Leaving Authn.sessionsOf(). " + out.length + " session(s).");
+    return out;
+  }
+
+  // Sessions whose sealed fedPartnerSession names this relationship.
+  // The column narrows the page; the body is still what the caller reads.
+  // A second store of the partner object would be a second answer.
+  /**
+   * Lists sessions whose partner relationship is the one named.
+   *
+   * While the window is on, the index selects `partner_relationship` and
+   * the sealed body is what the caller compares. While it is off, the walk
+   * is the realm map.
+   *
+   * @param relationship - the federation relationship id
+   * @returns the sessions, ended ones included
+   */
+  sessionsForRelationship(relationship) {
+    const { log, realms } = this.deps;
+    log.debug("Entering Authn.sessionsForRelationship(). " + relationship);
+    const wanted = String(relationship || '');
+    const out = [];
+    const seen: Record<string, boolean> = {};
+    const take = function (session) {
+      log.debug("Entering take().");
+      if (!session || !session.id || seen[session.id]) {
+        log.debug("Leaving take().");
+        return;
+      }
+      const held = session.fedPartnerSession;
+      if (!held || String(held.relationship || '') !== wanted) {
+        log.debug("Leaving take().");
+        return;
+      }
+      seen[session.id] = true;
+      out.push(session);
+      log.debug("Leaving take().");
+    };
+    if (this.windowOn()) {
+      const realmId = realms.currentId();
+      const keys = sessionWindow.indexKeys('session.partner',
+                                            [realmId, wanted]);
+      if (keys) {
+        keys.forEach(function (digest) {
+          const loaded = sessionWindow.loadByDigest(realmId, digest);
+          if (loaded.ok && loaded.session) {
+            take(loaded.session);
+          }
+        });
+      }
+      sessions.realmMap().forEach(function (session) {
+        take(session);
+      });
+    } else {
+      sessions.forEach(function (session) {
+        take(session);
+      });
+    }
+    log.debug("Leaving Authn.sessionsForRelationship(). " + out.length);
     return out;
   }
 
@@ -7001,12 +7082,51 @@ class Authn {
     return out;
   }
 
+  // A forEach of the facade while the window is on. The realm Map then
+  // holds unflushed rows only, so a caller that still walks it would see
+  // who is cached. Paging the index is the walk. A failed page calls
+  // nothing: the cache is not a stand-in for the rows that could not be
+  // read, and it is not a reason to end some other row.
+  /**
+   * Walks every session of the ambient realm.
+   *
+   * While the window is off this is the realm map. While it is on it is
+   * the index, plus rows not yet flushed.
+   *
+   * @param fn - `(session, id)`
+   * @param thisArg - the value of `this` inside `fn`
+   */
+  forEachSession(fn, thisArg?) {
+    const { log, realms } = this.deps;
+    log.debug("Entering Authn.forEachSession().");
+    if (typeof fn !== 'function') {
+      log.debug("Leaving Authn.forEachSession().");
+      return;
+    }
+    if (!this.windowOn()) {
+      sessions.realmMap().forEach(fn, thisArg);
+      log.debug("Leaving Authn.forEachSession().");
+      return;
+    }
+    const rows = this.indexedSessions(realms.currentId(),
+                                       sessions.realmMap());
+    if (!rows) {
+      log.debug("Leaving Authn.forEachSession(). Unread.");
+      return;
+    }
+    rows.forEach(function (row) {
+      fn.call(thisArg, row.session, row.id);
+    });
+    log.debug("Leaving Authn.forEachSession().");
+  }
+
   // THE SESSIONS OF THIS REALM THAT `test` ACCEPTS (#189), without the cookie
   // and without expiring them. For a SAML attribute authority, which is asked
   // about a subject by the NameID a service provider was GIVEN — a transient
   // or an emailAddress NameID is not the username, so the question is which
   // live session gave that service provider that NameID, and nothing but the
-  // session holds the answer.
+  // session holds the answer. There is no NameID column, so the page is
+  // every sealed body.
   /**
    * Lists the ambient realm's sessions a predicate accepts, without the cookie
    * and without expiring them.
@@ -14804,6 +14924,15 @@ const slot = new InstanceSlot<Authn>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+// The facade is a plain object the checker sees as a Map, so forEach is
+// typed read-only. Replacing it is what a caller that still walks
+// authn.sessions does while the window is on: the realm Map is unflushed
+// rows, and the walk has to page the index. A resident walk uses
+// realmMap(), which is the Map and not this function.
+(sessions as any).forEach = function (fn, thisArg) {
+  return slot.get().forEachSession(fn, thisArg);
+};
+
 // ---------------------------------------------------------------------------
 // THE SESSION-EXPIRY SWEEP, AS A SCHEDULER JOB (#49, 2026-09-22) — see the
 // header's *THE SWEEP IS A SCHEDULER JOB*. Registered here, at load, and run
@@ -14976,6 +15105,9 @@ export = {
   // somewhere else would be a sign-out that revoked nothing and logged nothing,
   // and it would look exactly like this one from the outside.
   sessionsOf: slot.forward('sessionsOf'),
+  // A partner sign-out's question: which sessions carry this relationship.
+  // The sealed fedPartnerSession is still the object the caller matches.
+  sessionsForRelationship: slot.forward('sessionsForRelationship'),
   // The SAML 2.0 attribute authority's question (#189): which live session
   // gave a service provider a NameID.
   sessionsMatching: slot.forward('sessionsMatching'),

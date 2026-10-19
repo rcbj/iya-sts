@@ -505,6 +505,7 @@ import stats = require('../common/admin_stats');
 // `common/oidc_rp.ts` still registers the console's callback on its client.
 import oidcRp = require('../common/oidc_rp');
 import authn = require('../authn/authn');
+import sessionWindow = require('../authn/session_window');
 const { sessions } = authn;
 // WHO MAY USE THIS CONSOLE. A library (rule 3): it registers no route, so
 // requiring it here moves nothing in the router, and it requires only
@@ -5398,13 +5399,19 @@ class AdminConsole {
     const { log, stats, config, sessions } = this.deps;
     log.debug("Entering AdminConsole.consoleJson().");
     const snap = stats.snapshot();
+    // sessions.size is who this process has cached. While the window is
+    // on, the index count is who holds a session. A failed count stays
+    // null: the cache size would report a partial map as the whole store.
+    const signOnSessions = sessionWindow.active()
+      ? sessionWindow.count(realms.currentId())
+      : sessions.size;
     const json = {
       issuer: IssuerNames.issuer(),
       startedAt: new Date(snap.startedAt).toISOString(),
       uptimeMs: snap.uptimeMs,
       calls: snap.calls.total, tokensHeld: snap.tokens.held,
       tokensRevoked: snap.tokens.revoked,
-      artifactsHeld: snap.artifacts.held, signOnSessions: sessions.size,
+      artifactsHeld: snap.artifacts.held, signOnSessions: signOnSessions,
       usersKnown: snap.users.known,
       usersAuthenticatedHere: snap.users.authenticatedHere,
       pages: NAV.filter(function (n) { return !n.hidden; })

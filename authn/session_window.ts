@@ -6,10 +6,12 @@
 // File: session_window.ts
 //
 // The sign-on sessions one process holds when authn.sessionWindow is on
-// (#350). The realm Map stays the whole store while the setting is off or
-// auto. Eviction forgets a memory copy only after its upsert has committed,
-// and it does not end the session. A miss reads the sealed row by its keyed
-// digest. This is not the authn.sessions partition and not a directory window.
+// (#350). `auto` is the same window once minted persistence is enabled, the
+// process is one cell, and the minted key is a digest; otherwise the realm
+// Map stays the whole store. Eviction forgets a memory copy only after its
+// upsert has committed, and it does not end the session. A miss reads the
+// sealed row by its keyed digest. This is not the authn.sessions partition
+// and not a directory window.
 
 import bunyan = require('bunyan');
 import config = require('../common/config');
@@ -113,13 +115,16 @@ class SessionWindow {
 
   // Hot path: every membership test. No Entering/Leaving pair.
   /**
-   * Whether explicit `on` is in force: minted persistence, one cell, and a
-   * digest key. `auto` stays off in this process.
+   * Whether the window replaces the full map. `on` and `auto` both require
+   * minted persistence, one cell, and a digest key. `digestHeld` is the
+   * same fact as `keyColumnOf` returning a digest; that function logs, so
+   * this probe does not call it. A null digest is not `enabled()` false.
    *
    * @returns true only when the window may replace the full map
    */
   active(): boolean {
-    if (String(config.processValue('authn.sessionWindow')) !== 'on') {
+    const setting = String(config.processValue('authn.sessionWindow'));
+    if (setting !== 'on' && setting !== 'auto') {
       return false;
     }
     if (!minted.enabled()) {

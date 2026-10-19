@@ -584,11 +584,17 @@ class Logout {
     log.debug("Entering Logout.sessionsByKey(). " + keys.length + " key(s).");
     const out = new Map();
     keys.forEach((key) => { out.set(String(key || ''), []); });
-    authn.sessions.forEach((session) => {
+    // holderKeyOf moves when a urn:uuid subject resolves, so it is not a
+    // column. The page is every sealed body; a cached subset is not.
+    authn.sessionsMatching(function () {
+      return true;
+    }).forEach((session) => {
       const username = (session.user && session.user.username) || '';
       const sub = (session.user && session.user.sub) || '';
       const list = out.get(stats.holderKeyOf(username, sub));
-      if (list) list.push(session);
+      if (list) {
+        list.push(session);
+      }
     });
     out.forEach((list) => {
       list.sort((a, b) => { return (b.authTime || 0) - (a.authTime || 0); });
@@ -2190,12 +2196,16 @@ class Logout {
     const nowMs = Date.now();
     const out = [];
 
-    // THE BROWSER SIGN-ON SESSIONS. Read straight off the store that owns them,
-    // and an expired one is skipped rather than listed as expired: `authn.js`
+    // THE BROWSER SIGN-ON SESSIONS. While the window is on the map is a
+    // cache, so this is the index: a chosen session that is not cached is
+    // still live, and an arrival is still skipped. An expired one is
+    // skipped rather than listed as expired: `authn.js`
     // drops a session when it is next looked up, so one still in the map with a
     // past `expires` is a session that has ended and has not been swept — and
     // this page is what is LIVE.
-    authn.sessions.forEach((session) => {
+    authn.sessionsMatching(function () {
+      return true;
+    }).forEach((session) => {
       // ---------------------------------------------------------------------
       // AN ARRIVAL SESSION IS NOT SOMEBODY BEING SIGNED IN, so it is not on
       // this list. `authn.startArrivalSession()` gives every browser one the

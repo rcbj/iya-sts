@@ -115,8 +115,10 @@ import devices = require('../common/devices');
 // person's page, and the policy that governs them.
 import serviceAccounts = require('../common/service_accounts');
 import serviceAccountPolicy = require('../common/service_account_policy');
-// THE SIGN-ON SESSION MAP, which `signOnSessionRows()` walks. It is the same
-// destructured-require trap one module along: admin.js pulls fourteen names
+// THE SIGN-ON SESSIONS. `signOnSessionRows()` asks `sessionsMatching`,
+// which reads the index while the window is on. The map kept on the deps
+// is that cache. The require is the same destructured-require trap one
+// module along: admin.js pulls fourteen names
 // out of two modules through multi-line destructures, and a name taken from
 // the second one is exactly as invisible to a move as one taken from the
 // first. `authn` is position 8 in the require order, so this is a cache hit
@@ -1592,11 +1594,16 @@ class AdminViews {
    * @returns the rows
    */
   signOnSessionRows() {
-    const { log, sessions, sessionStartedAt } = this.deps;
+    const { log, sessionStartedAt } = this.deps;
     log.debug("Entering AdminViews.signOnSessionRows().");
     const nowMs = Date.now();
     const rows = [];
-    sessions.forEach(function (session, id) {
+    // The injected map is who is cached. The list is every session the
+    // index names while the window is on, and the map while it is off.
+    authn.sessionsMatching(function () {
+      return true;
+    }).forEach(function (session) {
+      const id = session && session.id;
       rows.push({
         id: id,
         username: (session.user && session.user.username) || '',

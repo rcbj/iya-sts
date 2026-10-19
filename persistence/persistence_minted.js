@@ -724,9 +724,10 @@ function setDriver(theDriver, activeMode) {
 // the flush is where the mode and the setting are consulted. The cost of being
 // wrong that way round is a Set that fills and is discarded, which is nothing;
 // the cost of the other way round is three config reads per session write.
-// One string compare gates the session window, and only when the PROCESS
-// value of authn.sessionWindow is exactly "on". Off and auto do not load it.
-// The value is not the ambient realm's: a realm cannot carry this setting.
+// One call gates the session window. `auto` loads it only when the window
+// itself is active: minted persistence, one cell, and a digest key. Off
+// does not. The value is not the ambient realm's: a realm cannot carry
+// this setting.
 // ---------------------------------------------------------------------------
 function note(handle, realmId, key) {
   if (restoring || stopped) {
@@ -1144,8 +1145,7 @@ function applyLocally(store, realmId, key, value, remove) {
   restoring = true;
   try {
     let decision = remove ? 'remove' : 'restore';
-    if (store && store.handle === 'authn.sessions' &&
-        config.processValue('authn.sessionWindow') === 'on') {
+    if (store && store.handle === 'authn.sessions') {
       try {
         const sessionWindow = sessionWindowIfOn();
         if (sessionWindow) {
@@ -1182,12 +1182,9 @@ function applyLocally(store, realmId, key, value, remove) {
 }
 
 // Hot path: note() runs inside every sessions.set. No Entering/Leaving
-// pair. Off and auto return before the require, so they do not load the
-// window. enabled() is not read here.
+// pair. active() is the gate, so auto is on only when the three
+// predicates hold. A literal "on" left auto keeping the full map.
 function sessionWindowIfOn() {
-  if (config.processValue('authn.sessionWindow') !== 'on') {
-    return null;
-  }
   const sessionWindow = require('../authn/session_window');
   if (!sessionWindow.active()) {
     return null;
@@ -2340,16 +2337,14 @@ function restore() {
     });
   }
   const filter = restoreFilter(Date.now());
-  if (config.processValue('authn.sessionWindow') === 'on') {
-    try {
-      const sessionWindow = sessionWindowIfOn();
-      if (sessionWindow &&
-          filter.skipHandles.indexOf('authn.sessions') < 0) {
-        filter.skipHandles.push('authn.sessions');
-      }
-    } catch (e) {
-      log.debug("Caught in restore(): " + ((e && e.message) || e));
+  try {
+    const sessionWindow = sessionWindowIfOn();
+    if (sessionWindow &&
+        filter.skipHandles.indexOf('authn.sessions') < 0) {
+      filter.skipHandles.push('authn.sessions');
     }
+  } catch (e) {
+    log.debug("Caught in restore(): " + ((e && e.message) || e));
   }
   log.debug("Leaving restore().");
   // WHAT WAS MINTED BEFORE THE RESTORE (#357): journalled and not written —

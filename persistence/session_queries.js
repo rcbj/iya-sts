@@ -54,6 +54,9 @@ const PAGE = 'SELECT key FROM sts_sessions WHERE realm = $1 AND key > $2 ' +
 const SURFACE = 'SELECT key FROM sts_sessions WHERE realm = $1 AND ' +
   'rp_surface = $2';
 
+const PARTNER = 'SELECT key FROM sts_sessions WHERE realm = $1 AND ' +
+  'partner_relationship = $2';
+
 /**
  * Builds one named statement.
  *
@@ -98,6 +101,9 @@ function build(name, args) {
     values = [a[0], a[1], a[2]];
   } else if (name === 'session.surface') {
     text = SURFACE;
+    values = [a[0], a[1]];
+  } else if (name === 'session.partner') {
+    text = PARTNER;
     values = [a[0], a[1]];
   } else {
     log.debug("Leaving build().");
@@ -162,7 +168,8 @@ function answerOf(name, rows) {
   }
   if (name === 'session.expired' || name === 'session.children' ||
       name === 'session.credential' || name === 'session.username' ||
-      name === 'session.page' || name === 'session.surface') {
+      name === 'session.page' || name === 'session.surface' ||
+      name === 'session.partner') {
     const out = [];
     list.forEach(function (row) {
       if (row && row.key != null) {

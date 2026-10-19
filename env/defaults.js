@@ -184,9 +184,9 @@ var config = {
     maxSessions: 100000,            // Most sign-on sessions per realm
     maxSessionsPerSubject: 32,      // Most countable sessions per subject
     sessionShedPerSweep: 100,       // Own surplus sessions ended per sweep
-    sessionWindow: "off",           // Bounded session window (off, auto, on)
-    sessionCacheEntries: 10000,     // Sessions one process holds when on
-    sessionReadTimeoutMs: 2000,     // Session miss timeout and cooldown (ms)
+    sessionWindow: "auto",          // Bounded session window; restart to apply
+    sessionCacheEntries: 10000,     // Sessions one process holds
+    sessionReadTimeoutMs: 2000,     // Session read timeout (milliseconds)
     pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
     mfaStepTtlS: 300,               // How long a second-factor step waits (seconds)
     passwordAloneDoors: "",         // Password-only doors that accept a password alone

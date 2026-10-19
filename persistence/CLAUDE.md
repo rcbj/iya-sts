@@ -2571,8 +2571,9 @@ row: a resume's new head would hide an older build's delete, and a body
 published as the follower's floor only after the transaction commits. The
 follower starts at the change seq taken before the walk, so a commit during
 it still reaches the index repair. SQL cannot
-open the bodies. Memory and LDIF are unchanged, and the full in-memory map
-stays resident.
+open the bodies. Memory and LDIF are unchanged. Where the window is on,
+one process holds a bounded set and the walks read this index; the
+argument is in `authn/CLAUDE.md`.
 
 ### The schema version moved to 2
 

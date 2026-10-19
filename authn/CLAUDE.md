@@ -1683,15 +1683,21 @@ ends somebody else's session.
 
 `tests/session_cap.js` holds it.
 
-`authn.sessionWindow` defaults to `off`, so that walk is still the whole
-store: a miss is not read and a cached row is not evicted. Explicit `on` is
-refused at start unless minted persistence is enabled, the service is one
-cell, and the minted key is a digest (`STS-AUTHN-0339`, logged, never sent).
-`auto` does not turn the window on. The window, the cache size and the read
-timeout are properties of the process. The window is fixed at start: turning
-it off while running is refused, because a start that skipped the session
-bodies would then answer committed sessions as absent. `tests/session_window.js`
-forces `on`.
+`authn.sessionWindow` defaults to `auto`. It turns the window on only when
+minted persistence is enabled, the service is one cell, and the minted key
+is a digest. Otherwise it keeps the full map and logs `STS-AUTHN-0339` once
+at start. Explicit `on` in that state is refused at start with the same
+code (logged, never sent). `off` keeps the full map. While the window is
+on, a walk that needs every session reads `sts_sessions` and unseals the
+matches. `sessionsOf` filters `username_key` and, on a miss, pages the
+index. It does not filter `subject_key` and it does not call `holderKeyOf`,
+so a `urn:uuid:` subject is still found by the username. The keyed scan
+finds `credential_key`. A walk that sees only the cache, and treats the
+rest as gone, is the bug this exists to prevent. The window, the cache
+size and the read timeout are properties of the process. The window is
+fixed at start: turning it off while running is refused, because a start
+that skipped the session bodies would then answer committed sessions as
+absent. `tests/session_window.js` holds it.
 
 **THE EVENT SAYS `policy` AND NOT `user`.** `caep.ts`'s rule for a `revoked` act
 was `admin` when an administrator did it and `user` otherwise, and an expiry is
