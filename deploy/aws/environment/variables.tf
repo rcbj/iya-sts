@@ -95,6 +95,22 @@ variable "applications_max" {
   default     = 10000
 }
 
+variable "realms_max_count" {
+  description = <<-EOT
+    How many trust realms the cluster may hold, the default realm included
+    (STS_REALMS_MAX_COUNT, #368) on every node. The service default is 10 in
+    every mode, and stays so for a deployment (rcbj, 2026-10-19); every
+    environment this stack builds is a SUITE environment, and one suite run
+    creates dozens of realms and leaves them standing until the next run's
+    reset-environment.js removes them, so the cap is the setting's maximum
+    here, as env/test.js and env/docker-tests.js have it for the local
+    stacks. An environment that is not a suite target sets it lower in its
+    tfvars. Each realm costs memory in every node process.
+  EOT
+  type        = number
+  default     = 100000
+}
+
 variable "runner_task_cpu" {
   description = "Fargate CPU units for the suite task (runner, PEP and credential containers)."
   type        = number

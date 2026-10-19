@@ -116,7 +116,10 @@ standing — a kept stack has held well over ten — so `test.js` and
 `docker-tests.js` raise the cap to the setting's own maximum. `local.js`, the
 image default, does not: a deployment's effective value stays 10 until a
 service administrator sets it in the default realm, or `STS_REALMS_MAX_COUNT`
-is set. The in-process suite raises the same variable in `tests/run.js`.
+is set. The in-process suite raises the same variable in `tests/run.js`,
+`tests/tools/service.js` for the throwaway instance a debug, trace or coverage
+run starts on `env/local.js`, and `deploy/aws/environment` (`realms_max_count`)
+for the AWS suite environments.
 `common/CLAUDE.md` argues the cap.
 
 ## The union is also what keeps a file that is NOT this service's loadable

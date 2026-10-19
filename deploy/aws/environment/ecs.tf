@@ -105,6 +105,11 @@ locals {
     LDAP_MAX_ENTRIES     = tostring(var.ldap_max_entries)
     STS_APPLICATIONS_MAX = tostring(var.applications_max)
 
+    # The realm cap (#368), raised for the suite as an ENVIRONMENT value, so
+    # resetting the default realm's override (sts_realm_count_limit.js puts
+    # its own back) lands here rather than on the service default of 10.
+    STS_REALMS_MAX_COUNT = tostring(var.realms_max_count)
+
     # WHERE A RISK DATASET UPLOAD IS WRITTEN (#214): the task's own EBS volume,
     # below. Set explicitly, although it is the setting's default resolved,
     # so that the mount and the setting are read side by side here rather than
