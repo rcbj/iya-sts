@@ -1068,11 +1068,12 @@ const SCHEMA = {
             'partner is the one on this service\'s own SAML metadata.' },
     { name: 'fedUsernameSource', kind: 'single', role: 'service-provider',
       from: 'this register',
-      what: 'WHICH INCOMING VALUE BECOMES THE LOCAL USERNAME — a claim name ' +
-            'for OIDC/OAuth 2.0, a SAML Attribute Name for the others. Empty ' +
-            'means the subject itself: the NameID, or `sub`. This is the one ' +
-            'mapping decision that cannot be got wrong quietly, because it ' +
-            'decides which directory entry a person lands on.' },
+      what: 'WHICH INCOMING VALUE IS LOOKED UP AT LINK-AT-FIRST-SIGN-IN, ' +
+            'and matched under any-existing — a claim name for OIDC/OAuth ' +
+            '2.0, a SAML Attribute Name for the others. Empty means the ' +
+            'subject itself: the NameID, or `sub`. It does not name an ' +
+            'entry this sign-in CREATES: that name is the relationship and ' +
+            'the partner\'s stable subject (#358).' },
     { name: 'fedAttributeMap', kind: 'multi', role: 'service-provider',
       from: 'this register',
       what: 'ONE VALUE PER MAPPING, written `<incoming name>=<LDAP ' +
@@ -1084,12 +1085,15 @@ const SCHEMA = {
     { name: 'fedAutocreateUsers', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'DYNAMIC PROVISIONING: create a directory entry the first time ' +
-            'this partner signs somebody in. ON by default. OFF means the ' +
-            'person must ALREADY have an entry here — provisioned ahead of ' +
-            'time, by SCIM or by hand — and a sign-in for somebody who does ' +
-            'not is refused, because a session needs an entry to be the ' +
-            'subject of. (Until 2026-09-14 OFF gave a session and no entry; ' +
-            'a stable subject made that state impossible.)' },
+            'this partner signs somebody in. Written TRUE when a ' +
+            'relationship is created in development and FALSE in product ' +
+            '(mode.defaultsFederatedAutocreate()); a relationship that ' +
+            'stores neither reads the same way. OFF means the person must ' +
+            'ALREADY have an entry here — provisioned ahead of time, by ' +
+            'SCIM or by hand — and a sign-in for somebody who does not is ' +
+            'refused, because a session needs an entry to be the subject ' +
+            'of. (Until 2026-09-14 OFF gave a session and no entry; a ' +
+            'stable subject made that state impossible.)' },
     { name: 'fedUpdateUserAttributes', kind: 'single',
       role: 'service-provider', from: 'this register',
       what: 'Update the person\'s directory attributes on EVERY sign-in from ' +
@@ -1099,6 +1103,33 @@ const SCHEMA = {
             'person — or one somebody has since edited — keeps what the ' +
             'directory says. Which relationship and issuer a person came ' +
             'through is recorded either way.' },
+    { name: 'fedProvisionGroups', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'BUILD GROUP MEMBERSHIPS FROM THE PARTNER\'S TOKEN (#358). OFF ' +
+            'by default, and a missing value is off. On, each group name ' +
+            'the assertion carries becomes a membership of the person this ' +
+            'sign-in provisioned, on every successful sign-in. A group ' +
+            'created this way is marked with this relationship. A name ' +
+            'that already exists and is not marked as this relationship\'s ' +
+            '— a console group included — is ignored, audited ' +
+            '(STS-FED-0161) and the sign-in continues. It does not satisfy ' +
+            'fedSubjectGroup: that rule runs before anybody is added.' },
+    { name: 'fedProvisionCap', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'HOW MANY PEOPLE THIS RELATIONSHIP MAY CREATE. Empty or 0 is ' +
+            'unlimited. At the cap a new subject is refused STS-FED-0090; ' +
+            'a person already linked still signs in. ldap.maxEntries ' +
+            'remains the realm ceiling. Not a count of sign-ins — ' +
+            'fedUsers is that.' },
+    { name: 'fedProvisionIdleMinutes', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      what: 'DISABLE A PERSON THIS RELATIONSHIP IS THE ONLY SIGN-IN PATH ' +
+            'FOR, once federationLastSeen is older than this many minutes. ' +
+            'Empty or 0 is off: nobody is disabled for being idle. The ' +
+            'entry and the link are kept. A person with a local ' +
+            'userPassword, or a link through another relationship, is ' +
+            'left alone. A partner\'s account-disabled signal is separate ' +
+            '(STS-FED-0156) and blocks only that partner\'s sign-ins.' },
     // --- WHICH PEOPLE THE PARTNER MAY ASSERT (#109, 2026-09-22) ----------
     // The gate used to be on the SIGNER only: any person a verified assertion
     // named was signed in, matched onto a local entry by NAME. These five say
@@ -1118,10 +1149,12 @@ const SCHEMA = {
             'entry namespaced to this relationship where provisioning is on. ' +
             'pre-linked: only a link signs anybody in. jit-namespaced: an ' +
             'unlinked subject always gets a NEW entry, ' +
-            '<relationship>~<name>, ' +
-            'never an existing person. any-existing: the name the partner ' +
-            'sent is matched straight onto a local person, as this service ' +
-            'did before #109 — DEVELOPMENT ONLY, refused in product, and it ' +
+            '<relationship>~<subject>, ' +
+            'never an existing person. The subject is the partner\'s stable ' +
+            'identifier, with a urn:uuid: folded to sub-<uuid>; it is not ' +
+            'the mapped username. any-existing: the name the partner sent ' +
+            'is matched straight onto a local person, as this service did ' +
+            'before #109 — DEVELOPMENT ONLY, refused in product, and it ' +
             'lets this partner sign in any account it can name.' },
     { name: 'fedSubjectGroup', kind: 'multi', role: 'service-provider',
       from: 'this register',
@@ -1507,6 +1540,9 @@ const EDITABLE = {
   fedUsernameSource: 'set',
   fedAutocreateUsers: 'set',
   fedUpdateUserAttributes: 'set',
+  fedProvisionGroups: 'set',
+  fedProvisionCap: 'set',
+  fedProvisionIdleMinutes: 'set',
   fedSubjectPolicy: 'set',
   fedSubjectPattern: 'set',
   fedMayAssertAdministrators: 'set',
@@ -2019,6 +2055,113 @@ function linkedThrough(fedId) {
   log.debug("Leaving linkedThrough().");
   return directoryHas('federationLinksThrough')
     ? directory.federationLinksThrough(String(fedId || '')) : [];
+}
+
+// How many PEOPLE this relationship has linked, one per person however many
+// of its subjects they carry. The cap counts entries, not link values.
+/**
+ * Returns how many people carry a link through one relationship.
+ *
+ * @param fedId - the relationship id
+ * @returns the number of people
+ */
+function provisionedCount(fedId) {
+  log.debug("Entering provisionedCount().");
+  const seen = {};
+  let count = 0;
+  linkedThrough(fedId).forEach(function (row) {
+    const key = String((row && (row.dn || row.username)) || '')
+      .toLowerCase();
+    if (!key || seen[key]) {
+      return;
+    }
+    seen[key] = true;
+    count += 1;
+  });
+  log.debug("Leaving provisionedCount(). " + count);
+  return count;
+}
+
+// Empty or 0 is unlimited (the cap) or off (the idle sweep). A value that
+// is not a non-negative integer reads as 0 rather than as a cap of nothing:
+// a corrupt attribute must not refuse every newcomer. `Number(value || n)`
+// is not used, because 0 is one of the two legal values.
+/**
+ * Reads a non-negative integer attribute. Empty and anything else are 0.
+ *
+ * @param value - the stored value
+ * @returns the integer, or 0
+ */
+function nonNegativeIntOf(value) {
+  log.debug("Entering nonNegativeIntOf().");
+  const text = String(value == null ? '' : value).trim();
+  if (!/^[0-9]+$/.test(text)) {
+    log.debug("Leaving nonNegativeIntOf(). Not a count.");
+    return 0;
+  }
+  const n = Number(text);
+  log.debug("Leaving nonNegativeIntOf().");
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Returns how many people a relationship may create. 0 is unlimited.
+ *
+ * @param record - the federation relationship
+ * @returns the cap, or 0 when there is none
+ */
+function provisionCapOf(record) {
+  log.debug("Entering provisionCapOf().");
+  log.debug("Leaving provisionCapOf().");
+  return nonNegativeIntOf(record && record.fedProvisionCap);
+}
+
+/**
+ * Returns the idle time, in minutes, after which a person whose only
+ * sign-in path is this relationship is disabled. 0 is off.
+ *
+ * @param record - the federation relationship
+ * @returns the minutes, or 0 when the sweep is off
+ */
+function provisionIdleMinutesOf(record) {
+  log.debug("Entering provisionIdleMinutesOf().");
+  log.debug("Leaving provisionIdleMinutesOf().");
+  return nonNegativeIntOf(record && record.fedProvisionIdleMinutes);
+}
+
+/**
+ * Applies group names from a partner's assertion to one person, through
+ * the directory. A missing directory answers that nothing was done.
+ *
+ * @param fedId - the relationship id
+ * @param username - the local person
+ * @param names - the group names
+ * @returns `{ joined, ignored, created }`
+ */
+function applyFederatedGroups(fedId, username, names) {
+  log.debug("Entering applyFederatedGroups().");
+  if (!directoryHas('applyFederatedGroups')) {
+    log.debug("Leaving applyFederatedGroups(). No directory.");
+    return { joined: [], ignored: [], created: [] };
+  }
+  const applied = directory.applyFederatedGroups(String(fedId || ''),
+    String(username || ''), names || []);
+  log.debug("Leaving applyFederatedGroups().");
+  return applied || { joined: [], ignored: [], created: [] };
+}
+
+/**
+ * Returns the people whose only federation links are through one
+ * relationship and who hold no local password, for the idle sweep.
+ *
+ * @param fedId - the relationship id
+ * @returns `{ username, dn, lastSeen }` rows
+ */
+function idleCandidates(fedId) {
+  log.debug("Entering idleCandidates().");
+  log.debug("Leaving idleCandidates().");
+  return directoryHas('federationIdleCandidates')
+    ? directory.federationIdleCandidates(String(fedId || '')) : [];
 }
 
 /**
@@ -3521,8 +3664,14 @@ function create(spec) {
     record.fedSignalEmailMatch = boolText(false);
   }
   if (role === 'service-provider' && protocol !== 'ssf') {
-    record.fedAutocreateUsers = boolText(true);
+    // Development creates; product does not, until an operator turns it
+    // on (#358). A stored value always wins over this default later.
+    record.fedAutocreateUsers = boolText(
+      mode.defaultsFederatedAutocreate());
     record.fedUpdateUserAttributes = boolText(true);
+    record.fedProvisionGroups = boolText(false);
+    record.fedProvisionCap = '';
+    record.fedProvisionIdleMinutes = '';
     // WHICH PEOPLE THE PARTNER MAY ASSERT (#109): the most secure default a
     // federation still works with, written onto the entry for the reason the
     // two above are.
@@ -3658,6 +3807,22 @@ function subjectFieldProblem(field, value) {
              message: '"' + value + '" is not a fedSloBinding. It is ' +
                       'HTTP-Redirect or HTTP-POST, or empty for ' +
                       'HTTP-Redirect.' };
+  }
+  // Empty or 0 means unlimited (the cap) or off (the idle sweep). A blank
+  // is stored; anything else must be a non-negative integer, and 0 is a
+  // legal value so it is not read with `||`.
+  if ((field === 'fedProvisionCap' ||
+       field === 'fedProvisionIdleMinutes') &&
+      String(value || '').trim() !== '' &&
+      !/^[0-9]+$/.test(String(value).trim())) {
+    log.debug("Leaving subjectFieldProblem(). Not a count.");
+    return { code: 'STS-FED-0163',
+             why: field + ' is not a non-negative integer',
+             message: field + ' is a number of ' +
+                      (field === 'fedProvisionCap' ? 'people' : 'minutes') +
+                      ', or empty. 0 means ' +
+                      (field === 'fedProvisionCap' ? 'unlimited' : 'off') +
+                      '.' };
   }
   if (field === 'fedRequireSignedLogout' && !boolOf(value, true) &&
       !mode.acceptsUnsignedFederatedLogout()) {
@@ -3973,12 +4138,17 @@ function update(id, change) {
   // the form posted and `boolOf()` has to guess.
   if (row.name === 'fedEnabled' || row.name === 'fedAutocreateUsers' ||
       row.name === 'fedUpdateUserAttributes' ||
+      row.name === 'fedProvisionGroups' ||
       row.name === 'fedMayAssertAdministrators' ||
       row.name === 'fedSignalEmailMatch' ||
       row.name === 'fedSignalsEnabled' ||
       row.name === 'fedSignRequest' || row.name === 'fedAllowUnsolicited' ||
       row.name === 'fedAllowUnencrypted') {
     record[field] = boolText(boolOf(record[field], false));
+  }
+  if (row.name === 'fedProvisionCap' ||
+      row.name === 'fedProvisionIdleMinutes') {
+    record[field] = String(record[field] || '').trim();
   }
   // THE TWO SHARED SIGNALS CREDENTIALS ARE SEALED (#373) wherever keys
   // persist, as the transmitter register #153 replaced held them — and
@@ -4690,6 +4860,11 @@ module.exports = {
   peopleLinkedBy: peopleLinkedBy,
   peopleByMail: peopleByMail,
   linkedThrough: linkedThrough,
+  provisionedCount: provisionedCount,
+  provisionCapOf: provisionCapOf,
+  provisionIdleMinutesOf: provisionIdleMinutesOf,
+  applyFederatedGroups: applyFederatedGroups,
+  idleCandidates: idleCandidates,
   plannedPersonDn: plannedPersonDn,
   writeFederationLink: writeFederationLink,
   attributesFor: attributesFor,

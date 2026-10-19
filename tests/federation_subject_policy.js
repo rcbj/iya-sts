@@ -24,7 +24,7 @@
 //         first (password, and a second factor where held or required), and
 //         only then is the link recorded and the partner's attributes written;
 //       pre-linked — refused;
-//       jit-namespaced — a NEW entry `<relationship>~<name>`, never an
+//       jit-namespaced — a NEW entry `<relationship>~sub-<uuid>`, never an
 //         existing person;
 //       any-existing — the old name match, development only;
 //   * group, domain and DN-pattern rules on top of every policy, and a console
@@ -418,6 +418,19 @@ function childMain() {
          (MODE !== 'product'),
          '0c. mode.matchesFederatedNames() is ' + (MODE !== 'product') +
          ' in ' + MODE + ' mode');
+    note(inSp(function () {
+      return mode.defaultsFederatedAutocreate();
+    }) ===
+         (MODE !== 'product') &&
+         created.record.fedAutocreateUsers ===
+           (MODE === 'product' ? 'FALSE' : 'TRUE'),
+         '0c-ii. a new relationship stores fedAutocreateUsers ' +
+         (MODE === 'product' ? 'off' : 'on') +
+         ' (mode.defaultsFederatedAutocreate)',
+         created.record.fedAutocreateUsers);
+    // The cases below that CREATE still do, in both modes. The stored
+    // default is what 0c-ii holds; product would otherwise refuse them.
+    setRel('fedAutocreateUsers', 'TRUE');
 
     // The pattern validator (unit): bounded and anchored.
     note(federation.subjectPatternProblem('uid=[^,]+,ou=users,.*') === '' &&
@@ -600,16 +613,20 @@ function childMain() {
          '1l. somebody a second factor is REQUIRED of meets the enrolment ' +
          'step, and nothing is linked', 'setup=' + got.trail.setup);
 
-    // NOBODY OF THAT NAME: a namespaced entry, or nothing in product.
+    // NOBODY OF THAT NAME: a namespaced entry under the partner's subject.
     const NEWBIE = 'fsp-new-' + MODE;
+    const newbieSub = partnerSubjectOf(NEWBIE);
+    const newbieName = REL + '~sub-' +
+      newbieSub.replace(/^urn:uuid:/i, '').toLowerCase();
     got = await signIn(NEWBIE, {});
-    const namespaced = entryOf(REL + '~' + NEWBIE);
-    // IN BOTH MODES since #325 (2026-09-29): product honours the
-    // relationship's fedAutocreateUsers (on here) as development does.
+    const namespaced = entryOf(newbieName);
+    // IN BOTH MODES since #325, once the switch is on (0c-ii). The name is
+    // the subject since #358, not the mapped username.
     note(got.r.status === 200 && namespaced && !entryOf(NEWBIE) &&
+         !entryOf(REL + '~' + NEWBIE) &&
          attr(namespaced, 'federationLink').length === 1,
          '1m. a subject naming nobody gets a NAMESPACED entry, ' +
-         REL + '~' + NEWBIE + ', linked at creation',
+         newbieName + ', linked at creation',
          got.r.status + ' ' + !!namespaced);
 
     // #325's refusal was this shape, which 1m never makes. The username
@@ -707,15 +724,18 @@ function childMain() {
     setRel('fedSubjectPolicy', 'jit-namespaced');
     const GINA = 'fsp-gina-' + MODE;
     makePerson(GINA, 'local-gina@sp.example');
+    const ginaSub = partnerSubjectOf(GINA);
+    const ginaName = REL + '~sub-' +
+      ginaSub.replace(/^urn:uuid:/i, '').toLowerCase();
     got = await signIn(GINA, {});
-    const ginaSpace = entryOf(REL + '~' + GINA);
-    // IN BOTH MODES since #325, as 1m.
-    note(got.r.status === 200 && ginaSpace &&
+    const ginaSpace = entryOf(ginaName);
+    // IN BOTH MODES since #325, as 1m. The name is the subject (#358).
+    note(got.r.status === 200 && ginaSpace && !entryOf(REL + '~' + GINA) &&
          JSON.stringify(attr(entryOf(GINA), 'mail')) ===
            '["local-gina@sp.example"]' &&
          attr(entryOf(GINA), 'federationLink').length === 0,
          '4a. jit-namespaced gives the subject a NEW entry and never the ' +
-         'existing person of that name', got.r.status);
+         'existing person of that name', got.r.status + ' ' + ginaName);
 
     // =======================================================================
     // 5. ANY-EXISTING (development only)

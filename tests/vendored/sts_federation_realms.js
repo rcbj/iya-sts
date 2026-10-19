@@ -68,12 +68,11 @@
 //      starts a session whose subject is ITS OWN entry for the person, with
 //      `federated` first in the amr; the relationship counts it.
 //   2. PROVISIONING, AS CONFIGURED: the relationship's `fedAutocreateUsers` is
-//      READ, not set, and a person the SP realm has never heard of is either
-//      created (the switch on and a service that creates entries; named
-//      `<relationship>~<name>` and linked to the partner's subject since
-//      #109) or refused
-//      403 "has not been provisioned" with nothing created — product mode
-//      never creates, `mode.autoCreates()`.
+//      READ, not set. A new relationship stores it on in development and off
+//      in product (#358). A person the SP realm has never heard of is either
+//      created (the switch on; named `<relationship>~sub-<uuid>` and linked
+//      to the partner's subject) or refused
+//      403 "has not been provisioned" with nothing created.
 //   3. OIDC NEGATIVES: an ID Token signed by a key the relationship does not
 //      name (a forgery carrying the partner's own kid); `alg: none`; HS256
 //      nominated against the partner's RSA key; a genuine ID Token replayed
@@ -1149,10 +1148,16 @@ async function provisioning() {
            ", ldap.autocreateUsers=" + ldapOn + ", mode=" +
            (isProduct ? "product" : "development") + " — so the SP realm " +
            (creates ? "SHOULD create" : "should NOT create") + " an entry.");
-  // An entry a sign-in CREATES is namespaced to the relationship (#109).
-  const CREATED = REL.front + "~" + STRANGER;
+  // An entry a sign-in CREATES is the partner's subject, namespaced (#358).
+  const idp = await api(IDP, "GET", "/users?user=" +
+                                    encodeURIComponent(STRANGER));
+  const subject = String((idp.body && idp.body.subject) || "");
+  const CREATED = REL.front + "~sub-" +
+    subject.replace(/^urn:uuid:/i, "").toLowerCase();
+  const OLD = REL.front + "~" + STRANGER;
   const before = (await spView(STRANGER)).entry ||
-                 (await spView(CREATED)).entry;
+                 (await spView(CREATED)).entry ||
+                 (await spView(OLD)).entry;
   await check("precondition: the SP realm has no entry for " + STRANGER,
               async function () {
     assert.strictEqual(before, null);
@@ -1174,6 +1179,8 @@ async function provisioning() {
                   .indexOf(REL.front) >= 0,
         "the entry does not record the relationship it came through: " +
         JSON.stringify(view.entry.federationRelationship));
+      assert.strictEqual((await spView(OLD)).entry, null,
+        "the mapped-username entry was created");
     });
   } else {
     await assertRefused("an unprovisioned person, where the SP realm " +
@@ -1181,8 +1188,11 @@ async function provisioning() {
                         STRANGER, 0);
     await check("and nothing was created for them", async function () {
       const view = await spView(CREATED);
+      const old = await spView(OLD);
       assert.strictEqual(view.entry, null,
         "an entry exists: " + JSON.stringify(view.entry));
+      assert.strictEqual(old.entry, null,
+        "the mapped-username entry exists: " + JSON.stringify(old.entry));
     });
   }
   log.debug("Leaving provisioning().");

@@ -1208,10 +1208,19 @@ from any door, `ldapmodify` included, to `federation_links.ts`'s `linksRemoved()
 `noteAccountChange()`, which ends the sessions that partner made. `applyFederatedAttributes()`
 writes the link it is handed and derives none; `autoCreateUser()` creates a federated
 person only when the payload says `create: true`, which is the subject decision's call.
-The five functions the register reads (`federationPerson()`, `peopleByFederationLink()`,
-`federationLinksThrough()`, `plannedPersonDn()`, `writeFederationLink()`) ride on the
+The seven functions the register reads (`federationPerson()`, `peopleByFederationLink()`,
+`federationLinksThrough()`, `plannedPersonDn()`, `writeFederationLink()`,
+`applyFederatedGroups()`, `federationIdleCandidates()`) ride on the
 object `federation.setDirectory()` already takes — the same door, not a new slot. A
 lookup by link is a walk of the realm, as `entryBySpiffeSubject()` is.
+`applyFederatedGroups()` (#358) creates a group this relationship does not already
+own only when nothing occupies that name, stamps `federationrelationship` with the
+relationship id, and then adds the person; a name that is unusable as a DN, or that
+names a group this relationship did not create, is returned as ignored and the
+sign-in is not failed. It never writes `memberOf`. `federationIdleCandidates()`
+reads the holders of `federationLink` (`eachHolderOfAny()`, not `persons()`) and
+returns a person whose every link starts with that relationship and who has no
+`userPassword` and is not already disabled.
 
 ## `entryUUID`: THE ONE THING ABOUT AN ENTRY THAT NEVER CHANGES, AND A PERSON'S `sub` (2026-09-14)
 

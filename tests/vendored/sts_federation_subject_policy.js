@@ -26,8 +26,9 @@
 //   3. A CONSOLE ADMINISTRATOR is refused (STS-FED-0093) with a valid link,
 //      and signed in once the relationship sets fedMayAssertAdministrators.
 //   4. ANY-EXISTING: development matches the name; product refuses to set it.
-//   5. JIT-NAMESPACED: a new entry `<relationship>~<name>` in development and
-//      a refusal in product, the existing person untouched either way.
+//   5. JIT-NAMESPACED: a new entry `<relationship>~sub-<uuid>` once
+//      fedAutocreateUsers is turned on (a new relationship stores it on in
+//      development and off in product), the existing person untouched.
 //   6. A DOMAIN RULE refuses a linked person (STS-FED-0092).
 //   7. `POST /admin-api/users/federation-unlink` ends the partner's sessions.
 //   8. SCIM's iya-sts extension sets a link, and a pre-linked sign-in follows.
@@ -466,6 +467,15 @@ async function setUp() {
   must(enabled.status === 200 && enabled.body.ok, "enabling answered " +
                                                    enabled.status);
   const view = await api(SP, "GET", "/federation?relationship=" + REL);
+  const storedAuto = String((((view.body || {}).fields || {})
+    .fedAutocreateUsers) || "");
+  must(storedAuto === (isProduct ? "FALSE" : "TRUE"),
+       "a new relationship stores fedAutocreateUsers " + storedAuto +
+       " and this service is " + (isProduct ? "product" : "development"));
+  const turned = await setRel("fedAutocreateUsers", "TRUE");
+  must(turned.status === 200 && turned.body && turned.body.ok,
+       "turning fedAutocreateUsers on answered " + turned.status + " " +
+       turned.text.slice(0, 200));
   const acs = ((view.body || {}).endpoints || {}).assertionConsumerService;
   const app = await api(IDP, "POST", "/applications/create", {
     identifier: CLIENT, name: "subject policy " + CLIENT,
@@ -715,21 +725,25 @@ async function theOtherPolicies() {
   const jit = names.usernameFor("sp-jit");
   await createPerson(IDP, jit, IDP_MAIL);
   await createPerson(SP, jit, SP_MAIL);
+  const jitSubject = await subjectAtPartner(jit);
+  const jitName = REL + "~sub-" +
+    jitSubject.replace(/^urn:uuid:/i, "").toLowerCase();
   await setRel("fedSubjectPolicy", "jit-namespaced");
   const got = await federatedSignIn(jit, {});
   const own = await spView(jit);
-  const spaced = await spView(REL + "~" + jit);
-  // THE SAME IN BOTH MODES SINCE #325 (2026-09-29): product honours the
-  // relationship's fedAutocreateUsers, so jit-namespaced creates the
-  // namespaced entry there too. tests/federation_subject_policy.js 1m and 4a
-  // are the in-process half of the same change.
+  const spaced = await spView(jitName);
+  const oldName = await spView(REL + "~" + jit);
+  // THE SAME IN BOTH MODES SINCE #325, once setUp has turned the switch on.
+  // The created name is the partner's subject since #358.
+  // tests/federation_subject_policy.js 1m and 4a are the in-process half.
   await check("jit-namespaced never signs in the existing person of that " +
-              "name, and creates " + REL + "~" + jit, async function () {
+              "name, and creates " + jitName, async function () {
     assert.deepStrictEqual(own.entry.mail, [jit + "@" + SP_MAIL]);
     assert.strictEqual(own.links.length, 0);
     assert.strictEqual(got.r.status, 200, squash(got.r.body));
-    assert.ok(spaced.entry, "no namespaced entry");
+    assert.ok(spaced.entry, "no namespaced entry at " + jitName);
     assert.strictEqual(spaced.links.length, 1);
+    assert.strictEqual(oldName.entry, null);
   });
   await setRel("fedSubjectPolicy", "");
   log.debug("Leaving theOtherPolicies().");

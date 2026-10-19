@@ -246,5 +246,8 @@ test setting. A relationship must be configured, is created disabled, and refuse
 assertion that does not verify against the certificate configured on it. **And
 the gate is on the subject too**: a partner signs in only the person its subject
 is linked to, and an unlinked one naming an existing person must first sign in
-here as that person (#109). See [federation](federation.md) and
+here as that person (#109). One naming nobody is created as
+`<relationship>~<subject>` when that relationship's `fedAutocreateUsers` is on
+(on for a new relationship in development, off in product), and refused
+otherwise. See [federation](federation.md) and
 [what is not checked](what-is-not-checked.md).

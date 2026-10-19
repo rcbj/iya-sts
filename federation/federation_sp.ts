@@ -212,6 +212,10 @@ import roles = require('./../common/roles');
 // to and the policy it is decrypted under. A static utility class that
 // registers no route and requires nothing here back.
 import fedEncryption = require('./federation_encryption');
+// THE IDLE SWEEP (#358). Requiring it registers `federation.provision-idle`;
+// the module offers no route. A second register below is the guard's no-op
+// when this file is what loaded it.
+import fedProvision = require('./federation_provision');
 // A FLOW'S HANDLE NAMES THE CELL THAT HOLDS IT (#98 D10): stamped when it is
 // minted (putContext()), read where a partner's answer arrives (consume()).
 // Libraries that register no route.
@@ -1418,10 +1422,10 @@ class FederationSp {
   //      asked of every peer (`federation-link-home`): the routing index
   //      keeps names and entryUUIDs, not links;
   //   3. the NAMES the relationship's policy would sign in or create — the
-  //      mapped username under any-existing and link-at-first-sign-in, the
-  //      namespaced name under every policy that creates one — from the
-  //      routing index. A name homed elsewhere is never created here, which
-  //      is also what the index's own claim at creation refuses.
+  //      mapped username under any-existing and link-at-first-sign-in, and
+  //      `<relationship>~<subject>` under every policy that creates one —
+  //      from the routing index. A name homed elsewhere is never created
+  //      here, which is also what the index's own claim at creation refuses.
   //
   // Nothing personal leaves this cell and the assertion is not forwarded:
   // the flow restarts at home (restartAtHome()), where the partner — which
@@ -1454,8 +1458,8 @@ class FederationSp {
     if (policy === 'any-existing' || policy === 'link-at-first-sign-in') {
       names.push(mapped.username);
     }
-    if (policy !== 'any-existing' && policy !== 'pre-linked') {
-      names.push(links.namespacedName(record.fedId, mapped.username));
+    if (policy !== 'any-existing' && policy !== 'pre-linked' && stable.ok) {
+      names.push(links.provisionedName(record.fedId, stable.subject));
     }
     const byLink = stable.ok
       ? FederationSp.linkHomeAtPeers(realmId, stable.value)
@@ -1564,9 +1568,10 @@ class FederationSp {
   //   confirm    link-at-first-sign-in, and an unlinked subject whose mapped
   //              name is an existing person: that person signs in HERE first;
   //   created    nobody is named, and a new entry may be made — namespaced
-  //              `<relationship>~<name>` except under any-existing — linked at
-  //              creation (`create` false where provisioning is off, and the
-  //              session is then refused STS-FED-0090 as it always was);
+  //              `<relationship>~<subject>` except under any-existing, which
+  //              uses the mapped name with no namespace — linked at creation
+  //              (`create` false where provisioning is off, and the session
+  //              is then refused STS-FED-0090 as it always was);
   //   matched    any-existing's name match, development only.
   //
   // THE LINK IS FOUND FIRST, WHATEVER THE POLICY. A subject an administrator,
@@ -1609,7 +1614,7 @@ class FederationSp {
         'jit-namespaced.');
     }
     const stable = links.stableSubjectOf(record, result);
-    const provisioning = federation.boolOf(record.fedAutocreateUsers, true);
+    const provisioning = this.autocreateOn(record);
     let target = '';
     let how = '';
     let create = false;
@@ -1656,7 +1661,20 @@ class FederationSp {
         target = named.username;
         how = 'confirm';
       } else {
-        const namespaced = links.namespacedName(record.fedId, mapped.username);
+        const namespaced = links.provisionedName(record.fedId,
+                                                 stable.subject);
+        if (!links.subjectLocalName(stable.subject) ||
+            !links.nameFitsDirectory(namespaced)) {
+          log.debug("Leaving FederationSp.subjectDecision(). The name " +
+                    "cannot be a directory entry.");
+          return this.subjectRefusal('STS-FED-0090', 'namespace',
+            'This person has not been provisioned',
+            'A new entry for this subject would be called ' + namespaced +
+            ', and that name cannot be a directory entry here: it is ' +
+            'empty, or it carries a character RFC 4514 reserves in a DN. ' +
+            'The person has to be created here first and linked to the ' +
+            'partner\'s subject.');
+        }
         if (federation.federatedPerson(namespaced)) {
           log.debug("Leaving FederationSp.subjectDecision(). The namespaced " +
                     "name is taken.");
@@ -1694,6 +1712,22 @@ class FederationSp {
       log.debug("Leaving FederationSp.subjectDecision(). A rule refused.");
       return rules;
     }
+    // THE RELATIONSHIP'S OWN CEILING (#358), after the rules, and only for
+    // a person this sign-in would create. A linked person already signed
+    // in above. Empty or 0 is unlimited; `ldap.maxEntries` is still the
+    // realm's.
+    if (!person && create) {
+      const cap = federation.provisionCapOf(record);
+      if (cap > 0 && federation.provisionedCount(record.fedId) >= cap) {
+        log.debug("Leaving FederationSp.subjectDecision(). The cap.");
+        return this.subjectRefusal('STS-FED-0090', 'cap',
+          'This person has not been provisioned',
+          'This relationship may create ' + cap + ' people ' +
+          '(fedProvisionCap), and it already has that many. A person ' +
+          'already linked still signs in. Raise the cap, or create and ' +
+          'link this person here.');
+      }
+    }
     log.debug("Leaving FederationSp.subjectDecision(). " + how + " " +
               target + ".");
     return { ok: true, policy: policy, how: how,
@@ -1701,6 +1735,108 @@ class FederationSp {
              link: stable.ok ? stable.value : '',
              subject: stable.subject, issuer: stable.issuer,
              create: !person && create, confirm: how === 'confirm' };
+  }
+
+  // Whether this relationship creates an entry for an unlinked subject.
+  // A stored TRUE or FALSE wins. A missing value is development's on and
+  // product's off (`mode.defaultsFederatedAutocreate()`), never a literal.
+  private autocreateOn(record): boolean {
+    const { federation, mode, log } = this.deps;
+    log.debug("Entering FederationSp.autocreateOn().");
+    const on = federation.boolOf(record && record.fedAutocreateUsers,
+      mode.defaultsFederatedAutocreate());
+    log.debug("Leaving FederationSp.autocreateOn().");
+    return on;
+  }
+
+  // The claim names a partner's group list may arrive under. The WS-Federation
+  // role claim is not one of them: it maps to employeeType and authorizes
+  // nothing. `groups.claimName` is this realm's own name for the same list.
+  private groupNamesOf(mapped): string[] {
+    const { config, log } = this.deps;
+    log.debug("Entering FederationSp.groupNamesOf().");
+    const flat = (mapped && mapped.flat) || {};
+    const wanted = [
+      String(config.value('groups.claimName') || ''),
+      'groups',
+      'http://schemas.microsoft.com/ws/2008/06/identity/claims/groups',
+      'http://schemas.xmlsoap.org/claims/Group'
+    ].map(function (one: string): string {
+      return one.trim().toLowerCase();
+    }).filter(Boolean);
+    const seen: Record<string, boolean> = {};
+    const names: string[] = [];
+    Object.keys(flat).forEach(function (key: string): void {
+      if (wanted.indexOf(String(key).toLowerCase()) < 0) {
+        return;
+      }
+      const values = Array.isArray(flat[key]) ? flat[key] : [flat[key]];
+      values.forEach(function (value: unknown): void {
+        const name = String(value == null ? '' : value).trim();
+        const fold = name.toLowerCase();
+        if (!name || seen[fold]) {
+          return;
+        }
+        seen[fold] = true;
+        names.push(name);
+      });
+    });
+    log.debug("Leaving FederationSp.groupNamesOf(). " + names.length);
+    return names;
+  }
+
+  // Memberships from the partner's token, when fedProvisionGroups is on.
+  // A name that collides with a group this relationship did not create is
+  // ignored and audited; the sign-in already happened and is not undone.
+  // One array element is one group name. memberOf is never written.
+  private provisionGroups(record, username, mapped, decision): void {
+    const { federation, audit, errorCodes, log } = this.deps;
+    log.debug("Entering FederationSp.provisionGroups().");
+    if (!federation.boolOf(record.fedProvisionGroups, false)) {
+      log.debug("Leaving FederationSp.provisionGroups(). Off.");
+      return;
+    }
+    const names = this.groupNamesOf(mapped);
+    let applied: any = null;
+    try {
+      applied = federation.applyFederatedGroups(record.fedId, username,
+                                                names);
+    } catch (e) {
+      log.debug("Caught in FederationSp.provisionGroups(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-FED-0161') + 'federation: ' +
+               record.fedId + ' could not apply group memberships for ' +
+               username + ': ' + ((e && e.message) || e) +
+               '. The sign-in stands.');
+      log.debug("Leaving FederationSp.provisionGroups(). Threw.");
+      return;
+    }
+    const ignored = (applied && applied.ignored) || [];
+    const subject = String((decision && decision.subject) || '');
+    ignored.forEach(function (one: any): void {
+      const group = String((one && one.name) || '');
+      const why = String((one && one.reason) || '');
+      log.warn(errorCodes.tag('STS-FED-0161') + 'federation: ' +
+               record.fedId + ' did not add ' + username + ' to "' +
+               group + '" (' + why + '). The sign-in stands.');
+      audit.audit({
+        action: 'federation.group-ignored',
+        actor: 'federation:' + record.fedId,
+        channel: 'internal',
+        protocol: 'Federation',
+        target: username,
+        outcome: 'refused',
+        errorCode: 'STS-FED-0161',
+        summary: username + ' was not added to the group "' + group +
+                 '" through ' + record.fedId + ' (' + why + ')',
+        detail: { relationship: String(record.fedId),
+                  username: String(username), subject: subject,
+                  group: group, reason: why }
+      });
+    });
+    log.debug("Leaving FederationSp.provisionGroups(). " +
+              ((applied && applied.joined) || []).length + " joined, " +
+              ignored.length + " ignored.");
   }
 
   // A refusal in subjectDecision()'s shape. `rule` names what refused, for the
@@ -2330,7 +2466,7 @@ class FederationSp {
                'through ' +
                '' + record.fedId + ': the directory holds no entry for ' +
                'them and dynamic provisioning is ' +
-               (federation.boolOf(record.fedAutocreateUsers, true)
+               (this.autocreateOn(record)
                  ? 'on but the directory declined to create one.'
                  : 'off on this relationship.'));
       errorCodes.mark(res, 'STS-FED-0090');
@@ -2339,9 +2475,10 @@ class FederationSp {
                                            'provisioned',
         'The assertion verified and the partner is configured, but this ' +
         'service holds no directory entry for ' + username + ', and ' +
-        (federation.boolOf(record.fedAutocreateUsers, true)
+        (this.autocreateOn(record)
           ? 'the directory would not create one (the subject policy ' +
-            'refused it, or the directory is full).'
+            'refused it, the relationship\'s fedProvisionCap is full, or ' +
+            'the directory is full).'
           : 'dynamic provisioning (fedAutocreateUsers) is off on this ' +
             'relationship, so the person has to be created here first — ' +
             'through SCIM, /admin/users/new or the management API — and ' +
@@ -2379,6 +2516,10 @@ class FederationSp {
              ', ' + decision.how + '). ' + mapped.mapped.length +
              ' attribute(s) mapped, ' +
              mapped.unmapped.length + ' unmapped. Session ' + session.id + '.');
+    // GROUP NAMES FROM THE PARTNER (#358), after the session exists and
+    // never a reason to end it. fedSubjectGroup already ran, on an entry
+    // that was in none of these groups.
+    this.provisionGroups(record, username, mapped, decision);
 
     const returnTo = result.returnTo || '';
     const self = this;
@@ -2560,7 +2701,7 @@ class FederationSp {
       usernamePrefixed: !!mapped.usernamePrefixed,
       usernameFrom: String(mapped.usernameFrom || ''),
       session: String((session && session.id) || ''),
-      autocreate: federation.boolOf(record.fedAutocreateUsers, true),
+      autocreate: this.autocreateOn(record),
       updates: federation.boolOf(record.fedUpdateUserAttributes, true),
       mapped: (mapped.mapped || []).map(function (one) {
         return { incoming: String(one.incoming), ldap: String(one.ldap),
@@ -2633,7 +2774,7 @@ class FederationSp {
                { source: mapped.usernameFrom }) +
       '</span></td></tr><tr><td>' +
       t.html('handoff.federation.signedIn.entry') + '</td><td>' +
-        (federation.boolOf(record.fedAutocreateUsers, true)
+        (this.autocreateOn(record)
           ? t.html('handoff.federation.signedIn.created') + ' ' +
             '<a href="/admin/users">/admin/users</a>'
           : '<span class="note">' +
@@ -4978,6 +5119,7 @@ slot.buildNowUnlessDeferred();
 
 // A PEER'S QUESTION ABOUT A PARTNER'S LINK (#98 D9): see homeOfSubject().
 // Registered once at load; registering binds and dials nothing.
+fedProvision.registerIdleJob();
 require('./../common/cell_channel').registerOp(LINK_HOME_OP,
   function (body: any) {
     return FederationSp.answerLinkHome(body);
