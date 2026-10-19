@@ -1683,6 +1683,12 @@ ends somebody else's session.
 
 `tests/session_cap.js` holds it.
 
+`authn.sessionWindow` defaults to `off`, so that walk is still the whole
+store: a miss is not read and a cached row is not evicted. Explicit `on` is
+refused at start unless minted persistence is enabled, the service is one
+cell, and the minted key is a digest (`STS-AUTHN-0339`, logged, never sent).
+`auto` does not turn the window on. `tests/session_window.js` forces `on`.
+
 **THE EVENT SAYS `policy` AND NOT `user`.** `caep.ts`'s rule for a `revoked` act
 was `admin` when an administrator did it and `user` otherwise, and an expiry is
 neither — a lifetime this service configured ran out, which is what CAEP section

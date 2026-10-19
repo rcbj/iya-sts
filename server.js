@@ -1030,6 +1030,11 @@ serviceState.start().then(function (both) {
     log.fatal(err.message + ' The service is NOT STARTING.');
     process.exit(1);
   }
+  if (/STS-AUTHN-0339/.test(err.message || '')) {
+    // error-code: none — the refusal's own STS-AUTHN-0339 leads err.message
+    log.fatal(err.message + ' The service is NOT STARTING.');
+    process.exit(1);
+  }
   if (/key material|key-encryption key|signing key|minted state/i.test(
       err.message || '')) {
     log.fatal(errorCodes.tag('STS-CORE-0035') + 'sts: NOT STARTING. ' +

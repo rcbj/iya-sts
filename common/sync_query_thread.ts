@@ -38,6 +38,7 @@ interface ThreadData {
   port: workerThreads.MessagePort;
   connection: Record<string, unknown> | null;
   backend: string | null;
+  queries?: string | null;
 }
 
 // A backend: answers one named question.
@@ -58,8 +59,10 @@ const port = data.port;
 
 // The `pg` backend: one client, dialled on the first question and again
 // after it is lost.
-function pgBackend(connection: Record<string, unknown>): Backend {
-  const queries = require('../persistence/directory_queries');
+function pgBackend(connection: Record<string, unknown>,
+                   queriesModule: string | null): Backend {
+  const queries = require(queriesModule ||
+                          '../persistence/directory_queries');
   const pg = require('pg');
   // sslmode=verify-ca verifies the chain and not the host name, which takes
   // a `checkServerIdentity` that checks nothing — a function, which cannot
@@ -131,7 +134,7 @@ function pgBackend(connection: Record<string, unknown>): Backend {
 
 const backend: Backend = data.backend
   ? require(data.backend)
-  : pgBackend(data.connection || {});
+  : pgBackend(data.connection || {}, data.queries || null);
 
 // Posts an answer, then moves the counter: in that order (see the header).
 function answer(message: Record<string, unknown>): void {

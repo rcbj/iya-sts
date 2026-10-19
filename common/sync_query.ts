@@ -71,6 +71,14 @@ interface SyncQueryOptions {
   backend?: string | null;
   // The thread's script; the compiled `sync_query_thread.js` beside this.
   threadFile?: string | null;
+  // Named statements the thread builds instead of directory_queries.js.
+  // Absent on the directory bridge, whose workerData stays what it was.
+  queries?: string | null;
+  // Codes for a bridge that is not the directory's. Absent, the three
+  // directory sentences and STS-LDAP-0130/0131/0132 stay byte for byte.
+  timeoutCode?: string | null;
+  refusedCode?: string | null;
+  threadErrorCode?: string | null;
 }
 
 // One answer from the thread.
@@ -147,15 +155,23 @@ class SyncQuery {
     const channel = new workerThreads.MessageChannel();
     const file = this.options.threadFile ||
       path.join(__dirname, 'sync_query_thread.js');
+    // `queries` is added only when this bridge names its own module. The
+    // directory bridge's workerData is the four fields it has always posted.
+    const workerData: Record<string, unknown> = {
+      counter: shared, port: channel.port2,
+      connection: this.options.connection
+        ? Object.assign({}, this.options.connection,
+                        { statement_timeout: this.bound() })
+        : null,
+      backend: this.options.backend || null
+    };
+    if (this.options.queries) {
+      workerData.queries = this.options.queries;
+    }
     const worker = new workerThreads.Worker(file, {
       // THE STATEMENT TIMEOUT IS THE BOUND, so a query this side has given
       // up on does not go on running in the database.
-      workerData: { counter: shared, port: channel.port2,
-                    connection: this.options.connection
-                      ? Object.assign({}, this.options.connection,
-                                      { statement_timeout: this.bound() })
-                      : null,
-                    backend: this.options.backend || null },
+      workerData: workerData,
       transferList: [channel.port2]
     });
     worker.unref();
@@ -163,8 +179,11 @@ class SyncQuery {
     worker.on('error', (err: Error) => {
       // Delivered by the event loop, so after the question it broke has
       // already timed out; the next question starts a new thread.
-      log.error(errorCodes.tag('STS-LDAP-0132') + 'sync_query: the ' +
-                'directory bridge\'s thread failed: ' + err.message +
+      const threadCode = this.options.threadErrorCode || 'STS-LDAP-0132';
+      const bridgeName = this.options.threadErrorCode
+        ? 'session bridge\'s' : 'directory bridge\'s';
+      log.error(errorCodes.tag(threadCode) + 'sync_query: the ' +
+                bridgeName + ' thread failed: ' + err.message +
                 '. The next question starts a new one.');
       this.forget(worker);
     });
@@ -230,20 +249,23 @@ class SyncQuery {
     const waited = Date.now() - started;
     this.figures.waitedMs += waited;
     this.figures.longestMs = Math.max(this.figures.longestMs, waited);
+    const timeoutCode = this.options.timeoutCode || 'STS-LDAP-0130';
+    const refusedCode = this.options.refusedCode || 'STS-LDAP-0131';
+    const kind = this.options.timeoutCode ? 'session store' : 'directory';
     if (!answer) {
       this.figures.timedOut += 1;
       log.debug("Leaving SyncQuery.query(). Timed out.");
-      throw errorCodes.mark(new Error(errorCodes.tag('STS-LDAP-0130') +
-        'The directory could not be read: the store did not answer "' +
-        name + '" within ' + bound + ' ms.'), 'STS-LDAP-0130');
+      throw errorCodes.mark(new Error(errorCodes.tag(timeoutCode) +
+        'The ' + kind + ' could not be read: the store did not answer "' +
+        name + '" within ' + bound + ' ms.'), timeoutCode);
     }
     if (!answer.ok) {
       this.figures.failed += 1;
       const why = (answer.error && answer.error.message) || 'no reason given';
       log.debug("Leaving SyncQuery.query(). Refused.");
-      throw errorCodes.mark(new Error(errorCodes.tag('STS-LDAP-0131') +
-        'The directory could not be read: the store refused "' + name +
-        '": ' + why), 'STS-LDAP-0131');
+      throw errorCodes.mark(new Error(errorCodes.tag(refusedCode) +
+        'The ' + kind + ' could not be read: the store refused "' + name +
+        '": ' + why), refusedCode);
     }
     log.debug("Leaving SyncQuery.query().");
     return answer.value;

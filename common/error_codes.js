@@ -6255,6 +6255,20 @@ const CODES = [
     spec: 'none — the sign-in screen is drawn again, or no cookie is set; ' +
       'the code is not in the body. Logged at most once a minute per ' +
       'process, with a count' },
+  { code: 'STS-AUTHN-0338',
+    summary: 'A read of a sign-on session or of the session index failed. ' +
+      'It is not treated as absence. A browser is answered 503 with ' +
+      'Retry-After and keeps its cookie. An arrival is not minted. A ' +
+      'sign-out does not end the session and does not audit ' +
+      'STS-AUTHN-0011. The sweep skips that realm.',
+    spec: 'HTTP 503 with Retry-After; the body is ' +
+      '{ error: unavailable }. The code is not in the body' },
+  { code: 'STS-AUTHN-0339',
+    summary: 'authn.sessionWindow is on and minted persistence is not ' +
+      'enabled, or this process is one of several cells, or the minted ' +
+      'key is not a digest. The process does not start. auto in that ' +
+      'state is logged once and the full map stays.',
+    spec: 'none — the process does not start. Logged, never sent' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

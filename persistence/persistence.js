@@ -2121,6 +2121,23 @@ function workerCount() {
  * @throws a rejected promise when no directory is installed or the store
  * cannot be opened or read
  */
+// Explicit authn.sessionWindow=on cannot start unless a miss can be read
+// back. auto is logged and does not refuse. The window module is required
+// here, not at load: this file is step 4a and authn is step 8.
+function refuseSessionWindow() {
+  log.debug("Entering refuseSessionWindow().");
+  try {
+    require('../authn/session_window').assertConfigured();
+  } catch (e) {
+    log.debug("Caught in refuseSessionWindow(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving refuseSessionWindow().");
+    return Promise.reject(e);
+  }
+  log.debug("Leaving refuseSessionWindow().");
+  return null;
+}
+
 function start() {
   log.debug('Entering start().');
   // In every mode, a store or none: a blocked loop is worth measuring in a
@@ -2136,6 +2153,11 @@ function start() {
               'persistence: "' + chosen + '" is not a mode this module knows ' +
               '(' + MODES.join(', ') + '). Nothing will be persisted.');
     activeMode = 'memory';
+    const refused = refuseSessionWindow();
+    if (refused) {
+      log.debug('Leaving start(). The session window was refused.');
+      return refused;
+    }
     log.debug('Leaving start(). The mode was not recognised.');
     return Promise.resolve({ mode: 'memory' });
   }
@@ -2162,6 +2184,11 @@ function start() {
     log.info('persistence: off (persistence.mode=memory). Everything this ' +
              'service holds is in memory and goes when the process does, ' +
              'which is what it did before persistence existed.');
+    const refused = refuseSessionWindow();
+    if (refused) {
+      log.debug('Leaving start(). The session window was refused.');
+      return refused;
+    }
     log.debug('Leaving start(). Memory mode.');
     return Promise.resolve({ mode: 'memory' });
   }
@@ -2976,6 +3003,13 @@ function openStore(chosen, resolvedUrl, globalUrls) {
                'does not hold from the store, through the directory bridge ' +
                '(ldap.workerDirectory=postgres-lru).');
     }
+    // The session window's bridge is a second thread, offered whenever a
+    // driver is open. It starts on the first miss, not here, so a service
+    // whose window is off never dials it.
+    require('../authn/session_window').offerConnection(function () {
+      return typeof driver.bridgeConnection === 'function'
+        ? driver.bridgeConnection() : null;
+    });
     // -------------------------------------------------------------------
     // AND THE USED-ASSERTION HISTORY ITS STORE, BEFORE ANYTHING IS SERVED.
     // A file store is READ here: a token request answered from an empty copy
@@ -3096,6 +3130,11 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     realmsDirty = persistsRealms();
     configDirty = false;
     schedule();
+    const refused = refuseSessionWindow();
+    if (refused) {
+      log.debug('Leaving openStore(). The session window was refused.');
+      return refused;
+    }
     log.debug('Leaving openStore(). Restored.');
     return { mode: activeMode, restored: restoredCounts };
   }).catch(function (err) {
@@ -3108,6 +3147,10 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // operator to look at the database. Passed through with its own code.
     if (/STS-CLUSTER-\d{4}/.test(String(err && err.message))) {
       log.debug('Leaving openStore(). The cluster gate refused.');
+      throw err;
+    }
+    if (/STS-AUTHN-0339/.test(String(err && err.message))) {
+      log.debug('Leaving openStore(). The session window was refused.');
       throw err;
     }
     // ---------------------------------------------------------------------

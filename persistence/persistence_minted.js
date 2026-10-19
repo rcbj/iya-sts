@@ -714,8 +714,8 @@ function setDriver(theDriver, activeMode) {
 // ---------------------------------------------------------------------------
 // THE JOURNAL DOOR. This is `realms.js`'s persist observer, and it is called
 // from inside `sessions.set()` — which is inside a sign-in — so it does the
-// least it can: two Map lookups and a Set insert, no settings read, no
-// allocation past the first write to a store.
+// least it can: two Map lookups and a Set insert, no allocation past the
+// first write to a store.
 //
 // **IT DOES NOT CHECK `enabled()`.** That is deliberate and it is the one
 // non-obvious thing in this file. `enabled()` reads three settings, and this
@@ -724,6 +724,8 @@ function setDriver(theDriver, activeMode) {
 // the flush is where the mode and the setting are consulted. The cost of being
 // wrong that way round is a Set that fills and is discarded, which is nothing;
 // the cost of the other way round is three config reads per session write.
+// One string compare gates the session window, and only when
+// authn.sessionWindow is exactly "on". Off and auto do not load it.
 // ---------------------------------------------------------------------------
 function note(handle, realmId, key) {
   if (restoring || stopped) {
@@ -740,8 +742,19 @@ function note(handle, realmId, key) {
     keys = new Set();
     byRealm.set(id, keys);
   }
-  keys.add(key === null || key === undefined ? '' : String(key));
+  const noted = key === null || key === undefined ? '' : String(key);
+  keys.add(noted);
   generation += 1;
+  if (handle === 'authn.sessions') {
+    const sessionWindow = sessionWindowIfOn();
+    if (sessionWindow) {
+      try {
+        sessionWindow.noteLocal(id, noted);
+      } catch (e) {
+        log.debug("Caught in note(): " + ((e && e.message) || e));
+      }
+    }
+  }
   if (!observational.has(handle)) {
     observationalCount.miss();
     const declared = realms.handleFor(handle);
@@ -1129,7 +1142,23 @@ function applyLocally(store, realmId, key, value, remove) {
   const was = restoring;
   restoring = true;
   try {
-    if (remove) {
+    let decision = remove ? 'remove' : 'restore';
+    if (store && store.handle === 'authn.sessions' &&
+        config.value('authn.sessionWindow') === 'on') {
+      try {
+        const sessionWindow = sessionWindowIfOn();
+        if (sessionWindow) {
+          decision = sessionWindow.considerApply(realmId, key, value,
+                                                 !!remove);
+        }
+      } catch (e) {
+        // The window's decision is an optimisation of what is resident.
+        // A throw falls back to today's restore, which is the full map.
+        log.debug("Caught in applyLocally(): " + ((e && e.message) || e));
+        decision = remove ? 'remove' : 'restore';
+      }
+    }
+    if (decision === 'remove' || remove) {
       // THE ONLY PATH HERE THAT REACHES THE STORE'S ORDINARY `delete`, because
       // the registry's accessors are `dump`, `read` and `restore` and none of
       // them removes anything. It is done through the shape's own door and the
@@ -1141,12 +1170,28 @@ function applyLocally(store, realmId, key, value, remove) {
       log.debug("Leaving applyLocally().");
       return true;
     }
-    store.restore(realmId, key, value);
+    if (decision === 'restore') {
+      store.restore(realmId, key, value);
+    }
     log.debug("Leaving applyLocally().");
     return true;
   } finally {
     restoring = was;
   }
+}
+
+// Hot path: note() runs inside every sessions.set. No Entering/Leaving
+// pair. Off and auto return before the require, so they do not load the
+// window. enabled() is not read here.
+function sessionWindowIfOn() {
+  if (config.value('authn.sessionWindow') !== 'on') {
+    return null;
+  }
+  const sessionWindow = require('../authn/session_window');
+  if (!sessionWindow.active()) {
+    return null;
+  }
+  return sessionWindow;
 }
 
 // Is there anything to write? `persistence.js` asks before scheduling.
@@ -1435,6 +1480,16 @@ function flush() {
   }).then(function (result) {
     committedAt = Math.max(committedAt, takenAt);
     settleDecided(result);
+    try {
+      const sessionWindow = sessionWindowIfOn();
+      if (sessionWindow) {
+        sessionWindow.onCommitted(upserts);
+      }
+    } catch (e) {
+      // The rows are committed. A window that cannot unpin must not make
+      // the flush look failed, or the keys would be written again.
+      log.debug("Caught in flush(): " + ((e && e.message) || e));
+    }
     ensureTombstoneJob();
     writes++;
     rowsWritten += upserts.length;
@@ -2284,6 +2339,17 @@ function restore() {
     });
   }
   const filter = restoreFilter(Date.now());
+  if (config.value('authn.sessionWindow') === 'on') {
+    try {
+      const sessionWindow = sessionWindowIfOn();
+      if (sessionWindow &&
+          filter.skipHandles.indexOf('authn.sessions') < 0) {
+        filter.skipHandles.push('authn.sessions');
+      }
+    } catch (e) {
+      log.debug("Caught in restore(): " + ((e && e.message) || e));
+    }
+  }
   log.debug("Leaving restore().");
   // WHAT WAS MINTED BEFORE THE RESTORE (#357): journalled and not written —
   // before the keystore started a flush had nothing to seal with, and one
@@ -2678,6 +2744,7 @@ module.exports = {
   // The key column a name is filed under, and a stored row's name (#222):
   // for the tests, which look rows up by the name they wrote.
   keyColumnOf: keyColumnOf,
+  journalled: journalled,
   nameOfRow: nameOfRow,
   backfillSessionIndex: backfillSessionIndex,
   sessionIndexChangeFloor: sessionIndexChangeFloor,

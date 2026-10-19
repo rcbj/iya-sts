@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4365** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4367** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 297
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 299
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 713
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1467,6 +1467,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0335` | Counting this realm's credential holders, or which names seen signing in are people in its directory, for the users list's tiles (#610) threw; those tiles are drawn from the list instead. | — |
 | `STS-AUTHN-0336` | Writing the Android marker (stsAndroidAttestedCredential) of a person whose security keys say it is missing or wrong, during the Android attestation recheck's backfill, threw; that person's keys are rechecked only once a later write of them derives it (#615). | — |
 | `STS-AUTHN-0337` | A new session was not admitted because the realm is at authn.maxSessions and this insert did not free a row (#350). An arrival continues with no cookie. A chosen sign-in is drawn again, or the API answers its existing failure, and the audit action is session.refuse. | none — the sign-in screen is drawn again, or no cookie is set; the code is not in the body. Logged at most once a minute per process, with a count |
+| `STS-AUTHN-0338` | A read of a sign-on session or of the session index failed. It is not treated as absence. A browser is answered 503 with Retry-After and keeps its cookie. An arrival is not minted. A sign-out does not end the session and does not audit STS-AUTHN-0011. The sweep skips that realm. | HTTP 503 with Retry-After; the body is { error: unavailable }. The code is not in the body |
+| `STS-AUTHN-0339` | authn.sessionWindow is on and minted persistence is not enabled, or this process is one of several cells, or the minted key is not a digest. The process does not start. auto in that state is logged once and the full map stays. | none — the process does not start. Logged, never sent |
 
 ## STS-OAUTH
 

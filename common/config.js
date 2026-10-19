@@ -2013,6 +2013,35 @@ const SETTINGS = [
                  'is over authn.maxSessions. Lowering a cap does not ' +
                  'mass-end.' },
 
+  { key: 'authn.sessionWindow', group: 'Web security',
+    label: 'Bounded session window',
+    env: 'STS_AUTHN_SESSION_WINDOW', type: 'enum',
+    enumValues: ['off', 'auto', 'on'], dflt: 'off', runtime: true,
+    description: 'Whether one process holds every sign-on session or a ' +
+                 'bounded window of them. off, the default, keeps the full ' +
+                 'map: no miss is read and nothing is evicted. on is ' +
+                 'refused at start unless minted persistence is enabled, ' +
+                 'the service is one cell, and the minted key is a digest ' +
+                 '(STS-AUTHN-0339). auto does not turn the window on.' },
+
+  { key: 'authn.sessionCacheEntries', group: 'Web security',
+    label: 'Sessions one process holds',
+    env: 'STS_AUTHN_SESSION_CACHE_ENTRIES', type: 'int', dflt: 10000,
+    min: 1, max: 10000000, runtime: true,
+    description: 'How many sign-on sessions one process holds when ' +
+                 'authn.sessionWindow is on. A session past the bound is ' +
+                 'forgotten in memory after its upsert has committed. It ' +
+                 'is not ended. The row stays in the store and is read ' +
+                 'back on the next miss.' },
+
+  { key: 'authn.sessionReadTimeoutMs', group: 'Web security',
+    label: 'Session read timeout (milliseconds)',
+    env: 'STS_AUTHN_SESSION_READ_TIMEOUT_MS', type: 'int', dflt: 2000,
+    min: 0, max: 60000, runtime: true,
+    description: 'How long one session read may wait, and how long a ' +
+                 'failed read is not retried. 0 retries the next miss at ' +
+                 'once. A failed read is not treated as a missing session.' },
+
   { key: 'authn.pendingTtlS', group: 'Web security',
     label: 'How long a sign-in waits at the screen (seconds)',
     env: 'STS_AUTHN_PENDING_TTL_S',
