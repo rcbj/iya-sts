@@ -34,6 +34,14 @@
 //     comes back opens the wait page with its `response_code`, and that page
 //     collects the sign-in — a poll in the tab left behind would collect it
 //     first and leave the returning tab to say it was already used.
+//   * THE CLIENT CALLBACK is the waiting tab's. The return tab collects the
+//     `response_code` and finishes a second factor there. The authorization
+//     response then lands in that tab, which does not hold the portal's or
+//     the console's PKCE record. It offers the callback on
+//     `sts-spa-callback` (`SpaClient.handCallbackToStarter()`). The plain
+//     wait page, which still holds the record, loads the callback and
+//     redeems the code. A QR poll and the Digital Credentials API finish in
+//     the tab that started them, so they do not listen.
 //   * THE DIGITAL CREDENTIALS API: `navigator.credentials.get()` with the
 //     signed request, its answer sent to `POST …/dc-api`, the poll paused
 //     while the browser's dialog is open so the two never race to finish
@@ -300,6 +308,12 @@ class WalletFlow {
   protected armedFor: string;
   // An act in flight: the poll does not race the API's answer.
   protected busy: boolean;
+  // The callback handoff (`SpaClient.CALLBACK_CHANNEL`). The names are
+  // SpaClient's; a test holds the two copies equal.
+  static readonly CALLBACK_CHANNEL = 'sts-spa-callback';
+  static readonly SIGNIN_KEYS: string[] = ['sts-portal-signin',
+                                            'sts-console-signin'];
+  protected channel: Json;
 
   /**
    * Makes the flow for a surface.
@@ -311,6 +325,7 @@ class WalletFlow {
     this.timer = null;
     this.armedFor = '';
     this.busy = false;
+    this.channel = null;
   }
 
   /**
@@ -333,6 +348,10 @@ class WalletFlow {
     }
     this.timer = null;
     this.armedFor = '';
+    if (this.channel && this.channel.close) {
+      this.channel.close();
+    }
+    this.channel = null;
   }
 
   /**
@@ -481,6 +500,12 @@ class WalletFlow {
     } else if (query.qr === '1' && view.qr) {
       this.schedule(view, query);
     }
+    // THE TAB LEFT WAITING takes the client callback. The return tab, which
+    // arrived with a response_code, collects the sign-in and must not also
+    // take the callback: it has no PKCE record.
+    if (!query.response_code) {
+      this.listenForCallback();
+    }
   }
 
   /**
@@ -592,6 +617,9 @@ class WalletFlow {
       if (query.qr === '1' && view.qr) {
         this.schedule(view, query);
       }
+      // THE DIALOG CLOSED THE HANDOFF (`stop()` above). The page is still
+      // the one that holds the PKCE record, so it listens again.
+      this.listenForCallback();
       return;
     }
     const body = WalletFlow.ids(view);
@@ -601,6 +629,88 @@ class WalletFlow {
       .replace('{state}', encodeURIComponent(String(view.state))), body);
     this.busy = false;
     this.follow(answer);
+  }
+
+  /**
+   * Listens for the callback a return tab cannot finish.
+   *
+   * The portal and the console keep the PKCE verifier in this tab's
+   * sessionStorage. The return tab offers the callback; this tab loads it.
+   *
+   * @returns nothing
+   */
+  listenForCallback(): void {
+    const win = this.env().window;
+    const BC = win && win.BroadcastChannel;
+    if (typeof BC !== 'function') {
+      return;
+    }
+    if (this.channel && this.channel.close) {
+      this.channel.close();
+    }
+    this.channel = new BC(WalletFlow.CALLBACK_CHANNEL);
+    const self = this;
+    this.channel.onmessage = function (event: Json) {
+      self.onCallbackHandoff(event && event.data);
+    };
+  }
+
+  /**
+   * Answers one handoff message: ack a callback this tab can finish, or
+   * load it once the return tab sends the address.
+   *
+   * @param data - the message
+   * @returns nothing
+   */
+  onCallbackHandoff(data: Json): void {
+    if (!data || !this.channel) {
+      return;
+    }
+    const state = String(data.state || '');
+    if (!state || !this.holdsSignIn(state)) {
+      return;
+    }
+    if (data.type === 'continue') {
+      this.channel.postMessage({ type: 'ack', state: state,
+                                 nonce: String(data.nonce || '') });
+      return;
+    }
+    if (data.type !== 'go' || !data.location) {
+      return;
+    }
+    const location = String(data.location);
+    const win = this.env().window;
+    this.stop();
+    if (win && typeof win.focus === 'function') {
+      win.focus();
+    }
+    this.env().location.assign(location);
+  }
+
+  /**
+   * Whether this tab's sessionStorage holds a sign-in for `state`.
+   *
+   * @param state - the authorization response's state
+   * @returns whether it does
+   */
+  holdsSignIn(state: string): boolean {
+    const store = this.env().sessionStorage;
+    if (!store || typeof store.getItem !== 'function') {
+      return false;
+    }
+    const keys = WalletFlow.SIGNIN_KEYS;
+    for (let i = 0; i < keys.length; i++) {
+      let saved: Json = null;
+      try {
+        saved = JSON.parse(store.getItem(keys[i]) || 'null');
+      } catch (e) {
+        saved = null;
+      }
+      if (saved && String(saved.state || '') === state) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

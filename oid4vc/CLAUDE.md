@@ -326,6 +326,18 @@ above is the surface's rule rather than an exception:
   the sign-in first and leave the returning tab to say it was already used.
   The poll pauses while the browser's credential dialog is open, so it never
   races the API's answer to finish one sign-in.
+* **The client callback is the waiting tab's.** The return tab collects the
+  `response_code` and, where a second factor follows, finishes that factor.
+  The authorization response then lands in the return tab. That tab does not
+  hold the portal's or the console's PKCE record (`sts-portal-signin`,
+  `sts-console-signin`, sessionStorage, the tab that called `beginSignIn`).
+  It offers the callback on `sts-spa-callback`
+  (`SpaClient.handCallbackToStarter()`); the waiting tab loads it and
+  redeems the code. A QR poll and the Digital Credentials API finish in the
+  tab that started them, which already holds the record, so they do not
+  offer it. No ack within a second and the return tab says what it said
+  before: the answer belongs to no sign-in that tab started.
+  `tests/spa_callback_handoff.js`.
 * **What a refusal says is JSON** (`{ ok: false, next: 'refused', errors }`,
   English, no code), and the codes are the ones the pages were marked with.
   `STS-VC-0081` is now an answer sent with nothing in it — the form posted

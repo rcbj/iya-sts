@@ -26,6 +26,9 @@
 //   * the authorization request (`authorizationRequestUrl()`), pushed first
 //     where the realm requires it, and a JARM answer opened and checked
 //     (`openAuthorizationResponse()`).
+//   * A CALLBACK THIS TAB DID NOT START (`handCallbackToStarter()`). A
+//     same-device wallet comes back in another tab. That tab offers the
+//     authorization response to the tab that still holds the PKCE record.
 //
 // What each application does with a page — routing, drawing, its forms —
 // stays in its own runtime (`admin-ui/web_runtime.ts`,
@@ -67,6 +70,15 @@ interface SpaClientOptions {
  * A static application's OAuth 2.0 client: PKCE, DPoP and the tokens.
  */
 class SpaClient extends WebPage {
+  // THE CHANNEL A CALLBACK OFFERS ITSELF ON when this tab holds no matching
+  // PKCE record, and the sessionStorage keys the tab that started the
+  // sign-in wrote. `oid4vc/web_vc_signin.ts` listens under these same names.
+  static readonly CALLBACK_CHANNEL = 'sts-spa-callback';
+  static readonly SIGNIN_KEYS: string[] = ['sts-portal-signin',
+                                            'sts-console-signin'];
+  // How long the callback waits for the tab that holds the record, in
+  // milliseconds. One answer, not a poll.
+  static readonly CALLBACK_HANDOFF_MS = 1000;
   protected clientId: string;
   protected scope: string;
   protected accessToken: string;
@@ -522,6 +534,66 @@ class SpaClient extends WebPage {
     }
     return { code: claims.code, state: claims.state, error: claims.error,
              error_description: claims.error_description, iss: claims.iss };
+  }
+
+  /**
+   * Offers this callback to the tab that started the sign-in.
+   *
+   * A same-device wallet opens the verifier's return in a new tab. The
+   * passkey, when one is asked for, finishes there, and the authorization
+   * server then sends that tab to this callback. The PKCE record was written
+   * in the tab that called `beginSignIn` and never left it, so this tab
+   * cannot redeem the code. It asks that tab to load this address. The code
+   * rides only on the answer to a tab that said it holds the record. No
+   * answer within a second, and this tab finishes the refusal itself.
+   *
+   * @param query - the opened authorization response
+   * @returns whether a tab accepted the callback
+   */
+  handCallbackToStarter(query: Json): Promise<boolean> {
+    const win = this.env.window;
+    const BC = win && win.BroadcastChannel;
+    const state = String((query && query.state) || '');
+    const code = String((query && query.code) || '');
+    if (!state || !code || typeof BC !== 'function' || !win.setTimeout) {
+      return Promise.resolve(false);
+    }
+    const self = this;
+    return new Promise(function (resolve) {
+      const channel = new BC(SpaClient.CALLBACK_CHANNEL);
+      const nonce = self.random(16);
+      let settled = false;
+      let timer: Json = null;
+      const finish = function (ok: boolean): void {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timer !== null && win.clearTimeout) {
+          win.clearTimeout(timer);
+        }
+        channel.close();
+        resolve(ok);
+      };
+      // ONE WAIT, for a tab that is already open. Nothing re-arms it.
+      timer = win.setTimeout(function () {
+        finish(false);
+      }, SpaClient.CALLBACK_HANDOFF_MS);
+      channel.onmessage = function (event: Json) {
+        const data = event && event.data;
+        if (!data || data.type !== 'ack' || data.nonce !== nonce ||
+            data.state !== state) {
+          return;
+        }
+        const loc = self.env.location;
+        channel.postMessage({
+          type: 'go', state: state, nonce: nonce,
+          location: String(loc.pathname || '') + String(loc.search || '') +
+                    String(loc.hash || '') });
+        finish(true);
+      };
+      channel.postMessage({ type: 'continue', state: state, nonce: nonce });
+    });
   }
 
   /**
