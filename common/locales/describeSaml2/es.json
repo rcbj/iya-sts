@@ -9,7 +9,7 @@
   "sso": "Single Sign-On. <code>{scoped}</code> es el mismo servicio acotado a un proveedor de servicios.",
   "ars": "Artifact Resolution, SOAP sobre HTTP. Un navegador nunca lo toca: el proveedor de servicios lo llama directamente, que es justamente la razón de ser del perfil de artefactos.",
   "slo": "Single Logout, en ambas direcciones.",
-  "unsolicited": "Inicio de sesión iniciado por el proveedor de identidad: una Response no solicitada al proveedor de servicios que nombra <code>providerId</code> (<code>saml2.unsolicitedSso</code>).",
+  "unsolicited": "Inicio de sesión iniciado por el proveedor de identidad: una Response no solicitada al proveedor de servicios que nombra <code>providerId</code>, donde <code>saml2.idpInitiatedSso</code> está activado para él (desactivado por defecto).",
   "aa": "La autoridad de atributos: un <code>{element}</code> SOAP, el perfil Assertion Query and Request.",
   "metadata": "Los metadatos firmados del proveedor de identidad. <code>{scoped}</code> es un documento PROPIO para ese proveedor de servicios —un entityID distinto y endpoints distintos— y se genera para cualquier {sp} que se pida.",
   "perSp": "Metadatos por proveedor de servicios",

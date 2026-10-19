@@ -9,7 +9,7 @@
   "sso": "Single Sign-On. <code>{scoped}</code> är samma tjänst avgränsad till en tjänsteleverantör.",
   "ars": "Artefaktupplösning, SOAP över HTTP. En webbläsare rör den aldrig — tjänsteleverantören anropar den direkt, vilket är hela poängen med artefaktprofilen.",
   "slo": "Single Logout, i båda riktningarna.",
-  "unsolicited": "Inloggning initierad av identitetsleverantören: ett oombett Response till den tjänsteleverantör som <code>providerId</code> namnger (<code>saml2.unsolicitedSso</code>).",
+  "unsolicited": "Inloggning initierad av identitetsleverantören: ett oombett Response till den tjänsteleverantör som <code>providerId</code> namnger, där <code>saml2.idpInitiatedSso</code> är på för den (av som standard).",
   "aa": "Attributauktoriteten: ett SOAP-<code>{element}</code>, profilen Assertion Query and Request.",
   "metadata": "Identitetsleverantörens signerade metadata. <code>{scoped}</code> är ett EGET dokument för den tjänsteleverantören — ett annat entityID och andra slutpunkter — och det skapas för vilken {sp} som helst som efterfrågas.",
   "perSp": "Metadata per tjänsteleverantör",
