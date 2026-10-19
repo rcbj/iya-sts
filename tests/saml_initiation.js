@@ -297,6 +297,11 @@ function childMain() {
       // --- D. a step-up on risk -------------------------------------------
       config.setOverride('risk.enforceInDevelopment', true);
       const risky = sessionFor('si-bob-' + stamp);
+      // The sign-in's own risk assessment finishes after startSession()
+      // returns and writes the session's risk; a level put in place before
+      // it lands is overwritten. So wait for it, and put the level in place
+      // again before each step that depends on it.
+      await new Promise(function (r) { setTimeout(r, 1000); });
       const atMedium = function () {
         const s = risky.held();
         s.risk = { level: 'MEDIUM', score: 2, signals: ['tor-exit'],
@@ -322,6 +327,7 @@ function childMain() {
            'sign-in screen with a second factor demanded (STS-RISK-0017), ' +
            'back to the same link marked as its one trip — not refused',
            r.status + ' ' + r.code + ' ' + returnTo);
+      atMedium();
       r = await request('GET', returnTo || unsolicited(spOn,
                                                         { reprompted: '1' }),
                         risky.cookie);
@@ -349,6 +355,7 @@ function childMain() {
            !!pending.forceMfa && /[?&]fid=/.test(return11),
            'D4. SAML 1.1: a session at MEDIUM is stepped up too, back to the ' +
            'held flow', r.status + ' ' + r.code + ' ' + return11);
+      atMedium();
       r = await request('GET', return11 || sso11(rpOn), risky.cookie);
       note(r.status === 403 && r.code === 'STS-SAML-0115' &&
            !/name="SAMLResponse"/.test(r.text),

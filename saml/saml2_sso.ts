@@ -3816,16 +3816,16 @@ class Saml2Sso {
       const steppedUp = !!(roleAnswer.risk &&
                            roleAnswer.risk.action === 'step-up' &&
                            !roleAnswer.risk.observed && reprompted);
-      errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
-        : (roleAnswer.mechanism && reprompted
-          ? (roleAnswer.mechanism.secondFactor ? 'STS-SAML-0107'
-                                               : 'STS-SAML-0100')
-          : (steppedUp ? 'STS-SAML-0112' : 'STS-SAML-0010')));
       log.info('saml2: the issuance policy refused an unsolicited Response ' +
                'for "' + String((session.user || {}).username || '') +
                '" to "' + spEntityId + '"' +
                (reprompted ? ', back from its one sign-in trip' : '') +
                '. ' + roleAnswer.why);
+      errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
+        : (roleAnswer.mechanism && reprompted
+          ? (roleAnswer.mechanism.secondFactor ? 'STS-SAML-0107'
+                                               : 'STS-SAML-0100')
+          : (steppedUp ? 'STS-SAML-0112' : 'STS-SAML-0010')));
       const denied = this.buildResponse({
         issuer: idpEntityId, sp: spEntityId, destination: acsUrl,
         inResponseTo: '', status: STATUS_RESPONDER,
