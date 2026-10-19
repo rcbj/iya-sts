@@ -4831,6 +4831,8 @@ failure in its driver):
 * `WarnOnUnusableJwksKeys`, and FAILURE conditions that check an algorithm
   list against the suite's JWS table (`ValidateRequestAuthenticationSigning
   AlgValuesSupported`, `VCIValidateProofSigningAlgValuesSupported`,
+  `VCIValidateCredentialSigningAlgValuesSupported` (each configuration's
+  own list since #664),
   `VP1FinalValidateVpFormatsSupportedInClientMetadata`, `ValidateServerJWKs`,
   and `VerifyNewJwksHasNewSigningKey`, which hands every key of the rotated
   JWKS to nimbus's parser and so fails `oidcc-server-rotate-keys` on an AKP
@@ -4839,7 +4841,8 @@ failure in its driver):
   not know. rcbj on #176: PQC support over a clean run.
 * `VerifyStatusListTokenSignatureUsingEmbeddedJwk`: outside HAIP the suite
   resolves a status list token's key only from a header `jwk`; this realm's
-  names it by `kid` and `x5u`, which draft-ietf-oauth-status-list allows.
+  names it by `kid` and carries its chain in `x5c`, which
+  draft-ietf-oauth-status-list allows.
 * The OpenID Federation Leaf's `ValidateAbsenceOfAuthorityHints`: the suite
   decides "is this the Trust Anchor" by string prefix, and a realm's URL
   begins with its Trust Anchor's.
