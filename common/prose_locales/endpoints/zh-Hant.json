@@ -1159,6 +1159,14 @@
     "en": "17543ed2ad8f5b73",
     "text": "「單一」依賴方的聯盟中繼資料"
   },
+  "endpoints.route./wsfed/initiate/:rp.name": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "由身分識別提供者發起的登入"
+  },
+  "endpoints.route./wsfed/initiate.name": {
+    "en": "fe8976709b142424",
+    "text": "由身分識別提供者發起的登入，依 wtrealm"
+  },
   "endpoints.route./saml2.name": {
     "en": "35f88743c0a1f5d7",
     "text": "此設定檔是什麼"
@@ -1322,6 +1330,10 @@
   "endpoints.route./oauth2/authorize.name": {
     "en": "91ef8dd96110c183",
     "text": "授權端點"
+  },
+  "endpoints.route./launch/:app.name": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "由身分識別提供者發起的登入"
   },
   "endpoints.route./logout.name": {
     "en": "1228edbd8a552e3b",

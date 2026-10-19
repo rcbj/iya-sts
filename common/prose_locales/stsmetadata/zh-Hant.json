@@ -268,8 +268,8 @@
     "text": "partial：「兩種」瀏覽器設定檔——Browser/Artifact（第 4.1 節）與 Browser/POST（4.2）——各自使用其章節所要求的確認方法，兩者是不同的值，不可互換。「SAML 1.1 中沒有請求訊息」，因此兩者都由身分識別提供者發起：流程在瀏覽器攜帶 TARGET 抵達時開始，依賴方從不在協定中表明自己的身分，而失敗時是一個「頁面」而不是 Response，因為沒有東西可以回應。Shibboleth 的非標準 AuthnRequest 設定檔（urn:mace:shibboleth:1.0:profiles:AuthnRequest）會被接受並公告，因為每個真實的 SAML 1.1 服務提供者送出的都是它。`shire` 在開發模式下照原樣使用，在「產品」模式下必須註冊在依賴方的項目上（2026-09-12）。Browser/POST Response 依第 4.1.2.4 節的要求簽署，連同其斷言；關閉任一簽章是開發用的測試案例，產品模式會忽略（#181）。"
   },
   "stsmetadata.specs.ws-federation.coverage": {
-    "en": "2abb20f4fd0f6ab0",
-    "text": "partial：第 13 節的 Web（被動）請求者設定檔——帶有 wtrealm、wreply、wctx、wct、wfresh、wauth、whr 與 wreq 的 wsignin1.0、以表單 POST 傳送的登入回應，以及帶有前端通道清除請求的 wsignout1.0/wsignoutcleanup1.0；作為聯盟依賴方（#167）時，夥伴的清除請求（依規格未簽署）只有在該人於具備真正按鈕的頁面上確認後才會結束工作階段，而此處的登出會向夥伴送出 wsignout1.0。已簽署的聯盟中繼資料（第 3.1 節）位於 AD FS 路徑。「未」實作的部分，每一項都明確指名而非保持沉默：超出 /sts 已能回應範圍的主動（SOAP）請求者設定檔、wresultptr、都回應 501 的屬性服務（wattr1.0）與假名服務（wpseudo1.0）、wreqptr（拒絕——從查詢參數中解參照 URL 是伺服器端請求偽造）、此設定檔中的權杖加密（被動請求不攜帶接收者憑證），以及任何授權或原則強制執行。wreply 在開發模式下照原樣使用，在「產品」模式下必須是已註冊的 wsfedReplyUrl（2026-09-12）。"
+    "en": "df4a48ab6e7784a2",
+    "text": "partial：第 13 節的 Web（被動）請求者設定檔——帶有 wtrealm、wreply、wctx、wct、wfresh、wauth、whr 與 wreq 的 wsignin1.0、以表單 POST 傳送的登入回應，以及帶有前端通道清除請求的 wsignout1.0/wsignoutcleanup1.0；作為聯盟依賴方（#167）時，夥伴的清除請求（依規格未簽署）只有在該人於具備真正按鈕的頁面上確認後才會結束工作階段，而此處的登出會向夥伴送出 wsignout1.0。已簽署的聯盟中繼資料（第 3.1 節）位於 AD FS 路徑。「未」實作的部分，每一項都明確指名而非保持沉默：超出 /sts 已回應範圍的主動（SOAP）請求者設定檔、wresultptr、都回應 501 的屬性服務（wattr1.0）與假名服務（wpseudo1.0）、wreqptr（拒絕——從查詢參數解參照 URL 即是伺服器端請求偽造）、此設定檔中的權杖加密（被動請求不攜帶接收者憑證），以及任何授權或原則強制執行。wreply 在開發模式下照原樣使用，在「產品」模式下必須是已註冊的 wsfedReplyUrl（2026-09-12）。超出規格（規格沒有這種請求）的部分：位於 /wsfed/initiate/{rp} 的由身分識別提供者發起的登入（#712），在依賴方選擇加入之前為關閉，且只 POST 至其已註冊的 wsfedReplyUrl。"
   },
   "stsmetadata.specs.xmldsig.coverage": {
     "en": "668af5821905c8e5",
@@ -2107,6 +2107,18 @@
     "en": "604e81aecab74125",
     "text": "相同的文件，依應用程式提供（#494）：其 entityID 是領域唯一的簽發者，即其 OAuth 簽發者，與其他各處相同（#523）。路徑區段是應用程式的識別碼（其 wtrealm）或其 slug。未指名任何「已註冊」應用程式的區段在兩種模式下都回傳 404（STS-WSFED-0019）。no-store。"
   },
+  "stsmetadata.endpoints./wsfed/initiate/:rp.what": {
+    "en": "b12c32c1473198ea",
+    "text": "NON-SPEC（#712）：WS-Federation 1.2 並未定義讓此身分識別提供者開始登入的請求，因此此連結是本服務自己的。該區段是「已註冊」依賴方的識別碼（其 wtrealm）或 slug（否則為 404，STS-WSFED-0024）。在 wsfed.idpInitiatedSso 或項目的 wsfedIdpInitiatedSso 將其開啟之前為關閉（403，STS-WSFED-0025）。wreply 會被拒絕（STS-WSFED-0026）：回應只會送往為其註冊的第一個 wsfedReplyUrl，絕不會送往觀察到的位址（沒有時為 STS-WSFED-0027）。wctx 會逐位元組原樣回傳；tokenType 與 trust 的意義與在 /wsfed 時相同。簽發即為 wsignin1.0 的簽發——工作階段、簽發原則、session-presented、為 /logout 記錄的領域——而基於風險的拒絕會讓該人提升驗證一次。"
+  },
+  "stsmetadata.endpoints./wsfed/initiate/:rp.effect": {
+    "en": "8beda07914540942",
+    "text": "必要時讓該人登入，接著將 section 13.2.2 登入回應 POST 至依賴方已註冊的回覆位址"
+  },
+  "stsmetadata.endpoints./wsfed/initiate.what": {
+    "en": "9eaa4f8f36279f9e",
+    "text": "NON-SPEC（#712）：以 ?wtrealm= 而非路徑區段指定依賴方的 /wsfed/initiate/{rp}，適用於其斜線不便放在路徑中的識別碼。規則相同。"
+  },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
     "text": "說明頁面：端點、四種繫結，以及各服務提供者中繼資料的運作方式。GET /sts 與 GET /wsfed 基於相同理由以相同方式回應——對一個只想知道它是什麼的人回傳 400 的端點，會留下糟糕的第一印象。自 #584 起在瀏覽器中繪製；?format=json，或偏好 JSON 的 Accept，以資料形式回傳其檢視。"
@@ -2140,8 +2152,8 @@
     "text": "相同，而且它就是同一個端點"
   },
   "stsmetadata.endpoints./saml2/unsolicited.what": {
-    "en": "c4aa05f623f432ed",
-    "text": "一個「非請求的」Response（saml-profiles-2.0-os section 4.1.5，#189）：providerId 指名服務提供者（也可改由路徑區段指名），shire 指定其已註冊的判斷提示取用服務之一（否則為預設值），target 為 RelayState，binding 為 post、simplesign 或 artifact（否則為端點本身的繫結；絕不使用 HTTP-Redirect）。沒有工作階段時透過 /authn/login 讓該人登入；Response 及其判斷提示不帶 InResponseTo。在產品模式下服務提供者必須已註冊，而 saml2.unsolicitedSso 可為某個領域關閉此功能。"
+    "en": "46085ccec8b2cb1c",
+    "text": "「未經請求」的 Response（saml-profiles-2.0-os section 4.1.5，#189）：providerId 指名服務提供者（也可改由路徑區段指名），shire 為其已註冊的斷言取用者服務之一（否則為預設者），target 為 RelayState，binding 為 post、simplesign 或 artifact（否則為端點自己的繫結；絕不使用 HTTP-Redirect）。沒有工作階段時，會透過 /authn/login 讓該人登入；Response 及其斷言不攜帶 InResponseTo。在產品模式下服務提供者必須已註冊，且只有在 saml2.idpInitiatedSso 對其開啟時才會回應——預設為「關閉」，由其項目上的 saml2IdpInitiatedSso 開啟（#711）。簽發原則依工作階段風險要求的提升驗證，會將該人送去重新驗證後再返回，僅一次。"
   },
   "stsmetadata.endpoints./saml2/unsolicited.effect": {
     "en": "d57fa6373c895dd8",
@@ -2208,8 +2220,8 @@
     "text": "相同的文件，依應用程式提供，並遵循與 SAML 2.0 那份相同的規則：在開發模式下它不會因任何情況回傳 404，因為無人註冊的識別碼會「因請求而」被註冊；在產品模式下（#112），它、/saml11/sso/{rp} 與 /saml11/responder/{rp} 對任何不是已註冊 SAML 1.1 信賴方的對象都回傳 404（STS-SAML-0083）。路徑區段是百分比編碼的識別碼或 slug，而 slug 與 /saml2 使用的「是同一個」——一個應用程式在兩個設定檔中只有一個控點，否則主控台會將一個項目顯示為兩個。providerID 是領域唯一的簽發者（#523）。"
   },
   "stsmetadata.endpoints./saml11/sso.what": {
-    "en": "64a3ea22439a5c86",
-    "text": "SAML 1.1 對 SAML 2.0 所稱單一登入服務的名稱，而差異不只在用語：「沒有請求訊息」。流程只以一個 TARGET 開始，別無其他，因此信賴方由 Shibboleth 的 providerId 參數或路徑區段指名，兩者皆無時則「從 TARGET 的來源猜測」，並記錄為猜測。它沒有自己的登入畫面，也不需要 POST 轉 GET 的周折：流程以最上層 GET 抵達，SameSite=Lax Cookie 會隨之傳送。ForceAuthn、IsPassive 與 RequestedAuthnContext 在此協定中沒有對應寫法，因此它們是不存在，而不是未實作。"
+    "en": "112515a67fb513e6",
+    "text": "SAML 1.1 對 SAML 2.0 所稱之單一登入服務的名稱，而差異不只在用語：「沒有請求訊息」。流程以一個 TARGET 開始、別無其他，因此依賴方由 Shibboleth 的 providerId 參數、路徑區段指名，或者——兩者皆無時——「從 TARGET 的來源推測」，並會記錄為推測。它沒有自己的登入畫面，也不需要 POST 轉 GET 的周折：流程以頂層 GET 抵達，SameSite=Lax Cookie 會隨之攜帶。ForceAuthn、IsPassive 與 RequestedAuthnContext 在此協定中沒有對應寫法，因此它們是不存在，而非未實作。攜帶 shire 的請求（Shibboleth AuthnRequest 設定檔）是依賴方發起的開始，在 saml11.spInitiatedSso 對其開啟時回應；只有 TARGET 的請求是在此處開始的登入，只有在 saml11.idpInitiatedSso 對其開啟時才會回應——預設為「關閉」（#711）。"
   },
   "stsmetadata.endpoints./saml11/sso.effect": {
     "en": "c9f861ab9965a369",
@@ -2334,6 +2346,14 @@
   "stsmetadata.endpoints./oauth2/authorize.effect": {
     "en": "3535569413867e97",
     "text": "需要 client_id 與 redirect_uri——直接開啟時回應 400，提供後則重新導向至登入畫面"
+  },
+  "stsmetadata.endpoints./launch/:app.what": {
+    "en": "46e9ad826baa3150",
+    "text": "「每個應用程式一個在此處開始登入該應用程式的連結」（#426）：使用者入口網站的「登入」連結，以及主控台中每個協定子分頁頂端的 URL。?protocol= 為 saml2、saml11、wsfed 或 oidc，否則為已開啟的那一個，再否則為項目的 appLaunchProtocol；?target= 是之後要前往的位置。它會檢查該應用程式在該協定上是否已開啟由身分識別提供者發起的登入（預設關閉），並將瀏覽器送往 /saml2/unsolicited/{sp}、/saml11/sso/{rp} 或 /wsfed/initiate/{rp}，這些端點會如同任何登入一樣讓該人登入，並再次檢查開關；對於 OpenID Connect，它會在此處讓該人登入、在工作階段上記錄這次啟動，並將其送往用戶端的 initiate_login_uri（OpenID Connect Core section 4），由其開始一般的授權請求。未知的應用程式為 404。"
+  },
+  "stsmetadata.endpoints./launch/:app.effect": {
+    "en": "9fd32046b05133a5",
+    "text": "將瀏覽器送往協定端點；本身不簽發任何東西"
   },
   "stsmetadata.endpoints./logout.what": {
     "en": "926917f15c6fd9a9",

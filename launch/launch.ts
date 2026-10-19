@@ -219,6 +219,7 @@ class Launch {
     if (!chosen.protocol) {
       errorCodes.mark(res, chosen.code);
       log.debug("Leaving Launch.launch(). " + chosen.title);
+      // error-code: none — chosen.code, marked above, is STS-LAUNCH-0002..0005
       return this.refuse(res, chosen.status, chosen.title, chosen.detail);
     }
     const protocol = chosen.protocol;

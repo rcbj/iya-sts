@@ -1459,10 +1459,6 @@
     "en": "d5e8553e9978dfda",
     "text": "是否拒絕「未簽署」的 <samlp:AuthnRequest>——以及來自服務提供者的未簽署 <samlp:LogoutRequest>。**`auto` 在產品模式下為開啟，在開發模式下為關閉。**`on` 與 `off` 則不論模式直接決定；已採用之元數據指出 AuthnRequestsSigned=\"true\" 的服務提供者，即使此設定關閉也會受其約束。它也是此身分識別提供者元數據中 WantAuthnRequestsSigned 所表示的內容。\n\n「存在」的簽章在每種模式下都會被驗證——HTTP Redirect 繫結的查詢字串簽章（section 3.4.4.1）或 HTTP POST 繫結的封入式簽章——對照的是服務提供者「已註冊」的簽署證書（samlSigningCertificate，來自其元數據或在 SAML 2.0 頁面上設定），絕不是要求所攜帶的證書，而無法通過驗證的簽章會被拒絕。沒有已註冊的證書時，簽章會記錄為未驗證，在此設定開啟時視為「未簽署」。"
   },
-  "saml2.unsolicitedSso|description": {
-    "en": "aff7c855f4363724",
-    "text": "/saml2/unsolicited[/{sp}] 是否傳送「未經請求」的 Response（saml-profiles-2.0-os section 4.1.5）——在此身分識別提供者起始、針對未提出要求之服務提供者的登入：`providerId`（或路徑區段）指出它，`shire` 指出其已註冊的斷言取用服務之一，`target` 為 RelayState。在產品模式下服務提供者必須已註冊，地址必須是其元數據或其項目所註冊的地址，且會如任何登入一樣詢問簽發原則。斷言不攜帶 InResponseTo，因此服務提供者自行決定是否接受；對於其提供者只應被回應的領域，請關閉此設定。"
-  },
   "saml2.defaultSingleLogoutService|label": {
     "en": "a81a00ce8c57908e",
     "text": "後援登出返回地址"

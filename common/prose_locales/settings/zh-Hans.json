@@ -1847,6 +1847,30 @@
     "en": "d6543ad76912e1b1",
     "text": "在所有模式下（#123），结束浏览器单点登录会话时，在该会话上签发的、不带 offline_access 的每个刷新令牌都会被吊销——这是 OpenID Connect Back-Channel Logout 1.0 第 2.7 节的 SHOULD，也是 RFC 9700 第 2.2.2 节的 MAY。被授予 offline_access 的令牌会被保留：比会话存活更久正是该范围的用途（OIDC Core 第 11 节）。正是它让 /oauth2/logout 和 WS-Federation 的 wsignout1.0 对反向通道有意义：没有它，注销只结束了 Cookie，却把一个长期有效的凭据留在客户端手中。默认开启；关闭，或在某个客户端条目上设为 FALSE，可重现靠刷新重新回来的客户端。令牌按其签发时所在的会话查找。"
   },
+  "oauth2.thirdPartyInitiatedLogin|label": {
+    "en": "b7e8b085293fbd62",
+    "text": "身份提供方发起的登录（第三方发起的登录）"
+  },
+  "oauth2.thirdPartyInitiatedLogin|description": {
+    "en": "d652b991521afa8d",
+    "text": "/launch/{app} 是否带着 iss、login_hint 和 target_link_uri 将某人发送到 OpenID Connect 客户端的 initiate_login_uri（OpenID Connect Core 第 4 节），以及用户门户是否提供该链接。默认关闭；客户端条目上的 oauthThirdPartyInitiatedLogin 会针对该客户端覆盖此项。随后客户端发起一个普通的授权请求，因此链接之后的一切都是客户端自己的登录。"
+  },
+  "oauth2.spInitiatedSso|label": {
+    "en": "a4cd88a5fec219e4",
+    "text": "客户端发起的登录"
+  },
+  "oauth2.spInitiatedSso|description": {
+    "en": "2ac22081ca9a60d6",
+    "text": "/oauth2/authorize 是否应答并非刚刚被启动的客户端。默认开启；客户端条目上的 oauthSpInitiatedSso 会覆盖此项。关闭时，来自该客户端的授权请求只有在同一会话上、oauth2.launchWindowS 之内紧随对它的 /launch 之后才会得到应答，每次启动一次；其他任何请求都以 unauthorized_client 拒绝。不经过授权端点的授权类型不受影响。"
+  },
+  "oauth2.launchWindowS|label": {
+    "en": "9c1c1df5174c8754",
+    "text": "启动窗口（秒）"
+  },
+  "oauth2.launchWindowS|description": {
+    "en": "40b4f249f1f0c2d3",
+    "text": "对于自身发起已被关闭（oauth2.spInitiatedSso）的客户端，在 /launch/{app} 将某人发送到该客户端的 initiate_login_uri 之后多长时间内，该客户端的授权请求仍算作紧随启动之后。"
+  },
   "oauth2.eddsaCurve|label": {
     "en": "6637f461a494b5b2",
     "text": "EdDSA 曲线"
@@ -4303,13 +4327,21 @@
     "en": "d5e8553e9978dfda",
     "text": "是否拒绝未签名的 <samlp:AuthnRequest>——以及服务提供方未签名的 <samlp:LogoutRequest>。**`auto` 在产品模式下为打开，在开发模式下为关闭。**`on` 和 `off` 则不论模式如何都起决定作用；已导入元数据声明 AuthnRequestsSigned=\"true\" 的服务提供方，即使此设置关闭也要遵守该声明。它也决定了此身份提供方元数据中 WantAuthnRequestsSigned 的值。\n\n存在的签名在每种模式下都会被验证——HTTP Redirect 绑定的查询字符串签名（第 3.4.4.1 节）或 HTTP POST 绑定的封装型签名——对照服务提供方已注册的签名证书（samlSigningCertificate，来自其元数据或在 SAML 2.0 页面上设置）进行验证，而绝不对照请求所携带的证书，未通过验证的签名会被拒绝。没有已注册证书时，签名会被记录为未验证，在此设置打开时视为未签名。"
   },
-  "saml2.unsolicitedSso|label": {
+  "saml2.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "身份提供方发起的登录"
   },
-  "saml2.unsolicitedSso|description": {
-    "en": "aff7c855f4363724",
-    "text": "/saml2/unsolicited[/{sp}] 是否发送未经请求的 Response（saml-profiles-2.0-os 第 4.1.5 节）——一次在此身份提供方处发起、面向未提出请求的服务提供方的登录：`providerId`（或路径段）指明该服务提供方，`shire` 指明其已注册的某个断言消费者服务，`target` 为 RelayState。在产品模式下，服务提供方必须已注册，地址必须是其元数据或条目所注册的地址之一，并且会像任何登录一样询问签发策略。断言不携带 InResponseTo，因此由服务提供方自行决定是否接受；对于其提供方只应被应答的领域，请关闭此设置。"
+  "saml2.idpInitiatedSso|description": {
+    "en": "9982a49370bf40a8",
+    "text": "/saml2/unsolicited[/{sp}]——以及用于 SAML 2.0 的 /launch/{app}——是否发送未经请求的 Response（saml-profiles-2.0-os 第 4.1.5 节）：即在此身份提供方处为一个并未请求的服务提供方发起的登录。默认关闭；应用条目上的 saml2IdpInitiatedSso 会仅针对该服务提供方覆盖此项。断言不带 InResponseTo，因此服务提供方无法区分发给它的 Response 和他人推入其浏览器的 Response；只应为预期身份提供方发起的登录的提供方开启此项。在产品模式下服务提供方必须已注册，地址必须是其元数据或其条目所注册的地址，并且与任何登录一样会询问签发策略。"
+  },
+  "saml2.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "服务提供方发起的登录"
+  },
+  "saml2.spInitiatedSso|description": {
+    "en": "92e8e438813d4044",
+    "text": "/saml2/sso 上的 <samlp:AuthnRequest>——即服务提供方发起的登录——是否得到应答。默认开启；应用条目上的 saml2SpInitiatedSso 会针对该服务提供方覆盖此项。关闭时，请求会得到 RequestDenied Response，该服务提供方只能通过身份提供方发起的登录让人登录。"
   },
   "saml2.defaultSingleLogoutService|label": {
     "en": "a81a00ce8c57908e",
@@ -4455,6 +4487,22 @@
     "en": "2e68718a26d4706c",
     "text": "在首次指明某个依赖方时——通过到达的 TARGET、获取的元数据文档或解析的工件——在 ou=applications 下为其创建一个应用条目。关闭时，浏览器配置文件仍可工作，而 /admin/saml11 保持为空，这是进行负载测试的人想要的，其他人都不想要。"
   },
+  "saml11.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "身份提供方发起的登录"
+  },
+  "saml11.idpInitiatedSso|description": {
+    "en": "37300a932ffca76b",
+    "text": "在这里发起的 SAML 1.1 登录是否得到应答：带 TARGET 而不带 shire 的 /saml11/sso/{rp}，以及用于 SAML 1.1 的 /launch/{app}。默认关闭；应用条目上的 saml11IdpInitiatedSso 会针对该依赖方覆盖此项。依赖方会收到一个它并未请求的 Response，它无法将其与他人推入其浏览器的 Response 区分开。"
+  },
+  "saml11.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "服务提供方发起的登录"
+  },
+  "saml11.spInitiatedSso|description": {
+    "en": "f4b88ca2b7aa9fbc",
+    "text": "依赖方发起的 SAML 1.1 登录——Shibboleth 1.3 AuthnRequest 配置文件，即携带 `shire` 的请求——是否得到应答。默认开启；应用条目上的 saml11SpInitiatedSso 会覆盖此项。此类请求是一个普通的未签名 URL，因此关闭此项关上的是门，而不能证明是谁开的门。"
+  },
   "saml11.requestTtlMin|label": {
     "en": "f2c40fce66df42af",
     "text": "保留的流程有效期（分钟）"
@@ -4518,6 +4566,22 @@
   "wstrust.jwtCertificateHeader|description": {
     "en": "d75340dbe09a7542",
     "text": "此 STS 在 RequestSecurityTokenResponse 中返回的 JWT 是否指明签署它的密钥的证书链。SAML 断言在其自身的 XML Signature 中携带证书，不受影响。`x5u`（默认值）是证书链在本服务上的地址 `/pki/chain/{scope}/{sha256}.pem`，约一百字节；`x5c` 是内联的证书链，叶证书在前、服务根证书在后，base64 DER 编码，有数千字节；`both` 表示两者都有，`none` 表示两者都没有。无论哪种，它都是仅持有令牌的依赖方访问每个证书的 CRL 分发点、OCSP 响应方和 caIssuers 地址所需的信息。尚未在此领域的 JOSE 签发 CA 下获得认证的密钥，以及 HMAC 签名，两者都不会得到。RFC 7515 第 4.1.5 节要求 `x5u` 的获取使用 TLS：global.https 关闭时，该地址为 `http://`，严格的验证方将拒绝跟随它。JWE 头部从不带有它——本服务没有任何经过认证的密钥用于加密任何内容。可按领域设置。"
+  },
+  "wsfed.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "身份提供方发起的登录"
+  },
+  "wsfed.idpInitiatedSso|description": {
+    "en": "62f920d6663c4e4f",
+    "text": "/wsfed/initiate/{rp}——以及用于 WS-Federation 的 /launch/{app}——是否让某人登录到一个并未请求的依赖方，POST 到其已注册的 wsfedReplyUrl。默认关闭；应用条目上的 wsfedIdpInitiatedSso 会针对该依赖方覆盖此项。依赖方会收到一个它并未请求的响应，它无法将其与他人推入其浏览器的响应区分开。"
+  },
+  "wsfed.spInitiatedSso|label": {
+    "en": "705a2297f2762532",
+    "text": "依赖方发起的登录"
+  },
+  "wsfed.spInitiatedSso|description": {
+    "en": "d16076a2c90701e3",
+    "text": "/wsfed 上的 wsignin1.0——即依赖方发起的登录——是否得到应答。默认开启；应用条目上的 wsfedSpInitiatedSso 会覆盖此项。wsignin1.0 是一个未签名的 URL，因此关闭此项关上的是门，而不能证明是谁开的门。"
   },
   "wsfed.assertionLifetimeMin|label": {
     "en": "92ee206f116fd412",
