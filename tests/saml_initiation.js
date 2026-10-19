@@ -35,7 +35,14 @@
 //      instead of a refusal; back from that ONE trip still unmet, refused
 //      (STS-SAML-0112 as a RequestDenied Response, STS-SAML-0115 as a page)
 //      rather than sent round again; and back from it with the factor, the
-//      launch is answered.
+//      launch is answered. THEN AGAIN IN PRODUCT MODE (#715), "D1
+//      (product)" to "D7 (product)": `global.mode` overridden to product,
+//      no risk.enforceInDevelopment, service providers made in product, and
+//      a person with a real password who signs in with it at the screen
+//      (and is refused with a wrong one). Only D runs twice: A, B, C and E
+//      run in product over the wire, in
+//      tests/vendored/sts_idp_initiated_saml.js, and a session's risk is
+//      the one thing here HTTP cannot set up.
 //   E. THE MECHANISM RE-PROMPT ON /saml2/unsolicited (#457) makes the same
 //      one trip: back from it still on a mechanism the service provider
 //      does not allow, RequestDenied (STS-SAML-0100).
@@ -83,10 +90,15 @@ function childMain() {
     const authn = require(ROOT + '/authn/authn');
     const ldap = require(ROOT + '/ldap/ldap_server');
     const kit = require(ROOT + '/tests/tools/saml_signing_kit');
+    const credentials = require(ROOT + '/common/credentials');
+    const screen = require(ROOT + '/tests/tools/authn_screen');
 
     // The code the last response was marked with, off the server's own
     // response object.
     let lastCode = '';
+    // A browser's User-Agent, sent on every request while it is set: the
+    // product pass of D sets it (#715).
+    let userAgent = '';
     const server = http.createServer(function (req, res) {
       res.on('finish', function () {
         lastCode = errorCodes.codeOf(res);
@@ -102,6 +114,9 @@ function childMain() {
       lastCode = '';
       return new Promise(function (resolve) {
         const headers = cookie ? { cookie: cookie } : {};
+        if (userAgent) {
+          headers['user-agent'] = userAgent;
+        }
         const req = http.request({ host: '127.0.0.1', port: port,
           path: url.pathname + url.search, method: method, headers: headers },
         function (res) {
@@ -122,6 +137,11 @@ function childMain() {
     }
 
     const stamp = String(Date.now());
+    // The product pass's (#715): its person's password, and the User-Agent
+    // every request then carries, as a browser's would.
+    const PASSWORD = 'si-Initiation-Passw0rd!-' + stamp.slice(-6);
+    const BROWSER_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' +
+                       '(KHTML, like Gecko) Chrome/124.0 Safari/537.36';
     const created = [];
     function party(name, kind, fields) {
       const identifier = 'https://' + name + '-' + stamp + '.init.test/sp';
@@ -191,6 +211,130 @@ function childMain() {
         new URLSearchParams(Object.assign({
           TARGET: 'https://app.init.test/' + stamp }, extra || {}))
           .toString();
+    }
+
+    // D, a step-up on risk on both identity-provider-initiated paths, for
+    // `risky` (`{ cookie, held }`) against `sp` and `rp`, each opted in. Run
+    // twice (#715): in development with risk.enforceInDevelopment, and in
+    // product, where the policy's risk Deny is kept with no setting at all.
+    // `tag` tells the two passes' checks apart.
+    async function riskSection(tag, risky, sp, rp) {
+      // The sign-in's own risk assessment finishes after the session starts
+      // and writes the session's risk; a level put in place before it lands
+      // is overwritten. So wait for it, and put the level in place again
+      // before each step that depends on it.
+      await new Promise(function (r) { setTimeout(r, 1000); });
+      const atMedium = function () {
+        const s = risky.held();
+        s.risk = { level: 'MEDIUM', score: 2, signals: ['tor-exit'],
+                   assessmentId: 'si-' + stamp };
+        s.acr = '1';
+        s.amr = ['pwd'];
+        authn.noteSessionChanged(s);
+      };
+      const steppedUp = function () {
+        const s = risky.held();
+        s.acr = 'mfa';
+        s.amr = ['pwd', 'otp'];
+        authn.noteSessionChanged(s);
+      };
+      atMedium();
+      let r = await request('GET', unsolicited(sp), risky.cookie);
+      let pending = pendingOf(r.location);
+      const returnTo = pending ? String(pending.returnTo || '') : '';
+      note(r.status === 303 && r.code === 'STS-RISK-0017' && !!pending &&
+           !!pending.forceMfa && /[?&]reprompted=1$/.test(returnTo) &&
+           returnTo.indexOf('target=rs-' + stamp) >= 0,
+           'D1' + tag + '. SAML 2.0: a session at MEDIUM is STEPPED UP — to ' +
+           'the sign-in screen with a second factor demanded ' +
+           '(STS-RISK-0017), back to the same link marked as its one trip ' +
+           '— not refused', r.status + ' ' + r.code + ' ' + returnTo);
+      atMedium();
+      r = await request('GET', returnTo || unsolicited(sp,
+                                                       { reprompted: '1' }),
+                        risky.cookie);
+      let xml = samlResponseOf(r);
+      note(r.status === 200 && r.code === 'STS-SAML-0112' &&
+           /status:RequestDenied"/.test(xml) && !/InResponseTo=/.test(xml),
+           'D2' + tag + '. back from that trip still unmet: RequestDenied, ' +
+           'STS-SAML-0112, and not sent round again',
+           r.status + ' ' + r.code + ' ' + r.location + ' ' +
+           xml.slice(0, 200));
+      steppedUp();
+      r = await request('GET', returnTo || unsolicited(sp,
+                                                       { reprompted: '1' }),
+                        risky.cookie);
+      xml = samlResponseOf(r);
+      note(r.status === 200 && /StatusCode Value="[^"]*:Success"/.test(xml),
+           'D3' + tag + '. back from it WITH the second factor: the launch ' +
+           'is answered', r.status + ' ' + r.code + ' ' + xml.slice(0, 200));
+
+      atMedium();
+      r = await request('GET', sso11(rp), risky.cookie);
+      pending = pendingOf(r.location);
+      const return11 = pending ? String(pending.returnTo || '') : '';
+      note(r.status === 303 && r.code === 'STS-RISK-0017' && !!pending &&
+           !!pending.forceMfa && /[?&]fid=/.test(return11),
+           'D4' + tag + '. SAML 1.1: a session at MEDIUM is stepped up too, ' +
+           'back to the held flow', r.status + ' ' + r.code + ' ' + return11);
+      atMedium();
+      r = await request('GET', return11 || sso11(rp), risky.cookie);
+      note(r.status === 403 && r.code === 'STS-SAML-0115' &&
+           !/name="SAMLResponse"/.test(r.text),
+           'D5' + tag + '. back from that trip still unmet: refused on a ' +
+           'page, STS-SAML-0115, not sent round again', r.status + ' ' +
+           r.code + ' ' + r.location);
+      r = await request('GET', sso11(rp), risky.cookie);
+      pending = pendingOf(r.location);
+      const again11 = pending ? String(pending.returnTo || '') : '';
+      steppedUp();
+      r = await request('GET', again11 || sso11(rp), risky.cookie);
+      note(!!again11 && r.status === 200 &&
+           /name="SAMLResponse"/.test(r.text),
+           'D6' + tag + '. a fresh link stepped up, back with the second ' +
+           'factor: answered', r.status + ' ' + r.code + ' ' + again11);
+    }
+
+    // A PERSON WHO SIGNS IN THE WAY PRODUCT REQUIRES (#715): created with
+    // the attributes the realm's attribute policy asks of everybody in
+    // product (#396), given a real password through the same
+    // `credentials.setPassword()` the management API's create calls, and
+    // signed in at the sign-in screen over `/authn-api` with it — where
+    // product verifies it — by following `sp`'s own unsolicited link, which
+    // sends a browser with no session there. Answers `{ cookie, held }`
+    // as sessionFor() does, from the cookie the screen set.
+    async function signedInWithPassword(who, password, sp) {
+      const made = ldap.createUser(who, { invent: false, attributes: {
+        givenName: 'Initiation', sn: who, mail: who + '@init.test' } });
+      note(made && made.ok, 'D0 (product). the person ' + who + ' is ' +
+           'created with the attributes product requires',
+           JSON.stringify((made && made.errors) || ''));
+      const set = credentials.setPassword(who, password);
+      note(set && set.ok, 'D0 (product). and given a password',
+           JSON.stringify((set && set.errors) || ''));
+      const jar = {};
+      const started = await request('GET', unsolicited(sp));
+      const answer = await screen.submit({ port: port, jar: jar,
+        userAgent: userAgent, at: started.location,
+        fields: { username: who, password: password } });
+      const cookie = Object.keys(jar).map(function (k) {
+        return k + '=' + jar[k];
+      }).join('; ');
+      const sid = String(jar.sts_session || '').split('.')[0];
+      note(started.status === 303 && answer.next === 'redirect' && !!sid,
+           'D0 (product). and signs in at the sign-in screen with that ' +
+           'password', started.status + ' ' + answer.status + ' ' +
+           answer.next + ' ' + JSON.stringify(answer.errors || ''));
+      const back = await request('GET', answer.location || unsolicited(sp),
+                                 cookie);
+      note(back.status === 200 &&
+           /StatusCode Value="[^"]*:Success"/.test(samlResponseOf(back)),
+           'D0 (product). back from the screen, the link it started from is ' +
+           'answered', back.status + ' ' + back.code);
+      return { cookie: cookie, id: sid,
+               held: function () {
+                 return authn.sessionById(sid);
+               } };
     }
 
     try {
@@ -296,82 +440,49 @@ function childMain() {
 
       // --- D. a step-up on risk -------------------------------------------
       config.setOverride('risk.enforceInDevelopment', true);
-      const risky = sessionFor('si-bob-' + stamp);
-      // The sign-in's own risk assessment finishes after startSession()
-      // returns and writes the session's risk; a level put in place before
-      // it lands is overwritten. So wait for it, and put the level in place
-      // again before each step that depends on it.
-      await new Promise(function (r) { setTimeout(r, 1000); });
-      const atMedium = function () {
-        const s = risky.held();
-        s.risk = { level: 'MEDIUM', score: 2, signals: ['tor-exit'],
-                   assessmentId: 'si-' + stamp };
-        s.acr = '1';
-        s.amr = ['pwd'];
-        authn.noteSessionChanged(s);
-      };
-      const steppedUp = function () {
-        const s = risky.held();
-        s.acr = 'mfa';
-        s.amr = ['pwd', 'otp'];
-        authn.noteSessionChanged(s);
-      };
-      atMedium();
-      r = await request('GET', unsolicited(spOn), risky.cookie);
-      let pending = pendingOf(r.location);
-      const returnTo = pending ? String(pending.returnTo || '') : '';
-      note(r.status === 303 && r.code === 'STS-RISK-0017' && !!pending &&
-           !!pending.forceMfa && /[?&]reprompted=1$/.test(returnTo) &&
-           returnTo.indexOf('target=rs-' + stamp) >= 0,
-           'D1. SAML 2.0: a session at MEDIUM is STEPPED UP — to the ' +
-           'sign-in screen with a second factor demanded (STS-RISK-0017), ' +
-           'back to the same link marked as its one trip — not refused',
-           r.status + ' ' + r.code + ' ' + returnTo);
-      atMedium();
-      r = await request('GET', returnTo || unsolicited(spOn,
-                                                        { reprompted: '1' }),
-                        risky.cookie);
-      xml = samlResponseOf(r);
-      note(r.status === 200 && r.code === 'STS-SAML-0112' &&
-           /status:RequestDenied"/.test(xml) && !/InResponseTo=/.test(xml),
-           'D2. back from that trip still unmet: RequestDenied, ' +
-           'STS-SAML-0112, and not sent round again',
-           r.status + ' ' + r.code + ' ' + r.location + ' ' +
-           xml.slice(0, 200));
-      steppedUp();
-      r = await request('GET', returnTo || unsolicited(spOn,
-                                                        { reprompted: '1' }),
-                        risky.cookie);
-      xml = samlResponseOf(r);
-      note(r.status === 200 && /StatusCode Value="[^"]*:Success"/.test(xml),
-           'D3. back from it WITH the second factor: the launch is answered',
-           r.status + ' ' + r.code + ' ' + xml.slice(0, 200));
-
-      atMedium();
-      r = await request('GET', sso11(rpOn), risky.cookie);
-      pending = pendingOf(r.location);
-      const return11 = pending ? String(pending.returnTo || '') : '';
-      note(r.status === 303 && r.code === 'STS-RISK-0017' && !!pending &&
-           !!pending.forceMfa && /[?&]fid=/.test(return11),
-           'D4. SAML 1.1: a session at MEDIUM is stepped up too, back to the ' +
-           'held flow', r.status + ' ' + r.code + ' ' + return11);
-      atMedium();
-      r = await request('GET', return11 || sso11(rpOn), risky.cookie);
-      note(r.status === 403 && r.code === 'STS-SAML-0115' &&
-           !/name="SAMLResponse"/.test(r.text),
-           'D5. back from that trip still unmet: refused on a page, ' +
-           'STS-SAML-0115, not sent round again', r.status + ' ' + r.code +
-           ' ' + r.location);
-      r = await request('GET', sso11(rpOn), risky.cookie);
-      pending = pendingOf(r.location);
-      const again11 = pending ? String(pending.returnTo || '') : '';
-      steppedUp();
-      r = await request('GET', again11 || sso11(rpOn), risky.cookie);
-      note(!!again11 && r.status === 200 &&
-           /name="SAMLResponse"/.test(r.text),
-           'D6. a fresh link stepped up, back with the second factor: ' +
-           'answered', r.status + ' ' + r.code + ' ' + again11);
+      await riskSection('', sessionFor('si-bob-' + stamp), spOn, rpOn);
       config.clearOverride('risk.enforceInDevelopment');
+
+      // --- D (product). the same, in product mode (#715) ------------------
+      // The over-the-wire job, tests/vendored/sts_idp_initiated_saml.js,
+      // runs A, B, C and E in product (`single-node`, `cluster`); D cannot
+      // be set up over HTTP, because a session's risk comes from datasets
+      // the suite does not load, so it runs here a second time with the
+      // mode switched. What product changes for it: the risk Deny is kept
+      // with no setting (risk.enforceInDevelopment is not set), the
+      // service providers are registered ones made in product, and the
+      // person has a real password and signs in with it at the screen,
+      // where product checks it — not through startSession(), which checks
+      // nothing. A browser's User-Agent is sent meanwhile: product scores
+      // an automated client's sign-in as risky (`isbot`), which would make
+      // the sign-in itself the step-up.
+      config.setOverride('global.mode', 'product');
+      userAgent = BROWSER_UA;
+      try {
+        const spProduct = party('idp-on-p', 'saml2-service-provider',
+                                { saml2IdpInitiatedSso: 'TRUE' });
+        const rpProduct = party('rp11-on-p', 'saml11-relying-party',
+                                { saml11IdpInitiatedSso: 'TRUE' });
+        const carolName = 'si-carol-' + stamp;
+        const carol = await signedInWithPassword(carolName, PASSWORD,
+                                                 spProduct);
+        await riskSection(' (product)', carol, spProduct, rpProduct);
+        // LAST, so nothing above stands on a session a failed attempt may
+        // have made riskier: the wrong password is refused at the screen.
+        const wrongJar = {};
+        const startedWrong = await request('GET', unsolicited(spProduct));
+        const wrong = await screen.submit({ port: port, jar: wrongJar,
+          userAgent: userAgent, at: startedWrong.location,
+          fields: { username: carolName, password: PASSWORD + '-wrong' } });
+        note(startedWrong.status === 303 && wrong.next !== 'redirect' &&
+             !(wrong.json && wrong.json.ok),
+             'D7 (product). the same person with a WRONG password is ' +
+             'refused at the screen — product checks it',
+             startedWrong.status + ' ' + wrong.status + ' ' + wrong.next);
+      } finally {
+        userAgent = '';
+        config.clearOverride('global.mode');
+      }
 
       // --- E. the mechanism re-prompt, once ---------------------------------
       const spMech = party('mech', 'saml2-service-provider',
@@ -392,6 +503,7 @@ function childMain() {
            r.location);
     } finally {
       config.clearOverride('risk.enforceInDevelopment');
+      config.clearOverride('global.mode');
       created.forEach(function (identifier) {
         if (applications.get(identifier)) {
           applications.deleteApplication(identifier);
