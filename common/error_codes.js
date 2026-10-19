@@ -2391,6 +2391,18 @@ const CODES = [
       'written, because its trust realm was removed; nothing is run for a ' +
       'removed realm, and nothing is written back into it.',
     spec: '' },
+  { code: 'STS-SCHED-0019',
+    summary: 'A cluster run handed to a request worker (#408) failed because ' +
+      'that worker ended, or could not be reached, before it answered; the ' +
+      'run is recorded failed, its claim lapses, and the next slot runs ' +
+      'again.',
+    spec: '' },
+  { code: 'STS-SCHED-0020',
+    summary: 'A cluster job is not registered in the request worker its run ' +
+      'was handed to (#408), so it ran on the front process\'s thread, and ' +
+      'every later run of it in this process does too; register it at its ' +
+      'owner\'s load, or give it an onFront reason.',
+    spec: '' },
   // ===== KEYS ==============================================================
   { code: 'STS-KEYS-0001',
     summary: 'The artifact logger handed to an XML encryption threw and was ' +

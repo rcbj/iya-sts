@@ -2514,6 +2514,20 @@ function reportLag() {
     return { measuring: false };
   }
   lagReport = sample;
+  // A REQUEST WORKER TELLS THE FRONT PROCESS (#408): the scheduler's leader
+  // holds a patient cluster run while even the least-loaded worker's loop is
+  // running late, and a worker's loop is measurable only in the worker. One
+  // message per window, on the channel the worker already has. Required
+  // lazily and only in a worker, so a process that is not one loads nothing.
+  if (process.env.STS_REQUEST_WORKER) {
+    try {
+      require('../common/worker_channel').send({ loopLag: sample });
+    } catch (e) {
+      // The channel is gone: this worker is being ended, and the front
+      // forgets its figures with it.
+      log.debug("Caught in reportLag(): " + ((e && e.message) || e));
+    }
+  }
   if (sample.maxMs > LAG_WARN_MS) {
     log.warn(errorCodes.tag('STS-STORE-0068') + 'persistence: this ' +
              'process\'s event loop was blocked for up to ' + sample.maxMs +
