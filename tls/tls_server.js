@@ -3845,7 +3845,7 @@ const httpListeners = [];
  * @param kind - `main`, `debugger`, `revocation` or `custom`
  * @param realmId - for `custom`, the listener's id
  * @returns `{ keepAliveTimeoutS, headersTimeoutS, maxRequestsPerSocket,
- *   maxConnections }`, the header timeout resolved
+ *   maxConnections, http2 }`, the header timeout resolved
  */
 function httpPolicyFor(kind, realmId) {
   log.debug('Entering httpPolicyFor(). ' + kind);
@@ -3857,6 +3857,11 @@ function httpPolicyFor(kind, realmId) {
                                      'http.keepAliveTimeoutS') || 60);
   const asked = Math.max(0, pick('headersTimeoutS', 'http.headersTimeoutS') ||
                             0);
+  // A boolean, so not through `pick()`'s Number(): the listener's own on or
+  // off (`ownValue()` turns those into true and false), else the service's.
+  const ownHttp2 = kind ? ownValue(kind, realmId, 'http2') : undefined;
+  const http2 = ownHttp2 !== undefined ? ownHttp2 === true
+                                       : config.value('http.http2') !== false;
   log.debug('Leaving httpPolicyFor().');
   return {
     keepAliveTimeoutS: keepAlive,
@@ -3866,8 +3871,25 @@ function httpPolicyFor(kind, realmId) {
     maxRequestsPerSocket: Math.max(0, pick('maxRequestsPerSocket',
                                            'http.maxRequestsPerSocket') || 0),
     maxConnections: Math.max(0, pick('maxConnections',
-                                     'http.maxConnections') || 0)
+                                     'http.maxConnections') || 0),
+    http2: http2
   };
+}
+
+// WHAT ALPN OFFERS, as the TLS layer wants it: length-prefixed protocol
+// names, most preferred first (RFC 7301 section 3.1). `http/1.1` is in both,
+// so a client that asks only for it is answered either way.
+const ALPN_HTTP2 = Buffer.from('\x02h2\x08http/1.1', 'latin1');
+const ALPN_HTTP1 = Buffer.from('\x08http/1.1', 'latin1');
+
+// Whether a registered server is node's http2 secure server, which has no
+// exported class to test against.
+function isHttp2Server(server) {
+  log.debug('Entering isHttp2Server().');
+  const yes = !!(server && server.constructor &&
+                 server.constructor.name === 'Http2SecureServer');
+  log.debug('Leaving isHttp2Server(). ' + yes);
+  return yes;
 }
 
 // The pooling values onto the server object.
@@ -3881,6 +3903,15 @@ function applyHttpPolicy(entry) {
   // at a maxConnections of 0.
   entry.server.maxConnections = p.maxConnections > 0 ? p.maxConnections
                                                      : Infinity;
+  // HTTP/2 OFFERED OR NOT (#407). Only node's http2 secure server — built
+  // with `allowHTTP1` for every TLS HTTP listener — speaks both, and it reads
+  // `ALPNProtocols` at each new connection, so the offer changes here, in
+  // place, for the next handshake; an open connection keeps its protocol. A
+  // plain-HTTP server (the revocation listener, or the main port with
+  // global.https off) has no handshake to offer it in.
+  if (isHttp2Server(entry.server)) {
+    entry.server.ALPNProtocols = p.http2 ? ALPN_HTTP2 : ALPN_HTTP1;
+  }
   entry.applied = JSON.stringify(p);
   log.debug('Leaving applyHttpPolicy().');
 }

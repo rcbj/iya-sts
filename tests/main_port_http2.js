@@ -35,6 +35,18 @@
 //      none, and one more sends a length, as curl does.
 //   5. AND THE SOURCE: the main port is built that way, so reverting it
 //      fails here rather than in a browser.
+//   6. THE SETTING (rcbj, 2026-10-19: on by default on every listener, and
+//      the user can turn it off): `http.http2` on by default; off, the next
+//      handshake negotiates `http/1.1` while an open HTTP/2 session keeps
+//      answering; a listener's own `on` beats the service's `off`, and the
+//      debugger inherits it; cleared, `h2` again; and a custom listener's
+//      `tls.http2` is read and validated like the other per-listener names.
+//   7. THROUGH THE REQUEST POOL: an HTTP/2 request proxied to a worker by
+//      `request_pool.proxy()` reaches it with no pseudo-header (node's
+//      HTTP/1.1 client throws on `:path`, so every dispatched HTTP/2 request
+//      failed), its `:authority` as `host`, its body whole, and the client
+//      certificate `getPeerCertificate()` read off the HTTP/2 session in
+//      the header the worker rebuilds it from.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -85,6 +97,9 @@ function childMain() {
     // As server.js installs it on the main port, ahead of the application.
     server.prependListener('request',
       require(ROOT_DIR + '/common/http2_framing').markFramedBody);
+    // And held to the main port's HTTP policy, which is where the HTTP/2
+    // offer is applied (section 6).
+    tlsServer.registerHttpListener(server, 'main');
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
     const tls = { cert: own.certPem, key: own.privateKeyPem,
@@ -230,6 +245,173 @@ function childMain() {
          'each answered',
          answered.map(function (r) { return r.status; }).join(','));
 
+    // 6. The setting.
+    const config = require(ROOT_DIR + '/common/config');
+    const listenerMap = require(ROOT_DIR + '/common/listener_map');
+    const tlsModule = require('tls');
+    const negotiated = function () {
+      return new Promise(function (resolve) {
+        const socket = tlsModule.connect({
+          host: '127.0.0.1', port: port, ALPNProtocols: ['h2', 'http/1.1'],
+          rejectUnauthorized: false }, function () {
+          const chosen = socket.alpnProtocol;
+          socket.end();
+          resolve(chosen);
+        });
+        socket.on('error', function (e) {
+          resolve('error: ' + (e && e.message));
+        });
+      });
+    };
+    const settle = function () {
+      tlsServer.reapplyPolicy();
+    };
+    note(tlsServer.httpPolicyFor('main').http2 === true &&
+         config.value('http.http2') === true,
+         '6. http.http2 is on by default, and the main port offers it',
+         JSON.stringify(tlsServer.httpPolicyFor('main')));
+    note(await negotiated() === 'h2',
+         '6. so a client offering h2 and http/1.1 gets h2', '');
+    config.setOverride('http.http2', 'false');
+    settle();
+    const offWhat = await negotiated();
+    note(offWhat === 'http/1.1',
+         '6. turned off for the service, the next handshake gets http/1.1',
+         offWhat);
+    const stillOne = await overHttp1('GET',
+                                     '/.well-known/openid-configuration');
+    note(stillOne.status === 200,
+         '6. and HTTP/1.1 is answered on it', stillOne.status);
+    const openSession = await overHttp2('GET',
+                                        '/.well-known/openid-configuration');
+    note(openSession.status === 200,
+         '6. while the HTTP/2 session opened before keeps answering',
+         openSession.status + ' ' + openSession.body.slice(0, 120));
+    note(tlsServer.httpPolicyFor('debugger').http2 === false,
+         '6. and the debugger\'s listener, which inherits it, is off too',
+         JSON.stringify(tlsServer.httpPolicyFor('debugger')));
+    config.setOverride('listenerMain.http2', 'on');
+    settle();
+    const ownOn = await negotiated();
+    note(ownOn === 'h2' && tlsServer.httpPolicyFor('main').http2 === true,
+         '6. the main port\'s own listenerMain.http2=on beats the ' +
+         'service\'s off', ownOn);
+    config.clearOverride('listenerMain.http2');
+    config.clearOverride('http.http2');
+    settle();
+    const cleared = await negotiated();
+    note(cleared === 'h2', '6. cleared, h2 is offered again', cleared);
+    const define = function (value) {
+      return listenerMap.parseListeners(JSON.stringify([{
+        id: 'h2probe', port: 9555, publicBaseUrl: 'https://h2.example.com',
+        tls: { http2: value } }]), '');
+    };
+    const offDefined = define('off');
+    note(!offDefined.problem && offDefined.listeners.length === 1 &&
+         offDefined.listeners[0].tls.http2 === 'off',
+         '6. a custom listener\'s tls.http2 is accepted',
+         JSON.stringify(offDefined.problem));
+    const badDefined = define('maybe');
+    note(!!badDefined.problem && badDefined.problem.code === 'STS-CORE-0153',
+         '6. and a value http.http2 does not take is refused',
+         JSON.stringify(badDefined.problem));
+
+    // 7. Through the request pool, to a worker that says what it was sent.
+    const pool = require(ROOT_DIR + '/common/request_pool');
+    const http = require('http');
+    const os = require('os');
+    const pathModule = require('path');
+    const express = require('express');
+    const socketPath = pathModule.join(os.tmpdir(), 'sts-h2-pool-' +
+                                       process.pid + '.sock');
+    const worker = http.createServer(function (req, res) {
+      let body = '';
+      req.setEncoding('utf8');
+      req.on('data', function (d) { body += d; });
+      req.on('end', function () {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ method: req.method, url: req.url,
+                                 headers: req.headers, body: body }));
+      });
+    });
+    await new Promise(function (r) { worker.listen(socketPath, r); });
+    const entry = { pid: 914, socket: socketPath, tickets: new Set(),
+                    agent: new http.Agent({ keepAlive: false,
+                                            maxSockets: 8 }),
+                    inFlight: 0, served: 0, generation: 0 };
+    const frontApp = require('http2-express')(express);
+    frontApp.use(function (req, res) {
+      pool.proxy(entry, req, res, 0, 0);
+    });
+    const front = http2.createSecureServer({
+      allowHTTP1: true, cert: own.certPem, key: own.privateKeyPem,
+      requestCert: true, rejectUnauthorized: false }, frontApp);
+    front.prependListener('request',
+      require(ROOT_DIR + '/common/http2_framing').markFramedBody);
+    await new Promise(function (r) { front.listen(0, '127.0.0.1', r); });
+    const frontPort = front.address().port;
+    const poolSession = http2.connect('https://127.0.0.1:' + frontPort, tls);
+    const sent = 'a=1&b=2';
+    const proxied = await new Promise(function (resolve) {
+      const stream = poolSession.request({
+        ':method': 'POST', ':path': '/oauth2/token?x=1',
+        'content-type': 'application/x-www-form-urlencoded' });
+      let status = 0;
+      let text = '';
+      stream.on('response', function (h) { status = h[':status']; });
+      stream.setEncoding('utf8');
+      stream.on('data', function (d) { text += d; });
+      stream.on('end', function () {
+        resolve({ status: status, text: text });
+      });
+      stream.on('error', function (e) {
+        resolve({ status: 0, text: String(e && e.message) });
+      });
+      stream.end(sent);
+    });
+    let echoed = {};
+    try {
+      echoed = JSON.parse(proxied.text);
+    } catch (e) {
+      echoed = { unreadable: proxied.text.slice(0, 300) };
+    }
+    const names = Object.keys(echoed.headers || {});
+    note(proxied.status === 200 && echoed.method === 'POST' &&
+         echoed.url === '/oauth2/token?x=1' && echoed.body === sent,
+         '7. an HTTP/2 POST with no length reaches the worker through the ' +
+         'pool: method, path and body whole',
+         proxied.status + ' ' + JSON.stringify(echoed).slice(0, 300));
+    note(names.length > 0 && names.every(function (n) {
+      return n.charAt(0) !== ':';
+    }) && echoed.headers.host === '127.0.0.1:' + frontPort,
+         '7. with no pseudo-header, and its :authority as host',
+         names.join(','));
+    let forwarded = null;
+    try {
+      forwarded = JSON.parse(Buffer.from(
+        String(echoed.headers['x-sts-peer-certificate'] || ''), 'base64')
+        .toString('utf8'));
+    } catch (e) {
+      forwarded = { unreadable: String((e && e.message) || e) };
+    }
+    const forwardedDer = forwarded && forwarded.raw && forwarded.raw.__buffer
+      ? Buffer.from(forwarded.raw.__buffer, 'base64') : Buffer.alloc(0);
+    note(forwardedDer.length > 0 && forwardedDer.equals(der),
+         '7. and the client certificate getPeerCertificate() read off the ' +
+         'HTTP/2 session goes to the worker',
+         forwarded ? Object.keys(forwarded).join(',') : 'none');
+    poolSession.close();
+    front.close();
+    entry.agent.destroy();
+    worker.close();
+    try {
+      require('fs').unlinkSync(socketPath);
+    } catch (e) {
+      // Already gone with the server; recorded rather than failed.
+      note(true, '7. (the worker socket was already gone: ' +
+           String((e && e.message) || e) + ')', '');
+    }
+
     session.close();
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
@@ -291,6 +473,18 @@ function checkTheSource(t) {
   t.check(/mainServer\.prependListener\('request', require\('\.\/common\/http2_framing'\)\.markFramedBody\);/
     .test(server),
           '5. and marks a framed HTTP/2 body ahead of the application', '');
+  t.check(/const server = http2\.createSecureServer\(Object\.assign\(\{ allowHTTP1: true,/
+    .test(server),
+          '5. and so is every custom listener', '');
+  const debuggerServer = fs.readFileSync(path.join(ROOT, 'debugger',
+    'debugger_server.ts'), 'utf8').replace(/\s+/g, ' ');
+  t.check(/http2\.createSecureServer\(Object\.assign\(\{ allowHTTP1: true \},/
+    .test(debuggerServer) &&
+          /const app = http2Express\(express\);/.test(debuggerServer) &&
+          /server\.prependListener\('request', Http2Framing\.markFramedBody\);/
+            .test(debuggerServer),
+          '5. and the debugger\'s listener, with its own app through ' +
+          'http2-express', '');
   t.check(/const app = require\('http2-express'\)\(express\);/.test(app),
           '5. and common/app.js builds the application through ' +
           'http2-express', '');
@@ -343,7 +537,8 @@ module.exports = {
   describe: 'the main port on node\'s http2 server with HTTP/1.1 allowed ' +
             '(#407): the same answers over each protocol, a client ' +
             'certificate still binding a token, ten requests multiplexed ' +
-            'on one session, and the lingering close leaving an HTTP/2 ' +
-            'stream alone',
+            'on one session, the lingering close leaving an HTTP/2 stream ' +
+            'alone, and http.http2 on by default and turned off in the ' +
+            'next handshake',
   run: run
 };

@@ -1092,7 +1092,10 @@ function customListener(label, certificate, certificateOf, listenerId) {
   // inheriting the process's TLS settings where it is silent, and its own
   // client authentication (`clientAuth`).
   const policy = tlsServer.policyFor('custom', listenerId);
-  const server = https.createServer(Object.assign({
+  // HTTP/2 beside HTTP/1.1, as on the main port (#407): offered unless its
+  // `tls.http2` or http.http2 says not (tls_server.js applies the offer).
+  const server = http2.createSecureServer(Object.assign({
+    allowHTTP1: true,
     cert: certificate.cert,
     key: certificate.key,
     // Its own truststore (#429): its tls.trustAnchorsFile and
@@ -1105,6 +1108,8 @@ function customListener(label, certificate, certificateOf, listenerId) {
   // ITS OWN CONNECTION POOLING (#429): its tls.keepAliveTimeoutS and the
   // rest, inheriting the service's http.* rows; re-applied when they change.
   tlsServer.registerHttpListener(server, 'custom', listenerId);
+  server.prependListener('request',
+    require('./common/http2_framing').markFramedBody);
   tlsServer.trustClientCertificatesOn(server, label, certificateOf,
                                       { kind: 'custom', realm: listenerId });
   tlsServer.observeConnectionsOn(server, label);

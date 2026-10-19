@@ -135,6 +135,14 @@
     "en": "1dda75e901fc49af",
     "text": "HTTP 监听器同时保持打开的连接数；超出的连接在到达时即被关闭。0（默认）表示不限制（node 自身的行为）。"
   },
+  "http.http2|label": {
+    "en": "775d810d4f1a3356",
+    "text": "提供 HTTP/2"
+  },
+  "http.http2|description": {
+    "en": "76d7c1691efa23fa",
+    "text": "当客户端在 TLS 握手中（ALPN）请求 HTTP/2 时，HTTPS 监听器是否提供它。开启（默认值）时，一个连接承载浏览器并行发出的所有请求；对于只请求 HTTP/1.1 的客户端，仍以 HTTP/1.1 应答。关闭时，每个连接都是 HTTP/1.1——适用于 HTTP/2 行为异常的客户端或负载均衡器。新连接立即遵循更改；已打开的连接保持其协议。纯 HTTP 的吊销监听器只支持 HTTP/1.1，因为没有可以提供它的握手。"
+  },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
     "text": "TCP 监听器上的 PROXY 协议"
@@ -10538,5 +10546,21 @@
   "listenerRevocation.maxConnections|description": {
     "en": "33c1557318481882",
     "text": "仅针对吊销（明文 HTTP）监听器：http.maxConnections。-1（默认值）时遵循 http.maxConnections；其他任何值只对此监听器作出决定。HTTP 监听器同时保持打开的连接数；超出的连接在到达时即被关闭。默认值 0 表示无限制（node 自己的默认值）。"
+  },
+  "listenerMain.http2|label": {
+    "en": "d17df93a132abc21",
+    "text": "主端口：提供 HTTP/2"
+  },
+  "listenerMain.http2|description": {
+    "en": "4362a834f16b5b21",
+    "text": "仅针对主端口监听器：http.http2。inherit（默认值）时遵循 http.http2；其他任何值只对此监听器作出决定。当客户端在 TLS 握手中（ALPN）请求 HTTP/2 时，HTTPS 监听器是否提供它。开启（默认值）时，一个连接承载浏览器并行发出的所有请求；对于只请求 HTTP/1.1 的客户端，仍以 HTTP/1.1 应答。关闭时，每个连接都是 HTTP/1.1——适用于 HTTP/2 行为异常的客户端或负载均衡器。新连接立即遵循更改；已打开的连接保持其协议。纯 HTTP 的吊销监听器只支持 HTTP/1.1，因为没有可以提供它的握手。"
+  },
+  "listenerDebugger.http2|label": {
+    "en": "65d81b530197d8d7",
+    "text": "协议调试器：提供 HTTP/2"
+  },
+  "listenerDebugger.http2|description": {
+    "en": "95b887a7622f4880",
+    "text": "仅针对协议调试器监听器：http.http2。inherit（默认值）时遵循 http.http2；其他任何值只对此监听器作出决定。当客户端在 TLS 握手中（ALPN）请求 HTTP/2 时，HTTPS 监听器是否提供它。开启（默认值）时，一个连接承载浏览器并行发出的所有请求；对于只请求 HTTP/1.1 的客户端，仍以 HTTP/1.1 应答。关闭时，每个连接都是 HTTP/1.1——适用于 HTTP/2 行为异常的客户端或负载均衡器。新连接立即遵循更改；已打开的连接保持其协议。纯 HTTP 的吊销监听器只支持 HTTP/1.1，因为没有可以提供它的握手。"
   }
 }

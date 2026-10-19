@@ -135,6 +135,14 @@
     "en": "1dda75e901fc49af",
     "text": "Ilang connection ang sabay-sabay na pinananatiling bukas ng isang HTTP listener; isinasara pagdating ang isa pang lampas doon. Ang 0, ang default, ay walang limit (ang sa node mismo)."
   },
+  "http.http2|label": {
+    "en": "775d810d4f1a3356",
+    "text": "Mag-alok ng HTTP/2"
+  },
+  "http.http2|description": {
+    "en": "76d7c1691efa23fa",
+    "text": "Kung nag-aalok ang isang HTTPS listener ng HTTP/2 kapag hiniling ito ng client sa TLS handshake (ALPN). Kapag naka-on, ang default, iisang koneksyon ang nagdadala ng bawat request na sabay-sabay na ginagawa ng browser; sinasagot pa rin ang HTTP/1.1 para sa client na wala nang ibang hinihingi. Kapag naka-off, HTTP/1.1 ang bawat koneksyon — para sa client o balancer na may sirang HTTP/2. Agad na sumusunod sa pagbabago ang bagong koneksyon; pinananatili ng bukas nang koneksyon ang protocol nito. HTTP/1.1 lamang ang plain-HTTP na revocation listener, dahil walang handshake na mapag-aalukan nito."
+  },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
     "text": "PROXY protocol sa mga TCP listener"
@@ -10538,5 +10546,21 @@
   "listenerRevocation.maxConnections|description": {
     "en": "33c1557318481882",
     "text": "Para lang sa listener ng Revocation (plain HTTP): http.maxConnections. Ang -1, ang default, ay sumusunod sa http.maxConnections; ang anumang iba ay nagpapasya para sa listener na ito lang. Ilang connection ang sabay-sabay na pinananatiling bukas ng isang HTTP listener; ang isa pang lampas ay isinasara pagdating nito. Ang 0, ang default, ay walang limit (ang sa node)."
+  },
+  "listenerMain.http2|label": {
+    "en": "d17df93a132abc21",
+    "text": "Main port: mag-alok ng HTTP/2"
+  },
+  "listenerMain.http2|description": {
+    "en": "4362a834f16b5b21",
+    "text": "Para lang sa listener ng Main port: http.http2. Ang inherit, ang default, ay sumusunod sa http.http2; ang anumang iba ay nagpapasya para sa listener na ito lang. Kung nag-aalok ang isang HTTPS listener ng HTTP/2 kapag hiniling ito ng client sa TLS handshake (ALPN). Kapag naka-on, ang default, iisang koneksyon ang nagdadala ng bawat request na sabay-sabay na ginagawa ng browser; sinasagot pa rin ang HTTP/1.1 para sa client na wala nang ibang hinihingi. Kapag naka-off, HTTP/1.1 ang bawat koneksyon — para sa client o balancer na may sirang HTTP/2. Agad na sumusunod sa pagbabago ang bagong koneksyon; pinananatili ng bukas nang koneksyon ang protocol nito. HTTP/1.1 lamang ang plain-HTTP na revocation listener, dahil walang handshake na mapag-aalukan nito."
+  },
+  "listenerDebugger.http2|label": {
+    "en": "65d81b530197d8d7",
+    "text": "Protocol debugger: mag-alok ng HTTP/2"
+  },
+  "listenerDebugger.http2|description": {
+    "en": "95b887a7622f4880",
+    "text": "Para lang sa listener ng Protocol debugger: http.http2. Ang inherit, ang default, ay sumusunod sa http.http2; ang anumang iba ay nagpapasya para sa listener na ito lang. Kung nag-aalok ang isang HTTPS listener ng HTTP/2 kapag hiniling ito ng client sa TLS handshake (ALPN). Kapag naka-on, ang default, iisang koneksyon ang nagdadala ng bawat request na sabay-sabay na ginagawa ng browser; sinasagot pa rin ang HTTP/1.1 para sa client na wala nang ibang hinihingi. Kapag naka-off, HTTP/1.1 ang bawat koneksyon — para sa client o balancer na may sirang HTTP/2. Agad na sumusunod sa pagbabago ang bagong koneksyon; pinananatili ng bukas nang koneksyon ang protocol nito. HTTP/1.1 lamang ang plain-HTTP na revocation listener, dahil walang handshake na mapag-aalukan nito."
   }
 }

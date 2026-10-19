@@ -70,6 +70,7 @@
   "rowRequestsPer": "Mga request bawat koneksyon",
   "noLimit": "walang limitasyon",
   "rowMaxConnections": "Pinakamaraming bukas na koneksyon",
+  "rowHttp2": "Inaalok ang HTTP/2",
   "headInForce": "Umiiral sa listener na ito",
   "inForceNote": "Ang bawat value ay sariling value ng listener na ito kung may itinakda ang hanay nito sa ibaba, at ang default ng buong serbisyo kung wala (<em>inherit</em>, walang lamang kahon, o -1 para sa numero).",
   "tabListeners": "Mga listener",

@@ -619,14 +619,20 @@ is changed: on `/admin/tls` (or `/admin/config` for `global.*`), through
   lets a session resume for 300 seconds, and the shared key lets it resume on
   any node. Keep a load balancer's idle timeout above the keep-alive (an AWS
   NLB's is 350 seconds).
-* **The main port speaks HTTP/2 as well as HTTP/1.1 (#407).** ALPN chooses
+* **Every HTTPS listener speaks HTTP/2 as well as HTTP/1.1 (#407)** — the
+  main port, the protocol debugger's and each custom listener. ALPN chooses
   per connection: a client that offers `h2` gets HTTP/2, and one TLS
   connection carries every request a browser makes in parallel; a client
   that offers only `http/1.1` is answered exactly as before. A client
-  certificate is asked for and bound the same way over either. A load
-  balancer that terminates TLS speaks to this port in whatever protocol it
-  is configured to; one that passes TCP through (an NLB) leaves the choice
-  to the client.
+  certificate is asked for and bound the same way over either. **It is on
+  by default and can be turned off**: `http.http2` for every listener
+  (Server configuration → HTTP connections), `listenerMain.http2` or
+  `listenerDebugger.http2` for one, and `tls.http2` in a custom listener's
+  definition. A change reaches the next connection at once; an open one
+  keeps the protocol it chose. Off, a client that offers only `h2` is
+  refused in the handshake (`no_application_protocol`). A load balancer that terminates TLS speaks
+  to a listener in whatever protocol it is configured to; one that passes
+  TCP through (an NLB) leaves the choice to the client.
 * **The serial is random.** A constant serial made Firefox refuse the port after
   a restart with an error no "accept the risk" could get past.
 

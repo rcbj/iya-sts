@@ -5830,6 +5830,21 @@ function proxy(entry, req, res, atGeneration, ticket) {
   };
 
   const headers = Object.assign({}, req.headers);
+  // AN HTTP/2 REQUEST'S PSEUDO-HEADERS STAY ON ITS HOP (#407). Node hands
+  // `:method`, `:path`, `:scheme` and `:authority` over in `req.headers`, and
+  // a name starting with a colon is not an HTTP/1.1 field name: node's
+  // client throws ERR_INVALID_HTTP_TOKEN on it, so every HTTP/2 request a
+  // worker would have answered failed here. The method and path go on the
+  // request line below; the authority is the `host` HTTP/1.1 carries it in
+  // (RFC 9113 section 8.3.1), if the request has none already.
+  Object.keys(headers).forEach(function (name) {
+    if (name.charAt(0) === ':') {
+      delete headers[name];
+    }
+  });
+  if (headers.host === undefined && req.headers[':authority']) {
+    headers.host = req.headers[':authority'];
+  }
 
   // ---------------------------------------------------------------------
   // THE CLIENT'S HOP-BY-HOP HEADERS STAY ON THE CLIENT'S HOP, AND THIS HOP
