@@ -1133,6 +1133,8 @@ the file the row names.
 | ~~Perform back-channel logout~~ — reversed 2026-09-17 (#36) | `oauth-oidc/CLAUDE.md` (3aq), `logout/CLAUDE.md`, `authn/CLAUDE.md`, `federation/CLAUDE.md` |
 | ~~Fake WS-Federation's `wauth`~~ — reversed 2026-09-17 (#36), as a step-up | `ws-federation/CLAUDE.md`, `authn/CLAUDE.md` |
 | Dereference WS-Federation's `wreqptr` | `ws-federation/CLAUDE.md` |
+| Post an unsolicited ID Token to an OpenID Connect client's `redirect_uri` — its identity-provider-initiated sign-in is Core section 4 (#426) | `launch/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
+| Start a sign-in at this identity provider for an application that did not opt in — off by default in every protocol (#426) | `launch/CLAUDE.md` |
 | ~~Verify a SAML AuthnRequest's signature, or consume SP metadata~~ — reversed 2026-09-17 (#37) | `saml/CLAUDE.md`, `saml/request_signature.ts`, `saml/sp_metadata.ts` |
 | Encrypt an assertion it holds no certificate for — **product refuses**, development sends it in CLEAR | `saml/CLAUDE.md` |
 | Dial a service provider's metadata URL WHILE ISSUING | `saml/CLAUDE.md` |
