@@ -45,6 +45,7 @@
 //      (and said) otherwise; the in-process suite has no database.
 // ===========================================================================
 
+const storeDouble = require('./tools/store_double');
 const postgres = require('../persistence/persistence_postgres');
 const queries = require('../persistence/directory_queries');
 
@@ -367,25 +368,19 @@ async function driverDoor(t) {
   const row = { realm: 'default', dn_key: BASE, dn: 'dc=Example,dc=com',
                 attrs: { dc: ['example'] }, origin: 'seed',
                 created_at: '20261014000000Z', modified_at: null };
-  // The driver requires `pg` when it is made: the recording one is put in
-  // the cache for that, and the real one put back.
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-    exports: fakePg(statements, function (sql) {
-      return /WITH RECURSIVE parents\(realm, parent_key\)/.test(sql)
-        ? [row] : [];
-    }) };
+  // The driver requires its door to the store (`knex_store.js`, #326) when
+  // it is made: the recording one is put in the cache for that, and the real
+  // one put back.
+  const restore = storeDouble.install(fakePg(statements, function (sql) {
+    return /WITH RECURSIVE parents\(realm, parent_key\)/.test(sql)
+      ? [row] : [];
+  }));
   let driver = null;
   try {
     driver = postgres.create({ url: 'postgres://sts_app@localhost:5432/sts',
                                log: QUIET });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
   const list = windowedList();
   const answer = await driver.directoryQuery('residentOnly', [list]);
@@ -456,9 +451,11 @@ async function realDatabase(t) {
     return;
   }
   t.log.info('=== D. against ' + url.replace(/:[^:@/]*@/, ':***@') + ' ===');
-  const pg = require('pg');
+  // Through the service's one door to PostgreSQL (#326): a connection
+  // Knex makes, outside any pool, where a `pg.Client` was.
+  const knexStore = require('../persistence/knex_store');
   const schema = 'resident_' + process.pid;
-  const admin = new pg.Client({ connectionString: url });
+  const admin = knexStore.openConnection({ connectionString: url });
   await admin.connect();
   try {
     await admin.query('CREATE SCHEMA ' + schema);

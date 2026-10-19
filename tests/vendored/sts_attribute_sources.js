@@ -245,8 +245,9 @@ async function redeem(r) {
 }
 
 // ---------------------------------------------------------------------------
-// THE DATABASES. PostgreSQL as the stack's superuser (`pg` is the service's
-// own driver). MariaDB as root (`mysql2` is the optional peer, installed
+// THE DATABASES. PostgreSQL as the stack's superuser, dialled through the
+// service's own door to it, `persistence/knex_store.js` (#326): Knex, with
+// `pg` as its driver, because nothing but that door requires `pg`. MariaDB as root (`mysql2` is the optional peer, installed
 // for this job in tests/package.json; the service image gets it from
 // STS_CLOUD_SDKS). Each is a database of this job's own, never the
 // service's schema.
@@ -278,7 +279,7 @@ function sqlText(value) {
 
 function pgClient(urlText, database) {
   log.debug("Entering pgClient(). " + (database || "(the URL's)"));
-  const { Client } = require("pg");
+  const knexStore = require("../../persistence/knex_store");
   const url = new URL(urlText);
   if (database) {
     url.pathname = "/" + database;
@@ -287,8 +288,8 @@ function pgClient(urlText, database) {
   // and the certificate it reads off this handshake is the one the SERVICE
   // is then made to verify against.
   log.debug("Leaving pgClient().");
-  return new Client({ connectionString: url.toString(),
-                      ssl: { rejectUnauthorized: false } });
+  return knexStore.openConnection({ connectionString: url.toString(),
+                                    ssl: { rejectUnauthorized: false } });
 }
 
 async function mysqlAdmin(spec, database) {
@@ -309,11 +310,15 @@ async function mysqlAdmin(spec, database) {
 }
 
 // The server's certificate, as PEM, off a connected client's TLS socket.
-// `pg`'s client and mysql2's promise connection both keep the socket at
-// `connection.stream` once the handshake has finished.
+// mysql2's promise connection keeps the socket at `connection.stream` once
+// the handshake has finished. The PostgreSQL door's connection (#326) holds
+// the dialect's `pg.Client` as `connection`, and THAT keeps its wire
+// connection at `connection`, whose `stream` is the socket.
 function tlsSocketOf(holder) {
   log.debug("Entering tlsSocketOf().");
-  const socket = holder && holder.connection && holder.connection.stream;
+  const inner = holder && holder.connection;
+  const socket = (inner && inner.connection && inner.connection.stream) ||
+    (inner && inner.stream);
   log.debug("Leaving tlsSocketOf().");
   return socket || null;
 }

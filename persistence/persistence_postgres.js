@@ -2598,6 +2598,9 @@ function create(options) {
   // when trying to connect" (sts_data_keys, locally and in CI run
   // 36967212793). A connect timeout is retried here, four times, one, two,
   // three and four seconds apart; any other error is the caller's at once.
+  // Since #326 the pool is Knex's and the wait that ran out is its
+  // `KnexTimeoutError` ("Timeout acquiring a connection"); `knex_store.js`'s
+  // `timedOutWaiting()` is the one place that knows its spelling.
   // Safe to repeat: every write these passes make is a compare-and-swap on
   // the value it read. A bounded loop inside one operation, not a timer that
   // re-arms (tests/no_periodic_timers.js).
@@ -2628,8 +2631,7 @@ function create(options) {
   function connectTimedOut(e) {
     log.debug("Entering connectTimedOut().");
     log.debug("Leaving connectTimedOut().");
-    return /timeout exceeded when trying to connect/i.test(
-      String((e && e.message) || e));
+    return knexStore.timedOutWaiting(e);
   }
 
   async function maintenance(what, fn) {
@@ -2931,28 +2933,15 @@ function create(options) {
                     'it to fall back to the local development default.');
   }
 
-  let Pool;
-  let Client;
-  try {
-    // REQUIRED LAZILY, and that is the point: `pg` is a dependency only this
-    // mode needs, and a person running `persistence.mode=ldif` — or the default
-    // memory mode, which is everybody who has not asked for any of this —
-    // must not be stopped by its absence. The message names the package,
-    // because "Cannot find module 'pg'" arriving out of a mock identity
-    // service is a sentence with no obvious cause.
-    Pool = require('pg').Pool;
-    // AND THE BARE CLIENT, for the `LISTEN` connection. A pooled client cannot
-    // hold a subscription — the pool hands it to the next caller — so the
-    // change listener needs a connection outside the pool. Same lazy require
-    // and the same reason.
-    Client = require('pg').Client;
-  } catch (err) {
-    throw new Error(errorCodes.tag('STS-STORE-0028') +
-                    'persistence.mode is "postgres" but the "pg" package is ' +
-                    'not installed (' + err.message + '). Run `npm install` ' +
-                    'in this package, or use persistence.mode=ldif, which ' +
-                    'needs nothing but a directory to write in.');
-  }
+  // THE ONE DOOR (#326): every connection below is made by Knex, in
+  // `knex_store.js`, which is the only module that loads `knex` and the only
+  // way `pg` (Knex's driver) is reached. REQUIRED HERE, in create(), and
+  // `knex_store.js` loads Knex lazily in its turn: a person running
+  // `persistence.mode=ldif` — or the default memory mode, which is everybody
+  // who has not asked for any of this — must not be stopped by the absence of
+  // either package. A missing one is STS-STORE-0028, thrown by the first
+  // `openPool()` below, inside create(), where it always was.
+  const knexStore = require('./knex_store');
 
   // ---------------------------------------------------------------------
   // TLS, AND THE TWO HALVES OF IT THAT LIVE IN DIFFERENT PLACES.
@@ -3032,7 +3021,10 @@ function create(options) {
   // ONE PLACE THE CONNECTION IS DESCRIBED, because the pool and the change
   // listener have to dial the same database the same way — and a listener that
   // quietly used different TLS settings from the pool would be a second,
-  // weaker connection to the same store that nothing would ever report.
+  // weaker connection to the same store that nothing would ever report. Since
+  // #326 it is said once more structurally: the pool's Knex instance is built
+  // from these options, and the LISTEN and liveness connections are that
+  // instance's (`pool.dedicated()`), so they cannot be dialled any other way.
   function clientOptions() {
     log.debug("Entering clientOptions().");
     log.debug("Leaving clientOptions().");
@@ -3043,18 +3035,17 @@ function create(options) {
     };
   }
 
-  const pool = new Pool({
-    connectionString: dialled,
-    ssl: dial.ssl,
+  // Knex's pool over the writer (#326; `knex_store.js` argues the shape).
+  // A mock must not hang waiting for a database that is not there: the
+  // failure has to arrive as a logged error and a service that keeps
+  // answering, which needs the connection attempt to give up — the 5 s in
+  // `clientOptions()` bounds both the dial and the wait for a free slot.
+  const pool = knexStore.openPool(clientOptions(), {
     // Small on purpose. Every query this driver makes is on the flush path,
     // there is one flush at a time by construction (persistence.js serialises
     // them), and a mock does not need a connection per core.
     max: Number(options.poolMax) > 0 ? Number(options.poolMax)
       : POOL_FLOOR,
-    // A mock must not hang waiting for a database that is not there: the
-    // failure has to arrive as a logged error and a service that keeps
-    // answering, which needs the connection attempt to give up.
-    connectionTimeoutMillis: 5000,
     idleTimeoutMillis: 30000
   });
 
@@ -3096,12 +3087,9 @@ function create(options) {
       ssl: readDial.ssl,
       connectionTimeoutMillis: 5000
     };
-    const made = new Pool({
-      connectionString: readDial.connectionString,
-      ssl: readDial.ssl,
+    const made = knexStore.openPool(readOptions, {
       max: Number(options.poolMax) > 0 ? Number(options.poolMax)
         : POOL_FLOOR,
-      connectionTimeoutMillis: 5000,
       idleTimeoutMillis: 30000
     });
     made.on('error', function (err) {
@@ -3125,8 +3113,11 @@ function create(options) {
 
   pool.on('error', function (err) {
     // A pooled client that died while idle. Logged rather than thrown — an
-    // unhandled 'error' on a Pool is a process exit, and a mock identity
-    // service must not exit because a database restarted.
+    // unhandled 'error' on a Pool was a process exit, and a mock identity
+    // service must not exit because a database restarted. Knex's dialect
+    // listens on every connection it makes, so since #326 it cannot be one;
+    // the report is kept, and Knex discards the connection at the next
+    // acquire.
     log.error(errorCodes.tag('STS-STORE-0030') +
               'persistence: an idle postgres client errored: ' + err.message +
               '. The pool will make a new one on the next write.');
@@ -3172,10 +3163,12 @@ function create(options) {
       log.debug("Leaving liveConnection(). Connecting.");
       return liveConnecting;
     }
-    const client = new Client(clientOptions());
+    // The pool's own Knex instance dials it, outside the pool (#326).
+    const client = pool.dedicated();
     client.on('error', function (err) {
       // A dropped connection: the next statement opens another. An 'error'
-      // with no listener on a Client is a process exit.
+      // with no listener on a Client was a process exit (Knex's dialect
+      // listens too since #326).
       liveStats.drops += 1;
       log.warn(errorCodes.tag('STS-STORE-0070') + 'persistence: the ' +
                'liveness connection dropped (' + err.message + '); the ' +
@@ -3762,6 +3755,15 @@ function create(options) {
   // per checkout onto a client the pool reuses — node warns at eleven — and
   // would sit alongside the idle listener pg puts back, so one dead connection
   // would be reported twice.
+  //
+  // **SINCE #326 THE POOL IS KNEX'S, AND IT MUST NOT BRING THE EXIT BACK.**
+  // It does not: Knex's dialect gives every connection it makes a permanent
+  // `'error'` listener (it marks the connection disposed, and Knex destroys
+  // it at the next acquire), so an error on a borrowed connection always has
+  // a listener. What this guard still does is SAY it, under STS-STORE-0031,
+  // naming who held the connection — Knex's own note of it is a debug line
+  // (`knex_store.js`). The rule below it stands: whoever checks a connection
+  // out reports its errors until it gives it back.
   // ---------------------------------------------------------------------------
   function guardClient(client, what) {
     log.debug("Entering guardClient().");
@@ -4349,8 +4351,9 @@ function create(options) {
       const out = { ok: true, probes: {}, pool: null, tookMs: 0 };
 
       // THE POOL'S OWN NUMBERS, which are this PROCESS's and are not in any
-      // catalog view: postgres can say how many backends exist and only `pg`
-      // can say how many of them this process is holding, how many are idle
+      // catalog view: postgres can say how many backends exist and only the
+      // pool (Knex's since #326, `stats()`) can say how many of them this
+      // process is holding, how many are idle
       // in its pool, and how many callers are queued for one. A page drawing
       // only the server's side would answer "how contended is this service's
       // database handle" with a number about somebody else.
@@ -4361,12 +4364,7 @@ function create(options) {
       // this page's own connection and report a pool one busier than it is —
       // which on a `max` of 4 is a quarter of it, invented by the act of
       // looking.
-      out.pool = {
-        total: pool.totalCount,
-        idle: pool.idleCount,
-        waiting: pool.waitingCount,
-        max: pool.options && pool.options.max
-      };
+      out.pool = pool.stats();
 
       log.debug("Leaving metrics().");
       return pool.connect().then(function (client) {
@@ -5947,7 +5945,8 @@ function create(options) {
           log.debug("Leaving connect().");
           return;
         }
-        client = new Client(clientOptions());
+        // Outside the pool, dialled by the pool's Knex instance (#326).
+        client = pool.dedicated();
         client.on('notification', function (msg) {
           let payload = null;
           try {

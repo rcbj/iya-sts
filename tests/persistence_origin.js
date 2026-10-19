@@ -39,6 +39,7 @@
 
 delete process.env.CONFIG_FILE;
 
+const storeDouble = require('./tools/store_double');
 const fs = require('fs');
 const path = require('path');
 const realms = require('../common/realms');
@@ -168,20 +169,13 @@ function fakePg(db) {
 // A driver over the shared fake — one "process".
 function driverOver(db) {
   log.debug("Entering driverOver().");
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: fakePg(db) };
+  const restore = storeDouble.install(fakePg(db));
   try {
     log.debug("Leaving driverOver().");
     return postgres.create({ url: 'postgres://sts_app@localhost:5432/sts',
                              log: QUIET });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
 }
 

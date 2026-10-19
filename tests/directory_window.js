@@ -47,6 +47,7 @@
 // log between workers, and a database stopped under a request (503).
 // ===========================================================================
 
+const storeDouble = require('./tools/store_double');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -972,9 +973,7 @@ function installFakePg(db) {
   };
   FakePool.prototype.query = FakeClient.prototype.query;
   FakePool.prototype.end = function () { return Promise.resolve(); };
-  const pgPath = require.resolve('pg');
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: { Pool: FakePool, Client: FakeClient } };
+  storeDouble.install({ Pool: FakePool, Client: FakeClient });
   log.debug("Leaving installFakePg().");
 }
 

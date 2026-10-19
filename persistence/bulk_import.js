@@ -1347,10 +1347,12 @@ async function main(argv) {
       throw refusal('STS-LDAP-0152', 'the connection string is not ' +
                     'dialled: ' + dial.refused + ' (#273).');
     }
-    const Pool = /** @type {any} */ (require('pg')).Pool;
-    pool = new Pool({ connectionString: dial.connectionString,
-                      ssl: dial.ssl, max: 4,
-                      connectionTimeoutMillis: 10000 });
+    // Through the service's one door to PostgreSQL (#326): a Knex pool of
+    // the tool's own, dialled with the options the driver's would be.
+    pool = require('./knex_store').openPool(
+      { connectionString: dial.connectionString, ssl: dial.ssl,
+        connectionTimeoutMillis: 10000 },
+      { max: 4 });
     pool.on('error', function (err) {
       log.warn('bulk_import: an idle connection errored: ' +
                ((err && err.message) || err));

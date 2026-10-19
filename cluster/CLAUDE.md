@@ -24,7 +24,10 @@ the barrier that makes one node see what another committed.
 | `spiffe_targets.js` | **The SPIFFE target groups stay equal to the running tasks** (#323): the cluster job `spiffe.target-reconcile`. ECS allows five target groups on a service and the node services use them, so those groups are registered by address at apply time and reconciled afterwards. The algorithm is the file's header; the AWS constraint is `deploy/aws/CLAUDE.md`. |
 
 The SQL is `persistence/persistence_postgres.js`'s — the driver owns every
-statement, as it does for `/admin/database` — and the six tables
+statement, as it does for `/admin/database`, and sends it as raw `$n` text
+over a connection Knex holds since #326 (`persistence/CLAUDE.md`, *Knex is
+the one door*): nothing in this directory touches a connection — and the six
+tables
 (`sts_cluster_nodes`, `sts_cluster_leases`, `sts_cluster_claims`,
 `sts_cluster_secrets`, `sts_cluster_counters`, `sts_cluster_windows`) are in
 `postgres/schema.sql` at schema version 5, beside `sts_change_readers`

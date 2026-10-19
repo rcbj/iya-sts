@@ -33,6 +33,7 @@
 // indexes are used, and every query's result against real rows.
 // ===========================================================================
 
+const storeDouble = require('./tools/store_double');
 const postgres = require('../persistence/persistence_postgres');
 const queries = require('../persistence/directory_queries');
 
@@ -69,20 +70,13 @@ function fakePg(statements, answer) {
 
 function driverWith(statements, answer, url) {
   log.debug("Entering driverWith().");
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: fakePg(statements, answer) };
+  const restore = storeDouble.install(fakePg(statements, answer));
   try {
     log.debug("Leaving driverWith().");
     return postgres.create({
       url: url || 'postgres://sts_app@localhost:5432/sts', log: QUIET });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
 }
 

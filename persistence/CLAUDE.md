@@ -6,6 +6,7 @@
 |---|---|
 | `persistence.js` | The driver interface, the mode selection, the diff, the flush scheduler, the restore, the appliers, and the status object three surfaces render. A LIBRARY — it registers no route. |
 | `persistence_ldif.js` | The `ldif` driver, and the RFC 2849 codec under it. `tests/ldif_codec.js` guards the codec. It deliberately has NO `loadMinted`/`saveMinted`/`purgeMinted`, and the absence is the answer — see below. |
+| **`knex_store.js`** | **The one door to PostgreSQL** (#326, 2026-10-19): every connection this service makes to its store — the driver's pools, its liveness and LISTEN connections, the directory bridge's thread, `bulk_import.js`, `cell_convert.js`, the tests that dial a database — is made by a Knex instance here, and nothing else requires `pg`. See *Knex is the one door* below. |
 | `persistence_postgres.js` | The `postgres` driver: seven tables, one transaction per flush, and a `pg_notify` that something listens to now. The seventh, `sts_used_assertions` (2026-09-13), is written by ATOMIC CLAIM rather than by the flush — see below. **`sts_keys` is written by `mergeKeys()` since 2026-09-14 (#46)** — the row locked, the caller's merge decides, a change row only when it moved — and `loadKey()` reads one row; `common/CLAUDE.md` argues it. |
 | **`persistence_minted.js`** | **What this process MINTS, written down — in product mode, and nowhere else** (2026-09-06). The registry of declared stores, the journal, the seal, the restore. A LIBRARY that is HANDED its driver, which is what lets `tests/minted_persistence.js` drive the whole of it against a stub. |
 | **`directory_merge.js`** | **One directory entry written by two nodes** (2026-09-14, #46 section 3): the three-way merge (base = the shadow, mine = live, theirs = the row under `FOR UPDATE`) the postgres driver writes a directory upsert through, and `persistence.js` applies again to a write that raced the flush or a replicated row. A LEAF with no requires. See *Several nodes writing one row* below. |
@@ -18,7 +19,7 @@
 state of the schema this service owns in it. **`persistence_postgres.js` owns
 the statements and the console owns none of them**, which is the whole
 layering: `admin-ui/` must never hold a connection string — it is a credential
-— and must never require `pg`, which is a dependency only this mode needs and
+— and must never require `pg` or `knex`, dependencies only this mode needs and
 which this directory takes care to require lazily. The console asks
 `persistence.databaseMetrics()`, that routes to the active driver, and only a
 driver that HAS a database answers.
@@ -80,6 +81,121 @@ dead connection twice.
 owns that client's errors until it releases it. There are two such call sites
 and a third would need this guard too.
 
+**Since #326 the pool is Knex's, and it cannot bring the exit back**: Knex's
+dialect gives every connection it makes a permanent `'error'` listener, so a
+borrowed connection that dies always has one. `guardClient()` stays for the
+REPORT (STS-STORE-0031, naming who held it), and the rule above stands for
+the same reason. See *Knex is the one door*.
+
+
+## KNEX IS THE ONE DOOR TO POSTGRESQL (#326, 2026-10-19)
+
+Phase 2 of rcbj's decision on #94 (2026-09-28): Knex is this service's one
+database access layer. **`knex_store.js` is the only module that requires
+`knex` for the store, and nothing in this repository requires `pg`** — Knex's
+PostgreSQL dialect loads it as its driver. `tests/knex_store.js` holds both
+by reading the tree (a test may still read a URL back through
+`pg/lib/connection-parameters`, which dials nothing; phase 1's
+`attribute-sources/attribute_source_drivers.ts` keeps Knex instances of its
+own, over operators' databases, never folded into this one). **Still
+PostgreSQL-only, and no behaviour changed.**
+
+**What Knex owns**: the driver, the POOL (tarn, through
+`client.acquireConnection()` / `releaseConnection()`), making, validating and
+destroying a connection (the dialect's `acquireRawConnection()` /
+`destroyRawConnection()`), and the `'error'` listener every connection it
+makes carries.
+
+**WHAT IT DOES NOT OWN IS THE SQL, AND THAT IS THE DECISION.** Every
+statement here is node-postgres `$1`…`$n` text (`$n::type`,
+`ANY($n::text[])`, `unnest($n::jsonb[])`), and several carry a `?` that is
+PostgreSQL's — jsonb `?` and `?|` and a jsonpath filter's `?`
+(`directory_queries.js`'s asked names, holders and `classesUnder()`, the
+count trigger and backfill, `resealSealed()`). `knex.raw(sql, bindings)`
+counts `?` as ITS placeholders: given `$n` text and an array it refuses
+("Expected N bindings, saw 0"), and a literal `?` is read as a binding (`??`
+as an identifier) unless escaped `\?`. Converting 186 statements to `?` and
+escaping every operator would be a rewrite of the SQL, and four tests pin
+that SQL (`EXPLAIN` of the builders' text in
+`directory_parent_statistics.js` and `directory_resident_walk.js`, the DDL
+against `postgres/schema.sql` in `postgres_schema.js`, one generated DELETE in
+`cell_convert.js`). **So a statement goes to the connection Knex holds, as
+text and values, exactly as it went to the connection `pg-pool` held**:
+`StorePool.query()` and a checked-out `StoreClient.query()` are the dialect
+connection's own `query(text, values)`. Every statement — LISTEN/NOTIFY,
+`pg_advisory_xact_lock`, `ON CONFLICT`/`RETURNING`/`FOR UPDATE`, jsonb, the
+`pg_stat` probes, the `SCHEMA_*` DDL `open()` runs for a missing object — is
+raw SQL through Knex in that sense, and **no query builder is used**: one
+that emits different SQL is a behaviour change, and `DB_NOW`'s
+`clock_timestamp()` is not something a builder would keep. A builder call
+added later is a new decision, not this one extended.
+
+**A TRANSACTION IS STILL `BEGIN`/`COMMIT` ON ONE HELD CONNECTION**
+(`transactionOnce()`, `queryWithoutJit()`, the metrics client,
+`bulk_import.js`, `cell_convert.js`), not `knex.transaction()`: that runs its
+statements through the same `?` binder, and the flush is one transaction
+that records its change rows inside it and NOTIFYs only after its COMMIT,
+which a held connection says outright.
+
+**The shape is `pg-pool`'s, on purpose**: `openPool(settings, options)`
+answers a `StorePool` with `query()`, `connect()` (a `StoreClient` with
+`query()`, `release(err)`, `on()`, `removeListener()`), `on('error')`, `end()`,
+plus `stats()` (the numbers `/admin/database` draws, which `pg-pool` kept as
+`totalCount` / `idleCount` / `waitingCount`) and `dedicated()`. So the
+driver's statements, transactions and fences did not change, only where a
+connection comes from. What carried over, rule by rule:
+
+* **The lazy require.** `persistence_postgres.js` requires `knex_store.js`
+  inside `create()`; the layer loads `knex` in `loadKnex()` at the first
+  `openPool()`; a missing `knex` or `pg` is STS-STORE-0028, from `create()`,
+  where it always was.
+* **The checked-out connection.** Knex's own listener means a borrowed
+  connection's death is never an unhandled `'error'`; `guardClient()` still
+  reports it. An IDLE connection's error goes to the pool's `'error'`
+  listeners (STS-STORE-0030), and Knex discards the connection at the next
+  acquire.
+* **Given back broken.** `release(err)`, and a pooled `query()` that fails,
+  mark the connection the way Knex's own listener marks a dead one
+  (`__knex__disposed`), so Knex's validation refuses and destroys it at the
+  next acquire: a connection whose statement failed, or whose
+  `statement_timeout` could not be reset, is never handed to the next caller.
+* **The bounds.** `connectionTimeoutMillis` (5 s here, 10 s for the two
+  tools) is the dial's and the wait for a slot's (`acquireTimeoutMillis`);
+  tarn's create timeout is set a second past it so `pg`'s own connect timeout
+  is what a dead database reports. A wait that ran out is
+  `KnexTimeoutError` ("Timeout acquiring a connection"), which
+  `timedOutWaiting()` recognises for the maintenance retry — `pg-pool`'s was
+  "timeout exceeded when trying to connect". `min` is 0: nothing is dialled
+  until something asks.
+* **TLS decided in one place.** `dialOptions()` still decides it, and its
+  `{ connectionString, ssl }` is what the pool's Knex instance is built from;
+  the password is still injected into the URL by `persistence.js` from
+  `secrets.js` before the driver sees it.
+* **The dedicated connections.** LISTEN (a pooled connection cannot hold a
+  subscription) and the liveness connection are `pool.dedicated()`: the
+  POOL'S Knex instance's raw connection, outside the pool, so they cannot be
+  dialled any other way. Listeners given before `connect()` attach as it
+  connects. `end()` never rejects.
+* **No timer.** The layer arms none; a dropped dedicated connection is dialled
+  again by the next statement or by `watchChanges()`'s `connect` back-off,
+  as before (`tests/no_periodic_timers.js`'s entry). tarn's reaper is a
+  library `setInterval` that runs while the pool holds a connection and stops
+  when it is empty — what `pg-pool`'s idle timers were.
+* **No ORM-level cache (rcbj on #326).** The layer holds connections and
+  nothing they returned; every cache stays in `common/cache_registry.js`,
+  where the change log invalidates it across nodes.
+* **The directory bridge's thread** builds a Knex instance of its own from
+  the posted options (`openConnection()`): neither an instance nor a
+  connection crosses a thread boundary. It runs `directory_queries.build()`'s
+  text, as the driver's `directoryQuery()` does — one builder, two runners.
+
+**A test's double goes where the layer is**, not where `pg` was:
+`tests/tools/store_double.js` puts a layer over the `pg`-shaped `Pool` and
+`Client` doubles the tests already wrote. A test that dials a real database
+does it with `openConnection()`.
+
+**What a second database (phase 3, a later ticket if wanted) would cost**: the
+SQL, not the layer. Every statement above is PostgreSQL's.
 
 ## The sentence this directory reverses
 
@@ -431,7 +547,8 @@ shows.
 ### The liveness connection
 
 The origin-claim renewal, the cluster heartbeat and the lease statements run
-on a `pg.Client` of their own (`liveQuery()` in `persistence_postgres.js`) —
+on a connection of their own (`liveQuery()` in `persistence_postgres.js`;
+outside the pool, made by the pool's own Knex instance since #326) —
 like the LISTEN connection, opened on first use and again after it drops, with
 no timer — so write load cannot starve the lease that keeps a process writing.
 If it cannot be opened (a server at `max_connections`) the statement goes
@@ -1962,9 +2079,10 @@ realm's file — which matters because these files are meant to be diffable, and
 rewrite with no change is still a new mtime.
 
 **Require the driver's own dependency LAZILY**, the way the postgres driver
-requires `pg`. A person running `ldif` — or the default `memory`, which is
-everybody who has not asked for any of this — must not be stopped by the absence
-of a package they will never use.
+reaches Knex (`knex_store.js`, required in `create()`, loads `knex` in
+`loadKnex()`, and Knex loads `pg`). A person running `ldif` — or the default
+`memory`, which is everybody who has not asked for any of this — must not be
+stopped by the absence of a package they will never use.
 
 ## TLS TO THE DATABASE, REQUIRED AT BOTH ENDS (2026-08-30)
 

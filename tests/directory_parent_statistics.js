@@ -276,9 +276,11 @@ async function realDatabase(t) {
   }
   t.log.info('=== B. the trap, against ' +
              url.replace(/:[^:@/]*@/, ':***@') + ' ===');
-  const pg = require('pg');
+  // Through the service's one door to PostgreSQL (#326): a connection
+  // Knex makes, outside any pool, where a `pg.Client` was.
+  const knexStore = require('../persistence/knex_store');
   const schema = 'parents_' + process.pid;
-  const db = new pg.Client({ connectionString: url });
+  const db = knexStore.openConnection({ connectionString: url });
   await db.connect();
   try {
     await db.query('CREATE SCHEMA ' + schema);
