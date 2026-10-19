@@ -107,7 +107,8 @@ const SERVICE_PAGES = [
   '/admin/secrets',
   // Every realm's partition of every cache, and the process-wide ones (#74).
   '/admin/caches',
-  // The request, hosted-surface and post-quantum pools of the node (#327).
+  // The request and hosted-surface pools of the node (#327). Worker
+  // threads since #364; no post-quantum pool since #363.
   '/admin/worker-pools',
   // The container's CPU and memory and every process of the node (#329).
   '/admin/node-health',

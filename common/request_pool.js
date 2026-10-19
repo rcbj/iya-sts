@@ -7013,8 +7013,9 @@ module.exports = {
   start: start,
   stop: stop,
   stats: stats,
-  // Monitoring → Worker Pools (#327): each request worker's own
-  // post-quantum pool, asked for over the channel.
+  // Each ready worker's memory and CPU time, asked for over the channel
+  // (#327, #329). Until #363 the answer also carried that worker's
+  // post-quantum pool.
   askWorkerPoolStatus: askWorkerPoolStatus,
   // Monitoring → Node Health's Collect buttons (#611): a full garbage
   // collection in each worker thread, asked for over the channel.

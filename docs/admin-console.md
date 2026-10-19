@@ -1105,7 +1105,7 @@ picture has a form on it.
 
 ### Worker pools — `/admin/worker-pools`
 
-`/admin/worker-pools` shows the two pools of child processes this node runs
+`/admin/worker-pools` shows the two pools of worker threads this node runs
 ([the worker pools](architecture.md#the-request-dispatcher-and-the-worker-pools)):
 the request pool (`workers.requestCount`) and the console and portal's own
 pool (`workers.surfaceCount`). For each it gives:
@@ -1113,9 +1113,9 @@ pool (`workers.surfaceCount`). For each it gives:
 * the workers it has now, how many are **busy** and how many **free**;
 * its **maximum** (the setting) and its **initial** size — what it was started
   with;
-* **restarts and crashes**: every fork, the workers that exited when nobody
-  asked (and how many of those never started) apart from the ones the pool
-  stopped or retired, and how many it replaced;
+* **restarts and crashes**: every thread the pool started, the workers that
+  exited when nobody asked (and how many of those never started) apart from
+  the ones the pool stopped or retired, and how many it replaced;
 * the **average response time**, from dispatch to the end of the answer, with
   a recent average beside the one since start.
 

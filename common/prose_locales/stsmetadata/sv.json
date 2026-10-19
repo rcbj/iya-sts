@@ -1404,8 +1404,8 @@
     "text": "ICKE-SPEC (#74). Allt som /admin/caches ritar, som JSON: varje registrerad cache med dess storlek, giltiga och utgångna poster, gräns, livslängd, inställningar, träffar, missar och träffkvot; med ?cache=, den cachens sammanfattning och en sida av dess poster (page, per), var och en med sin sfär, nyckel och återstående tid. Ett okänt namn svarar 200 med found: false. Inget cachat värde finns i svaret. Speglar GET /admin/caches."
   },
   "stsmetadata.endpoints./admin-api/worker-pools.what": {
-    "en": "aa9d2b625e5ba68b",
-    "text": "ICKE-SPEC (#327). Allt som /admin/worker-pools ritar, som JSON: den här nodens pooler för begäranden, värdade ytor och postkvantkryptografi, var och en med sitt tillstånd, aktuella, upptagna, lediga, maximala och initiala arbetare, sina krascher, misslyckade starter och stopp och sin svarstid; postkvantpoolen per process; i ett kluster varje nod efter namn och summorna, ?node= för en (#332). Speglar GET /admin/worker-pools."
+    "en": "39bf096a70b38c7b",
+    "text": "ICKE-SPEC (#327). Allt som /admin/worker-pools ritar, som JSON: den här nodens pooler för begäranden och värdade ytor, var och en en uppsättning arbetartrådar, med sitt tillstånd, aktuella, upptagna, lediga, maximala och initiala arbetare, sina krascher, misslyckade starter och stopp och sin svarstid. Det finns ingen postkvantpool sedan #363. I ett kluster varje nod efter namn och summorna, ?node= för en (#332). Speglar GET /admin/worker-pools."
   },
   "stsmetadata.endpoints./admin-api/node-health.what": {
     "en": "8ad5e9e21c752f8d",

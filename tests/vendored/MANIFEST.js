@@ -677,10 +677,10 @@ const JOBS = [
   // /admin and /admin-api.
   { file: 'sts_scheduler.js',            browser: false, local: true },
   // MONITORING → WORKER POOLS (#327, 2026-09-28): GET /admin-api/worker-pools
-  // answers the request, surface and post-quantum pools with the seven
-  // figures, adding up, drawn by the front process; the page and its
-  // ?format=json agree; a realm's token is refused. `local: true`: this
-  // repository's own /admin and /admin-api.
+  // answers the request and surface pools with the seven figures, adding
+  // up, drawn by the front process; no post-quantum pool since #363; the
+  // page and its ?format=json agree; a realm's token is refused.
+  // `local: true`: this repository's own /admin and /admin-api.
   { file: 'sts_worker_pools.js',         browser: false, local: true },
   // MONITORING → NODE HEALTH (#329, 2026-09-28): GET /admin-api/node-health
   // answers the container's CPU and memory (read, or unavailable in a
