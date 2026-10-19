@@ -1739,13 +1739,17 @@ function mergerFor(row, handle, key, mine, upsert, realmId) {
         return null;
       }
       const merged = row.mergeRow(mine, JSON.parse(text));
-      // THE MERGED RECORD'S EXPIRY IS WHAT IS WRITTEN (#333), not this
-      // process's copy's: the other node may have extended it. The index
-      // columns the same way: a failure below leaves this process's copy.
+      const sealed = keystore.seal(JSON.stringify(merged), 'minted-rows',
+                                   tierOfHandle(handle), { realm: realmId });
+      // Only the ciphertext that will be written. A throw above leaves the
+      // columns flush took from this process's copy, which is the body the
+      // driver keeps when this returns null (#350).
+      if (!sealed) {
+        return sealed;
+      }
       upsert.expiresAt = expiryOf(row, merged, key, realmId);
       upsert.index = indexColumns(row, merged);
-      return keystore.seal(JSON.stringify(merged), 'minted-rows',
-                           tierOfHandle(handle), { realm: realmId });
+      return sealed;
     } catch (e) {
       log.warn(errorCodes.tag('STS-STORE-0056') + 'persistence: the "' +
                handle + '" row under "' + key + '" could not be merged with ' +
@@ -2495,6 +2499,10 @@ function status() {
 // pays and the same reason it is paid: the alternative is a test that launches
 // two processes and therefore cannot run in the in-process suite at all.
 // ---------------------------------------------------------------------------
+// Captured before a walk's first page. Null when this process did not walk.
+// The follower starts here so a commit during the walk is still applied.
+let sessionIndexFloor = null;
+
 /**
  * Clears every piece of state in this module, for the tests.
  */
@@ -2529,23 +2537,32 @@ function reset() {
   unsupportedReason = '';
   realmOnlyKeylessWarned = false;
   expiryHookFailed.clear();
+  sessionIndexFloor = null;
   log.debug("Leaving reset().");
 }
 
 // How many sealed bodies one backfill transaction opens. The ceiling: a
-// completion flag would be the upgrade when a start cannot finish a walk.
+// start that cannot finish a page of this size is the upgrade, not a
+// smaller page.
 const SESSION_INDEX_BATCH = 500;
 
-// Fills `sts_sessions` from sealed `authn.sessions` rows when the index is
-// empty (#350). SQL cannot open the bodies. Emptiness is the only completion
-// mark: a throw after a committed batch leaves rows, and the next start sees
-// a non-empty table and skips the rest. Do not delete rows another node may
-// have written. Expired rows are included; a tombstone is the only absence.
+function sessionIndexChangeFloor() {
+  log.debug("Entering sessionIndexChangeFloor().");
+  log.debug("Leaving sessionIndexChangeFloor().");
+  return sessionIndexFloor;
+}
+
+// Fills `sts_sessions` from sealed `authn.sessions` rows until the completion
+// row commits with the last page (#350). A non-empty table is not that mark:
+// another node may already have written a live row, and deleting would throw
+// that row away. A throw leaves the mark unwritten, so the next start walks
+// again. Upserts are idempotent. SQL cannot open the bodies. Expired rows
+// are included; a tombstone is the only absence.
 function backfillSessionIndex() {
   log.debug("Entering backfillSessionIndex().");
   const active = /** @type {any} */ (driver);
   if (!enabled() || !active ||
-      typeof active.sessionIndexEmpty !== 'function' ||
+      typeof active.sessionIndexDone !== 'function' ||
       typeof active.loadSessionBodies !== 'function' ||
       typeof active.writeSessionIndexes !== 'function') {
     log.debug("Leaving backfillSessionIndex(). Not this store.");
@@ -2556,16 +2573,29 @@ function backfillSessionIndex() {
     log.debug("Leaving backfillSessionIndex(). No index hook.");
     return Promise.resolve();
   }
-  // Probed once. A null digest writes no row, and walking every body on
-  // every start when nothing can be indexed would re-read the table for
-  // nothing. The table stays empty, so a later start tries again.
+  // Probed once. A null digest writes no row, and asking whether the walk
+  // finished would hide that the next start must try again.
   if (typeof keystore.keyedDigest !== 'function' ||
       !keystore.keyedDigest('session-subject', '')) {
     log.debug("Leaving backfillSessionIndex(). No digest.");
     return Promise.resolve();
   }
+  // True once a page has committed. The mark itself commits only with the
+  // last page, so a throw after this still resumes.
+  let committed = false;
+  function mark(err) {
+    log.debug("Entering mark().");
+    log.debug("Caught in mark(): " + ((err && err.message) || err));
+    if (committed && err && typeof err === 'object') {
+      err.sessionIndexCommitted = true;
+    }
+    log.debug("Leaving mark().");
+    throw err;
+  }
   // Every body in the page is opened before that page's transaction, so one
-  // that will not open throws before the batch commits.
+  // that will not open throws before the batch commits. A live body with no
+  // columns is the same failure: skipping it would leave a hole the mark
+  // would then call finished.
   function fillFrom(afterRealm, afterKey) {
     log.debug("Entering fillFrom().");
     log.debug("Leaving fillFrom().");
@@ -2589,28 +2619,42 @@ function backfillSessionIndex() {
             throw e;
           }
           const columns = indexColumns(row, value);
-          if (columns) {
-            ready.push({ realm: one.realm, key: one.key, index: columns });
+          if (!columns) {
+            throw new Error('a stored session body has no index columns');
           }
+          ready.push({ realm: one.realm, key: one.key, body: one.body,
+                       index: columns });
         }
-        const writing = ready.length
-          ? active.writeSessionIndexes(ready) : Promise.resolve();
+        const last = rows.length < SESSION_INDEX_BATCH;
+        const writing = (ready.length || last)
+          ? active.writeSessionIndexes(ready, last) : Promise.resolve();
         return Promise.resolve(writing).then(function () {
-          if (rows.length < SESSION_INDEX_BATCH) {
+          if (last) {
             return null;
           }
-          const last = rows[rows.length - 1];
-          return fillFrom(last.realm, last.key);
+          committed = true;
+          const tail = rows[rows.length - 1];
+          return fillFrom(tail.realm, tail.key);
         });
       });
   }
   log.debug("Leaving backfillSessionIndex().");
-  return Promise.resolve(active.sessionIndexEmpty()).then(function (empty) {
-    if (!empty) {
+  return Promise.resolve(active.sessionIndexDone()).then(function (done) {
+    if (done) {
       return null;
     }
-    return fillFrom('', '');
-  });
+    // Before the first page, so a commit during the walk stays above the
+    // follower's high-water and repairSessionIndex still sees it.
+    const seq = typeof active.latestChangeSeq === 'function'
+      ? active.latestChangeSeq() : null;
+    return Promise.resolve(seq).then(function (n) {
+      if (seq !== null) {
+        const parsed = Number(n);
+        sessionIndexFloor = Number.isFinite(parsed) ? parsed : 0;
+      }
+      return fillFrom('', '');
+    });
+  }).catch(mark);
 }
 
 /**
@@ -2628,6 +2672,7 @@ module.exports = {
   keyColumnOf: keyColumnOf,
   nameOfRow: nameOfRow,
   backfillSessionIndex: backfillSessionIndex,
+  sessionIndexChangeFloor: sessionIndexChangeFloor,
   ensureTombstoneJob: ensureTombstoneJob,
   ensureExpiryPurgeJob: ensureExpiryPurgeJob,
   purgeExpired: purgeExpired,

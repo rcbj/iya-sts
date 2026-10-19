@@ -2559,11 +2559,15 @@ loses the compiler.
 `sts_sessions` holds the columns a walk needs, written and deleted in the
 same `saveMinted` transaction as the sealed `authn.sessions` body. It is
 not columns on `sts_minted`, and that row's `expires_at` stays NULL so the
-generic purge cannot end a session. A start whose index is empty opens the
-sealed bodies in batches of 500 and fills it; a throw is fatal, because the
-next start treats a non-empty index as finished. SQL cannot open the
-bodies. Memory and LDIF are unchanged, and the full in-memory map stays
-resident.
+generic purge cannot end a session. A start opens the sealed bodies in
+batches of 500 until a completion row commits with the last page. A
+non-empty table is not that mark: another node may already have written a
+live row, and a throw leaves the mark unwritten so the next start walks
+again. A throw is fatal, and a page that has committed is not reported as
+nothing changed. The follower starts at the change seq taken before the
+walk, so a commit during it still reaches the index repair. SQL cannot
+open the bodies. Memory and LDIF are unchanged, and the full in-memory map
+stays resident.
 
 ### The schema version moved to 2
 

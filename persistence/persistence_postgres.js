@@ -380,6 +380,18 @@ const SESSION_INDEX_UPSERT =
 const SESSION_INDEX_DELETE =
   'DELETE FROM sts_sessions WHERE realm = $1 AND key = $2';
 
+// Not a session. `$` is not in a keyed digest, and '' is not a realm id, so
+// the partial indexes do not see it. It commits with the last backfill page;
+// until that row exists the next start walks again (#350).
+const SESSION_INDEX_MARK_REALM = '';
+const SESSION_INDEX_MARK_KEY = '$session-index-complete$';
+const SESSION_INDEX_MARK = {
+  expiresAt: null, lastSeenAt: 0, startedAt: 0,
+  subjectKey: '', usernameKey: '', chosen: false, authenticated: false,
+  kind: '', rpSurface: '', parentKey: '', backsConsole: false,
+  credentialKey: '', partnerRelationship: ''
+};
+
 // `expiresAt` null stays SQL NULL. `Number(null)` is 0, which would publish
 // a session as already expired.
 function sessionIndexParams(realm, key, index) {
@@ -6096,18 +6108,20 @@ function create(options) {
       });
     },
 
-    // True when the backfill has nothing to finish. Emptiness is the only
-    // completion mark (#350).
-    sessionIndexEmpty: function () {
-      log.debug("Entering sessionIndexEmpty().");
-      log.debug("Leaving sessionIndexEmpty().");
+    // True when the completion row has committed. A live index row is not
+    // that: another node may have written one before this walk finished.
+    sessionIndexDone: function () {
+      log.debug("Entering sessionIndexDone().");
+      log.debug("Leaving sessionIndexDone().");
       return readPool.query(
-        'SELECT NOT EXISTS (SELECT 1 FROM sts_sessions) AS empty'
+        'SELECT EXISTS (SELECT 1 FROM sts_sessions WHERE realm = $1 AND ' +
+        'key = $2) AS done',
+        [SESSION_INDEX_MARK_REALM, SESSION_INDEX_MARK_KEY]
       ).then(function (r) {
         const row = (r.rows || [])[0];
         // node-pg answers a boolean; a text 't' is the same fact. 'f' is
         // truthy as a string, so it is not a truthiness check.
-        return !!(row && (row.empty === true || row.empty === 't'));
+        return !!(row && (row.done === true || row.done === 't'));
       });
     },
 
@@ -6128,8 +6142,11 @@ function create(options) {
       });
     },
 
-    // One backfill page, one transaction. A later page is a later call.
-    writeSessionIndexes: function (rows) {
+    // One backfill page, one transaction. The body is read again under the
+    // lock: a commit since the page was opened is not indexed from the
+    // ciphertext that was opened. `complete` writes the mark in this same
+    // transaction, and only the last page passes it.
+    writeSessionIndexes: function (rows, complete) {
       log.debug("Entering writeSessionIndexes().");
       log.debug("Leaving writeSessionIndexes().");
       const list = Array.isArray(rows) ? rows : [];
@@ -6137,10 +6154,28 @@ function create(options) {
         let chain = Promise.resolve();
         list.forEach(function (row) {
           chain = chain.then(function () {
-            return upsertSessionIndex(client, row.realm, row.key,
-                                      row.index);
+            return client.query(
+              'SELECT body FROM sts_minted WHERE handle = $1 AND ' +
+              'realm = $2 AND key = $3 FOR UPDATE',
+              ['authn.sessions', row.realm, row.key]
+            ).then(function (r) {
+              const found = (r.rows || [])[0];
+              if (!found || found.body === TOMBSTONE ||
+                  found.body !== row.body) {
+                return null;
+              }
+              return upsertSessionIndex(client, row.realm, row.key,
+                                        row.index);
+            });
           });
         });
+        if (complete) {
+          chain = chain.then(function () {
+            return upsertSessionIndex(client, SESSION_INDEX_MARK_REALM,
+                                      SESSION_INDEX_MARK_KEY,
+                                      SESSION_INDEX_MARK);
+          });
+        }
         return chain;
       });
     },

@@ -3008,8 +3008,8 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // ---------------------------------------------------------------------
     return keystore.start();
   }).then(function () {
-    // Bodies can be opened now. A throw is fatal: the next start treats a
-    // non-empty index as finished (#350).
+    // Bodies can be opened now. A throw is fatal, and a page that already
+    // committed is not a finished index (#350).
     return minted.backfillSessionIndex();
   }).then(function () {
     return persistsAppconfig() ? driver.loadOverrides() : null;
@@ -3139,10 +3139,16 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // thing the operator will see, and "connect ECONNREFUSED" on its own does
     // not say which of the six settings to look at.
     // ---------------------------------------------------------------------
+    // A session-index page that committed is not "nothing changed": the
+    // next start must resume the walk, not treat the part as finished.
+    const partly = !!(err && err.sessionIndexCommitted);
     const explanation = errorCodes.tag('STS-STORE-0006') +
               'persistence.mode is "' + chosen + '" and the store ' +
-              'could not be read: ' + err.message + '. Nothing in the store ' +
-              'was changed.' +
+              'could not be read: ' + err.message +
+              (partly
+                ? '. The session index was partly written. The next start ' +
+                  'resumes it; it does not treat that part as finished.'
+                : '. Nothing in the store was changed.') +
               // -------------------------------------------------------------
               // AND IF THE CONNECTION STRING IS THE BUILT-IN ONE, SAY SO.
               //
@@ -4181,7 +4187,11 @@ function coordinate() {
   // would put a cross-region round trip on every request, which is the cost
   // #98 D3 declined. /admin/cells shows the lag.
   // -------------------------------------------------------------------------
-  const started = replication.start(driver, appliers);
+  // When a session-index walk ran, this is the seq from before its first
+  // page (#350). Commits during the walk stay above it, so
+  // repairSessionIndex still sees them. Null starts at the head.
+  const started = replication.start(driver, appliers,
+                                   minted.sessionIndexChangeFloor());
   if (!driver || !driver.tiered) {
     return started;
   }

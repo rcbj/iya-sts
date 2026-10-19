@@ -23,6 +23,8 @@ const stats = require('../common/admin_stats');
 const minted = require('../persistence/persistence_minted');
 const tiers = require('../persistence/tiers');
 const postgres = require('../persistence/persistence_postgres');
+const replication = require('../persistence/persistence_replication');
+const scheduler = require('../cluster/scheduler');
 const authn = require('../authn/authn');
 
 const log = require('bunyan').createLogger({ name: 'session_index',
@@ -210,9 +212,9 @@ function fakePg(statements, answer) {
         rows: [{ body: answer.selectBody }], rowCount: 1
       });
     }
-    if (/NOT EXISTS \(SELECT 1 FROM sts_sessions\)/i.test(text)) {
+    if (/AS done\b/.test(text)) {
       return Promise.resolve({
-        rows: [{ empty: answer.empty }], rowCount: 1
+        rows: [{ done: answer.done }], rowCount: 1
       });
     }
     if (/LIMIT \$5/.test(text)) {
@@ -277,6 +279,10 @@ function checkTheCallSite(t) {
   const before = text.slice(Math.max(0, at - 400), at);
   t.check(before.indexOf('keystore.start()') >= 0,
           'the backfill runs after the keystore has started');
+  t.check(text.indexOf('sessionIndexCommitted') > 0,
+          'a committed page is not reported as nothing changed');
+  t.check(text.indexOf('sessionIndexChangeFloor') > 0,
+          'coordinate starts the follower at the walk\'s floor');
   log.debug("Leaving checkTheCallSite().");
 }
 
@@ -390,16 +396,17 @@ async function sqlHalf(t) {
           'a session upsert with no index columns writes no index SQL');
 
   statements.length = 0;
-  answer.empty = true;
-  t.equal(await driver.sessionIndexEmpty(), true,
-          'an empty index answers true');
-  answer.empty = 't';
-  t.equal(await driver.sessionIndexEmpty(), true,
+  answer.done = true;
+  t.equal(await driver.sessionIndexDone(), true,
+          'a completion row answers done');
+  answer.done = 't';
+  t.equal(await driver.sessionIndexDone(), true,
           'and so does the text form');
-  answer.empty = false;
-  t.equal(await driver.sessionIndexEmpty(), false, 'a row answers false');
-  answer.empty = 'f';
-  t.equal(await driver.sessionIndexEmpty(), false,
+  answer.done = false;
+  t.equal(await driver.sessionIndexDone(), false,
+          'no completion row is not done');
+  answer.done = 'f';
+  t.equal(await driver.sessionIndexDone(), false,
           'and the text false is not read as true');
 
   statements.length = 0;
@@ -422,6 +429,51 @@ async function sqlHalf(t) {
   await driver.deleteSessionIndex(REALM, 'digest-one');
   t.equal(matching(txOf(statements), sessionDelete).length, 1,
           'deleteSessionIndex deletes inside a transaction');
+
+  statements.length = 0;
+  answer.selectBody = 'cipher-a';
+  await driver.writeSessionIndexes([{
+    realm: REALM, key: 'digest-page', body: 'cipher-a', index: index
+  }], true);
+  const pageTx = txOf(statements);
+  const locked = matching(pageTx, /SELECT body FROM sts_minted/i);
+  const inserts = matching(pageTx, sessionInsert);
+  t.equal(locked.length, 1, 'the page re-reads the body');
+  t.check(/FOR UPDATE/i.test(locked[0].sql), 'and locks it');
+  t.equal(inserts.length, 2, 'the index row and the completion row');
+  t.equal(inserts[0].params[1], 'digest-page', 'the session key');
+  t.equal(inserts[1].params[1], '$session-index-complete$',
+          'the completion row is in that same transaction');
+  t.check(pageTx.indexOf(locked[0]) < pageTx.indexOf(inserts[0]) &&
+          pageTx.indexOf(inserts[0]) < pageTx.indexOf(inserts[1]),
+          'the lock precedes both inserts');
+
+  statements.length = 0;
+  answer.selectBody = 'cipher-b';
+  await driver.writeSessionIndexes([{
+    realm: REALM, key: 'digest-page', body: 'cipher-a', index: index
+  }], false);
+  const skipTx = txOf(statements);
+  t.equal(matching(skipTx, /FOR UPDATE/i).length, 1,
+          'a changed body is still locked');
+  t.check(!matching(skipTx, sessionInsert).length,
+          'and is not indexed from the ciphertext that was opened');
+
+  statements.length = 0;
+  answer.selectBody = TOMBSTONE;
+  await driver.writeSessionIndexes([{
+    realm: REALM, key: 'digest-page', body: 'cipher-a', index: index
+  }], false);
+  t.check(!matching(txOf(statements), sessionInsert).length,
+          'a tombstone seen in the write is not indexed');
+
+  statements.length = 0;
+  answer.selectBody = null;
+  await driver.writeSessionIndexes([{
+    realm: REALM, key: 'digest-page', body: 'cipher-a', index: index
+  }], false);
+  t.check(!matching(txOf(statements), sessionInsert).length,
+          'a missing body is not indexed');
   log.debug("Leaving sqlHalf().");
 }
 
@@ -550,6 +602,42 @@ async function mergeCases(t, handle, planted, captured) {
   t.check(kept.body !== 'not-a-seal', 'the stored seal is this process\'s');
   t.equal(JSON.parse(keystore.open(kept.body, 'minted-rows')).lastSeenAt,
           2222, 'which still carries this process\'s lastSeenAt');
+
+  const realSeal = keystore.seal;
+  keystore.seal = function (plaintext, label) {
+    if (label === 'minted-rows' &&
+        String(plaintext).indexOf('"lastSeenAt":5000') >= 0) {
+      throw new Error('seal failed');
+    }
+    return realSeal.apply(keystore, arguments);
+  };
+  try {
+    const keptMine = sessionValue({ lastSeenAt: 3333, authTime: 40 });
+    const ahead = sessionValue({
+      backsConsole: true, authTime: 10, lastSeenAt: 5000
+    });
+    planted['seal-throws'] = realSeal(JSON.stringify(ahead), 'minted-rows',
+      tiers.mintedTierOf('authn.sessions'), { realm: REALM });
+    authn.sessions.set('seal-throws', keptMine);
+    const third = await minted.flush();
+    t.check(third.written, 'a seal that throws still writes this copy',
+            third && third.error);
+    const sealedRow = captured.filter(function (one) {
+      return one.journalKey === 'seal-throws';
+    })[0];
+    t.equal(JSON.stringify(sealedRow.index),
+            JSON.stringify(handle.indexOf(keptMine)),
+            'the index stays indexOf of the copy that was kept');
+    t.equal(JSON.parse(keystore.open(sealedRow.body, 'minted-rows'))
+              .lastSeenAt, 3333,
+            'and the sealed body is this process\'s');
+  } catch (e) {
+    log.debug("Caught in mergeCases(): " + ((e && e.message) || e));
+    log.debug("Leaving mergeCases().");
+    throw e;
+  } finally {
+    keystore.seal = realSeal;
+  }
   log.debug("Leaving mergeCases().");
 }
 
@@ -576,11 +664,11 @@ async function nullDigestCase(t, handle, captured) {
       loadMinted: emptyLoad,
       saveMinted: emptySave,
       origin: testOrigin,
-      sessionIndexEmpty: function () {
-        log.debug("Entering sessionIndexEmpty().");
+      sessionIndexDone: function () {
+        log.debug("Entering sessionIndexDone().");
         asked = true;
-        log.debug("Leaving sessionIndexEmpty().");
-        return Promise.resolve(true);
+        log.debug("Leaving sessionIndexDone().");
+        return Promise.resolve(false);
       },
       loadSessionBodies: function () {
         log.debug("Entering loadSessionBodies().");
@@ -611,18 +699,26 @@ async function backfillCases(t, handle) {
   const bad = { realm: REALM, key: 'backfill-bad', body: 'not-a-seal' };
   const wrote = [];
   const seen = [];
+  const order = [];
   const pages = [[good, bad]];
   install({
     loadMinted: emptyLoad,
     saveMinted: emptySave,
     origin: testOrigin,
-    sessionIndexEmpty: function () {
-      log.debug("Entering sessionIndexEmpty().");
-      log.debug("Leaving sessionIndexEmpty().");
-      return Promise.resolve(true);
+    sessionIndexDone: function () {
+      log.debug("Entering sessionIndexDone().");
+      log.debug("Leaving sessionIndexDone().");
+      return Promise.resolve(false);
+    },
+    latestChangeSeq: function () {
+      log.debug("Entering latestChangeSeq().");
+      order.push('seq');
+      log.debug("Leaving latestChangeSeq().");
+      return Promise.resolve(17);
     },
     loadSessionBodies: function (afterRealm, afterKey, limit) {
       log.debug("Entering loadSessionBodies().");
+      order.push('load');
       seen.push({ afterRealm: afterRealm, afterKey: afterKey, limit: limit });
       const page = pages.shift() || [];
       log.debug("Leaving loadSessionBodies().");
@@ -644,10 +740,64 @@ async function backfillCases(t, handle) {
   }
   t.check(failed && /will not open/.test(failed.message),
           'a body that will not open throws', failed && failed.message);
+  t.equal(failed && failed.sessionIndexCommitted, undefined,
+          'and a throw before any page commits names nothing written');
   t.equal(wrote.length, 0, 'and that page writes nothing');
   t.equal(seen[0].limit, 500, 'a page asks for 500');
   t.equal(seen[0].afterRealm, '', 'starting from an empty realm');
   t.equal(seen[0].afterKey, '', 'and an empty key');
+  t.check(order.indexOf('seq') >= 0 &&
+          order.indexOf('seq') < order.indexOf('load'),
+          'the change seq is taken before the first page');
+
+  const full = [];
+  for (let i = 0; i < 500; i++) {
+    full.push({ realm: REALM, key: 'p' + i, body: good.body });
+  }
+  const splitPages = [full, [bad]];
+  const splitWrote = [];
+  install({
+    loadMinted: emptyLoad,
+    saveMinted: emptySave,
+    origin: testOrigin,
+    sessionIndexDone: function () {
+      log.debug("Entering sessionIndexDone().");
+      log.debug("Leaving sessionIndexDone().");
+      return Promise.resolve(false);
+    },
+    latestChangeSeq: function () {
+      log.debug("Entering latestChangeSeq().");
+      log.debug("Leaving latestChangeSeq().");
+      return Promise.resolve(18);
+    },
+    loadSessionBodies: function () {
+      log.debug("Entering loadSessionBodies().");
+      const page = splitPages.shift() || [];
+      log.debug("Leaving loadSessionBodies().");
+      return Promise.resolve(page);
+    },
+    writeSessionIndexes: function (rows, complete) {
+      log.debug("Entering writeSessionIndexes().");
+      splitWrote.push({ rows: rows, complete: complete });
+      log.debug("Leaving writeSessionIndexes().");
+      return Promise.resolve();
+    }
+  });
+  let splitFailed = null;
+  try {
+    await minted.backfillSessionIndex();
+  } catch (e) {
+    splitFailed = e;
+    log.debug("Caught in backfillCases(): " + ((e && e.message) || e));
+  }
+  t.check(splitFailed && /will not open/.test(splitFailed.message),
+          'a later page that will not open throws',
+          splitFailed && splitFailed.message);
+  t.equal(splitWrote.length, 1, 'the page that committed is kept');
+  t.equal(splitWrote[0].complete, false,
+          'and it is not marked finished');
+  t.equal(splitFailed.sessionIndexCommitted, true,
+          'the throw says a page has committed');
 
   const okPages = [[good]];
   const okWrote = [];
@@ -655,32 +805,168 @@ async function backfillCases(t, handle) {
     loadMinted: emptyLoad,
     saveMinted: emptySave,
     origin: testOrigin,
-    sessionIndexEmpty: function () {
-      log.debug("Entering sessionIndexEmpty().");
-      log.debug("Leaving sessionIndexEmpty().");
-      return Promise.resolve(true);
+    sessionIndexDone: function () {
+      log.debug("Entering sessionIndexDone().");
+      log.debug("Leaving sessionIndexDone().");
+      return Promise.resolve(false);
     },
-    loadSessionBodies: function () {
+    latestChangeSeq: function () {
+      log.debug("Entering latestChangeSeq().");
+      log.debug("Leaving latestChangeSeq().");
+      return Promise.resolve(19);
+    },
+    loadSessionBodies: function (afterRealm) {
       log.debug("Entering loadSessionBodies().");
+      okWrote.push({ afterRealm: afterRealm });
       const page = okPages.shift() || [];
       log.debug("Leaving loadSessionBodies().");
       return Promise.resolve(page);
     },
-    writeSessionIndexes: function (rows) {
+    writeSessionIndexes: function (rows, complete) {
       log.debug("Entering writeSessionIndexes().");
-      okWrote.push(rows);
+      okWrote.push({ rows: rows, complete: complete });
       log.debug("Leaving writeSessionIndexes().");
       return Promise.resolve();
     }
   });
   await minted.backfillSessionIndex();
-  t.equal(okWrote.length, 1, 'an open page is written');
-  t.equal(okWrote[0][0].realm, REALM, 'under the loaded realm');
-  t.equal(okWrote[0][0].key, 'backfill-good', 'and the loaded key');
-  t.equal(JSON.stringify(okWrote[0][0].index),
+  const written = okWrote.filter(function (one) {
+    return one.rows;
+  });
+  t.equal(written.length, 1, 'an open page is written');
+  t.equal(written[0].complete, true,
+          'the last page carries the completion row');
+  t.equal(written[0].rows[0].realm, REALM, 'under the loaded realm');
+  t.equal(written[0].rows[0].key, 'backfill-good', 'and the loaded key');
+  t.equal(written[0].rows[0].body, good.body,
+          'and the ciphertext that was opened');
+  t.equal(JSON.stringify(written[0].rows[0].index),
           JSON.stringify(handle.indexOf(value)),
           'with indexOf of the opened body');
+  t.equal(okWrote[0].afterRealm, '',
+          'a resumed walk starts again at the beginning');
+  t.equal(minted.sessionIndexChangeFloor(), 19,
+          'the floor is the seq taken before that walk');
+
+  let skipped = false;
+  // setDriver, not install(): install() resets, which would drop the floor
+  // the walk just took. A finished index must not move it.
+  const finished = {
+    loadMinted: emptyLoad,
+    saveMinted: emptySave,
+    origin: testOrigin,
+    sessionIndexDone: function () {
+      log.debug("Entering sessionIndexDone().");
+      log.debug("Leaving sessionIndexDone().");
+      return Promise.resolve(true);
+    },
+    loadSessionBodies: function () {
+      log.debug("Entering loadSessionBodies().");
+      skipped = true;
+      log.debug("Leaving loadSessionBodies().");
+      return Promise.resolve([]);
+    },
+    writeSessionIndexes: function () {
+      log.debug("Entering writeSessionIndexes().");
+      skipped = true;
+      log.debug("Leaving writeSessionIndexes().");
+      return Promise.resolve();
+    }
+  };
+  t.check(minted.setDriver(finished, 'postgres'),
+          'the finished-index driver replaces the one that walked');
+  await minted.backfillSessionIndex();
+  t.check(!skipped, 'a finished index is not walked again');
+  t.equal(minted.sessionIndexChangeFloor(), 19,
+          'and a skipped walk does not move the floor');
+
+  const noneWrote = [];
+  const emptyStore = {
+    loadMinted: emptyLoad,
+    saveMinted: emptySave,
+    origin: testOrigin,
+    sessionIndexDone: function () {
+      log.debug("Entering sessionIndexDone().");
+      log.debug("Leaving sessionIndexDone().");
+      return Promise.resolve(false);
+    },
+    latestChangeSeq: function () {
+      log.debug("Entering latestChangeSeq().");
+      log.debug("Leaving latestChangeSeq().");
+      return Promise.resolve(20);
+    },
+    loadSessionBodies: function () {
+      log.debug("Entering loadSessionBodies().");
+      log.debug("Leaving loadSessionBodies().");
+      return Promise.resolve([]);
+    },
+    writeSessionIndexes: function (rows, complete) {
+      log.debug("Entering writeSessionIndexes().");
+      noneWrote.push({ rows: rows, complete: complete });
+      log.debug("Leaving writeSessionIndexes().");
+      return Promise.resolve();
+    }
+  };
+  t.check(minted.setDriver(emptyStore, 'postgres'),
+          'the empty-store driver replaces the finished one');
+  await minted.backfillSessionIndex();
+  t.equal(noneWrote.length, 1, 'an empty store still writes one page');
+  t.equal(noneWrote[0].rows.length, 0, 'with no session rows');
+  t.equal(noneWrote[0].complete, true,
+          'and that page carries the completion row');
   log.debug("Leaving backfillCases().");
+}
+
+async function floorCase(t) {
+  log.debug("Entering floorCase().");
+  t.log.info('=== the follower starts at the seq taken before the walk ===');
+  const previous = process.env.STS_PERSISTENCE_COORDINATE;
+  process.env.STS_PERSISTENCE_COORDINATE = 'true';
+  const follower = replication.createReplication('sessidx');
+  let asked = 0;
+  const stub = {
+    origin: function () {
+      log.debug("Entering origin().");
+      log.debug("Leaving origin().");
+      return 'sessidx-origin';
+    },
+    latestChangeSeq: function () {
+      log.debug("Entering latestChangeSeq().");
+      asked += 1;
+      log.debug("Leaving latestChangeSeq().");
+      return Promise.resolve(99);
+    },
+    changesSince: function () {
+      log.debug("Entering changesSince().");
+      log.debug("Leaving changesSince().");
+      return Promise.resolve([]);
+    }
+  };
+  try {
+    const started = await follower.start(stub, {}, 17);
+    t.equal(started.from, 17,
+            'a finite floor is the high-water, not the head');
+    t.equal(started.coordinating, true, 'and the follower is coordinating');
+    t.equal(asked, 0, 'the head is not read when the floor is passed');
+    t.equal(follower.status().appliedSeq, 17, 'applied is that floor');
+  } catch (e) {
+    log.debug("Caught in floorCase(): " + ((e && e.message) || e));
+    log.debug("Leaving floorCase().");
+    throw e;
+  } finally {
+    follower.reset();
+    // The instance: the module export does not include unregister.
+    scheduler.scheduler.unregister(
+      'persistence.sessidx-change-log-pull');
+    scheduler.scheduler.unregister(
+      'persistence.sessidx-change-log-purge');
+    if (previous === undefined) {
+      delete process.env.STS_PERSISTENCE_COORDINATE;
+    } else {
+      process.env.STS_PERSISTENCE_COORDINATE = previous;
+    }
+  }
+  log.debug("Leaving floorCase().");
 }
 
 async function applyCases(t, handle, realm) {
@@ -829,6 +1115,7 @@ async function liveHalf(t, realm) {
   await mergeCases(t, handle, planted, captured);
   await nullDigestCase(t, handle, captured);
   await backfillCases(t, handle);
+  await floorCase(t);
   await applyCases(t, handle, realm);
   log.debug("Leaving liveHalf().");
 }
