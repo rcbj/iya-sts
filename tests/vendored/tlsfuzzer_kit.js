@@ -938,8 +938,8 @@ function classify(entry, listener, out, failed, curve) {
   log.debug("Entering classify().");
   const exceptions = exceptionsFor(entry, listener, curve).filter(
     function (one) {
-    return !one.exclude;
-  });
+      return !one.exclude;
+    });
   const seen = new Set();
   const unexplained = [];
   const explained = [];
@@ -1155,6 +1155,8 @@ function presentedCertificate(host, port) {
         } catch (e) {
           log.debug("Caught in presentedCertificate(): " +
                     ((e && e.message) || e));
+          // An unreadable certificate is reported as no key so the
+          // caller keeps the RSA plan, rather than failing the probe.
         }
         socket.end();
         finish(found);

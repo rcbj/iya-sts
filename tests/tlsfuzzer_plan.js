@@ -135,6 +135,7 @@ function unusedPort() {
     const probe = net.createServer();
     probe.once('error', function (e) {
       log.debug('Caught in unusedPort(): ' + ((e && e.message) || e));
+      log.debug('Leaving unusedPort().');
       reject(e);
     });
     probe.listen(0, '127.0.0.1', function () {
@@ -156,6 +157,7 @@ function serve(pair) {
       });
     server.once('error', function (e) {
       log.debug('Caught in serve(): ' + ((e && e.message) || e));
+      log.debug('Leaving serve().');
       reject(e);
     });
     server.listen(0, '127.0.0.1', function () {
