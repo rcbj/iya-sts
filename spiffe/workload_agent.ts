@@ -64,7 +64,6 @@ import fs = require('fs');
 import path = require('path');
 import net = require('net');
 import https = require('https');
-import http = require('http');
 import crypto = require('crypto');
 import grpc = require('@grpc/grpc-js');
 import protoLoader = require('@grpc/proto-loader');
@@ -707,6 +706,16 @@ class WorkloadAgent {
       throw WorkloadAgent.fail('STS-SPIFFE-0148',
         'The workload agent was given no trust bundle and no bundle URL.');
     }
+    // ONLY OVER HTTPS. These are the anchors every later connection to the
+    // server is verified against, so a bundle fetched in the clear is one
+    // anybody on the path could have written. A deployment without an HTTPS
+    // bundle endpoint hands the PEM in instead (`--trust-bundle-file`).
+    if (!/^https:\/\//i.test(this.bundleUrl)) {
+      this.log.debug("Leaving WorkloadAgent.loadAnchors(). Not HTTPS.");
+      throw WorkloadAgent.fail('STS-SPIFFE-0148',
+        'The workload agent\'s bundle URL is not an https: URL; the trust ' +
+        'bundle is fetched only over HTTPS.');
+    }
     let text = '';
     try {
       text = await this.fetchText(this.bundleUrl);
@@ -766,10 +775,9 @@ class WorkloadAgent {
    */
   fetchText(url: string): Promise<string> {
     this.log.debug("Entering WorkloadAgent.fetchText().");
-    const lib: any = url.indexOf('https:') === 0 ? https : http;
     this.log.debug("Leaving WorkloadAgent.fetchText().");
     return new Promise(function (resolve, reject) {
-      const req = lib.get(url, { timeout: DEADLINE_MS }, function (res) {
+      const req = https.get(url, { timeout: DEADLINE_MS }, function (res) {
         const chunks = [];
         res.on('data', function (chunk) { chunks.push(chunk); });
         res.on('end', function () {
