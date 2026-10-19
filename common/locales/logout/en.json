@@ -5,7 +5,7 @@
   "startAgainEnd": ".",
   "inventory.holding": "Everything this service is still holding for <code>{username}</code>, across every protocol family it speaks.",
   "inventory.globalButton": "Global logout — end everything below",
-  "inventory.globalNote": "The default. A POST to <code>/logout</code> with nothing selected does exactly this.",
+  "inventory.globalNote": "The default. A POST to <code>/logout</code> with nothing selected does exactly this. Verifiable credentials, and the DIDs they are bound to, stay valid.",
   "inventory.selectedButton": "End the ticked items",
   "inventory.liveCount": "<strong>{total} live item(s)</strong> in {families, plural, one {# family} other {# families}}. Some of them cannot be ended by anybody — they are listed with the reason, because a sign-out that hid them would look complete when it is not.",
   "inventory.anyUserOpen": "This service checks no password anywhere, so <code>?username=</code> names anybody and grants nothing that was not already true — signing in as them takes one request. <code>logout.anyUser</code> turns that off.",

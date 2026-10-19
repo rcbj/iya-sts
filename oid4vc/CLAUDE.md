@@ -531,10 +531,12 @@ is accepted as well as the `jwt` proof's `key_attestation` header.
 
 Three acts, all of them read through `vc_issued.disownedReason()`:
 
-* a GLOBAL sign-out — `/logout`, `/admin/logout`, `/admin-api/logout` — ending
-  the `wallet-credential` family (`logout/CLAUDE.md`). It stamps the row, and
-  every credential issued up to that instant stops signing in; one issued
-  AFTER, on a fresh token, signs in again;
+* an administrator's GLOBAL sign-out — `/admin/logout`, `/admin-api/logout` —
+  or the `wallet-credential` row ticked on `/logout` (`logout/CLAUDE.md`). It
+  stamps the row, and every credential issued up to that instant stops
+  signing in; one issued AFTER, on a fresh token, signs in again. The
+  person's own Global logout on `/logout` leaves the credential, and the DID
+  it is bound to, valid;
 * an administrator's revocation of the credential on `/admin/tokens` (the
   issued register's own mark, read by handle, so a restore undoes it);
 * a status-list entry that is not VALID — set by either of those, or by
@@ -576,8 +578,9 @@ sign-out cannot be undone by the token it was meant to cut off.
 draft's linkability guidance) through a cluster claim, and free again when the
 credential expires. **A bit is COMPUTED**, never stored twice: the entry's own
 status, or INVALID because the issued register's mark says an administrator
-revoked it — so `/admin/tokens`, `/admin/vc-status`, a global sign-out and the
-sign-in door cannot disagree.
+revoked it — so `/admin/tokens`, `/admin/vc-status`, an administrator's
+global sign-out and the sign-in door cannot disagree. The person's own
+Global logout on `/logout` sets no bit.
 
 **The Verifier CONSULTS it** for every presentation that otherwise verified
 (section 8.3's order): a credential this realm signed is read from this realm's

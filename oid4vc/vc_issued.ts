@@ -62,12 +62,14 @@
 // ---------------------------------------------------------------------------
 // DISOWNED (2026-09-17). A credential stops signing anybody in when:
 //
-//   * a GLOBAL sign-out — `/logout`, `/admin/logout`, `/admin-api/logout` —
-//     ended the `wallet-credential` row `logout/logout.ts` draws from this
-//     register: `disown()` stamps the row, and every credential issued at or
-//     before that instant is disowned with it (a credential issued AFTER, on
-//     a fresh token, is not — which is what lets a person who signed out
-//     everywhere enrol a wallet again);
+//   * an administrator's GLOBAL sign-out — `/admin/logout`,
+//     `/admin-api/logout` — or the `wallet-credential` row ticked on
+//     `/logout`, ended the row `logout/logout.ts` draws from this register:
+//     `disown()` stamps the row, and every credential issued at or before
+//     that instant is disowned with it (a credential issued AFTER, on a
+//     fresh token, is not). The person's own Global logout on `/logout`
+//     does not: that act leaves the credential, and the DID it is bound to,
+//     valid;
 //   * an administrator revoked its row on `/admin/tokens` (the issued
 //     register's mark, read by handle, so a restore undoes it);
 //   * its status-list entry is not VALID — revoked or suspended on

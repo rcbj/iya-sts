@@ -110,6 +110,8 @@
   "totp.title": "一次性驗證碼 — 身分驗證服務",
   "startOver.button": "重新開始",
   "startOver.note": "返回同一請求的登入畫面。此步驟中的任何內容都不會保留。",
+  "stuck.close": "請關閉此瀏覽器分頁或視窗，然後重新開始。",
+  "stuck.home": "返回首頁",
   "totp.heading": "您的一次性驗證碼",
   "totp.sub": "<code>{name}</code> 的第二因素",
   "totp.label": "驗證器應用程式中的 {digits} 位數驗證碼",

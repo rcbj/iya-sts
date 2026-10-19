@@ -110,6 +110,8 @@
   "totp.title": "One-time code — serbisyo ng pagpapatunay",
   "startOver.button": "Magsimula muli",
   "startOver.note": "Bumalik sa screen ng pag-sign in para sa parehong kahilingan. Walang itinatago mula sa hakbang na ito.",
+  "stuck.close": "Isara ang tab o window na ito at magsimula muli.",
+  "stuck.home": "Bumalik sa unang pahina",
   "totp.heading": "Ang iyong one-time code",
   "totp.sub": "Pangalawang factor para sa <code>{name}</code>",
   "totp.label": "Ang {digits}-digit na code mula sa iyong authenticator app",

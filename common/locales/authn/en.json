@@ -110,6 +110,8 @@
   "totp.title": "One-time code — authentication service",
   "startOver.button": "Start over",
   "startOver.note": "Back to the sign-in screen for the same request. Nothing from this step is kept.",
+  "stuck.close": "Close this browser tab or window and start over.",
+  "stuck.home": "Return to the home page",
   "totp.heading": "Your one-time code",
   "totp.sub": "Second factor for <code>{name}</code>",
   "totp.label": "The {digits}-digit code from your authenticator app",

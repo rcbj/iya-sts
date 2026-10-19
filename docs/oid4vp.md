@@ -349,8 +349,10 @@ See [Authentication](authentication.md) for the second factors.
 
 A credential stops signing anybody in after any of these:
 
-* a **global** sign-out (`/logout`, `/admin/logout`, `/admin-api/logout`),
-  which disowns every credential issued up to that moment;
+* an administrator's **global** sign-out (`/admin/logout`,
+  `/admin-api/logout`), or ending the wallet-credential row, which disowns
+  every credential issued up to that moment. The person's own Global logout
+  on `/logout` leaves the credential, and the DID it is bound to, valid;
 * an administrator's revocation on `/admin/tokens`;
 * a status that is not VALID, set on the Credential status tab at
   `/admin/vc#vc-tab-status` or by either of the

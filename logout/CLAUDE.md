@@ -42,7 +42,8 @@ None of them is the question a person arrives with, which is *what am I still
 signed into, and how do I stop being signed into it*. That question is
 protocol-independent and so is this answer: ONE list of everything this service
 is still holding for one identity, a checkbox against each, and — by default — a
-button that ends all of it.
+button that ends the sessions, tokens, codes and connections. Verifiable
+credentials, and the DIDs they are bound to, stay valid.
 
 **It is the same shape `common/delegation.js` takes and for the same reason.**
 Eight delegation mechanisms in three families collapse to one model because the
@@ -137,11 +138,15 @@ Single Logout can carry it for an assertion from a browser profile.
 `revocationReach` on every row of the issued list is the field that keeps the
 two apart.
 
-**THE DEFAULT IS GLOBAL.** A POST that selects nothing ends everything.
-`/admin/logout`'s `end` action is the ONE place that differs — an empty
-selection there is refused — and the difference is intent: an empty form is a
-reader who ticked nothing, an empty body at `/logout` is a caller asking for
-everything.
+**THE DEFAULT IS GLOBAL.** A POST that selects nothing ends every session,
+token, code and connection. It leaves verifiable credentials, and the DIDs
+they are bound to, valid, and says so on the rows it did not end. Ticking
+those rows still ends them. `/admin/logout`'s `end` action is the ONE place
+that differs the other way — an empty selection there is refused — and an
+administrator's global sign-out still disowns the credentials. The difference
+is intent: an empty form on the console is a reader who ticked nothing, an
+empty body at `/logout` is a caller asking for everything the page's button
+ends.
 
 **A CREDENTIAL NEVER APPEARS IN A ROW ID.** An authorization code and a
 pre-authorized code are redeemable for tokens, so a row's handle is
@@ -385,14 +390,24 @@ one is not only a statement:
 `endOrder` 26, with the other credentials and before the session; a row is a
 handle and never a credential, and the label says which format and how many.
 
-**AN ORDINARY SIGN-OUT DOES NOT REACH IT, AND THAT IS THE POINT.**
-`/oauth2/logout`, SAML Single Logout, `wsignout1.0` and the console's and the
-portal's Sign out end ONE session through `authn.dropSession()`, which never
-touches this register. A person who signs out of an application signs back in
-with the wallet they are holding; a person who signs out of EVERYTHING is
-asking for exactly what this family does. The three surfaces that reach it are
-the three that go through `terminate()`: `/logout`, `/admin/logout` and
-`/admin-api/logout`.
+**AN ORDINARY SIGN-OUT DOES NOT REACH IT, AND NEITHER DOES THE PERSON'S OWN
+GLOBAL LOGOUT.** `/oauth2/logout`, SAML Single Logout, `wsignout1.0` and the
+console's and the portal's Sign out end ONE session through
+`authn.dropSession()`, which never touches this register. A person who signs
+out of an application signs back in with the wallet they are holding. The
+Global logout button on `/logout`, and a POST there with nothing selected —
+the page says the two are the same act, and both go through `endFor()` —
+passes `spareCredentials` and leaves the `wallet-credential` rows and the
+`Credential (` rows of `issued` alone. Both have to be spared: `disown()`
+sets the status-list bit INVALID, and revoking the issued-register artifact
+is what `statusOf()` and `disownedReason()` also read as INVALID. The DID is
+not a family of its own. The holder's `did:jwk` lives on the credential, so
+leaving both rows is what leaves it usable. The rows are reported under
+"Not ended", with the reason, because omitting them would make the act look
+complete. Ticking a row still ends it. An administrator's global sign-out
+(`/admin/logout`, `/admin-api/logout`), an account disable, a risk lockout
+and a cell's `revoke-subject` call `terminate()` with an empty selection and
+without the flag, and still disown.
 
 **A WALLET SIGN-IN'S TRANSACTION IS PRESENT, as `wallet-signin` (2026-09-17,
 #38), and the sentence above is why it had to be argued rather than assumed.**

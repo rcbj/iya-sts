@@ -110,6 +110,8 @@
   "totp.title": "Código de un solo uso — servicio de autenticación",
   "startOver.button": "Empezar de nuevo",
   "startOver.note": "Vuelve a la pantalla de inicio de sesión para la misma solicitud. No se conserva nada de este paso.",
+  "stuck.close": "Cierra esta pestaña o ventana del navegador y empieza de nuevo.",
+  "stuck.home": "Volver a la página de inicio",
   "totp.heading": "Su código de un solo uso",
   "totp.sub": "Segundo factor para <code>{name}</code>",
   "totp.label": "El código de {digits} dígitos de su aplicación de autenticación",

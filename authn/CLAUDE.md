@@ -172,7 +172,18 @@ leaves the visitorId on `window.stsDeviceFingerprint` too.
 `/authn/webauthn.js` was served for `/authn/webauthn` until #572 converted
 that page; nothing draws a page that loads it now, and it is gone.
 
-**Tests**: `tests/authn_api.js` (the shell, the index, the view, every
+**A page with nowhere to go** gets a way off (`AuthnSurface.put()`). The
+problem page — a sign-in this service no longer has, or any other refusal
+that drew no view — shows the language chooser and the English sentence
+and nothing else, and the same is true of any screen whose body draws
+neither a link nor a button (the chooser redraws the page, so it is not
+one). That page tells the person to close the browser tab or window and
+start over, and links the realm's root page (`stuck.close`, `stuck.home`).
+A screen that already has a link or a button is left as it is: Start over,
+Allow, and Sign in are ways on.
+
+**Tests**: `tests/authn_way_out.js` (the way off, and the pages that keep
+their own); `tests/authn_api.js` (the shell, the index, the view, every
 binding refusal, every act and its next step, the redacted audit row, the
 form POSTs gone); `tests/web_surfaces.js`'s round trip over seven cases in
 `tests/tools/web_surfaces.js`; in process, `tests/tools/authn_screen.js` is

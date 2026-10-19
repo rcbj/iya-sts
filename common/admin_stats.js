@@ -1566,7 +1566,9 @@ function recordCredential(format, detail) {
     // THE PERSON IT WAS ISSUED FOR, when that is not its subject (#38). An
     // ldp_vc names its HOLDER KEY as a did:jwk and says nothing about whose
     // wallet that is, so without this the credential was nobody's on
-    // /admin/users and beyond the reach of that person's global sign-out.
+    // /admin/users and beyond the reach of a sign-out that ends the issued
+    // row — an administrator's global sign-out, or the row ticked. The
+    // person's own Global logout at /logout leaves the row.
     // Set only where the issuer verified the access token that named them.
     person: detail.person || '',
     configId: detail.configId || '',

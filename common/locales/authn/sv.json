@@ -110,6 +110,8 @@
   "totp.title": "Engångskod — autentiseringstjänst",
   "startOver.button": "Börja om",
   "startOver.note": "Tillbaka till inloggningsskärmen för samma begäran. Inget från det här steget sparas.",
+  "stuck.close": "Stäng den här fliken eller det här fönstret och börja om.",
+  "stuck.home": "Tillbaka till startsidan",
   "totp.heading": "Din engångskod",
   "totp.sub": "Andra faktor för <code>{name}</code>",
   "totp.label": "Den {digits}-siffriga koden från din autentiseringsapp",

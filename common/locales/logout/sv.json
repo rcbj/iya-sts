@@ -5,7 +5,7 @@
   "startAgainEnd": ".",
   "inventory.holding": "Allt som den här tjänsten fortfarande håller för <code>{username}</code>, i varje protokollfamilj den talar.",
   "inventory.globalButton": "Global utloggning — avsluta allt nedan",
-  "inventory.globalNote": "Standardvalet. En POST till <code>/logout</code> utan något markerat gör exakt detta.",
+  "inventory.globalNote": "Standardvalet. En POST till <code>/logout</code> utan något markerat gör exakt detta. Verifierbara intyg, och de DID de är bundna till, förblir giltiga.",
   "inventory.selectedButton": "Avsluta de markerade",
   "inventory.liveCount": "<strong>{total} aktiva objekt</strong> i {families, plural, one {# familj} other {# familjer}}. Vissa av dem kan ingen avsluta — de listas med skälet, eftersom en utloggning som dolde dem skulle se fullständig ut utan att vara det.",
   "inventory.anyUserOpen": "Den här tjänsten kontrollerar inget lösenord någonstans, så <code>?username=</code> kan ange vem som helst och ger inget som inte redan gällde — att logga in som dem kräver en enda begäran. <code>logout.anyUser</code> stänger av det.",

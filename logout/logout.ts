@@ -49,7 +49,8 @@
 // question is protocol-independent, and so is the answer this endpoint gives:
 // ONE LIST of everything this service is still holding for one identity, across
 // every family, with a checkbox against each, and — by default, and by design —
-// a single button that ends all of it.
+// a single button that ends the sessions, tokens, codes and connections.
+// Verifiable credentials, and the DIDs they are bound to, stay valid.
 //
 // It is the same shape `common/delegation.js` takes and for the same reason:
 // eight delegation mechanisms in three families collapse to one model because
@@ -92,8 +93,12 @@
 // endpoint could do. They are rows with no checkbox and a sentence saying why —
 // the same decision `/admin/sts-metadata` makes about coverage notes.
 //
-// **THE DEFAULT IS GLOBAL.** A POST that selects nothing ends everything, and
-// the button says so. The per-row checkboxes exist because "sign me out of that
+// **THE DEFAULT IS GLOBAL.** A POST that selects nothing ends every session,
+// token, code and connection, and the button says so. It leaves verifiable
+// credentials, and the DIDs they are bound to, valid; ticking those rows is
+// what ends them, and they are reported as not ended, with the reason, so the
+// act does not look complete. An administrator's global sign-out still
+// disowns them. The per-row checkboxes exist because "sign me out of that
 // one relying party" is a real thing to want and no protocol here offers it
 // across families — but a logout endpoint whose default was partial would be a
 // logout endpoint that quietly left something behind.
@@ -126,9 +131,10 @@
 // This page is a person signing themselves out. The console's is an operator
 // looking at somebody, is behind the console's two roles, and is where an
 // UNDO lives (a Kerberos sign-out instant can be cleared; a revoked token can
-// be restored). Both call the functions in this file, which is what makes them
-// one behaviour rather than two — rule 7, and the reason `admin_api.js` gets an
-// operation for each control.
+// be restored). Both call the functions in this file — rule 7, and the reason
+// `admin_api.js` gets an operation for each control. They differ in one act:
+// this page's global sign-out leaves verifiable credentials and the DIDs they
+// are bound to, and the operator's global sign-out disowns them.
 // ---------------------------------------------------------------------------
 
 // The one place this service hashes (#453).
@@ -182,8 +188,9 @@ import vcOffers = require('../oid4vc/vc_offers');
 // The wallet sign-ins a wallet has answered and no browser has collected yet
 // (#38). A cache hit, like every require here — `vc_verifier` is at 11-14.
 import vcVerifier = require('../oid4vc/vc_verifier');
-// The wallet sign-in register (#38's follow-ups), for the credentials a
-// global sign-out DISOWNS. A library; a cache hit here.
+// The wallet sign-in register (#38's follow-ups), for the credentials an
+// administrator's global sign-out, or a ticked row, DISOWNS. The person's
+// own Global logout at /logout leaves them. A library; a cache hit here.
 import vcIssued = require('../oid4vc/vc_issued');
 // The principal database, for the sign-out instant that stops an older
 // ticket-granting ticket at the KDC.
@@ -1420,12 +1427,22 @@ class Logout {
       // (`vc_issued.ts`'s `disown()`), and sets each one's status-list bit so
       // a verifier elsewhere learns it too.
       //
-      // **A GLOBAL SIGN-OUT ENDS THEM; AN ORDINARY ONE DOES NOT.** This family
-      // is reached from `/logout`, `/admin/logout` and `/admin-api/logout`;
-      // the per-session sign-outs — `/oauth2/logout`, SAML Single Logout,
-      // `wsignout1.0`, the console's and the portal's Sign out — go through
-      // `authn.dropSession()` and never here, so a person who signs out of one
-      // application signs back in with the wallet they hold.
+      // **AN ADMINISTRATOR'S GLOBAL SIGN-OUT ENDS THEM, AND SO DOES TICKING
+      // THE ROW. THE PERSON'S OWN GLOBAL LOGOUT AT /logout DOES NOT, AND
+      // NEITHER DOES AN ORDINARY ONE.** This family is reached from
+      // `/logout`, `/admin/logout` and `/admin-api/logout`. The person's own
+      // global act — the Global logout button, and a POST with nothing
+      // selected, which the page says is the same act — passes
+      // `spareCredentials` and leaves these rows alone, and the `Credential (`
+      // rows of `issued` with them: the credential stays valid, and so does
+      // the DID it is bound to. Ticking the row still ends it. An
+      // administrator's global sign-out, an account disable, a risk lockout
+      // and a cell's revoke-subject call `terminate()` with an empty
+      // selection and without that flag, and still disown. The per-session
+      // sign-outs — `/oauth2/logout`, SAML Single Logout, `wsignout1.0`, the
+      // console's and the portal's Sign out — go through `authn.dropSession()`
+      // and never here, so a person who signs out of one application signs
+      // back in with the wallet they hold.
       //
       // `endOrder` 26: a credential, with the other credentials, and before
       // the session, on which nothing here depends.
@@ -1825,6 +1842,14 @@ class Logout {
         // that makes the mark worth having, because otherwise this service's
         // answer to "did you sign them out" would depend on which endpoint
         // issued the credential.
+        //
+        // THE PERSON'S OWN GLOBAL SIGN-OUT AT /logout IS THE EXCEPTION FOR ONE
+        // KIND OF ROW: a `Credential (` artifact, the verifiable credential,
+        // whose holder DID is the `did:jwk` an `ldp_vc` names. `terminate()`
+        // skips it when `spareCredentials` is set, which only `endFor()` sets,
+        // because revoking the artifact is what `statusOf()` and
+        // `disownedReason()` read as INVALID. Every other kind in this family
+        // is still marked. An administrator's global sign-out passes no flag.
         //
         // IT IS LAST (`endOrder: 99`) AND STAYS LAST. Nothing depends on these
         // rows, and marking them before the `saml2-sp` family had sent its
@@ -2801,6 +2826,25 @@ class Logout {
     return rows;
   }
 
+  // A verifiable credential, and the DID it is bound to. There is no DID
+  // family: the holder's `did:jwk` lives on the credential, and both of the
+  // acts that invalidate it have to be spared together. `disown()` on
+  // `wallet-credential` sets the status-list bit INVALID and refuses
+  // `/authn/wallet`. `revokeArtifact()` on an `issued` row whose kind is
+  // `Credential (` — `recordCredential()`'s prefix, the format after it —
+  // is what `statusOf()` and `disownedReason()` also read as INVALID.
+  // Either act alone is enough to invalidate the credential.
+  private leavesCredential(family?, row?): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Logout.leavesCredential().");
+    const id = family && family.id;
+    const kind = String((row && row.kind) || '');
+    const leaves = id === 'wallet-credential' ||
+      (id === 'issued' && kind.indexOf('Credential (') === 0);
+    log.debug("Leaving Logout.leavesCredential(). " + leaves);
+    return leaves;
+  }
+
   // ---------------------------------------------------------------------------
   // THE TERMINATION.
   //
@@ -2835,8 +2879,9 @@ class Logout {
    * @param key - the identity key
    * @param selection - row ids to end; empty or absent for global
    * @param opts - `issuer`, `by`, `actor`, `initiatingEntity`, `channel`,
-   *   `base` and `browser`, and `providerCommand: false` to send no OpenID
-   *   Provider Command
+   *   `base` and `browser`, `providerCommand: false` to send no OpenID
+   *   Provider Command, and `spareCredentials` so a global act leaves
+   *   verifiable credentials and the DIDs they are bound to alone
    * @returns what was ended, skipped and unknown, and the notifications,
    *   cleanups, LogoutRequests, partner sign-outs and back-channel deliveries
    *   that follow
@@ -2921,6 +2966,25 @@ class Logout {
           !!ctx.endingSessions[r.sessionId];
         if (!global && !wantedSet[r.id] && !withSession) return;
         delete unknown[r.id];
+        // THE PERSON'S OWN GLOBAL SIGN-OUT AT /logout LEAVES A VERIFIABLE
+        // CREDENTIAL, AND THE DID IT IS BOUND TO, ALONE. `endFor()` is the
+        // only caller that sets `spareCredentials`, and only for an empty
+        // selection: the Global logout button, and the empty POST the page
+        // says is the same act. Reported here rather than omitted, because
+        // a global logout that quietly skipped these would look complete.
+        // An administrator's global sign-out, an account disable, a risk
+        // lockout and a cell's revoke-subject pass no flag and still
+        // disown. A ticked row is a selection, so it is ended.
+        if (global && options.spareCredentials &&
+            this.leavesCredential(family, r)) {
+          skipped.push({ id: r.id, family: family.id, kind: r.kind,
+                         label: r.label,
+                         message: 'a sign-out at /logout leaves ' +
+                             'verifiable credentials and the DIDs they ' +
+                             'are bound to alone. Tick this row to end ' +
+                             'it.' });
+          return;
+        }
         if (!r.terminable || typeof family.terminate !== 'function') {
           // In a GLOBAL logout these are the honest short-fall and are reported
           // as such rather than counted. In a SELECTIVE one somebody has ticked
@@ -3536,7 +3600,9 @@ class Logout {
   //
   // `scope=global` is explicit and an empty selection means the same thing.
   // Both are spelt out because the button says "global" and a caller with no
-  // form should get the same behaviour from an empty body.
+  // form should get the same behaviour from an empty body. Both leave
+  // verifiable credentials, and the DIDs they are bound to, valid
+  // (`spareCredentials`). A ticked row still ends them.
   //
   // The cookie is cleared whenever the CALLER'S OWN session was among the
   // things ended, and only then: this endpoint can end somebody else's
@@ -3567,7 +3633,11 @@ class Logout {
       initiatingEntity: subject.named ? 'admin' : 'user',
       // A noun phrase (#294): it finishes CAEP's "ended by …".
       by: subject.named ? 'a /logout request naming ' +
-          subject.username : 'the person\'s own sign-out at /logout'
+          subject.username : 'the person\'s own sign-out at /logout',
+      // An empty selection is this door's global act. A ticked row is a
+      // selection and still ends the credential. Callers of terminate()
+      // that are not this door pass no flag.
+      spareCredentials: selection.length === 0
     });
     const endedOwn = !!ownSessionId && result.terminated.some((one) => {
       return one.id === 'session:' + ownSessionId;
