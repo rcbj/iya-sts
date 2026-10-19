@@ -828,7 +828,8 @@ per-process jobs and the algorithmic fixes are a follow-up. `scheduler.ts`'s
   and runs on the front for the process's life.
 * **An exemption is a reason**: `onFront: '<why>'` on the registration. An
   empty or non-string one is refused (`STS-SCHED-0009`), and
-  `tests/scheduler_workers.js` F holds it. Two jobs carry one:
+  `tests/scheduler_workers.js` F holds it. Three jobs carry one, the first
+  two because they must:
   `scheduler.history`, which reads the whole of `scheduler.runs`, which a
   worker does not restore (#617), and `keys.data-key-reencrypt`, whose
   `keystore.resealOwnRows()` re-seals the rows THIS process holds sealed in
@@ -854,7 +855,7 @@ per-process jobs and the algorithmic fixes are a follow-up. `scheduler.ts`'s
   and its loop delay is mostly the I/O it exists to do.
 
 **The jobs registered today**, and where each is argued. Every cluster
-row's body runs on a request worker except the two marked **front**:
+row's body runs on a request worker except those marked **front**:
 
 | Job | Kind, scope | Owner and argument |
 |---|---|---|
@@ -889,7 +890,7 @@ row's body runs on a request worker except the two marked **front**:
 | `risk.retention` | cluster, service; hourly — deletes the rows of superseded and refused dataset versions and the failures past their retention (#62) | `risk/risk_datasets.ts` |
 | `risk.stalled-imports` | cluster, service; `risk.uploadSweepS` — refuses a dataset version left `loading` with no progress for `risk.importStallMinutes`, the import whose process stopped (#215) | `risk/risk_datasets.ts` |
 | `risk.upload-cleanup` | per-process, quiet; `risk.uploadSweepS` — touches the upload files this process is importing and deletes the leftovers of one that stopped from `risk.uploadDirectory` (#215) | `risk/risk_upload.ts` |
-| `saml2.sp-metadata-refresh` | cluster, service; `saml2.spMetadataRefreshIntervalS` | `saml/sp_metadata.ts` (P5) |
+| `saml2.sp-metadata-refresh` | cluster, service, **front** (registered by the front process alone); `saml2.spMetadataRefreshIntervalS` | `saml/sp_metadata.ts` (P5) |
 | `persistence.change-log-pull` | per-process, **quiet**; `persistence.pollInterval` | `persistence/persistence_replication.js` (P5) |
 | `persistence.change-log-purge` | cluster, service; five minutes — replaced the `ops.change-log-purge` lease | `persistence/persistence_replication.js` (P5) |
 | `persistence.tombstone-purge` | cluster, service; ten minutes, registered at the first flush | `persistence/persistence_minted.js` (P5) |
