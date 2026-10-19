@@ -1760,8 +1760,37 @@ store now (`tls.presentedChains`), and `common/app.js` mounts a bounded wait
 above the request pool for a session that resumed before its chain's row
 arrived (`tls.resumedChainWaitMs`, `STS-TLS-0038` when it runs out).
 
-**HTTP/2 is not offered** — express cannot run on node's own `http2` server,
-and rcbj wants that out of the box rather than written here: #407.
+**HTTP/2 is offered since #407 (2026-10-19)**, beside HTTP/1.1 and chosen
+per connection by ALPN: the main port is `http2.createSecureServer()` with
+`allowHTTP1`, a `tls.Server` like `https.Server`, so every option and
+registration above — the truststore, client authentication, the ticket key,
+the connection observer, JA4 and the PROXY protocol — applies to it
+unchanged. Plain express cannot run on it (4.22 and 5.3 both throw on the
+first HTTP/2 request: express sets an `http.IncomingMessage` prototype and
+`Http2ServerRequest` keeps its state behind its own), so `common/app.js`
+builds the application through `http2-express`, which picks the prototype by
+protocol; an HTTP/1.1 request gets express's own. Four things follow:
+
+* **A socket is a connection, not a request.** On an HTTP/2 request
+  `req.socket` is node's proxy to the session's socket, shared with every
+  other stream. `getPeerCertificate()` through it is right (the certificate
+  is the connection's); ENDING it is not, which is why
+  `common/lingering_close.js`'s `arm()` does nothing for an HTTP/2 request —
+  the stream closes with RST_STREAM(NO_ERROR) on its own (RFC 9113 8.1).
+* **Connection-specific headers are forbidden** (RFC 9113 8.2.2):
+  `Connection`, `Keep-Alive`, `Transfer-Encoding`. Node drops one with a
+  warning. `request_pool.js` already strips them from a worker's answer.
+* **A body's length may be the framing's alone** (RFC 9113 8.1.1), and
+  body-parser reads a request with neither `content-length` nor
+  `transfer-encoding` as having no body — a token request over HTTP/2
+  without a length answered `grant_type ''`. `common/http2_framing.ts` marks
+  such a request `transfer-encoding: chunked` on the main port's `request`
+  event, ahead of the application, because nothing may sit above the realm
+  middleware.
+* **Custom listeners are still `https.createServer()`**, HTTP/1.1 only.
+  Nothing prevents them; #407 asked for the main port.
+
+`tests/main_port_http2.js` holds all of it.
 
 ## Custom listeners (#472, 2026-10-07; a realm's own, #99, among them) — rule 3cg
 

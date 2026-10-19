@@ -618,8 +618,15 @@ is changed: on `/admin/tls` (or `/admin/config` for `global.*`), through
   seconds (pipelined requests are answered in order), `tls.sessionTimeoutS`
   lets a session resume for 300 seconds, and the shared key lets it resume on
   any node. Keep a load balancer's idle timeout above the keep-alive (an AWS
-  NLB's is 350 seconds). HTTP/2 is not offered: express cannot run on node's
-  own HTTP/2 server (#407).
+  NLB's is 350 seconds).
+* **The main port speaks HTTP/2 as well as HTTP/1.1 (#407).** ALPN chooses
+  per connection: a client that offers `h2` gets HTTP/2, and one TLS
+  connection carries every request a browser makes in parallel; a client
+  that offers only `http/1.1` is answered exactly as before. A client
+  certificate is asked for and bound the same way over either. A load
+  balancer that terminates TLS speaks to this port in whatever protocol it
+  is configured to; one that passes TCP through (an NLB) leaves the choice
+  to the client.
 * **The serial is random.** A constant serial made Firefox refuse the port after
   a restart with an error no "accept the risk" could get past.
 

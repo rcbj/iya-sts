@@ -1200,6 +1200,11 @@ if (useHttps) {
   // listener and editable since #429: listenerMain.keepAliveTimeoutS and the
   // rest, inheriting http.*, re-applied by tls_server.js when they change.
   tlsServer.registerHttpListener(mainServer, 'main');
+  // AN HTTP/2 BODY WITH NO LENGTH IS STILL A BODY (#407): marked before the
+  // application's own `request` listener reads it, since nothing may sit
+  // above the realm middleware — common/http2_framing.ts.
+  mainServer.prependListener('request',
+    require('./common/http2_framing').markFramedBody);
   // REGISTERED SO THAT A LATER TRUSTSTORE CHANGE REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It
