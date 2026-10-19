@@ -11107,7 +11107,13 @@ it is missing. **A console request also has a budget on the sum (#359).**
 only (`ldap.workerDirectoryBudgetMs`, 5,000). Each `query()` waits only for
 the room that is left and, once the budget is spent, throws `STS-LDAP-0175`
 without posting another question. No slot means no budget — SCIM, an LDAP
-operation, startup and the scheduler keep the per-question bound alone. The
+operation, startup and the scheduler keep the per-question bound alone.
+**The budget ends with its request** (the review of #692): an
+`AsyncLocalStorage` store follows every timer and job a request starts, and
+a lazily armed job once carried a spent budget for the life of the process.
+So the slot closes on the response's `finish` or `close`, and the
+scheduler's `setTimer` and `persistence.js`'s flush and retry arm their
+timers through `SyncQuery.outsideBudget()`. The
 API stays synchronous. A thread that dies is seen as a timeout, because its
 `exit` event is delivered by the loop the question holds; the next question
 starts a new one (`STS-LDAP-0132` is logged when the event arrives). The
