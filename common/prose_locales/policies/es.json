@@ -1367,6 +1367,118 @@
     "en": "cb8bd4fa96dda063",
     "text": "ninguna aplicación"
   },
+  "kinds.attributes.label": {
+    "en": "6619889d4a9f485d",
+    "text": "Política de atributos"
+  },
+  "kinds.attributes.governs": {
+    "en": "20a9273a811994df",
+    "text": "los atributos que toda persona de este dominio debe tener, y los atributos personalizados que puede recibir una persona aquí"
+  },
+  "kinds.attributes.appliesTo": {
+    "en": "c68abf6d2b5ec2a2",
+    "text": "a la PRÓXIMA persona creada y a la PRÓXIMA modificación en este dominio; una persona a la que ya le falta un atributo exigido conserva todas las demás puertas"
+  },
+  "kinds.attributes.fallsBackTo": {
+    "en": "c352143b534bf909",
+    "text": "el perfil del dominio predeterminado si tiene uno, y el valor predeterminado integrado (givenName, sn y mail) si no"
+  },
+  "kinds.attributes.param.noun": {
+    "en": "58bb93afc775aa81",
+    "text": "perfil de política de atributos"
+  },
+  "attributes.FIELDS.requiredAttributes.label": {
+    "en": "59a6e795223fdea0",
+    "text": "Atributos obligatorios"
+  },
+  "attributes.FIELDS.requiredAttributes.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "Los atributos de los que toda persona de este dominio debe tener un valor, además de uid, cn y sn, que son siempre obligatorios. Una lista, o separados por comas. Cualquier atributo que pueda recibir una persona: el esquema inetOrgPerson, el catálogo de credenciales, mail y los atributos personalizados de este dominio. Se aplica en modo de producto: una creación sin alguno se rechaza en todas las puertas, y una modificación no puede quitar uno. Predeterminado: givenName, sn y mail."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
+    "en": "12630f210e385441",
+    "text": "La clase de este servicio para una política de atributos: los atributos que toda persona de un dominio debe tener. Nombrada por el PERFIL (`cn=default`)."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
+    "en": "a1a975c54d05126f",
+    "text": "La clase de este servicio para un atributo personalizado de un dominio, en ou=attributeDefinitions, nombrada por el atributo (`cn=<name>`)."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeRequired.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "Los atributos de los que toda persona de este dominio debe tener un valor, además de uid, cn y sn, que son siempre obligatorios. Una lista, o separados por comas. Cualquier atributo que pueda recibir una persona: el esquema inetOrgPerson, el catálogo de credenciales, mail y los atributos personalizados de este dominio. Se aplica en modo de producto: una creación sin alguno se rechaza en todas las puertas, y una modificación no puede quitar uno. Predeterminado: givenName, sn y mail."
+  },
+  "attributes.SCHEMA.attributes.description.what": {
+    "en": "8e8f462fddce3d22",
+    "text": "Para qué sirve el perfil o el atributo personalizado, para la próxima persona."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeLabel.what": {
+    "en": "8d93b7c14ddfd1af",
+    "text": "La etiqueta de un atributo personalizado, que se muestra junto a su nombre."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSyntax.what": {
+    "en": "b5ccce4927fccd38",
+    "text": "La sintaxis de un atributo personalizado: string, integer, boolean, date, email, uri o dn. Sus valores se comprueban según ella."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
+    "en": "b6a0dfd5be9d81fd",
+    "text": "TRUE si un atributo personalizado tiene un solo valor, FALSE si tiene varios."
+  },
+  "attributes.SYNTAXES.string.what": {
+    "en": "6f2c36f9a836b2f4",
+    "text": "Texto, como máximo 1024 caracteres, sin caracteres de control."
+  },
+  "attributes.SYNTAXES.integer.what": {
+    "en": "258ac79871ab42ad",
+    "text": "Un número entero (RFC 4517, sección 3.3.16)."
+  },
+  "attributes.SYNTAXES.boolean.what": {
+    "en": "5ab7cfb21a4d669d",
+    "text": "TRUE o FALSE (RFC 4517, sección 3.3.3)."
+  },
+  "attributes.SYNTAXES.date.what": {
+    "en": "70f2250e9d5c193d",
+    "text": "Una fecha, guardada como AAAAMMDD y aceptada también como AAAA-MM-DD."
+  },
+  "attributes.SYNTAXES.email.what": {
+    "en": "daebff95f510f8db",
+    "text": "Una dirección de correo electrónico (addr-spec de la RFC 5322, local@dominio)."
+  },
+  "attributes.SYNTAXES.uri.what": {
+    "en": "16bf68a2b162f491",
+    "text": "Una URL http o https."
+  },
+  "attributes.SYNTAXES.dn.what": {
+    "en": "3feab9c94c12f33d",
+    "text": "Un nombre distintivo (RFC 4514)."
+  },
+  "attributes.sentences.required": {
+    "en": "a35b08811463b6be",
+    "text": "una persona de este dominio debe tener {{list}} para ser creada, y una modificación no puede quitar el valor de ninguno de ellos"
+  },
+  "attributes.sentences.enforced": {
+    "en": "babafe534682a510",
+    "text": "aplicada: este dominio está en modo de producto, así que toda puerta que crea o modifica una persona la rechaza sin ellos"
+  },
+  "attributes.sentences.notEnforced": {
+    "en": "9e7b85236de9223c",
+    "text": "no aplicada: este dominio está en modo de desarrollo, donde una persona puede crearse con solo un nombre de usuario"
+  },
+  "attributes.sentences.custom": {
+    "en": "2296301f35c39ed9",
+    "text": "este dominio define {{n}} atributo(s) personalizado(s): {{list}}"
+  },
+  "attributes.sentences.noCustom": {
+    "en": "f9d920b6ce8d9d03",
+    "text": "este dominio no define ningún atributo personalizado"
+  },
+  "attributes.sentences.defined": {
+    "en": "3867ffa1e351efa2",
+    "text": "El atributo personalizado {{name}} está definido en este dominio en {{dn}}. Ahora puede darse a una persona y exigirse en esta política."
+  },
+  "attributes.sentences.undefined": {
+    "en": "36e7b5eba26472f2",
+    "text": "El atributo personalizado {{name}} ya no está definido en este dominio."
+  },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",
     "text": "Se guardó el {{noun}} \"{{name}}\" en {{dn}}. Se aplica a {{appliesTo}}."

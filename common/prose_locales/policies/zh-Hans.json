@@ -1367,6 +1367,118 @@
     "en": "cb8bd4fa96dda063",
     "text": "无应用"
   },
+  "kinds.attributes.label": {
+    "en": "6619889d4a9f485d",
+    "text": "属性策略"
+  },
+  "kinds.attributes.governs": {
+    "en": "20a9273a811994df",
+    "text": "此领域中每个人都必须持有的属性，以及此处人员可以拥有的自定义属性"
+  },
+  "kinds.attributes.appliesTo": {
+    "en": "c68abf6d2b5ec2a2",
+    "text": "此领域中下一个创建的人员和下一次编辑；已经缺少必填属性的人员仍可使用所有其他入口"
+  },
+  "kinds.attributes.fallsBackTo": {
+    "en": "c352143b534bf909",
+    "text": "默认领域的配置文件（如有），否则为内置默认值（givenName、sn 和 mail）"
+  },
+  "kinds.attributes.param.noun": {
+    "en": "58bb93afc775aa81",
+    "text": "属性策略配置文件"
+  },
+  "attributes.FIELDS.requiredAttributes.label": {
+    "en": "59a6e795223fdea0",
+    "text": "必填属性"
+  },
+  "attributes.FIELDS.requiredAttributes.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "除始终必填的 uid、cn 和 sn 之外，此领域中每个人都必须有值的属性。列表，或以逗号分隔。可以是人员可拥有的任何属性：inetOrgPerson 架构、凭据目录、mail，以及此领域的自定义属性。在 product 模式下强制执行：缺少其中任何一项的创建在每个入口都会被拒绝，编辑也不能移除其中任何一项。默认为 givenName、sn 和 mail。"
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
+    "en": "12630f210e385441",
+    "text": "本服务用于属性策略的类：一个领域中每个人都必须持有的属性。以配置文件命名（`cn=default`）。"
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
+    "en": "a1a975c54d05126f",
+    "text": "本服务用于领域自定义属性的类，位于 ou=attributeDefinitions，以属性命名（`cn=<name>`）。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributeRequired.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "除始终必填的 uid、cn 和 sn 之外，此领域中每个人都必须有值的属性。列表，或以逗号分隔。可以是人员可拥有的任何属性：inetOrgPerson 架构、凭据目录、mail，以及此领域的自定义属性。在 product 模式下强制执行：缺少其中任何一项的创建在每个入口都会被拒绝，编辑也不能移除其中任何一项。默认为 givenName、sn 和 mail。"
+  },
+  "attributes.SCHEMA.attributes.description.what": {
+    "en": "8e8f462fddce3d22",
+    "text": "配置文件或自定义属性的用途，供下一个人参考。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributeLabel.what": {
+    "en": "8d93b7c14ddfd1af",
+    "text": "自定义属性的标签，显示在其名称旁边。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSyntax.what": {
+    "en": "b5ccce4927fccd38",
+    "text": "自定义属性的语法：string、integer、boolean、date、email、uri 或 dn。其值按该语法检查。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
+    "en": "b6a0dfd5be9d81fd",
+    "text": "自定义属性只有一个值时为 TRUE，有多个值时为 FALSE。"
+  },
+  "attributes.SYNTAXES.string.what": {
+    "en": "6f2c36f9a836b2f4",
+    "text": "文本，最多 1024 个字符，不含控制字符。"
+  },
+  "attributes.SYNTAXES.integer.what": {
+    "en": "258ac79871ab42ad",
+    "text": "整数（RFC 4517 第 3.3.16 节）。"
+  },
+  "attributes.SYNTAXES.boolean.what": {
+    "en": "5ab7cfb21a4d669d",
+    "text": "TRUE 或 FALSE（RFC 4517 第 3.3.3 节）。"
+  },
+  "attributes.SYNTAXES.date.what": {
+    "en": "70f2250e9d5c193d",
+    "text": "日期，存储为 YYYYMMDD，也接受 YYYY-MM-DD。"
+  },
+  "attributes.SYNTAXES.email.what": {
+    "en": "daebff95f510f8db",
+    "text": "电子邮件地址（RFC 5322 addr-spec，local@domain）。"
+  },
+  "attributes.SYNTAXES.uri.what": {
+    "en": "16bf68a2b162f491",
+    "text": "http 或 https URL。"
+  },
+  "attributes.SYNTAXES.dn.what": {
+    "en": "3feab9c94c12f33d",
+    "text": "可分辨名称（RFC 4514）。"
+  },
+  "attributes.sentences.required": {
+    "en": "a35b08811463b6be",
+    "text": "此领域中的人员必须持有 {{list}} 才能被创建，编辑也不能移除其中任何一项的值"
+  },
+  "attributes.sentences.enforced": {
+    "en": "babafe534682a510",
+    "text": "已强制执行：此领域处于 product 模式，因此每个创建或编辑人员的入口都会拒绝缺少它们的人员"
+  },
+  "attributes.sentences.notEnforced": {
+    "en": "9e7b85236de9223c",
+    "text": "未强制执行：此领域处于开发模式，只需用户名即可创建人员"
+  },
+  "attributes.sentences.custom": {
+    "en": "2296301f35c39ed9",
+    "text": "此领域定义了 {{n}} 个自定义属性：{{list}}"
+  },
+  "attributes.sentences.noCustom": {
+    "en": "f9d920b6ce8d9d03",
+    "text": "此领域未定义任何自定义属性"
+  },
+  "attributes.sentences.defined": {
+    "en": "3867ffa1e351efa2",
+    "text": "自定义属性 {{name}} 已在此领域的 {{dn}} 定义。现在可以将其赋予人员，并由此策略设为必填。"
+  },
+  "attributes.sentences.undefined": {
+    "en": "36e7b5eba26472f2",
+    "text": "自定义属性 {{name}} 已不再在此领域中定义。"
+  },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",
     "text": "{{noun}}“{{name}}”已保存在 {{dn}}。它适用于{{appliesTo}}。"

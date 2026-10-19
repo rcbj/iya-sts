@@ -836,5 +836,9 @@
   "serviceAccountSection.itselfTip": "Un compte de service ne peut pas être son propre propriétaire.",
   "serviceAccountSection.addTip": "Fait de {value} un propriétaire. C’est écrit lorsque vous enregistrez le formulaire.",
   "serviceAccountSection.findHint": "Saisissez dans la case pour rechercher ; une case vide liste {which, select, groups {tous les groupes} other {toutes les personnes}}.",
-  "serviceAccountSection.destinationHeading": "Destination d’envoi"
+  "serviceAccountSection.destinationHeading": "Destination d’envoi",
+  "personFieldsSection.policyRequired": " La politique d’attributs du domaine l’exige.",
+  "newUserBody.requiredEnforced": "Toute personne de ce domaine doit avoir <strong>{list}</strong>, et une création sans l’un d’eux est refusée ; chacun de ces champs ci-dessous est marqué obligatoire, et un <code>cn</code> laissé vide est formé du prénom et du nom. La liste est celle de la ",
+  "newUserBody.requiredNotEnforced": "La politique d’attributs du domaine nomme <strong>{list}</strong> ; elle n’est pas appliquée en mode développement, donc une création sans eux est acceptée ici. La liste est celle de la ",
+  "newUserBody.requiredPolicy": "politique d’attributs"
 }

@@ -77,5 +77,6 @@
   "mail.none": "Den här sfären har ingen e-posttransport (",
   "mail.link": "E-post",
   "mail.noneAfter": "), så {what} visas för dig att vidarebefordra.",
-  "mail.box": "skicka {what} med e-post till adressen på deras post, och visa det inte för mig"
+  "mail.box": "skicka {what} med e-post till adressen på deras post, och visa det inte för mig",
+  "grid.required": " &middot; krävs"
 }

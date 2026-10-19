@@ -1367,6 +1367,118 @@
     "en": "cb8bd4fa96dda063",
     "text": "walang application"
   },
+  "kinds.attributes.label": {
+    "en": "6619889d4a9f485d",
+    "text": "Attribute policy"
+  },
+  "kinds.attributes.governs": {
+    "en": "20a9273a811994df",
+    "text": "ang mga attribute na dapat hawak ng bawat tao sa realm na ito, at ang mga custom attribute na puwedeng ibigay sa isang tao rito"
+  },
+  "kinds.attributes.appliesTo": {
+    "en": "c68abf6d2b5ec2a2",
+    "text": "sa SUSUNOD na taong gagawin at sa SUSUNOD na edit sa realm na ito; ang taong kulang na ng kailangang attribute ay may access pa rin sa lahat ng ibang pinto"
+  },
+  "kinds.attributes.fallsBackTo": {
+    "en": "c352143b534bf909",
+    "text": "ang profile ng default na realm kung mayroon ito, at ang built-in na default (givenName, sn at mail) kung wala"
+  },
+  "kinds.attributes.param.noun": {
+    "en": "58bb93afc775aa81",
+    "text": "profile ng attribute policy"
+  },
+  "attributes.FIELDS.requiredAttributes.label": {
+    "en": "59a6e795223fdea0",
+    "text": "Mga kailangang attribute"
+  },
+  "attributes.FIELDS.requiredAttributes.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "Ang mga attribute na dapat may value ang bawat tao sa realm na ito, bukod sa uid, cn at sn, na laging kailangan. Isang listahan, o pinaghihiwalay ng kuwit. Anumang attribute na puwedeng ibigay sa isang tao: ang inetOrgPerson schema, ang credential catalogue, mail, at ang mga custom attribute ng realm na ito. Ipinatutupad sa product mode: tinatanggihan sa bawat pinto ang paggawa nang wala ang isa, at hindi puwedeng alisin ng isang edit ang isa. Default ang givenName, sn at mail."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
+    "en": "12630f210e385441",
+    "text": "Ang class ng serbisyong ito para sa attribute policy: ang mga attribute na dapat hawak ng bawat tao sa isang realm. Pinangangalanan ng PROFILE (`cn=default`)."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
+    "en": "a1a975c54d05126f",
+    "text": "Ang class ng serbisyong ito para sa custom attribute ng isang realm, sa ou=attributeDefinitions, pinangangalanan ng attribute (`cn=<name>`)."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeRequired.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "Ang mga attribute na dapat may value ang bawat tao sa realm na ito, bukod sa uid, cn at sn, na laging kailangan. Isang listahan, o pinaghihiwalay ng kuwit. Anumang attribute na puwedeng ibigay sa isang tao: ang inetOrgPerson schema, ang credential catalogue, mail, at ang mga custom attribute ng realm na ito. Ipinatutupad sa product mode: tinatanggihan sa bawat pinto ang paggawa nang wala ang isa, at hindi puwedeng alisin ng isang edit ang isa. Default ang givenName, sn at mail."
+  },
+  "attributes.SCHEMA.attributes.description.what": {
+    "en": "8e8f462fddce3d22",
+    "text": "Para saan ang profile o ang custom attribute, para sa susunod na tao."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeLabel.what": {
+    "en": "8d93b7c14ddfd1af",
+    "text": "Ang label ng isang custom attribute, ipinapakita sa tabi ng pangalan nito."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSyntax.what": {
+    "en": "b5ccce4927fccd38",
+    "text": "Ang syntax ng isang custom attribute: string, integer, boolean, date, email, uri o dn. Sinusuri ang mga value nito ayon dito."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
+    "en": "b6a0dfd5be9d81fd",
+    "text": "TRUE kung iisa ang value ng custom attribute, FALSE kung marami."
+  },
+  "attributes.SYNTAXES.string.what": {
+    "en": "6f2c36f9a836b2f4",
+    "text": "Teksto, hanggang 1024 na character, walang control character."
+  },
+  "attributes.SYNTAXES.integer.what": {
+    "en": "258ac79871ab42ad",
+    "text": "Isang buong numero (RFC 4517 section 3.3.16)."
+  },
+  "attributes.SYNTAXES.boolean.what": {
+    "en": "5ab7cfb21a4d669d",
+    "text": "TRUE o FALSE (RFC 4517 section 3.3.3)."
+  },
+  "attributes.SYNTAXES.date.what": {
+    "en": "70f2250e9d5c193d",
+    "text": "Isang petsa, itinatago bilang YYYYMMDD at tinatanggap din bilang YYYY-MM-DD."
+  },
+  "attributes.SYNTAXES.email.what": {
+    "en": "daebff95f510f8db",
+    "text": "Isang email address (RFC 5322 addr-spec, local@domain)."
+  },
+  "attributes.SYNTAXES.uri.what": {
+    "en": "16bf68a2b162f491",
+    "text": "Isang http o https na URL."
+  },
+  "attributes.SYNTAXES.dn.what": {
+    "en": "3feab9c94c12f33d",
+    "text": "Isang distinguished name (RFC 4514)."
+  },
+  "attributes.sentences.required": {
+    "en": "a35b08811463b6be",
+    "text": "dapat may {{list}} ang isang tao sa realm na ito para magawa, at hindi puwedeng alisin ng isang edit ang value ng alinman sa mga ito"
+  },
+  "attributes.sentences.enforced": {
+    "en": "babafe534682a510",
+    "text": "ipinatutupad: nasa product mode ang realm na ito, kaya tinatanggihan ng bawat pintong gumagawa o nag-e-edit ng tao ang taong wala ng mga ito"
+  },
+  "attributes.sentences.notEnforced": {
+    "en": "9e7b85236de9223c",
+    "text": "hindi ipinatutupad: nasa development mode ang realm na ito, kung saan puwedeng gumawa ng tao na username lang ang mayroon"
+  },
+  "attributes.sentences.custom": {
+    "en": "2296301f35c39ed9",
+    "text": "tumutukoy ang realm na ito ng {{n}} custom attribute: {{list}}"
+  },
+  "attributes.sentences.noCustom": {
+    "en": "f9d920b6ce8d9d03",
+    "text": "walang custom attribute na tinutukoy ang realm na ito"
+  },
+  "attributes.sentences.defined": {
+    "en": "3867ffa1e351efa2",
+    "text": "Tinukoy ang custom attribute na {{name}} sa realm na ito sa {{dn}}. Puwede na itong ibigay sa isang tao at gawing kailangan ng policy na ito."
+  },
+  "attributes.sentences.undefined": {
+    "en": "36e7b5eba26472f2",
+    "text": "Hindi na tinutukoy ang custom attribute na {{name}} sa realm na ito."
+  },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",
     "text": "Naka-save ang {{noun}} na \"{{name}}\" sa {{dn}}. Nalalapat ito sa {{appliesTo}}."

@@ -11079,6 +11079,13 @@ const CODES = [
       'could not be sealed under a durable key-encryption key, so it was ' +
       'not written.',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0158',
+    summary: 'A federated first sign-in created nobody: in a product-mode ' +
+      'realm the partner supplied no value of an attribute the realm\'s ' +
+      'attribute policy requires of every person (#396), so the sign-in ' +
+      'is refused as one for a person nobody provisioned. Map the attribute ' +
+      'from the partner, or provision the person first.',
+    spec: 'none (the federated sign-in is refused 403, as STS-AUTHN-0180)' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
@@ -12914,6 +12921,78 @@ const CODES = [
       'scan the lists until an autovacuum or the owner\'s VACUUM (ANALYZE) ' +
       'sts_ldap_entries.',
     spec: 'none — an operator tool' },
+  // #396: the attribute policy and the custom attribute register.
+  { code: 'STS-LDAP-0162',
+    summary: 'A person was not created because they would hold no value of ' +
+      'an attribute the realm\'s attribute policy requires (uid, cn and sn ' +
+      'always; givenName and mail by default). Product mode only; asked at ' +
+      'the console, /admin-api, SCIM, an LDAP add and a HOBA registration, ' +
+      'before anything is written.',
+    spec: 'LDAP objectClassViolation (65); SCIM 400 invalidValue; HTTP 400 ' +
+      '(console and API)' },
+  { code: 'STS-LDAP-0163',
+    summary: 'The bulk import did not import a record: in a product-mode ' +
+      'realm it carries no value of an attribute the realm\'s attribute ' +
+      'policy requires (#396), as STS-LDAP-0162 refuses an add.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-LDAP-0164',
+    summary: 'An edit of a person was refused because it would take away ' +
+      'the value of an attribute the realm\'s attribute policy requires — ' +
+      'the attribute editor, /admin-api/users/*-attribute, an LDAP modify ' +
+      'or a SCIM replace or patch. Product mode only, and only a value the ' +
+      'person held: one they already lacked is not refused.',
+    spec: 'LDAP objectClassViolation (65); SCIM 400 invalidValue; HTTP 400 ' +
+      '(console and API)' },
+  { code: 'STS-LDAP-0165',
+    summary: 'An attribute policy save or reset named a profile other than ' +
+      'default, the one the policy has (#396).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-LDAP-0166',
+    summary: 'An attribute policy save was refused: requiredAttributes was ' +
+      'missing, held more than 256 names, or named an attribute a person ' +
+      'in the realm cannot be given a value for — userPassword, a binary ' +
+      'attribute, memberOf, an sts attribute, or a custom attribute the ' +
+      'realm does not define (#396).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-LDAP-0167',
+    summary: 'The attribute policy or a custom attribute could not be ' +
+      'written: this process has no embedded directory, so there is no ' +
+      'ou=attributePolicies or ou=attributeDefinitions (#396).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-LDAP-0168',
+    summary: 'The directory did not store the attribute policy or a custom ' +
+      'attribute: it holds its maximum of ldap.maxEntries entries (#396).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-LDAP-0169',
+    summary: 'A custom attribute was not defined: its name is not an RFC ' +
+      '4512 descr of at most 64 characters, its label is missing, longer ' +
+      'than 128 or holds a control character, its syntax is not one of ' +
+      'string, integer, boolean, date, email, uri and dn, whether it holds ' +
+      'several values is neither yes nor no, or its description is too ' +
+      'long (#396).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-LDAP-0170',
+    summary: 'A custom attribute was not defined: the realm already defines ' +
+      'it, the directory already knows the name (a schema, catalogue or ' +
+      'service attribute), it is memberOf, or it begins sts (#396).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-LDAP-0171',
+    summary: 'A custom attribute was not defined: the realm defines its ' +
+      'maximum of 100 (#396).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-LDAP-0172',
+    summary: 'A custom attribute was not removed: a person in the realm ' +
+      'holds a value of it, and a definition removed from under its values ' +
+      'would leave data no door offers again (#396).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-LDAP-0173',
+    summary: 'A custom attribute was not removed: the realm\'s own ' +
+      'attribute policy requires it (#396).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-LDAP-0174',
+    summary: 'A custom attribute was not removed: the realm defines none ' +
+      'by that name (#396).',
+    spec: 'HTTP 400 (console and API)' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +

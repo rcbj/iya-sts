@@ -836,5 +836,9 @@
   "serviceAccountSection.itselfTip": "Ett tjänstekonto kan inte äga sig självt.",
   "serviceAccountSection.addTip": "Gör {value} till ägare. Det skrivs när du sparar formuläret.",
   "serviceAccountSection.findHint": "Skriv i rutan för att söka; en tom ruta listar {which, select, groups {varje grupp} other {varje person}}.",
-  "serviceAccountSection.destinationHeading": "Push-mål"
+  "serviceAccountSection.destinationHeading": "Push-mål",
+  "personFieldsSection.policyRequired": " Sfärens attributpolicy kräver det.",
+  "newUserBody.requiredEnforced": "Varje person i den här sfären måste ha <strong>{list}</strong>, och att skapa en person utan något av dem nekas; varje sådant fält nedan är markerat som obligatoriskt, och ett tomt <code>cn</code> bildas av förnamn och efternamn. Listan kommer från ",
+  "newUserBody.requiredNotEnforced": "Sfärens attributpolicy anger <strong>{list}</strong>; den tillämpas inte i utvecklingsläge, så att skapa en person utan dem godtas här. Listan kommer från ",
+  "newUserBody.requiredPolicy": "attributpolicyn"
 }

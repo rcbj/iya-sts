@@ -836,5 +836,9 @@
   "serviceAccountSection.itselfTip": "Hindi maaaring maging may-ari ng sarili nito ang isang service account.",
   "serviceAccountSection.addTip": "Gawing may-ari si {value}. Isusulat ito kapag sine-save mo ang form.",
   "serviceAccountSection.findHint": "Mag-type sa kahon para maghanap; ililista ng walang laman na kahon ang bawat {which, select, groups {grupo} other {tao}}.",
-  "serviceAccountSection.destinationHeading": "Push destination"
+  "serviceAccountSection.destinationHeading": "Push destination",
+  "personFieldsSection.policyRequired": " Kailangan ito ng attribute policy ng realm.",
+  "newUserBody.requiredEnforced": "Dapat may <strong>{list}</strong> ang bawat tao sa realm na ito, at tinatanggihan ang paggawa nang wala ang isa sa mga ito; minarkahang kailangan ang bawat ganoong field sa ibaba, at ang <code>cn</code> na iniwang walang laman ay bubuuin mula sa pangalan at apelyido. Ang listahan ay mula sa ",
+  "newUserBody.requiredNotEnforced": "Pinangangalanan ng attribute policy ng realm ang <strong>{list}</strong>; hindi ito ipinatutupad sa development mode, kaya tinatanggap dito ang paggawa nang wala ang mga ito. Ang listahan ay mula sa ",
+  "newUserBody.requiredPolicy": "attribute policy"
 }

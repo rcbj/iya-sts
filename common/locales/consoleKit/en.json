@@ -77,5 +77,6 @@
   "mail.none": "This realm has no mail transport (",
   "mail.link": "Mail",
   "mail.noneAfter": "), so {what} is shown to you to pass on.",
-  "mail.box": "mail {what} to the address on their entry, and do not show it to me"
+  "mail.box": "mail {what} to the address on their entry, and do not show it to me",
+  "grid.required": " &middot; required"
 }

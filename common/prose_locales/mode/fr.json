@@ -599,6 +599,18 @@
     "en": "3a1905ca05d2e355",
     "text": "Une valeur provient de l’entrée d’annuaire de la personne ou est omise ; les `verified_claims` ne sont publiés qu’à partir d’une vérification enregistrée sur l’entrée, et email_verified n’est à true que pour une adresse vérifiée : une adresse que la personne a prouvée par un lien envoyé par courriel (#63), ou une adresse écrite par une source de confiance — un administrateur (la console, /admin-api, ou une écriture LDAP détenant Admin Write), SCIM, ou un partenaire de fédération qui n’a pas indiqué email_verified à false (#64)."
   },
+  "mode.requirements.required-attributes.what": {
+    "en": "766f977cdfc5a340",
+    "text": "Une personne porte les attributs qu’exige la politique d’attributs du domaine"
+  },
+  "mode.requirements.required-attributes.development": {
+    "en": "9f3eb5f6be8b0a4f",
+    "text": "La politique est stockée et affichée dans Annuaire > Politiques, et n’est pas appliquée : une personne peut être créée avec un simple nom d’utilisateur, et une modification peut vider tout attribut sauf cn et sn."
+  },
+  "mode.requirements.required-attributes.product": {
+    "en": "1217261af0bae35e",
+    "text": "Une création qui laisse un attribut obligatoire sans valeur est refusée (STS-LDAP-0162) à toutes les portes — la console, /admin-api, SCIM, un ajout LDAP (objectClassViolation, 65), un enregistrement HOBA et l’import en masse (STS-LDAP-0163) — et une première connexion fédérée dont le partenaire n’en a pas fourni ne crée personne (STS-FED-0158). Une modification qui retirerait une valeur obligatoire est refusée (STS-LDAP-0164). uid, cn et sn sont toujours obligatoires ; givenName et mail par défaut. Une personne à qui il en manquait déjà un ne se voit refuser ni une connexion ni la modification d’autre chose."
+  },
   "mode.requirements.saml-request-signatures.what": {
     "en": "85e7bc435ce1b0c0",
     "text": "La requête d’un fournisseur de services SAML 2.0 est signée"

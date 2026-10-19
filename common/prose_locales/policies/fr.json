@@ -1367,6 +1367,118 @@
     "en": "cb8bd4fa96dda063",
     "text": "aucune application"
   },
+  "kinds.attributes.label": {
+    "en": "6619889d4a9f485d",
+    "text": "Politique d’attributs"
+  },
+  "kinds.attributes.governs": {
+    "en": "20a9273a811994df",
+    "text": "les attributs que toute personne de ce domaine doit avoir, et les attributs personnalisés qu’une personne d’ici peut recevoir"
+  },
+  "kinds.attributes.appliesTo": {
+    "en": "c68abf6d2b5ec2a2",
+    "text": "à la PROCHAINE personne créée et à la PROCHAINE modification dans ce domaine ; une personne à qui manque déjà un attribut exigé garde toutes les autres portes"
+  },
+  "kinds.attributes.fallsBackTo": {
+    "en": "c352143b534bf909",
+    "text": "le profil du domaine par défaut s’il en a un, et la valeur par défaut intégrée (givenName, sn et mail) sinon"
+  },
+  "kinds.attributes.param.noun": {
+    "en": "58bb93afc775aa81",
+    "text": "profil de politique d’attributs"
+  },
+  "attributes.FIELDS.requiredAttributes.label": {
+    "en": "59a6e795223fdea0",
+    "text": "Attributs obligatoires"
+  },
+  "attributes.FIELDS.requiredAttributes.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "Les attributs dont toute personne de ce domaine doit avoir une valeur, en plus de uid, cn et sn, toujours obligatoires. Une liste, ou séparés par des virgules. Tout attribut qu’une personne peut recevoir : le schéma inetOrgPerson, le catalogue des identifiants, mail, et les attributs personnalisés de ce domaine. Appliqué en mode produit : une création sans l’un d’eux est refusée à toutes les portes, et une modification ne peut pas en retirer un. Par défaut givenName, sn et mail."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
+    "en": "12630f210e385441",
+    "text": "La classe de ce service pour une politique d’attributs : les attributs que toute personne d’un domaine doit avoir. Nommée par le PROFIL (`cn=default`)."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
+    "en": "a1a975c54d05126f",
+    "text": "La classe de ce service pour un attribut personnalisé d’un domaine, dans ou=attributeDefinitions, nommée par l’attribut (`cn=<name>`)."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeRequired.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "Les attributs dont toute personne de ce domaine doit avoir une valeur, en plus de uid, cn et sn, toujours obligatoires. Une liste, ou séparés par des virgules. Tout attribut qu’une personne peut recevoir : le schéma inetOrgPerson, le catalogue des identifiants, mail, et les attributs personnalisés de ce domaine. Appliqué en mode produit : une création sans l’un d’eux est refusée à toutes les portes, et une modification ne peut pas en retirer un. Par défaut givenName, sn et mail."
+  },
+  "attributes.SCHEMA.attributes.description.what": {
+    "en": "8e8f462fddce3d22",
+    "text": "À quoi sert le profil ou l’attribut personnalisé, pour la personne suivante."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeLabel.what": {
+    "en": "8d93b7c14ddfd1af",
+    "text": "Le libellé d’un attribut personnalisé, affiché à côté de son nom."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSyntax.what": {
+    "en": "b5ccce4927fccd38",
+    "text": "La syntaxe d’un attribut personnalisé : string, integer, boolean, date, email, uri ou dn. Ses valeurs sont vérifiées selon elle."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
+    "en": "b6a0dfd5be9d81fd",
+    "text": "TRUE si un attribut personnalisé a une seule valeur, FALSE s’il en a plusieurs."
+  },
+  "attributes.SYNTAXES.string.what": {
+    "en": "6f2c36f9a836b2f4",
+    "text": "Du texte, au plus 1024 caractères, sans caractère de contrôle."
+  },
+  "attributes.SYNTAXES.integer.what": {
+    "en": "258ac79871ab42ad",
+    "text": "Un nombre entier (RFC 4517, section 3.3.16)."
+  },
+  "attributes.SYNTAXES.boolean.what": {
+    "en": "5ab7cfb21a4d669d",
+    "text": "TRUE ou FALSE (RFC 4517, section 3.3.3)."
+  },
+  "attributes.SYNTAXES.date.what": {
+    "en": "70f2250e9d5c193d",
+    "text": "Une date, stockée AAAAMMJJ et acceptée aussi sous la forme AAAA-MM-JJ."
+  },
+  "attributes.SYNTAXES.email.what": {
+    "en": "daebff95f510f8db",
+    "text": "Une adresse électronique (addr-spec de la RFC 5322, local@domaine)."
+  },
+  "attributes.SYNTAXES.uri.what": {
+    "en": "16bf68a2b162f491",
+    "text": "Une URL http ou https."
+  },
+  "attributes.SYNTAXES.dn.what": {
+    "en": "3feab9c94c12f33d",
+    "text": "Un nom distinctif (RFC 4514)."
+  },
+  "attributes.sentences.required": {
+    "en": "a35b08811463b6be",
+    "text": "une personne de ce domaine doit avoir {{list}} pour être créée, et une modification ne peut retirer la valeur d’aucun d’eux"
+  },
+  "attributes.sentences.enforced": {
+    "en": "babafe534682a510",
+    "text": "appliquée : ce domaine est en mode produit, donc toute porte qui crée ou modifie une personne la refuse sans eux"
+  },
+  "attributes.sentences.notEnforced": {
+    "en": "9e7b85236de9223c",
+    "text": "non appliquée : ce domaine est en mode développement, où une personne peut être créée avec un simple nom d’utilisateur"
+  },
+  "attributes.sentences.custom": {
+    "en": "2296301f35c39ed9",
+    "text": "ce domaine définit {{n}} attribut(s) personnalisé(s) : {{list}}"
+  },
+  "attributes.sentences.noCustom": {
+    "en": "f9d920b6ce8d9d03",
+    "text": "ce domaine ne définit aucun attribut personnalisé"
+  },
+  "attributes.sentences.defined": {
+    "en": "3867ffa1e351efa2",
+    "text": "L’attribut personnalisé {{name}} est défini dans ce domaine à {{dn}}. Il peut désormais être donné à une personne et exigé par cette politique."
+  },
+  "attributes.sentences.undefined": {
+    "en": "36e7b5eba26472f2",
+    "text": "L’attribut personnalisé {{name}} n’est plus défini dans ce domaine."
+  },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",
     "text": "Le {{noun}} « {{name}} » est enregistré sous {{dn}}. Il s’applique {{appliesTo}}."

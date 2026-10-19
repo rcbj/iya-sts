@@ -1367,6 +1367,118 @@
     "en": "cb8bd4fa96dda063",
     "text": "沒有應用程式"
   },
+  "kinds.attributes.label": {
+    "en": "6619889d4a9f485d",
+    "text": "屬性原則"
+  },
+  "kinds.attributes.governs": {
+    "en": "20a9273a811994df",
+    "text": "此領域中每個人都必須持有的屬性，以及此處人員可以擁有的自訂屬性"
+  },
+  "kinds.attributes.appliesTo": {
+    "en": "c68abf6d2b5ec2a2",
+    "text": "此領域中下一個建立的人員和下一次編輯；已經缺少必填屬性的人員仍可使用所有其他入口"
+  },
+  "kinds.attributes.fallsBackTo": {
+    "en": "c352143b534bf909",
+    "text": "預設領域的設定檔（如有），否則為內建預設值（givenName、sn 和 mail）"
+  },
+  "kinds.attributes.param.noun": {
+    "en": "58bb93afc775aa81",
+    "text": "屬性原則設定檔"
+  },
+  "attributes.FIELDS.requiredAttributes.label": {
+    "en": "59a6e795223fdea0",
+    "text": "必填屬性"
+  },
+  "attributes.FIELDS.requiredAttributes.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "除一律必填的 uid、cn 和 sn 之外，此領域中每個人都必須有值的屬性。清單，或以逗號分隔。可以是人員可擁有的任何屬性：inetOrgPerson 結構描述、認證目錄、mail，以及此領域的自訂屬性。在 product 模式下強制執行：缺少其中任何一項的建立在每個入口都會被拒絕，編輯也不能移除其中任何一項。預設為 givenName、sn 和 mail。"
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
+    "en": "12630f210e385441",
+    "text": "本服務用於屬性原則的類別：一個領域中每個人都必須持有的屬性。以設定檔命名（`cn=default`）。"
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
+    "en": "a1a975c54d05126f",
+    "text": "本服務用於領域自訂屬性的類別，位於 ou=attributeDefinitions，以屬性命名（`cn=<name>`）。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributeRequired.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "除一律必填的 uid、cn 和 sn 之外，此領域中每個人都必須有值的屬性。清單，或以逗號分隔。可以是人員可擁有的任何屬性：inetOrgPerson 結構描述、認證目錄、mail，以及此領域的自訂屬性。在 product 模式下強制執行：缺少其中任何一項的建立在每個入口都會被拒絕，編輯也不能移除其中任何一項。預設為 givenName、sn 和 mail。"
+  },
+  "attributes.SCHEMA.attributes.description.what": {
+    "en": "8e8f462fddce3d22",
+    "text": "設定檔或自訂屬性的用途，供下一個人參考。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributeLabel.what": {
+    "en": "8d93b7c14ddfd1af",
+    "text": "自訂屬性的標籤，顯示在其名稱旁邊。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSyntax.what": {
+    "en": "b5ccce4927fccd38",
+    "text": "自訂屬性的語法：string、integer、boolean、date、email、uri 或 dn。其值依該語法檢查。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
+    "en": "b6a0dfd5be9d81fd",
+    "text": "自訂屬性只有一個值時為 TRUE，有多個值時為 FALSE。"
+  },
+  "attributes.SYNTAXES.string.what": {
+    "en": "6f2c36f9a836b2f4",
+    "text": "文字，最多 1024 個字元，不含控制字元。"
+  },
+  "attributes.SYNTAXES.integer.what": {
+    "en": "258ac79871ab42ad",
+    "text": "整數（RFC 4517 第 3.3.16 節）。"
+  },
+  "attributes.SYNTAXES.boolean.what": {
+    "en": "5ab7cfb21a4d669d",
+    "text": "TRUE 或 FALSE（RFC 4517 第 3.3.3 節）。"
+  },
+  "attributes.SYNTAXES.date.what": {
+    "en": "70f2250e9d5c193d",
+    "text": "日期，儲存為 YYYYMMDD，也接受 YYYY-MM-DD。"
+  },
+  "attributes.SYNTAXES.email.what": {
+    "en": "daebff95f510f8db",
+    "text": "電子郵件地址（RFC 5322 addr-spec，local@domain）。"
+  },
+  "attributes.SYNTAXES.uri.what": {
+    "en": "16bf68a2b162f491",
+    "text": "http 或 https URL。"
+  },
+  "attributes.SYNTAXES.dn.what": {
+    "en": "3feab9c94c12f33d",
+    "text": "辨別名稱（RFC 4514）。"
+  },
+  "attributes.sentences.required": {
+    "en": "a35b08811463b6be",
+    "text": "此領域中的人員必須持有 {{list}} 才能被建立，編輯也不能移除其中任何一項的值"
+  },
+  "attributes.sentences.enforced": {
+    "en": "babafe534682a510",
+    "text": "已強制執行：此領域處於 product 模式，因此每個建立或編輯人員的入口都會拒絕缺少它們的人員"
+  },
+  "attributes.sentences.notEnforced": {
+    "en": "9e7b85236de9223c",
+    "text": "未強制執行：此領域處於開發模式，只需使用者名稱即可建立人員"
+  },
+  "attributes.sentences.custom": {
+    "en": "2296301f35c39ed9",
+    "text": "此領域定義了 {{n}} 個自訂屬性：{{list}}"
+  },
+  "attributes.sentences.noCustom": {
+    "en": "f9d920b6ce8d9d03",
+    "text": "此領域未定義任何自訂屬性"
+  },
+  "attributes.sentences.defined": {
+    "en": "3867ffa1e351efa2",
+    "text": "自訂屬性 {{name}} 已在此領域的 {{dn}} 定義。現在可以將其賦予人員，並由此原則設為必填。"
+  },
+  "attributes.sentences.undefined": {
+    "en": "36e7b5eba26472f2",
+    "text": "自訂屬性 {{name}} 已不再在此領域中定義。"
+  },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",
     "text": "{{noun}}「{{name}}」已儲存在 {{dn}}。它適用於{{appliesTo}}。"

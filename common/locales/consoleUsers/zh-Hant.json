@@ -836,5 +836,9 @@
   "serviceAccountSection.itselfTip": "服務帳戶不能擁有自身。",
   "serviceAccountSection.addTip": "將 {value} 設為擁有者。儲存表單時寫入。",
   "serviceAccountSection.findHint": "在方塊中輸入以搜尋；方塊為空時列出每個{which, select, groups {群組} other {人員}}。",
-  "serviceAccountSection.destinationHeading": "推送目的地"
+  "serviceAccountSection.destinationHeading": "推送目的地",
+  "personFieldsSection.policyRequired": " 此領域的屬性原則要求它。",
+  "newUserBody.requiredEnforced": "此領域中每個人都必須持有 <strong>{list}</strong>，缺少其中任何一項的建立都會被拒絕；下方每個這樣的欄位都標示為必填，留空的 <code>cn</code> 會由名字和姓氏組成。該清單來自",
+  "newUserBody.requiredNotEnforced": "此領域的屬性原則列出 <strong>{list}</strong>；開發模式下不強制執行，因此這裡接受缺少它們的建立。該清單來自",
+  "newUserBody.requiredPolicy": "屬性原則"
 }

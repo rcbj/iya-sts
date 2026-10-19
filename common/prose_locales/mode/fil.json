@@ -599,6 +599,18 @@
     "en": "3a1905ca05d2e355",
     "text": "Nanggagaling ang value sa directory entry ng tao o inaalis; inilalabas lang ang `verified_claims` mula sa verification na naitala sa entry, at true lang ang email_verified para sa verified na address: isa na pinatunayan ng tao sa pamamagitan ng ipinadalang link (#63), o isa na isinulat ng pinagkakatiwalaang source — isang administrator (ang console, /admin-api, o isang LDAP write na may hawak na Admin Write), SCIM, o isang federation partner na hindi nagsabing email_verified false (#64)."
   },
+  "mode.requirements.required-attributes.what": {
+    "en": "766f977cdfc5a340",
+    "text": "Hawak ng isang tao ang mga attribute na kailangan ng attribute policy ng realm"
+  },
+  "mode.requirements.required-attributes.development": {
+    "en": "9f3eb5f6be8b0a4f",
+    "text": "Nakatago at ipinapakita ang policy sa Directory > Policies at hindi ipinatutupad: puwedeng gumawa ng tao na username lang ang mayroon, at puwedeng alisan ng laman ng isang edit ang anumang attribute maliban sa cn at sn."
+  },
+  "mode.requirements.required-attributes.product": {
+    "en": "1217261af0bae35e",
+    "text": "Tinatanggihan (STS-LDAP-0162) sa bawat pinto ang paggawang nag-iiwan ng kailangang attribute nang walang value — ang console, /admin-api, SCIM, isang LDAP add (objectClassViolation, 65), isang HOBA registration at ang bulk import (STS-LDAP-0163) — at walang nagagawang tao ang unang federated sign-in na hindi nagbigay ang partner ng isa (STS-FED-0158). Tinatanggihan ang edit na mag-aalis ng kailangang value (STS-LDAP-0164). Laging kailangan ang uid, cn at sn; ang givenName at mail bilang default. Ang taong kulang na ng isa ay hindi tinatanggihan ng sign-in o ng edit ng ibang bagay."
+  },
   "mode.requirements.saml-request-signatures.what": {
     "en": "85e7bc435ce1b0c0",
     "text": "Signed ang request ng isang SAML 2.0 service provider"

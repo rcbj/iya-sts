@@ -77,5 +77,6 @@
   "mail.none": "Este dominio no tiene transporte de correo (",
   "mail.link": "Correo",
   "mail.noneAfter": "), así que {what} se le muestra para que lo transmita.",
-  "mail.box": "enviar {what} por correo a la dirección de su entrada, y no mostrármelo"
+  "mail.box": "enviar {what} por correo a la dirección de su entrada, y no mostrármelo",
+  "grid.required": " &middot; obligatorio"
 }
