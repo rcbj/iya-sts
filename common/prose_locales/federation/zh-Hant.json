@@ -252,24 +252,36 @@
     "text": "以「本」服務的金鑰簽署外送 AuthnRequest。預設為「關閉」：大多數身分提供者不要求它，而要求它的夥伴會以指明問題的方式拒絕請求。開啟時，要在夥伴處設定的憑證就是本服務自己 SAML 中繼資料上的那一張。"
   },
   "fed.schema.attributes.fedUsernameSource.what": {
-    "en": "61e8ef6f6cf4a99d",
-    "text": "「哪個傳入值成為本機使用者名稱」——OIDC/OAuth 2.0 為宣告名稱，其他則為 SAML Attribute Name。空白表示使用主體本身：NameID 或 `sub`。這是唯一一個不可能悄悄弄錯的對應決策，因為它決定了人員會落在哪個目錄項目上。"
+    "en": "e0e96af3e55ca105",
+    "text": "「在 LINK-AT-FIRST-SIGN-IN 時查找哪個傳入值」，並在 any-existing 下進行比對——OIDC/OAuth 2.0 為宣告名稱，其他則為 SAML Attribute Name。空白表示使用主體本身：NameID 或 `sub`。它並不指名此次登入所「建立」的項目：該名稱由關係與夥伴的穩定主體組成（#358）。"
   },
   "fed.schema.attributes.fedAttributeMap.what": {
     "en": "4c966530efb4269f",
     "text": "「每個對應一個值」，寫成 `<incoming name>=<LDAP attribute>`。未列在此處的內容仍會抵達——federation_map.js 有一張預設表，涵蓋一般的 OIDC 宣告、SAML urn:oid: 名稱以及 WS-Federation 宣告 URI——因此這是給夥伴自己發明的名稱用的，而不是大家都在用的名稱。"
   },
   "fed.schema.attributes.fedAutocreateUsers.what": {
-    "en": "c047dc4310a6d6a9",
-    "text": "「動態佈建」：此夥伴第一次讓某人登入時建立目錄項目。預設為「開啟」。「關閉」表示該人必須「已經」在此處有項目——事先以 SCIM 或手動佈建——而為沒有項目的人進行的登入會被拒絕，因為工作階段需要一個項目作為其主體。（在 2026-09-14 之前，「關閉」會產生工作階段而沒有項目；穩定的主體讓這種狀態不再可能。）"
+    "en": "bfd1076470982a0d",
+    "text": "「動態佈建」：此夥伴第一次讓某人登入時建立目錄項目。在開發模式下建立關係時寫入 TRUE，在產品模式下寫入 FALSE（mode.defaultsFederatedAutocreate()）；兩者皆未儲存的關係以相同方式解讀。「關閉」表示該人必須「已經」在此處有項目——事先以 SCIM 或手動佈建——而為沒有項目的人進行的登入會被拒絕，因為工作階段需要一個項目作為其主體。（在 2026-09-14 之前，「關閉」會產生工作階段而沒有項目；穩定的主體讓這種狀態不再可能。）"
   },
   "fed.schema.attributes.fedUpdateUserAttributes.what": {
     "en": "4d516236bce43ce4",
     "text": "在「每次」登入時，依最新的斷言或權杖更新人員的目錄屬性。預設為「開啟」，這也是本服務一直以來的做法。「關閉」只在此次登入「建立」了項目時寫入夥伴的屬性，因此預先佈建的人員——或之後被人編輯過的人員——會保留目錄中的內容。無論如何，都會記錄該人是透過哪個關係與簽發者而來。"
   },
+  "fed.schema.attributes.fedProvisionGroups.what": {
+    "en": "7a8153e8814f97c9",
+    "text": "「依據夥伴的權杖建立群組成員資格」（#358）。預設為「關閉」，缺少值即為關閉。開啟時，斷言所攜帶的每個群組名稱，在每次成功登入時都會成為此次登入所佈建人員的成員資格。以此方式建立的群組會標記為此關係。已存在且未標記為此關係的名稱會被忽略、稽核（STS-FED-0161），登入繼續。僅憑成員身分就授予某種權限的群組——主控台群組、角色的成員群組、擁有者群組、原則所指名的群組——絕不會被建立或加入（STS-FED-0164）。它不滿足 fedSubjectGroup：該規則在加入任何人之前執行。"
+  },
+  "fed.schema.attributes.fedProvisionCap.what": {
+    "en": "4137e80dd72991e2",
+    "text": "「此關係最多可建立多少人」。空白或 0 表示不限。達到上限時，新主體會以 STS-FED-0090 被拒絕；已連結的人員仍可登入。ldap.maxEntries 仍是領域的上限。這不是登入次數——那是 fedUsers。"
+  },
+  "fed.schema.attributes.fedProvisionIdleMinutes.what": {
+    "en": "29c243b9d96fac47",
+    "text": "「停用以此關係為唯一登入途徑的人員」，一旦 federationLastSeen 早於這麼多分鐘。空白或 0 表示關閉：不會因閒置而停用任何人。項目與連結會保留。擁有本機 userPassword 或透過其他關係連結的人員不受影響。夥伴的 account-disabled 訊號是另一回事（STS-FED-0156），只會封鎖該夥伴的登入。"
+  },
   "fed.schema.attributes.fedSubjectPolicy.what": {
-    "en": "2b9955272be86815",
-    "text": "「夥伴的主體如何成為本機人員」。主體是夥伴自己的穩定識別碼——iss + sub、持久 NameID 以及夥伴的實體 ID——人員以 federationLink 的形式攜帶它。link-at-first-sign-in（預設；空白即表示此值）：已連結的主體直接登入；指名現有人員但未連結的主體，必須先在「此處」以該人身分登入——密碼，以及在持有或要求時的第二因素——之後才會記錄連結並寫入夥伴的屬性；未指名任何人的主體，在佈建開啟時會獲得一個以此關係為命名空間的新項目。pre-linked：只有連結能讓任何人登入。jit-namespaced：未連結的主體一律獲得「新」項目 <relationship>~<name>，絕不會是現有人員。any-existing：夥伴傳送的名稱直接比對到本機人員，如同本服務在 #109 之前的做法——「僅限開發」，在產品模式下會被拒絕，而且它讓此夥伴能登入任何它能指名的帳戶。"
+    "en": "afab8ba90a854d71",
+    "text": "「夥伴的主體如何成為本機人員」。主體是夥伴自己的穩定識別碼——iss + sub、持久 NameID 以及夥伴的實體 ID——人員以 federationLink 的形式攜帶它。link-at-first-sign-in（預設；空白即表示此值）：已連結的主體直接登入；指名現有人員但未連結的主體，必須先在「此處」以該人身分登入——密碼，以及在持有或要求時的第二因素——之後才會記錄連結並寫入夥伴的屬性；未指名任何人的主體，在佈建開啟時會獲得一個以此關係為命名空間的新項目。pre-linked：只有連結能讓任何人登入。jit-namespaced：未連結的主體一律獲得「新」項目 <relationship>~<subject>，絕不會是現有人員。主體是夥伴的穩定識別碼，urn:uuid: 會折疊為 sub-<uuid>；它不是比對到的使用者名稱。any-existing：夥伴傳送的名稱直接比對到本機人員，如同本服務在 #109 之前的做法——「僅限開發」，在產品模式下會被拒絕，而且它讓此夥伴能登入任何它能指名的帳戶。"
   },
   "fed.schema.attributes.fedSubjectGroup.what": {
     "en": "a93a51b8d9b56949",

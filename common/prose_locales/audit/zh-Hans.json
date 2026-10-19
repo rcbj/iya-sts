@@ -1127,6 +1127,10 @@
     "en": "a5c85407fff2c148",
     "text": "从某人身上移除了联合链接"
   },
+  "audit.actions.federation.group-ignored.label": {
+    "en": "a64e9612670b278c",
+    "text": "伙伴的组名未被应用，因为它指明的组不是该关系创建的，或者是一个仅凭成员身份就授予某种权限的组（#358）"
+  },
   "audit.actions.group.add-member.label": {
     "en": "37da254923cef1b6",
     "text": "向组添加了成员"

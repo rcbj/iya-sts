@@ -79,6 +79,14 @@
     "en": "c8990a4ca5b5163e",
     "text": "在 federation.encryptionKeyGraceS 过后，从每个联合关系中移除被轮换替换的加密密钥。该密钥在那一刻就已停止解密；此作业只是将它从条目上移除。"
   },
+  "sched.jobs.federation.provision-idle.title": {
+    "en": "20200542bb3c76b9",
+    "text": "联合预配闲置清理"
+  },
+  "sched.jobs.federation.provision-idle.describe": {
+    "en": "94bd34c4b59a85a1",
+    "text": "当某人唯一的登录途径是一个联合关系，且 federationLastSeen 早于该关系的 fedProvisionIdleMinutes 时，停用该人员。留空或 0 不影响任何人。条目和关联会保留。本地密码或通过其他关系的关联不受影响。"
+  },
   "sched.jobs.gnap.grant-expiry.title": {
     "en": "ed1bb7e24484e928",
     "text": "GNAP：过期授予"

@@ -1111,9 +1111,12 @@ const SCHEMA = {
             'sign-in provisioned, on every successful sign-in. A group ' +
             'created this way is marked with this relationship. A name ' +
             'that already exists and is not marked as this relationship\'s ' +
-            '— a console group included — is ignored, audited ' +
-            '(STS-FED-0161) and the sign-in continues. It does not satisfy ' +
-            'fedSubjectGroup: that rule runs before anybody is added.' },
+            'is ignored, audited (STS-FED-0161) and the sign-in continues. ' +
+            'A group that grants something by being held — a console ' +
+            'group, a role\'s member group, an owner group, a group a ' +
+            'policy names — is never created or joined (STS-FED-0164). It ' +
+            'does not satisfy fedSubjectGroup: that rule runs before ' +
+            'anybody is added.' },
     { name: 'fedProvisionCap', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'HOW MANY PEOPLE THIS RELATIONSHIP MAY CREATE. Empty or 0 is ' +

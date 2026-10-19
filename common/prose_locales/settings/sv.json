@@ -4028,8 +4028,8 @@
     "text": "Prefix för federerade användarnamn"
   },
   "federation.usernamePrefix|description": {
-    "en": "cd17a5b59a5cf957",
-    "text": "Sätts framför varje användarnamn som en främmande identitetsleverantör levererar, så att en federerad `alice` och den lokala `alice` är två poster. TOMT som standard, vilket betyder att de är EN post — och det är ett verkligt beslut snarare än ett standardvärde som ingen tänkt på. Tomt är rätt för en tjänst som riktas mot en partner för att se vad som kommer tillbaka, eftersom ett namn med prefix gör varje efterföljande token och intyg obekant. Ange något som `fed-` i samma stund som frågan är om federerade identiteter delar namnrymd med lokala, vilket är den fråga den här inställningen finns för. Det tillämpas EFTER att användarnamnet valts, så en ändring kan inte ändra VILKET inkommande värde som användes."
+    "en": "81424ee1cba2373a",
+    "text": "Sätts framför namnet som en `link-at-first-sign-in`-bekräftelse slår upp, och namnet som `any-existing` matchar, efter att värdet har valts och kortats till delen före det sista `@`. TOMT som standard, så att ett partnersubjekt `alice@partner.example` bekräftar den lokala `alice`. Ange det (till exempel `fed-`) när uppslagningen inte får träffa en lokal person. En post som en inloggning skapar under `link-at-first-sign-in` eller `jit-namespaced` är `<relationship>~<subject>` i båda fallen, och prefixet är inte en del av det namnet."
   },
   "federation.loginButtons|label": {
     "en": "712a94d0c664c839",

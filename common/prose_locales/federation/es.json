@@ -252,24 +252,36 @@
     "text": "Firmar el AuthnRequest saliente con la clave de ESTE servicio. DESACTIVADO de forma predeterminada: la mayoría de los proveedores de identidad no lo exigen, y un socio que sí lo haga rechazará la solicitud de una forma que nombra el problema. Cuando está activado, el certificado que debe configurarse en el socio es el de los propios metadatos SAML de este servicio."
   },
   "fed.schema.attributes.fedUsernameSource.what": {
-    "en": "61e8ef6f6cf4a99d",
-    "text": "QUÉ VALOR ENTRANTE SE CONVIERTE EN EL NOMBRE DE USUARIO LOCAL — un nombre de claim para OIDC/OAuth 2.0, un Attribute Name de SAML para los demás. Vacío significa el propio sujeto: el NameID, o `sub`. Esta es la única decisión de correspondencia en la que no se puede equivocar sin que se note, porque decide en qué entrada del directorio termina una persona."
+    "en": "e0e96af3e55ca105",
+    "text": "QUÉ VALOR ENTRANTE SE BUSCA EN LINK-AT-FIRST-SIGN-IN, y se hace coincidir con any-existing — un nombre de claim para OIDC/OAuth 2.0, un Attribute Name de SAML para los demás. Vacío significa el propio sujeto: el NameID, o `sub`. No nombra una entrada que este inicio de sesión CREA: ese nombre es la relación y el sujeto estable del socio (#358)."
   },
   "fed.schema.attributes.fedAttributeMap.what": {
     "en": "4c966530efb4269f",
     "text": "UN VALOR POR CORRESPONDENCIA, escrito `<incoming name>=<LDAP attribute>`. Lo que NO figura aquí llega igualmente — federation_map.js tiene una tabla predeterminada que cubre los claims OIDC habituales, los nombres urn:oid: de SAML y los URI de claims de WS-Federation —, así que esto es para las invenciones propias del socio y no para los nombres que usa todo el mundo."
   },
   "fed.schema.attributes.fedAutocreateUsers.what": {
-    "en": "c047dc4310a6d6a9",
-    "text": "APROVISIONAMIENTO DINÁMICO: crear una entrada de directorio la primera vez que este socio inicia la sesión de alguien. ACTIVADO de forma predeterminada. DESACTIVADO significa que la persona YA debe tener una entrada aquí — aprovisionada de antemano, por SCIM o a mano — y un inicio de sesión de alguien que no la tiene se rechaza, porque una sesión necesita una entrada de la que ser sujeto. (Hasta el 2026-09-14, DESACTIVADO daba una sesión sin entrada; un sujeto estable hizo imposible ese estado.)"
+    "en": "bfd1076470982a0d",
+    "text": "APROVISIONAMIENTO DINÁMICO: crear una entrada de directorio la primera vez que este socio inicia la sesión de alguien. Se escribe TRUE cuando se crea una relación en desarrollo y FALSE en producto (mode.defaultsFederatedAutocreate()); una relación que no almacena ninguno de los dos se lee igual. DESACTIVADO significa que la persona YA debe tener una entrada aquí — aprovisionada de antemano, por SCIM o a mano — y un inicio de sesión de alguien que no la tiene se rechaza, porque una sesión necesita una entrada de la que ser sujeto. (Hasta el 2026-09-14, DESACTIVADO daba una sesión sin entrada; un sujeto estable hizo imposible ese estado.)"
   },
   "fed.schema.attributes.fedUpdateUserAttributes.what": {
     "en": "4d516236bce43ce4",
     "text": "Actualizar los atributos de directorio de la persona en CADA inicio de sesión a partir de la aserción o el token más reciente. ACTIVADO de forma predeterminada, que es lo que este servicio hizo siempre. DESACTIVADO escribe los atributos del socio solo cuando este inicio de sesión CREÓ la entrada, así que una persona aprovisionada previamente — o una que alguien editó después — conserva lo que dice el directorio. En cualquier caso se registra por qué relación y emisor llegó una persona."
   },
+  "fed.schema.attributes.fedProvisionGroups.what": {
+    "en": "7a8153e8814f97c9",
+    "text": "CREAR PERTENENCIAS A GRUPOS A PARTIR DEL TOKEN DEL SOCIO (#358). DESACTIVADO de forma predeterminada, y un valor ausente equivale a desactivado. Activado, cada nombre de grupo que lleva la aserción se convierte en una pertenencia de la persona que este inicio de sesión aprovisionó, en cada inicio de sesión correcto. Un grupo creado así queda marcado con esta relación. Un nombre que ya existe y no está marcado como de esta relación se ignora, se audita (STS-FED-0161) y el inicio de sesión continúa. Un grupo que concede algo por el mero hecho de pertenecer a él — un grupo de la consola, el grupo miembro de un rol, un grupo propietario, un grupo que nombra una política — nunca se crea ni se une (STS-FED-0164). No satisface fedSubjectGroup: esa regla se aplica antes de que se añada a nadie."
+  },
+  "fed.schema.attributes.fedProvisionCap.what": {
+    "en": "4137e80dd72991e2",
+    "text": "CUÁNTAS PERSONAS PUEDE CREAR ESTA RELACIÓN. Vacío o 0 es ilimitado. En el límite, un sujeto nuevo se rechaza con STS-FED-0090; una persona ya vinculada sigue iniciando sesión. ldap.maxEntries sigue siendo el techo del reino. No es un recuento de inicios de sesión — eso es fedUsers."
+  },
+  "fed.schema.attributes.fedProvisionIdleMinutes.what": {
+    "en": "29c243b9d96fac47",
+    "text": "DESACTIVAR A UNA PERSONA PARA LA QUE ESTA RELACIÓN ES LA ÚNICA VÍA DE INICIO DE SESIÓN, en cuanto federationLastSeen tiene más de estos minutos. Vacío o 0 es desactivado: no se desactiva a nadie por inactividad. La entrada y el vínculo se conservan. A una persona con un userPassword local, o con un vínculo a través de otra relación, no se la toca. La señal account-disabled de un socio es aparte (STS-FED-0156) y solo bloquea los inicios de sesión de ese socio."
+  },
   "fed.schema.attributes.fedSubjectPolicy.what": {
-    "en": "2b9955272be86815",
-    "text": "CÓMO SE CONVIERTE EL SUJETO DEL SOCIO EN UNA PERSONA LOCAL. El sujeto es el identificador estable propio del socio — iss + sub, un NameID persistente y el entity ID del socio — y una persona lo lleva como federationLink. link-at-first-sign-in (el predeterminado; vacío equivale a este): un sujeto vinculado inicia sesión; uno no vinculado que nombra a una persona existente debe primero iniciar sesión AQUÍ como esa persona — contraseña, y un segundo factor cuando tiene uno o se le exige — y solo entonces se registra el vínculo y se escriben los atributos del socio; uno que no nombra a nadie obtiene una entrada nueva con el espacio de nombres de esta relación cuando el aprovisionamiento está activado. pre-linked: solo un vínculo permite iniciar sesión a alguien. jit-namespaced: un sujeto no vinculado siempre obtiene una entrada NUEVA, <relationship>~<name>, nunca una persona existente. any-existing: el nombre que envió el socio se hace coincidir directamente con una persona local, como hacía este servicio antes de #109 — SOLO DESARROLLO, se rechaza en producto, y permite a este socio iniciar sesión en cualquier cuenta que pueda nombrar."
+    "en": "afab8ba90a854d71",
+    "text": "CÓMO SE CONVIERTE EL SUJETO DEL SOCIO EN UNA PERSONA LOCAL. El sujeto es el identificador estable propio del socio — iss + sub, un NameID persistente y el entity ID del socio — y una persona lo lleva como federationLink. link-at-first-sign-in (el predeterminado; vacío equivale a este): un sujeto vinculado inicia sesión; uno no vinculado que nombra a una persona existente debe primero iniciar sesión AQUÍ como esa persona — contraseña, y un segundo factor cuando tiene uno o se le exige — y solo entonces se registra el vínculo y se escriben los atributos del socio; uno que no nombra a nadie obtiene una entrada nueva con el espacio de nombres de esta relación cuando el aprovisionamiento está activado. pre-linked: solo un vínculo permite iniciar sesión a alguien. jit-namespaced: un sujeto no vinculado siempre obtiene una entrada NUEVA, <relationship>~<subject>, nunca una persona existente. El sujeto es el identificador estable del socio, con un urn:uuid: reducido a sub-<uuid>; no es el nombre de usuario coincidente. any-existing: el nombre que envió el socio se hace coincidir directamente con una persona local, como hacía este servicio antes de #109 — SOLO DESARROLLO, se rechaza en producto, y permite a este socio iniciar sesión en cualquier cuenta que pueda nombrar."
   },
   "fed.schema.attributes.fedSubjectGroup.what": {
     "en": "a93a51b8d9b56949",

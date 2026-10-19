@@ -4028,8 +4028,8 @@
     "text": "Prefix para sa mga federated username"
   },
   "federation.usernamePrefix|description": {
-    "en": "cd17a5b59a5cf957",
-    "text": "Inilalagay sa unahan ng bawat username na ibinibigay ng isang foreign identity provider, para dalawang entry ang federated na `alice` at ang lokal na `alice`. WALANG LAMAN bilang default, na nangangahulugang IISANG entry sila — at tunay na desisyon iyon sa halip na default na walang nag-isip. Tama ang walang laman para sa serbisyong itinuturo sa isang partner para makita kung ano ang bumabalik, dahil ang pangalang may prefix ay ginagawang hindi pamilyar ang bawat downstream na token at assertion. Itakda ito sa isang tulad ng `fed-` sa sandaling ang tanong ay kung naghahati ba sa namespace ang mga federated identity at mga lokal, na siyang tanong na dahilan ng pag-iral ng setting na ito. Inilalapat ito PAGKATAPOS mapili ang username, kaya hindi mababago ng pagbabago nito KUNG ALING papasok na value ang ginamit."
+    "en": "81424ee1cba2373a",
+    "text": "Inilalagay sa unahan ng pangalang hinahanap ng isang `link-at-first-sign-in` na confirm, at ng pangalang itinutugma ng `any-existing`, pagkatapos piliin ang value na iyon at paikliin sa bahaging bago ang huling `@`. WALANG LAMAN bilang default, kaya kinukumpirma ng subject ng partner na `alice@partner.example` ang lokal na `alice`. Itakda ito (halimbawa `fed-`) kapag hindi dapat makatagpo ng lokal na tao ang paghahanap na iyon. Ang entry na ginagawa ng sign-in sa ilalim ng `link-at-first-sign-in` o `jit-namespaced` ay `<relationship>~<subject>` alinman ang mangyari, at hindi bahagi ng pangalang iyon ang prefix na ito."
   },
   "federation.loginButtons|label": {
     "en": "712a94d0c664c839",

@@ -47,9 +47,9 @@
     "en": "df6a6c1b53d5529c",
     "text": "以「本」服務的金鑰簽署外送 AuthnRequest。預設為「關閉」：大多數身分提供者不要求它，而要求它的夥伴會以指明問題的方式拒絕請求。開啟時，要在夥伴處設定的證書就是本服務自己 SAML 元數據上的那一張。"
   },
-  "fed.schema.attributes.fedUsernameSource.what": {
-    "en": "61e8ef6f6cf4a99d",
-    "text": "「哪個傳入值成為本機用戶名稱」——OIDC/OAuth 2.0 為宣告名稱，其他則為 SAML Attribute Name。空白表示使用主體本身：NameID 或 `sub`。這是唯一一個不可能悄悄弄錯的對應決策，因為它決定了人員會落在哪個目錄項目上。"
+  "fed.schema.attributes.fedSubjectPolicy.what": {
+    "en": "afab8ba90a854d71",
+    "text": "「夥伴的主體如何成為本機人員」。主體是夥伴自己的穩定識別碼——iss + sub、持久 NameID 以及夥伴的實體 ID——人員以 federationLink 的形式攜帶它。link-at-first-sign-in（預設；空白即表示此值）：已連結的主體直接登入；指名現有人員但未連結的主體，必須先在「此處」以該人身分登入——密碼，以及在持有或要求時的第二因素——之後才會記錄連結並寫入夥伴的屬性；未指名任何人的主體，在佈建開啟時會獲得一個以此關係為命名空間的新項目。pre-linked：只有連結能讓任何人登入。jit-namespaced：未連結的主體一律獲得「新」項目 <relationship>~<subject>，絕不會是現有人員。主體是夥伴的穩定識別碼，urn:uuid: 會折疊為 sub-<uuid>；它不是比對到的用戶名稱。any-existing：夥伴傳送的名稱直接比對到本機人員，如同本服務在 #109 之前的做法——「僅限開發」，在產品模式下會被拒絕，而且它讓此夥伴能登入任何它能指名的帳戶。"
   },
   "fed.schema.attributes.fedSubjectDomain.what": {
     "en": "ea40949bc8260521",

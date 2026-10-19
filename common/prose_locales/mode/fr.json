@@ -155,6 +155,18 @@
     "en": "21b1d1c16447c0c6",
     "text": "any-existing est refusé, au niveau de la relation (STS-FED-0095) et à la connexion (STS-FED-0094). Un partenaire connecte l’entrée à laquelle son couple (émetteur, sujet) est lié ; un sujet non lié nommant une personne existante doit d’abord se connecter ici en tant que cette personne (link-at-first-sign-in, par défaut), ou est refusé (pre-linked). Les modes développement et produit conservent tous deux les règles et le refus des administrateurs de la console."
   },
+  "mode.requirements.federated-autocreate.what": {
+    "en": "d38d38e45a73467e",
+    "text": "Une nouvelle relation de fédération crée une entrée d’annuaire pour un sujet de partenaire que personne n’a lié"
+  },
+  "mode.requirements.federated-autocreate.development": {
+    "en": "04193f48cc244e1b",
+    "text": "fedAutocreateUsers est écrit TRUE lorsque la relation est créée, et une relation qui ne stocke pas l’attribut crée. Un FALSE stocké ne crée toujours personne."
+  },
+  "mode.requirements.federated-autocreate.product": {
+    "en": "b8758f8842b1fc0a",
+    "text": "fedAutocreateUsers est écrit FALSE lorsque la relation est créée, et un attribut absent ne crée personne (STS-FED-0090). Une relation qui stocke déjà TRUE continue de créer jusqu’à ce qu’elle soit modifiée. link-at-first-sign-in lie toujours une personne existante mise en correspondance, dans les deux modes."
+  },
   "mode.requirements.federated-logout-signature.what": {
     "en": "ab3acff66ae80262",
     "text": "La déconnexion SAML d’un partenaire de fédération est signée par ce partenaire"

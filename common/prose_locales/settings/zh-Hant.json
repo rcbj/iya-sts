@@ -4028,8 +4028,8 @@
     "text": "聯合使用者名稱的前置詞"
   },
   "federation.usernamePrefix|description": {
-    "en": "cd17a5b59a5cf957",
-    "text": "加在外部身分識別提供者所提供之每個使用者名稱前面，讓聯合的 `alice` 與本機的 `alice` 成為兩個項目。預設為空白，表示它們是「同一個」項目——而這是一項真正的決定，而不是沒人想過的預設值。若是把本服務指向夥伴以觀察傳回的內容，空白是正確的，因為加了前置詞的名稱會讓下游的每個權杖與斷言看起來都很陌生。一旦問題變成聯合身分是否與本機身分共用命名空間——這正是此設定存在的目的——就將其設為類似 `fed-` 的值。它在選定使用者名稱「之後」才套用，因此變更它不會改變使用的是「哪個」傳入值。"
+    "en": "81424ee1cba2373a",
+    "text": "放在 `link-at-first-sign-in` 確認所查找的名稱，以及 `any-existing` 所比對的名稱之前，於該值被選定並截取為最後一個 `@` 之前的部分之後。預設為「空白」，因此夥伴主體 `alice@partner.example` 會確認本機的 `alice`。當該查找不得遇到本機人員時設定它（例如 `fed-`）。在 `link-at-first-sign-in` 或 `jit-namespaced` 下由登入建立的項目一律是 `<relationship>~<subject>`，此前綴不是該名稱的一部分。"
   },
   "federation.loginButtons|label": {
     "en": "712a94d0c664c839",

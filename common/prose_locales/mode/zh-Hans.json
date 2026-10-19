@@ -155,6 +155,18 @@
     "en": "21b1d1c16447c0c6",
     "text": "any-existing 会被拒绝，在关系上（STS-FED-0095）和登录时（STS-FED-0094）都是如此。伙伴让其（颁发者，主体）所关联的条目登录；指向某个现有人员的未关联主体，必须先在这里以该人身份登录（link-at-first-sign-in，默认），否则会被拒绝（pre-linked）。开发模式和产品模式都保留这些规则以及对控制台管理员的拒绝。"
   },
+  "mode.requirements.federated-autocreate.what": {
+    "en": "d38d38e45a73467e",
+    "text": "新的联合关系会为没有人关联的伙伴主体创建目录条目"
+  },
+  "mode.requirements.federated-autocreate.development": {
+    "en": "04193f48cc244e1b",
+    "text": "创建关系时写入 fedAutocreateUsers 为 TRUE，未存储该属性的关系会创建。已存储的 FALSE 仍然不创建任何人。"
+  },
+  "mode.requirements.federated-autocreate.product": {
+    "en": "b8758f8842b1fc0a",
+    "text": "创建关系时写入 fedAutocreateUsers 为 FALSE，缺少该属性时不创建任何人（STS-FED-0090）。已存储 TRUE 的关系会继续创建，直到被编辑。link-at-first-sign-in 在两种模式下仍会关联已匹配的现有人员。"
+  },
   "mode.requirements.federated-logout-signature.what": {
     "en": "ab3acff66ae80262",
     "text": "联合伙伴的 SAML 注销由该伙伴签名"

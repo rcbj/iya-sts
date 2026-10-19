@@ -281,6 +281,7 @@
   "audit.actions.federation.signout.label": "A federation partner's sign-out ended a session",
   "audit.actions.federation.signout-answered.label": "A federation partner confirmed a sign-out this service sent",
   "audit.actions.federation.unlink.label": "A federation link was removed from a person",
+  "audit.actions.federation.group-ignored.label": "A partner's group name was not applied, because it names a group that relationship did not create or one that grants something by being held (#358)",
   "audit.actions.group.add-member.label": "A member was added to a group",
   "audit.actions.group.add-owner.label": "An owner was added to a group",
   "audit.actions.group.remove-owner.label": "An owner was taken off a group",

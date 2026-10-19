@@ -1127,6 +1127,10 @@
     "en": "a5c85407fff2c148",
     "text": "Un lien de fédération a été retiré d’une personne"
   },
+  "audit.actions.federation.group-ignored.label": {
+    "en": "a64e9612670b278c",
+    "text": "Le nom de groupe d’un partenaire n’a pas été appliqué, car il nomme un groupe que cette relation n’a pas créé ou un groupe qui accorde quelque chose du seul fait d’en être membre (#358)"
+  },
   "audit.actions.group.add-member.label": {
     "en": "37da254923cef1b6",
     "text": "Un membre a été ajouté à un groupe"

@@ -79,6 +79,14 @@
     "en": "c8990a4ca5b5163e",
     "text": "Tar bort från varje federationsrelation den krypteringsnyckel som en rotation ersatte, när federation.encryptionKeyGraceS har passerats. Nyckeln slutade dekryptera redan i det ögonblicket; detta tar bort den från posten."
   },
+  "sched.jobs.federation.provision-idle.title": {
+    "en": "20200542bb3c76b9",
+    "text": "Inaktivitetssvep för federerad etablering"
+  },
+  "sched.jobs.federation.provision-idle.describe": {
+    "en": "94bd34c4b59a85a1",
+    "text": "Inaktiverar en person vars enda inloggningsväg är en federationsrelation, så snart federationLastSeen är äldre än relationens fedProvisionIdleMinutes. Tomt eller 0 lämnar alla i fred. Posten och länken behålls. Ett lokalt lösenord, eller en länk via en annan relation, lämnas i fred."
+  },
   "sched.jobs.gnap.grant-expiry.title": {
     "en": "ed1bb7e24484e928",
     "text": "GNAP: utgångna beviljanden"

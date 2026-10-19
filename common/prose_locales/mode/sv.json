@@ -155,6 +155,18 @@
     "en": "21b1d1c16447c0c6",
     "text": "any-existing avvisas, vid relationen (STS-FED-0095) och vid inloggningen (STS-FED-0094). En partner loggar in den post som dess (utfärdare, subjekt) är länkat till; ett olänkat subjekt som anger en befintlig person måste först logga in här som den personen (link-at-first-sign-in, standard), eller avvisas (pre-linked). Utvecklingsläge och produktläge behåller båda reglerna och avvisningen av konsoladministratörer."
   },
+  "mode.requirements.federated-autocreate.what": {
+    "en": "d38d38e45a73467e",
+    "text": "En ny federationsrelation skapar en katalogpost för ett partnersubjekt som ingen har länkat"
+  },
+  "mode.requirements.federated-autocreate.development": {
+    "en": "04193f48cc244e1b",
+    "text": "fedAutocreateUsers skrivs TRUE när relationen skapas, och en relation som inte lagrar attributet skapar. Ett lagrat FALSE skapar fortfarande ingen."
+  },
+  "mode.requirements.federated-autocreate.product": {
+    "en": "b8758f8842b1fc0a",
+    "text": "fedAutocreateUsers skrivs FALSE när relationen skapas, och ett saknat attribut skapar ingen (STS-FED-0090). En relation som redan lagrar TRUE fortsätter att skapa tills den redigeras. link-at-first-sign-in länkar fortfarande en befintlig matchad person i båda lägena."
+  },
   "mode.requirements.federated-logout-signature.what": {
     "en": "ab3acff66ae80262",
     "text": "En federationspartners SAML-utloggning är signerad av den partnern"

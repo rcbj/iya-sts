@@ -1127,6 +1127,10 @@
     "en": "a5c85407fff2c148",
     "text": "May federation link na inalis sa isang tao"
   },
+  "audit.actions.federation.group-ignored.label": {
+    "en": "a64e9612670b278c",
+    "text": "Hindi inilapat ang pangalan ng group ng isang partner, dahil pinapangalanan nito ang isang group na hindi ginawa ng relationship na iyon o isang group na nagbibigay ng isang bagay dahil lang sa pagiging miyembro nito (#358)"
+  },
   "audit.actions.group.add-member.label": {
     "en": "37da254923cef1b6",
     "text": "May member na idinagdag sa isang group"

@@ -155,6 +155,18 @@
     "en": "21b1d1c16447c0c6",
     "text": "any-existing se rechaza, en la relación (STS-FED-0095) y en el inicio de sesión (STS-FED-0094). Un socio inicia la sesión de la entrada a la que está vinculado su (emisor, sujeto); un sujeto no vinculado que nombra a una persona existente debe primero iniciar sesión aquí como esa persona (link-at-first-sign-in, el valor predeterminado), o se rechaza (pre-linked). Desarrollo y producto mantienen ambos las reglas y el rechazo de administradores de consola."
   },
+  "mode.requirements.federated-autocreate.what": {
+    "en": "d38d38e45a73467e",
+    "text": "Una nueva relación de federación crea una entrada de directorio para un sujeto del socio que nadie ha vinculado"
+  },
+  "mode.requirements.federated-autocreate.development": {
+    "en": "04193f48cc244e1b",
+    "text": "fedAutocreateUsers se escribe TRUE cuando se crea la relación, y una relación que no almacena el atributo crea. Un FALSE almacenado sigue sin crear a nadie."
+  },
+  "mode.requirements.federated-autocreate.product": {
+    "en": "b8758f8842b1fc0a",
+    "text": "fedAutocreateUsers se escribe FALSE cuando se crea la relación, y un atributo ausente no crea a nadie (STS-FED-0090). Una relación que ya almacena TRUE sigue creando hasta que se edite. link-at-first-sign-in sigue vinculando a una persona existente coincidente en ambos modos."
+  },
   "mode.requirements.federated-logout-signature.what": {
     "en": "ab3acff66ae80262",
     "text": "El cierre de sesión SAML de un socio de federación está firmado por ese socio"

@@ -79,6 +79,14 @@
     "en": "c8990a4ca5b5163e",
     "text": "Retire de chaque relation de fédération la clé de chiffrement qu’une rotation a remplacée, une fois federation.encryptionKeyGraceS écoulé. La clé a déjà cessé de déchiffrer à cet instant ; cette tâche la retire de l’entrée."
   },
+  "sched.jobs.federation.provision-idle.title": {
+    "en": "20200542bb3c76b9",
+    "text": "Balayage d’inactivité du provisionnement fédéré"
+  },
+  "sched.jobs.federation.provision-idle.describe": {
+    "en": "94bd34c4b59a85a1",
+    "text": "Désactive une personne dont le seul chemin de connexion est une relation de fédération, dès que federationLastSeen date de plus que le fedProvisionIdleMinutes de cette relation. Vide ou 0 ne touche personne. L’entrée et le lien sont conservés. Un mot de passe local, ou un lien par une autre relation, n’est pas touché."
+  },
   "sched.jobs.gnap.grant-expiry.title": {
     "en": "ed1bb7e24484e928",
     "text": "GNAP : autorisations expirées"

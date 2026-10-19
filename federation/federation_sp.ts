@@ -1834,7 +1834,7 @@ class FederationSp {
         protocol: 'Federation',
         target: username,
         outcome: 'refused',
-        errorCode: code,
+        errorCode: granting ? 'STS-FED-0164' : 'STS-FED-0161',
         summary: username + ' was not added to the group "' + group +
                  '" through ' + record.fedId + ' (' + because + ')',
         detail: { relationship: String(record.fedId),
