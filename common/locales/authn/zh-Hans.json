@@ -110,6 +110,8 @@
   "totp.title": "一次性验证码 — 身份验证服务",
   "startOver.button": "重新开始",
   "startOver.note": "返回同一请求的登录屏幕。此步骤中的任何内容都不会保留。",
+  "stuck.close": "请关闭此浏览器标签页或窗口，然后重新开始。",
+  "stuck.home": "返回首页",
   "totp.heading": "您的一次性验证码",
   "totp.sub": "<code>{name}</code> 的第二因素",
   "totp.label": "身份验证器应用中的 {digits} 位验证码",

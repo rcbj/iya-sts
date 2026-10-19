@@ -217,6 +217,22 @@ class AuthnSurface extends WebSurface {
    * @returns nothing
    */
   put(title: string, body: string, ctx: Json): void {
+    // A PAGE WITH NOWHERE TO GO. The language chooser redraws this same
+    // page. A link or a button is a way on. The problem page — a sign-in
+    // this service no longer has, and any other refusal that drew no view —
+    // and every other screen that draws neither, tell the person to close
+    // the browser tab or window and start over, and link the realm's root
+    // page. The problem page draws its own card, and the line goes in it.
+    if (!AuthnSurface.hasWayOn(body)) {
+      const way = AuthnSurface.wayOut(this.t);
+      const close = '</div>';
+      if (body.indexOf('<div class="card">') === 0 &&
+          body.slice(-close.length) === close) {
+        body = body.slice(0, -close.length) + way + close;
+      } else {
+        body += way;
+      }
+    }
     super.put(title, body, ctx);
     this.actError = '';
     this.notice = '';
@@ -745,7 +761,8 @@ class AuthnSurface extends WebSurface {
   /**
    * A page that could not be drawn: where an act was just refused and the
    * page it was on can no longer be drawn (the step it named is gone), the
-   * act's sentence is the one that says why.
+   * act's sentence is the one that says why. `put()` adds the way off,
+   * since this page draws neither a link nor a button.
    *
    * @param title - what went wrong
    * @param detail - the detail
@@ -753,6 +770,44 @@ class AuthnSurface extends WebSurface {
    */
   drawProblem(title: string, detail: string): void {
     super.drawProblem(title, this.actError || detail);
+  }
+
+  /**
+   * Whether a page's body already offers a way on: a link, or a button.
+   * The language chooser is drawn around the body and is not one.
+   *
+   * @param body - the page's body
+   * @returns true when the body has a link or a button
+   */
+  static hasWayOn(body: string): boolean {
+    const html = String(body || '');
+    return /<a\b[^>]*\bhref\s*=/i.test(html) ||
+      /<button\b/i.test(html) ||
+      /<input\b[^>]*\btype\s*=\s*["']submit["']/i.test(html);
+  }
+
+  /**
+   * The way off a page that has none: close this tab and start over, and
+   * a link to the realm's root page (`href="/"`, prefixed with the realm
+   * when the page is put). In the page's language where the `authn`
+   * catalog is loaded, and in English where it is not — the consent
+   * screen loads none of it, and a refusal's own sentence stays English
+   * either way. The English here is `authn/en.json`'s `stuck.close` and
+   * `stuck.home`.
+   *
+   * @param t - the page's translator
+   * @returns the markup
+   */
+  static wayOut(t: Json): string {
+    const known = t && typeof t.has === 'function';
+    const close = known && t.has('authn.stuck.close')
+      ? t.html('authn.stuck.close')
+      : 'Close this browser tab or window and start over.';
+    const home = known && t.has('authn.stuck.home')
+      ? t.html('authn.stuck.home')
+      : 'Return to the home page';
+    return '<p class="meta" id="authn-way-out">' + close + '</p>' +
+      '<p><a id="authn-home" href="/">' + home + '</a></p>';
   }
 
   // --- the steps after the screen (#572, #573) -------------------------------
