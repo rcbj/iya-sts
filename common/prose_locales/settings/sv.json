@@ -1707,6 +1707,14 @@
     "en": "0ecee8de8ef29c3f",
     "text": "Hur länge borttagningen av en förtroendesfär väntar på att det som sfären är skyldig ska levereras innan dess lager rensas: CAEP session-revoked och back-channel-utloggningstokener för varje session som avslutas, RISC account-purged för varje person i den, och SSF stream-updated (disabled) till varje ström. Det som inte har levererats när tiden tar slut loggas (STS-CORE-0120) och försvinner med sfären. 0 skickar fortfarande allt men väntar inte. En mottagare som avfrågar kan bara hämta medan väntan pågår."
   },
+  "realms.maxCount|label": {
+    "en": "017b530f97d0b9e0",
+    "text": "Högsta antal sfärer"
+  },
+  "realms.maxCount|description": {
+    "en": "1a45b5c5965dd169",
+    "text": "Hur många förtroendesfärer detta kluster får rymma, den inbyggda standardsfären inräknad, så 10 är standardsfären och nio andra. En tjänsteadministratör ställer in det, och bara i standardsfären: inifrån en annan sfär är kontrollen avstängd och skrivningen avvisas. Att sänka det tar inte bort sfärer som redan finns; en skapelse avvisas tills antalet åter är under gränsen. Varje sfär kostar minne i varje process på varje nod, och därför finns en gräns."
+  },
   "oauth2.issuer|label": {
     "en": "373396d5608b3885",
     "text": "Utfärdaridentifierare"

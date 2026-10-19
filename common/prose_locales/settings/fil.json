@@ -1707,6 +1707,14 @@
     "en": "0ecee8de8ef29c3f",
     "text": "Gaano katagal naghihintay ang pag-alis ng isang trust realm na maihatid ang mga utang nito bago purgahin ang mga store nito: ang CAEP session-revoked at mga back-channel Logout Token ng bawat session na tinatapos nito, RISC account-purged para sa bawat tao rito, at SSF stream-updated (disabled) sa bawat stream. Ang anumang hindi pa naihahatid kapag naubos ang oras ay nilo-log (STS-CORE-0120) at sumasama sa realm. Ang 0 ay nagpapadala pa rin ng lahat at hindi naghihintay. Makakakolekta lang ang poll receiver habang tumatagal ang paghihintay."
   },
+  "realms.maxCount|label": {
+    "en": "017b530f97d0b9e0",
+    "text": "Pinakamaraming bilang ng realm"
+  },
+  "realms.maxCount|description": {
+    "en": "1a45b5c5965dd169",
+    "text": "Ilang trust realm ang maaaring hawakan ng cluster na ito, kasama ang built-in na default realm, kaya ang 10 ay ang default realm at siyam pang iba. Isang service administrator ang nagtatakda nito, at sa default realm lamang: mula sa loob ng ibang realm, naka-disable ang kontrol at tinatanggihan ang pagsulat. Ang pagbaba nito ay hindi nag-aalis ng mga realm na umiiral na; tinatanggihan ang paggawa hangga’t hindi pa bumabalik sa ilalim nito ang bilang. Bawat realm ay gumagamit ng memorya sa bawat proseso ng bawat node, kaya may hangganan."
+  },
   "oauth2.issuer|label": {
     "en": "373396d5608b3885",
     "text": "Issuer identifier"
