@@ -21,8 +21,9 @@
 #   deploy/aws/terraform-local.sh dev apply          # IMAGE_TAG=<tag> required
 #   deploy/aws/terraform-local.sh dev suite          # report in tests/report/aws-dev
 #   TF_STACK=foundation deploy/aws/terraform-local.sh dev apply # administrator
-#   TF_STACK=spiffe-realm REALM=acme WORKLOAD_PORT=9092 SERVER_PORT=9181 \
-#     deploy/aws/terraform-local.sh testidp apply  # a realm's SPIFFE ports
+#   TF_STACK=spiffe-realm REALM=acme SERVER_PORT=9181 \
+#     deploy/aws/terraform-local.sh testidp apply  # a realm's Server API.
+#     WORKLOAD_PORT is accepted and no longer published (#324).
 #
 # A MULTI-CELL ENVIRONMENT (#98) — one with environment/envs/<env>.cells.tfvars.json:
 #   IMAGE_TAG=<tag> deploy/aws/terraform-local.sh testidpna apply    # every
@@ -176,11 +177,15 @@ then
   TF_VARS+=(-e "TF_REALM=${REALM}")
   if [ "${TF_ACTION}" = "plan" ] || [ "${TF_ACTION}" = "apply" ];
   then
-    [ -n "${WORKLOAD_PORT:-}" ] && [ -n "${SERVER_PORT:-}" ] || {
-      echo "ERROR: ${TF_ACTION} needs WORKLOAD_PORT and SERVER_PORT, the realm's spiffe.workloadPort and spiffe.serverPort." >&2
+    [ -n "${SERVER_PORT:-}" ] || {
+      echo "ERROR: ${TF_ACTION} needs SERVER_PORT, the realm's spiffe.serverPort. WORKLOAD_PORT is accepted and no longer published (#324)." >&2
       exit 1
     }
-    TF_VARS+=(-e "TF_VAR_workload_port=${WORKLOAD_PORT}" -e "TF_VAR_server_port=${SERVER_PORT}")
+    TF_VARS+=(-e "TF_VAR_server_port=${SERVER_PORT}")
+    if [ -n "${WORKLOAD_PORT:-}" ];
+    then
+      TF_VARS+=(-e "TF_VAR_workload_port=${WORKLOAD_PORT}")
+    fi
   fi
 fi
 

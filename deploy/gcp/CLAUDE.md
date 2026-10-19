@@ -51,7 +51,7 @@ and the parent's signing is AWS's.
 | ECS `secrets` injection | `sts-secrets` reads Secret Manager into env files on `/run` (a tmpfs); the containers take them as `--env-file` | Nothing secret is ever in instance metadata, which anybody who can describe the VM reads. The database password is still read by the SERVICE through `common/secrets.js`'s `gcp` provider — the path #51 exists to exercise — and so is the KEK with `kek_provider = "secret"`; by default the KEK is a Cloud KMS key the service never reads (*The key-encryption key*, below) |
 | NLB, TCP passthrough, PROXY v2, client-IP preservation off | **Regional external passthrough NLB** (backend-service based), one static address, two forwarding rules | A passthrough NLB is not a connection endpoint at all — the node's TLS is the client's, so `GET /tls/sign-in` and RFC 8705 work. It **preserves the client's address and sends no PROXY header**, so the nodes run `STS_PROXY_PROTOCOL=off` and trust no proxy |
 | 443 → 8081, 80 → 8082 on the NLB | **Docker publishes them** (`-p 443:8081`, `-p 80:8082`, the rest 1:1) | A passthrough load balancer does not translate ports |
-| Five target groups, and the SPIFFE ports registered BY ADDRESS by hand | One backend service (the three instance groups); SPIFFE's 8092/8181 are a second forwarding rule on the same address | A forwarding rule takes five ports. **The register-by-address workaround and its "re-apply after every restart" are gone**: the backend follows its instances |
+| Five target groups; the Server API (8181) registered BY ADDRESS by hand. The Workload API is not published (#324) | One backend service (the three instance groups); SPIFFE's 8092/8181 are a second forwarding rule on the same address | A forwarding rule takes five ports. **The register-by-address workaround and its "re-apply after every restart" are gone**: the backend follows its instances. **8092 is still published here.** #324 was applied on AWS only, and this stack was not rewritten. Preserving the client address is a different fact from the declaration #166 requires |
 | A health check per target group | One HTTPS GET of `/healthcheck` on 443 | A backend service takes one. **A node whose LDAPS failed to bind stays in service**, where on AWS it failed to reach steady state; the failure is still on `GET /admin/ldap/service` |
 | Three security groups | Firewall rules targeted by the nodes' SERVICE ACCOUNT: `allowed_cidrs` → the LB address on the published ports; Google's health-check ranges on 443; egress 443, 53 (only with a public name, for the ACME client's propagation check) and 5432 to the endpoint, everything else denied | The client's packets reach the node directly, so the rule AWS put on the NLB is on the nodes, with the LB's address as its DESTINATION — an allowed client can reach the published ports and not a node's own address. A service account rather than a tag, because a tag is set by anybody who can edit an instance |
 | RDS PG18 primary + replica, `rds.force_ssl`, project key | **Cloud SQL PG18 primary + replica** in two zones, CMEK, `ssl_mode = ENCRYPTED_ONLY`, `GOOGLE_MANAGED_CAS_CA`, 14 daily backups with PITR | — |
@@ -265,6 +265,12 @@ verify-ca; AWS sets nothing and is unchanged).
   transports can be configured through `extra_environment`.
 * **`spiffe-realm/` for additional realms.** A realm's ports would be one more
   forwarding rule on the same backend service — no address registration.
+* **Unpublishing the Workload API (#324).** `spiffe_default_ports` still
+  names `workload` (8092) beside `server` (8181). AWS stopped publishing
+  8092 (`deploy/aws/CLAUDE.md`); this stack was not rewritten, because only
+  AWS has been applied. A passthrough NLB here preserves the client address
+  and sends no PROXY header. That is a different fact from the declaration
+  #166 requires.
 * **A GitHub workflow.** It should authenticate with Workload Identity
   Federation and impersonate the deployer, not hold a key.
 

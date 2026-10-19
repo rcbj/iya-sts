@@ -14173,6 +14173,26 @@ const CODES = [
       'TLS handshake until the next change or a restart; every SVID is ' +
       'still verified against the bundles, read off the socket (#438).',
     spec: '' },
+  { code: 'STS-SPIFFE-0148',
+    summary: 'The workload agent could not serve the Workload API on its ' +
+      'Unix socket: the native peer-credentials module could not be ' +
+      'loaded, the socket could not be bound, or join-token attestation ' +
+      'failed (#324).',
+    spec: '' },
+  { code: 'STS-SPIFFE-0149',
+    summary: 'A Workload API caller on the workload agent\'s Unix socket ' +
+      'no longer matches the process that connected: it has exited, its ' +
+      'pid was reused, or it has executed a different program (#324).',
+    spec: '' },
+  { code: 'STS-SPIFFE-0150',
+    summary: 'The workload agent refused a Workload API caller that is ' +
+      'entitled to nothing it asked for: no registration entry matches ' +
+      'it (#324).',
+    spec: '' },
+  { code: 'STS-SPIFFE-0151',
+    summary: 'The workload agent could not obtain an SVID or a bundle ' +
+      'from the SPIRE Server API (#324).',
+    spec: '' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion, tls.ciphers, ' +
@@ -19957,6 +19977,11 @@ const CODES = [
       'with no code of the registry\'s own; where the registry gives one, ' +
       'that code is recorded instead (#604).',
     spec: 'HTTP 400 (API) or a refusal on the application page' },
+  { code: 'STS-ADMIN-0858',
+    summary: 'Creating a join token, on the agents page or through ' +
+      'POST /admin-api/spiffe/agents/join-token, was refused because ttl ' +
+      'was given and is not a positive number (#324).',
+    spec: 'HTTP 400' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

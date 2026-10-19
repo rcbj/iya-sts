@@ -882,7 +882,10 @@ const SPIFFE_ENTRY_ACTIONS = ['create', 'update', 'delete'];
 /**
  * The actions `spiffeAgentsAction()` answers.
  */
-const SPIFFE_AGENT_ACTIONS = ['ban', 'unban', 'delete'];
+// `join-token` mints a credential; it does not name an agent that already
+// attested, so the id check below stays on the three that do.
+const SPIFFE_AGENT_ID_ACTIONS = ['ban', 'unban', 'delete'];
+const SPIFFE_AGENT_ACTIONS = SPIFFE_AGENT_ID_ACTIONS.concat(['join-token']);
 // WHAT EVERY TOKEN REVOCATION ON `/admin/tokens` AND `/admin-api/tokens`
 // STATES (#239): an administrator's act, which CAEP's `session-revoked` about
 // the grant it ends reports as `initiating_entity: admin`
@@ -8880,7 +8883,7 @@ class AdminActions {
   }
 
   /**
-   * Bans, unbans or deletes an attested agent.
+   * Bans, unbans or deletes an attested agent, or mints a join token.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
@@ -8892,7 +8895,7 @@ class AdminActions {
               (body.action || '(none)'));
     const action = String(body.action || '');
     const id = String(body.agent || '').trim();
-    if (SPIFFE_AGENT_ACTIONS.indexOf(action) >= 0 && !id) {
+    if (SPIFFE_AGENT_ID_ACTIONS.indexOf(action) >= 0 && !id) {
       log.debug("Leaving AdminActions.spiffeAgentsAction(). No agent named.");
       return this.refused('STS-ADMIN-0573', { ok: false,
                                               errors: ['Which agent? ' +
@@ -8929,6 +8932,46 @@ class AdminActions {
                         'attests again, because attestation is not checked — ' +
                         'deleting is forgetting, not revoking. Ban it ' +
                         'instead if that is what you meant.' };
+    }
+    // A join token for a sidecar agent (#324). Written through the same
+    // store CreateJoinToken writes, required here because there is no admin
+    // SVID until a Workload API exists to fetch one from. The token is the
+    // reply, once, and the alias is `agentId` — `agent` is the attested id
+    // the three actions above name, and must not be read as the alias.
+    if (action === 'join-token') {
+      const rawTtl = body.ttl;
+      const blank = rawTtl === undefined || rawTtl === null ||
+                    String(rawTtl).trim() === '';
+      const ttl = blank ? 0 : Number(rawTtl);
+      if (!blank && !(Number.isFinite(ttl) && ttl > 0)) {
+        log.debug("Leaving AdminActions.spiffeAgentsAction(). Bad ttl.");
+        return this.refused('STS-ADMIN-0858', { ok: false,
+          errors: ['ttl must be a positive number of seconds. Omit it to ' +
+                   'use spiffe.joinTokenTtl.'] });
+      }
+      // Loaded here, at request time. This module is built at step 18 and
+      // the SPIFFE family at step 23; a require at the top of the file
+      // would build the join-token store before the family is registered.
+      const spiffeApi = require('../spiffe/spiffe_api');
+      const minted = spiffeApi.issueJoinToken({
+        ttl: ttl,
+        agentId: String(body.agentId || '').trim()
+      });
+      if (!minted.ok) {
+        log.debug("Leaving AdminActions.spiffeAgentsAction(). Join token " +
+                  "refused.");
+        return this.refused(minted.errorCode, { ok: false,
+                                                errors: [minted.message] });
+      }
+      const when = new Date(minted.expiresAt * 1000).toISOString();
+      log.debug("Leaving AdminActions.spiffeAgentsAction(). Join token " +
+                "minted.");
+      return { ok: true, token: minted.token, expiresAt: minted.expiresAt,
+               agentSpiffeId: minted.agentSpiffeId,
+               message: 'Join token ' + minted.token + '. It is shown once ' +
+                 'and is not recorded. It expires at ' + when + '. The ' +
+                 'agent it attests will be ' + minted.agentSpiffeId +
+                 '. Parent that agent\'s workload entries on it.' };
     }
     log.debug("Leaving AdminActions.spiffeAgentsAction(). Unknown action.");
     return this.spiffeUnknownAction(action, SPIFFE_AGENT_ACTIONS);

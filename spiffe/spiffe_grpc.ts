@@ -1724,7 +1724,9 @@ class SpiffeGrpc {
   // the SPIRE Server API's among them — does leave this thread. `bidiStream()`
   // is unchanged for the same reason read the other way: `AttestAgent` and
   // `SyncAuthorizedEntries` are request/response in practice, but the stream
-  // and its `data`/`end` events belong to the connection.
+  // and its `data`/`end` events belong to the connection. Those events are
+  // emitted outside the handler's `realms.run()`, so `handlersInRealm()`
+  // rebinds the listeners (`bindCallListeners()`, #324).
   // ---------------------------------------------------------------------------
   /**
    * Wraps a server-streaming handler, which is never dispatched: the stream

@@ -156,9 +156,11 @@ NODES="$(node -e 'process.stdout.write(String(Object.keys(JSON.parse(process.arg
 # WHAT THIS ENVIRONMENT DOES NOT PUBLISH (2026-09-21), for the jobs that
 # dial a port of their own rather than the main one. Kerberos TCP 88 is a
 # row of `load_balancer_ports` only where `publish_kerberos` is on (testidp);
-# SPIFFE's are the default realm's two ports, which every environment
-# publishes since #311 (`spiffe_default_ports`, environment/spiffe_default.tf);
-# an environment built before that has no such output and counts SPIFFE as
+# SPIFFE's published port is the default realm's Server API, which every
+# environment publishes since #311 (`spiffe_default_ports`,
+# environment/spiffe_default.tf). The Workload API is not on that map
+# (#324); the suite task serves it from a local agent. An environment
+# built before the output existed has none, and counts SPIFFE as
 # unpublished unless the caller names a socket (STS_SPIFFE_WORKLOAD_URL).
 # Without this both jobs
 # dialled the load balancer on a port nobody listens on and failed on a

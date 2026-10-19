@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4368** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4373** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -76,7 +76,7 @@ is an ordinary outcome.
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 147
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 122
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 236
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 237
 * [Management API (`STS-API`)](#sts-api) — 84
 * [User portal (`STS-PORTAL`)](#sts-portal) — 94
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
@@ -3287,6 +3287,10 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0145` | A request worker failed the SPIFFE Broker API's FetchJWTSVID for an attested reference before answering it (the worker went away, or the operation threw); it is not run again in the front process, because the worker may already have minted (2026-10-07). | gRPC UNAVAILABLE |
 | `STS-SPIFFE-0146` | A Workload API caller is entitled to nothing it asked for: no registration entry matches it (and none is invented), or FetchJWTSVID named a spiffe_id it is not entitled to. Refused at FetchX509SVID, FetchX509Bundles, FetchJWTSVID and FetchJWTBundles, and a stream whose caller lost every entry ends so (SPIFFE Workload API sections 5.2.1, 5.2.2, 6.2.1, 6.2.2; #274). | gRPC PERMISSION_DENIED |
 | `STS-SPIFFE-0147` | A realm's SPIRE Server API or Broker API TCP listener could not take its federated trust domains' X.509 authorities after a federated bundle changed, so a federated SVID is not chained at the TLS handshake until the next change or a restart; every SVID is still verified against the bundles, read off the socket (#438). | — |
+| `STS-SPIFFE-0148` | The workload agent could not serve the Workload API on its Unix socket: the native peer-credentials module could not be loaded, the socket could not be bound, or join-token attestation failed (#324). | — |
+| `STS-SPIFFE-0149` | A Workload API caller on the workload agent's Unix socket no longer matches the process that connected: it has exited, its pid was reused, or it has executed a different program (#324). | — |
+| `STS-SPIFFE-0150` | The workload agent refused a Workload API caller that is entitled to nothing it asked for: no registration entry matches it (#324). | — |
+| `STS-SPIFFE-0151` | The workload agent could not obtain an SVID or a bundle from the SPIRE Server API (#324). | — |
 
 ## STS-TLS
 
@@ -4591,6 +4595,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0855` | Taking an owner off a role, on the role page or through POST /admin-api/roles/remove-owner, was refused with no code of the register's own; where the register gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the role page |
 | `STS-ADMIN-0856` | Adding an owner to an application, on the application page or through POST /admin-api/applications/add-owner, was refused with no code of the registry's own; where the registry gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the application page |
 | `STS-ADMIN-0857` | Taking an owner off an application, on the application page or through POST /admin-api/applications/remove-owner, was refused with no code of the registry's own; where the registry gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the application page |
+| `STS-ADMIN-0858` | Creating a join token, on the agents page or through POST /admin-api/spiffe/agents/join-token, was refused because ttl was given and is not a positive number (#324). | HTTP 400 |
 
 ## STS-API
 
