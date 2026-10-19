@@ -1634,32 +1634,45 @@ refresh; `cluster/CLAUDE.md`, *The scheduler*). What moved and what did not:
   holds sessions nobody else can see would make it a *per-process* job there.
 
 **A REALM HOLDS AT MOST `authn.maxSessions` SESSIONS (#345, 2026-09-29;
-100,000 by default).** Until then only the expiry job bounded the store, so a
-burst of sign-ins — a suite run, credential stuffing, a client that never
-keeps its cookie — grew every process until the job caught up.
+#350, 2026-10-18; 100,000 by default).** Until #345 only the expiry job
+bounded the store. At the cap a new row is now refused. A flood no longer
+ends somebody else's session.
 
-* **Checked at INSERT**, in `makeRoomForSession()`, by the three doors that
-  add a key: `startArrivalSession()`, `startRelyingPartySession()` and
-  `startSessionHere()` (an upgraded arrival keeps its id and is not an
-  insert). The scheduler rule allows it: a bound cannot wait for a timer.
-* **At the cap the LEAST RECENTLY USED session ends, through
-  `expireSession()`** with `why` = `capacity` — the delete, back-channel
-  Logout Tokens planned, and once for the cluster the `session.end` audit row
-  carrying `STS-AUTHN-0292` and CAEP `session-revoked` initiated by `policy`.
-  The log line is at most once a minute per process, with a count.
-* **Least recently used is `lastSeenAt`, falling back to `startedAt`**,
-  because it is what the row tracks. It moves at every sign-in on the
-  session and every API client call, and on every use only while an idle
-  timeout is in force (`noteSessionUsed()`: a browser read is not a write
-  otherwise). Creation order would end an operator's session behind a burst
-  of arrivals.
+* **Checked at INSERT**, in `makeRoomForSession()`, by the doors that add a
+  key: `startArrivalSession()`, `startRelyingPartySession()`,
+  `adoptRelyingPartySession()` and `startSessionHere()`. An upgraded arrival
+  keeps its id and is not an insert, and neither is a restore or a
+  change-log apply. The scheduler rule allows the check: a bound cannot
+  wait for a timer.
+* **At `authn.maxSessions` the new row is refused** (`STS-AUTHN-0337`).
+  Nothing is stored and no cookie is set. A chosen sign-in is audited as
+  `session.refuse` and the screen is drawn again; an arrival continues
+  with no cookie. The log line is at most once a minute per process, with
+  a count. The code is not in the body. No class is admitted over the cap.
+* **A subject already at `authn.maxSessionsPerSubject` (32) loses their own
+  oldest countable row**, one per insert, through `expireSession()` with
+  `why` = `capacity` — `STS-AUTHN-0292`, CAEP `session-revoked` initiated
+  by `policy`. Countable is `chosen === true` (and an old relying-party row
+  that omitted `chosen`). Arrivals stay `chosen: false` and do not count;
+  they share one username, so the cap is `subjectId`, frozen at creation
+  (the `urn:uuid` sub, otherwise the username). The oldest row is
+  `lastSeenAt`, then `startedAt`. The sign-on a relying-party row was just
+  derived from is skipped. Another subject's console row is not a victim;
+  this subject's own oldest, console included, is. An upgrade of an arrival
+  ends one other own row and is not refused.
 * **Only the process doing the insert checks**, against its own view of the
   replicated store. A worker restoring sessions, or applying another's
-  writes from the change log, never evicts, so processes do not each evict
-  differently. The end is a normal tombstoned delete. Two concurrent
-  inserters may overshoot by one each until the next insert.
-* **Lowering the cap** ends every session over it at the next insert, in one
-  sort, rather than one per insert.
+  writes from the change log, never evicts. Two concurrent inserters may
+  overshoot by one each. The client address is not an admission key.
+* **Lowering a cap does not mass-end.** The next insert ends at most one
+  own row, and only when that subject is over their own cap. The
+  `authn.session-expiry` job then ends at most `authn.sessionShedPerSweep`
+  such rows in one run, oldest first, one subject at a time. A subject at
+  or under their cap is not ended because the realm is over
+  `authn.maxSessions`. Rows otherwise leave by lifetime, sign-out or revoke.
+* **`backsConsole` is set on the parent** when an admitted child has
+  `rpSurface === 'admin'`, and `mergeSessionRows()` ORs it so a stale copy
+  cannot clear it.
 
 `tests/session_cap.js` holds it.
 

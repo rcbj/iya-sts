@@ -1440,6 +1440,18 @@ class Authn {
       });
       out[field] = union;
     });
+    // A stale copy that is further along must not clear a console child
+    // the other copy already recorded, and an empty subjectId must not
+    // wipe the one frozen at creation. Two different non-empty ids keep
+    // the further-along copy's.
+    out.backsConsole = !!(mine.backsConsole || theirs.backsConsole);
+    const baseSub = base.subjectId ? String(base.subjectId) : '';
+    const otherSub = other.subjectId ? String(other.subjectId) : '';
+    if (baseSub && otherSub && baseSub !== otherSub) {
+      out.subjectId = baseSub;
+    } else {
+      out.subjectId = baseSub || otherSub;
+    }
     log.debug("Leaving Authn.mergeSessionRows(). " +
               (mineAhead ? "Mine is ahead." : "The stored copy is ahead."));
     return out;
@@ -1903,10 +1915,17 @@ class Authn {
       amr: [], acr: '0',
       via: via || 'unknown',
       relyingParties: [],
-      events: []
+      events: [],
+      // Not a person. Arrivals share one username, so the per-subject cap
+      // must not group them, and they are not countable.
+      subjectId: ''
     };
+    const room = this.makeRoomForSession(sessions.realmMap(), session);
+    if (!room.admitted) {
+      log.debug("Leaving Authn.startArrivalSession(). The realm is full.");
+      return null;
+    }
     const cookieValue = this.mintSessionHandle(session);
-    this.makeRoomForSession(sessions.realmMap(), sessionId);
     sessions.set(sessionId, session);
     this.setCookieHeader(res, this.sessionCookieLine(SESSION_COOKIE,
                                                      cookieValue));
@@ -2273,7 +2292,8 @@ class Authn {
    * @returns the new session
    */
   startRelyingPartySession(spec) {
-    const { realms, log, nowSec, randomId, userFor, audit } = this.deps;
+    const { realms, log, nowSec, randomId, userFor, audit,
+            errorCodes } = this.deps;
     log.debug("Entering Authn.startRelyingPartySession(). surface=" +
               spec.surface);
     const claims = spec.claims || {};
@@ -2375,13 +2395,28 @@ class Authn {
       derivedFromExpires: parent ? Number(parent.expires || 0) : 0,
       credentialKey: null,
       lastSeenAt: Date.now(),
-      calls: 1
+      calls: 1,
+      // Said explicitly: a missing chosen is treated as a real session by
+      // the merge, and the per-subject cap counts only chosen rows.
+      chosen: true
     };
+    session.subjectId = this.subjectIdOf(session.user);
+    const room = this.makeRoomForSession(store, session);
+    if (!room.admitted) {
+      this.auditCapRefusal(username, 'OAuth 2.0 / OIDC');
+      if (spec.res) {
+        errorCodes.mark(spec.res, 'STS-AUTHN-0337');
+      }
+      log.debug("Leaving Authn.startRelyingPartySession(). Refused.");
+      return null;
+    }
     const cookieValue = this.mintSessionHandle(session);
-    this.makeRoomForSession(store, sessionId);
     store.set(sessionId, session);
     this.setCookieHeader(spec.res, this.sessionCookieLine(spec.cookie,
                                                           cookieValue));
+    if (session.rpSurface === 'admin') {
+      this.noteBacksConsole(session);
+    }
     // THE AUDIT ROW SAYS WHERE IT CAME FROM, and it is a `session.start` like
     // every other because that is what happened. What tells it apart from the
     // sign-in that produced the ID Token is the summary and the detail: an
@@ -2480,7 +2515,7 @@ class Authn {
    * @returns the new session
    */
   adoptRelyingPartySession(spec) {
-    const { realms, log, randomId, userFor, audit } = this.deps;
+    const { realms, log, randomId, userFor, audit, errorCodes } = this.deps;
     log.debug("Entering Authn.adoptRelyingPartySession(). surface=" +
               spec.surface);
     const source = spec.source;
@@ -2522,13 +2557,26 @@ class Authn {
       derivedFromExpires: 0,
       credentialKey: null,
       lastSeenAt: Date.now(),
-      calls: 1
+      calls: 1,
+      chosen: true
     };
+    session.subjectId = this.subjectIdOf(session.user);
+    const room = this.makeRoomForSession(store, session);
+    if (!room.admitted) {
+      this.auditCapRefusal(username, 'OAuth 2.0 / OIDC');
+      if (spec.res) {
+        errorCodes.mark(spec.res, 'STS-AUTHN-0337');
+      }
+      log.debug("Leaving Authn.adoptRelyingPartySession(). Refused.");
+      return null;
+    }
     const cookieValue = this.mintSessionHandle(session);
-    this.makeRoomForSession(store, sessionId);
     store.set(sessionId, session);
     this.setCookieHeader(spec.res, this.sessionCookieLine(spec.cookie,
                                                           cookieValue));
+    if (session.rpSurface === 'admin') {
+      this.noteBacksConsole(session);
+    }
     audit.audit({
       action: 'session.start',
       actor: username,
@@ -3157,10 +3205,9 @@ class Authn {
     // away too long" and "your session is an hour old" are different things to
     // tell somebody, and a receiver may treat them differently.
     const idle = why === 'idle';
-    // THE THIRD WAY A SESSION RUNS OUT (#345): the realm's store was full
-    // (`authn.maxSessions`) when another session was created, and this was
-    // the least recently used. A policy ending a session nobody signed out
-    // of, exactly as an expiry is, so it takes this same end.
+    // THE THIRD WAY A SESSION RUNS OUT (#345, #350): this subject's own
+    // oldest countable row, so one more session of theirs can take its
+    // place, or one row the sweep sheds. Never another subject's row.
     const evicted = why === 'capacity';
     store.delete(id);
     // THE BACK-CHANNEL LOGOUT TOKENS, ON AN EXPIRY TOO (2026-09-17, #36
@@ -3174,8 +3221,8 @@ class Authn {
     // draw one on.
     const planned = this.backchannelOnExpiry()
       ? this.planBackchannel(session, evicted
-          ? 'the realm held authn.maxSessions sessions and this was the ' +
-            'least recently used'
+          ? 'this subject was at authn.maxSessionsPerSubject, and this ' +
+            'was their own oldest countable session'
           : idle
             ? 'the session went idle (authn.sessionIdleTimeoutS)'
             : 'the session expired (authn.sessionLifetimeS)', 'expiry')
@@ -3256,8 +3303,8 @@ class Authn {
 
   // The audit row and the event for an expiry — what sessionEndOnce() lets out
   // once for the cluster. Split from expireSession() for that reason only.
-  // `kind` is 'idle', 'capacity' (#345: ended to keep the realm under
-  // `authn.maxSessions`) or '' for the absolute expiry.
+  // `kind` is 'idle', 'capacity' (#350: this subject's own oldest
+  // countable row) or '' for the absolute expiry.
   private reportExpiry(id, session, via, kind) {
     const { log, audit } = this.deps;
     log.debug("Entering Authn.reportExpiry(). id=" + id);
@@ -3273,8 +3320,8 @@ class Authn {
       summary: ((session && session.user &&
                  session.user.username) || 'somebody') +
                '\'s session ' + id + (evicted
-                 ? ' was ended to make room: the realm held ' +
-                   'authn.maxSessions sessions'
+                 ? ' was ended at the per-subject session cap: it was ' +
+                   'that subject\'s own oldest countable session'
                  : ' expired and was discarded'),
       detail: {
         sessionId: id,
@@ -3283,8 +3330,9 @@ class Authn {
         // the two apart, which is what `initiating_entity` carries in the
         // event.
         reason: evicted
-          ? 'the realm held authn.maxSessions sessions when another was ' +
-            'created, and this one was the least recently used'
+          ? 'this subject was at authn.maxSessionsPerSubject, and this ' +
+            'was their own oldest countable session — never another ' +
+            'subject\'s row and never an arrival'
           : idle
             ? 'the session went unused for longer than ' +
               'authn.sessionIdleTimeoutS'
@@ -3313,9 +3361,10 @@ class Authn {
       via: via, byAdmin: false, expired: true,
       initiatingEntity: 'policy',
       reason: evicted
-        ? 'This service holds a bounded number of sessions, it was full, ' +
-          'and this was the session least recently used. Nobody signed ' +
-          'out — this service stopped honouring it to make room.'
+        ? 'This subject was at the per-subject session cap, and this was ' +
+          'their own oldest countable session. Nobody signed out — this ' +
+          'service stopped honouring it. It was not another subject\'s ' +
+          'session and not an arrival.'
         : idle
         ? 'The session went unused for longer than this service\'s idle ' +
           'timeout. Nobody signed out — this service stopped honouring a ' +
@@ -3374,6 +3423,10 @@ class Authn {
         });
       });
     });
+    // Expiries first, so a row already queued is not also a capacity
+    // victim. A realm with nothing expired still sheds. The count above
+    // stays the expiries: a capacity end is its own audit row.
+    this.shedSubjectSurplus();
     if (gone) {
       log.info('authn: the session sweep ended ' + gone + ' expired ' +
                'session(s). Each one is an audit row and a CAEP ' +
@@ -3386,107 +3439,380 @@ class Authn {
   }
 
   // ---------------------------------------------------------------------------
-  // THE SIZE CAP (#345): `authn.maxSessions` per realm, checked where a
-  // session is CREATED, because a bound cannot wait for the expiry job (root
-  // CLAUDE.md, *Anything periodic is a scheduler job*). Called by the three
-  // doors that add a key to the store — `startArrivalSession()`,
-  // `startRelyingPartySession()` and `startSessionHere()` — before the set;
-  // a write back to a session that already exists is not an insert and
-  // passes.
+  // THE SIZE CAP (#345, #350): `authn.maxSessions` per realm, checked where a
+  // session is CREATED, because a bound cannot wait for the expiry job.
+  // Called by the doors that add a key — `startArrivalSession()`,
+  // `startRelyingPartySession()`, `adoptRelyingPartySession()` and
+  // `startSessionHere()` — before the set. A write of an id the store
+  // already holds is not an insert. A restore or a change-log apply does
+  // not come through here.
   //
-  // **AT THE CAP THE LEAST RECENTLY USED SESSION ENDS, through
-  // `expireSession()`** — the one end an expiry takes: the delete, the
-  // back-channel Logout Tokens planned, and, once for the cluster, the audit
-  // row (carrying STS-AUTHN-0292) and CAEP session-revoked. Nothing is
-  // dropped silently; the person behind it signs in again.
+  // **AT THE REALM CAP A NEW ROW IS REFUSED** (STS-AUTHN-0337). Nothing is
+  // ended to make room for somebody else. One subject already at
+  // `authn.maxSessionsPerSubject` loses their own oldest countable row
+  // (STS-AUTHN-0292), one row, and the new row takes its place. An arrival
+  // is not countable. The sign-on a relying-party row was just derived from
+  // is not the victim.
   //
-  // **"LEAST RECENTLY USED" IS `lastSeenAt`, falling back to `startedAt`**,
-  // because that is what the row tracks. Oldest-by-creation would end a
-  // console operator's session while a burst of arrivals from nobody sat
-  // behind it. `lastSeenAt` is stamped at creation, at every sign-in on the
-  // session, on every call an API client makes, and — while an idle timeout
-  // is in force — on every use (`noteSessionUsed()`); with no idle timeout a
-  // browser read writes nothing (a read must not be a write to a persisted
-  // store), so it is then "last authenticated", which is still the better
-  // order. Map order would be free and is creation order, which is the
-  // wrong question.
+  // **OLDEST IS `lastSeenAt`, THEN `startedAt`.** A tie keeps the first row
+  // in Map order. The scan is the whole resident map; an index arrives with
+  // the window, not here.
   //
-  // **O(n) in the realm's sessions, and only at the cap** — the ordinary
-  // insert asks `size` and nothing else. When the cap was LOWERED below the
-  // store's size, one sort ends every session over it at once rather than
-  // one per insert, which would never converge.
-  //
-  // **SEVERAL PROCESSES, ONE STORE.** `sessions` is persisted and
-  // replicated (`realms.map({persist, tombstone})`), so the end is a normal
-  // tombstoned delete that reaches every node, and its report is claimed
-  // once (`sessionEndOnce()`). The check runs ONLY in the process doing the
-  // insert, against that process's view of the store: a worker RESTORING
-  // sessions at start, or applying another's writes from the change log,
-  // does not come through here and evicts nothing — so processes never
-  // evict each other's choices differently. Two processes inserting at the
-  // same instant may each see room, so the store can overshoot by one per
-  // concurrent inserter until the next insert; a bound, not an exact count.
+  // **NOT LOCKED.** Two inserts at the same instant can each see room, so
+  // the store can overshoot by one per concurrent inserter. Lowering a cap
+  // does not mass-end: the next insert ends at most one own row, and the
+  // sweep ends at most `authn.sessionShedPerSweep`.
   // ---------------------------------------------------------------------------
   private sessionCapLoggedAt = 0;
   private sessionCapEnded = 0;
+  private sessionRefuseLoggedAt = 0;
+  private sessionRefuseCount = 0;
 
-  private makeRoomForSession(store, newId) {
-    const { log, config, errorCodes } = this.deps;
-    const self = this;
-    log.debug("Entering Authn.makeRoomForSession().");
+  // HOT PATH: asked of every resident row while one victim is chosen.
+  // No Entering/Leaving pair — one would drown the log.
+  private countsTowardSubject(session) {
+    if (!session || session.chosen === false) {
+      return false;
+    }
+    if (session.chosen === true) {
+      return true;
+    }
+    // An old relying-party row omitted chosen. The merge treats that as a
+    // real session, so the cap does too.
+    return !!session.rpSurface;
+  }
+
+  // HOT PATH: compared once per resident row of one subject.
+  // No Entering/Leaving pair — one would drown the log.
+  // Strictly earlier. A tie is not earlier, so the first row in Map order
+  // stays the victim.
+  private earlierSession(a, b) {
+    const aSeen = Number(a && a.lastSeenAt) || 0;
+    const bSeen = Number(b && b.lastSeenAt) || 0;
+    if (aSeen !== bSeen) {
+      return aSeen < bSeen;
+    }
+    const aStart = Number(a && a.startedAt) || 0;
+    const bStart = Number(b && b.startedAt) || 0;
+    return aStart < bStart;
+  }
+
+  private realmSessionCap() {
+    const { log, config } = this.deps;
+    log.debug("Entering Authn.realmSessionCap().");
     const cap = Math.floor(Number(config.value('authn.maxSessions')));
-    if (!(cap > 0) || !store || store.size < cap ||
-        (newId && store.has(newId))) {
-      log.debug("Leaving Authn.makeRoomForSession(). Room.");
-      return 0;
+    log.debug("Leaving Authn.realmSessionCap().");
+    return cap;
+  }
+
+  private subjectSessionCap() {
+    const { log, config } = this.deps;
+    log.debug("Entering Authn.subjectSessionCap().");
+    let per = Math.floor(Number(
+      config.value('authn.maxSessionsPerSubject')));
+    const cap = Math.floor(Number(config.value('authn.maxSessions')));
+    if (cap >= 1 && per > cap) {
+      per = cap;
     }
-    // A HOT PATH: called for every session the scan or the sort compares,
-    // so no Entering/Leaving pair — one would drown the log.
-    const usedAt = function (session) {
-      return Number(session && (session.lastSeenAt || session.startedAt)) ||
-             0;
-    };
-    const over = store.size - cap + 1;
-    let victims = [];
-    if (over === 1) {
-      let oldest = null;
-      store.forEach(function (session, id) {
-        // Strictly less: a tie keeps the first, the older in Map order.
-        if (oldest === null || usedAt(session) < usedAt(oldest[1])) {
-          oldest = [id, session];
-        }
-      });
-      if (oldest) {
-        victims = [oldest];
-      }
-    } else {
-      const all = [];
-      store.forEach(function (session, id) {
-        all.push([id, session]);
-      });
-      all.sort(function (a, b) {
-        return usedAt(a[1]) - usedAt(b[1]);
-      });
-      victims = all.slice(0, over);
+    log.debug("Leaving Authn.subjectSessionCap().");
+    return per;
+  }
+
+  private sessionShedBudget() {
+    const { log, config } = this.deps;
+    log.debug("Entering Authn.sessionShedBudget().");
+    const budget = Math.floor(Number(
+      config.value('authn.sessionShedPerSweep')));
+    log.debug("Leaving Authn.sessionShedBudget().");
+    return budget;
+  }
+
+  // The stable id frozen on a chosen session: the urn:uuid sub when the
+  // user has one, otherwise the username `sessionsOf()` compares. Not
+  // holderKeyOf — that folds names the cap must keep apart.
+  private subjectIdOf(user) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.subjectIdOf().");
+    const sub = user && user.sub ? String(user.sub) : '';
+    if (/^urn:uuid:/i.test(sub)) {
+      log.debug("Leaving Authn.subjectIdOf().");
+      return sub;
     }
-    victims.forEach(function (pair) {
-      self.expireSession(store, pair[0], pair[1],
-                         'the session cap (authn.maxSessions)', 'capacity');
-    });
-    this.sessionCapEnded += victims.length;
+    const name = String((user && user.username) || '');
+    log.debug("Leaving Authn.subjectIdOf().");
+    return name;
+  }
+
+  private noteCapacityEnd(count) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.noteCapacityEnd().");
+    this.sessionCapEnded += count;
     const now = Date.now();
     if (now - this.sessionCapLoggedAt >= 60000) {
-      log.warn(errorCodes.tag('STS-AUTHN-0292') + 'authn: the realm held ' +
-               'authn.maxSessions (' + cap + ') sessions, so ' +
-               this.sessionCapEnded + ' least recently used session(s) were ' +
-               'ended to make room for new ones. Each is an audit row. ' +
-               'Raise the setting if this is ordinary load.');
+      log.warn(errorCodes.tag('STS-AUTHN-0292') + 'authn: ' +
+               this.sessionCapEnded + ' session(s) were ended at the ' +
+               'per-subject session cap. Each was that subject\'s own ' +
+               'oldest countable session, never another subject\'s and ' +
+               'never an arrival. Each is an audit row.');
       this.sessionCapEnded = 0;
       this.sessionCapLoggedAt = now;
     }
-    log.debug("Leaving Authn.makeRoomForSession(). " + victims.length +
-              " ended.");
-    return victims.length;
+    log.debug("Leaving Authn.noteCapacityEnd().");
+  }
+
+  private noteRealmRefusal() {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.noteRealmRefusal().");
+    this.sessionRefuseCount += 1;
+    const now = Date.now();
+    if (now - this.sessionRefuseLoggedAt >= 60000) {
+      log.warn(errorCodes.tag('STS-AUTHN-0337') + 'authn: ' +
+               this.sessionRefuseCount + ' new session(s) were not ' +
+               'admitted. The realm is at authn.maxSessions and the ' +
+               'insert freed no row. An arrival continues with no ' +
+               'cookie; a chosen sign-in is drawn again.');
+      this.sessionRefuseCount = 0;
+      this.sessionRefuseLoggedAt = now;
+    }
+    log.debug("Leaving Authn.noteRealmRefusal().");
+  }
+
+  private auditCapRefusal(username, via) {
+    const { log, audit } = this.deps;
+    log.debug("Entering Authn.auditCapRefusal().");
+    audit.audit({
+      action: 'session.refuse',
+      actor: String(username || ''),
+      errorCode: 'STS-AUTHN-0337',
+      protocol: via || 'OAuth 2.0 / OIDC',
+      channel: 'http',
+      target: '',
+      summary: 'a session for ' + username + ' was refused: the realm is ' +
+               'at authn.maxSessions',
+      detail: {
+        why: 'the realm is at authn.maxSessions and this insert freed ' +
+             'no row'
+      }
+    });
+    log.debug("Leaving Authn.auditCapRefusal().");
+  }
+
+  // Ends one countable row of `incoming.subjectId`, the oldest by
+  // lastSeenAt then startedAt, when that subject is already at the
+  // per-subject cap. Skips `skipId` and `incoming.derivedFrom`. Returns
+  // how many rows ended (0 or 1).
+  private endOneOwn(store, incoming, skipId) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.endOneOwn().");
+    if (!store || !this.countsTowardSubject(incoming)) {
+      log.debug("Leaving Authn.endOneOwn(). Not countable.");
+      return 0;
+    }
+    const subject = String(incoming.subjectId || '');
+    if (!subject) {
+      log.debug("Leaving Authn.endOneOwn(). No subject.");
+      return 0;
+    }
+    const cap = this.subjectSessionCap();
+    if (!(cap >= 1)) {
+      log.debug("Leaving Authn.endOneOwn(). No cap.");
+      return 0;
+    }
+    const skip = skipId ? String(skipId) : '';
+    const derived = incoming.derivedFrom ? String(incoming.derivedFrom) : '';
+    let count = 0;
+    let oldest = null;
+    // The scan is the whole resident map; an index arrives with the
+    // window, not here.
+    store.forEach(function (row, id) {
+      if (!self.countsTowardSubject(row)) {
+        return;
+      }
+      if (String(row.subjectId || '') !== subject) {
+        return;
+      }
+      const key = String(id);
+      if (skip && key === skip) {
+        return;
+      }
+      count += 1;
+      if (derived && key === derived) {
+        return;
+      }
+      if (oldest === null || self.earlierSession(row, oldest[1])) {
+        oldest = [key, row];
+      }
+    });
+    if (count < cap || !oldest) {
+      log.debug("Leaving Authn.endOneOwn(). " + count + " held.");
+      return 0;
+    }
+    this.expireSession(store, oldest[0], oldest[1],
+                       'the per-subject session cap', 'capacity');
+    this.noteCapacityEnd(1);
+    log.debug("Leaving Authn.endOneOwn(). Ended " + oldest[0] + ".");
+    return 1;
+  }
+
+  // An arrival becoming a sign-on on the same id. Not an insert: the realm
+  // cap does not refuse it. The subject cap still ends one other own row.
+  private considerUpgrade(store, session) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.considerUpgrade().");
+    const ended = this.endOneOwn(store, session, session && session.id);
+    log.debug("Leaving Authn.considerUpgrade(). " + ended + " ended.");
+  }
+
+  private makeRoomForSession(store, session) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.makeRoomForSession().");
+    if (!store || !session) {
+      log.debug("Leaving Authn.makeRoomForSession(). No store.");
+      return { ended: 0, admitted: true };
+    }
+    const newId = session.id ? String(session.id) : '';
+    if (newId && store.has(newId)) {
+      log.debug("Leaving Authn.makeRoomForSession(). Already held.");
+      return { ended: 0, admitted: true };
+    }
+    const ended = this.endOneOwn(store, session, '');
+    const cap = this.realmSessionCap();
+    // Not locked. Two inserts at once can each see room and overshoot by
+    // one per inserter. A victim already freed a row, so this insert is
+    // admitted even when the realm is still over the cap.
+    if (cap >= 1 && store.size >= cap && ended === 0) {
+      this.noteRealmRefusal();
+      log.debug("Leaving Authn.makeRoomForSession(). Refused.");
+      return { ended: 0, admitted: false };
+    }
+    log.debug("Leaving Authn.makeRoomForSession(). " + ended + " ended.");
+    return { ended: ended, admitted: true };
+  }
+
+  // A console child marks the parent sign-on, in the parent's realm, so a
+  // later merge can keep the flag. Only after the child was admitted.
+  private noteBacksConsole(session) {
+    const { log, realms } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.noteBacksConsole().");
+    if (!session || String(session.rpSurface || '') !== 'admin' ||
+        !session.derivedFrom) {
+      log.debug("Leaving Authn.noteBacksConsole(). Not a console child.");
+      return;
+    }
+    const parentId = String(session.derivedFrom);
+    const realmId = String(session.derivedFromRealm || realms.currentId());
+    const realm = realms.get(realmId) || realms.current();
+    realms.run(realm, function () {
+      const parent = sessions.get(parentId);
+      if (!parent) {
+        return;
+      }
+      parent.backsConsole = true;
+      self.noteSessionChanged(parent);
+    });
+    log.debug("Leaving Authn.noteBacksConsole().");
+  }
+
+  // At most one run's budget, across every realm. One subject is brought
+  // down to their cap, oldest first, before the next subject. Subjects are
+  // ordered by their oldest row. Arrivals are not ended for capacity, and
+  // a subject at or under their cap is not ended because the realm is over
+  // authn.maxSessions.
+  private shedSubjectSurplus() {
+    const { log, realms } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.shedSubjectSurplus().");
+    const budget = this.sessionShedBudget();
+    if (!(budget >= 1)) {
+      log.debug("Leaving Authn.shedSubjectSurplus(). No budget.");
+      return;
+    }
+    let left = budget;
+    const groups = [];
+    realms.list().forEach(function (realm) {
+      realms.run(realm, function () {
+        const store = sessions.realmMap(realm.id);
+        if (!store || !store.size) {
+          return;
+        }
+        const per = self.subjectSessionCap();
+        if (!(per >= 1)) {
+          return;
+        }
+        const bySubject = new Map();
+        // The scan is the whole resident map; an index arrives with the
+        // window, not here.
+        store.forEach(function (session, id) {
+          if (!self.countsTowardSubject(session)) {
+            return;
+          }
+          const subject = String(session.subjectId || '');
+          if (!subject) {
+            return;
+          }
+          let list = bySubject.get(subject);
+          if (!list) {
+            list = [];
+            bySubject.set(subject, list);
+          }
+          list.push([id, session]);
+        });
+        bySubject.forEach(function (list) {
+          if (list.length <= per) {
+            return;
+          }
+          list.sort(function (a, b) {
+            if (self.earlierSession(a[1], b[1])) {
+              return -1;
+            }
+            if (self.earlierSession(b[1], a[1])) {
+              return 1;
+            }
+            return 0;
+          });
+          groups.push({ realm: realm, rows: list, per: per });
+        });
+      });
+    });
+    groups.sort(function (a, b) {
+      if (self.earlierSession(a.rows[0][1], b.rows[0][1])) {
+        return -1;
+      }
+      if (self.earlierSession(b.rows[0][1], a.rows[0][1])) {
+        return 1;
+      }
+      return 0;
+    });
+    const planned = [];
+    groups.forEach(function (group) {
+      let held = group.rows.length;
+      for (let i = 0; i < group.rows.length && left > 0 &&
+           held > group.per; i++) {
+        planned.push({ realm: group.realm, id: group.rows[i][0],
+                       session: group.rows[i][1] });
+        held -= 1;
+        left -= 1;
+      }
+    });
+    let shed = 0;
+    planned.forEach(function (item) {
+      realms.run(item.realm, function () {
+        const store = sessions.realmMap(item.realm.id);
+        const live = store ? store.get(item.id) : null;
+        if (!live) {
+          return;
+        }
+        self.expireSession(store, item.id, live, 'the session sweep',
+                           'capacity');
+        shed += 1;
+      });
+    });
+    if (shed) {
+      this.noteCapacityEnd(shed);
+    }
+    log.debug("Leaving Authn.shedSubjectSurplus(). " + shed + " ended.");
   }
 
   // ---------------------------------------------------------------------------
@@ -5419,6 +5745,9 @@ class Authn {
       // through here. An upgraded row that left this false would be a sign-in
       // that sessionOf() went on hiding, which is a sign-in that does not take.
       chosen: true,
+      // Frozen here. A later rename does not rewrite it, and the per-subject
+      // cap groups on this rather than on the username arrivals share.
+      subjectId: this.subjectIdOf(user),
       // Preserved across an upgrade so that "when did this browser arrive" and
       // "when did they authenticate" stay two different facts.
       startedAt: arrived ? arrived.startedAt : Date.now(),
@@ -5467,6 +5796,23 @@ class Authn {
       risk: risk
     };
     this.bindPartnerSession(session, extra);
+    // Room before the handle, so a refused row is not stored and has no
+    // cookie. An upgraded arrival keeps its id and is not an insert: the
+    // realm cap does not refuse it, and the subject cap ends one other
+    // own row.
+    const store = sessions.realmMap();
+    if (arrived && store.has(sessionId)) {
+      this.considerUpgrade(store, session);
+    } else {
+      const room = this.makeRoomForSession(store, session);
+      if (!room.admitted) {
+        this.auditCapRefusal(username, via || 'OAuth 2.0 / OIDC');
+        extra.refusedWith = 'STS-AUTHN-0337';
+        log.debug("Leaving Authn.startSessionHere(). The realm is at " +
+                  "authn.maxSessions.");
+        return null;
+      }
+    }
     // A FRESH HANDLE, EVEN FOR AN UPGRADED ARRIVAL ROW. The arrival session's
     // id survives the upgrade on purpose — it is the `sid` a flow was
     // correlated by from its first request — and until 2026-09-14 so did its
@@ -5475,8 +5821,6 @@ class Authn {
     // fixation, whatever the randomness of the id. Rotating the handle keeps
     // the correlation and ends the fixation.
     const cookieValue = this.mintSessionHandle(session);
-    // An upgraded arrival row keeps its id and is not an insert.
-    this.makeRoomForSession(sessions.realmMap(), sessionId);
     sessions.set(sessionId, session);
     // The sweep that ends it if nobody signs it out is the scheduler job
     // `authn.session-expiry` (see the header); nothing is armed here.
@@ -13731,8 +14075,8 @@ scheduler.register({
   id: SESSION_EXPIRY_JOB,
   title: 'Session expiry',
   describe: 'Ends every sign-on session whose lifetime or idle timeout has ' +
-            'passed, in every realm: an audit row, CAEP session-revoked and ' +
-            'the back-channel Logout Tokens, once for the whole cluster.',
+            'passed, and at most authn.sessionShedPerSweep of one subject\'s ' +
+            'own surplus sessions, in every realm.',
   owner: 'authn/authn.ts',
   everySetting: SESSION_SWEEP_SETTING,
   everySettingUnit: 's',

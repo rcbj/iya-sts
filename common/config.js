@@ -1896,11 +1896,13 @@ const SETTINGS = [
                  'whose lifetime or idle timeout has passed — the audit row, ' +
                  'CAEP session-revoked and the back-channel Logout Tokens ' +
                  'going out ONCE for the whole cluster — whether or not ' +
-                 'anybody comes back to present it. 0 switches the job off: ' +
-                 'an expired session is then still refused whenever it is ' +
-                 'presented, and ended at that moment, but nobody is told of ' +
-                 'one that is never presented again. It was a fixed thirty ' +
-                 'seconds in every process until 2026-09-22 (#49).' },
+                 'anybody comes back to present it. The same run also ends ' +
+                 'at most authn.sessionShedPerSweep of one subject\'s own ' +
+                 'surplus sessions. 0 switches the job off: an expired ' +
+                 'session is then still refused whenever it is presented, ' +
+                 'and ended at that moment, but nobody is told of one that ' +
+                 'is never presented again. It was a fixed thirty seconds ' +
+                 'in every process until 2026-09-22 (#49).' },
 
   // THE SIGN-ON SESSION'S COOKIE DOMAIN (#472, rcbj's D3). The cookie is
   // host-only until this is set, which is the stronger default: it goes to
@@ -1957,24 +1959,57 @@ const SETTINGS = [
                  'already exist, because it is checked where a session is ' +
                  'read rather than stamped where one is made.' },
 
-  // #345: the sign-on session store's size cap, per realm.
+  // #345, #350: the sign-on session store's size cap, per realm. At the
+  // cap a new row is refused. A subject's own cap is the next two rows.
   { key: 'authn.maxSessions', group: 'Web security',
     label: 'Most sign-on sessions per realm',
     env: 'STS_AUTHN_MAX_SESSIONS', type: 'int', dflt: 100000,
     min: 1, max: 10000000, runtime: true,
-    description: 'The most sign-on sessions a trust realm holds — browser ' +
-                 'sign-ins, the arrival sessions a browser is given at a ' +
-                 'protocol\'s front door, the console\'s and the portal\'s ' +
-                 'own, and the sessions of API, SCIM and SPIRE clients. ' +
-                 'Checked when a session is CREATED: at the cap the least ' +
-                 'recently used session is ended to make room, exactly as ' +
-                 'an expiry ends one — an audit row carrying STS-AUTHN-0292, ' +
-                 'CAEP session-revoked and back-channel Logout Tokens — so ' +
-                 'its holder has to sign in again. Without it only the ' +
-                 'session expiry job bounded the store, and a burst of ' +
-                 'sign-ins grew every process until the job caught up. ' +
-                 'Lowering it takes effect at the next session created, ' +
-                 'which then ends every session over the new cap at once.' },
+    description: 'The most sessions a trust realm holds — browser ' +
+                 'sign-ins, arrival sessions, the console\'s and the ' +
+                 'portal\'s own, and the sessions of API, SCIM and SPIRE ' +
+                 'clients. Checked when a session is CREATED. At the cap a ' +
+                 'new row is REFUSED (STS-AUTHN-0337): nothing is ended to ' +
+                 'make room for somebody else. A subject already at ' +
+                 'authn.maxSessionsPerSubject loses their own oldest ' +
+                 'countable session instead (STS-AUTHN-0292), one row, and ' +
+                 'the new row takes its place. Lowering this does not end ' +
+                 'the sessions already held. A new row is refused while ' +
+                 'the realm is still over the new number; sessions leave ' +
+                 'by lifetime, sign-out, revoke, or, where one subject is ' +
+                 'over their own cap, by that subject\'s later insert and ' +
+                 'by the session sweep (at most ' +
+                 'authn.sessionShedPerSweep in one run).' },
+
+  { key: 'authn.maxSessionsPerSubject', group: 'Web security',
+    label: 'Most countable sessions per subject',
+    env: 'STS_AUTHN_MAX_SESSIONS_PER_SUBJECT', type: 'int', dflt: 32,
+    min: 1, max: 10000000, runtime: true,
+    description: 'How many countable sessions one subject may hold: a ' +
+                 'chosen sign-on, a keyed API session, or a relying-party ' +
+                 'session. An arrival is not countable, and arrivals share ' +
+                 'one username, so this is not keyed on the username. At ' +
+                 'the cap the next session that subject starts ends their ' +
+                 'own oldest countable row and takes its place. Never ' +
+                 'another subject\'s row, and never an arrival. A ' +
+                 'relying-party session does not end the sign-on it was ' +
+                 'just derived from. One row per insert; further surplus ' +
+                 'comes back through the session sweep, at most ' +
+                 'authn.sessionShedPerSweep a run. A value above the ' +
+                 'current authn.maxSessions is read as that cap.' },
+
+  { key: 'authn.sessionShedPerSweep', group: 'Web security',
+    label: 'Own surplus sessions ended per sweep',
+    env: 'STS_AUTHN_SESSION_SHED_PER_SWEEP', type: 'int', dflt: 100,
+    min: 1, max: 1000, runtime: true,
+    description: 'How many of a subject\'s own surplus sessions the ' +
+                 'authn.session-expiry job ends in one run. Oldest ' +
+                 'countable rows, one subject at a time, until this many ' +
+                 'have ended or nobody is over authn.maxSessionsPerSubject. ' +
+                 'It does not end an arrival for capacity, and it does not ' +
+                 'end a subject who is at or under their cap even when the ' +
+                 'realm is over authn.maxSessions. Lowering a cap does not ' +
+                 'mass-end.' },
 
   { key: 'authn.pendingTtlS', group: 'Web security',
     label: 'How long a sign-in waits at the screen (seconds)',

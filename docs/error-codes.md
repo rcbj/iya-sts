@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4364** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4365** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 296
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 297
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 713
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1421,7 +1421,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0270` | Ignore was posted on a second-factor set-up step that was REQUIRED rather than offered (#246): only an administrator the authentication policy OFFERS a second factor may decline it. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0290` | A session was ended by a caller that did not say who initiated it (#242): CAEP session-revoked says `system`, and the caller should state admin, user, policy or system. | none — logged; the session is ended |
 | `STS-AUTHN-0291` | Reporting a session's end (its audit row, CAEP session-revoked and back-channel Logout Tokens) threw after the claim that decides who reports it was won (#242); it is not tried again, because a second try could tell a receiver twice. | none — logged |
-| `STS-AUTHN-0292` | A realm held authn.maxSessions sign-on sessions when another was created, so the least recently used session was ended to make room (#345) — through the same end an expiry takes: its audit row (which carries this code), CAEP session-revoked and back-channel Logout Tokens. | none — audited; logged at most once a minute per process |
+| `STS-AUTHN-0292` | A session was ended for capacity: the inserting subject's own oldest countable row, one per insert, or one of at most authn.sessionShedPerSweep such rows in a sweep (#345, #350). Never another subject's row and never an arrival. The same end an expiry takes — its audit row (which carries this code), CAEP session-revoked and back-channel Logout Tokens. | none — audited; logged at most once a minute per process |
 | `STS-AUTHN-0293` | The directory's credential census threw (#352), so the users list's counts and second-factor filter asked each person's credentials one at a time instead — slower, and the same answer. | none — logged |
 | `STS-AUTHN-0294` | A passkey assertion was refused because the key's algorithm is insecure (SHA-1's RS1) and webauthn.insecureAlgorithms is off in this realm, or the service is in product mode. | none — the sign-in screen is drawn again |
 | `STS-AUTHN-0295` | A person's delegation semantics named something other than delegation or impersonation (#186). | none (a console or management API refusal, HTTP 400) |
@@ -1466,6 +1466,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0334` | Counting this realm's people for the users list's headline (#610) threw; the list is drawn without the directory's count. | — |
 | `STS-AUTHN-0335` | Counting this realm's credential holders, or which names seen signing in are people in its directory, for the users list's tiles (#610) threw; those tiles are drawn from the list instead. | — |
 | `STS-AUTHN-0336` | Writing the Android marker (stsAndroidAttestedCredential) of a person whose security keys say it is missing or wrong, during the Android attestation recheck's backfill, threw; that person's keys are rechecked only once a later write of them derives it (#615). | — |
+| `STS-AUTHN-0337` | A new session was not admitted because the realm is at authn.maxSessions and this insert did not free a row (#350). An arrival continues with no cookie. A chosen sign-in is drawn again, or the API answers its existing failure, and the audit action is session.refuse. | none — the sign-in screen is drawn again, or no cookie is set; the code is not in the body. Logged at most once a minute per process, with a count |
 
 ## STS-OAUTH
 

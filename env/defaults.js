@@ -182,6 +182,8 @@ var config = {
     sessionLifetimeS: 3600,         // Session lifetime (seconds)
     sessionIdleTimeoutS: 0,         // Session idle timeout (seconds, 0 = none)
     maxSessions: 100000,            // Most sign-on sessions per realm
+    maxSessionsPerSubject: 32,      // Most countable sessions per subject
+    sessionShedPerSweep: 100,       // Own surplus sessions ended per sweep
     pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
     mfaStepTtlS: 300,               // How long a second-factor step waits (seconds)
     passwordAloneDoors: "",         // Password-only doors that accept a password alone
