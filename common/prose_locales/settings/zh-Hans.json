@@ -4036,8 +4036,8 @@
     "text": "联合用户名前缀"
   },
   "federation.usernamePrefix|description": {
-    "en": "cd17a5b59a5cf957",
-    "text": "加在外部身份提供方提供的每个用户名之前，使联合的 `alice` 和本地的 `alice` 成为两个条目。默认为空，这意味着它们是同一个条目——这是一个真正的决定，而不是无人考虑过的默认值。当把本服务指向某个合作方以查看返回内容时，留空是正确的，因为加了前缀的名称会让下游的每个令牌和断言看起来都很陌生。一旦问题变成联合身份是否与本地身份共享命名空间——这正是此设置存在的原因——就将其设为类似 `fed-` 的值。它在选定用户名之后才应用，因此更改它不会改变使用的是哪个传入值。"
+    "en": "81424ee1cba2373a",
+    "text": "放在 `link-at-first-sign-in` 确认所查找的名称以及 `any-existing` 所匹配的名称前面，在该值被选定并截取为最后一个 `@` 之前的部分之后。默认为空，因此伙伴主体 `alice@partner.example` 会确认本地的 `alice`。当该查找不得遇到本地人员时设置它（例如 `fed-`）。在 `link-at-first-sign-in` 或 `jit-namespaced` 下由登录创建的条目始终是 `<relationship>~<subject>`，此前缀不是该名称的一部分。"
   },
   "federation.loginButtons|label": {
     "en": "712a94d0c664c839",

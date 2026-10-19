@@ -155,6 +155,18 @@
     "en": "21b1d1c16447c0c6",
     "text": "Tinatanggihan ang any-existing, sa relationship (STS-FED-0095) at sa sign-in (STS-FED-0094). Sina-sign in ng partner ang entry na naka-link sa (issuer, subject) nito; ang hindi naka-link na subject na nagpapangalan ng umiiral na tao ay dapat munang mag-sign in dito bilang taong iyon (link-at-first-sign-in, ang default), o tinatanggihan (pre-linked). Pinapanatili ng development at product ang mga patakaran at ang pagtanggi sa console administrator."
   },
+  "mode.requirements.federated-autocreate.what": {
+    "en": "d38d38e45a73467e",
+    "text": "Gumagawa ang bagong federation relationship ng directory entry para sa subject ng partner na walang nag-link"
+  },
+  "mode.requirements.federated-autocreate.development": {
+    "en": "04193f48cc244e1b",
+    "text": "Isinusulat na TRUE ang fedAutocreateUsers kapag ginawa ang relationship, at gumagawa ang relationship na hindi nag-iimbak ng attribute. Wala pa ring ginagawa ang naka-store na FALSE."
+  },
+  "mode.requirements.federated-autocreate.product": {
+    "en": "b8758f8842b1fc0a",
+    "text": "Isinusulat na FALSE ang fedAutocreateUsers kapag ginawa ang relationship, at walang ginagawa ang nawawalang attribute (STS-FED-0090). Patuloy na gumagawa ang relationship na nag-iimbak na ng TRUE hanggang ma-edit ito. Nili-link pa rin ng link-at-first-sign-in ang umiiral na itinugmang tao sa parehong mode."
+  },
   "mode.requirements.federated-logout-signature.what": {
     "en": "ab3acff66ae80262",
     "text": "Naka-sign ng partner na iyon ang SAML sign-out ng isang federation partner"

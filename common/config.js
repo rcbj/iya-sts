@@ -8160,19 +8160,16 @@ const SETTINGS = [
     label: 'Prefix for federated usernames',
     env: 'STS_FEDERATION_USERNAME_PREFIX', type: 'string', dflt: '',
     runtime: true,
-    description: 'Put in front of every username a foreign identity provider ' +
-                 'supplies, so a federated `alice` and the local `alice` are ' +
-                 'two entries. EMPTY by default, which means they are ONE ' +
-                 'entry — and that is a real decision rather than a default ' +
-                 'nobody thought about. Empty is right for a service being ' +
-                 'pointed at a partner to see what comes back, because a ' +
-                 'prefixed name makes every downstream token and assertion ' +
-                 'look unfamiliar. Set it to something like `fed-` the ' +
-                 'moment the question is whether federated identities share ' +
-                 'a namespace with local ones, which is the question this ' +
-                 'setting exists for. It is applied AFTER the username is ' +
-                 'chosen, so changing it cannot change WHICH incoming value ' +
-                 'was used.' },
+    description: 'Put in front of the name a `link-at-first-sign-in` ' +
+                 'confirm looks up, and the name `any-existing` matches, ' +
+                 'after that value is chosen and reduced to the part ' +
+                 'before the last `@`. EMPTY by default, so a partner ' +
+                 'subject `alice@partner.example` confirms the local ' +
+                 '`alice`. Set it (for example `fed-`) when that lookup ' +
+                 'must not meet a local person. An entry a sign-in ' +
+                 'creates under `link-at-first-sign-in` or ' +
+                 '`jit-namespaced` is `<relationship>~<subject>` either ' +
+                 'way, and this prefix is not part of that name.' },
 
   { key: 'federation.loginButtons', group: 'Federation',
     label: 'Offer partners at the sign-in screen',

@@ -1127,6 +1127,10 @@
     "en": "a5c85407fff2c148",
     "text": "En federationslänk togs bort från en person"
   },
+  "audit.actions.federation.group-ignored.label": {
+    "en": "a64e9612670b278c",
+    "text": "En partners gruppnamn tillämpades inte, eftersom det namnger en grupp som relationen inte skapade eller en grupp som ger något bara genom medlemskapet (#358)"
+  },
   "audit.actions.group.add-member.label": {
     "en": "37da254923cef1b6",
     "text": "En medlem lades till i en grupp"

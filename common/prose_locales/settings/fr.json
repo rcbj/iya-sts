@@ -4036,8 +4036,8 @@
     "text": "Préfixe des noms d’utilisateur fédérés"
   },
   "federation.usernamePrefix|description": {
-    "en": "cd17a5b59a5cf957",
-    "text": "Placé devant chaque nom d’utilisateur fourni par un fournisseur d’identité étranger, afin qu’un `alice` fédéré et le `alice` local soient deux entrées. VIDE par défaut, ce qui signifie qu’ils forment UNE seule entrée — et c’est une vraie décision plutôt qu’une valeur par défaut à laquelle personne n’a pensé. Vide convient à un service pointé vers un partenaire pour voir ce qui revient, car un nom préfixé rend inhabituel chaque jeton et chaque assertion en aval. Définissez-le à quelque chose comme `fed-` dès que la question est de savoir si les identités fédérées partagent un espace de noms avec les identités locales, question pour laquelle ce paramètre existe. Il est appliqué APRÈS le choix du nom d’utilisateur : le modifier ne peut donc pas changer QUELLE valeur entrante a été utilisée."
+    "en": "81424ee1cba2373a",
+    "text": "Placé devant le nom que recherche une confirmation `link-at-first-sign-in`, et le nom que met en correspondance `any-existing`, une fois cette valeur choisie et réduite à la partie qui précède le dernier `@`. VIDE par défaut, de sorte qu’un sujet de partenaire `alice@partner.example` confirme l’`alice` locale. Définissez-le (par exemple `fed-`) lorsque cette recherche ne doit pas rencontrer une personne locale. Une entrée qu’une connexion crée sous `link-at-first-sign-in` ou `jit-namespaced` est `<relationship>~<subject>` dans tous les cas, et ce préfixe ne fait pas partie de ce nom."
   },
   "federation.loginButtons|label": {
     "en": "712a94d0c664c839",

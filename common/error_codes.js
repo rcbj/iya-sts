@@ -10772,7 +10772,8 @@ const CODES = [
   { code: 'STS-FED-0090',
     summary: 'A federated sign-in verified, but the directory holds no entry ' +
       'for the person and none was created (dynamic provisioning off on the ' +
-      'relationship, or the directory declined), so no session was started.',
+      'relationship, the relationship\'s fedProvisionCap is already full, ' +
+      'or the directory declined), so no session was started.',
     spec: 'HTTP 403 page' },
   // #109 (2026-09-22): which people a partner may assert.
   { code: 'STS-FED-0091',
@@ -11116,7 +11117,33 @@ const CODES = [
       'attribute policy requires of every person (#396), so the sign-in ' +
       'is refused as one for a person nobody provisioned. Map the attribute ' +
       'from the partner, or provision the person first.',
-    spec: 'none (the federated sign-in is refused 403, as STS-AUTHN-0180)' },
+    spec: 'HTTP 403 page (the session refusal is audited STS-AUTHN-0180)' },
+  { code: 'STS-FED-0161',
+    summary: 'A group name in a partner\'s assertion was not applied: it ' +
+      'names a group this relationship did not create, it cannot be a ' +
+      'directory name, or the directory declined. The sign-in stands ' +
+      '(#358).',
+    spec: 'none (logged; the sign-in proceeds)' },
+  { code: 'STS-FED-0162',
+    summary: 'The scheduler job federation.provision-idle could not disable ' +
+      'a person whose only sign-in path is one relationship and whose ' +
+      'federationLastSeen is past fedProvisionIdleMinutes. The next run ' +
+      'tries again (#358).',
+    spec: 'none — logged' },
+  { code: 'STS-FED-0163',
+    summary: 'fedProvisionCap or fedProvisionIdleMinutes was set to ' +
+      'something that is not empty and not a non-negative integer (#358).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0164',
+    summary: 'A group name in a partner\'s assertion was refused because ' +
+      'the group grants something by being held: a group a setting names ' +
+      '(admin.readGroup, admin.writeGroup, roles.remotePepGroup, ' +
+      'roles.xacmlUserGroup), a group a role, an owner value, an ' +
+      'application\'s delegation subject group or a relationship\'s ' +
+      'fedSubjectGroup names, or a group an XACML policy names. ' +
+      'Provisioning never creates such a group and never adds anybody to ' +
+      'one; the sign-in stands (#358).',
+    spec: 'none (audited; the sign-in proceeds)' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +

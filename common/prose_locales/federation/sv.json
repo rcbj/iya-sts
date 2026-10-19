@@ -252,24 +252,36 @@
     "text": "Signera den utgående AuthnRequest med DEN HÄR tjänstens nyckel. AV som standard: de flesta identitetsleverantörer kräver det inte, och en partner som gör det avvisar begäran på ett sätt som namnger problemet. När det är på är certifikatet som ska konfigureras hos partnern det som finns i den här tjänstens egen SAML-metadata."
   },
   "fed.schema.attributes.fedUsernameSource.what": {
-    "en": "61e8ef6f6cf4a99d",
-    "text": "VILKET INKOMMANDE VÄRDE SOM BLIR DET LOKALA ANVÄNDARNAMNET — ett anspråksnamn för OIDC/OAuth 2.0, ett SAML Attribute Name för de andra. Tomt betyder subjektet självt: NameID, eller `sub`. Detta är det enda mappningsbeslut som inte kan bli fel i tysthet, eftersom det avgör vilken katalogpost en person hamnar på."
+    "en": "e0e96af3e55ca105",
+    "text": "VILKET INKOMMANDE VÄRDE SOM SLÅS UPP VID LINK-AT-FIRST-SIGN-IN, och matchas under any-existing — ett anspråksnamn för OIDC/OAuth 2.0, ett SAML Attribute Name för de andra. Tomt betyder subjektet självt: NameID, eller `sub`. Det namnger inte en post som den här inloggningen SKAPAR: det namnet är relationen och partnerns stabila subjekt (#358)."
   },
   "fed.schema.attributes.fedAttributeMap.what": {
     "en": "4c966530efb4269f",
     "text": "ETT VÄRDE PER MAPPNING, skrivet `<incoming name>=<LDAP attribute>`. Det som INTE listas här anländer ändå — federation_map.js har en standardtabell som täcker de vanliga OIDC-anspråken, SAML-namnen urn:oid: och WS-Federations anspråks-URI:er — så detta är för partnerns egna påhitt snarare än för de namn som alla använder."
   },
   "fed.schema.attributes.fedAutocreateUsers.what": {
-    "en": "c047dc4310a6d6a9",
-    "text": "DYNAMISK ETABLERING: skapa en katalogpost första gången den här partnern loggar in någon. PÅ som standard. AV betyder att personen REDAN måste ha en post här — etablerad i förväg, via SCIM eller för hand — och en inloggning för någon som inte har det avvisas, eftersom en session behöver en post att vara subjekt för. (Fram till 2026-09-14 gav AV en session och ingen post; ett stabilt subjekt gjorde det tillståndet omöjligt.)"
+    "en": "bfd1076470982a0d",
+    "text": "DYNAMISK ETABLERING: skapa en katalogpost första gången den här partnern loggar in någon. Skrivs TRUE när en relation skapas i utveckling och FALSE i produktläge (mode.defaultsFederatedAutocreate()); en relation som inte lagrar något av dem läses på samma sätt. AV betyder att personen REDAN måste ha en post här — etablerad i förväg, via SCIM eller för hand — och en inloggning för någon som saknar en avvisas, eftersom en session behöver en post att vara subjekt för. (Fram till 2026-09-14 gav AV en session utan post; ett stabilt subjekt gjorde det tillståndet omöjligt.)"
   },
   "fed.schema.attributes.fedUpdateUserAttributes.what": {
     "en": "4d516236bce43ce4",
     "text": "Uppdatera personens katalogattribut vid VARJE inloggning från det senaste intygandet eller den senaste token. PÅ som standard, vilket är vad den här tjänsten alltid gjorde. AV skriver partnerns attribut bara när den här inloggningen SKAPADE posten, så en förhandsetablerad person — eller en som någon har redigerat sedan dess — behåller det som katalogen säger. Vilken relation och utfärdare en person kom genom registreras i båda fallen."
   },
+  "fed.schema.attributes.fedProvisionGroups.what": {
+    "en": "7a8153e8814f97c9",
+    "text": "BYGG GRUPPMEDLEMSKAP FRÅN PARTNERNS TOKEN (#358). AV som standard, och ett saknat värde betyder av. På blir varje gruppnamn som intyget bär ett medlemskap för personen som den här inloggningen etablerade, vid varje lyckad inloggning. En grupp som skapas så markeras med den här relationen. Ett namn som redan finns och inte är markerat som den här relationens ignoreras, granskningsloggas (STS-FED-0161) och inloggningen fortsätter. En grupp som ger något bara genom medlemskapet — en konsolgrupp, en rolls medlemsgrupp, en ägargrupp, en grupp som en policy namnger — skapas eller ansluts aldrig (STS-FED-0164). Det uppfyller inte fedSubjectGroup: den regeln körs innan någon läggs till."
+  },
+  "fed.schema.attributes.fedProvisionCap.what": {
+    "en": "4137e80dd72991e2",
+    "text": "HUR MÅNGA PERSONER DEN HÄR RELATIONEN FÅR SKAPA. Tomt eller 0 är obegränsat. Vid taket avvisas ett nytt subjekt med STS-FED-0090; en person som redan är länkad loggar fortfarande in. ldap.maxEntries är fortfarande sfärens tak. Inte ett antal inloggningar — det är fedUsers."
+  },
+  "fed.schema.attributes.fedProvisionIdleMinutes.what": {
+    "en": "29c243b9d96fac47",
+    "text": "INAKTIVERA EN PERSON FÖR VILKEN DEN HÄR RELATIONEN ÄR DEN ENDA INLOGGNINGSVÄGEN, så snart federationLastSeen är äldre än så här många minuter. Tomt eller 0 är av: ingen inaktiveras för att vara overksam. Posten och länken behålls. En person med ett lokalt userPassword, eller en länk via en annan relation, lämnas i fred. En partners account-disabled-signal är separat (STS-FED-0156) och blockerar bara den partnerns inloggningar."
+  },
   "fed.schema.attributes.fedSubjectPolicy.what": {
-    "en": "2b9955272be86815",
-    "text": "HUR PARTNERNS SUBJEKT BLIR EN LOKAL PERSON. Subjektet är partnerns egen stabila identifierare — iss + sub, ett beständigt NameID och partnerns entitets-id — och en person bär det som en federationLink. link-at-first-sign-in (standard; tomt betyder det): ett länkat subjekt loggar in; ett olänkat som namnger en befintlig person måste först logga in HÄR som den personen — lösenord, och en andra faktor där en sådan finns eller krävs — och först då registreras länken och partnerns attribut skrivs; ett som inte namnger någon får en ny post i den här relationens namnrymd där etablering är påslagen. pre-linked: bara en länk loggar in någon. jit-namespaced: ett olänkat subjekt får alltid en NY post, <relationship>~<name>, aldrig en befintlig person. any-existing: namnet som partnern skickade matchas direkt mot en lokal person, som den här tjänsten gjorde före #109 — ENDAST UTVECKLING, avvisas i produktläge, och det låter den här partnern logga in vilket konto som helst som den kan namnge."
+    "en": "afab8ba90a854d71",
+    "text": "HUR PARTNERNS SUBJEKT BLIR EN LOKAL PERSON. Subjektet är partnerns egen stabila identifierare — iss + sub, ett beständigt NameID och partnerns entitets-id — och en person bär det som en federationLink. link-at-first-sign-in (standard; tomt betyder det): ett länkat subjekt loggar in; ett olänkat som namnger en befintlig person måste först logga in HÄR som den personen — lösenord, och en andra faktor där en sådan finns eller krävs — och först då registreras länken och partnerns attribut skrivs; ett som inte namnger någon får en ny post i den här relationens namnrymd där etablering är påslagen. pre-linked: bara en länk loggar in någon. jit-namespaced: ett olänkat subjekt får alltid en NY post, <relationship>~<subject>, aldrig en befintlig person. Subjektet är partnerns stabila identifierare, där ett urn:uuid: viks till sub-<uuid>; det är inte det matchade användarnamnet. any-existing: namnet som partnern skickade matchas direkt mot en lokal person, som den här tjänsten gjorde före #109 — ENDAST UTVECKLING, avvisas i produktläge, och det låter den här partnern logga in vilket konto som helst som den kan namnge."
   },
   "fed.schema.attributes.fedSubjectGroup.what": {
     "en": "a93a51b8d9b56949",

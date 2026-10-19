@@ -252,24 +252,36 @@
     "text": "用本服务的密钥签署出站 AuthnRequest。默认关闭：大多数身份提供方并不要求，而要求签名的伙伴会以指明问题的方式拒绝请求。开启时，需要在伙伴处配置的证书是本服务自己的 SAML 元数据上的那个。"
   },
   "fed.schema.attributes.fedUsernameSource.what": {
-    "en": "61e8ef6f6cf4a99d",
-    "text": "哪个传入值成为本地用户名——对 OIDC/OAuth 2.0 是声明名称，对其他协议是 SAML Attribute Name。留空表示主体本身：NameID 或 `sub`。这是唯一一个不会悄悄出错的映射决定，因为它决定了一个人落在哪个目录条目上。"
+    "en": "e0e96af3e55ca105",
+    "text": "在 LINK-AT-FIRST-SIGN-IN 时查找哪个传入值，并在 any-existing 下进行匹配——OIDC/OAuth 2.0 为声明名称，其他协议为 SAML Attribute Name。留空表示主体本身：NameID 或 `sub`。它并不指明此次登录所创建的条目：该名称由关系和伙伴的稳定主体组成（#358）。"
   },
   "fed.schema.attributes.fedAttributeMap.what": {
     "en": "4c966530efb4269f",
     "text": "每个映射一个值，写作 `<incoming name>=<LDAP attribute>`。未在此列出的内容仍会到达——federation_map.js 有一个默认表，涵盖常见的 OIDC 声明、SAML urn:oid: 名称和 WS-Federation 声明 URI——因此此项用于伙伴自己发明的名称，而不是人人都用的名称。"
   },
   "fed.schema.attributes.fedAutocreateUsers.what": {
-    "en": "c047dc4310a6d6a9",
-    "text": "动态预配：在该伙伴首次让某人登录时创建目录条目。默认开启。关闭意味着此人必须已在这里拥有条目——事先通过 SCIM 或手动预配——没有条目者的登录会被拒绝，因为会话需要一个条目作为其主体。（在 2026-09-14 之前，关闭会产生会话而没有条目；稳定的主体使这种状态不再可能。）"
+    "en": "bfd1076470982a0d",
+    "text": "动态预配：此伙伴第一次让某人登录时创建目录条目。在开发模式下创建关系时写入 TRUE，在产品模式下写入 FALSE（mode.defaultsFederatedAutocreate()）；两者都未存储的关系按同样方式解读。关闭表示该人员必须已经在此处拥有条目——事先通过 SCIM 或手动预配——没有条目的人员登录会被拒绝，因为会话需要一个条目作为其主体。（在 2026-09-14 之前，关闭会产生没有条目的会话；稳定的主体使这种状态不再可能。）"
   },
   "fed.schema.attributes.fedUpdateUserAttributes.what": {
     "en": "4d516236bce43ce4",
     "text": "在每次登录时根据最新的断言或令牌更新此人的目录属性。默认开启，这也是本服务一直以来的做法。关闭则只在此次登录创建了条目时才写入伙伴的属性，因此预先预配的人——或之后被人编辑过的人——会保留目录中的内容。无论如何，此人经由哪个关系和颁发者而来都会被记录。"
   },
+  "fed.schema.attributes.fedProvisionGroups.what": {
+    "en": "7a8153e8814f97c9",
+    "text": "根据伙伴的令牌建立组成员关系（#358）。默认关闭，缺少值即为关闭。开启时，断言携带的每个组名在每次成功登录时都会成为此次登录所预配人员的成员关系。以这种方式创建的组会标记为此关系。已存在且未标记为此关系的名称会被忽略、审计（STS-FED-0161），登录继续。仅凭成员身份就授予某种权限的组——控制台组、角色的成员组、所有者组、策略指明的组——绝不会被创建或加入（STS-FED-0164）。它不满足 fedSubjectGroup：该规则在添加任何人之前运行。"
+  },
+  "fed.schema.attributes.fedProvisionCap.what": {
+    "en": "4137e80dd72991e2",
+    "text": "此关系最多可以创建多少人。留空或 0 表示不限。达到上限时，新主体会以 STS-FED-0090 被拒绝；已关联的人员仍可登录。ldap.maxEntries 仍是领域的上限。这不是登录次数——那是 fedUsers。"
+  },
+  "fed.schema.attributes.fedProvisionIdleMinutes.what": {
+    "en": "29c243b9d96fac47",
+    "text": "当此关系是某人唯一的登录途径时，一旦 federationLastSeen 早于这么多分钟，就停用该人员。留空或 0 表示关闭：不会因闲置而停用任何人。条目和关联会保留。拥有本地 userPassword 或通过其他关系关联的人员不受影响。伙伴的 account-disabled 信号是另一回事（STS-FED-0156），只阻止该伙伴的登录。"
+  },
   "fed.schema.attributes.fedSubjectPolicy.what": {
-    "en": "2b9955272be86815",
-    "text": "伙伴的主体如何成为本地人员。主体是伙伴自己的稳定标识符——iss + sub、持久 NameID 加伙伴的实体 ID——人员将其作为 federationLink 携带。link-at-first-sign-in（默认；留空即为此项）：已关联的主体直接登录；指明现有人员的未关联主体必须先以该人员身份在这里登录——密码，以及持有或被要求时的第二因素——然后才记录关联并写入伙伴的属性；没有指明任何人的主体在开启预配时获得一个以此关系为命名空间的新条目。pre-linked：只有关联才能让人登录。jit-namespaced：未关联的主体总是获得一个新条目 <relationship>~<name>，绝不对应现有人员。any-existing：伙伴发送的名称直接匹配到本地人员，就像本服务在 #109 之前那样——仅限开发，在产品模式中被拒绝，并且它允许该伙伴登录它能叫出名字的任何账户。"
+    "en": "afab8ba90a854d71",
+    "text": "伙伴的主体如何成为本地人员。主体是伙伴自己的稳定标识符——iss + sub、持久 NameID 加伙伴的实体 ID——人员将其作为 federationLink 携带。link-at-first-sign-in（默认；留空即为此项）：已关联的主体直接登录；指明现有人员的未关联主体必须先以该人员身份在这里登录——密码，以及持有或被要求时的第二因素——然后才记录关联并写入伙伴的属性；没有指明任何人的主体在开启预配时获得一个以此关系为命名空间的新条目。pre-linked：只有关联才能让人登录。jit-namespaced：未关联的主体总是获得一个新条目 <relationship>~<subject>，绝不对应现有人员。主体是伙伴的稳定标识符，urn:uuid: 会折叠为 sub-<uuid>；它不是匹配到的用户名。any-existing：伙伴发送的名称直接匹配到本地人员，就像本服务在 #109 之前那样——仅限开发，在产品模式中被拒绝，并且它允许该伙伴登录它能叫出名字的任何账户。"
   },
   "fed.schema.attributes.fedSubjectGroup.what": {
     "en": "a93a51b8d9b56949",

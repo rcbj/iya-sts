@@ -1127,6 +1127,10 @@
     "en": "a5c85407fff2c148",
     "text": "從某人身上移除了聯盟連結"
   },
+  "audit.actions.federation.group-ignored.label": {
+    "en": "a64e9612670b278c",
+    "text": "夥伴的群組名稱未套用，因為它指名的群組不是該關係所建立的，或是一個僅憑成員身分就授予某種權限的群組（#358）"
+  },
   "audit.actions.group.add-member.label": {
     "en": "37da254923cef1b6",
     "text": "成員被新增到群組"

@@ -252,24 +252,36 @@
     "text": "Signer l’AuthnRequest sortante avec la clé de CE service. DÉSACTIVÉ par défaut : la plupart des fournisseurs d’identité ne l’exigent pas, et un partenaire qui l’exige refusera la requête d’une manière qui nomme le problème. Lorsqu’il est activé, le certificat à configurer chez le partenaire est celui des propres métadonnées SAML de ce service."
   },
   "fed.schema.attributes.fedUsernameSource.what": {
-    "en": "61e8ef6f6cf4a99d",
-    "text": "QUELLE VALEUR ENTRANTE DEVIENT LE NOM D’UTILISATEUR LOCAL — un nom de revendication pour OIDC/OAuth 2.0, un Attribute Name SAML pour les autres. Vide signifie le sujet lui-même : le NameID, ou `sub`. C’est la seule décision de correspondance qui ne peut pas être erronée en silence, car elle décide sur quelle entrée d’annuaire tombe une personne."
+    "en": "e0e96af3e55ca105",
+    "text": "QUELLE VALEUR ENTRANTE EST RECHERCHÉE AU LINK-AT-FIRST-SIGN-IN, et mise en correspondance sous any-existing — un nom de revendication pour OIDC/OAuth 2.0, un Attribute Name SAML pour les autres. Vide signifie le sujet lui-même : le NameID, ou `sub`. Elle ne nomme pas une entrée que cette connexion CRÉE : ce nom est la relation et le sujet stable du partenaire (#358)."
   },
   "fed.schema.attributes.fedAttributeMap.what": {
     "en": "4c966530efb4269f",
     "text": "UNE VALEUR PAR CORRESPONDANCE, écrite `<incoming name>=<LDAP attribute>`. Ce qui n’est PAS listé ici arrive quand même — federation_map.js comporte une table par défaut couvrant les revendications OIDC ordinaires, les noms SAML urn:oid: et les URI de revendications WS-Federation — ce paramètre sert donc aux inventions propres du partenaire plutôt qu’aux noms que tout le monde utilise."
   },
   "fed.schema.attributes.fedAutocreateUsers.what": {
-    "en": "c047dc4310a6d6a9",
-    "text": "PROVISIONNEMENT DYNAMIQUE : créer une entrée d’annuaire la première fois que ce partenaire connecte quelqu’un. ACTIVÉ par défaut. DÉSACTIVÉ signifie que la personne doit DÉJÀ avoir une entrée ici — provisionnée à l’avance, par SCIM ou manuellement — et une connexion pour quelqu’un qui n’en a pas est refusée, car une session a besoin d’une entrée dont elle soit le sujet. (Jusqu’au 2026-09-14, DÉSACTIVÉ donnait une session sans entrée ; un sujet stable a rendu cet état impossible.)"
+    "en": "bfd1076470982a0d",
+    "text": "PROVISIONNEMENT DYNAMIQUE : créer une entrée d’annuaire la première fois que ce partenaire connecte quelqu’un. Écrit TRUE lorsqu’une relation est créée en développement et FALSE en mode produit (mode.defaultsFederatedAutocreate()) ; une relation qui ne stocke ni l’un ni l’autre se lit de la même façon. DÉSACTIVÉ signifie que la personne doit DÉJÀ avoir une entrée ici — provisionnée à l’avance, par SCIM ou manuellement — et une connexion pour quelqu’un qui n’en a pas est refusée, car une session a besoin d’une entrée dont elle soit le sujet. (Jusqu’au 2026-09-14, DÉSACTIVÉ donnait une session sans entrée ; un sujet stable a rendu cet état impossible.)"
   },
   "fed.schema.attributes.fedUpdateUserAttributes.what": {
     "en": "4d516236bce43ce4",
     "text": "Mettre à jour les attributs d’annuaire de la personne à CHAQUE connexion à partir de la dernière assertion ou du dernier jeton. ACTIVÉ par défaut, ce que ce service a toujours fait. DÉSACTIVÉ n’écrit les attributs du partenaire que lorsque cette connexion a CRÉÉ l’entrée ; une personne provisionnée à l’avance — ou que quelqu’un a modifiée depuis — conserve donc ce que dit l’annuaire. La relation et l’émetteur par lesquels est arrivée une personne sont enregistrés dans tous les cas."
   },
+  "fed.schema.attributes.fedProvisionGroups.what": {
+    "en": "7a8153e8814f97c9",
+    "text": "CONSTRUIRE LES APPARTENANCES AUX GROUPES À PARTIR DU JETON DU PARTENAIRE (#358). DÉSACTIVÉ par défaut, et une valeur absente vaut désactivé. Activé, chaque nom de groupe que porte l’assertion devient une appartenance de la personne que cette connexion a provisionnée, à chaque connexion réussie. Un groupe créé de cette façon est marqué avec cette relation. Un nom qui existe déjà et n’est pas marqué comme appartenant à cette relation est ignoré, audité (STS-FED-0161), et la connexion se poursuit. Un groupe qui accorde quelque chose du seul fait d’en être membre — un groupe de la console, le groupe membre d’un rôle, un groupe propriétaire, un groupe qu’une politique nomme — n’est jamais créé ni rejoint (STS-FED-0164). Cela ne satisfait pas fedSubjectGroup : cette règle s’applique avant que quiconque soit ajouté."
+  },
+  "fed.schema.attributes.fedProvisionCap.what": {
+    "en": "4137e80dd72991e2",
+    "text": "COMBIEN DE PERSONNES CETTE RELATION PEUT CRÉER. Vide ou 0 signifie illimité. Au plafond, un nouveau sujet est refusé STS-FED-0090 ; une personne déjà liée se connecte toujours. ldap.maxEntries reste le plafond du domaine. Ce n’est pas un nombre de connexions — c’est fedUsers."
+  },
+  "fed.schema.attributes.fedProvisionIdleMinutes.what": {
+    "en": "29c243b9d96fac47",
+    "text": "DÉSACTIVER UNE PERSONNE POUR QUI CETTE RELATION EST LE SEUL CHEMIN DE CONNEXION, dès que federationLastSeen date de plus de ce nombre de minutes. Vide ou 0 signifie désactivé : personne n’est désactivé pour inactivité. L’entrée et le lien sont conservés. Une personne ayant un userPassword local, ou un lien par une autre relation, n’est pas touchée. Le signal account-disabled d’un partenaire est distinct (STS-FED-0156) et ne bloque que les connexions de ce partenaire."
+  },
   "fed.schema.attributes.fedSubjectPolicy.what": {
-    "en": "2b9955272be86815",
-    "text": "COMMENT LE SUJET DU PARTENAIRE DEVIENT UNE PERSONNE LOCALE. Le sujet est l’identifiant stable propre au partenaire — iss + sub, un NameID persistant et l’entity ID du partenaire — et une personne le porte sous forme de federationLink. link-at-first-sign-in (la valeur par défaut ; vide la désigne) : un sujet lié se connecte ; un sujet non lié nommant une personne existante doit d’abord se connecter ICI en tant que cette personne — mot de passe, et un second facteur lorsqu’il en détient un ou qu’il est requis — et ce n’est qu’ensuite que le lien est enregistré et les attributs du partenaire écrits ; un sujet ne nommant personne reçoit une nouvelle entrée dans l’espace de noms de cette relation lorsque le provisionnement est activé. pre-linked : seul un lien permet à quiconque de se connecter. jit-namespaced : un sujet non lié reçoit toujours une NOUVELLE entrée, <relationship>~<name>, jamais une personne existante. any-existing : le nom envoyé par le partenaire est mis directement en correspondance avec une personne locale, comme le faisait ce service avant #109 — DÉVELOPPEMENT UNIQUEMENT, refusé en mode produit, et cela permet à ce partenaire de connecter n’importe quel compte qu’il sait nommer."
+    "en": "afab8ba90a854d71",
+    "text": "COMMENT LE SUJET DU PARTENAIRE DEVIENT UNE PERSONNE LOCALE. Le sujet est l’identifiant stable propre au partenaire — iss + sub, un NameID persistant et l’entity ID du partenaire — et une personne le porte sous forme de federationLink. link-at-first-sign-in (la valeur par défaut ; vide la désigne) : un sujet lié se connecte ; un sujet non lié nommant une personne existante doit d’abord se connecter ICI en tant que cette personne — mot de passe, et un second facteur lorsqu’il en détient un ou qu’il est requis — et ce n’est qu’ensuite que le lien est enregistré et les attributs du partenaire écrits ; un sujet ne nommant personne reçoit une nouvelle entrée dans l’espace de noms de cette relation lorsque le provisionnement est activé. pre-linked : seul un lien permet à quiconque de se connecter. jit-namespaced : un sujet non lié reçoit toujours une NOUVELLE entrée, <relationship>~<subject>, jamais une personne existante. Le sujet est l’identifiant stable du partenaire, un urn:uuid: étant ramené à sub-<uuid> ; ce n’est pas le nom d’utilisateur mis en correspondance. any-existing : le nom envoyé par le partenaire est mis directement en correspondance avec une personne locale, comme le faisait ce service avant #109 — DÉVELOPPEMENT UNIQUEMENT, refusé en mode produit, et cela permet à ce partenaire de connecter n’importe quel compte qu’il sait nommer."
   },
   "fed.schema.attributes.fedSubjectGroup.what": {
     "en": "a93a51b8d9b56949",

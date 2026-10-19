@@ -4036,8 +4036,8 @@
     "text": "Prefijo para nombres de usuario federados"
   },
   "federation.usernamePrefix|description": {
-    "en": "cd17a5b59a5cf957",
-    "text": "Se antepone a todo nombre de usuario que proporcione un proveedor de identidad externo, para que un `alice` federado y el `alice` local sean dos entradas. VACÍO de forma predeterminada, lo que significa que son UNA sola entrada — y eso es una decisión real y no un predeterminado en el que nadie pensó. Vacío es lo correcto para un servicio al que se apunta a un socio para ver qué devuelve, porque un nombre con prefijo hace que todo token y aserción posteriores parezcan desconocidos. Defínalo como algo del estilo de `fed-` en cuanto la pregunta sea si las identidades federadas comparten espacio de nombres con las locales, que es la pregunta para la que existe este ajuste. Se aplica DESPUÉS de elegir el nombre de usuario, así que cambiarlo no puede cambiar QUÉ valor entrante se usó."
+    "en": "81424ee1cba2373a",
+    "text": "Se antepone al nombre que busca una confirmación `link-at-first-sign-in`, y al nombre que hace coincidir `any-existing`, después de elegir ese valor y reducirlo a la parte anterior a la última `@`. VACÍO de forma predeterminada, de modo que un sujeto del socio `alice@partner.example` confirma a la `alice` local. Establézcalo (por ejemplo `fed-`) cuando esa búsqueda no deba encontrar a una persona local. Una entrada que crea un inicio de sesión con `link-at-first-sign-in` o `jit-namespaced` es `<relationship>~<subject>` en cualquier caso, y este prefijo no forma parte de ese nombre."
   },
   "federation.loginButtons|label": {
     "en": "712a94d0c664c839",

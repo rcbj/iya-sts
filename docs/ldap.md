@@ -132,13 +132,19 @@ this service believes.
 ### An entry for everybody who authenticates
 
 With `ldap.autocreateUsers` on (the default), an entry appears at
-`uid=<name>,ou=users,<base>` the first time somebody authenticates through any
-protocol here. **One person is one entry**, however they arrive. `alice`,
-`alice@REALM` and her `sub` all name one entry, and a client certificate whose
-subject CN is `alice` folds onto that entry too. A DID or a SPIFFE ID, which
-names nobody by itself, is filed under a name made from a digest of it, with the
-identifier on the entry as `didSubject` or `spiffeSubject`. An LDAP bind never
-creates an entry, because the DN it presents already names one.
+`uid=<name>,ou=users,<base>` the first time somebody authenticates through a
+protocol that has no switch of its own. **One person is one entry**, however
+they arrive by those protocols. `alice`, `alice@REALM` and her `sub` all name
+one entry, and a client certificate whose subject CN is `alice` folds onto
+that entry too. A DID or a SPIFFE ID, which names nobody by itself, is filed
+under a name made from a digest of it, with the identifier on the entry as
+`didSubject` or `spiffeSubject`. An LDAP bind never creates an entry, because
+the DN it presents already names one. A federated sign-in does not follow
+this setting: the relationship's `fedAutocreateUsers` decides. An entry it
+creates under `link-at-first-sign-in` or `jit-namespaced` is
+`<relationship>~<subject>`, so a partner's `alice@partner.example` is not
+this `alice`. `any-existing` creates under the confirm-lookup name
+([Federation](federation.md#provisioning-dynamic-or-pre-provisioned)).
 
 An add under `ou=users` for a username that another entry already answers to is
 refused `entryAlreadyExists` (68), whichever door it comes through: an LDAP add,
@@ -328,7 +334,7 @@ provisioning client must.
 | `ldap.port` | `LDAP_PORT` | `389` | restart | The plain LDAP listener. A host run that is not root fails to bind 389; the failure is recorded, not thrown. |
 | `ldap.tlsPort` | `LDAPS_PORT` | `636` | restart | The LDAPS listener, presenting the service's TLS certificate; it binds independently of 389. |
 | `ldap.plainListener` | `LDAP_PLAIN_LISTENER` | `true` | restart | Whether the plain listener starts at all; off leaves LDAPS as the only way in, which product mode wants. |
-| `ldap.autocreateUsers` | `LDAP_AUTOCREATE_USERS` | `true` | yes | Creates `uid=<name>,ou=users,<base>` the first time somebody authenticates through any protocol. |
+| `ldap.autocreateUsers` | `LDAP_AUTOCREATE_USERS` | `true` | yes | Creates `uid=<name>,ou=users,<base>` the first time somebody authenticates through a protocol with no switch of its own. A federation relationship follows `fedAutocreateUsers` instead. |
 | `ldap.maxEntries` | `LDAP_MAX_ENTRIES` | `2000` | yes | How large the directory may grow, across every realm in the process. |
 | `ldap.sizeLimit` | `LDAP_SIZE_LIMIT` | `500` | yes | The server-side search size limit, past which a search ends with `sizeLimitExceeded`. |
 | `ldap.timeLimit` | `LDAP_TIME_LIMIT` | `30` | yes | The server-side search time limit in seconds (a client's shorter `timeLimit` wins), past which a search ends with `timeLimitExceeded` and the entries already sent. |
@@ -423,12 +429,18 @@ changes one, and a runtime setting can be set per trust realm. See
 ## How an identity becomes an entry
 
 With `ldap.autocreateUsers` on, an entry is grown at `uid=<name>,ou=users,<base>`
-the first time anybody authenticates through **any** family here — the sign-in
-screen, WS-Trust, WS-Federation, a Kerberos AS-REQ, a passwordless WebAuthn
-assertion. Every one of those reaches the directory through the single point at
-which a credential is ACCEPTED, so it is one rule and not one per protocol. A
-failure to write the entry is caught and logged: **a directory must never be
-able to fail an authentication.**
+the first time anybody authenticates through a family that has no switch of
+its own — the sign-in screen, WS-Trust, WS-Federation, a Kerberos AS-REQ, a
+passwordless WebAuthn assertion. Every one of those reaches the directory
+through the single point at which a credential is ACCEPTED, so it is one rule
+and not one per protocol. A failure to write the entry is caught and logged:
+**a directory must never be able to fail an authentication.**
+
+Federation is not one of those families. A service-provider relationship
+creates a person only when `fedAutocreateUsers` is on, even if this setting is
+off, and creates nobody when that switch is off, even if this setting is on.
+The `uid` is `<relationship>~<subject>` except under `any-existing`.
+[Federation](federation.md#provisioning-dynamic-or-pre-provisioned).
 
 Two identities are skipped on purpose:
 

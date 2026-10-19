@@ -79,6 +79,14 @@
     "en": "c8990a4ca5b5163e",
     "text": "Quita de cada relación de federación la clave de cifrado que reemplazó una rotación, una vez transcurrido federation.encryptionKeyGraceS. La clave ya dejó de descifrar en ese instante; esto la retira de la entrada."
   },
+  "sched.jobs.federation.provision-idle.title": {
+    "en": "20200542bb3c76b9",
+    "text": "Barrido de inactividad del aprovisionamiento federado"
+  },
+  "sched.jobs.federation.provision-idle.describe": {
+    "en": "94bd34c4b59a85a1",
+    "text": "Desactiva a una persona cuya única vía de inicio de sesión es una relación de federación, en cuanto federationLastSeen supera el fedProvisionIdleMinutes de esa relación. Vacío o 0 no toca a nadie. La entrada y el vínculo se conservan. Una contraseña local, o un vínculo a través de otra relación, no se toca."
+  },
   "sched.jobs.gnap.grant-expiry.title": {
     "en": "ed1bb7e24484e928",
     "text": "GNAP: concesiones caducadas"

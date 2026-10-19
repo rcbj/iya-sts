@@ -625,10 +625,14 @@ with `DEPTH_ZERO_SELF_SIGNED_CERT`, or, through `fetch()`, with a bare
 
 ### `ldap.autocreateUsers`
 
-On. Every identity that authenticates through any of the sixteen families gets an
-entry under `ou=users`, seeded from a single funnel rather than sixteen call
-sites. Turning it off gives you a directory holding only what somebody explicitly
-wrote into it.
+On. An identity that authenticates through a protocol with no switch of its
+own gets an entry under `ou=users`, seeded from a single funnel rather than
+one call site per family. Federation is the exception: a service-provider
+relationship creates a person only when its own `fedAutocreateUsers` is on,
+and that switch wins over this one in both directions. Turning this setting
+off does not stop a relationship that stores TRUE, and leaving it on does not
+make a relationship that stores FALSE create anybody.
+[Federation](federation.md#provisioning-dynamic-or-pre-provisioned).
 
 ### `groups.claim` — and the reason it is safe to have on
 
@@ -663,8 +667,13 @@ What `global.mode` decides is whether what they ask for is **checked**.
 date: a presented password is not verified, anything named is created, and there
 are no public-client restrictions — which is what makes this a test service. `product`
 runs the same protocol implementations with that permissiveness taken out, and
-additionally gates `/admin-api`. It is settable per trust realm, so one process
-can serve a development realm and a product realm at once.
+additionally gates `/admin-api`. A federated sign-in does not follow that
+create rule either way: the relationship's `fedAutocreateUsers` decides, on
+when the relationship is created in development and off in product, and the
+entry is `<relationship>~<subject>`
+([Federation](federation.md#provisioning-dynamic-or-pre-provisioned)). It is
+settable per trust realm, so one process can serve a development realm and a
+product realm at once.
 
 **Switching a realm from `development` to `product` does not carry over the
 return addresses development learnt.** A SAML ACS URL, a SAML 1.1 `shire`, a
@@ -735,14 +744,22 @@ than half-working. Turning it off makes every `/federation` route 404 without
 changing any relationship — the blunt instrument, for taking the feature away for
 one test run.
 
-`federation.usernamePrefix` is **empty by default, and that is a real decision
-rather than a default nobody thought about.** Empty means a federated `alice` and
-the local `alice` are ONE directory entry, which is right for a service being
-pointed at a partner to see what comes back — a prefixed name makes every
-downstream token and assertion look unfamiliar. Set it to something like `fed-`
-the moment the question is whether federated identities share a namespace with
-local ones, which is the question it exists for. It is applied *after* the
-username is chosen, so changing it cannot change which incoming value was used.
+`federation.usernamePrefix` is **empty by default.** It is put in front of the
+name a `link-at-first-sign-in` confirm looks up, and the name `any-existing`
+matches, after that value has been chosen and reduced to the part before the
+last `@`. Empty means a partner subject `alice@partner.example` confirms the
+local `alice`, which is what a service being pointed at a partner to see what
+comes back usually wants: the person proves here that they are that account,
+and a prefixed confirm-name would miss them. Set it (for example `fed-`) when
+that confirm, or `any-existing`, must not meet a local person. Changing it
+does not change which incoming value was chosen.
+
+It is not part of the name an entry a sign-in creates. Under
+`link-at-first-sign-in` and `jit-namespaced` that name is
+`<relationship>~<subject>` whether the prefix is empty or not, so
+`alice@a.example` and `alice@b.example` stay two people.
+[Federation](federation.md#provisioning-dynamic-or-pre-provisioned) is the
+whole of it, including when the entry is created at all.
 
 `federation.outbound` governs **the only outbound HTTP request this service
 makes** — a partner's token endpoint, UserInfo or JWKS. Turn it off for a
@@ -1373,7 +1390,7 @@ changed only while the default realm is ambient, by a service administrator.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `global.mode` | `STS_MODE` | `development` | yes — and it is **per trust realm**, so one process can serve a development realm and a product realm at once | What this service IS. `development` is what makes it a test service: no password is checked, anything named is created, and there are no public-client restrictions. `product` runs the SAME protocol implementations with the permissiveness taken out — a presented password is verified against the hashed `userPassword` on the person's own entry, nothing is created because it was named, every OAuth application that declared a confidential method authenticates with it, every development-only setting is ignored, and `/admin-api` is gated. `GET /admin/mode` and `GET /admin-api/mode` list what it changes. The console, SCIM, the SPIRE Server API and Shared Signals are gated in BOTH modes, with no setting to open them — what the mode changes is whether the credential they ask for is CHECKED. |
+| `global.mode` | `STS_MODE` | `development` | yes — and it is **per trust realm**, so one process can serve a development realm and a product realm at once | What this service IS. `development` is what makes it a test service: no password is checked, anything named is created, and there are no public-client restrictions. `product` runs the SAME protocol implementations with the permissiveness taken out — a presented password is verified against the hashed `userPassword` on the person's own entry, nothing is created because it was named, every OAuth application that declared a confidential method authenticates with it, every development-only setting is ignored, and `/admin-api` is gated. A federation relationship does not follow that create rule: `fedAutocreateUsers` is written on in development and off in product, and either mode creates when the relationship stores TRUE ([Federation](federation.md)). `GET /admin/mode` and `GET /admin-api/mode` list what it changes. The console, SCIM, the SPIRE Server API and Shared Signals are gated in BOTH modes, with no setting to open them — what the mode changes is whether the credential they ask for is CHECKED. |
 | `global.host` | `STS_HOST` | `0.0.0.0` | **restart** — the listener is bound when the process starts | The address the HTTP listener binds. 0.0.0.0 is every interface, which is what a container needs; 127.0.0.1 confines this service to the machine it runs on. |
 | `global.port` | `STS_PORT` | `8081` | **restart** — the listener is bound when the process starts | The port everything HTTP here answers on: the protocol endpoints, the console and this API. The two TLS listeners are separate and are under TLS below. **Several nodes against one store must all use the same value**: the console's and portal's own Shared Signals receivers are seeded at `<loopback>:<global.port>` and every node pushes to that address on its own loopback (`ssf/CLAUDE.md`, *Several nodes*). |
 | `listeners.custom` | `STS_LISTENERS_CUSTOM` | *(empty)* | yes — every node binds, rebinds or closes the listeners at once | The service's custom HTTPS listeners (#472), a JSON array of `{ id, port, publicBaseUrl, hostnames, certificateFile, privateKeyFile, clientAuth, tls }`; they answer every realm. See [Listeners](listeners.md). |
@@ -1770,7 +1787,7 @@ what its api may dial.
 |---|---|---|---|---|
 | `federation.enabled` | `STS_FEDERATION_ENABLED` | `true` | yes | Whether /federation answers at all. |
 | `federation.max` | `STS_FEDERATION_MAX` | `50` | yes | How many entries may live under ou=federations. |
-| `federation.usernamePrefix` | `STS_FEDERATION_USERNAME_PREFIX` | *(empty)* | yes | Put in front of every username a foreign identity provider supplies, so a federated `alice` and the local `alice` are two entries. |
+| `federation.usernamePrefix` | `STS_FEDERATION_USERNAME_PREFIX` | *(empty)* | yes | Put in front of the confirm-lookup name and the `any-existing` name, after the part before the last `@`. Empty means `alice@partner.example` confirms the local `alice`. An entry created under `link-at-first-sign-in` or `jit-namespaced` is `<relationship>~<subject>` either way. |
 | `federation.loginButtons` | `STS_FEDERATION_LOGIN_BUTTONS` | `true` | yes | Show a button per usable service-provider-side relationship on /authn/login, so a federated identity can satisfy ANY flow already in progress — an OAuth 2.0 authorization request, a WS-Federation sign-in, a SAML AuthnRequest, the admin console. |
 | `federation.outbound` | `STS_FEDERATION_OUTBOUND` | `true` | yes | Whether this service may make an HTTP request OUT, to a partner's token endpoint, UserInfo endpoint or JWKS. |
 | `federation.outboundTimeoutMs` | `STS_FEDERATION_OUTBOUND_TIMEOUT_MS` | `15000` | yes | How long to wait for a partner to answer before giving up. It is generous because the partner here is usually THIS process (a trust realm is a logical copy of this service), and the first thing anybody asks a brand-new realm for is its JWKS — which brings that realm's eleven post-quantum keys into being, one of them an SLH-DSA key generation of about five seconds. |
@@ -2049,7 +2066,7 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 |---|---|---|---|---|
 | `ldap.port` | `LDAP_PORT` | `389` | **restart** — the socket is bound when the process starts | The plain LDAP listener. 389 is privileged, so a host run that is not root fails to bind it — recorded rather than thrown, and reported by GET /admin/ldap/service. |
 | `ldap.tlsPort` | `LDAPS_PORT` | `636` | **restart** — the socket is bound when the process starts | The LDAPS listener, which serves the certificate the TLS module generated. It binds independently of 389, so "389 is up and 636 is not" is an ordinary outcome and each reports itself separately. |
-| `ldap.autocreateUsers` | `LDAP_AUTOCREATE_USERS` | `true` | yes | When on, an entry appears at uid=<name>,ou=users,<base> the first time anybody authenticates to this service through ANY protocol. On by default: a directory that fills up as you use the other protocols is the thing this one is here to show. |
+| `ldap.autocreateUsers` | `LDAP_AUTOCREATE_USERS` | `true` | yes | When on, an entry appears at uid=<name>,ou=users,<base> the first time somebody authenticates through a protocol with no switch of its own. A federation relationship does not read this: its `fedAutocreateUsers` decides, and wins in both directions. See [Federation](federation.md#provisioning-dynamic-or-pre-provisioned). |
 | `ldap.maxEntries` | `LDAP_MAX_ENTRIES` | `2000` | yes | How large the directory may grow. A ceiling rather than a target: entries appear for anybody who authenticates through any protocol here. Counted over every realm this process holds; in a request worker with `ldap.workerDirectory=postgres-lru`, over the realm's rows in the store instead. |
 | `ldap.workerDirectory` | `LDAP_WORKER_DIRECTORY` | `auto` | **restart** — the directory's store is chosen when the process loads it | How every process — the front process and each request or surface worker — holds the directory. `auto` (the default, #320): `postgres-lru` wherever it can work (`persistence.mode=postgres` and a single cell) and `memory` everywhere else. `memory`: every entry, in every process. `postgres-lru`: the people and devices as a window of at most `ldap.workerCacheEntries` entries per process, the rest read from PostgreSQL when asked for — memory no longer grows with the number of people, and a miss costs one database round trip during which that process does nothing else. Requires `persistence.mode=postgres` and a single cell; set explicitly where it cannot work, the service does not start (STS-LDAP-0133). Measured: 20,000 people cost the front process 47 MB less heap windowed. |
 | `ldap.workerCacheEntries` | `LDAP_WORKER_CACHE_ENTRIES` | `10000` | yes | With `ldap.workerDirectory=postgres-lru`, how many people and devices a request worker holds at once (about 2.5 KB each), the least recently read dropped first. An entry it changed and has not yet written is never dropped. |

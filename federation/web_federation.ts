@@ -415,6 +415,7 @@ class FederationPage {
       const switches = ['fedEnabled'].concat(
         row.role === 'service-provider' && row.signsIn
           ? ['fedAutocreateUsers', 'fedUpdateUserAttributes',
+             'fedProvisionGroups',
              'fedMayAssertAdministrators', 'fedAllowUnsolicited',
              'fedSignRequest', 'fedAcceptSignout', 'fedRequireSignedLogout']
               .concat(json.encrypts ? ['fedAllowUnencrypted'] : [])
@@ -422,12 +423,17 @@ class FederationPage {
         const field = json.schema.filter(
             function (f) { return f.name === name; })[0];
         if (!field) return '';
-        // The two provisioning switches and the two sign-out switches (#167)
-        // default ON; the rest default off.
-        const dflt = name === 'fedAutocreateUsers' ||
-                     name === 'fedUpdateUserAttributes' ||
-                     name === 'fedAcceptSignout' ||
-                     name === 'fedRequireSignedLogout';
+        // fedUpdateUserAttributes and the two sign-out switches default ON.
+        // fedAutocreateUsers is written TRUE or FALSE when the relationship
+        // is created; a row that stores neither shows the mode's default,
+        // which the server passes (missing means the old ON, so a stub
+        // that omits the field stays as it was). fedProvisionGroups
+        // defaults off.
+        const dflt = name === 'fedAutocreateUsers'
+          ? json.autocreateDefault !== false
+          : (name === 'fedUpdateUserAttributes' ||
+             name === 'fedAcceptSignout' ||
+             name === 'fedRequireSignedLogout');
         const on = FederationPage.boolOf(record[name], dflt);
         // TRUE and FALSE are the attribute's own values, not words.
         return '<tr><td><code>' + kit.esc(name) + '</code></td>' +

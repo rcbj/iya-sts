@@ -5290,8 +5290,25 @@ persistence.setDirectory(directoryHooks);
 // ---------------------------------------------------------------------------
 function subjectForName(name) {
   log.debug('Entering subjectForName(). name=' + name);
-  const key = stats.identityKeyOf(name);
-  const located = key ? locateEntry(key) : null;
+  // A namespaced federated uid is `<relationship>~<subject>`, and the
+  // subject may be an email (#358). identityKeyOf() would strip the
+  // partner's domain and resolve a different person. The whole name is
+  // tried first. A Kerberos principal that merely contains '~' still
+  // falls through to the fold when nothing is stored under the whole name.
+  const text = String(name == null ? '' : name);
+  const tilde = text.indexOf('~');
+  const at = text.indexOf('@');
+  let located = null;
+  if (tilde > 0 && at > tilde) {
+    const whole = locateEntry(text);
+    if (whole && whole.stored && isPersonEntry(whole.stored)) {
+      located = whole;
+    }
+  }
+  if (!located) {
+    const key = stats.identityKeyOf(name);
+    located = key ? locateEntry(key) : null;
+  }
   const stored = located && located.stored;
   const uuid = stored && isPersonEntry(stored) ? entryUuidOf(stored) : '';
   log.debug('Leaving subjectForName(). ' + (uuid ? 'Found.' : 'Nobody.'));
@@ -7170,6 +7187,14 @@ function autoCreateUser(detail) {
                ': the partner supplied no value of ' +
                incomplete.missing.join(', ') + ', which this realm\'s ' +
                'attribute policy requires of every person.');
+      // SAID ON THE SIGN-IN'S OWN RECORD (#358 with #396): the federation
+      // object is the one `federation_sp.ts` handed `authn.startSession()`,
+      // so its refusal page can name this code and the missing attributes
+      // rather than a generic "the directory declined" (STS-FED-0090). A
+      // directory reached in another process cannot write here, and that
+      // sign-in falls back to the generic answer.
+      info.federation.refusedWith = 'STS-FED-0158';
+      info.federation.refusedMissing = incomplete.missing.slice(0);
       log.debug('Leaving autoCreateUser(). The attribute policy refused the ' +
                 'federated newcomer.');
       return null;
@@ -20899,6 +20924,266 @@ function writeFederationLink(name, value, add, options) {
            username: usernameOfEntry(stored), links: after };
 }
 
+// A group this relationship created carries `federationrelationship` equal
+// to its id. Anything else — a console group, a group another relationship
+// created, an entry that merely occupies the name — is a collision.
+function markedForRelationship(stored, fedId) {
+  log.debug('Entering markedForRelationship().');
+  const marks = ((stored && stored.attributes &&
+                  stored.attributes.federationrelationship) || [])
+    .map(function (one) {
+      return String(one);
+    });
+  const marked = !!groupRuleFor(stored) &&
+                 marks.indexOf(String(fedId)) >= 0;
+  log.debug('Leaving markedForRelationship().');
+  return marked;
+}
+
+// The group of this name, at `cn=<name>,ou=groups` or anywhere else a
+// group's cn matches. The first hit is enough: a second group of the same
+// name is what the caller exists to refuse.
+function groupByFederatedName(name) {
+  log.debug('Entering groupByFederatedName().');
+  const at = getEntry(groupDnFor(name));
+  if (at) {
+    log.debug('Leaving groupByFederatedName(). At its DN.');
+    return at;
+  }
+  const wanted = String(name).trim().toLowerCase();
+  let found = null;
+  eachGroupEntry(function (stored) {
+    if (found) {
+      return;
+    }
+    const cns = (stored.attributes && stored.attributes.cn) || [];
+    if (cns.some(function (one) {
+      return String(one).trim().toLowerCase() === wanted;
+    })) {
+      found = stored;
+    }
+  });
+  log.debug('Leaving groupByFederatedName(). ' +
+            (found ? 'By cn.' : 'None.'));
+  return found;
+}
+
+// Stamped BEFORE the member is added. A group that exists without the mark
+// is a local group, and adding the person to it is the collision this
+// refuses. A stamp that fails leaves an empty unmarked group; the next
+// sign-in treats that name as taken.
+function stampFederationRelationship(dn, fedId) {
+  log.debug('Entering stampFederationRelationship().');
+  const stored = getEntry(dn);
+  if (!stored) {
+    log.debug('Leaving stampFederationRelationship(). No entry.');
+    return false;
+  }
+  stored.attributes.federationrelationship = [String(fedId)];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  touchDirectory(stored.dn);
+  log.debug('Leaving stampFederationRelationship(). Stamped.');
+  return true;
+}
+
+// WHETHER A GROUP GRANTS SOMETHING BY BEING HELD (#358). A partner's token
+// may name any group, and the group may not exist yet: creating it and
+// adding the person would hand a partner whatever that NAME already stands
+// for here. `admin-ui/CLAUDE.md` (*what a group does not grant*) says a
+// group grants nothing by being a group, and the groups below are exactly
+// the exceptions this service makes to that rule, so provisioning never
+// creates one of them and never adds anybody to one:
+//
+//   * a group a setting names as authority — the console rosters
+//     (`admin.readGroup`, `admin.writeGroup`; in a realm, its own roster)
+//     and the two group-derived roles, REMOTE_PEPS and XACML_USER — read
+//     from `common/ownership.ts`'s one list;
+//   * a group an entry of this realm names, by cn or DN, in an attribute
+//     that confers something on its members: a role's `roleMemberGroup`, an
+//     `owner` / `appOwner` / `stsServiceAccountOwner` (#607: an owner group
+//     administers what it owns), an application's
+//     `appDelegationSubjectGroup`, a relationship's `fedSubjectGroup`. A
+//     DANGLING value counts: re-creating a deleted group would restore what
+//     it named;
+//   * a group an XACML policy of this realm names as an attribute value,
+//     since the access gate hands a person's groups to the PDP by cn and DN.
+//
+// The walk is over resident entries, `groupsOwnedBy()`'s reach. A register
+// that cannot be read answers "it grants": not knowing is not permission.
+// Returns the reason, or '' when the name grants nothing.
+const GRANTING_ATTRIBUTES = ['rolemembergroup', 'owner', 'appowner',
+  'stsserviceaccountowner', 'appdelegationsubjectgroup', 'fedsubjectgroup'];
+
+function federatedGroupAuthority(name, dn) {
+  log.debug('Entering federatedGroupAuthority().');
+  const cn = String(name == null ? '' : name).trim().toLowerCase();
+  const dnKey = dn ? normalizeDn(String(dn)) : '';
+  const matches = function (value) {
+    const text = String(value == null ? '' : value).trim();
+    return text.toLowerCase() === cn ||
+           (!!dnKey && DN_SHAPED.test(text) && normalizeDn(text) === dnKey);
+  };
+  try {
+    const settings = require('../common/ownership').GRANTING_GROUP_SETTINGS;
+    const named = settings.filter(function (key) {
+      return String(config.value(key) || '').trim().toLowerCase() === cn;
+    });
+    if (named.length) {
+      log.debug('Leaving federatedGroupAuthority(). A setting.');
+      return 'named by ' + named[0];
+    }
+    let found = '';
+    eachResidentEntry(function (stored) {
+      if (found) {
+        return;
+      }
+      GRANTING_ATTRIBUTES.some(function (attribute) {
+        const values = (stored.attributes && stored.attributes[attribute]) ||
+                       [];
+        if (values.some(matches)) {
+          found = attribute + ' of ' + stored.dn;
+          return true;
+        }
+        return false;
+      });
+    });
+    if (found) {
+      log.debug('Leaving federatedGroupAuthority(). An entry.');
+      return found;
+    }
+    const pattern = new RegExp('>\\s*' +
+      cn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*<', 'i');
+    const policy = xacmlStore.all().filter(function (row) {
+      const text = String((row && row.document) || '');
+      return pattern.test(text) ||
+             (!!dnKey && text.toLowerCase().indexOf(dnKey) >= 0);
+    })[0];
+    if (policy) {
+      log.debug('Leaving federatedGroupAuthority(). A policy.');
+      return 'named by the XACML policy ' + policy.name;
+    }
+  } catch (e) {
+    log.debug('Caught in federatedGroupAuthority(): ' +
+              ((e && e.message) || e));
+    log.debug('Leaving federatedGroupAuthority(). Unreadable.');
+    return 'its registers could not be read';
+  }
+  log.debug('Leaving federatedGroupAuthority(). Grants nothing.');
+  return '';
+}
+
+// Group names from one partner's assertion, for one person (#358). A name
+// that is not a DN value, that names a group this relationship did not
+// create, or that names a group which grants something by being held
+// (`federatedGroupAuthority()`, reason `grants`), is ignored. The caller audits the ignores and the sign-in
+// continues. `memberOf` is never written: addGroupMember does not.
+function applyFederatedGroups(fedId, username, names) {
+  log.debug('Entering applyFederatedGroups(). ' + fedId);
+  const id = String(fedId || '');
+  const who = String(username || '').trim();
+  const joined = [];
+  const ignored = [];
+  const created = [];
+  if (!id || !who) {
+    log.debug('Leaving applyFederatedGroups(). Nothing to apply.');
+    return { joined: joined, ignored: ignored, created: created };
+  }
+  const seen = {};
+  const opts = { actor: 'federation:' + id, channel: 'internal',
+                 origin: 'federation', protocol: 'Federation' };
+  [].concat(names || []).forEach(function (raw) {
+    const name = String(raw == null ? '' : raw).trim();
+    const fold = name.toLowerCase();
+    if (!name || seen[fold]) {
+      return;
+    }
+    seen[fold] = true;
+    if (DN_SHAPED.test(name) || !nameUsableInDn(name)) {
+      ignored.push({ name: name, reason: 'unusable' });
+      return;
+    }
+    const existing = groupByFederatedName(name);
+    const authority = federatedGroupAuthority(name,
+      existing ? existing.dn : groupDnFor(name));
+    if (authority) {
+      ignored.push({ name: name, reason: 'grants', detail: authority });
+      return;
+    }
+    if (existing) {
+      if (!markedForRelationship(existing, id)) {
+        ignored.push({ name: name, reason: 'exists' });
+        return;
+      }
+      const added = addGroupMember(existing.dn || name, who, opts);
+      if (added && added.ok) {
+        joined.push(name);
+      } else {
+        ignored.push({ name: name, reason: 'add' });
+      }
+      return;
+    }
+    const made = createGroup(name, Object.assign({ members: [],
+      note: 'created for federation relationship ' + id }, opts));
+    if (!made || !made.ok) {
+      ignored.push({ name: name, reason: 'create' });
+      return;
+    }
+    if (!stampFederationRelationship(made.dn, id)) {
+      ignored.push({ name: name, reason: 'stamp' });
+      return;
+    }
+    created.push(name);
+    const added = addGroupMember(made.dn, who, opts);
+    if (added && added.ok) {
+      joined.push(name);
+    } else {
+      ignored.push({ name: name, reason: 'add' });
+    }
+  });
+  log.debug('Leaving applyFederatedGroups(). ' + joined.length +
+            ' joined, ' + ignored.length + ' ignored.');
+  return { joined: joined, ignored: ignored, created: created };
+}
+
+// People the idle sweep may disable: every federationLink is this
+// relationship's, there is no local password, and the account is not
+// already locked. Holders of the attribute, never every person.
+function federationIdleCandidates(fedId) {
+  log.debug('Entering federationIdleCandidates(). ' + fedId);
+  const id = String(fedId || '');
+  const prefix = id + ' ';
+  const out = [];
+  if (!id) {
+    log.debug('Leaving federationIdleCandidates(). No relationship.');
+    return out;
+  }
+  eachHolderOfAny(['federationlink'], function (stored) {
+    if (!isPersonEntry(stored)) {
+      return;
+    }
+    const links = stored.attributes.federationlink || [];
+    if (!links.length || !links.every(function (value) {
+      return String(value).indexOf(prefix) === 0;
+    })) {
+      return;
+    }
+    const passwords = stored.attributes.userpassword || [];
+    if (passwords.some(function (one) {
+      return String(one) !== '';
+    })) {
+      return;
+    }
+    if ((stored.attributes.pwdaccountlockedtime || []).length) {
+      return;
+    }
+    const seen = stored.attributes.federationlastseen || [];
+    out.push({ username: usernameOfEntry(stored), dn: stored.dn,
+               lastSeen: seen.length ? String(seen[0]) : '' });
+  });
+  log.debug('Leaving federationIdleCandidates(). ' + out.length);
+  return out;
+}
+
 federation.setDirectory({
   readFederation: readFederation,
   writeFederation: writeFederation,
@@ -20917,7 +21202,9 @@ federation.setDirectory({
   peopleByMail: peopleByMail,
   federationLinksThrough: federationLinksThrough,
   plannedPersonDn: plannedPersonDn,
-  writeFederationLink: writeFederationLink
+  writeFederationLink: writeFederationLink,
+  applyFederatedGroups: applyFederatedGroups,
+  federationIdleCandidates: federationIdleCandidates
 });
 
 // AND THE TWO APPLICATIONS THAT ARE THIS PROCESS, immediately after — because

@@ -142,6 +142,16 @@ interface OwnershipDeps {
  */
 class Ownership {
   /**
+   * The settings that name a group which grants something by being held:
+   * the console rosters and the two group-derived roles. One list, read here
+   * and by `ldap/ldap_server.js`'s federated-group guard (#358), so the two
+   * cannot disagree about which groups are authority.
+   */
+  static readonly GRANTING_GROUP_SETTINGS: readonly string[] = [
+    'admin.readGroup', 'admin.writeGroup', 'roles.remotePepGroup',
+    'roles.xacmlUserGroup'];
+
+  /**
    * Builds the module over its dependencies.
    *
    * @param deps - the logger, the error codes and lazy reads of the
@@ -507,8 +517,7 @@ class Ownership {
     const { log } = this.deps;
     log.debug("Entering Ownership.grantingGroups().");
     const config = this.deps.config();
-    const out = ['admin.readGroup', 'admin.writeGroup',
-                 'roles.remotePepGroup', 'roles.xacmlUserGroup']
+    const out = Ownership.GRANTING_GROUP_SETTINGS
       .map(function (key) {
         return String(config.value(key) || '').trim().toLowerCase();
       }).filter(Boolean);
@@ -705,6 +714,7 @@ slot.buildNowUnlessDeferred();
 export = {
   Ownership: Ownership,
   KINDS: KINDS,
+  GRANTING_GROUP_SETTINGS: Ownership.GRANTING_GROUP_SETTINGS,
   dnKey: Ownership.dnKey,
   isKind: Ownership.isKind,
   /**

@@ -1127,6 +1127,10 @@
     "en": "a5c85407fff2c148",
     "text": "Se quitó un vínculo de federación de una persona"
   },
+  "audit.actions.federation.group-ignored.label": {
+    "en": "a64e9612670b278c",
+    "text": "No se aplicó el nombre de grupo de un socio, porque nombra un grupo que esa relación no creó o uno que concede algo por el mero hecho de pertenecer a él (#358)"
+  },
   "audit.actions.group.add-member.label": {
     "en": "37da254923cef1b6",
     "text": "Se agregó un miembro a un grupo"

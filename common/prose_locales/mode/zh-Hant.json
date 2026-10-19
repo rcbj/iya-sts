@@ -155,6 +155,18 @@
     "en": "21b1d1c16447c0c6",
     "text": "any-existing 會在關係上（STS-FED-0095）與登入時（STS-FED-0094）被拒絕。夥伴會登入其（簽發者、主體）所連結的項目；指名既有人員的未連結主體，必須先在此以該人身分登入（link-at-first-sign-in，預設），否則會被拒絕（pre-linked）。開發模式與產品模式都保留這些規則以及對主控台管理員的拒絕。"
   },
+  "mode.requirements.federated-autocreate.what": {
+    "en": "d38d38e45a73467e",
+    "text": "新的聯盟關係會為沒有人連結的夥伴主體建立目錄項目"
+  },
+  "mode.requirements.federated-autocreate.development": {
+    "en": "04193f48cc244e1b",
+    "text": "建立關係時會將 fedAutocreateUsers 寫入為 TRUE，未儲存此屬性的關係會建立。已儲存的 FALSE 仍然不會建立任何人。"
+  },
+  "mode.requirements.federated-autocreate.product": {
+    "en": "b8758f8842b1fc0a",
+    "text": "建立關係時會將 fedAutocreateUsers 寫入為 FALSE，缺少此屬性時不會建立任何人（STS-FED-0090）。已儲存 TRUE 的關係會持續建立，直到被編輯。link-at-first-sign-in 在兩種模式下仍會連結已比對的現有人員。"
+  },
   "mode.requirements.federated-logout-signature.what": {
     "en": "ab3acff66ae80262",
     "text": "聯合夥伴的 SAML 登出由該夥伴簽署"
