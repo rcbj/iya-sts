@@ -337,9 +337,13 @@ async function test() {
   });
   r = await call("GET", realmBase + "/ssf/stream", undefined,
                  auth(r.json.access_token));
-  check("and the transmitter refuses it, naming ssf.read", function () {
-    assert.strictEqual(r.status, 403, r.text.slice(0, 400));
-    assert.ok(/ssf\.read/.test(r.text), r.text.slice(0, 400));
+  // Refused at the AUDIENCE, before any scope is read: a token that carries
+  // no Shared Signals scope is not issued for the transmitter (RFC 9068
+  // section 4), so the 401 names the audience rather than ssf.read.
+  check("and the transmitter refuses it: the token is not audienced to it",
+        function () {
+    assert.strictEqual(r.status, 401, r.text.slice(0, 400));
+    assert.ok(/aud/.test(r.text), r.text.slice(0, 400));
   });
   r = await token(COLON_WRITE, "ssf.manage");
   check("a client declaring only ssf:write is refused ssf.manage",
