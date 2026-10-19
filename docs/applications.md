@@ -1013,6 +1013,42 @@ application's page, `POST /admin-api/applications/update-fields`, or `add` /
 `remove` with `attribute: appMfaMechanism`. A value that is not a second
 factor is refused (`STS-REG-0203`).
 
+### What it has been seen doing
+
+Some attributes are written by this service as requests arrive, never by an
+administrator. The application's page shows each one read-only, beside the
+setting it shadows:
+
+- **Configuration → OAuth 2.0 / OpenID Connect**, at the top:
+  `oauthGrantTypeObserved`, `oauthResponseTypeObserved`,
+  `appRedirectUriObserved`, `oauthScope` (the scopes it asked for) and
+  `appAuthorizationServer`.
+- **Configuration → SAML**, at the top of each family's panel:
+  `samlNameIdFormat` and `samlResponseBinding`. SAML 2.0 also shows the last
+  AuthnRequest (whether it was signed, and what checking the signature
+  found), and the certificate it carried when that is not a registered one,
+  by subject and SHA-256 thumbprint. SAML 1.1 and SAML 2.0 record the two
+  lists in the same attributes, so both panels show what either profile asked
+  for.
+- **Overview**: Authentications, Sessions, People and Last person, after
+  Last seen.
+
+Each list is one line: the attribute's name, then each value with a check
+mark. A value that is not on the list declared beside it carries a warning
+mark instead: a grant or response type outside a non-empty `oauthGrantType` or
+`oauthResponseType`, a redirect URI that is not in `oauthRedirectUri`, or a
+scope outside a non-empty `oauthAllowedScope`. A line shows ten values and
+then **+N more**, which links to the **Directory entry** tab, where every
+value is listed.
+
+A value cannot be added to `oauthScope` through the console or `/admin-api`
+(`STS-REG-0361`); what a client may be issued is `oauthAllowedScope`. A value
+can still be removed.
+
+In the `oauthGrantType` checkboxes, a grant named by a URN is labelled by its
+last two sections (`grant-type:token-exchange`). Its tooltip gives the full
+name and what the grant is.
+
 ### The passkey policy that applies to it
 
 An application's Configuration tab, *Every protocol*, ends with a

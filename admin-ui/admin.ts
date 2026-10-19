@@ -4439,6 +4439,9 @@ class AdminConsole {
       '.fg-seen{display:inline-flex;align-items:center;gap:.2em;' +
       'white-space:nowrap}' +
       '.fg-seen svg{color:#1a7f37}' +
+      // A value seen but not declared (#708): the warning mark, amber.
+      '.fg-undeclared svg{color:#b35c00}' +
+      '.fg-more{white-space:nowrap}' +
       '.fg-protos{display:flex;flex-wrap:wrap;gap:.3em 1em;margin:.4em 0 1em}' +
       '.fg-proto{font-weight:400;white-space:nowrap}' +
       '.fg-view{align-items:center;gap:.8em}' +

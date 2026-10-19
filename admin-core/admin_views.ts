@@ -9029,6 +9029,91 @@ class AdminViews {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // WHAT AN APPLICATION WAS SEEN DOING (#706, #708), for the read-only lines
+  // at the head of its OAuth and SAML sub-tabs. Each list value carries
+  // `declared`: FALSE where the application declares a list and the value is
+  // not on it — rcbj's warning mark — so the page never compares lists
+  // itself. The four comparisons are the ones the endpoints make: a grant or
+  // response type outside a NON-EMPTY declared list (#289: an empty one
+  // restricts nothing), a redirect URI that is not registered (an empty list
+  // registers none), and a scope outside a non-empty `oauthAllowedScope`
+  // (#110). The SAML lists shadow nothing an endpoint refuses by, so every
+  // value is `declared`. The observed certificate is described, never
+  // drawn: its subject and SHA-256 thumbprint.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns what an application was seen doing, by attribute, each list
+   * value marked whether its declared twin allows it.
+   *
+   * @param fields - the application's fields
+   * @returns the lists, the last SAML request and the observed certificate
+   */
+  applicationObservedState(fields) {
+    const { log, applications, stsCrypto } = this.deps;
+    log.debug("Entering AdminViews.applicationObservedState().");
+    const listOf = function (name) {
+      return [].concat(fields[name] || []).map(String)
+        .filter(function (one) { return one !== ''; });
+    };
+    // `allowed` is the declared list, or null where nothing is declared and
+    // so nothing is outside it.
+    const marked = function (name, allowed, same?) {
+      const key = same || function (one) { return one; };
+      const keys = allowed ? allowed.map(key) : null;
+      return listOf(name).map(function (value) {
+        return { value: value,
+                 declared: !keys || keys.indexOf(key(value)) >= 0 };
+      });
+    };
+    const nonEmpty = function (name) {
+      const values = listOf(name);
+      return values.length ? values : null;
+    };
+    let certificate = null;
+    const observedCertificate = String(
+      fields.samlObservedSigningCertificate || '').trim();
+    if (observedCertificate) {
+      try {
+        const der = Buffer.from(observedCertificate.replace(
+          /-----[^-]+-----|\s+/g, ''), 'base64');
+        certificate = {
+          subject: String(stsCrypto.parseCertificate(der).subject || '')
+            .replace(/\n/g, ', '),
+          sha256: stsCrypto.certificateThumbprint(der,
+                                                  { format: 'colon-hex' })
+        };
+      } catch (e) {
+        log.debug("Caught in AdminViews.applicationObservedState(): " +
+                  ((e && e.message) || e));
+        // A value that does not parse is still a sighting; the line says
+        // so rather than the page losing it.
+        certificate = { subject: '', sha256: '', unreadable: true };
+      }
+    }
+    const signed = String(fields.samlAuthnRequestSigned || '');
+    const out = {
+      oauthGrantTypeObserved: marked('oauthGrantTypeObserved',
+                                     nonEmpty('oauthGrantType')),
+      oauthResponseTypeObserved: marked('oauthResponseTypeObserved',
+        nonEmpty('oauthResponseType'), applications.canonicalResponseType),
+      appRedirectUriObserved: marked('appRedirectUriObserved',
+                                     listOf('oauthRedirectUri')),
+      oauthScope: marked('oauthScope', nonEmpty('oauthAllowedScope')),
+      appAuthorizationServer: marked('appAuthorizationServer', null),
+      samlNameIdFormat: marked('samlNameIdFormat', null),
+      samlResponseBinding: marked('samlResponseBinding', null),
+      samlLastRequest: signed || fields.samlAuthnRequestVerification
+        ? Object.assign({ signed: signed === 'TRUE' },
+                        this.verificationOf(
+                          fields.samlAuthnRequestVerification))
+        : null,
+      samlObservedSigningCertificate: certificate
+    };
+    log.debug("Leaving AdminViews.applicationObservedState().");
+    return out;
+  }
+
   // `<outcome> <binding> <sigAlg> [weak]`, as the SSO service records it, as
   // an object.
   /**
@@ -10206,13 +10291,10 @@ class AdminViews {
         // The lists the grid offers a search on, and what each searches
         // (#459): `applications` or `groups`.
         fieldSearches: applications.FIELD_SEARCHES || {},
-        // WHAT THE CLIENT WAS SEEN DOING (#706), drawn read-only at the head
-        // of the OAuth sub-tab beside the two lists it may use. Neither is
-        // an editable attribute, so neither is in `fields`.
-        observed: {
-          oauthGrantTypeObserved: listOf('oauthGrantTypeObserved'),
-          oauthResponseTypeObserved: listOf('oauthResponseTypeObserved')
-        }
+        // WHAT THE APPLICATION WAS SEEN DOING (#706, #708), drawn read-only
+        // at the head of the sub-tab whose settings each one shadows. None is
+        // a field of the grid, so none is in `fields`.
+        observed: self.applicationObservedState(fields)
       },
       // #609: the named passkey policies naming this application, read-only
       // on the Every protocol sub-tab.

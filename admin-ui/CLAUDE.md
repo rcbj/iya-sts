@@ -8026,21 +8026,47 @@ tab, and a service account's section of the person page —
   sub-tabs and the search; `tests/vendored/sts_passkey_policy_application.js`
   the API half.
 
-## AN APPLICATION'S DECLARED AND OBSERVED FLOWS ON THE OAUTH SUB-TAB (#706; rcbj, 2026-10-19)
+## AN APPLICATION'S DECLARED AND OBSERVED ATTRIBUTES (#706, #708; rcbj, 2026-10-19)
 
 * **`oauthGrantType` and `oauthResponseType` are a checkbox per value**, the
   grid's ordinary closed-set list (`applications.ATTRIBUTE_CHOICES`: every
   grant and response type this service implements, `common/CLAUDE.md`).
-  Nothing on this page draws them specially. A value outside the set is
-  drawn as a marked box, so a Save does not drop it.
-* **`oauthGrantTypeObserved` and `oauthResponseTypeObserved` are drawn
-  READ-ONLY at the head of the OAuth 2.0 / OpenID Connect sub-tab**, above
-  its form: one line each, the attribute's name and every value with
-  `WebKit.checkIcon()`, kept small on rcbj's instruction (`.fg-observed`).
-  The application read carries them as `page.config.observed`
-  (`admin_views.applicationPageData()`), and
-  `ApplicationsPage.applicationObservedFlows()` draws them. **They are no
-  field of the grid and must not become one**: they are not in `EDITABLE`,
-  the endpoints write them as a client asks (#289), and an editable copy
-  would read as a permission. `tests/flow_type_choices.js` holds the sets,
-  the writes and the sub-tab.
+  A value outside the set is drawn as a marked box, so a Save does not drop
+  it. **A URN choice is labelled by its last two sections**
+  (`WebKit.choiceLabel()`: `grant-type:token-exchange`), so an extension grant
+  fits its cell. The checkbox still posts the full value, and the tooltip
+  carries it with its meaning from `WebKit.CHOICE_NOTES`. Those notes are
+  `consoleKit.grant.*` catalog keys, translated in the browser like the
+  rest of the console.
+* **Every attribute a sighting writes is drawn READ-ONLY beside what it
+  shadows** (rcbj's placement). On the OAuth sub-tab's head go the grant and
+  response types, `appRedirectUriObserved`, `oauthScope` and
+  `appAuthorizationServer`. Each SAML family panel's head gets
+  `samlNameIdFormat` and `samlResponseBinding`; SAML 2.0 also gets the last
+  AuthnRequest (`samlAuthnRequestSigned` + `samlAuthnRequestVerification`, a
+  badge by outcome) and `samlObservedSigningCertificate` by subject and
+  thumbprint, never the base64. SAML 1.1 says the profiles share the two
+  lists. Overview gets the four counters after Last seen. **Every protocol
+  gets nothing**: `appKind` and `appProtocol` are on Overview already, and
+  `appReturnAddressObserved` keeps its Return addresses tab, whose values
+  have Confirm and Discard.
+* **The answer decides the warning mark, not the page.**
+  `admin_views.applicationObservedState()` returns `page.config.observed`,
+  each value carrying `declared`. It is FALSE where the declared twin is a
+  list and the value is not on it, with the endpoints' rules: a grant or
+  response type against a NON-EMPTY list (#289), a redirect URI against
+  `oauthRedirectUri` even when empty, and a scope against a non-empty
+  `oauthAllowedScope`. `ApplicationsPage.observedLine()` draws a check or
+  `WebKit.warnIcon()`, cuts at `OBSERVED_SHOWN` (10) and links "+N more" to
+  `#tab-entry`.
+* **None of these is a field of the grid, and none may become one**: they
+  are not in `EDITABLE`, the endpoints write them, and an editable copy would
+  read as a permission. **`oauthScope` is the exception that proves it.** It
+  is still in `EDITABLE` (excluded from the grid only), so since #708
+  `updateApplication()` refuses an add to it (`STS-REG-0361`; a set of a
+  list was already refused, `STS-REG-0008`). A remove stays open, the tidy-up door every derived list keeps. A
+  create still accepts it as a seed, because the parent project's vendored
+  `jwt_vc_json_common.js` provisions its wallets with one and cannot be
+  edited here.
+* `tests/flow_type_choices.js` holds the sets, the writes, every panel, the
+  marks, the cut, the labels and the counters.

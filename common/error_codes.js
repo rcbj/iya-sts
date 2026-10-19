@@ -21938,6 +21938,11 @@ const CODES = [
       'oauthClientSecret empty, or a whole record carrying its own expiry ' +
       '(#394).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0361',
+    summary: 'A value was added to oauthScope by hand: it records the ' +
+      'scopes a client ASKED FOR, written as requests arrive, and what it ' +
+      'may be issued is oauthAllowedScope. A remove is allowed (#708).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +
