@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4388** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4389** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 142
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 129
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 130
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -2935,7 +2935,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0136` | A group owner add named the group itself (#603). | HTTP 400 (API) or a refusal on the group page |
 | `STS-LDAP-0137` | A group owner add was refused: the group already names the most owners a group may (MAX_GROUP_OWNERS, 25) (#603). | HTTP 400 (API) or a refusal on the group page |
 | `STS-LDAP-0138` | A group owner remove named a value the group does not list as an owner (#603). | HTTP 400 (API) or a refusal on the group page |
-| `STS-LDAP-0139` | GET /admin-api/ldap/directory, /admin-api/users or /admin-api/mfa in a process holding the directory as a window (#616) asked the store for its counts, its page or its first names asynchronously and the store failed to answer. The page is refused rather than drawn out of what this process happens to hold. | HTTP 503 with Retry-After |
+| `STS-LDAP-0139` | GET /admin-api/ldap/directory, /admin-api/users, /admin-api/mfa, /admin-api/ldap/devices, /admin-api/rbac or /admin-api/cells (a cell's residents) in a process holding the directory as a window (#616, #359) asked the store for its counts, its page or its first names asynchronously and the store failed to answer. The page is refused rather than drawn out of what this process happens to hold. | HTTP 503 with Retry-After |
 | `STS-LDAP-0140` | An LDAP search reached its time limit (#616) — the client's timeLimit or ldap.timeLimit, whichever is shorter — before it had considered everything under its base. The entries already sent are a partial answer and the paging of the store stops there. | RFC 4511 section 4.5.1.5: timeLimitExceeded (3) |
 | `STS-LDAP-0141` | An LDAP search read from the store asynchronously (#616) and a page of the read failed part way. The entries already sent stay sent; the search ends unavailable rather than answering as though the rest of the directory were empty. | RFC 4511: unavailable (52) |
 | `STS-LDAP-0142` | An LDAP add asked the store its questions asynchronously before its body ran (#621), and the body then threw something other than a store it could not read (which keeps STS-LDAP-0130, STS-LDAP-0131 and STS-LDAP-0175, and is answered unavailable). Thrown inside a promise, it would have left the add without a result; it is answered operationsError instead, and logged with the stack. | RFC 4511: operationsError (1) |
@@ -2968,6 +2968,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0173` | A custom attribute was not removed: the realm's own attribute policy requires it (#396). | HTTP 400 (console and API) |
 | `STS-LDAP-0174` | A custom attribute was not removed: the realm defines none by that name (#396). | HTTP 400 (console and API) |
 | `STS-LDAP-0175` | A console or management-API request (#359) had already spent ldap.workerDirectoryBudgetMs waiting on synchronous directory reads, so the next question was refused and not asked. One slow question still fails as STS-LDAP-0130 when it exceeds its own timeout first. A request outside /admin and /admin-api has no such budget. | HTTP 503 with Retry-After; an LDAP operation answers unavailable (52) |
+| `STS-LDAP-0176` | GET /admin-api/ldap/devices or /admin-api/rbac failed to draw its page with something other than a store it could not read (#359: STS-LDAP-0130, 0131, 0139 and 0175 are the 503s) and with no code of its own: a fault in this service, answered as one and logged with the stack, never a "try again shortly". | HTTP 500 (server_error) |
 
 ## STS-ATTR
 

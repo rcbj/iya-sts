@@ -8632,9 +8632,12 @@ class AdminViews {
           // twenty of twenty from twenty of five thousand.
           candidates: candidateShown,
           candidatesPaging: self.pagingJson(candidatePaging),
+          // Held in memory, the list is every candidate: whole (#359's
+          // windowed answer carries the same two keys).
           candidateSearch: {
             q: personWanted || null, total: candidates.length,
-            matched: candidateMatched.length
+            matched: candidateMatched.length, complete: true,
+            incomplete: null
           },
           picked: personAsked
             ? { asked: personAsked, candidate: picked }
@@ -8668,6 +8671,35 @@ class AdminViews {
     });
     log.debug("Leaving AdminViews.markSeen().");
     return rows;
+  }
+
+  /**
+   * The two incompleteness notes of a windowed candidate list — the
+   * page's and the pane's — as one (#359): the unusable names and the
+   * shortfall of each, summed, and the cap if either reached it. Null
+   * when both pages were whole.
+   *
+   * @param a - one page's `incomplete`, or null
+   * @param b - the other's, or null
+   * @returns the note, or null
+   */
+  private foldIncomplete(a, b) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.foldIncomplete().");
+    if (!a && !b) {
+      log.debug("Leaving AdminViews.foldIncomplete(). Whole.");
+      return null;
+    }
+    const one = a || {};
+    const two = b || {};
+    const out = {
+      unusable: (Number(one.unusable) || 0) + (Number(two.unusable) || 0),
+      short: (Number(one.short) || 0) + (Number(two.short) || 0),
+      capped: Boolean(one.capped || two.capped),
+      cap: Number(one.cap || two.cap) || 0
+    };
+    log.debug("Leaving AdminViews.foldIncomplete().");
+    return out;
   }
 
   // `/admin/rbac` where the directory is a window (#359). The candidate
@@ -8709,14 +8741,23 @@ class AdminViews {
       paneFrom = 0;
     }
     const known = built.knownKeys;
-    const pageRows = this.markSeen((await ldap.candidatePageAsync(
+    const asked = await ldap.candidatePageAsync(
       candidatePaging.offset, candidatePaging.perPage, personWanted,
-      { total: total, matched: matched })).rows, known);
+      { total: total, matched: matched });
+    const pageRows = this.markSeen(asked.rows, known);
     const same = candidatePaging.offset === paneFrom &&
       candidatePaging.perPage === CHOOSER_HITS;
-    const paneRows = same ? pageRows : this.markSeen(
-      (await ldap.candidatePageAsync(paneFrom, CHOOSER_HITS, personWanted,
-        { total: total, matched: matched })).rows, known);
+    const paneAsked = same ? asked
+      : await ldap.candidatePageAsync(paneFrom, CHOOSER_HITS, personWanted,
+          { total: total, matched: matched });
+    const paneRows = same ? pageRows : this.markSeen(paneAsked.rows, known);
+    // NOT A WHOLE PAGE, SAID (the review of #692): `matched` counts rows,
+    // and a name a DN cannot hold, a shared RDN value and the walk's cap
+    // each keep a counted row off the page. The page's answer says which
+    // (`candidatePageAsync()`), and the pane's is folded in when it asked
+    // a page of its own.
+    const incomplete = this.foldIncomplete(asked.incomplete,
+      same ? null : paneAsked.incomplete);
     const personAsked = this.queryOne(req.query, 'person').trim();
     let picked = null;
     if (personAsked) {
@@ -8800,7 +8841,8 @@ class AdminViews {
         candidates: pageRows,
         candidatesPaging: self.pagingJson(candidatePaging),
         candidateSearch: {
-          q: personWanted || null, total: total, matched: matched
+          q: personWanted || null, total: total, matched: matched,
+          complete: incomplete === null, incomplete: incomplete
         },
         picked: personAsked
           ? { asked: personAsked, candidate: picked }

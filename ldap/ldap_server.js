@@ -18878,6 +18878,10 @@ function directoryEntryMatches(stored, needle) {
 // setting — the answer says when it was reached.
 const DIRECTORY_SEARCH_SCAN = 5000;
 const DIRECTORY_SEARCH_PAGE = 500;
+// How far `persistence/directory_queries.js`'s `rdnPage` and
+// `containerPage` walk: their offset and their walk are capped here, so a
+// deep page cannot become a walk of the container. Kept equal to theirs.
+const WINDOWED_PAGE_CAP = 100000;
 
 /**
  * `/admin/ldap/directory` in a windowed process: counted, filtered by origin
@@ -21629,8 +21633,8 @@ async function residentsPageAsync(after, limit) {
   const rounds = count === 0 ? 0 : 8;
   for (let round = 0; round < rounds && people.length < count; round++) {
     const want = count - people.length + 1;
-    const page = await directoryWindow.rdnPageAsync(realmId, parent,
-                                                    cursor, want);
+    const page = await storeAsked(directoryWindow.rdnPageAsync(realmId,
+      parent, cursor, want));
     if (!page || !page.asked) {
       more = false;
       break;
@@ -21687,28 +21691,58 @@ async function residentsPageAsync(after, limit) {
 }
 
 /**
+ * A store question asked asynchronously for a windowed console page
+ * (#359), with its failure CODED: a rejection that carries no code of its
+ * own is the store's (the driver's read pool answers a database error as
+ * it is), and is marked `STS-LDAP-0139` so the handler can tell an
+ * unreadable store, which is a 503, from a bug, which is not.
+ *
+ * @param promise - the question
+ * @returns the same answer, or the rejection coded
+ */
+function storeAsked(promise) {
+  log.debug('Entering storeAsked().');
+  log.debug('Leaving storeAsked().');
+  return Promise.resolve(promise).catch(function (e) {
+    log.debug('Caught in storeAsked(): ' + ((e && e.message) || e));
+    if (e && typeof e === 'object' && !errorCodes.codeOf(e)) {
+      errorCodes.mark(e, 'STS-LDAP-0139');
+    }
+    throw e;
+  });
+}
+
+/**
  * One page of the role screen's directory candidates in a window (#359):
  * direct children of `ou=users`, in RDN order, `needle` a substring of
  * the RDN. `limit` of 0 counts and does not read a page. `options.total`
  * and `options.matched`, when both are given, are kept, so a caller that
  * already counted does not count again.
  *
- * The username is the lower-cased RDN. A name that cannot be spelt in a
- * DN is left out, so a page can be shorter than `limit`. An entry created
- * here and not yet flushed is not on the page.
+ * The username is the lower-cased RDN. An entry created here and not yet
+ * flushed is not on the page.
+ *
+ * **A PAGE THAT IS NOT WHOLE SAYS SO** (the review of #692): `matched`
+ * counts rows, and three things keep a counted row off the page — a name
+ * that cannot be spelt in a DN (left out; `unusable`), two entries sharing
+ * one RDN value (`uid=alice` and `cn=alice`: the walk's `>` steps past
+ * both, so the page ends short; `short`), and a row past the walk's cap
+ * (`WINDOWED_PAGE_CAP`; `capped`). `complete` is false when any of them
+ * touched this page, and the console says which.
  *
  * @param offset - rows to skip
  * @param limit - how many
  * @param needle - a substring, or ''
  * @param options - a count already known (`total`, `matched`)
- * @returns a promise of `{ rows, total, matched }`
+ * @returns a promise of `{ rows, total, matched, complete, incomplete }`
  */
 async function candidatePageAsync(offset, limit, needle, options) {
   log.debug('Entering candidatePageAsync().');
   const opts = options || {};
   if (!directoryWindow) {
     log.debug('Leaving candidatePageAsync(). Not windowed.');
-    return { rows: [], total: 0, matched: 0 };
+    return { rows: [], total: 0, matched: 0, complete: true,
+             incomplete: null };
   }
   const realmId = realms.currentId();
   const parent = normalizeDn(usersDn());
@@ -21718,33 +21752,62 @@ async function candidatePageAsync(offset, limit, needle, options) {
   let matched = opts.matched;
   if (total === undefined || total === null ||
       matched === undefined || matched === null) {
-    total = Number(await directoryWindow.askAsync('count',
-      [realmId, parent])) || 0;
+    total = Number(await storeAsked(directoryWindow.askAsync('count',
+      [realmId, parent]))) || 0;
     matched = wanted
-      ? (Number(await directoryWindow.askAsync('rdnCount',
-          [realmId, parent, wanted])) || 0)
+      ? (Number(await storeAsked(directoryWindow.askAsync('rdnCount',
+          [realmId, parent, wanted]))) || 0)
       : total;
   } else {
     total = Number(total) || 0;
     matched = Number(matched) || 0;
   }
+  const capped = matched > WINDOWED_PAGE_CAP;
+  const from = Math.max(0, Math.floor(Number(offset) || 0));
+  const incompleteness = function (unusable, short) {
+    const whole = unusable === 0 && short === 0 && !capped;
+    return { complete: whole,
+             incomplete: whole ? null
+               : { unusable: unusable, short: short, capped: capped,
+                   cap: WINDOWED_PAGE_CAP } };
+  };
   if (count === 0) {
+    const counted = incompleteness(0, 0);
     log.debug('Leaving candidatePageAsync(). Counted.');
-    return { rows: [], total: total, matched: matched };
+    return { rows: [], total: total, matched: matched,
+             complete: counted.complete, incomplete: counted.incomplete };
   }
-  const page = await directoryWindow.rdnPageAsync(realmId, parent, '',
-    count, { offset: Math.max(0, Math.floor(Number(offset) || 0)),
-             needle: wanted });
+  if (from >= WINDOWED_PAGE_CAP) {
+    // PAST THE CAP the store would answer the cap's page instead, which
+    // is somebody else's: nothing is asked, and the answer says why.
+    const past = incompleteness(0, 0);
+    log.debug('Leaving candidatePageAsync(). Past the cap.');
+    return { rows: [], total: total, matched: matched,
+             complete: past.complete, incomplete: past.incomplete };
+  }
+  const page = await storeAsked(directoryWindow.rdnPageAsync(realmId,
+    parent, '', count, { offset: from, needle: wanted }));
   const rows = [];
+  let unusable = 0;
   ((page && page.rows) || []).forEach(function (row) {
     const rdn = String(row.rdn || '').toLowerCase();
     if (!rdn || !nameUsableInDn(rdn)) {
+      unusable += 1;
       return;
     }
     rows.push({ username: rdn, inDirectory: true, seen: false });
   });
+  // What the count says this page should have held, against what the
+  // walk reached: within the cap, a shortfall is rows the walk stepped
+  // past (a shared RDN value) or rows gone since the count.
+  const asked = Number((page && page.asked) || 0);
+  const expected = Math.max(0, Math.min(matched, WINDOWED_PAGE_CAP,
+                                        from + count) - from);
+  const short = Math.max(0, expected - asked);
+  const answer = incompleteness(unusable, short);
   log.debug('Leaving candidatePageAsync(). ' + rows.length + ' row(s).');
-  return { rows: rows, total: total, matched: matched };
+  return { rows: rows, total: total, matched: matched,
+           complete: answer.complete, incomplete: answer.incomplete };
 }
 
 /**
@@ -21768,8 +21831,8 @@ async function candidateByNameAsync(name) {
   }
   const realmId = realms.currentId();
   const parent = normalizeDn(usersDn());
-  const found = await directoryWindow.askAsync('byName',
-    [realmId, parent, wanted]);
+  const found = await storeAsked(directoryWindow.askAsync('byName',
+    [realmId, parent, wanted]));
   const rows = Array.isArray(found) ? found : [];
   const row = rows[0];
   if (!row || !row.entry) {
@@ -24270,16 +24333,22 @@ async function windowedDevicesView(req) {
   const parent = normalizeDn(devicesDn());
   const wantedText = String(req.query.q || '').trim();
   const needle = wantedText.toLowerCase();
-  const count = Number(await directoryWindow.askAsync('count',
-    [realmId, parent])) || 0;
+  const count = Number(await storeAsked(directoryWindow.askAsync('count',
+    [realmId, parent]))) || 0;
   let matched = count;
   let shown = [];
   let search = null;
   let paging = null;
+  let pastCap = false;
   if (!needle) {
     paging = adminViews.pagingOf(req.query, matched, { noun: 'entries' });
-    const page = await directoryWindow.containerPageAsync(realmId, parent,
-      paging.offset, paging.perPage);
+    // PAST THE WALK'S CAP the store would answer the cap's page, which is
+    // other devices: nothing is asked, and `pageCap` says why the page is
+    // empty.
+    pastCap = paging.offset >= WINDOWED_PAGE_CAP;
+    const page = pastCap ? { rows: [], asked: 0 }
+      : await storeAsked(directoryWindow.containerPageAsync(realmId, parent,
+          paging.offset, paging.perPage));
     shown = page.rows.map(function (hit) {
       return { dn: hit.entry.dn,
                attributes: deviceShownAttributes(hit.entry) };
@@ -24292,8 +24361,8 @@ async function windowedDevicesView(req) {
     while (scanned < DIRECTORY_SEARCH_SCAN) {
       const n = Math.min(DIRECTORY_SEARCH_PAGE,
                          DIRECTORY_SEARCH_SCAN - scanned);
-      const page = await directoryWindow.containerPageAsync(realmId,
-        parent, offset, n);
+      const page = await storeAsked(directoryWindow.containerPageAsync(
+        realmId, parent, offset, n));
       scanned += page.asked;
       page.rows.forEach(function (hit) {
         if (deviceEntryMatches(hit.entry, needle)) {
@@ -24334,6 +24403,9 @@ async function windowedDevicesView(req) {
   };
   if (search) {
     payload.search = search;
+  }
+  if (pastCap) {
+    payload.pageCap = WINDOWED_PAGE_CAP;
   }
   log.debug('Leaving windowedDevicesView(). ' + shown.length +
             ' row(s) of ' + matched + ' matched.');

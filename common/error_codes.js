@@ -12807,11 +12807,13 @@ const CODES = [
       'an owner (#603).',
     spec: 'HTTP 400 (API) or a refusal on the group page' },
   { code: 'STS-LDAP-0139',
-    summary: 'GET /admin-api/ldap/directory, /admin-api/users or ' +
-      '/admin-api/mfa in a process holding the directory as a window (#616) ' +
-      'asked the store for its counts, its page or its first names ' +
-      'asynchronously and the store failed to answer. The page is refused ' +
-      'rather than drawn out of what this process happens to hold.',
+    summary: 'GET /admin-api/ldap/directory, /admin-api/users, ' +
+      '/admin-api/mfa, /admin-api/ldap/devices, /admin-api/rbac or ' +
+      '/admin-api/cells (a cell\'s residents) in a process holding the ' +
+      'directory as a window (#616, #359) asked the store for its counts, ' +
+      'its page or its first names asynchronously and the store failed to ' +
+      'answer. The page is refused rather than drawn out of what this ' +
+      'process happens to hold.',
     spec: 'HTTP 503 with Retry-After' },
   { code: 'STS-LDAP-0140',
     summary: 'An LDAP search reached its time limit (#616) — the client\'s ' +
@@ -13020,6 +13022,13 @@ const CODES = [
       'such budget.',
     spec: 'HTTP 503 with Retry-After; an LDAP operation answers ' +
       'unavailable (52)' },
+  { code: 'STS-LDAP-0176',
+    summary: 'GET /admin-api/ldap/devices or /admin-api/rbac failed to draw ' +
+      'its page with something other than a store it could not read ' +
+      '(#359: STS-LDAP-0130, 0131, 0139 and 0175 are the 503s) and with no ' +
+      'code of its own: a fault in this service, answered as one and ' +
+      'logged with the stack, never a "try again shortly".',
+    spec: 'HTTP 500 (server_error)' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
