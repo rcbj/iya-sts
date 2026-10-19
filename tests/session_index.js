@@ -1160,6 +1160,13 @@ async function body(t, dir) {
     log.debug("Leaving body().");
     return;
   }
+  // THE FULL MAP RESIDENT, AS THIS FILE ASSERTS IT (#350's second pull
+  // request): the index beside the sealed body, with every session held.
+  // The default `auto` turns the window on here (minted persistence, one
+  // cell, a digest key), and a change for a session no process holds is
+  // then not restored into the map; `tests/session_window.js` holds that.
+  const windowWas = process.env.STS_AUTHN_SESSION_WINDOW;
+  process.env.STS_AUTHN_SESSION_WINDOW = 'off';
   try {
     armed = true;
     await armKeystore(dir);
@@ -1185,6 +1192,11 @@ async function body(t, dir) {
     }
     minted.reset();
     minted.endPrefetch();
+    if (windowWas === undefined) {
+      delete process.env.STS_AUTHN_SESSION_WINDOW;
+    } else {
+      process.env.STS_AUTHN_SESSION_WINDOW = windowWas;
+    }
   }
   log.debug("Leaving body().");
 }

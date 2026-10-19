@@ -827,6 +827,15 @@ function upgradeCase(t) {
         url: '/oauth2/authorize'
       }
     };
+    // AN EARLIER FILE IN THE SAME RUN MAY HAVE LOADED THE DIRECTORY (the
+    // risk tests do), and in product mode a person with no entry is then
+    // refused with STS-AUTHN-0180 before the cap is reached. That is not
+    // what this asks, so the person is given an entry where a directory is
+    // there to hold one; standalone there is none and nothing is created.
+    if (require('../common/helpers').hasSubjectResolver()) {
+      require('../ldap/ldap_server').createUser('up-alice',
+                                                { invent: false });
+    }
     const session = signIn('up-alice', detail);
     t.equal(detail.refusedWith, undefined,
             'the upgrade is not refused');
