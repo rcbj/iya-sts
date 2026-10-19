@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4395** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4396** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -49,7 +49,7 @@ is an ordinary outcome.
 
 ## Contents
 
-* [HTTP front door (`STS-HTTP`)](#sts-http) — 18
+* [HTTP front door (`STS-HTTP`)](#sts-http) — 19
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 94
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 50
@@ -122,6 +122,7 @@ Raised from: common/app.js, common/cors.js, common/validation.js, common/websecu
 | `STS-HTTP-0021` | A cross-origin request named a client this realm has no application for (a client_id, Basic user name, client assertion or access token client_id), so its answer carried no Access-Control-Allow-Origin. | none — the endpoint answers; the browser withholds the answer from the page (a CORS error in place of the protocol's own error) |
 | `STS-HTTP-0022` | A cross-origin request named a client whose appCorsOrigin does not list the request's origin, so its answer carried no Access-Control-Allow-Origin. | none — the endpoint answers; the browser withholds the answer from the page |
 | `STS-HTTP-0023` | A value of global.corsOrigins is not an origin, and was ignored rather than widened. | — |
+| `STS-HTTP-0024` | An HTTP/2 request carried both :authority and a Host header naming different hosts, which makes it malformed (RFC 9113 section 8.3.1); it was refused before any endpoint saw it. | HTTP 400 text/plain |
 
 ## STS-PROXY
 

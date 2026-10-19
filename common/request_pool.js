@@ -121,6 +121,9 @@ const clientAddress = require('./client_address');
 // A LEAF: the affinity maps below, described to `/admin/caches` (#74).
 const cacheRegistry = require('./cache_registry');
 const lingeringClose = require('./lingering_close');
+// The HTTP/2 authority rule (#407): a leaf (node, express, the error-code
+// table).
+const Http2Express = require('./http2_express');
 // A LEAF (config, error_codes, node's own modules): every process's heap
 // budget, which fork() hands each worker, and the container's OOM-kill count,
 // which reap() reads for a worker that was SIGKILLed (#341).
@@ -5830,21 +5833,30 @@ function proxy(entry, req, res, atGeneration, ticket) {
   };
 
   const headers = Object.assign({}, req.headers);
+  // AN HTTP/2 REQUEST'S AUTHORITY IS ITS HOST, AND THE TWO MAY NOT DISAGREE
+  // (#407; RFC 9113 section 8.3.1). The app's own `init` has already applied
+  // this (common/http2_express.ts), so a request refused here is one that
+  // reached the pool some other way; the rule is asked again rather than
+  // trusted, because the worker believes the `host` this process sends it.
+  if (Http2Express.hostProblem(headers)) {
+    if (ticket) {
+      ticketAbandoned(entry, ticket);
+    }
+    Http2Express.refuseHostMismatch(res);
+    log.debug('Leaving proxy(). :authority and host disagree.');
+    return;
+  }
   // AN HTTP/2 REQUEST'S PSEUDO-HEADERS STAY ON ITS HOP (#407). Node hands
   // `:method`, `:path`, `:scheme` and `:authority` over in `req.headers`, and
   // a name starting with a colon is not an HTTP/1.1 field name: node's
   // client throws ERR_INVALID_HTTP_TOKEN on it, so every HTTP/2 request a
   // worker would have answered failed here. The method and path go on the
-  // request line below; the authority is the `host` HTTP/1.1 carries it in
-  // (RFC 9113 section 8.3.1), if the request has none already.
+  // request line below; the authority went into `host` above.
   Object.keys(headers).forEach(function (name) {
     if (name.charAt(0) === ':') {
       delete headers[name];
     }
   });
-  if (headers.host === undefined && req.headers[':authority']) {
-    headers.host = req.headers[':authority'];
-  }
 
   // ---------------------------------------------------------------------
   // THE CLIENT'S HOP-BY-HOP HEADERS STAY ON THE CLIENT'S HOP, AND THIS HOP

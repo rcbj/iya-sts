@@ -3845,7 +3845,8 @@ const httpListeners = [];
  * @param kind - `main`, `debugger`, `revocation` or `custom`
  * @param realmId - for `custom`, the listener's id
  * @returns `{ keepAliveTimeoutS, headersTimeoutS, maxRequestsPerSocket,
- *   maxConnections, http2 }`, the header timeout resolved
+ *   maxConnections, http2, http2MaxConcurrentStreams }`, the header timeout
+ *   resolved
  */
 function httpPolicyFor(kind, realmId) {
   log.debug('Entering httpPolicyFor(). ' + kind);
@@ -3858,10 +3859,19 @@ function httpPolicyFor(kind, realmId) {
   const asked = Math.max(0, pick('headersTimeoutS', 'http.headersTimeoutS') ||
                             0);
   // A boolean, so not through `pick()`'s Number(): the listener's own on or
-  // off (`ownValue()` turns those into true and false), else the service's.
+  // off (`ownValue()` turns those into true and false; a custom listener's
+  // definition may also say `"true"` or `"false"`), else the service's. A
+  // value that is none of those follows the service's, as `inherit` does.
   const ownHttp2 = kind ? ownValue(kind, realmId, 'http2') : undefined;
-  const http2 = ownHttp2 !== undefined ? ownHttp2 === true
-                                       : config.value('http.http2') !== false;
+  const ownSays = ownHttp2 === true || ownHttp2 === 'true' ? true
+    : ownHttp2 === false || ownHttp2 === 'false' ? false : undefined;
+  const http2 = ownSays !== undefined ? ownSays
+                                      : config.value('http.http2') !== false;
+  // THE STREAMS ONE HTTP/2 CONNECTION MAY HAVE OPEN AT ONCE (#407). 0 is not
+  // a legal value (the row's `min` is 1), so the `||` only catches a value
+  // that is not a number.
+  const streams = Math.max(1, pick('http2MaxConcurrentStreams',
+                                   'http.http2MaxConcurrentStreams') || 100);
   log.debug('Leaving httpPolicyFor().');
   return {
     keepAliveTimeoutS: keepAlive,
@@ -3872,7 +3882,8 @@ function httpPolicyFor(kind, realmId) {
                                            'http.maxRequestsPerSocket') || 0),
     maxConnections: Math.max(0, pick('maxConnections',
                                      'http.maxConnections') || 0),
-    http2: http2
+    http2: http2,
+    http2MaxConcurrentStreams: streams
   };
 }
 
@@ -3911,9 +3922,89 @@ function applyHttpPolicy(entry) {
   // global.https off) has no handshake to offer it in.
   if (isHttp2Server(entry.server)) {
     entry.server.ALPNProtocols = p.http2 ? ALPN_HTTP2 : ALPN_HTTP1;
+    // THE SAME BOUNDS ON AN HTTP/2 CONNECTION (#407). Node applies the
+    // pooling values above to HTTP/1.1 only, so without these one HTTP/2
+    // connection held open every stream a client asked for (node's own
+    // SETTINGS_MAX_CONCURRENT_STREAMS is 2^32-1) for as long as it liked:
+    // `maxConnections` bounded connections and nothing bounded the work on
+    // each. `updateSettings()` is what a new session announces; an open one
+    // is sent the new SETTINGS too, and given the new idle timeout.
+    entry.server.updateSettings({
+      maxConcurrentStreams: p.http2MaxConcurrentStreams });
+    entry.policy = p;
+    entry.sessions.forEach(function (session) {
+      holdHttp2Session(entry, session);
+    });
   }
   entry.applied = JSON.stringify(p);
   log.debug('Leaving applyHttpPolicy().');
+}
+
+/**
+ * Holds one HTTP/2 session to its listener's policy as it now stands: the
+ * stream cap, and the idle timeout. Called when the session opens and again
+ * when the policy changes.
+ *
+ * - **Idle**: `keepAliveTimeoutS` with no frame either way, and the session
+ *   is closed GRACEFULLY — a GOAWAY, then whatever stream is still open
+ *   finishes — which is what the keep-alive timeout does to an idle HTTP/1.1
+ *   connection.
+ * - **Streams**: the SETTINGS the session announces.
+ *
+ * @param entry - the listener's registration
+ * @param session - the server's `Http2Session`
+ */
+function holdHttp2Session(entry, session) {
+  log.debug('Entering holdHttp2Session(). ' + entry.kind);
+  const p = entry.policy;
+  if (!p || session.destroyed || session.closed) {
+    log.debug('Leaving holdHttp2Session(). Nothing to hold.');
+    return;
+  }
+  try {
+    session.settings({ maxConcurrentStreams: p.http2MaxConcurrentStreams });
+  } catch (e) {
+    // A session part-way through closing refuses new SETTINGS; it is
+    // about to go, and the next one announces the new value.
+    log.debug('Caught in holdHttp2Session(): ' + ((e && e.message) || e));
+  }
+  session.setTimeout(p.keepAliveTimeoutS * 1000, function () {
+    log.debug('tls: an idle HTTP/2 session on the ' + entry.kind +
+              ' listener is closed after ' + p.keepAliveTimeoutS + ' s.');
+    session.close();
+  });
+  log.debug('Leaving holdHttp2Session().');
+}
+
+/**
+ * Follows the HTTP/2 sessions of one registered listener: each is held to
+ * the policy when it opens (holdHttp2Session()), counted against
+ * `maxRequestsPerSocket` — an HTTP/2 connection carries requests as
+ * streams, and one that has carried its share is sent a GOAWAY after the
+ * last, so the client opens a new one exactly as it would over HTTP/1.1 —
+ * and forgotten when it closes.
+ *
+ * @param entry - the listener's registration
+ */
+function followHttp2Sessions(entry) {
+  log.debug('Entering followHttp2Sessions(). ' + entry.kind);
+  entry.server.on('session', function (session) {
+    entry.sessions.add(session);
+    holdHttp2Session(entry, session);
+    let carried = 0;
+    // Once per stream; no Entering/Leaving pair (a hot path).
+    session.on('stream', function () {
+      carried += 1;
+      const most = entry.policy ? entry.policy.maxRequestsPerSocket : 0;
+      if (most > 0 && carried >= most && !session.closed) {
+        session.close();
+      }
+    });
+    session.once('close', function () {
+      entry.sessions.delete(session);
+    });
+  });
+  log.debug('Leaving followHttp2Sessions().');
 }
 
 /**
@@ -3928,8 +4019,11 @@ function applyHttpPolicy(entry) {
 function registerHttpListener(server, kind, realmId) {
   log.debug('Entering registerHttpListener(). ' + kind);
   const entry = { server: server, kind: String(kind), realm: realmId || null,
-                  applied: '' };
+                  applied: '', policy: null, sessions: new Set() };
   httpListeners.push(entry);
+  if (isHttp2Server(server)) {
+    followHttp2Sessions(entry);
+  }
   applyHttpPolicy(entry);
   log.debug('Leaving registerHttpListener().');
   return function unregister() {

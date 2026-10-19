@@ -1105,8 +1105,11 @@ const SETTINGS = [
     env: 'STS_HTTP_KEEP_ALIVE_TIMEOUT_S', type: 'int', dflt: 60,
     min: 1, max: 3600, runtime: true, perProcess: true,
     description: 'How long, in seconds, an HTTP listener keeps an idle ' +
-                 'HTTP/1.1 connection open for the client\'s next request ' +
-                 '(node\'s own default is 5). A connection kept is a TLS ' +
+                 'connection open for the client\'s next request (node\'s ' +
+                 'own default is 5): an HTTP/1.1 connection between ' +
+                 'requests, or an HTTP/2 connection on which no frame has ' +
+                 'passed, which is then closed gracefully. A connection ' +
+                 'kept is a TLS ' +
                  'handshake — and a client-certificate prompt — not repeated. ' +
                  'Requests a client pipelines on one connection are answered ' +
                  'in order. Behind a balancer, keep its idle timeout above ' +
@@ -1160,6 +1163,24 @@ const SETTINGS = [
                  'an open one keeps its protocol. The plain-HTTP revocation ' +
                  'listener is HTTP/1.1 only, since there is no handshake to ' +
                  'offer it in.' },
+  // THE STREAMS ONE HTTP/2 CONNECTION MAY HAVE OPEN (#407). Node announces
+  // 2^32-1 unless told otherwise, so with HTTP/2 on, http.maxConnections
+  // bounded connections and nothing bounded the work each one carried.
+  // RUNTIME: tls_server.js updates the server's SETTINGS for the next
+  // session and sends them to every open one.
+  { key: 'http.http2MaxConcurrentStreams', group: 'HTTP connections',
+    label: 'HTTP/2 streams per connection',
+    env: 'STS_HTTP_HTTP2_MAX_CONCURRENT_STREAMS', type: 'int', dflt: 100,
+    min: 1, max: 1000, runtime: true, perProcess: true,
+    description: 'How many requests one HTTP/2 connection may have open at ' +
+                 'once (SETTINGS_MAX_CONCURRENT_STREAMS); a stream past it ' +
+                 'is refused until one finishes. 100, the default, is the ' +
+                 'smallest value RFC 9113 recommends; node\'s own is ' +
+                 'unbounded, which would let one connection carry the work ' +
+                 'of thousands. It bounds the work on a connection as ' +
+                 'http.maxConnections bounds the connections. A new ' +
+                 'connection follows a change at once, and an open one is ' +
+                 'sent the new value.' },
 
   { key: 'global.proxyProtocol', group: 'Global',
     label: 'PROXY protocol on the TCP listeners',
@@ -17302,6 +17323,8 @@ const PER_LISTENER_SETTINGS = [
   // HTTP/2, on every TLS HTTP listener (#407): not the revocation listener,
   // which is plain HTTP and has no handshake to offer it in.
   { name: 'http2', base: 'http.http2',
+    listeners: ['main', 'debugger'] },
+  { name: 'http2MaxConcurrentStreams', base: 'http.http2MaxConcurrentStreams',
     listeners: ['main', 'debugger'] }
 ];
 

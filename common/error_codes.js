@@ -567,6 +567,12 @@ const CODES = [
     summary: 'A value of global.corsOrigins is not an origin, and was ' +
       'ignored rather than widened.',
     spec: '' },
+  // HTTP/2 (#407): RFC 9113 section 8.3.1, common/http2_express.ts.
+  { code: 'STS-HTTP-0024',
+    summary: 'An HTTP/2 request carried both :authority and a Host header ' +
+      'naming different hosts, which makes it malformed (RFC 9113 section ' +
+      '8.3.1); it was refused before any endpoint saw it.',
+    spec: 'HTTP 400 text/plain' },
   // ===== PROXY =============================================================
   { code: 'STS-PROXY-0001',
     summary: 'A connection from an address outside global.trustedProxies ' +

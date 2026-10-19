@@ -537,10 +537,11 @@ refusal of an application's certificate — is the same in both modes. See
 | `tls.sessionTimeoutS` | `STS_TLS_SESSION_TIMEOUT_S` | `300` | yes | How long a TLS session may be resumed, on every TLS listener that does not set its own (`listener<Id>.sessionTimeoutS`; `-1` inherits). It was `tls.mainSessionTimeoutS`, the main port's alone, until #429. |
 | `tls.sessionCacheSize` | `STS_TLS_SESSION_CACHE_SIZE` | `2048` | yes | How many TLS 1.2 session IDs a listener keeps for resumption; `0` keeps none and resumes by ticket only. Per listener as `listener<Id>.sessionCacheSize`. Not on the SPIFFE listeners: grpc-js offers no session-ID cache. |
 | `tls.resumedChainWaitMs` | `STS_TLS_RESUMED_CHAIN_WAIT_MS` | `2000` | yes | How long a request on a session resumed from another node waits for that session's client-certificate chain to replicate; `0` never waits. |
-| `http.keepAliveTimeoutS` | `STS_HTTP_KEEP_ALIVE_TIMEOUT_S` | `60` | yes | How long an HTTP listener keeps an idle HTTP/1.1 connection for the next request; pipelined requests are answered in order. It was `global.httpKeepAliveTimeoutS`, the main port's alone, until #429. |
+| `http.keepAliveTimeoutS` | `STS_HTTP_KEEP_ALIVE_TIMEOUT_S` | `60` | yes | How long an HTTP listener keeps an idle connection for the next request — an HTTP/1.1 one between requests, an HTTP/2 one with no frame passing, which is closed with a GOAWAY; pipelined requests are answered in order. It was `global.httpKeepAliveTimeoutS`, the main port's alone, until #429. |
 | `http.headersTimeoutS` | `STS_HTTP_HEADERS_TIMEOUT_S` | `0` | yes | How long a request's headers may take to arrive; `0` is the keep-alive timeout plus one second, and a value at or below the keep-alive is raised to that. |
-| `http.maxRequestsPerSocket` | `STS_HTTP_MAX_REQUESTS_PER_SOCKET` | `0` | yes | How many requests one connection may carry before it is closed; `0` is no limit. |
+| `http.maxRequestsPerSocket` | `STS_HTTP_MAX_REQUESTS_PER_SOCKET` | `0` | yes | How many requests one connection may carry before it is closed; `0` is no limit. An HTTP/2 connection is sent a GOAWAY after its last. |
 | `http.maxConnections` | `STS_HTTP_MAX_CONNECTIONS` | `0` | yes | How many connections an HTTP listener holds at once; `0` is no limit. |
+| `http.http2MaxConcurrentStreams` | `STS_HTTP_HTTP2_MAX_CONCURRENT_STREAMS` | `100` | yes | How many streams (requests) one HTTP/2 connection may have open at once; a stream past it is refused (`REFUSED_STREAM`). Node's own is unbounded. Per listener as `listener<Id>.http2MaxConcurrentStreams` and a custom listener's `tls.http2MaxConcurrentStreams`. |
 | `global.trustProxy` | `STS_TRUST_PROXY` | `false` | yes | Believe `X-Forwarded-Proto` and `X-Forwarded-Host` from a TLS-terminating proxy. |
 | `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDRs forwarded headers — and PROXY protocol headers — are believed from. |
 | `global.proxyProtocol` | `STS_PROXY_PROTOCOL` | `off` | no | `v2` expects a PROXY protocol v2 header on every TCP listener, read before TLS. |
@@ -629,7 +630,12 @@ is changed: on `/admin/tls` (or `/admin/config` for `global.*`), through
   (Server configuration → HTTP connections), `listenerMain.http2` or
   `listenerDebugger.http2` for one, and `tls.http2` in a custom listener's
   definition. A change reaches the next connection at once; an open one
-  keeps the protocol it chose. Off, a client that offers only `h2` is
+  keeps the protocol it chose. An HTTP/2 connection is held to the same
+  bounds as an HTTP/1.1 one: it closes when idle for the keep-alive timeout,
+  is sent a GOAWAY after `http.maxRequestsPerSocket` requests, and may have
+  at most `http.http2MaxConcurrentStreams` (100) open at once. A request
+  whose `:authority` and `Host` name different hosts is refused 400 (RFC
+  9113 section 8.3.1). Off, a client that offers only `h2` is
   refused in the handshake (`no_application_protocol`). A load balancer that terminates TLS speaks
   to a listener in whatever protocol it is configured to; one that passes
   TCP through (an NLB) leaves the choice to the client.

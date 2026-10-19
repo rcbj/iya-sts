@@ -9,17 +9,17 @@
 // THE MAIN PORT ANSWERS HTTP/2 AND HTTP/1.1 ALIKE (#407).
 //
 // `server.js` builds the main port as node's `http2` secure server with
-// `allowHTTP1`, and `common/app.js` builds the application through
-// `http2-express`, because plain express — 4.22 and 5.3 alike — sets every
-// request's prototype to one derived from `http.IncomingMessage` and throws
-// on the first HTTP/2 request. A child process loads the whole stack, serves
-// the real application on that kind of server, and drives it over both
-// protocols:
+// `allowHTTP1`, and `common/app.js` adapts the application with
+// `common/http2_express.ts`, because plain express — 4.22 and 5.3 alike —
+// sets every request's prototype to one derived from `http.IncomingMessage`
+// and throws on the first HTTP/2 request. A child process loads the whole
+// stack, serves the real application on that kind of server, and drives it
+// over both protocols:
 //
 //   1. THE SAME ANSWER OVER EACH: the discovery document, a token request
 //      with a form body, a refusal from an unknown realm, an unrouted path —
 //      status, body and the `frame-ancestors` clause, and no `X-Powered-By`
-//      (the wrapper's names the package).
+//      (express's names the framework).
 //   2. A CLIENT CERTIFICATE AT THE HANDSHAKE STILL BINDS (RFC 8705): the
 //      token's `cnf` carries the presented certificate's thumbprint, over
 //      HTTP/2 as over HTTP/1.1 — `getPeerCertificate()` is reached through
@@ -47,6 +47,19 @@
 //      failed), its `:authority` as `host`, its body whole, and the client
 //      certificate `getPeerCertificate()` read off the HTTP/2 session in
 //      the header the worker rebuilds it from.
+//   8. THE HTTP/2 BOUNDS: `http2MaxConcurrentStreams` is what a session is
+//      told, and no more streams than that run at once on one connection;
+//      an idle session is closed after the keep-alive timeout; and a
+//      session that has carried `maxRequestsPerSocket` requests is sent a
+//      GOAWAY — so HTTP/2 cannot carry what HTTP/1.1 is bounded from.
+//   9. :authority AND host (RFC 9113 section 8.3.1): `host` is built from
+//      `:authority`; the two naming different hosts is refused 400 with
+//      STS-HTTP-0024, by the app's `init` and by `request_pool.proxy()`
+//      itself; the same host spelled with its default port or in another
+//      case is not a difference.
+//  10. THE EXPRESS MODULE IS UNTOUCHED: the adapter gives the app an own
+//      `lazyrouter` and changes nothing on `express.application`, so a
+//      plain `express()` app elsewhere in the process is express's.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -339,7 +352,8 @@ function childMain() {
                     agent: new http.Agent({ keepAlive: false,
                                             maxSockets: 8 }),
                     inFlight: 0, served: 0, generation: 0 };
-    const frontApp = require('http2-express')(express);
+    const frontApp = require(ROOT_DIR + '/common/http2_express')
+      .adapt(express());
     frontApp.use(function (req, res) {
       pool.proxy(entry, req, res, 0, 0);
     });
@@ -412,6 +426,199 @@ function childMain() {
            String((e && e.message) || e) + ')', '');
     }
 
+    // 8. The HTTP/2 bounds, on a listener of its own held to the main
+    // port's policy, whose handler waits until it is let go.
+    const MARK = Symbol.for('iya-sts.errorCode');
+    let active = 0;
+    let most = 0;
+    const waiting = [];
+    const slow = http2.createSecureServer({
+      allowHTTP1: true, cert: own.certPem, key: own.privateKeyPem },
+    function (req, res) {
+      active += 1;
+      most = Math.max(most, active);
+      waiting.push(function () {
+        active -= 1;
+        res.end('ok');
+      });
+    });
+    const unregisterSlow = tlsServer.registerHttpListener(slow, 'main');
+    await new Promise(function (r) { slow.listen(0, '127.0.0.1', r); });
+    const slowUrl = 'https://127.0.0.1:' + slow.address().port;
+    note(tlsServer.httpPolicyFor('main').http2MaxConcurrentStreams === 100,
+         '8. http.http2MaxConcurrentStreams is 100 by default',
+         JSON.stringify(tlsServer.httpPolicyFor('main')));
+    config.setOverride('listenerMain.http2MaxConcurrentStreams', '2');
+    settle();
+    const capped = http2.connect(slowUrl, { rejectUnauthorized: false });
+    capped.on('error', function () {});
+    await new Promise(function (r) { capped.once('remoteSettings', r); });
+    note(capped.remoteSettings.maxConcurrentStreams === 2,
+         '8. a new session is told the listener\'s stream cap',
+         capped.remoteSettings.maxConcurrentStreams);
+    const ends = [];
+    for (let i = 0; i < 5; i++) {
+      ends.push(new Promise(function (resolve) {
+        const st = capped.request({ ':path': '/slow/' + i });
+        let status = 0;
+        st.on('response', function (h) { status = h[':status']; });
+        st.resume();
+        st.on('end', function () { resolve(String(status)); });
+        st.on('error', function (e) { resolve(String(e && e.code)); });
+      }));
+    }
+    await new Promise(function (r) { setTimeout(r, 400); });
+    const atOnce = most;
+    const release = setInterval(function () {
+      while (waiting.length) {
+        waiting.shift()();
+      }
+    }, 50);
+    const outcomes = await Promise.all(ends);
+    clearInterval(release);
+    note(atOnce === 2 && most === 2,
+         '8. no more than the cap\'s streams run at once on one connection',
+         'at once ' + atOnce + ', ever ' + most);
+    note(outcomes.every(function (o) {
+      return o === '200' || o === 'ERR_HTTP2_STREAM_ERROR';
+    }), '8. and the rest are queued or refused, never run past it',
+         outcomes.join(','));
+    capped.close();
+    config.clearOverride('listenerMain.http2MaxConcurrentStreams');
+    config.setOverride('listenerMain.keepAliveTimeoutS', '1');
+    settle();
+    const idle = http2.connect(slowUrl, { rejectUnauthorized: false });
+    idle.on('error', function () {});
+    const idleAt = Date.now();
+    const idleEnd = await new Promise(function (resolve) {
+      const give = setTimeout(function () { resolve('still open'); }, 5000);
+      idle.once('goaway', function () {
+        clearTimeout(give);
+        resolve('goaway');
+      });
+      idle.once('close', function () {
+        clearTimeout(give);
+        resolve('closed');
+      });
+    });
+    note(idleEnd !== 'still open' && Date.now() - idleAt >= 900,
+         '8. an idle HTTP/2 session is closed after the keep-alive timeout',
+         idleEnd + ' after ' + (Date.now() - idleAt) + ' ms');
+    idle.destroy();
+    config.clearOverride('listenerMain.keepAliveTimeoutS');
+    config.setOverride('listenerMain.maxRequestsPerSocket', '2');
+    settle();
+    const counted = http2.connect(slowUrl, { rejectUnauthorized: false });
+    counted.on('error', function () {});
+    let goneAway = false;
+    counted.on('goaway', function () { goneAway = true; });
+    const one = function (n) {
+      return new Promise(function (resolve) {
+        const st = counted.request({ ':path': '/count/' + n });
+        let status = 0;
+        st.on('response', function (h) { status = h[':status']; });
+        st.resume();
+        st.on('end', function () { resolve(status); });
+        st.on('error', function (e) { resolve(String(e && e.code)); });
+        setTimeout(function () {
+          while (waiting.length) {
+            waiting.shift()();
+          }
+        }, 20);
+      });
+    };
+    const firstTwo = [await one(1), await one(2)];
+    await new Promise(function (r) { setTimeout(r, 200); });
+    note(firstTwo[0] === 200 && firstTwo[1] === 200 && goneAway,
+         '8. a session that has carried maxRequestsPerSocket requests is ' +
+         'answered and then sent a GOAWAY', firstTwo.join(',') + ' goaway=' +
+         goneAway);
+    counted.destroy();
+    config.clearOverride('listenerMain.maxRequestsPerSocket');
+    settle();
+    unregisterSlow();
+    slow.close();
+
+    // 9. :authority and host. On the real application first, the response
+    // kept so its error code can be read.
+    let lastRes = null;
+    server.prependListener('request', function (req, res) {
+      lastRes = res;
+    });
+    // Both, explicitly: node's client turns a lone `host` into the
+    // `:authority` and sends no `host` at all.
+    const withHost = function (who, host, named) {
+      return new Promise(function (resolve) {
+        const headers = { ':path': '/.well-known/openid-configuration' };
+        if (host !== undefined) {
+          headers[':authority'] = named;
+          headers.host = host;
+        }
+        const st = who.request(headers);
+        let status = 0;
+        let body = '';
+        st.on('response', function (h) { status = h[':status']; });
+        st.setEncoding('utf8');
+        st.on('data', function (d) { body += d; });
+        st.on('end', function () { resolve({ status: status, body: body }); });
+        st.on('error', function (e) {
+          resolve({ status: 0, body: String(e && e.message) });
+        });
+        st.end();
+      });
+    };
+    const authority = '127.0.0.1:' + port;
+    const differs = await withHost(session, 'evil.example', authority);
+    note(differs.status === 400 && lastRes && lastRes[MARK] === 'STS-HTTP-0024',
+         '9. :authority and host naming different hosts is refused 400 ' +
+         'with STS-HTTP-0024', differs.status + ' ' +
+         (lastRes && lastRes[MARK]) + ' ' + differs.body.slice(0, 120));
+    const same = await withHost(session, authority.toUpperCase(),
+                              authority);
+    note(same.status === 200,
+         '9. the same host in another case is not a difference', same.status);
+    const fromAuthority = await withHost(session, undefined);
+    note(fromAuthority.status === 200 && lastRes &&
+         lastRes.req && lastRes.req.headers.host === authority,
+         '9. with no host, the host is the :authority',
+         fromAuthority.status + ' ' +
+         (lastRes && lastRes.req && lastRes.req.headers.host));
+    const H2 = require(ROOT_DIR + '/common/http2_express');
+    const dflt = { ':authority': 'sts.example', ':scheme': 'https',
+                   host: 'sts.example:443' };
+    note(H2.hostProblem(dflt) === false &&
+         H2.hostProblem({ ':authority': 'a.example', host: 'b.example' }),
+         '9. a default port spelled out is not a difference; another host is',
+         JSON.stringify(dflt));
+    // And request_pool.proxy() asks it itself, on a request no adapted app
+    // saw first.
+    const raw = http2.createSecureServer({
+      allowHTTP1: true, cert: own.certPem, key: own.privateKeyPem },
+    function (req, res) {
+      lastRes = res;
+      pool.proxy(entry, req, res, 0, 0);
+    });
+    await new Promise(function (r) { raw.listen(0, '127.0.0.1', r); });
+    const rawSession = http2.connect('https://127.0.0.1:' +
+      raw.address().port, { rejectUnauthorized: false });
+    rawSession.on('error', function () {});
+    const proxiedBad = await withHost(rawSession, 'evil.example',
+                                      '127.0.0.1:' + raw.address().port);
+    note(proxiedBad.status === 400 && lastRes[MARK] === 'STS-HTTP-0024',
+         '9. request_pool.proxy() refuses the same request 400 with ' +
+         'STS-HTTP-0024', proxiedBad.status + ' ' + lastRes[MARK]);
+    rawSession.close();
+    raw.close();
+
+    // 10. The express module is untouched.
+    const plain = express();
+    note(plain.lazyrouter === express.application.lazyrouter &&
+         app.lazyrouter !== express.application.lazyrouter &&
+         /middleware\.init\(this\)/
+           .test(String(express.application.lazyrouter)),
+         '10. the adapter changes this app and not express.application',
+         '');
+
     session.close();
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
@@ -480,14 +687,18 @@ function checkTheSource(t) {
     'debugger_server.ts'), 'utf8').replace(/\s+/g, ' ');
   t.check(/http2\.createSecureServer\(Object\.assign\(\{ allowHTTP1: true \},/
     .test(debuggerServer) &&
-          /const app = http2Express\(express\);/.test(debuggerServer) &&
+          /const app = Http2Express\.adapt\(express\(\)\);/
+            .test(debuggerServer) &&
           /server\.prependListener\('request', Http2Framing\.markFramedBody\);/
             .test(debuggerServer),
-          '5. and the debugger\'s listener, with its own app through ' +
-          'http2-express', '');
-  t.check(/const app = require\('http2-express'\)\(express\);/.test(app),
-          '5. and common/app.js builds the application through ' +
-          'http2-express', '');
+          '5. and the debugger\'s listener, with its own app adapted', '');
+  t.check(/const app = require\('\.\/http2_express'\)\.adapt\(express\(\)\);/
+    .test(app),
+          '5. and common/app.js adapts the application', '');
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'),
+                                         'utf8'));
+  t.check(!(pkg.dependencies || {})['http2-express'],
+          '5. and no third-party wrapper patches express for it', '');
   log.debug("Leaving checkTheSource().");
 }
 
@@ -538,7 +749,8 @@ module.exports = {
             '(#407): the same answers over each protocol, a client ' +
             'certificate still binding a token, ten requests multiplexed ' +
             'on one session, the lingering close leaving an HTTP/2 stream ' +
-            'alone, and http.http2 on by default and turned off in the ' +
-            'next handshake',
+            'alone, http.http2 on by default and turned off in the ' +
+            'next handshake, the HTTP/2 stream cap, idle timeout and ' +
+            'request count, and :authority against host',
   run: run
 };

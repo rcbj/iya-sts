@@ -97,7 +97,6 @@ import http2 = require('http2');
 import https = require('https');
 import path = require('path');
 import express = require('express');
-import http2Express = require('http2-express');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 const { log, PORT } = helpers;
@@ -111,6 +110,7 @@ import cacheRegistry = require('../common/cache_registry');
 // listen() like every TCP listener's.
 import proxyProtocol = require('../common/proxy_protocol');
 import Http2Framing = require('../common/http2_framing');
+import Http2Express = require('../common/http2_express');
 import audit = require('../common/audit');
 import websecurity = require('../common/websecurity');
 import oidcRp = require('../common/oidc_rp');
@@ -829,20 +829,30 @@ class DebuggerServer {
       log.debug("Leaving DebuggerServer.forward(). Too large.");
       return;
     }
+    // THE HOST IS THE AUTHORITY (#407; RFC 9113 section 8.3.1), asked again
+    // here rather than trusted from the app's `init`, because the api
+    // process believes the `host` this one forwards.
+    const asked = Object.assign({}, req.headers);
+    if (Http2Express.hostProblem(asked)) {
+      Http2Express.refuseHostMismatch(res);
+      log.debug("Leaving DebuggerServer.forward(). Host mismatch.");
+      return;
+    }
     const original = String(req.originalUrl || '/');
     const stripped = original.slice(API_PREFIX.length) || '/';
     const target = stripped.charAt(0) === '/' ? stripped : '/' + stripped;
     const headers = {};
-    Object.keys(req.headers).forEach(function (name) {
+    Object.keys(asked).forEach(function (name) {
       const lower = name.toLowerCase();
       // An HTTP/2 request's pseudo-headers (`:path` and the rest, #407) are
-      // no HTTP/1.1 field name: node's client throws on one.
+      // no HTTP/1.1 field name: node's client throws on one; `:authority`
+      // is in `host` by now.
       if (HOP_BY_HOP.indexOf(lower) >= 0 || lower === 'cookie' ||
           lower === 'authorization' || lower.indexOf('x-forwarded-') === 0 ||
           lower.charAt(0) === ':') {
         return;
       }
-      headers[name] = req.headers[name];
+      headers[name] = asked[name];
     });
     const base = this.debuggerBaseOf(req);
     headers['x-forwarded-proto'] = base.split('://')[0];
@@ -1548,9 +1558,9 @@ const slot = new InstanceSlot<DebuggerServer>(
 /**
  * The debugger listener's own express app, not the shared one.
  */
-// Through `http2-express`, as the shared one is (#407): plain express throws
-// on the first HTTP/2 request.
-const app = http2Express(express);
+// Adapted for HTTP/2 as the shared one is (#407, common/http2_express.ts):
+// plain express throws on the first HTTP/2 request.
+const app = Http2Express.adapt(express());
 
 // The routes go on it in `DebuggerServer.wire()`, when the instance is
 // installed (#50, R2) — this app is the listener's own, not the shared one,

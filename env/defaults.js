@@ -77,7 +77,8 @@ var config = {
     headersTimeoutS: 0,      // Request header timeout (s)
     maxRequestsPerSocket: 0, // Requests per connection
     maxConnections: 0,       // Open connections at most
-    http2: true              // Offer HTTP/2
+    http2: true,             // Offer HTTP/2
+    http2MaxConcurrentStreams: 100 // HTTP/2 streams per connection
   },
 
   // --- Admin console ---------------------------------------------------
@@ -1439,7 +1440,8 @@ var config = {
     headersTimeoutS: -1,                      // Main port: request header timeout (s)
     maxRequestsPerSocket: -1,                 // Main port: requests per connection
     maxConnections: -1,                       // Main port: open connections at most
-    http2: "inherit"                          // Main port: offer HTTP/2
+    http2: "inherit",                         // Main port: offer HTTP/2
+    http2MaxConcurrentStreams: -1             // Main port: HTTP/2 streams per connection
   },
 
   // --- Listener: LDAPS -------------------------------------------------
@@ -1474,7 +1476,8 @@ var config = {
     headersTimeoutS: -1,                      // Protocol debugger: request header timeout (s)
     maxRequestsPerSocket: -1,                 // Protocol debugger: requests per connection
     maxConnections: -1,                       // Protocol debugger: open connections at most
-    http2: "inherit"                          // Protocol debugger: offer HTTP/2
+    http2: "inherit",                         // Protocol debugger: offer HTTP/2
+    http2MaxConcurrentStreams: -1             // Protocol debugger: HTTP/2 streams per connection
   },
 
   // --- Listener: SPIRE Server API --------------------------------------

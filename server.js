@@ -1143,7 +1143,7 @@ if (useHttps) {
   // `allowHTTP1` hands a client that offers only `http/1.1` to node's own
   // HTTP/1.1 parser with the server's timeouts. One TLS connection then
   // carries every request a browser makes in parallel. The application is
-  // built through `http2-express` (`common/app.js`) for this.
+  // adapted for it (`common/http2_express.ts`, from `common/app.js`).
   const mainServer = http2.createSecureServer(Object.assign({
     allowHTTP1: true,
     cert: serverCert.certPem,
