@@ -17,11 +17,13 @@ the code is the way it is.
 ## rcbj's decisions (on #94, 2026-09-28)
 
 1. **Knex is this service's database layer, adopted in phases.** This family
-   is the first thing built on it. #326 moves the service's own PostgreSQL
-   onto Knex, still PostgreSQL-only. A second database for the service's own
-   store is a later ticket, if wanted. It is a query builder, not an ORM: a
-   source reads one row of a table somebody else owns, and there is no model
-   of it to map here.
+   is the first thing built on it. #326 moved the service's own PostgreSQL
+   onto Knex (2026-10-19, `persistence/knex_store.js`), still
+   PostgreSQL-only; a source's Knex instances are this family's own, over an
+   operator's database, and are never folded into the store's. A second
+   database for the service's own store is a later ticket, if wanted. It is
+   a query builder, not an ORM: a source reads one row of a table somebody
+   else owns, and there is no model of it to map here.
 2. **No ORM-level cache.** Caches live in `common/cache_registry.js`. The one
    here, `attribute-sources.lookups`, is per process and 30 s long, so a burst
    of sign-ins makes one query.

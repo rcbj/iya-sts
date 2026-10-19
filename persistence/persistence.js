@@ -2743,10 +2743,11 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // one where there is one, whose settings go to the global tier.
     require('./sealed_settings').wrap(driver);
   } catch (err) {
-    // The postgres driver's `require('pg')` is the realistic way to get here —
-    // an image built without the dependency. Named, because "cannot find
-    // module pg" arriving from inside a mock identity service is a sentence
-    // nobody expects.
+    // The postgres driver's door loading Knex and Knex loading `pg`
+    // (`knex_store.js`, #326) is the realistic way to get here — an image
+    // built without the dependency. Named, because "cannot find module pg"
+    // arriving from inside a mock identity service is a sentence nobody
+    // expects.
     driver = null;
     activeMode = 'memory';
     lastError = err.message;
@@ -5068,10 +5069,10 @@ module.exports = {
       // `current_schema()`, and that is what every schema probe below it
       // actually scoped to.
       // **REQUIRED LAZILY, LIKE THE DRIVER ITSELF.** That module pulls in
-      // `pg` at create() time, and this file is required by every process
-      // that loads the protocol stack — including the ones running in
-      // `memory` mode, which must not be stopped by a missing optional
-      // dependency. By the time this line runs the driver is open, so it is
+      // Knex, and with it `pg`, at create() time (#326), and this file is
+      // required by every process that loads the protocol stack — including
+      // the ones running in `memory` mode, which must not be stopped by a
+      // missing optional dependency. By the time this line runs the driver is open, so it is
       // a cache hit.
       //
       // What crosses is the DECLARED schema: the version the driver expects
