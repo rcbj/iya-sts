@@ -9,7 +9,8 @@
 // the full map stays. A miss loads a sealed session. Eviction forgets the
 // memory copy after the commit and does not end the session. A read error
 // is not absence. A failed index read is unread, not an empty list and
-// not the rows still in the cache.
+// not the rows still in the cache. A child whose own children read
+// fails leaves that child and the sign-on in place.
 
 delete process.env.CONFIG_FILE;
 
@@ -1116,12 +1117,15 @@ function partialWalkCase(t) {
   const missName = keystore.keyedDigest('session-username', 'walk-miss');
   const parentKey = keystore.keyedDigest('session-parent', 'walk-parent');
   const keepParent = keystore.keyedDigest('session-parent', 'walk-keep');
+  const consoleParent = keystore.keyedDigest('session-parent',
+                                             'walk-console-keep');
   const seen = [];
   let countNull = false;
   let localNull = false;
   let partnerNull = false;
   let bodyBad = false;
   let childrenNull = false;
+  let childChildrenNull = false;
   let pageNull = false;
   queryFn = function (name, args) {
     seen.push(name);
@@ -1155,6 +1159,9 @@ function partialWalkCase(t) {
     }
     if (name === 'session.children') {
       if (childrenNull && second === keepParent) {
+        return null;
+      }
+      if (childChildrenNull && second === consoleParent) {
         return null;
       }
       if (bodyBad && second === parentKey) {
@@ -1324,6 +1331,48 @@ function partialWalkCase(t) {
     t.equal(audits('session.end', 'walk-keep').length, 0,
             'an unread children walk audits no session.end');
     childrenNull = false;
+    const signon = sessionBody('walk-signon', {
+      user: { username: 'walk-signon', sub: '' }
+    });
+    const earlier = sessionBody('walk-earlier', {
+      derivedFrom: 'walk-signon',
+      user: { username: 'walk-earlier', sub: '' }
+    });
+    const consoleChild = sessionBody('walk-console-keep', {
+      derivedFrom: 'walk-signon',
+      derivedFromRealm: REALM,
+      rpSurface: 'admin',
+      user: { username: 'walk-console-keep', sub: '' }
+    });
+    authn.sessions.set(signon.id, signon);
+    authn.sessions.set(earlier.id, earlier);
+    // A console session lives in the default realm. The cascade reaches
+    // it through realms.run, and that call's return is the child's.
+    authn.sessions.realmMap(realms.DEFAULT_ID).set(consoleChild.id,
+                                                    consoleChild);
+    childChildrenNull = true;
+    t.equal(authn.endSessionById('walk-signon', 'a test sign-out'), null,
+            'a failed child drop does not end the sign-on');
+    t.equal(authn.sessions.get('walk-signon') &&
+            authn.sessions.get('walk-signon').id, 'walk-signon',
+            'the sign-on stays in the map');
+    t.equal(authn.sessions.get('walk-earlier'), undefined,
+            'a child already ended stays ended');
+    t.check(audits('session.end', 'walk-earlier').some(function (row) {
+      return row.outcome === 'success';
+    }), 'the earlier child has its session.end');
+    const keptConsole = authn.sessions.realmMap(realms.DEFAULT_ID)
+      .get('walk-console-keep');
+    t.equal(keptConsole && keptConsole.id, 'walk-console-keep',
+            'the console child stays in the default realm');
+    t.equal(audits('session.end', 'walk-signon').length, 0,
+            'a failed child drop audits no session.end for the sign-on');
+    t.equal(audits('session.end', 'walk-signon',
+                   'STS-AUTHN-0011').length, 0,
+            'STS-AUTHN-0011 is not recorded for the sign-on');
+    t.equal(audits('session.end', 'walk-console-keep').length, 0,
+            'the console child is not ended');
+    childChildrenNull = false;
     pageNull = true;
     const liveBlow = thrownMessage(function () {
       logout.liveSessions();
@@ -1355,6 +1404,16 @@ function partialWalkCase(t) {
             'a keyed session is still found');
   } finally {
     countNull = false;
+    childChildrenNull = false;
+    try {
+      // clearSessions walks only the ambient map. This row is in the
+      // default realm, and a failed delete must not skip that clear.
+      authn.sessions.realmMap(realms.DEFAULT_ID).delete(
+        'walk-console-keep');
+    } catch (e) {
+      log.debug("Caught in partialWalkCase(): " +
+                ((e && e.message) || e));
+    }
     clearSessions();
   }
   log.debug("Leaving partialWalkCase().");

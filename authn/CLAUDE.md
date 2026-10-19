@@ -1696,7 +1696,9 @@ finds `credential_key`. A walk that sees only the cache, and treats the
 rest as gone, is the bug this exists to prevent. A failed index read is
 unread (`null`), not an empty list and not the rows still in the cache,
 and a sign-out does not end the parent while its children could not be
-read (`STS-AUTHN-0338`, recorded, never sent). The window, the cache
+read (`STS-AUTHN-0338`, recorded, never sent). A child whose own read
+fails is the same: that child stays, the sign-on is not revoked or
+deleted, and it gets no `session.end`. The window, the cache
 size and the read timeout are properties of the process. The window is
 fixed at start: turning it off while running is refused, because a start
 that skipped the session bodies would then answer committed sessions as

@@ -6701,7 +6701,13 @@ class Authn {
                   "could not be read.");
         return null;
       }
-      children.forEach(function (child) {
+      // forEach cannot return from dropSession, and realms.run's return
+      // is the child's. Null means that child's own children could not
+      // be read (STS-AUTHN-0338 is already recorded there). The sign-on
+      // is not revoked, deleted, or audited. A child already ended in
+      // this loop stays ended.
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
         log.info('authn: ending the ' + (child.session.rpSurface || 'relying ' +
             'party') +
                  ' session ' + child.id + ' (realm ' + child.realm + ') with ' +
@@ -6710,18 +6716,25 @@ class Authn {
           log.debug("Entering endChild().");
           // The child ends for the parent's reason and by the parent's
           // hand, so it says the parent's initiating entity.
-          self.dropSession(child.id,
+          const ended = self.dropSession(child.id,
                            'the end of the sign-on session it was derived ' +
                            'from (' + (via || 'an unknown door') + ')', false,
                            req, entity);
           log.debug("Leaving endChild().");
+          return ended;
         };
+        let ended = null;
         if (child.realm && child.realm !== realms.currentId()) {
-          realms.run(realms.get(child.realm), endChild);
+          ended = realms.run(realms.get(child.realm), endChild);
         } else {
-          endChild();
+          ended = endChild();
         }
-      });
+        if (ended == null) {
+          log.debug("Leaving Authn.dropSession(). A derived session " +
+                    "could not be ended.");
+          return null;
+        }
+      }
     }
     // RFC 9700 section 2.2.2: an authorization server MAY revoke refresh tokens
     // after a security event, and the section names LOGOUT as one; OpenID
