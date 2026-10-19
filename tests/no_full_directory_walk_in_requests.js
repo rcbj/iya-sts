@@ -132,6 +132,11 @@ const EXEMPT = {
     'the whole directory\'s page, held in memory; a windowed process ' +
     'returns windowedDirectoryView() first — the store\'s counts and one ' +
     'page, asynchronously (#616)' },
+  'ldap/ldap_server.js|peopleMissing|eachEntryInRealm': { memory:
+    'the attribute policy\'s count of people lacking a required ' +
+    'attribute (#396, /admin-api/policies?missing=count), held in memory; ' +
+    'a windowed process answers `missing: null` before the walk, and the ' +
+    'LDAP filter that finds those people is given either way' },
   'ldap/ldap_server.js|entriesUnder|directoryWindow.walk': { bounded:
     'entriesUnder() of a RESIDENT container (applications, roles, ' +
     'policies…) — walk() pages nothing for a base that reaches no windowed ' +
