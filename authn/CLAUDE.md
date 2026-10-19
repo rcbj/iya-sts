@@ -1662,6 +1662,12 @@ ends somebody else's session.
   `session.refuse` and the screen is drawn again; an arrival continues
   with no cookie. The log line is at most once a minute per process, with
   a count. The code is not in the body. No class is admitted over the cap.
+  **THE ACCEPTED TRADE-OFF (rcbj's decision on #350):** a flood that fills
+  the realm — many subjects, or cookie-less arrivals, which need no
+  credential and are not ended for capacity — refuses NEW sign-ins until
+  rows leave by lifetime, sign-out or revoke. Nobody already signed in is
+  signed out by it, and a browser already holding an arrival upgrades it
+  in place, which is not an insert.
 * **A subject already at `authn.maxSessionsPerSubject` (32) loses their own
   oldest countable row**, one per insert, through `expireSession()` with
   `why` = `capacity` — `STS-AUTHN-0292`, CAEP `session-revoked` initiated
