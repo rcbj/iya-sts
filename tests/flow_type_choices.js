@@ -26,6 +26,19 @@
 //      value and no control, and the declared lists are checkboxes, ticked
 //      as the entry holds them, with no text box.
 //
+// And #708 — every other sighting, beside what it shadows:
+//
+//   E. the OAuth block's five lines in order, a value outside a declared
+//      list marked with a warning instead of a check, and a line cut at ten
+//      values with "+N more" to the Directory entry tab;
+//   F. a URN choice is labelled by its last two sections, its full value and
+//      meaning in the tooltip, and still posts the full value;
+//   G. the SAML panels: SAML 2.0's lists, its last AuthnRequest and the
+//      observed certificate by subject and thumbprint; SAML 1.1's lists and
+//      the note that the profiles share them;
+//   H. the Overview's four counters, and `oauthScope` refused at a set or an
+//      add (STS-REG-0361) while a remove still works.
+//
 // In a child process, because it loads the whole stack and serves it.
 // ---------------------------------------------------------------------------
 
@@ -202,7 +215,7 @@ function childMain() {
            'D2. the observed lines are at the head of the OAuth sub-tab, ' +
            'above its form', JSON.stringify({ oauth: oauth, at: at,
                                               form: form }));
-      note(/<code>oauthGrantTypeObserved<\/code><span class="fg-seen"><svg[^]*?<\/svg>refresh_token<\/span>/
+      note(/<code>oauthGrantTypeObserved<\/code><span class="fg-seen"[^>]*><svg[^]*?<\/svg>refresh_token<\/span>/
              .test(block) &&
            /<code>oauthResponseTypeObserved<\/code><span class="fg-seen"><svg[^]*?<\/svg>code<\/span>/
              .test(block) &&
@@ -237,6 +250,146 @@ function childMain() {
       note(page.applicationObservedFlows({ page: { config: {} } },
                                          WebKit.context({}, true).t) === '',
            'D7. an answer without the member draws nothing');
+
+      // --- E. The OAuth block, #708 ----------------------------------------
+      const ctx = WebKit.context({}, true);
+      applications.updateApplication('ft-web', { attribute: 'oauthRedirectUri',
+        mode: 'add', value: 'https://ft.example/cb' });
+      applications.updateApplication('ft-web', {
+        attribute: 'oauthAllowedScope', mode: 'add', value: 'openid' });
+      const scopes = ['openid'];
+      for (let i = 1; i <= 12; i++) {
+        scopes.push('ft-scope-' + i);
+      }
+      applications.seen({ identifier: 'ft-web', kind: 'oauth2-client',
+        protocol: 'OAuth 2.0 / OIDC', counts: false, note: 'a test sighting',
+        fields: { oauthClientId: 'ft-web',
+                  oauthGrantTypeObserved: 'client_credentials',
+                  appRedirectUriObserved: ['https://ft.example/cb',
+                                           'https://ft.example/other'],
+                  oauthScope: scopes,
+                  appAuthorizationServer: 'default' } });
+      const json2 = views.applicationDetailJson(request, 'ft-web').json;
+      const oauthHtml = page.applicationObservedFlows(json2, ctx.t);
+      const lineOf = function (html, name) {
+        const at = html.indexOf('<code>' + name + '</code>');
+        return at < 0 ? '' : html.slice(at, html.indexOf('</div>', at));
+      };
+      const order = ['oauthGrantTypeObserved', 'oauthResponseTypeObserved',
+                     'appRedirectUriObserved', 'oauthScope',
+                     'appAuthorizationServer'].map(function (name) {
+        return oauthHtml.indexOf('<code>' + name + '</code>');
+      });
+      note(order.every(function (at, i) {
+        return at >= 0 && (i === 0 || at > order[i - 1]);
+      }), 'E1. the OAuth block draws its five lines in order',
+           JSON.stringify(order));
+      const redirectLine = lineOf(oauthHtml, 'appRedirectUriObserved');
+      const grantLine = lineOf(oauthHtml, 'oauthGrantTypeObserved');
+      note(/fg-undeclared"[^>]*><svg[^]*?<\/svg>https:\/\/ft\.example\/other</
+             .test(redirectLine) &&
+           /<span class="fg-seen"[^>]*><svg[^]*?<\/svg>https:\/\/ft\.example\/cb</
+             .test(redirectLine) &&
+           /fg-undeclared"[^>]*><svg[^]*?<\/svg>client_credentials</
+             .test(grantLine) &&
+           !/fg-undeclared"[^>]*><svg[^]*?<\/svg>refresh_token</
+             .test(grantLine),
+           'E2. a value outside the declared list is marked with a warning, ' +
+           'one on it with a check', redirectLine + ' | ' + grantLine);
+      const scopeLine = lineOf(oauthHtml, 'oauthScope');
+      const spans = (scopeLine.match(/class="fg-seen/g) || []).length;
+      note(spans === 10 && /href="#tab-entry">\+3 more</.test(scopeLine) &&
+           /fg-undeclared"[^>]*><svg[^]*?<\/svg>ft-scope-1</
+             .test(scopeLine) &&
+           /<span class="fg-seen"[^>]*><svg[^]*?<\/svg>openid</
+             .test(scopeLine),
+           'E3. ten values, then "+3 more" to the Directory entry tab; a ' +
+           'scope outside oauthAllowedScope is marked', scopeLine);
+
+      // --- F. URN choices by their last two sections ---------------------
+      const section2 = page.applicationFieldsSection(ctx, json2, '');
+      const exchange = 'urn:ietf:params:oauth:grant-type:token-exchange';
+      const labelAt = section2.indexOf('value="' + exchange + '"');
+      const label = labelAt < 0 ? '' : section2.slice(
+        section2.lastIndexOf('<label', labelAt),
+        section2.indexOf('</label>', labelAt));
+      note(/>grant-type:token-exchange$/.test(label) &&
+           label.indexOf('title="' + exchange + ' — ') >= 0 &&
+           /RFC 8693/.test(label) &&
+           /value="urn:openid:params:grant-type:ciba"[^>]*>grant-type:ciba/
+             .test(section2) &&
+           /value="authorization_code"[^>]*>authorization_code/
+             .test(section2),
+           'F1. a URN grant is labelled by its last two sections, with its ' +
+           'full value and meaning in the tooltip; a plain one as it is',
+           label.slice(0, 400));
+
+      // --- G. The SAML panels ----------------------------------------------
+      const cert = require(ROOT + '/common/crypto')
+        .selfSignedRsaCertificate({ commonName: 'ft-sp-signer', bits: 2048 });
+      applications.createApplication({ identifier: 'ft-sp',
+        protocols: ['saml2', 'saml11'],
+        fields: { samlEntityId: 'https://ft-sp.example/metadata' } });
+      applications.seen({ identifier: 'ft-sp', kind: 'saml2-service-provider',
+        protocol: 'SAML 2.0', counts: false, note: 'a test sighting',
+        fields: { samlNameIdFormat:
+                    'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent',
+                  samlResponseBinding:
+                    'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST',
+                  samlAuthnRequestSigned: 'TRUE',
+                  samlAuthnRequestVerification:
+                    'verified HTTP-Redirect rsa-sha256',
+                  samlObservedSigningCertificate: cert.certB64 } });
+      const spJson = views.applicationDetailJson(request, 'ft-sp').json;
+      const saml2 = page.applicationObservedSaml(spJson, ctx.t, 'saml2');
+      const saml11 = page.applicationObservedSaml(spJson, ctx.t, 'saml11');
+      const thumb = require(ROOT + '/common/crypto').certificateThumbprint(
+        cert.certB64, { format: 'colon-hex' });
+      note(/id="cfg-saml2-observed"/.test(saml2) &&
+           />nameid-format:persistent</.test(saml2) &&
+           />bindings:HTTP-POST</.test(saml2) &&
+           /Last AuthnRequest<\/code><span>signed<\/span><span class="state-valid">verified<\/span><code>HTTP-Redirect<\/code><code>rsa-sha256<\/code>/
+             .test(saml2) &&
+           saml2.indexOf(thumb) >= 0 && /ft-sp-signer/.test(saml2) &&
+           !/<input|<textarea|<select|<button|<form/.test(saml2),
+           'G1. SAML 2.0: the lists, the last AuthnRequest with its badge, ' +
+           'and the observed certificate by subject and thumbprint, no ' +
+           'control', saml2.slice(0, 900));
+      note(/id="cfg-saml11-observed"/.test(saml11) &&
+           />nameid-format:persistent</.test(saml11) &&
+           /record these two lists in the same attributes/.test(saml11) &&
+           !/Last AuthnRequest/.test(saml11),
+           'G2. SAML 1.1: the shared lists and the note', saml11.slice(0, 600));
+      const spSection = page.applicationFieldsSection(ctx, spJson, '');
+      const s2 = spSection.indexOf('id="cfg-saml2-observed"');
+      const s11 = spSection.indexOf('id="cfg-saml11-observed"');
+      note(s2 > 0 && s11 > s2 &&
+           spSection.indexOf('<form', s2) > s2,
+           'G3. each panel draws its block above its form',
+           JSON.stringify([s2, s11]));
+
+      // --- H. The Overview and oauthScope ----------------------------------
+      const detail = page.detail(ctx, Object.assign({}, json2,
+                                                    { state: {} }));
+      note(/<td>Authentications<\/td><td><code>\d+<\/code>/.test(detail) &&
+           /<td>Sessions<\/td><td><code>\d+<\/code>/.test(detail) &&
+           /<td>People<\/td><td><code>\d+<\/code>/.test(detail) &&
+           /<td>Last person<\/td>/.test(detail) &&
+           detail.indexOf('<td>Last seen') < detail.indexOf(
+             '<td>Authentications'),
+           'H1. the Overview carries the four counters after Last seen');
+      const scopeAdd = applications.updateApplication('ft-web',
+        { attribute: 'oauthScope', mode: 'add', value: 'email' });
+      const scopeSet = applications.updateApplication('ft-web',
+        { attribute: 'oauthScope', mode: 'set', value: 'email' });
+      const scopeRemove = applications.updateApplication('ft-web',
+        { attribute: 'oauthScope', mode: 'remove', value: 'ft-scope-1' });
+      note(!scopeAdd.ok && errorCodes.codeOf(scopeAdd) === 'STS-REG-0361' &&
+           !scopeSet.ok && errorCodes.codeOf(scopeSet) === 'STS-REG-0361' &&
+           scopeRemove.ok,
+           'H2. oauthScope is refused at a set and an add, STS-REG-0361, ' +
+           'and a remove still works',
+           JSON.stringify([scopeAdd, scopeSet, scopeRemove.errors]));
     });
     server.close();
     fs.writeFileSync(OUT, JSON.stringify(findings));
@@ -297,7 +450,8 @@ async function run(t) {
 module.exports = {
   name: 'declared flow types as checkboxes',
   describe: 'oauthGrantType and oauthResponseType are closed sets matching ' +
-            'the metadata, writes outside them are refused, and the OAuth ' +
-            'sub-tab draws the observed lists read-only above them (#706)',
+            'the metadata, writes outside them are refused, and every ' +
+            'observed attribute is drawn read-only beside what it shadows, ' +
+            'a value outside its declared twin marked (#706, #708)',
   run: run
 };

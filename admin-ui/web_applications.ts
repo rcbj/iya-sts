@@ -1316,7 +1316,10 @@ class ApplicationsPage {
         '</code></td></tr><tr><td>' +
         t.html('consoleApplications.a2.lastSeen') +
         '</td><td><code>' + kit.esc(row.lastSeen) +
-        '</code></td></tr><tr><td>' +
+        '</code></td></tr>' +
+        // WHAT HAS HAPPENED (#708): the four counters the sightings keep,
+        // read-only, after when it was seen.
+        ApplicationsPage.applicationActivityRows(row, t) + '<tr><td>' +
         t.html('consoleApplications.a2.description') + '</td><td>' +
         (row.description
           ? kit.esc(row.description)
@@ -1937,9 +1940,13 @@ class ApplicationsPage {
             t.text('consoleApplications.a2.customSamlAttributes')) +
             ApplicationsPage.applicationClaimSelectionSection(ctx, row,
               carryBack, [family], 'cfg-' + family);
+          // What the service provider was seen asking for (#708), at the
+          // head of its family's panel.
+          const observedSaml = ApplicationsPage.applicationObservedSaml(row,
+            t, family);
           return { id: 'cfg-' + family,
             label: family === 'saml2' ? 'SAML 2.0' : 'SAML 1.1',
-            html: familyFields + metadataForm + claims };
+            html: observedSaml + familyFields + metadataForm + claims };
         });
       const samlPanels = group.id === 'saml'
         ? kit.subTabbedPanels(group.label, samlFamilyPanels) : '';
@@ -1981,46 +1988,190 @@ class ApplicationsPage {
   }
 
   // ---------------------------------------------------------------------------
-  // WHAT THE CLIENT WAS SEEN DOING (#706, rcbj): `oauthGrantTypeObserved`
-  // and `oauthResponseTypeObserved`, one line each — the attribute's name and
-  // every value with a check mark — at the head of the OAuth 2.0 / OpenID
-  // Connect sub-tab. READ-ONLY, and drawn so: no box, no form, no Save; the
-  // endpoints write them as a client asks (#289), and what the client MAY
-  // use is the two checkbox lists under them. Drawn from the answer's
-  // `page.config.observed`; an answer from before it draws nothing.
+  // WHAT THE APPLICATION WAS SEEN DOING (#706, #708, rcbj): every attribute
+  // this service writes from what it sees a protocol do, drawn at the head of
+  // the sub-tab whose settings it shadows. A LIST is one line: the
+  // attribute's name, then each value with a check mark, or with a warning
+  // mark where the application declares a list beside it and the value is not
+  // on it (`declared: false`, decided by the answer). At most OBSERVED_SHOWN
+  // values, then "+N more" to the Directory entry tab, which lists every one.
+  // READ-ONLY, and drawn so: no box, no form, no Save. The endpoints write
+  // these as requests arrive (#289), and what the application MAY do is the
+  // fields under them. Drawn from the answer's `page.config.observed`; an
+  // answer from before it draws nothing.
   // ---------------------------------------------------------------------------
+  static readonly OBSERVED_SHOWN = 10;
+
   /**
-   * Draws the read-only observed grant and response types of an
-   * application's OAuth sub-tab.
+   * Draws the Overview's activity rows (#708): authentications, sessions,
+   * people and the last person, as the sightings counted them.
+   *
+   * @param row - the application's view
+   * @param t - the page's translator (#539)
+   * @returns the four table rows as HTML
+   */
+  static applicationActivityRows(row, t) {
+    const cell = function (key, value) {
+      return '<tr><td>' + t.html('consoleApplications.a2.' + key) +
+        '</td><td>' + value + '</td></tr>';
+    };
+    const lastUser = ApplicationsPage.firstFieldValue(row, 'appLastUser');
+    return cell('authentications',
+                '<code>' + kit.esc(String(row.authentications || 0)) +
+                '</code>') +
+      cell('sessions', '<code>' + kit.esc(String(row.sessions || 0)) +
+           '</code>') +
+      cell('people', '<code>' + kit.esc(String(row.users || 0)) +
+           '</code>') +
+      cell('lastPerson', lastUser
+        ? '<code>' + kit.esc(lastUser) + '</code>'
+        : '<span class="state-none">' +
+          t.html('consoleApplications.a2.nothingRecorded') + '</span>');
+  }
+
+  /**
+   * Draws one observed list as a line: its name, then its values.
+   *
+   * @param name - the attribute
+   * @param values - `{ value, declared }` each
+   * @param t - the page's translator (#539)
+   * @returns the line as HTML
+   */
+  static observedLine(name, values, t) {
+    const all = [].concat(values || []);
+    const shown = all.slice(0, ApplicationsPage.OBSERVED_SHOWN);
+    const more = all.length - shown.length;
+    // The tooltip's meaning is the declared twin's: a sighting of a grant
+    // means what declaring it means.
+    const declaredTwin = name.replace(/Observed$/, '');
+    return '<div class="fg-observed-row"><code>' + kit.esc(name) +
+      '</code>' + (all.length
+        ? shown.map(function (one) {
+          return one.declared === false
+            ? '<span class="fg-seen fg-undeclared"' +
+              kit.tip([kit.choiceTipText(declaredTwin, one.value, t),
+                       t.text('consoleApplications.a2.observedUndeclared')]
+                .filter(Boolean).join(' — ')) +
+              '>' + kit.warnIcon() + kit.esc(kit.choiceLabel(one.value)) +
+              '</span>'
+            : '<span class="fg-seen"' +
+              kit.tip(kit.choiceTipText(declaredTwin, one.value, t)) + '>' +
+              kit.checkIcon() + kit.esc(kit.choiceLabel(one.value)) +
+              '</span>';
+        }).join('') + (more > 0
+          ? '<a class="fg-more" href="#tab-entry">' +
+            t.html('consoleApplications.a2.observedMore',
+                   { n: String(more) }) + '</a>'
+          : '')
+        : '<span class="state-none">' +
+          t.html('consoleApplications.a2.observedNone') + '</span>') +
+      '</div>';
+  }
+
+  /**
+   * Draws a block of observed lines, or '' where the answer carries none.
    *
    * @param row - the application's view, `page.config.observed` in it
    * @param t - the page's translator (#539)
-   * @returns the two lines as HTML, or '' where the answer carries none
+   * @param id - the block's id
+   * @param tip - the block's explanation, as text
+   * @param names - the lists, in order
+   * @param extra - optional; further lines, as HTML
+   * @returns the block as HTML
    */
-  static applicationObservedFlows(row, t) {
+  static observedBlock(row, t, id, tip, names, extra?) {
     const observed = row && row.page && row.page.config
       ? row.page.config.observed : null;
     if (!observed) {
       return '';
     }
-    const line = function (name) {
-      const values = [].concat(observed[name] || []);
-      return '<div class="fg-observed-row"><code>' + kit.esc(name) +
-        '</code>' + (values.length
-          ? values.map(function (value) {
-            return '<span class="fg-seen">' + kit.checkIcon() +
-              kit.esc(value) + '</span>';
-          }).join('')
-          : '<span class="state-none">' +
-            t.html('consoleApplications.a2.observedNone') + '</span>') +
-        '</div>';
-    };
-    return '<div class="fg-observed" id="cfg-oauth-observed" role="group" ' +
-      'aria-label="' +
+    return '<div class="fg-observed" id="' + kit.esc(id) + '" ' +
+      'role="group" aria-label="' +
       kit.esc(t.text('consoleApplications.a2.observedLabel')) + '"' +
-      kit.tip(t.text('consoleApplications.a2.observedTip')) + '>' +
-      line('oauthGrantTypeObserved') + line('oauthResponseTypeObserved') +
-      '</div>';
+      kit.tip(tip) + '>' +
+      names.map(function (name) {
+        // An answer from #706 carried plain strings.
+        const values = [].concat(observed[name] || []).map(function (one) {
+          return typeof one === 'string' ? { value: one, declared: true }
+                                         : one;
+        });
+        return ApplicationsPage.observedLine(name, values, t);
+      }).join('') + (extra || '') + '</div>';
+  }
+
+  /**
+   * Draws the OAuth sub-tab's observed lines: grant and response types,
+   * redirect URIs, scopes and authorization servers.
+   *
+   * @param row - the application's view, `page.config.observed` in it
+   * @param t - the page's translator (#539)
+   * @returns the block as HTML, or '' where the answer carries none
+   */
+  static applicationObservedFlows(row, t) {
+    return ApplicationsPage.observedBlock(row, t, 'cfg-oauth-observed',
+      t.text('consoleApplications.a2.observedTip'),
+      ['oauthGrantTypeObserved', 'oauthResponseTypeObserved',
+       'appRedirectUriObserved', 'oauthScope', 'appAuthorizationServer']);
+  }
+
+  /**
+   * Draws a SAML family panel's observed lines. SAML 2.0 adds the last
+   * AuthnRequest and the certificate it carried; SAML 1.1 says the two
+   * profiles share the lists.
+   *
+   * @param row - the application's view, `page.config.observed` in it
+   * @param t - the page's translator (#539)
+   * @param family - `saml2` or `saml11`
+   * @returns the block as HTML, or '' where the answer carries none
+   */
+  static applicationObservedSaml(row, t, family) {
+    const observed = row && row.page && row.page.config
+      ? row.page.config.observed : null;
+    if (!observed) {
+      return '';
+    }
+    let extra = '';
+    if (family === 'saml2') {
+      const last = observed.samlLastRequest;
+      if (last) {
+        // The outcome is the token the SSO service records, drawn as it is
+        // and coloured by what it means.
+        const outcome = String(last.outcome || '');
+        const badge = outcome === 'verified' ? 'state-valid'
+          : outcome === 'failed' ? 'state-revoked' : 'state-none';
+        extra += '<div class="fg-observed-row"><code>' +
+          kit.esc(t.text('consoleApplications.a2.lastRequest')) +
+          '</code><span>' + t.html(last.signed
+            ? 'consoleApplications.a2.lastSigned'
+            : 'consoleApplications.a2.lastUnsigned') + '</span>' +
+          (outcome ? '<span class="' + badge + '">' + kit.esc(outcome) +
+            '</span>' : '') +
+          (last.binding ? '<code>' + kit.esc(last.binding) + '</code>' : '') +
+          (last.signatureMethod
+            ? '<code>' + kit.esc(last.signatureMethod) + '</code>' : '') +
+          (last.weak ? '<span class="state-revoked">weak</span>' : '') +
+          '</div>';
+      }
+      const cert = observed.samlObservedSigningCertificate;
+      if (cert) {
+        extra += '<div class="fg-observed-row"><code>' +
+          'samlObservedSigningCertificate</code>' +
+          (cert.unreadable
+            ? '<span class="state-revoked">' +
+              t.html('consoleApplications.a2.observedUnreadable') + '</span>'
+            : '<span class="fg-seen fg-undeclared"' +
+              kit.tip(t.text('consoleApplications.a2.observedNotTrusted')) +
+              '>' + kit.warnIcon() + kit.esc(cert.subject) +
+              '</span><code>' + kit.esc(cert.sha256) + '</code>') +
+          '</div>';
+      }
+    } else {
+      extra += '<div class="fg-observed-row sub">' +
+        t.html('consoleApplications.a2.observedSamlShared') + '</div>';
+    }
+    return ApplicationsPage.observedBlock(row, t, 'cfg-' + family +
+      '-observed', t.text('consoleApplications.a2.observedSamlTip'),
+      ['samlNameIdFormat', 'samlResponseBinding'], extra);
   }
 
   // ---------------------------------------------------------------------------
