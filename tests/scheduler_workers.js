@@ -32,7 +32,9 @@
 //      busy (requests in flight, or event-loop delay), forced through at
 //      its bound measured from when it was FIRST held, released when the
 //      load drops, and never held for nice 0, an on-demand job, a manual
-//      Run now or an inline run.
+//      Run now or an inline run;
+//   I. a worker that does not know the run's realm yet sends that one run
+//      back to the front, and the next is handed over again.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -337,6 +339,8 @@ async function run(t) {
                                               asked: s.pool.asked }));
     t.equal(logsMatching(s.w, /STS-SCHED-0020/).length, 1,
             'said once, STS-SCHED-0020');
+    t.equal((rowsOf(s.w, 'test.delegated')[0] || {}).ranIn, 'front',
+            'and its row says it ran on the front');
     await s.w.advance(10 * MINUTE);
     t.check(onFront === 2 && s.pool.asked === 1,
             'the next slot runs on the front without asking again',
@@ -447,6 +451,43 @@ async function run(t) {
     s.front.scheduler.start('front');
     await s.w.advance(5000);
     t.equal(ran, 1, 'with no worker the run is inline and is not held');
+  }
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== I. a worker that does not know the realm yet ===');
+  {
+    const s = setup();
+    let onFront = 0;
+    let onWorker = 0;
+    s.front.scheduler.register(job({ run: function () {
+      onFront += 1;
+    } }));
+    s.worker.scheduler.register(job({ run: function () {
+      onWorker += 1;
+    } }));
+    const real = s.pool.run;
+    let first = true;
+    s.pool.run = function (workerId, request) {
+      if (first) {
+        first = false;
+        s.pool.asked += 1;
+        return Promise.resolve({ unknownRealm: true });
+      }
+      return real(workerId, request);
+    };
+    s.front.scheduler.start('front');
+    await s.w.advance(MINUTE);
+    const rows = rowsOf(s.w, 'test.delegated');
+    t.check(onFront === 1 && onWorker === 0 && rows.length === 1 &&
+            rows[0].state === 'succeeded' && rows[0].ranIn === 'front',
+            'that one run is inline, and its row says so',
+            JSON.stringify({ onFront: onFront, rows: rows }));
+    t.equal(logsMatching(s.w, /STS-SCHED-0020/).length, 0,
+            'it is not the unregistered-job case');
+    await s.w.advance(10 * MINUTE);
+    t.check(onFront === 1 && onWorker === 1,
+            'the next slot is handed to the worker again',
+            JSON.stringify({ onFront: onFront, onWorker: onWorker }));
   }
   log.debug('Leaving run().');
 }

@@ -6905,6 +6905,10 @@ function stop(timeoutMs) {
         if (one.agent && typeof one.agent.destroy === 'function') {
           one.agent.destroy();
         }
+        // A CLUSTER RUN A STOPPED WORKER WAS DOING FAILS NOW (#408), as
+        // `reap()` makes it fail: nothing else would answer it before its
+        // time limit.
+        failSchedulerRunsOf(one, 'stop', 'the pool stopped');
       });
       workers = [];
       POOLS.forEach(function (pool) {
@@ -7017,12 +7021,21 @@ function schedulerWorkers() {
     return [];
   }
   const now = Date.now();
+  // THE RUNS A WORKER IS ALREADY DOING COUNT AS ITS LOAD: a body is not a
+  // request, so `inFlight` does not see it, and two long runs would
+  // otherwise both go to the worker that looked idle.
+  const running = new Map();
+  schedulerRuns.forEach(function (held) {
+    running.set(held.entry, (running.get(held.entry) || 0) + 1);
+  });
   const out = readyWorkers(PROTOCOL_POOL).filter(function (one) {
     return one.child && one.child.connected !== false;
   }).map(function (one) {
     const lag = one.loopLag && now - one.loopLag.at <= LOOP_LAG_FRESH_MS
       ? one.loopLag.p99Ms : null;
-    return { id: one.pid, inFlight: Number(one.inFlight) || 0, lagMs: lag };
+    return { id: one.pid,
+             inFlight: (Number(one.inFlight) || 0) + (running.get(one) || 0),
+             lagMs: lag };
   });
   log.debug("Leaving schedulerWorkers(). " + out.length + ".");
   return out;
@@ -7097,6 +7110,7 @@ function receiveSchedulerRunDone(entry, message) {
   }
   schedulerRuns.delete(runId);
   held.resolve({ ok: !!message.ok, unknownJob: !!message.unknownJob,
+                 unknownRealm: !!message.unknownRealm,
                  result: message.result === undefined ? null
                    : message.result,
                  error: message.error || '', code: message.code || '' });

@@ -291,8 +291,9 @@ interface RunRunner {
   // none (no pool, a pool that gave up, a store that does not coordinate).
   workers(): WorkerLoad[];
   // Runs one job's body in the named worker. Resolves `{ ok, result }` or
-  // `{ ok: false, error, code }`, or `{ unknownJob: true }` where that worker
-  // has no such job registered; never rejects.
+  // `{ ok: false, error, code }`, `{ unknownJob: true }` where that worker
+  // has no such job registered, or `{ unknownRealm: true }` where it does
+  // not know the run's realm yet; never rejects.
   run(workerId: number, request: Json): Promise<Json>;
   // Tells the worker running `runId` that it no longer owns the run, and
   // stops waiting for its answer.
@@ -1802,14 +1803,20 @@ class Scheduler {
       if (self.inFlight.has(one.row.runId)) {
         return;
       }
+      // THE CAP FIRST, THEN THE HOLD (#408). A run waiting for the cap is
+      // not asked about load, so the instant it was first held is kept: were
+      // the hold asked first, a run whose bound had just been reached but
+      // found the cap full would be forgotten as "no longer held" and held
+      // again from zero at the next tick, which under steady load could
+      // postpone it past its bound indefinitely.
+      if (self.inFlight.size >= cap) {
+        self.waiting = true;
+        return;
+      }
       // HELD FOR LOAD (#408), BEFORE THE CLAIM: what waits is not claimed,
       // so it is still due at the next tick, exactly as a run waiting for
       // the cap is — and a held run does not take a place under the cap.
       if (self.holdForLoad(one.job, one.row)) {
-        return;
-      }
-      if (self.inFlight.size >= cap) {
-        self.waiting = true;
         return;
       }
       self.attempt(one.job, one.realm, one.row);
@@ -2048,6 +2055,11 @@ class Scheduler {
       }
       const final: Json = Object.assign({}, live, {
         endedAt: endedAt, durationMs: self.deps.now() - startedLocal });
+      // A BODY THE WORKER SENT BACK (#408: a job it has not registered, a
+      // realm it does not know yet) ran here after all, and the row says so.
+      if (target && !flight.runner) {
+        final.ranIn = 'front';
+      }
       let errorCode = '';
       if (outcome.timedOut) {
         errorCode = 'STS-SCHED-0002';
@@ -2201,6 +2213,24 @@ class Scheduler {
                  'it runs on this front process\'s thread, now and from now ' +
                  'on. Register it at its owner\'s load, or give it an ' +
                  'onFront reason.');
+        return inline();
+      }
+      if (a.unknownRealm) {
+        // A REALM CREATED A MOMENT AGO that the worker has not caught up
+        // with: this run only is inline, and the next is handed over again.
+        // Unless it was removed meanwhile, when nothing is run (#338: the
+        // inline call would otherwise fall back to the default realm).
+        flight.runner = null;
+        if (!self.realmDefined(running.realm)) {
+          const gone: Json = new Error('the realm "' + running.realm +
+                                       '" was removed before it ran');
+          gone.schedulerCode = 'STS-SCHED-0018';
+          throw gone;
+        }
+        log.info('scheduler: request worker ' + target + ' does not know ' +
+                 'the realm "' + running.realm + '" yet, so run ' +
+                 running.runId + ' of ' + job.id + ' runs on this front ' +
+                 'process\'s thread.');
         return inline();
       }
       if (a.ok) {
@@ -2362,7 +2392,7 @@ class Scheduler {
    *
    * @param request - `{ jobId, realm, runId, trigger, params, clockOffsetMs }`
    * @returns a promise of `{ ok: true, result }`, `{ ok: false, error, code }`
-   *   or `{ unknownJob: true }`; never rejects
+   *   `{ unknownJob: true }` or `{ unknownRealm: true }`; never rejects
    */
   runDelegated(request: Json): Promise<Json> {
     const { log, realms, now } = this.deps;
@@ -2377,12 +2407,12 @@ class Scheduler {
     }
     const realm = realms.get(String(r.realm || ''));
     if (!realm) {
+      // NOT YET HERE, rather than gone: the leader checked the realm is
+      // defined just before it handed the run over, so a worker without it
+      // is one the realm's creation has not reached yet. The leader runs this
+      // run itself (`unknownRealm`), and hands the next one over again.
       log.debug("Leaving Scheduler.runDelegated(). No such realm here.");
-      return Promise.resolve({
-        ok: false, code: 'STS-SCHED-0018',
-        error: 'the realm "' +
-               String(r.realm || '') + '" is not defined in the request ' +
-               'worker the run was handed to.' });
+      return Promise.resolve({ unknownRealm: true });
     }
     const one: Json = { realm: realm.id || String(r.realm), fenced: false };
     this.delegated.set(runId, one);

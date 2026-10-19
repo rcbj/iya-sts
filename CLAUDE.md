@@ -414,9 +414,12 @@ and a new express app is covered by the guard already —
 
 **rcbj's architectural directive, 2026-09-21: anything that has to be done
 periodically in the background is a job on the central scheduler** (#49,
-`cluster/scheduler.ts`), which runs each job on exactly one node, on the
-serving front process and never in a request worker, and hands it to another
-node when that one goes. **No new module may start a timer of its own** — no
+`cluster/scheduler.ts`), which runs each job on exactly one node and hands
+it to another node when that one goes. The serving front process leads and
+keeps the lease, the claims, the fences and the run rows; since #408 a
+cluster job's BODY runs on the node's least-loaded ready request worker,
+unless the job names an `onFront` reason (`cluster/CLAUDE.md`, *Where a
+cluster run's body runs*). **No new module may start a timer of its own** — no
 `setInterval`, no `setTimeout` chain, no sweep armed at require or wire time —
 for work that repeats.
 

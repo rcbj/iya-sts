@@ -825,6 +825,13 @@ per-process jobs and the algorithmic fixes are a follow-up. `scheduler.ts`'s
   worker's `ctx.stillOwner()` answers false from then on. The front's timer
   now fires on time, because its thread was never the one held. A worker
   that ends under a run fails it at once with `STS-SCHED-0019`.
+* **A worker that does not know the run's realm yet** (one created a moment
+  ago) answers `unknownRealm`, and that one run is inline; a realm removed
+  meanwhile runs nothing (`STS-SCHED-0018`, #338's rule). A worker's load
+  counts the bodies it is already running as well as its requests, and a
+  pool's `stop()` fails the runs of the workers it stops as `reap()` does.
+  The hold below is asked only once a place under the cap is free, so a run
+  waiting for the cap keeps the instant it was first held.
 * **Inline, as before #408,** where there is no ready worker: none
   configured, a pool that gave up, or a store that does not coordinate,
   where there are no workers at all. Also for a job a worker answers it has
@@ -833,17 +840,21 @@ per-process jobs and the algorithmic fixes are a follow-up. `scheduler.ts`'s
   and runs on the front for the process's life.
 * **An exemption is a reason**: `onFront: '<why>'` on the registration. An
   empty or non-string one is refused (`STS-SCHED-0009`), and
-  `tests/scheduler_workers.js` F holds it. Three jobs carry one, the first
-  two because they must:
+  `tests/scheduler_workers.js` F holds it. Four jobs carry one, the first
+  three because they must:
   `scheduler.history`, which reads the whole of `scheduler.runs`, which a
-  worker does not restore (#617), and `keys.data-key-reencrypt`, whose
+  worker does not restore (#617); `keys.data-key-reencrypt`, whose
   `keystore.resealOwnRows()` re-seals the rows THIS process holds sealed in
-  memory before a superseded key is destroyed. The other cluster jobs were
+  memory before a superseded key is destroyed; and
+  `spiffe.target-reconcile` (added in the review of #705), whose halt while
+  stopping reads `SpiffeTargets.stopping`, a static only the front's
+  `beginStop()` sets — in a worker a reconcile would register this task
+  again after `onStop()` had deregistered it. The other cluster jobs were
   audited against front-only state (sockets, the run store, memory nothing
   replicates) and found to work through the store or the pool's channels.
   The ticket key and the TUF root are persisted shared maps, the SPIFFE
   authorities are a persisted realm map, key rotations bump the key set's
-  generation, and every outbound delivery is claimed per row. The third,
+  generation, and every outbound delivery is claimed per row. The fourth,
   `saml2.sp-metadata-refresh`, stays only because its owner registers it
   from `server.js`'s `listen()` alone, so no worker has it; registering it
   in every process would let it move.
@@ -916,7 +927,7 @@ row's body runs on a request worker except those marked **front**:
 | `tls.ticket-key-rotate` | cluster, service; `tls.sessionTicketRotationS`, off outside active-active — replaces the TLS session-ticket key every node's LDAPS listener shares (not the main port's or the debugger's: they ask for client certificates), deleting the old one | `tls/session_tickets.ts`, `tls/CLAUDE.md` |
 | `spiffe.authority-rotation` | cluster, realm; hourly, from each authority's own age, in both modes | `spiffe/spiffe_ca.ts` (D6) |
 | `spiffe.sigstore-tuf-refresh` | cluster, service; `spiffe.dockerSigstoreTufRefreshS` (daily), off while `spiffe.dockerSigstoreTufRootFile` is empty — the sigstore trust root through TUF, a failure keeping the last verified set (#170) | `spiffe/spiffe_sigstore_tuf.ts`, `spiffe/CLAUDE.md` |
-| `spiffe.target-reconcile` | cluster, service; every 15 s, off when `ECS_CONTAINER_METADATA_URI_V4` is unset and while this process is stopping — each running task's private address registered in this cluster's SPIFFE target groups, an address no running task still has deregistered; a failure is `STS-CLUSTER-0027` and the service keeps serving (#323) | `cluster/spiffe_targets.js`, `deploy/aws/CLAUDE.md` |
+| `spiffe.target-reconcile` | cluster, service, **front** (its stopping flag is the front's); every 15 s, off when `ECS_CONTAINER_METADATA_URI_V4` is unset and while this process is stopping — each running task's private address registered in this cluster's SPIFFE target groups, an address no running task still has deregistered; a failure is `STS-CLUSTER-0027` and the service keeps serving (#323) | `cluster/spiffe_targets.js`, `deploy/aws/CLAUDE.md` |
 | `process.memory-report` | per-process; every 5 minutes — one log line per process (front, protocol worker, surface worker) with its rss, heap used and total, heap limit, external and array buffers; a request worker also sends its figures to the front process, which reports them beside that worker's exit (#341) | `common/process_memory.ts`, `common/CLAUDE.md` |
 | `caches.eject-expired` | per-process, quiet; every minute — each store's own `eject()` | `admin-ui/caches_admin.ts`, `common/CLAUDE.md` 3ap (P5) |
 | `devices.android-status-refresh` | cluster, service; `devices.androidStatusRefreshS` (daily), off while `devices.androidStatusUrl` is empty — downloads Google's Android attestation status list and activates it, which queues the recheck | `common/attestation_revocation.ts`, `common/CLAUDE.md` 3cf |

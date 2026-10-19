@@ -1445,8 +1445,14 @@ class RequestWorker {
       this.report(Object.assign({ schedulerRunDone: true, runId: runId },
                                 answer || {}));
     };
-    scheduler.runDelegated(message).then((answer: any) => {
-      if (answer && answer.unknownJob) {
+    // OUTSIDE ANY REQUEST'S DIRECTORY BUDGET (#692): a body is no request's,
+    // and the channel's message is not delivered inside one today; said
+    // here so that a later change to how messages arrive cannot hand a job
+    // a console request's spent budget (`common/sync_query.ts`).
+    const started: Promise<any> = require('./sync_query').outsideBudget(
+      () => scheduler.runDelegated(message));
+    started.then((answer: any) => {
+      if (answer && (answer.unknownJob || answer.unknownRealm)) {
         report(answer);
         return;
       }
