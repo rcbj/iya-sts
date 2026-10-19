@@ -4968,15 +4968,28 @@ the estate this service issues into, decided once, and a per-application answer
 would be a question two applications could not meaningfully answer differently.
 And not a socket, a port, a key or a limit anywhere.
 
-**AN APPLICATION DECLARED FOR SAML GETS AN ENTITYID.** `createApplication()`
-fills `samlEntityId` from the identifier when `saml2` or `saml11` is ticked and
-no entityID was given — because that is what the same application would have got
-by ARRIVING on its own, where the registry files a service provider under its
-entityID. Without it the declaration was a note and nothing more: `samlEntityId`
-is what both SAML modules file an application under and what their
-per-service-provider metadata is published for. It is a default and not a rule —
-an explicit value wins, and nothing is refused, because this service accepts any
-entityID on sight everywhere else.
+**AN APPLICATION DECLARED FOR A FAMILY GETS THAT FAMILY'S PRIMARY NAME (#393;
+SAML only, from 2026-08-27).** `createApplication()` calls
+`fillPrimaryNames()`, which writes the identifier into each ticked family's
+identifier attribute that was left empty — `oauthClientId`, `samlEntityId`,
+`wsfedRealm` and the rest — because that is what the same application would have
+got by ARRIVING on its own, where a sighting files it under the string it
+presented. Without it a SAML declaration was a note and nothing more, and an
+OAuth client's creator typed one string three times (identifier, name,
+client_id). It is a default and not a rule: an explicit value wins, and a list
+typed on the create is the WHOLE list (the identifier is not forced in beside
+it), so an application that answers to several client ids keeps working. The
+attributes stay `multi`. `updateApplicationFields()` fills a family NEWLY
+declared by a save, once, and only when the body did not name the attribute; a
+re-save of the same families writes nothing, so a deliberately cleared
+client_id stays cleared. **Three identifier attributes are never filled**
+(`NOT_THE_REGISTRY_IDENTIFIER`): `oauthTlsClientAuthSubjectDn`, because RFC 8705
+would then match a subject nobody has; `ldapBindDn`, a DN rather than the key;
+and `spiffeWorkloadId`, a `spiffe://` URI filed under `ou=spiffe`. The field
+grid marks the filled kind `primaryName`: the create form's simplified view
+leaves it out, and the application page folds it into the advanced view while
+its only value is the identifier. Existing entries are not rewritten (no
+migration).
 
 ---
 

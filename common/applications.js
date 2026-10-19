@@ -375,6 +375,9 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 // console walks this table, DEDUPES BY ATTRIBUTE and draws one field per
 // attribute, listing the families it serves — so the form has eleven identifier
 // fields for sixteen families (fourteen when this was written) and says why.
+// The simplified create form does not draw a primary name (#393): that value
+// is the registry identifier, and fillPrimaryNames() writes it when the
+// create leaves the attribute empty. The advanced view still draws it.
 //
 // **EVERY ONE OF THEM IS MULTI-VALUED BAR ONE.** An application legitimately
 // answers to two client_ids, two entityIDs or two SPNs here — one per
@@ -391,8 +394,11 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 // The five families this service records no identifier for — LDAP, SCIM,
 // SPIFFE, OpenID4VCI, mutual TLS — get a field anyway, because "what is this
 // application called when it talks LDAP to us" is a fact an operator has and
-// this registry had nowhere to put. Nothing will ever write those attributes on
-// its own, so they read as declaration and only ever as declaration.
+// this registry had nowhere to put. A create writes the registry identifier
+// into a family's identifier attribute when that attribute was left empty
+// (`fillPrimaryNames()`, #393), except a certificate subject, a bind DN and
+// a SPIFFE ID, which are not that name. A protocol module still does not
+// invent those three.
 // ---------------------------------------------------------------------------
 /**
  * The declared protocol vocabulary: each family an application may be declared
@@ -1095,10 +1101,12 @@ const SCHEMA = {
             'authenticates as one, so all three declare their name here ' +
             'rather than in three attributes that would be three spellings ' +
             'of one fact. Usually equal to appIdentifier, which is what a ' +
-            'protocol sighting writes; a SECOND value is a client_id this ' +
+            'protocol sighting writes and what a create writes when this is ' +
+            'left empty (#393); a SECOND value is a client_id this ' +
             'application also answers to — a per-environment id — and is why ' +
-            'this accumulates rather than being assigned. Absent on an entry ' +
-            'no OAuth family has been declared for.' },
+            'this accumulates rather than being assigned. A list typed on ' +
+            'the create is the whole list. Absent on an entry no OAuth ' +
+            'family has been declared for.' },
     { name: 'oauthAudience', kind: 'multi',
       from: 'the console, the management API, or by hand',
       what: 'THE AUDIENCE THIS APPLICATION ANSWERS TO — the `aud` an access ' +
@@ -5548,6 +5556,89 @@ const IDENTIFIER_ATTRIBUTES = declarationAttributes().filter(function (row) {
 });
 
 // ---------------------------------------------------------------------------
+// A PRIMARY NAME IS THE REGISTRY IDENTIFIER (#393).
+//
+// The create form used to ask for three strings that were usually one: the
+// registry identifier, a display name, and the ticked family's identifier
+// attribute. The display name was already optional (`blankRecord()` names the
+// entry after its identifier, and a create overwrites that only when a name
+// is given). The family's identifier attribute is the same kind of default.
+//
+// **THREE ATTRIBUTES ARE A DIFFERENT KIND OF NAME AND ARE NEVER FILLED.**
+// `oauthTlsClientAuthSubjectDn` is the certificate subject RFC 8705 matches,
+// one DN, and writing a client_id into it would make mutual TLS match a
+// subject nobody has. `ldapBindDn` is the DN a client binds as, not the key
+// this entry is filed under. `spiffeWorkloadId` is a `spiffe://` URI, and a
+// SPIFFE identity lives under `ou=spiffe` rather than here. Each stays a
+// field of its own on both views of the form.
+//
+// Everything else a family names as its identifier — a client_id, an
+// entityID, a wtrealm, an AppliesTo, an SPN, a GNAP instance id — is the
+// string a sighting already files the entry under. A hand-made entry that
+// left the attribute empty was the odd one out.
+// ---------------------------------------------------------------------------
+const NOT_THE_REGISTRY_IDENTIFIER = [
+  'oauthTlsClientAuthSubjectDn',
+  'ldapBindDn',
+  'spiffeWorkloadId'
+];
+
+/**
+ * Returns the identifier attributes whose primary value is the registry
+ * identifier.
+ *
+ * @returns the attribute names, in protocol-table order
+ */
+function primaryNameAttributeNames() {
+  log.debug("Entering primaryNameAttributeNames().");
+  const names = [];
+  PROTOCOLS.forEach(function (family) {
+    const attribute = family.identifierAttribute;
+    if (!attribute ||
+        NOT_THE_REGISTRY_IDENTIFIER.indexOf(attribute) >= 0 ||
+        names.indexOf(attribute) >= 0) {
+      return;
+    }
+    names.push(attribute);
+  });
+  log.debug("Leaving primaryNameAttributeNames(). " + names.length +
+            " attribute(s).");
+  return names;
+}
+
+const PRIMARY_NAME_ATTRIBUTES = primaryNameAttributeNames();
+
+/**
+ * Returns the primary-name attributes of the families named.
+ *
+ * One attribute shared by several families is returned once. An attribute
+ * that is not the registry identifier is not returned.
+ *
+ * @param protocols - the family ids
+ * @returns the attribute names, in protocol-table order
+ */
+function primaryNameAttributes(protocols) {
+  log.debug("Entering primaryNameAttributes().");
+  const declared = protocols || [];
+  const wanted = [];
+  PROTOCOLS.forEach(function (family) {
+    if (declared.indexOf(family.id) < 0) {
+      return;
+    }
+    const attribute = family.identifierAttribute;
+    if (!attribute ||
+        NOT_THE_REGISTRY_IDENTIFIER.indexOf(attribute) >= 0 ||
+        wanted.indexOf(attribute) >= 0) {
+      return;
+    }
+    wanted.push(attribute);
+  });
+  log.debug("Leaving primaryNameAttributes(). " +
+            (wanted.length ? wanted.join(', ') : 'none') + ".");
+  return wanted;
+}
+
+// ---------------------------------------------------------------------------
 // EVERY PER-APPLICATION FIELD, TYPED, FOR THE CONSOLE'S FIELD GRID
 // (2026-09-30).
 //
@@ -6529,6 +6620,9 @@ function applicationFields() {
       families: scope.families,
       everyFamily: scope.everyFamily,
       declaration: declared.indexOf(row.name) >= 0,
+      // The registry identifier, so the simplified create form does not
+      // draw a second box for it (#393). The advanced view still does.
+      primaryName: PRIMARY_NAME_ATTRIBUTES.indexOf(row.name) >= 0,
       // Shown by its sub-tab's simple view (#500).
       simple: SIMPLE_FIELD_ATTRIBUTES.indexOf(row.name) >= 0,
       group: group.id,
@@ -11969,6 +12063,56 @@ function setField(record, name, value) {
 }
 
 // ---------------------------------------------------------------------------
+// A PRIMARY NAME IS THE REGISTRY IDENTIFIER (#393).
+//
+// A hand-made entry that left a family's identifier attribute empty was the
+// odd one out: `seen()` and `recordAuthentication()` already file the
+// presented string as both the registry identifier and that attribute.
+// `fillPrimaryNames()` writes the identifier when the create left the
+// attribute empty. An explicit value has already been written by the caller
+// and wins, including a list — that list is the whole list, and the
+// identifier is not forced in beside it. The attribute stays multi (or
+// `set`, for the one primary name that holds a single value). Nothing here
+// rewrites an entry that already exists; a later save fills only a family
+// that save newly declared, and only when the body did not name the
+// attribute (`updateApplicationFields()`).
+//
+// Three attributes are a different kind of fact and are not in
+// `primaryNameAttributes()`: a certificate subject, a bind DN and a SPIFFE
+// ID. Defaulting any of them to a short name would record a subject a
+// security check could trust, or a name that is not the entry's key.
+// ---------------------------------------------------------------------------
+/**
+ * Writes the registry identifier into each declared family's primary name
+ * when that attribute is empty.
+ *
+ * @param record - the application record being created
+ * @param protocols - the families the create declared
+ * @returns the attributes that were filled
+ */
+function fillPrimaryNames(record, protocols) {
+  log.debug("Entering fillPrimaryNames().");
+  const filled = [];
+  primaryNameAttributes(protocols).forEach(function (attribute) {
+    if (valuesOf(record.fields[attribute]).length) {
+      log.debug("fillPrimaryNames(): " + attribute + " was given.");
+      return;
+    }
+    setField(record, attribute, record.identifier);
+    filled.push(attribute);
+  });
+  if (filled.indexOf('samlEntityId') >= 0) {
+    log.debug('applications: "' + record.identifier + '" is declared for ' +
+              'SAML and carried no entityID, so its identifier is being ' +
+              'used as one. Its per-service-provider metadata is live from ' +
+              'now. Set samlEntityId explicitly to use a different name.');
+  }
+  log.debug("Leaving fillPrimaryNames(). " +
+            (filled.length ? filled.join(', ') : 'Nothing to fill.'));
+  return filled;
+}
+
+// ---------------------------------------------------------------------------
 // WHO PUT A RETURN ADDRESS ON THE ENTRY, AND THE ONE FUNCTION THAT DECIDES
 // WHETHER IT COUNTS AS REGISTERED (2026-09-12).
 //
@@ -13720,46 +13864,11 @@ function createApplication(detail) {
   Object.keys(given.fields).forEach(function (name) {
     setField(record, name, given.fields[name]);
   });
-  // ---------------------------------------------------------------------
-  // AN APPLICATION DECLARED FOR SAML GETS AN ENTITYID, added 2026-08-27.
-  //
-  // Ticking SAML 2.0 or SAML 1.1 on /admin/applications/new and typing no
-  // entityID used to produce an entry that could not be used as a service
-  // provider at all: `samlEntityId` is what /saml2 and /saml11 file an
-  // application under and what their per-service-provider metadata is
-  // published for, so without it the declaration was a note and nothing more.
-  //
-  // THE DEFAULT IS THE IDENTIFIER, and that is not an arbitrary pick — it is
-  // what the same application would have got by arriving on its own. A service
-  // provider that turns up with an AuthnRequest is filed under its entityID,
-  // so identifier and entityID are ALREADY one string on every SAML entry this
-  // registry has ever created for itself. Doing anything else here would make
-  // a hand-made entry the odd one out.
-  //
-  // IT IS A DEFAULT AND NOT A RULE. An explicit `samlEntityId` in the create
-  // wins — the loop above has already run — and this only fills a gap. Nothing
-  // is refused: this service accepts any entityID on sight and creates the
-  // entry, so refusing to CREATE one here would be the only place in the SAML
-  // path that turned somebody away, which is the opposite of what the rest of
-  // this file does.
-  //
-  // The metadata is then live immediately, at /saml2/metadata/{slug} and
-  // /saml11/metadata/{rp}, because those endpoints mint a document for
-  // anything asked of them — see saml/CLAUDE.md's decision 1.
-  const declaredSaml = asked.protocols.filter(function (id) {
-    return id === 'saml2' || id === 'saml11';
-  });
-  if (declaredSaml.length && !valuesOf(record.fields.samlEntityId).length) {
-    setField(record, 'samlEntityId', identifier);
-    log.debug('applications: "' + identifier + '" is declared for ' +
-              declaredSaml.join(' and ') + ' and carried no entityID, so its ' +
-              'identifier is being used as one. Its per-service-provider ' +
-              'metadata is live from now — /admin/applications names the ' +
-              'URL, which carries a slug this module deliberately does not ' +
-              'compute (slugOf() belongs to saml/saml2_sso.ts, and requiring ' +
-              'it here would point this module at a protocol). Set ' +
-              'samlEntityId explicitly to use a different name.');
-  }
+  // A declared family's primary name is the identifier when the create left
+  // the attribute empty (#393). An explicit value, including a list, is
+  // already on the record and is the whole list. SAML metadata is live from
+  // the moment samlEntityId is filled, for the reason fillPrimaryNames() logs.
+  fillPrimaryNames(record, asked.protocols);
   // ---------------------------------------------------------------------
   // AN APPLICATION DECLARED FOR OAUTH 2.0 OR OIDC GETS A CLIENT
   // AUTHENTICATION METHOD, added 2026-09-18.
@@ -13779,8 +13888,8 @@ function createApplication(detail) {
   // client_secret_basic (RFC 7591's own default for a client that has one),
   // a JWK Set or its URI is private_key_jwt, and NOTHING is `none` — a public
   // client, held to PKCE and RFC 9700 in product mode rather than refused.
-  // An explicit `oauthTokenEndpointAuthMethod` wins, as samlEntityId's does
-  // above; this only fills a gap, so every entry this create writes for
+  // An explicit `oauthTokenEndpointAuthMethod` wins, as a primary name's
+  // does above; this only fills a gap, so every entry this create writes for
   // those families says what it will be held to.
   const declaredOauth = asked.protocols.filter(function (id) {
     return id === 'oauth2' || id === 'oidc';
@@ -19342,6 +19451,10 @@ module.exports = {
   // document, so neither can offer a field the other has never heard of.
   declarationAttributes: declarationAttributes,
   DECLARATION_ATTRIBUTE_NAMES: DECLARATION_ATTRIBUTE_NAMES,
+  // The identifier attributes a declared family presents as the registry
+  // identifier (#393). A create fills an empty one; a certificate subject,
+  // a bind DN and a SPIFFE ID are not in the list.
+  primaryNameAttributes: primaryNameAttributes,
   // What an application answers to in each family, with the protocol's own
   // word for it. Exported for the delegation pictures — see its header for why
   // the list is built here and not in the renderer.
