@@ -204,10 +204,10 @@ async function test() {
     kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "ssf"],
     fields: { oauthClientId: [RECEIVER], oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post",
-              oauthAllowedScope: ["ssf:read", "ssf:write"],
+              oauthAllowedScope: ["ssf.read", "ssf.manage"],
               oauthGrantType: ["client_credentials"] } },
     "created the receiver's application");
-  const token = await tokenFor("ssf:read ssf:write");
+  const token = await tokenFor("ssf.read ssf.manage");
   const wanted = ["federation-key-rotated", "spiffe-authority-rotated",
                   "tls-certificate-changed", "kerberos-tickets-invalidated"]
     .map(function (name) {

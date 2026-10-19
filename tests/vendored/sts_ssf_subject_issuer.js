@@ -133,7 +133,7 @@ function application(identifier) {
            // The Shared Signals and SCIM scopes are issued only to a client
            // that declares them (#110).
            fields: { oauthClientId: [identifier],
-                     oauthAllowedScope: ["ssf:read", "ssf:write",
+                     oauthAllowedScope: ["ssf.read", "ssf.manage",
                                          "scim:read"],
                      oauthClientSecret: SECRET,
                      oauthTokenEndpointAuthMethod: "client_secret_post",
@@ -289,8 +289,8 @@ async function test() {
     credential: "password", password: PASSWORD,
     attributes: { cn: "SSF " + PERSON, givenName: "SSF", sn: "Issuer",
                   mail: PERSON + "@ssfiss154.test" } }, "created " + PERSON);
-  const tokenA = await tokenFor(EVERYBODY, "ssf:read ssf:write scim:read");
-  const tokenB = await tokenFor(NAMED, "ssf:read ssf:write");
+  const tokenA = await tokenFor(EVERYBODY, "ssf.read ssf.manage scim:read");
+  const tokenB = await tokenFor(NAMED, "ssf.read ssf.manage");
   const listed = await call("GET", realmBase + "/scim/v2/Users?filter=" +
     encodeURIComponent("userName eq \"" + PERSON + "\""), undefined,
     { Authorization: "Bearer " + tokenA });

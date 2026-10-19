@@ -6764,8 +6764,8 @@
     "text": "Erbjud HTTP Basic"
   },
   "ssf.authBasic|description": {
-    "en": "5476ee40c62ce1bb",
-    "text": "Om SSF-slutpunkterna accepterar HTTP Basic bredvid OAuth 2.0-åtkomsttokener, och publicerar det i authorization_schemes. I utvecklingsläge godtas vilket användarnamn som helst med vilket lösenord som helst utom \"invalid\"; i produktläge verifieras lösenordet mot personens hashade userPassword. I båda fallen har en Basic-principal båda omfången, eftersom Basic inte bär något — så en driftsättning som vill att ssf:read och ssf:write upprätthålls för varje anropare stänger av detta."
+    "en": "34a196af42de2673",
+    "text": "Om SSF-slutpunkterna accepterar HTTP Basic bredvid OAuth 2.0-åtkomsttokener, och publicerar det i authorization_schemes. I utvecklingsläge godtas vilket användarnamn som helst med vilket lösenord som helst utom \"invalid\"; i produktläge verifieras lösenordet mot personens hashade userPassword. I båda fallen har en Basic-principal båda omfången, eftersom Basic inte bär något — så en driftsättning som vill att ssf.read och ssf.manage upprätthålls för varje anropare stänger av detta."
   },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
@@ -6864,16 +6864,16 @@
     "text": "Omfång för att läsa en ström"
   },
   "ssf.authScopeRead|description": {
-    "en": "b3c6248d5c2a3f09",
-    "text": "Det OAuth-omfång som en åtkomsttoken måste bära för att LÄSA en strömkonfiguration, dess status eller avfrågningskön. Publiceras i scopes_supported i båda upptäcktsdokumenten, precis som de två SCIM-omfången."
+    "en": "6a58acf43f1ab901",
+    "text": "Den här tjänstens namn på det omfång som läser en strömkonfiguration, dess status eller avfrågningskön. Standardvärdet är CAEP Interoperability Profile-namnet ssf.read, som alltid accepteras även när detta byter namn. Båda publiceras i scopes_supported. Skrivning inkluderar läsning: en token som bär ett skrivomfång får också läsa, och en klient som deklarerar ett skrivomfång kan få ett läsomfång utfärdat."
   },
   "ssf.authScopeWrite|label": {
     "en": "3cf63aebc7df37eb",
     "text": "Omfång för att ändra en ström"
   },
   "ssf.authScopeWrite|description": {
-    "en": "ea33015fd3877e72",
-    "text": "Omfånget som krävs för att skapa, uppdatera eller ta bort en ström, för att lägga till eller ta bort ett subjekt, för att ändra en status eller för att be om en verifieringshändelse. Ett läsomfång räcker inte för något av dessa, vilket är den första platsen i den här tjänsten förutom SCIM där två omfång skiljer sig åt i vad de tillåter."
+    "en": "91d382139f5860a7",
+    "text": "Den här tjänstens namn på det omfång som skapar, uppdaterar eller tar bort en ström, lägger till eller tar bort ett subjekt, ändrar en status eller ber om en verifieringshändelse. Standardvärdet är CAEP Interoperability Profile-namnet ssf.manage, som alltid accepteras även när detta byter namn. Skrivning inkluderar läsning, så ett namn som sätts här läser också, och det gör även ett namn som sätts i båda inställningarna. Ett läsomfång räcker inte för någon av de skrivningarna."
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",

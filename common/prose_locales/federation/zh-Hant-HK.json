@@ -64,8 +64,8 @@
     "text": "「此領域以客戶端認證取得夥伴串流管理存取權杖的位置」。空白則使用 fedTokenUrl——登入關係已在撥接的同一個授權伺服器。"
   },
   "fed.schema.attributes.fedSignalsScope.what": {
-    "en": "a496c6a310b8c156",
-    "text": "以客戶端認證要求的範圍。空白則要求 `ssf:read ssf:write`。"
+    "en": "ed55c437fcd421f1",
+    "text": "以客戶端認證要求的範圍。空白則要求 `ssf.manage`，它包含讀取。"
   },
   "fed.schema.attributes.fedSignalsBearer.what": {
     "en": "75ae4009add7e2d2",

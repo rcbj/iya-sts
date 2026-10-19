@@ -24,15 +24,21 @@
 //
 //   * THIS SERVICE'S OWN PROTECTED SCOPES — `admin:read` and `admin:write`
 //     (/admin-api), the SCIM pair (`scim.scopeRead`, `scim.scopeWrite`), the
-//     Shared Signals pair (`ssf.authScopeRead`, `ssf.authScopeWrite`), the
+//     Shared Signals scopes (`ssf.authScopeRead`, `ssf.authScopeWrite`, and
+//     the fixed names `ssf.read` and `ssf.manage` —
+//     `common/ssf_scopes.ts`, #334; renaming a setting adds a name and
+//     unprotects neither, which is the opposite of SCIM), the
 //     embedded debugger's permission, Grant Management's two (#142), the
 //     VC-API test endpoints' two (#194) and the device compliance feed's
 //     `device:compliance` (#164). Issued ONLY to a client whose
-//     `oauthAllowedScope` lists them, IN BOTH MODES: the resource servers
-//     behind them are this service's own, development already gates them, and
+//     `oauthAllowedScope` lists them — for a Shared Signals name, names
+//     granting every permission it grants, write including read — IN BOTH
+//     MODES: the resource servers behind them are this service's own,
+//     development already gates them, and
 //     a gate any client can mint a key for is not one. Each of those resource
 //     servers asks `declares()` again on every call, so removing a value cuts
-//     off a token already issued.
+//     off a token already issued. Shared Signals asks the permission the
+//     operation needs (`common/ssf_scopes.ts`: write includes read).
 //   * A SCOPE NAMING AN APPLICATION OR A DELEGATED PERMISSION — the audience
 //     rule and `oauthDelegatedPermission` (`oauth2.ts`'s `audienceScopes()`,
 //     `permissionRefusal()`). They keep their own rules and are never judged
@@ -76,6 +82,10 @@ import config = require('./config');
 import mode = require('./mode');
 import applications = require('./applications');
 import audit = require('./audit');
+// THE SHARED SIGNALS NAMES (#334). A library built before this one. It
+// requires only `config` and `helpers`, so this require closes no cycle.
+// Facades are called from methods, never while this module loads.
+import ssfScopes = require('./ssf_scopes');
 // THE ISSUANCE POLICY DECIDES (#305, part D of #88): this file gathers the
 // FACTS about each scope and asks the per-scope question through the gate;
 // the rules — protected scopes in both modes, every other scope in product,
@@ -288,11 +298,15 @@ class ScopePolicy {
   // them are settings: a list written here would go stale the first time
   // `scim.scopeWrite` was set from /admin/config, and the symptom would be the
   // renamed scope issued to anybody. Each resource server names its own; this
-  // reads the same settings they read.
+  // reads the same settings they read. Shared Signals is the exception to
+  // "the setting's name, and only that": `ssf_scopes.published()` is the two
+  // settings PLUS `ssf.read` and `ssf.manage`, so
+  // renaming a setting does not unprotect the names receivers already use
+  // and does not let development issue the profile names to anybody (#334).
   // ---------------------------------------------------------------------------
   /**
-   * Lists this service's own protected scopes, reading the SCIM and Shared
-   * Signals scope names from their settings each time.
+   * Lists this service's own protected scopes, reading the SCIM scope names
+   * from their settings and the Shared Signals names from `ssf_scopes`.
    *
    * @returns the protected scope names
    */
@@ -302,10 +316,9 @@ class ScopePolicy {
     const names = ADMIN_SCOPES.slice(0);
     [String(config.value('scim.scopeRead') || 'scim:read'),
      String(config.value('scim.scopeWrite') || 'scim:write'),
-     String(config.value('ssf.authScopeRead') || 'ssf:read'),
-     String(config.value('ssf.authScopeWrite') || 'ssf:write'),
      DEBUGGER_PERMISSION, DEVICE_COMPLIANCE_SCOPE, ACCOUNT_SCOPE]
-      .concat(GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES, OWNER_SCOPES)
+      .concat(ssfScopes.published(), GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES,
+              OWNER_SCOPES)
       .forEach(function (one) {
       if (names.indexOf(one) < 0) {
         names.push(one);
@@ -366,7 +379,12 @@ class ScopePolicy {
     const { log } = this.deps;
     log.debug("Entering ScopePolicy.declares().");
     const held = this.declaredScopes(clientId);
-    const answer = !!held && held.indexOf(String(scope)) >= 0;
+    const name = String(scope);
+    // An exact listing, or — for a Shared Signals name — declared names
+    // granting every permission it grants, write including read (#334).
+    // Other scopes stay an exact match.
+    const answer = !!held && (held.indexOf(name) >= 0 ||
+      ssfScopes.declarationCovers(held, name));
     log.debug("Leaving ScopePolicy.declares(). " + answer);
     return answer;
   }
@@ -456,7 +474,8 @@ class ScopePolicy {
           scopeVerdicts.resourceFact(A.SCOPE_PROTECTED,
                                      protectedNames.indexOf(one) >= 0),
           scopeVerdicts.resourceFact(A.SCOPE_DECLARED,
-                                     !!declared && declared.indexOf(one) >= 0),
+            !!declared && (declared.indexOf(one) >= 0 ||
+              ssfScopes.declarationCovers(declared, one))),
           scopeVerdicts.resourceFact(A.SCOPE_NAMES_PARTY,
                                      self.namesAnotherParty(one)),
           scopeVerdicts.resourceFact(A.SCOPE_IN_DEFAULTS,
@@ -690,8 +709,7 @@ class ScopePolicy {
                                   : defaults.indexOf(value) >= 0;
       let reason = '';
       let why = '';
-      if (self.isProtected(value) && !(declared &&
-                                       declared.indexOf(value) >= 0)) {
+      if (self.isProtected(value) && !self.declares(clientId, value)) {
         reason = 'protected';
         why = 'is one of this service\'s protected scopes, which a token ' +
           'carries only for a client that declares it, so it is dropped ' +

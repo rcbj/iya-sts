@@ -6764,8 +6764,8 @@
     "text": "Proposer HTTP Basic"
   },
   "ssf.authBasic|description": {
-    "en": "5476ee40c62ce1bb",
-    "text": "Indique si les endpoints SSF acceptent HTTP Basic à côté des jetons d’accès OAuth 2.0, et le publient dans authorization_schemes. En développement, n’importe quel nom d’utilisateur avec n’importe quel mot de passe sauf « invalid » passe ; en mode produit, le mot de passe est vérifié par rapport au userPassword haché de la personne. Dans les deux cas, un principal Basic détient les deux portées, car Basic n’en porte aucune — un déploiement qui veut que ssf:read et ssf:write soient appliqués à chaque appelant désactive donc ce paramètre."
+    "en": "34a196af42de2673",
+    "text": "Indique si les endpoints SSF acceptent HTTP Basic à côté des jetons d’accès OAuth 2.0, et le publient dans authorization_schemes. En développement, n’importe quel nom d’utilisateur avec n’importe quel mot de passe sauf « invalid » passe ; en mode produit, le mot de passe est vérifié par rapport au userPassword haché de la personne. Dans les deux cas, un principal Basic détient les deux portées, car Basic n’en porte aucune — un déploiement qui veut que ssf.read et ssf.manage soient appliqués à chaque appelant désactive donc ce paramètre."
   },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
@@ -6864,16 +6864,16 @@
     "text": "Portée de lecture d’un flux"
   },
   "ssf.authScopeRead|description": {
-    "en": "b3c6248d5c2a3f09",
-    "text": "La portée OAuth qu’un jeton d’accès doit porter pour LIRE une configuration de flux, son statut ou la file d’interrogation. Publiée dans scopes_supported des deux documents de découverte, exactement comme les deux portées SCIM."
+    "en": "6a58acf43f1ab901",
+    "text": "Le nom que ce service donne à la portée qui lit une configuration de flux, son statut ou la file d’interrogation. La valeur par défaut est le nom du CAEP Interoperability Profile ssf.read, toujours accepté même si celui-ci est renommé. Les deux sont publiés dans scopes_supported. L’écriture inclut la lecture : un jeton qui porte une portée d’écriture peut aussi lire, et un client qui déclare une portée d’écriture peut recevoir une portée de lecture."
   },
   "ssf.authScopeWrite|label": {
     "en": "3cf63aebc7df37eb",
     "text": "Portée de modification d’un flux"
   },
   "ssf.authScopeWrite|description": {
-    "en": "ea33015fd3877e72",
-    "text": "La portée requise pour créer, mettre à jour ou supprimer un flux, ajouter ou retirer un sujet, modifier un statut ou demander un événement de vérification. Une portée de lecture ne suffit pour aucune de ces opérations ; c’est, après SCIM, le premier endroit de ce service où deux portées diffèrent dans ce qu’elles permettent."
+    "en": "91d382139f5860a7",
+    "text": "Le nom que ce service donne à la portée qui crée, met à jour ou supprime un flux, ajoute ou retire un sujet, modifie un statut ou demande un événement de vérification. La valeur par défaut est le nom du CAEP Interoperability Profile ssf.manage, toujours accepté même si celui-ci est renommé. L’écriture inclut la lecture : un nom défini ici lit donc aussi, tout comme un nom défini dans les deux paramètres. Une portée de lecture ne suffit pour aucune de ces écritures."
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",

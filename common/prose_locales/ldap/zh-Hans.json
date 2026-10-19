@@ -536,8 +536,8 @@
     "text": "此应用请求过的作用域，随其请求累积。是观察到的，从不是声明的：不会据此允许或拒绝任何东西。应用可以被签发什么由 oauthAllowedScope 决定。"
   },
   "applications.schema.attributes.oauthAllowedScope.what": {
-    "en": "318365370d864543",
-    "text": "此客户端可以被签发的作用域——RFC 7591 第 2 节的 `scope`，即“客户端在请求访问令牌时可以使用的列表”。每个值一个作用域令牌。三类作用域以不同方式读取它。\n\n**本服务自己的受保护作用域**——admin:read 和 admin:write（/admin-api）、SCIM 作用域（scim.scopeRead、scim.scopeWrite）、共享信号作用域（ssf.authScopeRead、ssf.authScopeWrite）以及调试器权限——只签发给列出它们的客户端，两种模式下都是如此，而且每个作用域背后的资源服务器在每次调用时都会再次检查，因此在这里移除一个值会切断已签发的令牌。RFC 7591 注册不能声明它们；由管理员在这里声明。\n\n**其他所有作用域**，在产品模式中，只有在此列出时才会签发——或者在未列出任何内容时，属于默认集合时才签发：openid、profile、email、address、phone、offline_access 以及本领域的 OpenID4VCI 凭据作用域。在开发模式中，任何作用域都会签发。\n\n**指明某个应用或委托权限的作用域**保留其自身的规则（受众，以及 oauthDelegatedPermission），无需列出。\n\n列表之外的作用域会在授权端点和令牌端点被以 invalid_scope 拒绝（RFC 6749 第 3.3 节），并在刷新或令牌交换时被去除。与 oauthScope 不同，后者只是客户端请求过的内容。"
+    "en": "f61c0b99f0e3941f",
+    "text": "此客户端可以被签发的作用域——RFC 7591 第 2 节的 `scope`，即“客户端在请求访问令牌时可以使用的列表”。每个值一个作用域令牌。三类作用域以不同方式读取它。\n\n**本服务自己的受保护作用域**——admin:read 和 admin:write（/admin-api）、SCIM 作用域（scim.scopeRead、scim.scopeWrite）、共享信号作用域（ssf.authScopeRead、ssf.authScopeWrite，以及始终存在的 ssf.read 和 ssf.manage）以及调试器权限——只签发给列出它们的客户端，两种模式下都是如此。对共享信号而言，写入包含读取：列出写入作用域也就授权了读取作用域，而只列出读取作用域并不授权写入作用域。每个作用域背后的资源服务器在每次调用时都会再次检查，因此在这里移除一个值会切断已签发的令牌。RFC 7591 注册不能声明它们；由管理员在这里声明。\n\n**其他所有作用域**，在产品模式中，只有在此列出时才会签发——或者在未列出任何内容时，属于默认集合时才签发：openid、profile、email、address、phone、offline_access 以及本领域的 OpenID4VCI 凭据作用域。在开发模式中，任何作用域都会签发。\n\n**指明某个应用或委托权限的作用域**保留其自身的规则（受众，以及 oauthDelegatedPermission），无需列出。\n\n列表之外的作用域会在授权端点和令牌端点被以 invalid_scope 拒绝（RFC 6749 第 3.3 节），并在刷新或令牌交换时被去除。与 oauthScope 不同，后者只是客户端请求过的内容。"
   },
   "applications.schema.attributes.oauthPermissionBaseUri.what": {
     "en": "a2b16552f308a9b4",

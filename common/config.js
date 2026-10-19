@@ -12719,7 +12719,7 @@ const SETTINGS = [
                  'password is verified against the person\'s hashed ' +
                  'userPassword. Either way a Basic principal holds both ' +
                  'scopes, because Basic carries none — so a deployment that ' +
-                 'wants ssf:read and ssf:write enforced for every caller ' +
+                 'wants ssf.read and ssf.manage enforced for every caller ' +
                  'turns this off.' },
 
   // -------------------------------------------------------------------------
@@ -12856,21 +12856,28 @@ const SETTINGS = [
                  'never restarts.' },
 
   { key: 'ssf.authScopeRead', group: 'SSF', label: 'Scope to read a stream',
-    env: 'STS_SSF_AUTH_SCOPE_READ', type: 'string', dflt: 'ssf:read',
+    env: 'STS_SSF_AUTH_SCOPE_READ', type: 'string', dflt: 'ssf.read',
     runtime: true,
-    description: 'The OAuth scope an access token must carry to READ a ' +
-                 'stream configuration, its status or the poll queue. ' +
-                 'Published in scopes_supported in both discovery ' +
-                 'documents, exactly as the two SCIM scopes are.' },
+    description: 'This service\'s name for the scope that reads a stream ' +
+                 'configuration, its status or the poll queue. The default ' +
+                 'is the CAEP Interoperability Profile name ssf.read, which ' +
+                 'is always accepted even when this is renamed. Both are ' +
+                 'published in scopes_supported. Write includes read: a ' +
+                 'token carrying a write scope may read as well, and a ' +
+                 'client that declares a write scope may be issued a read ' +
+                 'scope.' },
 
   { key: 'ssf.authScopeWrite', group: 'SSF', label: 'Scope to change a stream',
-    env: 'STS_SSF_AUTH_SCOPE_WRITE', type: 'string', dflt: 'ssf:write',
+    env: 'STS_SSF_AUTH_SCOPE_WRITE', type: 'string', dflt: 'ssf.manage',
     runtime: true,
-    description: 'The scope required to create, update or delete a stream, ' +
-                 'to add or remove a subject, to change a status or to ask ' +
-                 'for a verification event. A read scope is not enough for ' +
-                 'any of those, which is the first place in this service ' +
-                 'besides SCIM where two scopes differ in what they permit.' },
+    description: 'This service\'s name for the scope that creates, updates ' +
+                 'or deletes a stream, adds or removes a subject, changes a ' +
+                 'status or asks for a verification event. The default is ' +
+                 'the CAEP Interoperability Profile name ssf.manage, which ' +
+                 'is always accepted even when this is renamed. Write ' +
+                 'includes read, so a name set here reads as well, and so ' +
+                 'does a name set on both settings. A read scope is not ' +
+                 'enough for any of those writes.' },
 
   { key: 'ssf.receiveRequireSignature', group: 'SSF',
     label: 'Refuse a SET whose signature does not verify',

@@ -1119,8 +1119,9 @@ class SsfStreams {
   // stream configurations available to this Receiver". Until this date every
   // management call looked a stream up by id alone and a list returned every
   // stream in the realm — `authorization_header` included — so any caller
-  // holding `ssf:read` could read this service's own receiver tokens and any
-  // holding `ssf:write` could point another receiver's stream at itself.
+  // holding the read scope could read this service's own receiver tokens
+  // and any holding the write scope could point another receiver's stream
+  // at itself. The scopes are `ssf.read` and `ssf.manage` since #334.
   //
   // **THE OWNER IS THE IDENTIFIER THE CREATOR AUTHENTICATED AS** — a client's
   // client_id, a person's `sub`, a GNAP client instance, a Basic username —
@@ -1634,7 +1635,8 @@ class SsfStreams {
   // under `default_subjects: ALL`, with no subject named, it was sent every
   // event about everybody in the realm — every sign-in, credential change and
   // risk change of every other person — to anybody whose client may hold
-  // `ssf:read`. SSF 1.0 section 10.1 requires access controls so that "only
+  // `ssf.read` (or `ssf.manage`, which includes read).
+  // SSF 1.0 section 10.1 requires access controls so that "only
   // authorized parties can access the shared signals", and a person is an
   // authorized party for their own signals and nobody else's.
   //

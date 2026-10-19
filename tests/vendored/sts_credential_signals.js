@@ -289,10 +289,10 @@ async function test() {
     // them (#110).
     fields: { oauthClientId: [RECEIVER], oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post",
-              oauthAllowedScope: ["ssf:read", "ssf:write"],
+              oauthAllowedScope: ["ssf.read", "ssf.manage"],
               oauthGrantType: ["client_credentials"] } },
     "created the receiver's application");
-  const token = await tokenFor("ssf:read ssf:write");
+  const token = await tokenFor("ssf.read ssf.manage");
   const created = await send(realmBase + "/ssf/stream", { method: "POST",
     headers: { "Content-Type": "application/json",
                Authorization: "Bearer " + token },

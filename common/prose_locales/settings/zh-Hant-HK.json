@@ -2240,8 +2240,8 @@
     "text": "一個串流最多保留的無法投遞信件數。超過時會刪除「最舊」的，理由與 ssf.maxQueuedEvents 相同：檢視隊列的人想看的是最近失敗的內容。"
   },
   "ssf.authBasic|description": {
-    "en": "5476ee40c62ce1bb",
-    "text": "SSF 端點是否在 OAuth 2.0 存取權杖之外也接受 HTTP Basic，並在 authorization_schemes 中發布。在開發模式下，任何用戶名稱搭配 \"invalid\" 以外的任何密碼都能通過；在產品模式下，密碼會依該人員雜湊後的 userPassword 驗證。無論哪種情況，Basic 主體都擁有兩個範圍，因為 Basic 不攜帶任何範圍——因此要對每個呼叫者強制執行 ssf:read 與 ssf:write 的部署應關閉此項。"
+    "en": "34a196af42de2673",
+    "text": "SSF 端點是否在 OAuth 2.0 存取權杖之外也接受 HTTP Basic，並在 authorization_schemes 中發布。在開發模式下，任何用戶名稱搭配 \"invalid\" 以外的任何密碼都能通過；在產品模式下，密碼會依該人員雜湊後的 userPassword 驗證。無論哪種情況，Basic 主體都擁有兩個範圍，因為 Basic 不攜帶任何範圍——因此要對每個呼叫者強制執行 ssf.read 與 ssf.manage 的部署應關閉此項。"
   },
   "ssf.internalReceivers|description": {
     "en": "29e7cb1d4e0c30f3",
@@ -2256,8 +2256,8 @@
     "text": "一次 RFC 8936 輪詢最多傳回的 SET 數，不論接收端的 maxEvents 要求多少。回應會指出 moreAvailable，讓接收端知道要再回來——忽略該成員並假設一次輪詢就能清空隊列的客戶端，是常見到值得能隨時重現的缺陷：將此值設為 1。"
   },
   "ssf.authScopeRead|description": {
-    "en": "b3c6248d5c2a3f09",
-    "text": "存取權杖必須攜帶才能「讀取」串流組態、其狀態或輪詢隊列的 OAuth 範圍。在兩份探索文件的 scopes_supported 中發布，與兩個 SCIM 範圍完全相同。"
+    "en": "6a58acf43f1ab901",
+    "text": "此服務為讀取串流組態、其狀態或輪詢隊列的範圍所取的名稱。預設值是 CAEP Interoperability Profile 名稱 ssf.read，即使重新命名此項也一律接受。兩者都會在 scopes_supported 中發布。寫入包含讀取：攜帶寫入範圍的權杖也可以讀取，宣告寫入範圍的客戶端也可以獲簽讀取範圍。"
   },
   "ssf.legacySubClaim|description": {
     "en": "f9cae6d438dafa2d",

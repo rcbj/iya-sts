@@ -15095,7 +15095,8 @@ const CODES = [
     spec: 'HTTP 401 {err: authentication_failed} with WWW-Authenticate' },
   { code: 'STS-SSF-0005',
     summary: 'An SSF access token lacked the scope the operation needs ' +
-      '(ssf:read to read, ssf:write to change a stream).',
+      '(the read scope, ssf.read by default, to read; the write scope, ' +
+      'ssf.manage by default, to change a stream; write includes read).',
     spec: 'HTTP 403 {err: access_denied} with WWW-Authenticate' },
   { code: 'STS-SSF-0006',
     summary: 'HTTP Basic was presented to an SSF endpoint while the scheme ' +
@@ -15433,7 +15434,9 @@ const CODES = [
     spec: 'HTTP 401 invalid_token' },
   { code: 'STS-SSF-0080',
     summary: 'A GNAP access token presented to an SSF endpoint does not ' +
-      'carry the ssf:read or ssf:write access the operation needs.',
+      'carry the read or write access the operation needs (ssf.read or ' +
+      'ssf.manage, or a name a setting adds, or an object of type ssf; ' +
+      'write includes read).',
     spec: 'HTTP 403 access_denied' },
   { code: 'STS-SSF-0081',
     summary: 'A Security Event Token was not transmitted because the ' +
@@ -15522,9 +15525,11 @@ const CODES = [
       'deleted',
     spec: 'HTTP 400 {err: invalid_audience}', retired: true },
   { code: 'STS-SSF-0107',
-    summary: 'An access token (OAuth or GNAP) carried the Shared Signals ' +
+    summary: 'An access token (OAuth or GNAP) carried a Shared Signals ' +
       'scope an operation needs, and the client it was issued to no longer ' +
-      'declares that scope in its oauthAllowedScope.',
+      'declares a scope granting that permission in its oauthAllowedScope ' +
+      '(write includes read, so a read stays honoured while a read or a ' +
+      'write scope stays declared).',
     spec: 'HTTP 403 {err: access_denied}' },
   { code: 'STS-SSF-0108',
     summary: 'A push delivery endpoint was refused because it is plain http ' +
@@ -17518,9 +17523,11 @@ const CODES = [
     spec: 'RFC 9635 section 7.3 (invalid_request)' },
   { code: 'STS-GNAP-0719',
     summary: 'A GNAP client asked for an access right naming one of this ' +
-      'service\'s own protected scopes (ssf:read, ssf:write, as a ' +
-      'reference string or an object of type ssf) that its application\'s ' +
-      'oauthAllowedScope does not list.',
+      'service\'s own protected scopes (ssf.read, ssf.manage, or another ' +
+      'name ssf.authScopeRead or ssf.authScopeWrite is set to, as a ' +
+      'reference string or an object of type ssf) whose permissions its ' +
+      'application\'s oauthAllowedScope does not declare (write includes ' +
+      'read).',
     spec: 'RFC 9635 section 3.6 (request_denied)' },
   { code: 'STS-GNAP-0720',
     summary: 'Product mode ignored gnap.pushSkipTlsVerification: a push ' +

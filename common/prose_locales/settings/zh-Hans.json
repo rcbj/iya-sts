@@ -6764,8 +6764,8 @@
     "text": "提供 HTTP Basic"
   },
   "ssf.authBasic|description": {
-    "en": "5476ee40c62ce1bb",
-    "text": "SSF 端点是否在 OAuth 2.0 访问令牌之外还接受 HTTP Basic，并在 authorization_schemes 中发布它。在开发模式下，任何用户名配合除 \"invalid\" 以外的任何密码均可通过；在产品模式下，密码会依据该人员经过哈希的 userPassword 进行验证。无论哪种情况，Basic 主体都同时拥有两个范围，因为 Basic 不携带范围——因此希望对每个调用方都强制执行 ssf:read 和 ssf:write 的部署应关闭此项。"
+    "en": "34a196af42de2673",
+    "text": "SSF 端点是否在 OAuth 2.0 访问令牌之外还接受 HTTP Basic，并在 authorization_schemes 中发布它。在开发模式下，任何用户名配合除 \"invalid\" 以外的任何密码均可通过；在产品模式下，密码会依据该人员经过哈希的 userPassword 进行验证。无论哪种情况，Basic 主体都同时拥有两个范围，因为 Basic 不携带范围——因此希望对每个调用方都强制执行 ssf.read 和 ssf.manage 的部署应关闭此项。"
   },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
@@ -6864,16 +6864,16 @@
     "text": "读取流所需的范围"
   },
   "ssf.authScopeRead|description": {
-    "en": "b3c6248d5c2a3f09",
-    "text": "访问令牌读取流配置、其状态或轮询队列时必须携带的 OAuth 范围。在两个发现文档的 scopes_supported 中发布，与两个 SCIM 范围完全相同。"
+    "en": "6a58acf43f1ab901",
+    "text": "本服务为读取流配置、其状态或轮询队列的范围所起的名称。默认值是 CAEP Interoperability Profile 名称 ssf.read，即使重命名此项，它也始终被接受。两者都会在 scopes_supported 中发布。写入包含读取：携带写入范围的令牌也可以读取，声明了写入范围的客户端也可以获签读取范围。"
   },
   "ssf.authScopeWrite|label": {
     "en": "3cf63aebc7df37eb",
     "text": "更改流所需的范围"
   },
   "ssf.authScopeWrite|description": {
-    "en": "ea33015fd3877e72",
-    "text": "创建、更新或删除流，添加或删除主体，更改状态或请求验证事件所需的范围。读取范围不足以执行其中任何操作，这是本服务中除 SCIM 之外第一个两个范围所允许内容不同的地方。"
+    "en": "91d382139f5860a7",
+    "text": "本服务为创建、更新或删除流、添加或移除主体、更改状态或请求验证事件的范围所起的名称。默认值是 CAEP Interoperability Profile 名称 ssf.manage，即使重命名此项，它也始终被接受。写入包含读取，因此在此设置的名称也可以读取，同时设置在两个设置项上的名称也是如此。读取范围不足以执行其中任何写入。"
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",

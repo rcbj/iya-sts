@@ -352,8 +352,8 @@ async function test() {
     kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "oidc", "ssf"],
     fields: { oauthClientId: [RECEIVER], oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post",
-              oauthAllowedScope: ["openid", "profile", "ssf:read",
-                                  "ssf:write", "scim:read", "scim:write"],
+              oauthAllowedScope: ["openid", "profile", "ssf.read",
+                                  "ssf.manage", "scim:read", "scim:write"],
               oauthRedirectUri: [REDIRECT],
               oauthGrantType: ["authorization_code", "client_credentials"],
               oauthResponseType: ["code"] } },
@@ -362,7 +362,7 @@ async function test() {
     await ok(realmApi + "/consent/grant-global-consent",
              { client: RECEIVER, scope: one }, "consented " + one);
   }
-  const token = await tokenFor("ssf:read ssf:write");
+  const token = await tokenFor("ssf.read ssf.manage");
   const created = await send(realmBase + "/ssf/stream", { method: "POST",
     headers: { "Content-Type": "application/json",
                Authorization: "Bearer " + token },
