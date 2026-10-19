@@ -5705,12 +5705,14 @@ const BOOLEAN_ATTRIBUTES = [
 // ML-KEM and HPKE algorithms follow keys.*) and two live in modules that
 // require this one (read when asked, never at load).
 //
-// `oauthGrantType` and `oauthResponseType` are not here, although they are
-// declared and enforced since #289: an extension grant is a URI nobody lists
-// in advance (RFC 6749 section 4.5), so the field stays open text, and the
-// token endpoint refuses what the client did not declare. The setting
-// overrides take their lists from their setting (`config.js`'s
-// enumValues), in the console.
+// `oauthGrantType` and `oauthResponseType` are here since #706 (rcbj: a
+// checkbox per value, no free text). They were open text until then, on the
+// argument that an extension grant is a URI nobody lists in advance (RFC 6749
+// section 4.5) — but the token endpoint answers `unsupported_grant_type` to
+// any grant it does not implement, so declaring one is declaring nothing a
+// client could use. The two lists are FLOW_GRANT_TYPES and
+// FLOW_RESPONSE_TYPES below. The setting overrides take their lists from their
+// setting (`config.js`'s enumValues), in the console.
 // ---------------------------------------------------------------------------
 // THE TWO DELEGATION SEMANTICS (#108, #186), one list for the two places that
 // need it: the field grid's choices below — so the Configuration tab offers a
@@ -5719,7 +5721,50 @@ const BOOLEAN_ATTRIBUTES = [
 // at the write, delegationAttributeProblem().
 const DELEGATION_SEMANTICS = ['delegation', 'impersonation'];
 
+// WHAT A CLIENT MAY DECLARE IN `oauthResponseType` AND `oauthGrantType`
+// (#706): every response type the authorization endpoint issues and every
+// grant the token endpoint implements — the metadata's
+// `response_types_supported` and `grant_types_supported` with every switch
+// on, which `tests/flow_type_choices.js` holds them to. EVERY grant, not the
+// realm's advertised ones: a declaration names what the client may use, and a
+// client declaring the device grant while `oauth2.deviceAuthorization` is off
+// is refused by the endpoint's own switch, which is the right refusal. A
+// response type is written with its words in this order, which is the
+// metadata's (canonicalResponseType()).
+const FLOW_RESPONSE_TYPES = ['code', 'token', 'id_token', 'code token',
+  'code id_token', 'id_token token', 'code id_token token', 'none'];
+const FLOW_GRANT_TYPES = ['authorization_code', 'implicit', 'refresh_token',
+  'client_credentials', 'password',
+  'urn:ietf:params:oauth:grant-type:token-exchange',
+  'urn:ietf:params:oauth:grant-type:pre-authorized_code',
+  'urn:ietf:params:oauth:grant-type:jwt-bearer',
+  'urn:ietf:params:oauth:grant-type:saml2-bearer',
+  'urn:openid:params:grant-type:ciba',
+  'urn:ietf:params:oauth:grant-type:device_code'];
+
+/**
+ * A response_type value with its words sorted, the order every member of
+ * FLOW_RESPONSE_TYPES is written in — so `id_token code` is stored as the
+ * `code id_token` the console ticks, and the two cannot be two values.
+ *
+ * @param value - the value as given
+ * @returns the value, its words single-spaced and sorted
+ */
+function canonicalResponseType(value) {
+  log.debug("Entering canonicalResponseType().");
+  const out = String(value === undefined || value === null ? '' : value)
+    .split(/\s+/).filter(Boolean).sort().join(' ');
+  log.debug("Leaving canonicalResponseType().");
+  return out;
+}
+
 const ATTRIBUTE_CHOICES = {
+  oauthGrantType: function () {
+    return FLOW_GRANT_TYPES.slice(0);
+  },
+  oauthResponseType: function () {
+    return FLOW_RESPONSE_TYPES.slice(0);
+  },
   appDelegationSemantics: function () {
     return DELEGATION_SEMANTICS.slice(0);
   },
@@ -5908,7 +5953,10 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   // claim would be one no token ever carries.
   'oauthClaimsCombineAccessToken', 'oauthClaimsCombineIdToken',
   'oauthClaimsCombineUserinfo', 'saml2ClaimsCombine', 'saml11ClaimsCombine',
-  'oauthAccessTokenClaim', 'oauthAccessTokenClaimsCombine'];
+  'oauthAccessTokenClaim', 'oauthAccessTokenClaimsCombine',
+  // #706: a grant or response type this service does not implement is one
+  // no request could ever be allowed by.
+  'oauthGrantType', 'oauthResponseType'];
 
 /**
  * The values a setting's own closed set allows (enumValues or csvValues),
@@ -11007,6 +11055,16 @@ function normaliseFields(value) {
       });
       return;
     }
+    // #706: a response type STORED in the console's word order, as the CORS
+    // origins above are stored normalised. The closed set is checked by
+    // createApplication() after this walk.
+    if (name === 'oauthResponseType') {
+      fields[name] = values.map(canonicalResponseType)
+                           .filter(function (one, index, all) {
+        return one !== '' && all.indexOf(one) === index;
+      });
+      return;
+    }
     // #110: a declared scope is a scope token, the rule oauthGlobalConsent
     // has, for its reason — a value that is not one can never be asked for.
     if (name === 'oauthAllowedScope') {
@@ -14176,6 +14234,15 @@ function updateApplication(identifier, change) {
     return errorCodes.mark({ ok: false,
                              errors: ['A value is required to ' + mode + '.'] },
                            'STS-REG-0009');
+  }
+  // #706: an added response type is stored in the console's word order, and
+  // read in it by the closed-set check below. A REMOVE takes the value as
+  // typed or, when that is not on the entry, its canonical spelling — the
+  // CORS origins' rule, so a value an `ldapmodify` wrote can still go.
+  if (attribute === 'oauthResponseType' && (mode === 'add' ||
+      (mode === 'remove' &&
+       valuesOf(loaded.record.fields[attribute]).indexOf(value) < 0))) {
+    value = canonicalResponseType(value);
   }
   // THE ONE EDITABLE ATTRIBUTE WITH A CLOSED VOCABULARY, checked here so that
   // this edit and the create form cannot disagree about what a protocol family
@@ -19579,6 +19646,10 @@ module.exports = {
   ssfOverrideRows: ssfOverrideRows,
   strictOverrideProblem: strictOverrideProblem,
   attributeChoices: attributeChoices,
+  // #706: what the console offers for the two declared flow lists.
+  FLOW_GRANT_TYPES: FLOW_GRANT_TYPES,
+  FLOW_RESPONSE_TYPES: FLOW_RESPONSE_TYPES,
+  canonicalResponseType: canonicalResponseType,
   authMethodsProblem: authMethodsProblem,
   choiceProblem: choiceProblem,
   corsOriginsOfRealm: corsOriginsOfRealm,

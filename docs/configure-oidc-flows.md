@@ -31,9 +31,14 @@ and `grant_types`) or an administrator set them in the console or through
 `/admin-api`. A response type or grant not on a list is refused with
 `unauthorized_client`, in both modes. An empty list restricts nothing, so a
 client with neither list may use every response type the server advertises.
-Write each response type as one value, its words separated by spaces
-(`code id_token`). What a client has actually used is recorded separately, in
-`oauthResponseTypeObserved` and `oauthGrantTypeObserved`.
+The console offers one checkbox per value: the eight response types and
+every grant this service implements. A console or API write of any other value
+is refused. Through the API, write each response type as one value, its words
+separated by spaces (`code id_token`); it is stored with its words in that
+order whatever order they were given in. What a client has actually used is
+recorded separately, in `oauthResponseTypeObserved` and
+`oauthGrantTypeObserved`, and shown read-only at the top of the application's
+**OAuth 2.0 / OpenID Connect** sub-tab, one line each.
 
 **How responses are signed and encrypted is an attribute too.** The JARM
 algorithms, the signing and encryption algorithms for the ID Token and

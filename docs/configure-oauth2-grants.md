@@ -95,8 +95,11 @@ The same registration behaves differently in the two modes (`global.mode`):
   endpoint refuses any grant the list does not name with `unauthorized_client`,
   whether the list came from a dynamic registration (RFC 7591 `grant_types`) or
   an administrator. A client whose list omits `refresh_token` is issued no
-  refresh token. An empty list restricts nothing. What a client has actually
-  used is recorded separately, in `oauthGrantTypeObserved`.
+  refresh token. An empty list restricts nothing. The console offers one
+  checkbox per grant this service implements, and a console or API write of
+  any other value is refused. What a client has actually used is recorded
+  separately, in `oauthGrantTypeObserved`, shown read-only at the top of the
+  application's **OAuth 2.0 / OpenID Connect** sub-tab.
 * **Consent is on by default** (`oauth2.consentRequired`). A person approves
   each client on `/oauth2/consent` the first time. Test realms often turn it
   off with `"oauth2.consentRequired": false`. In production, leave it on.
@@ -141,7 +144,7 @@ Taken from `oauth_fixtures.js` and `oauth2_sts_endpoints.js`.
 6. On the application's page, in **Change what it is allowed to do**:
    - **Tick** `none` under `oauthTokenEndpointAuthMethod`, and nothing else.
    - **Set** `oauthConfidential` to `FALSE`.
-   - **Add to** `oauthGrantType` the values `authorization_code` and `refresh_token`.
+   - **Tick** `authorization_code` and `refresh_token` under `oauthGrantType`.
    - **Add to** `oauthAllowedScope` the values `openid`, `profile` and `email`.
 
 **API:**
@@ -236,7 +239,7 @@ Taken from `sts_scope_policy.js` and `oauth2_sts_endpoints.js`.
    generate a secret in **The client secret**. No redirect URI is needed.
 2. On its page:
    - **Tick** `client_secret_post` under `oauthTokenEndpointAuthMethod`, and nothing else.
-   - **Add to** `oauthGrantType` the value `client_credentials`.
+   - **Tick** `client_credentials` under `oauthGrantType`.
    - **Add to** `oauthAllowedScope` each scope it may be issued, for example `api`.
 
 **API:**

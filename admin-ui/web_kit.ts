@@ -1617,6 +1617,18 @@ class WebKit {
       'M3 5h10l-1 10H4zm3 2v6h1V7zm3 0v6h1V7z"/></svg>';
   }
 
+  /**
+   * The check mark a value seen in use carries (#706), inline for the
+   * trash icon's reason.
+   *
+   * @returns the SVG as HTML
+   */
+  static checkIcon() {
+    return '<svg viewBox="0 0 16 16" width="12" height="12" ' +
+      'aria-hidden="true" focusable="false"><path fill="currentColor" ' +
+      'd="M6.2 11.6 2.6 8l1.1-1.1 2.5 2.5 6.1-6.1L13.4 4.4z"/></svg>';
+  }
+
   // The classes that make a block appear only when one of its families is
   // ticked. `pf` is what the stylesheet hides; each `pf-<id>` is what a checked
   // box shows. A block serving several families carries several, and appears

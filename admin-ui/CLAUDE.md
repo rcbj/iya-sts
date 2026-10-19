@@ -8025,3 +8025,22 @@ tab, and a service account's section of the person page —
   `tests/passkey_policy_on_application.js` holds the data, the card, the
   sub-tabs and the search; `tests/vendored/sts_passkey_policy_application.js`
   the API half.
+
+## AN APPLICATION'S DECLARED AND OBSERVED FLOWS ON THE OAUTH SUB-TAB (#706; rcbj, 2026-10-19)
+
+* **`oauthGrantType` and `oauthResponseType` are a checkbox per value**, the
+  grid's ordinary closed-set list (`applications.ATTRIBUTE_CHOICES`: every
+  grant and response type this service implements, `common/CLAUDE.md`).
+  Nothing on this page draws them specially. A value outside the set is
+  drawn as a marked box, so a Save does not drop it.
+* **`oauthGrantTypeObserved` and `oauthResponseTypeObserved` are drawn
+  READ-ONLY at the head of the OAuth 2.0 / OpenID Connect sub-tab**, above
+  its form: one line each, the attribute's name and every value with
+  `WebKit.checkIcon()`, kept small on rcbj's instruction (`.fg-observed`).
+  The application read carries them as `page.config.observed`
+  (`admin_views.applicationPageData()`), and
+  `ApplicationsPage.applicationObservedFlows()` draws them. **They are no
+  field of the grid and must not become one**: they are not in `EDITABLE`,
+  the endpoints write them as a client asks (#289), and an editable copy
+  would read as a permission. `tests/flow_type_choices.js` holds the sets,
+  the writes and the sub-tab.

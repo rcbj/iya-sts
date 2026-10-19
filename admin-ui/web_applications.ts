@@ -1952,7 +1952,12 @@ class ApplicationsPage {
       // fields: which named passkey policies name this application.
       const passkeyCard = group.id === 'every'
         ? ApplicationsPage.applicationPasskeyPolicyCard(row, t) : '';
+      // WHAT THE CLIENT WAS SEEN DOING (#706), read-only, at the head of the
+      // OAuth sub-tab, above the two lists it may use.
+      const observedFlows = group.id === 'oauth'
+        ? ApplicationsPage.applicationObservedFlows(row, t) : '';
       return '<div class="subpanel" id="cfg-' + kit.esc(group.id) + '">' +
+        observedFlows +
         (group.id === 'saml' ? samlPanels :
           (fieldsFirst ? fieldForm + sections : sections + fieldForm)) +
         passkeyCard + '</div>';
@@ -1973,6 +1978,49 @@ class ApplicationsPage {
       'href="#tab-roles">' + t.html('consoleApplications.a2.tabRoles') +
       '</a>' + t.html('consoleApplications.a2.cfgNoteC')) +
       '<div class="subtabs">' + bar + familiesPanel + groupPanels + '</div>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT THE CLIENT WAS SEEN DOING (#706, rcbj): `oauthGrantTypeObserved`
+  // and `oauthResponseTypeObserved`, one line each — the attribute's name and
+  // every value with a check mark — at the head of the OAuth 2.0 / OpenID
+  // Connect sub-tab. READ-ONLY, and drawn so: no box, no form, no Save; the
+  // endpoints write them as a client asks (#289), and what the client MAY
+  // use is the two checkbox lists under them. Drawn from the answer's
+  // `page.config.observed`; an answer from before it draws nothing.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws the read-only observed grant and response types of an
+   * application's OAuth sub-tab.
+   *
+   * @param row - the application's view, `page.config.observed` in it
+   * @param t - the page's translator (#539)
+   * @returns the two lines as HTML, or '' where the answer carries none
+   */
+  static applicationObservedFlows(row, t) {
+    const observed = row && row.page && row.page.config
+      ? row.page.config.observed : null;
+    if (!observed) {
+      return '';
+    }
+    const line = function (name) {
+      const values = [].concat(observed[name] || []);
+      return '<div class="fg-observed-row"><code>' + kit.esc(name) +
+        '</code>' + (values.length
+          ? values.map(function (value) {
+            return '<span class="fg-seen">' + kit.checkIcon() +
+              kit.esc(value) + '</span>';
+          }).join('')
+          : '<span class="state-none">' +
+            t.html('consoleApplications.a2.observedNone') + '</span>') +
+        '</div>';
+    };
+    return '<div class="fg-observed" id="cfg-oauth-observed" role="group" ' +
+      'aria-label="' +
+      kit.esc(t.text('consoleApplications.a2.observedLabel')) + '"' +
+      kit.tip(t.text('consoleApplications.a2.observedTip')) + '>' +
+      line('oauthGrantTypeObserved') + line('oauthResponseTypeObserved') +
+      '</div>';
   }
 
   // ---------------------------------------------------------------------------
