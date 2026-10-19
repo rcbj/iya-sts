@@ -1920,8 +1920,7 @@ class Authn {
       // must not group them, and they are not countable.
       subjectId: ''
     };
-    const room = this.makeRoomForSession(sessions.realmMap(), session);
-    if (!room.admitted) {
+    if (!this.makeRoomForSession(sessions.realmMap(), session)) {
       log.debug("Leaving Authn.startArrivalSession(). The realm is full.");
       return null;
     }
@@ -2401,8 +2400,7 @@ class Authn {
       chosen: true
     };
     session.subjectId = this.subjectIdOf(session.user);
-    const room = this.makeRoomForSession(store, session);
-    if (!room.admitted) {
+    if (!this.makeRoomForSession(store, session)) {
       this.auditCapRefusal(username, 'OAuth 2.0 / OIDC');
       if (spec.res) {
         errorCodes.mark(spec.res, 'STS-AUTHN-0337');
@@ -2561,8 +2559,7 @@ class Authn {
       chosen: true
     };
     session.subjectId = this.subjectIdOf(session.user);
-    const room = this.makeRoomForSession(store, session);
-    if (!room.admitted) {
+    if (!this.makeRoomForSession(store, session)) {
       this.auditCapRefusal(username, 'OAuth 2.0 / OIDC');
       if (spec.res) {
         errorCodes.mark(spec.res, 'STS-AUTHN-0337');
@@ -3424,9 +3421,10 @@ class Authn {
       });
     });
     // Expiries first, so a row already queued is not also a capacity
-    // victim. A realm with nothing expired still sheds. The count above
-    // stays the expiries: a capacity end is its own audit row.
-    this.shedSubjectSurplus();
+    // victim. A realm with nothing expired still sheds. Both kinds are
+    // in the count the job reports; the 0292 row tells a capacity end
+    // from a lifetime.
+    const shed = this.shedSubjectSurplus();
     if (gone) {
       log.info('authn: the session sweep ended ' + gone + ' expired ' +
                'session(s). Each one is an audit row and a CAEP ' +
@@ -3434,8 +3432,9 @@ class Authn {
                'an expiry noticed only when somebody comes back is an expiry ' +
                'nobody is ever told about.');
     }
-    log.debug("Leaving Authn.sweepExpiredSessions(). " + gone + " ended.");
-    return gone;
+    log.debug("Leaving Authn.sweepExpiredSessions(). " +
+              (gone + shed) + " ended.");
+    return gone + shed;
   }
 
   // ---------------------------------------------------------------------------
@@ -3460,8 +3459,8 @@ class Authn {
   //
   // **NOT LOCKED.** Two inserts at the same instant can each see room, so
   // the store can overshoot by one per concurrent inserter. Lowering a cap
-  // does not mass-end: the next insert ends at most one own row, and the
-  // sweep ends at most `authn.sessionShedPerSweep`.
+  // does not mass-end: the next insert ends at most one own row, and each
+  // realm's sweep ends at most that realm's `authn.sessionShedPerSweep`.
   // ---------------------------------------------------------------------------
   private sessionCapLoggedAt = 0;
   private sessionCapEnded = 0;
@@ -3497,14 +3496,6 @@ class Authn {
     return aStart < bStart;
   }
 
-  private realmSessionCap() {
-    const { log, config } = this.deps;
-    log.debug("Entering Authn.realmSessionCap().");
-    const cap = Math.floor(Number(config.value('authn.maxSessions')));
-    log.debug("Leaving Authn.realmSessionCap().");
-    return cap;
-  }
-
   private subjectSessionCap() {
     const { log, config } = this.deps;
     log.debug("Entering Authn.subjectSessionCap().");
@@ -3516,15 +3507,6 @@ class Authn {
     }
     log.debug("Leaving Authn.subjectSessionCap().");
     return per;
-  }
-
-  private sessionShedBudget() {
-    const { log, config } = this.deps;
-    log.debug("Entering Authn.sessionShedBudget().");
-    const budget = Math.floor(Number(
-      config.value('authn.sessionShedPerSweep')));
-    log.debug("Leaving Authn.sessionShedBudget().");
-    return budget;
   }
 
   // The stable id frozen on a chosen session: the urn:uuid sub when the
@@ -3655,39 +3637,39 @@ class Authn {
     return 1;
   }
 
-  // An arrival becoming a sign-on on the same id. Not an insert: the realm
-  // cap does not refuse it. The subject cap still ends one other own row.
-  private considerUpgrade(store, session) {
-    const { log } = this.deps;
-    log.debug("Entering Authn.considerUpgrade().");
-    const ended = this.endOneOwn(store, session, session && session.id);
-    log.debug("Leaving Authn.considerUpgrade(). " + ended + " ended.");
-  }
-
-  private makeRoomForSession(store, session) {
-    const { log } = this.deps;
+  // True when the row may be stored. `replacingId` is a row this sign-in
+  // will end once the new row is admitted; it counts as leaving so a realm
+  // exactly at the cap still admits the switch, and it is not ended here.
+  private makeRoomForSession(store, session, replacingId = '') {
+    const { log, config } = this.deps;
     log.debug("Entering Authn.makeRoomForSession().");
     if (!store || !session) {
       log.debug("Leaving Authn.makeRoomForSession(). No store.");
-      return { ended: 0, admitted: true };
+      return true;
     }
     const newId = session.id ? String(session.id) : '';
     if (newId && store.has(newId)) {
       log.debug("Leaving Authn.makeRoomForSession(). Already held.");
-      return { ended: 0, admitted: true };
+      return true;
     }
     const ended = this.endOneOwn(store, session, '');
-    const cap = this.realmSessionCap();
-    // Not locked. Two inserts at once can each see room and overshoot by
-    // one per inserter. A victim already freed a row, so this insert is
-    // admitted even when the realm is still over the cap.
-    if (cap >= 1 && store.size >= cap && ended === 0) {
+    const cap = Math.floor(Number(config.value('authn.maxSessions')));
+    // A sign-in that will end this browser's previous session frees that
+    // one row. Not locked. Two inserts at once can each see room and
+    // overshoot by one per inserter. A victim already freed a row, so
+    // this insert is admitted even when the realm is still over the cap.
+    let size = store.size;
+    const leaving = replacingId ? String(replacingId) : '';
+    if (leaving && leaving !== newId && store.has(leaving)) {
+      size -= 1;
+    }
+    if (cap >= 1 && size >= cap && ended === 0) {
       this.noteRealmRefusal();
       log.debug("Leaving Authn.makeRoomForSession(). Refused.");
-      return { ended: 0, admitted: false };
+      return false;
     }
     log.debug("Leaving Authn.makeRoomForSession(). " + ended + " ended.");
-    return { ended: ended, admitted: true };
+    return true;
   }
 
   // A console child marks the parent sign-on, in the parent's realm, so a
@@ -3715,32 +3697,43 @@ class Authn {
     log.debug("Leaving Authn.noteBacksConsole().");
   }
 
-  // At most one run's budget, across every realm. One subject is brought
-  // down to their cap, oldest first, before the next subject. Subjects are
-  // ordered by their oldest row. Arrivals are not ended for capacity, and
-  // a subject at or under their cap is not ended because the realm is over
-  // authn.maxSessions.
+  // Each realm spends its own `authn.sessionShedPerSweep`, read while
+  // that realm is ambient. One subject is brought down to their cap,
+  // oldest first, before the next subject. Arrivals are not ended for
+  // capacity, and a subject at or under their cap is not ended because
+  // the realm is over authn.maxSessions.
   private shedSubjectSurplus() {
-    const { log, realms } = this.deps;
+    const { log, realms, config } = this.deps;
     const self = this;
     log.debug("Entering Authn.shedSubjectSurplus().");
-    const budget = this.sessionShedBudget();
-    if (!(budget >= 1)) {
-      log.debug("Leaving Authn.shedSubjectSurplus(). No budget.");
-      return;
-    }
-    let left = budget;
-    const groups = [];
+    // HOT PATH: ordered once per over-cap subject and once across them.
+    // No Entering/Leaving pair — one would drown the log.
+    const earlier = function (a, b) {
+      if (self.earlierSession(a, b)) {
+        return -1;
+      }
+      if (self.earlierSession(b, a)) {
+        return 1;
+      }
+      return 0;
+    };
+    let shed = 0;
     realms.list().forEach(function (realm) {
       realms.run(realm, function () {
         const store = sessions.realmMap(realm.id);
         if (!store || !store.size) {
           return;
         }
+        const budget = Math.floor(Number(
+          config.value('authn.sessionShedPerSweep')));
+        if (!(budget >= 1)) {
+          return;
+        }
         const per = self.subjectSessionCap();
         if (!(per >= 1)) {
           return;
         }
+        const groups = [];
         const bySubject = new Map();
         // The scan is the whole resident map; an index arrives with the
         // window, not here.
@@ -3764,55 +3757,38 @@ class Authn {
             return;
           }
           list.sort(function (a, b) {
-            if (self.earlierSession(a[1], b[1])) {
-              return -1;
-            }
-            if (self.earlierSession(b[1], a[1])) {
-              return 1;
-            }
-            return 0;
+            return earlier(a[1], b[1]);
           });
-          groups.push({ realm: realm, rows: list, per: per });
+          groups.push(list);
         });
-      });
-    });
-    groups.sort(function (a, b) {
-      if (self.earlierSession(a.rows[0][1], b.rows[0][1])) {
-        return -1;
-      }
-      if (self.earlierSession(b.rows[0][1], a.rows[0][1])) {
-        return 1;
-      }
-      return 0;
-    });
-    const planned = [];
-    groups.forEach(function (group) {
-      let held = group.rows.length;
-      for (let i = 0; i < group.rows.length && left > 0 &&
-           held > group.per; i++) {
-        planned.push({ realm: group.realm, id: group.rows[i][0],
-                       session: group.rows[i][1] });
-        held -= 1;
-        left -= 1;
-      }
-    });
-    let shed = 0;
-    planned.forEach(function (item) {
-      realms.run(item.realm, function () {
-        const store = sessions.realmMap(item.realm.id);
-        const live = store ? store.get(item.id) : null;
-        if (!live) {
-          return;
-        }
-        self.expireSession(store, item.id, live, 'the session sweep',
-                           'capacity');
-        shed += 1;
+        groups.sort(function (a, b) {
+          return earlier(a[0][1], b[0][1]);
+        });
+        let left = budget;
+        groups.forEach(function (rows) {
+          let held = rows.length;
+          for (let i = 0; i < rows.length && left > 0 &&
+               held > per; i++) {
+            const id = rows[i][0];
+            const live = store.get(id);
+            if (!live) {
+              held -= 1;
+              continue;
+            }
+            self.expireSession(store, id, live, 'the session sweep',
+                               'capacity');
+            shed += 1;
+            held -= 1;
+            left -= 1;
+          }
+        });
       });
     });
     if (shed) {
       this.noteCapacityEnd(shed);
     }
     log.debug("Leaving Authn.shedSubjectSurplus(). " + shed + " ended.");
+    return shed;
   }
 
   // ---------------------------------------------------------------------------
@@ -5251,10 +5227,14 @@ class Authn {
     // THE ARRIVAL SESSION IS READ BEFORE THE PREVIOUS ONE IS ENDED, and the
     // order is the whole of it.
     //
-    // The block below ends whatever session the browser was on, because a
-    // sign-in is a privilege change and leaving the old one usable would be a
-    // second live session for the same browser. An ARRIVAL session is on that
-    // cookie too — so with the lookup after this block it found nothing, every
+    // The block below only REMEMBERS whatever session the browser was on.
+    // The row is ended after the new one is admitted, because a sign-in is
+    // a privilege change and leaving the old one usable would be a second
+    // live session for the same browser — and ending it first signed the
+    // browser out when the replacement was refused. A lowered cap does that
+    // on purpose: deleting one row can still leave the realm over
+    // authn.maxSessions. An ARRIVAL session is on that cookie too — so with
+    // the lookup after the old session was deleted it found nothing, every
     // sign-in minted a fresh id, and the arrival row was left behind as a
     // stray anonymous session that nobody would ever present again. It looked
     // like the upgrade simply did not work, which is what it was.
@@ -5297,6 +5277,10 @@ class Authn {
       !this.sessionEnded(current.session) &&
       current.session.user && this.sameIdentity(current.session.user,
                                                 username));
+    // Ended after admission, below. Empty when this browser had no session,
+    // when that session is the arrival being upgraded, or when this is the
+    // same person re-authenticating.
+    let replaceId = '';
     if (extra.request) {
       const previous = current ? current.id : '';
       // AN ARRIVAL SESSION IS NOT ENDED, it is upgraded — ending it would write
@@ -5305,12 +5289,7 @@ class Authn {
       // person is re-authenticating on.
       if (previous && !reauthenticating &&
           !(arrived && arrived.id === previous)) {
-        log.info('authn: ending the session this browser was already on (' +
-                 previous + ') because a new sign-in is replacing it. Every ' +
-                 'sign-in is a privilege change and the old session must not ' +
-                 'outlive it.');
-        this.dropSession(previous, 'a new sign-in in the same browser', true,
-                         extra.request, 'user');
+        replaceId = previous;
       }
     }
     // -------------------------------------------------------------------------
@@ -5802,16 +5781,13 @@ class Authn {
     // own row.
     const store = sessions.realmMap();
     if (arrived && store.has(sessionId)) {
-      this.considerUpgrade(store, session);
-    } else {
-      const room = this.makeRoomForSession(store, session);
-      if (!room.admitted) {
-        this.auditCapRefusal(username, via || 'OAuth 2.0 / OIDC');
-        extra.refusedWith = 'STS-AUTHN-0337';
-        log.debug("Leaving Authn.startSessionHere(). The realm is at " +
-                  "authn.maxSessions.");
-        return null;
-      }
+      this.endOneOwn(store, session, session.id);
+    } else if (!this.makeRoomForSession(store, session, replaceId)) {
+      this.auditCapRefusal(username, via || 'OAuth 2.0 / OIDC');
+      extra.refusedWith = 'STS-AUTHN-0337';
+      log.debug("Leaving Authn.startSessionHere(). The realm is at " +
+                "authn.maxSessions.");
+      return null;
     }
     // A FRESH HANDLE, EVEN FOR AN UPGRADED ARRIVAL ROW. The arrival session's
     // id survives the upgrade on purpose — it is the `sid` a flow was
@@ -5822,6 +5798,17 @@ class Authn {
     // the correlation and ends the fixation.
     const cookieValue = this.mintSessionHandle(session);
     sessions.set(sessionId, session);
+    // Only now: a refusal above left this browser's session in place.
+    // `replaceId` counted as leaving, so a realm exactly at the cap still
+    // admitted the switch. The via string is what CAEP's reason_admin says.
+    if (replaceId && replaceId !== sessionId && sessions.get(replaceId)) {
+      log.info('authn: ending the session this browser was already on (' +
+               replaceId + ') because a new sign-in is replacing it. Every ' +
+               'sign-in is a privilege change and the old session must not ' +
+               'outlive it.');
+      this.dropSession(replaceId, 'a new sign-in in the same browser', true,
+                       extra.request, 'user');
+    }
     // The sweep that ends it if nobody signs it out is the scheduler job
     // `authn.session-expiry` (see the header); nothing is armed here.
     // `Secure` when — and only when — this port is TLS (global.https, which RFC
@@ -14075,8 +14062,9 @@ scheduler.register({
   id: SESSION_EXPIRY_JOB,
   title: 'Session expiry',
   describe: 'Ends every sign-on session whose lifetime or idle timeout has ' +
-            'passed, and at most authn.sessionShedPerSweep of one subject\'s ' +
-            'own surplus sessions, in every realm.',
+            'passed, and, in each realm, at most that realm\'s ' +
+            'authn.sessionShedPerSweep of one subject\'s own surplus ' +
+            'sessions.',
   owner: 'authn/authn.ts',
   everySetting: SESSION_SWEEP_SETTING,
   everySettingUnit: 's',

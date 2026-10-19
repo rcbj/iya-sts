@@ -1666,10 +1666,17 @@ ends somebody else's session.
   overshoot by one each. The client address is not an admission key.
 * **Lowering a cap does not mass-end.** The next insert ends at most one
   own row, and only when that subject is over their own cap. The
-  `authn.session-expiry` job then ends at most `authn.sessionShedPerSweep`
-  such rows in one run, oldest first, one subject at a time. A subject at
-  or under their cap is not ended because the realm is over
+  `authn.session-expiry` job then ends at most that realm's
+  `authn.sessionShedPerSweep` such rows, oldest first, one subject at a
+  time. The budget is read while that realm is ambient and is spent only
+  on that realm; the rows are part of the job's `{ ended }` count. A
+  subject at or under their cap is not ended because the realm is over
   `authn.maxSessions`. Rows otherwise leave by lifetime, sign-out or revoke.
+* **A refused sign-in leaves the browser's current session.** Admission is
+  decided before that session is ended. A realm exactly at the cap still
+  admits a different person in the same browser, because the current row
+  counts as leaving; a realm that would still be over the cap after that
+  one row left refuses, and the current session stays.
 * **`backsConsole` is set on the parent** when an admitted child has
   `rpSurface === 'admin'`, and `mergeSessionRows()` ORs it so a stale copy
   cannot clear it.

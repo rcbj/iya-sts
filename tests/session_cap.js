@@ -10,9 +10,10 @@
 //
 // Checked where a session is created. At the realm cap a new row is refused.
 // A subject already at `authn.maxSessionsPerSubject` loses their own oldest
-// countable row, one per insert. The sweep ends at most
-// `authn.sessionShedPerSweep` more. An arrival is not countable, and the
-// client address is not an admission key.
+// countable row, one per insert. Each realm's sweep ends at most that
+// realm's `authn.sessionShedPerSweep`. An arrival is not countable, and the
+// client address is not an admission key. A refused sign-in leaves the
+// browser's current session.
 //
 //   A. a new chosen session at a full cap of other subjects is refused;
 //   B. a re-set of a live session is not an insert;
@@ -24,7 +25,10 @@
 //   H. a relying-party row is stored with chosen: true;
 //   I. upgrading an arrival ends one other own row, not another subject;
 //   J. a portal insert does not end the sign-on it was derived from;
-//   K. two copies merge with backsConsole the OR.
+//   K. two copies merge with backsConsole the OR;
+//   L. a refused sign-in leaves the browser's session; an exact-cap switch
+//      still replaces it;
+//   M. two realms do not share one shed budget.
 //
 // WHY IN PROCESS: the victim is chosen from lastSeenAt, set here directly,
 // and the observer is read without a transmitter. Its own realm, so sessions
@@ -269,7 +273,7 @@ function sections(t) {
         plant('cap-shed-a', 'shed-alice', now - 80000, true);
         plant('cap-shed-z', '', now - 90000, false);
         const before = authn.sessions.size;
-        runSweep();
+        const swept = runSweep();
         t.equal(authn.sessions.get('cap-shed-b1'), undefined,
                 'the sweep ends the oldest surplus row');
         t.equal(authn.sessions.get('cap-shed-b2'), undefined,
@@ -285,6 +289,8 @@ function sections(t) {
                 'an arrival is not ended for capacity');
         t.equal(before - authn.sessions.size, 2,
                 'the sweep ended its budget and nothing else');
+        t.check(swept && swept.ended >= 2,
+                'and those capacity ends are in the job\'s ended count');
       });
     });
   });
@@ -511,6 +517,116 @@ function sections(t) {
           'an empty further-along subjectId keeps the other copy\'s');
   t.equal(kept.backsConsole, true, 'and the OR still holds');
 
+  // -------------------------------------------------------------------------
+  t.log.info('L. a refused sign-in leaves the browser\'s session');
+  // -------------------------------------------------------------------------
+  clearSessions();
+  const keptRes = fakeRes();
+  const keptSession = authn.startSession(keptRes, 'cap-ada', ['pwd'],
+                                         '1', 'Test', {
+                                           request: { headers: {}, query: {} }
+                                         });
+  const keptCookie = cookieFrom(keptRes, authn.SESSION_COOKIE);
+  signIn('cap-bob');
+  signIn('cap-carol');
+  withSetting('authn.maxSessions', 1, function () {
+    const detail = { request: reqWith(authn.SESSION_COOKIE, keptCookie) };
+    const refusedRes = fakeRes();
+    const refused = authn.startSession(refusedRes, 'cap-dave', ['pwd'],
+                                       '1', 'Test', detail);
+    t.equal(refused, null, 'the replacement is not admitted');
+    t.equal(detail.refusedWith, 'STS-AUTHN-0337',
+            'the refusal is the realm cap');
+    t.equal(refusedRes.headers.length, 0,
+            'and no cookie is written for it');
+    t.check(!!authn.sessions.get(keptSession.id),
+            'the browser\'s current session stays');
+    t.equal(endRowFor(keptSession.id), null, 'it was not ended');
+    t.equal(authn.sessions.size, 3,
+            'Bob and Carol are still held with it');
+  });
+
+  clearSessions();
+  withSetting('authn.maxSessions', 2, function () {
+    const firstRes = fakeRes();
+    const first = authn.startSession(firstRes, 'cap-ada', ['pwd'], '1',
+                                    'Test', {
+                                      request: { headers: {}, query: {} }
+                                    });
+    const second = signIn('cap-bea');
+    const third = authn.startSession(fakeRes(), 'cap-cara', ['pwd'],
+                                    '1', 'Test', {
+                                      request: reqWith(
+                                        authn.SESSION_COOKIE,
+                                        cookieFrom(firstRes,
+                                                   authn.SESSION_COOKIE))
+                                    });
+    t.check(!!third && !!authn.sessions.get(third.id),
+            'a realm exactly at the cap admits the switch');
+    t.equal(authn.sessions.get(first.id), undefined,
+            'and then ends the session this browser was on');
+    t.check(!!authn.sessions.get(second.id), 'the other subject stays');
+    const ended = endRowFor(first.id);
+    t.check(!!ended && ended.detail && ended.detail.via ===
+            'a new sign-in in the same browser',
+            'the end names the replacement',
+            ended ? JSON.stringify(ended.detail) : '(none)');
+  });
+
+  // -------------------------------------------------------------------------
+  t.log.info('M. two realms do not share one shed budget');
+  // -------------------------------------------------------------------------
+  clearSessions();
+  const other = realms.create({
+    id: 'session-cap-b', name: 'session-cap-b',
+    description: 'Created by ' + __filename
+  });
+  if (!other.ok) {
+    t.bad('could not create the realm "session-cap-b"',
+          (other.errors || []).join(' '));
+  } else {
+    try {
+      const now = Date.now();
+      withSetting('authn.maxSessionsPerSubject', 1, function () {
+        withSetting('authn.sessionShedPerSweep', 1, function () {
+          plant('cap-bud-a1', 'shed-a', now - 40000, true);
+          plant('cap-bud-a2', 'shed-a', now - 30000, true);
+          plant('cap-bud-a3', 'shed-a', now - 20000, true);
+          plant('cap-bud-a4', 'shed-a', now - 10000, true);
+          realms.run(other.realm, function () {
+            withSetting('authn.maxSessionsPerSubject', 1, function () {
+              withSetting('authn.sessionShedPerSweep', 3, function () {
+                plant('cap-bud-b1', 'shed-b', now - 35000, true);
+                plant('cap-bud-b2', 'shed-b', now - 25000, true);
+                plant('cap-bud-b3', 'shed-b', now - 15000, true);
+                plant('cap-bud-b4', 'shed-b', now - 5000, true);
+                const swept = runSweep();
+                t.equal(authn.sessions.get('cap-bud-b1'), undefined,
+                        'realm B spends its own budget of three');
+                t.equal(authn.sessions.get('cap-bud-b2'), undefined,
+                        'the second surplus row of B');
+                t.equal(authn.sessions.get('cap-bud-b3'), undefined,
+                        'and the third');
+                t.check(!!authn.sessions.get('cap-bud-b4'),
+                        'B keeps the row still inside its cap');
+                t.check(swept && swept.ended >= 4,
+                        'the job counts every realm\'s sheds');
+              });
+            });
+          });
+          t.equal(authn.sessions.get('cap-bud-a1'), undefined,
+                  'realm A spends only its own budget of one');
+          t.check(!!authn.sessions.get('cap-bud-a2') &&
+                  !!authn.sessions.get('cap-bud-a3') &&
+                  !!authn.sessions.get('cap-bud-a4'),
+                  'A\'s newer surplus stays for a later sweep');
+        });
+      });
+    } finally {
+      realms.remove('session-cap-b');
+    }
+  }
+
   authn.setSessionObserver(function () {
     return null;
   });
@@ -541,6 +657,6 @@ module.exports = {
   name: 'session_cap',
   describe: 'authn.maxSessions refuses a new row at the realm cap, ends ' +
             'one own session at the per-subject cap (STS-AUTHN-0292), and ' +
-            'the sweep sheds at most its budget (#350)',
+            'each realm\'s sweep sheds at most its own budget (#350)',
   run: run
 };
