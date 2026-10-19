@@ -39,6 +39,8 @@ groups to any number of remote SCIM service providers. See
 * **Query**: `filter` (section 3.4.2.2), `sortBy`, `sortOrder`, `startIndex`,
   `count`, `attributes` and `excludedAttributes`. A filter this server cannot
   evaluate is refused `400 invalidFilter`, never answered with an empty list.
+  A `startIndex` past `totalResults` returns an empty `Resources` and
+  `itemsPerPage` 0 (RFC 7644 section 3.4.2.4).
 * **Search by POST**: `/Users/.search`, `/Groups/.search`, and `/.search` at the
   root, which answers one filter from Users and Groups together. The body must
   carry the SearchRequest schema URN.

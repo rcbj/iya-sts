@@ -784,6 +784,26 @@ be removed (above, *`active` IS THE ACCOUNT'S DISABLED STATE*); there is no
 ETag, now refused rather than ignored; and the members the directory cannot
 hold are unpublished rather than stored.
 
+## A startIndex past totalResults is an empty page (#354, 2026-10-18)
+
+RFC 7644 section 3.4.2.4: `startIndex` is the 1-based index of the first
+result, and a client pages by advancing it until it has seen `totalResults`.
+scimmy's `ListResponse` offsets the array only when `Resources.length >=
+startIndex`, so a startIndex past the end failed that test and the page was
+the first rows again — or the first `count` of them, when `count` was smaller
+— while `startIndex` and `totalResults` said the page was past the end. A
+client that pages until an empty page loops, and one that counts what it
+received sees the same people twice. Found on testidp: four `bulk-` names,
+`startIndex` 5 and 100, and run 8 of #311's reset sat on them.
+
+`forTheWire()` empties that page on the way out and sets `itemsPerPage` to 0,
+the number returned. The requested `startIndex` stays, and `totalResults`
+stays the size of the match. An empty match is the same rule (nothing is at
+index 1). A startIndex on the last result is that one row. Users, Groups,
+`.search` and the root search all leave through that function.
+`tests/scim_conformance_fixes.js` section B holds it. The reset script's
+count stop stays: it is what ended the loop while the page repeated.
+
 ## THE OUTBOUND SCIM CLIENT (#552, 2026-10-10; the audit, 2026-10-13)
 
 Everything above is a SERVICE PROVIDER. `scim_client.ts` is a CLIENT of
