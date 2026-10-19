@@ -110,10 +110,28 @@ const WHY = {
     "answers a renegotiating ClientHello with a no_renegotiation warning; " +
     "test-renegotiation-disabled holds the refusal" },
   sessionCache: { why: "openssl", reason: "node keeps no server-side TLS " +
-    "session cache — stateful TLS 1.2 session-ID resumption needs a " +
-    "newSession/resumeSession handler — so a session ID is never resumed " +
-    "and the server answers with a full handshake; resumption works through " +
-    "session tickets (test-session-ticket-resumption, and TLS 1.3 PSK)" },
+    "session cache of its own; this service's session-ID cache (#429) is " +
+    "per listener and per PROCESS, sized by sessionCacheSize, so a " +
+    "session ID offered to another node, or to a listener whose cache is " +
+    "0, is not resumed and the server answers with a full handshake; " +
+    "resumption works everywhere through session tickets " +
+    "(test-session-ticket-resumption, and TLS 1.3 PSK)" },
+  // #703 (#407). Seen when the cache resumes the session and the HTTP/2
+  // preface reaches the script before its close_notify is answered, which
+  // is a race: the script sends that alert straight after its Finished. A
+  // bare node http2 server with a session-ID cache loses it every time;
+  // the memory-mode run of the build that found it passed, single-node's
+  // did not. An exception not seen is reported and fails nothing.
+  h2Preface: { why: "tool", reason: "the resumed handshake selects h2 — " +
+    "RFC 7301 section 3.1: ALPN establishes a property of the connection, " +
+    "not the session, so a resumption negotiates it afresh and the " +
+    "earlier http/1.1 is irrelevant — and RFC 9113 section 3.4 makes the " +
+    "server's SETTINGS frame the first thing it sends on an HTTP/2 " +
+    "connection, without waiting for the client's preface; the script " +
+    "expects a close_notify answer and nothing before it, so the SETTINGS " +
+    "record is an \"unexpected message\". Not TLS 1.3's rule (RFC 8446 " +
+    "section 4.2.11 holds only 0-RTT data to the original ALPN): this is " +
+    "a TLS 1.2 resumption with no early data" },
   noFfdhe: { why: "design", reason: "tls.groups offers no finite-field " +
     "group (#212): ffdhe2048 and up are an order of magnitude slower than " +
     "any curve, and every TLS 1.3 client offers a curve" },
@@ -450,7 +468,9 @@ const PLAN = [
       ex(/^renegotiation/, "no_renegotiation", "renegotiation"),
       ex(/^resumption with(out)? alpn( change)?$/,
          ["session_id == srv_hello.session_id", "no_application_protocol"],
-         "sessionCache")] },
+         "sessionCache"),
+      ex("resumption with alpn change",
+         "Unexpected message from peer: ApplicationData", "h2Preface")] },
   { script: "test-ccs.py" },
   { script: "test-certificate-malformed.py",
     serverKey: "rsa", skip: RSA_SERVER, on: CR, certificate: "rsa",

@@ -1578,13 +1578,25 @@ is Node/OpenSSL behaviour this service cannot configure, and each is also on
 #212:
 * alert choices that differ from tlsfuzzer's expectations;
 * SNI parsing with no `SNICallback`;
-* no stateful session-ID cache (tickets work);
+* a session-ID cache per listener and per PROCESS (#429), so a session ID
+  offered to another node is not resumed (tickets work);
 * no NewSessionTicket after a PSK resumption;
 * no `psk_ke`;
 * a lazy KeyUpdate answer;
 * OpenSSL checking `legacy_record_version`;
 * the hybrid and compressed-point leniency;
 * no ALPN on LDAPS.
+
+One TOOL entry sits beside them, `h2Preface` (2026-10-19): since #703 a TLS
+1.2 resumption that offers only `h2` after a full handshake on `http/1.1`
+selects `h2` — RFC 7301 section 3.1, ALPN is a property of the connection
+and is negotiated afresh on a resumption — and the HTTP/2 session then sends
+its SETTINGS frame first (RFC 9113 section 3.4), which
+`test-alpn-negotiation.py`'s "resumption with alpn change" reads as an
+unexpected message while it waits for its close_notify answer. It is a race
+(single-node lost it, memory won it on the same build), so the exception is
+often not seen. RFC 8446 section 4.2.11 does not apply: it binds only TLS 1.3
+early data to the original ALPN.
 
 ## THE PROXY PROTOCOL COMES OFF BEFORE THE HANDSHAKE (2026-09-14, #46)
 
