@@ -834,7 +834,9 @@ class DebuggerServer {
     // process believes the `host` this one forwards.
     const asked = Object.assign({}, req.headers);
     if (Http2Express.hostProblem(asked)) {
-      Http2Express.refuseHostMismatch(res);
+      this.refuse(req, res, 400, 'STS-HTTP-0024', 'invalid_request',
+                  'The request\'s :authority and Host name different hosts ' +
+                  '(RFC 9113 section 8.3.1).');
       log.debug("Leaving DebuggerServer.forward(). Host mismatch.");
       return;
     }
