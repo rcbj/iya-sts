@@ -97,7 +97,10 @@ const AGREEMENT_SETTINGS = [
   'krb5.realm', 'krb5.krbtgtPassword', 'krb5.servicePassword',
   'krb5.servicePrincipal', 'krb5.serviceSalt', 'krb5.kvno', 'krb5.enctypes',
   'krb5.trustPassword', 'krb5.trustedRealm', 'krb5.trustedKrbtgtPassword',
-  'krb5.domainSid', 'krb5.userPassword', 'krb5.personKeys'
+  'krb5.domainSid', 'krb5.userPassword', 'krb5.personKeys',
+  // How many realms the cluster may hold (#368). Two nodes that disagree
+  // would accept creates the other refuses. common/CLAUDE.md argues it.
+  'realms.maxCount'
 ];
 
 let driver = null;

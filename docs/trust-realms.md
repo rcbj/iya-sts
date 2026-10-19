@@ -455,17 +455,19 @@ is process-wide: there is one list of realms in a process, and `remove` refuses
 to remove the realm the call arrived in — the caller would be left talking to a
 prefix that had stopped existing.
 
-## Three settings
+## Four settings
 
 | Setting | Environment variable | Default | What it does |
 |---|---|---|---|
 | `realms.enabled` | `STS_REALMS_ENABLED` | `true` | Whether defined realms answer on their prefixes. Turning it **off** leaves every definition in place and stops the paths working — which is what to reach for when a realm is answering something it should not, since nothing has to be deleted to find out whether a realm is the reason for something. |
 | `realms.pathSegment` | `STS_REALMS_PATH_SEGMENT` | `realm` | The segment in front of a realm id. Set it to the empty string for the bare `/acme/oauth2/token` shape, which is what a client ported from a product that spells it that way expects. |
 | `realms.removalDeliveryTimeoutS` | `STS_REALMS_REMOVAL_DELIVERY_TIMEOUT_S` | `10` | How long removing a realm waits for what it owes its receivers and relying parties to be delivered — see *Removing one*. `0` still sends everything and does not wait. Read in the realm the removal is made from. |
+| `realms.maxCount` | `STS_REALMS_MAX_COUNT` | `10` | How many trust realms this cluster may hold, the default realm included. A service administrator sets it, and only in the default realm. Lowering it does not remove realms; a create past the cap is refused. |
 
-The first two cannot be set *on* a realm: a realm that could switch realms off would be
+No `realms.*` key can be set *on* a realm: a realm that could switch realms off would be
 doing it from inside the request that found it, and a realm that could move its
-own prefix would be changing the prefix already used to find it.
+own prefix would be changing the prefix already used to find it. `realms.maxCount`
+can additionally be changed only while the default realm is ambient.
 
 ## Removing one
 

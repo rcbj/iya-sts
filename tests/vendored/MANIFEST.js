@@ -297,6 +297,11 @@ const JOBS = [
   // realm's roster only when that realm's bootstrap window is closed, and
   // then revokes what it granted.
   { file: 'sts_realm_administrators.js', browser: false, local: true },
+  // HOW MANY REALMS ONE CLUSTER MAY HOLD (#368): the create past
+  // realms.maxCount is refused, lowering the cap removes nothing, and a
+  // write of the cap from inside another realm is refused. It puts the
+  // override back and removes the realm it created.
+  { file: 'sts_realm_count_limit.js', browser: false, local: true },
   // THE CONSOLE BEFORE ITS BOOTSTRAP ADMINISTRATOR ARRIVES (#103,
   // 2026-09-22): development's open window, product's closed one, a
   // client-certificate sign-in holding no role — and, in product, one naming

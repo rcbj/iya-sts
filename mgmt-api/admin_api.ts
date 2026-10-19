@@ -10463,7 +10463,13 @@ class AdminApi {
                          'case worth being able to build for testing.\n\nThe ' +
                          'OAuth issuer is deliberately NOT seeded: it ' +
                          'defaults to naming the base URL a request arrived ' +
-                         'on, and that already carries the realm prefix.',
+                         'on, and that already carries the realm prefix.\n\n' +
+                         'Creation is capped by `realms.maxCount`, which ' +
+                         'counts the default realm. At the cap the create ' +
+                         'is refused and nothing is defined. Lowering the ' +
+                         'cap does not remove realms that already exist. ' +
+                         'Only a service administrator in the default realm ' +
+                         'may change the limit.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -10484,13 +10490,13 @@ class AdminApi {
                              description: 'Settings to set on the realm, ' +
                                           'named by the dot paths GET ' +
                                           '/admin-api/config lists. They win ' +
-                                          'over the seeded names. ' +
-                                          '`realms.enabled` and ' +
-                                          '`realms.pathSegment` are refused: ' +
-                                          'a realm that could switch realms ' +
-                                          'off, or move the prefix it was ' +
-                                          'found under, would ' +
-                                          'be doing it half way ' +
+                                          'over the seeded names. Every ' +
+                                          '`realms.*` key is refused on a ' +
+                                          'realm: one of them decides ' +
+                                          'whether realms exist and where ' +
+                                          'they are found, and a realm ' +
+                                          'carrying it would be changing ' +
+                                          'how it was reached half way ' +
                                           'through the request that found it.' }
               },
               required: ['id'],
@@ -10536,8 +10542,12 @@ class AdminApi {
                          'only which realm you have to be in to make the ' +
                          'call. A setting whose `editable` is false is ' +
                          'refused with the reason, exactly as it is on the ' +
-                         'service-wide resource, and `realms.enabled` and ' +
-                         '`realms.pathSegment` are refused outright.',
+                         'service-wide resource, and every `realms.*` key ' +
+                         'is refused outright. `realms.maxCount` is ' +
+                         'process-wide; only the default realm\'s service ' +
+                         'administrator changes it, and a create past that ' +
+                         'limit is refused. Lowering the limit does not ' +
+                         'remove realms.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
