@@ -435,6 +435,15 @@ async function tieredDriver(t) {
   const given = ['dpop.seenJtis', 'authn.sessions', 'nobody.decided'];
   const expired = await d.purgeExpiredMinted('expired', { nowMs: 5,
                                                           limit: 10 });
+  // The realms are the GLOBAL registry's (#360): a cell's own sts_realms is
+  // not one, and judged against it every cell row of a later realm was an
+  // orphan.
+  const realmsBefore = g.loadRealms;
+  g.loadRealms = function () {
+    log.debug("Entering loadRealms(), the registry of acme.");
+    log.debug("Leaving loadRealms().");
+    return Promise.resolve([{ id: 'acme' }]);
+  };
   const orphan = await d.purgeExpiredMinted('orphan', {
     defaultRealm: 'default', orphanBeforeMs: 4, limit: 10 });
   const stale = await d.purgeExpiredMinted('stale', {
@@ -465,6 +474,27 @@ async function tieredDriver(t) {
           cOrphan[0].options.orphanBeforeMs ===
           gOrphan[0].options.orphanBeforeMs,
           'orphan rows are purged in both tiers, with the same rule');
+  t.check(JSON.stringify(gOrphan[0].options.realms) === '["acme"]' &&
+          JSON.stringify(cOrphan[0].options.realms) === '["acme"]',
+          'and both are judged against the global registry\'s realms, ' +
+          'never the cell database\'s own sts_realms',
+          JSON.stringify(cOrphan[0].options.realms));
+  g.loadRealms = function () {
+    log.debug("Entering loadRealms(), which fails.");
+    log.debug("Leaving loadRealms().");
+    return Promise.reject(new Error('the global database is down'));
+  };
+  let unreadRefused = null;
+  await d.purgeExpiredMinted('orphan', { defaultRealm: 'default',
+                                         orphanBeforeMs: 4, limit: 10 })
+    .catch(function (e) {
+      log.debug("Caught in the orphan purge: " + ((e && e.message) || e));
+      unreadRefused = e;
+    });
+  t.check(!!unreadRefused && ofKind(c, 'orphan').length === 1 &&
+          ofKind(g, 'orphan').length === 1,
+          'when the registry cannot be read, no tier purges an orphan');
+  g.loadRealms = realmsBefore;
   const gStale = ofKind(g, 'stale');
   const cStale = ofKind(c, 'stale');
   t.check(gStale.length === 1 && gStale[0].options.staleBeforeMs === 3 &&

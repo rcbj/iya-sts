@@ -8648,6 +8648,14 @@ function create(options) {
       if (kind === 'expired') {
         where = 'expires_at IS NOT NULL AND expires_at <= $1';
         binds = [Number(o.nowMs)];
+      } else if (kind === 'orphan' && Array.isArray(o.realms)) {
+        // The realms named by the caller: the tiered driver's, read from
+        // the GLOBAL registry, because this database's own `sts_realms` is
+        // not the registry when it is a cell's (#360).
+        where = 'realm <> \'\' AND realm <> $1 AND written_at < ' +
+                'to_timestamp($2 / 1000.0) AND NOT (realm = ANY($3::text[]))';
+        binds = [String(o.defaultRealm || 'default'),
+                 Number(o.orphanBeforeMs), o.realms.map(String)];
       } else if (kind === 'orphan') {
         where = 'realm <> \'\' AND realm <> $1 AND written_at < ' +
                 'to_timestamp($2 / 1000.0) AND NOT EXISTS (SELECT 1 FROM ' +

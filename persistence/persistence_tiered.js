@@ -787,14 +787,39 @@ function create(options) {
   // the cell driver's, so this one deleted only this cell's rows: a global
   // store's expired rows (dpop.seenJtis, the status lists) stayed in the
   // global table, refused wherever they were read and never deleted.
-  // 'expired' and 'orphan' name no handle — each database deletes its own
-  // rows — and 'stale' names the short-lived stores, handed to the tier
-  // that holds each one.
+  // 'expired' names no handle — each database deletes its own rows — and
+  // 'stale' names the short-lived stores, handed to the tier that holds
+  // each one.
+  //
+  // 'ORPHAN' ASKS THE GLOBAL REGISTRY, NOT EACH DATABASE'S OWN. The realms
+  // are a global table (`loadRealms` is a GLOBAL method and the conversion
+  // moves `sts_realms` there), so a cell's `sts_realms` is empty or the
+  // snapshot the conversion left. Judged against it, every cell row of a
+  // realm made since then was an orphan, and a session or token of that
+  // realm was deleted an hour after it was written. The global list is read
+  // first and handed to both tiers; when it cannot be read nothing is
+  // purged, because deleting on a guess is the failure this guards.
   driver.purgeExpiredMinted = function (kind, options) {
     log.debug("Entering tiered purgeExpiredMinted().");
     const o = options || {};
     let forGlobal = o;
     let forCell = o;
+    if (kind === 'orphan') {
+      log.debug("Leaving tiered purgeExpiredMinted(). Orphans, against " +
+                "the global realms.");
+      return globalDriver.loadRealms().then(function (rows) {
+        const realms = (rows || []).map(function (row) {
+          return String(row.id);
+        });
+        const withRealms = Object.assign({}, o, { realms: realms });
+        return Promise.all([
+          globalDriver.purgeExpiredMinted(kind, withRealms),
+          cellDriver.purgeExpiredMinted(kind, withRealms)
+        ]);
+      }).then(function (both) {
+        return (Number(both[0]) || 0) + (Number(both[1]) || 0);
+      });
+    }
     if (kind === 'stale') {
       const listed = Array.isArray(o.handles) ? o.handles : [];
       const split = byHandleTier(listed.map(function (handle) {
