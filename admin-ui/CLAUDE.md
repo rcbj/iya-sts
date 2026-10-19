@@ -8031,8 +8031,8 @@ tab, and a service account's section of the person page —
   are not in `EDITABLE`, the endpoints write them, and an editable copy would
   read as a permission. **`oauthScope` is the exception that proves it.** It
   is still in `EDITABLE` (excluded from the grid only), so since #708
-  `updateApplication()` refuses a set or an add of it (`STS-REG-0361`). A
-  remove and a clear stay open, the tidy-up door every derived list keeps. A
+  `updateApplication()` refuses an add to it (`STS-REG-0361`; a set of a
+  list was already refused, `STS-REG-0008`). A remove stays open, the tidy-up door every derived list keeps. A
   create still accepts it as a seed, because the parent project's vendored
   `jwt_vc_json_common.js` provisions its wallets with one and cannot be
   edited here.

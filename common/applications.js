@@ -14232,19 +14232,18 @@ function updateApplication(identifier, change) {
                            'STS-REG-0009');
   }
   // #708: `oauthScope` IS A SIGHTING (what the client asked for), so an
-  // update may not write one — the attribute an administrator means is
-  // `oauthAllowedScope`. A REMOVE and a CLEAR stay open, the tidy-up door
-  // every derived list keeps. A CREATE still accepts it as a seed, because
-  // the parent project's vendored `jwt_vc_json_common.js` provisions its
-  // wallets with one and cannot be edited here; nothing reads it as a
-  // permission either way.
-  if (attribute === 'oauthScope' && (mode === 'add' ||
-      (mode === 'set' && value))) {
+  // update may not add one — the attribute an administrator means is
+  // `oauthAllowedScope`. (A set of a list is refused above, STS-REG-0008.) A
+  // REMOVE stays open, the tidy-up door every derived list keeps. A CREATE
+  // still accepts it as a seed, because the parent project's vendored
+  // `jwt_vc_json_common.js` provisions its wallets with one and cannot be
+  // edited here; nothing reads it as a permission either way.
+  if (attribute === 'oauthScope' && mode === 'add') {
     log.debug("Leaving updateApplication(). oauthScope is a sighting.");
     return errorCodes.mark({ ok: false, errors: ['"oauthScope" records the ' +
                                  'scopes this client has ASKED FOR, written ' +
                                  'as its requests arrive, so it cannot be ' +
-                                 'set or added by hand. What it may be ' +
+                                 'added by hand. What it may be ' +
                                  'issued is oauthAllowedScope.'] },
                            'STS-REG-0361');
   }

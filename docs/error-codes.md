@@ -5021,7 +5021,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0358` | An application's owners could not be written to the directory (#604). | HTTP 400 (API) or a refusal on the application page |
 | `STS-REG-0359` | An application was not created: the lifetime given for its first client secret is not a whole number of days from 0 to 730 (#394). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0360` | An application was not created: a client secret lifetime was given with no new client secret for it to apply to — oauthClientSecret empty, or a whole record carrying its own expiry (#394). | none (a console or management API refusal, HTTP 400) |
-| `STS-REG-0361` | oauthScope was set or added by hand: it records the scopes a client ASKED FOR, written as requests arrive, and what it may be issued is oauthAllowedScope. A remove and a clear are allowed (#708). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0361` | A value was added to oauthScope by hand: it records the scopes a client ASKED FOR, written as requests arrive, and what it may be issued is oauthAllowedScope. A remove is allowed (#708). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-DBG
 

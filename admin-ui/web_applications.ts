@@ -2011,19 +2011,20 @@ class ApplicationsPage {
    * @returns the four table rows as HTML
    */
   static applicationActivityRows(row, t) {
-    const cell = function (key, value) {
-      return '<tr><td>' + t.html('consoleApplications.a2.' + key) +
-        '</td><td>' + value + '</td></tr>';
+    // `label` is the translated name, as HTML: the scan in
+    // tests/i18n_catalogs.js reads each key where it is named.
+    const cell = function (label, value) {
+      return '<tr><td>' + label + '</td><td>' + value + '</td></tr>';
     };
     const lastUser = ApplicationsPage.firstFieldValue(row, 'appLastUser');
-    return cell('authentications',
+    return cell(t.html('consoleApplications.a2.authentications'),
                 '<code>' + kit.esc(String(row.authentications || 0)) +
                 '</code>') +
-      cell('sessions', '<code>' + kit.esc(String(row.sessions || 0)) +
+      cell(t.html('consoleApplications.a2.sessions'), '<code>' + kit.esc(String(row.sessions || 0)) +
            '</code>') +
-      cell('people', '<code>' + kit.esc(String(row.users || 0)) +
+      cell(t.html('consoleApplications.a2.people'), '<code>' + kit.esc(String(row.users || 0)) +
            '</code>') +
-      cell('lastPerson', lastUser
+      cell(t.html('consoleApplications.a2.lastPerson'), lastUser
         ? '<code>' + kit.esc(lastUser) + '</code>'
         : '<span class="state-none">' +
           t.html('consoleApplications.a2.nothingRecorded') + '</span>');

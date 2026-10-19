@@ -199,9 +199,16 @@ function childMain() {
                         protocol: 'https', get: function () { return ''; } };
       const json = views.applicationDetailJson(request, 'ft-web').json;
       const observed = json.page.config.observed;
-      note(sorted(observed.oauthGrantTypeObserved) ===
+      const valuesOf = function (list) {
+        return [].concat(list || []).map(function (one) {
+          return one.value;
+        });
+      };
+      note(sorted(valuesOf(observed.oauthGrantTypeObserved)) ===
              sorted(['refresh_token']) &&
-           sorted(observed.oauthResponseTypeObserved) === sorted(['code']),
+           sorted(valuesOf(observed.oauthResponseTypeObserved)) ===
+             sorted(['code']) &&
+           observed.oauthGrantTypeObserved[0].declared === true,
            'D1. the answer carries what was seen, read off the entry',
            JSON.stringify(observed));
       const section = page.applicationFieldsSection(WebKit.context({}, true),
@@ -384,11 +391,12 @@ function childMain() {
         { attribute: 'oauthScope', mode: 'set', value: 'email' });
       const scopeRemove = applications.updateApplication('ft-web',
         { attribute: 'oauthScope', mode: 'remove', value: 'ft-scope-1' });
+      // A set of any list is refused before this (STS-REG-0008), so the
+      // add is the door #708 closes.
       note(!scopeAdd.ok && errorCodes.codeOf(scopeAdd) === 'STS-REG-0361' &&
-           !scopeSet.ok && errorCodes.codeOf(scopeSet) === 'STS-REG-0361' &&
-           scopeRemove.ok,
-           'H2. oauthScope is refused at a set and an add, STS-REG-0361, ' +
-           'and a remove still works',
+           !scopeSet.ok && scopeRemove.ok,
+           'H2. oauthScope is refused at an add, STS-REG-0361, and at a ' +
+           'set; a remove still works',
            JSON.stringify([scopeAdd, scopeSet, scopeRemove.errors]));
     });
     server.close();

@@ -1041,7 +1041,7 @@ scope outside a non-empty `oauthAllowedScope`. A line shows ten values and
 then **+N more**, which links to the **Directory entry** tab, where every
 value is listed.
 
-`oauthScope` cannot be set or added through the console or `/admin-api`
+A value cannot be added to `oauthScope` through the console or `/admin-api`
 (`STS-REG-0361`); what a client may be issued is `oauthAllowedScope`. A value
 can still be removed.
 
