@@ -1080,6 +1080,12 @@ async function createApplication(identifier, protocols) {
     fields.samlAssertionConsumerService = [acsUrlFor(identifier)];
     fields.samlSigningCertificate = [samlSpCredential().certificatePem];
   }
+  if (declares("saml11")) {
+    // saml11Sso() below starts the flow HERE, with a TARGET and no shire —
+    // an identity-provider-initiated sign-in, which is off until the
+    // relying party opts in (#426, #711) — so this one opts in.
+    fields.saml11IdpInitiatedSso = "TRUE";
+  }
   if (declares("wsfed")) {
     fields.wsfedRealm = [identifier];
     fields.wsfedReplyUrl = [replyUrlFor(identifier)];

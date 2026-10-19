@@ -7010,8 +7010,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'binding otherwise; never HTTP-Redirect). Signs the person in ' +
           'through /authn/login when there is no session; the Response ' +
           'and its assertion carry no InResponseTo. The service provider ' +
-          'must be registered in product, and saml2.unsolicitedSso turns ' +
-          'it off for a realm.' },
+          'must be registered in product, and it is answered only where ' +
+          'saml2.idpInitiatedSso is on for it — OFF by default, ' +
+          'saml2IdpInitiatedSso on its entry turning it on (#711). A ' +
+          'step-up the issuance policy asks for on the session\'s risk ' +
+          'sends the person to re-authenticate and back, once.' },
   { path: '/saml2/unsolicited/:sp', group: 'SAML 2.0',
     name: 'Identity-provider-initiated sign-in for ONE service provider',
     specs: ['saml2', 'saml2-profiles'],
@@ -7152,7 +7155,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'arrives as a top-level GET, which a SameSite=Lax cookie is ' +
           'carried on. ForceAuthn, IsPassive and RequestedAuthnContext have ' +
           'no spelling in this protocol, so they are absent rather than ' +
-          'unimplemented.' },
+          'unimplemented. A request carrying shire (the Shibboleth ' +
+          'AuthnRequest profile) is the relying party\'s start and is ' +
+          'answered where saml11.spInitiatedSso is on for it; one with ' +
+          'only a TARGET is a sign-in started here and is answered only ' +
+          'where saml11.idpInitiatedSso is — OFF by default (#711).' },
   { path: '/saml11/sso/:rp', group: 'SAML 1.1',
     name: 'Inter-site transfer service for ONE relying party',
     specs: ['saml11', 'saml11-profiles'],
