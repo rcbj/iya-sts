@@ -316,7 +316,8 @@ var config = {
   realms: {
     enabled: true,               // Trust realms enabled
     pathSegment: "realm",        // Realm path segment
-    removalDeliveryTimeoutS: 10  // Realm removal: delivery wait (seconds)
+    removalDeliveryTimeoutS: 10, // Realm removal: delivery wait (seconds)
+    maxCount: 10                 // Maximum number of realms
   },
 
   // --- OAuth 2.0 / OIDC ------------------------------------------------

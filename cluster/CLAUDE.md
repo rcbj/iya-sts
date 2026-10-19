@@ -84,6 +84,8 @@ fingerprint is an HMAC keyed by the key-encryption key, which the keystore opens
 after the join. A bare hash in a database row would be a dictionary attack on
 `krb5.krbtgtPassword`. `AGREEMENT_SETTINGS` is the list; `global.port` is
 deliberately NOT on it (it is per host, and a local two-node test binds two).
+`realms.maxCount` is on it (#368), so every node holds the same cap;
+`common/CLAUDE.md` argues the cap.
 
 ### Two bugs the first real run found, both mine
 

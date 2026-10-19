@@ -1189,6 +1189,28 @@ function seededNames(id, domain) {
   return out;
 }
 
+// The creation cap (#368). `count()` includes the default realm, and the
+// value is read directly: 0 is not a legal setting, and `|| n` would hide a
+// legal 0 if one were ever added. A restore does not call this — a registry
+// that is already over the cap must still come back.
+function refusedForCount() {
+  log.debug("Entering refusedForCount().");
+  const limit = config.value('realms.maxCount');
+  const held = count();
+  if (typeof limit === 'number' && held >= limit) {
+    log.debug("Leaving refusedForCount(). Refused.");
+    return errorCodes.mark({ ok: false, errors: [
+      'This cluster already holds ' + held + ' trust realm(s), which is ' +
+      'realms.maxCount (' + limit + '). The count includes the default ' +
+      'realm. A service administrator raises the limit in the default ' +
+      'realm — /admin/realms, or POST /admin-api/config/set with no realm ' +
+      'prefix — and lowering it does not remove realms that already exist.'
+    ] }, 'STS-CORE-0161');
+  }
+  log.debug("Leaving refusedForCount().");
+  return null;
+}
+
 /**
  * Defines a realm, builds its stores and announces it.
  *
@@ -1238,6 +1260,11 @@ function create(spec) {
     if (kerberos) {
       log.debug("Leaving create(). Refused for its Kerberos settings.");
       return kerberos;
+    }
+    const counted = refusedForCount();
+    if (counted) {
+      log.debug("Leaving create(). Refused for the realm count.");
+      return counted;
     }
   }
   const realm = {
@@ -1381,9 +1408,12 @@ function update(id, changes) {
 // than three copies, for the reason `gateStateFor()` exists: the two that were
 // written separately disagreed within the hour.
 //
-// It matches by PREFIX rather than naming the two settings, so a third
-// `realms.*` setting is refused the day it is added rather than the day
-// somebody remembers this function.
+// It matches by PREFIX rather than naming the settings, so a new `realms.*`
+// setting is refused the day it is added rather than the day somebody
+// remembers this function. `realms.maxCount` (#368) is covered here like the
+// others — it cannot be set ON a realm — and config.js refuses a process-wide
+// write of it unless the default realm is ambient, which this function never
+// sees: realmFor() answers null and the write does not come through here.
 //
 // THE SECOND REFUSAL IS `perProcess`, AND IT IS A DIFFERENT RULE. A setting
 // carrying that flag is a property of the OS PROCESS rather than of the

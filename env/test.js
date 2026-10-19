@@ -433,6 +433,18 @@ var config = {
     attemptsPerAddress: 5000
   },
 
+  // --- How many trust realms the suite may leave standing (#368) -----------
+  // realms.maxCount ships at 10, counting the default realm. This suite
+  // LEAVES the realms it creates, and a kept stack has held well over ten,
+  // so the next create would be refused for the cap. 100000 is the setting's
+  // own maximum. It is a LAYER for the test stacks, not the setting:
+  // env/defaults.js still ships 10, and env/local.js — the image default —
+  // does not raise it. A deployment stays at 10 until a service administrator
+  // sets it in the default realm.
+  realms: {
+    maxCount: 100000
+  },
+
   // --- SPIFFE / SPIRE ------------------------------------------------------
   //
   // The bundle endpoint, the Workload API and the SPIRE Server API. Four of

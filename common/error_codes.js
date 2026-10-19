@@ -1099,6 +1099,21 @@ const CODES = [
       'thread of this node (#611). Nothing was collected.',
     spec: 'HTTP 400 for an unknown action or a malformed target, 404 for ' +
       'a thread this node does not have' },
+  // HOW MANY TRUST REALMS ONE CLUSTER MAY HOLD (#368).
+  { code: 'STS-CORE-0161',
+    summary: 'A trust realm was not created because this cluster already ' +
+      'holds realms.maxCount of them, the default realm included (#368). ' +
+      'A realm read back from the store or another process is not refused ' +
+      'for this, so a restart of a registry that is already over the cap ' +
+      'still comes up. Lowering the cap does not remove realms.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-CORE-0162',
+    summary: 'realms.maxCount was set or cleared while a trust realm other ' +
+      'than the default was ambient (#368). The limit is process-wide and ' +
+      'only a service administrator in the default realm may change it. ' +
+      'The other realms.* settings stay settable process-wide from inside ' +
+      'a realm.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +

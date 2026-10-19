@@ -2483,7 +2483,7 @@ two mutants caught.
 ### Rule 3m: the realm's overrides are an inverted hook into `config.js`
 
 `realms.js` requires `config.js` in the ordinary direction — it validates a
-realm's settings through `checkOverride()` and reads its own two settings
+realm's settings through `checkOverride()` and reads its own settings
 through `value()`. `config.js` needs the current realm's overrides and cannot
 require this module back, so it offers `setRealmContext()` and this fills it at
 require time. That is rule 3e's shape and it passes rule 3e's test in the one
@@ -2498,12 +2498,14 @@ since 2026-08-27.
 Setting a value while `acme` is ambient means setting it for `acme`; anything
 else would be a console page that reads one realm and writes another.
 
-**TWO SETTINGS ARE EXEMPT IN BOTH DIRECTIONS** and it is not caution:
-`realms.enabled` and `realms.pathSegment` are read below the realm layer,
-always. A realm that could switch realms off would be doing it from inside the
-request that found it, and a realm that could move its own prefix would change
-the prefix that had already been used to find it. They are refused at the writing
-end as well, but the reading end is the lock that cannot be got around.
+**EVERY `realms.*` KEY IS EXEMPT IN BOTH DIRECTIONS** and it is not caution:
+`realms.enabled`, `realms.pathSegment`, `realms.removalDeliveryTimeoutS` and
+`realms.maxCount` are read below the realm layer, always. A realm that could
+switch realms off would be doing it from inside the request that found it, and
+a realm that could move its own prefix would change the prefix that had already
+been used to find it. They are refused at the writing end as well, but the
+reading end is the lock that cannot be got around. The prefix match is what
+makes a new `realms.*` key exempt the day it is added.
 
 **THE WRITING-END LOCK WAS MISSING UNTIL 2026-08-25, AND THE SENTENCE ABOVE
 DESCRIBED IT ANYWAY** — which is the whole lesson. `realms.setOverride()` went
@@ -2519,14 +2521,16 @@ look at. **A dead write is not harmless when something publishes what was
 written.**
 
 The lock is `checkRealmOverride()` in `realms.js`, and two things about it are
-deliberate. It matches by PREFIX rather than naming the two settings, so a third
+deliberate. It matches by PREFIX rather than naming the settings, so a new
 `realms.*` setting is refused the day it is added rather than the day somebody
-remembers this function. And **every writing path goes through it** —
-`setOverride()`, and `checkOverrides()`, which is what `create()` and `update()`
-validate a whole object with — because the two were written separately at first
-and that is exactly how one of them came to be missing.
+remembers this function. And **every writing path into a realm's overrides
+goes through it** — `setOverride()`, and `checkOverrides()`, which is what
+`create()` and `update()` validate a whole object with — because the two were
+written separately at first and that is exactly how one of them came to be
+missing.
 
-**One door still accepts those two keys and must**: `POST
+**One door still accepts `realms.enabled`, `realms.pathSegment` and
+`realms.removalDeliveryTimeoutS`, and must**: `POST
 /realm/acme/admin-api/config/set` goes through `config.setOverride()`, where
 `realmFor()` answers null and the write lands PROCESS-WIDE. That is the
 documented behaviour rather than a hole — it is the same exemption read from
@@ -2534,6 +2538,44 @@ the other side — and the reply names no realm, which is what tells the caller
 where it went. Do not "fix" that one to match: refusing it would leave
 `realms.enabled` unsettable from inside any realm, which is every request in a
 process where realms are switched on.
+
+**`realms.maxCount` is the exception to that door (#368).** It is still
+process-wide and still refused ON a realm (`STS-CORE-0014`), and a write or a
+clear of it while a non-default realm is ambient is refused as well
+(`STS-CORE-0162`), in `checkOverride()` and `clearOverride()`. The console
+describes the row with `editRefusal` and `editable: false` from inside that
+realm, so a section's all-or-nothing Save does not post the key. A service
+administrator changes it on `/admin/realms` in the default realm, or with
+`POST /admin-api/config/set` and no realm prefix. A realm administrator is
+already refused by the `realms.` prefix (`admin-ui/admin_scope.ts`).
+
+### How many realms one cluster may hold (#368)
+
+Each realm costs memory in every node process, so `realms.maxCount` caps how
+many this cluster may hold. The default is **10, and the count includes the
+built-in default realm**, so that is the default plus nine others. The minimum
+is 1, because the default realm always exists; the maximum a write may name is
+100000. It is on `AGREEMENT_SETTINGS`, so two nodes that disagree about it
+refuse to join (`STS-CLUSTER-0002`).
+
+`create()` refuses a new realm once `count()` is at the cap (`STS-CORE-0161`).
+**A restore skips the check** — `spec.restored`, the same skip the mode and
+Kerberos checks already make — because a restart or a replicated create of a
+registry that is already over the cap must still come up. Lowering the cap
+below the live count removes nothing; creates stay refused until the count is
+back under it. The chooser, OpenID Federation and the metadata keep listing
+every realm that exists.
+
+Two nodes can both pass a local count check and both persist, because the
+realm-registry save merges rather than claims. That race is accepted: the cap
+is a memory bound, and it does not grow a new cluster claim.
+
+The image default (`env/local.js`) does not raise it. `env/test.js` and
+`env/docker-tests.js` set it to 100000, because the protocol suite leaves its
+realms standing and a product default of 10 would refuse the next create on a
+stack that already holds more. The in-process suite sets
+`STS_REALMS_MAX_COUNT` the same way, in `tests/run.js`, under any override a
+test makes itself.
 
 ### A realm has a DNS DOMAIN, and it is the root of every NAME the realm invents (2026-09-18)
 
