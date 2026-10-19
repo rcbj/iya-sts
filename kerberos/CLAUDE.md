@@ -961,6 +961,174 @@ SPNEGO end to end (the acceptor's realm routing is asserted in
 `tests/kerberos_realm_routing.js` only through the KDC), and two nodes of a
 cluster answering for the same non-default realm.
 
+## DELEGATION ACROSS A TRUST: THE MESSAGE FLOWS (#430 Phase 0, 2026-10-19)
+
+**Written down before any code, as the ticket's plan asks.** Each flow is
+quoted from the specification that defines it; where a specification is
+silent or ambiguous the paragraph says so rather than guessing. Notation:
+realm A holds the front-end service (Service 1), realm B the user or the
+back end, and `krbtgt/B@A` is the ticket-granting ticket A issues for B's
+ticket-granting service — sealed in the key the two share, which A holds
+as its OUTGOING key for B and B holds as its INCOMING key from A.
+
+### The trust attributes the flows read ([MS-ADTS] 6.1.6.7.9 `trustAttributes`)
+
+| Bit | Name | What it changes here |
+|---|---|---|
+| 0x001 | `NON_TRANSITIVE` | Tickets from the partner are accepted only for the partner's own realm: nothing may transit it, in either direction. |
+| 0x004 | `QUARANTINED_DOMAIN` | SID filtering: only SIDs of the partner's own domain survive in a PAC that crosses it (Phase 2). Also a DisableCondition for ok-as-delegate, below. |
+| 0x008 | `FOREST_TRANSITIVE` | A forest trust: the partner's routed name suffixes cover realms behind it, and a path may transit it. |
+| 0x010 | `CROSS_ORGANIZATION` | [MS-KILE] 3.3.5.7.5: the OTHER_ORGANIZATION SID is added to the PAC's ExtraSids, and the target account is ACL-checked (KDC_ERR_POLICY on failure). Phase 2. |
+| 0x020 | `WITHIN_FOREST` | An EnableCondition for ok-as-delegate, below. |
+| 0x040 | `TREAT_AS_EXTERNAL` | A forest trust treated as external for SID filtering ([MS-ADTS] 6.1.6.7.9). |
+| 0x200 | `CROSS_ORGANIZATION_NO_TGT_DELEGATION` | A DisableCondition for ok-as-delegate. |
+| 0x800 | `CROSS_ORGANIZATION_ENABLE_TGT_DELEGATION` | An EnableCondition for ok-as-delegate. |
+
+`trustDirection` ([MS-ADTS] 6.1.6.7.12) is 1 INBOUND, 2 OUTBOUND, 3 both.
+The specification's sentence for INBOUND ("the trusted domain trusts the
+primary domain to perform operations such as name lookups and
+authentication") reads two ways; its second sentence ("If this flag is set,
+then the trustAuthIncoming attribute is present on this object") does not.
+Here **INBOUND means the INCOMING key is held** (`krbtgt/US@PARTNER`: this
+realm accepts the partner's tickets, so the partner's people reach this
+realm's services) and **OUTBOUND means the OUTGOING key is held**
+(`krbtgt/PARTNER@US`: this realm refers its own people to the partner). A
+record stores which keys it holds and derives the direction from them, so
+the two can never disagree.
+
+### Referrals and `transited` (RFC 4120 sections 1.2, 3.3.3.2; RFC 6806)
+
+1. The client asks its own KDC (A) for `HTTP/host@?`. A holds no such
+   service; the host's DNS suffix is routed to a partner (a trust record's
+   suffixes), so A answers an ordinary TGS-REP whose ticket is
+   `krbtgt/<next hop>@A`, sealed in the outgoing key. The reply's `sname`
+   differing from the request is the client's only signal.
+2. The client presents that ticket to the next hop's KDC, naming the next
+   hop as the request's realm. That KDC opens it with its INCOMING key from
+   A (looked up as `krbtgt/<itself>@A` — the ticket's own `realm` field).
+3. If that KDC is not the service's realm either, it refers again
+   (`krbtgt/C@B`), and so on; on every ticket it issues from a cross-realm
+   TGT it adds the realm that ISSUED the presented ticket to `transited`,
+   unless that realm is the client's own (section 3.3.3.2: the client's and
+   the server's realms are never listed). So `A → B → C` leaves the final
+   ticket with `transited` = `B`, and a direct trust leaves it empty.
+4. `transited` is `DOMAIN-X500-COMPRESS` (type 1): realm names separated by
+   commas, a name ending in `.` is prefixed to the name before it, a name
+   starting with `/` is appended to it, an empty first or last element
+   stands for the client's or the server's realm, and an empty middle
+   element for every realm between two on the hierarchy. A KDC that checks
+   the path against its policy sets TRANSITED-POLICY-CHECKED (section 2.7);
+   one that refuses answers KDC_ERR_PATH_NOT_ACCEPTED (28).
+
+**Uncertain:** RFC 4120 lets the KDC that checks be either the last one or
+the service; this KDC checks at every ticket it issues from a cross-realm
+TGT, and sets the flag where it did. Whether the elided-hierarchy form
+(`,,`) is ever acceptable is policy; it is refused here, because a trust
+record names partners and not a hierarchy.
+
+### S4U2Self across realms ([MS-SFU] 3.1.5.1.1.2 and 4.2, KDC side 3.2.5.1.1–3.2.5.1.2)
+
+Service 1 in A, the user in B, possibly with realms between them.
+
+1. Service 1 asks its own KDC for a TGT to B's ticket-granting service,
+   with NO S4U2Self data in the request; with no direct trust A answers a
+   TGT to a realm closer, and Service 1 repeats until it holds
+   `krbtgt/B@<previous>` (4.2 steps 1–2). How it learns the user's realm is
+   its own business: local policy, or an AS-REQ answered with
+   KDC_ERR_WRONG_REALM (RFC 6806).
+2. Service 1 sends B a TGS-REQ presenting that TGT, `sname` its OWN name,
+   with PA-FOR-USER (or PA-S4U-X509-USER) naming the user (step 3).
+3. B cannot issue the ticket: it does not hold Service 1's account. It
+   builds a PAC for the user and returns it in a REFERRAL TGT toward A
+   (step 4). Per 3.2.5.1.1 that referral's `cname`/`crealm` are SERVICE 1's
+   — the requester's — and the PAC's PAC_CLIENT_INFO names
+   `user@userRealm`; the identity being transported is in the PAC, not in
+   the ticket's client name. With realms between, each one repeats steps
+   2–3 back toward A (step 4, last paragraph).
+4. Service 1 presents that referral TGT to A, again with PA-FOR-USER, and A
+   issues the service ticket to Service 1 for the user (3.2.5.1.2: `cname`
+   and `crealm` from PA-FOR-USER), with a PAC combining what B wrote and what
+   A adds ([MS-PAC] 4.1.2.1). FORWARDABLE follows Service 1's
+   TrustedToAuthenticationForDelegation, and never for a user whose
+   DelegationNotAllowed is set.
+
+**What this service must decide that the specification does not:** step 3's
+B must believe Service 1 asked on its own behalf (the presented TGT names
+Service 1), and step 4's A must recognise the referral TGT as one carrying
+an S4U2Self PAC rather than Service 1's own — the only marker being that
+the PAC's client is not the ticket's client. Here that is checked against
+the trust record that admitted the ticket (A must hold an incoming trust
+from the realm that issued it, and that record must accept the user's
+realm). Phase 2.
+
+### S4U2Proxy and resource-based delegation across realms ([MS-SFU] 3.1.5.2.2, 3.2.5.2.3)
+
+Service 1 (front end) in A, Service 2 (back end) in B, evidence a service
+ticket to Service 1 for the user.
+
+1. Service 1 sends A the S4U2Proxy TGS-REQ: `cname-in-addl-tkt`, the
+   evidence as the additional ticket, PA-PAC-OPTIONS with resource-based
+   delegation, `sname` Service 2.
+2. A does not hold Service 2. It answers with a REFERRAL TGT toward B whose
+   PAC is the USER's, taken from the evidence ticket — the evidence turned
+   into a cross-realm TGT for the user. Service 1 also needs, and gets by an
+   ordinary referral, a cross-realm TGT for ITSELF. The client side
+   ([MS-SFU] 3.1.5.2.2) follows the path twice, once for each.
+3. Service 1 sends B the S4U2Proxy TGS-REQ presenting its own cross-realm
+   TGT, with the user's referral TGT as the additional ticket and
+   PA-PAC-OPTIONS again. B verifies the evidence under its INCOMING key
+   from A, reads the user from the evidence's PAC (its ticket names Service
+   1), and checks resource-based delegation: Service 2's
+   `appAllowedToActOnBehalfOf` must name the foreign actor, written
+   `SPN@A`. Forwardable evidence is required for resource-based delegation
+   since the CVE-2020-16996 update (3.2.5.2.3), as within a realm.
+4. CLASSIC constrained delegation is defined only within a realm: the
+   ServicesAllowedToSendForwardedTicketsTo list is on Service 1's account
+   in A, and nothing in the cross-realm exchange carries it to B. The plan's
+   decision 5 refuses it across realms unless a realm setting allows it.
+
+**Uncertain:** the subsection numbering of [MS-SFU] 3.2.5.2 has moved
+between revisions (an erratum of December 2019 also changed which route
+takes precedence when both are configured: classic first). The citations
+above are the current revision's; the behaviour is what is asserted.
+
+### TGT delegation across a trust ([MS-KILE] 3.3.5.7.5)
+
+The KDC "MUST NOT return a ticket with the ok-as-delegate flag set" unless,
+for the source ticket and the trust it crosses:
+
+* **DisableConditions** = the source ticket lacks ok-as-delegate, OR the
+  trust has `CROSS_ORGANIZATION_NO_TGT_DELEGATION`, OR the trust has
+  `QUARANTINED_DOMAIN`;
+* **EnableConditions** = the trust has `WITHIN_FOREST`, OR
+  `CROSS_ORGANIZATION_ENABLE_TGT_DELEGATION`;
+* ok-as-delegate is set only on EnableConditions and not DisableConditions.
+
+So what the two TGT-delegation bits change is **ok-as-delegate on the
+referral TGT** (and through it on the partner's service tickets), which is
+what tells a client it may forward its TGT to the service — not
+FORWARDABLE, which the client's own request and its account decide.
+A trust with neither bit set across organizations therefore stops
+unconstrained delegation by default. The same section adds, for
+`CROSS_ORGANIZATION`, the OTHER_ORGANIZATION SID and an ACL check on the
+target (KDC_ERR_POLICY). A protected user's TGT is never forwardable, on
+either side of any trust (#186). **Uncertain:** the section speaks of "the
+source ticket" without saying whether a referral issued from a referral
+inherits the first hop's verdict; here each hop applies its own record to
+the ticket it was given.
+
+### Keys
+
+**A password-derived inter-realm key** is RFC 3961 string-to-key over the
+shared password with the principal's DEFAULT SALT (RFC 4120 section 4: the
+realm followed by the name components, no separators) — for
+`krbtgt/B@A` that is `AkrbtgtB`. Both partners compute the same key from
+the same password with no other coordination, which is what lets a trust be
+built with a partner's KDC that is not this one. **A generated key** is
+RFC 3961 random-to-key per enctype, shown once at creation (Phase 4) and
+written to the partner's record by "pair" when the partner is a trust realm
+in this process.
+
 ## PRODUCT MODE, AND THE LITERALS AN AUDIT FOUND IN THIS DIRECTORY (2026-09-12)
 
 **The DEFAULT realm's principal database is built at REQUIRE TIME in the mode the
