@@ -1025,13 +1025,9 @@ serviceState.start().then(function (both) {
   // A CLUSTER REFUSAL (2026-09-14, #46) carries its whole explanation — which
   // mode, which setting, which node differs — and neither paragraph below is
   // about it: the store opened and the keys are fine. See cluster/cluster.js.
-  if (/STS-CLUSTER-\d{4}/.test(err.message || '')) {
-    // error-code: none — the refusal's own STS-CLUSTER code leads err.message
-    log.fatal(err.message + ' The service is NOT STARTING.');
-    process.exit(1);
-  }
-  if (/STS-AUTHN-0339/.test(err.message || '')) {
-    // error-code: none — the refusal's own STS-AUTHN-0339 leads err.message
+  if (/STS-CLUSTER-\d{4}|STS-AUTHN-0339/.test(err.message || '')) {
+    // error-code: none — the refusal's own STS-CLUSTER or STS-AUTHN-0339
+    // code leads err.message
     log.fatal(err.message + ' The service is NOT STARTING.');
     process.exit(1);
   }

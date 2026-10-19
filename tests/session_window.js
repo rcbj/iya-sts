@@ -27,6 +27,7 @@ const minted = require('../persistence/persistence_minted');
 const tiers = require('../persistence/tiers');
 const authn = require('../authn/authn');
 const sessionWindow = require('../authn/session_window');
+const scheduler = require('../cluster/scheduler');
 
 const log = require('bunyan').createLogger({ name: 'session_window',
   level: process.env.LOG_LEVEL || 'info' });
@@ -188,6 +189,37 @@ function cacheEntries(n) {
   log.debug("Entering cacheEntries().");
   config.setOverride('authn.sessionCacheEntries', String(n));
   log.debug("Leaving cacheEntries().");
+}
+
+// The window is restart-only, so a test sets the process environment
+// rather than a runtime override. Cache size and the read timeout stay
+// overridable; they are still the process value.
+function runSweep() {
+  log.debug("Entering runSweep().");
+  const job = scheduler.job('authn.session-expiry');
+  const result = job.run({
+    realm: REALM, runId: 'window-shed', trigger: 'manual',
+    params: null,
+    stillOwner: function () {
+      return true;
+    },
+    nowMs: function () {
+      return Date.now();
+    },
+    log: log
+  });
+  log.debug("Leaving runSweep().");
+  return result;
+}
+
+function windowSetting(raw) {
+  log.debug("Entering windowSetting().");
+  if (raw === undefined || raw === null) {
+    delete process.env.STS_AUTHN_SESSION_WINDOW;
+  } else {
+    process.env.STS_AUTHN_SESSION_WINDOW = String(raw);
+  }
+  log.debug("Leaving windowSetting().");
 }
 
 function stubDriver() {
@@ -735,13 +767,211 @@ function upgradeCase(t) {
   log.debug("Leaving upgradeCase().");
 }
 
+function processSettingCase(t) {
+  log.debug("Entering processSettingCase().");
+  t.log.info('on: the window is the process value and is not runtime');
+  t.equal(config.isPerProcess('authn.sessionWindow'), true,
+          'the window is per process');
+  t.equal(config.isPerProcess('authn.sessionCacheEntries'), true,
+          'the cache size is per process');
+  t.equal(config.isPerProcess('authn.sessionReadTimeoutMs'), true,
+          'the read timeout is per process');
+  const refused = config.setOverride('authn.sessionWindow', 'off');
+  t.equal(refused.ok, false, 'the window cannot be changed while running');
+  t.check(/cannot be changed while this service is running/.test(
+    (refused.errors || [])[0] || ''),
+          'the refusal says to restart', (refused.errors || [])[0]);
+  t.equal(config.processValue('authn.sessionWindow'), 'on',
+          'the process value stays on');
+  t.equal(config.value('authn.sessionWindow'), 'on',
+          'the ambient realm reads that same value');
+  t.equal(sessionWindow.active(), true,
+          'a realm does not turn the window off');
+  cacheEntries(9);
+  t.equal(config.processValue('authn.sessionCacheEntries'), 9,
+          'the cache size is the process value');
+  t.equal(config.value('authn.sessionCacheEntries'), 9,
+          'the ambient realm does not size the cache');
+  config.setOverride('authn.sessionReadTimeoutMs', '0');
+  t.equal(config.processValue('authn.sessionReadTimeoutMs'), 0,
+          'a wait of 0 is the process value');
+  config.clearOverride('authn.sessionReadTimeoutMs');
+  cacheEntries(10000);
+  log.debug("Leaving processSettingCase().");
+}
+
+function zeroWaitCase(t) {
+  log.debug("Entering zeroWaitCase().");
+  t.log.info('on: a wait of 0 does not cool the next miss');
+  freshWindow();
+  config.setOverride('authn.sessionReadTimeoutMs', '0');
+  let reads = 0;
+  queryFn = function (name) {
+    if (name === 'session.read') {
+      reads += 1;
+      throw new Error('timeout');
+    }
+    return emptyAnswer(name);
+  };
+  const first = sessionWindow.get(REALM, 'zero-1');
+  const second = sessionWindow.get(REALM, 'zero-2');
+  t.equal(first.error, true, 'the first miss is an error');
+  t.equal(second.error, true, 'the next miss is an error too');
+  t.equal(reads, 2, 'a wait of 0 does not cool the next miss');
+  config.clearOverride('authn.sessionReadTimeoutMs');
+  log.debug("Leaving zeroWaitCase().");
+}
+
+async function bridgeWaitCase(t) {
+  log.debug("Entering bridgeWaitCase().");
+  t.log.info('on: a session wait of 0 is not replaced with 2000');
+  const SyncQuery = require('../common/sync_query');
+  let wait = 0;
+  const bridge = new SyncQuery({
+    backend: path.join(__dirname, 'sync_query_kit.js'),
+    timeoutMs: function () {
+      return wait;
+    },
+    timeoutCode: 'STS-AUTHN-0338',
+    refusedCode: 'STS-AUTHN-0338',
+    threadErrorCode: 'STS-AUTHN-0338'
+  });
+  try {
+    const started = Date.now();
+    let message = '';
+    let code = '';
+    try {
+      bridge.query('slow', [1500, 'late']);
+    } catch (e) {
+      log.debug("Caught in bridgeWaitCase(): " + ((e && e.message) || e));
+      message = String((e && e.message) || e);
+      code = errorCodes.codeOf(e);
+    }
+    const ms = Date.now() - started;
+    t.equal(code, 'STS-AUTHN-0338', 'a wait of 0 is a read failure');
+    t.check(/within 0 ms/.test(message),
+            'the bound that was waited is 0', message);
+    t.check(ms < 500, 'a wait of 0 does not block for 2000 ms', String(ms));
+    wait = 80;
+    const again = Date.now();
+    let message2 = '';
+    let code2 = '';
+    try {
+      bridge.query('slow', [1500, 'late']);
+    } catch (e) {
+      log.debug("Caught in bridgeWaitCase(): " + ((e && e.message) || e));
+      message2 = String((e && e.message) || e);
+      code2 = errorCodes.codeOf(e);
+    }
+    const ms2 = Date.now() - again;
+    t.equal(code2, 'STS-AUTHN-0338', 'the later wait is a read failure');
+    t.check(/within 80 ms/.test(message2),
+            'the replaced thread waits the new bound', message2);
+    t.check(ms2 >= 60 && ms2 < 500,
+            'the later wait is about 80 ms, not 0 and not 2000',
+            String(ms2));
+  } finally {
+    await bridge.stop();
+  }
+  log.debug("Leaving bridgeWaitCase().");
+}
+
+function cooledIndexCase(t) {
+  log.debug("Entering cooledIndexCase().");
+  t.log.info('on: an index failure cools the request path, not the sweep');
+  freshWindow();
+  let calls = 0;
+  queryFn = function (name) {
+    calls += 1;
+    if (name === 'session.exists' || name === 'session.count' ||
+        name === 'session.oldest') {
+      throw new Error('index down');
+    }
+    return emptyAnswer(name);
+  };
+  const first = sessionWindow.has(REALM, 'cool-has');
+  const after = calls;
+  const second = sessionWindow.has(REALM, 'cool-has-2');
+  const counted = sessionWindow.count(REALM);
+  const rows = sessionWindow.oldest(REALM, 'subject');
+  t.equal(first, 'error', 'the first membership read fails');
+  t.equal(second, 'error', 'the next membership read fails closed');
+  t.equal(counted, null, 'a cooled count does not pretend to be zero');
+  t.equal(rows, null, 'a cooled oldest read fails closed');
+  t.equal(calls, after, 'those reads do not call the bridge');
+  let sweepCalls = 0;
+  queryFn = function (name) {
+    if (name === 'session.expired' || name === 'session.subjectRows') {
+      sweepCalls += 1;
+      return [];
+    }
+    throw new Error('request path');
+  };
+  runSweep();
+  t.check(sweepCalls >= 1,
+          'the sweep still queries while the request path is cooled',
+          String(sweepCalls));
+  log.debug("Leaving cooledIndexCase().");
+}
+
+function shedErrorCase(t) {
+  log.debug("Entering shedErrorCase().");
+  t.log.info('on: a failed shed load ends nobody for that subject');
+  freshWindow();
+  config.setOverride('authn.maxSessionsPerSubject', '1');
+  const older = 'digest-older';
+  const newer = 'digest-newer';
+  const reads = [];
+  queryFn = function (name, args) {
+    if (name === 'session.expired') {
+      return [];
+    }
+    if (name === 'session.subjectRows') {
+      if (!args || args[0] !== REALM) {
+        return [];
+      }
+      return [
+        { subjectKey: 'subj', key: older, lastSeenAt: 1, startedAt: 1 },
+        { subjectKey: 'subj', key: newer, lastSeenAt: 2, startedAt: 2 }
+      ];
+    }
+    if (name === 'session.read') {
+      reads.push(args && args[1]);
+      if (args && args[1] === older) {
+        return { session: {} };
+      }
+      return {
+        session: sessionBody('shed-newer', {
+          subjectId: 'shed-alice', lastSeenAt: 2, startedAt: 2
+        })
+      };
+    }
+    return emptyAnswer(name);
+  };
+  try {
+    const ended = runSweep();
+    t.equal(ended && ended.ended, 0, 'a failed load ends nobody');
+    t.equal(reads.indexOf(newer), -1, 'the later live row is not read');
+    t.equal(audits('session.end', 'shed-newer').length, 0,
+            'the later row has no session.end');
+  } finally {
+    config.clearOverride('authn.maxSessionsPerSubject');
+  }
+  log.debug("Leaving shedErrorCase().");
+}
+
 async function onHalf(t) {
   log.debug("Entering onHalf().");
   t.equal(sessionWindow.active(), true, 'explicit on with the three ' +
           'predicates holds the window');
+  processSettingCase(t);
   await evictionCase(t);
   await floodCase(t);
   timeoutCase(t);
+  zeroWaitCase(t);
+  await bridgeWaitCase(t);
+  cooledIndexCase(t);
+  shedErrorCase(t);
   middlewareCase(t);
   parentCase(t);
   await dropErrorCase(t);
@@ -758,7 +988,7 @@ async function refusalCases(t, dir) {
   t.log.info('explicit on is refused; auto keeps the full map');
   const savedIsMulti = cells.isMulti;
   try {
-    config.setOverride('authn.sessionWindow', 'on');
+    windowSetting('on');
     minted.reset();
     const missing = thrownMessage(function () {
       sessionWindow.assertConfigured();
@@ -791,7 +1021,7 @@ async function refusalCases(t, dir) {
             'on without a digest key is STS-AUTHN-0339', undigested);
 
     sessionWindow.resetForTests();
-    config.setOverride('authn.sessionWindow', 'auto');
+    windowSetting('auto');
     const first = loggedLines('STS-AUTHN-0339', function () {
       sessionWindow.assertConfigured();
     });
@@ -806,7 +1036,7 @@ async function refusalCases(t, dir) {
 
     await armKeystore(dir);
     cells.isMulti = savedIsMulti;
-    config.setOverride('authn.sessionWindow', 'auto');
+    windowSetting('auto');
     config.setOverride('global.mode', 'product');
     config.setOverride('persistence.minted', true);
     t.equal(installDriver(), true, 'the driver is back for the auto check');
@@ -873,6 +1103,7 @@ function clearOverrides() {
   log.debug("Entering clearOverrides().");
   config.clearOverride('global.mode');
   config.clearOverride('persistence.minted');
+  windowSetting(null);
   config.clearOverride('authn.sessionWindow');
   config.clearOverride('authn.sessionCacheEntries');
   config.clearOverride('authn.sessionReadTimeoutMs');
@@ -918,11 +1149,11 @@ async function body(t, dir) {
     await armKeystore(dir);
     config.setOverride('global.mode', 'product');
     config.setOverride('persistence.minted', true);
-    config.setOverride('authn.sessionWindow', 'on');
+    windowSetting('on');
     cacheEntries(10000);
     t.equal(installDriver(), true, 'the stub driver holds minted rows');
-    t.equal(config.value('authn.sessionWindow'), 'on',
-            'the test forces the window on');
+    t.equal(config.processValue('authn.sessionWindow'), 'on',
+            'the test forces the process window on');
     await realms.run(made.realm, function () {
       return onHalf(t);
     });

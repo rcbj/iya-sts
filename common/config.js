@@ -2016,20 +2016,27 @@ const SETTINGS = [
   { key: 'authn.sessionWindow', group: 'Web security',
     label: 'Bounded session window',
     env: 'STS_AUTHN_SESSION_WINDOW', type: 'enum',
-    enumValues: ['off', 'auto', 'on'], dflt: 'off', runtime: true,
+    enumValues: ['off', 'auto', 'on'], dflt: 'off',
+    runtime: false, perProcess: true,
+    restartReason: 'a start that skips session bodies cannot put them ' +
+                   'back when the window is turned off, so committed ' +
+                   'sessions would be answered as absent',
     description: 'Whether one process holds every sign-on session or a ' +
                  'bounded window of them. off, the default, keeps the full ' +
                  'map: no miss is read and nothing is evicted. on is ' +
                  'refused at start unless minted persistence is enabled, ' +
                  'the service is one cell, and the minted key is a digest ' +
-                 '(STS-AUTHN-0339). auto does not turn the window on.' },
+                 '(STS-AUTHN-0339). auto does not turn the window on. It ' +
+                 'is a property of this process: a realm cannot carry its ' +
+                 'own value, and changing it needs a restart.' },
 
   { key: 'authn.sessionCacheEntries', group: 'Web security',
     label: 'Sessions one process holds',
     env: 'STS_AUTHN_SESSION_CACHE_ENTRIES', type: 'int', dflt: 10000,
-    min: 1, max: 10000000, runtime: true,
+    min: 1, max: 10000000, runtime: true, perProcess: true,
     description: 'How many sign-on sessions one process holds when ' +
-                 'authn.sessionWindow is on. A session past the bound is ' +
+                 'authn.sessionWindow is on. One cache serves every realm, ' +
+                 'so a realm cannot size it. A session past the bound is ' +
                  'forgotten in memory after its upsert has committed. It ' +
                  'is not ended. The row stays in the store and is read ' +
                  'back on the next miss.' },
@@ -2037,10 +2044,12 @@ const SETTINGS = [
   { key: 'authn.sessionReadTimeoutMs', group: 'Web security',
     label: 'Session read timeout (milliseconds)',
     env: 'STS_AUTHN_SESSION_READ_TIMEOUT_MS', type: 'int', dflt: 2000,
-    min: 0, max: 60000, runtime: true,
+    min: 0, max: 60000, runtime: true, perProcess: true,
     description: 'How long one session read may wait, and how long a ' +
-                 'failed read is not retried. 0 retries the next miss at ' +
-                 'once. A failed read is not treated as a missing session.' },
+                 'failed read is not retried. 0 does not wait and does ' +
+                 'not cool the next miss down. The wait is this ' +
+                 'process\'s, not a realm\'s. A failed read is not ' +
+                 'treated as a missing session.' },
 
   { key: 'authn.pendingTtlS', group: 'Web security',
     label: 'How long a sign-in waits at the screen (seconds)',

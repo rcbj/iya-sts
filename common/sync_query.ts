@@ -108,6 +108,10 @@ class SyncQuery {
   private port: workerThreads.MessagePort | null = null;
   private counter: Int32Array | null = null;
   private nextId = 1;
+  // The statement_timeout the running thread was started with. A session
+  // bridge replaces the thread when the configured wait changes; the
+  // directory bridge keeps the thread it started.
+  private startedBound: number | null = null;
   private readonly figures: SyncQueryStats = {
     started: 0, questions: 0, timedOut: 0, failed: 0, waitedMs: 0,
     longestMs: 0
@@ -128,7 +132,11 @@ class SyncQuery {
     log.debug("Leaving SyncQuery.constructor().");
   }
 
-  // The bound as a usable number: at least 10 ms, at most a minute.
+  // The bound as a usable number, at most a minute. The directory bridge
+  // floors anything below 10 ms, including an unusable number, at 2000,
+  // which is what ldap.workerDirectoryTimeoutMs's minimum matches. A
+  // session bridge honors the configured wait, including 0: that wait
+  // does not block, and it is not replaced with 2000.
   private bound(): number {
     log.debug("Entering SyncQuery.bound().");
     let n = NaN;
@@ -139,17 +147,40 @@ class SyncQuery {
                 ((e && (e as Error).message) || e));
       n = NaN;
     }
+    let out = 2000;
+    if (isFinite(n)) {
+      const floor = this.options.timeoutCode ? 0 : 10;
+      if (n >= floor) {
+        out = Math.min(n, 60000);
+      }
+    }
     log.debug("Leaving SyncQuery.bound().");
-    return isFinite(n) && n >= 10 ? Math.min(n, 60000) : 2000;
+    return out;
   }
 
   // STARTS THE THREAD when there is none. Unref'd both ways, so a process
   // with nothing else to do can still exit.
   private ensureThread(): void {
     log.debug("Entering SyncQuery.ensureThread().");
-    if (this.worker && this.port && this.counter) {
+    const bound = this.bound();
+    // A session bridge's statement_timeout is copied into the thread once.
+    // When the configured wait changes, that copy would keep cancelling at
+    // the old bound, so the thread is replaced. The directory bridge does
+    // not: its tests change the bound on a live thread and still read the
+    // late answer from it.
+    if (this.worker && this.port && this.counter &&
+        (!this.options.timeoutCode || this.startedBound === bound)) {
       log.debug("Leaving SyncQuery.ensureThread(). Running.");
       return;
+    }
+    if (this.worker) {
+      const old = this.worker;
+      this.forget(old);
+      const gone = old.terminate();
+      Promise.resolve(gone).catch(function (e: any) {
+        log.debug("Caught in SyncQuery.ensureThread(): " +
+                  ((e && e.message) || e));
+      });
     }
     const shared = new SharedArrayBuffer(4);
     const channel = new workerThreads.MessageChannel();
@@ -157,11 +188,13 @@ class SyncQuery {
       path.join(__dirname, 'sync_query_thread.js');
     // `queries` is added only when this bridge names its own module. The
     // directory bridge's workerData is the four fields it has always posted.
+    // statement_timeout matches this call's bound, including 0. PostgreSQL
+    // treats 0 as no server cancel; the client has already returned.
     const workerData: Record<string, unknown> = {
       counter: shared, port: channel.port2,
       connection: this.options.connection
         ? Object.assign({}, this.options.connection,
-                        { statement_timeout: this.bound() })
+                        { statement_timeout: bound })
         : null,
       backend: this.options.backend || null
     };
@@ -194,6 +227,7 @@ class SyncQuery {
     this.worker = worker;
     this.port = channel.port1;
     this.counter = new Int32Array(shared);
+    this.startedBound = bound;
     this.figures.started += 1;
     log.debug("Leaving SyncQuery.ensureThread(). Started.");
   }

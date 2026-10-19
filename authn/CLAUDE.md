@@ -1687,7 +1687,11 @@ ends somebody else's session.
 store: a miss is not read and a cached row is not evicted. Explicit `on` is
 refused at start unless minted persistence is enabled, the service is one
 cell, and the minted key is a digest (`STS-AUTHN-0339`, logged, never sent).
-`auto` does not turn the window on. `tests/session_window.js` forces `on`.
+`auto` does not turn the window on. The window, the cache size and the read
+timeout are properties of the process. The window is fixed at start: turning
+it off while running is refused, because a start that skipped the session
+bodies would then answer committed sessions as absent. `tests/session_window.js`
+forces `on`.
 
 **THE EVENT SAYS `policy` AND NOT `user`.** `caep.ts`'s rule for a `revoked` act
 was `admin` when an administrator did it and `user` otherwise, and an expiry is

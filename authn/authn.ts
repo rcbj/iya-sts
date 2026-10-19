@@ -2349,7 +2349,8 @@ class Authn {
                   'is missing.');
       } else {
         asked.forEach(function (realmId) {
-          const keys = sessionWindow.children(realmId, parentKey);
+          const keys = sessionWindow.indexKeys('session.children',
+                                                [realmId, parentKey]);
           if (!keys) {
             return;
           }
@@ -3664,7 +3665,8 @@ class Authn {
         realms.run(realm, function () {
           const idle = self.sessionIdleTimeoutMs();
           const cutoff = idle > 0 ? nowMs - idle : 0;
-          const keys = sessionWindow.expired(realm.id, nowMs, cutoff);
+          const keys = sessionWindow.indexKeys('session.expired',
+                                                [realm.id, nowMs, cutoff]);
           if (keys === null) {
             return;
           }
@@ -4148,7 +4150,8 @@ class Authn {
           return;
         }
         // While the window is on the index is the shed authority. A failed
-        // page skips the realm; a failed body read skips that key.
+        // page skips the realm. A failed body ends nobody for that subject.
+        // An absent row is not held, and the loop continues.
         if (self.windowOn()) {
           const grouped = sessionWindow.chosenBySubject(realm.id);
           if (grouped === null) {
@@ -4175,6 +4178,9 @@ class Authn {
                  held > per; i++) {
               const loaded = sessionWindow.loadByDigest(realm.id,
                                                          rows[i].key);
+              if (loaded.error) {
+                return;
+              }
               if (!loaded.ok) {
                 held -= 1;
                 continue;
@@ -5191,7 +5197,8 @@ class Authn {
       return yes;
     };
     if (this.windowOn()) {
-      const keys = sessionWindow.surface(partition, surfaceId);
+      const keys = sessionWindow.indexKeys('session.surface',
+                                            [partition, surfaceId]);
       if (keys === null) {
         log.debug("Leaving Authn.endRelyingPartySessions(). 0 ended.");
         return 0;
@@ -6059,7 +6066,8 @@ class Authn {
       });
       if (!found && this.windowOn()) {
         const realmId = this.deps.realms.currentId();
-        const keys = sessionWindow.credential(realmId, wanted);
+        const keys = sessionWindow.indexKeys('session.credential',
+                                              [realmId, wanted]);
         if (keys === null) {
           extra.refusedWith = 'STS-AUTHN-0338';
           log.debug("Leaving Authn.startSessionHere(). The credential " +
@@ -6913,7 +6921,8 @@ class Authn {
         log.debug("Leaving Authn.sessionsOf(). 0 session(s).");
         return [];
       }
-      const keys = sessionWindow.username(realms.currentId(), nameKey);
+      const keys = sessionWindow.indexKeys('session.username',
+                                            [realms.currentId(), nameKey]);
       if (keys === null) {
         log.debug("Leaving Authn.sessionsOf(). 0 session(s).");
         return [];

@@ -724,8 +724,9 @@ function setDriver(theDriver, activeMode) {
 // the flush is where the mode and the setting are consulted. The cost of being
 // wrong that way round is a Set that fills and is discarded, which is nothing;
 // the cost of the other way round is three config reads per session write.
-// One string compare gates the session window, and only when
-// authn.sessionWindow is exactly "on". Off and auto do not load it.
+// One string compare gates the session window, and only when the PROCESS
+// value of authn.sessionWindow is exactly "on". Off and auto do not load it.
+// The value is not the ambient realm's: a realm cannot carry this setting.
 // ---------------------------------------------------------------------------
 function note(handle, realmId, key) {
   if (restoring || stopped) {
@@ -1144,7 +1145,7 @@ function applyLocally(store, realmId, key, value, remove) {
   try {
     let decision = remove ? 'remove' : 'restore';
     if (store && store.handle === 'authn.sessions' &&
-        config.value('authn.sessionWindow') === 'on') {
+        config.processValue('authn.sessionWindow') === 'on') {
       try {
         const sessionWindow = sessionWindowIfOn();
         if (sessionWindow) {
@@ -1184,7 +1185,7 @@ function applyLocally(store, realmId, key, value, remove) {
 // pair. Off and auto return before the require, so they do not load the
 // window. enabled() is not read here.
 function sessionWindowIfOn() {
-  if (config.value('authn.sessionWindow') !== 'on') {
+  if (config.processValue('authn.sessionWindow') !== 'on') {
     return null;
   }
   const sessionWindow = require('../authn/session_window');
@@ -2339,7 +2340,7 @@ function restore() {
     });
   }
   const filter = restoreFilter(Date.now());
-  if (config.value('authn.sessionWindow') === 'on') {
+  if (config.processValue('authn.sessionWindow') === 'on') {
     try {
       const sessionWindow = sessionWindowIfOn();
       if (sessionWindow &&

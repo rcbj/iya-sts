@@ -119,7 +119,7 @@ class SessionWindow {
    * @returns true only when the window may replace the full map
    */
   active(): boolean {
-    if (String(config.value('authn.sessionWindow')) !== 'on') {
+    if (String(config.processValue('authn.sessionWindow')) !== 'on') {
       return false;
     }
     if (!minted.enabled()) {
@@ -137,7 +137,7 @@ class SessionWindow {
    */
   assertConfigured(): void {
     log.debug("Entering SessionWindow.assertConfigured().");
-    const setting = String(config.value('authn.sessionWindow') || 'off');
+    const setting = String(config.processValue('authn.sessionWindow'));
     if (setting !== 'on' && setting !== 'auto') {
       log.debug("Leaving SessionWindow.assertConfigured().");
       return;
@@ -280,6 +280,12 @@ class SessionWindow {
     if (this.freshNegative(key)) {
       return 'absent';
     }
+    // Fail closed before any bridge call. A held or negatively cached id
+    // has already answered above. The sweep does not come through here.
+    if (Date.now() < this.cooldownUntil) {
+      log.debug('session window: a membership read is not retried yet.');
+      return 'error';
+    }
     const digest = this.digestOf(realm, id);
     if (!digest) {
       this.failRead('the minted key is not a digest');
@@ -291,10 +297,6 @@ class SessionWindow {
     }
     if ((exists as { hit?: boolean }).hit) {
       return 'present';
-    }
-    if (Date.now() < this.cooldownUntil) {
-      log.debug('session window: a membership read is not retried yet.');
-      return 'error';
     }
     let row: any = null;
     try {
@@ -462,6 +464,10 @@ class SessionWindow {
    */
   count(realmId: string): number | null {
     log.debug("Entering SessionWindow.count().");
+    if (Date.now() < this.cooldownUntil) {
+      log.debug("Leaving SessionWindow.count(). Cooling.");
+      return null;
+    }
     const answer = this.indexAnswer('session.count', [String(realmId)]);
     if (answer === null) {
       log.debug("Leaving SessionWindow.count(). Unread.");
@@ -481,6 +487,10 @@ class SessionWindow {
    */
   oldest(realmId: string, subjectKey: string): any[] | null {
     log.debug("Entering SessionWindow.oldest().");
+    if (Date.now() < this.cooldownUntil) {
+      log.debug("Leaving SessionWindow.oldest(). Cooling.");
+      return null;
+    }
     const answer = this.indexAnswer('session.oldest',
       [String(realmId), String(subjectKey)]);
     if (answer === null) {
@@ -492,19 +502,25 @@ class SessionWindow {
   }
 
   /**
-   * Digests the sweep should consider, or null when unread.
+   * Digests from one named index query, or null when unread. A request
+   * query fails closed while the miss cooldown is in the future and does
+   * not call the bridge. `session.expired` is the sweep: it still asks on
+   * its own interval.
    *
-   * @param realmId - the realm
-   * @param nowMs - the sweep's clock, epoch milliseconds
-   * @param cutoff - the idle cutoff, or 0 when idle is off
+   * @param name - the query (`session.children` and the same shape)
+   * @param args - that query's arguments
    * @returns the digests, or null
    */
-  expired(realmId: string, nowMs: number, cutoff: number): string[] | null {
-    log.debug("Entering SessionWindow.expired().");
-    const answer = this.indexAnswer('session.expired',
-      [String(realmId), nowMs, cutoff]);
-    log.debug("Leaving SessionWindow.expired().");
-    return this.asKeys(answer);
+  indexKeys(name: string, args: unknown[]): string[] | null {
+    log.debug("Entering SessionWindow.indexKeys().");
+    if (name !== 'session.expired' && Date.now() < this.cooldownUntil) {
+      log.debug("Leaving SessionWindow.indexKeys(). Cooling.");
+      return null;
+    }
+    const answer = this.asKeys(this.indexAnswer(String(name),
+      Array.isArray(args) ? args : []));
+    log.debug("Leaving SessionWindow.indexKeys().");
+    return answer;
   }
 
   /**
@@ -515,6 +531,10 @@ class SessionWindow {
    */
   keysOf(realmId: string): string[] | null {
     log.debug("Entering SessionWindow.keysOf().");
+    if (Date.now() < this.cooldownUntil) {
+      log.debug("Leaving SessionWindow.keysOf(). Cooling.");
+      return null;
+    }
     const out: string[] = [];
     let after = '';
     for (;;) {
@@ -538,66 +558,6 @@ class SessionWindow {
     }
     log.debug("Leaving SessionWindow.keysOf().");
     return out;
-  }
-
-  /**
-   * Child digests of one parent, or null when unread.
-   *
-   * @param realmId - the realm
-   * @param parentKey - the parent digest
-   * @returns the digests, or null
-   */
-  children(realmId: string, parentKey: string): string[] | null {
-    log.debug("Entering SessionWindow.children().");
-    const answer = this.asKeys(this.indexAnswer('session.children',
-      [String(realmId), String(parentKey)]));
-    log.debug("Leaving SessionWindow.children().");
-    return answer;
-  }
-
-  /**
-   * Digests filed under a credential fingerprint, or null when unread.
-   *
-   * @param realmId - the realm
-   * @param fingerprint - the clear credential key
-   * @returns the digests, or null
-   */
-  credential(realmId: string, fingerprint: string): string[] | null {
-    log.debug("Entering SessionWindow.credential().");
-    const answer = this.asKeys(this.indexAnswer('session.credential',
-      [String(realmId), String(fingerprint)]));
-    log.debug("Leaving SessionWindow.credential().");
-    return answer;
-  }
-
-  /**
-   * Digests filed under a username digest, or null when unread.
-   *
-   * @param realmId - the realm
-   * @param usernameKey - the username digest
-   * @returns the digests, or null
-   */
-  username(realmId: string, usernameKey: string): string[] | null {
-    log.debug("Entering SessionWindow.username().");
-    const answer = this.asKeys(this.indexAnswer('session.username',
-      [String(realmId), String(usernameKey)]));
-    log.debug("Leaving SessionWindow.username().");
-    return answer;
-  }
-
-  /**
-   * Digests of one relying-party surface, or null when unread.
-   *
-   * @param realmId - the realm
-   * @param surfaceId - `rp_surface`
-   * @returns the digests, or null
-   */
-  surface(realmId: string, surfaceId: string): string[] | null {
-    log.debug("Entering SessionWindow.surface().");
-    const answer = this.asKeys(this.indexAnswer('session.surface',
-      [String(realmId), String(surfaceId)]));
-    log.debug("Leaving SessionWindow.surface().");
-    return answer;
   }
 
   /**
@@ -774,13 +734,13 @@ class SessionWindow {
 
   // Hot path: the bound is asked on every insert. No Entering/Leaving pair.
   private cacheBound(): number {
-    return Number(config.value('authn.sessionCacheEntries'));
+    return Number(config.processValue('authn.sessionCacheEntries'));
   }
 
-  // Hot path. 0 is legal and means the next miss retries at once.
-  // No Entering/Leaving pair.
+  // Hot path. 0 is legal: the process does not wait and does not cool
+  // the next miss down. No Entering/Leaving pair.
   private readTimeout(): number {
-    const n = Number(config.value('authn.sessionReadTimeoutMs'));
+    const n = Number(config.processValue('authn.sessionReadTimeoutMs'));
     if (!isFinite(n) || n < 0) {
       return 2000;
     }
@@ -1111,8 +1071,10 @@ class SessionWindow {
       'authn: a session could not be read: ' + why);
   }
 
-  // Hot path: has() and every index walk. No Entering/Leaving pair. An
-  // index failure is logged and is not a cooldown: the next sweep asks again.
+  // Hot path: has() and every index walk. No Entering/Leaving pair. A
+  // driver or timeout failure arms the same cooldown as a body read. A
+  // missing bridge does not: there is nothing to cool down from. The
+  // sweep does not consult the timestamp, so it still asks on its interval.
   private indexAnswer(name: string, args: unknown[]): unknown {
     try {
       if (this.queryFn) {
@@ -1127,7 +1089,7 @@ class SessionWindow {
     } catch (e) {
       log.debug("Caught in SessionWindow.indexAnswer(): " +
                 ((e && (e as Error).message) || e));
-      this.failRead(String((e && (e as Error).message) || e));
+      this.noteReadFailure(e);
       return null;
     }
   }
