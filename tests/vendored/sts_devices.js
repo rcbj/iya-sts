@@ -725,7 +725,7 @@ async function test() {
                        oauthTokenEndpointAuthMethod: "client_secret_post" } };
   };
   await ok(api + "/applications/create",
-           client(RX, ["oauth2", "ssf"], ["ssf:read", "ssf.manage"]),
+           client(RX, ["oauth2", "ssf"], ["ssf.read", "ssf.manage"]),
            "registered a Shared Signals receiver");
   await ok(api + "/applications/create",
            client(MDM, ["oauth2"], ["device:compliance"]),
@@ -744,7 +744,7 @@ async function test() {
     log.debug("Leaving tokenOf(). " + r.status);
     return { status: r.status, json: json };
   };
-  const rxToken = (await tokenOf(RX, "ssf:read ssf.manage")).json.access_token;
+  const rxToken = (await tokenOf(RX, "ssf.read ssf.manage")).json.access_token;
   assert.ok(rxToken, "a Shared Signals token for the receiver");
   const ssf = async function (method, where, body) {
     log.debug("Entering ssf(). " + where);

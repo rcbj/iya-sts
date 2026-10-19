@@ -191,26 +191,26 @@ async function scim() {
 async function sharedSignals() {
   log.debug("Entering sharedSignals().");
   log.info("=== 2. Shared Signals ===");
-  let r = await token(realmBase, SSF_CLIENT, "ssf:read ssf.manage");
+  let r = await token(realmBase, SSF_CLIENT, "ssf.read ssf.manage");
   check("a client that does not declare the SSF scopes is refused " +
         "invalid_scope for them", function () {
     refusedInvalidScope(r);
   });
-  await declare(realmApi, SSF_CLIENT, "ssf:read");
+  await declare(realmApi, SSF_CLIENT, "ssf.read");
   await declare(realmApi, SSF_CLIENT, "ssf.manage");
-  r = await token(realmBase, SSF_CLIENT, "ssf:read ssf.manage");
+  r = await token(realmBase, SSF_CLIENT, "ssf.read ssf.manage");
   check("declared, it is issued them", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
-    assert.strictEqual(r.json.scope, "ssf:read ssf.manage", r.text);
+    assert.strictEqual(r.json.scope, "ssf.read ssf.manage", r.text);
   });
   const auth = { Authorization: "Bearer " + r.json.access_token };
   r = await call("GET", realmBase + "/ssf/stream", undefined, auth);
   check("and the transmitter accepts the token", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
   });
-  await declare(realmApi, SSF_CLIENT, "ssf:read", "remove");
+  await declare(realmApi, SSF_CLIENT, "ssf.read", "remove");
   r = await call("GET", realmBase + "/ssf/stream", undefined, auth);
-  check("withdrawing ssf:read leaves the read: ssf.manage includes it",
+  check("withdrawing ssf.read leaves the read: ssf.manage includes it",
         function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
   });

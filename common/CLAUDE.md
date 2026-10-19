@@ -4716,9 +4716,9 @@ reads.
   `admin:write`, the SCIM pair BY ITS SETTINGS (`scim.scopeRead` /
   `scopeWrite` — a list written out would go stale the day one was renamed,
   and the renamed scope would be issued to anybody), the Shared Signals
-  scopes by their settings PLUS the fixed names `ssf:read`, `ssf.read` and
-  `ssf.manage` (`common/ssf_scopes.ts`, #334; renaming a setting adds a name
-  and unprotects none — `ssf/CLAUDE.md`), and the
+  scopes by their settings PLUS the fixed names `ssf.read` and `ssf.manage`
+  (`common/ssf_scopes.ts`, #334; renaming a setting adds a name and
+  unprotects neither — `ssf/CLAUDE.md`), and the
   debugger permission. Development already
   gates the resource servers behind them; a gate any client can mint the key to
   is not one. The debugger permission keeps its own role rule on top
@@ -4736,9 +4736,8 @@ reads.
 **`declares()` IS THE RESOURCE SERVERS' QUESTION.** `/admin-api`
 (`declaredAdminScopes()`, `STS-API-0123`), SCIM (`STS-SCIM-0079`) and Shared
 Signals (`STS-SSF-0107`, OAuth and GNAP) ask it of every token, in the realm
-that issued it. Shared Signals asks the permission class the token carries
-(`ssf.manage` includes read; a configured write name other than `ssf.manage`
-does not). An allowance removed
+that issued it. Shared Signals asks the permission the call needs, and write
+includes read (`ssf/CLAUDE.md`). An allowance removed
 from a client stops the tokens it already holds. That is what replaced the
 realm gate's "only
 `sts-management-api`" (`STS-API-0111`, retired): one rule for both realms.

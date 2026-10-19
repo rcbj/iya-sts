@@ -10,25 +10,28 @@
 //
 // An authorization server that issues tokens to SSF Receivers supports
 // `ssf.read` and `ssf.manage`. `ssf.manage` is the write scope and includes
-// every `ssf.read` permission. `ssf:write` is not a Shared Signals scope.
-// Asserted here, in a throwaway realm left behind:
+// every `ssf.read` permission, and this service holds one rule: write
+// includes read. `ssf:read` and `ssf:write` are not Shared Signals scopes
+// (rcbj, #334, 2026-10-19: no alias). Asserted here, in a throwaway realm
+// left behind:
 //
-//   1. Discovery lists `ssf:read`, `ssf.manage` and `ssf.read`, and does
-//      not list `ssf:write`.
-//   2. A client that declares only `ssf.manage` is issued that spelling,
-//      with `expires_in` at most 3600 (the default lifetime, which is the
-//      profile's sixty-minute ceiling). That token creates a stream, reads
-//      it, reads its status, polls, asks for verification and receives the
-//      verification SET. The same client is refused `ssf.read`.
-//   3. A client that declares only `ssf:read` is issued `ssf.read` and
-//      `ssf:read`, lists streams and is refused a create. The 403 names
-//      `ssf.manage`. It is refused `ssf.manage`.
-//   4. A client that declares only `ssf.read` is issued `ssf:read`. A
+//   1. Discovery lists `ssf.read` and `ssf.manage`, and neither colon name.
+//   2. A client that declares only `ssf.manage` is issued `ssf.read` as
+//      well as `ssf.manage`, with `expires_in` at most 3600 (the default
+//      lifetime, which is the profile's sixty-minute ceiling). Its manage
+//      token creates a stream, reads it, reads its status, polls, asks for
+//      verification and receives the verification SET.
+//   3. A client that declares only `ssf.read` is issued `ssf.read`, lists
+//      streams and is refused a create. The 403 names `ssf.manage`. It is
+//      refused `ssf.manage`.
+//   4. A client that declares only `ssf:read` is refused `ssf.read`; the
+//      `ssf:read` token it can still get is refused by the transmitter. A
 //      client that declares only `ssf:write` is refused `ssf.manage`.
 //   5. An unauthenticated GET names `ssf.read` and `ssf.manage` in
 //      `WWW-Authenticate`.
-//   6. Withdrawing `ssf.manage` cuts the manage-only token off both the
-//      read and a write.
+//   6. With `ssf.manage` withdrawn and `ssf.read` declared, the manage-only
+//      token keeps its read and loses its write; with `ssf.read` withdrawn
+//      too, it loses the read.
 //
 // The in-process half is `tests/ssf_profile_scopes.js`.
 // OWNED HERE (local: true).
@@ -65,8 +68,8 @@ const SSF = "https://schemas.openid.net/secevent/ssf/event-type/";
 const VERIFICATION = SSF + "verification";
 const POLL = "urn:ietf:rfc:8936";
 const SECRET = "ssf-caep-" + String(Date.now()).slice(-8);
-const WRITE = "caep-write-" + REALM;
-const READ = "caep-read-" + REALM;
+const COLON_WRITE = "caep-colonw-" + REALM;
+const COLON_READ = "caep-colonr-" + REALM;
 const MANAGE = "caep-manage-" + REALM;
 const DOT = "caep-dotread-" + REALM;
 
@@ -198,35 +201,40 @@ async function test() {
   await ok(base + "/admin-api/realms/create", { id: REALM,
     domain: REALM + ".example.net", name: "CAEP scopes" },
     "created the realm");
-  await ok(realmApi + "/applications/create", application(WRITE, ["ssf:write"]),
-           "created the write client");
-  await ok(realmApi + "/applications/create", application(READ, ["ssf:read"]),
-           "created the read client");
+  await ok(realmApi + "/applications/create",
+           application(COLON_WRITE, ["ssf:write"]),
+           "created the ssf:write client");
+  await ok(realmApi + "/applications/create",
+           application(COLON_READ, ["ssf:read"]),
+           "created the ssf:read client");
   await ok(realmApi + "/applications/create",
            application(MANAGE, ["ssf.manage"]),
            "created the manage client");
   await ok(realmApi + "/applications/create", application(DOT, ["ssf.read"]),
-           "created the profile-read client");
+           "created the read client");
 
-  log.info("=== 1. discovery lists the three published names ===");
+  log.info("=== 1. discovery lists the two profile names ===");
   let r = await call("GET", realmBase + "/.well-known/openid-configuration");
-  check("scopes_supported lists ssf:read, ssf.manage and ssf.read, and " +
-        "not ssf:write", function () {
+  check("scopes_supported lists ssf.read and ssf.manage, and neither " +
+        "ssf:read nor ssf:write", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
     const scopes = r.json.scopes_supported || [];
-    ["ssf:read", "ssf.manage", "ssf.read"].forEach(function (one) {
+    ["ssf.read", "ssf.manage"].forEach(function (one) {
       assert.ok(scopes.indexOf(one) >= 0, one + " missing: " +
                 JSON.stringify(scopes));
     });
-    assert.ok(scopes.indexOf("ssf:write") < 0,
-              "ssf:write is still published: " + JSON.stringify(scopes));
+    ["ssf:read", "ssf:write"].forEach(function (one) {
+      assert.ok(scopes.indexOf(one) < 0, one + " is still published: " +
+                JSON.stringify(scopes));
+    });
   });
 
   log.info("=== 2. ssf.manage reads and writes ===");
   r = await token(MANAGE, "ssf.read");
-  check("a client declaring only ssf.manage is refused ssf.read",
-        function () {
-    refusedInvalidScope(r);
+  check("a client declaring only ssf.manage is issued ssf.read: write " +
+        "includes read", function () {
+    assert.strictEqual(r.status, 200, r.text.slice(0, 400));
+    assert.strictEqual(r.json.scope, "ssf.read", r.text);
   });
   r = await token(MANAGE, "ssf.manage");
   check("and is issued ssf.manage in the spelling it asked for", function () {
@@ -293,12 +301,12 @@ async function test() {
   });
 
   log.info("=== 3. a read declaration ===");
-  r = await token(READ, "ssf.manage");
-  check("a client declaring only ssf:read is refused ssf.manage",
+  r = await token(DOT, "ssf.manage");
+  check("a client declaring only ssf.read is refused ssf.manage",
         function () {
     refusedInvalidScope(r);
   });
-  r = await token(READ, "ssf.read");
+  r = await token(DOT, "ssf.read");
   check("and is issued ssf.read", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
     assert.strictEqual(r.json.scope, "ssf.read", r.text);
@@ -314,19 +322,26 @@ async function test() {
     assert.strictEqual(r.status, 403, r.text.slice(0, 400));
     assert.ok(/ssf\.manage/.test(r.text), r.text.slice(0, 400));
   });
-  r = await token(READ, "ssf:read");
-  check("and is issued ssf:read", function () {
-    assert.strictEqual(r.status, 200, r.text.slice(0, 300));
-    assert.strictEqual(r.json.scope, "ssf:read", r.text);
-  });
 
-  log.info("=== 4. the other read spelling, and the retired write name ===");
-  r = await token(DOT, "ssf:read");
-  check("a client declaring only ssf.read is issued ssf:read", function () {
+  log.info("=== 4. the colon names are not Shared Signals scopes ===");
+  r = await token(COLON_READ, "ssf.read");
+  check("a client declaring only ssf:read is refused ssf.read",
+        function () {
+    refusedInvalidScope(r);
+  });
+  r = await token(COLON_READ, "ssf:read");
+  check("the ssf:read it declares is issued as an ordinary scope",
+        function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
     assert.strictEqual(r.json.scope, "ssf:read", r.text);
   });
-  r = await token(WRITE, "ssf.manage");
+  r = await call("GET", realmBase + "/ssf/stream", undefined,
+                 auth(r.json.access_token));
+  check("and the transmitter refuses it, naming ssf.read", function () {
+    assert.strictEqual(r.status, 403, r.text.slice(0, 400));
+    assert.ok(/ssf\.read/.test(r.text), r.text.slice(0, 400));
+  });
+  r = await token(COLON_WRITE, "ssf.manage");
   check("a client declaring only ssf:write is refused ssf.manage",
         function () {
     refusedInvalidScope(r);
@@ -342,23 +357,32 @@ async function test() {
   });
 
   log.info("=== 6. withdrawing the write declaration ===");
+  await declare(MANAGE, "ssf.read");
   await declare(MANAGE, "ssf.manage", "remove");
   r = await call("GET", realmBase + "/ssf/stream?stream_id=" +
                         encodeURIComponent(stream), undefined,
                  auth(manageToken));
-  check("the manage-only token is refused the read it had, naming " +
+  check("with ssf.read still declared, the manage-only token keeps its " +
+        "read", function () {
+    assert.strictEqual(r.status, 200, r.text.slice(0, 400));
+  });
+  r = await call("POST", realmBase + "/ssf/status",
+                 { stream_id: stream, status: "paused" }, auth(manageToken));
+  check("and is refused a write, naming oauthAllowedScope", function () {
+    assert.strictEqual(r.status, 403, r.text.slice(0, 400));
+    assert.ok(/oauthAllowedScope/.test(r.text), r.text.slice(0, 400));
+  });
+  await declare(MANAGE, "ssf.read", "remove");
+  r = await call("GET", realmBase + "/ssf/stream?stream_id=" +
+                        encodeURIComponent(stream), undefined,
+                 auth(manageToken));
+  check("with nothing declared it is refused the read, naming " +
         "oauthAllowedScope", function () {
     assert.strictEqual(r.status, 403, r.text.slice(0, 400));
     assert.ok(/oauthAllowedScope/.test(r.text), r.text.slice(0, 400));
   });
-  r = await call("POST", realmBase + "/ssf/status",
-                 { stream_id: stream, status: "paused" }, auth(manageToken));
-  check("and refused a write the same way", function () {
-    assert.strictEqual(r.status, 403, r.text.slice(0, 400));
-    assert.ok(/oauthAllowedScope/.test(r.text), r.text.slice(0, 400));
-  });
 
-  assert.ok(checks >= 20, "only " + checks + " of 20 checks ran");
+  assert.ok(checks >= 21, "only " + checks + " of 21 checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
@@ -368,7 +392,7 @@ const program = new Command();
 program
   .name("sts_ssf_caep_scopes")
   .description("CAEP Interoperability Profile scope names over the wire " +
-    "(#334): ssf.manage is the write scope and includes read.")
+    "(#334): ssf.read and ssf.manage, and write includes read.")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

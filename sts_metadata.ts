@@ -668,9 +668,9 @@ const SPECS: Spec[] = [
               'critical_subject_members, and section 3.5\'s jwt_id, ' +
               'saml_assertion_id and ip-addresses formats are implemented. ' +
               'Section 8 authorization is three schemes — an OAuth 2.0 ' +
-              'access token with a read scope (ssf:read or ssf.read) or the ' +
-              'write scope ssf.manage, which includes read, issued to a ' +
-              'client that declares that permission class and ' +
+              'access token with the read scope (ssf.read) or the write ' +
+              'scope (ssf.manage), which includes read, issued to a ' +
+              'client that declares that permission and ' +
               'honoured only while it still does, HTTP Basic and GNAP — ' +
               'published in authorization_schemes. Failed pushes are retried ' +
               'ssf.pushRetries times (0 by default, deliberately) and then ' +

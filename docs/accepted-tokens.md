@@ -35,7 +35,7 @@ since may not be on it. The live list of endpoints is
 |---|---|---|---|
 | `GET`/`POST /oauth2/userinfo` | Verified, `typ` `Bearer`, not revoked, carrying `openid` | The same | The same |
 | `/scim/v2` (Bearer or DPoP) | Verified, `typ` `Bearer`, not revoked, carrying `scim:read` or `scim:write`. SCIM's other five credential schemes are separate | The same | The same |
-| The Shared Signals endpoints | Verified, `typ` `Bearer`, carrying a read scope (`ssf:read` or `ssf.read`) or the write scope `ssf.manage`, which includes read | The same | The same |
+| The Shared Signals endpoints | Verified, `typ` `Bearer`, carrying the read scope (`ssf.read`) or the write scope (`ssf.manage`), which includes read | The same | The same |
 | The step-up resource (RFC 9470) | Verified, then assessed against `oauth2.stepUpAcrValues` and `max_age` | The same | The same |
 | `/admin-api` | Verified against the default realm's key, or the ambient realm's under a realm prefix, audienced to the API, carrying `admin:read` or `admin:write`. A realm's token is confined to that realm | The same | The same |
 | The embedded debugger's listener | Verified, audienced to `urn:sts:debugger-api:`, carrying the debugger permission, which only a console administrator is issued | The same | The same |

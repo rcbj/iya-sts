@@ -1296,7 +1296,7 @@ class GnapGrants {
   // **THE ONE RESOURCE SERVER THAT NEEDS NO ENTRY IS THIS SERVICE'S OWN
   // SHARED SIGNALS TRANSMITTER.** Its access is a reference string naming
   // any published Shared Signals scope (`common/ssf_scopes.ts`: the two
-  // settings, `ssf:read`, `ssf.read` and `ssf.manage`), or an
+  // settings, `ssf.read` and `ssf.manage`), or an
   // object of type `ssf` (`ssf/ssf_auth.ts`'s `gnapCovers()`), and it
   // REFUSES a token issued for a named resource server (STS-SSF-0079) — so
   // a right of that shape names a resource server, this service's, and is

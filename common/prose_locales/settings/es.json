@@ -6756,8 +6756,8 @@
     "text": "Ofrecer HTTP Basic"
   },
   "ssf.authBasic|description": {
-    "en": "c71f34ca4ea9a564",
-    "text": "Si los endpoints de SSF aceptan HTTP Basic además de tokens de acceso de OAuth 2.0, y lo publican en authorization_schemes. En desarrollo pasa cualquier nombre de usuario con cualquier contraseña salvo «invalid»; en modo producto la contraseña se verifica contra el userPassword con hash de la persona. En cualquier caso un principal Basic tiene ambos ámbitos, porque Basic no lleva ninguno — así que un despliegue que quiera ssf:read y ssf.manage aplicados a todo llamante desactiva esto."
+    "en": "34a196af42de2673",
+    "text": "Si los endpoints de SSF aceptan HTTP Basic además de tokens de acceso de OAuth 2.0, y lo publican en authorization_schemes. En desarrollo pasa cualquier nombre de usuario con cualquier contraseña salvo «invalid»; en modo producto la contraseña se verifica contra el userPassword con hash de la persona. En cualquier caso un principal Basic tiene ambos ámbitos, porque Basic no lleva ninguno — así que un despliegue que quiera ssf.read y ssf.manage aplicados a todo llamante desactiva esto."
   },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
@@ -6856,16 +6856,16 @@
     "text": "Ámbito para leer un flujo"
   },
   "ssf.authScopeRead|description": {
-    "en": "fd2022d37872b994",
-    "text": "El nombre propio de este servicio para el ámbito que lee la configuración de un flujo, su estado o la cola de sondeo. ssf:read y el nombre del perfil CAEP ssf.read se aceptan siempre también, aunque este se renombre. Todos se publican en scopes_supported. Un token que lleva ssf.manage también puede leer. Un nombre de escritura configurado distinto de ssf.manage no puede."
+    "en": "6a58acf43f1ab901",
+    "text": "El nombre de este servicio para el ámbito que lee la configuración de un flujo, su estado o la cola de sondeo. El valor predeterminado es el nombre del CAEP Interoperability Profile ssf.read, que se acepta siempre aunque este se renombre. Ambos se publican en scopes_supported. La escritura incluye la lectura: un token que lleva un ámbito de escritura también puede leer, y a un cliente que declara un ámbito de escritura se le puede emitir un ámbito de lectura."
   },
   "ssf.authScopeWrite|label": {
     "en": "3cf63aebc7df37eb",
     "text": "Ámbito para cambiar un flujo"
   },
   "ssf.authScopeWrite|description": {
-    "en": "ecb89997474c28f7",
-    "text": "El nombre propio de este servicio para el ámbito que crea, actualiza o elimina un flujo, añade o quita un sujeto, cambia un estado o pide un evento de verificación. El valor predeterminado, y el nombre que siempre se acepta, es el nombre del perfil CAEP ssf.manage, que incluye la lectura. Renombrar esto no mueve ssf.manage. Un nombre puesto aquí distinto de ssf.manage es de escritura y no incluye la lectura. Un ámbito de lectura no basta para ninguna de esas escrituras."
+    "en": "91d382139f5860a7",
+    "text": "El nombre de este servicio para el ámbito que crea, actualiza o elimina un flujo, añade o quita un sujeto, cambia un estado o pide un evento de verificación. El valor predeterminado es el nombre del CAEP Interoperability Profile ssf.manage, que se acepta siempre aunque este se renombre. La escritura incluye la lectura, así que un nombre puesto aquí también lee, y lo mismo un nombre puesto en ambos ajustes. Un ámbito de lectura no basta para ninguna de esas escrituras."
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",

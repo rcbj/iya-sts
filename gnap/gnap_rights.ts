@@ -266,13 +266,13 @@ class GnapRights {
 
   // -------------------------------------------------------------------------
   // THIS SERVICE'S PROTECTED SCOPES IN A RIGHT (#110, #334): a published
-  // Shared Signals name (`ssf:read`, `ssf.read`, `ssf.manage`,
-  // or a name a setting adds) as a reference string, or an object of type
-  // `ssf` with those actions (no actions means both — a write-only client
-  // is refused, because unrestricted means both permissions; a listed
-  // `write` action does not ask for read). `declares()` treats either
-  // spelling of a class as that class. The facts the
-  // `gnap-protected-undeclared` rule reads.
+  // Shared Signals name (`ssf.read`, `ssf.manage`, or a name a setting
+  // adds) as a reference string, or an object of type `ssf` with those
+  // actions (no actions means both). `declares()` asks
+  // `common/ssf_scopes.ts`'s one rule, write includes read, so a client
+  // that declares only the write scope is granted an unrestricted `ssf`
+  // right and one that declares only the read scope is refused it. The
+  // facts the `gnap-protected-undeclared` rule reads.
   // -------------------------------------------------------------------------
   private protectedFacts(app: Json, right: Json): Json {
     const { log, scopePolicy } = this.deps;

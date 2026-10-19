@@ -231,20 +231,20 @@ async function test() {
     // only to an application that declares them (#110).
     fields: { gnapKey: JSON.stringify(web.keyObject()),
               gnapFinishUri: h.FINISH,
-              oauthAllowedScope: ["ssf:read", "ssf.manage"] } },
+              oauthAllowedScope: ["ssf.read", "ssf.manage"] } },
     "registered the web application that will own a stream");
   await h.ok(h.realmApi + "/applications/create", {
     identifier: OTHER_ID, kind: "gnap-client", protocols: ["gnap"],
     fields: { gnapKey: JSON.stringify(other.keyObject()),
               gnapFinishUri: h.FINISH,
-              oauthAllowedScope: ["ssf:read", "ssf.manage"] } },
+              oauthAllowedScope: ["ssf.read", "ssf.manage"] } },
     "registered a second web application");
   const CONTROL_ID = "gnap-control-" + h.realm;
   await h.ok(h.realmApi + "/applications/create", {
     identifier: CONTROL_ID, kind: "oauth2-client", name: CONTROL_ID,
     protocols: ["oauth2"],
     fields: { oauthClientId: [CONTROL_ID],
-              oauthAllowedScope: ["ssf:read", "ssf.manage"],
+              oauthAllowedScope: ["ssf.read", "ssf.manage"],
               oauthClientSecret: CONTROL_SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post" } },
     "registered the application that owns the unscoped control stream");
@@ -254,7 +254,7 @@ async function test() {
     body: "grant_type=client_credentials&client_id=" +
           encodeURIComponent(CONTROL_ID) + "&client_secret=" +
           encodeURIComponent(CONTROL_SECRET) + "&scope=" +
-          encodeURIComponent("ssf:read ssf.manage") })).json();
+          encodeURIComponent("ssf.read ssf.manage") })).json();
   assert.ok(controlTokenAnswer.access_token,
             "a token for the control application: " +
             JSON.stringify(controlTokenAnswer));
@@ -265,7 +265,7 @@ async function test() {
   // =========================================================================
   log.info("=== 1. a stream owned with a GNAP token ===");
   const ssfGrant = await h.redirectGrant(web, OWNER,
-    { access_token: { access: ["ssf:read", "ssf.manage"] } });
+    { access_token: { access: ["ssf.read", "ssf.manage"] } });
   const ssfToken = ssfGrant.released.access_token.value;
   // No `aud`: it is Transmitter-Supplied (SSF 1.0 section 8.1.1, #144) and
   // a stream is addressed to the identity that created it.
@@ -283,12 +283,12 @@ async function test() {
   const webStream = r.json.stream_id;
   const readOnly = await h.redirectGrant(web, OWNER,
                                          { access_token: {
-                                           access: ["ssf:read"] } });
+                                           access: ["ssf.read"] } });
   r = await web.send("POST", h.realmBase + "/ssf/stream",
                      { token: readOnly.released.access_token.value,
                                                              json:
                                                                streamBody });
-  check("a GNAP token carrying only ssf:read cannot create a stream (403 " +
+  check("a GNAP token carrying only ssf.read cannot create a stream (403 " +
         "access_denied)", function () {
     assert.strictEqual(r.status, 403, r.text);
     assert.ok(/ssf\.manage/.test(r.text), r.text);
@@ -527,7 +527,7 @@ async function test() {
     identifier: RS_ID, kind: "gnap-resource-server", protocols: ["gnap"],
     fields: { gnapKey: JSON.stringify(rsClient.keyObject()),
               gnapFinishUri: h.FINISH, gnapResourceServerUri: RS_URI,
-              oauthAllowedScope: ["ssf:read", "ssf.manage"] } },
+              oauthAllowedScope: ["ssf.read", "ssf.manage"] } },
     "registered the resource server that will own a stream");
   r = await rsClient.send("POST", h.realmBase + "/gnap/resource", { json: {
     access: [{ type: "https://rs.signals.gnap.test/photos",
@@ -539,7 +539,7 @@ async function test() {
   // application rule, which also applies to an entry with a finish URI, is
   // about RS_OWNER and never about OWNER, whom every event below names.
   const rsSsf = await h.redirectGrant(rsClient, RS_OWNER,
-    { access_token: { access: ["ssf:read", "ssf.manage"] } });
+    { access_token: { access: ["ssf.read", "ssf.manage"] } });
   const rsSsfToken = rsSsf.released.access_token.value;
   r = await rsClient.send("POST", h.realmBase + "/ssf/stream",
                           { token: rsSsfToken, json: streamBody });

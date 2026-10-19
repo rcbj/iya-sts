@@ -54,17 +54,18 @@
 // off, which is the posture a deployment whose receivers all hold OAuth tokens
 // should take.
 //
-// **TWO SCOPES, AND THE DIFFERENCE IS REAL.** A read scope (`ssf:read`,
-// `ssf.read`, or whatever `ssf.authScopeRead` names when that name is itself
-// a read name) reads a stream, its status and the poll queue. The write
-// scope is `ssf.manage` (the CAEP Interoperability Profile's name, and the
-// default of `ssf.authScopeWrite`), or another name that setting is set to.
-// It creates, changes and deletes a stream, adds and removes subjects, sets
-// a status and asks for a verification event. `ssf.manage` INCLUDES read. A
-// configured write name other than `ssf.manage` does not. A token that lacks
-// the class the operation needs is refused with a 403 naming the scopes that
-// would, which is the second place in this service where two scopes differ
-// in what they permit. `common/ssf_scopes.ts` (#334) is the vocabulary.
+// **TWO SCOPES, AND THE DIFFERENCE IS REAL.** A read scope (`ssf.read`, the
+// CAEP Interoperability Profile's name and the default of
+// `ssf.authScopeRead`, or another name that setting is set to) reads a
+// stream, its status and the poll queue. The write scope (`ssf.manage`, the
+// profile's name and the default of `ssf.authScopeWrite`, or another name
+// that setting is set to) creates, changes and deletes a stream, adds and
+// removes subjects, sets a status and asks for a verification event. WRITE
+// INCLUDES READ, whatever the write scope is called. A token that lacks the
+// permission the operation needs is refused with a 403 naming the scopes
+// that would, which is the second place in this service where two scopes
+// differ in what they permit. `common/ssf_scopes.ts` (#334) is the
+// vocabulary and the rule.
 //
 // ---------------------------------------------------------------------------
 // THE METADATA IS OPEN EITHER WAY AND MUST STAY SO.
@@ -179,19 +180,16 @@ interface SsfAuthDeps {
     declares(clientId: unknown, scope: string): boolean;
     declaredScopes(clientId: unknown): string[] | null;
   };
-  // `common/ssf_scopes.ts`. The module, so the facades and the profile
-  // constant are both here. Called from methods, never at load.
+  // `common/ssf_scopes.ts`, the module. Called from methods, never at load.
   ssfScopes: {
-    PROFILE_MANAGE: string;
     configuredRead(): string;
     configuredWrite(): string;
-    readNames(): string[];
-    writeNames(): string[];
-    published(): string[];
-    classOf(scope: unknown): 'read' | 'write' | null;
+    namesGranting(permission: string): string[];
     covers(held: unknown, need: string): boolean;
+    declarationCovers(declared: string[] | null, scope: unknown): boolean;
     stillDeclared(held: unknown, declared: string[] | null,
                   need: string): boolean;
+    published(): string[];
   };
   // `ssf/ssf_cluster.ts`, `gnap/gnap_access.ts` and `gnap/gnap_rs.ts`,
   // required when first asked for. See `attemptGnap()`.
@@ -210,8 +208,8 @@ const SCHEMES: Scheme[] = [
   { id: 'oauth', spec_urn: 'urn:ietf:rfc:6749',
     name: 'OAuth 2.0 access token',
     what: 'A Bearer or DPoP-bound access token this service issued, ' +
-          'carrying a read scope (ssf:read or ssf.read) or the write scope ' +
-          'ssf.manage, which includes read. It is the scheme SSF 1.0\'s ' +
+          'carrying the read scope (ssf.read) or the write scope ' +
+          '(ssf.manage), which includes read. It is the scheme SSF 1.0\'s ' +
           'own examples use, and the ' +
           'only one of the two that can express a DIFFERENCE between ' +
           'reading a stream and changing one.' },
@@ -232,9 +230,9 @@ const SCHEMES: Scheme[] = [
     name: 'GNAP access token',
     what: 'A key-bound access token this service issued through its GNAP ' +
           'grant endpoint, presented with the GNAP scheme and a proof by ' +
-          'the key it is bound to, whose access includes a read scope ' +
-          '("ssf:read" or "ssf.read") or the write scope "ssf.manage", ' +
-          'which includes read, ' +
+          'the key it is bound to, whose access includes the read scope ' +
+          '("ssf.read") or the write scope ("ssf.manage"), which includes ' +
+          'read, ' +
           'as a reference string or as an object of type "ssf" with those ' +
           'actions. The principal is the GNAP client application, which is ' +
           'what scopes a stream it owns to the people who approved a grant ' +
@@ -375,7 +373,7 @@ class SsfAuth {
 
   /**
    * Returns the scope that permits reading a stream, its status and the poll
-   * queue (`ssf.authScopeRead`, default `ssf:read`).
+   * queue (`ssf.authScopeRead`, default `ssf.read`).
    *
    * @returns the read scope
    */
@@ -531,9 +529,8 @@ class SsfAuth {
         'This access token carries ' + (scopes
           ? 'the scope(s) "' + scopes + '"' : 'no scope at all') +
         ' and this operation needs one of "' + accepted.join('", "') +
-        '". ssf.manage includes read. A configured write name other than ' +
-        'ssf.manage does not. A read name reads a stream, its status and ' +
-        'its poll queue, and a write name ' +
+        '". Write includes read. A read scope reads a stream, its status ' +
+        'and its poll queue, and a write scope ' +
         'changes what this transmitter delivers and to whom. Ask for the ' +
         'one you need, as a client whose oauthAllowedScope declares that ' +
         'permission.',
@@ -562,17 +559,15 @@ class SsfAuth {
   }
 
   // -------------------------------------------------------------------------
-  // THE CLIENT STILL DECLARES THE CLASS (#110, 2026-09-22; #334). The token
-  // endpoint and GNAP issue a Shared Signals name only to a client whose
-  // `oauthAllowedScope` lists some name of that permission class; asked
-  // again on every call, of the class the TOKEN carries, so an allowance
-  // removed from a client stops the tokens it already holds. A read is
-  // still declared while a read name stays declared, or while the token
-  // holds `ssf.manage` and a write name stays declared. A configured write
-  // name other than `ssf.manage` does not keep a read alive. `client` is an
-  // OAuth token's client_id, or the
-  // GNAP application's identifier. Null when the class is still declared,
-  // or when nothing is needed.
+  // THE CLIENT STILL DECLARES THE PERMISSION (#110, 2026-09-22; #334). The
+  // token endpoint and GNAP issue a Shared Signals name only to a client
+  // whose `oauthAllowedScope` grants every permission that name grants;
+  // asked again on every call, of the permission the operation needs, so an
+  // allowance removed from a client stops the tokens it already holds. The
+  // operation is still declared while the client declares some name that
+  // grants it, and write includes read (`common/ssf_scopes.ts`). `client`
+  // is an OAuth token's client_id, or the GNAP application's identifier.
+  // Null when the permission is still declared, or when nothing is needed.
   // -------------------------------------------------------------------------
   private undeclaredRefusal(client: string, need: string,
                             held: unknown): Decision | null {
@@ -592,26 +587,21 @@ class SsfAuth {
       'This token carries a Shared Signals scope this operation needs, and ' +
       'the client it was issued to, "' + client + '", no longer declares ' +
       'that permission in its oauthAllowedScope. A read stays honoured ' +
-      'while a read-class name stays declared, or while ssf.manage stays ' +
-      'declared as a write name. A configured write name other than ' +
-      'ssf.manage does not cover a read. Removing the declaration from ' +
-      'the application cuts off tokens already issued.',
+      'while a read or a write scope stays declared, because write ' +
+      'includes read; a write stays honoured while a write scope stays ' +
+      'declared. Removing the declaration from the application cuts off ' +
+      'tokens already issued.',
       { 'WWW-Authenticate': this.challenges() }, 'access_denied');
   }
 
-  // The names an operation accepts. A read accepts every read name and
-  // `ssf.manage`, the only write name that includes read. A write accepts
-  // every write name. Only `ssf.manage` covers a read.
+  // The names an operation accepts: every published name that grants the
+  // permission. A read accepts the read names and the write names, because
+  // write includes read; a write accepts the write names.
   private acceptedFor(need: string): string[] {
     const { helpers: { log }, ssfScopes } = this.deps;
     log.debug("Entering SsfAuth.acceptedFor().");
-    const names = need === 'write'
-      ? ssfScopes.writeNames().slice()
-      : ssfScopes.readNames().slice();
-    if (need !== 'write' &&
-        names.indexOf(ssfScopes.PROFILE_MANAGE) < 0) {
-      names.push(ssfScopes.PROFILE_MANAGE);
-    }
+    const names = ssfScopes.namesGranting(need === 'write' ? 'write'
+                                                           : 'read');
     log.debug("Leaving SsfAuth.acceptedFor(). " + names.length);
     return names;
   }
@@ -660,9 +650,12 @@ class SsfAuth {
         break;
       }
     }
-    if (!covered) {
+    // An object of type `ssf` with the action, or — for a read — with the
+    // `write` action, because write includes read.
+    const actions = need === 'read' ? ['read', 'write'] : [need];
+    for (let a = 0; !covered && a < actions.length; a++) {
       covered = accessLib.accessCovers(access,
-        [{ type: 'ssf', actions: [need] }]);
+        [{ type: 'ssf', actions: [actions[a]] }]);
     }
     log.debug("Leaving SsfAuth.gnapCovers(). " + covered);
     return covered;
@@ -672,7 +665,7 @@ class SsfAuth {
   // string grant does not cover an object point, and an object grant does
   // not cover a string (`gnap/gnap_access.ts`), so both shapes are asked.
   // An object of type `ssf` contributes the configured name of each action
-  // it covers; a listed `write` action does not contribute a read.
+  // it covers; the write name it contributes for `write` reads as well.
   private gnapHeldScopes(access: unknown): string[] {
     const { helpers: { log }, loadGnapAccess, ssfScopes } = this.deps;
     log.debug("Entering SsfAuth.gnapHeldScopes().");
@@ -804,8 +797,7 @@ class SsfAuth {
       return this.refusal('STS-SSF-0080', 403,
         'This GNAP access token\'s access does not include "' +
         accepted.join('" or "') +
-        '". ssf.manage includes read. A configured write name other than ' +
-        'ssf.manage does not. Ask for one as ' +
+        '". Write includes read. Ask for one as ' +
         'a reference string, or as an object of type "ssf" with the "' +
         need + '" action.',
         { 'WWW-Authenticate': this.challenges(req) }, 'access_denied');
@@ -819,12 +811,10 @@ class SsfAuth {
       return gnapWithdrawn;
     }
     const declared = scopePolicy.declaredScopes(instanceId);
+    // The names the client could be issued today: every permission each
+    // grants is still declared.
     const granted = held.filter(function (name) {
-      const kind = ssfScopes.classOf(name);
-      if (kind !== 'read' && kind !== 'write') {
-        return false;
-      }
-      return ssfScopes.stillDeclared([name], declared, kind);
+      return ssfScopes.declarationCovers(declared, name);
     });
     log.debug("Leaving SsfAuth.attemptGnap(). Accepted " +
               record.instanceId + '.');
@@ -867,9 +857,9 @@ class SsfAuth {
       log.debug("Leaving SsfAuth.attemptBasic(). Basic is not offered.");
       return this.refusal('STS-SSF-0006', 401,
         'HTTP Basic is not offered on these endpoints (ssf.authBasic is ' +
-        'off). Present an OAuth 2.0 access token carrying a read scope ' +
-        '(ssf:read or ssf.read) or the write scope ssf.manage, which ' +
-        'includes read; the ' +
+        'off). Present an OAuth 2.0 access token carrying the read scope ' +
+        '(ssf.read) or the write scope (ssf.manage), which includes read; ' +
+        'the ' +
         'WWW-Authenticate header says what to send.',
         { 'WWW-Authenticate': this.challenges() });
     }
@@ -998,14 +988,14 @@ class SsfAuth {
       'These endpoints decide what this transmitter delivers and to whom, ' +
       'so they require a credential. ' + (mode.verifiesCredentials()
         ? 'Send an access token from this service\'s own token endpoint ' +
-          'with a read scope (ssf:read or ssf.read) or the write scope ' +
-          'ssf.manage, which includes read' +
+          'with the read scope (ssf.read) or the write scope ' +
+          '(ssf.manage), which includes read' +
           (this.basicOffered() ? ', or a directory person\'s username and ' +
            'password over Basic' : '') + '.'
         : 'Any scheme in the WWW-Authenticate headers will do and each is ' +
           'permissive: an access token from this service\'s own token ' +
-          'endpoint with a read scope (ssf:read or ssf.read) or the write ' +
-          'scope ssf.manage, which includes read' +
+          'endpoint with the read scope (ssf.read) or the write scope ' +
+          '(ssf.manage), which includes read' +
           (this.basicOffered() ? ', or any username with any password but ' +
           '"' + REFUSED_PASSWORD + '" over Basic' : '') + '.') +
       ' The transmitter configuration at /.well-known/ssf-configuration ' +
@@ -1049,9 +1039,9 @@ class SsfAuth {
       required: this.authRequired(),
       realm: this.realm(),
       scopes: { read: this.scopeRead(), write: this.scopeWrite(),
-        readAlso: ssfScopes.readNames(),
-        writeAlso: ssfScopes.writeNames(),
-        manageIncludesRead: true },
+        readAlso: ssfScopes.namesGranting('read'),
+        writeAlso: ssfScopes.namesGranting('write'),
+        writeIncludesRead: true },
       refusedPassword: REFUSED_PASSWORD,
       metadataIsOpen: true,
       passwordVerified: mode.verifiesCredentials(),

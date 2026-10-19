@@ -121,7 +121,7 @@ function application(identifier, protocols, fields) {
            // The Shared Signals scopes are issued only to a client that
            // declares them (#110).
            fields: Object.assign({ oauthClientId: [identifier],
-                                   oauthAllowedScope: ["ssf:read",
+                                   oauthAllowedScope: ["ssf.read",
                                                        "ssf.manage"],
                                    oauthClientSecret: SECRET,
                                    oauthTokenEndpointAuthMethod:
@@ -135,7 +135,7 @@ async function tokenFor(identifier) {
     body: "grant_type=client_credentials&client_id=" +
           encodeURIComponent(identifier) +
           "&client_secret=" + encodeURIComponent(
-              SECRET) + "&scope=" + encodeURIComponent("ssf:read " +
+              SECRET) + "&scope=" + encodeURIComponent("ssf.read " +
               "ssf.manage") });
   const json = await r.json();
   assert.ok(json.access_token,

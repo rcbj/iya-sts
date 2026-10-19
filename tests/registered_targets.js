@@ -458,7 +458,6 @@ async function nobody(t) {
   const passed = [];
   for (const m of ['development', 'product']) {
     passed.push(await judge(m, one([photos([GNAP_RS])])));
-    passed.push(await judge(m, one(['ssf:read'])));
     passed.push(await judge(m, one(['ssf.read'])));
     passed.push(await judge(m, one(['ssf.manage'])));
     passed.push(await judge(m, one([{ type: 'ssf', actions: ['read'] }])));

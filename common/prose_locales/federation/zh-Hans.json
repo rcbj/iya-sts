@@ -324,8 +324,8 @@
     "text": "fedSignalsClientId 的密钥，在密钥持久化的任何地方都于密钥加密密钥下封存，从不显示。留空则使用 fedClientSecret，以同样方式封存。"
   },
   "fed.schema.attributes.fedSignalsScope.what": {
-    "en": "407bda87274a5574",
-    "text": "使用客户端凭据时请求的作用域。留空则请求 `ssf:read ssf.manage`。"
+    "en": "ed55c437fcd421f1",
+    "text": "使用客户端凭据时请求的作用域。留空则请求 `ssf.manage`，它包含读取。"
   },
   "fed.schema.attributes.fedSignalsBearer.what": {
     "en": "75ae4009add7e2d2",

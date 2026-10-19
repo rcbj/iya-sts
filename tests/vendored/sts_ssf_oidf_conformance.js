@@ -15,7 +15,7 @@
 // checks (#144), which this job does not replace.
 //
 //   1. Per plan a throwaway realm, a receiver registered as an OAuth client
-//      (client_secret_post, `client_credentials`) with `ssf:read` and
+//      (client_secret_post, `client_credentials`) with `ssf.read` and
 //      `ssf.manage` declared by an administrator (#110) — the plans' dynamic
 //      auth mode, in which the suite gets its own access token — and the
 //      suite's certificate as the realm's `ssf.pushCaFile`, so a push reaches
@@ -130,10 +130,10 @@ async function prepare(plan) {
       token_endpoint_auth_method: "client_secret_post" }) });
   assert.strictEqual(registered.status, 201, plan.key + " receiver: " +
                      registered.raw.slice(0, 400));
-  // ssf:read and ssf.manage are this service's protected scopes (#110): a
+  // ssf.read and ssf.manage are this service's protected scopes (#110): a
   // registration may not grant them to itself, and an administrator
   // declares them.
-  for (const scope of ["ssf:read", "ssf.manage"]) {
+  for (const scope of ["ssf.read", "ssf.manage"]) {
     await oidf.ok(realm.api + "/applications/add", {
       application: registered.body.client_id,
       attribute: "oauthAllowedScope", value: scope },
@@ -146,7 +146,7 @@ async function prepare(plan) {
               allow_unexpected_metadata_fields: oidf.EXTENSION_METADATA },
     client: { client_id: registered.body.client_id,
               client_secret: registered.body.client_secret,
-              scope: "ssf:read ssf.manage" },
+              scope: "ssf.read ssf.manage" },
     ssf: { transmitter: { issuer: root,
                           metadata_suffix: "/realm/" + id } }
   };

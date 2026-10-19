@@ -412,7 +412,7 @@ function builtInRules(t, fx) {
   r = judge(fx.nobearer, [{ type: 'gc-other' }], { bearer: true });
   t.check(code(r) === 'STS-GNAP-0111',
           'E5. gnapBearerTokens FALSE on the client: 0111', code(r));
-  r = judge(fx.client, ['ssf:read']);
+  r = judge(fx.client, ['ssf.read']);
   t.check(code(r) === 'STS-GNAP-0719' && /protected scope/.test(r.why),
           'E6. a protected scope the client does not declare is 0719',
           code(r));

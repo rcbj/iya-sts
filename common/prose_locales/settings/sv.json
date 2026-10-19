@@ -6756,8 +6756,8 @@
     "text": "Erbjud HTTP Basic"
   },
   "ssf.authBasic|description": {
-    "en": "c71f34ca4ea9a564",
-    "text": "Om SSF-slutpunkterna accepterar HTTP Basic bredvid OAuth 2.0-åtkomsttokener, och publicerar det i authorization_schemes. I utvecklingsläge godtas vilket användarnamn som helst med vilket lösenord som helst utom \"invalid\"; i produktläge verifieras lösenordet mot personens hashade userPassword. I båda fallen har en Basic-principal båda omfången, eftersom Basic inte bär något — så en driftsättning som vill att ssf:read och ssf.manage upprätthålls för varje anropare stänger av detta."
+    "en": "34a196af42de2673",
+    "text": "Om SSF-slutpunkterna accepterar HTTP Basic bredvid OAuth 2.0-åtkomsttokener, och publicerar det i authorization_schemes. I utvecklingsläge godtas vilket användarnamn som helst med vilket lösenord som helst utom \"invalid\"; i produktläge verifieras lösenordet mot personens hashade userPassword. I båda fallen har en Basic-principal båda omfången, eftersom Basic inte bär något — så en driftsättning som vill att ssf.read och ssf.manage upprätthålls för varje anropare stänger av detta."
   },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
@@ -6856,16 +6856,16 @@
     "text": "Omfång för att läsa en ström"
   },
   "ssf.authScopeRead|description": {
-    "en": "fd2022d37872b994",
-    "text": "Den här tjänstens eget namn på det omfång som läser en strömkonfiguration, dess status eller avfrågningskön. ssf:read och CAEP-profilens namn ssf.read accepteras också alltid, även när detta byter namn. Alla publiceras i scopes_supported. En token som bär ssf.manage får också läsa. Ett konfigurerat skrivnamn annat än ssf.manage får inte det."
+    "en": "6a58acf43f1ab901",
+    "text": "Den här tjänstens namn på det omfång som läser en strömkonfiguration, dess status eller avfrågningskön. Standardvärdet är CAEP Interoperability Profile-namnet ssf.read, som alltid accepteras även när detta byter namn. Båda publiceras i scopes_supported. Skrivning inkluderar läsning: en token som bär ett skrivomfång får också läsa, och en klient som deklarerar ett skrivomfång kan få ett läsomfång utfärdat."
   },
   "ssf.authScopeWrite|label": {
     "en": "3cf63aebc7df37eb",
     "text": "Omfång för att ändra en ström"
   },
   "ssf.authScopeWrite|description": {
-    "en": "ecb89997474c28f7",
-    "text": "Den här tjänstens eget namn på det omfång som skapar, uppdaterar eller tar bort en ström, lägger till eller tar bort ett subjekt, ändrar en status eller ber om en verifieringshändelse. Standardvärdet, och det namn som alltid accepteras, är CAEP-profilens namn ssf.manage, som inkluderar läsning. Att byta namn på detta flyttar inte ssf.manage. Ett namn som sätts här och som inte är ssf.manage är skrivning och inkluderar inte läsning. Ett läsomfång räcker inte för någon av de skrivningarna."
+    "en": "91d382139f5860a7",
+    "text": "Den här tjänstens namn på det omfång som skapar, uppdaterar eller tar bort en ström, lägger till eller tar bort ett subjekt, ändrar en status eller ber om en verifieringshändelse. Standardvärdet är CAEP Interoperability Profile-namnet ssf.manage, som alltid accepteras även när detta byter namn. Skrivning inkluderar läsning, så ett namn som sätts här läser också, och det gör även ett namn som sätts i båda inställningarna. Ett läsomfång räcker inte för någon av de skrivningarna."
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",

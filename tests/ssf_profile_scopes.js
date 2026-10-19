@@ -6,37 +6,36 @@
 // File: ssf_profile_scopes.js
 //
 // ===========================================================================
-// THE CAEP PROFILE NAMES, AND THE RETIRED WRITE NAME (#334).
+// THE CAEP PROFILE NAMES, AND WRITE INCLUDES READ (#334).
 //
 // `common/ssf_scopes.ts` is the vocabulary, and `common/scope_policy.ts` is
 // the issuance gate. Both are asked here, in process, because the collision
 // cases are settings (`ssf.authScopeRead` set to `ssf.manage`, the write
-// setting set back to `ssf:write`, both settings set to one custom name)
-// and because both modes have to agree. The wire half — a manage-only
-// token driving a stream — is `tests/vendored/sts_ssf_caep_scopes.js`.
+// setting renamed, both settings set to one custom name) and because both
+// modes have to agree. The wire half — a manage-only token driving a
+// stream — is `tests/vendored/sts_ssf_caep_scopes.js`.
 //
 // What is held:
 //
-//   1. With the defaults, discovery's list is `ssf:read`, `ssf.manage`,
-//      `ssf.read`. `ssf.manage` covers a read and a write. `ssf:write` is
-//      not a Shared Signals scope.
-//   2. The three fixed names keep their classes when a setting is pointed
-//      at one of them. Setting the write setting to `ssf:write` makes that
-//      name write, and it does not include read. A custom name used for
-//      both settings is write, and it does not gain manage's inclusion of
-//      read.
-//   3. Issuance is per class, in both modes. Declaring any write name
-//      authorizes any write name and no read name. Declaring any read name
-//      authorizes any read name and no write name. Declaring only
-//      `ssf:write` authorizes neither. Renaming the read setting adds that
-//      name and unprotects none of the three. `ssf:write` is not protected
-//      at the defaults: development issues it, product refuses it
-//      `STS-OAUTH-0578` when the client's list does not name it.
-//   4. `stillDeclared` looks at the token. A manage-only token's read lives
-//      while `ssf.manage` stays declared, and dies when only a read name,
-//      or only `ssf:write`, does. A token that only says `ssf:write`
-//      authorizes nothing. A token holding both a read name and
-//      `ssf.manage` keeps the read while either class stays.
+//   1. With the defaults, the names are `ssf.read` and `ssf.manage`, in that
+//      order. `ssf.manage` grants read and write, `ssf.read` grants read.
+//      `ssf:read` and `ssf:write` are not Shared Signals scopes: not
+//      published, not protected, and they grant nothing (rcbj, #334,
+//      2026-10-19: no alias).
+//   2. A setting cannot move a fixed name. A renamed write scope grants read
+//      and write, as `ssf.manage` does, and so does one custom name on both
+//      settings.
+//   3. THE ONE RULE, as a table: under four settings and for every name,
+//      `covers()`, `declarationCovers()` and `stillDeclared()` each agree
+//      with `permissionsOf()`. So a client declaring only a renamed write
+//      scope gets read by "write includes read" and by nothing else.
+//   4. The re-check: a manage-only token whose client now declares only
+//      `ssf.read` keeps its read and loses its write; a read token is kept
+//      alive by a write declaration; `ssf:read` keeps nothing alive.
+//   5. Issuance through `scope_policy`, in both modes: declaring
+//      `ssf.manage` issues `ssf.read`; declaring only `ssf.read` does not
+//      issue `ssf.manage`; declaring `ssf:read` issues neither, and
+//      `ssf:read` itself is an ordinary scope.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -51,11 +50,11 @@ const ssfScopes = require('../common/ssf_scopes');
 const log = require('bunyan').createLogger({ name: 'ssf_profile_scopes',
   level: process.env.LOG_LEVEL || 'info' });
 
-const READ = 'ssf-prof-read';
-const WRITE = 'ssf-prof-write';
+const LEGACY = 'ssf-prof-legacy';
 const MANAGE = 'ssf-prof-manage';
 const DOTREAD = 'ssf-prof-dotread';
 const CUSTOM = 'ssf-prof-custom';
+const CUSTOMW = 'ssf-prof-customw';
 
 function codeOf(refusal) {
   log.debug("Entering codeOf().");
@@ -70,14 +69,30 @@ function same(t, got, want, what) {
   log.debug("Leaving same().");
 }
 
+// Runs `body` with the given settings overridden, and clears them after.
+function withSettings(settings, body) {
+  log.debug("Entering withSettings().");
+  Object.keys(settings).forEach(function (key) {
+    config.setOverride(key, settings[key]);
+  });
+  try {
+    body();
+  } finally {
+    Object.keys(settings).forEach(function (key) {
+      config.clearOverride(key);
+    });
+  }
+  log.debug("Leaving withSettings().");
+}
+
 function makeApplications(t) {
   log.debug("Entering makeApplications().");
   const rows = [
-    [READ, ['ssf:read']],
-    [WRITE, ['ssf:write']],
+    [LEGACY, ['ssf:read']],
     [MANAGE, ['ssf.manage']],
     [DOTREAD, ['ssf.read']],
-    [CUSTOM, ['custom:read']]
+    [CUSTOM, ['custom:read']],
+    [CUSTOMW, ['custom:write']]
   ];
   const made = rows.map(function (row) {
     return applications.createApplication({ identifier: row[0],
@@ -95,199 +110,229 @@ function makeApplications(t) {
 function vocabulary(t) {
   log.debug("Entering vocabulary().");
   t.log.info('=== 1. the default names ===');
+  t.equal(ssfScopes.configuredRead(), 'ssf.read',
+          'the default read scope is ssf.read');
   t.equal(ssfScopes.configuredWrite(), 'ssf.manage',
           'the default write scope is ssf.manage');
-  same(t, ssfScopes.published(),
-       ['ssf:read', 'ssf.manage', 'ssf.read'],
-       'published order is the two settings, then the profile read name');
-  t.equal(ssfScopes.classOf('ssf.read'), 'read', 'ssf.read is read');
-  t.equal(ssfScopes.classOf('ssf:read'), 'read', 'ssf:read is read');
-  t.equal(ssfScopes.classOf('ssf.manage'), 'write', 'ssf.manage is write');
-  t.equal(ssfScopes.classOf('ssf:write'), null,
-          'ssf:write is not a Shared Signals scope');
+  same(t, ssfScopes.published(), ['ssf.read', 'ssf.manage'],
+       'the published names are the two profile names, read first');
+  same(t, ssfScopes.permissionsOf('ssf.read'), ['read'],
+       'ssf.read grants read');
+  same(t, ssfScopes.permissionsOf('ssf.manage'), ['read', 'write'],
+       'ssf.manage grants read and write');
+  same(t, ssfScopes.permissionsOf('ssf:read'), [],
+       'ssf:read grants nothing');
+  same(t, ssfScopes.permissionsOf('ssf:write'), [],
+       'ssf:write grants nothing');
+  t.check(ssfScopes.HISTORICAL_READ === undefined,
+          'no historical read name is exported');
+  t.check(!ssfScopes.isPublished('ssf:read') &&
+          !ssfScopes.isPublished('ssf:write'),
+          'neither colon name is published');
+  t.check(!scopePolicy.isProtected('ssf:read') &&
+          !scopePolicy.isProtected('ssf:write') &&
+          scopePolicy.isProtected('ssf.read') &&
+          scopePolicy.isProtected('ssf.manage'),
+          'the profile names are protected, and the colon names are not');
   t.check(ssfScopes.covers('ssf.manage', 'read') &&
           ssfScopes.covers('ssf.manage', 'write'),
           'ssf.manage covers a read and a write');
-  t.check(!ssfScopes.covers('ssf:write', 'write') &&
-          !ssfScopes.covers('ssf:write', 'read'),
-          'ssf:write covers neither');
   t.check(ssfScopes.covers('ssf.read', 'read') &&
           !ssfScopes.covers('ssf.read', 'write'),
           'ssf.read covers a read and not a write');
-  t.check(ssfScopes.covers('ssf:read ssf.manage', 'read') &&
-          ssfScopes.covers('ssf:read ssf.manage', 'write'),
-          'a token holding the read name and ssf.manage covers both');
-  t.check(!ssfScopes.declarationCovers(['ssf:write'], 'ssf.read') &&
-          !ssfScopes.declarationCovers(['ssf:write'], 'ssf.manage') &&
-          !ssfScopes.declarationCovers(['ssf.manage'], 'ssf:write'),
-          'declaring ssf:write authorizes nothing, and ssf.manage does ' +
-          'not authorize the retired name');
-  t.check(ssfScopes.declarationCovers(['ssf.read'], 'ssf:read') &&
-          !ssfScopes.declarationCovers(['ssf.read'], 'ssf.manage') &&
-          !ssfScopes.declarationCovers(['ssf:read'], 'ssf.manage'),
-          'a read declaration authorizes either read spelling and no ' +
-          'write spelling');
-  t.check(!scopePolicy.isProtected('ssf:write'),
-          'ssf:write is not protected at the defaults');
+  t.check(!ssfScopes.covers('ssf:read', 'read') &&
+          !ssfScopes.covers('ssf:write', 'write'),
+          'a token that says only ssf:read or ssf:write covers nothing');
+  same(t, ssfScopes.namesGranting('read'), ['ssf.read', 'ssf.manage'],
+       'a read accepts ssf.read and ssf.manage');
+  same(t, ssfScopes.namesGranting('write'), ['ssf.manage'],
+       'a write accepts ssf.manage');
   log.debug("Leaving vocabulary().");
 }
 
 function collisions(t) {
   log.debug("Entering collisions().");
   t.log.info('=== 2. a setting cannot move a fixed name ===');
-  config.setOverride('ssf.authScopeRead', 'ssf.manage');
-  try {
-    t.equal(ssfScopes.classOf('ssf.manage'), 'write',
-            'ssf.manage stays write when the read setting names it');
-    t.check(ssfScopes.readNames().indexOf('ssf.manage') < 0,
-            'and it is not listed as a read name');
-    t.check(ssfScopes.covers('ssf.manage', 'read'),
-            'it still covers a read, because manage includes read');
-  } finally {
-    config.clearOverride('ssf.authScopeRead');
-  }
-  config.setOverride('ssf.authScopeWrite', 'ssf.read');
-  try {
-    t.equal(ssfScopes.classOf('ssf.read'), 'read',
-            'ssf.read stays read when the write setting names it');
-    t.check(ssfScopes.writeNames().indexOf('ssf.read') < 0,
-            'and it is not listed as a write name');
-    t.check(ssfScopes.writeNames().indexOf('ssf.manage') >= 0,
-            'ssf.manage stays the write name');
-  } finally {
-    config.clearOverride('ssf.authScopeWrite');
-  }
-  config.setOverride('ssf.authScopeWrite', 'ssf:write');
-  try {
-    t.equal(ssfScopes.classOf('ssf:write'), 'write',
-            'setting the write scope back to ssf:write makes it write');
-    t.check(ssfScopes.covers('ssf:write', 'write') &&
-            !ssfScopes.covers('ssf:write', 'read'),
-            'and that name does not include read');
-    t.equal(ssfScopes.classOf('ssf.manage'), 'write',
-            'ssf.manage stays write');
-    t.check(ssfScopes.covers('ssf.manage', 'read'),
-            'and still includes read');
-    t.check(ssfScopes.declarationCovers(['ssf:write'], 'ssf.manage') &&
-            ssfScopes.declarationCovers(['ssf.manage'], 'ssf:write'),
-            'the two write names authorize each other');
-    t.check(ssfScopes.isPublished('ssf:write'),
-            'ssf:write is published while it is the configured name');
-  } finally {
-    config.clearOverride('ssf.authScopeWrite');
-  }
-  t.check(!ssfScopes.isPublished('ssf:write'),
-          'and is not published once the setting is the default again');
-  config.setOverride('ssf.authScopeRead', 'custom:both');
-  config.setOverride('ssf.authScopeWrite', 'custom:both');
-  try {
-    t.equal(ssfScopes.classOf('custom:both'), 'write',
-            'one custom name on both settings is write');
-    t.check(!ssfScopes.covers('custom:both', 'read') &&
+  withSettings({ 'ssf.authScopeRead': 'ssf.manage' }, function () {
+    same(t, ssfScopes.permissionsOf('ssf.manage'), ['read', 'write'],
+         'ssf.manage stays a write name when the read setting names it');
+    same(t, ssfScopes.published(), ['ssf.manage', 'ssf.read'],
+         'and is published once');
+  });
+  withSettings({ 'ssf.authScopeWrite': 'ssf.read' }, function () {
+    same(t, ssfScopes.permissionsOf('ssf.read'), ['read'],
+         'ssf.read stays a read name when the write setting names it');
+    same(t, ssfScopes.namesGranting('write'), ['ssf.manage'],
+         'and ssf.manage stays the only write name');
+  });
+  withSettings({ 'ssf.authScopeWrite': 'custom:write' }, function () {
+    same(t, ssfScopes.permissionsOf('custom:write'), ['read', 'write'],
+         'a renamed write scope grants read and write: write includes read');
+    same(t, ssfScopes.permissionsOf('ssf.manage'), ['read', 'write'],
+         'ssf.manage stays a write name beside it');
+    t.check(ssfScopes.isPublished('custom:write') &&
+            ssfScopes.isPublished('ssf.manage'),
+            'both are published');
+  });
+  t.check(!ssfScopes.isPublished('custom:write'),
+          'the renamed name is not published once the setting is default');
+  withSettings({ 'ssf.authScopeRead': 'custom:both',
+                 'ssf.authScopeWrite': 'custom:both' }, function () {
+    same(t, ssfScopes.permissionsOf('custom:both'), ['read', 'write'],
+         'one custom name on both settings grants read as well as write');
+    t.check(ssfScopes.covers('custom:both', 'read') &&
             ssfScopes.covers('custom:both', 'write'),
-            'and that name does not include read');
-    t.check(ssfScopes.declarationCovers(['custom:both'], 'ssf.manage') &&
-            ssfScopes.declarationCovers(['ssf.manage'], 'custom:both'),
-            'the custom write name and ssf.manage authorize each other');
-    t.check(ssfScopes.isPublished('custom:both') &&
-            ssfScopes.isPublished('ssf:read') &&
-            ssfScopes.isPublished('ssf.read') &&
-            ssfScopes.isPublished('ssf.manage') &&
-            !ssfScopes.isPublished('ssf:write'),
-            'the three fixed names stay published, and ssf:write does not');
-  } finally {
-    config.clearOverride('ssf.authScopeRead');
-    config.clearOverride('ssf.authScopeWrite');
-  }
+            'and a token holding it covers both');
+    same(t, ssfScopes.published(), ['custom:both', 'ssf.read', 'ssf.manage'],
+         'the custom name is published once, beside the profile names');
+  });
   log.debug("Leaving collisions().");
+}
+
+// THE ONE RULE. Every question the vocabulary answers is `permissionsOf()`
+// read a particular way; this asks each of them of every name, under each
+// settings arrangement, and fails on the first disagreement.
+function oneRule(t) {
+  log.debug("Entering oneRule().");
+  t.log.info('=== 3. one rule: write includes read ===');
+  const arrangements = [
+    {},
+    { 'ssf.authScopeWrite': 'custom:write' },
+    { 'ssf.authScopeRead': 'custom:read' },
+    { 'ssf.authScopeRead': 'custom:both',
+      'ssf.authScopeWrite': 'custom:both' }
+  ];
+  const names = ['ssf.read', 'ssf.manage', 'ssf:read', 'ssf:write',
+                 'custom:read', 'custom:write', 'custom:both', 'openid'];
+  const broken = [];
+  arrangements.forEach(function (settings) {
+    withSettings(settings, function () {
+      names.forEach(function (name) {
+        const has = ssfScopes.permissionsOf(name);
+        ['read', 'write'].forEach(function (p) {
+          const want = has.indexOf(p) >= 0;
+          const where = JSON.stringify(settings) + ' ' + name + ' ' + p;
+          if (ssfScopes.covers([name], p) !== want) {
+            broken.push('covers ' + where);
+          }
+          if (ssfScopes.stillDeclared([name], [name], p) !== want) {
+            broken.push('stillDeclared(token) ' + where);
+          }
+          if (ssfScopes.stillDeclared(
+            [p === 'read' ? 'ssf.read' : 'ssf.manage'], [name], p) !== want) {
+            broken.push('stillDeclared(declaration) ' + where);
+          }
+        });
+        if (ssfScopes.declarationCovers([name], 'ssf.read') !==
+            (has.indexOf('read') >= 0)) {
+          broken.push('declarationCovers(ssf.read) ' +
+                      JSON.stringify(settings) + ' ' + name);
+        }
+        if (ssfScopes.declarationCovers([name], 'ssf.manage') !==
+            (has.indexOf('write') >= 0)) {
+          broken.push('declarationCovers(ssf.manage) ' +
+                      JSON.stringify(settings) + ' ' + name);
+        }
+      });
+    });
+  });
+  t.check(broken.length === 0,
+          'under four arrangements of the settings, covers(), ' +
+          'declarationCovers() and stillDeclared() all agree with ' +
+          'permissionsOf() for every name', JSON.stringify(broken));
+  withSettings({ 'ssf.authScopeWrite': 'custom:write' }, function () {
+    t.check(ssfScopes.declarationCovers(['custom:write'], 'ssf.read') &&
+            ssfScopes.stillDeclared('ssf.read', ['custom:write'], 'read'),
+            'a client declaring only a renamed write scope may be issued ' +
+            'ssf.read and keeps it, because write includes read');
+    t.check(!ssfScopes.declarationCovers(['ssf.read'], 'custom:write') &&
+            !ssfScopes.stillDeclared('custom:write', ['ssf.read'], 'write'),
+            'and a read declaration never reaches the renamed write scope');
+  });
+  t.check(!ssfScopes.declarationCovers(['custom:write'], 'ssf.read'),
+          'once the setting is the default, custom:write grants nothing');
+  log.debug("Leaving oneRule().");
 }
 
 function recheck(t) {
   log.debug("Entering recheck().");
-  t.log.info('=== 3. the re-check looks at the token ===');
-  t.check(ssfScopes.stillDeclared('ssf.manage', ['ssf.manage'], 'read'),
-          'a manage-only token may read while ssf.manage stays declared');
-  t.check(!ssfScopes.stillDeclared('ssf.manage', ['ssf:write'], 'read'),
-          'and may not while only the retired name is declared');
-  t.check(!ssfScopes.stillDeclared('ssf.manage', ['ssf:read'], 'read'),
-          'and may not when only a read name is still declared');
-  t.check(!ssfScopes.stillDeclared('ssf.manage', ['ssf:read'], 'write'),
-          'nor write, once the write declaration is gone');
-  t.check(ssfScopes.stillDeclared('ssf.read ssf.manage', ['ssf:read'],
-                                  'read'),
-          'a token holding both keeps the read from the read name');
-  t.check(!ssfScopes.stillDeclared('ssf.read ssf.manage', ['ssf:read'],
-                                   'write'),
-          'and loses the write');
-  t.check(!ssfScopes.stillDeclared('ssf:write', ['ssf.manage'], 'write') &&
-          !ssfScopes.stillDeclared('ssf:write', ['ssf.manage'], 'read'),
-          'a token that only says ssf:write authorizes nothing');
-  t.check(!ssfScopes.stillDeclared('ssf:read', ['ssf.manage'], 'read'),
-          'a read token is not kept alive by a write declaration');
-  same(t, ssfScopes.authorities('ssf.manage', 'read'), ['write'],
-       'manage\'s read rests on the write class');
-  same(t, ssfScopes.authorities('ssf.read ssf.manage', 'read'),
-       ['read', 'write'],
-       'a token holding both contributes both classes to a read');
-  same(t, ssfScopes.authorities('ssf:write', 'read'), [],
-       'ssf:write contributes nothing to a read');
-  same(t, ssfScopes.authorities('ssf:write', 'write'), [],
-       'nor to a write, once it is not a write name');
+  t.log.info('=== 4. the re-check ===');
+  t.check(ssfScopes.stillDeclared('ssf.manage', ['ssf.manage'], 'read') &&
+          ssfScopes.stillDeclared('ssf.manage', ['ssf.manage'], 'write'),
+          'a manage-only token reads and writes while ssf.manage is declared');
+  t.check(ssfScopes.stillDeclared('ssf.manage', ['ssf.read'], 'read') &&
+          !ssfScopes.stillDeclared('ssf.manage', ['ssf.read'], 'write'),
+          'with only ssf.read declared it keeps the read and loses the write');
+  t.check(ssfScopes.stillDeclared('ssf.read', ['ssf.manage'], 'read'),
+          'a read token is kept alive by a write declaration');
+  t.check(!ssfScopes.stillDeclared('ssf.manage', ['ssf:read'], 'read') &&
+          !ssfScopes.stillDeclared('ssf:read', ['ssf.manage'], 'read'),
+          'ssf:read keeps nothing alive, as a declaration or in a token');
+  t.check(!ssfScopes.stillDeclared('ssf.manage', null, 'read') &&
+          !ssfScopes.stillDeclared('ssf.manage', [], 'read'),
+          'no declaration keeps nothing alive');
+  t.check(ssfScopes.stillDeclared('', null, 'none'),
+          'an operation that needs no scope is not asked');
   log.debug("Leaving recheck().");
 }
 
 function issuance(t) {
   log.debug("Entering issuance().");
-  t.log.info('=== 4. issuance, per class, in both modes ===');
+  t.log.info('=== 5. issuance, in both modes ===');
   ['development', 'product'].forEach(function (m) {
-    config.setOverride('global.mode', m);
-    try {
-      t.equal(codeOf(scopePolicy.refusal('ssf.manage', WRITE)),
+    withSettings({ 'global.mode': m }, function () {
+      t.equal(codeOf(scopePolicy.refusal('ssf.read', MANAGE)), null,
+              m + ': declaring ssf.manage issues ssf.read');
+      t.equal(codeOf(scopePolicy.refusal('ssf.read ssf.manage', MANAGE)),
+              null, m + ': and both together');
+      t.equal(codeOf(scopePolicy.refusal('ssf.manage', DOTREAD)),
               'STS-OAUTH-0577',
-              m + ': declaring only ssf:write does not issue ssf.manage');
-      t.equal(codeOf(scopePolicy.refusal('ssf.read', WRITE)),
-              'STS-OAUTH-0577',
-              m + ': and does not issue ssf.read');
-      t.equal(codeOf(scopePolicy.refusal('ssf:read', DOTREAD)), null,
-              m + ': declaring ssf.read issues ssf:read');
-      t.equal(codeOf(scopePolicy.refusal('ssf.manage', READ)),
-              'STS-OAUTH-0577',
-              m + ': declaring ssf:read does not issue ssf.manage');
-      t.equal(codeOf(scopePolicy.refusal('ssf.read', READ)), null,
+              m + ': declaring only ssf.read does not issue ssf.manage');
+      t.equal(codeOf(scopePolicy.refusal('ssf.read', DOTREAD)), null,
               m + ': and does issue ssf.read');
+      t.equal(codeOf(scopePolicy.refusal('ssf.read', LEGACY)),
+              'STS-OAUTH-0577',
+              m + ': declaring ssf:read does not issue ssf.read');
+      t.equal(codeOf(scopePolicy.refusal('ssf.manage', LEGACY)),
+              'STS-OAUTH-0577',
+              m + ': nor ssf.manage');
       t.equal(codeOf(scopePolicy.refusal('ssf.read', '')), 'STS-OAUTH-0577',
               m + ': ssf.read to a request naming no client is refused');
-      t.equal(codeOf(scopePolicy.refusal('ssf:write', MANAGE)),
+      t.equal(codeOf(scopePolicy.refusal('ssf:read', MANAGE)),
               m === 'development' ? null : 'STS-OAUTH-0578',
-              m + ': ssf:write is an ordinary scope, issued in ' +
-              'development and refused in product when the list omits it');
-      t.check(!scopePolicy.declares(WRITE, 'ssf.manage') &&
-              !scopePolicy.declares(WRITE, 'ssf.read'),
-              m + ': declares() : ssf:write is neither class');
+              m + ': ssf:read is an ordinary scope, issued in development ' +
+              'and refused in product when the list omits it');
       t.check(scopePolicy.declares(MANAGE, 'ssf.manage') &&
-              !scopePolicy.declares(MANAGE, 'ssf.read'),
-              m + ': declares() asks the class, and write is not read');
-    } finally {
-      config.clearOverride('global.mode');
-    }
+              scopePolicy.declares(MANAGE, 'ssf.read'),
+              m + ': declares(): a write declaration declares read');
+      t.check(scopePolicy.declares(DOTREAD, 'ssf.read') &&
+              !scopePolicy.declares(DOTREAD, 'ssf.manage'),
+              m + ': declares(): a read declaration does not declare write');
+      t.check(!scopePolicy.declares(LEGACY, 'ssf.read'),
+              m + ': declares(): ssf:read declares nothing');
+    });
   });
-  config.setOverride('ssf.authScopeRead', 'custom:read');
-  try {
+  withSettings({ 'ssf.authScopeWrite': 'custom:write' }, function () {
+    t.equal(codeOf(scopePolicy.refusal('ssf.read', CUSTOMW)), null,
+            'a client declaring only the renamed write scope is issued ' +
+            'ssf.read');
+    t.equal(codeOf(scopePolicy.refusal('ssf.manage', CUSTOMW)), null,
+            'and ssf.manage, which grants nothing it does not declare');
+  });
+  t.equal(codeOf(scopePolicy.refusal('ssf.read', CUSTOMW)), 'STS-OAUTH-0577',
+          'with the write setting default again, custom:write issues nothing');
+  withSettings({ 'ssf.authScopeRead': 'custom:read' }, function () {
     t.check(scopePolicy.isProtected('custom:read') &&
-            scopePolicy.isProtected('ssf:read') &&
             scopePolicy.isProtected('ssf.read') &&
-            scopePolicy.isProtected('ssf.manage') &&
-            !scopePolicy.isProtected('ssf:write'),
-            'the renamed read setting is protected, and so are the three ' +
-            'fixed names, and ssf:write is not');
+            scopePolicy.isProtected('ssf.manage'),
+            'the renamed read setting is protected, and so are both ' +
+            'profile names');
     t.equal(codeOf(scopePolicy.refusal('ssf.read', CUSTOM)), null,
             'a client declaring the renamed read name is issued ssf.read');
     t.equal(codeOf(scopePolicy.refusal('ssf.manage', CUSTOM)),
             'STS-OAUTH-0577',
             'and is not issued a write name');
-  } finally {
-    config.clearOverride('ssf.authScopeRead');
-  }
+  });
   log.debug("Leaving issuance().");
 }
 
@@ -296,6 +341,7 @@ function run(t) {
   makeApplications(t);
   vocabulary(t);
   collisions(t);
+  oneRule(t);
   recheck(t);
   issuance(t);
   log.debug("Leaving run().");
@@ -303,8 +349,8 @@ function run(t) {
 
 module.exports = {
   name: 'ssf_profile_scopes',
-  describe: 'CAEP profile scope names: ssf.manage is the write scope and ' +
-            'includes read, and ssf:write is not a Shared Signals scope ' +
-            'unless the write setting names it (#334)',
+  describe: 'CAEP profile scope names: ssf.read and ssf.manage, write ' +
+            'includes read, and ssf:read and ssf:write are not Shared ' +
+            'Signals scopes (#334)',
   run: run
 };

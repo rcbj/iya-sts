@@ -324,8 +324,8 @@
     "text": "LE SECRET DE fedSignalsClientId, SCELLÉ sous la clé de chiffrement de clé partout où les clés sont persistées et jamais affiché. Vide utilise fedClientSecret, scellé de la même façon."
   },
   "fed.schema.attributes.fedSignalsScope.what": {
-    "en": "407bda87274a5574",
-    "text": "La portée demandée avec les client credentials. Vide demande `ssf:read ssf.manage`."
+    "en": "ed55c437fcd421f1",
+    "text": "La portée demandée avec les client credentials. Vide demande `ssf.manage`, qui inclut la lecture."
   },
   "fed.schema.attributes.fedSignalsBearer.what": {
     "en": "75ae4009add7e2d2",

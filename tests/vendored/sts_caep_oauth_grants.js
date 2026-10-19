@@ -412,7 +412,7 @@ async function test() {
     protocols: ["oauth2", "oidc", "ssf"],
     fields: { oauthClientId: [CLIENT], oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post",
-              oauthAllowedScope: ["openid", "profile", "ssf:read",
+              oauthAllowedScope: ["openid", "profile", "ssf.read",
                                   "ssf.manage"],
               oauthRedirectUri: [REDIRECT],
               oauthGrantType: ["authorization_code", "refresh_token",
@@ -428,7 +428,7 @@ async function test() {
     credential: "password", password: PASSWORD,
     attributes: { cn: "CAEP " + ALICE, givenName: "CAEP", sn: "Grants",
                   mail: ALICE + "@caep239.test" } }, "created " + ALICE);
-  const token = await tokenFor("ssf:read ssf.manage");
+  const token = await tokenFor("ssf.read ssf.manage");
   const created = await send(base + "/ssf/stream", { method: "POST",
     headers: { "Content-Type": "application/json",
                Authorization: "Bearer " + token },

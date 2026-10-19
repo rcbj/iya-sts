@@ -6756,8 +6756,8 @@
     "text": "提供 HTTP Basic"
   },
   "ssf.authBasic|description": {
-    "en": "c71f34ca4ea9a564",
-    "text": "SSF 端點是否在 OAuth 2.0 存取權杖之外也接受 HTTP Basic，並在 authorization_schemes 中發布。在開發模式下，任何使用者名稱搭配 \"invalid\" 以外的任何密碼都能通過；在產品模式下，密碼會依該人員雜湊後的 userPassword 驗證。無論哪種情況，Basic 主體都擁有兩個範圍，因為 Basic 不攜帶任何範圍——因此要對每個呼叫者強制執行 ssf:read 與 ssf.manage 的部署應關閉此項。"
+    "en": "34a196af42de2673",
+    "text": "SSF 端點是否在 OAuth 2.0 存取權杖之外也接受 HTTP Basic，並在 authorization_schemes 中發布。在開發模式下，任何使用者名稱搭配 \"invalid\" 以外的任何密碼都能通過；在產品模式下，密碼會依該人員雜湊後的 userPassword 驗證。無論哪種情況，Basic 主體都擁有兩個範圍，因為 Basic 不攜帶任何範圍——因此要對每個呼叫者強制執行 ssf.read 與 ssf.manage 的部署應關閉此項。"
   },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
@@ -6856,16 +6856,16 @@
     "text": "讀取串流的範圍"
   },
   "ssf.authScopeRead|description": {
-    "en": "fd2022d37872b994",
-    "text": "此服務自己為讀取串流組態、其狀態或輪詢佇列的範圍所取的名稱。即使重新命名此項，ssf:read 與 CAEP 設定檔名稱 ssf.read 也一律接受。它們都會在 scopes_supported 中發布。攜帶 ssf.manage 的權杖也可以讀取。ssf.manage 以外的已設定寫入名稱則不可以。"
+    "en": "6a58acf43f1ab901",
+    "text": "此服務為讀取串流組態、其狀態或輪詢佇列的範圍所取的名稱。預設值是 CAEP Interoperability Profile 名稱 ssf.read，即使重新命名此項也一律接受。兩者都會在 scopes_supported 中發布。寫入包含讀取：攜帶寫入範圍的權杖也可以讀取，宣告寫入範圍的用戶端也可以獲簽讀取範圍。"
   },
   "ssf.authScopeWrite|label": {
     "en": "3cf63aebc7df37eb",
     "text": "變更串流的範圍"
   },
   "ssf.authScopeWrite|description": {
-    "en": "ecb89997474c28f7",
-    "text": "此服務自己為建立、更新或刪除串流、新增或移除主體、變更狀態或要求驗證事件的範圍所取的名稱。預設值，以及一律接受的名稱，是 CAEP 設定檔名稱 ssf.manage，它包含讀取。重新命名此項不會移動 ssf.manage。在此設定的 ssf.manage 以外的名稱是寫入，並且不包含讀取。讀取範圍不足以執行其中任何寫入。"
+    "en": "91d382139f5860a7",
+    "text": "此服務為建立、更新或刪除串流、新增或移除主體、變更狀態或要求驗證事件的範圍所取的名稱。預設值是 CAEP Interoperability Profile 名稱 ssf.manage，即使重新命名此項也一律接受。寫入包含讀取，因此在此設定的名稱也可以讀取，同時設定在兩個設定項上的名稱也是如此。讀取範圍不足以執行其中任何寫入。"
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",

@@ -25,20 +25,20 @@
 //   * THIS SERVICE'S OWN PROTECTED SCOPES — `admin:read` and `admin:write`
 //     (/admin-api), the SCIM pair (`scim.scopeRead`, `scim.scopeWrite`), the
 //     Shared Signals scopes (`ssf.authScopeRead`, `ssf.authScopeWrite`, and
-//     the fixed names `ssf:read`, `ssf.read` and `ssf.manage` —
+//     the fixed names `ssf.read` and `ssf.manage` —
 //     `common/ssf_scopes.ts`, #334; renaming a setting adds a name and
-//     unprotects none of those, which is the opposite of SCIM), the
+//     unprotects neither, which is the opposite of SCIM), the
 //     embedded debugger's permission, Grant Management's two (#142), the
 //     VC-API test endpoints' two (#194) and the device compliance feed's
 //     `device:compliance` (#164). Issued ONLY to a client whose
-//     `oauthAllowedScope` lists them — for a Shared Signals name, any name
-//     of that permission class — IN BOTH MODES: the resource servers
-//     behind them are this service's own, development already gates them, and
+//     `oauthAllowedScope` lists them — for a Shared Signals name, names
+//     granting every permission it grants, write including read — IN BOTH
+//     MODES: the resource servers behind them are this service's own,
+//     development already gates them, and
 //     a gate any client can mint a key for is not one. Each of those resource
 //     servers asks `declares()` again on every call, so removing a value cuts
-//     off a token already issued. Shared Signals asks the class the token
-//     carries (`ssf.manage` includes read; a configured write name other
-//     than `ssf.manage` does not).
+//     off a token already issued. Shared Signals asks the permission the
+//     operation needs (`common/ssf_scopes.ts`: write includes read).
 //   * A SCOPE NAMING AN APPLICATION OR A DELEGATED PERMISSION — the audience
 //     rule and `oauthDelegatedPermission` (`oauth2.ts`'s `audienceScopes()`,
 //     `permissionRefusal()`). They keep their own rules and are never judged
@@ -300,7 +300,7 @@ class ScopePolicy {
   // renamed scope issued to anybody. Each resource server names its own; this
   // reads the same settings they read. Shared Signals is the exception to
   // "the setting's name, and only that": `ssf_scopes.published()` is the two
-  // settings PLUS `ssf:read`, `ssf.read` and `ssf.manage`, so
+  // settings PLUS `ssf.read` and `ssf.manage`, so
   // renaming a setting does not unprotect the names receivers already use
   // and does not let development issue the profile names to anybody (#334).
   // ---------------------------------------------------------------------------
@@ -380,8 +380,9 @@ class ScopePolicy {
     log.debug("Entering ScopePolicy.declares().");
     const held = this.declaredScopes(clientId);
     const name = String(scope);
-    // An exact listing, or — for a Shared Signals name — any name of that
-    // permission class (#334). Other scopes stay an exact match.
+    // An exact listing, or — for a Shared Signals name — declared names
+    // granting every permission it grants, write including read (#334).
+    // Other scopes stay an exact match.
     const answer = !!held && (held.indexOf(name) >= 0 ||
       ssfScopes.declarationCovers(held, name));
     log.debug("Leaving ScopePolicy.declares(). " + answer);

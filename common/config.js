@@ -12701,7 +12701,7 @@ const SETTINGS = [
                  'password is verified against the person\'s hashed ' +
                  'userPassword. Either way a Basic principal holds both ' +
                  'scopes, because Basic carries none — so a deployment that ' +
-                 'wants ssf:read and ssf.manage enforced for every caller ' +
+                 'wants ssf.read and ssf.manage enforced for every caller ' +
                  'turns this off.' },
 
   // -------------------------------------------------------------------------
@@ -12838,27 +12838,28 @@ const SETTINGS = [
                  'never restarts.' },
 
   { key: 'ssf.authScopeRead', group: 'SSF', label: 'Scope to read a stream',
-    env: 'STS_SSF_AUTH_SCOPE_READ', type: 'string', dflt: 'ssf:read',
+    env: 'STS_SSF_AUTH_SCOPE_READ', type: 'string', dflt: 'ssf.read',
     runtime: true,
-    description: 'This service\'s own name for the scope that reads a ' +
-                 'stream configuration, its status or the poll queue. ' +
-                 'ssf:read and the CAEP profile name ssf.read are always ' +
-                 'also accepted, even when this is renamed. All of them ' +
-                 'are published in scopes_supported. A token carrying ' +
-                 'ssf.manage may read as well. A configured write name ' +
-                 'other than ssf.manage may not.' },
+    description: 'This service\'s name for the scope that reads a stream ' +
+                 'configuration, its status or the poll queue. The default ' +
+                 'is the CAEP Interoperability Profile name ssf.read, which ' +
+                 'is always accepted even when this is renamed. Both are ' +
+                 'published in scopes_supported. Write includes read: a ' +
+                 'token carrying a write scope may read as well, and a ' +
+                 'client that declares a write scope may be issued a read ' +
+                 'scope.' },
 
   { key: 'ssf.authScopeWrite', group: 'SSF', label: 'Scope to change a stream',
     env: 'STS_SSF_AUTH_SCOPE_WRITE', type: 'string', dflt: 'ssf.manage',
     runtime: true,
-    description: 'This service\'s own name for the scope that creates, ' +
-                 'updates or deletes a stream, adds or removes a subject, ' +
-                 'changes a status or asks for a verification event. The ' +
-                 'default, and the name always accepted, is the CAEP ' +
-                 'profile name ssf.manage, which includes read. Renaming ' +
-                 'this does not move ssf.manage. A name set here other ' +
-                 'than ssf.manage is write and does not include read. A ' +
-                 'read scope is not enough for any of those writes.' },
+    description: 'This service\'s name for the scope that creates, updates ' +
+                 'or deletes a stream, adds or removes a subject, changes a ' +
+                 'status or asks for a verification event. The default is ' +
+                 'the CAEP Interoperability Profile name ssf.manage, which ' +
+                 'is always accepted even when this is renamed. Write ' +
+                 'includes read, so a name set here reads as well, and so ' +
+                 'does a name set on both settings. A read scope is not ' +
+                 'enough for any of those writes.' },
 
   { key: 'ssf.receiveRequireSignature', group: 'SSF',
     label: 'Refuse a SET whose signature does not verify',

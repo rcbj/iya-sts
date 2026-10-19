@@ -188,8 +188,8 @@
     "text": "看到此客戶端在授權端點要求過的 response_type。這是記錄而不是權限：oauthResponseType 才是它可以要求的。"
   },
   "applications.schema.attributes.oauthAllowedScope.what": {
-    "en": "c9cc2f7588a994f4",
-    "text": "「此客戶端可獲簽發的範圍」——RFC 7591 section 2 的 `scope`，即「客戶端在要求存取權杖時可使用的清單」。每個值一個範圍權杖。三種範圍以不同方式讀取它。\n\n**本服務自己的受保護範圍**——admin:read 與 admin:write（/admin-api）、SCIM 範圍（scim.scopeRead、scim.scopeWrite）、Shared Signals 範圍（ssf.authScopeRead、ssf.authScopeWrite，以及一律存在的 ssf:read、ssf.read 與 ssf.manage）以及偵錯工具權限——「在兩種模式下」都只簽發給列出它們的客戶端。列出共享信號某一權限類別的任一名稱，即授權該類別的其他名稱；列出寫入名稱並不授權讀取名稱。每個範圍背後的資源伺服器在每次呼叫時都會再次詢問，因此在此移除一個值會切斷已簽發的權杖。RFC 7591 註冊不得宣告它們；由管理員在此宣告。\n\n**其他每個範圍**，在產品模式下只有列於此處時才會簽發——或者，未列出任何範圍時，屬於預設集合者才會簽發：openid、profile、email、address、phone、offline_access，以及此領域的 OpenID4VCI 憑證範圍。在開發模式下任何範圍都會簽發。\n\n**指名應用程式或委派權限的範圍**遵循其自身的規則（對象，以及 oauthDelegatedPermission），不必列出。\n\n清單之外的範圍在授權與權杖端點會以 invalid_scope 拒絕（RFC 6749 section 3.3），並從重新整理或權杖交換中移除。與 oauthScope 不同，後者只是客戶端要求過的內容。"
+    "en": "f61c0b99f0e3941f",
+    "text": "「此客戶端可獲簽發的範圍」——RFC 7591 section 2 的 `scope`，即「客戶端在要求存取權杖時可使用的清單」。每個值一個範圍權杖。三種範圍以不同方式讀取它。\n\n**本服務自己的受保護範圍**——admin:read 與 admin:write（/admin-api）、SCIM 範圍（scim.scopeRead、scim.scopeWrite）、Shared Signals 範圍（ssf.authScopeRead、ssf.authScopeWrite，以及一律存在的 ssf.read 與 ssf.manage）以及偵錯工具權限——「在兩種模式下」都只簽發給列出它們的客戶端。對共享信號而言，寫入包含讀取：列出寫入範圍也就授權了讀取範圍，而只列出讀取範圍並不授權寫入範圍。每個範圍背後的資源伺服器在每次呼叫時都會再次詢問，因此在此移除一個值會切斷已簽發的權杖。RFC 7591 註冊不得宣告它們；由管理員在此宣告。\n\n**其他每個範圍**，在產品模式下只有列於此處時才會簽發——或者，未列出任何範圍時，屬於預設集合者才會簽發：openid、profile、email、address、phone、offline_access，以及此領域的 OpenID4VCI 憑證範圍。在開發模式下任何範圍都會簽發。\n\n**指名應用程式或委派權限的範圍**遵循其自身的規則（對象，以及 oauthDelegatedPermission），不必列出。\n\n清單之外的範圍在授權與權杖端點會以 invalid_scope 拒絕（RFC 6749 section 3.3），並從重新整理或權杖交換中移除。與 oauthScope 不同，後者只是客戶端要求過的內容。"
   },
   "applications.schema.attributes.oauthPermissionBaseUri.what": {
     "en": "a2b16552f308a9b4",

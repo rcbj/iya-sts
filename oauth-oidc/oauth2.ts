@@ -2033,10 +2033,10 @@ class OAuth2Server {
         // The Shared Signals scopes, on the same terms and for the same
         // reason: a receiver needs a token before it can create a stream,
         // and a scope this document does not advertise is one a client has
-        // to be told about out of band. Both spellings (#334): the
-        // settings' names, the historical colon names and the CAEP profile
-        // names (`ssf.read`, `ssf.manage`). They go only where the family
-        // is on, so the promise and what is behind it stay together.
+        // to be told about out of band (#334): the settings' names and the
+        // CAEP profile names (`ssf.read`, `ssf.manage`). They go only where
+        // the family is on, so the promise and what is behind it stay
+        // together.
         config.value('ssf.enabled') !== false ? ssfScopes.published() : []),
       // All three, and form_post is the one that was advertised here and NOT
       // implemented for a long time — every request got a 302 whatever it asked

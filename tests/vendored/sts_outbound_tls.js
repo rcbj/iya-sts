@@ -204,7 +204,7 @@ async function tokenFor(realm, identifier) {
     body: "grant_type=client_credentials&client_id=" +
           encodeURIComponent(identifier) + "&client_secret=" +
           encodeURIComponent(SECRET) + "&scope=" +
-          encodeURIComponent("ssf:read ssf.manage") });
+          encodeURIComponent("ssf.read ssf.manage") });
   const json = await r.json();
   assert.ok(json.access_token,
             "a token for " + identifier + ": " + JSON.stringify(json));
@@ -309,7 +309,7 @@ async function test() {
            { identifier: APP, kind: "oauth2-client", name: APP,
              protocols: ["oauth2", "ssf"],
              fields: { oauthClientId: [APP],
-                       oauthAllowedScope: ["ssf:read", "ssf.manage"],
+                       oauthAllowedScope: ["ssf.read", "ssf.manage"],
                        oauthClientSecret: SECRET,
                        oauthTokenEndpointAuthMethod: "client_secret_post" } },
            "created the SSF receiver application");

@@ -6756,8 +6756,8 @@
     "text": "提供 HTTP Basic"
   },
   "ssf.authBasic|description": {
-    "en": "c71f34ca4ea9a564",
-    "text": "SSF 端点是否在 OAuth 2.0 访问令牌之外还接受 HTTP Basic，并在 authorization_schemes 中发布它。在开发模式下，任何用户名配合除 \"invalid\" 以外的任何密码均可通过；在产品模式下，密码会依据该人员经过哈希的 userPassword 进行验证。无论哪种情况，Basic 主体都同时拥有两个范围，因为 Basic 不携带范围——因此希望对每个调用方都强制执行 ssf:read 和 ssf.manage 的部署应关闭此项。"
+    "en": "34a196af42de2673",
+    "text": "SSF 端点是否在 OAuth 2.0 访问令牌之外还接受 HTTP Basic，并在 authorization_schemes 中发布它。在开发模式下，任何用户名配合除 \"invalid\" 以外的任何密码均可通过；在产品模式下，密码会依据该人员经过哈希的 userPassword 进行验证。无论哪种情况，Basic 主体都同时拥有两个范围，因为 Basic 不携带范围——因此希望对每个调用方都强制执行 ssf.read 和 ssf.manage 的部署应关闭此项。"
   },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
@@ -6856,16 +6856,16 @@
     "text": "读取流所需的范围"
   },
   "ssf.authScopeRead|description": {
-    "en": "fd2022d37872b994",
-    "text": "本服务自己为读取流配置、其状态或轮询队列的范围所起的名称。即使重命名此项，ssf:read 和 CAEP 配置文件名称 ssf.read 也始终被接受。它们都会在 scopes_supported 中发布。携带 ssf.manage 的令牌也可以读取。除 ssf.manage 以外的已配置写入名称则不可以。"
+    "en": "6a58acf43f1ab901",
+    "text": "本服务为读取流配置、其状态或轮询队列的范围所起的名称。默认值是 CAEP Interoperability Profile 名称 ssf.read，即使重命名此项，它也始终被接受。两者都会在 scopes_supported 中发布。写入包含读取：携带写入范围的令牌也可以读取，声明了写入范围的客户端也可以获签读取范围。"
   },
   "ssf.authScopeWrite|label": {
     "en": "3cf63aebc7df37eb",
     "text": "更改流所需的范围"
   },
   "ssf.authScopeWrite|description": {
-    "en": "ecb89997474c28f7",
-    "text": "本服务自己为创建、更新或删除流、添加或移除主体、更改状态或请求验证事件的范围所起的名称。默认值，以及始终被接受的名称，是 CAEP 配置文件名称 ssf.manage，它包含读取。重命名此项不会移动 ssf.manage。在此设置的 ssf.manage 以外的名称是写入，并且不包含读取。读取范围不足以执行其中任何写入。"
+    "en": "91d382139f5860a7",
+    "text": "本服务为创建、更新或删除流、添加或移除主体、更改状态或请求验证事件的范围所起的名称。默认值是 CAEP Interoperability Profile 名称 ssf.manage，即使重命名此项，它也始终被接受。写入包含读取，因此在此设置的名称也可以读取，同时设置在两个设置项上的名称也是如此。读取范围不足以执行其中任何写入。"
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",
