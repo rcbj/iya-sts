@@ -147,16 +147,23 @@ const KNOWN_FAILURES = {
   // run.
   VCIValidateProofSigningAlgValuesSupported: "the suite's JWS algorithm " +
     "table lacks SLH-DSA and the composite ML-DSA algorithms",
+  // The same table, held against the algorithms a credential may be signed
+  // with: since #664 each configuration lists them, post-quantum drafts
+  // included, so a wallet's offer can choose one.
+  VCIValidateCredentialSigningAlgValuesSupported: "the suite's JWS " +
+    "algorithm table lacks SLH-DSA and the composite ML-DSA algorithms " +
+    "a configuration's credentials may be signed with (#664)",
   ValidateServerJWKs: "the suite's JOSE library cannot parse the realm's " +
     "post-quantum (kty AKP) keys",
   // Outside HAIP the suite verifies a Token Status List's signature only
   // with a `jwk` in its header or keys it already holds, and this realm's
-  // names its key as every token here does, by `kid` and an `x5u` to the
-  // certificate chain — both of which draft-ietf-oauth-status-list allows.
-  // A `jwk` in the header would be a key the token vouches for itself.
+  // names its key by `kid` and carries its certificate chain in `x5c`
+  // (f1fdf2ad; HAIP 1.0 requires it) — both of which
+  // draft-ietf-oauth-status-list allows. A `jwk` in the header would be a
+  // key the token vouches for itself.
   VerifyStatusListTokenSignatureUsingEmbeddedJwk: "the suite resolves a " +
     "status list token's key only from a header jwk, and this realm names " +
-    "it by kid and x5u"
+    "it by kid and x5c"
 };
 
 let checks = 0;

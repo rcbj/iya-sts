@@ -439,6 +439,14 @@
     "en": "23ca3d0e22f4d09a",
     "text": "Kinukuha ang sigstore trust root (mga Fulcio CA, mga key ng Rekor at CT log) sa pamamagitan ng TUF para sa mga image-signature check ng docker workload attestor; itinatago ng nabigong refresh ang huling na-verify na set."
   },
+  "sched.jobs.spiffe.target-reconcile.title": {
+    "en": "da689365a5c7e0b8",
+    "text": "Pagtutugma ng mga target group ng SPIFFE"
+  },
+  "sched.jobs.spiffe.target-reconcile.describe": {
+    "en": "42a6fe3359b6cc70",
+    "text": "Inirerehistro ang pribadong address ng bawat tumatakbong task sa mga target group ng SPIFFE ng cluster na ito at inaalis sa rehistro ang address na wala nang tumatakbong task na may hawak nito (#323)."
+  },
   "sched.jobs.ssf.dead-letter-sweep.title": {
     "en": "825439e56379bcb0",
     "text": "Pagwalis ng Shared Signals dead letter"

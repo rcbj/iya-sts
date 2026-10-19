@@ -439,6 +439,14 @@
     "en": "23ca3d0e22f4d09a",
     "text": "Hämtar sigstores förtroenderot (Fulcio-CA:er, Rekor- och CT-loggnycklar) genom TUF för docker-arbetsbelastningsattestorns kontroller av avbildssignaturer; en uppdatering som misslyckas behåller den senast verifierade uppsättningen."
   },
+  "sched.jobs.spiffe.target-reconcile.title": {
+    "en": "da689365a5c7e0b8",
+    "text": "Avstämning av SPIFFE-målgrupper"
+  },
+  "sched.jobs.spiffe.target-reconcile.describe": {
+    "en": "42a6fe3359b6cc70",
+    "text": "Registrerar varje körande uppgifts privata adress i klustrets SPIFFE-målgrupper och avregistrerar en adress som ingen körande uppgift längre har (#323)."
+  },
   "sched.jobs.ssf.dead-letter-sweep.title": {
     "en": "825439e56379bcb0",
     "text": "Genomsökning av döda brev för Shared Signals"

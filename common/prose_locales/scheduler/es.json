@@ -439,6 +439,14 @@
     "en": "23ca3d0e22f4d09a",
     "text": "Obtiene la raíz de confianza de sigstore (las CA de Fulcio, las claves de Rekor y del registro CT) mediante TUF para las comprobaciones de firma de imagen del atestador de workloads docker; una actualización que falla conserva el último conjunto verificado."
   },
+  "sched.jobs.spiffe.target-reconcile.title": {
+    "en": "da689365a5c7e0b8",
+    "text": "Conciliación de los grupos de destino SPIFFE"
+  },
+  "sched.jobs.spiffe.target-reconcile.describe": {
+    "en": "42a6fe3359b6cc70",
+    "text": "Registra la dirección privada de cada tarea en ejecución en los grupos de destino SPIFFE de este clúster y anula el registro de una dirección que ya no tiene ninguna tarea en ejecución (#323)."
+  },
   "sched.jobs.ssf.dead-letter-sweep.title": {
     "en": "825439e56379bcb0",
     "text": "Barrido de mensajes fallidos de Shared Signals"

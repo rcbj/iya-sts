@@ -439,6 +439,14 @@
     "en": "23ca3d0e22f4d09a",
     "text": "Récupère via TUF la racine de confiance sigstore (AC Fulcio, clés de journaux Rekor et CT) pour les vérifications de signature d’image de l’attesteur de workloads docker ; une actualisation qui échoue conserve le dernier ensemble vérifié."
   },
+  "sched.jobs.spiffe.target-reconcile.title": {
+    "en": "da689365a5c7e0b8",
+    "text": "Rapprochement des groupes cibles SPIFFE"
+  },
+  "sched.jobs.spiffe.target-reconcile.describe": {
+    "en": "42a6fe3359b6cc70",
+    "text": "Enregistre l’adresse privée de chaque tâche en cours d’exécution dans les groupes cibles SPIFFE de ce cluster et désenregistre une adresse qu’aucune tâche en cours d’exécution n’a plus (#323)."
+  },
   "sched.jobs.ssf.dead-letter-sweep.title": {
     "en": "825439e56379bcb0",
     "text": "Balayage des lettres mortes Shared Signals"
