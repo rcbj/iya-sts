@@ -125,7 +125,12 @@ async function makeWorld(realmMode) {
            "the SP's metadata answered " + md.status);
   w.sp = (/entityID="([^"]+)"/.exec(w.spMetadata) || [])[1];
   kit.must(w.sp, "the SP's metadata names no entityID");
-  await kit.createApplication(realm, w.sp, ["saml2", "saml11"], {});
+  // saml2IdpInitiatedSso: saml2Unsolicited() sends this SP an unsolicited
+  // Response, and identity-provider-initiated sign-in is off until a
+  // service provider opts in (#426, #711). Its SAML 1.1 sign-ins carry a
+  // shire — the SP's own start — so they need nothing.
+  await kit.createApplication(realm, w.sp, ["saml2", "saml11"],
+                              { saml2IdpInitiatedSso: "TRUE" });
   w.consumed = await kit.consumeMetadata(realm, w.sp, w.spMetadata);
 
   const enc = encodeURIComponent(w.sp);
