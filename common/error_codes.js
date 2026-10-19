@@ -428,6 +428,11 @@ const SUBSYSTEMS = [
   { id: 'LOGOUT', label: 'Sign-out',
     where: 'logout/',
     what: 'The protocol-independent sign-out and the session inventory.' },
+  { id: 'LAUNCH', label: 'Identity-provider-initiated sign-in',
+    where: 'launch/, common/launch_links.ts',
+    what: 'GET /launch/{app}, the one link that starts a sign-in to an ' +
+          'application here and hands it to that protocol\'s own endpoint ' +
+          '(#426).' },
   { id: 'REG', label: 'Registries',
     where: 'common/applications.js, common/consent.ts, ' +
            'common/app_permissions.ts, common/delegation.js, ' +
@@ -9583,6 +9588,12 @@ const CODES = [
       'in force, and only its jtis were kept (#614). Refused, and what it ' +
       'bought is revoked.',
     spec: '400 invalid_grant (RFC 6749 sections 4.1.2 and 10.5)' },
+  { code: 'STS-OAUTH-0959',
+    summary: 'An authorization request from a client whose own start is ' +
+      'turned off (oauthSpInitiatedSso FALSE, else oauth2.spInitiatedSso) ' +
+      'did not follow a /launch of that client on the same session within ' +
+      'oauth2.launchWindowS (#426, #713).',
+    spec: 'unauthorized_client (RFC 6749 section 4.1.2.1)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -21073,6 +21084,35 @@ const CODES = [
       '(#577): the page\'s act is POST /authn-api/logout. The browser is ' +
       'sent to the page, which ends nothing.',
     spec: 'HTTP 303 to /logout' },
+  // ===== LAUNCH ============================================================
+  { code: 'STS-LAUNCH-0001',
+    summary: 'A /launch/{app} link named no application this realm has ' +
+      '(#713).',
+    spec: 'HTTP 404 page' },
+  { code: 'STS-LAUNCH-0002',
+    summary: 'A /launch/{app} link named a protocol a sign-in cannot be ' +
+      'started in: not saml2, saml11, wsfed or oidc (#713).',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-LAUNCH-0003',
+    summary: 'A /launch/{app} link named a protocol the application is ' +
+      'neither declared nor recorded for (#713).',
+    spec: 'HTTP 404 page' },
+  { code: 'STS-LAUNCH-0004',
+    summary: 'A /launch/{app} link named no protocol, identity-provider-' +
+      'initiated sign-in is on for the application in more than one, and ' +
+      'its appLaunchProtocol names none of them (#713).',
+    spec: 'HTTP 409 page' },
+  { code: 'STS-LAUNCH-0005',
+    summary: 'A /launch/{app} link was refused because identity-provider-' +
+      'initiated sign-in is off for the application in that protocol ' +
+      '(saml2IdpInitiatedSso and its siblings, else the realm setting; off ' +
+      'by default, #426).',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-LAUNCH-0006',
+    summary: 'A /launch/{app} link was refused because the application has ' +
+      'nowhere registered to send the sign-in: no assertion consumer ' +
+      'service, reply URL or usable initiate_login_uri (#713).',
+    spec: 'HTTP 409 page' },
   // ===== REG ===============================================================
   { code: 'STS-REG-0001',
     summary: 'An application identifier was empty, longer than 512 ' +

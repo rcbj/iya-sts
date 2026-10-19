@@ -805,5 +805,10 @@
   "passkey.default": "Une connexion pour cette application reçoit la politique de clés d’accès <strong>default</strong>.",
   "passkey.byName": "Une connexion qui la désigne comme <code>{value}</code> reçoit <strong>{name}</strong> à la place.",
   "passkey.open": "Ouvrir dans Annuaire → Politiques",
-  "passkey.groupNote": "Une politique nommée qui sélectionne par groupe peut tout de même l’emporter pour une personne donnée : lorsqu’une politique citant l’un des groupes de la personne a une priorité plus basse, c’est elle qui s’applique. Ce domaine compte {n} politique(s) de clés d’accès nommée(s) qui sélectionnent par groupe."
+  "passkey.groupNote": "Une politique nommée qui sélectionne par groupe peut tout de même l’emporter pour une personne donnée : lorsqu’une politique citant l’un des groupes de la personne a une priorité plus basse, c’est elle qui s’applique. Ce domaine compte {n} politique(s) de clés d’accès nommée(s) qui sélectionnent par groupe.",
+  "launch.heading": "Connexion initiée par le fournisseur d’identité",
+  "launch.lead": "Ce lien démarre ici une connexion {protocol} à cette application. Le lien <strong>Se connecter</strong> du portail utilisateur est la même URL, et elle fonctionne aussi partout ailleurs — un signet, une page intranet, un courriel.",
+  "launch.off": "Elle est <strong>désactivée</strong> pour cette application, et le lien est donc refusé : mettez <code>{attribute}</code> à TRUE ci-dessous, ou activez <code>{setting}</code> pour le domaine.",
+  "launch.missing": "Elle ne peut pas encore fonctionner : l’application n’a pas de <code>{attributes}</code> enregistré, et une connexion démarrée ici n’a donc nulle part où aller.",
+  "launch.endpoint": "Le point de terminaison propre au protocole, pour un partenaire qui le souhaite :"
 }

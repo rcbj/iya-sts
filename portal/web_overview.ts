@@ -309,8 +309,8 @@ class OverviewPages {
   }
 
   // THE APPLICATION'S NAME, AS A LINK TO ITS DECLARED HOME PAGE OR AS A
-  // GREYED-OUT LABEL — never a guess from a redirect URI. It is still not a
-  // launch button; the one launch is OpenID Connect Core section 4's.
+  // GREYED-OUT LABEL — never a guess from a redirect URI. It is not a launch
+  // button; the Sign in links beside it are (#426).
   /**
    * An application's name.
    *
@@ -352,9 +352,16 @@ class OverviewPages {
         '</th><th>' + t.html('portal.apps.signIn') + '</th><th>' +
         t.html('portal.apps.issued') + '</th></tr>' +
         rows.map(function (row: Json): string {
-          const launch = row.launch
-            ? '<a class="launch" rel="noopener" href="' + esc(row.launch) +
-              '">' + t.html('portal.signIn') + '</a>' : '';
+          // ONE SIGN IN LINK PER PROTOCOL THE ROW CAN BE STARTED IN (#426),
+          // each /launch/{app}?protocol=…; the protocol is named only when
+          // there is more than one to tell apart.
+          const launches: Json[] = row.launches || [];
+          const launch = launches.map(function (one: Json): string {
+            return '<a class="launch" rel="noopener" href="' +
+              esc(one.url) + '">' + t.html('portal.signIn') +
+              (launches.length > 1 ? ' (' + esc(one.label) + ')' : '') +
+              '</a>';
+          }).join(' ');
           return '<tr><td><strong>' + OverviewPages.linkedName(row, t) +
             '</strong>' + (launch ? ' ' + launch : '') +
             '<span class="ident"><code>' + esc(row.identifier) +

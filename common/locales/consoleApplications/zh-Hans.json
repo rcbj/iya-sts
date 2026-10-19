@@ -805,5 +805,10 @@
   "passkey.default": "此应用程序的登录使用 <strong>default</strong> 通行密钥策略。",
   "passkey.byName": "以 <code>{value}</code> 指定它的登录改用 <strong>{name}</strong>。",
   "passkey.open": "在目录 → 策略中打开",
-  "passkey.groupNote": "按组选择的命名策略仍可能对某个人生效：如果指定此人所在某个组的策略优先级数值更低，则对其适用该策略。此领域有 {n} 个按组选择的命名通行密钥策略。"
+  "passkey.groupNote": "按组选择的命名策略仍可能对某个人生效：如果指定此人所在某个组的策略优先级数值更低，则对其适用该策略。此领域有 {n} 个按组选择的命名通行密钥策略。",
+  "launch.heading": "身份提供方发起的登录",
+  "launch.lead": "此链接在这里发起对该应用的 {protocol} 登录。用户门户的<strong>登录</strong>链接就是同一个 URL，它在其他任何地方也可以使用——书签、内网页面或电子邮件。",
+  "launch.off": "该应用的此功能已<strong>关闭</strong>，因此该链接会被拒绝：请在下方将 <code>{attribute}</code> 设为 TRUE，或为该领域开启 <code>{setting}</code>。",
+  "launch.missing": "它目前还无法使用：该应用没有已注册的 <code>{attributes}</code>，因此在这里发起的登录无处可去。",
+  "launch.endpoint": "该协议自身的端点，供需要它的合作方使用："
 }

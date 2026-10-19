@@ -448,7 +448,7 @@
   "apps.notDestinationsWhat": "{n} 个{n, plural, one {条目} other {条目}}。已注册的应用不一定是用户登录的地方——Shared Signals 接收方、SCIM 预配客户端、LDAP 绑定方、SPIFFE 工作负载或 WS-Trust 信赖方，都是本服务知道的应用，而不是您可以走进去的一扇门。",
   "apps.notLooked": "未检查的",
   "apps.notLookedWhat": "{total} 个条目中的 {skipped} 个。此页面会为列出的每个应用评估签发策略，并在达到 {limit} 个（portal.applicationScanLimit）时停止，因为这项工作是在为本服务所有套接字提供响应的那一个线程上进行的。",
-  "apps.note": "蓝色的名称链接到该应用自己的主页，并且不向它传递任何内容——那是您自己会去的地方，登录也从那里开始。灰色的名称表示此身份提供方尚未被告知该应用的地址；本服务的管理员可以在其条目上设置主页，在此之前没有可链接的地方。<strong>登录</strong>只会出现在注册了 <code>initiate_login_uri</code> 的 OpenID Connect 应用旁边：它请求该应用在此发起登录，并指明此身份提供方和您（OpenID Connect Core 第 4 节）。除此之外没有其他东西会为您发起登录：本服务在浏览器配置文件中未实现由身份提供方发起的登录——<code>/saml2</code> 在其自己的页面上也说明了这一点——因此这样的链接将不得不凭空捏造一个应用从未发出的请求。",
+  "apps.note": "蓝色的名称链接到该应用自己的主页，不会向它传递任何内容——那是您自己会去的地方，登录也从那里开始。灰色的名称表示尚未告知本身份提供方该应用位于何处；管理本服务的人员可以在其条目上设置主页，在此之前没有可链接的地址。<strong>登录</strong>出现在本身份提供方可以为其发起登录的应用旁边：它在这里让您登录，并把已登录的您交给该应用——一个主动发送的 SAML Response、一次 WS-Federation 登录，或者对于 OpenID Connect，请求该应用发起一次指明本身份提供方和您的登录（OpenID Connect Core 第 4 节）。除非管理本服务的人员为该应用开启了此功能，否则它是关闭的，因为该应用会收到一次它并未请求的登录。",
   "risc.heading": "共享有关您账户的安全事件",
   "risc.alwaysShared": "有关此账户的安全事件<strong>会被共享</strong>，且无法在此停止。",
   "risc.shared": "有关您账户的安全事件<strong>会被共享</strong>给接收这些事件的应用。",

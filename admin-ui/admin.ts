@@ -4295,6 +4295,9 @@ class AdminConsole {
       // The copy buttons (2026-10-01): small, beside the value they copy.
       'button.copybtn{padding:1px 7px;margin-left:6px;font-size:.8em;' +
       'vertical-align:baseline}' +
+      // An application's identity-provider-initiated sign-in URL (#426):
+      // greyed while its switch is off, still selectable to copy.
+      '.launch-card.muted>p>code{color:#888}' +
       'a.btn{display:inline-block;padding:5px 10px;border-radius:5px;' +
       'border:1px solid #12107c;background:#12107c;color:#fff;font-size:.8em;' +
       'text-decoration:none}' +

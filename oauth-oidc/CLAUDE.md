@@ -2322,7 +2322,7 @@ metadata and honoured little of it. rcbj's answers:
 |---|---|
 | A `jwks_uri` | FETCHED, under the outbound policy — the eighth outbound fetch in the root index |
 | `grant_types` / `response_types` | Enforced in every mode, for a registered client — and since #289 for every client that declares them |
-| `initiate_login_uri` | Validated, and launched from the user portal |
+| `initiate_login_uri` | Validated, written to `oauthInitiateLoginUri`, and launched through `/launch/{app}` (#426) |
 
 **`applications.oidcRegistrationProblem()` is the grammar**, asked at RFC
 7591 registration and RFC 7592 update beside the other metadata checks, in
@@ -2391,14 +2391,26 @@ verification that needed it refuses with its own code. Two kinds of reader:
   prefetches for its own key checks (`prefetchRegisteredKeys()`), and the
   back-channel delivery before it encrypts.
 
-**THE PORTAL'S SIGN-IN LINK** is OpenID Connect Core section 4: a GET to the
-registered `initiate_login_uri` with `iss` and `login_hint`, drawn only
-beside an application that registered one (`portal/portal.ts`,
-`initiateLoginLink()`). `applications.initiateLoginUriOf()` re-checks https,
-because `ldapmodify` reaches the document.
+**THE SIGN-IN LINK** is OpenID Connect Core section 4, OpenID Connect's
+identity-provider-initiated sign-in (#426): `/launch/{app}?protocol=oidc`
+signs the person in here, records the launch on the session, and sends them
+to the client's `initiate_login_uri` with `iss`, `login_hint`,
+`target_link_uri` and #148's `tenant` and `domain_hint`
+(`common/launch_links.ts`, `thirdPartyLoginUrl()`). The portal and the
+console both draw that one link. **Since #426 the URI is the attribute
+`oauthInitiateLoginUri`**, which registration writes and the console and the
+management API edit; `applications.initiateLoginUriOf()` reads it and
+re-checks https, because `ldapmodify` reaches it. **It is off by default**
+(`oauthThirdPartyInitiatedLogin`, `oauth2.thirdPartyInitiatedLogin`), and a
+client whose own start is off (`oauthSpInitiatedSso`) is answered at the
+authorization endpoint only within `oauth2.launchWindowS` of a launch, and
+refused `unauthorized_client` otherwise (STS-OAUTH-0959); the launch is
+spent when the response goes out. `launch/CLAUDE.md` argues it. The
+unsolicited ID Token some providers post straight to a `redirect_uri` is
+not offered: no `state`, no `nonce`.
 
-**NOT DONE**: `target_link_uri` is not sent; `policy_uri` and `tos_uri` are
-not drawn on the consent screen. `tests/oidc_registration.js` holds it.
+**NOT DONE**: `policy_uri` and `tos_uri` are not drawn on the consent
+screen. `tests/oidc_registration.js` holds the rest.
 
 ## DISCOVERY ON THE REALM MODEL, AND WEBFINGER (#119, 2026-09-22)
 
@@ -4482,9 +4494,11 @@ home-realm discovery. All in every mode.
   application's own auto-redirect partner wins, being the more specific
   configuration. `fedSubjectDomain` stays an ADMISSION rule; this is a
   routing hint.
-* **The portal launch** (`Portal.initiateLoginLink()`) adds `tenant`,
-  `domain_hint` (the realm's DNS domain) and `target_link_uri` (the
-  application's registered https home page).
+* **The section 4 launch** (`common/launch_links.ts`,
+  `thirdPartyLoginUrl()`, since #426; it was `Portal.initiateLoginLink()`)
+  adds `tenant`, `domain_hint` (the realm's DNS domain) and
+  `target_link_uri` (the link's `target`, else the application's registered
+  https home page).
 
 Tests: `tests/vendored/sts_enterprise_extensions.js`.
 

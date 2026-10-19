@@ -7470,6 +7470,24 @@ const ENDPOINTS: EndpointEntry[] = [
   // a group of its own, because it is the other end of what that group does —
   // and deliberately not under any protocol, which is the whole point of it.
   // ---------------------------------------------------------------------
+  { path: '/launch/:app', group: 'Authentication',
+    name: 'Identity-provider-initiated sign-in',
+    specs: ['saml2-profiles', 'saml11', 'ws-federation', 'oidc'],
+    effect: 'sends the browser to a protocol endpoint; issues nothing itself',
+    what: 'ONE LINK PER APPLICATION THAT STARTS A SIGN-IN TO IT HERE (#426): ' +
+          'the user portal\'s Sign in link and the URL at the top of each ' +
+          'protocol sub-tab in the console. ?protocol= is saml2, saml11, ' +
+          'wsfed or oidc, else the one switched on, else the entry\'s ' +
+          'appLaunchProtocol; ?target= is where to land afterwards. It ' +
+          'checks that identity-provider-initiated sign-in is on for the ' +
+          'application in that protocol (off by default) and sends the ' +
+          'browser to /saml2/unsolicited/{sp}, /saml11/sso/{rp} or ' +
+          '/wsfed/initiate/{rp}, which sign the person in as for any ' +
+          'sign-in and check the switch again; for OpenID Connect it signs ' +
+          'the person in here, records the launch on the session and sends ' +
+          'them to the client\'s initiate_login_uri (OpenID Connect Core ' +
+          'section 4), which starts an ordinary authorization request. An ' +
+          'unknown application is a 404.' },
   { path: '/logout', group: 'Authentication', name: 'Sign out of everything',
     specs: ['oidc-fclogout', 'oidc-bclogout', 'rfc7009', 'ws-federation',
             'saml2', 'rfc4120', 'rfc4511'],

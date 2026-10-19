@@ -805,5 +805,10 @@
   "passkey.default": "A sign-in for this application gets the <strong>default</strong> passkey policy.",
   "passkey.byName": "A sign-in that names it as <code>{value}</code> gets <strong>{name}</strong> instead.",
   "passkey.open": "Open on Directory → Policies",
-  "passkey.groupNote": "A named policy selecting by group can still win for a given person: where a policy naming one of the person's groups has a lower precedence, it applies to them instead. This realm has {n} named passkey policy(ies) that select by group."
+  "passkey.groupNote": "A named policy selecting by group can still win for a given person: where a policy naming one of the person's groups has a lower precedence, it applies to them instead. This realm has {n} named passkey policy(ies) that select by group.",
+  "launch.heading": "Identity-provider-initiated sign-in",
+  "launch.lead": "This link starts a {protocol} sign-in to this application here. The user portal’s <strong>Sign in</strong> link is the same URL, and it works anywhere else too — a bookmark, an intranet page, an email.",
+  "launch.off": "It is <strong>off</strong> for this application, so the link is refused: set <code>{attribute}</code> to TRUE below, or turn on <code>{setting}</code> for the realm.",
+  "launch.missing": "It cannot work yet: the application has no registered <code>{attributes}</code>, so a sign-in started here has nowhere to go.",
+  "launch.endpoint": "The protocol’s own endpoint, for a partner who wants it:"
 }

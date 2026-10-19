@@ -27,6 +27,7 @@
     "gnap/*.js", "gnap/*.ts",
     "home/*.js", "home/*.ts",
     "kerberos/*.js", "kerberos/*.ts",
+    "launch/*.js", "launch/*.ts",
     "ldap/*.js", "ldap/*.ts",
     "logout/*.js", "logout/*.ts",
     "mgmt-api/*.js", "mgmt-api/*.ts",
