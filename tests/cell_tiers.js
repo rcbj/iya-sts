@@ -191,8 +191,10 @@ function stubDriver(name) {
     },
     purgeMinted: function () { return Promise.resolve(1); },
     purgeExpiredMinted: function (kind, options) {
+      log.debug("Entering purgeExpiredMinted().");
       calls.push({ op: 'purgeExpiredMinted', kind: kind,
                    options: options });
+      log.debug("Leaving purgeExpiredMinted().");
       return Promise.resolve(1);
     },
     claimOnce: function (scope) {
@@ -461,7 +463,7 @@ async function tieredDriver(t) {
           gOrphan[0].options.defaultRealm === 'default' &&
           cOrphan[0].options.orphanBeforeMs === 4 &&
           cOrphan[0].options.orphanBeforeMs ===
-            gOrphan[0].options.orphanBeforeMs,
+          gOrphan[0].options.orphanBeforeMs,
           'orphan rows are purged in both tiers, with the same rule');
   const gStale = ofKind(g, 'stale');
   const cStale = ofKind(c, 'stale');
