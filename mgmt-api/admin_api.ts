@@ -23322,9 +23322,9 @@ class AdminApi {
                      'SPIRE Server API. These entries are a RECORD rather ' +
                      'than configuration — everything on them was written by ' +
                      'this service — which is why nothing about an agent is ' +
-                     'editable. The writes are the ban, the unban, forgetting ' +
-                     'one, and creating a join token for an agent that has ' +
-                     'not attested yet.\n\n**Node ' +
+                     'editable. The writes are the ban, the unban, ' +
+                     'forgetting one, and creating a join token for an ' +
+                     'agent that has not attested yet.\n\n**Node ' +
                      'attestation is verified or refused.** An agent here ' +
                      'attested with a type the realm accepts ' +
                      '(spiffe.nodeAttestors) and an attestor verified, and ' +

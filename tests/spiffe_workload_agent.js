@@ -116,7 +116,9 @@ function childMain() {
     check(made.ok, 'a realm of this run\'s own',
           (made.errors || []).join(' '));
     const realm = realms.get(REALM);
-    const inRealm = function (fn) { return realms.run(realm, fn); };
+    const inRealm = function (fn) {
+      return realms.run(realm, fn);
+    };
     const set = function (key, value) {
       const r = realms.setOverride(REALM, key, value);
       if (!r.ok) {
@@ -171,6 +173,7 @@ function childMain() {
       try {
         await blind.start();
       } catch (e) {
+        // Expected: a missing native module fails as STS-SPIFFE-0148.
         blindError = e;
       }
       check(!!blindError && blindError.code === 'STS-SPIFFE-0148' &&
@@ -181,10 +184,13 @@ function childMain() {
       try {
         fs.rmSync(missingDir, { recursive: true, force: true });
       } catch (e) {
+        // Cleanup must become a finding so the child still writes WT_OUT.
         check(false, 'the unused socket directory was removed', e.message);
       }
 
-      const td = inRealm(function () { return ca.trustDomain(); });
+      const td = inRealm(function () {
+        return ca.trustDomain();
+      });
       const pem = inRealm(function () {
         return (ca.state().trustAnchors || []).map(function (anchor) {
           return anchor.certificatePem;
@@ -298,6 +304,7 @@ function childMain() {
                                      format: 'der', type: 'pkcs8' });
         keyOk = true;
       } catch (e) {
+        // A key that will not parse is a failed check, not a thrown child.
         keyOk = false;
       }
       check(keyOk && mine && mine.x509_svid && mine.x509_svid.length > 0,
@@ -359,16 +366,19 @@ function childMain() {
       try {
         held.stream.cancel();
       } catch (e) {
+        // Cancelling the stream must not stop the child writing WT_OUT.
         check(false, 'the held stream could be cancelled', e.message);
       }
       client.close();
     } catch (e) {
+      // An unexpected failure is a finding, so WT_OUT is still written.
       check(false, 'the child ran to the end', String(e && e.stack));
     } finally {
       if (agent) {
         try {
           agent.stop();
         } catch (e) {
+          // Stopping the agent must not stop the child writing WT_OUT.
           check(false, 'the agent stopped', e.message);
         }
       }
@@ -376,6 +386,7 @@ function childMain() {
         try {
           fs.rmSync(agentDir, { recursive: true, force: true });
         } catch (e) {
+          // Removing the agent directory must not stop WT_OUT being written.
           check(false, 'the agent directory was removed', e.message);
         }
       }
@@ -384,22 +395,27 @@ function childMain() {
         set('global.mode', 'development');
         await server.reconcile();
       } catch (e) {
+        // Putting the realm back must not stop the child writing WT_OUT.
         check(false, 'the realm was put back', e.message);
       }
       try {
         server.close();
       } catch (e) {
+        // Closing the SPIFFE server must not stop the child writing WT_OUT.
         check(false, 'the SPIFFE server closed', e.message);
       }
     }
     fs.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);
   })().catch(function (e) {
+    // An unexpected rejection of the child is a finding. WT_OUT is still
+    // written, then the child exits 1 so the parent sees the failure.
     findings.push({ ok: false, what: 'the child ran to the end',
                     detail: String(e && e.stack) });
     try {
       fs.writeFileSync(OUT, JSON.stringify(findings));
     } catch (writeError) {
+      // The report could not be written; stderr is what the parent sees.
       process.stderr.write(String(writeError && writeError.message) + '\n');
     }
     process.exit(1);
@@ -431,11 +447,14 @@ function inAChild(t) {
     findings = JSON.parse(fs.readFileSync(out, 'utf8'));
   } catch (e) {
     log.debug('Caught in inAChild(): ' + ((e && e.message) || e));
+    // No report: the child died before writing one. Reported below with its
+    // exit status and stderr, which is where the reason is.
     findings = null;
   }
   try {
     fs.unlinkSync(out);
   } catch (e) {
+    // Never written, which the read above has already reported.
     log.debug('Caught in inAChild(): ' + ((e && e.message) || e));
   }
   if (!t.check(Array.isArray(findings), 'the child process reported its ' +

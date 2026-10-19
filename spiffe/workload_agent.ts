@@ -190,9 +190,9 @@ class WorkloadAgent {
    *   and the trust bundle
    */
   constructor(opts: any) {
+    log.debug("Entering WorkloadAgent.constructor().");
     const options = opts || {};
     this.log = options.log || log;
-    this.log.debug("Entering WorkloadAgent().");
     this.server = String(options.server || '').trim();
     this.socketPath = options.socketPath
       ? path.resolve(String(options.socketPath)) : '';
@@ -227,7 +227,7 @@ class WorkloadAgent {
     this.timers = new Set();
     this.started = false;
     this.stopped = false;
-    this.log.debug("Leaving WorkloadAgent().");
+    log.debug("Leaving WorkloadAgent.constructor().");
   }
 
   /**
@@ -300,6 +300,7 @@ class WorkloadAgent {
         }
       }
     } catch (e) {
+      // A missing passwd or group file is not a failure; the name becomes ''.
       log.debug("Caught in WorkloadAgent.nameOf(): " +
                 ((e && e.message) || e));
     }
@@ -369,6 +370,8 @@ class WorkloadAgent {
       log.debug("Leaving WorkloadAgent.ensurePkijs(). Already set.");
       return;
     } catch (e) {
+      // No engine is installed yet, which is the case this method exists
+      // to fill. One already installed returned above.
       log.debug("Caught in WorkloadAgent.ensurePkijs(): " +
                 ((e && e.message) || e));
     }
@@ -669,6 +672,8 @@ class WorkloadAgent {
     try {
       loaded = require(where);
     } catch (e) {
+      // Without peer credentials the agent must not answer. This is
+      // STS-SPIFFE-0148, and no socket is created.
       this.log.debug("Caught in WorkloadAgent.loadNative(): " +
                      ((e && e.message) || e));
       this.log.debug("Leaving WorkloadAgent.loadNative(). Failed.");
@@ -706,6 +711,8 @@ class WorkloadAgent {
     try {
       text = await this.fetchText(this.bundleUrl);
     } catch (e) {
+      // The bundle URL did not answer. The caller sees STS-SPIFFE-0148
+      // rather than the transport's own error.
       this.log.debug("Caught in WorkloadAgent.loadAnchors(): " +
                      ((e && e.message) || e));
       this.log.debug("Leaving WorkloadAgent.loadAnchors(). Fetch.");
@@ -733,6 +740,7 @@ class WorkloadAgent {
     try {
       document = JSON.parse(text);
     } catch (e) {
+      // Not a JWK Set. '' is what the caller refuses as an empty bundle.
       log.debug("Caught in WorkloadAgent.anchorsFromDocument(): " +
                 ((e && e.message) || e));
       log.debug("Leaving WorkloadAgent.anchorsFromDocument(). Not JSON.");
@@ -908,12 +916,14 @@ class WorkloadAgent {
         try {
           stream.end();
         } catch (e) {
+          // Closing a stream that is already going away.
           self.log.debug("Caught in WorkloadAgent.attestOnce(): " +
                          ((e && e.message) || e));
         }
         try {
           client.close();
         } catch (e) {
+          // Closing a client that is already going away.
           self.log.debug("Caught in WorkloadAgent.attestOnce(): " +
                          ((e && e.message) || e));
         }
@@ -962,6 +972,8 @@ class WorkloadAgent {
                        (i + 1) + '.');
         return svid;
       } catch (e) {
+        // A token minted on another node is not visible everywhere at
+        // once, so those three statuses are retried and the last is kept.
         last = e;
         this.log.debug("Caught in WorkloadAgent.attest(): status " +
                        (e && e.code));
@@ -1074,6 +1086,8 @@ class WorkloadAgent {
     try {
       fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
     } catch (e) {
+      // The socket directory could not be created, so the agent does not
+      // bind. The caller sees STS-SPIFFE-0148.
       this.log.debug("Caught in WorkloadAgent.bindSocket(): " +
                      ((e && e.message) || e));
       this.log.debug("Leaving WorkloadAgent.bindSocket(). Directory.");
@@ -1083,9 +1097,10 @@ class WorkloadAgent {
     try {
       fs.unlinkSync(this.socketPath);
     } catch (e) {
+      // A missing socket is the state replace wanted.
+      this.log.debug("Caught in WorkloadAgent.bindSocket(): " +
+                     ((e && e.message) || e));
       if (!e || e.code !== 'ENOENT') {
-        this.log.debug("Caught in WorkloadAgent.bindSocket(): " +
-                       ((e && e.message) || e));
         this.log.debug("Leaving WorkloadAgent.bindSocket(). Unlink.");
         throw WorkloadAgent.fail('STS-SPIFFE-0148',
           'The workload agent could not replace ' + this.socketPath + '.');
@@ -1106,6 +1121,8 @@ class WorkloadAgent {
       });
       fs.chmodSync(this.socketPath, 0o666);
     } catch (e) {
+      // The listen or the mode change failed, so the agent does not
+      // serve. The caller sees STS-SPIFFE-0148.
       this.log.debug("Caught in WorkloadAgent.bindSocket(): " +
                      ((e && e.message) || e));
       this.log.debug("Leaving WorkloadAgent.bindSocket(). Bind.");
@@ -1133,6 +1150,8 @@ class WorkloadAgent {
       Object.defineProperty(socket, 'remoteAddress', { value: facts.tag });
       Object.defineProperty(socket, 'remotePort', { value: facts.n });
     } catch (e) {
+      // The peer tag could not be set. The socket is closed rather than
+      // injected: the tag is how a later call is matched to this peer.
       this.log.debug("Caught in WorkloadAgent.accept(): " +
                      ((e && e.message) || e));
       this.log.debug("Leaving WorkloadAgent.accept(). Tag.");
@@ -1144,6 +1163,8 @@ class WorkloadAgent {
     try {
       this.injector.injectConnection(socket);
     } catch (e) {
+      // grpc-js refused the paused socket. The peer is forgotten and the
+      // socket is destroyed, so a half-injected connection is not served.
       this.log.debug("Caught in WorkloadAgent.accept(): " +
                      ((e && e.message) || e));
       this.forget(facts);
@@ -1193,6 +1214,8 @@ class WorkloadAgent {
         facts.visible = !!facts.starttime && facts.pidfd >= 0;
       }
     } catch (e) {
+      // SO_PEERCRED or the pidfd failed. The facts carry the error and
+      // accept closes the socket; observe itself does not throw.
       this.log.debug("Caught in WorkloadAgent.observe(): " +
                      ((e && e.message) || e));
       facts.error = 'SO_PEERCRED failed';
@@ -1217,6 +1240,8 @@ class WorkloadAgent {
       try {
         this.native.closeFd(facts.pidfd);
       } catch (e) {
+        // A pidfd that will not close must not stop the facts being
+        // dropped. The descriptor is marked closed either way.
         this.log.debug("Caught in WorkloadAgent.forget(): " +
                        ((e && e.message) || e));
       }
@@ -1244,6 +1269,8 @@ class WorkloadAgent {
       this.log.debug("Leaving WorkloadAgent.starttimeOf().");
       return String(fields[19] || '');
     } catch (e) {
+      // /proc's stat is unreadable: the process is gone, or not in this
+      // pid namespace. An empty start time is the defined result.
       this.log.debug("Caught in WorkloadAgent.starttimeOf(): " +
                      ((e && e.message) || e));
       this.log.debug("Leaving WorkloadAgent.starttimeOf(). Unreadable.");
@@ -1264,6 +1291,8 @@ class WorkloadAgent {
       this.log.debug("Leaving WorkloadAgent.exeOf().");
       return { dev: Number(stat.dev), ino: Number(stat.ino) };
     } catch (e) {
+      // /proc's exe cannot be stat'd: the process is gone, or not in
+      // this pid namespace. Zeros are the defined result.
       this.log.debug("Caught in WorkloadAgent.exeOf(): " +
                      ((e && e.message) || e));
       this.log.debug("Leaving WorkloadAgent.exeOf(). Unreadable.");
@@ -1367,6 +1396,8 @@ class WorkloadAgent {
     try {
       peer = String(call.getPeer());
     } catch (e) {
+      // getPeer threw. An empty string matches no connection, and prepare
+      // refuses the call rather than guessing which peer it was.
       this.log.debug("Caught in WorkloadAgent.peerId(): " +
                      ((e && e.message) || e));
     }
@@ -1538,6 +1569,8 @@ class WorkloadAgent {
     this.sendX509(call, open, prepared).then(function () {
       self.log.debug("Leaving WorkloadAgent.onFetchX509().");
     }, function (err) {
+      // The first message could not be written. The caller gets the
+      // refusal while the stream is still open.
       self.log.debug("Caught in WorkloadAgent.onFetchX509(): " +
                      ((err && err.message) || err));
       if (open.open) {
@@ -1567,6 +1600,8 @@ class WorkloadAgent {
     this.sendBundles(call, open, 'x509').then(function () {
       self.log.debug("Leaving WorkloadAgent.onFetchX509Bundles().");
     }, function (err) {
+      // The bundles could not be written. The caller gets the refusal
+      // while the stream is still open.
       self.log.debug("Caught in WorkloadAgent.onFetchX509Bundles(): " +
                      ((err && err.message) || err));
       if (open.open) {
@@ -1596,6 +1631,7 @@ class WorkloadAgent {
         callback(null, value);
         self.log.debug("Leaving WorkloadAgent.onFetchJwt().");
       }, function (err) {
+        // The JWT-SVID could not be built. The caller gets the refusal.
         self.log.debug("Caught in WorkloadAgent.onFetchJwt(): " +
                        ((err && err.message) || err));
         self.failUnary(call, callback, self.asRefusal(err));
@@ -1622,6 +1658,8 @@ class WorkloadAgent {
     this.sendBundles(call, open, 'jwt').then(function () {
       self.log.debug("Leaving WorkloadAgent.onFetchJwtBundles().");
     }, function (err) {
+      // The bundles could not be written. The caller gets the refusal
+      // while the stream is still open.
       self.log.debug("Caught in WorkloadAgent.onFetchJwtBundles(): " +
                      ((err && err.message) || err));
       if (open.open) {
@@ -1650,6 +1688,7 @@ class WorkloadAgent {
       callback(null, value);
       self.log.debug("Leaving WorkloadAgent.onValidateJwt().");
     }, function (err) {
+      // The token could not be validated. The caller gets the refusal.
       self.log.debug("Caught in WorkloadAgent.onValidateJwt(): " +
                      ((err && err.message) || err));
       self.failUnary(call, callback, self.asRefusal(err));
@@ -1820,6 +1859,8 @@ class WorkloadAgent {
         try {
           call.write(message.body);
         } catch (e) {
+          // The client has gone. The stream is closed and this rotation
+          // does not arm again.
           self.log.debug("Caught in tick(): " + ((e && e.message) || e));
           open.open = false;
           return;
@@ -1827,13 +1868,20 @@ class WorkloadAgent {
         life = message.lifetime;
         arm();
       }).catch(function (err) {
+        // A not-entitled caller ends the stream while any other failure
+        // is retried on the next half-life.
         if (err && err.errorCode === 'STS-SPIFFE-0150') {
+          self.log.debug("Caught in tick(): " +
+                         ((err && err.message) || err));
           open.open = false;
           self.failStream(call, self.asRefusal(err));
           return;
         }
+        self.log.debug("Caught in tick(): " +
+                       ((err && err.message) || err));
         self.log.error(errorCodes.tag('STS-SPIFFE-0030') +
-          'workload agent: could not re-send ' + label + '.');
+          'workload agent: could not re-send ' + label + '. ' +
+          ((err && err.message) || err));
         if (open.open && !self.stopped) {
           arm();
         }
@@ -1877,6 +1925,8 @@ class WorkloadAgent {
       response = await this.callUnary(this.clients.entry,
                                      'GetAuthorizedEntries', {});
     } catch (e) {
+      // The registration list could not be read. A refusal is thrown so
+      // the caller sees STS-SPIFFE-0151, not the raw gRPC error.
       this.log.error(errorCodes.tag('STS-SPIFFE-0151') +
         'workload agent: GetAuthorizedEntries failed with gRPC status ' +
         (e && e.code) + '.');
@@ -1888,7 +1938,9 @@ class WorkloadAgent {
     }
     const rows = ((response && response.entries) || []).map(function (one) {
       return WorkloadAgent.entryFromProto(one);
-    }).filter(function (entry) { return !!entry.spiffeId; });
+    }).filter(function (entry) {
+      return !!entry.spiffeId;
+    });
     this.log.debug("Leaving WorkloadAgent.authorizedEntries(). " +
                    rows.length);
     return rows;
@@ -1919,6 +1971,8 @@ class WorkloadAgent {
           return { entry_id: one.entry.id, csr: one.csr };
         }) });
     } catch (e) {
+      // The Server API did not mint. A refusal is thrown so the caller
+      // sees STS-SPIFFE-0151 rather than an empty chain.
       this.log.error(errorCodes.tag('STS-SPIFFE-0151') +
         'workload agent: BatchNewX509SVID failed with gRPC status ' +
         (e && e.code) + '.');
@@ -1992,6 +2046,8 @@ class WorkloadAgent {
         });
       });
     } catch (e) {
+      // The entries could not be listed. The answer still carries this
+      // trust domain's own bundle, and names no federated domain.
       this.log.debug("Caught in WorkloadAgent.bundleResponse(): " +
                      ((e && e.message) || e));
       domains = [];
@@ -2018,6 +2074,8 @@ class WorkloadAgent {
     try {
       response = await this.callUnary(this.clients.bundle, 'GetBundle', {});
     } catch (e) {
+      // This trust domain's bundle could not be fetched. A refusal is
+      // thrown so the caller sees STS-SPIFFE-0151, not an empty DER.
       this.log.error(errorCodes.tag('STS-SPIFFE-0151') +
         'workload agent: GetBundle failed with gRPC status ' +
         (e && e.code) + '.');
@@ -2042,6 +2100,8 @@ class WorkloadAgent {
     try {
       response = await this.callUnary(this.clients.bundle, 'GetBundle', {});
     } catch (e) {
+      // This trust domain's JWT bundle could not be fetched. A refusal
+      // is thrown so the caller sees STS-SPIFFE-0151, not an empty set.
       this.log.error(errorCodes.tag('STS-SPIFFE-0151') +
         'workload agent: GetBundle failed with gRPC status ' +
         (e && e.code) + '.');
@@ -2096,6 +2156,8 @@ class WorkloadAgent {
         jwk.kid = String((authority && authority.key_id) || '');
         keys.push(jwk);
       } catch (e) {
+        // One authority's key will not import. It is skipped; the rest
+        // of the bundle is still returned.
         log.debug("Caught in WorkloadAgent.jwtKeysFromProto(): " +
                   ((e && e.message) || e));
       }
@@ -2140,6 +2202,8 @@ class WorkloadAgent {
               keys: WorkloadAgent.jwtKeysFromProto(bundle) }), 'utf8')
           : WorkloadAgent.x509FromProto(bundle);
       } catch (e) {
+        // A denial is ignored: one trust domain the server will not show
+        // must not empty the answer.
         this.log.debug("Caught in WorkloadAgent.federatedBundles(): " +
                        "status " + (e && e.code));
       }
@@ -2206,6 +2270,8 @@ class WorkloadAgent {
             entry.id + '.');
         }
       } catch (e) {
+        // One entry did not mint. The others are still asked; if none
+        // do, the caller is refused after the loop.
         this.log.error(errorCodes.tag('STS-SPIFFE-0151') +
           'workload agent: NewJWTSVID failed for entry ' + entry.id +
           ' with gRPC status ' + (e && e.code) + '.');
@@ -2265,6 +2331,8 @@ class WorkloadAgent {
     try {
       keys = await this.jwtKeysFor(parsed.trustDomain);
     } catch (e) {
+      // This trust domain's own bundle could not be fetched. The caller
+      // is refused STS-SPIFFE-0151 rather than told the token is bad.
       this.log.debug("Caught in WorkloadAgent.buildValidate(): status " +
                      (e && e.code));
       this.log.debug("Leaving WorkloadAgent.buildValidate(). Unreachable.");
@@ -2312,6 +2380,8 @@ class WorkloadAgent {
       this.log.debug("Leaving WorkloadAgent.jwtKeysFor(). Federated.");
       return WorkloadAgent.jwtKeysFromProto(bundle);
     } catch (e) {
+      // A federated bundle the server will not show is no bundle, not an
+      // outage. Null is what the caller reports as STS-SPIFFE-0035.
       this.log.debug("Caught in WorkloadAgent.jwtKeysFor(): status " +
                      (e && e.code));
       this.log.debug("Leaving WorkloadAgent.jwtKeysFor(). None.");
@@ -2349,6 +2419,8 @@ class WorkloadAgent {
                signingInput: parts[0] + '.' + parts[1],
                signature: parts[2] };
     } catch (e) {
+      // The segments are not base64url JSON. The caller refuses that as
+      // not a JWT (STS-SPIFFE-0033).
       log.debug("Caught in WorkloadAgent.decodeJwt(): " +
                 ((e && e.message) || e));
       log.debug("Leaving WorkloadAgent.decodeJwt(). Unreadable.");
@@ -2382,6 +2454,8 @@ class WorkloadAgent {
     try {
       sig = WorkloadAgent.b64url(decoded.signature);
     } catch (e) {
+      // The signature segment is not base64url. Verification then fails
+      // as STS-SPIFFE-0037 rather than this decode throwing.
       log.debug("Caught in WorkloadAgent.verifyJwt(): " +
                 ((e && e.message) || e));
     }
@@ -2391,6 +2465,8 @@ class WorkloadAgent {
       try {
         verified = WorkloadAgent.signatureOk(alg, data, sig, usable[i]);
       } catch (e) {
+        // This key could not be used (a bad JWK, or the wrong algorithm).
+        // The next key is tried; none verifying is STS-SPIFFE-0037.
         log.debug("Caught in WorkloadAgent.verifyJwt(): " +
                   ((e && e.message) || e));
       }
@@ -2508,6 +2584,8 @@ class WorkloadAgent {
                     ' serving ' + this.socketPath);
       this.log.debug("Leaving WorkloadAgent.start().");
     } catch (e) {
+      // Start did not finish. stop() drops a socket already bound, and
+      // the error is rethrown so the process does not claim to be serving.
       this.log.debug("Caught in WorkloadAgent.start(): " +
                      ((e && e.message) || e));
       this.stop();
@@ -2539,6 +2617,8 @@ class WorkloadAgent {
       try {
         this.injector.destroy();
       } catch (e) {
+        // Cleanup must not hide the original error. destroy() throwing
+        // is logged and the rest of stop() still runs.
         this.log.debug("Caught in WorkloadAgent.stop(): " +
                        ((e && e.message) || e));
       }
@@ -2548,6 +2628,8 @@ class WorkloadAgent {
       try {
         this.listener.close();
       } catch (e) {
+        // Cleanup must not hide the original error. A listener that will
+        // not close is logged and the rest of stop() still runs.
         this.log.debug("Caught in WorkloadAgent.stop(): " +
                        ((e && e.message) || e));
       }
@@ -2557,6 +2639,8 @@ class WorkloadAgent {
       try {
         this.grpcServer.forceShutdown();
       } catch (e) {
+        // Cleanup must not hide the original error. A server that will
+        // not shut down is logged and the rest of stop() still runs.
         this.log.debug("Caught in WorkloadAgent.stop(): " +
                        ((e && e.message) || e));
       }
@@ -2566,10 +2650,9 @@ class WorkloadAgent {
       try {
         fs.unlinkSync(this.socketPath);
       } catch (e) {
-        if (!e || e.code !== 'ENOENT') {
-          this.log.debug("Caught in WorkloadAgent.stop(): " +
-                         ((e && e.message) || e));
-        }
+        // A missing socket is the state shutdown wanted.
+        this.log.debug("Caught in WorkloadAgent.stop(): " +
+                       ((e && e.message) || e));
       }
     }
     if (this.clients) {
@@ -2579,6 +2662,8 @@ class WorkloadAgent {
             self.clients[name].close();
           }
         } catch (e) {
+          // Cleanup must not hide the original error. A client that will
+          // not close is logged and the other clients are still closed.
           self.log.debug("Caught in WorkloadAgent.stop(): " +
                          ((e && e.message) || e));
         }
@@ -2639,6 +2724,8 @@ class WorkloadAgent {
       try {
         token = fs.readFileSync(map['join-token-file'], 'utf8').trim();
       } catch (e) {
+        // The join-token file could not be read. A fixed refusal is
+        // returned, and the token itself is never what the message carries.
         log.debug("Caught in WorkloadAgent.readArgs(): " +
                   ((e && e.message) || e));
         log.debug("Leaving WorkloadAgent.readArgs(). File.");
@@ -2659,6 +2746,8 @@ class WorkloadAgent {
       try {
         pem = fs.readFileSync(map['trust-bundle-file'], 'utf8');
       } catch (e) {
+        // The trust-bundle file could not be read. A fixed refusal is
+        // returned rather than starting the agent with no anchors.
         log.debug("Caught in WorkloadAgent.readArgs(): " +
                   ((e && e.message) || e));
         log.debug("Leaving WorkloadAgent.readArgs(). Bundle file.");
@@ -2721,7 +2810,9 @@ class WorkloadAgent {
     }
     const agent = new WorkloadAgent(read.opts);
     const shutdown = function () {
+      log.debug("Entering shutdown().");
       agent.stop();
+      log.debug("Leaving shutdown().");
       process.exit(0);
     };
     process.on('SIGTERM', shutdown);
@@ -2729,6 +2820,10 @@ class WorkloadAgent {
     agent.start().then(function () {
       log.debug("Leaving WorkloadAgent.main().");
     }, function (err) {
+      // start() failed before the socket was serving. The code is
+      // recorded and the process exits; nothing is left listening.
+      log.debug("Caught in WorkloadAgent.main(): " +
+                ((err && err.message) || err));
       log.error(errorCodes.tag(err && err.code ? err.code
                                               : 'STS-SPIFFE-0148') +
                 ((err && err.message) || err));
