@@ -568,16 +568,20 @@ function childMain() {
       });
     };
     const authority = '127.0.0.1:' + port;
-    const differs = await withHost(session, 'evil.example', authority);
+    // A session of its own: section 8's one-second keep-alive closed the
+    // idle one opened at the top, as it should.
+    const hosted = http2.connect('https://127.0.0.1:' + port, tls);
+    hosted.on('error', function () {});
+    const differs = await withHost(hosted, 'evil.example', authority);
     note(differs.status === 400 && lastRes && lastRes[MARK] === 'STS-HTTP-0024',
          '9. :authority and host naming different hosts is refused 400 ' +
          'with STS-HTTP-0024', differs.status + ' ' +
          (lastRes && lastRes[MARK]) + ' ' + differs.body.slice(0, 120));
-    const same = await withHost(session, authority.toUpperCase(),
+    const same = await withHost(hosted, authority.toUpperCase(),
                               authority);
     note(same.status === 200,
          '9. the same host in another case is not a difference', same.status);
-    const fromAuthority = await withHost(session, undefined);
+    const fromAuthority = await withHost(hosted, undefined);
     note(fromAuthority.status === 200 && lastRes &&
          lastRes.req && lastRes.req.headers.host === authority,
          '9. with no host, the host is the :authority',
@@ -609,6 +613,7 @@ function childMain() {
          'STS-HTTP-0024', proxiedBad.status + ' ' + lastRes[MARK]);
     rawSession.close();
     raw.close();
+    hosted.close();
 
     // 10. The express module is untouched.
     const plain = express();
