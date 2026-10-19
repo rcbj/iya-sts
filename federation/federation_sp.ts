@@ -1816,9 +1816,17 @@ class FederationSp {
     ignored.forEach(function (one: any): void {
       const group = String((one && one.name) || '');
       const why = String((one && one.reason) || '');
-      log.warn(errorCodes.tag('STS-FED-0161') + 'federation: ' +
+      // A group that grants something by being held (#358) is its own
+      // code: it is a partner reaching for authority, not a name collision.
+      const granting = why === 'grants';
+      const code = granting ? 'STS-FED-0164' : 'STS-FED-0161';
+      const because = granting
+        ? 'it grants something by being held: ' +
+          String((one && one.detail) || '')
+        : why;
+      log.warn(errorCodes.tag(code) + 'federation: ' +
                record.fedId + ' did not add ' + username + ' to "' +
-               group + '" (' + why + '). The sign-in stands.');
+               group + '" (' + because + '). The sign-in stands.');
       audit.audit({
         action: 'federation.group-ignored',
         actor: 'federation:' + record.fedId,
@@ -1826,9 +1834,9 @@ class FederationSp {
         protocol: 'Federation',
         target: username,
         outcome: 'refused',
-        errorCode: 'STS-FED-0161',
+        errorCode: code,
         summary: username + ' was not added to the group "' + group +
-                 '" through ' + record.fedId + ' (' + why + ')',
+                 '" through ' + record.fedId + ' (' + because + ')',
         detail: { relationship: String(record.fedId),
                   username: String(username), subject: subject,
                   group: group, reason: why }
@@ -2460,6 +2468,27 @@ class FederationSp {
     // NO ENTRY, AND DYNAMIC PROVISIONING OFF (2026-09-14) — told apart from a
     // policy refusal because they are two different things to fix: one is a
     // person nobody provisioned, the other a role they do not hold.
+    // THE REALM'S ATTRIBUTE POLICY REFUSED TO CREATE THEM (#396), told
+    // apart from the generic case below: what to fix is the relationship's
+    // attribute mapping, and the code is STS-FED-0158, the directory's own.
+    const fedSaid = (said && said.federation) || {};
+    if (!session && fedSaid.refusedWith === 'STS-FED-0158') {
+      const missing = [].concat(fedSaid.refusedMissing || []).map(String);
+      log.info('federation: no session for ' + username + ' arriving ' +
+               'through ' + record.fedId + ': the realm\'s attribute ' +
+               'policy would not create them (missing ' +
+               missing.join(', ') + ').');
+      errorCodes.mark(res, 'STS-FED-0158');
+      log.debug("Leaving FederationSp.startFederatedSession(). Attribute " +
+                "policy.");
+      return this.refuse(res, record, 403, 'This person has not been ' +
+                                           'provisioned',
+        'The assertion verified and the partner is configured, but this ' +
+        'realm\'s attribute policy requires ' + missing.join(', ') +
+        ' of every person and the partner supplied no value of it, so ' +
+        'nobody was created. Map the attribute on the relationship ' +
+        '(fedAttributeMap), or provision the person first.');
+    }
     if (!session && hasSubjectResolver() &&
         !subjectForName(username)) {
       log.info('federation: no session for ' + username + ' arriving ' +

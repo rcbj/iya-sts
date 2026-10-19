@@ -1837,7 +1837,7 @@ on the relationship's page (the same list of switches every protocol's relations
 |---|---|---|
 | `fedAutocreateUsers` | the first sign-in CREATES the person's entry — `<relationship>~<subject>` and linked, since #358 (it was `<relationship>~<name>` until then) — no SCIM needed. A new relationship is written on in development and off in product (`mode.defaultsFederatedAutocreate()`); a stored `TRUE` or `FALSE` always wins | the entry must ALREADY exist (SCIM, `/admin/users/new`, `/admin-api`) and be linked, or be linked at first sign-in; a sign-in for somebody who has none is refused 403 *has not been provisioned* (`STS-FED-0090`, with `STS-AUTHN-0180` on the session refusal) |
 | `fedUpdateUserAttributes` | a returning person's attributes are overwritten from the latest assertion or token — what this service always did. On by default | the partner's values are written only when the sign-in CREATES the entry; a pre-provisioned or since-edited person keeps what the directory says |
-| `fedProvisionGroups` | on every successful federated sign-in, a group name in the partner's token becomes a membership, written through the group object. A group this relationship creates is marked `federationrelationship = [<fedId>]`, and a later sign-in may add people only to groups carrying that mark. A name that collides with a group this relationship did not create — the console groups included — is ignored, the sign-in continues, and the audit records `federation.group-ignored` (`STS-FED-0161`). `fedSubjectGroup` is an admission rule and is not satisfied by this flag. Off unless the relationship stores it | the token's group names change no membership |
+| `fedProvisionGroups` | on every successful federated sign-in, a group name in the partner's token becomes a membership, written through the group object. A group this relationship creates is marked `federationrelationship = [<fedId>]`, and a later sign-in may add people only to groups carrying that mark. A name that collides with a group this relationship did not create is ignored, the sign-in continues, and the audit records `federation.group-ignored` (`STS-FED-0161`). **A name that grants something by being held is refused before either path, existing or not** — `STS-FED-0164` on the same audit action; see *A partner's token never buys a group that grants something*, below. `fedSubjectGroup` is an admission rule and is not satisfied by this flag. Off unless the relationship stores it | the token's group names change no membership |
 | `fedProvisionCap` | empty or `0` means unlimited (the default). A positive count is how many distinct people this relationship may have created; the next newcomer is `STS-FED-0090` rule `cap`. A person already linked still signs in. Junk on `update()` is `STS-FED-0163` | — |
 | `fedProvisionIdleMinutes` | empty or `0` means off (the default). A positive count is how long `federationLastSeen` may sit before the cluster job `federation.provision-idle` disables a person whose only sign-in path is this relationship (`account_state.setDisabled`, the link and the entry kept). A missing or unparsable `federationLastSeen`, a person already disabled, a local `userPassword`, or a link through another relationship is left alone. A passkey with no password is not seen as another path. A disable that fails is `STS-FED-0162` and the sweep continues. Junk on `update()` is `STS-FED-0163`. The job is per cell and is not in `persistence/tiers.js`'s `GLOBAL_JOBS` | — |
 
@@ -1860,6 +1860,43 @@ it here would file the person under a raw URN or, worse, find a local person hol
 that value (`federation_map.ts`'s `usernameFor()`). Another instance of this service
 issues exactly that form, so a relationship to one wants `fedUsernameSource` set
 when the operator means to confirm-link onto a local uid.
+
+**A PARTNER'S TOKEN NEVER BUYS A GROUP THAT GRANTS SOMETHING (#358's review).** The
+first cut of `fedProvisionGroups` refused only a name that already EXISTED unmarked, so a
+token naming a group that did not exist yet — but whose NAME already stood for something
+here — had it created, marked and joined. `admin-ui/CLAUDE.md` holds that a group grants
+nothing by being a group; the exceptions are exactly what `ldap_server.js`'s
+`federatedGroupAuthority()` asks about, before the existing-or-create split:
+
+* a group a SETTING names — `admin.readGroup`, `admin.writeGroup` (in a realm, its own
+  roster), `roles.remotePepGroup`, `roles.xacmlUserGroup` — from
+  `common/ownership.ts`'s `GRANTING_GROUP_SETTINGS`, the one list ownership's own
+  protection reads;
+* a group an entry names, by cn or DN, in `roleMemberGroup`, `owner`, `appOwner`,
+  `stsServiceAccountOwner`, `appDelegationSubjectGroup` or `fedSubjectGroup` — a dangling
+  value included, since re-creating a deleted group would restore what it named;
+* a group an XACML policy names as an attribute value.
+
+A register that cannot be read answers "it grants". `STS-FED-0164`, audited
+`federation.group-ignored` with the reason; the sign-in stands.
+`tests/federation_group_authority.js` holds it, and `tests/federation_provisioning.js` 8
+holds the console's `admin-write` refused through a real sign-in.
+
+**AND IN PRODUCT, A NEWCOMER THE ATTRIBUTE POLICY REFUSES IS `STS-FED-0158` ON THE PAGE
+(#396 with #358).** `ldap_server.js`'s `autoCreateUser()` writes `refusedWith` and the
+missing attributes on the sign-in's own `federation` object, and `startFederatedSession()`
+answers that before the generic `STS-FED-0090` *the directory declined*. A directory
+reached in another process cannot write there; that sign-in gets the generic answer.
+`tests/federation_subject_policy.js` 1m-0.
+
+**Known limits of #358's provisioning, recorded rather than fixed:**
+
+* `provisionedCount` counts people linked by confirm-at-first-sign-in too, not only people the relationship created, so `fedProvisionCap` fills sooner than its name says.
+* The cap check is not atomic across nodes or cells: two first sign-ins at once can each see room and both create.
+* `groupByFederatedName()` walks every group on each sign-in that names a group not at its DN; so does `federatedGroupAuthority()`'s walk over resident entries.
+* Groups are only ever added: a name the partner stops sending leaves the membership in place.
+* The idle sweep ignores passkeys: a person whose other path is a passkey alone is still disabled.
+* `federatedGroupAuthority()` reads resident entries only, so in a windowed directory a person-side owner value (`stsServiceAccountOwner`) that is not resident is not seen.
 
 `tests/federation_provisioning.js` drives a real OIDC federated sign-in between two realms
 of one process — the default realm's OpenID Provider and a service-provider realm of its

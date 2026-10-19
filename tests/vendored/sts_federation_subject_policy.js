@@ -476,6 +476,18 @@ async function setUp() {
   must(turned.status === 200 && turned.body && turned.body.ok,
        "turning fedAutocreateUsers on answered " + turned.status + " " +
        turned.text.slice(0, 200));
+  // A created person must satisfy the realm's attribute policy (#396) in
+  // product mode, so the relationship maps givenName, sn and mail from the
+  // partner's claims explicitly rather than relying on the default map.
+  for (const mapping of ["given_name=givenName", "family_name=sn",
+                         "email=mail"]) {
+    const mapped = await api(SP, "POST", "/federation/add-value",
+                             { id: REL, field: "fedAttributeMap",
+                               value: mapping });
+    must(mapped.status === 200 && mapped.body && mapped.body.ok,
+         "mapping " + mapping + " answered " + mapped.status + " " +
+         mapped.text.slice(0, 200));
+  }
   const acs = ((view.body || {}).endpoints || {}).assertionConsumerService;
   const app = await api(IDP, "POST", "/applications/create", {
     identifier: CLIENT, name: "subject policy " + CLIENT,

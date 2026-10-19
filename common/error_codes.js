@@ -11102,7 +11102,7 @@ const CODES = [
       'attribute policy requires of every person (#396), so the sign-in ' +
       'is refused as one for a person nobody provisioned. Map the attribute ' +
       'from the partner, or provision the person first.',
-    spec: 'none (the federated sign-in is refused 403, as STS-AUTHN-0180)' },
+    spec: 'HTTP 403 page (the session refusal is audited STS-AUTHN-0180)' },
   { code: 'STS-FED-0161',
     summary: 'A group name in a partner\'s assertion was not applied: it ' +
       'names a group this relationship did not create, it cannot be a ' +
@@ -11119,6 +11119,16 @@ const CODES = [
     summary: 'fedProvisionCap or fedProvisionIdleMinutes was set to ' +
       'something that is not empty and not a non-negative integer (#358).',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0164',
+    summary: 'A group name in a partner\'s assertion was refused because ' +
+      'the group grants something by being held: a group a setting names ' +
+      '(admin.readGroup, admin.writeGroup, roles.remotePepGroup, ' +
+      'roles.xacmlUserGroup), a group a role, an owner value, an ' +
+      'application\'s delegation subject group or a relationship\'s ' +
+      'fedSubjectGroup names, or a group an XACML policy names. ' +
+      'Provisioning never creates such a group and never adds anybody to ' +
+      'one; the sign-in stands (#358).',
+    spec: 'none (audited; the sign-in proceeds)' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +

@@ -7187,6 +7187,14 @@ function autoCreateUser(detail) {
                ': the partner supplied no value of ' +
                incomplete.missing.join(', ') + ', which this realm\'s ' +
                'attribute policy requires of every person.');
+      // SAID ON THE SIGN-IN'S OWN RECORD (#358 with #396): the federation
+      // object is the one `federation_sp.ts` handed `authn.startSession()`,
+      // so its refusal page can name this code and the missing attributes
+      // rather than a generic "the directory declined" (STS-FED-0090). A
+      // directory reached in another process cannot write here, and that
+      // sign-in falls back to the generic answer.
+      info.federation.refusedWith = 'STS-FED-0158';
+      info.federation.refusedMissing = incomplete.missing.slice(0);
       log.debug('Leaving autoCreateUser(). The attribute policy refused the ' +
                 'federated newcomer.');
       return null;
@@ -20971,9 +20979,96 @@ function stampFederationRelationship(dn, fedId) {
   return true;
 }
 
+// WHETHER A GROUP GRANTS SOMETHING BY BEING HELD (#358). A partner's token
+// may name any group, and the group may not exist yet: creating it and
+// adding the person would hand a partner whatever that NAME already stands
+// for here. `admin-ui/CLAUDE.md` (*what a group does not grant*) says a
+// group grants nothing by being a group, and the groups below are exactly
+// the exceptions this service makes to that rule, so provisioning never
+// creates one of them and never adds anybody to one:
+//
+//   * a group a setting names as authority — the console rosters
+//     (`admin.readGroup`, `admin.writeGroup`; in a realm, its own roster)
+//     and the two group-derived roles, REMOTE_PEPS and XACML_USER — read
+//     from `common/ownership.ts`'s one list;
+//   * a group an entry of this realm names, by cn or DN, in an attribute
+//     that confers something on its members: a role's `roleMemberGroup`, an
+//     `owner` / `appOwner` / `stsServiceAccountOwner` (#607: an owner group
+//     administers what it owns), an application's
+//     `appDelegationSubjectGroup`, a relationship's `fedSubjectGroup`. A
+//     DANGLING value counts: re-creating a deleted group would restore what
+//     it named;
+//   * a group an XACML policy of this realm names as an attribute value,
+//     since the access gate hands a person's groups to the PDP by cn and DN.
+//
+// The walk is over resident entries, `groupsOwnedBy()`'s reach. A register
+// that cannot be read answers "it grants": not knowing is not permission.
+// Returns the reason, or '' when the name grants nothing.
+const GRANTING_ATTRIBUTES = ['rolemembergroup', 'owner', 'appowner',
+  'stsserviceaccountowner', 'appdelegationsubjectgroup', 'fedsubjectgroup'];
+
+function federatedGroupAuthority(name, dn) {
+  log.debug('Entering federatedGroupAuthority().');
+  const cn = String(name == null ? '' : name).trim().toLowerCase();
+  const dnKey = dn ? normalizeDn(String(dn)) : '';
+  const matches = function (value) {
+    const text = String(value == null ? '' : value).trim();
+    return text.toLowerCase() === cn ||
+           (!!dnKey && DN_SHAPED.test(text) && normalizeDn(text) === dnKey);
+  };
+  try {
+    const settings = require('../common/ownership').GRANTING_GROUP_SETTINGS;
+    const named = settings.filter(function (key) {
+      return String(config.value(key) || '').trim().toLowerCase() === cn;
+    });
+    if (named.length) {
+      log.debug('Leaving federatedGroupAuthority(). A setting.');
+      return 'named by ' + named[0];
+    }
+    let found = '';
+    eachResidentEntry(function (stored) {
+      if (found) {
+        return;
+      }
+      GRANTING_ATTRIBUTES.some(function (attribute) {
+        const values = (stored.attributes && stored.attributes[attribute]) ||
+                       [];
+        if (values.some(matches)) {
+          found = attribute + ' of ' + stored.dn;
+          return true;
+        }
+        return false;
+      });
+    });
+    if (found) {
+      log.debug('Leaving federatedGroupAuthority(). An entry.');
+      return found;
+    }
+    const pattern = new RegExp('>\\s*' +
+      cn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*<', 'i');
+    const policy = xacmlStore.all().filter(function (row) {
+      const text = String((row && row.document) || '');
+      return pattern.test(text) ||
+             (!!dnKey && text.toLowerCase().indexOf(dnKey) >= 0);
+    })[0];
+    if (policy) {
+      log.debug('Leaving federatedGroupAuthority(). A policy.');
+      return 'named by the XACML policy ' + policy.name;
+    }
+  } catch (e) {
+    log.debug('Caught in federatedGroupAuthority(): ' +
+              ((e && e.message) || e));
+    log.debug('Leaving federatedGroupAuthority(). Unreadable.');
+    return 'its registers could not be read';
+  }
+  log.debug('Leaving federatedGroupAuthority(). Grants nothing.');
+  return '';
+}
+
 // Group names from one partner's assertion, for one person (#358). A name
-// that is not a DN value, or that names a group this relationship did not
-// create, is ignored. The caller audits the ignores and the sign-in
+// that is not a DN value, that names a group this relationship did not
+// create, or that names a group which grants something by being held
+// (`federatedGroupAuthority()`, reason `grants`), is ignored. The caller audits the ignores and the sign-in
 // continues. `memberOf` is never written: addGroupMember does not.
 function applyFederatedGroups(fedId, username, names) {
   log.debug('Entering applyFederatedGroups(). ' + fedId);
@@ -21001,6 +21096,12 @@ function applyFederatedGroups(fedId, username, names) {
       return;
     }
     const existing = groupByFederatedName(name);
+    const authority = federatedGroupAuthority(name,
+      existing ? existing.dn : groupDnFor(name));
+    if (authority) {
+      ignored.push({ name: name, reason: 'grants', detail: authority });
+      return;
+    }
     if (existing) {
       if (!markedForRelationship(existing, id)) {
         ignored.push({ name: name, reason: 'exists' });

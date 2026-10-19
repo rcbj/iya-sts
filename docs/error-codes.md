@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4390** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4391** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
-* [Federation (`STS-FED`)](#sts-fed) — 145
+* [Federation (`STS-FED`)](#sts-fed) — 146
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 128
@@ -2532,10 +2532,11 @@ Raised from: federation/.
 | `STS-FED-0155` | A federated sign-in was started through an ssf relationship, which only sends Shared Signals and signs nobody in (#374). | HTTP 400 page |
 | `STS-FED-0156` | A federated sign-in was refused because the partner's own Shared Signals (a verified account-disabled) blocked its sign-ins of this person; its account-enabled, or an administrator, lifts it (#373). | HTTP 403 page |
 | `STS-FED-0157` | A federation relationship's client secret (fedClientSecret) could not be sealed under a durable key-encryption key, so it was not written. | HTTP 400 (console and API) |
-| `STS-FED-0158` | A federated first sign-in created nobody: in a product-mode realm the partner supplied no value of an attribute the realm's attribute policy requires of every person (#396), so the sign-in is refused as one for a person nobody provisioned. Map the attribute from the partner, or provision the person first. | none (the federated sign-in is refused 403, as STS-AUTHN-0180) |
+| `STS-FED-0158` | A federated first sign-in created nobody: in a product-mode realm the partner supplied no value of an attribute the realm's attribute policy requires of every person (#396), so the sign-in is refused as one for a person nobody provisioned. Map the attribute from the partner, or provision the person first. | HTTP 403 page (the session refusal is audited STS-AUTHN-0180) |
 | `STS-FED-0161` | A group name in a partner's assertion was not applied: it names a group this relationship did not create, it cannot be a directory name, or the directory declined. The sign-in stands (#358). | none (logged; the sign-in proceeds) |
 | `STS-FED-0162` | The scheduler job federation.provision-idle could not disable a person whose only sign-in path is one relationship and whose federationLastSeen is past fedProvisionIdleMinutes. The next run tries again (#358). | none — logged |
 | `STS-FED-0163` | fedProvisionCap or fedProvisionIdleMinutes was set to something that is not empty and not a non-negative integer (#358). | HTTP 400 (console and API) |
+| `STS-FED-0164` | A group name in a partner's assertion was refused because the group grants something by being held: a group a setting names (admin.readGroup, admin.writeGroup, roles.remotePepGroup, roles.xacmlUserGroup), a group a role, an owner value, an application's delegation subject group or a relationship's fedSubjectGroup names, or a group an XACML policy names. Provisioning never creates such a group and never adds anybody to one; the sign-in stands (#358). | none (audited; the sign-in proceeds) |
 
 ## STS-OIDFED
 

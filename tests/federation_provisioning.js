@@ -491,8 +491,9 @@ function childMain() {
 
     // =======================================================================
     // 8. GROUP MEMBERSHIP FROM THE TOKEN (#358). A group this relationship
-    // creates is joined and marked. A group that already exists here, the
-    // console's admin-write included, is not joined and is audited.
+    // creates is joined and marked. The console's admin-write is not joined
+    // and is audited STS-FED-0164: it grants something by being held, and
+    // provisioning never adds anybody to such a group.
     // =======================================================================
     await setRel('fedProvisionGroups', 'TRUE');
     // The person is created by the same sign-in the earlier sections use.
@@ -540,7 +541,8 @@ function childMain() {
     const ignored = await inSp(function () {
       return audit.list().filter(function (event) {
         return event.action === 'federation.group-ignored' &&
-               event.errorCode === 'STS-FED-0161';
+               event.errorCode === 'STS-FED-0164' &&
+               event.detail && event.detail.group === 'admin-write';
       });
     });
     function hopText(one) {
@@ -554,7 +556,7 @@ function childMain() {
          cns.indexOf('admin-write') < 0 && mark.indexOf(REL) >= 0 &&
          ignored.length >= 1,
          '8. fedProvisionGroups joins a new group from the token and ' +
-         'ignores an existing unmarked group (STS-FED-0161)',
+         'refuses the console\'s admin-write group (STS-FED-0164)',
          'first=' + hopText(firstGroups) + ' planted=' +
          JSON.stringify(planted) + ' idp=' +
          JSON.stringify(planted.cns) + ' second=' + hopText(r) +

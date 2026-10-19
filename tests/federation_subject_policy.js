@@ -86,6 +86,15 @@ function childMain() {
     const views = require(ROOT + '/admin-core/admin_views');
     const federation = require(ROOT + '/federation/federation');
     const fedSp = require(ROOT + '/federation/federation_sp');
+    const errorCodes = require(ROOT + '/common/error_codes');
+    // Every code put on a response, so a refusal page's own code can be
+    // asserted (#358 with #396: the attribute policy's STS-FED-0158).
+    const marks = [];
+    const markOriginal = errorCodes.mark;
+    errorCodes.mark = function (res, code) {
+      marks.push(code);
+      return markOriginal.apply(this, arguments);
+    };
 
     // HTTPS UNDER A CA OF THIS CHILD'S OWN (#171). The relationship is to
     // this service's own OpenID Provider, and product mode refuses a plain
@@ -431,6 +440,18 @@ function childMain() {
     // The cases below that CREATE still do, in both modes. The stored
     // default is what 0c-ii holds; product would otherwise refuse them.
     setRel('fedAutocreateUsers', 'TRUE');
+    // AND IN PRODUCT THE REALM'S ATTRIBUTE POLICY (#396) requires givenName,
+    // sn and mail of every person a sign-in creates, so the relationship
+    // maps them from the partner's claims explicitly rather than relying on
+    // the default map. 1m-0 below is the case that leaves them out.
+    if (MODE === 'product') {
+      ['given_name=givenName', 'family_name=sn', 'email=mail']
+        .forEach(function (mapping) {
+          const added = addRel('fedAttributeMap', mapping);
+          note(added.ok, '0d. the product relationship maps ' + mapping,
+               JSON.stringify(added.errors || []));
+        });
+    }
 
     // The pattern validator (unit): bounded and anchored.
     note(federation.subjectPatternProblem('uid=[^,]+,ou=users,.*') === '' &&
@@ -612,6 +633,32 @@ function childMain() {
          attr(entryOf(EVE), 'federationLink').length === 0,
          '1l. somebody a second factor is REQUIRED of meets the enrolment ' +
          'step, and nothing is linked', 'setup=' + got.trail.setup);
+
+    // PRODUCT, AND A PARTNER THAT SENDS NO NAMES OR ADDRESS: the realm's
+    // attribute policy (#396) refuses to create the newcomer, and the
+    // refusal page carries ITS code, STS-FED-0158 — not #358's, and not the
+    // generic "the directory declined" (STS-FED-0090). The scope is cut to
+    // `openid`, so the partner releases none of the three.
+    if (MODE === 'product') {
+      const BARE = 'fsp-bare-' + MODE;
+      const bareSub = partnerSubjectOf(BARE);
+      const bareName = REL + '~sub-' +
+        bareSub.replace(/^urn:uuid:/i, '').toLowerCase();
+      const scoped = setRel('fedScope', 'openid');
+      const markAt = marks.length;
+      const auditAt = auditCount();
+      got = await signIn(BARE, {});
+      const bareMarks = marks.slice(markAt);
+      setRel('fedScope', 'openid profile email');
+      note(scoped.ok && got.r.status === 403 && !entryOf(bareName) &&
+           bareMarks.indexOf('STS-FED-0158') >= 0 &&
+           bareMarks.indexOf('STS-FED-0090') < 0 &&
+           codesSince(auditAt).indexOf('STS-AUTHN-0180') >= 0,
+           '1m-0. product: a partner that sends no givenName, sn or mail ' +
+           'creates nobody, refused STS-FED-0158 by the attribute policy',
+           got.r.status + ' marks=' + JSON.stringify(bareMarks) + ' ' +
+           String(got.r.text || '').replace(/\s+/g, ' ').slice(0, 200));
+    }
 
     // NOBODY OF THAT NAME: a namespaced entry under the partner's subject.
     const NEWBIE = 'fsp-new-' + MODE;
