@@ -100,3 +100,12 @@ translated). No script, so the service's default policy needs no change.
 refusing and allowing, the choice of protocol, the OpenID Connect launch
 record and `/oauth2/authorize` honouring and spending it, and the portal's
 and the console's links.
+
+`tests/vendored/sts_idp_initiated_launch.js` (over HTTP, `local: true`,
+#715): the same sections in a throwaway realm, run in `memory`, `single-node`
+and `cluster` — **the product-mode coverage**, and across nodes in
+`cluster`. The switches are set through `/admin-api`, the person signs in
+with a real password, the launch window is set to 10 s and waited out, and
+the links are read from `/admin-api`'s `launchUrls` and the portal's
+`/account-api/applications`. That the launch is on the session is asserted
+through its effect at `/oauth2/authorize`.
