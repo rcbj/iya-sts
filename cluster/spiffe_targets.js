@@ -460,6 +460,7 @@ class SpiffeTargets {
         }
       }
     } catch (e) {
+      // The failure is rethrown so reconcileLive can record STS-CLUSTER-0027.
       log.debug("Caught in SpiffeTargets.reconcileGroups(): " +
                 ((e && e.message) || e));
       log.debug("Leaving SpiffeTargets.reconcileGroups(). Failed.");
@@ -528,6 +529,8 @@ class SpiffeTargets {
             });
           });
       } catch (e) {
+        // A synchronous http.get failure must reject through finish
+        // and return before req.on runs on an unset request.
         log.debug("Caught in SpiffeTargets.readUrl(): " +
                   ((e && e.message) || e));
         finish(/** @type {Error} */ (e));
@@ -562,6 +565,8 @@ class SpiffeTargets {
       }
       href = url.href;
     } catch (e) {
+      // new URL's TypeError says "Invalid URL". The refusal names the
+      // metadata address, as the not-http refusal above does.
       log.debug("Caught in SpiffeTargets.readTask(): " +
                 ((e && e.message) || e));
       log.debug("Leaving SpiffeTargets.readTask(). Bad address.");
@@ -574,6 +579,8 @@ class SpiffeTargets {
       try {
         body = JSON.parse(text);
       } catch (e) {
+        // JSON.parse's SyntaxError quotes the body. The throw replaces
+        // it so the refusal does not carry that quote.
         log.debug("Caught in SpiffeTargets.readTask(): " +
                   ((e && e.message) || e));
         throw new Error('the task metadata was not JSON');
@@ -614,6 +621,7 @@ class SpiffeTargets {
         marker = out.NextMarker || '';
       } while (marker);
     } catch (e) {
+      // The failure is rethrown so reconcileLive can record STS-CLUSTER-0027.
       log.debug("Caught in SpiffeTargets.listAllGroups(): " +
                 ((e && e.message) || e));
       log.debug("Leaving SpiffeTargets.listAllGroups(). Failed.");
@@ -702,6 +710,7 @@ class SpiffeTargets {
         token = out.nextToken || '';
       } while (token);
     } catch (e) {
+      // The failure is rethrown so reconcileLive can record STS-CLUSTER-0027.
       log.debug("Caught in SpiffeTargets.listTaskArns(): " +
                 ((e && e.message) || e));
       log.debug("Leaving SpiffeTargets.listTaskArns(). Failed.");
@@ -740,6 +749,7 @@ class SpiffeTargets {
         });
       }
     } catch (e) {
+      // The failure is rethrown so reconcileLive can record STS-CLUSTER-0027.
       log.debug("Caught in SpiffeTargets.describeTaskIps(): " +
                 ((e && e.message) || e));
       log.debug("Leaving SpiffeTargets.describeTaskIps(). Failed.");
@@ -765,21 +775,31 @@ class SpiffeTargets {
     const api = {
       elb: {
         listGroups: function () {
+          log.debug("Entering listGroups().");
+          log.debug("Leaving listGroups().");
           return SpiffeTargets.listAllGroups(elb, elbSdk);
         },
         health: function (arn) {
+          log.debug("Entering health().");
+          log.debug("Leaving health().");
           return SpiffeTargets.groupHealth(elb, elbSdk, arn);
         },
         register: function (arn, targets) {
+          log.debug("Entering register().");
+          log.debug("Leaving register().");
           return SpiffeTargets.changeMembers(
             elb, elbSdk, arn, targets, true);
         },
         deregister: function (arn, targets) {
+          log.debug("Entering deregister().");
+          log.debug("Leaving deregister().");
           return SpiffeTargets.changeMembers(
             elb, elbSdk, arn, targets, false);
         }
       },
       tasks: function (cluster) {
+        log.debug("Entering tasks().");
+        log.debug("Leaving tasks().");
         return SpiffeTargets.listTaskArns(ecs, ecsSdk, cluster)
           .then(function (arns) {
             return SpiffeTargets.describeTaskIps(
@@ -933,6 +953,8 @@ class SpiffeTargets {
           self: self,
           deregisterOnly: !!o.deregisterOnly,
           stopping: function () {
+            log.debug("Entering stopping().");
+            log.debug("Leaving stopping().");
             return !!SpiffeTargets.stopping && !o.deregisterOnly;
           }
         });
@@ -977,13 +999,19 @@ class SpiffeTargets {
       kind: 'cluster',
       scope: 'service',
       everyMs: function () {
+        log.debug("Entering everyMs().");
+        log.debug("Leaving everyMs().");
         return SpiffeTargets.INTERVAL_MS;
       },
       off: function () {
+        log.debug("Entering off().");
+        log.debug("Leaving off().");
         return SpiffeTargets.whyOff();
       },
       manual: true,
       run: function () {
+        log.debug("Entering run().");
+        log.debug("Leaving run().");
         return SpiffeTargets.reconcileLive();
       }
     });
