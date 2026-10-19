@@ -148,6 +148,18 @@ function lingerOn(socket) {
  */
 function arm(req, res) {
   log.debug("Entering arm().");
+  // NOTHING TO DO FOR AN HTTP/2 REQUEST (#407). Its socket is the whole
+  // connection, shared with every other stream the client has open, so
+  // ending it would end those too, and `Connection` is a header HTTP/2
+  // forbids (RFC 9113 section 8.2.2; node drops it with a warning). The
+  // protocol has the answer built in: a server that responds before the
+  // request is complete ends that one stream with RST_STREAM(NO_ERROR)
+  // after the response (section 8.1), which node does, and the client keeps
+  // the response it has read.
+  if (req && req.httpVersionMajor === 2) {
+    log.debug("Leaving arm(). An HTTP/2 stream closes on its own.");
+    return;
+  }
   // `set()` where there is no `setHeader()`: an in-process test drives a
   // route with express's response shape and nothing below it.
   if (typeof res.setHeader === 'function') {

@@ -76,7 +76,9 @@ var config = {
     keepAliveTimeoutS: 60,   // Idle connection kept for (s)
     headersTimeoutS: 0,      // Request header timeout (s)
     maxRequestsPerSocket: 0, // Requests per connection
-    maxConnections: 0        // Open connections at most
+    maxConnections: 0,       // Open connections at most
+    http2: true,             // Offer HTTP/2
+    http2MaxConcurrentStreams: 100 // Streams per HTTP/2 connection
   },
 
   // --- Admin console ---------------------------------------------------
@@ -1365,7 +1367,10 @@ var config = {
     runHistoryHours: 24,  // Runs kept for (hours)
     disabledJobs: "",     // Jobs switched off
     runTimeoutS: 600,     // The longest a run may take (seconds)
-    maxConcurrentRuns: 2  // Most runs going at once
+    maxConcurrentRuns: 2, // Most runs going at once
+    niceBusyThreshold: 8, // A busy worker's requests in flight
+    niceLagMs: 200,       // A busy worker's event-loop delay
+    niceMaxDeferS: 300    // Longest a run waits for a busy worker
   },
 
   // --- Attribute sources -----------------------------------------------
@@ -1445,7 +1450,9 @@ var config = {
     keepAliveTimeoutS: -1,                    // Main port: idle connection kept for (s)
     headersTimeoutS: -1,                      // Main port: request header timeout (s)
     maxRequestsPerSocket: -1,                 // Main port: requests per connection
-    maxConnections: -1                        // Main port: open connections at most
+    maxConnections: -1,                       // Main port: open connections at most
+    http2: "inherit",                         // Main port: offer HTTP/2
+    http2MaxConcurrentStreams: -1             // Main port: streams per HTTP/2 connection
   },
 
   // --- Listener: LDAPS -------------------------------------------------
@@ -1479,7 +1486,9 @@ var config = {
     keepAliveTimeoutS: -1,                    // Protocol debugger: idle connection kept for (s)
     headersTimeoutS: -1,                      // Protocol debugger: request header timeout (s)
     maxRequestsPerSocket: -1,                 // Protocol debugger: requests per connection
-    maxConnections: -1                        // Protocol debugger: open connections at most
+    maxConnections: -1,                       // Protocol debugger: open connections at most
+    http2: "inherit",                         // Protocol debugger: offer HTTP/2
+    http2MaxConcurrentStreams: -1             // Protocol debugger: streams per HTTP/2 connection
   },
 
   // --- Listener: SPIRE Server API --------------------------------------

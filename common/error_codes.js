@@ -572,6 +572,12 @@ const CODES = [
     summary: 'A value of global.corsOrigins is not an origin, and was ' +
       'ignored rather than widened.',
     spec: '' },
+  // HTTP/2 (#407): RFC 9113 section 8.3.1, common/http2_express.ts.
+  { code: 'STS-HTTP-0024',
+    summary: 'An HTTP/2 request carried both :authority and a Host header ' +
+      'naming different hosts, which makes it malformed (RFC 9113 section ' +
+      '8.3.1); it was refused before any endpoint saw it.',
+    spec: 'HTTP 400 text/plain' },
   // ===== PROXY =============================================================
   { code: 'STS-PROXY-0001',
     summary: 'A connection from an address outside global.trustedProxies ' +
@@ -2411,6 +2417,18 @@ const CODES = [
     summary: 'A run of a realm job was not started, or its outcome not ' +
       'written, because its trust realm was removed; nothing is run for a ' +
       'removed realm, and nothing is written back into it.',
+    spec: '' },
+  { code: 'STS-SCHED-0019',
+    summary: 'A cluster run handed to a request worker (#408) failed because ' +
+      'that worker ended, or could not be reached, before it answered; the ' +
+      'run is recorded failed, its claim lapses, and the next slot runs ' +
+      'again.',
+    spec: '' },
+  { code: 'STS-SCHED-0020',
+    summary: 'A cluster job is not registered in the request worker its run ' +
+      'was handed to (#408), so it ran on the front process\'s thread, and ' +
+      'every later run of it in this process does too; register it at its ' +
+      'owner\'s load, or give it an onFront reason.',
     spec: '' },
   // ===== KEYS ==============================================================
   { code: 'STS-KEYS-0001',

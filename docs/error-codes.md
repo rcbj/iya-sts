@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4413** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4416** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -49,14 +49,14 @@ is an ordinary outcome.
 
 ## Contents
 
-* [HTTP front door (`STS-HTTP`)](#sts-http) — 18
+* [HTTP front door (`STS-HTTP`)](#sts-http) — 19
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 94
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 50
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 83
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 87
-* [Scheduler (`STS-SCHED`)](#sts-sched) — 18
+* [Scheduler (`STS-SCHED`)](#sts-sched) — 20
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 143
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 206
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
@@ -123,6 +123,7 @@ Raised from: common/app.js, common/cors.js, common/validation.js, common/websecu
 | `STS-HTTP-0021` | A cross-origin request named a client this realm has no application for (a client_id, Basic user name, client assertion or access token client_id), so its answer carried no Access-Control-Allow-Origin. | none — the endpoint answers; the browser withholds the answer from the page (a CORS error in place of the protocol's own error) |
 | `STS-HTTP-0022` | A cross-origin request named a client whose appCorsOrigin does not list the request's origin, so its answer carried no Access-Control-Allow-Origin. | none — the endpoint answers; the browser withholds the answer from the page |
 | `STS-HTTP-0023` | A value of global.corsOrigins is not an origin, and was ignored rather than widened. | — |
+| `STS-HTTP-0024` | An HTTP/2 request carried both :authority and a Host header naming different hosts, which makes it malformed (RFC 9113 section 8.3.1); it was refused before any endpoint saw it. | HTTP 400 text/plain |
 
 ## STS-PROXY
 
@@ -559,6 +560,8 @@ Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
 | `STS-SCHED-0016` *(retired)* | A run was asked for that does not exist (an unknown run id). | — |
 | `STS-SCHED-0017` | Purging the scheduler's run history past its bound (scheduler.runHistoryCount, scheduler.runHistoryHours) failed; the rows stay until the next run of scheduler.history, and a start still skips the ones past their expiry. | — |
 | `STS-SCHED-0018` | A run of a realm job was not started, or its outcome not written, because its trust realm was removed; nothing is run for a removed realm, and nothing is written back into it. | — |
+| `STS-SCHED-0019` | A cluster run handed to a request worker (#408) failed because that worker ended, or could not be reached, before it answered; the run is recorded failed, its claim lapses, and the next slot runs again. | — |
+| `STS-SCHED-0020` | A cluster job is not registered in the request worker its run was handed to (#408), so it ran on the front process's thread, and every later run of it in this process does too; register it at its owner's load, or give it an onFront reason. | — |
 
 ## STS-KEYS
 

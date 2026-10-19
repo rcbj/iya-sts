@@ -4434,6 +4434,14 @@ class AdminConsole {
       'button.fg-grow{font-weight:700;margin-top:.2em}' +
       '.fg-bool,.fg-checks{display:flex;flex-wrap:wrap;gap:.2em .9em}' +
       '.fg-radio{font-weight:400;white-space:nowrap}' +
+      // WHAT A CLIENT WAS SEEN DOING (#706): one line per attribute, at the
+      // head of the OAuth sub-tab, as small as it can be.
+      '.fg-observed{margin:.2em 0 .5em;font-size:.88em}' +
+      '.fg-observed-row{display:flex;flex-wrap:wrap;gap:.1em .8em;' +
+      'align-items:center}' +
+      '.fg-seen{display:inline-flex;align-items:center;gap:.2em;' +
+      'white-space:nowrap}' +
+      '.fg-seen svg{color:#1a7f37}' +
       '.fg-protos{display:flex;flex-wrap:wrap;gap:.3em 1em;margin:.4em 0 1em}' +
       '.fg-proto{font-weight:400;white-space:nowrap}' +
       '.fg-view{align-items:center;gap:.8em}' +

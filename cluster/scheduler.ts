@@ -53,12 +53,18 @@
 // (croner computes it, D1, and nothing else). A job may say it runs only on
 // demand.
 //
-// **4. NEVER AT REQUIRE TIME, NEVER IN A STANDBY, NEVER A CLUSTER JOB IN A
-// WORKER.** Registering a job starts nothing. `start()` is called by
-// `server.js` once the service's state is restored and before it binds — so
-// an active-passive standby, which never gets that far, runs nothing — and by
-// `common/request_worker.ts` in PER-PROCESS mode, which runs per-process jobs
-// and nothing else.
+// **4. NEVER AT REQUIRE TIME, NEVER IN A STANDBY, AND A WORKER NEVER
+// SCHEDULES A CLUSTER JOB — BUT SINCE #408 IT RUNS ONE'S BODY.** Registering
+// a job starts nothing. `start()` is called by `server.js` once the service's
+// state is restored and before it binds — so an active-passive standby, which
+// never gets that far, runs nothing — and by `common/request_worker.ts` in
+// PER-PROCESS mode, which schedules per-process jobs and nothing else. The
+// leader is still a front process and keeps the lease, the claims, the fences,
+// the time limits and every run row; only the call to a cluster job's `run()`
+// is handed to a ready request worker (`runClaimed()`, *WHERE A CLUSTER RUN
+// RUNS*), because a job's synchronous work on the front's thread stops every
+// listener the front holds (#408). A job that must run on the front says so
+// with `onFront` and its reason.
 //
 // **5. EVERYTHING THE PAGE SAYS IS IN THE STORE.** Runs are rows of
 // `scheduler.runs`, a persisted per-realm `realms.map` (a service-wide job's
@@ -77,7 +83,13 @@
 // expected to yield: the cluster heartbeat is a JavaScript timer, and a job
 // that blocks for a node's lifetime costs the node its membership
 // (`STS-CLUSTER-0004`). A run past its time limit is recorded as failed and
-// fenced out; the scheduler does not wait on it.
+// fenced out; the scheduler does not wait on it. **#408 found that sixteen
+// of fifty-nine did not yield** (a key generation, a walk of every session,
+// a CRL encoded per authority), and a time limit is a `Promise.race`, which
+// cannot interrupt synchronous work on the thread it shares. That is why the
+// work now runs on a request worker's thread: there a run past its limit is
+// fenced out and the front's timer fires on time, because the front's thread
+// was never the one held.
 //
 // A LIBRARY (rule 3): it registers no route. It requires `cluster.js`,
 // `cluster_claims.js` and `common/` leaves, and every job's owner requires it
@@ -135,6 +147,12 @@ const FINAL = ['succeeded', 'failed', 'abandoned'];
 // event loop run (2026-09-29): each costs the job's own `off()`, a hash and a
 // store read, so fifty is a few milliseconds.
 const TICK_YIELD_EVERY = 50;
+
+// A job's patience with a busy worker when its registration names none
+// (#408): the middle of 0 to 19, the scale `nice(1)` uses. See
+// `holdForLoad()`.
+const DEFAULT_NICE = 10;
+const MAX_NICE = 19;
 
 // A job id: lower-case words joined by dots and hyphens, as the ones in the
 // plan are (`authn.session-expiry`, `signing.rotate`).
@@ -239,8 +257,47 @@ interface JobSpec {
   // Whether an administrator may run it now.
   manual?: boolean;
   timeoutS?: number | (() => number);
+  // WHY A CLUSTER JOB MUST RUN ON THE FRONT PROCESS'S THREAD (#408), or
+  // absent: every other cluster job's `run()` is handed to a request worker.
+  // A reason, never a flag — an empty one is refused (STS-SCHED-0009), so
+  // the next reader can check the argument rather than trust it.
+  onFront?: string;
+  // HOW PATIENT A SCHEDULED RUN IS WITH A BUSY WORKER (#408): 0 is never
+  // held, 19 the most patient, 10 by default. See `holdForLoad()`. An
+  // on-demand job is an operator's act and is 0 whatever it says.
+  nice?: number;
   // Runs the job. Resolves a small JSON summary, which the run row keeps.
   run: (ctx: RunContext) => Promise<Json> | Json;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT THE LEADER NEEDS OF THE PROCESS THAT RUNS A CLUSTER JOB'S BODY (#408).
+// The front process's request pool fills it (`common/request_pool.js`'s
+// `schedulerRunner()`); a test gives stubs. Absent — a request worker's own
+// scheduler, a process with no pool — every run is inline, as before #408.
+// ---------------------------------------------------------------------------
+interface WorkerLoad {
+  // The worker's id in the pool (its threadId).
+  id: number;
+  // Requests and operations in flight there now.
+  inFlight: number;
+  // Its event loop's recent delay in milliseconds, or null when it has not
+  // reported one lately.
+  lagMs: number | null;
+}
+
+interface RunRunner {
+  // The ready protocol-pool workers, with their load. Empty when there are
+  // none (no pool, a pool that gave up, a store that does not coordinate).
+  workers(): WorkerLoad[];
+  // Runs one job's body in the named worker. Resolves `{ ok, result }` or
+  // `{ ok: false, error, code }`, `{ unknownJob: true }` where that worker
+  // has no such job registered, or `{ unknownRealm: true }` where it does
+  // not know the run's realm yet; never rejects.
+  run(workerId: number, request: Json): Promise<Json>;
+  // Tells the worker running `runId` that it no longer owns the run, and
+  // stops waiting for its answer.
+  fence(runId: string): void;
 }
 
 interface RunContext {
@@ -304,6 +361,9 @@ interface SchedulerDeps {
   host: string;
   pid: number;
   isRequestWorker: () => boolean;
+  // Where a cluster job's body runs when it does not run here (#408); see
+  // `RunRunner`. A function, so the pool is reached only when a run starts.
+  runner?: () => RunRunner | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -540,6 +600,24 @@ class Scheduler {
   // index exists, and a stale entry costs one Map read.
   // -------------------------------------------------------------------------
   private readonly pendingRows = new Map<string, Json>();
+  // -------------------------------------------------------------------------
+  // #408's BOOKKEEPING, all of it in memory and none of it a row: a run's
+  // history is the store's, and these only say what this process is doing.
+  //
+  // `notInWorkers`: jobs a worker answered it has not registered (a job its
+  // owner registers only in the front process, at `listen()` or at a first
+  // use there). Run here from then on, for this process's life.
+  // `heldSince`: on the LEADER, runId -> `{ since, logged }`, when a due
+  // scheduled run was first held for load. The runId names the slot, so a
+  // new slot is a new entry; an entry no tick saw again is dropped.
+  // `deferredMs`: runId -> how long it was held, written on its running row.
+  // `delegated`: in a WORKER, runId -> `{ realm, fenced }` for each body it
+  // is running for the leader, which `stillOwner()` reads.
+  // -------------------------------------------------------------------------
+  private readonly notInWorkers = new Set<string>();
+  private readonly heldSince = new Map<string, Json>();
+  private readonly deferredMs = new Map<string, number>();
+  private readonly delegated = new Map<string, Json>();
 
   /**
    * Builds a scheduler from its dependencies.
@@ -630,6 +708,29 @@ class Scheduler {
       pid: process.pid,
       isRequestWorker: function (): boolean {
         return !!process.env.STS_REQUEST_WORKER;
+      },
+      runner: function (): RunRunner | null {
+        // FOUND IN THE REQUIRE CACHE AND NEVER REQUIRED (#408): `server.js`
+        // loads the pool before it starts anything, so the front process
+        // always finds it; a process that never loaded it (an in-process
+        // test, a request worker, the parent project's Kerberos jobs) has no
+        // workers to hand a run to, and loading the pool there would load
+        // half its startup machinery for nothing.
+        if (process.env.STS_REQUEST_WORKER) {
+          return null;
+        }
+        let file = '';
+        try {
+          file = require.resolve('../common/request_pool');
+        } catch (e) {
+          helpers.log.debug("Caught in Scheduler.defaultDeps().runner(): " +
+                            ((e && e.message) || e));
+          return null;
+        }
+        const cached = require.cache[file];
+        return cached && cached.exports &&
+          typeof cached.exports.schedulerRunner === 'function'
+          ? cached.exports.schedulerRunner() : null;
       }
     };
   }
@@ -768,6 +869,21 @@ class Scheduler {
       problems.push('no quiet flag: only a per-process job is recorded ' +
                     'quietly, because a cluster job\'s run row is its fence');
     }
+    // A REASON TO STAY ON THE FRONT IS A SENTENCE (#408): `onFront: true`, or
+    // an empty string, would be an exemption nobody can check.
+    if (s.onFront !== undefined &&
+        (typeof s.onFront !== 'string' || !s.onFront.trim())) {
+      problems.push('an onFront that says why the job must run on the ' +
+                    'front process, or no onFront');
+    }
+    if (s.onFront !== undefined && s.kind === 'per-process') {
+      problems.push('no onFront: a per-process job always runs in the ' +
+                    'process whose state it cleans');
+    }
+    if (s.nice !== undefined && !(Number.isInteger(s.nice) && s.nice >= 0 &&
+                                  s.nice <= 19)) {
+      problems.push('a nice of a whole number from 0 to 19');
+    }
     if (s.kind === 'per-process' && s.manualOnly) {
       problems.push('a schedule: a per-process job cannot be on demand ' +
                     'only, because nothing queues a run in every process');
@@ -782,7 +898,13 @@ class Scheduler {
                       'It needs ' + problems.join('; ') + '.');
     }
     const job: JobSpec = Object.assign({ kind: 'cluster', scope: 'service',
-                                         manual: true }, s);
+                                         manual: true, nice: DEFAULT_NICE },
+                                       s);
+    // AN ON-DEMAND JOB IS AN OPERATOR'S ACT (a `*-now`), and an operator who
+    // pressed a button is not made to wait for a busy worker.
+    if (job.manualOnly) {
+      job.nice = 0;
+    }
     this.jobs.set(job.id, job);
     log.debug("Leaving Scheduler.register(). " + this.jobs.size +
               " job(s).");
@@ -1300,6 +1422,17 @@ class Scheduler {
         fenced += 1;
       }
     });
+    // A BODY RUNNING ELSEWHERE IS TOLD (#408) — the leader's side — and a
+    // body this process runs for a leader is fenced here — the worker's
+    // side, which hears of the removal through its own `realms.onRemove()`.
+    this.fenceDelegatedRuns(function (flight: Json): boolean {
+      return flight.realm === id;
+    });
+    this.delegated.forEach(function (one: Json): void {
+      if (one.realm === id) {
+        one.fenced = true;
+      }
+    });
     const suffix = '|' + id;
     const prefix = id + '\n';
     const pendingRows = this.pendingRows;
@@ -1462,6 +1595,14 @@ class Scheduler {
       clearTimer(this.timer);
       this.timer = null;
     }
+    // A NEW LEADER MEASURES ITS OWN HOLDS (#408), and a run this process
+    // handed to a worker is told it no longer owns it, so its next
+    // `stillOwner()` there answers false as it would have here.
+    this.heldSince.clear();
+    this.deferredMs.clear();
+    this.fenceDelegatedRuns(function (): boolean {
+      return true;
+    });
     log.warn('scheduler: this process (' + process.pid + ') no longer leads ' +
              'the scheduler. ' + this.inFlight.size + ' run(s) still going ' +
              'here are fenced out from now on.');
@@ -1656,15 +1797,42 @@ class Scheduler {
     });
     const cap = this.maxConcurrentRuns();
     this.waiting = false;
+    const seen = new Set<string>();
     line.concat(scheduled).forEach(function (one: Json): void {
+      seen.add(one.row.runId);
       if (self.inFlight.has(one.row.runId)) {
         return;
       }
+      // THE CAP FIRST, THEN THE HOLD (#408). A run waiting for the cap is
+      // not asked about load, so the instant it was first held is kept: were
+      // the hold asked first, a run whose bound had just been reached but
+      // found the cap full would be forgotten as "no longer held" and held
+      // again from zero at the next tick, which under steady load could
+      // postpone it past its bound indefinitely.
       if (self.inFlight.size >= cap) {
         self.waiting = true;
         return;
       }
+      // HELD FOR LOAD (#408), BEFORE THE CLAIM: what waits is not claimed,
+      // so it is still due at the next tick, exactly as a run waiting for
+      // the cap is — and a held run does not take a place under the cap.
+      if (self.holdForLoad(one.job, one.row)) {
+        return;
+      }
       self.attempt(one.job, one.realm, one.row);
+    });
+    // A HELD RUN NO TICK SAW AGAIN is forgotten: its slot moved on, its job
+    // was switched off, or its realm went. A run of the next slot is a new
+    // runId, so its bound is measured from its own first due.
+    Array.from(this.heldSince.keys()).forEach(function (runId: string) {
+      if (!seen.has(runId)) {
+        self.heldSince.delete(runId);
+      }
+    });
+    Array.from(this.deferredMs.keys()).forEach(function (runId: string) {
+      if (!seen.has(runId) && !self.inFlight.has(runId)) {
+        self.deferredMs.delete(runId);
+      }
     });
     log.debug("Leaving Scheduler.tickOnce().");
   }
@@ -1797,16 +1965,23 @@ class Scheduler {
                      detail: { runId: stored.runId, realm: realmId,
                                node: stored.node, pid: stored.pid } });
     }
+    // WHERE THE BODY RUNS (#408), decided now rather than at the tick, so
+    // the load it is decided on is the load the run meets.
+    const runner = this.runnerFor(job);
+    const target = runner ? Scheduler.leastLoaded(runner.workers()) : null;
+    const heldMs = Number(this.deferredMs.get(row.runId)) || 0;
+    this.deferredMs.delete(row.runId);
     const running = Object.assign({}, stored, {
       state: 'running', fenceAt: fence,
       attempt: (Number(stored.attempt) || 0) + 1,
       node: me.node, nodeName: me.nodeName, host: me.host, pid: me.pid,
       startedAt: this.nowMs(), endedAt: 0, errorCode: '', why: '',
-      result: null, takenOver: stored.state === 'running'
+      result: null, takenOver: stored.state === 'running',
+      ranIn: target ? 'worker' : 'front', deferredMs: heldMs
     });
     this.writeRow(realmId, running);
     const flight: Json = { fence: fence, realm: realmId, timedOut: false,
-                           asking: false };
+                           asking: false, runner: target ? runner : null };
     this.inFlight.set(row.runId, flight);
     const startedLocal = this.deps.now();
     const ctx: RunContext = {
@@ -1826,14 +2001,27 @@ class Scheduler {
     const timedOut = new Promise(function (resolve: (v: Json) => void) {
       timeoutHandle = setTimer(function (): void {
         flight.timedOut = true;
+        // A BODY IN A WORKER IS TOLD (#408): its `stillOwner()` answers
+        // false from now on, and this process stops waiting for its answer.
+        // The front's thread is free either way — the work is not on it.
+        if (flight.runner) {
+          flight.runner.fence(row.runId);
+        }
         resolve({ timedOut: true });
       }, timeoutMs);
     });
     const realm = realms.get(realmId) || realms.get(realms.DEFAULT_ID);
-    const work = Promise.resolve().then(function (): Json {
+    const inline = function (): Json {
       return realms.run(realm, function (): Json {
         return job.run(ctx);
       });
+    };
+    const work = Promise.resolve().then(function (): Json {
+      if (!target) {
+        return inline();
+      }
+      return self.runInWorker(runner as RunRunner, target, job, running,
+                              flight, inline);
     }).then(function (result: Json): Json {
       return { ok: true, result: result };
     }, function (e: Json): Json {
@@ -1867,6 +2055,11 @@ class Scheduler {
       }
       const final: Json = Object.assign({}, live, {
         endedAt: endedAt, durationMs: self.deps.now() - startedLocal });
+      // A BODY THE WORKER SENT BACK (#408: a job it has not registered, a
+      // realm it does not know yet) ran here after all, and the row says so.
+      if (target && !flight.runner) {
+        final.ranIn = 'front';
+      }
       let errorCode = '';
       if (outcome.timedOut) {
         errorCode = 'STS-SCHED-0002';
@@ -1875,7 +2068,10 @@ class Scheduler {
                     Scheduler.span(timeoutMs) + '.';
         claims.release(answer.handle);
       } else if (!outcome.ok) {
-        errorCode = 'STS-SCHED-0001';
+        // A worker that ended under the run names its own code (#408); a
+        // job that failed, wherever it ran, is STS-SCHED-0001.
+        errorCode = (outcome.error && outcome.error.schedulerCode) ||
+          'STS-SCHED-0001';
         final.state = 'failed';
         final.why = String((outcome.error && outcome.error.message) ||
                            outcome.error || 'it failed');
@@ -1902,6 +2098,369 @@ class Scheduler {
                  'failed: ' + final.why);
       }
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // WHERE A CLUSTER RUN RUNS (#408).
+  //
+  // A cluster job's `run()` was called inline on the leader, which is a front
+  // process — the thread that answers the main port, LDAPS and the KDC — and
+  // sixteen of them did synchronous work for tens of milliseconds to minutes.
+  // So the leader keeps everything that decides a run (the lease, the claim,
+  // the fence, the time limit, the run row) and hands the BODY to a ready
+  // request worker, which loads the same stack and registers the same jobs.
+  // That needs nothing new to be correct, because a cluster job already runs
+  // on whichever node leads and its effects already reach every other process
+  // through the store; a request worker is one more process against it
+  // (`common/CLAUDE.md`, *A WORKER IS ANOTHER PROCESS AGAINST THE STORE*):
+  //
+  //   * its writes are journalled and replicated like any worker's, and the
+  //     worker announces their commit before it answers the run
+  //     (`request_worker.ts`'s `runSchedulerJob()`), so the pool's
+  //     read-your-write generation moves for them before the outcome is
+  //     written and a reader on another worker is synced;
+  //   * a key set or a hierarchy it makes goes up the pool's key and PKI
+  //     channels, as one made by a request does (`receivePublishedKeys()`
+  //     adopts a newer generation and broadcasts it);
+  //   * a directory connection it ends is closed by the front, which holds
+  //     the socket, over the channel (`ldap/ldap_server.js`'s remote dropper
+  //     sends `{ ldapDrop }` when no response is in flight).
+  //
+  // WHICH WORKER: the ready protocol-pool worker with the fewest requests in
+  // flight, then the shortest event-loop delay (`leastLoaded()`). Not a
+  // surface worker: those are kept for a person waiting on a console page.
+  //
+  // NO WORKER — none configured, a pool that gave up, a store that does not
+  // coordinate (where there are no workers at all), or a job a worker has not
+  // registered — means the run is inline, exactly as before #408. A job that
+  // must not move says so with `onFront` and its reason.
+  // -------------------------------------------------------------------------
+  private runnerFor(job: JobSpec): RunRunner | null {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.runnerFor(). " + job.id);
+    if (job.kind === 'per-process' || job.onFront ||
+        this.notInWorkers.has(job.id) ||
+        typeof this.deps.runner !== 'function') {
+      log.debug("Leaving Scheduler.runnerFor(). Here.");
+      return null;
+    }
+    let runner: RunRunner | null = null;
+    try {
+      runner = this.deps.runner();
+    } catch (e) {
+      log.debug("Caught in Scheduler.runnerFor(): " +
+                ((e && e.message) || e));
+      runner = null;
+    }
+    log.debug("Leaving Scheduler.runnerFor().");
+    return runner;
+  }
+
+  /**
+   * Picks the worker with the fewest requests in flight, then the shortest
+   * recent event-loop delay, then the lowest id.
+   *
+   * @param loads - the ready workers and their load
+   * @returns the chosen worker's id, or null when there is none
+   */
+  static leastLoaded(loads: WorkerLoad[]): number | null {
+    helpers.log.debug("Entering Scheduler.leastLoaded().");
+    const list = Array.isArray(loads) ? loads.slice() : [];
+    if (!list.length) {
+      helpers.log.debug("Leaving Scheduler.leastLoaded(). None.");
+      return null;
+    }
+    list.sort(function (a: WorkerLoad, b: WorkerLoad): number {
+      const busy = (Number(a.inFlight) || 0) - (Number(b.inFlight) || 0);
+      if (busy) {
+        return busy;
+      }
+      const lag = (Number(a.lagMs) || 0) - (Number(b.lagMs) || 0);
+      return lag || (Number(a.id) - Number(b.id));
+    });
+    helpers.log.debug("Leaving Scheduler.leastLoaded(). " + list[0].id);
+    return list[0].id;
+  }
+
+  // ONE BODY IN ONE WORKER. Resolves the job's result, or rejects with an
+  // Error the outcome reads (`schedulerCode` naming a worker that ended).
+  private runInWorker(runner: RunRunner, target: number, job: JobSpec,
+                      running: Json, flight: Json,
+                      inline: () => Json): Promise<Json> {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.runInWorker(). " + running.runId + " -> " +
+              target);
+    const request = {
+      jobId: job.id, realm: running.realm, runId: running.runId,
+      trigger: running.trigger, params: running.params || null,
+      // The database clock's offset from this process's: a worker is a
+      // thread of this process and reads the same local clock, so the offset
+      // is all it needs for `ctx.nowMs()` to answer what it would here.
+      clockOffsetMs: this.clockOffset
+    };
+    log.debug("Leaving Scheduler.runInWorker().");
+    return runner.run(target, request).then(function (answer: Json): Json {
+      const a = answer || {};
+      if (a.unknownJob) {
+        // REGISTERED ONLY IN THE FRONT PROCESS: its owner registers it at
+        // `listen()` or at a first use there. It runs here, now and for the
+        // rest of this process's life, and says so once.
+        self.notInWorkers.add(job.id);
+        flight.runner = null;
+        log.warn(errorCodes.tag('STS-SCHED-0020') + 'scheduler: ' + job.id +
+                 ' is not registered in request worker ' + target + ', so ' +
+                 'it runs on this front process\'s thread, now and from now ' +
+                 'on. Register it at its owner\'s load, or give it an ' +
+                 'onFront reason.');
+        return inline();
+      }
+      if (a.unknownRealm) {
+        // A REALM CREATED A MOMENT AGO that the worker has not caught up
+        // with: this run only is inline, and the next is handed over again.
+        // Unless it was removed meanwhile, when nothing is run (#338: the
+        // inline call would otherwise fall back to the default realm).
+        flight.runner = null;
+        if (!self.realmDefined(running.realm)) {
+          const gone: Json = new Error('the realm "' + running.realm +
+                                       '" was removed before it ran');
+          gone.schedulerCode = 'STS-SCHED-0018';
+          throw gone;
+        }
+        log.info('scheduler: request worker ' + target + ' does not know ' +
+                 'the realm "' + running.realm + '" yet, so run ' +
+                 running.runId + ' of ' + job.id + ' runs on this front ' +
+                 'process\'s thread.');
+        return inline();
+      }
+      if (a.ok) {
+        return a.result;
+      }
+      const e: Json = new Error(String(a.error || 'it failed'));
+      if (a.code) {
+        e.schedulerCode = String(a.code);
+      }
+      throw e;
+    });
+  }
+
+  // Tells every worker running a body this process handed it, of the runs
+  // `which` picks, that it no longer owns the run.
+  private fenceDelegatedRuns(which: (flight: Json) => boolean): void {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.fenceDelegatedRuns().");
+    this.inFlight.forEach(function (flight: Json, runId: string): void {
+      if (flight.runner && which(flight)) {
+        try {
+          flight.runner.fence(runId);
+        } catch (e) {
+          // The pool's own failure to reach a worker is its to report; the
+          // run is fenced out here by its row either way.
+          log.debug("Caught in Scheduler.fenceDelegatedRuns(): " +
+                    ((e && e.message) || e));
+        }
+      }
+    });
+    log.debug("Leaving Scheduler.fenceDelegatedRuns().");
+  }
+
+  // -------------------------------------------------------------------------
+  // A RUN HELD FOR LOAD, AND NEVER FOR LONG — "nice" (#408, rcbj).
+  //
+  // A scheduled run handed to a worker that is already busy competes with
+  // that worker's requests. So a due SCHEDULED run waits while even the
+  // least-loaded worker is heavy — `scheduler.niceBusyThreshold` requests in
+  // flight, or an event-loop delay of `scheduler.niceLagMs` in its last
+  // report — and is held at most min(scheduler.niceMaxDeferS × nice / 19,
+  // half the job's interval), measured from when it was FIRST held, not reset
+  // by each tick. Past that it runs whatever the load: a job that never ran
+  // because its workers were always busy would be a security control
+  // silently off (a key never rotated, a session never expired).
+  //
+  // Never held: a manual run and an on-demand job (an operator's act), a job
+  // of nice 0, a job on the front, and every run where there is no worker.
+  // **INLINE RUNS ARE NOT HELD**, deliberately: the signal is a worker's
+  // queue, which the front has no equivalent of, and the front's own loop
+  // delay is mostly the scheduler's and the requests' I/O it exists to do;
+  // a service with no worker is development, or a degraded pool, where
+  // holding a run would only postpone the same work on the same thread.
+  //
+  // The hold happens BEFORE the claim, so a held run is not claimed and is
+  // still due at the next tick — a tick comes at least every scheduler.tickS.
+  // -------------------------------------------------------------------------
+  private holdForLoad(job: JobSpec, row: Json): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.holdForLoad(). " + row.runId);
+    const nice = Number(job.nice) || 0;
+    if (row.trigger !== 'schedule' || job.manualOnly || nice <= 0) {
+      log.debug("Leaving Scheduler.holdForLoad(). Never held.");
+      return false;
+    }
+    const runner = this.runnerFor(job);
+    const loads = runner ? runner.workers() : [];
+    if (!loads.length) {
+      log.debug("Leaving Scheduler.holdForLoad(). Inline: not held.");
+      return false;
+    }
+    const bestId = Scheduler.leastLoaded(loads);
+    const best = loads.filter(function (one: WorkerLoad): boolean {
+      return one.id === bestId;
+    })[0];
+    const held = this.heldSince.get(row.runId);
+    const now = this.deps.now();
+    if (!this.isHeavy(best)) {
+      if (held) {
+        this.heldSince.delete(row.runId);
+        this.deferredMs.set(row.runId, Math.max(0, now - held.since));
+        log.info('scheduler: run ' + row.runId + ' of ' + job.id + ' was ' +
+                 'held ' + (now - held.since) + ' ms for load and now runs.');
+      }
+      log.debug("Leaving Scheduler.holdForLoad(). Not heavy.");
+      return false;
+    }
+    const bound = this.holdBoundMs(job, nice);
+    const since = held ? held.since : now;
+    if (!held) {
+      this.heldSince.set(row.runId, { since: since });
+    }
+    const waited = now - since;
+    if (waited >= bound) {
+      this.heldSince.delete(row.runId);
+      this.deferredMs.set(row.runId, Math.max(0, waited));
+      // NOT A FAILURE, so no code: the bound doing its job.
+      log.info('scheduler: run ' + row.runId + ' of ' + job.id + ' runs ' +
+               'although every request worker is busy (the least loaded ' +
+               'has ' + best.inFlight + ' in flight' +
+               (best.lagMs !== null ? ', a ' + best.lagMs + ' ms loop delay'
+                 : '') + '): it was held ' + waited + ' ms, its bound (nice ' +
+               nice + ').');
+      log.debug("Leaving Scheduler.holdForLoad(). Forced through.");
+      return false;
+    }
+    if (!held) {
+      log.info('scheduler: run ' + row.runId + ' of ' + job.id + ' is held ' +
+               'for load: the least loaded request worker has ' +
+               best.inFlight + ' in flight' +
+               (best.lagMs !== null ? ', a ' + best.lagMs + ' ms loop delay'
+                 : '') + '. It runs when one is lighter, or in ' + bound +
+               ' ms at most (nice ' + nice + ').');
+    }
+    log.debug("Leaving Scheduler.holdForLoad(). Held.");
+    return true;
+  }
+
+  // Whether a worker is too busy for a patient run: either signal will do.
+  private isHeavy(load: WorkerLoad): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.isHeavy().");
+    const busy = this.setting('scheduler.niceBusyThreshold');
+    const lag = this.setting('scheduler.niceLagMs');
+    // 0 SWITCHES A SIGNAL OFF (the `|| n` rule: read directly, 0 is legal).
+    const heavy = (busy > 0 && Number(load.inFlight) >= busy) ||
+      (lag > 0 && load.lagMs !== null && Number(load.lagMs) >= lag);
+    log.debug("Leaving Scheduler.isHeavy(). " + heavy);
+    return heavy;
+  }
+
+  // The longest a run of this job is held: its share of
+  // scheduler.niceMaxDeferS, and never more than half its interval — a job
+  // held longer than that could meet its next slot still waiting.
+  private holdBoundMs(job: JobSpec, nice: number): number {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.holdBoundMs(). " + job.id);
+    const max = Math.max(0, this.setting('scheduler.niceMaxDeferS')) * 1000;
+    let bound = Math.floor(max * Math.min(nice, MAX_NICE) / MAX_NICE);
+    const slot = this.slotAt(job, this.nowMs());
+    const interval = slot && Number(slot.nextAt) > Number(slot.startsAt)
+      ? Number(slot.nextAt) - Number(slot.startsAt) : 0;
+    if (interval > 0) {
+      bound = Math.min(bound, Math.floor(interval / 2));
+    }
+    log.debug("Leaving Scheduler.holdBoundMs(). " + bound);
+    return bound;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE WORKER'S HALF (#408): a body the leader handed this process. The run
+  // row, the claim and the time limit are the leader's; this only runs the
+  // job and answers. `stillOwner()` reads a flag the leader clears — on its
+  // time limit, on losing its lease, on the realm's removal — and the realm's
+  // removal here clears it too (`forgetRealm()`).
+  // -------------------------------------------------------------------------
+  /**
+   * Runs a cluster job's body for the leader, in this process.
+   *
+   * @param request - `{ jobId, realm, runId, trigger, params, clockOffsetMs }`
+   * @returns a promise of `{ ok: true, result }`, `{ ok: false, error, code }`
+   *   `{ unknownJob: true }` or `{ unknownRealm: true }`; never rejects
+   */
+  runDelegated(request: Json): Promise<Json> {
+    const { log, realms, now } = this.deps;
+    const self = this;
+    const r = request || {};
+    const runId = String(r.runId || '');
+    log.debug("Entering Scheduler.runDelegated(). " + runId);
+    const job = this.jobs.get(String(r.jobId || ''));
+    if (!job || job.kind === 'per-process') {
+      log.debug("Leaving Scheduler.runDelegated(). Not registered here.");
+      return Promise.resolve({ unknownJob: true });
+    }
+    const realm = realms.get(String(r.realm || ''));
+    if (!realm) {
+      // NOT YET HERE, rather than gone: the leader checked the realm is
+      // defined just before it handed the run over, so a worker without it
+      // is one the realm's creation has not reached yet. The leader runs this
+      // run itself (`unknownRealm`), and hands the next one over again.
+      log.debug("Leaving Scheduler.runDelegated(). No such realm here.");
+      return Promise.resolve({ unknownRealm: true });
+    }
+    const one: Json = { realm: realm.id || String(r.realm), fenced: false };
+    this.delegated.set(runId, one);
+    const offset = Number(r.clockOffsetMs) || 0;
+    const ctx: RunContext = {
+      realm: String(r.realm), runId: runId,
+      trigger: String(r.trigger || 'schedule'), params: r.params || null,
+      stillOwner: function (): boolean {
+        return !one.fenced;
+      },
+      nowMs: function (): number {
+        return now() + offset;
+      },
+      log: log
+    };
+    log.debug("Leaving Scheduler.runDelegated(). Running.");
+    return Promise.resolve().then(function (): Json {
+      return realms.run(realm, function (): Json {
+        return job.run(ctx);
+      });
+    }).then(function (result: Json): Json {
+      // The leader keeps a summary of at most 500 characters; the same
+      // reduction made here means what crosses the channel is text, which a
+      // structured clone always carries.
+      return { ok: true, result: Scheduler.summaryOf(result) };
+    }, function (e: Json): Json {
+      return { ok: false, error: String((e && e.message) || e) };
+    }).then(function (answer: Json): Json {
+      self.delegated.delete(runId);
+      return answer;
+    });
+  }
+
+  /**
+   * Marks a body this process runs for the leader as no longer owned.
+   *
+   * @param runId - the run
+   * @returns true when this process was running it
+   */
+  fenceDelegated(runId: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.fenceDelegated(). " + runId);
+    const one = this.delegated.get(String(runId || ''));
+    if (one) {
+      one.fenced = true;
+    }
+    log.debug("Leaving Scheduler.fenceDelegated(). " + !!one);
+    return !!one;
   }
 
   // A job's answer, kept small: the row is replicated and drawn on a page.
@@ -2650,7 +3209,15 @@ class Scheduler {
       state: off ? 'off' : 'enabled',
       offReason: off || null,
       manual: job.manual !== false && job.kind !== 'per-process',
-      timeoutMs: this.timeoutMsOf(job)
+      timeoutMs: this.timeoutMsOf(job),
+      // Where a cluster run's body goes (#408): a request worker, or the
+      // front process with the reason its owner gave.
+      runsOn: job.kind === 'per-process' ? 'every-process'
+        : (job.onFront || this.notInWorkers.has(job.id) ? 'front'
+          : 'worker'),
+      onFront: job.onFront || (this.notInWorkers.has(job.id)
+        ? 'not registered in the request workers' : null),
+      nice: Number(job.nice) || 0
     };
     if (job.kind === 'per-process') {
       view.processes = this.processViews(job, realmId, at);
@@ -2773,6 +3340,10 @@ class Scheduler {
       requestedBy: row.requestedBy || '', requestedVia: row.requestedVia || '',
       params: row.params || null, takenOver: !!row.takenOver,
       abandonedOf: row.abandonedOf || null,
+      // Where its body ran and how long it was held for load (#408): rows
+      // written before #408 carry neither, and read as the front and none.
+      ranIn: row.ranIn || (row.kind === 'run' ? 'front' : null),
+      deferredMs: Number(row.deferredMs) || 0,
       errorCode: row.errorCode || '', why: row.why || '',
       result: row.result === undefined ? null : row.result
     };
@@ -2941,6 +3512,12 @@ scheduler.register({
             'realm that was removed — in batches of ' + HISTORY_BATCH +
             ', at most ' + HISTORY_MAX_BATCHES + ' a run.',
   owner: 'cluster/scheduler.ts',
+  // #408: the history it reads whole is `scheduler.runs`, which a request
+  // worker does not read back at its start (`restoreInWorkers: false`, #617),
+  // so in a worker it would find a fraction of the rows and keep the rest.
+  onFront: 'it reads the whole run history, which only a front process ' +
+           'restores (scheduler.runs is not read back by a request worker, ' +
+           '#617)',
   everyMs: function (): number {
     return HISTORY_PURGE_MS;
   },
@@ -3025,5 +3602,9 @@ export = {
   findRun: scheduler.findRun.bind(scheduler) as Scheduler['findRun'],
   recentRuns: scheduler.recentRuns.bind(scheduler) as Scheduler['recentRuns'],
   job: scheduler.job.bind(scheduler) as Scheduler['job'],
+  runDelegated: scheduler.runDelegated.bind(scheduler) as
+    Scheduler['runDelegated'],
+  fenceDelegated: scheduler.fenceDelegated.bind(scheduler) as
+    Scheduler['fenceDelegated'],
   jobIds: scheduler.jobIds.bind(scheduler) as Scheduler['jobIds']
 };

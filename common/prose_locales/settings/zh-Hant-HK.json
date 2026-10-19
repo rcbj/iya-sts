@@ -36,8 +36,8 @@
     "text": "此部署自己的代理與負載平衡器所連線的地址或 CIDR 範圍，以逗號分隔（10.0.0.0/8、fd00::/8）。僅在 global.trustProxy 開啟時讀取。「空白」（預設）維持舊規則：任何呼叫端的轉送標頭都會被採信，速率限制器取 X-Forwarded-For 最左側的項目，而那是客戶端自己寫的。「設定」後，X-Forwarded-For、X-Forwarded-Proto 與 X-Forwarded-Host 只在連線對端位於這些範圍之一時才被採信，客戶端則是 X-Forwarded-For 中最右側、不在範圍內的項目——因此直接連到節點的呼叫端既無法挑選自己的速率限制地址，也無法左右本服務對自身 URL 的認知。不是地址或範圍的值會被忽略並記錄，絕不會被放寬。global.proxyProtocol 開啟時，無論 global.trustProxy 如何設定，這「也」是採信 PROXY protocol 標頭的清單——而在那種情況下空白清單表示不信任任何人，因此服務會拒絕啟動。"
   },
   "http.keepAliveTimeoutS|description": {
-    "en": "15ba4c34c3d3349e",
-    "text": "HTTP 接聽程式為客戶端的下一個請求保留閒置 HTTP/1.1 連線的時間，以秒為單位（node 自己的預設值為 5）。保留連線就省下一次 TLS 交握——以及一次客戶端證書提示。客戶端在同一連線上管線化送出的請求會依序回應。位於負載平衡器後方時，請讓其閒置逾時大於此值。"
+    "en": "0fa763b61550474c",
+    "text": "HTTP 接聽程式為客戶端的下一個請求保留閒置連線的時間，以秒為單位（node 自己的預設值為 5）：即請求之間的 HTTP/1.1 連線，或沒有任何訊框經過的 HTTP/2 連線，後者隨後會被妥善關閉。保留連線就省下一次 TLS 交握——以及一次客戶端證書提示。客戶端在同一連線上管線化送出的請求會依序回應。位於負載平衡器後方時，請讓其閒置逾時大於此值。"
   },
   "http.headersTimeoutS|description": {
     "en": "7670a8ee39fa4e73",
@@ -3348,16 +3348,16 @@
     "text": "僅適用於單元間通道監聽器：tls.sessionCacheSize。預設值 -1 依循 tls.sessionCacheSize；其他任何值只對此監聽器生效。監聽器在記憶體中保留多少個 TLS 工作階段，以便依「工作階段 ID」恢復——即不使用票證而恢復的 TLS 1.2 客戶端；超過時最舊的會被遺忘。預設為 2048（rcbj，2026-10-07），讓不使用票證的 TLS 1.2 客戶端也能恢復；0 則不保留任何工作階段，node 也不保留自己的工作階段快取，只依票證恢復——TLS 1.3 一律使用票證，且票證不需要伺服器記憶體。快取是每個程序各自擁有的，因此在負載平衡器之後，工作階段 ID 只能在建立它的節點上恢復（票證則可在任何地方以共用金鑰恢復）。不適用於 SPIFFE gRPC 監聽器，其伺服器由 grpc-js 擁有。"
   },
   "listenerMain.keepAliveTimeoutS|description": {
-    "en": "d48d22c3af904939",
-    "text": "僅適用於主連接埠監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為客戶端的下一個請求保持閒置 HTTP/1.1 連線開啟的時間（秒）（node 自己的預設值為 5）。保留下來的連線，就是不必重複的 TLS 交握——以及客戶端證書提示。客戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
+    "en": "a895a3ca14fdb99f",
+    "text": "僅適用於主連接埠監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為客戶端的下一個請求保持閒置連線開啟的時間（秒）（node 自己的預設值為 5）：即請求之間的 HTTP/1.1 連線，或沒有任何訊框經過的 HTTP/2 連線，後者隨後會被妥善關閉。保留下來的連線，就是不必重複的 TLS 交握——以及客戶端證書提示。客戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
   },
   "listenerDebugger.keepAliveTimeoutS|description": {
-    "en": "c772bcacfb6260cb",
-    "text": "僅適用於協定偵錯工具監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為客戶端的下一個請求保持閒置 HTTP/1.1 連線開啟的時間（秒）（node 自己的預設值為 5）。保留下來的連線，就是不必重複的 TLS 交握——以及客戶端證書提示。客戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
+    "en": "b63e0c1aae9ba585",
+    "text": "僅適用於協定偵錯工具監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為客戶端的下一個請求保持閒置連線開啟的時間（秒）（node 自己的預設值為 5）：即請求之間的 HTTP/1.1 連線，或沒有任何訊框經過的 HTTP/2 連線，後者隨後會被妥善關閉。保留下來的連線，就是不必重複的 TLS 交握——以及客戶端證書提示。客戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
   },
   "listenerRevocation.keepAliveTimeoutS|description": {
-    "en": "0f76cf6236976ee9",
-    "text": "僅適用於撤銷（純 HTTP）監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為客戶端的下一個請求保持閒置 HTTP/1.1 連線開啟的時間（秒）（node 自己的預設值為 5）。保留下來的連線，就是不必重複的 TLS 交握——以及客戶端證書提示。客戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
+    "en": "dec63c7b7c394604",
+    "text": "僅適用於撤銷（純 HTTP）監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為客戶端的下一個請求保持閒置連線開啟的時間（秒）（node 自己的預設值為 5）：即請求之間的 HTTP/1.1 連線，或沒有任何訊框經過的 HTTP/2 連線，後者隨後會被妥善關閉。保留下來的連線，就是不必重複的 TLS 交握——以及客戶端證書提示。客戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
   },
   "listenerMain.headersTimeoutS|description": {
     "en": "8c10df66985844e6",

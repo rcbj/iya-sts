@@ -108,8 +108,8 @@
     "text": "Durée de conservation d’une connexion inactive (s)"
   },
   "http.keepAliveTimeoutS|description": {
-    "en": "15ba4c34c3d3349e",
-    "text": "Combien de temps, en secondes, un écouteur HTTP garde ouverte une connexion HTTP/1.1 inactive pour la requête suivante du client (la valeur par défaut de node est 5). Une connexion conservée, c’est une négociation TLS — et une demande de certificat client — qui ne se répète pas. Les requêtes qu’un client envoie en pipeline sur une même connexion reçoivent leurs réponses dans l’ordre. Derrière un répartiteur de charge, gardez son délai d’inactivité supérieur à cette valeur."
+    "en": "0fa763b61550474c",
+    "text": "Combien de temps, en secondes, un écouteur HTTP garde ouverte une connexion inactive pour la requête suivante du client (la valeur par défaut de node est 5) : une connexion HTTP/1.1 entre deux requêtes, ou une connexion HTTP/2 sur laquelle aucune trame n’est passée, qui est alors fermée proprement. Une connexion conservée, c’est une négociation TLS — et une demande de certificat client — qui ne se répète pas. Les requêtes qu’un client envoie en pipeline sur une même connexion reçoivent leurs réponses dans l’ordre. Derrière un répartiteur de charge, gardez son délai d’inactivité supérieur à cette valeur."
   },
   "http.headersTimeoutS|label": {
     "en": "af0b2f7be18e5943",
@@ -134,6 +134,22 @@
   "http.maxConnections|description": {
     "en": "1dda75e901fc49af",
     "text": "Combien de connexions un écouteur HTTP garde ouvertes simultanément ; une de plus est fermée dès son arrivée. 0, la valeur par défaut, signifie aucune limite (le comportement de node)."
+  },
+  "http.http2|label": {
+    "en": "775d810d4f1a3356",
+    "text": "Proposer HTTP/2"
+  },
+  "http.http2|description": {
+    "en": "76d7c1691efa23fa",
+    "text": "Indique si un écouteur HTTPS propose HTTP/2 lorsqu’un client le demande dans la poignée de main TLS (ALPN). Activé, la valeur par défaut, une seule connexion transporte toutes les requêtes qu’un navigateur envoie en parallèle ; HTTP/1.1 reste servi pour un client qui ne demande rien d’autre. Désactivé, chaque connexion est en HTTP/1.1 — pour un client ou un répartiteur de charge dont le HTTP/2 se comporte mal. Une nouvelle connexion suit un changement immédiatement ; une connexion déjà ouverte garde son protocole. L’écouteur de révocation en HTTP simple ne parle que HTTP/1.1, faute de poignée de main où le proposer."
+  },
+  "http.http2MaxConcurrentStreams|label": {
+    "en": "27fcdca12afd105b",
+    "text": "Flux par connexion HTTP/2"
+  },
+  "http.http2MaxConcurrentStreams|description": {
+    "en": "ec218fbbb4297601",
+    "text": "Combien de requêtes une connexion HTTP/2 peut avoir ouvertes simultanément (SETTINGS_MAX_CONCURRENT_STREAMS) ; un flux au-delà est refusé jusqu’à ce qu’un autre se termine. 100, la valeur par défaut, est la plus petite valeur que recommande la RFC 9113 ; celle de node est illimitée, ce qui permettrait à une seule connexion de porter le travail de milliers. Elle borne le travail d’une connexion comme http.maxConnections borne les connexions. Une nouvelle connexion suit un changement immédiatement, et la nouvelle valeur est envoyée à une connexion ouverte."
   },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
@@ -9427,6 +9443,30 @@
     "en": "56fac41f63177db7",
     "text": "Combien d’exécutions planifiées ou manuelles le leader mène simultanément, toutes tâches et tous domaines de confiance confondus. Un créneau est un multiple de son intervalle, si bien que chaque tâche horaire de chaque domaine arrive à échéance à la même seconde ; chaque exécution occupe une connexion au stockage pendant qu’elle revendique et travaille, et le stockage postgres en a quatre. Les autres attendent, le Run now d’une personne en premier, et démarrent à mesure que des exécutions se terminent. Il n’excède jamais le nombre de connexions du pool moins une, quelle que soit sa valeur, afin que le planificateur ne puisse pas prendre toutes les connexions aux requêtes."
   },
+  "scheduler.niceBusyThreshold|label": {
+    "en": "115ae6125244b30a",
+    "text": "Requêtes en cours d'un worker occupé"
+  },
+  "scheduler.niceBusyThreshold|description": {
+    "en": "364260c11358e10c",
+    "text": "Combien de requêtes un worker de requêtes peut avoir en cours avant qu'une exécution planifiée patiente d'une tâche de cluster l'attende. Le leader confie chaque exécution au worker le moins chargé, et retient l'exécution d'une tâche dont le nice est supérieur à 0 tant que même ce worker en a autant. 0 signifie que le nombre ne retient jamais une exécution."
+  },
+  "scheduler.niceLagMs|label": {
+    "en": "c0b9af3bbe7cb091",
+    "text": "Retard de la boucle d'événements d'un worker occupé"
+  },
+  "scheduler.niceLagMs|description": {
+    "en": "0c0e3c66e7c2e010",
+    "text": "Le retard de la boucle d'événements, en millisecondes (le 99e centile du dernier rapport de dix secondes d'un worker), à partir duquel un worker de requêtes compte comme occupé et une exécution planifiée patiente d'une tâche de cluster l'attend. 0 signifie que le retard ne retient jamais une exécution."
+  },
+  "scheduler.niceMaxDeferS|label": {
+    "en": "07484a01ef8c2875",
+    "text": "Attente maximale d'une exécution pour un worker occupé"
+  },
+  "scheduler.niceMaxDeferS|description": {
+    "en": "22928f93b52af2b5",
+    "text": "La durée maximale, en secondes, pendant laquelle une exécution planifiée d'une tâche de cluster est retenue tant que tous les workers de requêtes sont occupés. Une tâche est retenue pendant sa part de cette durée, nice / 19, et jamais plus de la moitié de son intervalle ; au-delà, elle s'exécute quelle que soit la charge. Une exécution manuelle, une tâche à la demande et une tâche de nice 0 ne sont jamais retenues. 0 signifie qu'aucune exécution n'est retenue."
+  },
   "attributeSources.hostPatterns|label": {
     "en": "04c2e7926c9351dd",
     "text": "Hôtes qu’une source d’attributs peut nommer"
@@ -10528,24 +10568,24 @@
     "text": "Port principal : durée de conservation d’une connexion inactive (s)"
   },
   "listenerMain.keepAliveTimeoutS|description": {
-    "en": "d48d22c3af904939",
-    "text": "Pour l’écouteur du port principal uniquement : http.keepAliveTimeoutS. -1, la valeur par défaut, suit http.keepAliveTimeoutS ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de temps, en secondes, un écouteur HTTP garde ouverte une connexion HTTP/1.1 inactive pour la prochaine requête du client (la valeur par défaut propre à node est 5). Une connexion conservée est une poignée de main TLS — et une invite de certificat client — qui n’est pas répétée. Les requêtes qu’un client enchaîne en pipeline sur une connexion reçoivent leurs réponses dans l’ordre. Derrière un équilibreur de charge, gardez son délai d’inactivité supérieur à cette valeur."
+    "en": "a895a3ca14fdb99f",
+    "text": "Pour l’écouteur du port principal uniquement : http.keepAliveTimeoutS. -1, la valeur par défaut, suit http.keepAliveTimeoutS ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de temps, en secondes, un écouteur HTTP garde ouverte une connexion inactive pour la prochaine requête du client (la valeur par défaut propre à node est 5) : une connexion HTTP/1.1 entre deux requêtes, ou une connexion HTTP/2 sur laquelle aucune trame n’est passée, qui est alors fermée proprement. Une connexion conservée est une poignée de main TLS — et une invite de certificat client — qui n’est pas répétée. Les requêtes qu’un client enchaîne en pipeline sur une connexion reçoivent leurs réponses dans l’ordre. Derrière un équilibreur de charge, gardez son délai d’inactivité supérieur à cette valeur."
   },
   "listenerDebugger.keepAliveTimeoutS|label": {
     "en": "76ffd87245c2ff28",
     "text": "Débogueur de protocoles : durée de conservation d’une connexion inactive (s)"
   },
   "listenerDebugger.keepAliveTimeoutS|description": {
-    "en": "c772bcacfb6260cb",
-    "text": "Pour l’écouteur du débogueur de protocoles uniquement : http.keepAliveTimeoutS. -1, la valeur par défaut, suit http.keepAliveTimeoutS ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de temps, en secondes, un écouteur HTTP garde ouverte une connexion HTTP/1.1 inactive pour la prochaine requête du client (la valeur par défaut propre à node est 5). Une connexion conservée est une poignée de main TLS — et une invite de certificat client — qui n’est pas répétée. Les requêtes qu’un client enchaîne en pipeline sur une connexion reçoivent leurs réponses dans l’ordre. Derrière un équilibreur de charge, gardez son délai d’inactivité supérieur à cette valeur."
+    "en": "b63e0c1aae9ba585",
+    "text": "Pour l’écouteur du débogueur de protocoles uniquement : http.keepAliveTimeoutS. -1, la valeur par défaut, suit http.keepAliveTimeoutS ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de temps, en secondes, un écouteur HTTP garde ouverte une connexion inactive pour la prochaine requête du client (la valeur par défaut propre à node est 5) : une connexion HTTP/1.1 entre deux requêtes, ou une connexion HTTP/2 sur laquelle aucune trame n’est passée, qui est alors fermée proprement. Une connexion conservée est une poignée de main TLS — et une invite de certificat client — qui n’est pas répétée. Les requêtes qu’un client enchaîne en pipeline sur une connexion reçoivent leurs réponses dans l’ordre. Derrière un équilibreur de charge, gardez son délai d’inactivité supérieur à cette valeur."
   },
   "listenerRevocation.keepAliveTimeoutS|label": {
     "en": "19f295348b85fba9",
     "text": "Révocation (HTTP simple) : durée de conservation d’une connexion inactive (s)"
   },
   "listenerRevocation.keepAliveTimeoutS|description": {
-    "en": "0f76cf6236976ee9",
-    "text": "Pour l’écouteur de révocation (HTTP simple) uniquement : http.keepAliveTimeoutS. -1, la valeur par défaut, suit http.keepAliveTimeoutS ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de temps, en secondes, un écouteur HTTP garde ouverte une connexion HTTP/1.1 inactive pour la prochaine requête du client (la valeur par défaut propre à node est 5). Une connexion conservée est une poignée de main TLS — et une invite de certificat client — qui n’est pas répétée. Les requêtes qu’un client enchaîne en pipeline sur une connexion reçoivent leurs réponses dans l’ordre. Derrière un équilibreur de charge, gardez son délai d’inactivité supérieur à cette valeur."
+    "en": "dec63c7b7c394604",
+    "text": "Pour l’écouteur de révocation (HTTP simple) uniquement : http.keepAliveTimeoutS. -1, la valeur par défaut, suit http.keepAliveTimeoutS ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de temps, en secondes, un écouteur HTTP garde ouverte une connexion inactive pour la prochaine requête du client (la valeur par défaut propre à node est 5) : une connexion HTTP/1.1 entre deux requêtes, ou une connexion HTTP/2 sur laquelle aucune trame n’est passée, qui est alors fermée proprement. Une connexion conservée est une poignée de main TLS — et une invite de certificat client — qui n’est pas répétée. Les requêtes qu’un client enchaîne en pipeline sur une connexion reçoivent leurs réponses dans l’ordre. Derrière un équilibreur de charge, gardez son délai d’inactivité supérieur à cette valeur."
   },
   "listenerMain.headersTimeoutS|label": {
     "en": "8d17a4d86aca9ed5",
@@ -10618,5 +10658,37 @@
   "listenerRevocation.maxConnections|description": {
     "en": "33c1557318481882",
     "text": "Pour l’écouteur de révocation (HTTP simple) uniquement : http.maxConnections. -1, la valeur par défaut, suit http.maxConnections ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de connexions un écouteur HTTP garde ouvertes simultanément ; une connexion supplémentaire est fermée dès son arrivée. 0, la valeur par défaut, signifie aucune limite (celle de node)."
+  },
+  "listenerMain.http2|label": {
+    "en": "d17df93a132abc21",
+    "text": "Port principal : proposer HTTP/2"
+  },
+  "listenerMain.http2|description": {
+    "en": "4362a834f16b5b21",
+    "text": "Pour l’écouteur du port principal uniquement : http.http2. inherit, la valeur par défaut, suit http.http2 ; toute autre valeur ne s’applique qu’à cet écouteur. Indique si un écouteur HTTPS propose HTTP/2 lorsqu’un client le demande dans la poignée de main TLS (ALPN). Activé, la valeur par défaut, une seule connexion transporte toutes les requêtes qu’un navigateur envoie en parallèle ; HTTP/1.1 reste servi pour un client qui ne demande rien d’autre. Désactivé, chaque connexion est en HTTP/1.1 — pour un client ou un répartiteur de charge dont le HTTP/2 se comporte mal. Une nouvelle connexion suit un changement immédiatement ; une connexion déjà ouverte garde son protocole. L’écouteur de révocation en HTTP simple ne parle que HTTP/1.1, faute de poignée de main où le proposer."
+  },
+  "listenerDebugger.http2|label": {
+    "en": "65d81b530197d8d7",
+    "text": "Débogueur de protocoles : proposer HTTP/2"
+  },
+  "listenerDebugger.http2|description": {
+    "en": "95b887a7622f4880",
+    "text": "Pour l’écouteur du débogueur de protocoles uniquement : http.http2. inherit, la valeur par défaut, suit http.http2 ; toute autre valeur ne s’applique qu’à cet écouteur. Indique si un écouteur HTTPS propose HTTP/2 lorsqu’un client le demande dans la poignée de main TLS (ALPN). Activé, la valeur par défaut, une seule connexion transporte toutes les requêtes qu’un navigateur envoie en parallèle ; HTTP/1.1 reste servi pour un client qui ne demande rien d’autre. Désactivé, chaque connexion est en HTTP/1.1 — pour un client ou un répartiteur de charge dont le HTTP/2 se comporte mal. Une nouvelle connexion suit un changement immédiatement ; une connexion déjà ouverte garde son protocole. L’écouteur de révocation en HTTP simple ne parle que HTTP/1.1, faute de poignée de main où le proposer."
+  },
+  "listenerMain.http2MaxConcurrentStreams|label": {
+    "en": "c152ce6a507a8348",
+    "text": "Port principal : flux par connexion HTTP/2"
+  },
+  "listenerMain.http2MaxConcurrentStreams|description": {
+    "en": "ba8c8cd0302f4417",
+    "text": "Pour l’écouteur du port principal uniquement : http.http2MaxConcurrentStreams. -1, la valeur par défaut, suit http.http2MaxConcurrentStreams ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de requêtes une connexion HTTP/2 peut avoir ouvertes simultanément (SETTINGS_MAX_CONCURRENT_STREAMS) ; un flux au-delà est refusé jusqu’à ce qu’un autre se termine. 100, la valeur par défaut, est la plus petite valeur que recommande la RFC 9113 ; celle de node est illimitée, ce qui permettrait à une seule connexion de porter le travail de milliers. Elle borne le travail d’une connexion comme http.maxConnections borne les connexions. Une nouvelle connexion suit un changement immédiatement, et la nouvelle valeur est envoyée à une connexion ouverte."
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|label": {
+    "en": "a6a26cb5d1740fb5",
+    "text": "Débogueur de protocoles : flux par connexion HTTP/2"
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|description": {
+    "en": "94c52205da70930f",
+    "text": "Pour l’écouteur du débogueur de protocoles uniquement : http.http2MaxConcurrentStreams. -1, la valeur par défaut, suit http.http2MaxConcurrentStreams ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de requêtes une connexion HTTP/2 peut avoir ouvertes simultanément (SETTINGS_MAX_CONCURRENT_STREAMS) ; un flux au-delà est refusé jusqu’à ce qu’un autre se termine. 100, la valeur par défaut, est la plus petite valeur que recommande la RFC 9113 ; celle de node est illimitée, ce qui permettrait à une seule connexion de porter le travail de milliers. Elle borne le travail d’une connexion comme http.maxConnections borne les connexions. Une nouvelle connexion suit un changement immédiatement, et la nouvelle valeur est envoyée à une connexion ouverte."
   }
 }

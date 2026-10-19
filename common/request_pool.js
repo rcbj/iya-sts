@@ -121,6 +121,9 @@ const clientAddress = require('./client_address');
 // A LEAF: the affinity maps below, described to `/admin/caches` (#74).
 const cacheRegistry = require('./cache_registry');
 const lingeringClose = require('./lingering_close');
+// The HTTP/2 authority rule (#407): a leaf (node, express, the error-code
+// table).
+const Http2Express = require('./http2_express');
 // A LEAF (config, error_codes, node's own modules): every process's heap
 // budget, which fork() hands each worker, and the container's OOM-kill count,
 // which reap() reads for a worker that was SIGKILLed (#341).
@@ -3098,6 +3101,21 @@ function fork(pool, slot) {
         receiveCollectGarbage(entry, message);
         return;
       }
+      // A CLUSTER JOB'S BODY ANSWERED, ITS LOOP'S DELAY, AND A DIRECTORY
+      // SIGN-OUT WITH NO RESPONSE TO RIDE ON (#408): see schedulerRunner().
+      if (message && message.schedulerRunDone) {
+        receiveSchedulerRunDone(entry, message);
+        return;
+      }
+      if (message && message.loopLag) {
+        entry.loopLag = { p99Ms: Number(message.loopLag.p99Ms) || 0,
+                          at: Date.now() };
+        return;
+      }
+      if (message && message.ldapDrop) {
+        closeDirectoryConnections(message.ldapDrop);
+        return;
+      }
       if (message && message.status) {
         entry.served = message.served;
       }
@@ -3275,6 +3293,10 @@ function recoverFromGiveUp(pool) {
 function reap(entry, code, reason) {
   log.debug('Entering reap(). pid=' + entry.pid);
   workers = workers.filter(function (one) { return one !== entry; });
+  // THE CLUSTER RUNS IT WAS RUNNING FAIL NOW (#408), under their own code,
+  // rather than waiting out their time limits for an answer nothing will
+  // send. Their claims lapse as any run's does.
+  failSchedulerRunsOf(entry, code, reason);
   // ITS DIRECTORY CREATE CLAIMS GO BACK NOW (#628): it will never give them
   // back itself, and a name it held would otherwise wait out the claim's
   // lifetime.
@@ -5830,6 +5852,30 @@ function proxy(entry, req, res, atGeneration, ticket) {
   };
 
   const headers = Object.assign({}, req.headers);
+  // AN HTTP/2 REQUEST'S AUTHORITY IS ITS HOST, AND THE TWO MAY NOT DISAGREE
+  // (#407; RFC 9113 section 8.3.1). The app's own `init` has already applied
+  // this (common/http2_express.ts), so a request refused here is one that
+  // reached the pool some other way; the rule is asked again rather than
+  // trusted, because the worker believes the `host` this process sends it.
+  if (Http2Express.hostProblem(headers)) {
+    if (ticket) {
+      ticketAbandoned(entry, ticket);
+    }
+    Http2Express.refuseHostMismatch(res);
+    log.debug('Leaving proxy(). :authority and host disagree.');
+    return;
+  }
+  // AN HTTP/2 REQUEST'S PSEUDO-HEADERS STAY ON ITS HOP (#407). Node hands
+  // `:method`, `:path`, `:scheme` and `:authority` over in `req.headers`, and
+  // a name starting with a colon is not an HTTP/1.1 field name: node's
+  // client throws ERR_INVALID_HTTP_TOKEN on it, so every HTTP/2 request a
+  // worker would have answered failed here. The method and path go on the
+  // request line below; the authority went into `host` above.
+  Object.keys(headers).forEach(function (name) {
+    if (name.charAt(0) === ':') {
+      delete headers[name];
+    }
+  });
 
   // ---------------------------------------------------------------------
   // THE CLIENT'S HOP-BY-HOP HEADERS STAY ON THE CLIENT'S HOP, AND THIS HOP
@@ -6859,6 +6905,10 @@ function stop(timeoutMs) {
         if (one.agent && typeof one.agent.destroy === 'function') {
           one.agent.destroy();
         }
+        // A CLUSTER RUN A STOPPED WORKER WAS DOING FAILS NOW (#408), as
+        // `reap()` makes it fail: nothing else would answer it before its
+        // time limit.
+        failSchedulerRunsOf(one, 'stop', 'the pool stopped');
       });
       workers = [];
       POOLS.forEach(function (pool) {
@@ -6921,6 +6971,167 @@ function removeSocketDir() {
 // to a worker that has not installed its handler yet ends it, and its reply
 // overwrites `served` with the worker's own count.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A CLUSTER JOB'S BODY, RUN IN A REQUEST WORKER (#408).
+//
+// The scheduler's leader is this process, and it keeps everything that
+// decides a run — the lease, the claim, the fence, the time limit, the row —
+// and hands the job's `run()` to a ready PROTOCOL worker, because sixteen jobs
+// did synchronous work for tens of milliseconds to minutes on the thread that
+// answers every listener. `cluster/scheduler.ts`'s *WHERE A CLUSTER RUN RUNS*
+// argues it; this is the transport, in the shape of the operation channel:
+//
+//   front -> worker   { schedulerRun, runId, jobId, realm, trigger, params,
+//                       clockOffsetMs }
+//   worker -> front   { schedulerRunDone, runId, ok, result | error, code }
+//                     or { schedulerRunDone, runId, unknownJob }
+//   front -> worker   { schedulerFence, runId }   (time limit, lost lease,
+//                                                   removed realm)
+//
+// A run's answer is resolved ONCE: the answer, the fence (the leader stopped
+// waiting) or the worker's exit (STS-SCHED-0019), whichever comes first. A
+// worker's load is its requests in flight and the event-loop delay its own
+// `persistence.event-loop-lag` run last reported (`{ loopLag }`, every ten
+// seconds); a report older than three windows is no report.
+// ---------------------------------------------------------------------------
+const schedulerRuns = new Map();
+const LOOP_LAG_FRESH_MS = 30 * 1000;
+
+/**
+ * What the scheduler's leader hands a cluster job's body to (#408).
+ *
+ * @returns `{ workers(), run(workerId, request), fence(runId) }`
+ */
+function schedulerRunner() {
+  log.debug("Entering schedulerRunner().");
+  log.debug("Leaving schedulerRunner().");
+  return {
+    workers: schedulerWorkers,
+    run: runSchedulerJob,
+    fence: fenceSchedulerJob
+  };
+}
+
+// The ready protocol-pool workers with their load. A pool that gave up has
+// none to offer: its paths are answered here, and so are its runs.
+function schedulerWorkers() {
+  log.debug("Entering schedulerWorkers().");
+  if (givenUp[PROTOCOL_POOL]) {
+    log.debug("Leaving schedulerWorkers(). The pool gave up.");
+    return [];
+  }
+  const now = Date.now();
+  // THE RUNS A WORKER IS ALREADY DOING COUNT AS ITS LOAD: a body is not a
+  // request, so `inFlight` does not see it, and two long runs would
+  // otherwise both go to the worker that looked idle.
+  const running = new Map();
+  schedulerRuns.forEach(function (held) {
+    running.set(held.entry, (running.get(held.entry) || 0) + 1);
+  });
+  const out = readyWorkers(PROTOCOL_POOL).filter(function (one) {
+    return one.child && one.child.connected !== false;
+  }).map(function (one) {
+    const lag = one.loopLag && now - one.loopLag.at <= LOOP_LAG_FRESH_MS
+      ? one.loopLag.p99Ms : null;
+    return { id: one.pid,
+             inFlight: (Number(one.inFlight) || 0) + (running.get(one) || 0),
+             lagMs: lag };
+  });
+  log.debug("Leaving schedulerWorkers(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Runs one cluster job's body in a worker.
+ *
+ * @param workerId - the worker's id (its threadId)
+ * @param request - `{ runId, jobId, realm, trigger, params, clockOffsetMs }`
+ * @returns a promise of the worker's answer; never rejects
+ */
+function runSchedulerJob(workerId, request) {
+  log.debug("Entering runSchedulerJob(). " + (request && request.runId));
+  const runId = String((request || {}).runId || '');
+  const entry = workers.filter(function (one) {
+    return one.pid === workerId && one.ready;
+  })[0];
+  if (!entry) {
+    log.debug("Leaving runSchedulerJob(). No such worker.");
+    return Promise.resolve({ ok: false, code: 'STS-SCHED-0019',
+                             error: 'request worker ' + workerId + ' is not ' +
+                                    'ready to run it' });
+  }
+  log.debug("Leaving runSchedulerJob().");
+  return new Promise(function (resolve) {
+    schedulerRuns.set(runId, { entry: entry, resolve: resolve });
+    try {
+      entry.child.send(Object.assign({}, request, { schedulerRun: true }));
+    } catch (e) {
+      log.debug("Caught in runSchedulerJob(): " + ((e && e.message) || e));
+      schedulerRuns.delete(runId);
+      resolve({ ok: false, code: 'STS-SCHED-0019',
+                error: 'request worker ' + workerId + ' could not be ' +
+                       'reached: ' + ((e && e.message) || e) });
+    }
+  });
+}
+
+/**
+ * Tells the worker running a cluster run that the leader no longer waits for
+ * it, and stops waiting.
+ *
+ * @param runId - the run
+ */
+function fenceSchedulerJob(runId) {
+  log.debug("Entering fenceSchedulerJob(). " + runId);
+  const held = schedulerRuns.get(String(runId || ''));
+  if (!held) {
+    log.debug("Leaving fenceSchedulerJob(). Not running.");
+    return;
+  }
+  schedulerRuns.delete(String(runId));
+  try {
+    held.entry.child.send({ schedulerFence: true, runId: String(runId) });
+  } catch (e) {
+    // A worker that cannot be reached is going, and its run with it.
+    log.debug("Caught in fenceSchedulerJob(): " + ((e && e.message) || e));
+  }
+  held.resolve({ ok: false, fenced: true,
+                 error: 'the leader stopped waiting for it' });
+  log.debug("Leaving fenceSchedulerJob().");
+}
+
+function receiveSchedulerRunDone(entry, message) {
+  log.debug("Entering receiveSchedulerRunDone(). " + message.runId);
+  const runId = String(message.runId || '');
+  const held = schedulerRuns.get(runId);
+  if (!held || held.entry !== entry) {
+    log.debug("Leaving receiveSchedulerRunDone(). Nobody is waiting.");
+    return;
+  }
+  schedulerRuns.delete(runId);
+  held.resolve({ ok: !!message.ok, unknownJob: !!message.unknownJob,
+                 unknownRealm: !!message.unknownRealm,
+                 result: message.result === undefined ? null
+                   : message.result,
+                 error: message.error || '', code: message.code || '' });
+  log.debug("Leaving receiveSchedulerRunDone().");
+}
+
+// Every run a worker that ended was running fails, under STS-SCHED-0019.
+function failSchedulerRunsOf(entry, code, reason) {
+  log.debug("Entering failSchedulerRunsOf(). pid=" + entry.pid);
+  Array.from(schedulerRuns.entries()).forEach(function (pair) {
+    if (pair[1].entry !== entry) {
+      return;
+    }
+    schedulerRuns.delete(pair[0]);
+    pair[1].resolve({ ok: false, code: 'STS-SCHED-0019',
+                      error: 'request worker ' + entry.pid + ' ended (' +
+                             (reason || code) + ') before it answered' });
+  });
+  log.debug("Leaving failSchedulerRunsOf().");
+}
+
 let nextPoolStatusId = 1;
 const poolStatusWaiters = new Map();
 
@@ -7281,6 +7492,8 @@ function reset() {
  * @namespace
  */
 module.exports = {
+  // Where the scheduler's leader runs a cluster job's body (#408).
+  schedulerRunner: schedulerRunner,
   size: size,
   start: start,
   stop: stop,

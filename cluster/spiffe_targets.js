@@ -998,6 +998,15 @@ class SpiffeTargets {
       owner: 'cluster/spiffe_targets.js',
       kind: 'cluster',
       scope: 'service',
+      // ON THE FRONT (#408): `SpiffeTargets.stopping`, which `beginStop()`
+      // sets in `server.js` so that a reconcile cannot register this task's
+      // address again after `onStop()` has deregistered it, is a static of
+      // the FRONT process. A request worker's copy is never set, so a run
+      // there would keep mutating the target groups through the shutdown.
+      // The work is a few AWS calls, I/O that does not hold the thread.
+      onFront: 'the stopping flag that keeps a reconcile from registering ' +
+               'this task again after it deregistered itself is set only ' +
+               'in the front process, by server.js',
       everyMs: function () {
         log.debug("Entering everyMs().");
         log.debug("Leaving everyMs().");

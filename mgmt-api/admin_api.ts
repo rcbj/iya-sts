@@ -4882,9 +4882,14 @@ class AdminApi {
                      '`realm`, `schedule` (`text`, `everyMs`, `setting`, ' +
                      '`cron`, `manualOnly`), `state` (`enabled` or `off`) ' +
                      'and `offReason`, `manual` (whether it may be run now), ' +
+                     '`runsOn` (`worker`, `front` or `every-process`, #408) ' +
+                     'with `onFront` (why a cluster job stays on the front ' +
+                     'process) and `nice` (0 to 19), ' +
                      '`lastRun` and `running` (a run: `runId`, `state`, ' +
                      '`attempt`, `fenceAt`, `node`, `pid`, `startedAt`, ' +
-                     '`endedAt`, `durationMs`, `errorCode`, `why`), ' +
+                     '`endedAt`, `durationMs`, `ranIn` (`worker` or ' +
+                     '`front`), `deferredMs` (how long it was held for a ' +
+                     'busy worker), `errorCode`, `why`), ' +
                      '`queued` manual runs, `nextRunAt` (absolute, UTC), ' +
                      '`nextRunInMs` (by the DATABASE\'s clock at the time of ' +
                      'the request, so every node answers the same figure) ' +

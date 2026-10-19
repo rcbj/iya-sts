@@ -108,8 +108,8 @@
     "text": "閒置連線保留時間（秒）"
   },
   "http.keepAliveTimeoutS|description": {
-    "en": "15ba4c34c3d3349e",
-    "text": "HTTP 接聽程式為用戶端的下一個請求保留閒置 HTTP/1.1 連線的時間，以秒為單位（node 自己的預設值為 5）。保留連線就省下一次 TLS 交握——以及一次用戶端憑證提示。用戶端在同一連線上管線化送出的請求會依序回應。位於負載平衡器後方時，請讓其閒置逾時大於此值。"
+    "en": "0fa763b61550474c",
+    "text": "HTTP 接聽程式為用戶端的下一個請求保留閒置連線的時間，以秒為單位（node 自己的預設值為 5）：即請求之間的 HTTP/1.1 連線，或沒有任何訊框經過的 HTTP/2 連線，後者隨後會被妥善關閉。保留連線就省下一次 TLS 交握——以及一次用戶端憑證提示。用戶端在同一連線上管線化送出的請求會依序回應。位於負載平衡器後方時，請讓其閒置逾時大於此值。"
   },
   "http.headersTimeoutS|label": {
     "en": "af0b2f7be18e5943",
@@ -134,6 +134,22 @@
   "http.maxConnections|description": {
     "en": "1dda75e901fc49af",
     "text": "HTTP 接聽程式同時保持開啟的連線數；超出的一個在抵達時即被關閉。0（預設）表示無限制（node 自己的行為）。"
+  },
+  "http.http2|label": {
+    "en": "775d810d4f1a3356",
+    "text": "提供 HTTP/2"
+  },
+  "http.http2|description": {
+    "en": "76d7c1691efa23fa",
+    "text": "當用戶端在 TLS 交握中（ALPN）請求 HTTP/2 時，HTTPS 監聽器是否提供它。開啟（預設值）時，一個連線承載瀏覽器並行發出的所有請求；對於只請求 HTTP/1.1 的用戶端，仍以 HTTP/1.1 回應。關閉時，每個連線都是 HTTP/1.1——適用於 HTTP/2 行為異常的用戶端或負載平衡器。新連線立即遵循變更；已開啟的連線保持其協定。純 HTTP 的撤銷監聽器只支援 HTTP/1.1，因為沒有可以提供它的交握。"
+  },
+  "http.http2MaxConcurrentStreams|label": {
+    "en": "27fcdca12afd105b",
+    "text": "每條 HTTP/2 連線的串流數"
+  },
+  "http.http2MaxConcurrentStreams|description": {
+    "en": "ec218fbbb4297601",
+    "text": "一條 HTTP/2 連線可同時開啟的請求數（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的串流會被拒絕，直到有串流結束。預設值 100 是 RFC 9113 建議的最小值；node 自己的值沒有上限，這會讓一條連線承載成千上萬條連線的工作量。它限制一條連線上的工作量，正如 http.maxConnections 限制連線數。新連線會立即依循變更，已開啟的連線會收到新值。"
   },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
@@ -9427,6 +9443,30 @@
     "en": "56fac41f63177db7",
     "text": "領導者在所有工作與信任領域之間同時進行的排程或手動執行數量。時段是其間隔的倍數，因此每個領域中每個每小時執行的工作都會在同一秒到期；每次執行在領取與工作期間都會佔用一條通往儲存區的連線，而 postgres 儲存區有四條。其餘的會等待，人員的 Run now 優先，並在執行結束時開始。無論設定為何，它絕不會超過集區容量減一，因此排程器無法從請求那裡拿走所有連線。"
   },
+  "scheduler.niceBusyThreshold|label": {
+    "en": "115ae6125244b30a",
+    "text": "繁忙工作執行緒的進行中請求數"
+  },
+  "scheduler.niceBusyThreshold|description": {
+    "en": "364260c11358e10c",
+    "text": "請求工作執行緒最多可有多少個進行中的請求，超過後耐心的排程叢集執行會等待它。領導者把每次執行交給負載最低的工作執行緒；只要連該工作執行緒也有這麼多請求，nice 大於 0 的作業的執行就會被暫緩。0 表示請求數從不暫緩執行。"
+  },
+  "scheduler.niceLagMs|label": {
+    "en": "c0b9af3bbe7cb091",
+    "text": "繁忙工作執行緒的事件迴圈延遲"
+  },
+  "scheduler.niceLagMs|description": {
+    "en": "0c0e3c66e7c2e010",
+    "text": "事件迴圈延遲（毫秒，取工作執行緒最近一次十秒報告的第 99 百分位），達到該值時請求工作執行緒被視為繁忙，耐心的排程叢集執行會等待它。0 表示延遲從不暫緩執行。"
+  },
+  "scheduler.niceMaxDeferS|label": {
+    "en": "07484a01ef8c2875",
+    "text": "執行等待繁忙工作執行緒的最長時間"
+  },
+  "scheduler.niceMaxDeferS|description": {
+    "en": "22928f93b52af2b5",
+    "text": "在所有請求工作執行緒都繁忙時，任何排程叢集執行最多被暫緩的秒數。作業按其份額（nice / 19）被暫緩，且從不超過其間隔的一半；超過後無論負載如何都會執行。手動執行、隨選作業和 nice 為 0 的作業從不暫緩。0 表示不暫緩任何執行。"
+  },
   "attributeSources.hostPatterns|label": {
     "en": "04c2e7926c9351dd",
     "text": "屬性來源可指名的主機"
@@ -10528,24 +10568,24 @@
     "text": "主連接埠：閒置連線保留時間（秒）"
   },
   "listenerMain.keepAliveTimeoutS|description": {
-    "en": "d48d22c3af904939",
-    "text": "僅適用於主連接埠監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為用戶端的下一個請求保持閒置 HTTP/1.1 連線開啟的時間（秒）（node 自己的預設值為 5）。保留下來的連線，就是不必重複的 TLS 交握——以及用戶端憑證提示。用戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
+    "en": "a895a3ca14fdb99f",
+    "text": "僅適用於主連接埠監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為用戶端的下一個請求保持閒置連線開啟的時間（秒）（node 自己的預設值為 5）：即請求之間的 HTTP/1.1 連線，或沒有任何訊框經過的 HTTP/2 連線，後者隨後會被妥善關閉。保留下來的連線，就是不必重複的 TLS 交握——以及用戶端憑證提示。用戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
   },
   "listenerDebugger.keepAliveTimeoutS|label": {
     "en": "76ffd87245c2ff28",
     "text": "協定偵錯工具：閒置連線保留時間（秒）"
   },
   "listenerDebugger.keepAliveTimeoutS|description": {
-    "en": "c772bcacfb6260cb",
-    "text": "僅適用於協定偵錯工具監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為用戶端的下一個請求保持閒置 HTTP/1.1 連線開啟的時間（秒）（node 自己的預設值為 5）。保留下來的連線，就是不必重複的 TLS 交握——以及用戶端憑證提示。用戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
+    "en": "b63e0c1aae9ba585",
+    "text": "僅適用於協定偵錯工具監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為用戶端的下一個請求保持閒置連線開啟的時間（秒）（node 自己的預設值為 5）：即請求之間的 HTTP/1.1 連線，或沒有任何訊框經過的 HTTP/2 連線，後者隨後會被妥善關閉。保留下來的連線，就是不必重複的 TLS 交握——以及用戶端憑證提示。用戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
   },
   "listenerRevocation.keepAliveTimeoutS|label": {
     "en": "19f295348b85fba9",
     "text": "撤銷（純 HTTP）：閒置連線保留時間（秒）"
   },
   "listenerRevocation.keepAliveTimeoutS|description": {
-    "en": "0f76cf6236976ee9",
-    "text": "僅適用於撤銷（純 HTTP）監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為用戶端的下一個請求保持閒置 HTTP/1.1 連線開啟的時間（秒）（node 自己的預設值為 5）。保留下來的連線，就是不必重複的 TLS 交握——以及用戶端憑證提示。用戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
+    "en": "dec63c7b7c394604",
+    "text": "僅適用於撤銷（純 HTTP）監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為用戶端的下一個請求保持閒置連線開啟的時間（秒）（node 自己的預設值為 5）：即請求之間的 HTTP/1.1 連線，或沒有任何訊框經過的 HTTP/2 連線，後者隨後會被妥善關閉。保留下來的連線，就是不必重複的 TLS 交握——以及用戶端憑證提示。用戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
   },
   "listenerMain.headersTimeoutS|label": {
     "en": "8d17a4d86aca9ed5",
@@ -10618,5 +10658,37 @@
   "listenerRevocation.maxConnections|description": {
     "en": "33c1557318481882",
     "text": "僅適用於撤銷（純 HTTP）監聽器：http.maxConnections。預設值 -1 依循 http.maxConnections；其他任何值只對此監聽器生效。HTTP 監聽器同時保持開啟的連線數；再多一條會在到達時被關閉。預設值 0 表示無限制（node 自己的預設）。"
+  },
+  "listenerMain.http2|label": {
+    "en": "d17df93a132abc21",
+    "text": "主連接埠：提供 HTTP/2"
+  },
+  "listenerMain.http2|description": {
+    "en": "4362a834f16b5b21",
+    "text": "僅適用於主連接埠監聽器：http.http2。預設值 inherit 依循 http.http2；其他任何值只對此監聽器生效。當用戶端在 TLS 交握中（ALPN）請求 HTTP/2 時，HTTPS 監聽器是否提供它。開啟（預設值）時，一個連線承載瀏覽器並行發出的所有請求；對於只請求 HTTP/1.1 的用戶端，仍以 HTTP/1.1 回應。關閉時，每個連線都是 HTTP/1.1——適用於 HTTP/2 行為異常的用戶端或負載平衡器。新連線立即遵循變更；已開啟的連線保持其協定。純 HTTP 的撤銷監聽器只支援 HTTP/1.1，因為沒有可以提供它的交握。"
+  },
+  "listenerDebugger.http2|label": {
+    "en": "65d81b530197d8d7",
+    "text": "協定偵錯工具：提供 HTTP/2"
+  },
+  "listenerDebugger.http2|description": {
+    "en": "95b887a7622f4880",
+    "text": "僅適用於協定偵錯工具監聽器：http.http2。預設值 inherit 依循 http.http2；其他任何值只對此監聽器生效。當用戶端在 TLS 交握中（ALPN）請求 HTTP/2 時，HTTPS 監聽器是否提供它。開啟（預設值）時，一個連線承載瀏覽器並行發出的所有請求；對於只請求 HTTP/1.1 的用戶端，仍以 HTTP/1.1 回應。關閉時，每個連線都是 HTTP/1.1——適用於 HTTP/2 行為異常的用戶端或負載平衡器。新連線立即遵循變更；已開啟的連線保持其協定。純 HTTP 的撤銷監聽器只支援 HTTP/1.1，因為沒有可以提供它的交握。"
+  },
+  "listenerMain.http2MaxConcurrentStreams|label": {
+    "en": "c152ce6a507a8348",
+    "text": "主連接埠：每條 HTTP/2 連線的串流數"
+  },
+  "listenerMain.http2MaxConcurrentStreams|description": {
+    "en": "ba8c8cd0302f4417",
+    "text": "僅適用於主連接埠監聽器：http.http2MaxConcurrentStreams。預設值 -1 依循 http.http2MaxConcurrentStreams；其他任何值只對此監聽器生效。一條 HTTP/2 連線可同時開啟的請求數（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的串流會被拒絕，直到有串流結束。預設值 100 是 RFC 9113 建議的最小值；node 自己的值沒有上限，這會讓一條連線承載成千上萬條連線的工作量。它限制一條連線上的工作量，正如 http.maxConnections 限制連線數。新連線會立即依循變更，已開啟的連線會收到新值。"
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|label": {
+    "en": "a6a26cb5d1740fb5",
+    "text": "協定偵錯工具：每條 HTTP/2 連線的串流數"
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|description": {
+    "en": "94c52205da70930f",
+    "text": "僅適用於協定偵錯工具監聽器：http.http2MaxConcurrentStreams。預設值 -1 依循 http.http2MaxConcurrentStreams；其他任何值只對此監聽器生效。一條 HTTP/2 連線可同時開啟的請求數（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的串流會被拒絕，直到有串流結束。預設值 100 是 RFC 9113 建議的最小值；node 自己的值沒有上限，這會讓一條連線承載成千上萬條連線的工作量。它限制一條連線上的工作量，正如 http.maxConnections 限制連線數。新連線會立即依循變更，已開啟的連線會收到新值。"
   }
 }

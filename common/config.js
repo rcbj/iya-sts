@@ -1105,8 +1105,11 @@ const SETTINGS = [
     env: 'STS_HTTP_KEEP_ALIVE_TIMEOUT_S', type: 'int', dflt: 60,
     min: 1, max: 3600, runtime: true, perProcess: true,
     description: 'How long, in seconds, an HTTP listener keeps an idle ' +
-                 'HTTP/1.1 connection open for the client\'s next request ' +
-                 '(node\'s own default is 5). A connection kept is a TLS ' +
+                 'connection open for the client\'s next request (node\'s ' +
+                 'own default is 5): an HTTP/1.1 connection between ' +
+                 'requests, or an HTTP/2 connection on which no frame has ' +
+                 'passed, which is then closed gracefully. A connection ' +
+                 'kept is a TLS ' +
                  'handshake — and a client-certificate prompt — not repeated. ' +
                  'Requests a client pipelines on one connection are answered ' +
                  'in order. Behind a balancer, keep its idle timeout above ' +
@@ -1138,6 +1141,46 @@ const SETTINGS = [
     description: 'How many connections an HTTP listener holds open at once; ' +
                  'one more is closed as it arrives. 0, the default, is no ' +
                  'limit (node\'s own).' },
+  // HTTP/2 ON EVERY TLS HTTP LISTENER (#407, 2026-10-19; rcbj: "enabled by
+  // default on all listeners. But, the user can disable it if necessary").
+  // Each is node's http2 secure server with HTTP/1.1 allowed, and this
+  // decides only whether ALPN OFFERS `h2`; a client that does not ask for it
+  // is answered over HTTP/1.1 either way. RUNTIME: the offer is a property
+  // of the server node reads at each new connection, so `tls/tls_server.js`
+  // re-applies it with the pooling values; a connection already open keeps
+  // the protocol it chose.
+  { key: 'http.http2', group: 'HTTP connections',
+    label: 'Offer HTTP/2',
+    env: 'STS_HTTP_HTTP2', type: 'bool', dflt: true,
+    runtime: true, perProcess: true,
+    description: 'Whether an HTTPS listener offers HTTP/2 when a client ' +
+                 'asks for it in the TLS handshake (ALPN). On, the default, ' +
+                 'one connection carries every request a browser makes in ' +
+                 'parallel; HTTP/1.1 is still answered for a client that ' +
+                 'asks for nothing else. Off, every connection is ' +
+                 'HTTP/1.1 — for a client or a balancer whose HTTP/2 ' +
+                 'misbehaves. A new connection follows a change at once; ' +
+                 'an open one keeps its protocol. The plain-HTTP revocation ' +
+                 'listener is HTTP/1.1 only, since there is no handshake to ' +
+                 'offer it in.' },
+  // THE STREAMS ONE HTTP/2 CONNECTION MAY HAVE OPEN (#407). Node announces
+  // 2^32-1 unless told otherwise, so with HTTP/2 on, http.maxConnections
+  // bounded connections and nothing bounded the work each one carried.
+  // RUNTIME: tls_server.js updates the server's SETTINGS for the next
+  // session and sends them to every open one.
+  { key: 'http.http2MaxConcurrentStreams', group: 'HTTP connections',
+    label: 'Streams per HTTP/2 connection',
+    env: 'STS_HTTP_HTTP2_MAX_CONCURRENT_STREAMS', type: 'int', dflt: 100,
+    min: 1, max: 1000, runtime: true, perProcess: true,
+    description: 'How many requests one HTTP/2 connection may have open at ' +
+                 'once (SETTINGS_MAX_CONCURRENT_STREAMS); a stream past it ' +
+                 'is refused until one finishes. 100, the default, is the ' +
+                 'smallest value RFC 9113 recommends; node\'s own is ' +
+                 'unbounded, which would let one connection carry the work ' +
+                 'of thousands. It bounds the work on a connection as ' +
+                 'http.maxConnections bounds the connections. A new ' +
+                 'connection follows a change at once, and an open one is ' +
+                 'sent the new value.' },
 
   { key: 'global.proxyProtocol', group: 'Global',
     label: 'PROXY protocol on the TCP listeners',
@@ -16900,6 +16943,42 @@ const SETTINGS = [
                  'than one fewer than the pool holds, whatever it is set ' +
                  'to, so the scheduler cannot take every connection from ' +
                  'the requests.' },
+  // HOW LONG A PATIENT CLUSTER RUN WAITS FOR A BUSY WORKER (#408, rcbj): the
+  // leader hands a cluster job's body to the least-loaded request worker,
+  // and a scheduled run of a job whose `nice` is above 0 waits before its
+  // claim while even that worker is heavy by either of the first two. The
+  // third bounds it, so a run is late and never skipped. Per process: the
+  // leader is a process, and a realm has no worker of its own. 0 switches a
+  // signal off, read directly (the `|| n` rule).
+  { key: 'scheduler.niceBusyThreshold', group: 'Scheduler',
+    label: 'A busy worker\'s requests in flight',
+    env: 'STS_SCHEDULER_NICE_BUSY_THRESHOLD', type: 'int', dflt: 8, min: 0,
+    max: 10000, runtime: true, perProcess: true,
+    description: 'How many requests a request worker may have in flight ' +
+                 'before a patient scheduled cluster run waits for it. The ' +
+                 'leader hands each run to the least-loaded worker, and ' +
+                 'holds a run of a job whose nice is above 0 while even ' +
+                 'that worker has this many. 0 means the count never holds ' +
+                 'a run.' },
+  { key: 'scheduler.niceLagMs', group: 'Scheduler',
+    label: 'A busy worker\'s event-loop delay',
+    env: 'STS_SCHEDULER_NICE_LAG_MS', type: 'int', dflt: 200, min: 0,
+    max: 600000, runtime: true, perProcess: true,
+    description: 'The event-loop delay, in milliseconds (the 99th ' +
+                 'percentile of a worker\'s last ten-second report), at ' +
+                 'which a request worker counts as busy and a patient ' +
+                 'scheduled cluster run waits for it. 0 means the delay ' +
+                 'never holds a run.' },
+  { key: 'scheduler.niceMaxDeferS', group: 'Scheduler',
+    label: 'Longest a run waits for a busy worker',
+    env: 'STS_SCHEDULER_NICE_MAX_DEFER_S', type: 'int', dflt: 300, min: 0,
+    max: 86400, runtime: true, perProcess: true,
+    description: 'The longest, in seconds, any scheduled cluster run is ' +
+                 'held while every request worker is busy. A job is held ' +
+                 'for its share of this, nice / 19 of it, and never more ' +
+                 'than half its interval; past that it runs whatever the ' +
+                 'load. A manual run, an on-demand job and a job of nice 0 ' +
+                 'are never held. 0 means no run is held.' },
 
   // ATTRIBUTE SOURCES (#94): the operators' SQL databases a realm reads
   // people's attributes from. The sources themselves are a register
@@ -17410,7 +17489,13 @@ const PER_LISTENER_SETTINGS = [
   { name: 'maxRequestsPerSocket', base: 'http.maxRequestsPerSocket',
     listeners: ['main', 'debugger', 'revocation'] },
   { name: 'maxConnections', base: 'http.maxConnections',
-    listeners: ['main', 'debugger', 'revocation'] }
+    listeners: ['main', 'debugger', 'revocation'] },
+  // HTTP/2, on every TLS HTTP listener (#407): not the revocation listener,
+  // which is plain HTTP and has no handshake to offer it in.
+  { name: 'http2', base: 'http.http2',
+    listeners: ['main', 'debugger'] },
+  { name: 'http2MaxConcurrentStreams', base: 'http.http2MaxConcurrentStreams',
+    listeners: ['main', 'debugger'] }
 ];
 
 // One generated row. `owner` is a TLS_LISTENERS entry.

@@ -101,6 +101,7 @@ require('./common/process_memory').reexecWithHeapLimit();
 require('./common/delivered_secrets').load();
 
 const http = require('http');
+const http2 = require('http2');
 const https = require('https');
 const app = require('./common/app');
 // `warmPqKeys` joins the three destructured names for one call in announce()
@@ -1091,7 +1092,10 @@ function customListener(label, certificate, certificateOf, listenerId) {
   // inheriting the process's TLS settings where it is silent, and its own
   // client authentication (`clientAuth`).
   const policy = tlsServer.policyFor('custom', listenerId);
-  const server = https.createServer(Object.assign({
+  // HTTP/2 beside HTTP/1.1, as on the main port (#407): offered unless its
+  // `tls.http2` or http.http2 says not (tls_server.js applies the offer).
+  const server = http2.createSecureServer(Object.assign({
+    allowHTTP1: true,
     cert: certificate.cert,
     key: certificate.key,
     // Its own truststore (#429): its tls.trustAnchorsFile and
@@ -1104,6 +1108,8 @@ function customListener(label, certificate, certificateOf, listenerId) {
   // ITS OWN CONNECTION POOLING (#429): its tls.keepAliveTimeoutS and the
   // rest, inheriting the service's http.* rows; re-applied when they change.
   tlsServer.registerHttpListener(server, 'custom', listenerId);
+  server.prependListener('request',
+    require('./common/http2_framing').markFramedBody);
   tlsServer.trustClientCertificatesOn(server, label, certificateOf,
                                       { kind: 'custom', realm: listenerId });
   tlsServer.observeConnectionsOn(server, label);
@@ -1131,7 +1137,15 @@ if (listenerProblem) {
 }
 if (useHttps) {
   const serverCert = tlsServer.serverCertificate();
-  const mainServer = https.createServer(Object.assign({
+  // HTTP/2 AND HTTP/1.1 ON ONE PORT (#407), chosen per connection by ALPN:
+  // node's `http2` secure server is a `tls.Server` like `https.Server`, so
+  // every option and registration below applies to it unchanged, and
+  // `allowHTTP1` hands a client that offers only `http/1.1` to node's own
+  // HTTP/1.1 parser with the server's timeouts. One TLS connection then
+  // carries every request a browser makes in parallel. The application is
+  // adapted for it (`common/http2_express.ts`, from `common/app.js`).
+  const mainServer = http2.createSecureServer(Object.assign({
+    allowHTTP1: true,
     cert: serverCert.certPem,
     key: serverCert.privateKeyPem,
     // THE CLIENT TRUSTSTORE, THE ONE /admin-api/tls/trust FILLS (2026-09-06; it
@@ -1191,6 +1205,11 @@ if (useHttps) {
   // listener and editable since #429: listenerMain.keepAliveTimeoutS and the
   // rest, inheriting http.*, re-applied by tls_server.js when they change.
   tlsServer.registerHttpListener(mainServer, 'main');
+  // AN HTTP/2 BODY WITH NO LENGTH IS STILL A BODY (#407): marked before the
+  // application's own `request` listener reads it, since nothing may sit
+  // above the realm middleware — common/http2_framing.ts.
+  mainServer.prependListener('request',
+    require('./common/http2_framing').markFramedBody);
   // REGISTERED SO THAT A LATER TRUSTSTORE CHANGE REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It

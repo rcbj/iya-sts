@@ -97,7 +97,18 @@ const requestPool = require('./request_pool');
 // request. Installed directly below the pool's middleware — see there.
 const clusterBarrier = require('../cluster/cluster_barrier');
 // --- express app -----------------------------------------------------------
-const app = express();
+// ADAPTED FOR HTTP/2 (#407), so that the same application answers a request
+// that arrived over HTTP/2 on the main port: plain express throws on the
+// first HTTP/2 body it reads. `common/http2_express.ts` gives THIS app its
+// own router `init`, which picks the request's and response's prototypes by
+// protocol (an HTTP/1.1 request gets exactly express's own), builds `host`
+// from `:authority`, and refuses a request whose two disagree. Nothing on the
+// express module is changed, so no other app in the process is touched.
+const app = require('./http2_express').adapt(express());
+// AND NO `X-Powered-By` (#407). Nothing here or in the suite reads it, the
+// debugger's own app has never sent one, and it tells every caller which
+// framework parses its requests.
+app.disable('x-powered-by');
 
 // ---------------------------------------------------------------------------
 // THE TRUST REALM. FIRST OF ALL, AND NOTHING MAY BE REGISTERED ABOVE IT.

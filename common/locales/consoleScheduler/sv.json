@@ -96,5 +96,9 @@
   "detail.ended": "Avslutad",
   "detail.params": "Parametrar",
   "detail.result": "Resultat",
-  "detail.abandonedOf": "Övergivet försök av"
+  "detail.abandonedOf": "Övergivet försök av",
+  "detail.ranIn": "Kördes i",
+  "detail.ranIn.worker": "En förfrågnings-worker",
+  "detail.ranIn.front": "Frontprocessen",
+  "detail.deferred": "Kvarhållen för en upptagen worker"
 }

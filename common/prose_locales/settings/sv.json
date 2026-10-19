@@ -108,8 +108,8 @@
     "text": "Tid en vilande anslutning behålls (s)"
   },
   "http.keepAliveTimeoutS|description": {
-    "en": "15ba4c34c3d3349e",
-    "text": "Hur länge, i sekunder, en HTTP-lyssnare håller en vilande HTTP/1.1-anslutning öppen för klientens nästa begäran (nodes eget standardvärde är 5). En behållen anslutning är en TLS-handskakning — och en fråga om klientcertifikat — som inte upprepas. Begäranden som en klient skickar i följd (pipelining) på en anslutning besvaras i ordning. Bakom en balanserare, håll dess vilotidsgräns över detta värde."
+    "en": "0fa763b61550474c",
+    "text": "Hur länge, i sekunder, en HTTP-lyssnare håller en vilande anslutning öppen för klientens nästa begäran (nodes eget standardvärde är 5): en HTTP/1.1-anslutning mellan begäranden, eller en HTTP/2-anslutning där ingen ram har passerat, som då stängs på ett ordnat sätt. En behållen anslutning är en TLS-handskakning — och en fråga om klientcertifikat — som inte upprepas. Begäranden som en klient skickar i följd (pipelining) på en anslutning besvaras i ordning. Bakom en balanserare, håll dess vilotidsgräns över detta värde."
   },
   "http.headersTimeoutS|label": {
     "en": "af0b2f7be18e5943",
@@ -134,6 +134,22 @@
   "http.maxConnections|description": {
     "en": "1dda75e901fc49af",
     "text": "Hur många anslutningar en HTTP-lyssnare håller öppna samtidigt; en till stängs när den kommer. 0, standardvärdet, är ingen gräns (nodes eget)."
+  },
+  "http.http2|label": {
+    "en": "775d810d4f1a3356",
+    "text": "Erbjud HTTP/2"
+  },
+  "http.http2|description": {
+    "en": "76d7c1691efa23fa",
+    "text": "Om en HTTPS-lyssnare erbjuder HTTP/2 när en klient ber om det i TLS-handskakningen (ALPN). På, standardvärdet, bär en anslutning varje begäran som en webbläsare gör parallellt; HTTP/1.1 besvaras fortfarande för en klient som inte ber om något annat. Av, är varje anslutning HTTP/1.1 — för en klient eller lastbalanserare vars HTTP/2 inte fungerar. En ny anslutning följer en ändring direkt; en redan öppen behåller sitt protokoll. Revokeringslyssnaren över ren HTTP talar bara HTTP/1.1, eftersom det inte finns någon handskakning att erbjuda det i."
+  },
+  "http.http2MaxConcurrentStreams|label": {
+    "en": "27fcdca12afd105b",
+    "text": "Strömmar per HTTP/2-anslutning"
+  },
+  "http.http2MaxConcurrentStreams|description": {
+    "en": "ec218fbbb4297601",
+    "text": "Hur många begäranden en HTTP/2-anslutning får ha öppna samtidigt (SETTINGS_MAX_CONCURRENT_STREAMS); en ström utöver det avvisas tills en annan är klar. 100, standardvärdet, är det minsta värde RFC 9113 rekommenderar; nodes eget är obegränsat, vilket skulle låta en enda anslutning bära arbetet för tusentals. Det begränsar arbetet på en anslutning som http.maxConnections begränsar anslutningarna. En ny anslutning följer en ändring direkt, och en öppen skickas det nya värdet."
   },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
@@ -9427,6 +9443,30 @@
     "en": "56fac41f63177db7",
     "text": "Hur många schemalagda eller manuella körningar ledaren har igång samtidigt, över alla jobb och förtroendesfärer. En plats är en multipel av sitt intervall, så varje timjobb i varje sfär förfaller samma sekund; varje körning håller en anslutning till lagret medan den gör anspråk och arbetar, och postgres-lagret har fyra. Resten väntar, en persons Run now först, och startar när körningar avslutas. Det är aldrig mer än en färre än vad poolen rymmer, vad det än sätts till, så att schemaläggaren inte kan ta varje anslutning från förfrågningarna."
   },
+  "scheduler.niceBusyThreshold|label": {
+    "en": "115ae6125244b30a",
+    "text": "En upptagen workers pågående förfrågningar"
+  },
+  "scheduler.niceBusyThreshold|description": {
+    "en": "364260c11358e10c",
+    "text": "Hur många förfrågningar en förfrågnings-worker får ha pågående innan en tålmodig schemalagd klusterkörning väntar på den. Ledaren lämnar varje körning till den minst belastade workern och håller kvar en körning av ett jobb vars nice är över 0 medan även den workern har så många. 0 betyder att antalet aldrig håller kvar en körning."
+  },
+  "scheduler.niceLagMs|label": {
+    "en": "c0b9af3bbe7cb091",
+    "text": "En upptagen workers fördröjning i händelseloopen"
+  },
+  "scheduler.niceLagMs|description": {
+    "en": "0c0e3c66e7c2e010",
+    "text": "Fördröjningen i händelseloopen, i millisekunder (99:e percentilen i en workers senaste tiosekundersrapport), vid vilken en förfrågnings-worker räknas som upptagen och en tålmodig schemalagd klusterkörning väntar på den. 0 betyder att fördröjningen aldrig håller kvar en körning."
+  },
+  "scheduler.niceMaxDeferS|label": {
+    "en": "07484a01ef8c2875",
+    "text": "Längsta väntan för en körning på en upptagen worker"
+  },
+  "scheduler.niceMaxDeferS|description": {
+    "en": "22928f93b52af2b5",
+    "text": "Den längsta tid, i sekunder, som en schemalagd klusterkörning hålls kvar medan alla förfrågnings-workers är upptagna. Ett jobb hålls kvar under sin andel av denna tid, nice / 19, och aldrig längre än halva sitt intervall; därefter körs det oavsett belastning. En manuell körning, ett jobb på begäran och ett jobb med nice 0 hålls aldrig kvar. 0 betyder att ingen körning hålls kvar."
+  },
   "attributeSources.hostPatterns|label": {
     "en": "04c2e7926c9351dd",
     "text": "Värdar som en attributkälla får ange"
@@ -10528,24 +10568,24 @@
     "text": "Huvudport: inaktiv anslutning behålls i (s)"
   },
   "listenerMain.keepAliveTimeoutS|description": {
-    "en": "d48d22c3af904939",
-    "text": "Gäller bara huvudportens lyssnare: http.keepAliveTimeoutS. -1, standardvärdet, följer http.keepAliveTimeoutS; allt annat avgör bara för den här lyssnaren. Hur länge, i sekunder, en HTTP-lyssnare håller en inaktiv HTTP/1.1-anslutning öppen för klientens nästa begäran (nodes egen standard är 5). En behållen anslutning är en TLS-handskakning — och en fråga om klientcertifikat — som inte upprepas. Förfrågningar som en klient pipelinar på en anslutning besvaras i ordning. Bakom en lastbalanserare, håll dess tidsgräns för inaktivitet över detta."
+    "en": "a895a3ca14fdb99f",
+    "text": "Gäller bara huvudportens lyssnare: http.keepAliveTimeoutS. -1, standardvärdet, följer http.keepAliveTimeoutS; allt annat avgör bara för den här lyssnaren. Hur länge, i sekunder, en HTTP-lyssnare håller en inaktiv anslutning öppen för klientens nästa begäran (nodes egen standard är 5): en HTTP/1.1-anslutning mellan begäranden, eller en HTTP/2-anslutning där ingen ram har passerat, som då stängs på ett ordnat sätt. En behållen anslutning är en TLS-handskakning — och en fråga om klientcertifikat — som inte upprepas. Förfrågningar som en klient pipelinar på en anslutning besvaras i ordning. Bakom en lastbalanserare, håll dess tidsgräns för inaktivitet över detta."
   },
   "listenerDebugger.keepAliveTimeoutS|label": {
     "en": "76ffd87245c2ff28",
     "text": "Protokollfelsökare: inaktiv anslutning behålls i (s)"
   },
   "listenerDebugger.keepAliveTimeoutS|description": {
-    "en": "c772bcacfb6260cb",
-    "text": "Gäller bara protokollfelsökarens lyssnare: http.keepAliveTimeoutS. -1, standardvärdet, följer http.keepAliveTimeoutS; allt annat avgör bara för den här lyssnaren. Hur länge, i sekunder, en HTTP-lyssnare håller en inaktiv HTTP/1.1-anslutning öppen för klientens nästa begäran (nodes egen standard är 5). En behållen anslutning är en TLS-handskakning — och en fråga om klientcertifikat — som inte upprepas. Förfrågningar som en klient pipelinar på en anslutning besvaras i ordning. Bakom en lastbalanserare, håll dess tidsgräns för inaktivitet över detta."
+    "en": "b63e0c1aae9ba585",
+    "text": "Gäller bara protokollfelsökarens lyssnare: http.keepAliveTimeoutS. -1, standardvärdet, följer http.keepAliveTimeoutS; allt annat avgör bara för den här lyssnaren. Hur länge, i sekunder, en HTTP-lyssnare håller en inaktiv anslutning öppen för klientens nästa begäran (nodes egen standard är 5): en HTTP/1.1-anslutning mellan begäranden, eller en HTTP/2-anslutning där ingen ram har passerat, som då stängs på ett ordnat sätt. En behållen anslutning är en TLS-handskakning — och en fråga om klientcertifikat — som inte upprepas. Förfrågningar som en klient pipelinar på en anslutning besvaras i ordning. Bakom en lastbalanserare, håll dess tidsgräns för inaktivitet över detta."
   },
   "listenerRevocation.keepAliveTimeoutS|label": {
     "en": "19f295348b85fba9",
     "text": "Återkallelse (okrypterad HTTP): inaktiv anslutning behålls i (s)"
   },
   "listenerRevocation.keepAliveTimeoutS|description": {
-    "en": "0f76cf6236976ee9",
-    "text": "Gäller bara lyssnaren för återkallelse (okrypterad HTTP): http.keepAliveTimeoutS. -1, standardvärdet, följer http.keepAliveTimeoutS; allt annat avgör bara för den här lyssnaren. Hur länge, i sekunder, en HTTP-lyssnare håller en inaktiv HTTP/1.1-anslutning öppen för klientens nästa begäran (nodes egen standard är 5). En behållen anslutning är en TLS-handskakning — och en fråga om klientcertifikat — som inte upprepas. Förfrågningar som en klient pipelinar på en anslutning besvaras i ordning. Bakom en lastbalanserare, håll dess tidsgräns för inaktivitet över detta."
+    "en": "dec63c7b7c394604",
+    "text": "Gäller bara lyssnaren för återkallelse (okrypterad HTTP): http.keepAliveTimeoutS. -1, standardvärdet, följer http.keepAliveTimeoutS; allt annat avgör bara för den här lyssnaren. Hur länge, i sekunder, en HTTP-lyssnare håller en inaktiv anslutning öppen för klientens nästa begäran (nodes egen standard är 5): en HTTP/1.1-anslutning mellan begäranden, eller en HTTP/2-anslutning där ingen ram har passerat, som då stängs på ett ordnat sätt. En behållen anslutning är en TLS-handskakning — och en fråga om klientcertifikat — som inte upprepas. Förfrågningar som en klient pipelinar på en anslutning besvaras i ordning. Bakom en lastbalanserare, håll dess tidsgräns för inaktivitet över detta."
   },
   "listenerMain.headersTimeoutS|label": {
     "en": "8d17a4d86aca9ed5",
@@ -10618,5 +10658,37 @@
   "listenerRevocation.maxConnections|description": {
     "en": "33c1557318481882",
     "text": "Gäller bara lyssnaren för återkallelse (okrypterad HTTP): http.maxConnections. -1, standardvärdet, följer http.maxConnections; allt annat avgör bara för den här lyssnaren. Hur många anslutningar en HTTP-lyssnare håller öppna samtidigt; en till stängs när den kommer. 0, standardvärdet, är ingen gräns (nodes egen)."
+  },
+  "listenerMain.http2|label": {
+    "en": "d17df93a132abc21",
+    "text": "Huvudport: erbjud HTTP/2"
+  },
+  "listenerMain.http2|description": {
+    "en": "4362a834f16b5b21",
+    "text": "Gäller bara huvudportens lyssnare: http.http2. inherit, standardvärdet, följer http.http2; allt annat avgör bara för den här lyssnaren. Om en HTTPS-lyssnare erbjuder HTTP/2 när en klient ber om det i TLS-handskakningen (ALPN). På, standardvärdet, bär en anslutning varje begäran som en webbläsare gör parallellt; HTTP/1.1 besvaras fortfarande för en klient som inte ber om något annat. Av, är varje anslutning HTTP/1.1 — för en klient eller lastbalanserare vars HTTP/2 inte fungerar. En ny anslutning följer en ändring direkt; en redan öppen behåller sitt protokoll. Revokeringslyssnaren över ren HTTP talar bara HTTP/1.1, eftersom det inte finns någon handskakning att erbjuda det i."
+  },
+  "listenerDebugger.http2|label": {
+    "en": "65d81b530197d8d7",
+    "text": "Protokollfelsökare: erbjud HTTP/2"
+  },
+  "listenerDebugger.http2|description": {
+    "en": "95b887a7622f4880",
+    "text": "Gäller bara protokollfelsökarens lyssnare: http.http2. inherit, standardvärdet, följer http.http2; allt annat avgör bara för den här lyssnaren. Om en HTTPS-lyssnare erbjuder HTTP/2 när en klient ber om det i TLS-handskakningen (ALPN). På, standardvärdet, bär en anslutning varje begäran som en webbläsare gör parallellt; HTTP/1.1 besvaras fortfarande för en klient som inte ber om något annat. Av, är varje anslutning HTTP/1.1 — för en klient eller lastbalanserare vars HTTP/2 inte fungerar. En ny anslutning följer en ändring direkt; en redan öppen behåller sitt protokoll. Revokeringslyssnaren över ren HTTP talar bara HTTP/1.1, eftersom det inte finns någon handskakning att erbjuda det i."
+  },
+  "listenerMain.http2MaxConcurrentStreams|label": {
+    "en": "c152ce6a507a8348",
+    "text": "Huvudport: strömmar per HTTP/2-anslutning"
+  },
+  "listenerMain.http2MaxConcurrentStreams|description": {
+    "en": "ba8c8cd0302f4417",
+    "text": "Gäller bara huvudportens lyssnare: http.http2MaxConcurrentStreams. -1, standardvärdet, följer http.http2MaxConcurrentStreams; allt annat avgör bara för den här lyssnaren. Hur många begäranden en HTTP/2-anslutning får ha öppna samtidigt (SETTINGS_MAX_CONCURRENT_STREAMS); en ström utöver det avvisas tills en annan är klar. 100, standardvärdet, är det minsta värde RFC 9113 rekommenderar; nodes eget är obegränsat, vilket skulle låta en enda anslutning bära arbetet för tusentals. Det begränsar arbetet på en anslutning som http.maxConnections begränsar anslutningarna. En ny anslutning följer en ändring direkt, och en öppen skickas det nya värdet."
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|label": {
+    "en": "a6a26cb5d1740fb5",
+    "text": "Protokollfelsökare: strömmar per HTTP/2-anslutning"
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|description": {
+    "en": "94c52205da70930f",
+    "text": "Gäller bara protokollfelsökarens lyssnare: http.http2MaxConcurrentStreams. -1, standardvärdet, följer http.http2MaxConcurrentStreams; allt annat avgör bara för den här lyssnaren. Hur många begäranden en HTTP/2-anslutning får ha öppna samtidigt (SETTINGS_MAX_CONCURRENT_STREAMS); en ström utöver det avvisas tills en annan är klar. 100, standardvärdet, är det minsta värde RFC 9113 rekommenderar; nodes eget är obegränsat, vilket skulle låta en enda anslutning bära arbetet för tusentals. Det begränsar arbetet på en anslutning som http.maxConnections begränsar anslutningarna. En ny anslutning följer en ändring direkt, och en öppen skickas det nya värdet."
   }
 }

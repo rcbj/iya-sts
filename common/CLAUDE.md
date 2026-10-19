@@ -45,6 +45,8 @@ more than one family needs it, not because it felt general.
 | `account_state.ts` | **A DISABLED ACCOUNT — THE ONE PLACE ONE IS DISABLED, ENABLED AND ASKED ABOUT (2026-09-17).** `pwdAccountLockedTime` on the person's entry, written by the console's Disable button, `POST /admin-api/users/disable` and SCIM's `active: false` alike; a disable ENDS everything the person holds through the same global logout. A LIBRARY (rule 3at) that finds `logout/logout.ts` in `require.cache` and never requires it. |
 | `outbound_tls.ts` | **WHETHER AN OUTBOUND REQUEST MAY BE PLAIN HTTP, AND WHETHER THE CERTIFICATE OF WHOEVER ANSWERS IS VERIFIED (#171, 2026-09-23)** — one policy for GNAP's push finish, SSF push, federation's back channels (and every requester that borrows them) and the XACML nudge, each handing in its three settings and two codes. A static utility class. See *`outbound_tls.ts`* below. |
 | `lingering_close.js` | **AN ANSWER SENT BEFORE AN UPLOAD HAS ALL ARRIVED, CLOSED WITHOUT A RESET (2026-09-26).** `arm(req, res)` in place of `res.set('Connection', 'close')`: after the answer is flushed the socket half-closes and discards what the client is still sending (until it closes, 5 s idle or 30 s), instead of node's immediate destroy — which, with unread data in the buffer, sends a TCP RESET that throws away the answer the peer had not read. The risk upload routes and `request_pool.js`'s early-answer path use it, and **since 2026-09-27 `request_worker.ts` arms it for every dispatched request**: the front asks each for `Connection: close` (#77), so any early answer — a refusal, a 404, a sign-out with no session — closed a socket the front was still writing, and the answer was lost to `write EPIPE` and a 502 (`STS-WORKER-0030`; 17 in 2000 races measured, none armed). A LEAF over `config`. |
+| `http2_express.ts` | **EXPRESS 4 ON AN HTTP/2 REQUEST, FOR THE TWO APPS THIS SERVICE BUILDS AND NO OTHER (#407, 2026-10-19).** `adapt(app)` gives one app an own `lazyrouter` — express 4's: the router, the query parser, then an `init` that is express's six lines with the request's and response's prototypes chosen by protocol (express's methods over `Http2ServerRequest`/`Http2ServerResponse` for HTTP/2; express's own for HTTP/1.1). `common/app.js` adapts the shared app and `debugger/debugger_server.ts` its own; **nothing on the express module changes**, which is why it replaced the `http2-express` package #703 first used: that replaced `express.application.lazyrouter` for every app in the process. The same `init` writes `host` from `:authority` and refuses 400, `STS-HTTP-0024`, a request whose two name different hosts (RFC 9113 section 8.3.1; default port and case are not a difference); `hostProblem()` is asked again by `request_pool.proxy()` and the debugger's API proxy. A static utility class over node, express and the error-code table, so the pool may require it. |
+| `http2_framing.ts` | **AN HTTP/2 BODY WITH NO `content-length` IS STILL A BODY (#407).** `markFramedBody()`, on each TLS HTTP listener's `request` event ahead of the app, adds `transfer-encoding: chunked` to an HTTP/2 request whose HEADERS did not end the stream and that sent no length, so body-parser's `hasBody()` reads it. **The header is SYNTHETIC and exists only on this service's side**: HTTP/2 forbids `transfer-encoding` (RFC 9113 section 8.2.2) and no client sent it — it is what the request pool forwards to a worker as the chunked body node's client sends there anyway, so it is real on that HTTP/1.1 hop and nowhere else. **It also appears in anything that captures `req.headers`** (the call log, the debugger's capture, a test echo) as though the client had sent it; read it there as "framed by HTTP/2", never as a client's request header. |
 | `secret_destinations.ts` | **WHERE A SERVICE ACCOUNT'S ROTATED PASSWORD IS PUSHED (#221 P3, 2026-10-06) — rule 3ce.** The register of secret push destinations, which is the realm's application entries declared for `secret-destination` and not a store of its own; `list()`, `get()`, `push()`, `testPush()`, `isDestination()`, the console's and the API's `act()`. The write path itself is `secrets.js`'s `pushSecret()`. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
 | `vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** — see `common/vendored/CLAUDE.md`. |
@@ -814,11 +816,20 @@ JWS and JWE tables, `GNAP_MTLS_TRUSTS`, the GNAP settings' own enums and
 checkboxes. Seven of them had no check at a console or API write until this
 change (`CHOICES_CHECKED_HERE`), so `choiceProblem()` refuses a value outside
 them at update and create (`STS-REG-0203`). The rest already have a validator
-that says more. `oauthGrantType` and `oauthResponseType` are not on the list:
-they are declared and enforced since #289, but an extension grant is a URI
-nobody lists in advance (RFC 6749 section 4.5), so they stay open text and the
-endpoints refuse what a client did not declare (`oauth-oidc/CLAUDE.md`,
-*OpenID Connect Registration*).
+that says more. **`oauthGrantType` and `oauthResponseType` joined the list
+with #706** (rcbj: checkboxes, no free text). Until then they were open text,
+because an extension grant is a URI nobody lists in advance (RFC 6749 section
+4.5). That argument did not hold: the token endpoint refuses a grant it does
+not implement, so declaring one declared nothing usable. Their choices are
+`FLOW_GRANT_TYPES` and `FLOW_RESPONSE_TYPES`, which are every grant and response
+type implemented, not only the ones the realm advertises.
+`tests/flow_type_choices.js` holds them to the metadata with every switch on.
+A response type is stored with its words sorted (`canonicalResponseType()`),
+the order the console ticks. **Dynamic registration is unchanged**: it still
+records what a client registers, and the grid draws a value outside the set as
+a marked box, so a Save does not drop it. The endpoints still refuse what a
+client did not declare (`oauth-oidc/CLAUDE.md`, *OpenID Connect
+Registration*).
 
 **A GENERATED SECRET SETS ITS METHOD.** `regenerateClientSecret()` (and so
 Regenerate and Rotate) writes `client_secret_basic`, RFC 7591's default, where
@@ -1374,6 +1385,14 @@ it.)
 
 **The goal is one sentence: the front process should be doing
 request/response I/O and nothing else.**
+
+**AND SINCE #408 A PROTOCOL WORKER ALSO RUNS THE BODY OF A CLUSTER
+SCHEDULER JOB** that the leader (a front process) hands it over the channel
+(`schedulerRunner()`: `{ schedulerRun }` out, `{ schedulerRunDone }` back,
+`{ schedulerFence }` to stop it). It also reports its event-loop delay
+(`{ loopLag }`), and sends a directory sign-out with no response to ride on
+as `{ ldapDrop }`. A worker that ends fails its runs with `STS-SCHED-0019`.
+`cluster/CLAUDE.md`, *Where a cluster run's body runs*, has the design.
 
 **ROUTING IS THE PART TO GET RIGHT AND THE CUT IS NOT THE OBVIOUS ONE.** It is
 **sessionless versus session-bearing**, not stateless versus stateful.

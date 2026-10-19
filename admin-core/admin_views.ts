@@ -10207,7 +10207,14 @@ class AdminViews {
         longTextAttributes: applications.LONG_TEXT_ATTRIBUTES || [],
         // The lists the grid offers a search on, and what each searches
         // (#459): `applications` or `groups`.
-        fieldSearches: applications.FIELD_SEARCHES || {}
+        fieldSearches: applications.FIELD_SEARCHES || {},
+        // WHAT THE CLIENT WAS SEEN DOING (#706), drawn read-only at the head
+        // of the OAuth sub-tab beside the two lists it may use. Neither is
+        // an editable attribute, so neither is in `fields`.
+        observed: {
+          oauthGrantTypeObserved: listOf('oauthGrantTypeObserved'),
+          oauthResponseTypeObserved: listOf('oauthResponseTypeObserved')
+        }
       },
       // #609: the named passkey policies naming this application, read-only
       // on the Every protocol sub-tab.
