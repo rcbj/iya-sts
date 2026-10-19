@@ -97,7 +97,15 @@ const requestPool = require('./request_pool');
 // request. Installed directly below the pool's middleware — see there.
 const clusterBarrier = require('../cluster/cluster_barrier');
 // --- express app -----------------------------------------------------------
-const app = express();
+// BUILT THROUGH `http2-express` (#407), so that the same application answers
+// a request that arrived over HTTP/2 on the main port. Express sets every
+// request's prototype to one derived from `http.IncomingMessage`, and node's
+// `Http2ServerRequest` keeps its state behind its own prototype, so plain
+// express throws `Cannot read properties of undefined (reading 'readable')`
+// on the first HTTP/2 body it reads (express 4.22 and 5.3 alike). The wrapper
+// chooses the prototype by the request's protocol: an HTTP/1.1 request gets
+// exactly express's own, so nothing changes for one.
+const app = require('http2-express')(express);
 
 // ---------------------------------------------------------------------------
 // THE TRUST REALM. FIRST OF ALL, AND NOTHING MAY BE REGISTERED ABOVE IT.

@@ -101,6 +101,7 @@ require('./common/process_memory').reexecWithHeapLimit();
 require('./common/delivered_secrets').load();
 
 const http = require('http');
+const http2 = require('http2');
 const https = require('https');
 const app = require('./common/app');
 // `warmPqKeys` joins the three destructured names for one call in announce()
@@ -1131,7 +1132,15 @@ if (listenerProblem) {
 }
 if (useHttps) {
   const serverCert = tlsServer.serverCertificate();
-  const mainServer = https.createServer(Object.assign({
+  // HTTP/2 AND HTTP/1.1 ON ONE PORT (#407), chosen per connection by ALPN:
+  // node's `http2` secure server is a `tls.Server` like `https.Server`, so
+  // every option and registration below applies to it unchanged, and
+  // `allowHTTP1` hands a client that offers only `http/1.1` to node's own
+  // HTTP/1.1 parser with the server's timeouts. One TLS connection then
+  // carries every request a browser makes in parallel. The application is
+  // built through `http2-express` (`common/app.js`) for this.
+  const mainServer = http2.createSecureServer(Object.assign({
+    allowHTTP1: true,
     cert: serverCert.certPem,
     key: serverCert.privateKeyPem,
     // THE CLIENT TRUSTSTORE, THE ONE /admin-api/tls/trust FILLS (2026-09-06; it
