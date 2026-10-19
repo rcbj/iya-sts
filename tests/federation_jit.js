@@ -160,18 +160,22 @@ function childMain() {
       return r.status + ' ' + String(r.text || '').replace(/\s+/g, ' ')
         .slice(0, 280);
     }
+
     function person(name) {
       return ldap.existingUserEntry(name);
     }
+
     function locked(name) {
       const entry = person(name);
       return !!(entry && (entry.attributes.pwdaccountlockedtime || [])
         .length);
     }
+
     function linksOf(name) {
       const entry = person(name);
       return entry ? (entry.attributes.federationlink || []).slice() : [];
     }
+
     function uid(rel, subject) {
       return rel + '~' + subject;
     }
@@ -210,6 +214,7 @@ function childMain() {
       return { made: made, enabled: enabled, problems: problems,
                record: federation.get(id) };
     }
+
     function xmlFields(issuer, opts) {
       const o = opts || {};
       const fields = {
@@ -223,12 +228,14 @@ function childMain() {
       if (o.unsolicited) fields.fedAllowUnsolicited = 'TRUE';
       return fields;
     }
+
     function sign2(issuer, subject) {
       const built = xmldsig.buildAssertion({
         issuer: issuer, subject: subject, audience: ENTITY,
         nameIdFormat: PERSISTENT, authnStatement: true });
       return xmldsig.sign(built, partnerKey.privateKeyPem, '');
     }
+
     function saml2Document(signed) {
       const id = '_r' + nodeCrypto.randomBytes(4).toString('hex');
       return '<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:' +
@@ -237,10 +244,12 @@ function childMain() {
         'Value="urn:oasis:names:tc:SAML:2.0:status:Success"/>' +
         '</samlp:Status>' + signed + '</samlp:Response>';
     }
+
     function postSaml(id, xml) {
       return request('POST', '/federation/acs/' + id, { form: {
         SAMLResponse: Buffer.from(xml).toString('base64') } });
     }
+
     async function created(id, issuer, subject, version) {
       const from = marks.length;
       const name = uid(id, subject);

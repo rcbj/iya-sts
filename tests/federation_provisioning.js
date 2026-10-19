@@ -281,7 +281,9 @@ function childMain() {
     // #358: an entry a sign-in CREATES is the partner's subject, namespaced
     // to the relationship, not the mapped username.
     const dynName = createdName('fp-dyn');
-    const dyn = await inSp(function () { return entryOf(dynName); });
+    const dyn = await inSp(function () {
+      return entryOf(dynName);
+    });
     const dynOld = await inSp(function () {
       return entryOf(REL + '~fp-dyn');
     });
@@ -507,7 +509,9 @@ function childMain() {
                                  { members: ['fp-groups'] });
       }
       const cns = (ldap.groupsOfUser('fp-groups').groups || [])
-        .map(function (one) { return String(one.cn || ''); });
+        .map(function (one) {
+          return String(one.cn || '');
+        });
       return { engineers: !!engineers.ok, write: !!write.ok, cns: cns,
                errors: [].concat(engineers.errors || [],
                                  write.errors || []) };

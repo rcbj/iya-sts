@@ -414,7 +414,9 @@ function childMain() {
          (MODE !== 'product'),
          '0c. mode.matchesFederatedNames() is ' + (MODE !== 'product') +
          ' in ' + MODE + ' mode');
-    note(inSp(function () { return mode.defaultsFederatedAutocreate(); }) ===
+    note(inSp(function () {
+      return mode.defaultsFederatedAutocreate();
+    }) ===
          (MODE !== 'product') &&
          created.record.fedAutocreateUsers ===
            (MODE === 'product' ? 'FALSE' : 'TRUE'),

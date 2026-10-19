@@ -20572,7 +20572,9 @@ function markedForRelationship(stored, fedId) {
   log.debug('Entering markedForRelationship().');
   const marks = ((stored && stored.attributes &&
                   stored.attributes.federationrelationship) || [])
-    .map(function (one) { return String(one); });
+    .map(function (one) {
+      return String(one);
+    });
   const marked = !!groupRuleFor(stored) &&
                  marks.indexOf(String(fedId)) >= 0;
   log.debug('Leaving markedForRelationship().');
@@ -20714,7 +20716,9 @@ function federationIdleCandidates(fedId) {
       return;
     }
     const passwords = stored.attributes.userpassword || [];
-    if (passwords.some(function (one) { return String(one) !== ''; })) {
+    if (passwords.some(function (one) {
+      return String(one) !== '';
+    })) {
       return;
     }
     if ((stored.attributes.pwdaccountlockedtime || []).length) {
