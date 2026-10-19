@@ -110,7 +110,10 @@ left; they are a few hundred a run. The registry's ceiling stays at
 `STS_APPLICATIONS_MAX = applications_max` (10,000): the second reuse of the dev
 cluster found the service default of 500 full, and every registration was
 refused `STS-REG-0020`, which `sts_userinfo_protected` reported as an
-unencrypted UserInfo response. `STS_SUITE_KEEP_REALMS=1` skips the reset.
+unencrypted UserInfo response. **The realm cap is `STS_REALMS_MAX_COUNT =
+realms_max_count` (100,000, #368)** for the same reason: the service default
+of 10, which a deployment keeps, would refuse the eleventh realm a run makes
+(`STS-CORE-0161`). `STS_SUITE_KEEP_REALMS=1` skips the reset.
 
 **Four published ports.** 443 → 8081; 389 (the directory in the clear) and
 **636 (the same directory behind TLS, since 2026-09-17)** on the same numbers

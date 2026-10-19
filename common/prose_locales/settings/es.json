@@ -1707,6 +1707,14 @@
     "en": "0ecee8de8ef29c3f",
     "text": "Cuánto espera la eliminación de un dominio de confianza a que se entregue lo que debe antes de purgar sus almacenes: el CAEP session-revoked y los Logout Tokens de back-channel de cada sesión que cierra, RISC account-purged por cada persona que contiene y SSF stream-updated (disabled) a cada flujo. Lo que no se haya entregado cuando se agota se registra (STS-CORE-0120) y desaparece con el dominio. 0 sigue enviándolo todo y no espera. Un receptor por sondeo solo puede recoger mientras dura la espera."
   },
+  "realms.maxCount|label": {
+    "en": "017b530f97d0b9e0",
+    "text": "Número máximo de dominios"
+  },
+  "realms.maxCount|description": {
+    "en": "1a45b5c5965dd169",
+    "text": "Cuántos dominios de confianza puede albergar este clúster, incluido el dominio predeterminado integrado, de modo que 10 es el dominio predeterminado y otros nueve. Lo establece un administrador del servicio, y solo en el dominio predeterminado: desde dentro de otro dominio el control está deshabilitado y la escritura se rechaza. Reducirlo no elimina los dominios que ya existen; una creación se rechaza hasta que el recuento vuelve a estar por debajo. Cada dominio cuesta memoria en cada proceso de cada nodo, y por eso hay un límite."
+  },
   "oauth2.issuer|label": {
     "en": "373396d5608b3885",
     "text": "Identificador del emisor"

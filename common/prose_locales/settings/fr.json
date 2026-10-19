@@ -1707,6 +1707,14 @@
     "en": "0ecee8de8ef29c3f",
     "text": "Combien de temps la suppression d’un domaine de confiance attend que ce qu’il doit soit livré avant que ses stockages soient purgés : le CAEP session-revoked et les Logout Tokens back-channel de chaque session qu’il clôt, RISC account-purged pour chaque personne qu’il contient, et SSF stream-updated (disabled) vers chaque flux. Tout ce qui n’a pas été livré à l’expiration du délai est journalisé (STS-CORE-0120) et disparaît avec le domaine. 0 envoie quand même tout et n’attend pas. Un récepteur en mode poll ne peut collecter que tant que dure l’attente."
   },
+  "realms.maxCount|label": {
+    "en": "017b530f97d0b9e0",
+    "text": "Nombre maximal de domaines"
+  },
+  "realms.maxCount|description": {
+    "en": "1a45b5c5965dd169",
+    "text": "Combien de domaines de confiance ce cluster peut contenir, le domaine par défaut intégré compris, si bien que 10 correspond au domaine par défaut et à neuf autres. Un administrateur du service le définit, et uniquement dans le domaine par défaut : depuis un autre domaine, la commande est désactivée et l’écriture est refusée. Le réduire ne supprime pas les domaines qui existent déjà ; une création est refusée jusqu’à ce que le nombre repasse en dessous. Chaque domaine coûte de la mémoire dans chaque processus de chaque nœud, d’où cette limite."
+  },
   "oauth2.issuer|label": {
     "en": "373396d5608b3885",
     "text": "Identifiant d’émetteur"

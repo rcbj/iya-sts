@@ -1194,6 +1194,12 @@ async function configurationCanBeChangedAndPutBack(doc) {
   const rowSchema = doc.components.schemas.Config
     .properties.groups.items.properties.settings.items;
   const never = Object.keys(rowSchema.properties).filter(function (name) {
+    // `editRefusal` is present only while a non-default realm is ambient
+    // (#368, realms.maxCount). This read is the default realm, where the
+    // field is absent on every row, and that absence is the field working.
+    if (name === 'editRefusal') {
+      return false;
+    }
     return !rows.some(function (row) { return row[name] !== undefined; });
   });
   assert.deepStrictEqual(never, [],

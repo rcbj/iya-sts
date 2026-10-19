@@ -109,6 +109,19 @@ runner's one address, so `sts_metadata_anonymous.js` met a 429 on
 against 60 and have no block. The enrollment jobs that assert the throttle set
 their own limits inside their realms, so the layer hides none of them.
 
+**THE FOURTH USE, #368: `realms.maxCount` at 100000 in the two test files
+only.** The shipped default is 10, counting the default realm, and each realm
+costs memory in every node. The protocol suite leaves the realms it creates
+standing — a kept stack has held well over ten — so `test.js` and
+`docker-tests.js` raise the cap to the setting's own maximum. `local.js`, the
+image default, does not: a deployment's effective value stays 10 until a
+service administrator sets it in the default realm, or `STS_REALMS_MAX_COUNT`
+is set. The in-process suite raises the same variable in `tests/run.js`,
+`tests/tools/service.js` for the throwaway instance a debug, trace or coverage
+run starts on `env/local.js`, and `deploy/aws/environment` (`realms_max_count`)
+for the AWS suite environments.
+`common/CLAUDE.md` argues the cap.
+
 ## The union is also what keeps a file that is NOT this service's loadable
 
 The parent project's in-process Kerberos jobs point `CONFIG_FILE` at that test

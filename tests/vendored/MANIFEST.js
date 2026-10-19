@@ -242,9 +242,12 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 //                      job depends on — `revoke-all` (which revokes each
 //                      job's own /admin-api token) and `build-root` (which
 //                      replaces the listener certificate a job's truststore
-//                      was pinned to when it started).
+//                      was pinned to when it started) — and
+//                      `sts_realm_count_limit.js` (#368), which holds
+//                      realms.maxCount at the live count, so any other job's
+//                      realm create would be refused while it runs.
 //
-// A new job that does either of those owes `exclusive: true`; a new job that
+// A new job that does any of those of those owes `exclusive: true`; a new job that
 // is long, self-contained and in no way order-dependent may be given a lane.
 // `run-report.js --serial` runs everything one at a time, as before.
 // ---------------------------------------------------------------------------
@@ -297,6 +300,14 @@ const JOBS = [
   // realm's roster only when that realm's bootstrap window is closed, and
   // then revokes what it granted.
   { file: 'sts_realm_administrators.js', browser: false, local: true },
+  // HOW MANY REALMS ONE CLUSTER MAY HOLD (#368): the create past
+  // realms.maxCount is refused (through /admin-api and the console),
+  // lowering the cap removes nothing, and a write of the cap from inside
+  // another realm is refused. EXCLUSIVE: it holds the cap at the live count,
+  // so a parallel lane's realm create would be refused STS-CORE-0161. It
+  // always puts the cap back, and leaves its one realm standing.
+  { file: 'sts_realm_count_limit.js', browser: false, local: true,
+    exclusive: true },
   // THE CONSOLE BEFORE ITS BOOTSTRAP ADMINISTRATOR ARRIVES (#103,
   // 2026-09-22): development's open window, product's closed one, a
   // client-certificate sign-in holding no role — and, in product, one naming

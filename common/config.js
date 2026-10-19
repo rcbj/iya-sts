@@ -3962,12 +3962,14 @@ const SETTINGS = [
                  'owner.' },
 
   // --- Trust realms --------------------------------------------------------
-  // Two settings, and they are the only two in this table that a realm cannot
-  // set on itself for THIS reason (the `perProcess` rows are refused for
-  // another): a realm that could turn realms off, or move the prefix it was
-  // found under, would be doing it half way through the request that found it.
-  // Refused at both ends — see realms.js's checkRealmOverride() and this
-  // file's realmFor().
+  // Every `realms.*` key is refused ON a realm for this reason (the
+  // `perProcess` rows are refused for another): a realm that could turn
+  // realms off, or move the prefix it was found under, would be doing it
+  // half way through the request that found it. Refused at both ends — see
+  // realms.js's checkRealmOverride() and this file's realmFor(). The prefix
+  // matches every key, so a new one is covered the day it is added.
+  // `realms.maxCount` has a further lock (#368): it can be changed only
+  // while the default realm is ambient.
   { key: 'realms.enabled', group: 'Trust realms', label: 'Trust realms enabled',
     env: 'STS_REALMS_ENABLED', type: 'bool', dflt: true, runtime: true,
     description: 'Whether the realms defined on /admin/realms answer on ' +
@@ -4010,6 +4012,22 @@ const SETTINGS = [
                  'logged (STS-CORE-0120) and goes with the realm. 0 still ' +
                  'sends everything and does not wait. A poll receiver can ' +
                  'collect only while the wait lasts.' },
+
+  // How many realms one cluster may hold (#368). The count includes the
+  // built-in default realm. Restores skip the check in realms.create();
+  // lowering the value removes nothing.
+  { key: 'realms.maxCount', group: 'Trust realms',
+    label: 'Maximum number of realms',
+    env: 'STS_REALMS_MAX_COUNT', type: 'int', dflt: 10,
+    min: 1, max: 100000, runtime: true,
+    description: 'How many trust realms this cluster may hold, the built-in ' +
+                 'default realm included, so 10 is the default realm and ' +
+                 'nine others. A service administrator sets it, and only in ' +
+                 'the default realm: from inside another realm the control ' +
+                 'is disabled and the write is refused. Lowering it does ' +
+                 'not remove realms that already exist; a create is refused ' +
+                 'until the count is back under it. Each realm costs memory ' +
+                 'in every node process, which is why there is a cap.' },
 
   // --- OAuth 2.0 / OpenID Connect -----------------------------------------
   { key: 'oauth2.issuer', group: 'OAuth 2.0 / OIDC', label: 'Issuer identifier',
@@ -17870,7 +17888,7 @@ function overridesChanged(realmId) {
 // `realms.js` fills this at ITS require time, and it is an INVERTED HOOK rather
 // than a require in the other direction for rule 3e's reason: that module
 // requires this one — it validates a realm's overrides through checkOverride()
-// and reads its own two settings through value() — so a require back would
+// and reads its own settings through value() — so a require back would
 // close a cycle, and node answers a cycle with a half-initialised module whose
 // exports are undefined rather than with an error.
 //
@@ -17879,15 +17897,17 @@ function overridesChanged(realmId) {
 // one. Null rather than an empty object because this is on the hot path of
 // every setting read in this service.
 //
-// WHAT IT DOES **NOT** COVER, and the reason is not caution: the two `realms.*`
-// settings themselves are read below the realm layer, always. A realm that
-// could set `realms.enabled` could switch realms off from inside a realm, and a
-// realm that could set `realms.pathSegment` would change the prefix that was
-// used to find it — half way through the request that found it. Both are
-// refused at the writing end too (see realms.js's checkRealmOverride()), so
-// this is the second of two locks on one door; it is here because this is the
-// end that is on the reading path and therefore the end that cannot be got
-// around.
+// WHAT IT DOES **NOT** COVER, and the reason is not caution: every `realms.*`
+// setting is read below the realm layer, always. A realm that could set
+// `realms.enabled` could switch realms off from inside a realm, and a realm
+// that could set `realms.pathSegment` would change the prefix that was used
+// to find it — half way through the request that found it. They are refused
+// at the writing end too (see realms.js's checkRealmOverride()), so this is
+// the second of two locks on one door; it is here because this is the end
+// that is on the reading path and therefore the end that cannot be got
+// around. `realms.maxCount` (#368) is read here too, and a write of it is
+// refused unless the default realm is ambient — that lock is checkOverride(),
+// because this function's null is what makes the write process-wide.
 // ---------------------------------------------------------------------------
 // The id this file reports when nothing is ambient. Spelt here rather than
 // required from realms.js, because that module requires this one — see
@@ -17924,11 +17944,14 @@ function setRealmContext(fn) {
 // THERE ARE NOW TWO REASONS A REALM MAY NOT CARRY A SETTING, and they are
 // different rules rather than one spelt twice.
 //
-//   * the `realms.*` PREFIX — whether realms exist and where they are found. A
-//     realm carrying one of those would be changing how it was reached half way
-//     through the request that reached it. It matches by prefix on purpose, so
-//     that a third `realms.*` setting is exempt the day it is added rather than
-//     the day somebody remembers this function.
+//   * the `realms.*` PREFIX — whether realms exist, where they are found, and
+//     how many a cluster may hold. A realm carrying one of those would be
+//     changing how it was reached half way through the request that reached
+//     it, or carrying a process-wide cap nobody would read off the realm.
+//     It matches by prefix on purpose, so that a new `realms.*` setting is
+//     exempt the day it is added rather than the day somebody remembers this
+//     function. The further rule that `realms.maxCount` may be written only
+//     while the default realm is ambient lives in checkOverride().
 //   * `perProcess` on the row — a setting that is a property of the OS PROCESS
 //     rather than of the service's behaviour, so that one realm's value would
 //     silently be every realm's. The request pool's settings are the
@@ -18305,6 +18328,45 @@ function applyLogLevel() {
   return level;
 }
 
+// `realms.maxCount` is process-wide, like every `realms.*` key, and it may be
+// changed only while the default realm is ambient (#368). A service
+// administrator signed in through another realm would otherwise post
+// /realm/<id>/admin-api/config/set and realmFor() would write it for the
+// whole process — the door the other realms.* keys still use, and must.
+// The slot is unfilled until realms.js loads; a write before that has no
+// ambient realm and is allowed. A throw from the slot refuses nothing, the
+// same way writeRuleProblem() treats a rule that throws.
+function maxCountOutsideDefault(key) {
+  log.debug("Entering maxCountOutsideDefault().");
+  if (key !== 'realms.maxCount' || typeof realmContext !== 'function') {
+    log.debug("Leaving maxCountOutsideDefault().");
+    return false;
+  }
+  let ambient = null;
+  try {
+    ambient = realmContext();
+  } catch (e) {
+    log.debug("Caught in maxCountOutsideDefault(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving maxCountOutsideDefault().");
+    return false;
+  }
+  log.debug("Leaving maxCountOutsideDefault().");
+  return !!ambient;
+}
+
+function maxCountRealmProblem(key) {
+  log.debug("Entering maxCountRealmProblem().");
+  if (!maxCountOutsideDefault(key)) {
+    log.debug("Leaving maxCountRealmProblem().");
+    return '';
+  }
+  log.debug("Leaving maxCountRealmProblem(). Refused.");
+  return '"realms.maxCount" can be set only in the default realm, by a ' +
+    'service administrator. Open /admin/realms there, or POST ' +
+    '/admin-api/config/set with no realm prefix.';
+}
+
 // Whether this value WOULD be accepted, without accepting it. Separate from
 // setOverride() for one caller: the console's Save posts a whole section, and a
 // section that applied its first three fields and then refused the fourth would
@@ -18366,6 +18428,13 @@ function checkOverride(key, raw, forRealm) {
     return '"' + key + '" cannot be changed while this service is running: ' +
       setting.restartReason + '. Set it in the appconfig file or as ' +
       (setting.env || 'its environment variable') + ' and restart.';
+  }
+  // After the runtime check and before the type check, so a non-default
+  // realm hears STS-CORE-0162 rather than a type error (#368).
+  const realmLocked = maxCountRealmProblem(key);
+  if (realmLocked) {
+    log.debug("Leaving checkOverride().");
+    return realmLocked;
   }
   const problem = TYPES[setting.type].check(raw, setting);
   if (problem) {
@@ -18454,6 +18523,10 @@ function checkOverrideCode(key, raw, forRealm) {
   if (!setting.runtime && !(inRealm && setting.realmRuntime)) {
     log.debug("Leaving checkOverrideCode().");
     return 'STS-CORE-0005';
+  }
+  if (maxCountOutsideDefault(key)) {
+    log.debug("Leaving checkOverrideCode().");
+    return 'STS-CORE-0162';
   }
   if (TYPES[setting.type].check(raw, setting)) {
     log.debug("Leaving checkOverrideCode().");
@@ -18602,8 +18675,10 @@ function setOverride(key, raw) {
   // explained, correctly, that a realm may carry the setting it was refusing.
   //
   // `realmFor()` answers null when realms are off, when the ambient realm is
-  // the default one, and always for the two `realms.*` rows — so this is the
-  // process-wide behaviour unchanged everywhere else.
+  // the default one, and always for every `realms.*` row — so this is the
+  // process-wide behaviour unchanged everywhere else. `realms.maxCount` is
+  // the one of those rows checkOverride() then refuses unless that ambient
+  // realm is the default (#368).
   const realm = realmFor(key);
   const problem = checkWrite(key, raw, !!realm);
   // (Passed explicitly here because the realm is already in hand; the default
@@ -18627,10 +18702,12 @@ function setOverride(key, raw) {
   // token-lifetimes page, POST /admin-api/config/set and whatever is added next
   // — is realm-correct without knowing this exists.
   //
-  // The two `realms.*` settings are the exception in both directions:
-  // realmFor() answers null for them, so they always land process-wide. A realm
-  // that could turn realms off, or move its own prefix, would be doing it from
-  // inside the request that found it.
+  // Every `realms.*` setting is the exception in both directions:
+  // realmFor() answers null for them, so they always land process-wide. A
+  // realm that could turn realms off, or move its own prefix, would be doing
+  // it from inside the request that found it. `realms.maxCount` still lands
+  // here when the write is allowed, and checkOverride() refuses it unless
+  // the default realm is ambient.
   // ---------------------------------------------------------------------
   const shape = claimShapeBefore(key);
   if (realm) {
@@ -18671,6 +18748,16 @@ function clearOverride(key) {
     return errorCodes.mark({ ok: false,
                              errors: ['Unknown setting "' + key + '".'] },
                            'STS-CORE-0004');
+  }
+  // Before the "nothing was overridden" check (#368). A Reset of
+  // realms.maxCount posted from inside another realm is a real attempt,
+  // whether or not an override is in force, and the section's formaction
+  // would otherwise clear a process-wide cap the page was not allowed to set.
+  const realmLocked = maxCountRealmProblem(key);
+  if (realmLocked) {
+    log.debug("Leaving clearOverride(). Refused.");
+    return errorCodes.mark({ ok: false, errors: [realmLocked] },
+                           'STS-CORE-0162');
   }
   // The same rule as setOverride(): a reset undoes the override that was made
   // HERE. In a realm that is the realm's, and the value then falls back to
@@ -18891,6 +18978,13 @@ function applyPersistedOverrides(saved) {
 function describe(setting) {
   log.debug("Entering describe().");
   const state = resolve(setting.key);
+  // `realms.maxCount` from inside a non-default realm (#368). The row stays
+  // runtime-settable; this realm may not be the one that sets it. The
+  // restart sentence is withheld so the console does not say the process
+  // must be restarted for a value the default realm changes live.
+  const lockedHere = maxCountRealmProblem(setting.key);
+  const runtimeHere = !!setting.runtime ||
+    !!(setting.realmRuntime && realmFor(setting.key));
   log.debug("Leaving describe().");
   return {
     key: setting.key,
@@ -18924,12 +19018,14 @@ function describe(setting) {
     // same page in the default realm correctly refuses — otherwise the console
     // would report a setting as unchangeable while POST /admin-api/config/set
     // on the same path changed it.
-    editable: !!setting.runtime ||
-              !!(setting.realmRuntime && realmFor(setting.key)),
-    restartReason: (setting.runtime ||
-                    (setting.realmRuntime && realmFor(setting.key)))
-      ? undefined
-      : setting.restartReason,
+    editable: lockedHere ? false : runtimeHere,
+    restartReason: lockedHere ? undefined
+      : (runtimeHere ? undefined : setting.restartReason),
+    // Why this row cannot be edited from the realm the reader is in (#368).
+    // Absent everywhere else, including the default realm, so a caller that
+    // does not know the field still reads the old shape. JSON.stringify drops
+    // undefined.
+    editRefusal: lockedHere || undefined,
     env: setting.env,
     legacyEnv: setting.legacyEnv,
     appconfigPath: setting.path || setting.key,
