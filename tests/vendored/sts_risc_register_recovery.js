@@ -518,6 +518,13 @@ async function test() {
     assert.strictEqual(created.status, 201, created.raw.slice(0, 400));
   });
   const streamId = created.body.stream_id;
+  // THIS REALM'S OWN ATTRIBUTE POLICY (#396) asks no address: TIM is
+  // created without one ON PURPOSE, so that section 3 sees a FIRST address
+  // raise recovery-information-changed, and product mode's default
+  // (givenName, sn, mail) would refuse the create.
+  await ok(realmApi + "/policies/save-attributes-policy",
+    { profile: "default", requiredAttributes: ["givenName"] },
+    "this realm's attribute policy requires no address");
   for (const who of [EVE, SID, TIM, VIC, WYN]) {
     const attributes = { cn: "RISC " + who, givenName: "RISC", sn: who };
     if (who !== TIM) {

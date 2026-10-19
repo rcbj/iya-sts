@@ -409,10 +409,12 @@ async function setRel(field, value) {
 
 async function createPerson(realm, username, mailDomain) {
   log.debug("Entering createPerson(). " + realm + " " + username);
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
   const r = await api(realm, "POST", "/users/create", {
     username: username, invent: false,
-    attributes: { cn: "Subject " + username, sn: username,
-                  mail: username + "@" + mailDomain },
+    attributes: { cn: "Subject " + username, givenName: "Subject",
+                  sn: username, mail: username + "@" + mailDomain },
     credential: "password", password: PASSWORD });
   must(r.status === 200 && r.body && r.body.ok,
        "creating " + username + " in " + realm + " answered " + r.status +
@@ -791,9 +793,12 @@ async function scimAndViews(pre) {
   const who = names.usernameFor("sp-scimmed");
   await createPerson(IDP, who, IDP_MAIL);
   const subject = await subjectAtPartner(who);
+  // name and emails: the attribute policy (#396), in product mode.
   const body = { schemas: ["urn:ietf:params:scim:schemas:core:2.0:User",
                            EXT],
-                 userName: who };
+                 userName: who,
+                 name: { givenName: "Subject", familyName: who },
+                 emails: [{ value: who + "@" + SP_MAIL, type: "work" }] };
   body[EXT] = { federationLinks: [{ relationship: REL, subject: subject }] };
   const r = await fetch(realmBase(SP) + "/scim/v2/Users", {
     method: "POST",

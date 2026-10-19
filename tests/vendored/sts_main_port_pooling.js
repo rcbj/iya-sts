@@ -372,10 +372,14 @@ async function resumption() {
     subject: "CN=pooling-" + STAMP + ",O=iya-sts tests"
   });
   // THE CERTIFICATE'S PERSON, made first: product mode signs nobody in whom
-  // nobody provisioned.
+  // nobody provisioned. The realm's attribute policy (#396) requires
+  // givenName, sn and mail of every person in product mode.
   const made = await post("/admin-api/users/create",
                           { username: "pooling-" + STAMP, invent: false,
-                            credential: "generate" });
+                            credential: "generate",
+                            attributes: {
+                              givenName: "Pooling", sn: "pooling-" + STAMP,
+                              mail: "pooling-" + STAMP + "@pooling.test" } });
   assert.strictEqual(made.status, 200,
     "POST /admin-api/users/create answered " + made.status + " " +
     made.text.slice(0, 200));

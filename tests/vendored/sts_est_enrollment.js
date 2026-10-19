@@ -333,14 +333,16 @@ async function test() {
   // A REAL PASSWORD, in both modes (2026-09-18). The person signed in with
   // `any-password-development-mode`, which only development accepts; a
   // product-mode target verifies it against userPassword, as section 15 does
-  // in its own realm.
+  // in its own realm. The realm's attribute policy (#396) requires givenName,
+  // sn and mail of every person in product mode.
   const personCreated = await ok(realmApi + "/users/create",
            { username: PERSON, invent: false, credential: "generate",
-             attributes: { cn: "EST Alice", sn: PERSON, mail: MAIL } },
+             attributes: { cn: "EST Alice", givenName: "EST", sn: PERSON,
+                           mail: MAIL } },
            "created the person");
   const otherCreated = await ok(realmApi + "/users/create",
            { username: OTHER, invent: false, credential: "generate",
-             attributes: { cn: "EST Bob", sn: OTHER,
+             attributes: { cn: "EST Bob", givenName: "EST", sn: OTHER,
                            mail: OTHER + "@est.example.test" } },
            "created a second person");
   await ok(realmApi + "/applications/create",
@@ -547,7 +549,8 @@ async function test() {
   log.info("=== 6. an administrator, for somebody else ===");
   const adminCreated = await ok(api + "/users/create",
            { username: ADMIN, invent: false, credential: "generate",
-             attributes: { cn: "EST Admin", sn: ADMIN } },
+             attributes: { cn: "EST Admin", givenName: "EST", sn: ADMIN,
+                           mail: ADMIN + "@est.example.test" } },
            "created the administrator in the DEFAULT realm");
   const plainForOther = await enroll(EST + "/tls-client/simpleenroll",
     (await csrFor("ec-p256", OTHER,
@@ -958,7 +961,8 @@ async function test() {
   const productEst = base + "/realm/" + REALM_P + "/.well-known/est";
   const productPerson = await ok(productApi + "/users/create",
     { username: PERSON, invent: false, credential: "generate",
-      attributes: { cn: "EST Product", sn: PERSON, mail: MAIL } },
+      attributes: { cn: "EST Product", givenName: "EST", sn: PERSON,
+                    mail: MAIL } },
     "created a person with a generated password in the product realm");
   const productSecret = nodeCrypto.randomBytes(18).toString("base64url");
   await ok(productApi + "/applications/create",

@@ -1956,3 +1956,14 @@ SHARED SIGNALS*) argues it. What lives here:
   act is `federationAction()`'s `signals-*`, handed to the receiver; a
   delete forgets the relationship's stream there first. The map marks a
   relationship receiving signals on its consuming arrow.
+
+## A NEWCOMER THE ATTRIBUTE POLICY WOULD REFUSE (#396, 2026-10-19)
+
+Where `fedAutocreateUsers` lets a first sign-in create the person, product mode
+holds the entry it would write — the plan's attributes and the partner's
+mapped ones, a `cn` made of the names — to the realm's attribute policy
+(`common/CLAUDE.md` 3co, `ldap/CLAUDE.md`). One missing a required attribute
+creates nobody (STS-FED-0158, logged), and `authn.startSession()` refuses the
+sign-in as it refuses an unprovisioned person. rcbj's choice on #396 was this
+refusal over exempting the door; a sign-in step that asks the person for what
+the partner did not send is a follow-up ticket.

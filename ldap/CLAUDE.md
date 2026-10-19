@@ -3666,3 +3666,54 @@ membership, each on purpose:
 anyway, by the count rule. An owner grants nothing. `groupsFor()` answers
 `ownerCount` on each list row and `owners` with `maxOwners` on the group.
 
+
+## WHAT EVERY PERSON MUST HOLD: THE ATTRIBUTE POLICY AT THIS DIRECTORY'S DOORS (#396, 2026-10-19)
+
+`common/attribute_policy.ts` (rule 3co, `common/CLAUDE.md`) says what a person
+in the realm must hold — `uid`, `cn` and `sn` always, `givenName` and `mail`
+by default — and this module asks it at every door that creates or edits a
+person, in product mode only (`mode.createsIncompletePeople()`). What is
+this directory's:
+
+* **`createUser()` asks before `putEntry()`**, of the entry as it would be
+  written, and refuses with STS-LDAP-0162 and the `missing` names; a `cn`
+  nobody typed is made of `givenName sn` first. `requiredExempt` names the
+  two creates that are not a person being described: the bootstrap
+  administrator (both `createPerson` hooks), which a fresh product deployment
+  must make with nothing typed, and SCIM, which checks the resource it writes
+  over the entry a line later. A service account created with
+  `serviceAccount: true` is exempt through the users action. A HOBA
+  registration creates through here with nothing typed, so a product realm
+  with the default policy refuses it (`scim/CLAUDE.md`).
+* **`autoCreateUser()` asks of a federated newcomer**: the plan's attributes
+  and the partner's (the ones `SourcedAttributes` lets through), a `cn` made
+  of the names. One missing a required attribute is logged under
+  STS-FED-0158 and nobody is created, so `authn.startSession()` refuses the
+  sign-in as it refuses an unprovisioned person. No other automatic create
+  happens in product mode.
+* **The LDAP add (65, STS-LDAP-0162)** asks after the password policy, with
+  the RDN's value counted as the entry's own (RFC 4512 2.3.1); nothing is
+  derived — an LDAP client writes what it sends. **The LDAP modify (65,
+  STS-LDAP-0164)** refuses only a value TAKEN AWAY, compared on the working
+  copy before anything is committed. A service account is exempt from both
+  (`serviceAccounts.isServiceAccount()`), as at every door.
+  objectClassViolation is the result a directory that checks its schema gives
+  an entry missing a MUST attribute.
+* **`person_editor.ts` takes the realm's custom attributes into its
+  universe**, a third list beside the schema and the catalogue, drawn under a
+  group of its own (Custom) with their syntax as the format — three formats
+  added for them: integer, boolean (stored upper-case) and email (the shape
+  of an addr-spec). `editorFor()` marks each row `required`, and `update()`
+  refuses taking a required value away (STS-LDAP-0164) after the schema's
+  MUST check (0109).
+* **The two registers' stores** are `ou=attributePolicies` and
+  `ou=attributeDefinitions`, seeded beside the other policy containers and
+  re-created by the first write where a realm predates them;
+  `policyEntriesIn()`, `writePolicyEntryIn()` and `deletePolicyEntryIn()` are
+  `ou=localePolicies`' three functions written once for both. The slot is
+  validated WHOLE (nine hooks): the six stores, `knownName()` (the name
+  table's spelling, which a custom attribute may not take), `holders()` and
+  `missing()`.
+* **`peopleMissing()` IS A WALK**, said at the function: no index records
+  what an entry LACKS. It answers null in a windowed process, where the
+  directory is in the store, and the page gives the RFC 4515 filter instead.

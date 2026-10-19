@@ -599,6 +599,18 @@
     "en": "3a1905ca05d2e355",
     "text": "值來自該人的目錄項目，否則省略；`verified_claims` 只依據記錄在項目上的驗證釋出，且 email_verified 只有在地址已驗證時才為 true：該人透過郵寄連結證明的地址（#63），或受信任來源寫入的地址——管理員（主控台、/admin-api，或持有 Admin Write 的 LDAP 寫入）、SCIM，或未表示 email_verified 為 false 的聯合合作夥伴（#64）。"
   },
+  "mode.requirements.required-attributes.what": {
+    "en": "766f977cdfc5a340",
+    "text": "人員持有此領域屬性原則要求的屬性"
+  },
+  "mode.requirements.required-attributes.development": {
+    "en": "9f3eb5f6be8b0a4f",
+    "text": "該原則儲存並顯示在「目錄 > 原則」中，但不強制執行：只需使用者名稱即可建立人員，編輯可以清空除 cn 和 sn 之外的任何屬性。"
+  },
+  "mode.requirements.required-attributes.product": {
+    "en": "1217261af0bae35e",
+    "text": "缺少必填屬性值的建立在每個入口都會被拒絕（STS-LDAP-0162）——主控台、/admin-api、SCIM、LDAP 新增（objectClassViolation，65）、HOBA 註冊和大量匯入（STS-LDAP-0163）——合作夥伴未提供該屬性的首次聯合登入不會建立任何人（STS-FED-0158）。會移除必填值的編輯會被拒絕（STS-LDAP-0164）。uid、cn 和 sn 一律必填；預設還有 givenName 和 mail。原本就缺少某項的人員不會因此被拒絕登入或編輯其他內容。"
+  },
   "mode.requirements.saml-request-signatures.what": {
     "en": "85e7bc435ce1b0c0",
     "text": "SAML 2.0 服務提供者的請求須經簽署"

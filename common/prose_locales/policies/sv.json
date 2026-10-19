@@ -1367,6 +1367,118 @@
     "en": "cb8bd4fa96dda063",
     "text": "ingen applikation"
   },
+  "kinds.attributes.label": {
+    "en": "6619889d4a9f485d",
+    "text": "Attributpolicy"
+  },
+  "kinds.attributes.governs": {
+    "en": "20a9273a811994df",
+    "text": "de attribut som varje person i den här sfären måste ha, och de anpassade attribut som en person här kan få"
+  },
+  "kinds.attributes.appliesTo": {
+    "en": "c68abf6d2b5ec2a2",
+    "text": "NÄSTA person som skapas och NÄSTA ändring i den här sfären; en person som redan saknar ett obligatoriskt attribut behåller alla andra vägar in"
+  },
+  "kinds.attributes.fallsBackTo": {
+    "en": "c352143b534bf909",
+    "text": "standardsfärens profil om den har en, och annars det inbyggda standardvärdet (givenName, sn och mail)"
+  },
+  "kinds.attributes.param.noun": {
+    "en": "58bb93afc775aa81",
+    "text": "attributpolicyprofil"
+  },
+  "attributes.FIELDS.requiredAttributes.label": {
+    "en": "59a6e795223fdea0",
+    "text": "Obligatoriska attribut"
+  },
+  "attributes.FIELDS.requiredAttributes.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "De attribut som varje person i den här sfären måste ha ett värde för, utöver uid, cn och sn, som alltid krävs. En lista, eller kommaseparerade. Vilket attribut som helst som en person kan få: inetOrgPerson-schemat, katalogen över inloggningsuppgifter, mail och den här sfärens anpassade attribut. Tillämpas i produktläge: att skapa en person utan något av dem nekas vid varje väg in, och en ändring får inte ta bort något. Standard är givenName, sn och mail."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
+    "en": "12630f210e385441",
+    "text": "Tjänstens klass för en attributpolicy: de attribut som varje person i en sfär måste ha. Namngiven efter PROFILEN (`cn=default`)."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
+    "en": "a1a975c54d05126f",
+    "text": "Tjänstens klass för ett anpassat attribut i en sfär, i ou=attributeDefinitions, namngiven efter attributet (`cn=<name>`)."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeRequired.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "De attribut som varje person i den här sfären måste ha ett värde för, utöver uid, cn och sn, som alltid krävs. En lista, eller kommaseparerade. Vilket attribut som helst som en person kan få: inetOrgPerson-schemat, katalogen över inloggningsuppgifter, mail och den här sfärens anpassade attribut. Tillämpas i produktläge: att skapa en person utan något av dem nekas vid varje väg in, och en ändring får inte ta bort något. Standard är givenName, sn och mail."
+  },
+  "attributes.SCHEMA.attributes.description.what": {
+    "en": "8e8f462fddce3d22",
+    "text": "Vad profilen eller det anpassade attributet är till för, för nästa person."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeLabel.what": {
+    "en": "8d93b7c14ddfd1af",
+    "text": "Ett anpassat attributs etikett, som visas bredvid namnet."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSyntax.what": {
+    "en": "b5ccce4927fccd38",
+    "text": "Ett anpassat attributs syntax: string, integer, boolean, date, email, uri eller dn. Dess värden kontrolleras mot den."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
+    "en": "b6a0dfd5be9d81fd",
+    "text": "TRUE om ett anpassat attribut har ett värde, FALSE om det har flera."
+  },
+  "attributes.SYNTAXES.string.what": {
+    "en": "6f2c36f9a836b2f4",
+    "text": "Text, högst 1024 tecken, utan kontrolltecken."
+  },
+  "attributes.SYNTAXES.integer.what": {
+    "en": "258ac79871ab42ad",
+    "text": "Ett heltal (RFC 4517 avsnitt 3.3.16)."
+  },
+  "attributes.SYNTAXES.boolean.what": {
+    "en": "5ab7cfb21a4d669d",
+    "text": "TRUE eller FALSE (RFC 4517 avsnitt 3.3.3)."
+  },
+  "attributes.SYNTAXES.date.what": {
+    "en": "70f2250e9d5c193d",
+    "text": "Ett datum, lagrat som ÅÅÅÅMMDD och godtaget även som ÅÅÅÅ-MM-DD."
+  },
+  "attributes.SYNTAXES.email.what": {
+    "en": "daebff95f510f8db",
+    "text": "En e-postadress (addr-spec enligt RFC 5322, lokal@domän)."
+  },
+  "attributes.SYNTAXES.uri.what": {
+    "en": "16bf68a2b162f491",
+    "text": "En http- eller https-URL."
+  },
+  "attributes.SYNTAXES.dn.what": {
+    "en": "3feab9c94c12f33d",
+    "text": "Ett distinguished name (RFC 4514)."
+  },
+  "attributes.sentences.required": {
+    "en": "a35b08811463b6be",
+    "text": "en person i den här sfären måste ha {{list}} för att skapas, och en ändring får inte ta bort värdet för något av dem"
+  },
+  "attributes.sentences.enforced": {
+    "en": "babafe534682a510",
+    "text": "tillämpas: den här sfären är i produktläge, så varje väg in som skapar eller ändrar en person nekar en person utan dem"
+  },
+  "attributes.sentences.notEnforced": {
+    "en": "9e7b85236de9223c",
+    "text": "tillämpas inte: den här sfären är i utvecklingsläge, där en person kan skapas med bara ett användarnamn"
+  },
+  "attributes.sentences.custom": {
+    "en": "2296301f35c39ed9",
+    "text": "den här sfären definierar {{n}} anpassade attribut: {{list}}"
+  },
+  "attributes.sentences.noCustom": {
+    "en": "f9d920b6ce8d9d03",
+    "text": "den här sfären definierar inget anpassat attribut"
+  },
+  "attributes.sentences.defined": {
+    "en": "3867ffa1e351efa2",
+    "text": "Det anpassade attributet {{name}} är definierat i den här sfären på {{dn}}. Det kan nu ges till en person och krävas av den här policyn."
+  },
+  "attributes.sentences.undefined": {
+    "en": "36e7b5eba26472f2",
+    "text": "Det anpassade attributet {{name}} är inte längre definierat i den här sfären."
+  },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",
     "text": "Följande har sparats på {{dn}}: {{noun}} ”{{name}}”. Den gäller för {{appliesTo}}."

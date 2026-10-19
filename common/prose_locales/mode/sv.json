@@ -599,6 +599,18 @@
     "en": "3a1905ca05d2e355",
     "text": "Ett värde kommer från personens katalogpost eller utelämnas; `verified_claims` lämnas ut endast från en verifiering som registrerats på posten, och email_verified är true endast för en verifierad adress: en som personen bevisat via en mejlad länk (#63), eller en som en betrodd källa skrev — en administratör (konsolen, /admin-api eller en LDAP-skrivning med Admin Write), SCIM, eller en federationspartner som inte angav email_verified false (#64)."
   },
+  "mode.requirements.required-attributes.what": {
+    "en": "766f977cdfc5a340",
+    "text": "En person har de attribut som sfärens attributpolicy kräver"
+  },
+  "mode.requirements.required-attributes.development": {
+    "en": "9f3eb5f6be8b0a4f",
+    "text": "Policyn lagras och visas under Katalog > Policyer och tillämpas inte: en person kan skapas med bara ett användarnamn, och en ändring får tömma vilket attribut som helst utom cn och sn."
+  },
+  "mode.requirements.required-attributes.product": {
+    "en": "1217261af0bae35e",
+    "text": "Att skapa en person som lämnar ett obligatoriskt attribut utan värde nekas (STS-LDAP-0162) vid varje väg in — konsolen, /admin-api, SCIM, ett LDAP-tillägg (objectClassViolation, 65), en HOBA-registrering och massimporten (STS-LDAP-0163) — och en första federerad inloggning där partnern inte gav något skapar ingen (STS-FED-0158). En ändring som skulle ta bort ett obligatoriskt värde nekas (STS-LDAP-0164). uid, cn och sn krävs alltid; givenName och mail som standard. En person som redan saknade ett nekas varken inloggning eller ändring av något annat."
+  },
   "mode.requirements.saml-request-signatures.what": {
     "en": "85e7bc435ce1b0c0",
     "text": "En SAML 2.0-tjänsteleverantörs begäran är signerad"

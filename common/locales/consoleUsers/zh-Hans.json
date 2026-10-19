@@ -836,5 +836,9 @@
   "serviceAccountSection.itselfTip": "服务账户不能拥有自身。",
   "serviceAccountSection.addTip": "将 {value} 设为所有者。保存表单时写入。",
   "serviceAccountSection.findHint": "在框中输入以搜索；框为空时列出每个{which, select, groups {组} other {人员}}。",
-  "serviceAccountSection.destinationHeading": "推送目标"
+  "serviceAccountSection.destinationHeading": "推送目标",
+  "personFieldsSection.policyRequired": " 此领域的属性策略要求它。",
+  "newUserBody.requiredEnforced": "此领域中每个人都必须持有 <strong>{list}</strong>，缺少其中任何一项的创建都会被拒绝；下方每个这样的字段都标记为必填，留空的 <code>cn</code> 会由名字和姓氏组成。该列表来自",
+  "newUserBody.requiredNotEnforced": "此领域的属性策略列出 <strong>{list}</strong>；开发模式下不强制执行，因此这里接受缺少它们的创建。该列表来自",
+  "newUserBody.requiredPolicy": "属性策略"
 }

@@ -599,6 +599,18 @@
     "en": "3a1905ca05d2e355",
     "text": "值来自此人的目录条目，否则省略；`verified_claims` 只依据条目上记录的核验发布，email_verified 只有在地址已验证时才为 true：要么此人通过邮件链接证明过它（#63），要么由受信任的来源写入——管理员（控制台、/admin-api，或持有 Admin Write 的 LDAP 写入）、SCIM，或未声明 email_verified 为 false 的联合伙伴（#64）。"
   },
+  "mode.requirements.required-attributes.what": {
+    "en": "766f977cdfc5a340",
+    "text": "人员持有此领域属性策略要求的属性"
+  },
+  "mode.requirements.required-attributes.development": {
+    "en": "9f3eb5f6be8b0a4f",
+    "text": "该策略存储并显示在“目录 > 策略”中，但不强制执行：只需用户名即可创建人员，编辑可以清空除 cn 和 sn 之外的任何属性。"
+  },
+  "mode.requirements.required-attributes.product": {
+    "en": "1217261af0bae35e",
+    "text": "缺少必填属性值的创建在每个入口都会被拒绝（STS-LDAP-0162）——控制台、/admin-api、SCIM、LDAP 添加（objectClassViolation，65）、HOBA 注册和批量导入（STS-LDAP-0163）——合作方未提供该属性的首次联合登录不会创建任何人（STS-FED-0158）。会移除必填值的编辑会被拒绝（STS-LDAP-0164）。uid、cn 和 sn 始终必填；默认还有 givenName 和 mail。原本就缺少某项的人员不会因此被拒绝登录或编辑其他内容。"
+  },
   "mode.requirements.saml-request-signatures.what": {
     "en": "85e7bc435ce1b0c0",
     "text": "SAML 2.0 服务提供方的请求经过签名"

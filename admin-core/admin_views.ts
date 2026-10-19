@@ -210,6 +210,10 @@ import krb5PersonKeys = require('../kerberos/krb5_person_keys');
 // change, with what the entry holds. A library whose directory arrives
 // through its own slot, so this require loads no route module.
 import personEditor = require('../ldap/person_editor');
+// The attribute policy (#396): the attributes every person must hold, drawn
+// on Directory > Policies, marked on the new-user form and a person's
+// Attributes tab.
+import attributePolicy = require('../common/attribute_policy');
 // RFC 9728's well-known path, which the new-application form names (#446).
 import resourceMetadata = require('../oauth-oidc/protected_resource_metadata');
 import oauth2 = require('../oauth-oidc/oauth2');
@@ -2438,6 +2442,43 @@ class AdminViews {
     return out;
   }
 
+  // What only the attribute policy has to say (#396): every attribute a
+  // person here may be given and which are required, the realm's custom
+  // attributes and the syntaxes one may have, and — only when the reader
+  // asks, `missing=count` — how many people lack a required attribute,
+  // which is a walk of the realm's people (said in `ldap_server.js`'s
+  // `peopleMissing()`). The LDAP filter that finds them is given either way.
+  private attributePolicyExtras(query) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.attributePolicyExtras().");
+    const q = query || {};
+    const required = attributePolicy.required();
+    const asked = String((Array.isArray(q.missing) ? q.missing[0]
+                                                   : q.missing) || '') ===
+                  'count';
+    const out = {
+      enforced: attributePolicy.enforced(),
+      alwaysRequired: attributePolicy.ALWAYS_REQUIRED.slice(),
+      required: required,
+      catalogue: attributePolicy.catalogue(),
+      custom: attributePolicy.definitions(),
+      maxCustom: attributePolicy.MAX_DEFINITIONS,
+      syntaxes: attributePolicy.SYNTAXES.map(function (one) {
+        return { id: one.id, what: one.what };
+      }),
+      // RFC 4515: every person under ou=users lacking any of them.
+      missingFilter: '(|' + required.map(function (one) {
+        return '(!(' + one + '=*))';
+      }).join('') + ')',
+      missingAsked: asked,
+      missing: asked ? attributePolicy.peopleMissing() : null,
+      actions: { define: 'define-person-attribute',
+                 remove: 'remove-person-attribute' }
+    };
+    log.debug("Leaving AdminViews.attributePolicyExtras().");
+    return out;
+  }
+
   /**
    * Builds Directory → Policies: every kind of policy and its profiles.
    *
@@ -2463,6 +2504,8 @@ class AdminViews {
         Object.assign(member, this.passwordPolicyExtras());
       } else if (kind.id === 'authn') {
         Object.assign(member, this.authnPolicyExtras(member));
+      } else if (kind.id === 'attributes') {
+        Object.assign(member, this.attributePolicyExtras(q));
       }
       out[kind.id] = member;
       const profiles = kind.module.list();
@@ -2470,7 +2513,11 @@ class AdminViews {
                        container: kind.container, governs: kind.governs,
                        profiles: profiles.length,
                        actions: [policyKinds.saveAction(kind),
-                                 policyKinds.resetAction(kind)] });
+                                 policyKinds.resetAction(kind)]
+                         .concat((kind.extraActions || []).map(
+                           function (one) {
+                             return one.action;
+                           })) });
       profiles.forEach(function (one) {
         rows.push({ kind: kind.id, name: one.name, stored: one.stored,
                     inherited: !!one.inherited, dn: one.dn,
@@ -8172,8 +8219,15 @@ class AdminViews {
                     simple: row.ldap.toLowerCase() === 'mail' });
       }
     });
+    // WHAT THE REALM'S ATTRIBUTE POLICY REQUIRES (#396), marked on each
+    // field and always in the simplified view: a form that hid a box a
+    // create would be refused for leaving empty would be a trap.
+    const required = attributePolicy.required().map(function (one) {
+      return one.toLowerCase();
+    });
     const out = rows.map(function (row) {
       const claim = claimOf[row.name.toLowerCase()];
+      const isRequired = required.indexOf(row.name.toLowerCase()) >= 0;
       return {
         attribute: row.name,
         type: row.multi ? 'array' : 'string',
@@ -8184,7 +8238,8 @@ class AdminViews {
         example: row.example,
         forText: row.label,
         families: [], everyFamily: true, group: row.group,
-        simple: !!row.simple
+        simple: !!row.simple || isRequired,
+        required: isRequired
       };
     });
     log.debug("Leaving AdminViews.newUserFieldRows(). " + out.length +
@@ -8295,8 +8350,14 @@ class AdminViews {
       gridFields: personEditor.editableAttributes().map(function (row) {
         return { attribute: row.name, label: row.label, group: row.group,
                  multi: row.multi, example: row.example,
-                 simple: row.simple, takes: row.note || 'text' };
+                 simple: row.simple, takes: row.note || 'text',
+                 custom: !!row.custom };
       }),
+      // WHAT A CREATE MUST CARRY (#396): the realm's attribute policy, and
+      // whether it is enforced here (product mode). `cn` is made from
+      // givenName and sn when it is left empty.
+      requiredAttributes: attributePolicy.required(),
+      requiredEnforced: attributePolicy.enforced(),
       credentials: CREDENTIAL_CHOICES.map(function (one) {
         return { id: one.id, label: one.label, what: one.what };
       }),

@@ -77,5 +77,6 @@
   "mail.none": "Walang mail transport ang realm na ito (",
   "mail.link": "Mail",
   "mail.noneAfter": "), kaya ipinapakita sa iyo ang {what} para maipasa mo.",
-  "mail.box": "i-mail ang {what} sa address na nasa kanilang entry, at huwag itong ipakita sa akin"
+  "mail.box": "i-mail ang {what} sa address na nasa kanilang entry, at huwag itong ipakita sa akin",
+  "grid.required": " &middot; kailangan"
 }

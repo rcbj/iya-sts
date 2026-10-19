@@ -1193,3 +1193,34 @@ and `tests/no_full_directory_walk_in_requests.js` records it as owed, with
 what would remove it. `entryForHobaKid()` reads only the people holding
 `hobaPublicKey` (`ldap.personsHolding()`), where it read everybody on each
 HOBA-authenticated request.
+
+## THE ATTRIBUTE POLICY OVER SCIM (#396, 2026-10-19)
+
+In product mode a provisioned person is held to the realm's attribute policy
+(`common/CLAUDE.md` 3co): `uid`, `cn`, `sn`, and by default `givenName` and
+`mail`. Three things are this module's.
+
+* **A CREATE IS CHECKED HERE, NOT IN `createUser()`.** `createUser()` writes
+  the entry with nothing of the resource on it, and the resource is merged
+  over it a few lines later, so asking there would refuse every SCIM create.
+  The ingress previews `scimMap.fromScimUser(data, {})`, makes a `cn` of the
+  names where there is no `displayName`, and refuses with `400 invalidValue`
+  under STS-LDAP-0162 before anything is written; `createUser()` is passed
+  `requiredExempt: 'scim'`. The code is the directory's, as STS-LDAP-0005 is
+  for a taken name: one condition, one code, at every door.
+* **AN UPDATE MAY NOT TAKE A REQUIRED VALUE AWAY** (`400 invalidValue`,
+  STS-LDAP-0164), compared on the merged attribute set; a PATCH reaches the
+  ingress as the whole resource, so PUT and PATCH are one check. A person who
+  never held one may still be updated.
+* **A HOBA REGISTRATION CREATES WITH NOTHING BUT A NAME**, through
+  `createUser()`, so a product realm keeping the default policy refuses it
+  (400, STS-LDAP-0162). That is the policy working, not a defect: the realm
+  either lowers its policy or provisions the person first.
+
+**NOT YET:** `/Schemas` does not publish `required` from the realm's policy,
+and a realm's custom attributes are not a SCIM extension — SCIMMY's schema
+definitions are the process's, not a realm's. A follow-up ticket of #396
+records both. `sts_scim_conformance.js`'s realm saves a policy requiring only
+`uid`, `cn` and `sn` (RFC 7643 requires only `userName`); a harness case
+writing a person with no `name.familyName` is refused in product mode for
+`sn`, and would be an exception recorded on #396.

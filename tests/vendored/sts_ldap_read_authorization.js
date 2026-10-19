@@ -267,12 +267,14 @@ async function setUp(realm, mode) {
            "created the " + mode + " realm " + realm);
   const api = realmBase(realm) + "/admin-api";
   const dns = {};
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
   for (const who of [READER, OTHER, ADMIN]) {
     const made = await ok(api + "/users/create", {
       username: who, invent: false, credential: "password",
       password: PASSWORD,
-      attributes: { cn: "LDR " + who, sn: who, mail: who + "@ldr.test",
-                    telephoneNumber: PHONE } },
+      attributes: { cn: "LDR " + who, givenName: "LDR", sn: who,
+                    mail: who + "@ldr.test", telephoneNumber: PHONE } },
       "created " + who + " in " + realm);
     dns[who] = String(made.dn);
   }

@@ -1840,6 +1840,8 @@ class WebKit {
       '<span class="fg-for">' + WebKit.esc(labels) +
       (row.type === 'array' ? t.html('consoleKit.grid.aList') : '') +
       (row.sensitive ? t.html('consoleKit.grid.aCredential') : '') +
+      // A FIELD A CREATE MUST FILL (#396): the realm's attribute policy.
+      (row.required ? t.html('consoleKit.grid.required') : '') +
       '</span>' +
       control +
       // #488: a value the service will not use as written, said beside the

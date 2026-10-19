@@ -304,6 +304,15 @@ Verifying a Basic password costs about 70 ms of
 CPU per request in product mode, so a bulk provisioning client should use a
 `scim:write` access token. See [what is not checked](what-is-not-checked.md).
 
+**In product mode a provisioned person must carry what the realm's
+[attribute policy](admin-console.md#policies--adminpolicies) requires**
+(#396): `uid`, `cn` and `sn` always, and by default `givenName` and `mail` —
+`userName`, `name.familyName`, `name.givenName` and `emails` over SCIM, with
+`displayName` as `cn` or, without one, `cn` made of the two names. A create
+without one is `400 invalidValue`, and so is a replace or a patch that would
+take one away. A HOBA registration creates an account with nothing but a name,
+so a realm that keeps the default policy refuses it.
+
 **In development mode the credential is a turnstile, not a lock.** Any password
 but `invalid` passes Basic, any username passes Digest with the shared
 password, and anybody can register a HOBA key for any name. Nothing decides that

@@ -77,5 +77,6 @@
   "mail.none": "此领域没有邮件传输方式（",
   "mail.link": "邮件",
   "mail.noneAfter": "），因此{what}会显示给您，由您转交。",
-  "mail.box": "将{what}发送到其条目上的邮件地址，不要显示给我"
+  "mail.box": "将{what}发送到其条目上的邮件地址，不要显示给我",
+  "grid.required": " &middot; 必填"
 }

@@ -380,6 +380,13 @@ async function test() {
   const streamId = created.body.stream_id;
 
   log.info("=== a person with no address, signed in, holding tokens ===");
+  // THIS REALM'S OWN ATTRIBUTE POLICY (#396) asks no address: the person is
+  // created without one ON PURPOSE, so that step d sees email_verified flip
+  // once one is proved, and product mode's default (givenName, sn, mail)
+  // would refuse the create.
+  await ok(realmApi + "/policies/save-attributes-policy",
+    { profile: "default", requiredAttributes: ["givenName"] },
+    "this realm's attribute policy requires no address");
   await ok(realmApi + "/users/create", { username: ALICE, invent: false,
     credential: "password", password: PASSWORD,
     attributes: { cn: "CAEP " + ALICE, givenName: "Caep", sn: "Doors" } },

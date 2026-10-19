@@ -83,6 +83,16 @@ const APP = 'readauth-app-' + STAMP;
 const PASSWORD = 'Ra-' + STAMP + '-Correct.Horse.Battery.Staple.42';
 const WIDENED = 'objectClass,cn,uid,mail';
 
+// The realm's attribute policy (#396) requires givenName, sn and mail of every
+// person in product mode, and invents none of them.
+function personOptions(name) {
+  log.debug("Entering personOptions().");
+  log.debug("Leaving personOptions().");
+  return { invent: false,
+           attributes: { givenName: 'Readauth', sn: name,
+                         mail: name + '@readauth.test' } };
+}
+
 function withSettings(pairs, fn) {
   log.debug("Entering withSettings().");
   const keys = Object.keys(pairs);
@@ -413,8 +423,8 @@ function administrators(t, dns, made) {
   t.check(made.realm, 'precondition: a throwaway realm was created',
           JSON.stringify(created));
   const inside = realms.run(realms.get(REALM), function () {
-    ldap.createUser(REALM_ADMIN, { invent: false });
-    ldap.createUser(OTHER, { invent: false });
+    ldap.createUser(REALM_ADMIN, personOptions(REALM_ADMIN));
+    ldap.createUser(OTHER, personOptions(OTHER));
     return { admin: ldap.objectFor(REALM_ADMIN).entry.dn,
              other: ldap.objectFor(OTHER).entry.dn,
              users: ldap.usersDn(),
@@ -550,7 +560,7 @@ async function overTheSocket() {
     const ldapjs = require('ldapjs');
     const product = config.value('global.mode') === 'product';
     [READER, OTHER, ADMIN].forEach(function (name) {
-      ldap.createUser(name, { invent: false });
+      ldap.createUser(name, personOptions(name));
       credentials.setPassword(name, PASSWORD);
     });
     const reader = ldap.objectFor(READER).entry.dn;

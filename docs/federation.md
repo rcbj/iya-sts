@@ -558,6 +558,13 @@ development. What the mode changes:
 | `fedRequireSignedLogout` off | an **unsigned** SAML logout message from the partner is accepted — a warning: anybody who can name a partner session can then end it | refused on the relationship (`STS-FED-0132`), and an unsigned logout message is refused whatever it says |
 | A plaintext SAML 2.0 or WS-Federation assertion, or a signed-only `id_token` by form_post | accepted | **refused** (`STS-FED-0140`) unless the relationship sets `fedAllowUnencrypted` — a warning: the person's identifier and attributes then cross their browser in clear. An ID Token redeemed at the partner's token endpoint crosses no browser and is not asked about |
 
+**A newcomer the realm's [attribute policy](admin-console.md#policies--adminpolicies)
+would refuse is not created in product mode** (#396): where `fedAutocreateUsers`
+lets a first sign-in create the person, the partner's mapped attributes must
+supply what every person must hold — by default a given name, a surname and an
+address (`STS-FED-0158`). Map them on the relationship, or provision the person
+first.
+
 See [What is not checked](what-is-not-checked.md), *Federation inverts all of
 this*.
 

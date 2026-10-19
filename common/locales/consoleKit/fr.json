@@ -77,5 +77,6 @@
   "mail.none": "Ce domaine n’a aucun transport de courrier (",
   "mail.link": "Courrier",
   "mail.noneAfter": ") : {what} vous est donc affiché pour que vous le transmettiez.",
-  "mail.box": "envoyer {what} par e-mail à l’adresse de son entrée, sans me l’afficher"
+  "mail.box": "envoyer {what} par e-mail à l’adresse de son entrée, sans me l’afficher",
+  "grid.required": " &middot; obligatoire"
 }

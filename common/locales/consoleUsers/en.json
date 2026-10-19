@@ -836,5 +836,9 @@
   "serviceAccountSection.itselfTip": "A service account cannot own itself.",
   "serviceAccountSection.addTip": "Make {value} an owner. It is written when you save the form.",
   "serviceAccountSection.findHint": "Type in the box to search; an empty box lists every {which, select, groups {group} other {person}}.",
-  "serviceAccountSection.destinationHeading": "Push destination"
+  "serviceAccountSection.destinationHeading": "Push destination",
+  "personFieldsSection.policyRequired": " The realm's attribute policy requires it.",
+  "newUserBody.requiredEnforced": "Every person in this realm must hold <strong>{list}</strong>, and a create without one is refused; each such field below is marked required, and a <code>cn</code> left empty is made from the given name and surname. The list is the ",
+  "newUserBody.requiredNotEnforced": "The realm's attribute policy names <strong>{list}</strong>; it is not enforced in development mode, so a create without them is accepted here. The list is the ",
+  "newUserBody.requiredPolicy": "attribute policy"
 }

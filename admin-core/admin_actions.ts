@@ -3734,7 +3734,10 @@ class AdminActions {
               'authenticating',
         channel: 'console',
         attributes: typed,
-        invent: invent
+        invent: invent,
+        // A SERVICE ACCOUNT IS NOT A PERSON BEING DESCRIBED (#396): the
+        // attribute policy's given name and address are not asked of it.
+        requiredExempt: asServiceAccount ? 'service account' : ''
       });
       if (!result.ok) {
         log.debug("Leaving AdminActions.usersAction(). create refused.");
@@ -7034,6 +7037,31 @@ class AdminActions {
       log.debug("Leaving valuesOf().");
       return out;
     };
+
+    // AN ACT OF THE KIND'S OWN (#396): the attribute policy's custom
+    // attribute register, defined or removed. The module answers; this
+    // records it, as a save is recorded.
+    if (found.verb === 'act') {
+      const result = module.act(action, Object.assign({}, body));
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.policiesAction(). act refused.");
+        return this.refused(this.innerCode(result) || 'STS-ADMIN-0549',
+                            Object.assign({}, result,
+                                          { ok: false,
+                                            errors: result.errors }));
+      }
+      auditLog.audit({
+        action: found.extra.auditAction, actor: actor,
+        target: String(result.dn || (result.definition &&
+                                     result.definition.dn) || ''),
+        channel: 'http',
+        summary: action + ' ' + String(body.name || ''),
+        detail: { via: ctx.via || '', kind: kind.id, action: action,
+                  name: String(body.name || '') }
+      });
+      log.debug("Leaving AdminActions.policiesAction(). act " + action + ".");
+      return Object.assign({ kind: kind.id }, result);
+    }
 
     if (found.verb === 'save') {
       const given = Object.assign({}, body);

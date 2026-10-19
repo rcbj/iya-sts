@@ -877,10 +877,14 @@ async function provisionTheContainersIdentity() {
   log.debug("Entering provisionTheContainersIdentity().");
   // With the attributes a real entry carries and nothing invented — product
   // mode invents no persona onto an entry, and a directory entry for an
-  // enforcement point is a record somebody reads.
+  // enforcement point is a record somebody reads. The realm's attribute
+  // policy (#396) requires givenName, sn and mail of every entry under
+  // ou=users in product mode.
   const made = await postJson(api("/users/create"), {
     username: PEP_NAME, invent: false,
-    attributes: { cn: PEP_NAME, sn: "Remote PEP", displayName: PEP_NAME,
+    attributes: { cn: PEP_NAME, givenName: "Remote", sn: "Remote PEP",
+                  mail: PEP_NAME + "@xacml-remote-pep.test",
+                  displayName: PEP_NAME,
                   description:
                     "the remote XACML PEP container this job drives" }
   });

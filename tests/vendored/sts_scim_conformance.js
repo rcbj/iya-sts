@@ -265,6 +265,14 @@ async function setUp(product) {
   await ok(realmBase + "/admin-api/config/set",
            { key: "scim.inventOnCreate", value: false },
            "a SCIM create in " + REALM + " invents nothing");
+  // RFC 7643 SECTION 4.1 REQUIRES ONLY userName, and the harnesses create
+  // and PATCH people on that footing; this realm's own attribute policy
+  // (#396) requires nothing beyond uid, cn and sn, which no policy can lift.
+  // A harness case writing a person with no name.familyName is refused in
+  // product mode for sn, and would be an EXCEPTION recorded on #396.
+  await ok(realmBase + "/admin-api/policies/save-attributes-policy",
+           { profile: "default", requiredAttributes: [] },
+           "this realm's attribute policy requires only uid, cn and sn");
   // A service-provider-side federation relationship, so that the harness can
   // write this service's own `federationLinks` extension member, whose
   // `relationship` must name one (scim/CLAUDE.md, #109). Never enabled: a

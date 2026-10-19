@@ -242,7 +242,10 @@ async function child(phase) {
   const PW = 'Krbtgt-Rotation-Passw0rd#169';
   const USER = 'krbalice';
   const SPN = 'HTTP/svc169.' + REALM.toLowerCase();
-  out.userMade = directory.createUser(USER, { invent: false }).ok;
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
+  out.userMade = directory.createUser(USER, { invent: false, attributes: {
+    givenName: 'Alice', sn: USER, mail: USER + '@example.test' } }).ok;
   out.passwordSet = credentials.setPassword(USER, PW).ok;
   await personKeys.idle();
   const created = actions.kerberosPrincipalsAction(

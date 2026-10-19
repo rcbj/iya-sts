@@ -117,6 +117,8 @@ Every realm's tree has the same containers under its base:
 | `ou=policies` | the XACML policy repository |
 | `ou=peps` | remote XACML Policy Enforcement Points |
 | `ou=passwordPolicies` | password policy profiles |
+| `ou=attributePolicies` | attribute policy profiles: what every person must hold (#396) |
+| `ou=attributeDefinitions` | the realm's custom attributes (#396) |
 | `ou=spiffe` | SPIFFE registration entries (`ou=entries`) and attested agents (`ou=agents`) |
 | `ou=trustAnchors` | the client-certificate truststore, in the default realm only |
 

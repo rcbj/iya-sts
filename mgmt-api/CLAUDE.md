@@ -1702,6 +1702,19 @@ doors. A caller that means nobody to hold anything sends `credential: "none"`;
 a generated one, meet the realm's password policy in product mode, and
 `set-password` does the same.
 
+### The attribute policy's two acts (#396, 2026-10-19)
+
+`POST /admin-api/policies/{save,reset}-attributes-policy` are the sixth
+kind's save and reset, generated from its FIELDS like every kind's; the field
+is `requiredAttributes`, `oneOf` a list or a comma-separated string (the
+`attributeList` type). Beside them are the first two actions a kind has OF ITS
+OWN, `define-person-attribute` and `remove-person-attribute`, described by the
+kind (`PolicyKind.extraActions`: summary, description and request body) and
+answered through `policiesAction()`'s `act` verb — the same resource, the same
+console form target, so rule 7 needed no new operation. `GET
+/admin-api/policies` grew `missing=count`, a walk of the realm's people asked
+only on request.
+
 ## `upload-certificate` AND `regenerate-secret` (2026-09-13)
 
 Two operations for the Credentials section of an application's console page,

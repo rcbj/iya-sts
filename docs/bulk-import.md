@@ -69,6 +69,12 @@ Each record is one person directly under the realm's `ou=users`:
   - a URL value (`name:< url`), an empty value, a NUL byte;
   - a `changetype` other than `add`.
 
+- **In a product-mode realm**, a record that carries no value of an attribute
+  the realm's attribute policy requires (`uid`, `cn` and `sn` always; by
+  default `givenName` and `mail`) is refused (`STS-LDAP-0163`). Nothing is
+  derived: the record says what it says. A custom attribute is not among the
+  attributes a record may carry.
+
 A refused record is counted and skipped, and the rest of the file is imported.
 
 **One entry per person.** A record's names are its RDN value and every `uid`

@@ -659,6 +659,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3cl | `common/web_*.ts` and friends (#570): the static surfaces' foundation | `common/CLAUDE.md` |
 | 3cm | The mock relying parties (#581) — deleted by #592; number kept | `common/CLAUDE.md` |
 | 3cn | `ownership.ts` (#607): owners, and OWNER_READ / OWNER_WRITE | `common/CLAUDE.md`, `xacml/CLAUDE.md`, `mgmt-api/CLAUDE.md` |
+| 3co | `attribute_policy.ts` (#396): what every person must hold, and a realm's custom attributes | `common/CLAUDE.md`, `ldap/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |

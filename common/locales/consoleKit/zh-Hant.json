@@ -77,5 +77,6 @@
   "mail.none": "此領域沒有郵件傳輸（",
   "mail.link": "郵件",
   "mail.noneAfter": "），因此{what}會顯示給您，由您轉交。",
-  "mail.box": "將{what}以電子郵件寄到其項目上的地址，不要顯示給我"
+  "mail.box": "將{what}以電子郵件寄到其項目上的地址，不要顯示給我",
+  "grid.required": " &middot; 必填"
 }

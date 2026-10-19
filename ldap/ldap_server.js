@@ -389,6 +389,12 @@ const passkeyPolicy = require('../common/passkey_policy');
 // It is also asked at every person entry's creation, for the
 // preferredLanguage a new person is given (`populatePreferredLanguage`).
 const localePolicy = require('../common/locale_policy');
+// THE ATTRIBUTE POLICY AND THE CUSTOM ATTRIBUTE REGISTER (#396, 2026-10-19),
+// `ou=attributePolicies` and `ou=attributeDefinitions`, for the five
+// policies' reason: a LEAF whose store this directory is (it reaches
+// `ldap/person_editor.ts` only lazily). It is asked at every door that
+// creates or edits a person, for what that person must hold.
+const attributePolicy = require('../common/attribute_policy');
 const mode = require('../common/mode');
 // The attributes no outside source may write (#94), asked at the federated
 // write. A leaf.
@@ -960,6 +966,22 @@ function localePoliciesDn() {
   log.debug("Entering localePoliciesDn().");
   log.debug("Leaving localePoliciesDn().");
   return 'ou=localePolicies,' + baseDn();
+}
+
+// ou=attributePolicies is the ATTRIBUTE POLICY register (#396), a sixth
+// container for the same reason, and ou=attributeDefinitions the realm's
+// custom attributes beside it. `common/attribute_policy.ts` owns both
+// schemas.
+function attributePoliciesDn() {
+  log.debug("Entering attributePoliciesDn().");
+  log.debug("Leaving attributePoliciesDn().");
+  return 'ou=attributePolicies,' + baseDn();
+}
+
+function attributeDefinitionsDn() {
+  log.debug("Entering attributeDefinitionsDn().");
+  log.debug("Leaving attributeDefinitionsDn().");
+  return 'ou=attributeDefinitions,' + baseDn();
 }
 
 // The fourth and fifth, and they are `spiffe_registry.js`'s store the way
@@ -3278,6 +3300,12 @@ localePolicy.SCHEMA.attributes.concat(localePolicy.SCHEMA.personAttributes)
   .forEach(function (row) {
     learnName(row.name, 'the locale policy schema');
   });
+// #396: the attribute policy's and the custom attribute register's. A custom
+// attribute's OWN name is never learnt: it is one realm's, and the table is
+// the process's — the register refuses a name already here instead.
+attributePolicy.SCHEMA.attributes.forEach(function (row) {
+  learnName(row.name, 'the attribute policy schema');
+});
 xacmlStore.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the XACML policy schema');
 });
@@ -4412,6 +4440,28 @@ function seed() {
       'exists. A named profile applies to the applications it lists. ' +
       'common/locale_policy.ts holds the schema; GET /admin/policies ' +
       'publishes it.'
+  }, { origin: 'seed' });
+  // And the attribute policy's and the custom attributes' (#396), for the
+  // same reason.
+  putEntry(attributePoliciesDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'attributePolicies',
+    description: 'ATTRIBUTE POLICY profiles: the attributes every person ' +
+      'in this realm must hold, besides uid, cn and sn. cn=default applies ' +
+      'everywhere; while it is absent a realm other than the default one ' +
+      'follows the DEFAULT REALM\'s, and the built-in default (givenName, ' +
+      'sn, mail) applies where neither exists. Enforced in product mode. ' +
+      'common/attribute_policy.ts holds the schema; GET /admin/policies ' +
+      'publishes it.'
+  }, { origin: 'seed' });
+  putEntry(attributeDefinitionsDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'attributeDefinitions',
+    description: 'CUSTOM ATTRIBUTES of this realm: cn=<name> with a label, ' +
+      'a syntax and whether it holds one value or several. A person may be ' +
+      'given a value of each, and the attribute policy may require one. ' +
+      'Not inherited from the default realm. common/attribute_policy.ts ' +
+      'holds the schema; Directory > Policies > Attribute policy edits it.'
   }, { origin: 'seed' });
   putEntry(pepsDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -7096,6 +7146,35 @@ function autoCreateUser(detail) {
     log.debug('Leaving autoCreateUser(). The entry already existed.');
     return existing;
   }
+  // A FEDERATED NEWCOMER THE REALM'S ATTRIBUTE POLICY WOULD NOT LET BE
+  // CREATED (#396), in product mode: the entry as this sign-in would write
+  // it — the plan's attributes and the partner's, a `cn` made of the names —
+  // is asked before anything is written, and one missing a required
+  // attribute creates nobody. `authn.startSession()` then refuses the
+  // sign-in as it refuses a person nobody provisioned. The partner's mapping
+  // (`federation/CLAUDE.md`) is where a missing attribute is supplied, or
+  // the person is provisioned ahead of time.
+  if (info.federation) {
+    const prospective = Object.assign({}, plan.attributes);
+    const sent = info.federation.attributes || {};
+    Object.keys(sent).forEach(function (attribute) {
+      if (!SourcedAttributes.refusal(attribute.toLowerCase())) {
+        prospective[attribute] = sent[attribute];
+      }
+    });
+    attributePolicy.deriveCommonName(prospective);
+    const incomplete = attributePolicy.createRefusal(prospective);
+    if (incomplete) {
+      log.warn(errorCodes.tag('STS-FED-0158') + 'ldap: not creating ' + dn +
+               ' for a federated sign-in through ' + info.federation.id +
+               ': the partner supplied no value of ' +
+               incomplete.missing.join(', ') + ', which this realm\'s ' +
+               'attribute policy requires of every person.');
+      log.debug('Leaving autoCreateUser(). The attribute policy refused the ' +
+                'federated newcomer.');
+      return null;
+    }
+  }
   if (cappedEntries() >= maxEntries()) {
     // Reported rather than thrown: the authentication itself succeeded and must
     // not be failed by a directory that is full.
@@ -7127,6 +7206,12 @@ function autoCreateUser(detail) {
   // branch above. What a foreign identity provider asserted about somebody
   // beats what this service invented for them.
   applyFederatedAttributes(created, info, { created: true });
+  // And a `cn` made of the partner's names where nothing gave one (#396), as
+  // the check above assumed.
+  if (info.federation &&
+      attributePolicy.deriveCommonName(created.attributes)) {
+    touchDirectory(created.dn);
+  }
   log.debug('ldap: created ' + dn + ' because ' + name + ' ' + note + '.');
   // A user created by the SERVICE rather than by a client, and the audit row
   // says so through `channel: 'internal'` — no LDAP client asked for this. It
@@ -7348,6 +7433,14 @@ function personAttributesFrom(given) {
 //     the directory and an issued credential agree) and it means "no value
 //     recorded" is a statement about this create rather than a permanent
 //     property of the entry. /admin/users/new says so on the page.
+//   * **IN PRODUCT MODE IT HOLDS THE PERSON TO THE REALM'S ATTRIBUTE POLICY
+//     (#396)** — `uid`, `cn` and `sn` always, `givenName` and `mail` by
+//     default (`common/attribute_policy.ts`) — and refuses a create that
+//     would leave one empty (STS-LDAP-0162), before anything is written. A
+//     `cn` nobody typed is made from `givenName sn` first. The bootstrap
+//     administrator and SCIM pass `requiredExempt`: the first is made before
+//     anybody could describe it, and the second checks the resource it
+//     writes over this entry a line later.
 // ---------------------------------------------------------------------------
 /**
  * Creates a person on purpose, from the console or the management API, at
@@ -7355,7 +7448,8 @@ function personAttributesFrom(given) {
  *
  * @param name - the username
  * @param options - `attributes` (the values typed), `invent` (false to invent
- * no attribute values) and `mailSource`
+ * no attribute values), `mailSource`, and `requiredExempt` (why the attribute
+ * policy is not asked, #396)
  * @returns `{ ok: true, dn, username, typed, invented, entry }`, or a refusal
  * marked with its error code
  */
@@ -7491,6 +7585,26 @@ function createUser(name, options) {
   const attributes = Object.assign({}, base, supplied.attributes);
   if (!attributes.description) {
     attributes.description = [note];
+  }
+  // A COMMON NAME FROM THE NAMES TYPED (#396). `cn` is on `person`'s MUST
+  // list, and an operator who typed a given name and a surname has said what
+  // it is; it is written only where nothing named one.
+  attributePolicy.deriveCommonName(attributes);
+  // WHAT THE REALM'S ATTRIBUTE POLICY REQUIRES (#396), in product mode, of
+  // the entry as it would be written — before putEntry(), which cannot be
+  // undone. `requiredExempt` names the two creates that are not a person
+  // being described: the bootstrap administrator, which a fresh product
+  // deployment must be able to make with nothing typed, and SCIM, which
+  // checks the resource it is about to write over this entry itself.
+  if (!opts.requiredExempt) {
+    const incomplete = attributePolicy.createRefusal(
+      Object.assign({ uid: [wanted] }, attributes));
+    if (incomplete) {
+      log.debug('Leaving createUser(). The attribute policy refused it.');
+      return coded('STS-LDAP-0162', { ok: false,
+                                      errors: [incomplete.message],
+                                      missing: incomplete.missing });
+    }
   }
   // `application` (#539): the application that caused the create, whose
   // locale policy gives the person a language — SCIM's client; none from the
@@ -9352,6 +9466,33 @@ if (typeof localePolicy.setDirectory === 'function') {
 } else {
   log.warn('ldap: common/locale_policy.ts offers no setDirectory(), so ' +
            'ou=localePolicies is unreachable and the built-in locale ' +
+           'policy cannot be edited.');
+}
+
+// THE ATTRIBUTE POLICY'S CONTAINERS (#396), guarded the same way. Validated
+// whole by the policy: nine hooks or none.
+if (typeof attributePolicy.setDirectory === 'function') {
+  attributePolicy.setDirectory({
+    allAttributePolicies: allAttributePolicies,
+    writeAttributePolicy: writeAttributePolicy,
+    deleteAttributePolicy: deleteAttributePolicy,
+    allAttributeDefinitions: allAttributeDefinitions,
+    writeAttributeDefinition: writeAttributeDefinition,
+    deleteAttributeDefinition: deleteAttributeDefinition,
+    // The spelling the directory's name table knows a name by, or '' — what
+    // a custom attribute may not be called.
+    knownName: function knownName(name) {
+      log.debug('Entering knownName().');
+      const lower = String(name || '').toLowerCase();
+      log.debug('Leaving knownName().');
+      return CANONICAL_NAMES[lower] || '';
+    },
+    holders: peopleHolding,
+    missing: peopleMissing
+  });
+} else {
+  log.warn('ldap: common/attribute_policy.ts offers no setDirectory(), so ' +
+           'ou=attributePolicies is unreachable and the built-in attribute ' +
            'policy cannot be edited.');
 }
 if (typeof serviceAccounts.setDirectory === 'function') {
@@ -12225,7 +12366,8 @@ if (typeof credentials.setDirectory === 'function') {
     createPerson: function (name) {
       log.debug("Entering createPerson().");
       log.debug("Leaving createPerson().");
-      return createUser(name, {});
+      // The bootstrap administrator (#396): see createUser().
+      return createUser(name, { requiredExempt: 'bootstrap administrator' });
     },
     // A PASSWORD THAT MUST BE CHANGED (2026-09-13): `pwdReset` on the person's
     // own entry, in the AMBIENT realm like the password itself.
@@ -13895,7 +14037,8 @@ function rosterViewFor(realm) {
     createPerson: inRealm(function (name) {
       log.debug("Entering createPerson().");
       log.debug("Leaving createPerson().");
-      return createUser(name, {});
+      // The bootstrap administrator (#396): see createUser().
+      return createUser(name, { requiredExempt: 'bootstrap administrator' });
     }),
     readPersonFlags: inRealm(readPersonFlags),
     writePersonFlag: inRealm(writePersonFlag),
@@ -16615,6 +16758,29 @@ function ldapAddNow(req, res, next) {
         ' carried a userPassword the password policy refused',
         policyRefusal, dn));
     }
+    // AND WHAT THE REALM'S ATTRIBUTE POLICY REQUIRES (#396), in product
+    // mode: objectClassViolation (65), the result a directory that checks
+    // its schema gives an entry missing a MUST attribute (RFC 4511 appendix
+    // A.2). The RDN's value counts as the entry's own (RFC 4512 section
+    // 2.3.1). A service account is exempt, as at every door. Nothing is
+    // derived here: an LDAP client writes what it sends.
+    if (!serviceAccounts.isServiceAccount(lowered)) {
+      const rdn = /^\s*([^=\s]+)\s*=\s*(.*)$/.exec(
+        dn.slice(0, Math.max(0, dn.length - parent.length - 1)));
+      const prospective = Object.assign({}, lowered);
+      if (rdn && !(prospective[rdn[1].toLowerCase()] || []).length) {
+        prospective[rdn[1].toLowerCase()] = [rdn[2]];
+      }
+      const incomplete = attributePolicy.createRefusal(prospective);
+      if (incomplete) {
+        log.debug('Leaving the LDAP add handler. The attribute policy ' +
+                  'refused it.');
+        return next(ldapRefusal(req, 'STS-LDAP-0162', 'an add of ' + dn +
+          ' was refused by the attribute policy: it holds no ' +
+          incomplete.missing.join(', '),
+          new ldap.ObjectclassViolationError(incomplete.message), dn));
+      }
+    }
   }
   stampLdapRegistration(req, dn, attributes);
   const addedEntry = putEntry(dn, attributes, { origin: 'ldap add' });
@@ -17236,6 +17402,20 @@ function ldapModifyNow(req, res, next) {
                 'refused.');
       return next(ldapRefusal(req, '', 'a modify of ' + dn +
         ' was refused by the service-account rules', accountRefusal, dn));
+    }
+    // AND A REQUIRED VALUE TAKEN AWAY (#396), in product mode: only one the
+    // entry held, so a person created before the policy said so can still
+    // be modified. 65, for the add's reason.
+    if (!serviceAccounts.isServiceAccount(working)) {
+      const taken = attributePolicy.editRefusal(stored.attributes, working);
+      if (taken) {
+        log.debug('Leaving the LDAP modify handler. A required value was ' +
+                  'taken away.');
+        return next(ldapRefusal(req, 'STS-LDAP-0164', 'a modify of ' + dn +
+          ' would have left ' + taken.removed.join(', ') + ' without a ' +
+          'value, which the attribute policy requires',
+          new ldap.ObjectclassViolationError(taken.message), dn));
+      }
     }
     keepServiceAccountClass(working);
   }
@@ -19916,6 +20096,170 @@ function deleteLocalePolicy(name) {
   log.debug('Leaving deleteLocalePolicy(). ' + entries.size +
             ' entry/entries left.');
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// ou=attributePolicies AND ou=attributeDefinitions AS STORES (#396).
+// ou=localePolicies' three functions again for each, for the same reasons,
+// and two counts over the people of the realm.
+// ---------------------------------------------------------------------------
+function policyEntriesIn(containerDn) {
+  log.debug('Entering policyEntriesIn(). ' + containerDn);
+  const rows = entriesUnder(containerDn).map(function (stored) {
+    const object = entryObject(stored);
+    object.name = (stored.attributes.cn || [])[0] ||
+                  stored.dn.split(',')[0].replace(/^cn=/i, '');
+    return object;
+  });
+  log.debug('Leaving policyEntriesIn(). ' + rows.length + ' entry/entries.');
+  return rows;
+}
+
+function writePolicyEntryIn(containerDn, ou, name, attributes, origin) {
+  log.debug('Entering writePolicyEntryIn(). name=' + name);
+  const dn = 'cn=' + escapeDnValue(String(name)) + ',' + containerDn;
+  const existing = getEntry(dn);
+  if (!existing && cappedEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writePolicyEntryIn(). The directory is full.');
+    return false;
+  }
+  if (!getEntry(containerDn)) {
+    putEntry(containerDn, {
+      objectClass: ['top', 'organizationalUnit'],
+      ou: ou
+    }, { origin: origin });
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
+                          { origin: existing ? existing.origin : origin });
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  auditPolicyDirectory(existing ? 'entry.update' : 'entry.create', dn,
+                       stored.attributes, !existing);
+  log.debug('Leaving writePolicyEntryIn(). The entry was ' +
+            (existing ? 'updated.' : 'created.'));
+  return true;
+}
+
+function deletePolicyEntryIn(containerDn, name) {
+  log.debug('Entering deletePolicyEntryIn(). name=' + name);
+  const stored = getEntry('cn=' + escapeDnValue(String(name)) + ',' +
+                          containerDn);
+  if (!stored) {
+    log.debug('Leaving deletePolicyEntryIn(). It was not here.');
+    return false;
+  }
+  entries.delete(normalizeDn(stored.dn));
+  touchDirectory(stored.dn);
+  auditPolicyDirectory('entry.delete', stored.dn, stored.attributes, false);
+  log.debug('Leaving deletePolicyEntryIn(). ' + entries.size +
+            ' entry/entries left.');
+  return true;
+}
+
+function allAttributePolicies() {
+  log.debug('Entering allAttributePolicies().');
+  log.debug('Leaving allAttributePolicies().');
+  return policyEntriesIn(attributePoliciesDn());
+}
+
+function writeAttributePolicy(name, attributes) {
+  log.debug('Entering writeAttributePolicy().');
+  log.debug('Leaving writeAttributePolicy().');
+  return writePolicyEntryIn(attributePoliciesDn(), 'attributePolicies', name,
+                            attributes, 'attribute policy');
+}
+
+function deleteAttributePolicy(name) {
+  log.debug('Entering deleteAttributePolicy().');
+  log.debug('Leaving deleteAttributePolicy().');
+  return deletePolicyEntryIn(attributePoliciesDn(), name);
+}
+
+function allAttributeDefinitions() {
+  log.debug('Entering allAttributeDefinitions().');
+  log.debug('Leaving allAttributeDefinitions().');
+  return policyEntriesIn(attributeDefinitionsDn());
+}
+
+function writeAttributeDefinition(name, attributes) {
+  log.debug('Entering writeAttributeDefinition().');
+  log.debug('Leaving writeAttributeDefinition().');
+  return writePolicyEntryIn(attributeDefinitionsDn(), 'attributeDefinitions',
+                            name, attributes, 'custom attribute');
+}
+
+function deleteAttributeDefinition(name) {
+  log.debug('Entering deleteAttributeDefinition().');
+  log.debug('Leaving deleteAttributeDefinition().');
+  return deletePolicyEntryIn(attributeDefinitionsDn(), name);
+}
+
+// Whether a stored entry holds a non-empty value of a lower-cased name.
+// A HOT PATH, run per person per name by the two counts below: no
+// Entering/Leaving pair, which would drown the log in a line per entry.
+function holdsValue(stored, lower) {
+  return (stored.attributes[lower] || []).some(function (one) {
+    return String(one).trim() !== '';
+  });
+}
+
+/**
+ * Counts the people in the ambient realm who hold a value of an attribute:
+ * what a custom attribute's removal asks (#396).
+ *
+ * @param name - the attribute, any case
+ * @returns the count
+ */
+function peopleHolding(name) {
+  log.debug('Entering peopleHolding(). ' + name);
+  const lower = String(name || '').toLowerCase();
+  let n = 0;
+  eachHolderOfAny([lower], function (stored) {
+    if (isPersonEntry(stored) && holdsValue(stored, lower)) {
+      n += 1;
+    }
+  });
+  log.debug('Leaving peopleHolding(). ' + n);
+  return n;
+}
+
+/**
+ * Counts the people in the ambient realm who lack a value of any of the
+ * attributes: those the attribute policy would not let be created now (#396).
+ *
+ * **A WALK OF THE REALM'S PEOPLE**, said here: there is no index of what an
+ * entry LACKS. So it is asked only when a reader asks for it (the policies
+ * view's `missing=count`), and in a windowed process — a directory in the
+ * store, which may hold millions — it is not asked at all: it answers null,
+ * and the page gives the LDAP filter that finds them instead.
+ *
+ * @param names - the required attributes
+ * @returns the count, or null in a windowed process
+ */
+function peopleMissing(names) {
+  log.debug('Entering peopleMissing().');
+  if (directoryWindow && directoryWindow.attached()) {
+    log.debug('Leaving peopleMissing(). Windowed: not walked.');
+    return null;
+  }
+  const lowered = (names || []).map(function (one) {
+    return String(one).toLowerCase();
+  });
+  let n = 0;
+  eachEntryInRealm(function (stored) {
+    if (isPersonEntry(stored) && lowered.some(function (lower) {
+      return !holdsValue(stored, lower);
+    })) {
+      n += 1;
+    }
+  });
+  log.debug('Leaving peopleMissing(). ' + n);
+  return n;
 }
 
 // ---------------------------------------------------------------------------

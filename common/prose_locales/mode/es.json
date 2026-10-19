@@ -599,6 +599,18 @@
     "en": "3a1905ca05d2e355",
     "text": "Un valor proviene de la entrada de directorio de la persona o se omite; los `verified_claims` solo se divulgan a partir de una verificación registrada en la entrada, y email_verified solo es true para una dirección verificada: una que la persona demostró mediante un enlace enviado por correo (#63), o una que escribió una fuente de confianza — un administrador (la consola, /admin-api o una escritura LDAP con Admin Write), SCIM, o un socio de federación que no dijo email_verified false (#64)."
   },
+  "mode.requirements.required-attributes.what": {
+    "en": "766f977cdfc5a340",
+    "text": "Una persona tiene los atributos que exige la política de atributos del dominio"
+  },
+  "mode.requirements.required-attributes.development": {
+    "en": "9f3eb5f6be8b0a4f",
+    "text": "La política se guarda y se muestra en Directorio > Políticas y no se aplica: una persona puede crearse con solo un nombre de usuario, y una modificación puede vaciar cualquier atributo salvo cn y sn."
+  },
+  "mode.requirements.required-attributes.product": {
+    "en": "1217261af0bae35e",
+    "text": "Una creación que deja un atributo obligatorio sin valor se rechaza (STS-LDAP-0162) en todas las puertas — la consola, /admin-api, SCIM, un alta LDAP (objectClassViolation, 65), un registro HOBA y la importación masiva (STS-LDAP-0163) —, y un primer inicio de sesión federado cuyo socio no lo aportó no crea a nadie (STS-FED-0158). Una modificación que quitaría un valor obligatorio se rechaza (STS-LDAP-0164). uid, cn y sn son siempre obligatorios; givenName y mail, de forma predeterminada. A una persona a la que ya le faltaba uno no se le rechaza el inicio de sesión ni la modificación de otra cosa."
+  },
   "mode.requirements.saml-request-signatures.what": {
     "en": "85e7bc435ce1b0c0",
     "text": "La solicitud de un proveedor de servicios SAML 2.0 está firmada"

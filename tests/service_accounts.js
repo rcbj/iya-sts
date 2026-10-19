@@ -116,7 +116,11 @@ async function withSettings(pairs, fn) {
 
 function person(name) {
   log.debug('Entering person().');
-  ldap.createUser(name, { invent: false });
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode, and H makes its people in product.
+  ldap.createUser(name, { invent: false,
+                          attributes: { givenName: 'Service', sn: name,
+                                        mail: name + '@example.test' } });
   const set = credentials.setPassword(name, PASSWORD);
   log.debug('Leaving person().');
   return set;
