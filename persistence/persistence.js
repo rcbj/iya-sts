@@ -3008,6 +3008,10 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // ---------------------------------------------------------------------
     return keystore.start();
   }).then(function () {
+    // Bodies can be opened now. A throw is fatal: the next start treats a
+    // non-empty index as finished (#350).
+    return minted.backfillSessionIndex();
+  }).then(function () {
     return persistsAppconfig() ? driver.loadOverrides() : null;
   }).then(function (saved) {
     // WHAT THE SETTINGS TABLE HOLDS, which is what a flush diffs against. The

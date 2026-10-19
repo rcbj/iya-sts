@@ -117,6 +117,9 @@ import app = require('../common/app');
 // destructured because `sameIdentity()` and the provisioning refusal are the
 // only callers and both read better as `helpers.`.
 import helpers = require('../common/helpers');
+// The keyed digest the session index files a subject, a username and a
+// parent under (#350). It requires realms, not this module.
+import keystore = require('../common/keystore');
 import InstanceSlot = require('../common/instance_slot');
 // The sign-in mechanisms an application allows and a session satisfies
 // (#457): a leaf, so requiring it closes no cycle.
@@ -465,6 +468,88 @@ const AUTHN_TTL_MS = 10 * 60 * 1000;
 // write. `tombstone` makes an ended session stay ended in the store, and
 // `mergeSessionRows()` below is what two copies of one live session become.
 // `persistence/persistence_minted.js` carries the mechanism.
+// The columns `sts_sessions` holds beside the sealed body (#350). Not an
+// `expiresAt` hook: `sts_minted.expires_at` stays NULL so the generic purge
+// cannot end a session. Null when no digest key is held, which writes no
+// index row.
+function sessionIndexOf(value: any) {
+  helpers.log.debug("Entering sessionIndexOf().");
+  try {
+    if (!value || typeof value !== 'object') {
+      helpers.log.debug("Leaving sessionIndexOf(). Not a session.");
+      return null;
+    }
+    const subjectId = value.subjectId == null ? ''
+      : String(value.subjectId);
+    const subjectKey = keystore.keyedDigest('session-subject', subjectId);
+    if (!subjectKey) {
+      helpers.log.debug("Leaving sessionIndexOf(). No digest.");
+      return null;
+    }
+    let username = '';
+    if (value.user && typeof value.user === 'object' &&
+        value.user.username != null) {
+      username = String(value.user.username);
+    }
+    const usernameKey = keystore.keyedDigest('session-username', username);
+    if (!usernameKey) {
+      helpers.log.debug("Leaving sessionIndexOf(). No username digest.");
+      return null;
+    }
+    const parentSid = value.derivedFrom ? String(value.derivedFrom) : '';
+    let parentKey = '';
+    if (parentSid) {
+      parentKey = keystore.keyedDigest('session-parent', parentSid);
+      if (!parentKey) {
+        helpers.log.debug("Leaving sessionIndexOf(). No parent digest.");
+        return null;
+      }
+    }
+    const credentialKey = value.credentialKey
+      ? String(value.credentialKey) : '';
+    let kind = 'sign-on';
+    if (parentSid) {
+      kind = 'relying-party';
+    } else if (credentialKey) {
+      kind = 'keyed';
+    } else if (value.chosen === false) {
+      kind = 'arrival';
+    }
+    const partner = value.fedPartnerSession;
+    let relationship = '';
+    if (partner && typeof partner === 'object' && partner.relationship) {
+      relationship = String(partner.relationship);
+    }
+    const expires = Number(value.expires);
+    const lastSeen = Number(value.lastSeenAt);
+    const started = Number(value.startedAt);
+    helpers.log.debug("Leaving sessionIndexOf().");
+    return {
+      expiresAt: Number.isFinite(expires) && expires > 0
+        ? Math.floor(expires) : null,
+      lastSeenAt: Number.isFinite(lastSeen)
+        ? Math.max(0, Math.floor(lastSeen)) : 0,
+      startedAt: Number.isFinite(started)
+        ? Math.max(0, Math.floor(started)) : 0,
+      subjectKey: subjectKey,
+      usernameKey: usernameKey,
+      chosen: value.chosen !== false,
+      authenticated: value.authenticated !== false,
+      kind: kind,
+      rpSurface: value.rpSurface ? String(value.rpSurface) : '',
+      parentKey: parentKey,
+      backsConsole: value.backsConsole === true,
+      credentialKey: credentialKey,
+      partnerRelationship: relationship
+    };
+  } catch (e) {
+    helpers.log.debug("Caught in sessionIndexOf(): " +
+                      ((e && e.message) || e));
+    helpers.log.debug("Leaving sessionIndexOf().");
+    return null;
+  }
+}
+
 /**
  * The sign-on session store, per trust realm: session id to session row.
  *
@@ -472,6 +557,9 @@ const AUTHN_TTL_MS = 10 * 60 * 1000;
  * Handed out rather than copied because the console reports on the live store.
  */
 const sessions = realms.map({ persist: 'authn.sessions', tombstone: true,
+                              // Not expiresAt: that column stays NULL so the
+                              // generic purge cannot end a session (#350).
+                              indexOf: sessionIndexOf,
                               // Late-bound to the instance in the slot at
                               // the bottom: a merge happens only once the
                               // store is open, after the root installed it.

@@ -1564,7 +1564,10 @@ currently defined realms.** Four parts:
   `gnap.tokens` (RFC 9635 section 6.1.1 lets an EXPIRED token be rotated,
   and this AS does), and `vc_status.entries` (a dropped entry would publish
   its bit as VALID). Those stores' own sweeps delete their rows, and each
-  delete reaches the table like any other write.
+  delete reaches the table like any other write. Schema 21 does not give
+  `authn.sessions` an `expiresAt` hook: the session's expiry is
+  `sts_sessions.expires_at`, and `sts_minted.expires_at` stays NULL so this
+  purge cannot end a session.
 * **The restore deletes nothing.** It used to purge stale rows in EVERY
   process at every start; now the CLUSTER job `persistence.minted-expiry-purge`
   does (every five minutes): expired rows, rows of a realm not in `sts_realms`
@@ -2550,6 +2553,17 @@ own after `SET LOCAL jit = off` (`queryWithoutJit()`). The walk's estimate
 at 50M is about 28,000, under the threshold anyway (EXPLAIN on the 50.2M
 stack); the setting is the statement's, so nothing else this service asks
 loses the compiler.
+
+### The session index, beside the sealed body (#350, schema version 21)
+
+`sts_sessions` holds the columns a walk needs, written and deleted in the
+same `saveMinted` transaction as the sealed `authn.sessions` body. It is
+not columns on `sts_minted`, and that row's `expires_at` stays NULL so the
+generic purge cannot end a session. A start whose index is empty opens the
+sealed bodies in batches of 500 and fills it; a throw is fatal, because the
+next start treats a non-empty index as finished. SQL cannot open the
+bodies. Memory and LDIF are unchanged, and the full in-memory map stays
+resident.
 
 ### The schema version moved to 2
 

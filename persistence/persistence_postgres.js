@@ -251,7 +251,10 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // set by hand (SCHEMA_UPGRADES' `sts_ldap_entries_parent_ndistinct`), which
 // ANALYZE's sample cannot estimate once one container holds nearly every
 // row.
-const SCHEMA_VERSION = 20;
+// 21 SINCE 2026-10-18 (#350): `sts_sessions`, the index of a live session,
+// written in the same transaction as the sealed body. Not a column of
+// `sts_minted` — `expires_at` there stays NULL for a session.
+const SCHEMA_VERSION = 21;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -350,6 +353,77 @@ const JOIN_LOCK = 460046;
 const SEALED_VALUE = /\$aes(?:gcm|siv)\$2\$[A-Za-z0-9_.-]+\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*/g;
 
 const TOMBSTONE = '$tombstone$1';
+
+// `sts_sessions` (#350), written in the same transaction as the sealed body.
+// One row of a minted flush. Entering/Leaving on sessionIndexParams() would
+// drown the log.
+const SESSION_INDEX_UPSERT =
+  'INSERT INTO sts_sessions (realm, key, expires_at, last_seen_at, ' +
+  'started_at, subject_key, username_key, chosen, authenticated, kind, ' +
+  'rp_surface, parent_key, backs_console, credential_key, ' +
+  'partner_relationship) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ' +
+  '$10, $11, $12, $13, $14, $15) ON CONFLICT (realm, key) DO UPDATE SET ' +
+  'expires_at = EXCLUDED.expires_at, ' +
+  'last_seen_at = EXCLUDED.last_seen_at, ' +
+  'started_at = EXCLUDED.started_at, ' +
+  'subject_key = EXCLUDED.subject_key, ' +
+  'username_key = EXCLUDED.username_key, ' +
+  'chosen = EXCLUDED.chosen, ' +
+  'authenticated = EXCLUDED.authenticated, ' +
+  'kind = EXCLUDED.kind, ' +
+  'rp_surface = EXCLUDED.rp_surface, ' +
+  'parent_key = EXCLUDED.parent_key, ' +
+  'backs_console = EXCLUDED.backs_console, ' +
+  'credential_key = EXCLUDED.credential_key, ' +
+  'partner_relationship = EXCLUDED.partner_relationship';
+
+const SESSION_INDEX_DELETE =
+  'DELETE FROM sts_sessions WHERE realm = $1 AND key = $2';
+
+// `expiresAt` null stays SQL NULL. `Number(null)` is 0, which would publish
+// a session as already expired.
+function sessionIndexParams(realm, key, index) {
+  const expires = index ? index.expiresAt : null;
+  let expiresAt = null;
+  if (expires !== null && expires !== undefined) {
+    const ms = Number(expires);
+    if (Number.isFinite(ms) && ms > 0) {
+      expiresAt = Math.floor(ms);
+    }
+  }
+  const lastSeen = Number(index && index.lastSeenAt);
+  const started = Number(index && index.startedAt);
+  return [
+    String(realm),
+    String(key),
+    expiresAt,
+    Number.isFinite(lastSeen) ? Math.max(0, Math.floor(lastSeen)) : 0,
+    Number.isFinite(started) ? Math.max(0, Math.floor(started)) : 0,
+    String((index && index.subjectKey) || ''),
+    String((index && index.usernameKey) || ''),
+    !index || index.chosen !== false,
+    !index || index.authenticated !== false,
+    String((index && index.kind) || ''),
+    String((index && index.rpSurface) || ''),
+    String((index && index.parentKey) || ''),
+    !!(index && index.backsConsole === true),
+    String((index && index.credentialKey) || ''),
+    String((index && index.partnerRelationship) || '')
+  ];
+}
+
+// One row of a minted flush. Entering/Leaving on upsertSessionIndex() would
+// drown the log.
+function upsertSessionIndex(client, realm, key, index) {
+  return client.query(SESSION_INDEX_UPSERT,
+                      sessionIndexParams(realm, key, index));
+}
+
+// One row of a minted flush. Entering/Leaving on deleteSessionIndexRow()
+// would drown the log.
+function deleteSessionIndexRow(client, realm, key) {
+  return client.query(SESSION_INDEX_DELETE, [realm, key]);
+}
 
 // How long a node row is kept after it expired, for `/admin/cluster` to show a
 // node that went away. A join purges older ones.
@@ -763,6 +837,50 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_minted_expires', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_minted_expires ON sts_minted ' +
   '(expires_at) WHERE expires_at IS NOT NULL' },
+  // -------------------------------------------------------------------------
+  // THE SESSION INDEX (#350, schema version 21). Columns of a live
+  // `authn.sessions` row, written in the same transaction as the sealed
+  // body. Not columns of `sts_minted`: `expires_at` there stays NULL for a
+  // session, so the generic expiry purge cannot end one. `key` is the same
+  // digest `sts_minted.key` already uses. A null digest writes no row.
+  // -------------------------------------------------------------------------
+  { name: 'sts_sessions', statement:
+  'CREATE TABLE IF NOT EXISTS sts_sessions (' +
+  '  realm                text    NOT NULL,' +
+  '  key                  text    NOT NULL,' +
+  '  expires_at           bigint,' +
+  '  last_seen_at         bigint  NOT NULL,' +
+  '  started_at           bigint  NOT NULL,' +
+  '  subject_key          text    NOT NULL DEFAULT \'\',' +
+  '  username_key         text    NOT NULL DEFAULT \'\',' +
+  '  chosen               boolean NOT NULL,' +
+  '  authenticated        boolean NOT NULL,' +
+  '  kind                 text    NOT NULL,' +
+  '  rp_surface           text    NOT NULL DEFAULT \'\',' +
+  '  parent_key           text    NOT NULL DEFAULT \'\',' +
+  '  backs_console        boolean NOT NULL DEFAULT false,' +
+  '  credential_key       text    NOT NULL DEFAULT \'\',' +
+  '  partner_relationship text    NOT NULL DEFAULT \'\',' +
+  '  PRIMARY KEY (realm, key))' },
+  { name: 'sts_sessions_subject', statement:
+  'CREATE INDEX IF NOT EXISTS sts_sessions_subject ON sts_sessions ' +
+  '(realm, subject_key, last_seen_at) WHERE chosen AND ' +
+  'subject_key <> \'\'' },
+  { name: 'sts_sessions_username', statement:
+  'CREATE INDEX IF NOT EXISTS sts_sessions_username ON sts_sessions ' +
+  '(realm, username_key) WHERE username_key <> \'\'' },
+  { name: 'sts_sessions_expires', statement:
+  'CREATE INDEX IF NOT EXISTS sts_sessions_expires ON sts_sessions ' +
+  '(realm, expires_at) WHERE expires_at IS NOT NULL' },
+  { name: 'sts_sessions_parent', statement:
+  'CREATE INDEX IF NOT EXISTS sts_sessions_parent ON sts_sessions ' +
+  '(realm, parent_key) WHERE parent_key <> \'\'' },
+  { name: 'sts_sessions_credential', statement:
+  'CREATE INDEX IF NOT EXISTS sts_sessions_credential ON sts_sessions ' +
+  '(realm, credential_key) WHERE credential_key <> \'\'' },
+  { name: 'sts_sessions_partner', statement:
+  'CREATE INDEX IF NOT EXISTS sts_sessions_partner ON sts_sessions ' +
+  '(realm, partner_relationship) WHERE partner_relationship <> \'\'' },
   // -------------------------------------------------------------------------
   // THE CHANGE LOG (2026-09-06), which is what makes several processes against
   // one store agree rather than merely coexist.
@@ -5297,6 +5415,35 @@ function create(options) {
             return r;
           });
         };
+        // One statement per minted row of a flush. Entering/Leaving on
+        // sessionSide() or afterBody() would drown the log. The index is
+        // written only after the body statement succeeded: a refused upsert
+        // does not put the body back and does not insert an index row.
+        const sessionSide = function (row, removing) {
+          if (row.handle !== 'authn.sessions') {
+            return null;
+          }
+          if (removing) {
+            return deleteSessionIndexRow(client, row.realm, row.key);
+          }
+          if (!row.index || typeof row.index !== 'object') {
+            return null;
+          }
+          return upsertSessionIndex(client, row.realm, row.key,
+                                    row.index);
+        };
+        const afterBody = function (row, removing, result) {
+          if (!removing && skip.has(row)) {
+            return result;
+          }
+          const side = sessionSide(row, removing);
+          if (!side) {
+            return result;
+          }
+          return side.then(function () {
+            return result;
+          });
+        };
         statements.forEach(function (one) {
           const row = one.row;
           chain = chain.then(function () {
@@ -5322,11 +5469,16 @@ function create(options) {
                                   body: answer });
                   }
                 }
-                return upsert(row, body, true);
+                return upsert(row, body, true).then(function (written) {
+                  return afterBody(row, false, written);
+                });
               });
             }
             if (one.upsert) {
-              return upsert(row, row.body, !!row.tombstone);
+              return upsert(row, row.body, !!row.tombstone)
+                .then(function (written) {
+                  return afterBody(row, false, written);
+                });
             }
             if (row.tombstone) {
               // A TOMBSTONE HAS NO EXPIRY OF ITS OWN (#333): it lives for
@@ -5340,13 +5492,17 @@ function create(options) {
                 'expires_at = NULL, key_sealed = EXCLUDED.key_sealed',
                 [row.handle, row.realm, row.key, TOMBSTONE,
                  String(row.keySealed || '')]
-              );
+              ).then(function (written) {
+                return afterBody(row, true, written);
+              });
             }
             return client.query(
               'DELETE FROM sts_minted WHERE handle = $1 AND realm = $2 ' +
               'AND key = $3',
               [row.handle, row.realm, row.key]
-            );
+            ).then(function (written) {
+              return afterBody(row, true, written);
+            });
           });
         });
         return chain.then(function () {
@@ -5918,6 +6074,74 @@ function create(options) {
         }
         return { handle: row.handle, realm: row.realm, key: row.key,
                  body: row.body, writtenAt: Number(row.written_ms || 0) };
+      });
+    },
+
+    // One `sts_sessions` row, in its own transaction. Apply repairs through
+    // this; the flush writes the index inside `saveMinted` instead.
+    writeSessionIndex: function (realmId, key, index) {
+      log.debug("Entering writeSessionIndex().");
+      log.debug("Leaving writeSessionIndex().");
+      return withTransaction(function (client) {
+        return upsertSessionIndex(client, realmId, key, index);
+      });
+    },
+
+    // The index row for a session that is gone. Same key as `sts_minted`.
+    deleteSessionIndex: function (realmId, key) {
+      log.debug("Entering deleteSessionIndex().");
+      log.debug("Leaving deleteSessionIndex().");
+      return withTransaction(function (client) {
+        return deleteSessionIndexRow(client, realmId, key);
+      });
+    },
+
+    // True when the backfill has nothing to finish. Emptiness is the only
+    // completion mark (#350).
+    sessionIndexEmpty: function () {
+      log.debug("Entering sessionIndexEmpty().");
+      log.debug("Leaving sessionIndexEmpty().");
+      return readPool.query(
+        'SELECT NOT EXISTS (SELECT 1 FROM sts_sessions) AS empty'
+      ).then(function (r) {
+        const row = (r.rows || [])[0];
+        // node-pg answers a boolean; a text 't' is the same fact. 'f' is
+        // truthy as a string, so it is not a truthiness check.
+        return !!(row && (row.empty === true || row.empty === 't'));
+      });
+    },
+
+    // One page of sealed session bodies, keyset on (realm, key). Tombstones
+    // are absent. Expired rows are included: the index still names them.
+    loadSessionBodies: function (afterRealm, afterKey, limit) {
+      log.debug("Entering loadSessionBodies().");
+      log.debug("Leaving loadSessionBodies().");
+      return readPool.query(
+        'SELECT realm, key, body FROM sts_minted WHERE handle = $1 AND ' +
+        'body <> $2 AND (realm, key) > ($3, $4) ORDER BY realm, key ' +
+        'LIMIT $5',
+        ['authn.sessions', TOMBSTONE, afterRealm, afterKey, limit]
+      ).then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return { realm: row.realm, key: row.key, body: row.body };
+        });
+      });
+    },
+
+    // One backfill page, one transaction. A later page is a later call.
+    writeSessionIndexes: function (rows) {
+      log.debug("Entering writeSessionIndexes().");
+      log.debug("Leaving writeSessionIndexes().");
+      const list = Array.isArray(rows) ? rows : [];
+      return withTransaction(function (client) {
+        let chain = Promise.resolve();
+        list.forEach(function (row) {
+          chain = chain.then(function () {
+            return upsertSessionIndex(client, row.realm, row.key,
+                                      row.index);
+          });
+        });
+        return chain;
       });
     },
 

@@ -2628,6 +2628,11 @@ function declareHandle(options, shape, accessors) {
     // ---------------------------------------------------------------------
     expiresAt: typeof options.expiresAt === 'function' ? options.expiresAt
       : null,
+    // `indexOf(value)` answers the columns of a side table written in the
+    // same transaction as the sealed body (#350). Null when the store has
+    // none. An option the handle does not keep is not how that table is
+    // wired, which is why this is copied the way `expiresAt` is.
+    indexOf: typeof options.indexOf === 'function' ? options.indexOf : null,
     // ---------------------------------------------------------------------
     // `restoreInWorkers: false` (#617, 2026-10-14): a REQUEST WORKER does not
     // read this store's rows back at its start. For a store nothing a worker
