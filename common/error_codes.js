@@ -10444,6 +10444,39 @@ const CODES = [
       'rested on a second factor the relying party does not allow ' +
       '(appMfaMechanism, #475).',
     spec: 'HTTP 403 page' },
+  { code: 'STS-WSFED-0024',
+    summary: 'An identity-provider-initiated sign-in (/wsfed/initiate/{rp} ' +
+      'or ?wtrealm=) named no registered relying party, by identifier or ' +
+      'slug. Refused in both modes: the response may go only to a reply ' +
+      'address registered for it (#712).',
+    spec: 'HTTP 404 error page (the profile defines no error response)' },
+  { code: 'STS-WSFED-0025',
+    summary: 'An identity-provider-initiated sign-in to a relying party for ' +
+      'which it is turned off: wsfed.idpInitiatedSso, or ' +
+      'wsfedIdpInitiatedSso on its entry, is FALSE (off by default, #426, ' +
+      '#712).',
+    spec: 'HTTP 403 error page' },
+  { code: 'STS-WSFED-0026',
+    summary: 'An identity-provider-initiated sign-in carried a wreply. ' +
+      'Refused rather than ignored: the response goes only to the relying ' +
+      'party\'s registered wsfedReplyUrl (#712).',
+    spec: 'HTTP 400 error page' },
+  { code: 'STS-WSFED-0027',
+    summary: 'An identity-provider-initiated sign-in to a relying party with ' +
+      'no usable registered wsfedReplyUrl: none, only observed ones, or a ' +
+      'first one that is not an absolute http(s) URL (#712).',
+    spec: 'HTTP 400 error page' },
+  { code: 'STS-WSFED-0028',
+    summary: 'A wsignin1.0 from a relying party for which a sign-in it ' +
+      'starts is turned off: wsfed.spInitiatedSso, or wsfedSpInitiatedSso ' +
+      'on its entry, is FALSE (#426, #712).',
+    spec: 'HTTP 403 error page (the profile defines no error response)' },
+  { code: 'STS-WSFED-0029',
+    summary: 'An identity-provider-initiated sign-in back from its one ' +
+      'step-up on risk (sts_risk_retry=1) was still denied on risk by the ' +
+      'issuance policy, and was refused rather than sent round again ' +
+      '(#712).',
+    spec: 'HTTP 403 error page' },
   // ===== FED ===============================================================
   { code: 'STS-FED-0001',
     summary: 'A federation endpoint (login or assertion consumer service) ' +
