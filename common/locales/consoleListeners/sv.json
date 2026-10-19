@@ -70,6 +70,7 @@
   "rowRequestsPer": "Begäranden per anslutning",
   "noLimit": "ingen gräns",
   "rowMaxConnections": "Öppna anslutningar som mest",
+  "rowHttp2": "HTTP/2 erbjuds",
   "headInForce": "Gäller på den här lyssnaren",
   "inForceNote": "Varje värde är lyssnarens eget där dess rad nedan anger ett, och annars tjänstens standardvärde (<em>inherit</em>, en tom ruta, eller -1 för ett tal).",
   "tabListeners": "Lyssnare",

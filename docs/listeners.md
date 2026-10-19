@@ -72,7 +72,7 @@ A listener is a JSON object:
 | `hostnames` | The DNS names an issued certificate carries; the host of `publicBaseUrl` when left out. |
 | `certificateFile`, `privateKeyFile` | Your certificate (a public CA's for a browser-facing listener) and its key — both or neither. Without them the owning realm's certificate authority issues one for `hostnames` and renews it; a client must trust the service's Root to accept it. |
 | `clientAuth` | `none` (no CertificateRequest), `optional` (asked, not required — the default, as on the main port) or `required` (a handshake without a certificate chaining to the [client truststore](tls.md) is refused). |
-| `tls` | The listener's own TLS settings, by the short names the main port's per-listener rows use: `minVersion`, `disableTls12`, `ciphers`, `tls13CipherSuites`, `pqcOnly`, `groups`, `signatureAlgorithms`, `trustAnchorsFile`, `trustIssuedClientCertificates`, `sessionTimeoutS`, `sessionCacheSize`, `keepAliveTimeoutS`, `headersTimeoutS`, `maxRequestsPerSocket`, `maxConnections`. A value left out, `inherit`, `""` or `-1` follows the service-wide setting. |
+| `tls` | The listener's own TLS settings, by the short names the main port's per-listener rows use: `minVersion`, `disableTls12`, `ciphers`, `tls13CipherSuites`, `pqcOnly`, `groups`, `signatureAlgorithms`, `trustAnchorsFile`, `trustIssuedClientCertificates`, `sessionTimeoutS`, `sessionCacheSize`, `keepAliveTimeoutS`, `headersTimeoutS`, `maxRequestsPerSocket`, `maxConnections`, `http2` (`true`, `false`, `on` or `off`). A value left out, `inherit`, `""` or `-1` follows the service-wide setting. |
 
 **The service's listeners** are `listeners.custom` (in the default realm) and
 answer every realm under its `/realm/<id>` prefix. **A realm's own listeners**

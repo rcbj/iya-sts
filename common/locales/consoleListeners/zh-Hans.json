@@ -70,6 +70,7 @@
   "rowRequestsPer": "每个连接的请求数",
   "noLimit": "无限制",
   "rowMaxConnections": "最多打开的连接数",
+  "rowHttp2": "提供 HTTP/2",
   "headInForce": "在此监听器上生效的设置",
   "inForceNote": "如果下方该监听器自己的行设置了值，则使用该值，否则使用服务范围的默认值（<em>inherit</em>、空框，或数字为 -1）。",
   "tabListeners": "监听器",

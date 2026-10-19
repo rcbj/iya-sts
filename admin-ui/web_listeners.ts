@@ -288,7 +288,12 @@ class ListenersPage {
            : t.text('consoleListeners.noLimit')],
         [t.text('consoleListeners.rowMaxConnections'), pooling.maxConnections
           ? String(pooling.maxConnections)
-          : t.text('consoleListeners.noLimit')]];
+          : t.text('consoleListeners.noLimit')]].concat(
+        // HTTP/2 (#407) is offered in the TLS handshake, so only a TLS
+        // listener has an answer to give; the revocation listener has none.
+        policy ? [[t.text('consoleListeners.rowHttp2'), pooling.http2
+          ? t.text('consoleListeners.yes')
+          : t.text('consoleListeners.no')]] : []);
       return '<h2>' + t.html('consoleListeners.headInForce') +
         '</h2><table class="grid"><tbody>' +
         tlsRows.concat(httpRows).map(function (row) {

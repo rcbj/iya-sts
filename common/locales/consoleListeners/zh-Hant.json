@@ -70,6 +70,7 @@
   "rowRequestsPer": "每個連線的請求數",
   "noLimit": "無限制",
   "rowMaxConnections": "最多開啟的連線數",
+  "rowHttp2": "提供 HTTP/2",
   "headInForce": "在此接聽程式上生效的設定",
   "inForceNote": "如果下方該接聽程式自己的列設定了值，則使用該值，否則使用服務範圍的預設值（<em>inherit</em>、空白欄位，或數字為 -1）。",
   "tabListeners": "接聽程式",

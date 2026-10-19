@@ -135,6 +135,14 @@
     "en": "1dda75e901fc49af",
     "text": "Combien de connexions un écouteur HTTP garde ouvertes simultanément ; une de plus est fermée dès son arrivée. 0, la valeur par défaut, signifie aucune limite (le comportement de node)."
   },
+  "http.http2|label": {
+    "en": "775d810d4f1a3356",
+    "text": "Proposer HTTP/2"
+  },
+  "http.http2|description": {
+    "en": "76d7c1691efa23fa",
+    "text": "Indique si un écouteur HTTPS propose HTTP/2 lorsqu’un client le demande dans la poignée de main TLS (ALPN). Activé, la valeur par défaut, une seule connexion transporte toutes les requêtes qu’un navigateur envoie en parallèle ; HTTP/1.1 reste servi pour un client qui ne demande rien d’autre. Désactivé, chaque connexion est en HTTP/1.1 — pour un client ou un répartiteur de charge dont le HTTP/2 se comporte mal. Une nouvelle connexion suit un changement immédiatement ; une connexion déjà ouverte garde son protocole. L’écouteur de révocation en HTTP simple ne parle que HTTP/1.1, faute de poignée de main où le proposer."
+  },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
     "text": "PROXY protocol sur les écouteurs TCP"
@@ -10554,5 +10562,21 @@
   "listenerRevocation.maxConnections|description": {
     "en": "33c1557318481882",
     "text": "Pour l’écouteur de révocation (HTTP simple) uniquement : http.maxConnections. -1, la valeur par défaut, suit http.maxConnections ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de connexions un écouteur HTTP garde ouvertes simultanément ; une connexion supplémentaire est fermée dès son arrivée. 0, la valeur par défaut, signifie aucune limite (celle de node)."
+  },
+  "listenerMain.http2|label": {
+    "en": "d17df93a132abc21",
+    "text": "Port principal : proposer HTTP/2"
+  },
+  "listenerMain.http2|description": {
+    "en": "4362a834f16b5b21",
+    "text": "Pour l’écouteur du port principal uniquement : http.http2. inherit, la valeur par défaut, suit http.http2 ; toute autre valeur ne s’applique qu’à cet écouteur. Indique si un écouteur HTTPS propose HTTP/2 lorsqu’un client le demande dans la poignée de main TLS (ALPN). Activé, la valeur par défaut, une seule connexion transporte toutes les requêtes qu’un navigateur envoie en parallèle ; HTTP/1.1 reste servi pour un client qui ne demande rien d’autre. Désactivé, chaque connexion est en HTTP/1.1 — pour un client ou un répartiteur de charge dont le HTTP/2 se comporte mal. Une nouvelle connexion suit un changement immédiatement ; une connexion déjà ouverte garde son protocole. L’écouteur de révocation en HTTP simple ne parle que HTTP/1.1, faute de poignée de main où le proposer."
+  },
+  "listenerDebugger.http2|label": {
+    "en": "65d81b530197d8d7",
+    "text": "Débogueur de protocoles : proposer HTTP/2"
+  },
+  "listenerDebugger.http2|description": {
+    "en": "95b887a7622f4880",
+    "text": "Pour l’écouteur du débogueur de protocoles uniquement : http.http2. inherit, la valeur par défaut, suit http.http2 ; toute autre valeur ne s’applique qu’à cet écouteur. Indique si un écouteur HTTPS propose HTTP/2 lorsqu’un client le demande dans la poignée de main TLS (ALPN). Activé, la valeur par défaut, une seule connexion transporte toutes les requêtes qu’un navigateur envoie en parallèle ; HTTP/1.1 reste servi pour un client qui ne demande rien d’autre. Désactivé, chaque connexion est en HTTP/1.1 — pour un client ou un répartiteur de charge dont le HTTP/2 se comporte mal. Une nouvelle connexion suit un changement immédiatement ; une connexion déjà ouverte garde son protocole. L’écouteur de révocation en HTTP simple ne parle que HTTP/1.1, faute de poignée de main où le proposer."
   }
 }

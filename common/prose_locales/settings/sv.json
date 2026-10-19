@@ -135,6 +135,14 @@
     "en": "1dda75e901fc49af",
     "text": "Hur många anslutningar en HTTP-lyssnare håller öppna samtidigt; en till stängs när den kommer. 0, standardvärdet, är ingen gräns (nodes eget)."
   },
+  "http.http2|label": {
+    "en": "775d810d4f1a3356",
+    "text": "Erbjud HTTP/2"
+  },
+  "http.http2|description": {
+    "en": "76d7c1691efa23fa",
+    "text": "Om en HTTPS-lyssnare erbjuder HTTP/2 när en klient ber om det i TLS-handskakningen (ALPN). På, standardvärdet, bär en anslutning varje begäran som en webbläsare gör parallellt; HTTP/1.1 besvaras fortfarande för en klient som inte ber om något annat. Av, är varje anslutning HTTP/1.1 — för en klient eller lastbalanserare vars HTTP/2 inte fungerar. En ny anslutning följer en ändring direkt; en redan öppen behåller sitt protokoll. Revokeringslyssnaren över ren HTTP talar bara HTTP/1.1, eftersom det inte finns någon handskakning att erbjuda det i."
+  },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
     "text": "PROXY protocol på TCP-lyssnarna"
@@ -10554,5 +10562,21 @@
   "listenerRevocation.maxConnections|description": {
     "en": "33c1557318481882",
     "text": "Gäller bara lyssnaren för återkallelse (okrypterad HTTP): http.maxConnections. -1, standardvärdet, följer http.maxConnections; allt annat avgör bara för den här lyssnaren. Hur många anslutningar en HTTP-lyssnare håller öppna samtidigt; en till stängs när den kommer. 0, standardvärdet, är ingen gräns (nodes egen)."
+  },
+  "listenerMain.http2|label": {
+    "en": "d17df93a132abc21",
+    "text": "Huvudport: erbjud HTTP/2"
+  },
+  "listenerMain.http2|description": {
+    "en": "4362a834f16b5b21",
+    "text": "Gäller bara huvudportens lyssnare: http.http2. inherit, standardvärdet, följer http.http2; allt annat avgör bara för den här lyssnaren. Om en HTTPS-lyssnare erbjuder HTTP/2 när en klient ber om det i TLS-handskakningen (ALPN). På, standardvärdet, bär en anslutning varje begäran som en webbläsare gör parallellt; HTTP/1.1 besvaras fortfarande för en klient som inte ber om något annat. Av, är varje anslutning HTTP/1.1 — för en klient eller lastbalanserare vars HTTP/2 inte fungerar. En ny anslutning följer en ändring direkt; en redan öppen behåller sitt protokoll. Revokeringslyssnaren över ren HTTP talar bara HTTP/1.1, eftersom det inte finns någon handskakning att erbjuda det i."
+  },
+  "listenerDebugger.http2|label": {
+    "en": "65d81b530197d8d7",
+    "text": "Protokollfelsökare: erbjud HTTP/2"
+  },
+  "listenerDebugger.http2|description": {
+    "en": "95b887a7622f4880",
+    "text": "Gäller bara protokollfelsökarens lyssnare: http.http2. inherit, standardvärdet, följer http.http2; allt annat avgör bara för den här lyssnaren. Om en HTTPS-lyssnare erbjuder HTTP/2 när en klient ber om det i TLS-handskakningen (ALPN). På, standardvärdet, bär en anslutning varje begäran som en webbläsare gör parallellt; HTTP/1.1 besvaras fortfarande för en klient som inte ber om något annat. Av, är varje anslutning HTTP/1.1 — för en klient eller lastbalanserare vars HTTP/2 inte fungerar. En ny anslutning följer en ändring direkt; en redan öppen behåller sitt protokoll. Revokeringslyssnaren över ren HTTP talar bara HTTP/1.1, eftersom det inte finns någon handskakning att erbjuda det i."
   }
 }

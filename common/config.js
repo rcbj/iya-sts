@@ -1138,6 +1138,28 @@ const SETTINGS = [
     description: 'How many connections an HTTP listener holds open at once; ' +
                  'one more is closed as it arrives. 0, the default, is no ' +
                  'limit (node\'s own).' },
+  // HTTP/2 ON EVERY TLS HTTP LISTENER (#407, 2026-10-19; rcbj: "enabled by
+  // default on all listeners. But, the user can disable it if necessary").
+  // Each is node's http2 secure server with HTTP/1.1 allowed, and this
+  // decides only whether ALPN OFFERS `h2`; a client that does not ask for it
+  // is answered over HTTP/1.1 either way. RUNTIME: the offer is a property
+  // of the server node reads at each new connection, so `tls/tls_server.js`
+  // re-applies it with the pooling values; a connection already open keeps
+  // the protocol it chose.
+  { key: 'http.http2', group: 'HTTP connections',
+    label: 'Offer HTTP/2',
+    env: 'STS_HTTP_HTTP2', type: 'bool', dflt: true,
+    runtime: true, perProcess: true,
+    description: 'Whether an HTTPS listener offers HTTP/2 when a client ' +
+                 'asks for it in the TLS handshake (ALPN). On, the default, ' +
+                 'one connection carries every request a browser makes in ' +
+                 'parallel; HTTP/1.1 is still answered for a client that ' +
+                 'asks for nothing else. Off, every connection is ' +
+                 'HTTP/1.1 — for a client or a balancer whose HTTP/2 ' +
+                 'misbehaves. A new connection follows a change at once; ' +
+                 'an open one keeps its protocol. The plain-HTTP revocation ' +
+                 'listener is HTTP/1.1 only, since there is no handshake to ' +
+                 'offer it in.' },
 
   { key: 'global.proxyProtocol', group: 'Global',
     label: 'PROXY protocol on the TCP listeners',
@@ -17276,7 +17298,11 @@ const PER_LISTENER_SETTINGS = [
   { name: 'maxRequestsPerSocket', base: 'http.maxRequestsPerSocket',
     listeners: ['main', 'debugger', 'revocation'] },
   { name: 'maxConnections', base: 'http.maxConnections',
-    listeners: ['main', 'debugger', 'revocation'] }
+    listeners: ['main', 'debugger', 'revocation'] },
+  // HTTP/2, on every TLS HTTP listener (#407): not the revocation listener,
+  // which is plain HTTP and has no handshake to offer it in.
+  { name: 'http2', base: 'http.http2',
+    listeners: ['main', 'debugger'] }
 ];
 
 // One generated row. `owner` is a TLS_LISTENERS entry.

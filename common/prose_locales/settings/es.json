@@ -135,6 +135,14 @@
     "en": "1dda75e901fc49af",
     "text": "Cuántas conexiones mantiene abiertas a la vez una escucha HTTP; una más se cierra al llegar. 0, el valor predeterminado, es sin límite (el de node)."
   },
+  "http.http2|label": {
+    "en": "775d810d4f1a3356",
+    "text": "Ofrecer HTTP/2"
+  },
+  "http.http2|description": {
+    "en": "76d7c1691efa23fa",
+    "text": "Indica si un escuchador HTTPS ofrece HTTP/2 cuando un cliente lo pide en el protocolo de enlace TLS (ALPN). Activado, el valor predeterminado, una sola conexión lleva todas las solicitudes que un navegador hace en paralelo; HTTP/1.1 se sigue atendiendo para un cliente que no pide otra cosa. Desactivado, toda conexión es HTTP/1.1 — para un cliente o un balanceador cuyo HTTP/2 falla. Una conexión nueva sigue un cambio de inmediato; una ya abierta conserva su protocolo. El escuchador de revocación en HTTP simple solo habla HTTP/1.1, porque no hay protocolo de enlace en el que ofrecerlo."
+  },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
     "text": "Protocolo PROXY en las escuchas TCP"
@@ -10554,5 +10562,21 @@
   "listenerRevocation.maxConnections|description": {
     "en": "33c1557318481882",
     "text": "Solo para la escucha de revocación (HTTP sin cifrar): http.maxConnections. -1, el predeterminado, sigue a http.maxConnections; cualquier otro valor decide solo para esta escucha. Cuántas conexiones mantiene abiertas a la vez una escucha HTTP; una más se cierra en cuanto llega. 0, el predeterminado, es sin límite (el propio de node)."
+  },
+  "listenerMain.http2|label": {
+    "en": "d17df93a132abc21",
+    "text": "Puerto principal: ofrecer HTTP/2"
+  },
+  "listenerMain.http2|description": {
+    "en": "4362a834f16b5b21",
+    "text": "Solo para la escucha del puerto principal: http.http2. inherit, el predeterminado, sigue a http.http2; cualquier otro valor decide solo para esta escucha. Indica si un escuchador HTTPS ofrece HTTP/2 cuando un cliente lo pide en el protocolo de enlace TLS (ALPN). Activado, el valor predeterminado, una sola conexión lleva todas las solicitudes que un navegador hace en paralelo; HTTP/1.1 se sigue atendiendo para un cliente que no pide otra cosa. Desactivado, toda conexión es HTTP/1.1 — para un cliente o un balanceador cuyo HTTP/2 falla. Una conexión nueva sigue un cambio de inmediato; una ya abierta conserva su protocolo. El escuchador de revocación en HTTP simple solo habla HTTP/1.1, porque no hay protocolo de enlace en el que ofrecerlo."
+  },
+  "listenerDebugger.http2|label": {
+    "en": "65d81b530197d8d7",
+    "text": "Depurador de protocolos: ofrecer HTTP/2"
+  },
+  "listenerDebugger.http2|description": {
+    "en": "95b887a7622f4880",
+    "text": "Solo para la escucha del depurador de protocolos: http.http2. inherit, el predeterminado, sigue a http.http2; cualquier otro valor decide solo para esta escucha. Indica si un escuchador HTTPS ofrece HTTP/2 cuando un cliente lo pide en el protocolo de enlace TLS (ALPN). Activado, el valor predeterminado, una sola conexión lleva todas las solicitudes que un navegador hace en paralelo; HTTP/1.1 se sigue atendiendo para un cliente que no pide otra cosa. Desactivado, toda conexión es HTTP/1.1 — para un cliente o un balanceador cuyo HTTP/2 falla. Una conexión nueva sigue un cambio de inmediato; una ya abierta conserva su protocolo. El escuchador de revocación en HTTP simple solo habla HTTP/1.1, porque no hay protocolo de enlace en el que ofrecerlo."
   }
 }

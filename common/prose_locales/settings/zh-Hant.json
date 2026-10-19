@@ -135,6 +135,14 @@
     "en": "1dda75e901fc49af",
     "text": "HTTP 接聽程式同時保持開啟的連線數；超出的一個在抵達時即被關閉。0（預設）表示無限制（node 自己的行為）。"
   },
+  "http.http2|label": {
+    "en": "775d810d4f1a3356",
+    "text": "提供 HTTP/2"
+  },
+  "http.http2|description": {
+    "en": "76d7c1691efa23fa",
+    "text": "當用戶端在 TLS 交握中（ALPN）請求 HTTP/2 時，HTTPS 監聽器是否提供它。開啟（預設值）時，一個連線承載瀏覽器並行發出的所有請求；對於只請求 HTTP/1.1 的用戶端，仍以 HTTP/1.1 回應。關閉時，每個連線都是 HTTP/1.1——適用於 HTTP/2 行為異常的用戶端或負載平衡器。新連線立即遵循變更；已開啟的連線保持其協定。純 HTTP 的撤銷監聽器只支援 HTTP/1.1，因為沒有可以提供它的交握。"
+  },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
     "text": "TCP 接聽程式上的 PROXY protocol"
@@ -10554,5 +10562,21 @@
   "listenerRevocation.maxConnections|description": {
     "en": "33c1557318481882",
     "text": "僅適用於撤銷（純 HTTP）監聽器：http.maxConnections。預設值 -1 依循 http.maxConnections；其他任何值只對此監聽器生效。HTTP 監聽器同時保持開啟的連線數；再多一條會在到達時被關閉。預設值 0 表示無限制（node 自己的預設）。"
+  },
+  "listenerMain.http2|label": {
+    "en": "d17df93a132abc21",
+    "text": "主連接埠：提供 HTTP/2"
+  },
+  "listenerMain.http2|description": {
+    "en": "4362a834f16b5b21",
+    "text": "僅適用於主連接埠監聽器：http.http2。預設值 inherit 依循 http.http2；其他任何值只對此監聽器生效。當用戶端在 TLS 交握中（ALPN）請求 HTTP/2 時，HTTPS 監聽器是否提供它。開啟（預設值）時，一個連線承載瀏覽器並行發出的所有請求；對於只請求 HTTP/1.1 的用戶端，仍以 HTTP/1.1 回應。關閉時，每個連線都是 HTTP/1.1——適用於 HTTP/2 行為異常的用戶端或負載平衡器。新連線立即遵循變更；已開啟的連線保持其協定。純 HTTP 的撤銷監聽器只支援 HTTP/1.1，因為沒有可以提供它的交握。"
+  },
+  "listenerDebugger.http2|label": {
+    "en": "65d81b530197d8d7",
+    "text": "協定偵錯工具：提供 HTTP/2"
+  },
+  "listenerDebugger.http2|description": {
+    "en": "95b887a7622f4880",
+    "text": "僅適用於協定偵錯工具監聽器：http.http2。預設值 inherit 依循 http.http2；其他任何值只對此監聽器生效。當用戶端在 TLS 交握中（ALPN）請求 HTTP/2 時，HTTPS 監聽器是否提供它。開啟（預設值）時，一個連線承載瀏覽器並行發出的所有請求；對於只請求 HTTP/1.1 的用戶端，仍以 HTTP/1.1 回應。關閉時，每個連線都是 HTTP/1.1——適用於 HTTP/2 行為異常的用戶端或負載平衡器。新連線立即遵循變更；已開啟的連線保持其協定。純 HTTP 的撤銷監聽器只支援 HTTP/1.1，因為沒有可以提供它的交握。"
   }
 }
