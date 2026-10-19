@@ -833,8 +833,12 @@ function upgradeCase(t) {
     // what this asks, so the person is given an entry where a directory is
     // there to hold one; standalone there is none and nothing is created.
     if (require('../common/helpers').hasSubjectResolver()) {
-      require('../ldap/ldap_server').createUser('up-alice',
-                                                { invent: false });
+      // Every attribute the default attribute policy (#702) requires.
+      require('../ldap/ldap_server').createUser('up-alice', {
+        invent: false,
+        attributes: { cn: 'Up Alice', sn: 'Alice', givenName: 'Up',
+                      mail: 'up-alice@session-window.example' }
+      });
     }
     const session = signIn('up-alice', detail);
     t.equal(detail.refusedWith, undefined,
