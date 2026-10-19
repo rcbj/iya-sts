@@ -43,6 +43,7 @@ interface ThreadData {
   port: workerThreads.MessagePort;
   connection: Record<string, unknown> | null;
   backend: string | null;
+  queries?: string | null;
 }
 
 // A backend: answers one named question.
@@ -62,11 +63,14 @@ const counter = new Int32Array(data.counter);
 const port = data.port;
 
 // The database backend: one connection, dialled on the first question and
-// again after it is lost. The statement is `directory_queries.build()`'s
-// `$n` text, handed to the connection Knex made (`knex_store.js` says why
-// it is not `knex.raw()`).
-function databaseBackend(connection: Record<string, unknown>): Backend {
-  const queries = require('../persistence/directory_queries');
+// again after it is lost. The statement is the named module's `build()`
+// `$n` text — `directory_queries.js`, or the bridge's own (#350's
+// `session_queries.js`) — handed to the connection Knex made
+// (`knex_store.js` says why it is not `knex.raw()`).
+function databaseBackend(connection: Record<string, unknown>,
+                         queriesModule: string | null): Backend {
+  const queries = require(queriesModule ||
+                          '../persistence/directory_queries');
   const knexStore = require('../persistence/knex_store');
   // sslmode=verify-ca verifies the chain and not the host name, which takes
   // a `checkServerIdentity` that checks nothing — a function, which cannot
@@ -145,7 +149,7 @@ function databaseBackend(connection: Record<string, unknown>): Backend {
 
 const backend: Backend = data.backend
   ? require(data.backend)
-  : databaseBackend(data.connection || {});
+  : databaseBackend(data.connection || {}, data.queries || null);
 
 // Posts an answer, then moves the counter: in that order (see the header).
 function answer(message: Record<string, unknown>): void {

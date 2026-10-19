@@ -1682,7 +1682,10 @@ currently defined realms.** Four parts:
   `gnap.tokens` (RFC 9635 section 6.1.1 lets an EXPIRED token be rotated,
   and this AS does), and `vc_status.entries` (a dropped entry would publish
   its bit as VALID). Those stores' own sweeps delete their rows, and each
-  delete reaches the table like any other write.
+  delete reaches the table like any other write. Schema 21 does not give
+  `authn.sessions` an `expiresAt` hook: the session's expiry is
+  `sts_sessions.expires_at`, and `sts_minted.expires_at` stays NULL so this
+  purge cannot end a session.
 * **The restore deletes nothing.** It used to purge stale rows in EVERY
   process at every start; now the CLUSTER job `persistence.minted-expiry-purge`
   does (every five minutes): expired rows, rows of a realm not in `sts_realms`
@@ -2669,6 +2672,27 @@ own after `SET LOCAL jit = off` (`queryWithoutJit()`). The walk's estimate
 at 50M is about 28,000, under the threshold anyway (EXPLAIN on the 50.2M
 stack); the setting is the statement's, so nothing else this service asks
 loses the compiler.
+
+### The session index, beside the sealed body (#350, schema version 21)
+
+`sts_sessions` holds the columns a walk needs, written and deleted in the
+same `saveMinted` transaction as the sealed `authn.sessions` body. It is
+not columns on `sts_minted`, and that row's `expires_at` stays NULL so the
+generic purge cannot end a session. A start opens the sealed bodies in
+batches of 500 until a completion row commits with the last page. A
+non-empty table is not that mark: another node may already have written a
+live row, and a throw leaves the mark unwritten so the next start walks
+again. A throw is fatal, and a page that has committed is not reported as
+nothing changed. The last page's transaction deletes index rows whose
+session body is missing or a tombstone, and does not delete the completion
+row: a resume's new head would hide an older build's delete, and a body
+`purgeTombstones` already removed is not in the change log. That head is
+published as the follower's floor only after the transaction commits. The
+follower starts at the change seq taken before the walk, so a commit during
+it still reaches the index repair. SQL cannot
+open the bodies. Memory and LDIF are unchanged. Where the window is on,
+one process holds a bounded set and the walks read this index; the
+argument is in `authn/CLAUDE.md`.
 
 ### The schema version moved to 2
 

@@ -331,11 +331,13 @@ function createReplication(label) {
    * @param theDriver - the persistence driver
    * @param theAppliers - the appliers, by row kind, that take another process's
    * rows into this process's memory
+   * @param fromSeq - when a finite number, the high-water to start from
+   * instead of the log's current head
    * @returns a promise of `{ coordinating, from }`, or `{ coordinating: false
    * }`
    * with an `error` when coordination is off or failed
    */
-  function start(theDriver, theAppliers) {
+  function start(theDriver, theAppliers, fromSeq) {
     log.debug('Entering start().');
     driver = supports(theDriver) ? theDriver : null;
     appliers = theAppliers || {};
@@ -355,8 +357,14 @@ function createReplication(label) {
       return Promise.resolve({ coordinating: false });
     }
 
+    // A session-index walk passes the seq it captured before its first page
+    // (#350). Commits during that walk stay above it. Every other start
+    // reads the head, which is what the restore already holds.
+    const pinned = Number.isFinite(fromSeq) ? fromSeq : null;
+    const reading = pinned === null ? driver.latestChangeSeq()
+                                    : Promise.resolve(pinned);
     log.debug("Leaving start().");
-    return driver.latestChangeSeq().then(function (seq) {
+    return reading.then(function (seq) {
       applied = seq;
       highest = seq;
       holes.clear();

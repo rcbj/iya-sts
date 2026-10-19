@@ -2147,6 +2147,23 @@ function workerCount() {
  * @throws a rejected promise when no directory is installed or the store
  * cannot be opened or read
  */
+// Explicit authn.sessionWindow=on cannot start unless a miss can be read
+// back. auto is logged and does not refuse. The window module is required
+// here, not at load: this file is step 4a and authn is step 8.
+function refuseSessionWindow() {
+  log.debug("Entering refuseSessionWindow().");
+  try {
+    require('../authn/session_window').assertConfigured();
+  } catch (e) {
+    log.debug("Caught in refuseSessionWindow(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving refuseSessionWindow().");
+    return Promise.reject(e);
+  }
+  log.debug("Leaving refuseSessionWindow().");
+  return null;
+}
+
 function start() {
   log.debug('Entering start().');
   // In every mode, a store or none: a blocked loop is worth measuring in a
@@ -2162,6 +2179,11 @@ function start() {
               'persistence: "' + chosen + '" is not a mode this module knows ' +
               '(' + MODES.join(', ') + '). Nothing will be persisted.');
     activeMode = 'memory';
+    const refused = refuseSessionWindow();
+    if (refused) {
+      log.debug('Leaving start(). The session window was refused.');
+      return refused;
+    }
     log.debug('Leaving start(). The mode was not recognised.');
     return Promise.resolve({ mode: 'memory' });
   }
@@ -2188,6 +2210,11 @@ function start() {
     log.info('persistence: off (persistence.mode=memory). Everything this ' +
              'service holds is in memory and goes when the process does, ' +
              'which is what it did before persistence existed.');
+    const refused = refuseSessionWindow();
+    if (refused) {
+      log.debug('Leaving start(). The session window was refused.');
+      return refused;
+    }
     log.debug('Leaving start(). Memory mode.');
     return Promise.resolve({ mode: 'memory' });
   }
@@ -3017,6 +3044,13 @@ function openStore(chosen, resolvedUrl, globalUrls) {
                'does not hold from the store, through the directory bridge ' +
                '(ldap.workerDirectory=postgres-lru).');
     }
+    // The session window's bridge is a second thread, offered whenever a
+    // driver is open. It starts on the first miss, not here, so a service
+    // whose window is off never dials it.
+    require('../authn/session_window').offerConnection(function () {
+      return typeof driver.bridgeConnection === 'function'
+        ? driver.bridgeConnection() : null;
+    });
     // -------------------------------------------------------------------
     // AND THE USED-ASSERTION HISTORY ITS STORE, BEFORE ANYTHING IS SERVED.
     // A file store is READ here: a token request answered from an empty copy
@@ -3048,6 +3082,10 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // with this one's promise.
     // ---------------------------------------------------------------------
     return keystore.start();
+  }).then(function () {
+    // Bodies can be opened now. A throw is fatal, and a page that already
+    // committed is not a finished index (#350).
+    return minted.backfillSessionIndex();
   }).then(function () {
     return persistsAppconfig() ? driver.loadOverrides() : null;
   }).then(function (saved) {
@@ -3133,6 +3171,11 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     realmsDirty = persistsRealms();
     configDirty = false;
     schedule();
+    const refused = refuseSessionWindow();
+    if (refused) {
+      log.debug('Leaving openStore(). The session window was refused.');
+      return refused;
+    }
     log.debug('Leaving openStore(). Restored.');
     return { mode: activeMode, restored: restoredCounts };
   }).catch(function (err) {
@@ -3145,6 +3188,10 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // operator to look at the database. Passed through with its own code.
     if (/STS-CLUSTER-\d{4}/.test(String(err && err.message))) {
       log.debug('Leaving openStore(). The cluster gate refused.');
+      throw err;
+    }
+    if (/STS-AUTHN-0339/.test(String(err && err.message))) {
+      log.debug('Leaving openStore(). The session window was refused.');
       throw err;
     }
     // ---------------------------------------------------------------------
@@ -3176,10 +3223,16 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // thing the operator will see, and "connect ECONNREFUSED" on its own does
     // not say which of the six settings to look at.
     // ---------------------------------------------------------------------
+    // A session-index page that committed is not "nothing changed": the
+    // next start must resume the walk, not treat the part as finished.
+    const partly = !!(err && err.sessionIndexCommitted);
     const explanation = errorCodes.tag('STS-STORE-0006') +
               'persistence.mode is "' + chosen + '" and the store ' +
-              'could not be read: ' + err.message + '. Nothing in the store ' +
-              'was changed.' +
+              'could not be read: ' + err.message +
+              (partly
+                ? '. The session index was partly written. The next start ' +
+                  'resumes it; it does not treat that part as finished.'
+                : '. Nothing in the store was changed.') +
               // -------------------------------------------------------------
               // AND IF THE CONNECTION STRING IS THE BUILT-IN ONE, SAY SO.
               //
@@ -4218,7 +4271,11 @@ function coordinate() {
   // would put a cross-region round trip on every request, which is the cost
   // #98 D3 declined. /admin/cells shows the lag.
   // -------------------------------------------------------------------------
-  const started = replication.start(driver, appliers);
+  // When a session-index walk ran, this is the seq from before its first
+  // page (#350). Commits during the walk stay above it, so
+  // repairSessionIndex still sees them. Null starts at the head.
+  const started = replication.start(driver, appliers,
+                                   minted.sessionIndexChangeFloor());
   if (!driver || !driver.tiered) {
     return started;
   }

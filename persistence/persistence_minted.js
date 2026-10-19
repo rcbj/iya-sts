@@ -248,6 +248,32 @@ function expiryOf(row, value, key, realmId) {
     ? Math.floor(ms) : null;
 }
 
+// The side-table columns for one plaintext row (#350). Null when the store
+// has no `indexOf`, or when that hook declines (no digest key). Shared by
+// the flush, the merge, apply and the backfill: a second copy of "call the
+// hook, keep an object" would drift. A hook that throws writes no index row
+// rather than failing the flush.
+function indexColumns(row, value) {
+  log.debug("Entering indexColumns().");
+  if (!row || typeof row.indexOf !== 'function') {
+    log.debug("Leaving indexColumns(). No hook.");
+    return null;
+  }
+  try {
+    const columns = row.indexOf(value);
+    if (!columns || typeof columns !== 'object') {
+      log.debug("Leaving indexColumns(). No columns.");
+      return null;
+    }
+    log.debug("Leaving indexColumns().");
+    return columns;
+  } catch (e) {
+    log.debug("Caught in indexColumns(): " + ((e && e.message) || e));
+    log.debug("Leaving indexColumns().");
+    return null;
+  }
+}
+
 // The journal: handle -> realm -> Set of keys. Nested rather than a flat set of
 // composite strings because the flush walks it handle-first (a handle is what
 // finds the store) and because a composite key would have to be split back
@@ -688,8 +714,8 @@ function setDriver(theDriver, activeMode) {
 // ---------------------------------------------------------------------------
 // THE JOURNAL DOOR. This is `realms.js`'s persist observer, and it is called
 // from inside `sessions.set()` — which is inside a sign-in — so it does the
-// least it can: two Map lookups and a Set insert, no settings read, no
-// allocation past the first write to a store.
+// least it can: two Map lookups and a Set insert, no allocation past the
+// first write to a store.
 //
 // **IT DOES NOT CHECK `enabled()`.** That is deliberate and it is the one
 // non-obvious thing in this file. `enabled()` reads three settings, and this
@@ -698,6 +724,10 @@ function setDriver(theDriver, activeMode) {
 // the flush is where the mode and the setting are consulted. The cost of being
 // wrong that way round is a Set that fills and is discarded, which is nothing;
 // the cost of the other way round is three config reads per session write.
+// One call gates the session window. `auto` loads it only when the window
+// itself is active: minted persistence, one cell, and a digest key. Off
+// does not. The value is not the ambient realm's: a realm cannot carry
+// this setting.
 // ---------------------------------------------------------------------------
 function note(handle, realmId, key) {
   if (restoring || stopped) {
@@ -714,8 +744,19 @@ function note(handle, realmId, key) {
     keys = new Set();
     byRealm.set(id, keys);
   }
-  keys.add(key === null || key === undefined ? '' : String(key));
+  const noted = key === null || key === undefined ? '' : String(key);
+  keys.add(noted);
   generation += 1;
+  if (handle === 'authn.sessions') {
+    const sessionWindow = sessionWindowIfOn();
+    if (sessionWindow) {
+      try {
+        sessionWindow.noteLocal(id, noted);
+      } catch (e) {
+        log.debug("Caught in note(): " + ((e && e.message) || e));
+      }
+    }
+  }
   if (!observational.has(handle)) {
     observationalCount.miss();
     const declared = realms.handleFor(handle);
@@ -1015,7 +1056,13 @@ function applyChange(change) {
                                  split.origin, null);
           return true;
         }
-        return applyLocally(store, change.realm, split.key, undefined, true);
+        // The index first: a failed repair rejects and the change is
+        // retried, rather than landing in memory with no index row.
+        return repairSessionIndex(store, handle, change.realm, storedName,
+                                  null).then(function () {
+          return applyLocally(store, change.realm, split.key, undefined,
+                              true);
+        });
       }
       if (!keystore.sealed()) {
         log.error(errorCodes.tag('STS-STORE-0015') +
@@ -1049,8 +1096,43 @@ function applyChange(change) {
                                split.origin, value);
         return true;
       }
-      return applyLocally(store, change.realm, split.key, value, false);
+      return repairSessionIndex(store, handle, change.realm, storedName,
+                                value).then(function () {
+        return applyLocally(store, change.realm, split.key, value, false);
+      });
     });
+}
+
+// Brings `sts_sessions` in line with a body another node committed (#350).
+// Idempotent. A driver without the methods (memory, ldif, an older stub)
+// skips it. A null digest writes nothing and does not delete a live row.
+function repairSessionIndex(store, handle, realmId, storedName, value) {
+  log.debug("Entering repairSessionIndex().");
+  const active = /** @type {any} */ (driver);
+  if (!store || typeof store.indexOf !== 'function' || !active) {
+    log.debug("Leaving repairSessionIndex(). No index.");
+    return Promise.resolve();
+  }
+  const key = keyColumnOf(handle, realmId, storedName);
+  if (value == null) {
+    if (typeof active.deleteSessionIndex !== 'function') {
+      log.debug("Leaving repairSessionIndex(). No delete.");
+      return Promise.resolve();
+    }
+    log.debug("Leaving repairSessionIndex().");
+    return Promise.resolve(active.deleteSessionIndex(realmId, key));
+  }
+  if (typeof active.writeSessionIndex !== 'function') {
+    log.debug("Leaving repairSessionIndex(). No write.");
+    return Promise.resolve();
+  }
+  const columns = indexColumns(store, value);
+  if (!columns) {
+    log.debug("Leaving repairSessionIndex(). No columns.");
+    return Promise.resolve();
+  }
+  log.debug("Leaving repairSessionIndex().");
+  return Promise.resolve(active.writeSessionIndex(realmId, key, columns));
 }
 
 // Writing another process's row into this one's memory, with the journal
@@ -1062,7 +1144,22 @@ function applyLocally(store, realmId, key, value, remove) {
   const was = restoring;
   restoring = true;
   try {
-    if (remove) {
+    let decision = remove ? 'remove' : 'restore';
+    if (store && store.handle === 'authn.sessions') {
+      try {
+        const sessionWindow = sessionWindowIfOn();
+        if (sessionWindow) {
+          decision = sessionWindow.considerApply(realmId, key, value,
+                                                 !!remove);
+        }
+      } catch (e) {
+        // The window's decision is an optimisation of what is resident.
+        // A throw falls back to today's restore, which is the full map.
+        log.debug("Caught in applyLocally(): " + ((e && e.message) || e));
+        decision = remove ? 'remove' : 'restore';
+      }
+    }
+    if (decision === 'remove' || remove) {
       // THE ONLY PATH HERE THAT REACHES THE STORE'S ORDINARY `delete`, because
       // the registry's accessors are `dump`, `read` and `restore` and none of
       // them removes anything. It is done through the shape's own door and the
@@ -1074,12 +1171,25 @@ function applyLocally(store, realmId, key, value, remove) {
       log.debug("Leaving applyLocally().");
       return true;
     }
-    store.restore(realmId, key, value);
+    if (decision === 'restore') {
+      store.restore(realmId, key, value);
+    }
     log.debug("Leaving applyLocally().");
     return true;
   } finally {
     restoring = was;
   }
+}
+
+// Hot path: note() runs inside every sessions.set. No Entering/Leaving
+// pair. active() is the gate, so auto is on only when the three
+// predicates hold. A literal "on" left auto keeping the full map.
+function sessionWindowIfOn() {
+  const sessionWindow = require('../authn/session_window');
+  if (!sessionWindow.active()) {
+    return null;
+  }
+  return sessionWindow;
 }
 
 // Is there anything to write? `persistence.js` asks before scheduling.
@@ -1296,6 +1406,8 @@ function flush() {
                          tombstone: row.tombstone === true });
           return;
         }
+        // Of the plaintext about to be sealed, not of the ciphertext.
+        const indexed = indexColumns(row, present.value);
         let body = null;
         try {
           // Under THIS ROW'S realm's data encryption key (#391), not the
@@ -1323,6 +1435,9 @@ function flush() {
                        // WHEN THE RECORD IS DEAD (#333), or null: what the
                        // restore and the expiry purge read. See expiryOf().
                        expiresAt: expiryOf(row, present.value, key, realmId),
+                       // Side-table columns, or null when there is no index.
+                       // The merge path replaces these from the merged row.
+                       index: indexed,
                        // WHETHER A READER HAS TO WAIT FOR THIS ROW. An `own`
                        // store is per-process fan-in — every process keeps its
                        // own contribution and the console SUMS them when
@@ -1363,6 +1478,16 @@ function flush() {
   }).then(function (result) {
     committedAt = Math.max(committedAt, takenAt);
     settleDecided(result);
+    try {
+      const sessionWindow = sessionWindowIfOn();
+      if (sessionWindow) {
+        sessionWindow.onCommitted(upserts);
+      }
+    } catch (e) {
+      // The rows are committed. A window that cannot unpin must not make
+      // the flush look failed, or the keys would be written again.
+      log.debug("Caught in flush(): " + ((e && e.message) || e));
+    }
     ensureTombstoneJob();
     writes++;
     rowsWritten += upserts.length;
@@ -1667,11 +1792,17 @@ function mergerFor(row, handle, key, mine, upsert, realmId) {
         return null;
       }
       const merged = row.mergeRow(mine, JSON.parse(text));
-      // THE MERGED RECORD'S EXPIRY IS WHAT IS WRITTEN (#333), not this
-      // process's copy's: the other node may have extended it.
+      const sealed = keystore.seal(JSON.stringify(merged), 'minted-rows',
+                                   tierOfHandle(handle), { realm: realmId });
+      // Only the ciphertext that will be written. A throw above leaves the
+      // columns flush took from this process's copy, which is the body the
+      // driver keeps when this returns null (#350).
+      if (!sealed) {
+        return sealed;
+      }
       upsert.expiresAt = expiryOf(row, merged, key, realmId);
-      return keystore.seal(JSON.stringify(merged), 'minted-rows',
-                           tierOfHandle(handle), { realm: realmId });
+      upsert.index = indexColumns(row, merged);
+      return sealed;
     } catch (e) {
       log.warn(errorCodes.tag('STS-STORE-0056') + 'persistence: the "' +
                handle + '" row under "' + key + '" could not be merged with ' +
@@ -2206,6 +2337,15 @@ function restore() {
     });
   }
   const filter = restoreFilter(Date.now());
+  try {
+    const sessionWindow = sessionWindowIfOn();
+    if (sessionWindow &&
+        filter.skipHandles.indexOf('authn.sessions') < 0) {
+      filter.skipHandles.push('authn.sessions');
+    }
+  } catch (e) {
+    log.debug("Caught in restore(): " + ((e && e.message) || e));
+  }
   log.debug("Leaving restore().");
   // WHAT WAS MINTED BEFORE THE RESTORE (#357): journalled and not written —
   // before the keystore started a flush had nothing to seal with, and one
@@ -2421,6 +2561,10 @@ function status() {
 // pays and the same reason it is paid: the alternative is a test that launches
 // two processes and therefore cannot run in the in-process suite at all.
 // ---------------------------------------------------------------------------
+// Captured before a walk's first page. Null when this process did not walk.
+// The follower starts here so a commit during the walk is still applied.
+let sessionIndexFloor = null;
+
 /**
  * Clears every piece of state in this module, for the tests.
  */
@@ -2455,7 +2599,132 @@ function reset() {
   unsupportedReason = '';
   realmOnlyKeylessWarned = false;
   expiryHookFailed.clear();
+  sessionIndexFloor = null;
   log.debug("Leaving reset().");
+}
+
+// How many sealed bodies one backfill transaction opens. The ceiling: a
+// start that cannot finish a page of this size is the upgrade, not a
+// smaller page.
+const SESSION_INDEX_BATCH = 500;
+
+function sessionIndexChangeFloor() {
+  log.debug("Entering sessionIndexChangeFloor().");
+  log.debug("Leaving sessionIndexChangeFloor().");
+  return sessionIndexFloor;
+}
+
+// Fills `sts_sessions` from sealed `authn.sessions` rows until the completion
+// row commits with the last page (#350). A non-empty table is not that mark:
+// another node may already have written a live row, and deleting would throw
+// that row away. A throw leaves the mark unwritten, so the next start walks
+// again. Upserts are idempotent. SQL cannot open the bodies. Expired rows
+// are included; a tombstone is the only absence.
+function backfillSessionIndex() {
+  log.debug("Entering backfillSessionIndex().");
+  const active = /** @type {any} */ (driver);
+  if (!enabled() || !active ||
+      typeof active.sessionIndexDone !== 'function' ||
+      typeof active.loadSessionBodies !== 'function' ||
+      typeof active.writeSessionIndexes !== 'function') {
+    log.debug("Leaving backfillSessionIndex(). Not this store.");
+    return Promise.resolve();
+  }
+  const row = realms.handleFor('authn.sessions');
+  if (!row || typeof row.indexOf !== 'function') {
+    log.debug("Leaving backfillSessionIndex(). No index hook.");
+    return Promise.resolve();
+  }
+  // Probed once. A null digest writes no row, and asking whether the walk
+  // finished would hide that the next start must try again.
+  if (typeof keystore.keyedDigest !== 'function' ||
+      !keystore.keyedDigest('session-subject', '')) {
+    log.debug("Leaving backfillSessionIndex(). No digest.");
+    return Promise.resolve();
+  }
+  // True once a page has committed. The mark itself commits only with the
+  // last page, so a throw after this still resumes.
+  let committed = false;
+  function mark(err) {
+    log.debug("Entering mark().");
+    log.debug("Caught in mark(): " + ((err && err.message) || err));
+    if (committed && err && typeof err === 'object') {
+      err.sessionIndexCommitted = true;
+    }
+    log.debug("Leaving mark().");
+    throw err;
+  }
+  // Every body in the page is opened before that page's transaction, so one
+  // that will not open throws before the batch commits. A live body with no
+  // columns is the same failure: skipping it would leave a hole the mark
+  // would then call finished.
+  function fillFrom(afterRealm, afterKey) {
+    log.debug("Entering fillFrom().");
+    log.debug("Leaving fillFrom().");
+    return Promise.resolve(active.loadSessionBodies(afterRealm, afterKey,
+                                                    SESSION_INDEX_BATCH))
+      .then(function (page) {
+        const rows = page || [];
+        const ready = [];
+        for (let i = 0; i < rows.length; i++) {
+          const one = rows[i];
+          const text = keystore.open(one.body, 'minted-rows');
+          if (text == null) {
+            throw new Error('a stored session body will not open');
+          }
+          let value;
+          try {
+            value = JSON.parse(text);
+          } catch (e) {
+            log.debug("Caught in a callback in fillFrom(): " +
+                      ((e && e.message) || e));
+            throw e;
+          }
+          const columns = indexColumns(row, value);
+          if (!columns) {
+            throw new Error('a stored session body has no index columns');
+          }
+          ready.push({ realm: one.realm, key: one.key, body: one.body,
+                       index: columns });
+        }
+        const last = rows.length < SESSION_INDEX_BATCH;
+        const writing = (ready.length || last)
+          ? active.writeSessionIndexes(ready, last) : Promise.resolve();
+        return Promise.resolve(writing).then(function () {
+          if (last) {
+            return null;
+          }
+          committed = true;
+          const tail = rows[rows.length - 1];
+          return fillFrom(tail.realm, tail.key);
+        });
+      });
+  }
+  log.debug("Leaving backfillSessionIndex().");
+  return Promise.resolve(active.sessionIndexDone()).then(function (done) {
+    if (done) {
+      return null;
+    }
+    // Sampled before the first page, so a commit during the walk stays
+    // above the follower. Published only after the walk returns: the last
+    // transaction has then deleted index rows whose body is gone, and a
+    // resume's fresh head is not a floor while those rows remain (#350).
+    const seq = typeof active.latestChangeSeq === 'function'
+      ? active.latestChangeSeq() : null;
+    return Promise.resolve(seq).then(function (n) {
+      let sampled = null;
+      if (seq !== null) {
+        const parsed = Number(n);
+        sampled = Number.isFinite(parsed) ? parsed : 0;
+      }
+      return fillFrom('', '').then(function () {
+        if (sampled !== null) {
+          sessionIndexFloor = sampled;
+        }
+        return null;
+      });
+    });
+  }).catch(mark);
 }
 
 /**
@@ -2471,7 +2740,10 @@ module.exports = {
   // The key column a name is filed under, and a stored row's name (#222):
   // for the tests, which look rows up by the name they wrote.
   keyColumnOf: keyColumnOf,
+  journalled: journalled,
   nameOfRow: nameOfRow,
+  backfillSessionIndex: backfillSessionIndex,
+  sessionIndexChangeFloor: sessionIndexChangeFloor,
   ensureTombstoneJob: ensureTombstoneJob,
   ensureExpiryPurgeJob: ensureExpiryPurgeJob,
   purgeExpired: purgeExpired,

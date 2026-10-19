@@ -449,7 +449,13 @@ export = class FederationLinks {
     try {
       // Lazily, and never at load: see the header.
       const authn = require('../authn/authn');
-      const sessions = (authn.sessionsOf(username) || []) as Json[];
+      // Null is an unread index, not an empty list. Coercing it to []
+      // would audit a partial end. The catch records STS-FED-0110 and
+      // the unlink, which already happened, stands.
+      const sessions = authn.sessionsOf(username) as Json[] | null;
+      if (sessions == null) {
+        throw new Error('the sessions could not be read');
+      }
       sessions.forEach(function (session: Json): void {
         const events = Array.isArray(session.events) ? session.events : [];
         const through = links.some(function (link: Json): boolean {

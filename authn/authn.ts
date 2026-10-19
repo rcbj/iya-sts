@@ -117,6 +117,9 @@ import app = require('../common/app');
 // destructured because `sameIdentity()` and the provisioning refusal are the
 // only callers and both read better as `helpers.`.
 import helpers = require('../common/helpers');
+// The keyed digest the session index files a subject, a username and a
+// parent under (#350). It requires realms, not this module.
+import keystore = require('../common/keystore');
 import InstanceSlot = require('../common/instance_slot');
 // The sign-in mechanisms an application allows and a session satisfies
 // (#457): a leaf, so requiring it closes no cycle.
@@ -226,6 +229,7 @@ import accountState = require('../common/account_state');
 import cells = require('../common/cells');
 import cellRouting = require('../common/cell_routing');
 import cellPlacement = require('../common/cell_placement');
+import sessionWindow = require('./session_window');
 
 // The path a caller sends the browser to. Exported, because the two callers
 // build a URL out of it and a string spelled twice is a string that drifts.
@@ -465,6 +469,88 @@ const AUTHN_TTL_MS = 10 * 60 * 1000;
 // write. `tombstone` makes an ended session stay ended in the store, and
 // `mergeSessionRows()` below is what two copies of one live session become.
 // `persistence/persistence_minted.js` carries the mechanism.
+// The columns `sts_sessions` holds beside the sealed body (#350). Not an
+// `expiresAt` hook: `sts_minted.expires_at` stays NULL so the generic purge
+// cannot end a session. Null when no digest key is held, which writes no
+// index row.
+function sessionIndexOf(value: any) {
+  helpers.log.debug("Entering sessionIndexOf().");
+  try {
+    if (!value || typeof value !== 'object') {
+      helpers.log.debug("Leaving sessionIndexOf(). Not a session.");
+      return null;
+    }
+    const subjectId = value.subjectId == null ? ''
+      : String(value.subjectId);
+    const subjectKey = keystore.keyedDigest('session-subject', subjectId);
+    if (!subjectKey) {
+      helpers.log.debug("Leaving sessionIndexOf(). No digest.");
+      return null;
+    }
+    let username = '';
+    if (value.user && typeof value.user === 'object' &&
+        value.user.username != null) {
+      username = String(value.user.username);
+    }
+    const usernameKey = keystore.keyedDigest('session-username', username);
+    if (!usernameKey) {
+      helpers.log.debug("Leaving sessionIndexOf(). No username digest.");
+      return null;
+    }
+    const parentSid = value.derivedFrom ? String(value.derivedFrom) : '';
+    let parentKey = '';
+    if (parentSid) {
+      parentKey = keystore.keyedDigest('session-parent', parentSid);
+      if (!parentKey) {
+        helpers.log.debug("Leaving sessionIndexOf(). No parent digest.");
+        return null;
+      }
+    }
+    const credentialKey = value.credentialKey
+      ? String(value.credentialKey) : '';
+    let kind = 'sign-on';
+    if (parentSid) {
+      kind = 'relying-party';
+    } else if (credentialKey) {
+      kind = 'keyed';
+    } else if (value.chosen === false) {
+      kind = 'arrival';
+    }
+    const partner = value.fedPartnerSession;
+    let relationship = '';
+    if (partner && typeof partner === 'object' && partner.relationship) {
+      relationship = String(partner.relationship);
+    }
+    const expires = Number(value.expires);
+    const lastSeen = Number(value.lastSeenAt);
+    const started = Number(value.startedAt);
+    helpers.log.debug("Leaving sessionIndexOf().");
+    return {
+      expiresAt: Number.isFinite(expires) && expires > 0
+        ? Math.floor(expires) : null,
+      lastSeenAt: Number.isFinite(lastSeen)
+        ? Math.max(0, Math.floor(lastSeen)) : 0,
+      startedAt: Number.isFinite(started)
+        ? Math.max(0, Math.floor(started)) : 0,
+      subjectKey: subjectKey,
+      usernameKey: usernameKey,
+      chosen: value.chosen !== false,
+      authenticated: value.authenticated !== false,
+      kind: kind,
+      rpSurface: value.rpSurface ? String(value.rpSurface) : '',
+      parentKey: parentKey,
+      backsConsole: value.backsConsole === true,
+      credentialKey: credentialKey,
+      partnerRelationship: relationship
+    };
+  } catch (e) {
+    helpers.log.debug("Caught in sessionIndexOf(): " +
+                      ((e && e.message) || e));
+    helpers.log.debug("Leaving sessionIndexOf().");
+    return null;
+  }
+}
+
 /**
  * The sign-on session store, per trust realm: session id to session row.
  *
@@ -472,6 +558,9 @@ const AUTHN_TTL_MS = 10 * 60 * 1000;
  * Handed out rather than copied because the console reports on the live store.
  */
 const sessions = realms.map({ persist: 'authn.sessions', tombstone: true,
+                              // Not expiresAt: that column stays NULL so the
+                              // generic purge cannot end a session (#350).
+                              indexOf: sessionIndexOf,
                               // Late-bound to the instance in the slot at
                               // the bottom: a merge happens only once the
                               // store is open, after the root installed it.
@@ -479,6 +568,14 @@ const sessions = realms.map({ persist: 'authn.sessions', tombstone: true,
                                 return slot.get().mergeSessionRows(mine,
                                                                    theirs);
                               } });
+
+// A coalesced touch writes back through the facade, in the realm the
+// touch belongs to. Registered once: clearing it would drop later touches.
+sessionWindow.setTouchFlusher(function (realmId, sid, session) {
+  realms.run(realms.get(realmId) || null, function () {
+    sessions.set(sid, session);
+  });
+});
 
 // The requests waiting at the login screen: what to do with the person once
 // they have signed in, and what to tell them they are signing in FOR.
@@ -1304,11 +1401,36 @@ class Authn {
    *   is gone
    */
   noteSessionChanged(session) {
-    const { log } = this.deps;
+    const { log, realms } = this.deps;
     log.debug("Entering Authn.noteSessionChanged().");
     if (!session || !session.id) {
       log.debug("Leaving Authn.noteSessionChanged(). No session.");
       return false;
+    }
+    // A read error is not "the session is gone": the change is written so a
+    // parent that only the index holds still records backsConsole.
+    if (this.windowOn()) {
+      const read = sessionWindow.get(realms.currentId(), session.id);
+      if (!read.ok && read.error) {
+        sessions.set(session.id, session);
+        log.debug("Leaving Authn.noteSessionChanged(). Re-set.");
+        return true;
+      }
+      if (!read.ok) {
+        log.debug("Leaving Authn.noteSessionChanged(). The session is gone.");
+        return false;
+      }
+      const held = sessions.get(session.id);
+      if (!held) {
+        sessions.set(session.id, session);
+        log.debug("Leaving Authn.noteSessionChanged(). Re-set.");
+        return true;
+      }
+      sessions.set(session.id, held === session
+        ? session
+        : this.mergeSessionRows(session, held));
+      log.debug("Leaving Authn.noteSessionChanged(). Re-set.");
+      return true;
     }
     const held = sessions.get(session.id);
     if (!held) {
@@ -1440,6 +1562,18 @@ class Authn {
       });
       out[field] = union;
     });
+    // A stale copy that is further along must not clear a console child
+    // the other copy already recorded, and an empty subjectId must not
+    // wipe the one frozen at creation. Two different non-empty ids keep
+    // the further-along copy's.
+    out.backsConsole = !!(mine.backsConsole || theirs.backsConsole);
+    const baseSub = base.subjectId ? String(base.subjectId) : '';
+    const otherSub = other.subjectId ? String(other.subjectId) : '';
+    if (baseSub && otherSub && baseSub !== otherSub) {
+      out.subjectId = baseSub;
+    } else {
+      out.subjectId = baseSub || otherSub;
+    }
     log.debug("Leaving Authn.mergeSessionRows(). " +
               (mineAhead ? "Mine is ahead." : "The stored copy is ahead."));
     return out;
@@ -1566,10 +1700,39 @@ class Authn {
            (config.value('global.https') ? '; Secure' : '');
   }
 
+  // Hot path: every session read. No Entering/Leaving pair — one would
+  // drown the log. True for explicit on and for auto, and only while
+  // minted persistence, one cell, and a digest key all hold.
+  private windowOn(): boolean {
+    return sessionWindow.active();
+  }
+
+  // A session read failed. The code is recorded and is not in the body.
+  // The cookie stays; no replacement arrival is minted.
+  private refuseUnread(res): boolean {
+    const { errorCodes, log } = this.deps;
+    log.debug("Entering Authn.refuseUnread().");
+    if (res && !res.headersSent && typeof res.status === 'function') {
+      errorCodes.mark(res, 'STS-AUTHN-0338');
+      res.setHeader('Retry-After', '5');
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(503).json({
+        error: 'unavailable',
+        error_description: 'The session store could not be read. Try again.'
+      });
+    } else {
+      errorCodes.mark(res, 'STS-AUTHN-0338');
+    }
+    log.debug("Leaving Authn.refuseUnread().");
+    return true;
+  }
+
   // The session a request's cookie names, IF the cookie also carries that
-  // session's current handle. `{ id, session }` or null. `store` is a realm's
-  // partition where the caller is reading a named one; the ambient partition
-  // otherwise. It EXPIRES NOTHING: the callers that sweep what they find
+  // session's current handle. `{ id, session }`, `{ error: true, id }`, or
+  // null. A read error is not absence and does not clear the cookie.
+  // `store` is a realm's partition where the caller is reading a named one;
+  // the ambient partition otherwise. It EXPIRES NOTHING: the callers that
+  // sweep what they find
   // (`sessionOf()`, `relyingPartySessionOf()`, `consoleSession()`) still do,
   // and an observer that ended sessions while reporting on them would be
   // changing the thing it describes.
@@ -1582,10 +1745,11 @@ class Authn {
    * @param req - the request
    * @param cookieName - the cookie to read; the sign-on cookie by default
    * @param store - a realm's partition to look in; the ambient one by default
-   * @returns `{ id, session }`, or null
+   * @param realmId - the realm the window reads when it is on
+   * @returns `{ id, session }`, `{ error: true, id }`, or null
    */
-  cookieSession(req, cookieName, store?) {
-    const { stsCrypto, log } = this.deps;
+  cookieSession(req, cookieName, store?, realmId?) {
+    const { stsCrypto, log, realms } = this.deps;
     log.debug("Entering Authn.cookieSession(). cookie=" + cookieName);
     const value = req ? this.cookiesOf(req)[String(cookieName ||
                                                    SESSION_COOKIE)]
@@ -1601,7 +1765,18 @@ class Authn {
     }
     const id = value.slice(0, dot);
     const handle = value.slice(dot + 1);
-    const session = (store || sessions).get(id);
+    let session = null;
+    if (this.windowOn()) {
+      const read = sessionWindow.get(realmId || realms.currentId(), id);
+      if (!read.ok && read.error) {
+        log.debug("Leaving Authn.cookieSession(). The session could not " +
+                  "be read.");
+        return { error: true, id: id };
+      }
+      session = read.ok ? read.session : null;
+    } else {
+      session = (store || sessions).get(id);
+    }
     if (!session || !session.handleHash ||
         !stsCrypto.constantTimeEquals(this.handleHashOf(handle),
                                       session.handleHash)) {
@@ -1630,7 +1805,7 @@ class Authn {
     const { log } = this.deps;
     log.debug("Entering Authn.sessionOf().");
     const found = this.cookieSession(req, SESSION_COOKIE);
-    if (!found) {
+    if (!found || found.error) {
       log.debug("Leaving Authn.sessionOf(). No session cookie naming a " +
                 "session this server holds, with its current handle.");
       return null;
@@ -1863,7 +2038,13 @@ class Authn {
   startArrivalSession(req, res, via) {
     const { log, nowSec, randomId, userFor } = this.deps;
     log.debug("Entering Authn.startArrivalSession().");
-    if (this.cookieSession(req, SESSION_COOKIE)) {
+    const existing = this.cookieSession(req, SESSION_COOKIE);
+    if (existing && existing.error) {
+      log.debug("Leaving Authn.startArrivalSession(). The session could " +
+                "not be read.");
+      return null;
+    }
+    if (existing) {
       // Already has one — a live sign-in, or an arrival session from an earlier
       // hop. Either way this browser is already correlated and must not be
       // given a second identity.
@@ -1903,10 +2084,22 @@ class Authn {
       amr: [], acr: '0',
       via: via || 'unknown',
       relyingParties: [],
-      events: []
+      events: [],
+      // Not a person. Arrivals share one username, so the per-subject cap
+      // must not group them, and they are not countable.
+      subjectId: ''
     };
+    const room = this.makeRoomForSession(sessions.realmMap(), session);
+    if (room === 'error') {
+      log.debug("Leaving Authn.startArrivalSession(). The session store " +
+                "could not be read.");
+      return null;
+    }
+    if (!room) {
+      log.debug("Leaving Authn.startArrivalSession(). The realm is full.");
+      return null;
+    }
     const cookieValue = this.mintSessionHandle(session);
-    this.makeRoomForSession(sessions.realmMap(), sessionId);
     sessions.set(sessionId, session);
     this.setCookieHeader(res, this.sessionCookieLine(SESSION_COOKIE,
                                                      cookieValue));
@@ -1952,9 +2145,13 @@ class Authn {
   // business being applied to one.
   // ---------------------------------------------------------------------------
   private touchArrivalSession(req) {
-    const { log } = this.deps;
+    const { log, realms } = this.deps;
     log.debug("Entering Authn.touchArrivalSession().");
     const found = this.cookieSession(req, SESSION_COOKIE);
+    if (found && found.error) {
+      log.debug("Leaving Authn.touchArrivalSession().");
+      return;
+    }
     const id = found ? found.id : '';
     const session = found ? found.session : null;
     if (!session || session.chosen !== false) {
@@ -1973,7 +2170,13 @@ class Authn {
     // stamped on the object it handed out — so an extension made in place
     // reaches this process's memory and nothing else. Another process would go
     // on holding the OLD expiry and refuse a session somebody is actively
-    // using.
+    // using. While the window is on, touches inside one second stay on the
+    // dirty pin and flush once.
+    if (this.windowOn() &&
+        sessionWindow.holdTouch(realms.currentId(), id, session)) {
+      log.debug("Leaving Authn.touchArrivalSession().");
+      return;
+    }
     sessions.set(id, session);
     log.debug("Leaving Authn.touchArrivalSession().");
   }
@@ -1986,6 +2189,10 @@ class Authn {
     const { log } = this.deps;
     log.debug("Entering Authn.arrivalSessionOf().");
     const found = this.cookieSession(req, SESSION_COOKIE);
+    if (found && found.error) {
+      log.debug("Leaving Authn.arrivalSessionOf().");
+      return null;
+    }
     const session = found ? found.session : null;
     if (!session || session.chosen !== false) {
       log.debug("Leaving Authn.arrivalSessionOf().");
@@ -2097,10 +2304,11 @@ class Authn {
    * @param parentId - the parent session id
    * @param store - the partition to look in; the ambient one by default
    * @param alsoRealm - one further realm whose partition is walked
-   * @returns the derived sessions found
+   * @returns the derived sessions found, or null when a children read
+   *   failed. Null is not an empty generation.
    */
   derivedFrom(parentId, store?, alsoRealm?) {
-    const { realms, log } = this.deps;
+    const { realms, log, errorCodes } = this.deps;
     log.debug("Entering Authn.derivedFrom(). parentId=" + parentId);
     const here = realms.currentId();
     const found = [];
@@ -2120,13 +2328,65 @@ class Authn {
       log.debug("Leaving scan().");
     }
     scan(here, store || sessions.realmMap());
+    const also = String(alsoRealm || '');
+    const asked = [here];
     if (here !== realms.DEFAULT_ID) {
       scan(realms.DEFAULT_ID, sessions.realmMap(realms.DEFAULT_ID));
+      asked.push(realms.DEFAULT_ID);
     }
-    const also = String(alsoRealm || '');
     if (also && also !== here && also !== realms.DEFAULT_ID &&
         realms.get(also)) {
       scan(also, sessions.realmMap(also));
+      asked.push(also);
+    }
+    // Unflushed children are already in the map. The index names children
+    // this process has not loaded. A failed read is not that shorter list:
+    // the caller must not delete the parent while a child could not be read.
+    if (this.windowOn()) {
+      const parentKey = keystore.keyedDigest('session-parent',
+                                              String(parentId));
+      if (!parentKey) {
+        log.error(errorCodes.tag('STS-AUTHN-0338') +
+                  'authn: a session could not be read: the parent digest ' +
+                  'is missing.');
+        log.debug("Leaving Authn.derivedFrom(). Unread.");
+        return null;
+      }
+      for (let i = 0; i < asked.length; i++) {
+        const realmId = asked[i];
+        const keys = sessionWindow.indexKeys('session.children',
+                                              [realmId, parentKey]);
+        if (keys === null) {
+          log.error(errorCodes.tag('STS-AUTHN-0338') +
+                    'authn: a session could not be read: the children of ' +
+                    parentId + ' in ' + realmId + '.');
+          log.debug("Leaving Authn.derivedFrom(). Unread.");
+          return null;
+        }
+        for (let j = 0; j < keys.length; j++) {
+          const loaded = sessionWindow.loadByDigest(realmId, keys[j]);
+          if (!loaded.ok && loaded.error) {
+            log.error(errorCodes.tag('STS-AUTHN-0338') +
+                      'authn: a session could not be read: a child of ' +
+                      parentId + ' would not open.');
+            log.debug("Leaving Authn.derivedFrom(). Unread.");
+            return null;
+          }
+          if (!loaded.ok || !loaded.session) {
+            continue;
+          }
+          const held = loaded.session;
+          const id = String(held.id || '');
+          if (!id || held.derivedFrom !== parentId || seen[id]) {
+            continue;
+          }
+          if (String(held.derivedFromRealm || realmId) !== here) {
+            continue;
+          }
+          seen[id] = true;
+          found.push({ id: id, session: held, realm: realmId });
+        }
+      }
     }
     log.debug("Leaving Authn.derivedFrom(). " + found.length +
               " derived session(s).");
@@ -2164,8 +2424,9 @@ class Authn {
     // for a reason that is sharper here: these ids are printed on
     // /admin/sessions to every holder of Admin Read, and a bare id in
     // `sts_admin` was a console session belonging to whoever held Admin Write.
-    const found = this.cookieSession(req, String(cookie || ''), store);
-    if (!found) {
+    const found = this.cookieSession(req, String(cookie || ''), store,
+                                     realmId);
+    if (!found || found.error) {
       log.debug("Leaving Authn.relyingPartySessionOf(). No cookie naming a " +
                 "session with its current handle.");
       return null;
@@ -2209,8 +2470,26 @@ class Authn {
     const parentRanOut = !!(session.rpTokens && session.rpTokens.refreshToken &&
                             session.derivedFromExpires &&
                             Date.now() >= session.derivedFromExpires);
-    if (session.derivedFrom && !parentStore.get(session.derivedFrom) &&
-        !parentRanOut) {
+    let parent = null;
+    let parentUnread = false;
+    if (session.derivedFrom) {
+      if (this.windowOn()) {
+        const read = sessionWindow.get(parentRealm, session.derivedFrom);
+        if (!read.ok && read.error) {
+          parentUnread = true;
+        } else if (read.ok) {
+          parent = read.session;
+        }
+      } else {
+        parent = parentStore.get(session.derivedFrom) || null;
+      }
+    }
+    if (parentUnread) {
+      log.debug("Leaving Authn.relyingPartySessionOf(). The parent could " +
+                "not be read.");
+      return null;
+    }
+    if (session.derivedFrom && !parent && !parentRanOut) {
       // The provider session is gone and this one is therefore over. It is
       // ENDED rather than merely refused, so that /admin/sessions stops listing
       // it and the audit log carries the row: a session that keeps being
@@ -2247,9 +2526,8 @@ class Authn {
     // actively using the console, and the cascade would then end the console
     // session too. Inert with no idle timeout, which is the default.
     this.noteSessionUsed(store, id, session);
-    if (session.derivedFrom) {
-      this.noteSessionUsed(parentStore, session.derivedFrom,
-                           parentStore.get(session.derivedFrom));
+    if (session.derivedFrom && parent) {
+      this.noteSessionUsed(parentStore, session.derivedFrom, parent);
     }
     log.debug("Leaving Authn.relyingPartySessionOf(). Signed in as " +
               session.user.username + ".");
@@ -2273,7 +2551,8 @@ class Authn {
    * @returns the new session
    */
   startRelyingPartySession(spec) {
-    const { realms, log, nowSec, randomId, userFor, audit } = this.deps;
+    const { realms, log, nowSec, randomId, userFor, audit,
+            errorCodes } = this.deps;
     log.debug("Entering Authn.startRelyingPartySession(). surface=" +
               spec.surface);
     const claims = spec.claims || {};
@@ -2297,7 +2576,19 @@ class Authn {
     const parentRealm = String(spec.parentRealm || realms.currentId());
     const parentStore = parentRealm === realms.currentId()
       ? store : sessions.realmMap(parentRealm);
-    const parent = spec.parent ? parentStore.get(spec.parent) : null;
+    let parent = null;
+    if (spec.parent && this.windowOn()) {
+      const read = sessionWindow.get(parentRealm, spec.parent);
+      if (!read.ok && read.error) {
+        this.refuseUnread(spec.res);
+        log.debug("Leaving Authn.startRelyingPartySession(). The parent " +
+                  "could not be read.");
+        return null;
+      }
+      parent = read.ok ? read.session : null;
+    } else if (spec.parent) {
+      parent = parentStore.get(spec.parent) || null;
+    }
     // WHO VOUCHED FOR THE SIGN-IN THIS SESSION CAME FROM (2026-09-22, #103):
     // the kind of authority on the sign-on session's most recent event —
     // `local` for this service, `federation` or `kerberos` otherwise. The ID
@@ -2375,13 +2666,34 @@ class Authn {
       derivedFromExpires: parent ? Number(parent.expires || 0) : 0,
       credentialKey: null,
       lastSeenAt: Date.now(),
-      calls: 1
+      calls: 1,
+      // Said explicitly: a missing chosen is treated as a real session by
+      // the merge, and the per-subject cap counts only chosen rows.
+      chosen: true
     };
+    session.subjectId = this.subjectIdOf(session.user);
+    const room = this.makeRoomForSession(store, session);
+    if (room === 'error') {
+      this.refuseUnread(spec.res);
+      log.debug("Leaving Authn.startRelyingPartySession(). The session " +
+                "store could not be read.");
+      return null;
+    }
+    if (!room) {
+      this.auditCapRefusal(username, 'OAuth 2.0 / OIDC');
+      if (spec.res) {
+        errorCodes.mark(spec.res, 'STS-AUTHN-0337');
+      }
+      log.debug("Leaving Authn.startRelyingPartySession(). Refused.");
+      return null;
+    }
     const cookieValue = this.mintSessionHandle(session);
-    this.makeRoomForSession(store, sessionId);
     store.set(sessionId, session);
     this.setCookieHeader(spec.res, this.sessionCookieLine(spec.cookie,
                                                           cookieValue));
+    if (session.rpSurface === 'admin') {
+      this.noteBacksConsole(session);
+    }
     // THE AUDIT ROW SAYS WHERE IT CAME FROM, and it is a `session.start` like
     // every other because that is what happened. What tells it apart from the
     // sign-in that produced the ID Token is the summary and the detail: an
@@ -2480,7 +2792,7 @@ class Authn {
    * @returns the new session
    */
   adoptRelyingPartySession(spec) {
-    const { realms, log, randomId, userFor, audit } = this.deps;
+    const { realms, log, randomId, userFor, audit, errorCodes } = this.deps;
     log.debug("Entering Authn.adoptRelyingPartySession(). surface=" +
               spec.surface);
     const source = spec.source;
@@ -2522,13 +2834,32 @@ class Authn {
       derivedFromExpires: 0,
       credentialKey: null,
       lastSeenAt: Date.now(),
-      calls: 1
+      calls: 1,
+      chosen: true
     };
+    session.subjectId = this.subjectIdOf(session.user);
+    const room = this.makeRoomForSession(store, session);
+    if (room === 'error') {
+      this.refuseUnread(spec.res);
+      log.debug("Leaving Authn.adoptRelyingPartySession(). The session " +
+                "store could not be read.");
+      return null;
+    }
+    if (!room) {
+      this.auditCapRefusal(username, 'OAuth 2.0 / OIDC');
+      if (spec.res) {
+        errorCodes.mark(spec.res, 'STS-AUTHN-0337');
+      }
+      log.debug("Leaving Authn.adoptRelyingPartySession(). Refused.");
+      return null;
+    }
     const cookieValue = this.mintSessionHandle(session);
-    this.makeRoomForSession(store, sessionId);
     store.set(sessionId, session);
     this.setCookieHeader(spec.res, this.sessionCookieLine(spec.cookie,
                                                           cookieValue));
+    if (session.rpSurface === 'admin') {
+      this.noteBacksConsole(session);
+    }
     audit.audit({
       action: 'session.start',
       actor: username,
@@ -2797,8 +3128,9 @@ class Authn {
     // exactly this — a caller that wants a NAMED partition rather than the
     // ambient one.
     const store = sessions.realmMap(realms.DEFAULT_ID);
-    const found = this.cookieSession(req, SESSION_COOKIE, store);
-    if (!found) {
+    const found = this.cookieSession(req, SESSION_COOKIE, store,
+                                     realms.DEFAULT_ID);
+    if (!found || found.error) {
       log.debug("Leaving Authn.consoleSession(). The default realm holds no " +
                 "session this cookie names with its current handle.");
       return null;
@@ -3157,10 +3489,9 @@ class Authn {
     // away too long" and "your session is an hour old" are different things to
     // tell somebody, and a receiver may treat them differently.
     const idle = why === 'idle';
-    // THE THIRD WAY A SESSION RUNS OUT (#345): the realm's store was full
-    // (`authn.maxSessions`) when another session was created, and this was
-    // the least recently used. A policy ending a session nobody signed out
-    // of, exactly as an expiry is, so it takes this same end.
+    // THE THIRD WAY A SESSION RUNS OUT (#345, #350): this subject's own
+    // oldest countable row, so one more session of theirs can take its
+    // place, or one row the sweep sheds. Never another subject's row.
     const evicted = why === 'capacity';
     store.delete(id);
     // THE BACK-CHANNEL LOGOUT TOKENS, ON AN EXPIRY TOO (2026-09-17, #36
@@ -3174,8 +3505,8 @@ class Authn {
     // draw one on.
     const planned = this.backchannelOnExpiry()
       ? this.planBackchannel(session, evicted
-          ? 'the realm held authn.maxSessions sessions and this was the ' +
-            'least recently used'
+          ? 'this subject was at authn.maxSessionsPerSubject, and this ' +
+            'was their own oldest countable session'
           : idle
             ? 'the session went idle (authn.sessionIdleTimeoutS)'
             : 'the session expired (authn.sessionLifetimeS)', 'expiry')
@@ -3256,8 +3587,8 @@ class Authn {
 
   // The audit row and the event for an expiry — what sessionEndOnce() lets out
   // once for the cluster. Split from expireSession() for that reason only.
-  // `kind` is 'idle', 'capacity' (#345: ended to keep the realm under
-  // `authn.maxSessions`) or '' for the absolute expiry.
+  // `kind` is 'idle', 'capacity' (#350: this subject's own oldest
+  // countable row) or '' for the absolute expiry.
   private reportExpiry(id, session, via, kind) {
     const { log, audit } = this.deps;
     log.debug("Entering Authn.reportExpiry(). id=" + id);
@@ -3273,8 +3604,8 @@ class Authn {
       summary: ((session && session.user &&
                  session.user.username) || 'somebody') +
                '\'s session ' + id + (evicted
-                 ? ' was ended to make room: the realm held ' +
-                   'authn.maxSessions sessions'
+                 ? ' was ended at the per-subject session cap: it was ' +
+                   'that subject\'s own oldest countable session'
                  : ' expired and was discarded'),
       detail: {
         sessionId: id,
@@ -3283,8 +3614,9 @@ class Authn {
         // the two apart, which is what `initiating_entity` carries in the
         // event.
         reason: evicted
-          ? 'the realm held authn.maxSessions sessions when another was ' +
-            'created, and this one was the least recently used'
+          ? 'this subject was at authn.maxSessionsPerSubject, and this ' +
+            'was their own oldest countable session — never another ' +
+            'subject\'s row and never an arrival'
           : idle
             ? 'the session went unused for longer than ' +
               'authn.sessionIdleTimeoutS'
@@ -3313,9 +3645,10 @@ class Authn {
       via: via, byAdmin: false, expired: true,
       initiatingEntity: 'policy',
       reason: evicted
-        ? 'This service holds a bounded number of sessions, it was full, ' +
-          'and this was the session least recently used. Nobody signed ' +
-          'out — this service stopped honouring it to make room.'
+        ? 'This subject was at the per-subject session cap, and this was ' +
+          'their own oldest countable session. Nobody signed out — this ' +
+          'service stopped honouring it. It was not another subject\'s ' +
+          'session and not an arrival.'
         : idle
         ? 'The session went unused for longer than this service\'s idle ' +
           'timeout. Nobody signed out — this service stopped honouring a ' +
@@ -3341,6 +3674,42 @@ class Authn {
     let gone = 0;
     realms.list().forEach(function (realm) {
       const store = sessions.realmMap(realm.id);
+      // While the window is on the index names expired rows. An empty map
+      // is not an empty realm, and a failed index read skips the realm.
+      if (self.windowOn()) {
+        realms.run(realm, function () {
+          const idle = self.sessionIdleTimeoutMs();
+          const cutoff = idle > 0 ? nowMs - idle : 0;
+          const keys = sessionWindow.indexKeys('session.expired',
+                                                [realm.id, nowMs, cutoff]);
+          if (keys === null) {
+            return;
+          }
+          keys.forEach(function (digest) {
+            const loaded = sessionWindow.loadByDigest(realm.id, digest);
+            if (!loaded.ok) {
+              return;
+            }
+            const session = loaded.session;
+            let why = '';
+            if (session.expires && session.expires <= nowMs) {
+              why = 'expired';
+            } else {
+              const ended = self.sessionEnded(session, nowMs);
+              if (ended) {
+                why = ended;
+              }
+            }
+            if (!why) {
+              return;
+            }
+            self.expireSession(store, session.id, session,
+                               'the session sweep', why);
+            gone++;
+          });
+        });
+        return;
+      }
       if (!store || !store.size) {
         return;
       }
@@ -3374,6 +3743,11 @@ class Authn {
         });
       });
     });
+    // Expiries first, so a row already queued is not also a capacity
+    // victim. A realm with nothing expired still sheds. Both kinds are
+    // in the count the job reports; the 0292 row tells a capacity end
+    // from a lifetime.
+    const shed = this.shedSubjectSurplus();
     if (gone) {
       log.info('authn: the session sweep ended ' + gone + ' expired ' +
                'session(s). Each one is an audit row and a CAEP ' +
@@ -3381,112 +3755,518 @@ class Authn {
                'an expiry noticed only when somebody comes back is an expiry ' +
                'nobody is ever told about.');
     }
-    log.debug("Leaving Authn.sweepExpiredSessions(). " + gone + " ended.");
-    return gone;
+    log.debug("Leaving Authn.sweepExpiredSessions(). " +
+              (gone + shed) + " ended.");
+    return gone + shed;
   }
 
   // ---------------------------------------------------------------------------
-  // THE SIZE CAP (#345): `authn.maxSessions` per realm, checked where a
-  // session is CREATED, because a bound cannot wait for the expiry job (root
-  // CLAUDE.md, *Anything periodic is a scheduler job*). Called by the three
-  // doors that add a key to the store — `startArrivalSession()`,
-  // `startRelyingPartySession()` and `startSessionHere()` — before the set;
-  // a write back to a session that already exists is not an insert and
-  // passes.
+  // THE SIZE CAP (#345, #350): `authn.maxSessions` per realm, checked where a
+  // session is CREATED, because a bound cannot wait for the expiry job.
+  // Called by the doors that add a key — `startArrivalSession()`,
+  // `startRelyingPartySession()`, `adoptRelyingPartySession()` and
+  // `startSessionHere()` — before the set. A write of an id the store
+  // already holds is not an insert. A restore or a change-log apply does
+  // not come through here.
   //
-  // **AT THE CAP THE LEAST RECENTLY USED SESSION ENDS, through
-  // `expireSession()`** — the one end an expiry takes: the delete, the
-  // back-channel Logout Tokens planned, and, once for the cluster, the audit
-  // row (carrying STS-AUTHN-0292) and CAEP session-revoked. Nothing is
-  // dropped silently; the person behind it signs in again.
+  // **AT THE REALM CAP A NEW ROW IS REFUSED** (STS-AUTHN-0337). Nothing is
+  // ended to make room for somebody else. One subject already at
+  // `authn.maxSessionsPerSubject` loses their own oldest countable row
+  // (STS-AUTHN-0292), one row, and the new row takes its place. An arrival
+  // is not countable. The sign-on a relying-party row was just derived from
+  // is not the victim.
   //
-  // **"LEAST RECENTLY USED" IS `lastSeenAt`, falling back to `startedAt`**,
-  // because that is what the row tracks. Oldest-by-creation would end a
-  // console operator's session while a burst of arrivals from nobody sat
-  // behind it. `lastSeenAt` is stamped at creation, at every sign-in on the
-  // session, on every call an API client makes, and — while an idle timeout
-  // is in force — on every use (`noteSessionUsed()`); with no idle timeout a
-  // browser read writes nothing (a read must not be a write to a persisted
-  // store), so it is then "last authenticated", which is still the better
-  // order. Map order would be free and is creation order, which is the
-  // wrong question.
+  // **OLDEST IS `lastSeenAt`, THEN `startedAt`.** A tie keeps the first row
+  // in Map order while authn.sessionWindow is off. While it is on, the
+  // index orders the same two columns and the map is not walked.
   //
-  // **O(n) in the realm's sessions, and only at the cap** — the ordinary
-  // insert asks `size` and nothing else. When the cap was LOWERED below the
-  // store's size, one sort ends every session over it at once rather than
-  // one per insert, which would never converge.
-  //
-  // **SEVERAL PROCESSES, ONE STORE.** `sessions` is persisted and
-  // replicated (`realms.map({persist, tombstone})`), so the end is a normal
-  // tombstoned delete that reaches every node, and its report is claimed
-  // once (`sessionEndOnce()`). The check runs ONLY in the process doing the
-  // insert, against that process's view of the store: a worker RESTORING
-  // sessions at start, or applying another's writes from the change log,
-  // does not come through here and evicts nothing — so processes never
-  // evict each other's choices differently. Two processes inserting at the
-  // same instant may each see room, so the store can overshoot by one per
-  // concurrent inserter until the next insert; a bound, not an exact count.
+  // **NOT LOCKED.** Two inserts at the same instant can each see room, so
+  // the store can overshoot by one per concurrent inserter. Lowering a cap
+  // does not mass-end: the next insert ends at most one own row, and each
+  // realm's sweep ends at most that realm's `authn.sessionShedPerSweep`.
   // ---------------------------------------------------------------------------
   private sessionCapLoggedAt = 0;
   private sessionCapEnded = 0;
+  private sessionRefuseLoggedAt = 0;
+  private sessionRefuseCount = 0;
 
-  private makeRoomForSession(store, newId) {
-    const { log, config, errorCodes } = this.deps;
-    const self = this;
-    log.debug("Entering Authn.makeRoomForSession().");
+  // HOT PATH: asked of every resident row while one victim is chosen.
+  // No Entering/Leaving pair — one would drown the log.
+  private countsTowardSubject(session) {
+    if (!session || session.chosen === false) {
+      return false;
+    }
+    if (session.chosen === true) {
+      return true;
+    }
+    // An old relying-party row omitted chosen. The merge treats that as a
+    // real session, so the cap does too.
+    return !!session.rpSurface;
+  }
+
+  // HOT PATH: compared once per resident row of one subject.
+  // No Entering/Leaving pair — one would drown the log.
+  // Strictly earlier. A tie is not earlier, so the first row in Map order
+  // stays the victim.
+  private earlierSession(a, b) {
+    const aSeen = Number(a && a.lastSeenAt) || 0;
+    const bSeen = Number(b && b.lastSeenAt) || 0;
+    if (aSeen !== bSeen) {
+      return aSeen < bSeen;
+    }
+    const aStart = Number(a && a.startedAt) || 0;
+    const bStart = Number(b && b.startedAt) || 0;
+    return aStart < bStart;
+  }
+
+  private subjectSessionCap() {
+    const { log, config } = this.deps;
+    log.debug("Entering Authn.subjectSessionCap().");
+    let per = Math.floor(Number(
+      config.value('authn.maxSessionsPerSubject')));
     const cap = Math.floor(Number(config.value('authn.maxSessions')));
-    if (!(cap > 0) || !store || store.size < cap ||
-        (newId && store.has(newId))) {
-      log.debug("Leaving Authn.makeRoomForSession(). Room.");
-      return 0;
+    if (cap >= 1 && per > cap) {
+      per = cap;
     }
-    // A HOT PATH: called for every session the scan or the sort compares,
-    // so no Entering/Leaving pair — one would drown the log.
-    const usedAt = function (session) {
-      return Number(session && (session.lastSeenAt || session.startedAt)) ||
-             0;
-    };
-    const over = store.size - cap + 1;
-    let victims = [];
-    if (over === 1) {
-      let oldest = null;
-      store.forEach(function (session, id) {
-        // Strictly less: a tie keeps the first, the older in Map order.
-        if (oldest === null || usedAt(session) < usedAt(oldest[1])) {
-          oldest = [id, session];
-        }
-      });
-      if (oldest) {
-        victims = [oldest];
-      }
-    } else {
-      const all = [];
-      store.forEach(function (session, id) {
-        all.push([id, session]);
-      });
-      all.sort(function (a, b) {
-        return usedAt(a[1]) - usedAt(b[1]);
-      });
-      victims = all.slice(0, over);
+    log.debug("Leaving Authn.subjectSessionCap().");
+    return per;
+  }
+
+  // The stable id frozen on a chosen session: the urn:uuid sub when the
+  // user has one, otherwise the username `sessionsOf()` compares. Not
+  // holderKeyOf — that folds names the cap must keep apart.
+  private subjectIdOf(user) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.subjectIdOf().");
+    const sub = user && user.sub ? String(user.sub) : '';
+    if (/^urn:uuid:/i.test(sub)) {
+      log.debug("Leaving Authn.subjectIdOf().");
+      return sub;
     }
-    victims.forEach(function (pair) {
-      self.expireSession(store, pair[0], pair[1],
-                         'the session cap (authn.maxSessions)', 'capacity');
-    });
-    this.sessionCapEnded += victims.length;
+    const name = String((user && user.username) || '');
+    log.debug("Leaving Authn.subjectIdOf().");
+    return name;
+  }
+
+  private noteCapacityEnd(count) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.noteCapacityEnd().");
+    this.sessionCapEnded += count;
     const now = Date.now();
     if (now - this.sessionCapLoggedAt >= 60000) {
-      log.warn(errorCodes.tag('STS-AUTHN-0292') + 'authn: the realm held ' +
-               'authn.maxSessions (' + cap + ') sessions, so ' +
-               this.sessionCapEnded + ' least recently used session(s) were ' +
-               'ended to make room for new ones. Each is an audit row. ' +
-               'Raise the setting if this is ordinary load.');
+      log.warn(errorCodes.tag('STS-AUTHN-0292') + 'authn: ' +
+               this.sessionCapEnded + ' session(s) were ended at the ' +
+               'per-subject session cap. Each was that subject\'s own ' +
+               'oldest countable session, never another subject\'s and ' +
+               'never an arrival. Each is an audit row.');
       this.sessionCapEnded = 0;
       this.sessionCapLoggedAt = now;
     }
-    log.debug("Leaving Authn.makeRoomForSession(). " + victims.length +
-              " ended.");
-    return victims.length;
+    log.debug("Leaving Authn.noteCapacityEnd().");
+  }
+
+  private noteRealmRefusal() {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.noteRealmRefusal().");
+    this.sessionRefuseCount += 1;
+    const now = Date.now();
+    if (now - this.sessionRefuseLoggedAt >= 60000) {
+      log.warn(errorCodes.tag('STS-AUTHN-0337') + 'authn: ' +
+               this.sessionRefuseCount + ' new session(s) were not ' +
+               'admitted. The realm is at authn.maxSessions and the ' +
+               'insert freed no row. An arrival continues with no ' +
+               'cookie; a chosen sign-in is drawn again.');
+      this.sessionRefuseCount = 0;
+      this.sessionRefuseLoggedAt = now;
+    }
+    log.debug("Leaving Authn.noteRealmRefusal().");
+  }
+
+  private auditCapRefusal(username, via) {
+    const { log, audit } = this.deps;
+    log.debug("Entering Authn.auditCapRefusal().");
+    audit.audit({
+      action: 'session.refuse',
+      actor: String(username || ''),
+      errorCode: 'STS-AUTHN-0337',
+      protocol: via || 'OAuth 2.0 / OIDC',
+      channel: 'http',
+      target: '',
+      summary: 'a session for ' + username + ' was refused: the realm is ' +
+               'at authn.maxSessions',
+      detail: {
+        why: 'the realm is at authn.maxSessions and this insert freed ' +
+             'no row'
+      }
+    });
+    log.debug("Leaving Authn.auditCapRefusal().");
+  }
+
+  // Ends one countable row of `incoming.subjectId`, the oldest by
+  // lastSeenAt then startedAt, when that subject is already at the
+  // per-subject cap. Skips `skipId` and `incoming.derivedFrom`. Returns
+  // how many rows ended (0 or 1).
+  private endOneOwn(store, incoming, skipId) {
+    const { log, realms, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.endOneOwn().");
+    if (!store || !this.countsTowardSubject(incoming)) {
+      log.debug("Leaving Authn.endOneOwn(). Not countable.");
+      return 0;
+    }
+    const subject = String(incoming.subjectId || '');
+    if (!subject) {
+      log.debug("Leaving Authn.endOneOwn(). No subject.");
+      return 0;
+    }
+    const cap = this.subjectSessionCap();
+    if (!(cap >= 1)) {
+      log.debug("Leaving Authn.endOneOwn(). No cap.");
+      return 0;
+    }
+    const skip = skipId ? String(skipId) : '';
+    const derived = incoming.derivedFrom ? String(incoming.derivedFrom) : '';
+    // While the window is on the index is the authority. A failed read
+    // ends nobody: ending from a partial map would pick the wrong row.
+    if (this.windowOn()) {
+      const realmId = realms.currentId();
+      const subjectKey = keystore.keyedDigest('session-subject', subject);
+      if (!subjectKey) {
+        log.error(errorCodes.tag('STS-AUTHN-0338') +
+                  'authn: a session could not be read: the subject ' +
+                  'digest is missing.');
+        log.debug("Leaving Authn.endOneOwn(). Unread.");
+        return 'error';
+      }
+      const rows = sessionWindow.oldest(realmId, subjectKey);
+      if (rows === null) {
+        log.debug("Leaving Authn.endOneOwn(). Unread.");
+        return 'error';
+      }
+      const skipDigest = skip
+        ? sessionWindow.sessionDigest(realmId, skip) : '';
+      const derivedDigest = derived
+        ? sessionWindow.sessionDigest(realmId, derived) : '';
+      if ((skip && !skipDigest) || (derived && !derivedDigest)) {
+        log.error(errorCodes.tag('STS-AUTHN-0338') +
+                  'authn: a session could not be read: the session ' +
+                  'digest is missing.');
+        log.debug("Leaving Authn.endOneOwn(). Unread.");
+        return 'error';
+      }
+      let held = 0;
+      let victim = '';
+      rows.forEach(function (row) {
+        const key = String((row && row.key) || '');
+        if (!key || key === skipDigest) {
+          return;
+        }
+        held += 1;
+        if (derivedDigest && key === derivedDigest) {
+          return;
+        }
+        if (!victim) {
+          victim = key;
+        }
+      });
+      if (held < cap || !victim) {
+        log.debug("Leaving Authn.endOneOwn(). " + held + " held.");
+        return 0;
+      }
+      const loaded = sessionWindow.loadByDigest(realmId, victim);
+      if (!loaded.ok) {
+        log.debug("Leaving Authn.endOneOwn(). The victim could not be " +
+                  "read.");
+        return 'error';
+      }
+      this.expireSession(store, loaded.session.id, loaded.session,
+                         'the per-subject session cap', 'capacity');
+      this.noteCapacityEnd(1);
+      log.debug("Leaving Authn.endOneOwn(). Ended " +
+                loaded.session.id + ".");
+      return 1;
+    }
+    let count = 0;
+    let oldest = null;
+    // While authn.sessionWindow is off the scan is the whole resident map.
+    store.forEach(function (row, id) {
+      if (!self.countsTowardSubject(row)) {
+        return;
+      }
+      if (String(row.subjectId || '') !== subject) {
+        return;
+      }
+      const key = String(id);
+      if (skip && key === skip) {
+        return;
+      }
+      count += 1;
+      if (derived && key === derived) {
+        return;
+      }
+      if (oldest === null || self.earlierSession(row, oldest[1])) {
+        oldest = [key, row];
+      }
+    });
+    if (count < cap || !oldest) {
+      log.debug("Leaving Authn.endOneOwn(). " + count + " held.");
+      return 0;
+    }
+    this.expireSession(store, oldest[0], oldest[1],
+                       'the per-subject session cap', 'capacity');
+    this.noteCapacityEnd(1);
+    log.debug("Leaving Authn.endOneOwn(). Ended " + oldest[0] + ".");
+    return 1;
+  }
+
+  // True when the row may be stored. `replacingId` is a row this sign-in
+  // will end once the new row is admitted; it counts as leaving so a realm
+  // exactly at the cap still admits the switch, and it is not ended here.
+  private makeRoomForSession(store, session, replacingId = '') {
+    const { log, config, realms } = this.deps;
+    log.debug("Entering Authn.makeRoomForSession().");
+    if (!store || !session) {
+      log.debug("Leaving Authn.makeRoomForSession(). No store.");
+      return true;
+    }
+    const newId = session.id ? String(session.id) : '';
+    if (this.windowOn()) {
+      const realmId = realms.currentId();
+      if (newId) {
+        const held = sessionWindow.has(realmId, newId);
+        if (held === 'error') {
+          log.debug("Leaving Authn.makeRoomForSession(). Unread.");
+          return 'error';
+        }
+        if (held === 'present') {
+          log.debug("Leaving Authn.makeRoomForSession(). Already held.");
+          return true;
+        }
+      }
+      const ended = this.endOneOwn(store, session, '');
+      if (ended === 'error') {
+        log.debug("Leaving Authn.makeRoomForSession(). Unread.");
+        return 'error';
+      }
+      const cap = Math.floor(Number(config.value('authn.maxSessions')));
+      let size = sessionWindow.count(realmId);
+      if (size === null) {
+        log.debug("Leaving Authn.makeRoomForSession(). Unread.");
+        return 'error';
+      }
+      const leaving = replacingId ? String(replacingId) : '';
+      if (leaving && leaving !== newId) {
+        const leavingHeld = sessionWindow.has(realmId, leaving);
+        if (leavingHeld === 'error') {
+          log.debug("Leaving Authn.makeRoomForSession(). Unread.");
+          return 'error';
+        }
+        if (leavingHeld === 'present') {
+          size -= 1;
+        }
+      }
+      if (cap >= 1 && size >= cap && ended === 0) {
+        this.noteRealmRefusal();
+        log.debug("Leaving Authn.makeRoomForSession(). Refused.");
+        return false;
+      }
+      log.debug("Leaving Authn.makeRoomForSession(). " + ended + " ended.");
+      return true;
+    }
+    if (newId && store.has(newId)) {
+      log.debug("Leaving Authn.makeRoomForSession(). Already held.");
+      return true;
+    }
+    const ended = this.endOneOwn(store, session, '');
+    const cap = Math.floor(Number(config.value('authn.maxSessions')));
+    // A sign-in that will end this browser's previous session frees that
+    // one row. Not locked. Two inserts at once can each see room and
+    // overshoot by one per inserter. A victim already freed a row, so
+    // this insert is admitted even when the realm is still over the cap.
+    let size = store.size;
+    const leaving = replacingId ? String(replacingId) : '';
+    if (leaving && leaving !== newId && store.has(leaving)) {
+      size -= 1;
+    }
+    if (cap >= 1 && size >= cap && ended === 0) {
+      this.noteRealmRefusal();
+      log.debug("Leaving Authn.makeRoomForSession(). Refused.");
+      return false;
+    }
+    log.debug("Leaving Authn.makeRoomForSession(). " + ended + " ended.");
+    return true;
+  }
+
+  // A console child marks the parent sign-on, in the parent's realm, so a
+  // later merge can keep the flag. Only after the child was admitted.
+  private noteBacksConsole(session) {
+    const { log, realms } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.noteBacksConsole().");
+    if (!session || String(session.rpSurface || '') !== 'admin' ||
+        !session.derivedFrom) {
+      log.debug("Leaving Authn.noteBacksConsole(). Not a console child.");
+      return;
+    }
+    const parentId = String(session.derivedFrom);
+    const realmId = String(session.derivedFromRealm || realms.currentId());
+    const realm = realms.get(realmId) || realms.current();
+    realms.run(realm, function () {
+      let parent = null;
+      if (self.windowOn()) {
+        const read = sessionWindow.get(realmId, parentId);
+        if (!read.ok) {
+          return;
+        }
+        parent = read.session;
+      } else {
+        parent = sessions.get(parentId);
+      }
+      if (!parent) {
+        return;
+      }
+      parent.backsConsole = true;
+      self.noteSessionChanged(parent);
+    });
+    log.debug("Leaving Authn.noteBacksConsole().");
+  }
+
+  // Each realm spends its own `authn.sessionShedPerSweep`, read while
+  // that realm is ambient. One subject is brought down to their cap,
+  // oldest first, before the next subject. Arrivals are not ended for
+  // capacity, and a subject at or under their cap is not ended because
+  // the realm is over authn.maxSessions.
+  private shedSubjectSurplus() {
+    const { log, realms, config } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.shedSubjectSurplus().");
+    // HOT PATH: ordered once per over-cap subject and once across them.
+    // No Entering/Leaving pair — one would drown the log.
+    const earlier = function (a, b) {
+      if (self.earlierSession(a, b)) {
+        return -1;
+      }
+      if (self.earlierSession(b, a)) {
+        return 1;
+      }
+      return 0;
+    };
+    let shed = 0;
+    realms.list().forEach(function (realm) {
+      realms.run(realm, function () {
+        const store = sessions.realmMap(realm.id);
+        const budget = Math.floor(Number(
+          config.value('authn.sessionShedPerSweep')));
+        if (!(budget >= 1)) {
+          return;
+        }
+        const per = self.subjectSessionCap();
+        if (!(per >= 1)) {
+          return;
+        }
+        // While the window is on the index is the shed authority. A failed
+        // page skips the realm. A failed body ends nobody for that subject.
+        // An absent row is not held, and the loop continues.
+        if (self.windowOn()) {
+          const grouped = sessionWindow.chosenBySubject(realm.id);
+          if (grouped === null) {
+            return;
+          }
+          const groups = [];
+          grouped.forEach(function (group) {
+            const list = group.rows.slice();
+            if (list.length <= per) {
+              return;
+            }
+            list.sort(function (a, b) {
+              return earlier(a, b);
+            });
+            groups.push(list);
+          });
+          groups.sort(function (a, b) {
+            return earlier(a[0], b[0]);
+          });
+          let left = budget;
+          groups.forEach(function (rows) {
+            let held = rows.length;
+            for (let i = 0; i < rows.length && left > 0 &&
+                 held > per; i++) {
+              const loaded = sessionWindow.loadByDigest(realm.id,
+                                                         rows[i].key);
+              if (loaded.error) {
+                return;
+              }
+              if (!loaded.ok) {
+                held -= 1;
+                continue;
+              }
+              self.expireSession(store, loaded.session.id, loaded.session,
+                                 'the session sweep', 'capacity');
+              shed += 1;
+              held -= 1;
+              left -= 1;
+            }
+          });
+          return;
+        }
+        if (!store || !store.size) {
+          return;
+        }
+        const groups = [];
+        const bySubject = new Map();
+        // While authn.sessionWindow is off the scan is the whole map.
+        store.forEach(function (session, id) {
+          if (!self.countsTowardSubject(session)) {
+            return;
+          }
+          const subject = String(session.subjectId || '');
+          if (!subject) {
+            return;
+          }
+          let list = bySubject.get(subject);
+          if (!list) {
+            list = [];
+            bySubject.set(subject, list);
+          }
+          list.push([id, session]);
+        });
+        bySubject.forEach(function (list) {
+          if (list.length <= per) {
+            return;
+          }
+          list.sort(function (a, b) {
+            return earlier(a[1], b[1]);
+          });
+          groups.push(list);
+        });
+        groups.sort(function (a, b) {
+          return earlier(a[0][1], b[0][1]);
+        });
+        let left = budget;
+        groups.forEach(function (rows) {
+          let held = rows.length;
+          for (let i = 0; i < rows.length && left > 0 &&
+               held > per; i++) {
+            const id = rows[i][0];
+            const live = store.get(id);
+            if (!live) {
+              held -= 1;
+              continue;
+            }
+            self.expireSession(store, id, live, 'the session sweep',
+                               'capacity');
+            shed += 1;
+            held -= 1;
+            left -= 1;
+          }
+        });
+      });
+    });
+    if (shed) {
+      this.noteCapacityEnd(shed);
+    }
+    log.debug("Leaving Authn.shedSubjectSurplus(). " + shed + " ended.");
+    return shed;
   }
 
   // ---------------------------------------------------------------------------
@@ -4321,9 +5101,19 @@ class Authn {
    * @returns true when adopted, false when there is no live session
    */
   adoptSessionRisk(id: string, risk: any): boolean {
-    const { log } = this.deps;
+    const { log, realms } = this.deps;
     log.debug("Entering Authn.adoptSessionRisk(). " + id);
-    const session = sessions.get(String(id || ''));
+    let session = null;
+    if (this.windowOn()) {
+      const read = sessionWindow.get(realms.currentId(), String(id || ''));
+      if (!read.ok) {
+        log.debug("Leaving Authn.adoptSessionRisk(). No live session.");
+        return false;
+      }
+      session = read.session;
+    } else {
+      session = sessions.get(String(id || ''));
+    }
     if (!session || !risk || this.sessionEnded(session)) {
       log.debug("Leaving Authn.adoptSessionRisk(). No live session.");
       return false;
@@ -4350,10 +5140,24 @@ class Authn {
     const out = [];
     realms.list().forEach(function (realm) {
       const store = sessions.realmMap(realm.id);
-      if (!store || !store.size) {
-        return;
+      let rows = null;
+      if (self.windowOn()) {
+        rows = self.indexedSessions(realm.id, store);
+        if (rows === null) {
+          return;
+        }
+      } else {
+        if (!store || !store.size) {
+          return;
+        }
+        rows = [];
+        store.forEach(function (session, id) {
+          rows.push({ id: id, session: session });
+        });
       }
-      store.forEach(function (session, id) {
+      rows.forEach(function (row) {
+        const session = row.session;
+        const id = row.id;
         if (session && session.risk && !session.credentialKey &&
             session.authenticated !== false && !self.sessionEnded(session)) {
           out.push({ realm: realm, id: id, session: session });
@@ -4399,11 +5203,45 @@ class Authn {
     const partition = surfaceId === 'admin' ? realms.DEFAULT_ID : fromRealm;
     const store = sessions.realmMap(partition);
     const doomed: string[] = [];
-    if (store) {
+    const matches = function (session, id) {
+      log.debug("Entering matches().");
+      const yes = !!(session && session.rpSurface === surfaceId &&
+        String(session.derivedFromRealm || partition) === fromRealm &&
+        session.user && about(session.user, session) && id);
+      log.debug("Leaving matches().");
+      return yes;
+    };
+    if (this.windowOn()) {
+      const keys = sessionWindow.indexKeys('session.surface',
+                                            [partition, surfaceId]);
+      if (keys === null) {
+        log.debug("Leaving Authn.endRelyingPartySessions(). 0 ended.");
+        return 0;
+      }
+      const seen: Record<string, boolean> = {};
+      keys.forEach(function (digest) {
+        const loaded = sessionWindow.loadByDigest(partition, digest);
+        if (!loaded.ok || !loaded.session) {
+          return;
+        }
+        const id = String(loaded.session.id || '');
+        if (!matches(loaded.session, id) || seen[id]) {
+          return;
+        }
+        seen[id] = true;
+        doomed.push(id);
+      });
+      if (store) {
+        store.forEach(function (session, id) {
+          if (seen[id] || !matches(session, id)) {
+            return;
+          }
+          doomed.push(id);
+        });
+      }
+    } else if (store) {
       store.forEach(function (session, id) {
-        if (session && session.rpSurface === surfaceId &&
-            String(session.derivedFromRealm || partition) === fromRealm &&
-            session.user && about(session.user, session)) {
+        if (matches(session, id)) {
           doomed.push(id);
         }
       });
@@ -4925,10 +5763,14 @@ class Authn {
     // THE ARRIVAL SESSION IS READ BEFORE THE PREVIOUS ONE IS ENDED, and the
     // order is the whole of it.
     //
-    // The block below ends whatever session the browser was on, because a
-    // sign-in is a privilege change and leaving the old one usable would be a
-    // second live session for the same browser. An ARRIVAL session is on that
-    // cookie too — so with the lookup after this block it found nothing, every
+    // The block below only REMEMBERS whatever session the browser was on.
+    // The row is ended after the new one is admitted, because a sign-in is
+    // a privilege change and leaving the old one usable would be a second
+    // live session for the same browser — and ending it first signed the
+    // browser out when the replacement was refused. A lowered cap does that
+    // on purpose: deleting one row can still leave the realm over
+    // authn.maxSessions. An ARRIVAL session is on that cookie too — so with
+    // the lookup after the old session was deleted it found nothing, every
     // sign-in minted a fresh id, and the arrival row was left behind as a
     // stray anonymous session that nobody would ever present again. It looked
     // like the upgrade simply did not work, which is what it was.
@@ -4963,6 +5805,12 @@ class Authn {
     // is not `sts_session`.
     const current = extra.request ? this.cookieSession(extra.request,
                                                        SESSION_COOKIE) : null;
+    if (current && current.error) {
+      extra.refusedWith = 'STS-AUTHN-0338';
+      log.debug("Leaving Authn.startSessionHere(). The session could not " +
+                "be read.");
+      return null;
+    }
     const reauthenticating = !!(current && !extra.key &&
       extra.authenticated !== false &&
       current.session.chosen !== false &&
@@ -4971,6 +5819,10 @@ class Authn {
       !this.sessionEnded(current.session) &&
       current.session.user && this.sameIdentity(current.session.user,
                                                 username));
+    // Ended after admission, below. Empty when this browser had no session,
+    // when that session is the arrival being upgraded, or when this is the
+    // same person re-authenticating.
+    let replaceId = '';
     if (extra.request) {
       const previous = current ? current.id : '';
       // AN ARRIVAL SESSION IS NOT ENDED, it is upgraded — ending it would write
@@ -4979,12 +5831,7 @@ class Authn {
       // person is re-authenticating on.
       if (previous && !reauthenticating &&
           !(arrived && arrived.id === previous)) {
-        log.info('authn: ending the session this browser was already on (' +
-                 previous + ') because a new sign-in is replacing it. Every ' +
-                 'sign-in is a privilege change and the old session must not ' +
-                 'outlive it.');
-        this.dropSession(previous, 'a new sign-in in the same browser', true,
-                         extra.request, 'user');
+        replaceId = previous;
       }
     }
     // -------------------------------------------------------------------------
@@ -5226,12 +6073,35 @@ class Authn {
     if (extra.key) {
       const wanted = String(extra.key);
       let found = null;
-      sessions.forEach(function (held) {
+      // The realm Map, not the facade. While the window is on the facade
+      // pages the index, and this scan is the unflushed rows plus the
+      // credential_key query below. The fingerprint stays in the clear:
+      // it is not a digest.
+      sessions.realmMap().forEach(function (held) {
         if (!found && held.credentialKey === wanted &&
             !self.sessionEnded(held)) {
           found = held;
         }
       });
+      if (!found && this.windowOn()) {
+        const realmId = this.deps.realms.currentId();
+        const keys = sessionWindow.indexKeys('session.credential',
+                                              [realmId, wanted]);
+        if (keys === null) {
+          extra.refusedWith = 'STS-AUTHN-0338';
+          log.debug("Leaving Authn.startSessionHere(). The credential " +
+                    "could not be read.");
+          return null;
+        }
+        for (let i = 0; i < keys.length && !found; i++) {
+          const loaded = sessionWindow.loadByDigest(realmId, keys[i]);
+          if (loaded.ok && loaded.session &&
+              loaded.session.credentialKey === wanted &&
+              !self.sessionEnded(loaded.session)) {
+            found = loaded.session;
+          }
+        }
+      }
       if (found) {
         found.expires = Date.now() + this.sessionLifetimeMs();
         found.lastSeenAt = Date.now();
@@ -5243,7 +6113,11 @@ class Authn {
         // other process went on holding the OLD expiry and ended a session a
         // SCIM client or SPIRE agent was actively using.
         // `touchArrivalSession()` records the same lesson one function up.
-        sessions.set(found.id, found);
+        // While the window is on, touches inside one second stay pinned.
+        if (!(this.windowOn() && sessionWindow.holdTouch(
+            this.deps.realms.currentId(), found.id, found))) {
+          sessions.set(found.id, found);
+        }
         // The name may sharpen between calls — a scheme that authenticated
         // anonymously first and by name later — and the creation instant
         // deliberately does not move.
@@ -5419,6 +6293,9 @@ class Authn {
       // through here. An upgraded row that left this false would be a sign-in
       // that sessionOf() went on hiding, which is a sign-in that does not take.
       chosen: true,
+      // Frozen here. A later rename does not rewrite it, and the per-subject
+      // cap groups on this rather than on the username arrivals share.
+      subjectId: this.subjectIdOf(user),
       // Preserved across an upgrade so that "when did this browser arrive" and
       // "when did they authenticate" stay two different facts.
       startedAt: arrived ? arrived.startedAt : Date.now(),
@@ -5467,6 +6344,51 @@ class Authn {
       risk: risk
     };
     this.bindPartnerSession(session, extra);
+    // Room before the handle, so a refused row is not stored and has no
+    // cookie. An upgraded arrival keeps its id and is not an insert: the
+    // realm cap does not refuse it, and the subject cap ends one other
+    // own row.
+    const store = sessions.realmMap();
+    let upgrading = false;
+    if (arrived) {
+      if (this.windowOn()) {
+        const held = sessionWindow.has(this.deps.realms.currentId(),
+                                        sessionId);
+        if (held === 'error') {
+          extra.refusedWith = 'STS-AUTHN-0338';
+          log.debug("Leaving Authn.startSessionHere(). The session could " +
+                    "not be read.");
+          return null;
+        }
+        upgrading = held === 'present';
+      } else {
+        upgrading = store.has(sessionId);
+      }
+    }
+    if (upgrading) {
+      const ended = this.endOneOwn(store, session, session.id);
+      if (ended === 'error') {
+        extra.refusedWith = 'STS-AUTHN-0338';
+        log.debug("Leaving Authn.startSessionHere(). The session index " +
+                  "could not be read.");
+        return null;
+      }
+    } else {
+      const room = this.makeRoomForSession(store, session, replaceId);
+      if (room === 'error') {
+        extra.refusedWith = 'STS-AUTHN-0338';
+        log.debug("Leaving Authn.startSessionHere(). The session store " +
+                  "could not be read.");
+        return null;
+      }
+      if (!room) {
+        this.auditCapRefusal(username, via || 'OAuth 2.0 / OIDC');
+        extra.refusedWith = 'STS-AUTHN-0337';
+        log.debug("Leaving Authn.startSessionHere(). The realm is at " +
+                  "authn.maxSessions.");
+        return null;
+      }
+    }
     // A FRESH HANDLE, EVEN FOR AN UPGRADED ARRIVAL ROW. The arrival session's
     // id survives the upgrade on purpose — it is the `sid` a flow was
     // correlated by from its first request — and until 2026-09-14 so did its
@@ -5475,9 +6397,30 @@ class Authn {
     // fixation, whatever the randomness of the id. Rotating the handle keeps
     // the correlation and ends the fixation.
     const cookieValue = this.mintSessionHandle(session);
-    // An upgraded arrival row keeps its id and is not an insert.
-    this.makeRoomForSession(sessions.realmMap(), sessionId);
     sessions.set(sessionId, session);
+    // Only now: a refusal above left this browser's session in place.
+    // `replaceId` counted as leaving, so a realm exactly at the cap still
+    // admitted the switch. The via string is what CAEP's reason_admin says.
+    let replacing = null;
+    if (replaceId && replaceId !== sessionId) {
+      if (this.windowOn()) {
+        const read = sessionWindow.get(this.deps.realms.currentId(),
+                                        replaceId);
+        if (read.ok) {
+          replacing = read.session;
+        }
+      } else if (sessions.get(replaceId)) {
+        replacing = sessions.get(replaceId);
+      }
+    }
+    if (replacing) {
+      log.info('authn: ending the session this browser was already on (' +
+               replaceId + ') because a new sign-in is replacing it. Every ' +
+               'sign-in is a privilege change and the old session must not ' +
+               'outlive it.');
+      this.dropSession(replaceId, 'a new sign-in in the same browser', true,
+                       extra.request, 'user');
+    }
     // The sweep that ends it if nobody signs it out is the scheduler job
     // `authn.session-expiry` (see the header); nothing is armed here.
     // `Secure` when — and only when — this port is TLS (global.https, which RFC
@@ -5682,8 +6625,29 @@ class Authn {
     log.debug("Entering Authn.dropSession(). id=" + (id || '(none)'));
     // WHO ENDED IT, SAID BY THE CALLER (#242). See initiatorOf().
     const entity = this.initiatorOf(initiatingEntity, via);
-    const session = id ? sessions.get(id) : null;
-    if (id) sessions.delete(id);
+    // The read decides. A failure is not absence: nothing is deleted and
+    // STS-AUTHN-0011 is not audited. Absence is still the no-session path.
+    let session = null;
+    let deleteAfter = false;
+    if (id && this.windowOn()) {
+      const read = sessionWindow.get(realms.currentId(), String(id));
+      if (!read.ok && read.error) {
+        log.debug("Leaving Authn.dropSession(). The session could not " +
+                  "be read.");
+        return null;
+      }
+      if (read.ok) {
+        session = read.session;
+        deleteAfter = true;
+      } else {
+        sessions.delete(id);
+      }
+    } else {
+      session = id ? sessions.get(id) : null;
+      if (id) {
+        sessions.delete(id);
+      }
+    }
     // -------------------------------------------------------------------------
     // AND EVERY SESSION DERIVED FROM IT (2026-09-06).
     //
@@ -5726,10 +6690,24 @@ class Authn {
     // live in the realm the console session's person signed in through, which
     // is the console session's own `derivedFromRealm`, named here.
     if (id && session) {
-      this.derivedFrom(id, undefined,
+      const children = this.derivedFrom(id, undefined,
                        session.rpSurface === 'admin'
-                         ? session.derivedFromRealm : '')
-        .forEach(function (child) {
+                         ? session.derivedFromRealm : '');
+      // Null is a children read that failed, already recorded as
+      // STS-AUTHN-0338. The parent stays: deleting it would leave a
+      // committed child signed in, with no cascade and no logout.
+      if (children == null) {
+        log.debug("Leaving Authn.dropSession(). The derived sessions " +
+                  "could not be read.");
+        return null;
+      }
+      // forEach cannot return from dropSession, and realms.run's return
+      // is the child's. Null means that child's own children could not
+      // be read (STS-AUTHN-0338 is already recorded there). The sign-on
+      // is not revoked, deleted, or audited. A child already ended in
+      // this loop stays ended.
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
         log.info('authn: ending the ' + (child.session.rpSurface || 'relying ' +
             'party') +
                  ' session ' + child.id + ' (realm ' + child.realm + ') with ' +
@@ -5738,18 +6716,25 @@ class Authn {
           log.debug("Entering endChild().");
           // The child ends for the parent's reason and by the parent's
           // hand, so it says the parent's initiating entity.
-          self.dropSession(child.id,
+          const ended = self.dropSession(child.id,
                            'the end of the sign-on session it was derived ' +
                            'from (' + (via || 'an unknown door') + ')', false,
                            req, entity);
           log.debug("Leaving endChild().");
+          return ended;
         };
+        let ended = null;
         if (child.realm && child.realm !== realms.currentId()) {
-          realms.run(realms.get(child.realm), endChild);
+          ended = realms.run(realms.get(child.realm), endChild);
         } else {
-          endChild();
+          ended = endChild();
         }
-      });
+        if (ended == null) {
+          log.debug("Leaving Authn.dropSession(). A derived session " +
+                    "could not be ended.");
+          return null;
+        }
+      }
     }
     // RFC 9700 section 2.2.2: an authorization server MAY revoke refresh tokens
     // after a security event, and the section names LOGOUT as one; OpenID
@@ -5848,6 +6833,9 @@ class Authn {
     // hold even where this claim cannot be asked. Required LAZILY, as
     // `frontchannel_logout.ts` requires this module: a library loaded long
     // before any session ends. An EXPIRY sends too, from expireSession().
+    if (deleteAfter && id) {
+      sessions.delete(id);
+    }
     if (session) {
       const planned = this.planBackchannel(session, via || 'a sign-out',
                                            'sign-out');
@@ -5957,20 +6945,255 @@ class Authn {
    * The comparison is on the username exactly as typed.
    *
    * @param username - the username
-   * @returns the sessions
+   * @returns the sessions, or null when the index could not be read.
+   *   Null is not an empty list and not the realm map.
    */
   sessionsOf(username) {
-    const { log } = this.deps;
+    const { log, realms, errorCodes } = this.deps;
     log.debug("Entering Authn.sessionsOf(). username=" + username);
     const wanted = String(username || '');
     const out = [];
-    sessions.forEach(function (session) {
-      if (((session.user && session.user.username) || '') === wanted) out.push(
-          session);
+    const seen: Record<string, boolean> = {};
+    // The username as typed. Not subject_key: a urn:uuid subject digests
+    // the sub, and not holderKeyOf, which moves when the person is renamed.
+    const take = function (session) {
+      log.debug("Entering take().");
+      if (!session || seen[session.id]) {
+        log.debug("Leaving take().");
+        return;
+      }
+      const name = (session.user && session.user.username) || '';
+      if (name !== wanted) {
+        log.debug("Leaving take().");
+        return;
+      }
+      seen[session.id] = true;
+      out.push(session);
+      log.debug("Leaving take().");
+    };
+    if (this.windowOn()) {
+      const realmId = realms.currentId();
+      const nameKey = keystore.keyedDigest('session-username', wanted);
+      // A missing digest is not an empty username. The filter cannot run,
+      // so the page is the walk. Returning nobody would hide the row.
+      let page = false;
+      if (!nameKey) {
+        log.error(errorCodes.tag('STS-AUTHN-0338') +
+                  'authn: a session could not be read: the username ' +
+                  'digest is missing.');
+        page = true;
+      } else {
+        const keys = sessionWindow.indexKeys('session.username',
+                                              [realmId, nameKey]);
+        // null is a failed read. It is not a miss, and the realm map is
+        // not every session of this username. Paging does not repair it.
+        if (keys === null) {
+          log.error(errorCodes.tag('STS-AUTHN-0338') +
+                    'authn: a session could not be read: the username ' +
+                    'index.');
+          log.debug("Leaving Authn.sessionsOf(). Unread.");
+          return null;
+        }
+        if (!keys.length) {
+          page = true;
+        } else {
+          for (let i = 0; i < keys.length; i++) {
+            const loaded = sessionWindow.loadByDigest(realmId, keys[i]);
+            if (!loaded.ok && loaded.error) {
+              log.error(errorCodes.tag('STS-AUTHN-0338') +
+                        'authn: a session could not be read: a session ' +
+                        'of ' + wanted + ' would not open.');
+              log.debug("Leaving Authn.sessionsOf(). Unread.");
+              return null;
+            }
+            if (loaded.ok && loaded.session) {
+              take(loaded.session);
+            }
+          }
+        }
+      }
+      if (page) {
+        const rows = this.indexedSessions(realmId, null);
+        if (!rows) {
+          log.error(errorCodes.tag('STS-AUTHN-0338') +
+                    'authn: a session could not be read: the page for ' +
+                    wanted + '.');
+          log.debug("Leaving Authn.sessionsOf(). Unread.");
+          return null;
+        }
+        rows.forEach(function (row) {
+          take(row.session);
+        });
+      }
+      // Unflushed rows are not in the index yet. realmMap is those rows,
+      // not the facade, whose forEach pages the index. Only after a read
+      // that returned a key list.
+      sessions.realmMap().forEach(function (session) {
+        take(session);
+      });
+    } else {
+      sessions.forEach(function (session) {
+        take(session);
+      });
+    }
+    out.sort(function (a, b) {
+      return (b.authTime || 0) - (a.authTime || 0);
     });
-    out.sort(function (a, b) { return (b.authTime || 0) - (a.authTime || 0); });
     log.debug("Leaving Authn.sessionsOf(). " + out.length + " session(s).");
     return out;
+  }
+
+  // Sessions whose sealed fedPartnerSession names this relationship.
+  // The column narrows the page; the body is still what the caller reads.
+  // A second store of the partner object would be a second answer.
+  /**
+   * Lists sessions whose partner relationship is the one named.
+   *
+   * While the window is on, the index selects `partner_relationship` and
+   * the sealed body is what the caller compares. While it is off, the walk
+   * is the realm map.
+   *
+   * @param relationship - the federation relationship id
+   * @returns the sessions, ended ones included, or null when the index
+   *   could not be read. Null is not an empty list and not the realm map.
+   */
+  sessionsForRelationship(relationship) {
+    const { log, realms, errorCodes } = this.deps;
+    log.debug("Entering Authn.sessionsForRelationship(). " + relationship);
+    const wanted = String(relationship || '');
+    const out = [];
+    const seen: Record<string, boolean> = {};
+    const take = function (session) {
+      log.debug("Entering take().");
+      if (!session || !session.id || seen[session.id]) {
+        log.debug("Leaving take().");
+        return;
+      }
+      const held = session.fedPartnerSession;
+      if (!held || String(held.relationship || '') !== wanted) {
+        log.debug("Leaving take().");
+        return;
+      }
+      seen[session.id] = true;
+      out.push(session);
+      log.debug("Leaving take().");
+    };
+    if (this.windowOn()) {
+      const realmId = realms.currentId();
+      const keys = sessionWindow.indexKeys('session.partner',
+                                            [realmId, wanted]);
+      // null is a failed read. The unflushed map is not the relationship.
+      if (keys === null) {
+        log.error(errorCodes.tag('STS-AUTHN-0338') +
+                  'authn: a session could not be read: the partner index ' +
+                  'for ' + wanted + '.');
+        log.debug("Leaving Authn.sessionsForRelationship(). Unread.");
+        return null;
+      }
+      for (let i = 0; i < keys.length; i++) {
+        const loaded = sessionWindow.loadByDigest(realmId, keys[i]);
+        if (!loaded.ok && loaded.error) {
+          log.error(errorCodes.tag('STS-AUTHN-0338') +
+                    'authn: a session could not be read: a session of ' +
+                    wanted + ' would not open.');
+          log.debug("Leaving Authn.sessionsForRelationship(). Unread.");
+          return null;
+        }
+        if (loaded.ok && loaded.session) {
+          take(loaded.session);
+        }
+      }
+      // A query that returned a list still adds rows not flushed yet.
+      sessions.realmMap().forEach(function (session) {
+        take(session);
+      });
+    } else {
+      sessions.forEach(function (session) {
+        take(session);
+      });
+    }
+    log.debug("Leaving Authn.sessionsForRelationship(). " + out.length);
+    return out;
+  }
+
+  // The index plus rows this process has not flushed. Null when the index
+  // could not be read or a listed body would not open. The cache is not
+  // merged into that failure: a partial page is not the whole store.
+  private indexedSessions(realmId, store) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.indexedSessions().");
+    const keys = sessionWindow.keysOf(realmId);
+    if (keys === null) {
+      log.debug("Leaving Authn.indexedSessions(). Unread.");
+      return null;
+    }
+    const out = [];
+    const seen: Record<string, boolean> = {};
+    for (let i = 0; i < keys.length; i++) {
+      const loaded = sessionWindow.loadByDigest(realmId, keys[i]);
+      if (!loaded.ok && loaded.error) {
+        log.debug("Leaving Authn.indexedSessions(). Unread.");
+        return null;
+      }
+      if (!loaded.ok || !loaded.session || !loaded.session.id) {
+        continue;
+      }
+      const id = String(loaded.session.id);
+      if (seen[id]) {
+        continue;
+      }
+      seen[id] = true;
+      out.push({ id: id, session: loaded.session });
+    }
+    if (store) {
+      store.forEach(function (session, id) {
+        if (!session || seen[id]) {
+          return;
+        }
+        seen[id] = true;
+        out.push({ id: String(id), session: session });
+      });
+    }
+    log.debug("Leaving Authn.indexedSessions(). " + out.length + ".");
+    return out;
+  }
+
+  // A forEach of the facade while the window is on. The realm Map then
+  // holds unflushed rows only, so a caller that still walks it would see
+  // who is cached. Paging the index is the walk. A failed page calls
+  // nothing: the cache is not a stand-in for the rows that could not be
+  // read, and it is not a reason to end some other row.
+  /**
+   * Walks every session of the ambient realm.
+   *
+   * While the window is off this is the realm map. While it is on it is
+   * the index, plus rows not yet flushed.
+   *
+   * @param fn - `(session, id)`
+   * @param thisArg - the value of `this` inside `fn`
+   */
+  forEachSession(fn, thisArg?) {
+    const { log, realms } = this.deps;
+    log.debug("Entering Authn.forEachSession().");
+    if (typeof fn !== 'function') {
+      log.debug("Leaving Authn.forEachSession().");
+      return;
+    }
+    if (!this.windowOn()) {
+      sessions.realmMap().forEach(fn, thisArg);
+      log.debug("Leaving Authn.forEachSession().");
+      return;
+    }
+    const rows = this.indexedSessions(realms.currentId(),
+                                       sessions.realmMap());
+    if (!rows) {
+      log.debug("Leaving Authn.forEachSession(). Unread.");
+      return;
+    }
+    rows.forEach(function (row) {
+      fn.call(thisArg, row.session, row.id);
+    });
+    log.debug("Leaving Authn.forEachSession().");
   }
 
   // THE SESSIONS OF THIS REALM THAT `test` ACCEPTS (#189), without the cookie
@@ -5978,23 +7201,41 @@ class Authn {
   // about a subject by the NameID a service provider was GIVEN — a transient
   // or an emailAddress NameID is not the username, so the question is which
   // live session gave that service provider that NameID, and nothing but the
-  // session holds the answer.
+  // session holds the answer. There is no NameID column, so the page is
+  // every sealed body.
   /**
    * Lists the ambient realm's sessions a predicate accepts, without the cookie
    * and without expiring them.
    *
    * @param test - the predicate
-   * @returns the matching sessions
+   * @returns the matching sessions, or null when the page could not be
+   *   read. Null is not an empty list, and the cache is not walked.
    */
   sessionsMatching(test) {
-    const { log } = this.deps;
+    const { log, realms, errorCodes } = this.deps;
     log.debug("Entering Authn.sessionsMatching().");
     const out = [];
-    sessions.forEach(function (session) {
-      if (test(session)) {
-        out.push(session);
+    if (this.windowOn()) {
+      const rows = this.indexedSessions(realms.currentId(),
+                                         sessions.realmMap());
+      if (!rows) {
+        log.error(errorCodes.tag('STS-AUTHN-0338') +
+                  'authn: a session could not be read: the page.');
+        log.debug("Leaving Authn.sessionsMatching(). Unread.");
+        return null;
       }
-    });
+      rows.forEach(function (row) {
+        if (test(row.session)) {
+          out.push(row.session);
+        }
+      });
+    } else {
+      sessions.forEach(function (session) {
+        if (test(session)) {
+          out.push(session);
+        }
+      });
+    }
     log.debug("Leaving Authn.sessionsMatching(). " + out.length +
               " session(s).");
     return out;
@@ -6010,10 +7251,16 @@ class Authn {
    * @returns the session, or null
    */
   sessionById(id) {
-    const { log } = this.deps;
+    const { log, realms } = this.deps;
     log.debug("Entering Authn.sessionById().");
+    const key = String(id || '');
+    if (this.windowOn()) {
+      const read = sessionWindow.get(realms.currentId(), key);
+      log.debug("Leaving Authn.sessionById().");
+      return read.ok ? read.session : null;
+    }
     log.debug("Leaving Authn.sessionById().");
-    return sessions.get(String(id || '')) || null;
+    return sessions.get(key) || null;
   }
 
   // End one session named by its id. The protocol-independent logout's door,
@@ -6061,21 +7308,34 @@ class Authn {
                   realms.get(realms.DEFAULT_ID);
     const store = sessions.realmMap(realm.id);
     const ids = [];
-    if (store) {
+    const take = function (session, id) {
+      log.debug("Entering take().");
+      if (!session) {
+        log.debug("Leaving take().");
+        return;
+      }
+      // A row nobody signed in to (an arrival session, the anonymous
+      // principal) is ended too, and answers no account: a caller that
+      // tells RISC about the accounts must not tell it about `anonymous`
+      // (#242).
+      const somebody = session.chosen !== false &&
+                       session.authenticated !== false;
+      ids.push({ id: id,
+                 username: somebody
+                   ? String((session.user && session.user.username) || '')
+                   : '' });
+      log.debug("Leaving take().");
+    };
+    if (this.windowOn()) {
+      const rows = this.indexedSessions(realm.id, store);
+      if (rows) {
+        rows.forEach(function (row) {
+          take(row.session, row.id);
+        });
+      }
+    } else if (store) {
       store.forEach(function (session, id) {
-        if (session) {
-          // A row nobody signed in to (an arrival session, the anonymous
-          // principal) is ended too, and answers no account: a caller that
-          // tells RISC about the accounts must not tell it about `anonymous`
-          // (#242).
-          const somebody = session.chosen !== false &&
-                           session.authenticated !== false;
-          ids.push({ id: id,
-                     username: somebody
-                       ? String((session.user && session.user.username) ||
-                                '')
-                       : '' });
-        }
+        take(session, id);
       });
     }
     const ended = realms.run(realm, function () {
@@ -6253,6 +7513,10 @@ class Authn {
     // sign a person out from a forged cookie. A cookie that names nothing is
     // still recorded as a refused sign-out, by dropSession() below.
     const found = this.cookieSession(req, SESSION_COOKIE);
+    if (found && found.error) {
+      log.debug("Leaving Authn.endSession(). The session could not be read.");
+      return null;
+    }
     const id = found ? found.id : '';
     const presented = !!this.cookiesOf(req)[SESSION_COOKIE];
     const session = this.dropSession(id,
@@ -7273,6 +8537,16 @@ class Authn {
       return false;
     }
     const said = detail || {};
+    if (said.refusedWith === 'STS-AUTHN-0338') {
+      if (res && !res.headersSent) {
+        this.refuseUnread(res);
+      } else {
+        errorCodes.mark(res, 'STS-AUTHN-0338');
+      }
+      log.debug("Leaving Authn.refusedSession(). The session could not " +
+                "be read.");
+      return true;
+    }
     // A REMEMBERED BROWSER'S COOKIE THAT CAUSED OR SHARED THE REFUSAL (#265)
     // — a copy, somebody else's, or a device since marked compromised — is
     // cleared, so the next attempt from this browser is not refused on it
@@ -11785,7 +13059,7 @@ class Authn {
     const { log } = this.deps;
     log.debug("Entering Authn.auditActorOf().");
     const found = this.cookieSession(req, SESSION_COOKIE);
-    const session = found ? found.session : null;
+    const session = found && !found.error ? found.session : null;
     if (!session) {
       log.debug("Leaving Authn.auditActorOf().");
       return '';
@@ -13409,6 +14683,15 @@ class Authn {
     log.debug("Entering Authn.registerRoutes().");
 
     app.use((req, res, next) => {
+      // A session read that failed is not a missing cookie. Nothing below
+      // may mint a replacement arrival, and the cookie stays.
+      if (this.windowOn()) {
+        const found = this.cookieSession(req, SESSION_COOKIE);
+        if (found && found.error) {
+          this.refuseUnread(res);
+          return;
+        }
+      }
       // ---------------------------------------------------------------------
       // THE SLIDE RUNS ON EVERY REQUEST; THE MINT ONLY ON A FRONT DOOR.
       //
@@ -13720,6 +15003,15 @@ const slot = new InstanceSlot<Authn>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+// The facade is a plain object the checker sees as a Map, so forEach is
+// typed read-only. Replacing it is what a caller that still walks
+// authn.sessions does while the window is on: the realm Map is unflushed
+// rows, and the walk has to page the index. A resident walk uses
+// realmMap(), which is the Map and not this function.
+(sessions as any).forEach = function (fn, thisArg) {
+  return slot.get().forEachSession(fn, thisArg);
+};
+
 // ---------------------------------------------------------------------------
 // THE SESSION-EXPIRY SWEEP, AS A SCHEDULER JOB (#49, 2026-09-22) — see the
 // header's *THE SWEEP IS A SCHEDULER JOB*. Registered here, at load, and run
@@ -13731,8 +15023,9 @@ scheduler.register({
   id: SESSION_EXPIRY_JOB,
   title: 'Session expiry',
   describe: 'Ends every sign-on session whose lifetime or idle timeout has ' +
-            'passed, in every realm: an audit row, CAEP session-revoked and ' +
-            'the back-channel Logout Tokens, once for the whole cluster.',
+            'passed, and, in each realm, at most that realm\'s ' +
+            'authn.sessionShedPerSweep of one subject\'s own surplus ' +
+            'sessions.',
   owner: 'authn/authn.ts',
   everySetting: SESSION_SWEEP_SETTING,
   everySettingUnit: 's',
@@ -13891,6 +15184,9 @@ export = {
   // somewhere else would be a sign-out that revoked nothing and logged nothing,
   // and it would look exactly like this one from the outside.
   sessionsOf: slot.forward('sessionsOf'),
+  // A partner sign-out's question: which sessions carry this relationship.
+  // The sealed fedPartnerSession is still the object the caller matches.
+  sessionsForRelationship: slot.forward('sessionsForRelationship'),
   // The SAML 2.0 attribute authority's question (#189): which live session
   // gave a service provider a NameID.
   sessionsMatching: slot.forward('sessionsMatching'),

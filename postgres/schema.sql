@@ -603,6 +603,38 @@ ALTER TABLE sts_minted SET (fillfactor=80);
 CREATE INDEX IF NOT EXISTS sts_minted_expires ON sts_minted (expires_at) WHERE expires_at IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
+-- THE SESSION INDEX (schema version 21, #350). Columns of a live
+-- `authn.sessions` row, written in the same transaction as the sealed body.
+-- Not columns of `sts_minted`: `expires_at` there stays NULL for a session,
+-- so the generic expiry purge cannot end one. `key` is the same digest
+-- `sts_minted.key` already uses. A null digest writes no row.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sts_sessions (
+  realm                text    NOT NULL,
+  key                  text    NOT NULL,
+  expires_at           bigint,
+  last_seen_at         bigint  NOT NULL,
+  started_at           bigint  NOT NULL,
+  subject_key          text    NOT NULL DEFAULT '',
+  username_key         text    NOT NULL DEFAULT '',
+  chosen               boolean NOT NULL,
+  authenticated        boolean NOT NULL,
+  kind                 text    NOT NULL,
+  rp_surface           text    NOT NULL DEFAULT '',
+  parent_key           text    NOT NULL DEFAULT '',
+  backs_console        boolean NOT NULL DEFAULT false,
+  credential_key       text    NOT NULL DEFAULT '',
+  partner_relationship text    NOT NULL DEFAULT '',
+  PRIMARY KEY (realm, key));
+
+CREATE INDEX IF NOT EXISTS sts_sessions_subject ON sts_sessions (realm, subject_key, last_seen_at) WHERE chosen AND subject_key <> '';
+CREATE INDEX IF NOT EXISTS sts_sessions_username ON sts_sessions (realm, username_key) WHERE username_key <> '';
+CREATE INDEX IF NOT EXISTS sts_sessions_expires ON sts_sessions (realm, expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS sts_sessions_parent ON sts_sessions (realm, parent_key) WHERE parent_key <> '';
+CREATE INDEX IF NOT EXISTS sts_sessions_credential ON sts_sessions (realm, credential_key) WHERE credential_key <> '';
+CREATE INDEX IF NOT EXISTS sts_sessions_partner ON sts_sessions (realm, partner_relationship) WHERE partner_relationship <> '';
+
+-- ---------------------------------------------------------------------------
 -- THE CHANGE LOG (2026-09-06), which is what makes several processes against
 -- one store AGREE rather than merely coexist. Until this, two processes each
 -- held their own copy in memory and neither saw the other's writes.
@@ -1067,7 +1099,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (20) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (21) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

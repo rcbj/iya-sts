@@ -6037,11 +6037,12 @@ const CODES = [
       'again, because a second try could tell a receiver twice.',
     spec: 'none — logged' },
   { code: 'STS-AUTHN-0292',
-    summary: 'A realm held authn.maxSessions sign-on sessions when another ' +
-      'was created, so the least recently used session was ended to make ' +
-      'room (#345) — through the same end an expiry takes: its audit row ' +
-      '(which carries this code), CAEP session-revoked and back-channel ' +
-      'Logout Tokens.',
+    summary: 'A session was ended for capacity: the inserting subject\'s ' +
+      'own oldest countable row, one per insert, or one of at most ' +
+      'authn.sessionShedPerSweep such rows in a sweep (#345, #350). Never ' +
+      'another subject\'s row and never an arrival. The same end an expiry ' +
+      'takes — its audit row (which carries this code), CAEP ' +
+      'session-revoked and back-channel Logout Tokens.',
     spec: 'none — audited; logged at most once a minute per process' },
   { code: 'STS-AUTHN-0293',
     summary: 'The directory\'s credential census threw (#352), so the users ' +
@@ -6294,6 +6295,29 @@ const CODES = [
       'keys are rechecked only once a later write of them derives it ' +
       '(#615).',
     spec: '' },
+  { code: 'STS-AUTHN-0337',
+    summary: 'A new session was not admitted because the realm is at ' +
+      'authn.maxSessions and this insert did not free a row (#350). An ' +
+      'arrival continues with no cookie. A chosen sign-in is drawn again, ' +
+      'or the API answers its existing failure, and the audit action is ' +
+      'session.refuse.',
+    spec: 'none — the sign-in screen is drawn again, or no cookie is set; ' +
+      'the code is not in the body. Logged at most once a minute per ' +
+      'process, with a count' },
+  { code: 'STS-AUTHN-0338',
+    summary: 'A read of a sign-on session or of the session index failed. ' +
+      'It is not treated as absence. A browser is answered 503 with ' +
+      'Retry-After and keeps its cookie. An arrival is not minted. A ' +
+      'sign-out does not end the session and does not audit ' +
+      'STS-AUTHN-0011. The sweep skips that realm.',
+    spec: 'HTTP 503 with Retry-After; the body is ' +
+      '{ error: unavailable }. The code is not in the body' },
+  { code: 'STS-AUTHN-0339',
+    summary: 'authn.sessionWindow is on and minted persistence is not ' +
+      'enabled, or this process is one of several cells, or the minted ' +
+      'key is not a digest. The process does not start. auto in that ' +
+      'state is logged once and the full map stays.',
+    spec: 'none — the process does not start. Logged, never sent' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

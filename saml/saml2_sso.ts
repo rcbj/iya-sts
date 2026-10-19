@@ -3747,7 +3747,8 @@ class Saml2Sso {
   //     session here gave it (`saml2ServiceProviders[sp].nameId`) — which is
   //     what makes a transient NameID answerable at all, and what keeps a
   //     service provider from asking about anybody it names. Otherwise
-  //     Requester / UnknownPrincipal (STS-SAML-0094);
+  //     Requester / UnknownPrincipal (STS-SAML-0094). A failed read of
+  //     the sessions is Responder and STS-AUTHN-0338, not that miss;
   //   * the issuance policy is asked with that session, as a sign-in is;
   //   * what is released is what that sign-in released (`attributesFor()`),
   //     narrowed to the <saml:Attribute>s the query names when it names any.
@@ -3855,6 +3856,16 @@ class Saml2Sso {
         }
         return self.answerAttributeQuery(req, res, query, spEntityId,
                                          answer);
+      }).catch(function (e) {
+        log.error(errorCodes.tag('STS-AUTHN-0338') +
+                  'saml2: an AttributeQuery could not be placed because ' +
+                  'the sessions could not be read: ' +
+                  ((e && e.message) || e));
+        if (res.headersSent) {
+          return undefined;
+        }
+        return answer('STS-AUTHN-0338', STATUS_RESPONDER, '',
+                      'the sessions could not be read', '');
       });
   }
 
@@ -3883,6 +3894,13 @@ class Saml2Sso {
       return !!there && there.nameId === nameId &&
              !authnApi.sessionEnded(session);
     }) : [];
+    // Null is an unread page. UnknownPrincipal is a page that was read
+    // and held no live session for this NameID.
+    if (live == null) {
+      log.debug("Leaving Saml2Sso.answerAttributeQuery(). Unread.");
+      return answer('STS-AUTHN-0338', STATUS_RESPONDER, '',
+                    'the sessions could not be read', '');
+    }
     const session = live[0];
     if (!session) {
       log.info('saml2: an AttributeQuery from "' + spEntityId + '" named "' +

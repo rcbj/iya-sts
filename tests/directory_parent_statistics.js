@@ -189,7 +189,8 @@ function theStep(t) {
           /'n_distinct=100000'/.test(step.when),
           'A4. and is owed while the column\'s attoptions lack the value',
           step.when);
-  t.equal(postgres.SCHEMA_VERSION, 20, 'A5. schema version 20');
+  t.check(postgres.SCHEMA_VERSION >= 20,
+          'A5. schema version 20 or later (20 set n_distinct)');
   log.debug("Leaving theStep().");
 }
 

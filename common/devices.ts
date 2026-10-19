@@ -1823,14 +1823,22 @@ class Devices {
       return 0;
     }
     let ended = 0;
+    let unread = false;
     try {
-      const ids = authn.sessionsMatching(function (session: Json): boolean {
+      const matched = authn.sessionsMatching(function (session: Json):
+                                              boolean {
         return Array.isArray(session && session.events) &&
           session.events.some(function (e: Json): boolean {
             return !!(e && e.registeredDevice &&
                       e.registeredDevice.id === device.id);
           });
-      }).map(function (session: Json): string {
+      });
+      // Null is an unread page. Ending nobody and then logging that
+      // zero sessions were ended would say the walk finished.
+      if (matched == null) {
+        throw new Error('the sessions could not be read');
+      }
+      const ids = matched.map(function (session: Json): string {
         return String(session.id || '');
       }).filter(Boolean);
       ids.forEach(function (id: string): void {
@@ -1842,6 +1850,11 @@ class Devices {
       log.error(errorCodes.tag('STS-DEVICE-0031') + 'devices: the sessions ' +
                 'device ' + device.id + ' authenticated could not all be ' +
                 'ended: ' + ((e && e.message) || e));
+      unread = true;
+    }
+    if (unread) {
+      log.debug("Leaving Devices.endSessionsFrom(). Unread.");
+      return ended;
     }
     log.info('devices: ' + ended + ' sign-on session(s) device ' +
              device.id + ' authenticated were ended (' + via + ').');

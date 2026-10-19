@@ -112,6 +112,14 @@ interface SyncQueryOptions {
   backend?: string | null;
   // The thread's script; the compiled `sync_query_thread.js` beside this.
   threadFile?: string | null;
+  // Named statements the thread builds instead of directory_queries.js.
+  // Absent on the directory bridge, whose workerData stays what it was.
+  queries?: string | null;
+  // Codes for a bridge that is not the directory's. Absent, the three
+  // directory sentences and STS-LDAP-0130/0131/0132 stay byte for byte.
+  timeoutCode?: string | null;
+  refusedCode?: string | null;
+  threadErrorCode?: string | null;
 }
 
 // One answer from the thread.
@@ -142,6 +150,10 @@ class SyncQuery {
   private port: workerThreads.MessagePort | null = null;
   private counter: Int32Array | null = null;
   private nextId = 1;
+  // The statement_timeout the running thread was started with. A session
+  // bridge replaces the thread when the configured wait changes; the
+  // directory bridge keeps the thread it started.
+  private startedBound: number | null = null;
   private readonly figures: SyncQueryStats = {
     started: 0, questions: 0, timedOut: 0, failed: 0, waitedMs: 0,
     longestMs: 0, budgetRefused: 0
@@ -162,7 +174,11 @@ class SyncQuery {
     log.debug("Leaving SyncQuery.constructor().");
   }
 
-  // The bound as a usable number: at least 10 ms, at most a minute.
+  // The bound as a usable number, at most a minute. The directory bridge
+  // floors anything below 10 ms, including an unusable number, at 2000,
+  // which is what ldap.workerDirectoryTimeoutMs's minimum matches. A
+  // session bridge honors the configured wait, including 0: that wait
+  // does not block, and it is not replaced with 2000.
   private bound(): number {
     log.debug("Entering SyncQuery.bound().");
     let n = NaN;
@@ -173,31 +189,64 @@ class SyncQuery {
                 ((e && (e as Error).message) || e));
       n = NaN;
     }
+    let out = 2000;
+    if (isFinite(n)) {
+      const floor = this.options.timeoutCode ? 0 : 10;
+      if (n >= floor) {
+        out = Math.min(n, 60000);
+      }
+    }
     log.debug("Leaving SyncQuery.bound().");
-    return isFinite(n) && n >= 10 ? Math.min(n, 60000) : 2000;
+    return out;
   }
 
   // STARTS THE THREAD when there is none. Unref'd both ways, so a process
   // with nothing else to do can still exit.
   private ensureThread(): void {
     log.debug("Entering SyncQuery.ensureThread().");
-    if (this.worker && this.port && this.counter) {
+    const bound = this.bound();
+    // A session bridge's statement_timeout is copied into the thread once.
+    // When the configured wait changes, that copy would keep cancelling at
+    // the old bound, so the thread is replaced. The directory bridge does
+    // not: its tests change the bound on a live thread and still read the
+    // late answer from it.
+    if (this.worker && this.port && this.counter &&
+        (!this.options.timeoutCode || this.startedBound === bound)) {
       log.debug("Leaving SyncQuery.ensureThread(). Running.");
       return;
+    }
+    if (this.worker) {
+      const old = this.worker;
+      this.forget(old);
+      const gone = old.terminate();
+      Promise.resolve(gone).catch(function (e: any) {
+        log.debug("Caught in SyncQuery.ensureThread(): " +
+                  ((e && e.message) || e));
+      });
     }
     const shared = new SharedArrayBuffer(4);
     const channel = new workerThreads.MessageChannel();
     const file = this.options.threadFile ||
       path.join(__dirname, 'sync_query_thread.js');
+    // `queries` is added only when this bridge names its own module. The
+    // directory bridge's workerData is the four fields it has always posted.
+    // statement_timeout matches this call's bound, including 0. PostgreSQL
+    // treats 0 as no server cancel; the client has already returned.
+    const workerData: Record<string, unknown> = {
+      counter: shared, port: channel.port2,
+      connection: this.options.connection
+        ? Object.assign({}, this.options.connection,
+                        { statement_timeout: bound })
+        : null,
+      backend: this.options.backend || null
+    };
+    if (this.options.queries) {
+      workerData.queries = this.options.queries;
+    }
     const worker = new workerThreads.Worker(file, {
       // THE STATEMENT TIMEOUT IS THE BOUND, so a query this side has given
       // up on does not go on running in the database.
-      workerData: { counter: shared, port: channel.port2,
-                    connection: this.options.connection
-                      ? Object.assign({}, this.options.connection,
-                                      { statement_timeout: this.bound() })
-                      : null,
-                    backend: this.options.backend || null },
+      workerData: workerData,
       transferList: [channel.port2]
     });
     worker.unref();
@@ -205,8 +254,11 @@ class SyncQuery {
     worker.on('error', (err: Error) => {
       // Delivered by the event loop, so after the question it broke has
       // already timed out; the next question starts a new thread.
-      log.error(errorCodes.tag('STS-LDAP-0132') + 'sync_query: the ' +
-                'directory bridge\'s thread failed: ' + err.message +
+      const threadCode = this.options.threadErrorCode || 'STS-LDAP-0132';
+      const bridgeName = this.options.threadErrorCode
+        ? 'session bridge\'s' : 'directory bridge\'s';
+      log.error(errorCodes.tag(threadCode) + 'sync_query: the ' +
+                bridgeName + ' thread failed: ' + err.message +
                 '. The next question starts a new one.');
       this.forget(worker);
     });
@@ -217,6 +269,7 @@ class SyncQuery {
     this.worker = worker;
     this.port = channel.port1;
     this.counter = new Int32Array(shared);
+    this.startedBound = bound;
     this.figures.started += 1;
     log.debug("Leaving SyncQuery.ensureThread(). Started.");
   }
@@ -248,7 +301,15 @@ class SyncQuery {
    */
   query(name: string, args: unknown[]): unknown {
     log.debug("Entering SyncQuery.query(). " + name);
-    const held = directoryBudget.getStore();
+    // A SESSION BRIDGE (#350) IS OUTSIDE THE DIRECTORY BUDGET. The budget
+    // is a console request's wait on the DIRECTORY (#359); a session read
+    // is the cookie middleware's, ahead of every page, and a spent
+    // directory budget refusing it would turn a slow console page into
+    // STS-LDAP-0175 on the sign-on itself. Its own bound is
+    // authn.sessionWindowTimeoutMs, and it neither reads nor adds to the
+    // slot.
+    const held = this.options.timeoutCode
+      ? undefined : directoryBudget.getStore();
     // A closed slot belongs to a request that has finished: whatever is
     // asking now was started by it and outlived it, and has no budget.
     const slot = held && held.open ? held : undefined;
@@ -296,20 +357,23 @@ class SyncQuery {
     if (slot) {
       slot.waited += waited;
     }
+    const timeoutCode = this.options.timeoutCode || 'STS-LDAP-0130';
+    const refusedCode = this.options.refusedCode || 'STS-LDAP-0131';
+    const kind = this.options.timeoutCode ? 'session store' : 'directory';
     if (!answer) {
       this.figures.timedOut += 1;
       log.debug("Leaving SyncQuery.query(). Timed out.");
-      throw errorCodes.mark(new Error(errorCodes.tag('STS-LDAP-0130') +
-        'The directory could not be read: the store did not answer "' +
-        name + '" within ' + bound + ' ms.'), 'STS-LDAP-0130');
+      throw errorCodes.mark(new Error(errorCodes.tag(timeoutCode) +
+        'The ' + kind + ' could not be read: the store did not answer "' +
+        name + '" within ' + bound + ' ms.'), timeoutCode);
     }
     if (!answer.ok) {
       this.figures.failed += 1;
       const why = (answer.error && answer.error.message) || 'no reason given';
       log.debug("Leaving SyncQuery.query(). Refused.");
-      throw errorCodes.mark(new Error(errorCodes.tag('STS-LDAP-0131') +
-        'The directory could not be read: the store refused "' + name +
-        '": ' + why), 'STS-LDAP-0131');
+      throw errorCodes.mark(new Error(errorCodes.tag(refusedCode) +
+        'The ' + kind + ' could not be read: the store refused "' + name +
+        '": ' + why), refusedCode);
     }
     log.debug("Leaving SyncQuery.query().");
     return answer.value;
