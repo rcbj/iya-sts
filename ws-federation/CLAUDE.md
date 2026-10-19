@@ -296,7 +296,14 @@ byte for byte; the realm on the session's cleanup list; the `?wtrealm=` form;
 a `wsignin1.0` refused under `wsfedSpInitiatedSso` FALSE; and the risk
 step-up sent once and refused on a marked return — with the risk put on the
 session object directly rather than scored. It does not complete a stepped-up
-sign-in (the test person holds no second factor). Nothing else here is
+sign-in (the test person holds no second factor).
+The risk step-up runs there a second time in PRODUCT mode (#715).
+**`tests/vendored/sts_idp_initiated_wsfed.js` is the product-mode and
+cross-node coverage of the rest** — the same rules over the wire, in a
+throwaway realm in the run's mode, with relying parties and a person with a
+real password made through `/admin-api`, the realm setting set and reset
+there, and the relying party read back from `GET /logout`'s JSON inventory;
+the suite runs it in `memory`, `single-node` and `cluster`. Nothing else here is
 tested but by `tests/vendored/sts_saml11.js`, which posts a sign-in response to
 the test peer's relying party (the mock relying party that made the rest look
 covered was deleted, #592). What a test would add is the other negatives:
