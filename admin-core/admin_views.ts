@@ -1916,7 +1916,8 @@ class AdminViews {
    * @param req - the request
    * @returns the page's JSON, or a no-directory answer when none is loaded
    *   — or a PROMISE of the JSON where the page is asked of the store
-   *   asynchronously (`/admin/ldap/directory` in a windowed process, #616)
+   *   asynchronously (`/admin/ldap/directory`, #616, and
+   *   `/admin/ldap/devices`, #359, in a windowed process)
    */
   directoryPageJson(name, req) {
     const { log } = this.deps;
@@ -8473,6 +8474,21 @@ class AdminViews {
                                                 role: wantedRole || '',
                            per: req.query.per ? paging.perPage : '' };
     const knownKeys = this.knownUserKeys();
+    // A WINDOW PAGES THE STORE (#359). The list below is every person, which
+    // on a window is a synchronous walk. The page is asked of the store
+    // instead; this call stays so the in-memory directory still builds the
+    // union it always built.
+    const ldapMod = require('../ldap/ldap_server');
+    if (typeof ldapMod.directoryIsWindowed === 'function' &&
+        ldapMod.directoryIsWindowed()) {
+      log.debug("Leaving AdminViews.rbacListJson(). Windowed.");
+      return this.windowedRbacList(req, {
+        info: info, state: state, grants: grants,
+        wantedText: wantedText, needle: needle, wantedRole: wantedRole,
+        filtered: filtered, paging: paging, shown: shown,
+        filterParams: filterParams, knownKeys: knownKeys
+      });
+    }
     const candidates = rbac.candidates(Object.keys(knownKeys),
                                       realms.currentId());
 
@@ -8630,6 +8646,168 @@ class AdminViews {
           roleChoices: rbac.ROLES
       };
       }())
+    };
+  }
+
+  // Marks directory rows the console has seen authenticate. The key's own
+  // spelling is kept on a seen-only row; a directory row keeps the RDN.
+  private markSeen(rows: Array<{ username: string; seen: boolean }>,
+                   knownKeys: Record<string, any>):
+      Array<{ username: string; seen: boolean }> {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.markSeen().");
+    const keys = Object.keys(knownKeys || {});
+    rows.forEach(function (row) {
+      const hit = keys.filter(function (key) {
+        return String(key).toLowerCase() ===
+          String(row.username).toLowerCase();
+      })[0];
+      if (hit) {
+        row.seen = true;
+      }
+    });
+    log.debug("Leaving AdminViews.markSeen().");
+    return rows;
+  }
+
+  // `/admin/rbac` where the directory is a window (#359). The candidate
+  // list is one count and one page of the direct children of ou=users —
+  // the pane's slice is the same page when it asks the same offset — and
+  // a `person` not on that page is one lookup. People who have signed in
+  // and have no entry are not listed; a typed name can still be granted.
+  // The username is the lower-cased RDN.
+  private async windowedRbacList(req, built: {
+    info: any; state: any; grants: any[]; wantedText: string;
+    needle: string; wantedRole: string; filtered: any[]; paging: any;
+    shown: any[]; filterParams: Record<string, any>;
+    knownKeys: Record<string, any>;
+  }): Promise<any> {
+    const { log, rbac } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.windowedRbacList().");
+    const ldap = require('../ldap/ldap_server');
+    const personWanted = this.queryOne(req.query, 'personq').trim();
+    const census = await ldap.candidatePageAsync(0, 0, personWanted);
+    const matched = Number(census.matched) || 0;
+    const total = Number(census.total) || 0;
+    const candidateOptions = { name: 'candidates', defaultPer: CHOOSER_HITS,
+                               noun: 'people' };
+    let candidatePaging = this.pagingOf(req.query, matched,
+                                        candidateOptions);
+    const offsetAsked = parseInt(this.queryOne(req.query, 'personfrom'), 10);
+    if (this.queryOne(req.query, 'candidatesPage') === '' &&
+        isFinite(offsetAsked) &&
+        offsetAsked > 0 && offsetAsked < matched) {
+      const asPage = Object.assign({}, req.query, {
+        candidatesPage: String(Math.floor(offsetAsked /
+                                          candidatePaging.perPage) + 1)
+      });
+      candidatePaging = this.pagingOf(asPage, matched, candidateOptions);
+    }
+    let paneFrom = parseInt(this.queryOne(req.query, 'personfrom'), 10);
+    if (!isFinite(paneFrom) || paneFrom < 0 || paneFrom >= matched) {
+      paneFrom = 0;
+    }
+    const known = built.knownKeys;
+    const pageRows = this.markSeen((await ldap.candidatePageAsync(
+      candidatePaging.offset, candidatePaging.perPage, personWanted,
+      { total: total, matched: matched })).rows, known);
+    const same = candidatePaging.offset === paneFrom &&
+      candidatePaging.perPage === CHOOSER_HITS;
+    const paneRows = same ? pageRows : this.markSeen(
+      (await ldap.candidatePageAsync(paneFrom, CHOOSER_HITS, personWanted,
+        { total: total, matched: matched })).rows, known);
+    const personAsked = this.queryOne(req.query, 'person').trim();
+    let picked = null;
+    if (personAsked) {
+      const wanted = personAsked.toLowerCase();
+      picked = pageRows.filter(function (row) {
+        return row.username.toLowerCase() === wanted;
+      })[0] || paneRows.filter(function (row) {
+        return row.username.toLowerCase() === wanted;
+      })[0] || null;
+      if (!picked) {
+        const named = await ldap.candidateByNameAsync(personAsked);
+        if (named) {
+          this.markSeen([named], known);
+          picked = named;
+        } else {
+          const seenKey = Object.keys(known).filter(function (key) {
+            return String(key).toLowerCase() === wanted;
+          })[0];
+          if (seenKey) {
+            picked = { username: seenKey, inDirectory: false, seen: true };
+          }
+        }
+      }
+    }
+    const filterParams = built.filterParams;
+    filterParams.personq = personWanted;
+    filterParams.personfrom = this.queryOne(req.query, 'personfrom');
+    filterParams.person = personAsked;
+    const candidatePane = {
+      from: paneFrom, matched: matched, shown: paneRows
+    };
+    const knownHere: Record<string, boolean> = {};
+    built.shown.forEach(function (row) {
+      if (row.userKey && known[row.userKey]) {
+        knownHere[row.userKey] = true;
+      }
+    });
+    const pagingJson = this.pagingJson(built.paging);
+    const info = built.info;
+    const state = built.state;
+    const shown = built.shown;
+    const wantedText = built.wantedText;
+    const wantedRole = built.wantedRole;
+    const filtered = built.filtered;
+    const paging = built.paging;
+    log.debug("Leaving AdminViews.windowedRbacList(). " + matched +
+              " candidate(s) match.");
+    return {
+      info: info, state: state, grants: built.grants,
+      wantedText: wantedText, needle: built.needle,
+      wantedRole: wantedRole, filtered: filtered, paging: paging,
+      shown: shown, filterParams: filterParams, knownKeys: known,
+      candidates: pageRows, personWanted: personWanted,
+      personAsked: personAsked, picked: picked,
+      candidateMatched: pageRows,
+      json: {
+        enforced: info.enforced, openWhenEmpty: info.openWhenEmpty,
+        openToAnyone: info.openToAnyone,
+        closedToEveryone: info.closedToEveryone,
+        windowOpens: info.windowOpens,
+        bootstrapPasswordRequired: info.bootstrapPasswordRequired,
+        bootstrap: info.bootstrap,
+        available: info.available, groupsDn: info.groupsDn,
+        usersDn: info.usersDn,
+        grantCount: info.grantCount, matched: filtered.length,
+        shown: shown.length,
+        settings: configSettingsJson('/admin/rbac'),
+        filter: { q: wantedText || null, role: wantedRole || null },
+        page: paging.page, pages: paging.pages, perPage: paging.perPage,
+        firstRow: paging.firstRow, lastRow: paging.lastRow,
+        you: { username: state.username, roles: state.roles,
+               read: state.read, write: state.write,
+               viaEmptyRoster: state.open },
+        roles: info.roles.map(function (role) {
+          const out = Object.assign({}, role);
+          delete out.members;
+          delete out.claimed;
+          return out;
+        }),
+        grants: shown,
+        candidates: pageRows,
+        candidatesPaging: self.pagingJson(candidatePaging),
+        candidateSearch: {
+          q: personWanted || null, total: total, matched: matched
+        },
+        picked: personAsked
+          ? { asked: personAsked, candidate: picked }
+          : null,
+        paging: pagingJson, candidatePane: candidatePane,
+        known: knownHere, roleChoices: rbac.ROLES
+      }
     };
   }
 

@@ -90,6 +90,8 @@ interface Row {
   realm: string;
   key: string;
   entry: Entry;
+  // Set by `rdnPage`: the row's `rdn_value`, the page's order.
+  rdn?: string;
 }
 
 // One change the flush writes.
@@ -1704,6 +1706,80 @@ class DirectoryWindow {
               ' of ' + asked.length + '.');
     return { rows: out, more: asked.length >= limit, asked: asked.length,
              last: asked.length ? asked[asked.length - 1].key : '' };
+  }
+
+  /**
+   * One page of a parent's direct children in `rdn_value` order, asked
+   * asynchronously (#359). Nothing is put in the LRU. `asked` is how many
+   * rows the store answered, including ones this process has deleted;
+   * `last` is the last of those rows' RDN, so a cursor moves past a row
+   * this process no longer holds.
+   *
+   * @param realmId - the realm id
+   * @param parentKey - the parent's normalised DN
+   * @param afterRdn - the previous page's last RDN, or ''
+   * @param limit - the page size (at most 1,000)
+   * @param options - `offset` and `needle`
+   * @returns `{ rows, asked, last }`
+   */
+  async rdnPageAsync(realmId: string, parentKey: string, afterRdn: string,
+                     limit: number,
+                     options?: { offset?: number; needle?: string }):
+      Promise<{ rows: Array<{ key: string; entry: Entry; rdn: string }>;
+                asked: number; last: string }> {
+    log.debug("Entering DirectoryWindow.rdnPageAsync().");
+    const raw = (await this.askAsync('rdnPage',
+      [realmId, parentKey, String(afterRdn || ''), limit,
+       options || {}]) as Row[]) || [];
+    const resident = this.residentOf(realmId);
+    const out: Array<{ key: string; entry: Entry; rdn: string }> = [];
+    raw.forEach((row) => {
+      const entry = this.isWindowed(realmId, row.key)
+        ? this.heldOrRow(realmId, row)
+        : resident.get(row.key) || null;
+      if (entry) {
+        out.push({ key: row.key, entry: entry,
+                   rdn: String(row.rdn || '') });
+      }
+    });
+    const last = raw.length ? String(raw[raw.length - 1].rdn || '') : '';
+    log.debug("Leaving DirectoryWindow.rdnPageAsync(). " + out.length +
+              ' of ' + raw.length + '.');
+    return { rows: out, asked: raw.length, last: last };
+  }
+
+  /**
+   * One numbered page of a parent's direct children in key order, asked
+   * asynchronously (#359). `asked` counts rows the store answered before
+   * a delete made here dropped one, so a short page is the end of the
+   * container and not a page of deletions.
+   *
+   * @param realmId - the realm id
+   * @param parentKey - the parent's normalised DN
+   * @param offset - rows to skip
+   * @param limit - the page size (at most 1,000)
+   * @returns `{ rows, asked }`
+   */
+  async containerPageAsync(realmId: string, parentKey: string,
+                           offset: number, limit: number):
+      Promise<{ rows: Array<{ key: string; entry: Entry }>;
+                asked: number }> {
+    log.debug("Entering DirectoryWindow.containerPageAsync().");
+    const raw = (await this.askAsync('containerPage',
+      [realmId, parentKey, offset, limit]) as Row[]) || [];
+    const resident = this.residentOf(realmId);
+    const out: Array<{ key: string; entry: Entry }> = [];
+    raw.forEach((row) => {
+      const entry = this.isWindowed(realmId, row.key)
+        ? this.heldOrRow(realmId, row)
+        : resident.get(row.key) || null;
+      if (entry) {
+        out.push({ key: row.key, entry: entry });
+      }
+    });
+    log.debug("Leaving DirectoryWindow.containerPageAsync(). " +
+              out.length + ' of ' + raw.length + '.');
+    return { rows: out, asked: raw.length };
   }
 
   /**

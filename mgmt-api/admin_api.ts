@@ -3138,6 +3138,22 @@ class AdminApi {
           }, function (e) {
             log.debug("Caught in the management API cells endpoint: " +
                       ((e && e.message) || e));
+            const code = errorCodes.codeOf(e);
+            if (code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131' ||
+                code === 'STS-LDAP-0175') {
+              log.error(errorCodes.tag(code) +
+                        'admin-api: the cells page could not be read from ' +
+                        'the store: ' + ((e && e.message) || e));
+              res.setHeader('Retry-After', '5');
+              // STS-LDAP-0130, STS-LDAP-0131, STS-LDAP-0175.
+              errorCodes.mark(res, code);
+              self.sendJson(res, 503, { error: 'temporarily_unavailable',
+                error_description: 'The directory could not be read; try ' +
+                  'again shortly.' });
+              log.debug("Leaving the management API cells endpoint. " +
+                        "Unavailable.");
+              return;
+            }
             errorCodes.mark(res, 'STS-CELL-0191');
             self.sendJson(res, 500, { error: 'server_error',
                                       error_description: String(
@@ -3178,6 +3194,30 @@ class AdminApi {
                                       req.stsCellRelay.from) || ''))
             .then(function (view) {
               self.sendJson(res, 200, view);
+              log.debug("Leaving the management API cell people endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API cell people " +
+                        "endpoint: " + ((e && e.message) || e));
+              const code = errorCodes.codeOf(e);
+              if (code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131' ||
+                  code === 'STS-LDAP-0175') {
+                log.error(errorCodes.tag(code) +
+                          'admin-api: a cell\'s residents could not be ' +
+                          'read from the store: ' + ((e && e.message) || e));
+                res.setHeader('Retry-After', '5');
+                // STS-LDAP-0130, STS-LDAP-0131, STS-LDAP-0175.
+                errorCodes.mark(res, code);
+                self.sendJson(res, 503, { error: 'temporarily_unavailable',
+                  error_description: 'The directory could not be read; ' +
+                    'try again shortly.' });
+                log.debug("Leaving the management API cell people " +
+                          "endpoint. Unavailable.");
+                return;
+              }
+              errorCodes.mark(res, 'STS-CELL-0191');
+              self.sendJson(res, 500, { error: 'server_error',
+                                        error_description: String(
+                                          (e && e.message) || e) });
               log.debug("Leaving the management API cell people endpoint.");
             });
         } },
@@ -9404,7 +9444,11 @@ class AdminApi {
                      '`stsDeviceSecretHash` is withheld, as from every ' +
                      'LDAP read; every other value is shown as the ' +
                      'directory holds it. Read-only: the register is ' +
-                     'edited through `/admin-api/devices`.',
+                     'edited through `/admin-api/devices`.\n\nWHERE THE ' +
+                     'DIRECTORY IS A WINDOW (#359) the count and the page ' +
+                     'are asked of the store, and a `q` looks inside at ' +
+                     'most a bounded number of entries and says so in ' +
+                     '`search`.',
         mirrors: 'GET /admin/ldap/devices',
         parameters: [
           { name: 'q', in: 'query', required: false, schema: { type: 'string' },
@@ -9419,10 +9463,27 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API directory devices " +
                     "endpoint.");
-          self.sendJson(res, 200, adminViews.directoryPageJson('devices',
-                                                               req));
-          log.debug("Leaving the management API directory devices " +
-                    "endpoint.");
+          Promise.resolve(adminViews.directoryPageJson('devices', req))
+            .then(function (json) {
+              self.sendJson(res, 200, json);
+              log.debug("Leaving the management API directory devices " +
+                        "endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API directory devices " +
+                        "endpoint: " + ((e && e.message) || e));
+              log.error(errorCodes.tag(errorCodes.codeOf(e) ||
+                                       'STS-LDAP-0139') +
+                        'admin-api: the devices page could not be read ' +
+                        'from the store: ' + ((e && e.message) || e));
+              res.setHeader('Retry-After', '5');
+              errorCodes.mark(res, errorCodes.codeOf(e) ||
+                                   'STS-LDAP-0139');
+              self.sendJson(res, 503, { error: 'temporarily_unavailable',
+                error_description: 'The directory could not be read; try ' +
+                  'again shortly.' });
+              log.debug("Leaving the management API directory devices " +
+                        "endpoint. Unavailable.");
+            });
         } },
 
       // LAST OF THE EIGHT, and it is the one that answers about the SOCKETS
@@ -9547,10 +9608,15 @@ class AdminApi {
           { name: 'personq', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'Narrows `candidates` — the people a role could be ' +
-                         'granted to, from the directory and from who has ' +
-                         'signed in — to usernames containing this, ' +
-                         'case-insensitive. `candidateSearch` says how many ' +
-                         'candidates there are in all and how many matched.' },
+                         'granted to — to usernames containing this, ' +
+                         'case-insensitive. Where the directory is held in ' +
+                         'memory the list is the directory and who has ' +
+                         'signed in; where it is a window (#359) it is the ' +
+                         'direct children of ou=users, a page at a time, ' +
+                         'and a person who has signed in with no entry is ' +
+                         'not listed (a typed name can still be granted). ' +
+                         '`candidateSearch` says how many candidates there ' +
+                         'are in all and how many matched.' },
           { name: 'candidatesPage', in: 'query', required: false,
             schema: { type: 'integer', minimum: 1 },
             description: 'Which page of the matching `candidates`, answered ' +
@@ -9580,8 +9646,24 @@ class AdminApi {
           log.debug("Entering the management API admin roles endpoint.");
           // The layer, not the page: rbacView() built two tables and four forms
           // and this resource used none of them.
-          self.sendJson(res, 200, adminViews.rbacListJson(req).json);
-          log.debug("Leaving the management API admin roles endpoint.");
+          Promise.resolve(adminViews.rbacListJson(req)).then(function (body) {
+            self.sendJson(res, 200, body.json);
+            log.debug("Leaving the management API admin roles endpoint.");
+          }, function (e) {
+            log.debug("Caught in the management API admin roles endpoint: " +
+                      ((e && e.message) || e));
+            log.error(errorCodes.tag(errorCodes.codeOf(e) ||
+                                     'STS-LDAP-0139') +
+                      'admin-api: the role roster could not be read from ' +
+                      'the store: ' + ((e && e.message) || e));
+            res.setHeader('Retry-After', '5');
+            errorCodes.mark(res, errorCodes.codeOf(e) || 'STS-LDAP-0139');
+            self.sendJson(res, 503, { error: 'temporarily_unavailable',
+              error_description: 'The directory could not be read; try ' +
+                'again shortly.' });
+            log.debug("Leaving the management API admin roles endpoint. " +
+                      "Unavailable.");
+          });
         } },
 
       { method: 'POST', route: BASE + '/rbac/:action', tag: 'Admin roles',

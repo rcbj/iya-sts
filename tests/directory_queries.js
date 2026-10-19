@@ -196,6 +196,36 @@ function builders(t) {
           'A16. a count answers a number');
   t.equal(queries.answerOf('hasChild', []), false,
           'A17. hasChild answers a boolean');
+  const rdn = queries.rdnPage('default', users, 'alice', 20);
+  t.check(/\(e\.realm, e\.parent_key, e\.rdn_value\) > \(\$1, \$2, \$3\)/
+      .test(rdn.text) &&
+          /ORDER BY e\.realm, e\.parent_key, e\.rdn_value/.test(rdn.text) &&
+          /ORDER BY rdn_value OFFSET/.test(rdn.text) &&
+          !/position\(/.test(rdn.text) &&
+          rdn.values[3] === 20 && rdn.values[4] === 0,
+          'A18. rdnPage walks the rdn index after the cursor, and an empty ' +
+          'needle adds no predicate', rdn.text);
+  const searched = queries.rdnPage('default', users, '', 10,
+                                   { needle: 'Al', offset: 5 });
+  t.check(/position\(\$4 in e\.rdn_value\) > 0/.test(searched.text) &&
+          searched.values[3] === 'al' && searched.values[4] === 15 &&
+          searched.values[5] === 5,
+          'A19. a needle is position() inside the walk, lower-cased, and ' +
+          'the offset is applied after it', JSON.stringify(searched.values));
+  const box = queries.containerPage('default',
+                                    'ou=devices,dc=example,dc=com', 50, 10);
+  t.check(box.text.indexOf("($1, $2, '')") >= 0 &&
+          /OFFSET \$4/.test(box.text) &&
+          box.values[2] === 60 && box.values[3] === 50,
+          'A20. containerPage walks from the empty key and drops the offset',
+          box.text);
+  const withRdn = queries.answerOf('rdnPage',
+    [Object.assign({ rdn_value: 'a' }, row)])[0];
+  t.check(withRdn.key === 'uid=a,ou=users' && withRdn.rdn === 'a',
+          'A21. rdnPage answers the row plus its rdn',
+          JSON.stringify(withRdn));
+  t.equal(queries.answerOf('rdnCount', [{ n: '7' }]), 7,
+          'A22. rdnCount answers a number');
   log.debug("Leaving builders().");
 }
 

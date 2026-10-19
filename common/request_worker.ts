@@ -458,7 +458,8 @@ class RequestWorker {
   // goes on to Express's own handler, unchanged.
   /**
    * Refuses a request whose directory read the store did not answer
-   * (STS-LDAP-0130, STS-LDAP-0131) with a 503; passes anything else on.
+   * (STS-LDAP-0130, STS-LDAP-0131, STS-LDAP-0175) with a 503; passes
+   * anything else on.
    *
    * @param err - the error a handler threw
    * @param req - the request
@@ -469,7 +470,8 @@ class RequestWorker {
                               res: any, next: (e?: any) => void): void {
     log.debug("Entering RequestWorker.directoryUnavailable().");
     const code = errorCodes.codeOf(err);
-    if (code !== 'STS-LDAP-0130' && code !== 'STS-LDAP-0131') {
+    if (code !== 'STS-LDAP-0130' && code !== 'STS-LDAP-0131' &&
+        code !== 'STS-LDAP-0175') {
       log.debug("Leaving RequestWorker.directoryUnavailable(). Not ours.");
       next(err);
       return;
@@ -653,8 +655,9 @@ class RequestWorker {
     // A DIRECTORY THIS WORKER COULD NOT READ (#349). With
     // `ldap.workerDirectory=postgres-lru` a directory read this worker's
     // window does not hold asks the store synchronously, and a store that
-    // does not answer throws STS-LDAP-0130 or -0131 out of whatever handler
-    // asked. Express hands a thrown error to the error middleware, and this
+    // does not answer throws STS-LDAP-0130, -0131 or -0175 out of whatever
+    // handler asked. Express hands a thrown error to the error middleware,
+    // and this
     // is the last one: the request is refused as unavailable, with a
     // Retry-After, rather than answered out of a window that cannot say what
     // it is missing. Registered after every route, which is what an error

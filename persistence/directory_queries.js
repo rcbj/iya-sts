@@ -249,6 +249,168 @@ function childrenRange(columns, realm, parent, after, limit) {
 }
 
 /**
+ * One parent's direct children after a cursor, in `rdn_value` order, as a
+ * parenthesised subquery: a walk of `sts_ldap_entries_rdn`, one descent a
+ * row. The same shape as `childrenRange()`, on `(realm, parent_key,
+ * rdn_value)` rather than `dn_key` (#359).
+ *
+ * A plain `WHERE parent_key = $n ORDER BY rdn_value LIMIT` is planned on
+ * the primary key when `parent_key`'s `n_distinct` is wrong, which is the
+ * failure `childrenRange()` exists to avoid. The row comparison alone
+ * positions the rdn index.
+ *
+ * Two children with the same `rdn_value` (`uid=alice` and `cn=alice`) are
+ * not both visited: the index carries no `dn_key`, so the step's `>` moves
+ * past every row that shares the cursor's value. A person's RDN is its
+ * `uid`, which this directory keeps unique under `ou=users`.
+ *
+ * `filter`, when given, is SQL ANDed inside the one-row step (a
+ * `position($n in e.rdn_value) > 0` this module built), so a contains
+ * search stops at the next match instead of reading every child and
+ * throwing the misses away. It is never a caller's text.
+ *
+ * @param columns - the columns to select (unqualified)
+ * @param realm - the realm, as SQL (a parameter or an outer column)
+ * @param parent - the parent's key, as SQL
+ * @param after - the cursor, as SQL: an RDN value, lower-cased
+ * @param limit - the limit, as SQL; null for every child
+ * @param filter - extra SQL for the step's WHERE, or ''
+ * @returns the SQL, parenthesised, for the caller to alias
+ */
+function rdnRange(columns, realm, parent, after, limit, filter) {
+  log.debug("Entering rdnRange().");
+  const extra = filter ? ' ' + filter : '';
+  // ONE STEP, as childrenRange(): the next key of the rdn index, kept
+  // only while it is still this realm's and this parent's. The test is
+  // OUTSIDE the LIMIT, so the scan stops at one row.
+  const step = function (from, alias) {
+    log.debug("Entering step().");
+    const sql = '(SELECT * FROM (SELECT ' + columns +
+                ', e.rdn_value AS at, ' +
+                'e.parent_key AS within, e.realm AS home FROM ' +
+                'sts_ldap_entries e WHERE ' + from + extra +
+                ' ORDER BY e.realm, e.parent_key, e.rdn_value LIMIT 1) ' +
+                'AS ' + alias + ' WHERE ' + alias + '.home = ' + realm +
+                ' AND ' + alias + '.within = ' + parent + ')';
+    log.debug("Leaving step().");
+    return sql;
+  };
+  const first = '(e.realm, e.parent_key, e.rdn_value) > (' + realm + ', ' +
+                parent + ', ' + after + ')';
+  log.debug("Leaving rdnRange().");
+  return '(WITH RECURSIVE walk AS (' + step(first, 'f') + ' UNION ALL ' +
+         'SELECT n.* FROM walk w CROSS JOIN LATERAL ' +
+         step('(e.realm, e.parent_key, e.rdn_value) > (w.home, ' +
+              'w.within, w.at)', 'm') + ' AS n) SELECT ' + columns +
+         ', at AS rdn_value FROM walk' +
+         (limit === null ? '' : ' LIMIT ' + limit) + ')';
+}
+
+/**
+ * One page of a parent's direct children in `rdn_value` order (#359).
+ *
+ * `afterRdn` is the previous page's last RDN, compared with `>`. `offset`
+ * skips that many matching children after the cursor — the chooser's page
+ * — and is capped so a deep page cannot become a walk of the container.
+ * `options.needle`, when set, is a lower-cased substring of the RDN,
+ * applied inside the walk (`position()`, not `LIKE`, so the needle cannot
+ * inject a wildcard). An empty needle adds no predicate: `position('' in
+ * x)` is 1 in PostgreSQL and would match every row for the wrong reason.
+ *
+ * @param realm - the realm id
+ * @param parentKey - the parent's normalised DN
+ * @param afterRdn - the cursor, or ''
+ * @param limit - the page size (at most 1,000)
+ * @param options - `offset` and `needle`
+ * @returns the statement
+ */
+function rdnPage(realm, parentKey, afterRdn, limit, options) {
+  log.debug("Entering rdnPage().");
+  const o = options || {};
+  const needle = String(o.needle || '').toLowerCase();
+  const skip = Math.max(0, Math.min(100000,
+    Math.floor(Number(o.offset) || 0)));
+  const n = pageSize(limit);
+  const walk = Math.min(skip + n, 100000);
+  // The walk and the offset are numbers; the rest of the row is text.
+  /** @type {Array<string | number>} */
+  const values = [String(realm), String(parentKey),
+                  String(afterRdn || '').toLowerCase()];
+  let filter = '';
+  if (needle) {
+    values.push(needle);
+    filter = 'AND position($' + values.length + ' in e.rdn_value) > 0';
+  }
+  values.push(walk);
+  const walkSql = '$' + values.length;
+  values.push(skip);
+  const skipSql = '$' + values.length;
+  log.debug("Leaving rdnPage().");
+  return { text: 'SELECT ' + COLUMNS + ', rdn_value FROM ' +
+                 rdnRange(COLUMNS, '$1', '$2', '$3', walkSql, filter) +
+                 ' AS x ORDER BY rdn_value OFFSET ' + skipSql,
+           values: values };
+}
+
+/**
+ * How many direct children of a parent have an RDN containing `needle`.
+ *
+ * An empty needle is every direct child. This is a count of the table,
+ * not the counter: the counter cannot see a substring. A caller that
+ * wants the container's size asks `count` instead, and this is asked
+ * asynchronously — a heavier plan must not hold the event loop.
+ *
+ * @param realm - the realm id
+ * @param parentKey - the parent's normalised DN
+ * @param needle - the substring, or ''
+ * @returns the statement
+ */
+function rdnCount(realm, parentKey, needle) {
+  log.debug("Entering rdnCount().");
+  const wanted = String(needle || '').toLowerCase();
+  log.debug("Leaving rdnCount().");
+  if (!wanted) {
+    return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries ' +
+                   'WHERE realm = $1 AND parent_key = $2',
+             values: [String(realm), String(parentKey)] };
+  }
+  return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries ' +
+                 'WHERE realm = $1 AND parent_key = $2 AND position($3 ' +
+                 'in rdn_value) > 0',
+           values: [String(realm), String(parentKey), wanted] };
+}
+
+/**
+ * One numbered page of a parent's direct children, in key order (#359).
+ *
+ * `page()`'s one-level form stays a cursor. This is the devices page,
+ * which numbers its pages: the walk reads `offset + limit` rows of the
+ * parent index and the statement drops the offset. The walk is capped,
+ * as `rdnPage()`'s is. The cursor is the empty key, so the first child
+ * is included — `page()` passes the cursor as a parameter, and passing
+ * that here would bind a value instead of comparing with `''`.
+ *
+ * @param realm - the realm id
+ * @param parentKey - the parent's normalised DN
+ * @param offset - rows to skip
+ * @param limit - the page size (at most 1,000)
+ * @returns the statement
+ */
+function containerPage(realm, parentKey, offset, limit) {
+  log.debug("Entering containerPage().");
+  const skip = Math.max(0, Math.min(100000,
+    Math.floor(Number(offset) || 0)));
+  const n = pageSize(limit);
+  const walk = Math.min(skip + n, 100000);
+  log.debug("Leaving containerPage().");
+  // `''` is the SQL literal, so the comparison is `> ($1, $2, '')`.
+  return { text: 'SELECT ' + COLUMNS + ' FROM ' +
+                 childrenRange(COLUMNS, '$1', '$2', "''", '$3') +
+                 ' AS x ORDER BY dn_key OFFSET $4',
+           values: [String(realm), String(parentKey), walk, skip] };
+}
+
+/**
  * The parent a key's row has: `parent_key` as the column computes it —
  * everything after the key's first comma, or '' when it has none.
  *
@@ -1086,9 +1248,9 @@ function rowOf(row) {
 
 /**
  * The answer to a named query from its result rows: rows in the directory's
- * shape, except `count` and `realmCount` (a number), `countHolding`
- * (`{ n, holding }`), `originCounts` (`{ origin: n }`) and `hasChild` (a
- * boolean).
+ * shape, except `count`, `realmCount` and `rdnCount` (a number),
+ * `countHolding` (`{ n, holding }`), `originCounts` (`{ origin: n }`) and
+ * `hasChild` (a boolean). `rdnPage` is the row shape plus `rdn`.
  *
  * @param name - the query's name
  * @param rows - the result rows
@@ -1097,7 +1259,7 @@ function rowOf(row) {
 function answerOf(name, rows) {
   log.debug("Entering answerOf().");
   const list = Array.isArray(rows) ? rows : [];
-  if (name === 'count' || name === 'realmCount') {
+  if (name === 'count' || name === 'realmCount' || name === 'rdnCount') {
     log.debug("Leaving answerOf(). A count.");
     return Number((list[0] || {}).n || 0);
   }
@@ -1141,6 +1303,14 @@ function answerOf(name, rows) {
                attrs: plain ? undefined : row.attrs };
     });
   }
+  if (name === 'rdnPage') {
+    log.debug("Leaving answerOf(). RDN rows.");
+    return list.map(function (row) {
+      const one = rowOf(row);
+      one.rdn = String(row.rdn_value || '');
+      return one;
+    });
+  }
   log.debug("Leaving answerOf().");
   return list.map(rowOf);
 }
@@ -1168,7 +1338,10 @@ const QUERIES = {
   realmCount: realmCount,
   originCounts: originCounts,
   keysUnder: keysUnder,
-  residentOnly: residentOnly
+  residentOnly: residentOnly,
+  rdnPage: rdnPage,
+  rdnCount: rdnCount,
+  containerPage: containerPage
 };
 
 /**
@@ -1224,5 +1397,8 @@ module.exports = {
   realmCount: realmCount,
   originCounts: originCounts,
   keysUnder: keysUnder,
-  residentOnly: residentOnly
+  residentOnly: residentOnly,
+  rdnPage: rdnPage,
+  rdnCount: rdnCount,
+  containerPage: containerPage
 };
