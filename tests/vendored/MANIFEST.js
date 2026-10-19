@@ -1072,6 +1072,15 @@ const JOBS = [
   // expected Requester for a replay. Fixed here first; it goes back to the
   // parent with rcbj/id-proto-debugger#353, and this flag comes off then.
   { file: 'sts_saml11.js',               browser: false, local: true },
+  // IDENTITY-PROVIDER-INITIATED SIGN-IN OVER THE WIRE (#715): `/launch/{app}`
+  // for SAML 2.0, SAML 1.1, WS-Federation and OpenID Connect, the switches
+  // set through /admin-api, the launch record /oauth2/authorize honours
+  // (across nodes in `cluster`), the launch window waited out, and the links
+  // /admin-api and /account-api carry. `tests/launch.js` is the in-process,
+  // development-only half; this is the product-mode coverage. `local: true`:
+  // the door and every API it is read through are ours. Its realm is left
+  // standing; the one setting it changes it resets.
+  { file: 'sts_idp_initiated_launch.js', browser: false, local: true },
   // OWNED HERE SINCE 2026-09-21, when it was a byte-identical copy of the
   // parent's: its no-certificate case had to stop registering a signing
   // certificate in development (the service encrypts to one, so the in-clear
