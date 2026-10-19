@@ -212,13 +212,13 @@ function contentOf(table, row) {
 }
 
 // ---------------------------------------------------------------------------
-// ONE DATABASE, OVER `pg`. The store the conversion is driven through: the
-// real one here, a double in `tests/cell_convert.js`. Six operations and a
+// ONE DATABASE, OVER KNEX (#326). The store the conversion is driven through:
+// the real one here, a double in `tests/cell_convert.js`. Six operations and a
 // transaction, each a statement built from `TABLES` with every value a
 // parameter.
 // ---------------------------------------------------------------------------
 /**
- * Builds the store of one database over `pg`.
+ * Builds the store of one database over Knex (`knex_store.js`, #326).
  *
  * @param options - `url` (the connection string, password included),
  *   `verifyTls`, `tlsCa` (the database's PEM trust anchors, or ''), and
@@ -234,10 +234,12 @@ function sqlStore(options) {
                     options.name + ' connection string is not dialled: ' +
                     dial.refused + ' (#273).');
   }
-  const Pool = /** @type {any} */ (require('pg')).Pool;
-  const pool = new Pool({ connectionString: dial.connectionString,
-                          ssl: dial.ssl, max: 2,
-                          connectionTimeoutMillis: 10000 });
+  // Through the service's one door to PostgreSQL (#326): a Knex pool per
+  // database, dialled with the options the driver's would be.
+  const pool = require('./knex_store').openPool(
+    { connectionString: dial.connectionString, ssl: dial.ssl,
+      connectionTimeoutMillis: 10000 },
+    { max: 2 });
   pool.on('error', function (err) {
     log.warn('cell_convert: an idle connection to the ' + options.name +
              ' database errored: ' + ((err && err.message) || err));

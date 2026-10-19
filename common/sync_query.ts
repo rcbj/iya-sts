@@ -49,7 +49,7 @@
 // A CLASS WHOSE DEPENDENCIES ARRIVE THROUGH ITS CONSTRUCTOR (#50): the
 // connection options (the driver's `bridgeConnection()`), the bound, and —
 // for `tests/sync_query.js` — the module the thread runs its questions
-// through instead of `pg`, so the whole mechanism is exercised in process
+// through instead of the database, so the whole mechanism is exercised in process
 // with no database.
 // ---------------------------------------------------------------------------
 
@@ -62,12 +62,14 @@ const log = bunyan.createLogger({ name: 'sts-sync-query' });
 
 // What the constructor takes.
 interface SyncQueryOptions {
-  // `pg` client options: the driver's `bridgeConnection()`.
+  // The connection options (`knex_store.js`'s, #326): the driver's
+  // `bridgeConnection()`.
   connection?: Record<string, unknown> | null;
   // The bound on one question, in milliseconds, asked per question.
   timeoutMs: () => number;
-  // A module path the thread runs questions through instead of `pg`: it
-  // exports `run(name, args)`, which answers or rejects. For tests.
+  // A module path the thread runs questions through instead of the
+  // database: it exports `run(name, args)`, which answers or rejects. For
+  // tests.
   backend?: string | null;
   // The thread's script; the compiled `sync_query_thread.js` beside this.
   threadFile?: string | null;

@@ -9,8 +9,13 @@
 // THE DIRECTORY BRIDGE'S THREAD (#349 phase 3, 2026-09-29).
 //
 // `common/sync_query.ts` starts this in a `worker_thread` and blocks its own
-// thread while this one answers. It holds ONE `pg` client of its own, dialled
-// with the driver's read-side options (`bridgeConnection()`), and answers a
+// thread while this one answers. It holds ONE connection of its own, dialled
+// with the driver's read-side options (`bridgeConnection()`) through the
+// service's one door to PostgreSQL, `persistence/knex_store.js` (#326): a
+// Knex instance is built HERE, in the thread, from the posted options,
+// because neither a Knex instance nor a connection can cross a thread
+// boundary — and it is the same door, so the thread dials exactly as the
+// driver's pools do. It answers a
 // question by building the named statement with
 // `persistence/directory_queries.js` — the same builder the driver's async
 // door uses, so the two cannot disagree about a WHERE clause.
@@ -26,7 +31,7 @@
 // running in the database.
 //
 // `backend`, when given, is a module whose `run(name, args)` answers instead
-// of `pg` — `tests/sync_query_kit.js` — so the mechanism can be held in
+// of the database — `tests/sync_query_kit.js` — so the mechanism can be held in
 // process without a database.
 // ---------------------------------------------------------------------------
 
@@ -56,11 +61,13 @@ const data = workerThreads.workerData as ThreadData;
 const counter = new Int32Array(data.counter);
 const port = data.port;
 
-// The `pg` backend: one client, dialled on the first question and again
-// after it is lost.
-function pgBackend(connection: Record<string, unknown>): Backend {
+// The database backend: one connection, dialled on the first question and
+// again after it is lost. The statement is `directory_queries.build()`'s
+// `$n` text, handed to the connection Knex made (`knex_store.js` says why
+// it is not `knex.raw()`).
+function databaseBackend(connection: Record<string, unknown>): Backend {
   const queries = require('../persistence/directory_queries');
-  const pg = require('pg');
+  const knexStore = require('../persistence/knex_store');
   // sslmode=verify-ca verifies the chain and not the host name, which takes
   // a `checkServerIdentity` that checks nothing — a function, which cannot
   // be posted here, so the driver's `bridgeConnection()` says it as
@@ -89,11 +96,15 @@ function pgBackend(connection: Record<string, unknown>): Backend {
       return Promise.resolve(client);
     }
     if (!connecting) {
-      const c = new pg.Client(connection);
+      const c = knexStore.openConnection(connection);
       c.on('error', function () {
-        // An idle client that died: forget it, and the next question dials
-        // again. The error itself reaches the question that was running.
-        client = null;
+        // An idle client that died: forget it (closing it and the Knex
+        // instance it was made by), and the next question dials again. The
+        // error itself reaches the question that was running.
+        if (client === c) {
+          client = null;
+        }
+        c.end();
       });
       connecting = c.connect().then(function () {
         client = c;
@@ -121,6 +132,9 @@ function pgBackend(connection: Record<string, unknown>): Backend {
       }, function (err: any) {
         // A connection-level failure leaves the client unusable.
         if (!err || !err.code || /^08|^57P/.test(String(err.code))) {
+          if (client) {
+            client.end();
+          }
           client = null;
         }
         throw err;
@@ -131,7 +145,7 @@ function pgBackend(connection: Record<string, unknown>): Backend {
 
 const backend: Backend = data.backend
   ? require(data.backend)
-  : pgBackend(data.connection || {});
+  : databaseBackend(data.connection || {});
 
 // Posts an answer, then moves the counter: in that order (see the header).
 function answer(message: Record<string, unknown>): void {
