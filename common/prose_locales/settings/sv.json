@@ -6075,6 +6075,14 @@
     "en": "bb7f7ca790c61dc0",
     "text": "Med ldap.workerDirectory=postgres-lru, hur länge en begäranarbetare väntar på databasen när den behöver en katalogpost som den inte har. Arbetaren gör inget annat medan den väntar, så detta är också den längsta tid som ett databasavbrott kan hålla kvar en av dess begäranden; därefter avvisas begäran (503, STS-LDAP-0130)."
   },
+  "ldap.workerDirectoryBudgetMs|label": {
+    "en": "7af008dc55949ed0",
+    "text": "Workerns katalogbudget per begäran (ms)"
+  },
+  "ldap.workerDirectoryBudgetMs|description": {
+    "en": "9b2485155e270c50",
+    "text": "Med ldap.workerDirectory=postgres-lru: hur länge en begäran till /admin eller /admin-api sammanlagt får vänta på synkrona katalogläsningar. En fråga som skulle överskrida budgeten avvisas (503, STS-LDAP-0175) och ställs inte; en enskild långsam fråga misslyckas fortfarande som STS-LDAP-0130 när den först överskrider sin egen tidsgräns. Andra begäranden har ingen sådan budget."
+  },
   "ldap.sizeLimit|label": {
     "en": "8486449552f77864",
     "text": "Storleksgräns för sökning"

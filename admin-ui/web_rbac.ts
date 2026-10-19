@@ -137,6 +137,28 @@ class RbacPage {
         ? t.text('consoleRbac.body.nobodyMatches')
         : t.text('consoleRbac.body.nobodyAtAll')
     }, t);
+    // A CANDIDATE LIST THAT IS NOT WHOLE SAYS SO (#359), as the device
+    // search says when its scan stopped: a windowed directory's page can
+    // leave out a name a DN cannot hold, step past two entries sharing
+    // one RDN value, or stop at the walk's cap. Each reason is a sentence
+    // of its own, drawn only when it applies.
+    const gap = (json.candidateSearch &&
+                 json.candidateSearch.complete === false &&
+                 json.candidateSearch.incomplete) || null;
+    const gapNotes = gap
+      ? (gap.unusable
+          ? kit.note(t.html('consoleRbac.body.candidatesUnusable',
+                            { count: gap.unusable }))
+          : '') +
+        (gap.short
+          ? kit.note(t.html('consoleRbac.body.candidatesShort',
+                            { count: gap.short }))
+          : '') +
+        (gap.capped
+          ? kit.note(t.html('consoleRbac.body.candidatesCapped',
+                            { cap: gap.cap }))
+          : '')
+      : '';
     const roleOptions = json.roleChoices.map(function (role) {
       return '<option value="' + kit.esc(role.id) + '">' +
              kit.esc(role.label) +
@@ -182,7 +204,7 @@ class RbacPage {
       ? '<h2 id="grant" data-tab="grant">' +
         t.html('consoleRbac.body.grantHeading') +
         '</h2>' + kit.note(t.html('consoleRbac.body.grantNote')) +
-        personPane +
+        personPane + gapNotes +
         (picked
           ? '<form method="post" action="/admin/rbac" id="grant-picked">' +
             '<div class="formrow">' +

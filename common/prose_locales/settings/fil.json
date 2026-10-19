@@ -6075,6 +6075,14 @@
     "en": "bb7f7ca790c61dc0",
     "text": "Kapag ldap.workerDirectory=postgres-lru, gaano katagal naghihintay ang request worker sa database kapag kailangan nito ng directory entry na hindi nito hawak. Wala nang ibang ginagawa ang worker habang naghihintay, kaya ito rin ang pinakamatagal na mapipigil ng database outage ang isa sa mga request nito; kapag lumampas, tinatanggihan ang request (503, STS-LDAP-0130)."
   },
+  "ldap.workerDirectoryBudgetMs|label": {
+    "en": "7af008dc55949ed0",
+    "text": "Budget ng directory ng worker bawat request (ms)"
+  },
+  "ldap.workerDirectoryBudgetMs|description": {
+    "en": "9b2485155e270c50",
+    "text": "Kapag ldap.workerDirectory=postgres-lru, kung gaano katagal, sa kabuuan, maaaring maghintay ang isang request sa /admin o /admin-api sa mga synchronous na pagbasa ng directory. Ang tanong na lalampas sa budget ay tinatanggihan (503, STS-LDAP-0175) at hindi itinatanong; ang isang mabagal na tanong ay nabibigo pa rin bilang STS-LDAP-0130 kapag nauna nitong nalampasan ang sarili nitong timeout. Walang ganitong budget ang ibang mga request."
+  },
   "ldap.sizeLimit|label": {
     "en": "8486449552f77864",
     "text": "Size limit ng search"

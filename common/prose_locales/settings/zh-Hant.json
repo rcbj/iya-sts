@@ -6075,6 +6075,14 @@
     "en": "bb7f7ca790c61dc0",
     "text": "在 ldap.workerDirectory=postgres-lru 時，要求工作執行緒需要一個未持有的目錄項目時，等待資料庫多久。工作執行緒在等待期間不做其他事，因此這也是資料庫中斷能卡住其一個要求的最長時間；超過時該要求會被拒絕（503，STS-LDAP-0130）。"
   },
+  "ldap.workerDirectoryBudgetMs|label": {
+    "en": "7af008dc55949ed0",
+    "text": "工作執行緒每個請求的目錄預算（毫秒）"
+  },
+  "ldap.workerDirectoryBudgetMs|description": {
+    "en": "9b2485155e270c50",
+    "text": "在 ldap.workerDirectory=postgres-lru 時，一個 /admin 或 /admin-api 請求總共可以花多長時間等待同步目錄讀取。會超出預算的查詢將被拒絕（503，STS-LDAP-0175）且不會發出；單個緩慢的查詢若先超過其自身的逾時，仍以 STS-LDAP-0130 失敗。其他請求沒有這樣的預算。"
+  },
   "ldap.sizeLimit|label": {
     "en": "8486449552f77864",
     "text": "搜尋大小限制"

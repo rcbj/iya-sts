@@ -825,14 +825,41 @@ ldif or multi-cell service is unchanged.
       (`mechanismsFor()` per row, about nine `locateEntry()`s, most held
       after the first), and the tiles' `credentialTallies()` and
       `countPeopleNamed()` — counts, the holders, and one `withNames`.
-    - **Still whole walks on a request path**, recorded as `owed` in
-      `tests/no_full_directory_walk_in_requests.js` with what would remove
-      each: the role screen's candidates (`personDns()`), the cells page's
-      residents (`residentsPage()`), SCIM's user list for any filter but
-      `userName eq` (asked of the name index since #616), and
-      `/admin/ldap/devices`. Fixed by #616's audit besides: the RFC 7523/7522
-      issuer lookup (the key pair's holders), the portal's forgot-password
-      address (`peopleByMail()`), and SCIM's HOBA key (`personsHolding()`).
+    - **THE CONSOLE PAGES THAT LISTED EVERYBODY (#359).** The cells
+      residents (`residentsPageAsync()`), the device register
+      (`windowedDevicesView()`) and the role screen's candidates
+      (`candidatePageAsync()`, drawn by `adminViews.windowedRbacList()`)
+      each ask one indexed page asynchronously. Residents and candidates
+      are the direct children of `ou=users` in `rdn_value` order (`rdnPage`
+      on `sts_ldap_entries_rdn`): the `uid` is sealed, so the order is the
+      RDN's, which for `uid=<name>,ou=users` is that name. Devices are the
+      direct children of `ou=devices` in key order (`containerPage`). A `q`
+      on the device page still looks inside at most
+      `DIRECTORY_SEARCH_SCAN` entries. A console or `/admin-api` request's
+      synchronous waits also share `ldap.workerDirectoryBudgetMs`
+      (`STS-LDAP-0175`, `common/CLAUDE.md`).
+      **A candidate page that is not whole says so** (the review of #692):
+      `matched` counts rows, and a name a DN cannot hold, two entries
+      sharing one RDN value (the walk's `>` steps past both) and the
+      walk's 100,000-row cap each keep a counted row off the page;
+      `candidateSearch.complete` is then false and `incomplete` says
+      which, and the console draws a sentence for each. A rejection the
+      store gives these pages carries no code, so `storeAsked()` marks it
+      `STS-LDAP-0139` and `/admin-api` answers it 503; anything else is a
+      500 (`STS-LDAP-0176`, `mgmt-api/admin_api.ts`'s
+      `answerDirectoryFailure()`). **A known cost, not fixed:** a needle
+      search's `rdnCount` is `position($3 in rdn_value) > 0`, which no
+      index serves, so it reads every direct child of `ou=users` in the
+      realm (the page itself stops at the next match, inside the rdn
+      walk). It is asked asynchronously and once per page; a trigram
+      index or a prefix-only search would be what stops it.
+    - **Still a whole walk on a request path**, recorded as `owed` in
+      `tests/no_full_directory_walk_in_requests.js`: SCIM's user list for
+      any filter but `userName eq` (asked of the name index since #616).
+      Fixed earlier, and named there: the role screen, the cells residents
+      and `/admin/ldap/devices` (#359); the RFC 7523/7522 issuer lookup
+      (the key pair's holders), the portal's forgot-password address
+      (`peopleByMail()`), and SCIM's HOBA key (`personsHolding()`) (#616).
   - **Still whole walks, correct and paged, off the request path**:
     `populateVcAttributes()` (development only), the realm-retirement
     announcement and the seed; `buildUsernameIndex()` is not reached.
@@ -1075,13 +1102,15 @@ bridge's 2 s ran out. Now:
   `common/devices.ts`' are; what is gone is any cost that grows.
 
 **What still pages `ou=devices` on a request**, each costing the realm in a
-windowed process for the reason above: `/admin-api/ldap/devices`
-(`ldapDevicesView()`, owed in `tests/no_full_directory_walk_in_requests.js`),
-and `/admin-api/devices`' list with no owner and its counts
-(`devices.list()`, `devices.counts()`, `common/CLAUDE.md`). What would stop
-them is the shape of `windowedDirectoryView()` for one container —
-`parent_key` pages (one level: a device is `cn=<id>,ou=devices`) and the
-counter rows — or an index the suffix comparison can use.
+windowed process for the reason above: `/admin-api/devices`' list with no
+owner and its counts (`devices.list()`, `devices.counts()`,
+`common/CLAUDE.md`). `/admin-api/ldap/devices` (`ldapDevicesView()`) asks
+the store one page of the container's direct children
+(`windowedDevicesView()`, #359): one `count` and one `containerPage`. What
+would stop the list and the counts is the shape of `windowedDirectoryView()`
+for one container — `parent_key` pages (one level: a device is
+`cn=<id>,ou=devices`) and the counter rows — or an index the suffix
+comparison can use.
 
 **A PAGE UNDER A BASE NO LONGER COSTS THE REALM (#638, 2026-10-14).**
 `page()`, `keysUnder()` and `namesUnder()` read the realm's DISTINCT
@@ -1091,8 +1120,8 @@ range of that index, still in key order and still every depth below the
 base (`persistence/directory_queries.js`, *A subtree is read through its
 parents*). So a page under `ou=devices` beside fifty million people costs
 the realm's containers plus a page — about 200 buffers where the suffix
-read the realm's keys — and the three listings above now cost the
-devices, not the directory. A page under the realm's BASE reads up to a
+read the realm's keys — and the listings above now cost the devices,
+not the directory. A page under the realm's BASE reads up to a
 page from every container and sorts them: bounded by containers × page,
 not by rows. What still tests a row's suffix, each narrowed first by a
 GIN index so the suffix is a filter on the few rows it answers:
@@ -1599,7 +1628,10 @@ one statement; the function's own comment names the statement.
 * **`residentsPage(after, limit)`**: the cells page's keyset, a binary search
   over the same rows sorted by lower-cased first `uid`, reading `limit`
   entries. It was `allPersons()`, a filter, a sort and a slice, so the cursor
-  bought nothing.
+  bought nothing. **In a window (#359)** `residentsPageAsync()` asks one
+  `rdnPage` of the direct children of `ou=users` and drops projections and
+  entries with no `uid`. The order is the RDN's, which for `uid=<name>` is
+  that name, and the cursor answered in `next` is that RDN.
 * **`memberOfClaims()`**: who claims each group through their own `memberOf`,
   one walk for every group, kept on `directoryVersion` (a `memberOf` can be on
   any entry, the base included, which no container clock covers).

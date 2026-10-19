@@ -1125,6 +1125,50 @@ class AdminApi {
     return { ok: false, errors: this.errorsFromAjv(validate.errors) };
   }
 
+  // A WINDOWED CONSOLE PAGE THAT FAILED (#359, and the review of #692): an
+  // unreadable store is a 503 the caller may retry — the bridge's timeout
+  // (STS-LDAP-0130) or refusal (0131), the request's spent budget (0175),
+  // or an asynchronous question the store did not answer (0139, which
+  // `ldap_server.js`'s `storeAsked()` marks) — and anything else is the
+  // bug it is: a 500 under its own code, or `fallback` when it has none.
+  /**
+   * Answers a rejected directory page: 503 for an unreadable store, 500
+   * otherwise.
+   *
+   * @param res - the response
+   * @param e - the rejection
+   * @param what - what could not be drawn, for the log line
+   * @param fallback - the code of a failure that carries none
+   * @returns true when it was the store (a 503)
+   */
+  answerDirectoryFailure(res, e, what: string, fallback: string): boolean {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AdminApi.answerDirectoryFailure().");
+    const code = errorCodes.codeOf(e);
+    const store = code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131' ||
+      code === 'STS-LDAP-0139' || code === 'STS-LDAP-0175';
+    if (store) {
+      log.error(errorCodes.tag(code) + 'admin-api: ' + what + ' could not ' +
+                'be read from the store: ' + ((e && e.message) || e));
+      res.setHeader('Retry-After', '5');
+      // STS-LDAP-0130, STS-LDAP-0131, STS-LDAP-0139, STS-LDAP-0175.
+      errorCodes.mark(res, code);
+      this.sendJson(res, 503, { error: 'temporarily_unavailable',
+        error_description: 'The directory could not be read; try again ' +
+          'shortly.' });
+      log.debug("Leaving AdminApi.answerDirectoryFailure(). Unavailable.");
+      return true;
+    }
+    log.error(errorCodes.tag(code || fallback) + 'admin-api: ' + what +
+              ' could not be drawn: ' + ((e && e.stack) || e));
+    // The rejection's own code, or `fallback` (STS-LDAP-0176).
+    errorCodes.mark(res, code || fallback);
+    this.sendJson(res, 500, { error: 'server_error',
+      error_description: String((e && e.message) || e) });
+    log.debug("Leaving AdminApi.answerDirectoryFailure(). A failure.");
+    return false;
+  }
+
   // Every reply here is JSON, is never cached, and is pretty-printed. The last
   // of those is not decoration: the caller of a mock's admin API is usually a
   // person at a terminal or a test whose failure message is the body, and a 40
@@ -3138,6 +3182,22 @@ class AdminApi {
           }, function (e) {
             log.debug("Caught in the management API cells endpoint: " +
                       ((e && e.message) || e));
+            const code = errorCodes.codeOf(e);
+            if (code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131' ||
+                code === 'STS-LDAP-0139' || code === 'STS-LDAP-0175') {
+              log.error(errorCodes.tag(code) +
+                        'admin-api: the cells page could not be read from ' +
+                        'the store: ' + ((e && e.message) || e));
+              res.setHeader('Retry-After', '5');
+              // STS-LDAP-0130, STS-LDAP-0131, STS-LDAP-0139, STS-LDAP-0175.
+              errorCodes.mark(res, code);
+              self.sendJson(res, 503, { error: 'temporarily_unavailable',
+                error_description: 'The directory could not be read; try ' +
+                  'again shortly.' });
+              log.debug("Leaving the management API cells endpoint. " +
+                        "Unavailable.");
+              return;
+            }
             errorCodes.mark(res, 'STS-CELL-0191');
             self.sendJson(res, 500, { error: 'server_error',
                                       error_description: String(
@@ -3178,6 +3238,31 @@ class AdminApi {
                                       req.stsCellRelay.from) || ''))
             .then(function (view) {
               self.sendJson(res, 200, view);
+              log.debug("Leaving the management API cell people endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API cell people " +
+                        "endpoint: " + ((e && e.message) || e));
+              const code = errorCodes.codeOf(e);
+              if (code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131' ||
+                  code === 'STS-LDAP-0139' || code === 'STS-LDAP-0175') {
+                log.error(errorCodes.tag(code) +
+                          'admin-api: a cell\'s residents could not be ' +
+                          'read from the store: ' + ((e && e.message) || e));
+                res.setHeader('Retry-After', '5');
+                // STS-LDAP-0130, STS-LDAP-0131, STS-LDAP-0139,
+                // STS-LDAP-0175.
+                errorCodes.mark(res, code);
+                self.sendJson(res, 503, { error: 'temporarily_unavailable',
+                  error_description: 'The directory could not be read; ' +
+                    'try again shortly.' });
+                log.debug("Leaving the management API cell people " +
+                          "endpoint. Unavailable.");
+                return;
+              }
+              errorCodes.mark(res, 'STS-CELL-0191');
+              self.sendJson(res, 500, { error: 'server_error',
+                                        error_description: String(
+                                          (e && e.message) || e) });
               log.debug("Leaving the management API cell people endpoint.");
             });
         } },
@@ -9404,7 +9489,12 @@ class AdminApi {
                      '`stsDeviceSecretHash` is withheld, as from every ' +
                      'LDAP read; every other value is shown as the ' +
                      'directory holds it. Read-only: the register is ' +
-                     'edited through `/admin-api/devices`.',
+                     'edited through `/admin-api/devices`.\n\nWHERE THE ' +
+                     'DIRECTORY IS A WINDOW (#359) the count and the page ' +
+                     'are asked of the store, and a `q` looks inside at ' +
+                     'most a bounded number of entries and says so in ' +
+                     '`search`. A page past the walk\'s cap (100,000 ' +
+                     'entries) is empty and carries `pageCap`.',
         mirrors: 'GET /admin/ldap/devices',
         parameters: [
           { name: 'q', in: 'query', required: false, schema: { type: 'string' },
@@ -9419,10 +9509,19 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API directory devices " +
                     "endpoint.");
-          self.sendJson(res, 200, adminViews.directoryPageJson('devices',
-                                                               req));
-          log.debug("Leaving the management API directory devices " +
-                    "endpoint.");
+          Promise.resolve(adminViews.directoryPageJson('devices', req))
+            .then(function (json) {
+              self.sendJson(res, 200, json);
+              log.debug("Leaving the management API directory devices " +
+                        "endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API directory devices " +
+                        "endpoint: " + ((e && e.message) || e));
+              self.answerDirectoryFailure(res, e, 'the devices page',
+                                          'STS-LDAP-0176');
+              log.debug("Leaving the management API directory devices " +
+                        "endpoint. Refused.");
+            });
         } },
 
       // LAST OF THE EIGHT, and it is the one that answers about the SOCKETS
@@ -9547,10 +9646,22 @@ class AdminApi {
           { name: 'personq', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'Narrows `candidates` — the people a role could be ' +
-                         'granted to, from the directory and from who has ' +
-                         'signed in — to usernames containing this, ' +
-                         'case-insensitive. `candidateSearch` says how many ' +
-                         'candidates there are in all and how many matched.' },
+                         'granted to — to usernames containing this, ' +
+                         'case-insensitive. Where the directory is held in ' +
+                         'memory the list is the directory and who has ' +
+                         'signed in; where it is a window (#359) it is the ' +
+                         'direct children of ou=users, a page at a time, ' +
+                         'and a person who has signed in with no entry is ' +
+                         'not listed (a typed name can still be granted). ' +
+                         '`candidateSearch` says how many candidates there ' +
+                         'are in all and how many matched, and `complete` ' +
+                         'whether this page holds every one it counted: ' +
+                         'where it is false, `incomplete` says how many ' +
+                         'names a DN cannot hold were left out ' +
+                         '(`unusable`), how many counted rows the page ' +
+                         'did not reach (`short`, most often two entries ' +
+                         'sharing one RDN value), and whether the list ' +
+                         'stops at the walk\'s cap (`capped`, `cap`).' },
           { name: 'candidatesPage', in: 'query', required: false,
             schema: { type: 'integer', minimum: 1 },
             description: 'Which page of the matching `candidates`, answered ' +
@@ -9580,8 +9691,17 @@ class AdminApi {
           log.debug("Entering the management API admin roles endpoint.");
           // The layer, not the page: rbacView() built two tables and four forms
           // and this resource used none of them.
-          self.sendJson(res, 200, adminViews.rbacListJson(req).json);
-          log.debug("Leaving the management API admin roles endpoint.");
+          Promise.resolve(adminViews.rbacListJson(req)).then(function (body) {
+            self.sendJson(res, 200, body.json);
+            log.debug("Leaving the management API admin roles endpoint.");
+          }, function (e) {
+            log.debug("Caught in the management API admin roles endpoint: " +
+                      ((e && e.message) || e));
+            self.answerDirectoryFailure(res, e, 'the role roster',
+                                        'STS-LDAP-0176');
+            log.debug("Leaving the management API admin roles endpoint. " +
+                      "Refused.");
+          });
         } },
 
       { method: 'POST', route: BASE + '/rbac/:action', tag: 'Admin roles',

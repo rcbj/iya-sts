@@ -15616,7 +15616,8 @@ function performOperation(operation, shape, emit) {
     // not be consulted, which is not a statement about its contents — and
     // anything else is thrown on as it always was.
     const code = errorCodes.codeOf(e);
-    if (code !== 'STS-LDAP-0130' && code !== 'STS-LDAP-0131') {
+    if (code !== 'STS-LDAP-0130' && code !== 'STS-LDAP-0131' &&
+        code !== 'STS-LDAP-0175') {
       throw e;
     }
     log.debug("Caught in performOperation(): " + e.message);
@@ -16926,7 +16927,8 @@ function screenedThen(req, next, passwords, run) {
     return runOnce();
   }).catch(function (e) {
     const code = errorCodes.codeOf(e);
-    const store = code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131';
+    const store = code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131' ||
+      code === 'STS-LDAP-0175';
     log.error(errorCodes.tag(store ? code : 'STS-LDAP-0143') + 'ldap: a ' +
               'screened write to ' + (req.dn ? req.dn.toString() : '') +
               ' could not be completed: ' + ((e && e.stack) || e));
@@ -16977,7 +16979,8 @@ server.add('', function (req, res, next) {
     // could not read is `unavailable` (52) as it is there; anything else
     // is an operations error. Either way the client gets one result.
     const code = errorCodes.codeOf(e);
-    const store = code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131';
+    const store = code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131' ||
+      code === 'STS-LDAP-0175';
     log.error(errorCodes.tag(store ? code : 'STS-LDAP-0142') + 'ldap: an ' +
               'add of ' + (req.dn ? req.dn.toString() : '') + ' could not ' +
               'be completed: ' + ((e && e.stack) || e));
@@ -18875,6 +18878,10 @@ function directoryEntryMatches(stored, needle) {
 // setting — the answer says when it was reached.
 const DIRECTORY_SEARCH_SCAN = 5000;
 const DIRECTORY_SEARCH_PAGE = 500;
+// How far `persistence/directory_queries.js`'s `rdnPage` and
+// `containerPage` walk: their offset and their walk are capped here, so a
+// deep page cannot become a walk of the container. Kept equal to theirs.
+const WINDOWED_PAGE_CAP = 100000;
 
 /**
  * `/admin/ldap/directory` in a windowed process: counted, filtered by origin
@@ -21523,7 +21530,7 @@ async function personNamesUpToAsync(limit) {
 }
 
 // ---------------------------------------------------------------------------
-// A CELL'S RESIDENTS, A PAGE AT A TIME BY `uid` (#352, #98).
+// A CELL'S RESIDENTS, A PAGE AT A TIME BY `uid` (#352, #98, #359).
 //
 // `/admin/cells?people=` and the inter-cell `directory-people` operation list
 // this cell's own people — not another cell's projections — by lower-cased
@@ -21534,9 +21541,14 @@ async function personNamesUpToAsync(limit) {
 // `allPersons()`'s order as the old stable sort did — and a page is a binary
 // search for `after` and `limit` entry reads.
 //
-// **IN #349's WINDOW** `personRows()` pages `ou=users` through the store,
-// read-only, and this pages its rows; a keyset page by `uid` in SQL is the
-// further step, not built.
+// **IN #349's WINDOW** this function is not the one a request calls.
+// `residentsPageAsync()` asks `rdnPage` — direct children of `ou=users` in
+// `rdn_value` order, one statement — and drops projections and entries with
+// no `uid` after the row is open. The `uid` attribute is sealed, so the
+// order is the RDN's, which for `uid=<name>,ou=users` is that name. A person
+// nested under `ou=users` is not on the page. Two children with the same
+// RDN (`uid=alice` and `cn=alice`) share one step of the index, so the
+// second is not visited.
 // ---------------------------------------------------------------------------
 /**
  * Returns one page of this realm's residents (people not projected from
@@ -21544,8 +21556,8 @@ async function personNamesUpToAsync(limit) {
  *
  * @param after - the name the previous page ended on, or ''
  * @param limit - how many to answer
- * @returns `people` (`{ name, uuid, displayName }`) and `more`, whether
- *   another page follows
+ * @returns `people` (`{ name, uuid, displayName }`), `more`, and `next`
+ *   (the cursor when `more`, else '')
  */
 function residentsPage(after, limit) {
   log.debug('Entering residentsPage().');
@@ -21584,8 +21596,259 @@ function residentsPage(after, limit) {
     people.push({ name: row.uid, uuid: one('entryuuid'),
                   displayName: one('displayname') || one('cn') });
   });
+  const more = byUid.length - lo > count;
   log.debug('Leaving residentsPage(). ' + people.length + ' person(s).');
-  return { people: people, more: byUid.length - lo > count };
+  return { people: people, more: more,
+           next: more && people.length ? people[people.length - 1].name
+                                       : '' };
+}
+
+/**
+ * `residentsPage()` for a windowed directory (#359): one `rdnPage` per
+ * round, asynchronously, never a walk. The realm and the container are
+ * read before the first wait, so the question stays in the realm the
+ * caller entered.
+ *
+ * A page of projections or entries with no `uid` is skipped, at most
+ * eight times; the cursor then moves to the last RDN the store answered.
+ * When the people page fills in the middle of a store page, the cursor is
+ * the last person shown, so the rest of that page is not skipped.
+ *
+ * @param after - the RDN the previous page ended on, or ''
+ * @param limit - how many to answer
+ * @returns a promise of `{ people, more, next }`
+ */
+async function residentsPageAsync(after, limit) {
+  log.debug('Entering residentsPageAsync().');
+  if (!directoryWindow) {
+    log.debug('Leaving residentsPageAsync(). Not windowed.');
+    return { people: [], more: false, next: '' };
+  }
+  const count = Math.max(0, Math.floor(Number(limit) || 0));
+  const parent = normalizeDn(usersDn());
+  const realmId = realms.currentId();
+  let cursor = String(after || '').toLowerCase();
+  const people = [];
+  let more = false;
+  const rounds = count === 0 ? 0 : 8;
+  for (let round = 0; round < rounds && people.length < count; round++) {
+    const want = count - people.length + 1;
+    const page = await storeAsked(directoryWindow.rdnPageAsync(realmId,
+      parent, cursor, want));
+    if (!page || !page.asked) {
+      more = false;
+      break;
+    }
+    let lastKept = '';
+    let stoppedEarly = false;
+    for (let i = 0; i < page.rows.length; i++) {
+      if (people.length >= count) {
+        stoppedEarly = true;
+        break;
+      }
+      const row = page.rows[i];
+      const entry = row.entry;
+      if (!entry) {
+        continue;
+      }
+      const origin = String(entry.origin || '');
+      if (origin.indexOf('projection') === 0) {
+        continue;
+      }
+      const uid = String(((entry.attributes && entry.attributes.uid) ||
+                          [])[0] || '').toLowerCase();
+      if (!uid) {
+        continue;
+      }
+      const attrs = entry.attributes || {};
+      // A HOT PATH: three reads per row, so no Entering/Leaving pair.
+      const one = function (name) {
+        return String((attrs[name] || [])[0] || '');
+      };
+      people.push({ name: uid, uuid: one('entryuuid'),
+                    displayName: one('displayname') || one('cn') });
+      lastKept = String(row.rdn || uid);
+    }
+    if (people.length >= count) {
+      more = stoppedEarly || page.asked >= want;
+      if (lastKept) {
+        cursor = lastKept;
+      }
+      break;
+    }
+    if (page.last) {
+      cursor = page.last;
+    }
+    if (page.asked < want) {
+      more = false;
+      break;
+    }
+    more = true;
+  }
+  log.debug('Leaving residentsPageAsync(). ' + people.length +
+            ' person(s).');
+  return { people: people, more: more, next: more ? cursor : '' };
+}
+
+/**
+ * A store question asked asynchronously for a windowed console page
+ * (#359), with its failure CODED: a rejection that carries no code of its
+ * own is the store's (the driver's read pool answers a database error as
+ * it is), and is marked `STS-LDAP-0139` so the handler can tell an
+ * unreadable store, which is a 503, from a bug, which is not.
+ *
+ * @param promise - the question
+ * @returns the same answer, or the rejection coded
+ */
+function storeAsked(promise) {
+  log.debug('Entering storeAsked().');
+  log.debug('Leaving storeAsked().');
+  return Promise.resolve(promise).catch(function (e) {
+    log.debug('Caught in storeAsked(): ' + ((e && e.message) || e));
+    if (e && typeof e === 'object' && !errorCodes.codeOf(e)) {
+      errorCodes.mark(e, 'STS-LDAP-0139');
+    }
+    throw e;
+  });
+}
+
+/**
+ * One page of the role screen's directory candidates in a window (#359):
+ * direct children of `ou=users`, in RDN order, `needle` a substring of
+ * the RDN. `limit` of 0 counts and does not read a page. `options.total`
+ * and `options.matched`, when both are given, are kept, so a caller that
+ * already counted does not count again.
+ *
+ * The username is the lower-cased RDN. An entry created here and not yet
+ * flushed is not on the page.
+ *
+ * **A PAGE THAT IS NOT WHOLE SAYS SO** (the review of #692): `matched`
+ * counts rows, and three things keep a counted row off the page — a name
+ * that cannot be spelt in a DN (left out; `unusable`), two entries sharing
+ * one RDN value (`uid=alice` and `cn=alice`: the walk's `>` steps past
+ * both, so the page ends short; `short`), and a row past the walk's cap
+ * (`WINDOWED_PAGE_CAP`; `capped`). `complete` is false when any of them
+ * touched this page, and the console says which.
+ *
+ * @param offset - rows to skip
+ * @param limit - how many
+ * @param needle - a substring, or ''
+ * @param options - a count already known (`total`, `matched`)
+ * @returns a promise of `{ rows, total, matched, complete, incomplete }`
+ */
+async function candidatePageAsync(offset, limit, needle, options) {
+  log.debug('Entering candidatePageAsync().');
+  const opts = options || {};
+  if (!directoryWindow) {
+    log.debug('Leaving candidatePageAsync(). Not windowed.');
+    return { rows: [], total: 0, matched: 0, complete: true,
+             incomplete: null };
+  }
+  const realmId = realms.currentId();
+  const parent = normalizeDn(usersDn());
+  const wanted = String(needle || '').trim().toLowerCase();
+  const count = Math.max(0, Math.floor(Number(limit) || 0));
+  let total = opts.total;
+  let matched = opts.matched;
+  if (total === undefined || total === null ||
+      matched === undefined || matched === null) {
+    total = Number(await storeAsked(directoryWindow.askAsync('count',
+      [realmId, parent]))) || 0;
+    matched = wanted
+      ? (Number(await storeAsked(directoryWindow.askAsync('rdnCount',
+          [realmId, parent, wanted]))) || 0)
+      : total;
+  } else {
+    total = Number(total) || 0;
+    matched = Number(matched) || 0;
+  }
+  const capped = matched > WINDOWED_PAGE_CAP;
+  const from = Math.max(0, Math.floor(Number(offset) || 0));
+  const incompleteness = function (unusable, short) {
+    const whole = unusable === 0 && short === 0 && !capped;
+    return { complete: whole,
+             incomplete: whole ? null
+               : { unusable: unusable, short: short, capped: capped,
+                   cap: WINDOWED_PAGE_CAP } };
+  };
+  if (count === 0) {
+    const counted = incompleteness(0, 0);
+    log.debug('Leaving candidatePageAsync(). Counted.');
+    return { rows: [], total: total, matched: matched,
+             complete: counted.complete, incomplete: counted.incomplete };
+  }
+  if (from >= WINDOWED_PAGE_CAP) {
+    // PAST THE CAP the store would answer the cap's page instead, which
+    // is somebody else's: nothing is asked, and the answer says why.
+    const past = incompleteness(0, 0);
+    log.debug('Leaving candidatePageAsync(). Past the cap.');
+    return { rows: [], total: total, matched: matched,
+             complete: past.complete, incomplete: past.incomplete };
+  }
+  const page = await storeAsked(directoryWindow.rdnPageAsync(realmId,
+    parent, '', count, { offset: from, needle: wanted }));
+  const rows = [];
+  let unusable = 0;
+  ((page && page.rows) || []).forEach(function (row) {
+    const rdn = String(row.rdn || '').toLowerCase();
+    if (!rdn || !nameUsableInDn(rdn)) {
+      unusable += 1;
+      return;
+    }
+    rows.push({ username: rdn, inDirectory: true, seen: false });
+  });
+  // What the count says this page should have held, against what the
+  // walk reached: within the cap, a shortfall is rows the walk stepped
+  // past (a shared RDN value) or rows gone since the count.
+  const asked = Number((page && page.asked) || 0);
+  const expected = Math.max(0, Math.min(matched, WINDOWED_PAGE_CAP,
+                                        from + count) - from);
+  const short = Math.max(0, expected - asked);
+  const answer = incompleteness(unusable, short);
+  log.debug('Leaving candidatePageAsync(). ' + rows.length + ' row(s).');
+  return { rows: rows, total: total, matched: matched,
+           complete: answer.complete, incomplete: answer.incomplete };
+}
+
+/**
+ * One directory candidate by login name, for a `person` the page being
+ * drawn does not already hold (#359). One `byName`. Null when the
+ * container has nobody by that name, or the name cannot be a DN.
+ *
+ * @param name - the username
+ * @returns a promise of the row, or null
+ */
+async function candidateByNameAsync(name) {
+  log.debug('Entering candidateByNameAsync().');
+  if (!directoryWindow) {
+    log.debug('Leaving candidateByNameAsync(). Not windowed.');
+    return null;
+  }
+  const wanted = String(name || '').trim().toLowerCase();
+  if (!wanted || !nameUsableInDn(wanted)) {
+    log.debug('Leaving candidateByNameAsync(). Unusable.');
+    return null;
+  }
+  const realmId = realms.currentId();
+  const parent = normalizeDn(usersDn());
+  const found = await storeAsked(directoryWindow.askAsync('byName',
+    [realmId, parent, wanted]));
+  const rows = Array.isArray(found) ? found : [];
+  const row = rows[0];
+  if (!row || !row.entry) {
+    log.debug('Leaving candidateByNameAsync(). Nobody.');
+    return null;
+  }
+  const dn = String(row.entry.dn || row.key || '');
+  const first = dn.split(',')[0];
+  const eq = first.indexOf('=');
+  const value = eq > 0 ? first.slice(eq + 1).toLowerCase() : '';
+  if (!value || !nameUsableInDn(value)) {
+    log.debug('Leaving candidateByNameAsync(). No usable RDN.');
+    return null;
+  }
+  log.debug('Leaving candidateByNameAsync().');
+  return { username: value, inDirectory: true, seen: false };
 }
 
 // The DNs of every person, as stored, in `allPersons()`'s order — for a caller
@@ -24026,9 +24289,135 @@ function ldapFederationsView(req) {
 // ONE VALUE IS WITHHELD: `stsDeviceSecretHash`, which is in
 // SECRET_ATTRIBUTES and withheld from every LDAP read. Every other value is
 // shown as the directory holds it — a key's JSON is public material.
+//
+// **IN #349's WINDOW (#359)** the page is `windowedDevicesView()`: the
+// container's count and one page of its direct children, asynchronously.
+// A `q` cannot be pushed (the values are sealed) and looks inside a
+// bounded number of entries, as the directory page does. The order is the
+// store's key order. An entry created here and not yet flushed is absent
+// until the next flush.
 // ---------------------------------------------------------------------------
+function deviceEntryMatches(entry, needle) {
+  log.debug('Entering deviceEntryMatches().');
+  if (String(entry.dn).toLowerCase().indexOf(needle) >= 0) {
+    log.debug('Leaving deviceEntryMatches(). The DN.');
+    return true;
+  }
+  const found = Object.keys(entry.attributes || {}).some(function (name) {
+    if (isSecretAttribute(name)) {
+      return false;
+    }
+    return entry.attributes[name].some(function (value) {
+      return String(value).toLowerCase().indexOf(needle) >= 0;
+    });
+  });
+  log.debug('Leaving deviceEntryMatches(). ' + found);
+  return found;
+}
+
+function deviceShownAttributes(entry) {
+  log.debug('Entering deviceShownAttributes().');
+  const out = {};
+  Object.keys(entry.attributes || {}).sort().forEach(function (name) {
+    out[canonicalName(name)] = isSecretAttribute(name)
+      ? ['(withheld: a verifier, as from every LDAP read)']
+      : entry.attributes[name].slice(0);
+  });
+  log.debug('Leaving deviceShownAttributes().');
+  return out;
+}
+
+async function windowedDevicesView(req) {
+  log.debug('Entering windowedDevicesView().');
+  const realmId = realms.currentId();
+  const parent = normalizeDn(devicesDn());
+  const wantedText = String(req.query.q || '').trim();
+  const needle = wantedText.toLowerCase();
+  const count = Number(await storeAsked(directoryWindow.askAsync('count',
+    [realmId, parent]))) || 0;
+  let matched = count;
+  let shown = [];
+  let search = null;
+  let paging = null;
+  let pastCap = false;
+  if (!needle) {
+    paging = adminViews.pagingOf(req.query, matched, { noun: 'entries' });
+    // PAST THE WALK'S CAP the store would answer the cap's page, which is
+    // other devices: nothing is asked, and `pageCap` says why the page is
+    // empty.
+    pastCap = paging.offset >= WINDOWED_PAGE_CAP;
+    const page = pastCap ? { rows: [], asked: 0 }
+      : await storeAsked(directoryWindow.containerPageAsync(realmId, parent,
+          paging.offset, paging.perPage));
+    shown = page.rows.map(function (hit) {
+      return { dn: hit.entry.dn,
+               attributes: deviceShownAttributes(hit.entry) };
+    });
+  } else {
+    const found = [];
+    let offset = 0;
+    let scanned = 0;
+    let complete = false;
+    while (scanned < DIRECTORY_SEARCH_SCAN) {
+      const n = Math.min(DIRECTORY_SEARCH_PAGE,
+                         DIRECTORY_SEARCH_SCAN - scanned);
+      const page = await storeAsked(directoryWindow.containerPageAsync(
+        realmId, parent, offset, n));
+      scanned += page.asked;
+      page.rows.forEach(function (hit) {
+        if (deviceEntryMatches(hit.entry, needle)) {
+          found.push(hit.entry);
+        }
+      });
+      if (!page.asked || page.asked < n) {
+        complete = true;
+        break;
+      }
+      offset += page.asked;
+      await new Promise(function (resolve) {
+        setImmediate(resolve);
+      });
+    }
+    matched = found.length;
+    paging = adminViews.pagingOf(req.query, matched, { noun: 'entries' });
+    shown = found.slice(paging.offset, paging.offset + paging.perPage)
+      .map(function (entry) {
+        return { dn: entry.dn, attributes: deviceShownAttributes(entry) };
+      });
+    search = { complete: complete, scanned: scanned,
+               scanLimit: DIRECTORY_SEARCH_SCAN };
+  }
+  const payload = {
+    baseDn: baseDn(),
+    container: devicesDn(),
+    count: count,
+    matched: matched,
+    shown: shown.length,
+    filter: { q: wantedText || null },
+    page: paging.page, pages: paging.pages, perPage: paging.perPage,
+    firstRow: paging.firstRow, lastRow: paging.lastRow,
+    sourceOfTruth: SOURCE_OF_TRUTH.devices,
+    schema: devices.SCHEMA,
+    entries: shown,
+    paging: adminViews.pagingJson(paging)
+  };
+  if (search) {
+    payload.search = search;
+  }
+  if (pastCap) {
+    payload.pageCap = WINDOWED_PAGE_CAP;
+  }
+  log.debug('Leaving windowedDevicesView(). ' + shown.length +
+            ' row(s) of ' + matched + ' matched.');
+  return { title: 'Device entries', json: payload };
+}
+
 function ldapDevicesView(req) {
   log.debug('Entering ldapDevicesView().');
+  if (directoryWindow) {
+    log.debug('Leaving ldapDevicesView(). Windowed: asked of the store.');
+    return windowedDevicesView(req);
+  }
   const all = listDeviceEntries();
   const wantedText = String(req.query.q || '').trim();
   const needle = wantedText.toLowerCase();
@@ -25053,9 +25442,14 @@ module.exports = {
   personNames: personNames,
   personDns: personDns,
   residentsPage: residentsPage,
+  residentsPageAsync: residentsPageAsync,
+  candidatePageAsync: candidatePageAsync,
+  candidateByNameAsync: candidateByNameAsync,
   // /admin/ldap/directory's view, for the in-process test that counts what
   // it copies (#352).
   ldapDirectoryView: ldapDirectoryView,
+  // The device register's view, counted the same way (#352, #359).
+  ldapDevicesView: ldapDevicesView,
   readPerson: readPerson,
   writePerson: writePerson,
   deletePerson: deletePerson,

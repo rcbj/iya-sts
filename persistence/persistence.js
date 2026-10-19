@@ -627,6 +627,23 @@ function settleDirWaiters(error) {
 }
 
 /**
+ * Runs `fn` outside any console request's directory budget (#359): the
+ * timers this module arms run background work, which must never inherit
+ * the AsyncLocalStorage slot of the request whose change armed them.
+ * `common/sync_query` is required here, lazily, as `persistence.start()`
+ * already does — never at load, which would move it ahead of this module.
+ *
+ * @param fn - arms the timer
+ * @returns what `fn` returns
+ */
+function outsideBudget(fn) {
+  log.debug("Entering outsideBudget().");
+  const handle = require('../common/sync_query').outsideBudget(fn);
+  log.debug("Leaving outsideBudget().");
+  return handle;
+}
+
+/**
  * Arms the one retry of a failed write, if none is armed; see RETRY_FIRST_MS.
  * @param why - what failed, for the debug line
  */
@@ -640,18 +657,22 @@ function retryAfterFailure(why) {
                          RETRY_FIRST_MS * Math.pow(2, Math.min(retryFailures,
                                                                5)));
   retryFailures += 1;
-  retryTimer = setTimeout(function () {
-    retryTimer = null;
-    // A keystore row whose write failed has no generation and no journal: it
-    // is queued again here, whole, with what it held when it failed.
-    if (typeof keystore.retryFailed === 'function') {
-      keystore.retryFailed();
-    }
-    flush().catch(function (err) {
-      log.error(errorCodes.tag('STS-STORE-0001') +
-                'persistence: a retried flush failed: ' + err.message);
-    });
-  }, delay);
+  // Outside any request's directory budget, as `schedule()`'s timer.
+  retryTimer = outsideBudget(function () {
+    return setTimeout(function () {
+      retryTimer = null;
+      // A keystore row whose write failed has no generation and no
+      // journal: it is queued again here, whole, with what it held when it
+      // failed.
+      if (typeof keystore.retryFailed === 'function') {
+        keystore.retryFailed();
+      }
+      flush().catch(function (err) {
+        log.error(errorCodes.tag('STS-STORE-0001') +
+                  'persistence: a retried flush failed: ' + err.message);
+      });
+    }, delay);
+  });
   if (retryTimer.unref) {
     retryTimer.unref();
   }
@@ -970,17 +991,22 @@ function schedule() {
   }
   // 0 for a database, `writeDelay` for a file. The header argues both.
   const delay = activeMode === 'postgres' ? 0 : writeDelay();
-  timer = setTimeout(function () {
-    timer = null;
-    flush().catch(function (err) {
-      // flush() records its own failure; this catch exists so that an
-      // unhandled rejection from a timer cannot take the process down. A mock
-      // that exits because a database blinked would be worse than one that
-      // stopped persisting.
-      log.error(errorCodes.tag('STS-STORE-0001') +
-                'persistence: a scheduled flush failed: ' + err.message);
-    });
-  }, delay);
+  // ARMED OUTSIDE ANY REQUEST'S DIRECTORY BUDGET (#359): the change that
+  // schedules a flush is often a console request's, and the flush is
+  // background work that must not inherit that request's slot.
+  timer = outsideBudget(function () {
+    return setTimeout(function () {
+      timer = null;
+      flush().catch(function (err) {
+        // flush() records its own failure; this catch exists so that an
+        // unhandled rejection from a timer cannot take the process down. A
+        // mock that exits because a database blinked would be worse than
+        // one that stopped persisting.
+        log.error(errorCodes.tag('STS-STORE-0001') +
+                  'persistence: a scheduled flush failed: ' + err.message);
+      });
+    }, delay);
+  });
   // The timer must not hold the process open on its own — a service with
   // nothing else to do should still be able to exit.
   if (timer.unref) {
