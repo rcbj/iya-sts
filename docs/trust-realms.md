@@ -232,10 +232,11 @@ the default realm are different people. A realm administrator who opens another
 realm's console is told they administer another realm, with a link back.
 
 **Choosing a realm.** When realms are defined, the plain `/admin` and `/portal`
-ask which realm you belong to before signing you in — a list of realms in
-development mode, a box for the realm's id in product mode. Add `?realm=<id>` to
-skip the question, or `?realm=default` to sign in to the default realm. A link
-to any page below `/admin` or `/portal` never asks.
+ask which realm you belong to before signing you in, as a list of every realm.
+The choice is remembered in the browser, and the next visit to those addresses
+opens that realm. Add `?realm=<id>` to choose a different one, or
+`?realm=default` to sign in to the default realm. A link to any page below
+`/admin` or `/portal` never asks.
 
 **The management API.** `/admin-api` accepts a token from the default realm's
 `sts-management-api` client everywhere. Under `/realm/<id>/admin-api` it also

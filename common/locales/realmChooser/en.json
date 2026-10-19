@@ -5,6 +5,5 @@
   "explain": "This service hosts more than one trust realm, and each has its own people and its own administrators. Choose the realm you belong to, and you will be asked to sign in there.",
   "realm": "Realm",
   "continue": "Continue to {surface, select, portal {your account} other {the admin console}}",
-  "defaultRealm": "(the default realm)",
-  "idNote": "Your administrator can tell you the id of your realm. The default realm's id is <code>{id}</code>."
+  "defaultRealm": "(the default realm)"
 }

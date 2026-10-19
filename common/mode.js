@@ -720,25 +720,6 @@ function refusesExpiredClientSecrets() {
   return isProduct();
 }
 
-// Does the realm chooser in front of `/admin` and `/portal` LIST the realms?
-// (2026-09-14, #32.) A person arriving at either surface with no session, on a
-// service with realms defined, chooses which realm to sign in through.
-// Development draws every realm in a list, because the list is what somebody
-// exercising the service wants; product asks for the realm's id in a text box,
-// because a list drawn to anybody who can reach the page publishes every
-// tenant this deployment serves.
-/**
- * Tells whether the realm chooser in front of `/admin` and `/portal` lists the
- * realms; product asks for the realm's id instead.
- *
- * @returns true in development mode
- */
-function listsRealmsBeforeSignIn() {
-  log.debug("Entering listsRealmsBeforeSignIn().");
-  log.debug("Leaving listsRealmsBeforeSignIn().");
-  return !isProduct();
-}
-
 // May a claim VALUE be invented where the store holds none? A persona surname,
 // an address at a domain nobody owns with `email_verified: true`, a generated
 // birthdate in a signed credential, an `@example.com` subject in a security
@@ -2608,15 +2589,6 @@ const REQUIREMENTS = [
              'disclose its credentialStatus, is always refused. own-only ' +
              'and the per-issuer exemption are allowed.',
     where: 'oid4vc/vc_verifier.ts, oid4vc/vc_status.ts' },
-  { id: 'realm-chooser',
-    what: 'The realm chooser before sign-in lists every realm',
-    development: 'A browser with no session at /admin or /portal, on a ' +
-                 'service with trust realms defined, is shown a list of every ' +
-                 'realm to sign in through.',
-    product: 'The same page asks for the realm\'s id in a text box, so the ' +
-             'deployment\'s realms are not published to anybody who can ' +
-             'reach it.',
-    where: 'common/realm_chooser.ts' },
   { id: 'weaker-responses',
     what: 'A response may go out weaker than asked',
     development: 'An assertion or token that should have been encrypted and ' +
@@ -3968,7 +3940,6 @@ module.exports = {
   derivesKrbtgtFromPassword: derivesKrbtgtFromPassword,
   generatesAcceptorKey: generatesAcceptorKey,
   refusesExpiredClientSecrets: refusesExpiredClientSecrets,
-  listsRealmsBeforeSignIn: listsRealmsBeforeSignIn,
   inventsClaimValues: inventsClaimValues,
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,
   requiresCellKek: requiresCellKek,

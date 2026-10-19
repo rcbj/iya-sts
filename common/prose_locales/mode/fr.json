@@ -371,18 +371,6 @@
     "en": "091040d9ab1a08e5",
     "text": "off est IGNORÉ là où il est lu (journalisé une fois, STS-CORE-0106) et refusé à l’écriture (STS-CORE-0103) : une attestation de ce domaine sans référence de statut, ou un ldp_vc qui n’a pas divulgué son credentialStatus, est toujours refusé. own-only et l’exemption par émetteur sont autorisés."
   },
-  "mode.requirements.realm-chooser.what": {
-    "en": "c37334adfeccc2cb",
-    "text": "Le sélecteur de domaine affiché avant la connexion liste tous les domaines"
-  },
-  "mode.requirements.realm-chooser.development": {
-    "en": "7ace23d168380455",
-    "text": "Un navigateur sans session sur /admin ou /portal, sur un service où des domaines de confiance sont définis, voit une liste de tous les domaines par lesquels se connecter."
-  },
-  "mode.requirements.realm-chooser.product": {
-    "en": "b3e379e5d61df6c0",
-    "text": "La même page demande l’identifiant du domaine dans une zone de texte, afin que les domaines du déploiement ne soient pas publiés à quiconque peut l’atteindre."
-  },
   "mode.requirements.weaker-responses.what": {
     "en": "57d0e17e4a068c39",
     "text": "Une réponse peut sortir plus faible que demandé"

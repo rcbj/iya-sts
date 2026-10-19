@@ -371,18 +371,6 @@
     "en": "091040d9ab1a08e5",
     "text": "off 在讀取時會被「忽略」（記錄一次，STS-CORE-0106），並在寫入時被拒絕（STS-CORE-0103）：此領域沒有狀態參照的憑證，或未揭露其 credentialStatus 的 ldp_vc，一律被拒絕。own-only 與按簽發者的豁免是允許的。"
   },
-  "mode.requirements.realm-chooser.what": {
-    "en": "c37334adfeccc2cb",
-    "text": "登入前的領域選擇器列出每個領域"
-  },
-  "mode.requirements.realm-chooser.development": {
-    "en": "7ace23d168380455",
-    "text": "在已定義信任領域的服務上，於 /admin 或 /portal 沒有工作階段的瀏覽器，會看到一份可供登入的所有領域清單。"
-  },
-  "mode.requirements.realm-chooser.product": {
-    "en": "b3e379e5d61df6c0",
-    "text": "同一頁面會以文字方塊要求輸入領域 ID，因此部署的領域不會公開給任何能連到它的人。"
-  },
   "mode.requirements.weaker-responses.what": {
     "en": "57d0e17e4a068c39",
     "text": "回應可以比所要求的更弱"

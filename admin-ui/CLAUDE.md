@@ -3883,7 +3883,7 @@ than by refusing the roster. rcbj's four decisions are the design:
 |---|---|
 | Who is on a realm's roster | the realm's own `cn=admin-read` and `cn=admin-write`, and a seeded `admin` with a forced password change |
 | What a realm administrator reaches | their realm; service pages, actions and settings are hidden and refused |
-| How the plain `/admin` and `/portal` pick a realm | a chooser — a list in development, a text box in product |
+| How the plain `/admin` and `/portal` pick a realm | a chooser — a list of every realm, remembered on the `sts_realm` cookie |
 | The machine door | a realm-scoped `sts-management-api` token per realm |
 
 **THE DEFAULT REALM'S ROSTER IS STILL THE SERVICE ROSTER** and administers every
@@ -3964,18 +3964,25 @@ reason. The account is protected from deletion in its realm
 
 A GET of exactly `/admin` or `/portal`, in the default realm, with no session,
 while realms are defined, draws a chooser (`STS-ADMIN-0790` / `STS-PORTAL-0074`
-for an unknown id). `?realm=<id>` 303s to that realm's surface, BUILT from the
-registry and never echoed; `?realm=default` signs in where it is. A deep link is
-never asked. **`mode.listsRealmsBeforeSignIn()`** decides list versus text box,
-because listing every tenant's name to anonymous readers is a development
-convenience. **It is a page of its own since 2026-10-08 (rcbj)**,
+for an unknown id). The control is a list of every realm, in both modes
+(2026-10-18; until then product asked for the id in a text box, so a page
+anybody could open would not publish every tenant). A choice is remembered
+on the `sts_realm` cookie — a year, `HttpOnly`, `SameSite=Lax`, and `Secure`
+where the service is https — and the next bare visit is that choice.
+`?realm=<id>` still wins: it 303s to that realm's surface, BUILT from the
+registry and never echoed, and replaces what was remembered. `?realm=default`
+signs in where it is and remembers the default realm. A cookie that names no
+realm, or that cannot be read, is dropped and the page is drawn. A deep link
+is never asked. **It is a page of its own since 2026-10-08 (rcbj)**,
 `RealmChooser.page()`, for both surfaces: a blank, centred document with a
-note, the large control (with the focus) and its button, and nothing of the
+note, the large list (with the focus) and its button, and nothing of the
 console's or the portal's frame — every control a frame draws leads to a
 sign-in this page has not let the reader start, so drawing them was an
-unusable console with one working form in it. #32's list-or-text-box rule is
-unchanged. **Every owned job signs in through `?realm=default`** since the
-suite nearly always has realms — the doors are named constants in each job.
+unusable console with one working form in it. **Every owned job signs in
+through `?realm=default`** since the suite nearly always has realms — the
+doors are named constants in each job. That query writes the cookie too, and
+a later bare request in the same jar is the default realm, which is the same
+sign-in.
 
 ### What it does not do yet
 

@@ -371,18 +371,6 @@
     "en": "091040d9ab1a08e5",
     "text": "off IGNORERAS där det läses (loggas en gång, STS-CORE-0106) och avvisas vid skrivning (STS-CORE-0103): ett credential från den här sfären utan statusreferens, eller ett ldp_vc som inte avslöjade sin credentialStatus, avvisas alltid. own-only och undantaget per utfärdare är tillåtna."
   },
-  "mode.requirements.realm-chooser.what": {
-    "en": "c37334adfeccc2cb",
-    "text": "Sfärväljaren före inloggning listar varje sfär"
-  },
-  "mode.requirements.realm-chooser.development": {
-    "en": "7ace23d168380455",
-    "text": "En webbläsare utan session vid /admin eller /portal, på en tjänst med definierade förtroendesfärer, visas en lista över varje sfär att logga in genom."
-  },
-  "mode.requirements.realm-chooser.product": {
-    "en": "b3e379e5d61df6c0",
-    "text": "Samma sida ber om sfärens id i en textruta, så att driftsättningens sfärer inte publiceras för vem som helst som kan nå den."
-  },
   "mode.requirements.weaker-responses.what": {
     "en": "57d0e17e4a068c39",
     "text": "Ett svar får skickas svagare än begärt"

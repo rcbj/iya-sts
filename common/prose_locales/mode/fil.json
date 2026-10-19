@@ -371,18 +371,6 @@
     "en": "091040d9ab1a08e5",
     "text": "BINABALEWALA ang off kung saan ito binabasa (nilo-log nang isang beses, STS-CORE-0106) at tinatanggihan sa pagsulat (STS-CORE-0103): palaging tinatanggihan ang credential ng realm na ito na walang status reference, o ang ldp_vc na hindi nagbunyag ng credentialStatus nito. Pinapayagan ang own-only at ang per-issuer na exemption."
   },
-  "mode.requirements.realm-chooser.what": {
-    "en": "c37334adfeccc2cb",
-    "text": "Inililista ng realm chooser bago ang sign-in ang bawat realm"
-  },
-  "mode.requirements.realm-chooser.development": {
-    "en": "7ace23d168380455",
-    "text": "Ang browser na walang session sa /admin o /portal, sa serbisyong may mga trust realm na nakadepina, ay ipinapakitaan ng listahan ng bawat realm na mapag-si-sign in-an."
-  },
-  "mode.requirements.realm-chooser.product": {
-    "en": "b3e379e5d61df6c0",
-    "text": "Humihingi ang parehong page ng id ng realm sa isang text box, kaya hindi inilalathala ang mga realm ng deployment sa sinumang nakakaabot dito."
-  },
   "mode.requirements.weaker-responses.what": {
     "en": "57d0e17e4a068c39",
     "text": "Puwedeng lumabas ang response na mas mahina kaysa sa hiningi"
