@@ -72,9 +72,12 @@ are seeded, in both modes.
 ## People: `ou=users`
 
 `objectClass: top, person, organizationalPerson, inetOrgPerson`. The RDN is
-`uid=<username>`. **One person is one entry**, however they arrive. An
-identity that names nobody by itself (a DID, a SPIFFE ID) gets an entry
-named by a digest of its identifier.
+`uid=<username>`. **One person is one entry**, however they arrive by a
+protocol that folds names together. An identity that names nobody by itself
+(a DID, a SPIFFE ID) gets an entry named by a digest of its identifier. A
+person a federated sign-in creates is a different entry from a local person
+who shares the part before `@`: the `uid` is `<relationship>~<subject>`
+([Federation](federation.md#provisioning-dynamic-or-pre-provisioned)).
 
 ### Standard attributes
 
@@ -188,7 +191,11 @@ The console groups are created on first grant, and the bootstrap `admin` holds b
 
 The names are the defaults of `admin.readGroup`, `admin.writeGroup`, `roles.remotePepGroup` and `roles.xacmlUserGroup`. The directory also treats `groupOfUniqueNames`, `posixGroup` and `groupOfURLs` entries as groups, and reads `uniqueMember` and `memberUid` as well as `member`.
 
-A group `fedProvisionGroups` creates also carries `federationrelationship`, the relationship id that created it. A later sign-in through that relationship may add people only to groups carrying that mark. A token that names `admin-write`, or any other group the relationship did not create, does not add the person to it.
+A group `fedProvisionGroups` creates also carries `federationRelationship`,
+the relationship id that created it. A later sign-in through that
+relationship may add people only to groups carrying that mark. A token that
+names `admin-write`, or any other group the relationship did not create,
+does not add the person to it.
 
 ## Applications: `ou=applications`
 

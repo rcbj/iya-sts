@@ -969,13 +969,15 @@ Everything else on the entry is decoration; the username decides WHICH ENTRY.
 Getting it wrong means either a second entry for somebody who already has one
 or — far worse — a foreign partner's `alice` landing on the local `alice`.
 
-That second case is not a bug to be fixed later. It is the whole question of
-whether federated identities share a namespace with local ones, and this service
-answers it with **`federation.usernamePrefix`**: empty by default, because a
-mock exists to be pointed at things and a prefixed name makes every downstream
-token and assertion look unfamiliar. Set it the moment the question is being
-asked. It is applied AFTER the username is chosen, so changing it cannot change
-WHICH incoming value was used.
+That second case is the confirm lookup and `any-existing`, and this service
+answers it with **`federation.usernamePrefix`**: empty by default, so those
+two share the local namespace, because a mock exists to be pointed at things
+and a prefixed confirm-name misses the local person. Set it the moment that
+lookup must not meet a local account. It is applied AFTER the username is
+chosen and reduced, so changing it cannot change WHICH incoming value was
+used. It is not the name an entry is created under. Since #358 that uid is
+`<relationship>~<subject>` (`provisionedName()`), prefix or not; the paragraph
+*Creating anybody* below is that rule.
 
 ---
 
