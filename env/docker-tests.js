@@ -252,14 +252,6 @@ var config = {
       "krbtgt-mock-password",                        // restart to apply
     domainSid:
       "S-1-5-21-1004336348-1177238915-682003330",         // restart to apply
-    trustedRealm:
-      "PARTNER.COM",                                   // restart to apply
-    trustPassword:
-      "inter-realm-trust-password",                   // restart to apply
-    trustedDomainSid:
-      "S-1-5-21-2035427030-2118130302-1178042555", // restart to apply
-    trustedKrbtgtPassword:
-      "partner-krbtgt-password",              // restart to apply
     s2kparams: "omit"
   },
 

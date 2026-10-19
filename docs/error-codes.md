@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4398** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4415** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
 * [Federation (`STS-FED`)](#sts-fed) — 146
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 229
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 130
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
@@ -2750,7 +2750,7 @@ Raised from: kerberos/.
 | `STS-KRB-0121` | A TGS-REQ named a realm this KDC does not serve. Until 2026-09-15 such a request was answered as the default realm. | KDC_ERR_WRONG_REALM (68) |
 | `STS-KRB-0122` | A KDC request sent to a trust realm's own /realm/<id>/KdcProxy named a Kerberos realm that realm does not serve (another realm's name, or one whose Kerberos is off). | KDC_ERR_WRONG_REALM (68) |
 | `STS-KRB-0123` | Kerberos was turned on for a trust realm that has no krb5.realm of its own. | none (a refused administrative change) |
-| `STS-KRB-0124` | A trust realm was given a krb5.realm another realm already answers to (another realm's, the default realm's, or krb5.trustedRealm), compared without regard to case. | none (a refused administrative change) |
+| `STS-KRB-0124` | A trust realm was given a krb5.realm another realm already answers to (another realm's, the default realm's, or the development partner realm the default realm answers as), compared without regard to case. | none (a refused administrative change) |
 | `STS-KRB-0125` | A trust realm's krb5.realm was changed or cleared while its Kerberos was on. | none (a refused administrative change) |
 | `STS-KRB-0126` | The acceptor was presented a ticket for a Kerberos realm the trust realm it was reached in does not serve. | KRB_AP_ERR_NOT_US (35); over SPNEGO, HTTP 401 |
 | `STS-KRB-0127` | Two trust realms answer to one Kerberos realm name (a restored or replicated realm the registry did not re-judge), so the KDC routes that name to the first and not the second. | none (logged when the router finds it) |
@@ -2839,6 +2839,23 @@ Raised from: kerberos/.
 | `STS-KRB-0210` | No random key could be made for the Kerberos acceptor's SPN, whose configured krb5.servicePassword product refused (empty or the published default), so the acceptor accepts no ticket. | — |
 | `STS-KRB-0211` | A node lost the race to make the Kerberos acceptor's random key and, re-reading the directory, did not find the winner's key yet; its acceptor refuses until it arrives. | — |
 | `STS-KRB-0212` | The Kerberos acceptor's random key was not made: this node could not ask the shared store whether another node was making it. | — |
+| `STS-KRB-0213` | A Kerberos trust record was refused: its partner realm is not a domain-style Kerberos realm name, or an update tried to change it. | none (a refused administrative change) |
+| `STS-KRB-0214` | A Kerberos trust record was refused: its partner is this realm's own Kerberos realm, or this realm has no Kerberos realm. | none (a refused administrative change) |
+| `STS-KRB-0215` | A Kerberos trust act was refused: the realm already holds a trust with that partner (or the most it may), or holds none to change or remove. | none (a refused administrative change) |
+| `STS-KRB-0216` | A Kerberos trust record was refused: its type is unknown, or a trust-realm partner names no trust realm in this process answering as that Kerberos realm. | none (a refused administrative change) |
+| `STS-KRB-0217` | A Kerberos trust record was refused: it names an attribute outside the closed set, or two that contradict each other. | none (a refused administrative change); [MS-ADTS] 6.1.6.7.9 |
+| `STS-KRB-0218` | A Kerberos trust record was refused: its NetBIOS name or its partner domain SID is not well formed. | none (a refused administrative change) |
+| `STS-KRB-0219` | A Kerberos trust record was refused: a routed suffix is not a DNS name, or is this realm's own domain. | none (a refused administrative change) |
+| `STS-KRB-0220` | A Kerberos trust record was refused: its enctypes name none, one this KDC does not implement, one the mode withholds, or one a kept generated key was not made for. | none (a refused administrative change) |
+| `STS-KRB-0221` | A Kerberos trust record was refused: it holds neither an incoming nor an outgoing key, or a pairing named no direction. | none (a refused administrative change) |
+| `STS-KRB-0222` | A Kerberos trust record was refused: a key has no source, a trust password is too short, a given key is the wrong length, or a kvno is out of range. | none (a refused administrative change) |
+| `STS-KRB-0223` | A Kerberos trust record was not written: its keys could not be sealed, or the directory refused the entry. | none (a refused administrative change) |
+| `STS-KRB-0224` | A stored Kerberos trust record was not used: its data is not JSON, names no partner, or its keys will not open. Said once per realm and record. | logged; no referral through it and no ticket accepted from it |
+| `STS-KRB-0225` | The Kerberos trust register was given a directory without all three of its functions, or could not be loaded at all; the KDC holds no trust there. | logged |
+| `STS-KRB-0226` | A referral was refused: the path would cross more trusts than krb5.maxReferralHops allows. | KDC_ERR_PATH_NOT_ACCEPTED (28); RFC 4120 section 3.3.3.2 |
+| `STS-KRB-0227` | A cross-realm ticket was refused: it came through a non-transitive trust for somebody not of the partner's own realm, or would be referred onward through one. | KDC_ERR_PATH_NOT_ACCEPTED (28); [MS-ADTS] 6.1.6.7.9 |
+| `STS-KRB-0228` | A cross-realm ticket's path failed the transited-policy check: a realm on it is outside the trust's routed namespace, is this realm, is elided, or no enabled trust accepts its issuer. | KDC_ERR_PATH_NOT_ACCEPTED (28); RFC 4120 sections 2.7, 3.3.3.2 |
+| `STS-KRB-0229` | A cross-realm ticket-granting ticket was refused: the trust it came through is disabled, or holds no incoming key. | KDC_ERR_S_PRINCIPAL_UNKNOWN (7) |
 
 ## STS-LDAP
 

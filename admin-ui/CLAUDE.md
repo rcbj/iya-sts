@@ -3934,9 +3934,10 @@ tables, each refused only to a realm authority (`refusalFor()`):
   PREFIX BECAME SIX KEYS on 2026-09-15**, for the reason Kerberos left
   `SERVICE_PAGES`: the ten rows a realm's principal database is built from are
   the realm administrator's, and what stays the service's is the KDC's socket
-  (`krb5.kdcPort`; `krb5.servicePort` was the other, until #595) and the
-  development-mode trust
-  (`krb5.trustedRealm` and its three).
+  (`krb5.kdcPort`; `krb5.servicePort` was the other, until #595). The
+  development-mode trust (`krb5.trustedRealm` and its three) was the
+  service's too until #430 retired the four: a trust is a record in the
+  realm's own directory now (`kerberos/krb5_trusts.ts`).
   **The `admin.*` and `adminApi.*` gate settings were made `perProcess` for the
   same reason** — a realm override of the console's own groups would otherwise
   be a way round the roster.

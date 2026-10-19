@@ -69,11 +69,13 @@
 // finding the other realm's KDC (DNS and SRV records) and none of the
 // protocol. What it buys is that the whole cross-realm referral can be walked
 // without a second container. Any other trust realm's KDC answers for its own
-// Kerberos realm alone and holds no trust (see WHICH TRUST REALM below, and
-// kerberos/CLAUDE.md).
+// Kerberos realm alone (see WHICH TRUST REALM below, and kerberos/CLAUDE.md).
 //
-// A trust is not a setting: it is one principal,
-// krbtgt/PARTNER.COM@EXAMPLE.COM, whose key both KDCs hold. Ask this KDC for a
+// A trust is not a setting: it is one key,
+// krbtgt/PARTNER.COM@EXAMPLE.COM, which both KDCs hold — since #430 a TRUST
+// RECORD in the realm's own directory subtree (`krb5_trusts.ts`), one per
+// partner, so two trust realms of this process may trust each other on the
+// same port 88, each answering for its own Kerberos realm. Ask this KDC for a
 // service in the other realm and it does not refuse — it issues a
 // ticket-granting ticket for that realm, sealed with the trust key, and expects
 // the client to notice and go and ask there. The reply is an ordinary,
@@ -736,7 +738,9 @@ async function buildPacFor(client, opts) {
 //    records the realms traversed EXCLUDING the client's and the server's own,
 //    so a single hop across a direct trust transits nothing. It is only a
 //    multi-hop path that fills the field — and it is the field a service is
-//    supposed to apply policy to.
+//    supposed to apply policy to. Since #430 it is filled (crossRealmPath()),
+//    and the path is checked against the trust records before a referral
+//    goes onward.
 //  * **The PAC is not re-signed here and is not stripped either.** The referral
 //    ticket carries the client's PAC from the issuing realm; the TARGET realm's
 //    KDC is what re-signs it with its own keys. That is also where Windows
@@ -748,6 +752,25 @@ async function issueReferral(ctx) {
   log.debug('Entering issueReferral(). target=' + ctx.targetRealm);
   const body = ctx.body;
   const trust = ctx.trust;
+
+  // THE PATH SO FAR, AND WHETHER IT MAY GO ON (#430): the hop limit, and a
+  // presented cross-realm TGT's trust being transitive. See crossRealmPath().
+  const path = crossRealmPath(ctx.ticketPart, ctx.apReq, ctx.answeringRealm,
+                              true);
+  if (path.problem) {
+    log.info('krb5: refused to refer ' +
+             ctx.ticketPart.cname.name.join('/') + '@' +
+             ctx.ticketPart.crealm + ' to ' + ctx.targetRealm + ': ' +
+             path.problem.message);
+    log.debug("Leaving issueReferral(). The path is refused.");
+    // error-code: none — the code is the path check's own, STS-KRB-0226..0228
+    return errorReply(28, {
+      errorCode: path.problem.code,
+      crealm: ctx.ticketPart.crealm, cname: ctx.ticketPart.cname,
+      realm: ctx.answeringRealm, sname: body.sname,
+      eText: path.problem.message
+    });
+  }
 
   const etype = principals.chooseEtype(trust, body.etypes);
   if (etype === null) {
@@ -782,6 +805,9 @@ async function issueReferral(ctx) {
   // `initial` — it was not obtained with a password — and carries the client's
   // authorization data forward unchanged.
   let flags = ticketFlagsForReferral(ctx.ticketPart.flags);
+  if (path.checked) {
+    flags = flags.concat([msgs.TICKET_FLAG.TRANSITED_POLICY_CHECKED]);
+  }
   // RFC 6806 section 11: every ticket issued carries enc-pa-rep.
   if (ctx.request[REQUEST_BYTES]) flags = withEncPaRep(flags);
   const sessionKey = kcrypto.randomBytes(profile.keyBytes);
@@ -795,8 +821,9 @@ async function issueReferral(ctx) {
     key: { etype: etype, key: sessionKey },
     crealm: ctx.ticketPart.crealm,
     cname: ctx.ticketPart.cname,
-    // Empty: a direct trust transits no intermediate realm. See above.
-    transited: { type: 1, contents: new Uint8Array(0) },
+    // Empty for a direct trust; each realm a longer path came through
+    // otherwise, DOMAIN-X500-COMPRESS. See above and crossRealmPath().
+    transited: { type: 1, contents: path.contents },
     authtime: ctx.ticketPart.authtime,
     starttime: ctx.at,
     endtime: endtime,
@@ -884,11 +911,74 @@ async function issueReferral(ctx) {
 
 // `initial` never survives: it means the ticket came from an AS exchange with a
 // password, and a referral did not.
+// ---------------------------------------------------------------------------
+// THE PATH A CROSS-REALM TICKET CAME BY, AND WHETHER THIS REALM ACCEPTS IT
+// (#430; RFC 4120 sections 2.7 and 3.3.3.2).
+//
+// Asked before anything is issued from a TGT, and before a referral: the
+// presented ticket's `transited` decoded, the realm that issued it, and the
+// trust register's verdict (`krb5_trusts.ts`'s pathProblem()). Answers
+// `{ problem, contents, checked }`:
+//
+//   * `contents` is the `transited` of the ticket about to be issued — the
+//     presented one's realms, plus the realm that issued the presented ticket
+//     when that is neither the client's nor this one (section 3.3.3.2), in
+//     DOMAIN-X500-COMPRESS;
+//   * `checked` says the path was checked against this realm's records, and
+//     sets TRANSITED-POLICY-CHECKED on what is issued;
+//   * the DEVELOPMENT PARTNER this KDC answers as (PARTNER.COM) holds no
+//     records of its own — it is a fixture of the partner's database, not a
+//     realm with a register — so a path into it is carried and NOT checked,
+//     and no flag says otherwise.
+//
+// `onward` is a referral being made: the hop limit, and a transitive trust
+// for a ticket that is already cross-realm.
+// ---------------------------------------------------------------------------
+function crossRealmPath(ticketPart, apReq, answeringRealm, onward) {
+  log.debug("Entering crossRealmPath().");
+  const register = principals.trustRegister();
+  const crealm = String(ticketPart.crealm || '');
+  const issuer = String(apReq.ticket.realm || '');
+  const transited = ticketPart.transited || { type: 1, contents: null };
+  const contents = transited.contents || new Uint8Array(0);
+  if (!register) {
+    log.debug("Leaving crossRealmPath(). No register.");
+    return { problem: null, contents: contents, checked: false };
+  }
+  if (contents.length && transited.type !== 1) {
+    log.debug("Leaving crossRealmPath(). An encoding not read here.");
+    return { problem: { code: 'STS-KRB-0228', message: 'the ticket\'s ' +
+      'transited field is of type ' + transited.type + ', and this KDC ' +
+      'reads DOMAIN-X500-COMPRESS (1) only' }, contents: contents,
+             checked: false };
+  }
+  const decoded = register.decodeTransited(contents, crealm, answeringRealm);
+  const ownRealm = answeringRealm === principals.REALM;
+  const problem = ownRealm ? register.pathProblem({
+    crealm: crealm, issuer: issuer, transited: decoded, onward: !!onward,
+    ourRealm: answeringRealm }) : null;
+  const realmsSoFar = decoded.realms.slice();
+  if (issuer && issuer !== crealm && issuer !== answeringRealm) {
+    realmsSoFar.push(issuer);
+  }
+  log.debug("Leaving crossRealmPath(). " + (problem ? problem.code :
+            'acceptable') + ", " + realmsSoFar.length + " transited.");
+  return {
+    problem: problem,
+    contents: register.encodeTransited(realmsSoFar),
+    checked: ownRealm && issuer !== answeringRealm && !problem
+  };
+}
+
 function ticketFlagsForReferral(presented) {
   log.debug("Entering ticketFlagsForReferral().");
   log.debug("Leaving ticketFlagsForReferral().");
-  return (presented ||
-          []).filter(function (f) { return f !== msgs.TICKET_FLAG.INITIAL; });
+  // Without TRANSITED-POLICY-CHECKED too: only the KDC that checked may say
+  // so, and crossRealmPath() decides whether this one did (#430).
+  return (presented || []).filter(function (f) {
+    return f !== msgs.TICKET_FLAG.INITIAL &&
+           f !== msgs.TICKET_FLAG.TRANSITED_POLICY_CHECKED;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -3303,6 +3393,21 @@ async function answerTgsReq(request, state) {
   // problem about which of two identically-named principals was consulted.
   const ticketService = principals.find(apReq.ticket.sname.name,
                                         apReq.ticket.realm);
+  // A CROSS-REALM TGT THROUGH A TRUST THAT IS DISABLED, OR THAT HOLDS NO
+  // INCOMING KEY (#430): the record says which, so the refusal can.
+  const trustWhy = ticketService ? '' :
+    principals.trustUnavailableReason(apReq.ticket.sname.name,
+                                      apReq.ticket.realm);
+  if (trustWhy) {
+    log.info('krb5: a ticket-granting ticket from ' + apReq.ticket.realm +
+             ' was refused: ' + trustWhy + '.');
+    log.debug("Leaving answerTgsReq(). Through a trust it cannot use.");
+    return errorReply(7, { realm: ourRealm(), sname: apReq.ticket.sname,
+      errorCode: 'STS-KRB-0229',
+      eText: 'the ticket presented is for ' +
+             apReq.ticket.sname.name.join('/') + '@' + apReq.ticket.realm +
+             ', and ' + trustWhy });
+  }
   if (!ticketService) {
     log.debug("Leaving answerTgsReq().");
     return errorReply(7, { realm: ourRealm(), sname: apReq.ticket.sname,
@@ -3761,6 +3866,27 @@ async function answerTgsReq(request, state) {
       eText: kerberosRoleAnswer.why });
   }
 
+  // THE CROSS-REALM PATH (#430): a ticket issued from a TGT another realm
+  // issued, or a krbtgt of another realm asked for by name (a referral the
+  // client named itself), is checked against this realm's trust records
+  // and carries the path in `transited`. See crossRealmPath().
+  const snameParts = (body.sname || {}).name || [];
+  const askedOnward = snameParts.length === 2 && snameParts[0] === 'krbtgt' &&
+                      snameParts[1] !== answeringRealm;
+  const tgsPath = crossRealmPath(ticketPart, apReq, answeringRealm,
+                                 askedOnward);
+  if (tgsPath.problem) {
+    log.info('krb5: refused a ticket for ' +
+             ticketPart.cname.name.join('/') + '@' + ticketPart.crealm +
+             ' to ' + serviceName + ': ' + tgsPath.problem.message);
+    log.debug("Leaving answerTgsReq(). The path is refused.");
+    // error-code: none — the code is the path check's own, STS-KRB-0226..0228
+    return errorReply(28, { crealm: ticketPart.crealm,
+      errorCode: tgsPath.problem.code,
+      cname: ticketPart.cname, realm: answeringRealm, sname: body.sname,
+      eText: tgsPath.problem.message });
+  }
+
   // The krbtgt of the ANSWERING realm, looked up by name rather than reused
   // from the presented ticket's sname: three of the PAC's four signatures are
   // made with the KRBTGT key specifically, and while the ticket presented here
@@ -4048,9 +4174,14 @@ async function answerTgsReq(request, state) {
   // AS exchange issues an initial ticket, and a service may rely on that
   // distinction.
   const inherited = ticketPart.flags.filter(function (f) {
-    return f !== msgs.TICKET_FLAG.INITIAL;
+    return f !== msgs.TICKET_FLAG.INITIAL &&
+           f !== msgs.TICKET_FLAG.TRANSITED_POLICY_CHECKED;
   });
   let flags = inherited.slice();
+  // Set by the KDC that checked the path, and only by it (#430).
+  if (tgsPath.checked) {
+    flags.push(msgs.TICKET_FLAG.TRANSITED_POLICY_CHECKED);
+  }
   // #186: unconstrained delegation is `krb5TrustedForDelegation` on the
   // service's entry, off by default — its tickets carry ok-as-delegate.
   if (krb5Delegation().trustedForDelegation(body.sname.name, answeringRealm) &&
@@ -4152,6 +4283,10 @@ async function answerTgsReq(request, state) {
       // delegation happened at all is the PAC's S4U_DELEGATION_INFO.
       crealm: clientRealm,
       cname: clientName,
+      // The path it came by (#430), when it came across a trust; otherwise
+      // what every ticket issued here has always carried.
+      transited: tgsPath.checked || tgsPath.contents.length ?
+        { type: 1, contents: tgsPath.contents } : undefined,
       authtime: authtime,
       starttime: at,
       endtime: endtime,

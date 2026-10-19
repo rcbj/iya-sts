@@ -873,6 +873,14 @@ class ProtocolStack {
     // Binding a privileged port can fail, and a require that throws takes the
     // whole service down; a route cannot.
     const krb5 = require('../kerberos/krb5_kdc');
+    // #430: the Kerberos trust register, a library the KDC and the
+    // principal database reach LAZILY (so the parent project's copy of the
+    // KDC's closure loads it only on a cross-realm name). Built HERE, before
+    // the directory (21) fills its slot through a facade call — a facade
+    // called first would build a default instance this root could not
+    // replace. It requires `common/` leaves and the vendored codec only.
+    this.build('kerberos/krb5_trusts', require('../kerberos/krb5_trusts'),
+               'Krb5Trusts');
     // 14c's second half (#588): the KDC handed to `krb5_home`, which
     // registers the inter-cell `kdc-message` operation and — in a service
     // deployed as cells only — sets the router TCP and UDP 88 ask before

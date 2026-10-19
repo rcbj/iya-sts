@@ -11991,8 +11991,9 @@ const CODES = [
     spec: 'none (a refused administrative change)' },
   { code: 'STS-KRB-0124',
     summary: 'A trust realm was given a krb5.realm another realm already ' +
-      'answers to (another realm\'s, the default realm\'s, or ' +
-      'krb5.trustedRealm), compared without regard to case.',
+      'answers to (another realm\'s, the default realm\'s, or the ' +
+      'development partner realm the default realm answers as), compared ' +
+      'without regard to case.',
     spec: 'none (a refused administrative change)' },
   { code: 'STS-KRB-0125',
     summary: 'A trust realm\'s krb5.realm was changed or cleared while its ' +
@@ -12437,6 +12438,83 @@ const CODES = [
     summary: 'The Kerberos acceptor\'s random key was not made: this node ' +
       'could not ask the shared store whether another node was making it.',
     spec: '' },
+  // #430 (2026-10-19): Kerberos trusts as records, and the path across them.
+  { code: 'STS-KRB-0213',
+    summary: 'A Kerberos trust record was refused: its partner realm is not ' +
+      'a domain-style Kerberos realm name, or an update tried to change it.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0214',
+    summary: 'A Kerberos trust record was refused: its partner is this ' +
+      'realm\'s own Kerberos realm, or this realm has no Kerberos realm.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0215',
+    summary: 'A Kerberos trust act was refused: the realm already holds a ' +
+      'trust with that partner (or the most it may), or holds none to ' +
+      'change or remove.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0216',
+    summary: 'A Kerberos trust record was refused: its type is unknown, or ' +
+      'a trust-realm partner names no trust realm in this process answering ' +
+      'as that Kerberos realm.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0217',
+    summary: 'A Kerberos trust record was refused: it names an attribute ' +
+      'outside the closed set, or two that contradict each other.',
+    spec: 'none (a refused administrative change); [MS-ADTS] 6.1.6.7.9' },
+  { code: 'STS-KRB-0218',
+    summary: 'A Kerberos trust record was refused: its NetBIOS name or its ' +
+      'partner domain SID is not well formed.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0219',
+    summary: 'A Kerberos trust record was refused: a routed suffix is not a ' +
+      'DNS name, or is this realm\'s own domain.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0220',
+    summary: 'A Kerberos trust record was refused: its enctypes name none, ' +
+      'one this KDC does not implement, one the mode withholds, or one a ' +
+      'kept generated key was not made for.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0221',
+    summary: 'A Kerberos trust record was refused: it holds neither an ' +
+      'incoming nor an outgoing key, or a pairing named no direction.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0222',
+    summary: 'A Kerberos trust record was refused: a key has no source, a ' +
+      'trust password is too short, a given key is the wrong length, or a ' +
+      'kvno is out of range.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0223',
+    summary: 'A Kerberos trust record was not written: its keys could not ' +
+      'be sealed, or the directory refused the entry.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0224',
+    summary: 'A stored Kerberos trust record was not used: its data is not ' +
+      'JSON, names no partner, or its keys will not open. Said once per ' +
+      'realm and record.',
+    spec: 'logged; no referral through it and no ticket accepted from it' },
+  { code: 'STS-KRB-0225',
+    summary: 'The Kerberos trust register was given a directory without all ' +
+      'three of its functions, or could not be loaded at all; the KDC holds ' +
+      'no trust there.',
+    spec: 'logged' },
+  { code: 'STS-KRB-0226',
+    summary: 'A referral was refused: the path would cross more trusts than ' +
+      'krb5.maxReferralHops allows.',
+    spec: 'KDC_ERR_PATH_NOT_ACCEPTED (28); RFC 4120 section 3.3.3.2' },
+  { code: 'STS-KRB-0227',
+    summary: 'A cross-realm ticket was refused: it came through a ' +
+      'non-transitive trust for somebody not of the partner\'s own realm, ' +
+      'or would be referred onward through one.',
+    spec: 'KDC_ERR_PATH_NOT_ACCEPTED (28); [MS-ADTS] 6.1.6.7.9' },
+  { code: 'STS-KRB-0228',
+    summary: 'A cross-realm ticket\'s path failed the transited-policy ' +
+      'check: a realm on it is outside the trust\'s routed namespace, is ' +
+      'this realm, is elided, or no enabled trust accepts its issuer.',
+    spec: 'KDC_ERR_PATH_NOT_ACCEPTED (28); RFC 4120 sections 2.7, 3.3.3.2' },
+  { code: 'STS-KRB-0229',
+    summary: 'A cross-realm ticket-granting ticket was refused: the trust ' +
+      'it came through is disabled, or holds no incoming key.',
+    spec: 'KDC_ERR_S_PRINCIPAL_UNKNOWN (7)' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',

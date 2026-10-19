@@ -172,13 +172,12 @@ const SERVICE_SETTING_KEYS = [
   'spiffe.workloadPort', 'spiffe.serverPort',
   // KERBEROS, PER KEY SINCE 2026-09-15 (it was the `krb5.` prefix). A realm
   // carries its own Kerberos realm, principal database and keys, so the rows
-  // those are built from are the realm administrator's. These five are not:
+  // those are built from are the realm administrator's. This one is not:
   // the KDC's SOCKET is bound once for the process (the protected service's,
-  // `krb5.servicePort`, left with #595), and the development-mode trust is
-  // the DEFAULT realm's second Kerberos realm — no other realm has one, so
-  // setting them on a realm would say something untrue.
-  'krb5.kdcPort', 'krb5.trustedRealm',
-  'krb5.trustPassword', 'krb5.trustedDomainSid', 'krb5.trustedKrbtgtPassword'
+  // `krb5.servicePort`, left with #595). The development-mode trust's four
+  // were here until #430 retired them: a trust is a record in the realm's
+  // own directory now, the realm administrator's like its people.
+  'krb5.kdcPort'
 ];
 
 /**
