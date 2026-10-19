@@ -460,6 +460,22 @@ browser: `oauthRedirectUri`, `samlAssertionConsumerService` and
 separated, not comma separated, since a redirect URI may legally contain a
 comma and may not contain a newline.
 
+**The identifier is what each ticked family calls it, unless you say
+otherwise (#393).** The simplified form asks for the identifier once and does
+not draw `oauthClientId`, `samlEntityId`, `wsfedRealm`, `wstrustAppliesTo`,
+`krb5ServicePrincipalName`, `oid4vpClientId`, `federationPartnerId`,
+`scimClientId`, `ssfReceiverId` or `gnapInstanceId` again: a create that leaves
+one empty writes the identifier into it, which is what the entry would have
+held had the application arrived on its own. *Show every field* still draws
+each one as a list, for an application that answers to a different name or to
+several — a list typed there is the whole list, and the identifier is not
+added beside it. A later save that ticks a new family fills that family's
+attribute the same way, once; clearing it afterwards keeps it cleared. Three
+identifier attributes are a different kind of name and are never filled:
+`oauthTlsClientAuthSubjectDn` (a certificate subject), `ldapBindDn` and
+`spiffeWorkloadId`. The display **name** is optional too: with none given the
+identifier is the name.
+
 **The entry lands in the trust realm the console is showing**, at that
 realm's `ou=applications`. An `ldapsearch` under that realm's base DN sees it;
 another realm's registry has never heard of it.
@@ -481,7 +497,8 @@ read from it, editable — and fills in the create form:
 * one **permission** per `scopes_supported` value, with the resource prefix
   taken off (`https://api.example.com/read` under `https://api.example.com` is
   `read`);
-* a **client_id** generated at random;
+* a **client_id** generated at random, as the **identifier** — it is the
+  entry's `oauthClientId` too, so the form does not ask for it twice;
 * OAuth 2.0 ticked.
 
 Nothing is created until **Create** is pressed. The document is kept on the

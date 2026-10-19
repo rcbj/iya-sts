@@ -25,7 +25,8 @@
 //
 //   1. every declaration attribute is a grid field marked `declaration`, so
 //      the create form's simplified view — which draws exactly those, the
-//      setting overrides and the SAML key fields — draws it;
+//      setting overrides and the SAML key fields, less a primary name
+//      (#393), which is the identifier typed above it — draws it;
 //   2. every editable attribute is a grid field, unless it is one the grid
 //      leaves to a control of its own;
 //   3. each field's type is the one its schema row and the BOOLEAN table say:
@@ -285,15 +286,18 @@ function run(t) {
   // --- 5. The console's simplified view reads `declaration` ---------------
   // The answer of GET /admin-api/applications/new marks each field `inSimple`
   // since #446, and the page draws a field in the simplified view by that
-  // mark alone; a declaration is one of the three things that set it.
+  // mark alone; a declaration is one of the three things that set it, and a
+  // primary name (#393) is the one declaration it leaves out, because the
+  // identifier box above the grid already holds that value.
   const views = fs.readFileSync(path.join(__dirname, '..', 'admin-core',
                                           'admin_views.ts'), 'utf8');
   const page = fs.readFileSync(path.join(__dirname, '..', 'admin-ui',
                                          'web_applications.ts'), 'utf8');
-  t.check(/inSimple: !!row\.declaration \|\| !!row\.overrides/.test(views) &&
+  t.check(/inSimple: !row\.primaryName &&\s*\(!!row\.declaration \|\| !!row\.overrides/
+            .test(views) &&
           /view === 'advanced' \|\| row\.inSimple/.test(page),
-          '5. the new-application form draws every declaration in the ' +
-          'simplified view');
+          '5. the new-application form draws every declaration but a ' +
+          'primary name in the simplified view');
   log.debug("Leaving run().");
 }
 

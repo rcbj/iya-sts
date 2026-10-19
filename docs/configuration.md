@@ -1223,10 +1223,12 @@ an OAuth client is not asked for a SAML entityID. That is done in CSS with
 `:has()` and no script; a browser without `:has()` shows every field, which the
 page says on itself.
 
-**An application declared for SAML 2.0 or SAML 1.1 gets a `samlEntityId`** — its
-own identifier, if none was given — so its per-service-provider metadata at
+**An application declared for a family gets that family's identifier
+attribute** — its own identifier, if none was given (#393) — so an OAuth client
+needs no separate `client_id`, and a SAML service provider's metadata at
 `/saml2/metadata/{sp}` and `/saml11/metadata/{rp}` is publishable the moment the
-entry exists.
+entry exists. A certificate subject, a bind DN and a SPIFFE ID are never filled;
+`docs/applications.md` lists the rest.
 
 **The scopes a client may be issued are declared here too (#110).**
 `oauthAllowedScope` is RFC 7591 section 2's `scope` — a registration writes it

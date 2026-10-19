@@ -44,7 +44,9 @@ const applicationsLinks = function (t) {
 // can be handed one — pasted, uploaded, or fetched from a URL — and turn it
 // into the create form, filled in: the `resource` as the default name, the
 // permission base URI and the audience; `scopes_supported` as the permissions;
-// a client_id minted at random. `oauth-oidc/protected_resource_metadata.ts` is
+// a client_id minted at random. That client_id IS the identifier (#393), so
+// the pane does not draw a client_id box again.
+// `oauth-oidc/protected_resource_metadata.ts` is
 // the reading and argues every rule; what is decided HERE is the page.
 //
 // **TWO ROUND TRIPS AND NO SCRIPT.** A file can only reach a server without a
@@ -67,7 +69,12 @@ const applicationsLinks = function (t) {
 // `POST /admin/applications` and `POST /admin-api/applications/{action}`
 // dispatch on — so the page adds TRANSPORT and nothing it decides.
 // ---------------------------------------------------------------------------
-const RESOURCE_METADATA_OWNED = ['oauthClientId', 'oauthPermissionBaseUri',
+// Attributes the pane draws, so the declarations grid does not post the
+// same name twice. oauthClientId is not among them (#393): the minted
+// client_id is the identifier, and the grid's advanced view may still list
+// further client ids. The simplified view omits it because it is a primary
+// name, not because this pane draws it.
+const RESOURCE_METADATA_OWNED = ['oauthPermissionBaseUri',
                                  'oauthAudience', 'oauthPermission',
                                  'oauthAuthorizationDetailsType',
                                  'oauthResourceMetadata',
@@ -462,6 +469,7 @@ class ApplicationsPage {
         kit.tip(t.html('consoleApplications.a1.identifierTip')) +
         ' value="' + kit.esc(drafted('identifier')) + '"></div>' +
         kit.note(t.html('consoleApplications.a1.theKey')) +
+        kit.note(t.html('consoleApplications.a1.primaryName')) +
         '<div class="formrow"><label for="newname">' +
         t.html('consoleApplications.a1.name') + '</label><input ' +
         'type="text" id="newname" name="name" size="24" ' +
@@ -529,7 +537,8 @@ class ApplicationsPage {
               given.tab, t) +
             '<h2>' + t.html('consoleApplications.a1.calledHeading') +
             '</h2>' +
-            kit.note(t.html('consoleApplications.a1.onEditableTab'))
+            kit.note(t.html('consoleApplications.a1.onEditableTab')) +
+            kit.note(t.html('consoleApplications.a1.primaryName'))
           : calledSection) +
 
         '<h2>' + t.html('consoleApplications.a1.familiesHeading') + '</h2>' +
@@ -935,9 +944,6 @@ class ApplicationsPage {
             t.html('consoleApplications.a1.fIdentifier')) +
       field('prm-name', 'name', t.html('consoleApplications.a1.name'),
             values.name, t.html('consoleApplications.a1.fName')) +
-      field('prm-client-id', 'field.oauthClientId',
-            '<code>oauthClientId</code>', values.clientId,
-            t.html('consoleApplications.a1.fClientId')) +
       field('prm-base', 'field.oauthPermissionBaseUri',
             '<code>oauthPermissionBaseUri</code>', values.baseUri,
             t.html('consoleApplications.a1.fBase')) +
@@ -1090,7 +1096,6 @@ class ApplicationsPage {
     return {
       identifier: pick('identifier', plan.identifier),
       name: pick('name', plan.name),
-      clientId: pick('field.oauthClientId', plan.clientId),
       baseUri: pick('field.oauthPermissionBaseUri', plan.baseUri),
       audience: pick('field.oauthAudience', plan.audience),
       permissions: pick('field.oauthPermission',
@@ -1596,6 +1601,39 @@ class ApplicationsPage {
     return inner;
   }
 
+  // A primary name whose only value is the identifier is the identifier
+  // (#393). The simplified view hides that box; the advanced view still has
+  // it, so a save of the simplified view posts the value and does not clear
+  // it. An empty list, a different name, or more than one value stays in
+  // the simplified view. This page cannot require `applications.js` — it
+  // runs in a browser — so the predicate lives here, beside the drawing.
+  /**
+   * Folds a primary name into the advanced view when it is the identifier.
+   *
+   * @param rows - the fields a sub-tab draws
+   * @param values - the entry's values by attribute
+   * @param identifier - the application's registry identifier
+   * @returns the rows to draw, and whether any was folded
+   */
+  static withFoldedPrimaryNames(rows, values, identifier) {
+    const id = String(identifier || '');
+    let folded = false;
+    const out = (rows || []).map(function (row) {
+      if (!row || !row.primaryName) {
+        return row;
+      }
+      const held = [].concat((values && values[row.attribute]) || [])
+        .map(function (one) { return String(one).trim(); })
+        .filter(function (one) { return one !== ''; });
+      if (held.length === 1 && held[0] === id) {
+        folded = true;
+        return Object.assign({}, row, { simple: false });
+      }
+      return row;
+    });
+    return { rows: out, folded: folded };
+  }
+
   // ---------------------------------------------------------------------------
   // THE APPLICATION'S FIELD GRID (2026-09-30): the protocol families it is
   // declared for, as a row of checkboxes, and every field of
@@ -1721,8 +1759,14 @@ class ApplicationsPage {
       });
       // THE SUB-TAB'S TWO VIEWS (#500): the simplified one unless this is a
       // redraw of this sub-tab's own form posted from the advanced one.
-      const views = kit.hasViews(mine);
-      const advancedRows = mine.filter(function (one) {
+      // A primary name equal to the identifier is folded into the advanced
+      // view (#393). The copy is what is drawn; `mine` stays the entry's
+      // own rows, which the SAML panels fold for themselves.
+      const folded = ApplicationsPage.withFoldedPrimaryNames(
+        mine, values, row.identifier);
+      const drawn = folded.rows;
+      const views = kit.hasViews(drawn);
+      const advancedRows = drawn.filter(function (one) {
         return !one.simple;
       });
       const viewSwitch = !views ? ''
@@ -1776,10 +1820,14 @@ class ApplicationsPage {
       const fieldForm =
         // A sub-tab drawn only for a section has no fields to save.
         (!mine.length || group.id === 'saml' ? '' :
-        formOpen(group.id, mine.map(function (one) {
+        formOpen(group.id, drawn.map(function (one) {
           return one.attribute;
         })) + viewSwitch +
-        kit.fieldGridOf(mine, config.groups, values,
+        (folded.folded
+          ? kit.note(t.html(
+              'consoleApplications.a2.primaryNameFolded'))
+          : '') +
+        kit.fieldGridOf(drawn, config.groups, values,
                            { redraw: '/admin/applications/edit',
                              showSet: true, protocols: config.protocols,
                              views: views,
@@ -1803,10 +1851,13 @@ class ApplicationsPage {
           const familyRows = mine.filter(function (one) {
             return one.everyFamily || one.families.indexOf(family) >= 0;
           });
-          const familyAdvanced = familyRows.filter(function (one) {
+          const familyFolded = ApplicationsPage.withFoldedPrimaryNames(
+            familyRows, values, row.identifier);
+          const familyDrawn = familyFolded.rows;
+          const familyAdvanced = familyDrawn.filter(function (one) {
             return !one.simple;
           });
-          const familyViews = kit.hasViews(familyRows);
+          const familyViews = kit.hasViews(familyDrawn);
           const familyViewSwitch = !familyViews ? ''
             : kit.viewSwitch(group.label,
                 !!draft && String(draft.group || '') === group.id &&
@@ -1817,11 +1868,15 @@ class ApplicationsPage {
                     return String(v).trim() !== '';
                   });
                 }).length);
-          const familyFields = !familyRows.length ? ''
-            : formOpen(group.id, familyRows.map(function (one) {
+          const familyFields = !familyDrawn.length ? ''
+            : formOpen(group.id, familyDrawn.map(function (one) {
                 return one.attribute;
               })) + familyViewSwitch +
-              kit.fieldGridOf(familyRows, config.groups, values, {
+              (familyFolded.folded
+                ? kit.note(t.html(
+                    'consoleApplications.a2.primaryNameFolded'))
+                : '') +
+              kit.fieldGridOf(familyDrawn, config.groups, values, {
                 redraw: '/admin/applications/edit', showSet: true,
                 protocols: config.protocols, views: familyViews,
                 searches: config.fieldSearches || {},
