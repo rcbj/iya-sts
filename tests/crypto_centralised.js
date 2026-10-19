@@ -99,7 +99,14 @@ const STANDALONE = {
   // MANIFEST.js --check` in a bare checkout, before CONFIG_FILE is set —
   // where crypto.js cannot load (it requires config.js, and a .ts compiled
   // only in an image). Read by tests/xacml_conformance.js and nothing else.
-  'xacml/conformance/MANIFEST.js': 'a checkout-time integrity tool'
+  'xacml/conformance/MANIFEST.js': 'a checkout-time integrity tool',
+  // The SPIFFE workload agent (#324): a sidecar of its own, a LEAF by
+  // design (its header), that requires bunyan, gRPC, pkijs and
+  // error_codes.js and none of the service's configuration — crypto.js
+  // requires config.js, so the sidecar would load the service to sign one
+  // certificate request. It verifies the server's JWT-SVIDs and makes its
+  // own CSR key; nothing in the service requires it.
+  'spiffe/workload_agent.ts': 'the Workload API sidecar, a separate process'
 };
 
 // Node's module, by either spelling, required or imported for a value.
