@@ -30,6 +30,7 @@
 // "after the COMMIT" is an order, not a timing.
 // ===========================================================================
 
+const storeDouble = require('./tools/store_double');
 const log = require('bunyan').createLogger({ name: 'notify_after_commit',
   level: process.env.LOG_LEVEL || 'info' });
 
@@ -88,20 +89,13 @@ function sequencedPg(state) {
 
 function driverOver(state) {
   log.debug("Entering driverOver().");
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: sequencedPg(state) };
+  const restore = storeDouble.install(sequencedPg(state));
   try {
     log.debug("Leaving driverOver().");
     return require('../persistence/persistence_postgres').create({
       url: 'postgres://sts_app@localhost:5432/sts', log: QUIET });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
 }
 

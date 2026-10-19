@@ -40,6 +40,7 @@
 //      advisory ones for the table's owner only — and nothing not owed.
 // ===========================================================================
 
+const storeDouble = require('./tools/store_double');
 const postgres = require('../persistence/persistence_postgres');
 const queries = require('../persistence/directory_queries');
 
@@ -220,20 +221,13 @@ function fakePg(statements, answer) {
 
 function driverWith(statements, answer) {
   log.debug("Entering driverWith().");
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: fakePg(statements, answer) };
+  const restore = storeDouble.install(fakePg(statements, answer));
   try {
     log.debug("Leaving driverWith().");
     return postgres.create({ url: 'postgres://sts@localhost:5432/sts',
                              log: QUIET });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
 }
 
@@ -374,9 +368,11 @@ async function realDatabase(t) {
     return;
   }
   t.log.info('=== D. against ' + url.replace(/:[^:@/]*@/, ':***@') + ' ===');
-  const pg = require('pg');
+  // Through the service's one door to PostgreSQL (#326): a connection
+  // Knex makes, outside any pool, where a `pg.Client` was.
+  const knexStore = require('../persistence/knex_store');
   const schema = 'counts_' + process.pid;
-  const admin = new pg.Client({ connectionString: url });
+  const admin = knexStore.openConnection({ connectionString: url });
   await admin.connect();
   const clients = [];
   try {
@@ -434,7 +430,7 @@ async function realDatabase(t) {
     t.equal(Number(n.rows[0].n), 3000, 'D2. count() reads 3,000 people');
     // EIGHT CONNECTIONS AT ONCE.
     for (let i = 0; i < 8; i++) {
-      const c = new pg.Client({ connectionString: url });
+      const c = knexStore.openConnection({ connectionString: url });
       await c.connect();
       await c.query('SET search_path TO ' + schema);
       clients.push(c);

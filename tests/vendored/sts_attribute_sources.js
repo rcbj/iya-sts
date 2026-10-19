@@ -236,12 +236,15 @@ async function redeem(r) {
 
 // ---------------------------------------------------------------------------
 // THE DATABASE, as the stack's PostgreSQL superuser (a test's database,
-// never the service's). `pg` is the service's own driver, installed at the
-// repository root the job resolves from.
+// never the service's). Dialled through the service's own door to
+// PostgreSQL, `persistence/knex_store.js` (#326) — Knex, with `pg` as its
+// driver, installed at the repository root the job resolves from — because
+// nothing but that door requires `pg`. A connection of its own, outside any
+// pool, as the `pg.Client` this was until then.
 // ---------------------------------------------------------------------------
 function pgClient(database) {
   log.debug("Entering pgClient(). " + (database || "(the URL's)"));
-  const { Client } = require("pg");
+  const knexStore = require("../../persistence/knex_store");
   const url = new URL(DB_URL);
   if (database) {
     url.pathname = "/" + database;
@@ -250,14 +253,18 @@ function pgClient(database) {
   // and the certificate it reads off this handshake is the one the SERVICE
   // is then made to verify against.
   log.debug("Leaving pgClient().");
-  return new Client({ connectionString: url.toString(),
-                      ssl: { rejectUnauthorized: false } });
+  return knexStore.openConnection({ connectionString: url.toString(),
+                                    ssl: { rejectUnauthorized: false } });
 }
 
-// The server's certificate, as PEM, off a connected client's TLS socket.
+// The server's certificate, as PEM, off a connected client's TLS socket: the
+// layer's connection holds the dialect's `pg.Client` as `connection`, and
+// that holds its wire connection, whose `stream` is the socket.
 function serverCertificateOf(client) {
   log.debug("Entering serverCertificateOf().");
-  const socket = client.connection && client.connection.stream;
+  const pgClient = client.connection;
+  const socket = pgClient && pgClient.connection &&
+    pgClient.connection.stream;
   const cert = socket && typeof socket.getPeerCertificate === "function"
     ? socket.getPeerCertificate() : null;
   assert.ok(cert && cert.raw, "the database's TLS certificate could not be " +

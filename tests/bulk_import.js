@@ -646,10 +646,12 @@ function dialOf(url) {
 
 async function clientOf(url) {
   log.debug("Entering clientOf().");
-  const pg = require('pg');
+  // Through the service's one door to PostgreSQL (#326): a connection
+  // Knex makes, outside any pool, where a `pg.Client` was.
+  const knexStore = require('../persistence/knex_store');
   const dial = dialOf(url);
-  const client = new pg.Client({ connectionString: dial.connectionString,
-                                 ssl: dial.ssl });
+  const client = knexStore.openConnection({
+    connectionString: dial.connectionString, ssl: dial.ssl });
   await client.connect();
   log.debug("Leaving clientOf().");
   return client;

@@ -44,6 +44,7 @@
 
 delete process.env.CONFIG_FILE;
 
+const storeDouble = require('./tools/store_double');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -106,8 +107,6 @@ async function refusalOf(fn) {
 // dialled.
 function driverWith(url, tlsCa) {
   log.debug("Entering driverWith().");
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
   function FakePool() {}
   FakePool.prototype.on = function () {};
   FakePool.prototype.query = function () {
@@ -116,18 +115,14 @@ function driverWith(url, tlsCa) {
   FakePool.prototype.end = function () {
     return Promise.resolve();
   };
-  require.cache[pgPath] = /** @type {any} */ ({ id: pgPath, filename: pgPath,
-    loaded: true, exports: { Pool: FakePool, Client: function () {} } });
+  const restore = storeDouble.install({ Pool: FakePool,
+                                        Client: function () {} });
   try {
     log.debug("Leaving driverWith().");
     return postgres.create({ url: url, log: QUIET, verifyTls: true,
                              tlsCa: tlsCa });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
 }
 

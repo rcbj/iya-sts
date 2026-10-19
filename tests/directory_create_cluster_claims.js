@@ -46,6 +46,7 @@
 // process-wide.
 // ===========================================================================
 
+const storeDouble = require('./tools/store_double');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -288,9 +289,7 @@ function installFakePg(db) {
   FakePool.prototype.end = function () {
     return Promise.resolve();
   };
-  const pgPath = require.resolve('pg');
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: { Pool: FakePool, Client: FakeClient } };
+  storeDouble.install({ Pool: FakePool, Client: FakeClient });
   log.debug("Leaving installFakePg().");
 }
 
@@ -1168,10 +1167,8 @@ function recordingDriver(statements, reply) {
   FakePool.prototype.end = function () {
     return Promise.resolve();
   };
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: { Pool: FakePool, Client: FakeClient } };
+  const restore = storeDouble.install({ Pool: FakePool,
+                                        Client: FakeClient });
   const quiet = { debug: function () {}, info: function () {},
                   warn: function () {}, error: function () {} };
   try {
@@ -1179,11 +1176,7 @@ function recordingDriver(statements, reply) {
     return postgres.create({ url: 'postgres://sts_app@localhost:5432/sts',
                              log: quiet });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
 }
 

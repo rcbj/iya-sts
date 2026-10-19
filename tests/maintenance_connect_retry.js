@@ -24,6 +24,7 @@
 // waits out the retry delays — about ten seconds in all.
 // ===========================================================================
 
+const storeDouble = require('./tools/store_double');
 const postgres = require('../persistence/persistence_postgres');
 
 const log = require('bunyan').createLogger({
@@ -82,20 +83,13 @@ function fakePg(statements, plan) {
 
 function driverWith(statements, plan) {
   log.debug("Entering driverWith().");
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: fakePg(statements, plan) };
+  const restore = storeDouble.install(fakePg(statements, plan));
   try {
     log.debug("Leaving driverWith().");
     return postgres.create({
       url: 'postgres://sts_app@localhost:5432/sts', log: QUIET });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
 }
 
