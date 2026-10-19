@@ -2023,6 +2023,14 @@
     "en": "bb7f7ca790c61dc0",
     "text": "在 ldap.workerDirectory=postgres-lru 時，要求工作線程需要一個未持有的目錄項目時，等待數據庫多久。工作線程在等待期間不做其他事，因此這也是數據庫中斷能卡住其一個要求的最長時間；超過時該要求會被拒絕（503，STS-LDAP-0130）。"
   },
+  "ldap.workerDirectoryBudgetMs|label": {
+    "en": "7af008dc55949ed0",
+    "text": "工作線程每個要求的目錄預算（毫秒）"
+  },
+  "ldap.workerDirectoryBudgetMs|description": {
+    "en": "9b2485155e270c50",
+    "text": "在 ldap.workerDirectory=postgres-lru 時，一個 /admin 或 /admin-api 要求總共可以花多長時間等待同步目錄讀取。會超出預算的查詢將被拒絕（503，STS-LDAP-0175）且不會發出；單個緩慢的查詢若先超過其自身的逾時，仍以 STS-LDAP-0130 失敗。其他要求沒有這樣的預算。"
+  },
   "ldap.directoryReadableAttributes|description": {
     "en": "44bf1dfcca2f496c",
     "text": "在「產品」模式下，以人員身分繫結的連線可在「其他」人員項目上讀取的屬性，以逗號分隔、不區分大小寫比對；搜尋篩選只能看到這些，看不到他們的其他任何內容。留空（預設值）表示僅限本人：就該連線所知，其他人根本不在目錄中，對其 DN 的 base 搜尋會回應 noSuchObject。警告——放寬此項會讓領域中每個人都暴露給其他每個人：\"objectClass,cn,displayName,uid,mail\" 就是一本通訊錄，會讓任何擁有密碼的人取得完整的用戶名稱與地址清單，用以網絡釣魚或猜測密碼；telephoneNumber、title 等屬於個人資料；memberOf 與 employeeType 會告訴他們誰是管理員。不論此處為何，認證資料絕不可讀取。管理員（Admin Read 或 Admin Write）可讀取範圍內的一切。開發模式不授權任何 LDAP 讀取。"

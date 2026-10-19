@@ -6067,6 +6067,14 @@
     "en": "bb7f7ca790c61dc0",
     "text": "当 ldap.workerDirectory=postgres-lru 时，请求工作线程在需要一个它未持有的目录条目时等待数据库的时长。工作线程在等待期间不做任何其他事情，因此这也是数据库中断可以拖住其某个请求的最长时间；超过后请求会被拒绝（503，STS-LDAP-0130）。"
   },
+  "ldap.workerDirectoryBudgetMs|label": {
+    "en": "7af008dc55949ed0",
+    "text": "工作线程每个请求的目录预算（毫秒）"
+  },
+  "ldap.workerDirectoryBudgetMs|description": {
+    "en": "9b2485155e270c50",
+    "text": "在 ldap.workerDirectory=postgres-lru 时，一个 /admin 或 /admin-api 请求总共可以花多长时间等待同步目录读取。会超出预算的查询将被拒绝（503，STS-LDAP-0175）且不会发出；单个缓慢的查询若先超过其自身的超时，仍以 STS-LDAP-0130 失败。其他请求没有这样的预算。"
+  },
   "ldap.sizeLimit|label": {
     "en": "8486449552f77864",
     "text": "搜索大小限制"

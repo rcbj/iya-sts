@@ -6067,6 +6067,14 @@
     "en": "bb7f7ca790c61dc0",
     "text": "Con ldap.workerDirectory=postgres-lru, cuánto espera un worker de solicitudes a la base de datos cuando necesita una entrada del directorio que no tiene. El worker no hace nada más mientras espera, así que esto es también el tiempo máximo durante el que una caída de la base de datos puede retener una de sus solicitudes; superado, la solicitud se rechaza (503, STS-LDAP-0130)."
   },
+  "ldap.workerDirectoryBudgetMs|label": {
+    "en": "7af008dc55949ed0",
+    "text": "Presupuesto de directorio del worker por solicitud (ms)"
+  },
+  "ldap.workerDirectoryBudgetMs|description": {
+    "en": "9b2485155e270c50",
+    "text": "Con ldap.workerDirectory=postgres-lru, cuánto tiempo puede pasar en total una solicitud a /admin o /admin-api esperando lecturas síncronas del directorio. Una pregunta que superaría el presupuesto se rechaza (503, STS-LDAP-0175) y no se formula; una sola pregunta lenta sigue fallando como STS-LDAP-0130 cuando supera antes su propio tiempo de espera. Las demás solicitudes no tienen ese presupuesto."
+  },
   "ldap.sizeLimit|label": {
     "en": "8486449552f77864",
     "text": "Límite de tamaño de búsqueda"

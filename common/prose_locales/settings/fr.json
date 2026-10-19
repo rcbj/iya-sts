@@ -6067,6 +6067,14 @@
     "en": "bb7f7ca790c61dc0",
     "text": "Avec ldap.workerDirectory=postgres-lru, pendant combien de temps un worker de requêtes attend la base de données lorsqu’il a besoin d’une entrée de l’annuaire qu’il ne détient pas. Le worker ne fait rien d’autre pendant cette attente ; c’est donc aussi la durée maximale pendant laquelle une panne de la base de données peut retenir l’une de ses requêtes ; au-delà, la requête est refusée (503, STS-LDAP-0130)."
   },
+  "ldap.workerDirectoryBudgetMs|label": {
+    "en": "7af008dc55949ed0",
+    "text": "Budget d’annuaire d’un worker par requête (ms)"
+  },
+  "ldap.workerDirectoryBudgetMs|description": {
+    "en": "9b2485155e270c50",
+    "text": "Avec ldap.workerDirectory=postgres-lru, combien de temps une requête /admin ou /admin-api peut passer, au total, à attendre des lectures synchrones de l’annuaire. Une question qui dépasserait ce budget est refusée (503, STS-LDAP-0175) et n’est pas posée ; une seule question lente échoue toujours en STS-LDAP-0130 lorsqu’elle dépasse d’abord son propre délai. Les autres requêtes n’ont pas de tel budget."
+  },
   "ldap.sizeLimit|label": {
     "en": "8486449552f77864",
     "text": "Limite de taille des recherches"
