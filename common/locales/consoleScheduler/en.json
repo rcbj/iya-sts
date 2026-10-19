@@ -96,5 +96,9 @@
   "detail.ended": "Ended",
   "detail.params": "Parameters",
   "detail.result": "Result",
-  "detail.abandonedOf": "Abandoned attempt of"
+  "detail.abandonedOf": "Abandoned attempt of",
+  "detail.ranIn": "Ran in",
+  "detail.ranIn.worker": "A request worker",
+  "detail.ranIn.front": "The front process",
+  "detail.deferred": "Held for a busy worker"
 }

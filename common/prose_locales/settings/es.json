@@ -9379,6 +9379,30 @@
     "en": "56fac41f63177db7",
     "text": "Cuántas ejecuciones programadas o manuales tiene en curso a la vez el líder, entre todos los trabajos y dominios de confianza. Un intervalo es un múltiplo de su periodo, así que todos los trabajos horarios de todos los dominios vencen en el mismo segundo; cada ejecución mantiene una conexión al almacén mientras reclama y trabaja, y el almacén postgres tiene cuatro. El resto espera, primero el Run now de una persona, y empieza a medida que terminan ejecuciones. Nunca es más que uno menos de lo que contiene el pool, se defina como se defina, para que el planificador no pueda quitarles todas las conexiones a las solicitudes."
   },
+  "scheduler.niceBusyThreshold|label": {
+    "en": "115ae6125244b30a",
+    "text": "Solicitudes en curso de un worker ocupado"
+  },
+  "scheduler.niceBusyThreshold|description": {
+    "en": "364260c11358e10c",
+    "text": "Cuántas solicitudes puede tener en curso un worker de solicitudes antes de que una ejecución programada paciente de un trabajo de clúster lo espere. El líder entrega cada ejecución al worker menos cargado y retiene la ejecución de un trabajo cuyo nice es mayor que 0 mientras incluso ese worker tenga tantas. 0 significa que el número nunca retiene una ejecución."
+  },
+  "scheduler.niceLagMs|label": {
+    "en": "c0b9af3bbe7cb091",
+    "text": "Retraso del bucle de eventos de un worker ocupado"
+  },
+  "scheduler.niceLagMs|description": {
+    "en": "0c0e3c66e7c2e010",
+    "text": "El retraso del bucle de eventos, en milisegundos (el percentil 99 del último informe de diez segundos de un worker), a partir del cual un worker de solicitudes cuenta como ocupado y una ejecución programada paciente de un trabajo de clúster lo espera. 0 significa que el retraso nunca retiene una ejecución."
+  },
+  "scheduler.niceMaxDeferS|label": {
+    "en": "07484a01ef8c2875",
+    "text": "Espera máxima de una ejecución por un worker ocupado"
+  },
+  "scheduler.niceMaxDeferS|description": {
+    "en": "22928f93b52af2b5",
+    "text": "El tiempo máximo, en segundos, que se retiene cualquier ejecución programada de un trabajo de clúster mientras todos los workers de solicitudes están ocupados. Un trabajo se retiene durante su parte de este tiempo, nice / 19, y nunca más de la mitad de su intervalo; pasado ese tiempo se ejecuta sea cual sea la carga. Una ejecución manual, un trabajo bajo demanda y un trabajo de nice 0 nunca se retienen. 0 significa que no se retiene ninguna ejecución."
+  },
   "attributeSources.hostPatterns|label": {
     "en": "04c2e7926c9351dd",
     "text": "Hosts que puede nombrar una fuente de atributos"

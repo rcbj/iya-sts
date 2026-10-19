@@ -1377,6 +1377,14 @@ it.)
 **The goal is one sentence: the front process should be doing
 request/response I/O and nothing else.**
 
+**AND SINCE #408 A PROTOCOL WORKER ALSO RUNS THE BODY OF A CLUSTER
+SCHEDULER JOB** that the leader (a front process) hands it over the channel
+(`schedulerRunner()`: `{ schedulerRun }` out, `{ schedulerRunDone }` back,
+`{ schedulerFence }` to stop it). It also reports its event-loop delay
+(`{ loopLag }`), and sends a directory sign-out with no response to ride on
+as `{ ldapDrop }`. A worker that ends fails its runs with `STS-SCHED-0019`.
+`cluster/CLAUDE.md`, *Where a cluster run's body runs*, has the design.
+
 **ROUTING IS THE PART TO GET RIGHT AND THE CUT IS NOT THE OBVIOUS ONE.** It is
 **sessionless versus session-bearing**, not stateless versus stateful.
 `workers.fanout` names the exceptions and everything else dispatched holds

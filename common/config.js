@@ -16809,6 +16809,42 @@ const SETTINGS = [
                  'than one fewer than the pool holds, whatever it is set ' +
                  'to, so the scheduler cannot take every connection from ' +
                  'the requests.' },
+  // HOW LONG A PATIENT CLUSTER RUN WAITS FOR A BUSY WORKER (#408, rcbj): the
+  // leader hands a cluster job's body to the least-loaded request worker,
+  // and a scheduled run of a job whose `nice` is above 0 waits before its
+  // claim while even that worker is heavy by either of the first two. The
+  // third bounds it, so a run is late and never skipped. Per process: the
+  // leader is a process, and a realm has no worker of its own. 0 switches a
+  // signal off, read directly (the `|| n` rule).
+  { key: 'scheduler.niceBusyThreshold', group: 'Scheduler',
+    label: 'A busy worker\'s requests in flight',
+    env: 'STS_SCHEDULER_NICE_BUSY_THRESHOLD', type: 'int', dflt: 8, min: 0,
+    max: 10000, runtime: true, perProcess: true,
+    description: 'How many requests a request worker may have in flight ' +
+                 'before a patient scheduled cluster run waits for it. The ' +
+                 'leader hands each run to the least-loaded worker, and ' +
+                 'holds a run of a job whose nice is above 0 while even ' +
+                 'that worker has this many. 0 means the count never holds ' +
+                 'a run.' },
+  { key: 'scheduler.niceLagMs', group: 'Scheduler',
+    label: 'A busy worker\'s event-loop delay',
+    env: 'STS_SCHEDULER_NICE_LAG_MS', type: 'int', dflt: 200, min: 0,
+    max: 600000, runtime: true, perProcess: true,
+    description: 'The event-loop delay, in milliseconds (the 99th ' +
+                 'percentile of a worker\'s last ten-second report), at ' +
+                 'which a request worker counts as busy and a patient ' +
+                 'scheduled cluster run waits for it. 0 means the delay ' +
+                 'never holds a run.' },
+  { key: 'scheduler.niceMaxDeferS', group: 'Scheduler',
+    label: 'Longest a run waits for a busy worker',
+    env: 'STS_SCHEDULER_NICE_MAX_DEFER_S', type: 'int', dflt: 300, min: 0,
+    max: 86400, runtime: true, perProcess: true,
+    description: 'The longest, in seconds, any scheduled cluster run is ' +
+                 'held while every request worker is busy. A job is held ' +
+                 'for its share of this, nice / 19 of it, and never more ' +
+                 'than half its interval; past that it runs whatever the ' +
+                 'load. A manual run, an on-demand job and a job of nice 0 ' +
+                 'are never held. 0 means no run is held.' },
 
   // ATTRIBUTE SOURCES (#94): the operators' SQL databases a realm reads
   // people's attributes from. The sources themselves are a register
