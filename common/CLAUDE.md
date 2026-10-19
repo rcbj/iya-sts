@@ -814,11 +814,20 @@ JWS and JWE tables, `GNAP_MTLS_TRUSTS`, the GNAP settings' own enums and
 checkboxes. Seven of them had no check at a console or API write until this
 change (`CHOICES_CHECKED_HERE`), so `choiceProblem()` refuses a value outside
 them at update and create (`STS-REG-0203`). The rest already have a validator
-that says more. `oauthGrantType` and `oauthResponseType` are not on the list:
-they are declared and enforced since #289, but an extension grant is a URI
-nobody lists in advance (RFC 6749 section 4.5), so they stay open text and the
-endpoints refuse what a client did not declare (`oauth-oidc/CLAUDE.md`,
-*OpenID Connect Registration*).
+that says more. **`oauthGrantType` and `oauthResponseType` joined the list
+with #706** (rcbj: checkboxes, no free text). Until then they were open text,
+because an extension grant is a URI nobody lists in advance (RFC 6749 section
+4.5). That argument did not hold: the token endpoint refuses a grant it does
+not implement, so declaring one declared nothing usable. Their choices are
+`FLOW_GRANT_TYPES` and `FLOW_RESPONSE_TYPES`, which are every grant and response
+type implemented, not only the ones the realm advertises.
+`tests/flow_type_choices.js` holds them to the metadata with every switch on.
+A response type is stored with its words sorted (`canonicalResponseType()`),
+the order the console ticks. **Dynamic registration is unchanged**: it still
+records what a client registers, and the grid draws a value outside the set as
+a marked box, so a Save does not drop it. The endpoints still refuse what a
+client did not declare (`oauth-oidc/CLAUDE.md`, *OpenID Connect
+Registration*).
 
 **A GENERATED SECRET SETS ITS METHOD.** `regenerateClientSecret()` (and so
 Regenerate and Rotate) writes `client_secret_basic`, RFC 7591's default, where
