@@ -1549,7 +1549,11 @@ const SPECS: Spec[] = [
               'profile (a passive request carries no recipient certificate), ' +
               'and any authorization or policy enforcement. wreply is used ' +
               'as sent in development mode and must be a registered ' +
-              'wsfedReplyUrl in PRODUCT mode (2026-09-12).' },
+              'wsfedReplyUrl in PRODUCT mode (2026-09-12). Beyond the ' +
+              'specification, which has no such request: an ' +
+              'identity-provider-initiated sign-in at ' +
+              '/wsfed/initiate/{rp} (#712), off until a relying party opts ' +
+              'in, posting only to its registered wsfedReplyUrl.' },
   { id: 'xmldsig', name: 'XML Signature and XML Encryption',
     where: 'W3C',
     url: 'https://www.w3.org/TR/xmldsig-core1/',
@@ -6895,6 +6899,31 @@ const ENDPOINTS: EndpointEntry[] = [
           'the application\'s identifier (its wtrealm) or its slug. A ' +
           'segment naming no REGISTERED application is a 404 in both modes ' +
           '(STS-WSFED-0019). no-store.' },
+  { path: '/wsfed/initiate/:rp', group: 'WS-Federation',
+    name: 'Identity-provider-initiated sign-in',
+    specs: ['ws-federation', 'saml11', 'saml2', 'xmldsig', 'ws-trust'],
+    effect: 'signs the person in if need be, then POSTs a section 13.2.2 ' +
+            'sign-in response to the relying party\'s registered reply ' +
+            'address',
+    what: 'NON-SPEC (#712): WS-Federation 1.2 defines no request for this ' +
+          'identity provider to start a sign-in, so the link is this ' +
+          'service\'s. The segment is a REGISTERED relying party\'s ' +
+          'identifier (its wtrealm) or slug (else 404, STS-WSFED-0024). OFF ' +
+          'until wsfed.idpInitiatedSso or the entry\'s wsfedIdpInitiatedSso ' +
+          'turns it on (403, STS-WSFED-0025). A wreply is refused ' +
+          '(STS-WSFED-0026): the response goes only to the first ' +
+          'wsfedReplyUrl registered for it, never an observed one ' +
+          '(STS-WSFED-0027 when there is none). wctx is echoed byte for ' +
+          'byte; tokenType and trust mean what they mean at /wsfed. The ' +
+          'issuance is a wsignin1.0\'s — the session, the issuance policy, ' +
+          'session-presented, the realm recorded for /logout — and a ' +
+          'denial on risk steps the person up once.' },
+  { path: '/wsfed/initiate', group: 'WS-Federation',
+    name: 'Identity-provider-initiated sign-in, by wtrealm',
+    specs: ['ws-federation', 'saml11', 'saml2', 'xmldsig', 'ws-trust'],
+    what: 'NON-SPEC (#712): /wsfed/initiate/{rp} with the relying party as ' +
+          '?wtrealm= rather than a path segment, for an identifier whose ' +
+          'slashes a path carries badly. The same rules.' },
 
   // --- SAML 2.0 ---
   // The profile whose absence this file documented at length until 2026-08-24.
