@@ -9347,6 +9347,30 @@
     "en": "56fac41f63177db7",
     "text": "Combien d’exécutions planifiées ou manuelles le leader mène simultanément, toutes tâches et tous domaines de confiance confondus. Un créneau est un multiple de son intervalle, si bien que chaque tâche horaire de chaque domaine arrive à échéance à la même seconde ; chaque exécution occupe une connexion au stockage pendant qu’elle revendique et travaille, et le stockage postgres en a quatre. Les autres attendent, le Run now d’une personne en premier, et démarrent à mesure que des exécutions se terminent. Il n’excède jamais le nombre de connexions du pool moins une, quelle que soit sa valeur, afin que le planificateur ne puisse pas prendre toutes les connexions aux requêtes."
   },
+  "scheduler.niceBusyThreshold|label": {
+    "en": "115ae6125244b30a",
+    "text": "Requêtes en cours d'un worker occupé"
+  },
+  "scheduler.niceBusyThreshold|description": {
+    "en": "364260c11358e10c",
+    "text": "Combien de requêtes un worker de requêtes peut avoir en cours avant qu'une exécution planifiée patiente d'une tâche de cluster l'attende. Le leader confie chaque exécution au worker le moins chargé, et retient l'exécution d'une tâche dont le nice est supérieur à 0 tant que même ce worker en a autant. 0 signifie que le nombre ne retient jamais une exécution."
+  },
+  "scheduler.niceLagMs|label": {
+    "en": "c0b9af3bbe7cb091",
+    "text": "Retard de la boucle d'événements d'un worker occupé"
+  },
+  "scheduler.niceLagMs|description": {
+    "en": "0c0e3c66e7c2e010",
+    "text": "Le retard de la boucle d'événements, en millisecondes (le 99e centile du dernier rapport de dix secondes d'un worker), à partir duquel un worker de requêtes compte comme occupé et une exécution planifiée patiente d'une tâche de cluster l'attend. 0 signifie que le retard ne retient jamais une exécution."
+  },
+  "scheduler.niceMaxDeferS|label": {
+    "en": "07484a01ef8c2875",
+    "text": "Attente maximale d'une exécution pour un worker occupé"
+  },
+  "scheduler.niceMaxDeferS|description": {
+    "en": "22928f93b52af2b5",
+    "text": "La durée maximale, en secondes, pendant laquelle une exécution planifiée d'une tâche de cluster est retenue tant que tous les workers de requêtes sont occupés. Une tâche est retenue pendant sa part de cette durée, nice / 19, et jamais plus de la moitié de son intervalle ; au-delà, elle s'exécute quelle que soit la charge. Une exécution manuelle, une tâche à la demande et une tâche de nice 0 ne sont jamais retenues. 0 signifie qu'aucune exécution n'est retenue."
+  },
   "attributeSources.hostPatterns|label": {
     "en": "04c2e7926c9351dd",
     "text": "Hôtes qu’une source d’attributs peut nommer"

@@ -259,7 +259,10 @@ function world(options) {
       },
       host: 'host-' + name,
       pid: node.pid,
-      isRequestWorker: function () { return !!no.worker; }
+      isRequestWorker: function () { return !!no.worker; },
+      // Where a cluster run's body goes (#408): a test's stand-in for the
+      // request pool, or none — every run inline, as before #408.
+      runner: no.runner ? function () { return no.runner; } : undefined
     });
     node.kill = function () { node.alive = false; };
     node.wake = function () { node.alive = true; };

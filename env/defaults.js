@@ -1355,7 +1355,10 @@ var config = {
     runHistoryHours: 24,  // Runs kept for (hours)
     disabledJobs: "",     // Jobs switched off
     runTimeoutS: 600,     // The longest a run may take (seconds)
-    maxConcurrentRuns: 2  // Most runs going at once
+    maxConcurrentRuns: 2, // Most runs going at once
+    niceBusyThreshold: 8, // A busy worker's requests in flight
+    niceLagMs: 200,       // A busy worker's event-loop delay
+    niceMaxDeferS: 300    // Longest a run waits for a busy worker
   },
 
   // --- Attribute sources -----------------------------------------------
