@@ -6126,6 +6126,38 @@ now says which rules apply and whether this realm enforces them.
 Rule 7 is `GET /admin-api/policies` and `POST /admin-api/policies/{action}`, in
 the same change, over the same two functions.
 
+### The Attribute policy tab (#396, 2026-10-19)
+
+The sixth kind (`common/CLAUDE.md` 3co) gets a section of its own in
+`web_policies.ts` (`attributePolicySection()`), because rcbj asked for "a list
+of all attributes, custom attributes, ability to add a new attribute, and
+require each individual attribute as needed" — a table of checkboxes, not the
+generic field rows.
+
+* **ONE ROW PER ATTRIBUTE A PERSON MAY BE GIVEN** (`attributes.catalogue`),
+  each with a Required box; `uid`, `cn` and `sn` are drawn ticked and
+  DISABLED, because nothing can switch them off. **The save form carries a
+  hidden, empty `requiredAttributes` ahead of the boxes**, so a form with
+  every box unticked still sends the member: the static console's runtime
+  sends `false` for an unticked box only where the member is a boolean, and
+  this one is a list, so without the hidden field the save would be refused as
+  one that forgot its field.
+* **THE CUSTOM ATTRIBUTES ARE ON THE SAME TAB**: a table with a Remove form
+  per row, and a form that defines one (name, label, syntax, one value or
+  several, description). Both post `/admin/policies` with the kind's own act
+  (`define-person-attribute`, `remove-person-attribute`), which the runtime
+  maps to `POST /admin-api/policies/{action}` as it does a save — rule 7 by
+  construction, through `policyKinds.forAction()`'s third verb, `act`.
+* **THE COUNT OF PEOPLE WHO LACK ONE IS A LINK**, `?missing=count#attributes`,
+  because it is a walk of the realm's people; the LDAP filter that finds them
+  is drawn always. Where the directory is in the store the count says it was
+  not made.
+* **`/admin/users/new` and a person's Attributes tab mark what the policy
+  requires** — the field grid's " · required" (`consoleKit.grid.required`),
+  always shown in the simplified view, and a note on the form naming the list
+  and whether it is enforced here — so a box a create would be refused for
+  leaving empty is never hidden behind the advanced view.
+
 
 ## `/admin/error-codes`: THE ERROR CODE TABLE, UNDER MONITORING (2026-09-12)
 

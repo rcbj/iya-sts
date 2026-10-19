@@ -44,6 +44,8 @@ dc=example,dc=com                       domain, dcObject
 ├── ou=policies                         xacmlPolicy
 ├── ou=peps                             xacmlPep
 ├── ou=passwordPolicies                 pwdPolicy + stsPasswordPolicy
+├── ou=attributePolicies                stsAttributePolicy          (#396)
+├── ou=attributeDefinitions             stsAttributeDefinition      (#396)
 ├── ou=spiffe
 │   ├── ou=entries                      applicationProcess + spiffeRegistrationEntry
 │   └── ou=agents                       applicationProcess + spiffeAgent
@@ -297,6 +299,20 @@ ALL_APPLICATIONS, ALL_AUTHENTICATED_APPLICATIONS, ALL_UNAUTHENTICATED_APPLICATIO
 `stsPwdMinSymbols`, `stsPwdGeneratedLength` and others), which cover the
 composition rules and the generator. The default profile is **not seeded**:
 the defaults apply until an administrator saves one. See `common/password_policy.ts`.
+
+## Attribute policies and custom attributes: `ou=attributePolicies`, `ou=attributeDefinitions`
+
+`cn=default,ou=attributePolicies` is `objectClass: top, stsAttributePolicy` with
+`stsAttributeRequired` (one value per attribute every person must hold, besides
+`uid`, `cn` and `sn`) and an optional `description`. Absent, the default
+realm's applies, then the built-in default (`givenName`, `sn`, `mail`).
+
+`cn=<name>,ou=attributeDefinitions` is one of the realm's custom attributes:
+`objectClass: top, stsAttributeDefinition`, `stsAttributeLabel`,
+`stsAttributeSyntax` (`string`, `integer`, `boolean`, `date`, `email`, `uri`,
+`dn`), `stsAttributeSingleValued` (`TRUE` or `FALSE`) and an optional
+`description`. Its values are stored on a person under that name, like any
+other attribute. See `common/attribute_policy.ts`.
 
 ## SPIFFE: `ou=spiffe`
 

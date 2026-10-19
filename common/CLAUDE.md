@@ -12608,3 +12608,65 @@ owning to holding this service's permissions are closed as a FACT:
 anything: not knowing is not permission, in both directions.
 
 `tests/owner_administration.js` holds the rule, the protections and the roles.
+
+## 3co. `attribute_policy.ts`: WHAT EVERY PERSON MUST HOLD, AND A REALM'S CUSTOM ATTRIBUTES (#396, 2026-10-19)
+
+rcbj's ticket: "Minimum user attributes that must be populated for a new user
+object. Default: first name, sn, email. Add a policy that defines what the
+required fields must be for a realm." On the ticket, the same day: the page
+"should display a list of all attributes, custom attributes, ability to add a
+new attribute, and require each individual attribute as needed." The design
+comment on #396 is the decision of record; rcbj chose cn and sn LOCKED and the
+suite SWEPT rather than the policy weakened for it.
+
+* **The sixth kind on Directory → Policies** (`admin-core/policy_kinds.ts`),
+  `locale_policy.ts`'s pattern: `cn=default,ou=attributePolicies`, inherited
+  from the default realm while a realm has none, else the built-in default.
+  One field, `requiredAttributes` (`stsAttributeRequired`, multi-valued),
+  default `givenName, sn, mail`.
+* **`uid`, `cn` and `sn` are always required** and are not in the field: the
+  username, and `person`'s MUST list (RFC 4519 3.12). A create that names no
+  `cn` is given `givenName sn` (`deriveCommonName()`), at the console, the
+  API, SCIM and a federated first sign-in — never at an LDAP add, which writes
+  what the client sent.
+* **What may be required is the person editor's universe** plus `uid` and
+  `mail` (`catalogue()`): never `userPassword`, a binary attribute, `memberOf`
+  or an `sts` attribute. `ldap/person_editor.ts` is required LAZILY here,
+  because it requires this module at load for its custom rows. Where it cannot
+  be asked (the bulk import's process), a read keeps every stored name rather
+  than dropping what it cannot check — `offeredNames()` answers null, never an
+  empty table.
+* **Enforced in product mode only** (`mode.createsIncompletePeople()`,
+  requirement `required-attributes`), the password policy's arrangement:
+  development creates a subject from a username and the page says the policy
+  is not enforced. `createRefusal()` and `editRefusal()` are the two questions
+  every door asks; the doors are the directory's and SCIM's (`ldap/CLAUDE.md`,
+  `scim/CLAUDE.md`, `federation/CLAUDE.md`, `persistence/CLAUDE.md`). An edit
+  is refused only for a value TAKEN AWAY, so a person created before the
+  policy said so keeps every other door, and nobody's sign-in is refused for
+  it.
+* **Custom attributes** are a register of the realm's own,
+  `cn=<name>,ou=attributeDefinitions` (`stsAttributeDefinition`: a label, a
+  syntax of seven — string, integer, boolean, date, email, uri, dn — and
+  whether it holds one value or several), defined and removed by this kind's
+  two acts (`define-person-attribute`, `remove-person-attribute`, the first
+  kind with acts beside save and reset: `PolicyKind.extraActions` and the
+  module's `act()`). NOT inherited. The name is an RFC 4512 descr of at most
+  64, and may not be one the directory's name table knows (`learnName()`'s),
+  `memberOf`, or begin `sts`; a custom name is never learnt into that table,
+  because the table is the process's and the name one realm's. Never secret
+  and never binary: `inetorgperson.ts` keeps a fixed list so nothing appears
+  on a page by accident, and a custom attribute is an administrator's act only
+  while a credential cannot be stored as one. Removal is refused while anybody
+  holds a value (0172) or the realm's own profile requires it (0173).
+* **The count of people who lack one is a walk**, so it is asked only on
+  request (`GET /admin-api/policies?missing=count`), and not at all where the
+  directory is in the store; the view always gives the LDAP filter that finds
+  them (`missingFilter`).
+* **Left for follow-up tickets**, as the design comment says: SCIM `/Schemas`
+  publishing `required` and the custom attributes as a per-realm extension;
+  custom attributes as token, UserInfo and SAML claims and on the portal; and
+  a sign-in step that collects a missing value instead of refusing a
+  federated newcomer.
+
+`tests/attribute_policy.js` holds it in process.

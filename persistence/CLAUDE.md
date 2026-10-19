@@ -2884,3 +2884,15 @@ by the next trim and the dead-node purge like any dead node's.
 `tests/cell_convert.js` holds the rules over two in-memory databases;
 `tests/tools/rehearse-cell-conversion.sh` rehearses it against real
 PostgreSQL (`tests/CLAUDE.md`).
+
+## THE BULK IMPORT AND THE ATTRIBUTE POLICY (#396, 2026-10-19)
+
+`requirementFor()` reads the realm's `ou=attributePolicies` and
+`ou=attributeDefinitions` rows from the store (and the default realm's
+profile), as `languageFor()` reads the locale policy, and installs them into
+`common/attribute_policy.ts` read-only. In a product-mode realm a record
+without a value of a required attribute is refused (STS-LDAP-0163) in
+`candidateOf()`; nothing is derived, as at an LDAP add. Where the person
+editor cannot be loaded in this process the policy keeps every stored name
+rather than dropping one it cannot check (`offeredNames()`), so the import
+never requires LESS than the realm says.
