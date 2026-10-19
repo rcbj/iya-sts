@@ -863,6 +863,16 @@ const JOBS = [
   // `local: true`: this repository's own identity provider and /admin-api,
   // in two throwaway realms.
   { file: 'sts_saml_unregistered.js',    browser: false, local: true },
+  // WHO MAY START A SAML SIGN-IN, OVER THE WIRE (#715): #711's contract —
+  // SAML 2.0's unsolicited Response and SAML 1.1's TARGET-only link off
+  // until an application or the realm opts in, the service provider's own
+  // start refused per application, the relying party in the logout
+  // inventory, the mechanism re-prompt's one trip — in a realm of its own
+  // in the process's mode, so `single-node` and `cluster` run it in product
+  // with real passwords and registered addresses. `tests/saml_initiation.js`
+  // holds the same in process, and the risk step-up HTTP cannot set up.
+  // `local: true`: this repository's own identity providers and /admin-api.
+  { file: 'sts_idp_initiated_saml.js',   browser: false, local: true },
   // THE CRL AND OCSP ENDPOINTS, AND THE REVOCATION PANE (2026-09-11).
   // `local: true` on the FIRST of `tests/CLAUDE.md`'s two questions: most of
   // what it drives is `/admin-api/pki` and a pane on `/admin/pki`, and the
@@ -1072,6 +1082,23 @@ const JOBS = [
   // expected Requester for a replay. Fixed here first; it goes back to the
   // parent with rcbj/id-proto-debugger#353, and this flag comes off then.
   { file: 'sts_saml11.js',               browser: false, local: true },
+  // IDENTITY-PROVIDER-INITIATED SIGN-IN OVER THE WIRE (#715): `/launch/{app}`
+  // for SAML 2.0, SAML 1.1, WS-Federation and OpenID Connect, the switches
+  // set through /admin-api, the launch record /oauth2/authorize honours
+  // (across nodes in `cluster`), the launch window waited out, and the links
+  // /admin-api and /account-api carry. `tests/launch.js` is the in-process,
+  // development-only half; this is the product-mode coverage. `local: true`:
+  // the door and every API it is read through are ours. Its realm is left
+  // standing; the one setting it changes it resets.
+  { file: 'sts_idp_initiated_launch.js', browser: false, local: true },
+  // Identity-provider-initiated WS-Federation sign-in over the wire (#715):
+  // `/wsfed/initiate/{rp}` off by default, registered relying parties only,
+  // no wreply, the registered reply address with wctx intact, the sign-out
+  // inventory, the realm setting through /admin-api and the entry
+  // overrides, in a throwaway realm in the run's mode — product in
+  // single-node and cluster. `tests/wsfed_initiation.js` is the in-process
+  // half, and holds the risk step-up HTTP cannot set up.
+  { file: 'sts_idp_initiated_wsfed.js',  browser: false, local: true },
   // OWNED HERE SINCE 2026-09-21, when it was a byte-identical copy of the
   // parent's: its no-certificate case had to stop registering a signing
   // certificate in development (the service encrypts to one, so the in-clear
