@@ -9,7 +9,7 @@
   "sso": "Single Sign-On. <code>{scoped}</code> is the same service scoped to one service provider.",
   "ars": "Artifact Resolution, SOAP over HTTP. A browser never touches it — the service provider calls it directly, which is the whole point of the artifact profile.",
   "slo": "Single Logout, both directions.",
-  "unsolicited": "Identity-provider-initiated sign-in: an unsolicited Response to the service provider <code>providerId</code> names (<code>saml2.unsolicitedSso</code>).",
+  "unsolicited": "Identity-provider-initiated sign-in: an unsolicited Response to the service provider <code>providerId</code> names, where <code>saml2.idpInitiatedSso</code> is on for it (off by default).",
   "aa": "The attribute authority: a SOAP <code>{element}</code>, the Assertion Query and Request profile.",
   "metadata": "The signed identity provider metadata. <code>{scoped}</code> is a document of its OWN for that service provider — a different entityID and different endpoints — and it is minted for any {sp} asked for.",
   "perSp": "Per-service-provider metadata",

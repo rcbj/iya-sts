@@ -10045,7 +10045,9 @@ const CODES = [
     spec: 'a LogoutResponse with StatusCode Requester / UnknownPrincipal' },
   { code: 'STS-SAML-0091',
     summary: 'An identity-provider-initiated sign-in (/saml2/unsolicited) ' +
-      'was refused: saml2.unsolicitedSso is off in the realm. #189.',
+      'was refused: saml2.idpInitiatedSso is off for that service provider ' +
+      '(the realm default, off, unless saml2IdpInitiatedSso on its entry ' +
+      'turns it on). #189, #711.',
     spec: 'an HTTP 403 page' },
   { code: 'STS-SAML-0092',
     summary: 'An identity-provider-initiated sign-in (/saml2/unsolicited) ' +
@@ -10150,6 +10152,38 @@ const CODES = [
       'one (#614). Nothing was sent to the service provider.',
     spec: 'HTTP 503 page — the HTTP-Artifact binding and the SAML 1.1 ' +
       'Browser/Artifact profile can carry no failure without an artifact' },
+  { code: 'STS-SAML-0111',
+    summary: 'A SAML 2.0 AuthnRequest was refused: saml2.spInitiatedSso is ' +
+      'off for that service provider (saml2SpInitiatedSso FALSE on its ' +
+      'entry, or the realm setting), so it is reached only through ' +
+      'identity-provider-initiated sign-in. Refused before the sign-in ' +
+      'screen. #711.',
+    spec: 'Responder / RequestDenied' },
+  { code: 'STS-SAML-0112',
+    summary: 'An identity-provider-initiated SAML 2.0 sign-in ' +
+      '(/saml2/unsolicited) came back from its one trip to the sign-in ' +
+      'screen and the issuance policy still asked for a step-up on the ' +
+      'session\'s risk; it is not sent round again. #711.',
+    spec: 'Responder / RequestDenied (no InResponseTo)' },
+  { code: 'STS-SAML-0113',
+    summary: 'A SAML 1.1 sign-in started here — /saml11/sso with a TARGET ' +
+      'and no shire — was refused: saml11.idpInitiatedSso is off for that ' +
+      'relying party (the realm default, off, unless ' +
+      'saml11IdpInitiatedSso on its entry turns it on). #711.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-SAML-0114',
+    summary: 'A SAML 1.1 sign-in the relying party started — a request ' +
+      'carrying shire, the Shibboleth 1.3 AuthnRequest profile — was ' +
+      'refused: saml11.spInitiatedSso is off for that relying party ' +
+      '(saml11SpInitiatedSso FALSE on its entry, or the realm setting). ' +
+      'The request is unsigned, so this closes a door rather than proving ' +
+      'where a request came from. #711.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-SAML-0115',
+    summary: 'A SAML 1.1 flow came back from its one trip to the sign-in ' +
+      'screen and the issuance policy still asked for a step-up on the ' +
+      'session\'s risk; it is not sent round again. #711.',
+    spec: 'HTTP 403 page' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
