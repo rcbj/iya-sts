@@ -1450,6 +1450,26 @@ class AdminApi {
               'applies to the applications in `selectApplications`, and an ' +
               'application is on one named profile at most.',
         example: { defaultLocale: 'fr-CA', populatePreferredLanguage: true }
+      },
+      // #396: the sixth kind, with two acts of its own for the realm's
+      // custom attributes.
+      attributes: {
+        save: 'Writes `cn=default,ou=attributePolicies` in this realm\'s ' +
+              'directory, REPLACING what is there; a realm with no entry of ' +
+              'its own follows the default realm\'s, and the built-in ' +
+              'default is `givenName, sn, mail`. `requiredAttributes` is ' +
+              'the list (an array, or comma-separated) of attributes every ' +
+              'person must hold besides `uid`, `cn` and `sn`, which are ' +
+              'always required; a name a person here cannot be given a ' +
+              'value for — `userPassword`, a binary attribute, `memberOf`, ' +
+              'an `sts` attribute, or a custom attribute this realm does ' +
+              'not define — is refused (STS-LDAP-0166). **Enforced in ' +
+              'product mode**: a create without one is refused at every ' +
+              'door (STS-LDAP-0162), and an edit may not take one away ' +
+              '(STS-LDAP-0164). `GET /admin-api/policies?missing=count` ' +
+              'counts the people who lack one, where the directory is held ' +
+              'in memory.',
+        example: { requiredAttributes: ['givenName', 'sn', 'mail'] }
       }
     };
     const cap = function (text) {
@@ -1531,6 +1551,10 @@ class AdminApi {
           : field.type === 'locale'
             ? { type: 'string',
                 description: field.what + ' Default `' + field.dflt + '`.' }
+          : field.type === 'attributeList'
+            ? { oneOf: [{ type: 'array', items: { type: 'string' } },
+                        { type: 'string' }],
+                description: field.what + ' Default `' + field.dflt + '`.' }
           : field.type === 'list'
             ? { type: 'string',
                 description: field.what + ' An ordered, comma-separated ' +
@@ -1591,6 +1615,18 @@ class AdminApi {
         },
         responseDescription: 'Whether anything was removed, and the profile ' +
                              'now in force.' });
+      // A KIND'S OWN ACTS (#396), described by the kind itself.
+      (kind.extraActions || []).forEach(function (extra) {
+        out.push({
+          action: extra.action,
+          operationId: extra.operationId,
+          summary: extra.summary,
+          description: extra.description,
+          requestBodyRequired: true,
+          requestBody: extra.requestBody,
+          responseDescription: 'What was done, and the sentence saying so.'
+        });
+      });
     });
     log.debug("Leaving AdminApi.policyKindActions(). " + out.length + ".");
     return out;
@@ -22403,10 +22439,30 @@ class AdminApi {
                      '`authn.mail.usable` says whether its two email ' +
                      'mechanisms can be on here, and a field with ' +
                      '`disabled: true` cannot be turned on until it ' +
-                     'can.\n\nIt is NOT the XACML policy repository, which ' +
+                     'can.\n\n**`attributes` is the attribute policy ' +
+                     '(#396)**: `required` the attributes every person here ' +
+                     'must hold, `catalogue` every attribute a person may be ' +
+                     'given (each `locked`, `required`, `custom`), `custom` ' +
+                     'the realm\'s own attributes, `enforced` whether it is ' +
+                     'enforced (product mode), and `missingFilter` the LDAP ' +
+                     'filter finding a person who lacks one.' +
+                     '\n\nIt is NOT the XACML policy repository, which ' +
                      'is `GET /admin-api/xacml/policies`.',
         mirrors: 'GET /admin/policies',
-        parameters: this.pagingParameters(),
+        // A CAST: `pagingParameters()`'s inferred element type is its two
+        // integer schemas, which this string `enum` is not one of.
+        parameters: (this.pagingParameters() as any[]).concat([
+          // #396: a walk of the realm's people, so only when asked.
+          { name: 'missing', in: 'query', required: false,
+            schema: { type: 'string', enum: ['count'] },
+            description: '`count` answers `attributes.missing`: how many ' +
+                         'people in this realm lack a value of an ' +
+                         'attribute the attribute policy requires. A walk ' +
+                         'of the realm\'s people, so asked only on request, ' +
+                         'and null where the directory is held in the store ' +
+                         '(`attributes.missingFilter` is the LDAP filter ' +
+                         'that finds them there).' }
+        ]),
         responseDescription: 'The kinds of policy, each kind\'s profile in ' +
                              'force with its field table and schema, and ' +
                              'the paged profiles.',

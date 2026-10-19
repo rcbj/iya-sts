@@ -38,6 +38,7 @@ import authnPolicy = require('../common/authn_policy');
 import serviceAccountPolicy = require('../common/service_account_policy');
 import passkeyPolicy = require('../common/passkey_policy');
 import localePolicy = require('../common/locale_policy');
+import attributePolicy = require('../common/attribute_policy');
 // The page's sentences, in the reader's language (#543): the templates the
 // messages below are filled with, and the namespace `prose()` extracts.
 import serverProse = require('../common/server_prose');
@@ -62,6 +63,23 @@ interface PolicyModule {
   // A kind whose profiles may be NAMED and selected (#535, the passkey
   // policy): the selectors each named profile carries.
   SELECTORS?: ReadonlyArray<Record<string, any>>;
+  // A kind with acts of its own beside save and reset (#396, the attribute
+  // policy's custom attribute register): each named in the kind's
+  // `extraActions`, answered here.
+  act?(action: string, body: Record<string, any>):
+    { ok: boolean; errors?: string[]; message?: string;
+      [member: string]: any };
+}
+
+// An act a kind has beside save and reset (#396): its name, the module's
+// audit action, what it does (for the API's description) and its body.
+interface ExtraAction {
+  action: string;
+  operationId: string;
+  summary: string;
+  description: string;
+  auditAction: string;
+  requestBody: Record<string, any>;
 }
 
 interface PolicyKind {
@@ -78,6 +96,8 @@ interface PolicyKind {
   // A field whose value is a secret is never drawn; none are today, and the
   // flag is here so a kind that has one says so rather than relying on it.
   secretFields?: string[];
+  // Acts beside save and reset (#396), answered by the module's `act()`.
+  extraActions?: ExtraAction[];
 }
 
 const KINDS: PolicyKind[] = [];
@@ -194,7 +214,7 @@ class PolicyKinds {
         label: kind.label, governs: kind.governs, appliesTo: kind.appliesTo,
         fallsBackTo: kind.fallsBackTo }, MEMBERS));
       out['kinds.' + kind.id + '.param.noun'] = PolicyKinds.nounOf(kind);
-      ['FIELDS', 'SCHEMA', 'MECHANISMS', 'DOORS', 'SELECTORS']
+      ['FIELDS', 'SCHEMA', 'MECHANISMS', 'DOORS', 'SELECTORS', 'SYNTAXES']
         .forEach(function (name) {
           if (mod[name]) {
             Object.assign(out, harvest(kind.id + '.' + name, mod[name],
@@ -325,9 +345,11 @@ class PolicyKinds {
     return 'reset-' + kind.id + '-policy';
   }
 
-  // Every action every kind answers, in kind order: save then reset.
+  // Every action every kind answers, in kind order: save then reset, then
+  // its own (#396).
   /**
-   * Returns every action every kind answers, in kind order: save then reset.
+   * Returns every action every kind answers, in kind order: save then reset,
+   * then any the kind has of its own.
    *
    * @returns the actions
    */
@@ -336,6 +358,9 @@ class PolicyKinds {
     const out: string[] = [];
     KINDS.forEach(function (kind) {
       out.push(PolicyKinds.saveAction(kind), PolicyKinds.resetAction(kind));
+      (kind.extraActions || []).forEach(function (extra) {
+        out.push(extra.action);
+      });
     });
     log.debug("Leaving PolicyKinds.actions(). " + out.length + ".");
     return out;
@@ -350,7 +375,8 @@ class PolicyKinds {
    * @returns the kind and verb, or null
    */
   static forAction(action: string):
-      { kind: PolicyKind; verb: 'save' | 'reset' } | null {
+      { kind: PolicyKind; verb: 'save' | 'reset' | 'act';
+        extra?: ExtraAction } | null {
     log.debug("Entering PolicyKinds.forAction(). " + action);
     for (const kind of KINDS) {
       if (action === PolicyKinds.saveAction(kind)) {
@@ -360,6 +386,13 @@ class PolicyKinds {
       if (action === PolicyKinds.resetAction(kind)) {
         log.debug("Leaving PolicyKinds.forAction(). reset " + kind.id);
         return { kind: kind, verb: 'reset' };
+      }
+      const extra = (kind.extraActions || []).filter(function (one) {
+        return one.action === action;
+      })[0];
+      if (extra) {
+        log.debug("Leaving PolicyKinds.forAction(). act " + kind.id);
+        return { kind: kind, verb: 'act', extra: extra };
       }
     }
     log.debug("Leaving PolicyKinds.forAction(). None.");
@@ -444,6 +477,86 @@ PolicyKinds.register({
              'they have, or none',
   fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
                'built-in defaults where it has not'
+});
+
+// #396: the sixth kind, rcbj's "Add a policy that defines what the required
+// fields must be for a realm", and on the ticket "a list of all attributes,
+// custom attributes, ability to add a new attribute, and require each
+// individual attribute as needed" — the custom attribute register is this
+// kind's two acts of its own.
+PolicyKinds.register({
+  id: 'attributes',
+  label: 'Attribute policy',
+  container: 'ou=attributePolicies',
+  governs: 'the attributes every person in this realm must hold, and the ' +
+           'custom attributes a person here may be given',
+  module: attributePolicy as unknown as PolicyModule,
+  auditAction: 'admin.attribute-policy.change',
+  appliesTo: 'the NEXT person created and the NEXT edit in this realm; a ' +
+             'person who already lacks an attribute it requires keeps every ' +
+             'other door',
+  fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
+               'built-in default (givenName, sn and mail) where it has not',
+  extraActions: [
+    { action: 'define-person-attribute',
+      operationId: 'definePersonAttribute',
+      summary: 'Define a custom attribute in this realm',
+      description: 'Writes `cn=<name>,ou=attributeDefinitions` in this ' +
+                   'realm\'s directory: an attribute a person here may be ' +
+                   'given, with a label, a syntax its values are checked ' +
+                   'against and whether it holds several values. It is then ' +
+                   'editable on a person\'s page and through ' +
+                   '`/admin-api/users/*-attribute`, settable at a create, ' +
+                   'and may be required by this policy. **The realm\'s own**: ' +
+                   'not inherited from the default realm. The name is an ' +
+                   'RFC 4512 descr of at most 64 characters, and may not be ' +
+                   'a name the directory already knows, `memberOf`, or ' +
+                   'begin `sts` (STS-LDAP-0170). At most 100 per realm.',
+      auditAction: 'admin.attribute-policy.define',
+      requestBody: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9-]{0,63}$',
+                  description: 'The attribute\'s name.' },
+          label: { type: 'string', maxLength: 128,
+                   description: 'What the pages draw beside the name.' },
+          syntax: { type: 'string',
+                    enum: attributePolicy.SYNTAXES.map(function (one) {
+                      return one.id;
+                    }),
+                    description: 'What its values are checked against. ' +
+                                 'Default `string`.' },
+          multiValued: { oneOf: [{ type: 'boolean' }, { type: 'string' }],
+                         description: 'Whether it holds several values ' +
+                                      '(`true`, or `multiple` from a form). ' +
+                                      'Default false.' },
+          description: { type: 'string', maxLength: 1024,
+                         description: 'What it is for. Optional.' }
+        },
+        required: ['name', 'label'],
+        examples: [{ name: 'employeeBadge', label: 'Badge number',
+                     syntax: 'string', multiValued: false }],
+        additionalProperties: false
+      } },
+    { action: 'remove-person-attribute',
+      operationId: 'removePersonAttribute',
+      summary: 'Remove a custom attribute of this realm',
+      description: 'Deletes `cn=<name>,ou=attributeDefinitions`. Refused ' +
+                   'while any person in the realm holds a value of it ' +
+                   '(STS-LDAP-0172) and while this realm\'s own profile ' +
+                   'requires it (STS-LDAP-0173): a definition removed from ' +
+                   'under its values would leave data no door offers again.',
+      auditAction: 'admin.attribute-policy.undefine',
+      requestBody: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'The attribute\'s name.' }
+        },
+        required: ['name'],
+        examples: [{ name: 'employeeBadge' }],
+        additionalProperties: false
+      } }
+  ]
 });
 
 export = PolicyKinds;

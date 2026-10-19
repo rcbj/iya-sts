@@ -262,6 +262,9 @@ import errorCodes = require('../common/error_codes');
 // The mode (common/mode.js): which of the two warnings `GET /scim` draws is
 // true in this realm (#543 round 2).
 import mode = require('../common/mode');
+// What every person in the realm must hold (#396): a create is held to it
+// before the entry exists, and an update may not take one of them away.
+import attributePolicy = require('../common/attribute_policy');
 // WHICH CELL ANSWERS (#98): asked by handle() before the caller is
 // authenticated, and by the User ingress before a person is written. A
 // library that registers nothing; `scim_cells.ts` argues every operation.
@@ -2221,10 +2224,32 @@ class Scim {
               'directory keeps one entry per person at every door.'));
           }
         } else {
+          // THE RESOURCE AS IT WILL BE WRITTEN, HELD TO THE REALM'S
+          // ATTRIBUTE POLICY (#396) BEFORE ANYTHING IS: createUser() below
+          // writes the entry with nothing of the resource on it, and the
+          // resource is merged over it a few lines later, so it is this —
+          // not that create — the policy is asked of (createUser() is told
+          // so with `requiredExempt`). A resource the mapping refuses is
+          // left to that refusal, below.
+          const preview = scimMap.fromScimUser(data, {});
+          if (!preview.errors.length) {
+            const prospective = Object.assign({ uid: [userName] },
+                                              preview.attributes);
+            attributePolicy.deriveCommonName(prospective);
+            const incomplete = attributePolicy.createRefusal(prospective);
+            if (incomplete) {
+              throw coded('STS-LDAP-0162',
+                new SCIMMY.Types.Error(400, 'invalidValue',
+                  incomplete.message + ' Over SCIM: userName is uid, ' +
+                  'name.givenName givenName, name.familyName sn, ' +
+                  'displayName cn and emails mail.'));
+            }
+          }
           const made = directory.createUser(userName, {
             origin: 'scim',
             channel: 'http',
             protocol: 'SCIM',
+            requiredExempt: 'scim',
             // The persona, only where scim.inventOnCreate asks for it — and
             // createUser() invents nothing in product mode either way.
             invent: this.inventOnCreate(),
@@ -2285,6 +2310,18 @@ class Scim {
           throw coded('STS-SCIM-0010',
             new SCIMMY.Types.Error(400, 'invalidValue',
                                    converted.errors.join(' ')));
+        }
+        // A `cn` FROM THE NAMES where the resource gives no displayName
+        // (#396), as every other door does; and on an update, no required
+        // value taken away — a PATCH reaches here as the whole resource too.
+        attributePolicy.deriveCommonName(converted.attributes);
+        if (existing && before) {
+          const taken = attributePolicy.editRefusal(before.attributes || {},
+                                                    converted.attributes);
+          if (taken) {
+            throw coded('STS-LDAP-0164',
+              new SCIMMY.Types.Error(400, 'invalidValue', taken.message));
+          }
         }
 
         // The manager arrives as a SCIM id and is stored as the DN LDAP's

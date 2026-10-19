@@ -752,6 +752,17 @@ class UsersPage {
         (development
           ? kit.note(t.html('consoleUsers.newUserBody.uidNote'))
           : '') +
+        // WHAT A CREATE MUST CARRY (#396): the realm's attribute policy,
+        // each field it names marked "required" in the grid below. The list
+        // is the view's; the link is markup a message cannot carry.
+        (json.requiredAttributes && json.requiredAttributes.length
+          ? kit.note(t.html(json.requiredEnforced
+              ? 'consoleUsers.newUserBody.requiredEnforced'
+              : 'consoleUsers.newUserBody.requiredNotEnforced',
+              { list: json.requiredAttributes.join(', ') }) +
+              '<a href="/admin/policies#attributes">' +
+              t.html('consoleUsers.newUserBody.requiredPolicy') + '</a>.')
+          : '') +
         '<input type="hidden" name="view" value="' + kit.esc(view) + '">' +
         '<div class="formrow fg-view"><span class="sub">' +
         (view === 'advanced'
@@ -3251,16 +3262,21 @@ class UsersPage {
                 : '') +
               (row.must ? t.text('consoleUsers.personFieldsSection.must')
                         : '') +
+              // The realm's attribute policy (#396), where the schema did
+              // not already say so.
+              (row.required && !row.must
+                ? t.text('consoleUsers.personFieldsSection.policyRequired')
+                : '') +
               (row.multi ? ''
                          : t.text('consoleUsers.personFieldsSection.single')),
         example: row.example,
         forText: row.label +
-          (row.must ? t.text('consoleUsers.personFieldsSection.required')
-                    : ''),
+          (row.must || row.required
+            ? t.text('consoleUsers.personFieldsSection.required') : ''),
         families: [], everyFamily: true,
         // Shown by the sub-tab's simple view (#500); a field every person
-        // must hold is always shown.
-        simple: !!row.simple || !!row.must
+        // must hold, by the schema or the realm's policy, is always shown.
+        simple: !!row.simple || !!row.must || !!row.required
       };
     };
     const mailForm = gate.write

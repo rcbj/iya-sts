@@ -738,6 +738,26 @@ function inventsClaimValues() {
   return !isProduct();
 }
 
+// May a person be created without what the realm's attribute policy requires
+// (#396)? `common/attribute_policy.ts` holds a realm's list of the attributes
+// every person must carry — `uid`, `cn` and `sn` always, `givenName` and
+// `mail` by default — and development creates a person without them, as it
+// creates one at a sign-in with nothing typed: a client under test needs a
+// subject, and a fixture that had to describe somebody in full before it
+// could exist would be the same refusal at every door for nothing. Product
+// refuses the create, and an edit that would take a required value away.
+/**
+ * Tells whether a person may be created, or edited, without the attributes
+ * the realm's attribute policy requires.
+ *
+ * @returns true in development mode
+ */
+function createsIncompletePeople() {
+  log.debug("Entering createsIncompletePeople().");
+  log.debug("Leaving createsIncompletePeople().");
+  return !isProduct();
+}
+
 // May a response be delivered to an address the REQUEST named and no
 // registration did? A SAML AssertionConsumerServiceURL, a SAML 1.1 `shire`, a
 // WS-Federation `wreply`, a wallet URL on a query string. Development accepts
@@ -2853,6 +2873,27 @@ const REQUIREMENTS = [
     where: 'common/helpers.js, oauth-oidc/oauth2.ts, oid4vc/vc_claims.ts, ' +
            'ssf/ssf_subjects.js, ssf/risc.ts, ' +
            'common/identity_assurance.js' },
+  // 2026-10-19 (#396).
+  { id: 'required-attributes',
+    what: 'A person carries the attributes the realm\'s attribute policy ' +
+          'requires',
+    development: 'The policy is stored and drawn on Directory > Policies ' +
+                 'and not enforced: a person may be created with no more ' +
+                 'than a username, and an edit may empty any attribute ' +
+                 'but cn and sn.',
+    product: 'A create that leaves a required attribute without a value is ' +
+             'refused (STS-LDAP-0162) at every door — the console, ' +
+             '/admin-api, SCIM, an LDAP add (objectClassViolation, 65), a ' +
+             'HOBA registration and the bulk import (STS-LDAP-0163) — and a ' +
+             'federated first sign-in whose partner did not supply one ' +
+             'creates nobody (STS-FED-0158). An edit that would take a ' +
+             'required value away is refused (STS-LDAP-0164). uid, cn and ' +
+             'sn are always required; givenName and mail by default. A ' +
+             'person who already lacked one is not refused a sign-in or an ' +
+             'edit of something else.',
+    where: 'common/attribute_policy.ts, ldap/ldap_server.js, ' +
+           'ldap/person_editor.ts, scim/scim.ts, scim/scim_auth.ts, ' +
+           'persistence/bulk_import.js' },
   { id: 'saml-request-signatures',
     what: 'A SAML 2.0 service provider\'s request is signed',
     development: 'An unsigned AuthnRequest or LogoutRequest is accepted ' +
@@ -3941,6 +3982,7 @@ module.exports = {
   generatesAcceptorKey: generatesAcceptorKey,
   refusesExpiredClientSecrets: refusesExpiredClientSecrets,
   inventsClaimValues: inventsClaimValues,
+  createsIncompletePeople: createsIncompletePeople,
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,
   requiresCellKek: requiresCellKek,
   opensTestControls: opensTestControls,
