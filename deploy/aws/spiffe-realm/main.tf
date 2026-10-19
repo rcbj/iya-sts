@@ -14,17 +14,20 @@
 # port) — and the load balancer publishes those ports. The default realm keeps
 # 8092 / 8181, and a realm may not take them.
 #
-# THE NODES ARE REGISTERED BY ADDRESS, BY THIS STACK, AND THAT IS THE COST.
-# Every other port the load balancer carries is a target group ECS keeps up to
-# date, through a `load_balancer` block on each node's service
-# (environment/ecs.tf). ECS allows FIVE per service, and `testidp` uses all
-# five (https, ldap, ldaps, pki, kerberos) — so these target groups are not
-# ECS's, and the nodes' current private addresses are looked up here and
-# registered. A task that restarts comes back on a NEW address: its old one
-# goes unhealthy and its new one is registered nowhere until this stack is
-# applied again. RE-APPLY AFTER ANY DEPLOY OR TASK RESTART. rcbj chose this
-# over a Lambda that follows ECS's task events (which the deployer role has no
-# permission to create) on 2026-09-18.
+# THE NODES ARE REGISTERED BY ADDRESS, BY THIS STACK, AND THE NODE KEEPS
+# THEM CURRENT (#323). Every other port the load balancer carries is a target
+# group ECS keeps up to date, through a `load_balancer` block on each node's
+# service (environment/ecs.tf). ECS allows FIVE per service, and the node
+# services use all five (https, ldap, ldaps, pki, kerberos) — so these target
+# groups are not ECS's, and the nodes' current private addresses are looked
+# up here and registered. That attachment is the membership at apply time.
+# Between applies the node reconciles the groups itself
+# (`cluster/spiffe_targets.js`; deploy/aws/CLAUDE.md). The task-role grant
+# does nothing until an administrator re-applies foundation/, and an image
+# built without the two AWS clients records the failure and does not
+# register. rcbj chose address registration over a Lambda that follows ECS's
+# task events (which the deployer role has no permission to create) on
+# 2026-09-18.
 #
 # NO PROXY PROTOCOL. The environment's target groups send a PROXY v2 header
 # and the node reads it (common/proxy_protocol.ts) — on the main port, LDAP,

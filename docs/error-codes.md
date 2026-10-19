@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4364** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4365** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -54,7 +54,7 @@ is an ordinary outcome.
 * [Service core (`STS-CORE`)](#sts-core) — 92
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 49
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 83
-* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 31
+* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 87
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 18
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 143
@@ -426,6 +426,7 @@ Raised from: cluster/.
 | `STS-CLUSTER-0024` | Sweeping the rate-limit windows whose time has passed failed; they are swept on a later count. | — |
 | `STS-CLUSTER-0025` | A node's heartbeat ran late by a heartbeat or more because its event loop was busy; a stall past the membership lifetime costs the node its membership. | — |
 | `STS-CLUSTER-0026` | Active-active mode was refused because global.publicBaseUrl is empty, so each node would name itself by the address it was reached on. | — |
+| `STS-CLUSTER-0027` | Reconciling this cluster's SPIFFE target groups with the running nodes' addresses failed; the groups stay as they were until the next run, and the service keeps serving (#323). | — |
 | `STS-CLUSTER-0040` | A cluster mode was configured with persistence.minted off, so nodes would not share sessions, pending sign-ins, codes or tokens; the service does not start. | — |
 | `STS-CLUSTER-0041` | Standing down from a lease early failed in the store; the lease expires on its own within one node lifetime, and this node does not renew it. | — |
 | `STS-CLUSTER-0162` | The store every node shares could not be asked to spend against a budget (a GNAP right's limits); the operation was refused (#432 phase 5). | — |

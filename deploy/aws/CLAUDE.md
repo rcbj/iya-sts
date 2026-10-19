@@ -1356,16 +1356,23 @@ stack refuses a port the environment already uses (80, 88, 389, 443, 636,
 8081, 8082, the debugger's 8444) and, for any realm but `default`, 8092 and
 8181.
 
-**THE NODES ARE REGISTERED BY ADDRESS, AND A RESTARTED TASK FALLS OUT.** ECS
-keeps a target group's members current only for the target groups on a
-service's `load_balancer` blocks, and **ECS allows five per service — which
-`testidp` already uses** (https, ldap, ldaps, pki, kerberos). So this stack
-looks up the nodes' current private addresses (the in-use interfaces
-carrying `<prefix>-nodes`) and registers them itself. **Re-apply every
-realm's stack after any deploy or task restart**; until then the restarted
-node is missing from these ports, and its old address fails health checks.
-rcbj chose this over a Lambda following ECS task events, which the deployer
-role cannot create.
+**THE NODES ARE REGISTERED BY ADDRESS, AND THE NODE KEEPS THEM CURRENT
+(#323).** ECS keeps a target group's members current only for the target
+groups on a service's `load_balancer` blocks, and **ECS allows five per
+service — which these environments already use** (https, ldap, ldaps, pki,
+kerberos). So this stack looks up the nodes' current private addresses (the
+in-use interfaces carrying `<prefix>-nodes`) and registers them itself.
+That attachment is the membership at apply time. It does not remove a
+target registered any other way, and a task restarted since the apply comes
+back on a new address. `cluster/spiffe_targets.js` reconciles the groups
+after that — the algorithm is that file's. The task role may do it only
+once an administrator has re-applied `foundation/`, because the workload
+boundary is the ceiling and a role policy cannot rise above it. An image
+built without `@aws-sdk/client-elastic-load-balancing-v2` and
+`@aws-sdk/client-ecs` records `STS-CLUSTER-0027` and leaves the groups as
+they were. rcbj chose address registration over a Lambda following ECS task
+events, which the deployer role cannot create. `environment/realm_listeners.tf`
+is the same apply-time registration and is not reconciled here.
 
 **No PROXY protocol on these target groups**, unlike every other port:
 SPIFFE's gRPC listeners do not read the header, and a header in front of gRPC
@@ -1490,7 +1497,7 @@ terraform -chdir=deploy/aws/foundation init -backend-config=bucket=iya-sts-terra
 terraform -chdir=deploy/aws/foundation apply          # once, administrator
 
 # as the deployer role, from here on
-docker build -t <repo>:<tag> --build-arg STS_CLOUD_SDKS="@aws-sdk/client-secrets-manager @aws-sdk/client-kms @aws-sdk/client-sesv2" \
+docker build -t <repo>:<tag> --build-arg STS_CLOUD_SDKS="@aws-sdk/client-secrets-manager @aws-sdk/client-kms @aws-sdk/client-sesv2 @aws-sdk/client-elastic-load-balancing-v2 @aws-sdk/client-ecs" \
   --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem .
 docker build -t <repo>:schema-<tag> -f deploy/aws/schema-init/Dockerfile .
 docker build -t <repo>:cert-<tag> -f deploy/aws/cert-init/Dockerfile .   # only with a public name

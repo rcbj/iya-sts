@@ -1841,6 +1841,11 @@ const CODES = [
       'empty, so each node would name itself by the address it was reached ' +
       'on.',
     spec: '' },
+  { code: 'STS-CLUSTER-0027',
+    summary: 'Reconciling this cluster\'s SPIFFE target groups with the ' +
+      'running nodes\' addresses failed; the groups stay as they were until ' +
+      'the next run, and the service keeps serving (#323).',
+    spec: '' },
   { code: 'STS-CLUSTER-0040',
     summary: 'A cluster mode was configured with persistence.minted off, so ' +
       'nodes would not share sessions, pending sign-ins, codes or tokens; ' +

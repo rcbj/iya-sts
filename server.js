@@ -502,6 +502,12 @@ function announce() {
     log.error(errorCodes.tag('STS-CORE-0031') +
               'spiffe: the SPIFFE listeners could not start: ' + err.message);
   });
+  // THE SPIFFE TARGET GROUPS (#323). ECS allows five target groups on a
+  // service and the node services use them, so these groups are registered
+  // by address. This process's own address is registered now; the
+  // scheduler's leader keeps the groups equal to the running tasks. A
+  // failure is recorded and these listeners are unaffected.
+  require('./cluster/spiffe_targets').onStart();
   // THE PLAIN-HTTP REVOCATION LISTENER (2026-09-13): `/pki/` and nothing else,
   // because RFC 5280 section 8 and RFC 5019 section 5 put CRL and OCSP
   // addresses on http:// — see pki/pki_service.ts. Recorded rather than
@@ -641,6 +647,11 @@ function shutdown(signal) {
   // ---------------------------------------------------------------------
   // The debugger's api child first: it is not a worker of either pool and
   // holds nothing worth draining, and an orphan would keep its socket.
+  // The SPIFFE target groups (#323), before the scheduler stops: an
+  // in-flight reconcile sees the flag before its next register, and this
+  // task's own address is deregistered below, before the store closes. A
+  // load balancer that does not answer does not hold the process.
+  require('./cluster/spiffe_targets').beginStop();
   // The scheduler first of all: no job may start while the process drains.
   // A run in progress is left to finish or be fenced out; its claim lapses
   // and the next leader takes it over.
@@ -650,8 +661,12 @@ function shutdown(signal) {
   require('./common/cell_channel').close().catch(function (e) {
     log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
   });
-  debuggerServer.close().catch(function (e) {
-    log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
+  require('./cluster/spiffe_targets').onStop().catch(function (e) {
+    log.debug("Caught in shutdown(): " + ((e && e.message) || e));
+  }).then(function () {
+    return debuggerServer.close();
+  }).catch(function (e) {
+    log.debug("Caught in shutdown(): " + ((e && e.message) || e));
   }).then(function () {
     return requestPool.stop();
   }).then(function (drained) {
