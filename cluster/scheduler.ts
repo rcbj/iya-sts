@@ -608,7 +608,13 @@ class Scheduler {
         return Date.now();
       },
       setTimer: function (fn: () => void, ms: number): Json {
-        const handle = setTimeout(fn, Math.max(0, ms));
+        // OUTSIDE ANY REQUEST'S DIRECTORY BUDGET (#359): a job armed
+        // lazily from a console request would otherwise carry that
+        // request's AsyncLocalStorage slot into every run.
+        const handle = require('../common/sync_query').outsideBudget(
+          function () {
+            return setTimeout(fn, Math.max(0, ms));
+          });
         // Never the reason a process that is shutting down stays up.
         if (handle && typeof handle.unref === 'function') {
           handle.unref();

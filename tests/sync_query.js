@@ -31,6 +31,10 @@
 //      The kit's thread is one thread, so a question the budget cut short is
 //      still running there: the next case waits for it. No slot means no
 //      budget.
+//   G. the budget ends with its request (the review of #692): a timer the
+//      request started that fires after its response finished sees no
+//      budget and is answered, and a timer armed through `outsideBudget()`
+//      sees none even while the request is open.
 //
 // WHAT NEEDS A REAL POSTGRES (on #349): an answer through `pg` itself, the
 // statement timeout taking effect, and a database restarted under a waiting
@@ -38,6 +42,7 @@
 // ===========================================================================
 
 const path = require('path');
+const EventEmitter = require('events');
 const SyncQuery = require('../common/sync_query');
 const errorCodes = require('../common/error_codes');
 
@@ -253,6 +258,78 @@ async function run(t) {
     });
     t.equal(again.value, 'again',
             'F8. and the next question, still with no budget, is answered');
+
+    t.log.info('=== G. the budget ends with its request (#359 review) ===');
+    // A response stand-in: `runWithBudget()` listens for its `finish`.
+    const response = new EventEmitter();
+    let afterFinish = null;
+    let armedOutside = null;
+    let inheritedWhileOpen = null;
+    const background = [];
+    SyncQuery.runWithBudget(40, function () {
+      // Spend the whole budget, as a slow console page does.
+      attempt(function () {
+        return budgetBridge.query('slow', [500, 'spent']);
+      });
+      // A timer the request starts and that outlives it: a debounced
+      // flush, a lazily armed job.
+      background.push(new Promise(function (resolve) {
+        setTimeout(function () {
+          afterFinish = { inForce: SyncQuery.budgetInForce(),
+            asked: attempt(function () {
+              return budgetBridge.query('echo', ['later']);
+            }) };
+          resolve();
+        }, 650);
+      }));
+      // A timer armed through the background door while the request is
+      // still open (it fires before `finish`).
+      background.push(new Promise(function (resolve) {
+        SyncQuery.outsideBudget(function () {
+          return setTimeout(function () {
+            armedOutside = SyncQuery.budgetInForce();
+            resolve();
+          }, 5);
+        });
+      }));
+      // And a plain timer firing while the request is open: it shares the
+      // request's budget, which is the request's own work.
+      background.push(new Promise(function (resolve) {
+        setTimeout(function () {
+          inheritedWhileOpen = SyncQuery.budgetInForce();
+          resolve();
+        }, 5);
+      }));
+      return null;
+    }, response);
+    await pause(50);
+    response.emit('finish');
+    await Promise.all(background);
+    t.check(armedOutside === false,
+            'G1. a timer armed through outsideBudget() inside an open ' +
+            'budget sees no budget', String(armedOutside));
+    t.check(inheritedWhileOpen === true,
+            'G2. a plain timer firing while its request is open shares ' +
+            'that request\'s budget', String(inheritedWhileOpen));
+    t.check(afterFinish && afterFinish.inForce === false &&
+            afterFinish.asked.value === 'later' &&
+            afterFinish.asked.code === '',
+            'G3. a timer a budgeted request started, firing after the ' +
+            'request finished, sees no budget and its question is ' +
+            'answered rather than refused as STS-LDAP-0175',
+            JSON.stringify(afterFinish));
+    // The background entry points arm their timers through that door. A
+    // statement, not a line: each is read whole from its file.
+    const fs = require('fs');
+    const scheduler = fs.readFileSync(path.join(__dirname, '..', 'cluster',
+                                                'scheduler.ts'), 'utf8');
+    const store = fs.readFileSync(path.join(__dirname, '..', 'persistence',
+                                            'persistence.js'), 'utf8');
+    t.check(/setTimer:[\s\S]{0,400}outsideBudget\(/.test(scheduler) &&
+            /\btimer = outsideBudget\(/.test(store) &&
+            /retryTimer = outsideBudget\(/.test(store),
+            'G4. the scheduler\'s timers and the persistence flush and ' +
+            'retry are armed outside any request\'s budget');
   } finally {
     await budgetBridge.stop();
   }

@@ -478,8 +478,10 @@ app.use(function (req, res, next) {
   if (!consoleRequest(req)) {
     return proceed();
   }
+  // The response ends the budget: a timer or job this request starts and
+  // that outlives it asks with none (`common/sync_query.ts`).
   return require('./sync_query').runWithBudget(directoryBudgetMs(),
-                                                proceed);
+                                                proceed, res);
 });
 
 // The rewrite itself. A function rather than an inline regex so that the ONE

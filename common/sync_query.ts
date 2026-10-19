@@ -40,6 +40,19 @@
 // throws `STS-LDAP-0175` without posting another question. No slot means
 // no budget. The API stays synchronous.
 //
+// **THE BUDGET IS THE REQUEST'S, AND ENDS WITH IT.** An `AsyncLocalStorage`
+// store follows everything started inside it — a timer, a debounced flush,
+// a scheduler job armed lazily by the first request that needed it — and is
+// never cleared there. Left at that, a job armed from a console request
+// carried that request's spent budget for the life of the process and every
+// synchronous read it made failed as `STS-LDAP-0175` (the review of #692).
+// So the slot is CLOSED when the request's response finishes or its
+// connection closes, and a closed slot is no budget; and the background
+// entry points that arm a timer (`cluster/scheduler.ts`'s `setTimer`,
+// `persistence.js`'s flush and retry) arm it through `outsideBudget()`, so
+// what they run never sees a request's slot even while that request is
+// still open.
+//
 // **THE COUNTER, NOT A FLAG.** A flag set to 0 before each question and to 1
 // by the thread loses a wake when a LATE answer to a question that already
 // timed out lands between the reset and the wait. The thread adds one per
@@ -74,6 +87,14 @@ const log = bunyan.createLogger({ name: 'sts-sync-query' });
 interface BudgetSlot {
   ms: number;
   waited: number;
+  // false once the request the budget belongs to has finished or closed.
+  open: boolean;
+}
+
+// What `runWithBudget()` may be handed to end the budget with: the
+// request's response (an `http.ServerResponse` is one).
+interface BudgetLifetime {
+  once(event: string, listener: () => void): unknown;
 }
 
 const directoryBudget = new asyncHooks.AsyncLocalStorage<BudgetSlot>();
@@ -227,7 +248,10 @@ class SyncQuery {
    */
   query(name: string, args: unknown[]): unknown {
     log.debug("Entering SyncQuery.query(). " + name);
-    const slot = directoryBudget.getStore();
+    const held = directoryBudget.getStore();
+    // A closed slot belongs to a request that has finished: whatever is
+    // asking now was started by it and outlived it, and has no budget.
+    const slot = held && held.open ? held : undefined;
     if (slot && slot.waited >= slot.ms) {
       this.figures.budgetRefused += 1;
       log.debug("Leaving SyncQuery.query(). The request's budget is spent.");
@@ -345,13 +369,18 @@ class SyncQuery {
    * Runs `fn` with a budget on the synchronous waits `query()` does
    * inside it (#359). A non-positive or non-finite budget runs `fn`
    * with none. The wait is cumulative across every question in the
-   * call, including one a timeout cut short.
+   * call, including one a timeout cut short. When `lifetime` is given
+   * (the request's response), the budget ends at its `finish` or
+   * `close`: anything `fn` started that is still running afterwards
+   * asks with no budget.
    *
    * @param ms - the budget, in milliseconds
    * @param fn - the work
+   * @param lifetime - what ends the budget, or none
    * @returns whatever `fn` returns
    */
-  static runWithBudget(ms: number, fn: () => unknown): unknown {
+  static runWithBudget(ms: number, fn: () => unknown,
+                       lifetime?: BudgetLifetime): unknown {
     log.debug("Entering SyncQuery.runWithBudget().");
     const n = Number(ms);
     let answer: unknown;
@@ -369,8 +398,16 @@ class SyncQuery {
       log.debug("Leaving SyncQuery.runWithBudget(). No budget.");
       return answer;
     }
+    const slot: BudgetSlot = { ms: n, waited: 0, open: true };
+    if (lifetime && typeof lifetime.once === 'function') {
+      const close = function (): void {
+        slot.open = false;
+      };
+      lifetime.once('finish', close);
+      lifetime.once('close', close);
+    }
     try {
-      answer = directoryBudget.run({ ms: n, waited: 0 }, fn);
+      answer = directoryBudget.run(slot, fn);
     } catch (e) {
       // The same refusal, now from a question that ran under the budget.
       log.debug("Caught in SyncQuery.runWithBudget(): " +
@@ -380,6 +417,35 @@ class SyncQuery {
     }
     log.debug("Leaving SyncQuery.runWithBudget().");
     return answer;
+  }
+
+  /**
+   * Runs `fn` with no request's budget, whatever context it was called
+   * from: a background entry point arms its timer through this, so the
+   * work the timer runs never inherits a console request's slot.
+   *
+   * @param fn - the work
+   * @returns whatever `fn` returns
+   */
+  static outsideBudget<T>(fn: () => T): T {
+    log.debug("Entering SyncQuery.outsideBudget().");
+    const answer = directoryBudget.exit(fn);
+    log.debug("Leaving SyncQuery.outsideBudget().");
+    return answer;
+  }
+
+  /**
+   * Whether a budget is in force here: an open slot (for tests and for
+   * a reader of the logs).
+   *
+   * @returns true inside a request's open budget
+   */
+  static budgetInForce(): boolean {
+    log.debug("Entering SyncQuery.budgetInForce().");
+    const held = directoryBudget.getStore();
+    const inForce = Boolean(held && held.open);
+    log.debug("Leaving SyncQuery.budgetInForce().");
+    return inForce;
   }
 }
 
