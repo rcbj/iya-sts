@@ -5,6 +5,5 @@
   "explain": "Este servicio aloja más de un dominio de confianza, y cada uno tiene sus propias personas y sus propios administradores. Elija el dominio al que pertenece y se le pedirá que inicie sesión allí.",
   "realm": "Dominio",
   "continue": "Continuar a {surface, select, portal {su cuenta} other {la consola de administración}}",
-  "defaultRealm": "(el dominio predeterminado)",
-  "idNote": "Su administrador puede decirle el id de su dominio. El id del dominio predeterminado es <code>{id}</code>."
+  "defaultRealm": "(el dominio predeterminado)"
 }

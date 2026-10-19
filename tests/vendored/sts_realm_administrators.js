@@ -12,12 +12,12 @@
 // scope table as a table, the chooser's decision). This is the half that is
 // only true of a running service:
 //
-//   1. THE CHOOSER. A bare `/portal` with realms defined asks which realm;
-//      `?realm=<id>` redirects under that realm's prefix, an unknown id is
-//      refused, `?realm=default` and a prefixed path sign in where they are.
-//      The console has no chooser since the #446 cutover: every `/admin`
-//      address answers the static console's document, which signs in at the
-//      realm its own prefix names and switches realms in place.
+//   1. THE CHOOSER. A bare `/admin` or `/portal` with realms defined asks
+//      which realm, as a list of every realm. Choosing one redirects under
+//      that realm's prefix and is remembered on the `sts_realm` cookie, so
+//      the next bare visit is that choice. An unknown id is refused and
+//      stores nothing. `?realm=default` signs in where it is and remembers
+//      the default realm. A deep link and a prefixed path are never asked.
 //   2. A REALM ADMINISTRATOR IS CONFINED. Signed in through a realm they read
 //      that realm's pages, do not see or reach the service pages, cannot write
 //      a per-process setting, create a realm or replace the service Root, and
@@ -109,9 +109,26 @@ async function call(method, url, options) {
     // Not JSON — a page, a redirect or an empty body. The text is kept.
     body = null;
   }
+  const cookies = typeof r.headers.getSetCookie === "function"
+    ? r.headers.getSetCookie()
+    : (r.headers.get("set-cookie") ? [r.headers.get("set-cookie")] : []);
   log.debug("Leaving call(). status=" + r.status);
   return { status: r.status, body: body, text: text,
-           location: r.headers.get("location") || "" };
+           location: r.headers.get("location") || "", cookies: cookies };
+}
+
+// The chooser's `sts_realm` line, or "" when the answer set none.
+function realmCookie(reply) {
+  log.debug("Entering realmCookie().");
+  const cookies = (reply && reply.cookies) || [];
+  let found = "";
+  cookies.forEach(function (line) {
+    if (!found && String(line).indexOf("sts_realm=") === 0) {
+      found = String(line);
+    }
+  });
+  log.debug("Leaving realmCookie().");
+  return found;
 }
 
 // The management API with the run's token, which the preload attaches.
@@ -224,42 +241,53 @@ async function theChooserAsksWhichRealm() {
   log.info("=== the plain /admin and /portal ask which realm ===");
   for (const surface of ["/admin", "/portal"]) {
     const bare = await call("GET", base + surface);
-    check("a bare " + surface + " with realms defined draws the chooser " +
-          "rather than starting a sign-in", function () {
-      assert.strictEqual(bare.status, 200,
-        surface + " answered " + bare.status + " -> " + bare.location);
-      assert.ok(/name="realm"/.test(bare.text),
-        "the page has no realm control: " + bare.text.slice(0, 200));
-    });
-    check("its control is a list naming the realm in development, or a " +
-          "text box in product — never a list in product", function () {
-      const listed = /<select[^>]*name="realm"/.test(bare.text);
-      if (listed) {
-        assert.ok(bare.text.indexOf('value="' + REALM + '"') >= 0,
-          "the list does not offer " + REALM);
-      } else {
-        assert.ok(/<input[^>]+name="realm"/.test(bare.text),
-          "neither a list nor a text box");
-        assert.ok(bare.text.indexOf(REALM) < 0,
-          "a text box page must not name the realms");
-      }
-    });
-    const chosen = await call("GET", base + surface + "?realm=" + REALM);
-    check("choosing " + REALM + " redirects under that realm's prefix",
+    check("a bare " + surface + " lists every realm and stores nothing",
       function () {
-        assert.ok(chosen.status === 303 || chosen.status === 302,
-          "it answered " + chosen.status);
+        assert.strictEqual(bare.status, 200,
+          surface + " answered " + bare.status + " -> " + bare.location);
+        assert.ok(/<select[^>]*name="realm"/.test(bare.text) &&
+                  bare.text.indexOf('value="' + REALM + '"') >= 0,
+          "the page has no list offering " + REALM + ": " +
+          bare.text.slice(0, 200));
+        assert.ok(!/<input[^>]*name="realm"/.test(bare.text),
+          "the realm control is a text box");
+        assert.strictEqual(realmCookie(bare), "",
+          "a first visit stored " + realmCookie(bare));
+      });
+    const chosen = await call("GET", base + surface + "?realm=" + REALM);
+    check("choosing " + REALM + " redirects under that realm's prefix " +
+          "and is remembered", function () {
+      assert.ok(chosen.status === 303 || chosen.status === 302,
+        "it answered " + chosen.status);
+      assert.ok(new RegExp("/realm/" + REALM + surface + "$")
+                  .test(chosen.location),
+        "it went to " + chosen.location);
+      const cookie = realmCookie(chosen);
+      assert.ok(cookie.indexOf("sts_realm=" + REALM) === 0 &&
+                cookie.indexOf("HttpOnly") >= 0 &&
+                cookie.indexOf("SameSite=Lax") >= 0,
+        "it stored " + cookie);
+    });
+    const remembered = await call("GET", base + surface, {
+      headers: { Cookie: "sts_realm=" + REALM }
+    });
+    check("a remembered " + REALM + " is the next bare " + surface,
+      function () {
+        assert.ok(remembered.status === 303 || remembered.status === 302,
+          "it answered " + remembered.status);
         assert.ok(new RegExp("/realm/" + REALM + surface + "$")
-                    .test(chosen.location),
-          "it went to " + chosen.location);
+                    .test(remembered.location),
+          "it went to " + remembered.location);
       });
     const unknown = await call("GET", base + surface +
                                "?realm=no-such-realm-" + STAMP);
-    check("an unknown realm is refused on the chooser, not redirected",
+    check("an unknown realm is refused on the chooser and stores nothing",
       function () {
         assert.strictEqual(unknown.status, 400, "it answered " +
                            unknown.status + " -> " + unknown.location);
         assert.ok(!unknown.location, "it redirected to " + unknown.location);
+        assert.strictEqual(realmCookie(unknown), "",
+          "an unknown id was stored: " + realmCookie(unknown));
       });
     const here = await call("GET", base + surface + "?realm=default");
     // BOTH SIGN IN IN THE BROWSER — the console since the #446 cutover, the
@@ -267,11 +295,15 @@ async function theChooserAsksWhichRealm() {
     // whose script starts the authorization request.
     const script = surface === "/admin" ? "/admin/console.js"
                                         : "/portal/portal.js";
-    check("?realm=default signs in where it is: an authorization request " +
-          "started by the " + surface + " document", function () {
+    check("?realm=default signs in where it is and remembers the default " +
+          "realm", function () {
       assert.ok(here.status === 200 &&
                 here.text.indexOf('<script src="' + script + '"') >= 0,
         "it answered " + here.status + " " + here.text.slice(0, 200));
+      const cookie = realmCookie(here);
+      assert.ok(cookie.indexOf("sts_realm=default") === 0 &&
+                cookie.indexOf("HttpOnly") >= 0,
+        "it stored " + cookie);
     });
   }
   const deep = await call("GET", base + "/admin/tokens");

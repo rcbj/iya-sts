@@ -371,18 +371,6 @@
     "en": "091040d9ab1a08e5",
     "text": "off se IGNORA donde se lee (registrado una vez, STS-CORE-0106) y se rechaza al escribirse (STS-CORE-0103): una credencial de este dominio sin referencia de estado, o un ldp_vc que no reveló su credentialStatus, siempre se rechaza. Se permiten own-only y la exención por emisor."
   },
-  "mode.requirements.realm-chooser.what": {
-    "en": "c37334adfeccc2cb",
-    "text": "El selector de dominio previo al inicio de sesión enumera todos los dominios"
-  },
-  "mode.requirements.realm-chooser.development": {
-    "en": "7ace23d168380455",
-    "text": "A un navegador sin sesión en /admin o /portal, en un servicio con dominios de confianza definidos, se le muestra una lista de todos los dominios a través de los que iniciar sesión."
-  },
-  "mode.requirements.realm-chooser.product": {
-    "en": "b3e379e5d61df6c0",
-    "text": "La misma página pide el id del dominio en un cuadro de texto, de modo que los dominios del despliegue no se publican a cualquiera que pueda llegar a ella."
-  },
   "mode.requirements.weaker-responses.what": {
     "en": "57d0e17e4a068c39",
     "text": "Una respuesta puede salir más débil de lo pedido"

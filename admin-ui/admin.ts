@@ -8501,6 +8501,9 @@ class AdminConsole {
       // should draw the console rather than ask again.
       const signedIn = !!authn.sessionOf(req);
       const choice = signedIn ? null : loginRealmChooser.decide(req, 'admin');
+      // The remembered realm, written here so the portal's gate cannot
+      // forget the same line (`RealmChooser.writeCookie()`).
+      loginRealmChooser.writeCookie(res, choice);
       if (choice && choice.kind === 'redirect') {
         res.set('Cache-Control', 'no-store').redirect(303, choice.location);
         log.debug("Leaving the static console shell. To the chosen realm.");

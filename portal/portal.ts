@@ -377,6 +377,8 @@ class Portal {
       const linked = FOR_NOBODY.indexOf(path) >= 0;
       const choice = linked || authn.sessionOf(req) ? null
         : realmChooser.decide(req, 'portal');
+      // The remembered realm, the same line the console's gate writes.
+      realmChooser.writeCookie(res, choice);
       if (choice && choice.kind === 'redirect') {
         res.set('Cache-Control', 'no-store').redirect(303, choice.location);
         log.debug("Leaving the portal shell. To the chosen realm.");

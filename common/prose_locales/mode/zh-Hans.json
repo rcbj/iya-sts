@@ -371,18 +371,6 @@
     "en": "091040d9ab1a08e5",
     "text": "off 在读取处会被忽略（记录一次日志，STS-CORE-0106），写入时会被拒绝（STS-CORE-0103）：本领域不带状态引用的凭证，或未披露其 credentialStatus 的 ldp_vc，始终会被拒绝。own-only 和按颁发者的豁免是允许的。"
   },
-  "mode.requirements.realm-chooser.what": {
-    "en": "c37334adfeccc2cb",
-    "text": "登录前的领域选择器会列出每个领域"
-  },
-  "mode.requirements.realm-chooser.development": {
-    "en": "7ace23d168380455",
-    "text": "在定义了信任领域的服务上，在 /admin 或 /portal 没有会话的浏览器会看到可用于登录的所有领域的列表。"
-  },
-  "mode.requirements.realm-chooser.product": {
-    "en": "b3e379e5d61df6c0",
-    "text": "同一页面会在文本框中要求输入领域的 id，因此部署中的领域不会向任何能访问该页面的人公开。"
-  },
   "mode.requirements.weaker-responses.what": {
     "en": "57d0e17e4a068c39",
     "text": "响应可以以比请求更弱的形式发出"
