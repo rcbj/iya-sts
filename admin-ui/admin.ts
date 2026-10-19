@@ -8737,7 +8737,10 @@ const SETTING_HOMES = [
   { group: 'OAuth 2.0 / OIDC per-client', pages: ['/admin/token-lifetimes'] },
   { group: 'WS-Trust', pages: ['/admin/wstrust'] },
   // `WS-Federation` had one row, the mock relying party's wctx lifetime, and
-  // went with it (#592); its assertions' row is homed above.
+  // went with it (#592); its assertions' row is homed above. It came back with
+  // #426: who may start a sign-in, the relying party or this identity
+  // provider, which is a question about the protocol page's own endpoints.
+  { group: 'WS-Federation', pages: ['/admin/wsfed'] },
   // THE LISTENERS PAGE (#423, rcbj: "Put all the listener configuration,
   // including TLS on its own page under Server Settings->Listeners"): the
   // TLS group moved here from /admin/tls, which keeps the truststore and the
