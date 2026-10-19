@@ -14412,9 +14412,10 @@ function updateApplication(identifier, change) {
   // update may not add one — the attribute an administrator means is
   // `oauthAllowedScope`. (A set of a list is refused above, STS-REG-0008.) A
   // REMOVE stays open, the tidy-up door every derived list keeps. A CREATE
-  // still accepts it as a seed, because the parent project's vendored
-  // `jwt_vc_json_common.js` provisions its wallets with one and cannot be
-  // edited here; nothing reads it as a permission either way.
+  // still accepts it as a seed, because several of the parent project's
+  // vendored jobs create their clients with one; nothing reads it as a
+  // permission either way. The OID4VC wallet, which RECONCILES one shared
+  // entry, declares its scopes on `oauthAllowedScope` instead.
   if (attribute === 'oauthScope' && mode === 'add') {
     log.debug("Leaving updateApplication(). oauthScope is a sighting.");
     return errorCodes.mark({ ok: false, errors: ['"oauthScope" records the ' +

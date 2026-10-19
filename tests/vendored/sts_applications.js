@@ -572,6 +572,20 @@ async function reconcile(base, identifier, protocols, fields) {
         "\" was refused: " + JSON.stringify(wrote.errors || wrote));
       continue;
     }
+    // `oauthScope` IS A SIGHTING (iya-sts #708): the token endpoint writes
+    // it as the client's requests arrive, and an update may not add to it
+    // (STS-REG-0361), even a value already there. A create may still seed
+    // it, so a job re-run against an entry an earlier run created asks for
+    // nothing new: a value the entry already holds is skipped, and a NEW one
+    // is sent and refused, whose message names oauthAllowedScope — the
+    // attribute a job declaring what it may ask for means.
+    if (name === "oauthScope") {
+      var current = await entryOf(base, identifier);
+      var seen = valuesOf(heldValues(((current || {}).fields || {})[name]));
+      values = values.filter(function (one) {
+        return seen.indexOf(one) < 0;
+      });
+    }
     for (var v = 0; v < values.length; v++) {
       var added = await adminPost(base, "/applications/add", {
         application: identifier, attribute: name, value: values[v]
