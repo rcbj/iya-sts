@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4420** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4421** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -93,7 +93,7 @@ is an ordinary outcome.
 * [User portal (`STS-PORTAL`)](#sts-portal) — 94
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
-* [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 6
+* [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 179
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
@@ -4895,6 +4895,7 @@ Raised from: launch/, common/launch_links.ts.
 | `STS-LAUNCH-0004` | A /launch/{app} link named no protocol, identity-provider-initiated sign-in is on for the application in more than one, and its appLaunchProtocol names none of them (#713). | HTTP 409 page |
 | `STS-LAUNCH-0005` | A /launch/{app} link was refused because identity-provider-initiated sign-in is off for the application in that protocol (saml2IdpInitiatedSso and its siblings, else the realm setting; off by default, #426). | HTTP 403 page |
 | `STS-LAUNCH-0006` | A /launch/{app} link was refused because the application has nowhere registered to send the sign-in: no assertion consumer service, reply URL or usable initiate_login_uri (#713). | HTTP 409 page |
+| `STS-LAUNCH-0007` | An OpenID Connect /launch/{app} link was refused because its target is not exactly one of the client's registered https addresses (oauthRedirectUri not marked observed, oauthInitiateLoginUri, appHomePageUrl); in every mode, so target_link_uri never names an address a link's author chose (#714). | HTTP 400 page |
 
 ## STS-REG
 

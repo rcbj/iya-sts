@@ -903,8 +903,10 @@ OpenID Connect Enterprise Extensions 1.0 (#148), in every mode:
   `fedHomeRealmDomain` lists the domain receives the person's sign-in
   directly, unless the application names a partner of its own.
 * **Third-party-initiated login** from the portal adds `tenant`,
-  `domain_hint` (the realm's DNS domain) and `target_link_uri` (the
-  application's registered https home page) to `iss` and `login_hint`.
+  `domain_hint` (the realm's DNS domain) and `target_link_uri` (the link's
+  `target`, which must be one of the client's registered https addresses,
+  else the application's registered https home page) to `iss` and
+  `login_hint`.
 
 ### Signing in a device (RFC 8628)
 

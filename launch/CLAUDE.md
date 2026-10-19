@@ -48,6 +48,40 @@ Duplicating any of that here would be a second copy of it.
 `target` is each protocol's own word for where to land: RelayState, TARGET,
 wctx, `target_link_uri` (https only, Core section 4).
 
+## An OpenID Connect `target` is a REGISTERED address or it is refused
+
+rcbj on #714 (2026-10-19): `target` "should only work with registered URIs
+for an application object". Until then any https `target` became
+`target_link_uri`, so anybody could build a launch link that had the client
+send the person, signed in, wherever they chose. Now
+`LaunchLinks.registeredTarget()` passes it on only when it EXACTLY matches —
+both sides parsed with `new URL()` and compared as `href`, no prefix, origin
+or path matching — one of `LaunchLinks.registeredTargetsOf()`:
+
+* `oauthRedirectUri`, less any value `appReturnAddressObserved` marks as a
+  development sighting;
+* `oauthInitiateLoginUri` (through `initiateLoginUriOf()`);
+* `appHomePageUrl` (through `homePageOf()`), which is also the default;
+
+https only. Never `appRedirectUriObserved`, and never a marked value **in
+any mode** — the same rule as `/wsfed/initiate`'s reply address and
+`missingOf()`'s WS-Federation branch, not `returnAddressesOf()`'s
+development belief, because a link anybody can build is not a development
+convenience. `oauthPostLogoutRedirectUri` is not on the list: it is where a
+sign-OUT lands. The registered spelling is what is sent.
+
+Anything else is refused 400 with `STS-LAUNCH-0007`, before any sign-in,
+rather than dropped — `/wsfed/initiate` refuses a `wreply` for the same
+reason (STS-WSFED-0026): whoever built the link learns the address was not
+used. No `target` is not a refusal; the home page is used, as before.
+
+**The other three need no such check, and were looked at for it**: RelayState
+(`/saml2/unsolicited`), TARGET (`/saml11/sso`, both the POST form and the
+artifact redirect, which goes to the registered assertion consumer with
+TARGET as a parameter) and wctx (`/wsfed/initiate`, which posts only to the
+registered reply) are carried to the application's REGISTERED address as
+data. This service never sends the browser to them.
+
 ## OpenID Connect is the exception, because section 4 ends at the client
 
 The door signs the person in HERE first — through the same sign-in every
@@ -97,6 +131,8 @@ translated). No script, so the service's default policy needs no change.
 ## Tests
 
 `tests/launch.js` (in process): the four protocols' destinations, the switch
-refusing and allowing, the choice of protocol, the OpenID Connect launch
+refusing and allowing, the choice of protocol, an OpenID Connect `target`
+passed on when registered and refused (0007) when it is unregistered,
+observed, a prefix or extension, another scheme or host, the launch
 record and `/oauth2/authorize` honouring and spending it, and the portal's
 and the console's links.

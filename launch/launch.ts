@@ -251,7 +251,24 @@ class Launch {
                 " endpoint.");
       return res.set('Cache-Control', 'no-store').redirect(303, there);
     }
-    return this.launchOidc(req, res, view, base, target, realms);
+    // A TARGET IS ONE OF THE CLIENT'S REGISTERED ADDRESSES OR IT IS REFUSED
+    // (rcbj on #714), in every mode, before any sign-in: refused rather than
+    // dropped, as /wsfed/initiate refuses a wreply, so whoever built the
+    // link learns the address was not used. `registeredTargetsOf()` says
+    // which attributes count.
+    const landing = target ? LaunchLinks.registeredTarget(view, target) : '';
+    if (target && !landing) {
+      errorCodes.mark(res, 'STS-LAUNCH-0007');
+      log.info('launch: refused "' + view.identifier + '" in OpenID ' +
+               'Connect — the target is not a registered address.');
+      log.debug("Leaving Launch.launch(). Unregistered target.");
+      return this.refuse(res, 400, 'That address is not registered',
+        'A launch of this application may send you on only to an https ' +
+        'address registered on it (oauthRedirectUri, oauthInitiateLoginUri ' +
+        'or appHomePageUrl), and the link named another. Remove target ' +
+        'from the link, or register the address.');
+    }
+    return this.launchOidc(req, res, view, base, landing, realms);
   }
 
   // OPENID CONNECT CORE SECTION 4. Signed in first, through the sign-in

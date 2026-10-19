@@ -26,7 +26,11 @@
 //      and appLaunchProtocol picks when the link does not;
 //   e. OpenID Connect: no session goes to the sign-in screen and back; then
 //      303 to initiate_login_uri with iss, login_hint, tenant and the
-//      target_link_uri, and the launch is on the session;
+//      target_link_uri, and the launch is on the session; a target is
+//      passed on only when it is exactly one of the client's registered
+//      https addresses, and anything else — an unregistered address, an
+//      observed one, a prefix or extension of a registered one, another
+//      scheme or host — is refused 400 (STS-LAUNCH-0007);
 //   f. /oauth2/authorize for that client, whose own start is off, is not
 //      refused within the window, and is refused unauthorized_client
 //      (STS-OAUTH-0959) with no launch on the session or one older than the
@@ -132,6 +136,8 @@ function childMain() {
     const HOME = 'https://rp.launch.example/home';
     const REDIRECT = 'https://rp.launch.example/cb';
     const USER = 'launch-alice';
+    const OBSERVED = 'https://rp.launch.example/seen';
+    const MARKED = 'https://rp.launch.example/marked';
 
     const made = [
       applications.createApplication({ identifier: SP2, protocols: ['saml2'],
@@ -288,6 +294,49 @@ function childMain() {
          'e3. then 303 to the client\'s initiate_login_uri with iss, ' +
          'login_hint, tenant and the home page as target_link_uri',
          r.status + ' ' + String(r.headers.location || ''));
+    // A target: passed on only when it is a REGISTERED address (#714).
+    const landsAt = async function (target) {
+      const got = await alice.go('GET', link(RP_CLIENT, { target: target }));
+      let at = null;
+      try {
+        at = new URL(String(got.headers.location || ''));
+      } catch (e) {
+        at = null;
+      }
+      return { status: got.status,
+               target: at ? at.searchParams.get('target_link_uri') : null };
+    };
+    let landed = await landsAt(REDIRECT);
+    note(landed.status === 303 && landed.target === REDIRECT,
+         'e3a. a registered redirect URI as target is passed on as ' +
+         'target_link_uri', JSON.stringify(landed));
+    landed = await landsAt('HTTPS://RP.launch.example/cb');
+    note(landed.status === 303 && landed.target === REDIRECT,
+         'e3b. matched after URL parsing, and sent as registered',
+         JSON.stringify(landed));
+    applications.seen({ identifier: RP_CLIENT, kind: 'oidc-relying-party',
+      protocol: 'OAuth 2.0 / OIDC', counts: false, note: 'a test sighting',
+      fields: { oauthClientId: RP_CLIENT, appRedirectUriObserved: OBSERVED,
+                oauthRedirectUri: MARKED } });
+    const refusals = [
+      ['an unregistered https address', 'https://evil.launch.example/x'],
+      ['an observed-only address (appRedirectUriObserved)', OBSERVED],
+      ['a redirect URI a sighting added (marked observed)', MARKED],
+      ['an extension of a registered address', REDIRECT + '/more'],
+      ['a prefix of a registered address', 'https://rp.launch.example/c'],
+      ['a registered address with a query added', REDIRECT + '?x=1'],
+      ['another scheme', 'http://rp.launch.example/cb'],
+      ['another host', 'https://rp2.launch.example/cb'],
+      ['not a URL', '/cb']
+    ];
+    for (const [what, target] of refusals) {
+      const got = await alice.go('GET', link(RP_CLIENT, { target: target }));
+      note(got.status === 400 && !got.headers.location &&
+           /not registered/.test(got.text) &&
+           await refusedWith('STS-LAUNCH-0007'),
+           'e3c. ' + what + ' as target is refused 400 (STS-LAUNCH-0007)',
+           got.status + ' ' + String(got.headers.location || ''));
+    }
     const session = authn.sessionsOf(USER)[0];
     note(session && session.launches &&
          Number(session.launches[RP_CLIENT]) > 0,

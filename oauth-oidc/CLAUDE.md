@@ -4497,8 +4497,9 @@ home-realm discovery. All in every mode.
 * **The section 4 launch** (`common/launch_links.ts`,
   `thirdPartyLoginUrl()`, since #426; it was `Portal.initiateLoginLink()`)
   adds `tenant`, `domain_hint` (the realm's DNS domain) and
-  `target_link_uri` (the link's `target`, else the application's registered
-  https home page).
+  `target_link_uri` (the link's `target`, which must be one of the client's
+  registered https addresses or the launch is refused — `launch/CLAUDE.md`
+  — else the application's registered https home page).
 
 Tests: `tests/vendored/sts_enterprise_extensions.js`.
 

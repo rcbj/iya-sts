@@ -47,8 +47,19 @@ https://sts.example.com/realm/acme/launch/{application}?protocol=saml2
   `appLaunchProtocol` when more than one is.
 * `target` is where to land afterwards. It is sent as SAML 2.0's
   `RelayState`, SAML 1.1's `TARGET`, WS-Federation's `wctx`, or OpenID
-  Connect's `target_link_uri` (https only). Without it, OpenID Connect uses
-  the application's home page.
+  Connect's `target_link_uri`. Without it, OpenID Connect uses the
+  application's home page.
+* **For OpenID Connect, `target` must be an address registered on the
+  client**, in every mode: exactly one of its redirect URIs
+  (`oauthRedirectUri`), its `oauthInitiateLoginUri` or its home page
+  (`appHomePageUrl`), https only. The match is exact once both are parsed
+  as URLs — a longer path, an added query, another host or `http` do not
+  match — and a redirect URI this service only *saw* a client use
+  (`appRedirectUriObserved`, or one marked in `appReturnAddressObserved`)
+  does not count. Any other `target` is refused (400, `STS-LAUNCH-0007`)
+  rather than dropped. For the other three protocols `target` is data the
+  application receives at its own registered address; this service never
+  sends the browser to it.
 
 You will find the link in two places:
 
@@ -118,5 +129,6 @@ again and the launch continues, rather than being refused.
 
 The link answers a short page with a code in the `STS-LAUNCH` range when it
 cannot start a sign-in: the application does not exist, the protocol is not
-one of the four or not one the application uses, the switch is off, or there
-is nowhere registered to send the sign-in. See [error codes](error-codes.md).
+one of the four or not one the application uses, the switch is off, there
+is nowhere registered to send the sign-in, or an OpenID Connect `target` is
+not one of the client's registered addresses. See [error codes](error-codes.md).

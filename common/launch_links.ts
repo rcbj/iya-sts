@@ -260,6 +260,83 @@ class LaunchLinks {
     return url;
   }
 
+  // WHERE AN OPENID CONNECT LAUNCH MAY SAY TO LAND (rcbj on #714,
+  // 2026-10-19): `target_link_uri` only ever names an address the client's
+  // entry REGISTERED — its `oauthRedirectUri` values, its
+  // `oauthInitiateLoginUri` and its `appHomePageUrl` — https only (Core
+  // section 4). Never an OBSERVED one, in EVERY mode: not
+  // `appRedirectUriObserved`, and not an `oauthRedirectUri` value that
+  // `appReturnAddressObserved` marks as a development sighting. This is
+  // missingOf()'s WS-Federation arrangement, for the reason /wsfed/initiate
+  // refuses a caller's wreply: a link anybody can build must not be able to
+  // name where the client sends the person next.
+  /**
+   * The https addresses a launch of this client may name as its target.
+   *
+   * @param view - an `applications.get()` view
+   * @returns the registered addresses, as the entry holds them
+   */
+  static registeredTargetsOf(view: Json): string[] {
+    helpers.log.debug("Entering LaunchLinks.registeredTargetsOf().");
+    const fields = (view && view.fields) || {};
+    const held = fields.oauthRedirectUri;
+    const redirects = (Array.isArray(held) ? held : (held ? [held] : []))
+      .map(function (one: Json) {
+        return String(one || '').trim();
+      });
+    const observed = applications.observedReturnAddresses(fields)
+      .filter(function (one: Json) {
+        return one.attribute === 'oauthRedirectUri';
+      }).map(function (one: Json) {
+        return one.value;
+      });
+    const out: string[] = [];
+    redirects.filter(function (one: string) {
+      return observed.indexOf(one) < 0;
+    }).concat([applications.initiateLoginUriOf(view),
+               applications.homePageOf(view)])
+      .forEach(function (one: string) {
+        if (/^https:\/\//i.test(one) && out.indexOf(one) < 0) {
+          out.push(one);
+        }
+      });
+    helpers.log.debug("Leaving LaunchLinks.registeredTargetsOf(). " +
+                      out.length);
+    return out;
+  }
+
+  // EXACT MATCH, after each side is parsed as a URL — so `HTTPS://Host/a`
+  // and `https://host/a` are one address — and nothing looser: no prefix,
+  // no origin, no path extension.
+  /**
+   * The registered address a target names, or '' when it names none.
+   *
+   * @param view - an `applications.get()` view
+   * @param target - the link's `target`
+   * @returns the entry's own spelling of the address, or ''
+   */
+  static registeredTarget(view: Json, target: string): string {
+    helpers.log.debug("Entering LaunchLinks.registeredTarget().");
+    const parse = function (text: string): string {
+      try {
+        return new URL(String(text || '')).href;
+      } catch (e) {
+        helpers.log.debug("Caught in LaunchLinks.registeredTarget(): " +
+                          ((e && e.message) || e));
+        // Not a URL, so not one of the registered addresses either.
+        return '';
+      }
+    };
+    const asked = parse(target);
+    const found = !asked ? '' : (LaunchLinks.registeredTargetsOf(view)
+      .filter(function (one: string) {
+        return parse(one) === asked;
+      })[0] || '');
+    helpers.log.debug("Leaving LaunchLinks.registeredTarget(). " +
+                      (found ? 'Registered.' : 'Not registered.'));
+    return found;
+  }
+
   // OPENID CONNECT CORE SECTION 4: a GET at the client's initiate_login_uri
   // with `iss` (this realm's issuer), `login_hint` (the person, who chose to
   // click) and `target_link_uri` (https only — section 4 says the client

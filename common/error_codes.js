@@ -21222,6 +21222,14 @@ const CODES = [
       'nowhere registered to send the sign-in: no assertion consumer ' +
       'service, reply URL or usable initiate_login_uri (#713).',
     spec: 'HTTP 409 page' },
+  { code: 'STS-LAUNCH-0007',
+    summary: 'An OpenID Connect /launch/{app} link was refused because its ' +
+      'target is not exactly one of the client\'s registered https ' +
+      'addresses (oauthRedirectUri not marked observed, ' +
+      'oauthInitiateLoginUri, appHomePageUrl); in every mode, so ' +
+      'target_link_uri never names an address a link\'s author chose ' +
+      '(#714).',
+    spec: 'HTTP 400 page' },
   // ===== REG ===============================================================
   { code: 'STS-REG-0001',
     summary: 'An application identifier was empty, longer than 512 ' +
