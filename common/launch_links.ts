@@ -153,8 +153,9 @@ class LaunchLinks {
   // WHAT A LINK CANNOT WORK WITHOUT: somewhere to send the answer. Asked of
   // the REGISTERED addresses (returnAddressesOf()), because in product an
   // address a development request merely recorded is refused at the
-  // endpoint; SAML 2.0 consumed metadata counts as registering an assertion
-  // consumer service, which the endpoint reads first.
+  // endpoint (and at WS-Federation's in every mode); SAML 2.0 consumed
+  // metadata counts as registering an assertion consumer service, which the
+  // endpoint reads first.
   /**
    * The attributes a launch in a protocol is missing, or an empty list.
    *
@@ -172,8 +173,23 @@ class LaunchLinks {
     } else if (protocol === 'oidc') {
       missing = applications.initiateLoginUriOf(view) ? [] : [row.needs];
     } else {
-      const known = applications.returnAddressesOf(fields, row.needs)
+      let known = applications.returnAddressesOf(fields, row.needs)
         .registered;
+      // WS-Federation's door posts only to a reply address an operator put
+      // there, never an observed one, in EVERY mode (wsfed.ts,
+      // registeredReplyOf()); asked the same way here, so a development
+      // card does not offer a link the door then refuses (STS-WSFED-0027).
+      if (protocol === 'wsfed') {
+        const observed = applications.observedReturnAddresses(fields)
+          .filter(function (one: Json) {
+            return one.attribute === row.needs;
+          }).map(function (one: Json) {
+            return one.value;
+          });
+        known = known.filter(function (one: string) {
+          return observed.indexOf(one) < 0;
+        });
+      }
       const metadata = protocol !== 'wsfed' &&
         (!!fields.samlSpMetadata || !!fields.samlSpMetadataUrl);
       missing = known.length || metadata ? [] : [row.needs];
