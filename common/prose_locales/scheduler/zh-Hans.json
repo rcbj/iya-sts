@@ -439,6 +439,14 @@
     "en": "23ca3d0e22f4d09a",
     "text": "通过 TUF 获取 sigstore 信任根（Fulcio CA、Rekor 和 CT 日志密钥），供 docker 工作负载证明器检查镜像签名；刷新失败时保留上次验证过的集合。"
   },
+  "sched.jobs.spiffe.target-reconcile.title": {
+    "en": "da689365a5c7e0b8",
+    "text": "SPIFFE 目标组协调"
+  },
+  "sched.jobs.spiffe.target-reconcile.describe": {
+    "en": "42a6fe3359b6cc70",
+    "text": "将每个正在运行的任务的私有地址注册到本集群的 SPIFFE 目标组中，并注销不再有任何正在运行的任务使用的地址（#323）。"
+  },
   "sched.jobs.ssf.dead-letter-sweep.title": {
     "en": "825439e56379bcb0",
     "text": "Shared Signals 死信清理"
