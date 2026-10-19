@@ -68,6 +68,7 @@ async function call(method, url, options) {
     body = JSON.parse(text);
   } catch (e) {
     log.debug("Caught in call(): " + ((e && e.message) || e));
+    // Not JSON — a page or an empty body. The text is kept; body stays null.
     body = null;
   }
   log.debug("Leaving call(). status=" + r.status);

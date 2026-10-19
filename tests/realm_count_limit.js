@@ -214,6 +214,8 @@ function run(t) {
       try {
         realms.remove(one);
       } catch (e) {
+        // A remove that throws must not stop the finally from putting
+        // `realms.maxCount` and `realms.enabled` back.
         log.debug("Caught in run(): " + ((e && e.message) || e));
       }
     });
