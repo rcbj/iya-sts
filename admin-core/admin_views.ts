@@ -8104,6 +8104,11 @@ class AdminViews {
         fieldGroups: applications.FIELD_GROUPS,
         familyChoices: applications.FAMILY_CHOICES,
         longTextAttributes: applications.LONG_TEXT_ATTRIBUTES || [],
+        // What an empty `lifetimeDays` gives the first client secret (#394),
+        // in days, 0 for never: the create form's placeholder, and what a
+        // caller of the create is told it gets by sending nothing.
+        defaultSecretLifetimeDays:
+          Number(config.value('oauth2.clientSecretLifetimeDays')) || 0,
         persistence: { persistsDirectory:
                          !!persistence.status().persistsDirectory,
                        mode: persistence.status().mode },

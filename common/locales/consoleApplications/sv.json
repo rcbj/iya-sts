@@ -162,6 +162,7 @@
   "a1.persistence": "Beständighet",
   "a1.notPersistedA": "<strong>Inget här sparas beständigt i den här processen.</strong> Posten försvinner vid omstart, tillsammans med alla andra applikationer, personer och grupper i katalogen. Det är en egenskap hos hela tjänsten och inte hos den här sidan, och den går att ändra: ",
   "a1.notPersistedB": " skriver ned katalogen, och är av som standard.",
+  "a1.secretLifetime": "Tom livslängd: <code>oauth2.clientSecretLifetimeDays</code> ({days, select, never {går aldrig ut} other {{days} dagar}}); 0 går aldrig ut. Den gäller hemligheten i rutan, genererad eller inskriven.",
   "a2.credentialBadge": "autentiseringsuppgift",
   "a2.sealedTitle": "Posten håller detta krypterat under nyckelkrypteringsnyckeln — samma som tjänstens signeringsnycklar och certifikatutfärdaren är förseglade med. En ldapsearch, en ldif-fil, en databasrad eller en säkerhetskopia visar chiffertexten; den här sidan öppnade den.",
   "a2.sealedAtRest": "förseglad i vila",

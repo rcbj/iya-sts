@@ -162,6 +162,7 @@
   "a1.persistence": "Persistencia",
   "a1.notPersistedA": "<strong>Nada aquí se conserva en este proceso.</strong> La entrada desaparece al reiniciar, junto con todas las demás aplicaciones, personas y grupos del directorio. Es una propiedad de todo el servicio y no de esta página, y se puede cambiar: ",
   "a1.notPersistedB": " guarda el directorio, y está desactivado por defecto.",
+  "a1.secretLifetime": "Duración vacía: <code>oauth2.clientSecretLifetimeDays</code> ({days, select, never {nunca caduca} other {{days} días}}); 0 nunca caduca. Se aplica al secreto del campo, generado o escrito.",
   "a2.credentialBadge": "credencial",
   "a2.sealedTitle": "La entrada lo guarda cifrado con la clave de cifrado de claves — la misma con la que se sellan las claves de firma de este servicio y la autoridad de certificación. Un ldapsearch, un archivo ldif, una fila de base de datos o una copia de seguridad muestran el texto cifrado; esta página lo abrió.",
   "a2.sealedAtRest": "sellado en reposo",

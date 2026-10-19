@@ -594,6 +594,8 @@ class ApplicationsPage {
                 : {},
           { redraw: '/admin/applications/new',
             generateSecret: '/admin/applications/new',
+            secretLifetime: ApplicationsPage.newSecretLifetime(
+              json.defaultSecretLifetimeDays, drafted('lifetimeDays'), t),
             protocols: json.protocols }) +
 
         '<div class="formrow"><button type="submit">' +
@@ -607,6 +609,29 @@ class ApplicationsPage {
     }
 
     return inner;
+  }
+
+  /**
+   * Draws the first client secret's lifetime beside Generate Secret on the
+   * create form (#394): the add-secret form's field and words, posted as
+   * `lifetimeDays` beside the grid's boxes, so it applies to a generated
+   * secret and a typed one alike.
+   *
+   * @param defaultDays - `oauth2.clientSecretLifetimeDays`, 0 for never
+   * @param value - what a redraw carries back, or empty
+   * @param t - the page's translator (#539)
+   * @returns the field as HTML
+   */
+  static newSecretLifetime(defaultDays, value, t) {
+    const days = Number(defaultDays) || 0;
+    return ' <label for="secret-lifetime">' +
+      t.html('consoleApplications.a2.lifetimeDays') + '</label>' +
+      '<input type="number" id="secret-lifetime" name="lifetimeDays" ' +
+      'min="0" max="730" step="1" placeholder="' + kit.esc(String(days)) +
+      '" value="' + kit.esc(value) + '">' +
+      '<span class="sub">' +
+      t.html('consoleApplications.a1.secretLifetime',
+             { days: days ? String(days) : 'never' }) + '</span>';
   }
 
   // One protocol family as a row of the checkbox table. `kind` is what the

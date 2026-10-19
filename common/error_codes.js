@@ -21735,6 +21735,17 @@ const CODES = [
     summary: 'An application\'s owners could not be written to the ' +
       'directory (#604).',
     spec: 'HTTP 400 (API) or a refusal on the application page' },
+  { code: 'STS-REG-0359',
+    summary: 'An application was not created: the lifetime given for its ' +
+      'first client secret is not a whole number of days from 0 to 730 ' +
+      '(#394).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0360',
+    summary: 'An application was not created: a client secret lifetime was ' +
+      'given with no new client secret for it to apply to — ' +
+      'oauthClientSecret empty, or a whole record carrying its own expiry ' +
+      '(#394).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

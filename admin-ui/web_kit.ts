@@ -1648,6 +1648,7 @@ class WebKit {
    * @param values - the grid's values by attribute
    * @param options - `redraw` (the route "+" and delete post to), `showSet`
    *   (show a cell holding a value whatever is ticked), `generateSecret`,
+   *   `secretLifetime` (HTML drawn after Generate Secret, #394),
    *   and `protocols`, the families a cell's labels are named from;
    *   `views` (#500), the cell is classed `fg-adv` unless `row.simple`, so
    *   its form's simple / advanced switch (`viewSwitch()`) can hide it
@@ -1779,7 +1780,10 @@ class WebKit {
             'value="generate-secret" formaction="' +
             WebKit.esc(opts.generateSecret) + '" formnovalidate' +
             WebKit.tip(t.text('consoleKit.grid.generate.tip')) +
-            '>' + t.html('consoleKit.grid.generate') + '</button>'
+            '>' + t.html('consoleKit.grid.generate') + '</button>' +
+            // The secret's lifetime beside it (#394), drawn by the page,
+            // which owns the words.
+            (opts.secretLifetime || '')
           : '');
     }
     const labels = row.forText !== undefined ? String(row.forText)

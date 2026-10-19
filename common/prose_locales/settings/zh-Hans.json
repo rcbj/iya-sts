@@ -2148,8 +2148,8 @@
     "text": "客户端密钥有效期（天）"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "91dc7031f88426d1",
-    "text": "本服务生成或接收的每个客户端密钥的有效期（天），因而也是 RFC 7591 第 3.2.1 节为在 POST /oauth2/register 注册的客户端发布的 `client_secret_expires_at`——也是生成或接收的每个密钥（重新生成、轮换、添加的密钥、在控制台上输入的值）的默认值，除非添加表单指定了其他值。零（默认）即该节自己的“永不过期”。它在每个密钥创建时写入，之后的更改不会改变它。"
+    "en": "6ad202dff164f155",
+    "text": "本服务生成或接收的每个客户端密钥的有效期（天），因而也是 RFC 7591 第 3.2.1 节为在 POST /oauth2/register 注册的客户端发布的 `client_secret_expires_at`——也是生成或接收的每个密钥（重新生成、轮换、添加的密钥、在控制台上输入的值）的默认值，除非添加表单指定了其他值，或创建表单为应用的第一个密钥指定了其他值。零（默认）即该节自己的“永不过期”。它在每个密钥创建时写入，之后的更改不会改变它。"
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",

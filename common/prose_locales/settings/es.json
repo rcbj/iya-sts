@@ -2148,8 +2148,8 @@
     "text": "Vigencia del secreto de cliente (días)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "91dc7031f88426d1",
-    "text": "La vigencia, en días, de cada secreto de cliente que este servicio genera o recibe, y por tanto el `client_secret_expires_at` que publica la sección 3.2.1 de RFC 7591 para un cliente registrado en POST /oauth2/register — el valor predeterminado para cada secreto generado o recibido (una regeneración, una rotación, un secreto añadido, un valor tecleado en la consola), salvo que el formulario de alta nombre otro. CERO, el valor predeterminado, es el propio \"nunca\" de esa sección. Se estampa en cada secreto al crearlo y un cambio posterior no lo mueve."
+    "en": "6ad202dff164f155",
+    "text": "La vigencia, en días, de cada secreto de cliente que este servicio genera o recibe, y por tanto el `client_secret_expires_at` que publica la sección 3.2.1 de RFC 7591 para un cliente registrado en POST /oauth2/register — el valor predeterminado para cada secreto generado o recibido (una regeneración, una rotación, un secreto añadido, un valor tecleado en la consola), salvo que el formulario de alta nombre otro, o el formulario de creación lo haga para el primer secreto de una aplicación. CERO, el valor predeterminado, es el propio \"nunca\" de esa sección. Se estampa en cada secreto al crearlo y un cambio posterior no lo mueve."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",

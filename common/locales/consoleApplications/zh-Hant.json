@@ -162,6 +162,7 @@
   "a1.persistence": "持久化",
   "a1.notPersistedA": "<strong>此程序不持久保存這裡的任何內容。</strong>重新啟動後該項目會消失，目錄中的其他所有應用程式、人員和群組也一樣。這是整個服務的屬性，而不是本頁的，並且可以變更：",
   "a1.notPersistedB": "會把目錄寫入儲存區，預設關閉。",
+  "a1.secretLifetime": "有效期留空：<code>oauth2.clientSecretLifetimeDays</code>（{days, select, never {永不到期} other {{days} 天}}）；0 表示永不到期。它適用於框中的密鑰，無論是產生的還是輸入的。",
   "a2.credentialBadge": "憑證",
   "a2.sealedTitle": "項目以金鑰加密金鑰加密保存此值——本服務的簽署金鑰和憑證授權單位也用同一金鑰密封。ldapsearch、ldif 檔案、資料庫列或備份顯示的是密文；本頁已將其解開。",
   "a2.sealedAtRest": "靜態密封",

@@ -162,6 +162,7 @@
   "a1.persistence": "Persistance",
   "a1.notPersistedA": "<strong>Rien ici n’est persisté sur ce processus.</strong> L’entrée disparaît au redémarrage, avec toutes les autres applications, personnes et groupes de l’annuaire. C’est une propriété de tout le service et non de cette page, et cela peut se changer : ",
   "a1.notPersistedB": " enregistre l’annuaire, et est désactivé par défaut.",
+  "a1.secretLifetime": "Durée vide : <code>oauth2.clientSecretLifetimeDays</code> ({days, select, never {n’expire jamais} other {{days} jours}}) ; 0 n’expire jamais. Elle s’applique au secret de la case, généré ou saisi.",
   "a2.credentialBadge": "identifiant",
   "a2.sealedTitle": "L’entrée le conserve chiffré sous la clé de chiffrement de clés — la même qui scelle les clés de signature de ce service et l’autorité de certification. Un ldapsearch, un fichier ldif, une ligne de base de données ou une sauvegarde montre le texte chiffré ; cette page l’a ouvert.",
   "a2.sealedAtRest": "scellé au repos",

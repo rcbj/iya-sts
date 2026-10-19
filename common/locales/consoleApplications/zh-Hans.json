@@ -162,6 +162,7 @@
   "a1.persistence": "持久化",
   "a1.notPersistedA": "<strong>此进程不持久保存这里的任何内容。</strong>重启后该条目会消失，目录中的其他所有应用、人员和组也一样。这是整个服务的属性，而不是本页的，并且可以更改：",
   "a1.notPersistedB": "会把目录写入存储，默认关闭。",
+  "a1.secretLifetime": "有效期留空：<code>oauth2.clientSecretLifetimeDays</code>（{days, select, never {永不过期} other {{days} 天}}）；0 表示永不过期。它适用于框中的密钥，无论是生成的还是输入的。",
   "a2.credentialBadge": "凭据",
   "a2.sealedTitle": "条目以密钥加密密钥加密保存此值——本服务的签名密钥和证书颁发机构也用同一密钥密封。ldapsearch、ldif 文件、数据库行或备份显示的是密文；本页已将其解开。",
   "a2.sealedAtRest": "静态密封",

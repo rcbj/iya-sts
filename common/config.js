@@ -5200,7 +5200,9 @@ const SETTINGS = [
                  '/oauth2/register — the default for every secret ' +
                  'mints or is given (a regeneration, a rotation, an added ' +
                  'secret, a value typed on the console), unless the add ' +
-                 'form names another. ZERO, the default, is that section\'s ' +
+                 'form names another, or the create form does for an ' +
+                 'application\'s first secret. ZERO, the default, is that ' +
+                 'section\'s ' +
                  'own "never". It is stamped on each secret when it is ' +
                  'made and is not moved by a later change.' },
 

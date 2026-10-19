@@ -162,6 +162,7 @@
   "a1.persistence": "Persistence",
   "a1.notPersistedA": "<strong>Nothing here is persisted on this process.</strong> The entry is gone on restart, along with every other application, person and group in the directory. That is a property of the whole service and not of this page, and it is changeable: ",
   "a1.notPersistedB": " writes the directory down, and is off by default.",
+  "a1.secretLifetime": "Empty lifetime: <code>oauth2.clientSecretLifetimeDays</code> ({days, select, never {never expires} other {{days} days}}); 0 never expires. It applies to the secret in the box, generated or typed.",
   "a2.credentialBadge": "credential",
   "a2.sealedTitle": "The entry holds this encrypted under the key-encryption key — the same one this service's signing keys and the certificate authority are sealed with. An ldapsearch, an ldif file, a database row or a backup shows the ciphertext; this page opened it.",
   "a2.sealedAtRest": "sealed at rest",

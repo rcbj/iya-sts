@@ -2148,8 +2148,8 @@
     "text": "Lifetime ng client secret (araw)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "91dc7031f88426d1",
-    "text": "Ang lifetime, sa araw, ng bawat client secret na ginagawa o ibinibigay sa serbisyong ito, kaya ang `client_secret_expires_at` na inilalathala ng RFC 7591 section 3.2.1 para sa client na na-register sa POST /oauth2/register — ang default para sa bawat secret na ginagawa o ibinibigay (isang regeneration, isang rotation, isang idinagdag na secret, isang value na na-type sa console), maliban kung nagpapangalan ng iba ang add form. Ang ZERO, ang default, ay ang sariling \"never\" ng section na iyon. Itinatatak ito sa bawat secret kapag ginawa ito at hindi ginagalaw ng pagbabago sa ibang pagkakataon."
+    "en": "6ad202dff164f155",
+    "text": "Ang lifetime, sa araw, ng bawat client secret na ginagawa o ibinibigay sa serbisyong ito, kaya ang `client_secret_expires_at` na inilalathala ng RFC 7591 section 3.2.1 para sa client na na-register sa POST /oauth2/register — ang default para sa bawat secret na ginagawa o ibinibigay (isang regeneration, isang rotation, isang idinagdag na secret, isang value na na-type sa console), maliban kung nagpapangalan ng iba ang add form, o ang create form para sa unang secret ng isang application. Ang ZERO, ang default, ay ang sariling \"never\" ng section na iyon. Itinatatak ito sa bawat secret kapag ginawa ito at hindi ginagalaw ng pagbabago sa ibang pagkakataon."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",
