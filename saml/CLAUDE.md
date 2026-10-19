@@ -104,7 +104,8 @@ change was mostly a prose sweep.
   server.
 * ~~**No identity-provider-initiated SSO**~~ **REVERSED 2026-09-24 (#189)**:
   `/saml2/unsolicited[/{sp}]` sends an unsolicited Response — see *What four
-  independent service providers found*, below. ~~**No Assertion Query and
+  independent service providers found*, below — **to a service provider that
+  opted in** since #711 (*WHO MAY START A SIGN-IN*, below). ~~**No Assertion Query and
   Request profile**~~ **its attribute query is answered since #189**, at
   `/saml2/aa`, under a release policy (same section).
 * **No ECP profile and its PAOS binding, no Name Identifier Management, and no
@@ -1471,8 +1472,10 @@ saml-profiles-2.0-os 4.1.5): `providerId` (or the path segment), `shire`,
 `target` and `binding`, the Shibboleth identity provider's parameter names.
 Held to what a solicited request is: a registered service provider in
 product, an ACS its consumed metadata or entry registered, the endpoint's own
-binding (never HTTP-Redirect), the issuance policy; `saml2.unsolicitedSso`
-turns it off for a realm. The Response and assertion carry no InResponseTo.
+binding (never HTTP-Redirect), the issuance policy. The Response and
+assertion carry no InResponseTo. ~~`saml2.unsolicitedSso` turns it off for a
+realm~~ — **off until a service provider opts in since #711**, the next
+section.
 
 **THE ATTRIBUTE AUTHORITY** (`/saml2/aa[/{sp}]`, an
 AttributeAuthorityDescriptor in the per-SP metadata): the Assertion Query and
@@ -1493,6 +1496,76 @@ service's listener certificate is not~~ — **decided and built on #248**: the
 metadata carries it now (the next section), so that pin would pass; with the
 artifact profile out of SimpleSAMLphp's reach there is still nothing of its
 to exercise it with.
+
+## WHO MAY START A SIGN-IN (#426, #711, 2026-10-19)
+
+**Two switches per profile, each a realm default an application's entry
+overrides, both read through the local `settingFor()`** (the section on the
+fourteen per-application settings is why that is the only way to read them):
+
+| Setting | On the entry | Default | Refused with |
+|---|---|---|---|
+| `saml2.idpInitiatedSso` | `saml2IdpInitiatedSso` | **off** | a 403 page, `STS-SAML-0091` |
+| `saml2.spInitiatedSso` | `saml2SpInitiatedSso` | on | `Responder` / `RequestDenied`, `STS-SAML-0111` |
+| `saml11.idpInitiatedSso` | `saml11IdpInitiatedSso` | **off** | a 403 page, `STS-SAML-0113` |
+| `saml11.spInitiatedSso` | `saml11SpInitiatedSso` | on | a 403 page, `STS-SAML-0114` |
+
+**IDENTITY-PROVIDER-INITIATED IS OFF UNTIL AN APPLICATION OPTS IN** — rcbj's
+decision 1 on #426, which reversed `saml2.unsolicitedSso`'s ON and renamed it
+with no alias. An unsolicited Response carries no InResponseTo, so the
+service provider cannot tell one it was sent from one pushed into a browser,
+and that is a choice made per relying party. The unsolicited path refuses
+on a PAGE, not a Response: the service provider never asked and has not
+said it accepts one, so it is exactly the one not to post to. The check sits
+after the registration check, so an unregistered service provider in product
+is still the 404 every per-SP path answers.
+
+**AN AuthnRequest FROM A SERVICE PROVIDER WHOSE OWN START IS OFF** is
+answered `RequestDenied`, the policy refusal's shape, after the request is
+understood and its sighting recorded and BEFORE the sign-in screen — a person
+is not made to sign in for a refusal.
+
+**SAML 1.1 HAS NO REQUEST MESSAGE, SO `shire` IS THE ONLY TELL.** A request
+carrying one is the Shibboleth 1.3 AuthnRequest profile, the relying party's
+start; a link with only a TARGET (and `providerId` or the path segment) was
+always the inter-site transfer service's own start. **That request is an
+unsigned URL**: anybody can write one with a `shire`, or leave it off, so the
+service-provider switch closes a door and proves nothing about origin. Both
+refusals come before the relying party's sighting is recorded and before the
+screen.
+
+**AN IDENTITY-PROVIDER-INITIATED ISSUANCE RUNS WHAT A SOLICITED ONE RUNS**
+(#426's decision 4), in the same order: `sessionOf()` or
+`beginAuthentication({ application, protocol })`, `gate.check()` with the
+session, `notePresented()`, and `issueSignInResponse()` /
+`issueSignIn()` — which write `session.saml2ServiceProviders` /
+`saml11RelyingParties`, what `/logout` and back-channel logout read.
+
+**A STEP-UP ON RISK IS A SIGN-IN, NOT A REFUSAL, ON BOTH IDP-INITIATED
+PATHS** — the authorization endpoint's branch (`oauth-oidc/oauth2.ts`),
+copied: a Deny whose risk obligation is `step-up`, not observe-only, on an
+authenticated session, marks `STS-RISK-0017` and sends the person to
+`beginAuthentication()` with `forceMfa` / `forceKey` for the factor named,
+back to the same link. **The solicited SAML 2.0 path does NOT step up** and
+was left alone: it refuses on risk with `STS-SAML-0010` as before, and #711
+was about the identity provider's start.
+
+**ONE TRIP PER LINK.** The mechanism re-prompt (#457) and the step-up share
+it. SAML 1.1 marks its held flow (`mechanismAt`, `steppedUpAt`) — the
+server's copy, as SAML 2.0's solicited path marks `forcedAt`. SAML 2.0's
+unsolicited link has no request to hold, so the trip is marked IN THE URL,
+`reprompted=1` appended to the return address: a forged mark only gets the
+person the refusal a trip sooner, and a stripped one only sends them round
+again as following the link would — the guard stops a loop, not an
+attacker, and the policy is asked afresh either way. Back from the trip and
+still denied: `RequestDenied` with `STS-SAML-0112` (risk) or `0100` / `0107`
+(mechanism); SAML 1.1's page with `STS-SAML-0115` or `0102` / `0109`.
+
+`tests/saml_initiation.js` holds all of it over HTTP, risk included (a
+session's risk put in place directly, with `risk.enforceInDevelopment`).
+The local jobs that send an unsolicited Response — the three SAML peers and
+`sts_xml_schema_validation.js` — and `sts_global_logout.js`'s TARGET-only
+SAML 1.1 flow set the entry's switch on the application they create.
 
 ## EVERY DOCUMENT HERE IS VALIDATED AGAINST THE PUBLISHED SCHEMAS (#188, 2026-09-24)
 
