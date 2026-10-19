@@ -336,7 +336,7 @@ Raised from: persistence/.
 | `STS-STORE-0025` *(retired)* | Minted rows older than persistence.mintedRetention could not be purged from the store at startup. Retired (#333): a start deletes nothing; the persistence.minted-expiry-purge job does, and its failure is STS-STORE-0065. | — |
 | `STS-STORE-0026` | The service refused to start: the minted state in the store could not be read. | — |
 | `STS-STORE-0027` | The service refused to start: persistence.mode is postgres and persistence.databaseUrl was set to empty. | — |
-| `STS-STORE-0028` | The service refused to start: persistence.mode is postgres and the pg package is not installed. | — |
+| `STS-STORE-0028` | The service refused to start: persistence.mode is postgres and the knex package, or the pg package it dials PostgreSQL with, is not installed. | — |
 | `STS-STORE-0029` | The postgres store could not be opened because the schema is missing or the connecting role lacks permission on it (build it with postgres/schema.sql). | — |
 | `STS-STORE-0030` | An idle pooled postgres client errored (typically a database restart); the pool makes a new one. | — |
 | `STS-STORE-0031` | A checked-out postgres connection errored while in use; it is discarded. | — |

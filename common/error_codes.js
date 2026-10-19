@@ -1466,7 +1466,8 @@ const CODES = [
     spec: '' },
   { code: 'STS-STORE-0028',
     summary: 'The service refused to start: persistence.mode is postgres and ' +
-      'the pg package is not installed.',
+      'the knex package, or the pg package it dials PostgreSQL with, is not ' +
+      'installed.',
     spec: '' },
   { code: 'STS-STORE-0029',
     summary: 'The postgres store could not be opened because the schema is ' +
