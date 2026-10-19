@@ -363,13 +363,20 @@ function samlSpCredential() {
 }
 
 // A signed AuthnRequest from `issuer` on the HTTP Redirect binding, and its
-// ID, which the Response must name in InResponseTo.
+// ID, which the Response must name in InResponseTo. A SIGNED message carries
+// its Destination — the endpoint it is sent to, here the realm's
+// /saml2/sso — because saml-bindings-2.0-os section 3.4.5.2 requires it, and
+// the service refuses one without it (STS-SAML-0085, a 400 page: a request
+// whose signature cannot be said to be about this endpoint is not yet
+// attributed to any service provider, so there is no one to answer).
 function authnRequestUrl(issuer) {
   log.debug("Entering authnRequestUrl().");
   const id = "_sii" + nodeCrypto.randomBytes(10).toString("hex");
+  const endpoint = realmBase() + "/saml2/sso";
   const xml = '<samlp:AuthnRequest xmlns:samlp="' + NS_SAMLP + '" ' +
     'xmlns:saml="' + NS_SAML + '" ID="' + id + '" Version="2.0" ' +
     'IssueInstant="' + new Date().toISOString() + '" ' +
+    'Destination="' + endpoint + '" ' +
     'AssertionConsumerServiceURL="' + acsOf(issuer) + '" ' +
     'ProtocolBinding="' + BINDING_POST + '">' +
     '<saml:Issuer>' + issuer + '</saml:Issuer></samlp:AuthnRequest>';
@@ -381,7 +388,7 @@ function authnRequestUrl(issuer) {
   const signature = nodeCrypto.sign("sha256", Buffer.from(signed),
     samlSpCredential().privateKeyPem).toString("base64");
   log.debug("Leaving authnRequestUrl().");
-  return { id: id, url: realmBase() + "/saml2/sso?" + signed +
+  return { id: id, url: endpoint + "?" + signed +
                         "&Signature=" + encodeURIComponent(signature) };
 }
 
