@@ -648,8 +648,8 @@
     "text": "Frecuencia de cierre de sesiones vencidas (segundos)"
   },
   "authn.sessionSweepS|description": {
-    "en": "852f6e4a8d15fa99",
-    "text": "El intervalo de la tarea del planificador `authn.session-expiry` (Supervisión → Planificador), que cierra cada sesión de inicio de sesión único cuya vigencia o tiempo de inactividad ha pasado — la fila de auditoría, el CAEP session-revoked y los Logout Tokens de back-channel salen UNA vez para todo el clúster — vuelva o no alguien a presentarla. 0 desactiva la tarea: una sesión vencida se sigue rechazando siempre que se presente, y se cierra en ese momento, pero no se avisa a nadie de una que nunca se vuelva a presentar. Fueron treinta segundos fijos en cada proceso hasta el 2026-09-22 (#49)."
+    "en": "7c9e47e90ca7211c",
+    "text": "El intervalo de la tarea del planificador `authn.session-expiry` (Supervisión → Planificador), que cierra cada sesión de inicio de sesión único cuya vigencia o tiempo de inactividad ha pasado — la fila de auditoría, el CAEP session-revoked y los Logout Tokens de back-channel salen UNA vez para todo el clúster — vuelva o no alguien a presentarla. La misma ejecución cierra además, en cada dominio, como mucho el valor de authn.sessionShedPerSweep de ese dominio en sesiones sobrantes propias de un mismo sujeto. 0 desactiva la tarea: una sesión vencida se sigue rechazando siempre que se presente, y se cierra en ese momento, pero no se avisa a nadie de una que nunca se vuelva a presentar. Fueron treinta segundos fijos en cada proceso hasta el 2026-09-22 (#49)."
   },
   "authn.cookieDomain|label": {
     "en": "d384717cc62561e8",
@@ -680,8 +680,52 @@
     "text": "Máximo de sesiones de inicio de sesión único por dominio"
   },
   "authn.maxSessions|description": {
-    "en": "02399d7a28c348d5",
-    "text": "El máximo de sesiones de inicio de sesión único que guarda un dominio de confianza — inicios de sesión de navegador, las sesiones de llegada que recibe un navegador en la puerta de entrada de un protocolo, las propias de la consola y del portal, y las sesiones de clientes de la API, de SCIM y de SPIRE. Se comprueba cuando se CREA una sesión: al llegar al límite, se cierra la sesión usada menos recientemente para hacer sitio, exactamente como la cierra un vencimiento — una fila de auditoría con STS-AUTHN-0292, CAEP session-revoked y Logout Tokens de back-channel — así que su titular tiene que volver a iniciar sesión. Sin esto, solo la tarea de vencimiento de sesiones acotaba el almacén, y una ráfaga de inicios de sesión hacía crecer cada proceso hasta que la tarea se ponía al día. Reducirlo surte efecto con la siguiente sesión creada, que entonces cierra de una vez todas las sesiones que superen el nuevo límite."
+    "en": "a5b6beb131a44df2",
+    "text": "El máximo de sesiones que mantiene un dominio de confianza: inicios de sesión de navegador, sesiones de llegada, las de la consola y el portal, y las sesiones de clientes de API, SCIM y SPIRE. Se comprueba cuando se CREA una sesión. En el límite, una fila nueva se RECHAZA (STS-AUTHN-0337): no se cierra nada para hacer sitio a otra persona. Un sujeto que ya está en authn.maxSessionsPerSubject pierde en su lugar su propia sesión contable más antigua (STS-AUTHN-0292), una fila, y la fila nueva ocupa su lugar. Bajarlo no cierra las sesiones ya existentes. Se rechaza una fila nueva mientras el dominio siga por encima del nuevo número; las sesiones salen por vencimiento, cierre de sesión, revocación o, cuando un sujeto supera su propio límite, por una inserción posterior de ese sujeto y por el barrido de sesiones (como mucho authn.sessionShedPerSweep en la ejecución de ese dominio)."
+  },
+  "authn.maxSessionsPerSubject|label": {
+    "en": "88aeb86239334502",
+    "text": "Máximo de sesiones contables por sujeto"
+  },
+  "authn.maxSessionsPerSubject|description": {
+    "en": "b825060c911d7200",
+    "text": "Cuántas sesiones contables puede tener un sujeto: un inicio de sesión elegido, una sesión de API con clave o una sesión de parte de confianza. Una sesión de llegada no cuenta, y las sesiones de llegada comparten un mismo nombre de usuario, así que este límite no se indexa por nombre de usuario. En el límite, la siguiente sesión que ese sujeto inicie cierra su propia fila contable más antigua y ocupa su lugar. Nunca la fila de otro sujeto, y nunca una sesión de llegada. Una sesión de parte de confianza no cierra el inicio de sesión del que acaba de derivarse. Una fila por inserción; el excedente restante lo recoge el barrido de sesiones, como mucho authn.sessionShedPerSweep en la ejecución de ese dominio. Un valor por encima del authn.maxSessions actual se lee como ese límite."
+  },
+  "authn.sessionShedPerSweep|label": {
+    "en": "83dd8742cd13895b",
+    "text": "Sesiones sobrantes propias cerradas por barrido"
+  },
+  "authn.sessionShedPerSweep|description": {
+    "en": "d3d71af793b0befc",
+    "text": "Cuántas de las sesiones sobrantes propias de un sujeto cierra la tarea authn.session-expiry en una ejecución de este dominio. Cada dominio gasta su propio valor. Las filas contables más antiguas, un sujeto cada vez, hasta haber cerrado esa cantidad o hasta que nadie supere authn.maxSessionsPerSubject. No cierra una sesión de llegada por capacidad, ni cierra a un sujeto que está en su límite o por debajo aunque el dominio supere authn.maxSessions. Bajar un límite no provoca cierres masivos."
+  },
+  "authn.sessionWindow|label": {
+    "en": "8f5e9b73e3237ec2",
+    "text": "Ventana de sesiones acotada"
+  },
+  "authn.sessionWindow|description": {
+    "en": "59fc245bcee32b34",
+    "text": "Si un proceso mantiene todas las sesiones de inicio de sesión o una ventana acotada de ellas. auto, el valor predeterminado, usa la ventana cuando la persistencia de lo emitido está habilitada, el servicio es una sola celda y la clave de lo emitido es un resumen. Si no, conserva el mapa completo y registra STS-AUTHN-0339 una vez al arrancar. on se rechaza al arrancar en ese mismo estado. off conserva el mapa completo. Es una propiedad de este proceso: un dominio no puede tener su propio valor, y cambiarlo requiere reiniciar."
+  },
+  "authn.sessionWindow|restartReason": {
+    "en": "ff36b8697d3f42a0",
+    "text": "un arranque que omite los cuerpos de las sesiones no puede devolverlos cuando se desactiva la ventana, así que las sesiones confirmadas se responderían como ausentes"
+  },
+  "authn.sessionCacheEntries|label": {
+    "en": "9745355bc4897a82",
+    "text": "Sesiones que mantiene un proceso"
+  },
+  "authn.sessionCacheEntries|description": {
+    "en": "e5815f7302e5577e",
+    "text": "Cuántas sesiones de inicio de sesión mantiene un proceso cuando authn.sessionWindow está activo. Una sola caché sirve a todos los dominios, así que un dominio no puede dimensionarla. Una sesión más allá del límite se olvida en memoria una vez confirmado su upsert. No se cierra. La fila permanece en el almacén y se vuelve a leer en el siguiente fallo de caché."
+  },
+  "authn.sessionReadTimeoutMs|label": {
+    "en": "c0f67cf6f4eb61c6",
+    "text": "Tiempo de espera de lectura de sesión (milisegundos)"
+  },
+  "authn.sessionReadTimeoutMs|description": {
+    "en": "04b8133757dcd380",
+    "text": "Cuánto puede esperar una lectura de sesión y durante cuánto tiempo no se reintenta una lectura fallida. 0 no espera ni aplaza el siguiente fallo de caché. La espera es de este proceso, no de un dominio. Una lectura fallida no se trata como una sesión ausente."
   },
   "authn.pendingTtlS|label": {
     "en": "d328ac4c11db98f0",

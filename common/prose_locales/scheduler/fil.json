@@ -12,8 +12,8 @@
     "text": "Pag-expire ng session"
   },
   "sched.jobs.authn.session-expiry.describe": {
-    "en": "ca99d997bdb0c403",
-    "text": "Tinatapos ang bawat sign-on session na lumampas na sa lifetime o idle timeout nito, sa bawat realm: isang audit row, CAEP session-revoked at ang mga back-channel Logout Token, nang isang beses para sa buong cluster."
+    "en": "5631096a0aa7c62f",
+    "text": "Tinatapos ang bawat sign-on session na lumampas na sa lifetime o idle timeout nito, at, sa bawat realm, hanggang sa authn.sessionShedPerSweep ng realm na iyon sa sariling sobrang session ng iisang subject."
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",

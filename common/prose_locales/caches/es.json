@@ -79,6 +79,14 @@
     "en": "758990e906bc4fb2",
     "text": "{{seconds}} s después de la búsqueda; un cambio en la fuente descarta sus filas."
   },
+  "caches.store.authn.session-window.title": {
+    "en": "c7d3b3347696bed7",
+    "text": "Ventana de sesiones de inicio de sesión"
+  },
+  "caches.store.authn.session-window.description": {
+    "en": "7a7d9e762890fe35",
+    "text": "Las sesiones de inicio de sesión que un proceso mantiene cuando authn.sessionWindow está activo (#350). Un fallo de caché se lee de la fila sellada. La expulsión olvida la copia en memoria una vez confirmado el upsert y no cierra la sesión."
+  },
   "caches.store.certificates.parsed-facts.title": {
     "en": "5746d523daca087a",
     "text": "Datos de certificados analizados"

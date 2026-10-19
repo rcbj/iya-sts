@@ -79,6 +79,14 @@
     "en": "758990e906bc4fb2",
     "text": "{{seconds}} s après la recherche ; une modification de la source supprime ses lignes."
   },
+  "caches.store.authn.session-window.title": {
+    "en": "c7d3b3347696bed7",
+    "text": "Fenêtre des sessions d’authentification"
+  },
+  "caches.store.authn.session-window.description": {
+    "en": "7a7d9e762890fe35",
+    "text": "Les sessions d’authentification qu’un processus détient lorsque authn.sessionWindow est actif (#350). Un défaut de cache est lu depuis la ligne scellée. L’éviction oublie la copie en mémoire une fois l’upsert validé et ne met pas fin à la session."
+  },
   "caches.store.certificates.parsed-facts.title": {
     "en": "5746d523daca087a",
     "text": "Informations de certificat analysées"

@@ -79,6 +79,14 @@
     "en": "758990e906bc4fb2",
     "text": "查詢後 {{seconds}} 秒；來源有變更時會捨棄其列。"
   },
+  "caches.store.authn.session-window.title": {
+    "en": "c7d3b3347696bed7",
+    "text": "登入工作階段視窗"
+  },
+  "caches.store.authn.session-window.description": {
+    "en": "7a7d9e762890fe35",
+    "text": "authn.sessionWindow 開啟時一個程序持有的登入工作階段（#350）。未命中時從密封的列讀取。逐出只在其 upsert 已提交後忘記記憶體中的副本，不會結束工作階段。"
+  },
   "caches.store.certificates.parsed-facts.title": {
     "en": "5746d523daca087a",
     "text": "已剖析的憑證資訊"

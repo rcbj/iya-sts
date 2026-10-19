@@ -648,8 +648,8 @@
     "text": "Hur ofta utgångna sessioner avslutas (sekunder)"
   },
   "authn.sessionSweepS|description": {
-    "en": "852f6e4a8d15fa99",
-    "text": "Intervallet för schemaläggarjobbet `authn.session-expiry` (Övervakning → Schemaläggare), som avslutar varje inloggningssession vars livslängd eller vilotidsgräns har passerats — granskningsraden, CAEP session-revoked och back-channel-utloggningstokenerna skickas EN gång för hela klustret — oavsett om någon kommer tillbaka och visar upp den. 0 stänger av jobbet: en utgången session vägras då fortfarande när den visas upp, och avslutas i det ögonblicket, men ingen underrättas om en som aldrig visas upp igen. Det var fast trettio sekunder i varje process fram till 2026-09-22 (#49)."
+    "en": "7c9e47e90ca7211c",
+    "text": "Intervallet för schemaläggarjobbet `authn.session-expiry` (Övervakning → Schemaläggare), som avslutar varje inloggningssession vars livslängd eller vilotidsgräns har passerats — granskningsraden, CAEP session-revoked och back-channel-utloggningstokenerna skickas EN gång för hela klustret — oavsett om någon kommer tillbaka och visar upp den. Samma körning avslutar också, i varje sfär, högst den sfärens authn.sessionShedPerSweep av ett subjekts egna överskottssessioner. 0 stänger av jobbet: en utgången session vägras då fortfarande när den visas upp, och avslutas i det ögonblicket, men ingen underrättas om en som aldrig visas upp igen. Det var fast trettio sekunder i varje process fram till 2026-09-22 (#49)."
   },
   "authn.cookieDomain|label": {
     "en": "d384717cc62561e8",
@@ -680,8 +680,52 @@
     "text": "Högsta antal inloggningssessioner per sfär"
   },
   "authn.maxSessions|description": {
-    "en": "02399d7a28c348d5",
-    "text": "Det högsta antal inloggningssessioner en förtroendesfär håller — webbläsarinloggningar, de ankomstsessioner som en webbläsare får vid ett protokolls ytterdörr, konsolens och portalens egna, och sessionerna för API-, SCIM- och SPIRE-klienter. Kontrolleras när en session SKAPAS: vid taket avslutas den minst nyligen använda sessionen för att ge plats, precis som när en session går ut — en granskningsrad med STS-AUTHN-0292, CAEP session-revoked och back-channel-utloggningstokener — så dess innehavare måste logga in igen. Utan den begränsade bara jobbet för sessionsutgång lagret, och en våg av inloggningar fick varje process att växa tills jobbet hann ikapp. En sänkning träder i kraft vid nästa session som skapas, vilket då genast avslutar varje session över det nya taket."
+    "en": "a5b6beb131a44df2",
+    "text": "Det högsta antalet sessioner en förtroendesfär håller — webbläsarinloggningar, ankomstsessioner, konsolens och portalens egna, och sessionerna för API-, SCIM- och SPIRE-klienter. Kontrolleras när en session SKAPAS. Vid gränsen VÄGRAS en ny rad (STS-AUTHN-0337): inget avslutas för att ge plats åt någon annan. Ett subjekt som redan är vid authn.maxSessionsPerSubject förlorar i stället sin egen äldsta räknade session (STS-AUTHN-0292), en rad, och den nya raden tar dess plats. Att sänka värdet avslutar inte sessioner som redan finns. En ny rad vägras så länge sfären fortfarande är över det nya talet; sessioner försvinner genom livslängd, utloggning, återkallelse eller, där ett subjekt är över sin egen gräns, genom det subjektets senare insättning och genom sessionssvepet (högst authn.sessionShedPerSweep i den sfärens körning)."
+  },
+  "authn.maxSessionsPerSubject|label": {
+    "en": "88aeb86239334502",
+    "text": "Högsta antal räknade sessioner per subjekt"
+  },
+  "authn.maxSessionsPerSubject|description": {
+    "en": "b825060c911d7200",
+    "text": "Hur många räknade sessioner ett subjekt får hålla: en vald inloggning, en API-session med nyckel eller en förlitande parts session. En ankomstsession räknas inte, och ankomstsessioner delar ett och samma användarnamn, så gränsen är inte knuten till användarnamnet. Vid gränsen avslutar nästa session som subjektet startar subjektets egen äldsta räknade rad och tar dess plats. Aldrig ett annat subjekts rad, och aldrig en ankomstsession. En förlitande parts session avslutar inte inloggningen den just härleddes från. En rad per insättning; resterande överskott tas om hand av sessionssvepet, högst authn.sessionShedPerSweep i den sfärens körning. Ett värde över nuvarande authn.maxSessions läses som den gränsen."
+  },
+  "authn.sessionShedPerSweep|label": {
+    "en": "83dd8742cd13895b",
+    "text": "Egna överskottssessioner som avslutas per svep"
+  },
+  "authn.sessionShedPerSweep|description": {
+    "en": "d3d71af793b0befc",
+    "text": "Hur många av ett subjekts egna överskottssessioner jobbet authn.session-expiry avslutar i en körning av den här sfären. Varje sfär förbrukar sitt eget värde. De äldsta räknade raderna, ett subjekt i taget, tills så många har avslutats eller ingen längre är över authn.maxSessionsPerSubject. Den avslutar inte en ankomstsession av kapacitetsskäl, och den avslutar inte ett subjekt som är vid eller under sin gräns, inte ens när sfären är över authn.maxSessions. Att sänka en gräns ger ingen massavslutning."
+  },
+  "authn.sessionWindow|label": {
+    "en": "8f5e9b73e3237ec2",
+    "text": "Begränsat sessionsfönster"
+  },
+  "authn.sessionWindow|description": {
+    "en": "59fc245bcee32b34",
+    "text": "Om en process håller varje inloggningssession eller ett begränsat fönster av dem. auto, standardvärdet, använder fönstret när persistens av utfärdat är aktiverad, tjänsten är en enda cell och nyckeln för utfärdat är ett sammandrag. Annars behålls hela tabellen och STS-AUTHN-0339 loggas en gång vid start. on vägras vid start i samma läge. off behåller hela tabellen. Det är en egenskap hos den här processen: en sfär kan inte ha ett eget värde, och en ändring kräver omstart."
+  },
+  "authn.sessionWindow|restartReason": {
+    "en": "ff36b8697d3f42a0",
+    "text": "en start som hoppar över sessionskropparna kan inte lägga tillbaka dem när fönstret stängs av, så bekräftade sessioner skulle besvaras som saknade"
+  },
+  "authn.sessionCacheEntries|label": {
+    "en": "9745355bc4897a82",
+    "text": "Sessioner som en process håller"
+  },
+  "authn.sessionCacheEntries|description": {
+    "en": "e5815f7302e5577e",
+    "text": "Hur många inloggningssessioner en process håller när authn.sessionWindow är på. En enda cache betjänar alla sfärer, så en sfär kan inte dimensionera den. En session bortom gränsen glöms i minnet när dess upsert har bekräftats. Den avslutas inte. Raden finns kvar i lagret och läses in igen vid nästa miss."
+  },
+  "authn.sessionReadTimeoutMs|label": {
+    "en": "c0f67cf6f4eb61c6",
+    "text": "Tidsgräns för sessionsläsning (millisekunder)"
+  },
+  "authn.sessionReadTimeoutMs|description": {
+    "en": "04b8133757dcd380",
+    "text": "Hur länge en sessionsläsning får vänta, och hur länge en misslyckad läsning inte försöks igen. 0 väntar inte och skjuter inte upp nästa miss. Väntan är den här processens, inte en sfärs. En misslyckad läsning behandlas inte som en saknad session."
   },
   "authn.pendingTtlS|label": {
     "en": "d328ac4c11db98f0",

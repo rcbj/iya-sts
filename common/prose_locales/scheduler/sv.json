@@ -12,8 +12,8 @@
     "text": "Sessionsutgång"
   },
   "sched.jobs.authn.session-expiry.describe": {
-    "en": "ca99d997bdb0c403",
-    "text": "Avslutar varje inloggningssession vars livslängd eller inaktivitetstidsgräns har passerats, i varje sfär: en granskningsrad, CAEP session-revoked och back-channel-Logout Tokens, en gång för hela klustret."
+    "en": "5631096a0aa7c62f",
+    "text": "Avslutar varje inloggningssession vars livslängd eller inaktivitetstidsgräns har passerats och, i varje sfär, högst den sfärens authn.sessionShedPerSweep av ett subjekts egna överskottssessioner."
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",

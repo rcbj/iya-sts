@@ -12,8 +12,8 @@
     "text": "Expiration des sessions"
   },
   "sched.jobs.authn.session-expiry.describe": {
-    "en": "ca99d997bdb0c403",
-    "text": "Met fin à chaque session d’authentification unique dont la durée de vie ou le délai d’inactivité est dépassé, dans tous les domaines : une ligne d’audit, CAEP session-revoked et les Logout Tokens back-channel, une seule fois pour l’ensemble du cluster."
+    "en": "5631096a0aa7c62f",
+    "text": "Met fin à chaque session d’authentification unique dont la durée de vie ou le délai d’inactivité est dépassé et, dans chaque domaine, à au plus authn.sessionShedPerSweep sessions excédentaires propres à un même sujet, selon la valeur de ce domaine."
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",

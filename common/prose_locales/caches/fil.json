@@ -79,6 +79,14 @@
     "en": "758990e906bc4fb2",
     "text": "{{seconds}} s pagkatapos ng lookup; tinatanggal ng pagbabago sa source ang mga row nito."
   },
+  "caches.store.authn.session-window.title": {
+    "en": "c7d3b3347696bed7",
+    "text": "Window ng mga sign-on session"
+  },
+  "caches.store.authn.session-window.description": {
+    "en": "7a7d9e762890fe35",
+    "text": "Ang mga sign-on session na hawak ng isang process kapag naka-on ang authn.sessionWindow (#350). Ang isang miss ay binabasa mula sa sealed na row. Kinakalimutan ng eviction ang kopya sa memory pagkatapos ma-commit ang upsert nito, at hindi nito tinatapos ang session."
+  },
   "caches.store.certificates.parsed-facts.title": {
     "en": "5746d523daca087a",
     "text": "Mga naka-parse na detalye ng certificate"

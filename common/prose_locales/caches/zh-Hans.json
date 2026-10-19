@@ -79,6 +79,14 @@
     "en": "758990e906bc4fb2",
     "text": "查找后 {{seconds}} 秒；对数据源的更改会丢弃其行。"
   },
+  "caches.store.authn.session-window.title": {
+    "en": "c7d3b3347696bed7",
+    "text": "单点登录会话窗口"
+  },
+  "caches.store.authn.session-window.description": {
+    "en": "7a7d9e762890fe35",
+    "text": "authn.sessionWindow 开启时一个进程持有的单点登录会话（#350）。未命中时从密封的行读取。逐出只在其 upsert 已提交后忘记内存中的副本，不会结束会话。"
+  },
   "caches.store.certificates.parsed-facts.title": {
     "en": "5746d523daca087a",
     "text": "已解析的证书信息"

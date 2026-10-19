@@ -648,8 +648,8 @@
     "text": "Gaano kadalas tinatapos ang mga expired na session (segundo)"
   },
   "authn.sessionSweepS|description": {
-    "en": "852f6e4a8d15fa99",
-    "text": "Ang interval ng scheduler job na `authn.session-expiry` (Monitoring → Scheduler), na tumatapos sa bawat sign-on session na lumampas na sa lifetime o idle timeout nito — ang audit row, CAEP session-revoked at ang mga back-channel Logout Token ay ipinapadala nang ISANG BESES para sa buong cluster — bumalik man o hindi ang sinuman para ipakita ito. Pinapatay ng 0 ang job: tatanggihan pa rin ang expired na session tuwing ipapakita ito, at tatapusin sa sandaling iyon, pero walang sasabihan tungkol sa session na hindi na muling ipapakita. Nakapirming tatlumpung segundo ito sa bawat process hanggang 2026-09-22 (#49)."
+    "en": "7c9e47e90ca7211c",
+    "text": "Ang interval ng scheduler job na `authn.session-expiry` (Monitoring → Scheduler), na tumatapos sa bawat sign-on session na lumampas na sa lifetime o idle timeout nito — ang audit row, CAEP session-revoked at ang mga back-channel Logout Token ay ipinapadala nang ISANG BESES para sa buong cluster — bumalik man o hindi ang sinuman para ipakita ito. Tinatapos din ng parehong run, sa bawat realm, hanggang sa authn.sessionShedPerSweep ng realm na iyon sa sariling sobrang session ng iisang subject. Pinapatay ng 0 ang job: tatanggihan pa rin ang expired na session tuwing ipapakita ito, at tatapusin sa sandaling iyon, pero walang sasabihan tungkol sa session na hindi na muling ipapakita. Nakapirming tatlumpung segundo ito sa bawat process hanggang 2026-09-22 (#49)."
   },
   "authn.cookieDomain|label": {
     "en": "d384717cc62561e8",
@@ -680,8 +680,52 @@
     "text": "Pinakamaraming sign-on session bawat realm"
   },
   "authn.maxSessions|description": {
-    "en": "02399d7a28c348d5",
-    "text": "Ang pinakamaraming sign-on session na hawak ng isang trust realm — mga browser sign-in, ang mga arrival session na ibinibigay sa browser sa front door ng isang protocol, ang sariling mga session ng console at portal, at ang mga session ng mga API, SCIM at SPIRE client. Sinusuri kapag GINAWA ang session: sa cap, tinatapos ang least recently used na session para magkaroon ng puwang, eksakto gaya ng pagtatapos ng expiry — isang audit row na may dalang STS-AUTHN-0292, CAEP session-revoked at mga back-channel Logout Token — kaya kailangang mag-sign in ulit ng may hawak nito. Kung wala ito, ang session expiry job lang ang naglilimita sa store, at ang biglang dami ng sign-in ay nagpapalaki sa bawat process hanggang makahabol ang job. Ang pagbaba nito ay may epekto sa susunod na session na gagawin, na siyang agad na tatapos sa bawat session na lampas sa bagong cap."
+    "en": "a5b6beb131a44df2",
+    "text": "Ang pinakamaraming session na hawak ng isang trust realm — mga sign-in sa browser, mga arrival session, ang sariling session ng console at ng portal, at ang mga session ng mga API, SCIM at SPIRE client. Sinusuri kapag GINAGAWA ang isang session. Sa cap, TINATANGGIHAN ang bagong row (STS-AUTHN-0337): walang tinatapos para magbigay-puwang sa ibang tao. Ang subject na nasa authn.maxSessionsPerSubject na ay mawawalan sa halip ng sarili nitong pinakalumang nabibilang na session (STS-AUTHN-0292), isang row, at papalit dito ang bagong row. Hindi tinatapos ng pagbaba nito ang mga session na hawak na. Tinatanggihan ang bagong row habang lumalampas pa ang realm sa bagong bilang; umaalis ang mga session sa pamamagitan ng lifetime, sign-out, revoke, o, kung lumalampas ang isang subject sa sarili nitong cap, sa pamamagitan ng susunod na insert ng subject na iyon at ng session sweep (hanggang authn.sessionShedPerSweep sa run ng realm na iyon)."
+  },
+  "authn.maxSessionsPerSubject|label": {
+    "en": "88aeb86239334502",
+    "text": "Pinakamaraming nabibilang na session bawat subject"
+  },
+  "authn.maxSessionsPerSubject|description": {
+    "en": "b825060c911d7200",
+    "text": "Ilang nabibilang na session ang maaaring hawak ng isang subject: isang piniling sign-on, isang keyed na API session, o isang relying-party session. Hindi nabibilang ang arrival, at iisang username ang ginagamit ng mga arrival, kaya hindi nakabatay sa username ang limitasyong ito. Sa cap, ang susunod na session na sisimulan ng subject na iyon ay tatapos sa sarili nitong pinakalumang nabibilang na row at papalit dito. Hindi kailanman ang row ng ibang subject, at hindi kailanman isang arrival. Hindi tinatapos ng relying-party session ang sign-on na kahahango lang nito. Isang row bawat insert; ang natitirang sobra ay kinukuha ng session sweep, hanggang authn.sessionShedPerSweep sa run ng realm na iyon. Ang value na mas mataas sa kasalukuyang authn.maxSessions ay binabasa bilang cap na iyon."
+  },
+  "authn.sessionShedPerSweep|label": {
+    "en": "83dd8742cd13895b",
+    "text": "Sariling sobrang session na tinatapos bawat sweep"
+  },
+  "authn.sessionShedPerSweep|description": {
+    "en": "d3d71af793b0befc",
+    "text": "Ilan sa sariling sobrang session ng isang subject ang tinatapos ng job na authn.session-expiry sa isang run ng realm na ito. Bawat realm ay gumagamit ng sarili nitong value. Ang pinakalumang nabibilang na row, isang subject sa bawat pagkakataon, hanggang matapos ang ganoong dami o wala nang lumalampas sa authn.maxSessionsPerSubject. Hindi nito tinatapos ang arrival dahil sa kapasidad, at hindi nito tinatapos ang subject na nasa o mas mababa sa cap nito kahit lumalampas ang realm sa authn.maxSessions. Hindi nagdudulot ng maramihang pagtatapos ang pagbaba ng cap."
+  },
+  "authn.sessionWindow|label": {
+    "en": "8f5e9b73e3237ec2",
+    "text": "May hangganang session window"
+  },
+  "authn.sessionWindow|description": {
+    "en": "59fc245bcee32b34",
+    "text": "Kung hawak ng isang process ang bawat sign-on session o isang may hangganang window ng mga ito. Ang auto, ang default, ay gumagamit ng window kapag naka-enable ang minted persistence, iisang cell ang serbisyo, at digest ang minted key. Kung hindi, pinapanatili nito ang buong map at nila-log ang STS-AUTHN-0339 nang isang beses sa pagsisimula. Tinatanggihan ang on sa pagsisimula sa ganoon ding kalagayan. Pinapanatili ng off ang buong map. Katangian ito ng process na ito: hindi maaaring magkaroon ng sariling value ang isang realm, at kailangan ng restart para baguhin ito."
+  },
+  "authn.sessionWindow|restartReason": {
+    "en": "ff36b8697d3f42a0",
+    "text": "hindi maibabalik ng pagsisimulang lumaktaw sa mga session body ang mga ito kapag pinatay ang window, kaya sasagutin bilang wala ang mga na-commit na session"
+  },
+  "authn.sessionCacheEntries|label": {
+    "en": "9745355bc4897a82",
+    "text": "Mga session na hawak ng isang process"
+  },
+  "authn.sessionCacheEntries|description": {
+    "en": "e5815f7302e5577e",
+    "text": "Ilang sign-on session ang hawak ng isang process kapag naka-on ang authn.sessionWindow. Iisang cache ang nagsisilbi sa bawat realm, kaya hindi ito masusukat ng isang realm. Ang session na lampas sa hangganan ay kinakalimutan sa memory pagkatapos ma-commit ang upsert nito. Hindi ito tinatapos. Nananatili ang row sa store at binabasa muli sa susunod na miss."
+  },
+  "authn.sessionReadTimeoutMs|label": {
+    "en": "c0f67cf6f4eb61c6",
+    "text": "Timeout ng pagbasa ng session (milliseconds)"
+  },
+  "authn.sessionReadTimeoutMs|description": {
+    "en": "04b8133757dcd380",
+    "text": "Gaano katagal maaaring maghintay ang isang pagbasa ng session, at gaano katagal hindi uulitin ang nabigong pagbasa. Ang 0 ay hindi naghihintay at hindi nagpapaliban sa susunod na miss. Ang paghihintay ay sa process na ito, hindi sa isang realm. Hindi itinuturing na nawawalang session ang nabigong pagbasa."
   },
   "authn.pendingTtlS|label": {
     "en": "d328ac4c11db98f0",

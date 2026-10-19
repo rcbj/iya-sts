@@ -648,8 +648,8 @@
     "text": "结束过期会话的频率（秒）"
   },
   "authn.sessionSweepS|description": {
-    "en": "852f6e4a8d15fa99",
-    "text": "调度器作业 `authn.session-expiry`（监控 → 调度器）的间隔，它会结束每个已超过有效期或空闲超时的单点登录会话——审计记录、CAEP session-revoked 和反向通道注销令牌对整个集群只发出一次——无论是否有人回来出示它。0 关闭此作业：过期会话在被出示时仍会被拒绝并在那一刻结束，但对于再也不被出示的会话，不会通知任何人。直到 2026-09-22（#49）之前，它在每个进程中都固定为三十秒。"
+    "en": "7c9e47e90ca7211c",
+    "text": "调度器作业 `authn.session-expiry`（监控 → 调度器）的间隔，它会结束每个已超过有效期或空闲超时的单点登录会话——审计记录、CAEP session-revoked 和反向通道注销令牌对整个集群只发出一次——无论是否有人回来出示它。同一次运行还会在每个领域中最多结束该领域 authn.sessionShedPerSweep 个同一主体自身的超额会话。0 关闭此作业：过期会话在被出示时仍会被拒绝并在那一刻结束，但对于再也不被出示的会话，不会通知任何人。直到 2026-09-22（#49）之前，它在每个进程中都固定为三十秒。"
   },
   "authn.cookieDomain|label": {
     "en": "d384717cc62561e8",
@@ -680,8 +680,52 @@
     "text": "每领域最多单点登录会话数"
   },
   "authn.maxSessions|description": {
-    "en": "02399d7a28c348d5",
-    "text": "一个信任领域持有的单点登录会话的最大数量——浏览器登录、浏览器在协议入口处获得的到达会话、控制台和门户自己的会话，以及 API、SCIM 和 SPIRE 客户端的会话。在创建会话时检查：达到上限时会结束最近最少使用的会话以腾出空间，与到期结束会话的方式完全相同——一条带有 STS-AUTHN-0292 的审计记录、CAEP session-revoked 和反向通道注销令牌——因此其持有者必须重新登录。没有此项时，只有会话过期作业限制存储大小，一波登录会让每个进程不断增长，直到作业赶上。调低此值在下一次创建会话时生效，届时会立即结束超出新上限的所有会话。"
+    "en": "a5b6beb131a44df2",
+    "text": "一个信任领域持有的会话上限——浏览器登录、到达会话、控制台和门户自己的会话，以及 API、SCIM 和 SPIRE 客户端的会话。在会话“创建”时检查。达到上限时，新行会被“拒绝”（STS-AUTHN-0337）：不会为了给别人腾出空间而结束任何会话。已达到 authn.maxSessionsPerSubject 的主体会改为失去其自身最旧的可计数会话（STS-AUTHN-0292），一行，由新行取而代之。调低此值不会结束已持有的会话。只要领域仍超过新数值，新行就会被拒绝；会话会因有效期、登出、撤销而离开，或者在某个主体超过其自身上限时，因该主体之后的插入以及会话清扫（在该领域的运行中最多 authn.sessionShedPerSweep 个）而离开。"
+  },
+  "authn.maxSessionsPerSubject|label": {
+    "en": "88aeb86239334502",
+    "text": "每个主体最多可计数的会话"
+  },
+  "authn.maxSessionsPerSubject|description": {
+    "en": "b825060c911d7200",
+    "text": "一个主体可持有的可计数会话数量：一次已选择的单点登录、一个带密钥的 API 会话或一个依赖方会话。到达会话不计数，而且到达会话共享同一个用户名，因此此上限不以用户名为键。达到上限时，该主体启动的下一个会话会结束其自身最旧的可计数行并取而代之。绝不会是其他主体的行，也绝不会是到达会话。依赖方会话不会结束它刚刚派生自的单点登录。每次插入一行；其余超额由会话清扫收回，在该领域的运行中最多 authn.sessionShedPerSweep 个。高于当前 authn.maxSessions 的值按该上限读取。"
+  },
+  "authn.sessionShedPerSweep|label": {
+    "en": "83dd8742cd13895b",
+    "text": "每次清扫结束的自身超额会话"
+  },
+  "authn.sessionShedPerSweep|description": {
+    "en": "d3d71af793b0befc",
+    "text": "authn.session-expiry 作业在本领域的一次运行中结束多少个主体自身的超额会话。每个领域使用自己的值。从最旧的可计数行开始，一次一个主体，直到结束了这么多个，或者不再有人超过 authn.maxSessionsPerSubject。它不会因容量而结束到达会话，也不会结束处于或低于自身上限的主体，即使领域超过了 authn.maxSessions。降低上限不会造成批量结束。"
+  },
+  "authn.sessionWindow|label": {
+    "en": "8f5e9b73e3237ec2",
+    "text": "有界会话窗口"
+  },
+  "authn.sessionWindow|description": {
+    "en": "59fc245bcee32b34",
+    "text": "一个进程是持有所有单点登录会话，还是只持有其中的一个有界窗口。默认值 auto 在已启用签发数据持久化、服务只有一个单元且签发数据的键是摘要时使用窗口。否则保留完整映射，并在启动时记录一次 STS-AUTHN-0339。在同样的状态下，on 会在启动时被拒绝。off 保留完整映射。这是本进程的属性：领域不能有自己的值，更改它需要重启。"
+  },
+  "authn.sessionWindow|restartReason": {
+    "en": "ff36b8697d3f42a0",
+    "text": "跳过会话主体的启动无法在关闭窗口时将其放回，因此已提交的会话会被答复为不存在"
+  },
+  "authn.sessionCacheEntries|label": {
+    "en": "9745355bc4897a82",
+    "text": "一个进程持有的会话"
+  },
+  "authn.sessionCacheEntries|description": {
+    "en": "e5815f7302e5577e",
+    "text": "authn.sessionWindow 开启时一个进程持有多少个单点登录会话。一个缓存服务所有领域，因此领域无法设定其大小。超出上限的会话在其 upsert 提交后从内存中忘记。它不会被结束。该行仍保留在存储中，并在下次未命中时重新读取。"
+  },
+  "authn.sessionReadTimeoutMs|label": {
+    "en": "c0f67cf6f4eb61c6",
+    "text": "会话读取超时（毫秒）"
+  },
+  "authn.sessionReadTimeoutMs|description": {
+    "en": "04b8133757dcd380",
+    "text": "一次会话读取可以等待多久，以及失败的读取在多长时间内不重试。0 表示不等待，也不推迟下一次未命中。等待属于本进程，而不是某个领域。失败的读取不会被视为会话不存在。"
   },
   "authn.pendingTtlS|label": {
     "en": "d328ac4c11db98f0",

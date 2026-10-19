@@ -19,6 +19,8 @@
   "caches.store.attribute-sources.lookups.bound": "Enforced: 2000 rows per process, the oldest dropped.",
   "caches.store.attribute-sources.lookups.hitMeaning": "a sign-in answered from a lookup made seconds before",
   "caches.store.attribute-sources.lookups.sentences.lifetime": "{{seconds}} s after the lookup; a change to the source drops its rows.",
+  "caches.store.authn.session-window.title": "Sign-on session window",
+  "caches.store.authn.session-window.description": "The sign-on sessions one process holds when authn.sessionWindow is on (#350). A miss is read from the sealed row. Eviction forgets the memory copy after the upsert has committed and does not end the session.",
   "caches.store.certificates.parsed-facts.title": "Parsed certificate facts",
   "caches.store.certificates.parsed-facts.description": "The subject, issuer and notAfter a certificate list shows, and whether a certificate carries a post-quantum key, parsed once per certificate for /admin/pki and GET /admin-api/certificates. Keyed by the certificate's own SHA-256.",
   "caches.store.certificates.parsed-facts.bound": "Enforced: 4,096 certificates, the oldest dropped and parsed again when next shown.",

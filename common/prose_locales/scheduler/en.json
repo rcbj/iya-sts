@@ -2,7 +2,7 @@
   "sched.jobs.attribute-sources.refresh.title": "Attribute sources: scheduled refresh",
   "sched.jobs.attribute-sources.refresh.describe": "Reads the next page of the realm's people from each attribute source whose scheduled interval is due, onto their entries (#94). attributeSources.refreshBatch people per source per run.",
   "sched.jobs.authn.session-expiry.title": "Session expiry",
-  "sched.jobs.authn.session-expiry.describe": "Ends every sign-on session whose lifetime or idle timeout has passed, in every realm: an audit row, CAEP session-revoked and the back-channel Logout Tokens, once for the whole cluster.",
+  "sched.jobs.authn.session-expiry.describe": "Ends every sign-on session whose lifetime or idle timeout has passed, and, in each realm, at most that realm's authn.sessionShedPerSweep of one subject's own surplus sessions.",
   "sched.jobs.caches.eject-expired.title": "Expired cache entries ejection",
   "sched.jobs.caches.eject-expired.describe": "Deletes, in this process, every cache and replay-store entry whose lifetime has passed — housekeeping only: each store still refuses an expired entry where it reads it.",
   "sched.jobs.cluster.claims-purge.title": "Expired claims sweep",

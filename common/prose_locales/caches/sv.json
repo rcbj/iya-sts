@@ -79,6 +79,14 @@
     "en": "758990e906bc4fb2",
     "text": "{{seconds}} s efter uppslagningen; en ändring av källan släpper dess rader."
   },
+  "caches.store.authn.session-window.title": {
+    "en": "c7d3b3347696bed7",
+    "text": "Fönster för inloggningssessioner"
+  },
+  "caches.store.authn.session-window.description": {
+    "en": "7a7d9e762890fe35",
+    "text": "De inloggningssessioner en process håller när authn.sessionWindow är på (#350). En miss läses från den förseglade raden. Utkastning glömmer minneskopian först när dess upsert har bekräftats och avslutar inte sessionen."
+  },
   "caches.store.certificates.parsed-facts.title": {
     "en": "5746d523daca087a",
     "text": "Tolkade certifikatuppgifter"

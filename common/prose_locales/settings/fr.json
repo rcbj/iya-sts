@@ -648,8 +648,8 @@
     "text": "Fréquence de clôture des sessions expirées (secondes)"
   },
   "authn.sessionSweepS|description": {
-    "en": "852f6e4a8d15fa99",
-    "text": "L’intervalle de la tâche planifiée `authn.session-expiry` (Surveillance → Planificateur), qui met fin à chaque session d’authentification unique dont la durée de vie ou le délai d’inactivité est dépassé — la ligne d’audit, le CAEP session-revoked et les Logout Tokens back-channel étant envoyés UNE SEULE FOIS pour l’ensemble de la grappe — que quelqu’un revienne la présenter ou non. 0 désactive la tâche : une session expirée est alors toujours refusée chaque fois qu’elle est présentée, et close à ce moment-là, mais personne n’est informé d’une session qui n’est plus jamais présentée. C’était trente secondes fixes dans chaque processus jusqu’au 2026-09-22 (#49)."
+    "en": "7c9e47e90ca7211c",
+    "text": "L’intervalle de la tâche planifiée `authn.session-expiry` (Surveillance → Planificateur), qui met fin à chaque session d’authentification unique dont la durée de vie ou le délai d’inactivité est dépassé — la ligne d’audit, le CAEP session-revoked et les Logout Tokens back-channel étant envoyés UNE SEULE FOIS pour l’ensemble de la grappe — que quelqu’un revienne la présenter ou non. La même exécution termine aussi, dans chaque domaine, au plus authn.sessionShedPerSweep sessions excédentaires propres à un même sujet, selon la valeur de ce domaine. 0 désactive la tâche : une session expirée est alors toujours refusée chaque fois qu’elle est présentée, et close à ce moment-là, mais personne n’est informé d’une session qui n’est plus jamais présentée. C’était trente secondes fixes dans chaque processus jusqu’au 2026-09-22 (#49)."
   },
   "authn.cookieDomain|label": {
     "en": "d384717cc62561e8",
@@ -680,8 +680,52 @@
     "text": "Nombre maximal de sessions d’authentification unique par domaine"
   },
   "authn.maxSessions|description": {
-    "en": "02399d7a28c348d5",
-    "text": "Le nombre maximal de sessions d’authentification unique que détient un domaine de confiance — connexions par navigateur, sessions d’arrivée remises à un navigateur à l’entrée d’un protocole, sessions propres de la console et du portail, et sessions des clients API, SCIM et SPIRE. Vérifié lorsqu’une session est CRÉÉE : au plafond, la session utilisée le moins récemment est close pour faire de la place, exactement comme une expiration en clôt une — une ligne d’audit portant STS-AUTHN-0292, CAEP session-revoked et des Logout Tokens back-channel — si bien que son détenteur doit se reconnecter. Sans lui, seule la tâche d’expiration des sessions bornait le stockage, et une rafale de connexions faisait grossir chaque processus jusqu’à ce que la tâche rattrape son retard. L’abaisser prend effet à la prochaine session créée, qui clôt alors d’un coup toutes les sessions au-delà du nouveau plafond."
+    "en": "a5b6beb131a44df2",
+    "text": "Le nombre maximal de sessions qu’un domaine de confiance détient — authentifications de navigateur, sessions d’arrivée, celles de la console et du portail, et les sessions des clients d’API, SCIM et SPIRE. Vérifié lorsqu’une session est CRÉÉE. À la limite, une nouvelle ligne est REFUSÉE (STS-AUTHN-0337) : rien n’est terminé pour faire de la place à quelqu’un d’autre. Un sujet déjà à authn.maxSessionsPerSubject perd à la place sa propre session comptée la plus ancienne (STS-AUTHN-0292), une ligne, et la nouvelle ligne prend sa place. L’abaisser ne termine pas les sessions déjà détenues. Une nouvelle ligne est refusée tant que le domaine dépasse encore le nouveau nombre ; les sessions partent par expiration, déconnexion, révocation ou, lorsqu’un sujet dépasse sa propre limite, par une insertion ultérieure de ce sujet et par le balayage des sessions (au plus authn.sessionShedPerSweep lors de l’exécution de ce domaine)."
+  },
+  "authn.maxSessionsPerSubject|label": {
+    "en": "88aeb86239334502",
+    "text": "Sessions comptées au plus par sujet"
+  },
+  "authn.maxSessionsPerSubject|description": {
+    "en": "b825060c911d7200",
+    "text": "Le nombre de sessions comptées qu’un sujet peut détenir : une authentification choisie, une session d’API à clé ou une session de partie de confiance. Une session d’arrivée n’est pas comptée, et les sessions d’arrivée partagent un même nom d’utilisateur ; cette limite n’est donc pas indexée sur le nom d’utilisateur. À la limite, la session suivante que ce sujet ouvre met fin à sa propre ligne comptée la plus ancienne et prend sa place. Jamais la ligne d’un autre sujet, et jamais une session d’arrivée. Une session de partie de confiance ne met pas fin à l’authentification dont elle vient d’être dérivée. Une ligne par insertion ; le surplus restant est repris par le balayage des sessions, au plus authn.sessionShedPerSweep lors de l’exécution de ce domaine. Une valeur supérieure à l’actuel authn.maxSessions est lue comme cette limite."
+  },
+  "authn.sessionShedPerSweep|label": {
+    "en": "83dd8742cd13895b",
+    "text": "Sessions excédentaires propres terminées par balayage"
+  },
+  "authn.sessionShedPerSweep|description": {
+    "en": "d3d71af793b0befc",
+    "text": "Le nombre de sessions excédentaires propres à un sujet que la tâche authn.session-expiry termine lors d’une exécution de ce domaine. Chaque domaine dépense sa propre valeur. Les lignes comptées les plus anciennes, un sujet à la fois, jusqu’à ce que ce nombre soit atteint ou que plus personne ne dépasse authn.maxSessionsPerSubject. Elle ne termine pas une session d’arrivée pour cause de capacité, et ne termine pas un sujet qui est à sa limite ou en dessous, même lorsque le domaine dépasse authn.maxSessions. Abaisser une limite ne provoque pas de fin en masse."
+  },
+  "authn.sessionWindow|label": {
+    "en": "8f5e9b73e3237ec2",
+    "text": "Fenêtre de sessions bornée"
+  },
+  "authn.sessionWindow|description": {
+    "en": "59fc245bcee32b34",
+    "text": "Si un processus détient toutes les sessions d’authentification ou une fenêtre bornée de celles-ci. auto, la valeur par défaut, utilise la fenêtre lorsque la persistance des éléments émis est activée, que le service est une seule cellule et que la clé des éléments émis est un condensé. Sinon, il conserve la table complète et journalise STS-AUTHN-0339 une fois au démarrage. on est refusé au démarrage dans ce même état. off conserve la table complète. C’est une propriété de ce processus : un domaine ne peut pas porter sa propre valeur, et la changer exige un redémarrage."
+  },
+  "authn.sessionWindow|restartReason": {
+    "en": "ff36b8697d3f42a0",
+    "text": "un démarrage qui ignore les corps de session ne peut pas les remettre lorsque la fenêtre est désactivée ; des sessions validées seraient alors répondues comme absentes"
+  },
+  "authn.sessionCacheEntries|label": {
+    "en": "9745355bc4897a82",
+    "text": "Sessions détenues par un processus"
+  },
+  "authn.sessionCacheEntries|description": {
+    "en": "e5815f7302e5577e",
+    "text": "Le nombre de sessions d’authentification qu’un processus détient lorsque authn.sessionWindow est actif. Un seul cache sert tous les domaines ; un domaine ne peut donc pas le dimensionner. Une session au-delà de la borne est oubliée en mémoire une fois son upsert validé. Elle n’est pas terminée. La ligne reste dans le magasin et est relue au prochain défaut de cache."
+  },
+  "authn.sessionReadTimeoutMs|label": {
+    "en": "c0f67cf6f4eb61c6",
+    "text": "Délai de lecture d’une session (millisecondes)"
+  },
+  "authn.sessionReadTimeoutMs|description": {
+    "en": "04b8133757dcd380",
+    "text": "Combien de temps une lecture de session peut attendre, et combien de temps une lecture échouée n’est pas réessayée. 0 n’attend pas et ne met pas en pause le défaut de cache suivant. L’attente est celle de ce processus, pas celle d’un domaine. Une lecture échouée n’est pas traitée comme une session absente."
   },
   "authn.pendingTtlS|label": {
     "en": "d328ac4c11db98f0",

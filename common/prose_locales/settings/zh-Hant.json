@@ -648,8 +648,8 @@
     "text": "結束過期工作階段的頻率（秒）"
   },
   "authn.sessionSweepS|description": {
-    "en": "852f6e4a8d15fa99",
-    "text": "排程器工作 `authn.session-expiry`（監控 → 排程器）的間隔，此工作會結束每個超過有效期或閒置逾時的登入工作階段——稽核列、CAEP session-revoked 與後端通道 Logout Token 會為整個叢集只送出「一次」——無論是否有人回來出示它。0 會關閉此工作：過期的工作階段在每次被出示時仍會被拒絕並在那一刻結束，但對於再也不會被出示的工作階段，不會通知任何人。直到 2026-09-22（#49）為止，它在每個程序中都是固定的三十秒。"
+    "en": "7c9e47e90ca7211c",
+    "text": "排程器工作 `authn.session-expiry`（監控 → 排程器）的間隔，此工作會結束每個超過有效期或閒置逾時的登入工作階段——稽核列、CAEP session-revoked 與後端通道 Logout Token 會為整個叢集只送出「一次」——無論是否有人回來出示它。同一次執行也會在每個領域中最多結束該領域 authn.sessionShedPerSweep 個同一主體自身的超額工作階段。0 會關閉此工作：過期的工作階段在每次被出示時仍會被拒絕並在那一刻結束，但對於再也不會被出示的工作階段，不會通知任何人。直到 2026-09-22（#49）為止，它在每個程序中都是固定的三十秒。"
   },
   "authn.cookieDomain|label": {
     "en": "d384717cc62561e8",
@@ -680,8 +680,52 @@
     "text": "每個領域的登入工作階段上限"
   },
   "authn.maxSessions|description": {
-    "en": "02399d7a28c348d5",
-    "text": "信任領域持有的登入工作階段上限——瀏覽器登入、瀏覽器在協定入口取得的到達工作階段、主控台與入口網站自己的工作階段，以及 API、SCIM 與 SPIRE 用戶端的工作階段。在工作階段「建立」時檢查：達到上限時，最久未使用的工作階段會被結束以騰出空間，與到期結束的方式完全相同——一筆帶有 STS-AUTHN-0292 的稽核列、CAEP session-revoked 與後端通道 Logout Token——因此其持有者必須重新登入。沒有它時，只有工作階段到期工作會限制儲存區，一陣登入高峰會讓每個程序持續膨脹，直到該工作趕上為止。調低它會在下一個工作階段建立時生效，屆時會立即結束所有超出新上限的工作階段。"
+    "en": "a5b6beb131a44df2",
+    "text": "信任領域持有的工作階段上限——瀏覽器登入、到達工作階段、主控台與入口網站自己的工作階段，以及 API、SCIM 與 SPIRE 用戶端的工作階段。在工作階段「建立」時檢查。達到上限時，新列會被「拒絕」（STS-AUTHN-0337）：不會為了給別人騰出空間而結束任何工作階段。已達到 authn.maxSessionsPerSubject 的主體會改為失去其自身最舊的可計數工作階段（STS-AUTHN-0292），一列，由新列取而代之。調低此值不會結束已持有的工作階段。只要領域仍超過新數值，新列就會被拒絕；工作階段會因有效期、登出、撤銷而離開，或者在某個主體超過其自身上限時，因該主體之後的插入以及工作階段清掃（在該領域的執行中最多 authn.sessionShedPerSweep 個）而離開。"
+  },
+  "authn.maxSessionsPerSubject|label": {
+    "en": "88aeb86239334502",
+    "text": "每個主體最多可計數的工作階段"
+  },
+  "authn.maxSessionsPerSubject|description": {
+    "en": "b825060c911d7200",
+    "text": "一個主體可持有的可計數工作階段數量：一次已選擇的登入、一個帶金鑰的 API 工作階段或一個信賴方工作階段。到達工作階段不計數，而且到達工作階段共用同一個使用者名稱，因此此上限不以使用者名稱為鍵。達到上限時，該主體啟動的下一個工作階段會結束其自身最舊的可計數列並取而代之。絕不會是其他主體的列，也絕不會是到達工作階段。信賴方工作階段不會結束它剛剛衍生自的登入。每次插入一列；其餘超額由工作階段清掃收回，在該領域的執行中最多 authn.sessionShedPerSweep 個。高於目前 authn.maxSessions 的值會依該上限讀取。"
+  },
+  "authn.sessionShedPerSweep|label": {
+    "en": "83dd8742cd13895b",
+    "text": "每次清掃結束的自身超額工作階段"
+  },
+  "authn.sessionShedPerSweep|description": {
+    "en": "d3d71af793b0befc",
+    "text": "authn.session-expiry 工作在本領域的一次執行中結束多少個主體自身的超額工作階段。每個領域使用自己的值。從最舊的可計數列開始，一次一個主體，直到結束了這麼多個，或者不再有人超過 authn.maxSessionsPerSubject。它不會因容量而結束到達工作階段，也不會結束處於或低於自身上限的主體，即使領域超過了 authn.maxSessions。調低上限不會造成大量結束。"
+  },
+  "authn.sessionWindow|label": {
+    "en": "8f5e9b73e3237ec2",
+    "text": "有界工作階段視窗"
+  },
+  "authn.sessionWindow|description": {
+    "en": "59fc245bcee32b34",
+    "text": "一個程序是持有所有登入工作階段，還是只持有其中的一個有界視窗。預設值 auto 在已啟用簽發資料持久化、服務只有一個儲存格且簽發資料的鍵是摘要時使用視窗。否則保留完整對應表，並在啟動時記錄一次 STS-AUTHN-0339。在同樣的狀態下，on 會在啟動時被拒絕。off 保留完整對應表。這是本程序的屬性：領域不能有自己的值，變更它需要重新啟動。"
+  },
+  "authn.sessionWindow|restartReason": {
+    "en": "ff36b8697d3f42a0",
+    "text": "略過工作階段內容的啟動無法在關閉視窗時將其放回，因此已提交的工作階段會被回應為不存在"
+  },
+  "authn.sessionCacheEntries|label": {
+    "en": "9745355bc4897a82",
+    "text": "一個程序持有的工作階段"
+  },
+  "authn.sessionCacheEntries|description": {
+    "en": "e5815f7302e5577e",
+    "text": "authn.sessionWindow 開啟時一個程序持有多少個登入工作階段。一個快取服務所有領域，因此領域無法設定其大小。超出上限的工作階段在其 upsert 提交後從記憶體中忘記。它不會被結束。該列仍保留在儲存區中，並在下次未命中時重新讀取。"
+  },
+  "authn.sessionReadTimeoutMs|label": {
+    "en": "c0f67cf6f4eb61c6",
+    "text": "工作階段讀取逾時（毫秒）"
+  },
+  "authn.sessionReadTimeoutMs|description": {
+    "en": "04b8133757dcd380",
+    "text": "一次工作階段讀取可以等待多久，以及失敗的讀取在多長時間內不重試。0 表示不等待，也不延後下一次未命中。等待屬於本程序，而不是某個領域。失敗的讀取不會被視為工作階段不存在。"
   },
   "authn.pendingTtlS|label": {
     "en": "d328ac4c11db98f0",
