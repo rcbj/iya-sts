@@ -255,9 +255,12 @@ class ConsoleRuntime extends SpaClient {
           'console. You can close this one.');
         return;
       }
-      this.drawProblem('This sign-in cannot be finished',
-        'The answer from the authorization server does not belong to a ' +
-        'sign-in this page started. Open the console again to sign in.');
+      // THE SESSION IS ALREADY THERE, as on the portal: the wallet and the
+      // passkey finished in this tab. No waiting tab took the callback.
+      // Open the console under the old refusal started a fresh request,
+      // which that session accepts.
+      this.env.history.replaceState(null, '', this.prefix + '/admin');
+      await this.beginSignIn('/admin');
       return;
     }
     const answer = await this.tokenRequest({

@@ -335,8 +335,9 @@ above is the surface's rule rather than an exception:
   (`SpaClient.handCallbackToStarter()`); the waiting tab loads it and
   redeems the code. A QR poll and the Digital Credentials API finish in the
   tab that started them, which already holds the record, so they do not
-  offer it. No ack within a second and the return tab says what it said
-  before: the answer belongs to no sign-in that tab started.
+  offer it. No ack within a second, and the return tab starts the sign-in
+  again. The session the wallet just established accepts that request,
+  which is what the Sign in link under the old refusal did.
   `tests/spa_callback_handoff.js`.
 * **What a refusal says is JSON** (`{ ok: false, next: 'refused', errors }`,
   English, no code), and the codes are the ones the pages were marked with.

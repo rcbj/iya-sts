@@ -264,9 +264,14 @@ class PortalRuntime extends SpaClient {
           'portal. You can close this one.');
         return;
       }
-      this.drawProblem('This sign-in cannot be finished',
-        'The answer from the authorization server does not belong to a ' +
-        'sign-in this page started. Open the portal again to sign in.');
+      // THE SESSION IS ALREADY THERE. The wallet and the passkey finished
+      // in this tab, so the authorization server holds a session. This tab
+      // has no matching PKCE record, and no waiting tab took the callback.
+      // The Sign in link under the old refusal started a fresh request,
+      // which that session accepts. Start it, rather than call a finished
+      // sign-in an error.
+      this.env.history.replaceState(null, '', this.prefix + kit.BASE);
+      await this.beginSignIn(kit.BASE);
       return;
     }
     const answer = await this.tokenRequest({

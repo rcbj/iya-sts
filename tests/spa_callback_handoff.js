@@ -241,21 +241,33 @@ async function run(t) {
           'the tab that holds the record redeems the code',
           finisher.body.innerHTML.slice(0, 180));
 
-  // A record for a different sign-in does not take this callback.
+  // A record for a different sign-in does not take this callback. The
+  // return tab starts a fresh sign-in instead of calling that an error:
+  // the wallet's session is already in this browser.
   const wrongBus = {};
   const wrongCalls = [];
-  const wrong = browser('/authn/wallet/wait', '', {
+  const wrongStore = {
     'sts-portal-signin': record('some-other-state', '/portal')
-  }, wrongBus, wrongCalls);
+  };
+  const wrong = browser('/authn/wallet/wait', '', wrongStore, wrongBus,
+                        wrongCalls);
+  const freshStore = {};
   const refused = browser('/portal/callback',
-    '?code=' + CODE + '&state=' + STATE, {}, wrongBus, wrongCalls);
+    '?code=' + CODE + '&state=' + STATE, freshStore, wrongBus, wrongCalls);
   waiting(wrong.env, {});
   await new PortalRuntime(refused.env).finishSignIn();
-  t.check(/does not belong/.test(refused.body.innerHTML),
-          'no matching record, and the return tab says so',
+  t.check(!/does not belong/.test(refused.body.innerHTML),
+          'no matching record, and the return tab does not call it an error',
           refused.body.innerHTML.slice(0, 180));
+  t.check(/\/oauth2\/authorize\?/.test(refused.location.assigned),
+          'the return tab starts a fresh sign-in',
+          refused.location.assigned.slice(0, 180));
   t.equal(wrong.location.assigned, '',
           'a different sign-in\'s tab stays where it is');
+  const fresh = JSON.parse(freshStore['sts-portal-signin'] || 'null');
+  t.check(fresh && fresh.state && fresh.state !== STATE,
+          'the fresh sign-in is a new record',
+          JSON.stringify(fresh && fresh.state));
 
   // The tab the wallet opened collects the response and does not listen.
   const returnBus = {};
