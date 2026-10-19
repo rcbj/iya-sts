@@ -19,6 +19,22 @@
     "en": "ced50089d8744adc",
     "text": "Uppgiven: {{failed}} arbetstråd(ar) kunde inte starta och poolen slutade starta dem. Varje begäran besvaras av frontprocessen."
   },
+  "workerpools.s.givenUpSurfaceRetry": {
+    "en": "2bd6c8a7d6d36521",
+    "text": "Uppgiven: {{failed}} arbetstråd(ar) kunde inte starta och poolen slutade starta dem. De värdade ytorna går till begärandepoolen. En arbetstråd till prövas om {{retryS}} sekunder."
+  },
+  "workerpools.s.givenUpRequestRetry": {
+    "en": "58247b5d1f427501",
+    "text": "Uppgiven: {{failed}} arbetstråd(ar) kunde inte starta och poolen slutade starta dem. Varje begäran besvaras av frontprocessen. En arbetstråd till prövas om {{retryS}} sekunder."
+  },
+  "workerpools.s.givenUpSurfaceProbing": {
+    "en": "1a1aea378ae79a4f",
+    "text": "Uppgiven: {{failed}} arbetstråd(ar) kunde inte starta och poolen slutade starta dem. De värdade ytorna går till begärandepoolen. En arbetstråd till prövas nu."
+  },
+  "workerpools.s.givenUpRequestProbing": {
+    "en": "7df55ed536d4e065",
+    "text": "Uppgiven: {{failed}} arbetstråd(ar) kunde inte starta och poolen slutade starta dem. Varje begäran besvaras av frontprocessen. En arbetstråd till prövas nu."
+  },
   "workerpools.s.notStarted": {
     "en": "62c83c1852ddfcd4",
     "text": "Inte startad: {{setting}} är {{configured}}, och den här processen startade ingen arbetstråd — den startades inte som frontprocess för en tjänst, eller så försattes poolen i viloläge vid start."

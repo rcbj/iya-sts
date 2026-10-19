@@ -19,6 +19,22 @@
     "en": "ced50089d8744adc",
     "text": "Abandonné : {{failed}} thread(s) worker n’ont pas pu démarrer et le pool a cessé d’en démarrer. Chaque requête est traitée par le processus frontal."
   },
+  "workerpools.s.givenUpSurfaceRetry": {
+    "en": "2bd6c8a7d6d36521",
+    "text": "Abandonné : {{failed}} thread(s) worker n’ont pas pu démarrer et le pool a cessé d’en démarrer. Les surfaces hébergées vont au pool de requêtes. Un autre thread worker est essayé dans {{retryS}} secondes."
+  },
+  "workerpools.s.givenUpRequestRetry": {
+    "en": "58247b5d1f427501",
+    "text": "Abandonné : {{failed}} thread(s) worker n’ont pas pu démarrer et le pool a cessé d’en démarrer. Chaque requête est traitée par le processus frontal. Un autre thread worker est essayé dans {{retryS}} secondes."
+  },
+  "workerpools.s.givenUpSurfaceProbing": {
+    "en": "1a1aea378ae79a4f",
+    "text": "Abandonné : {{failed}} thread(s) worker n’ont pas pu démarrer et le pool a cessé d’en démarrer. Les surfaces hébergées vont au pool de requêtes. Un autre thread worker est en cours d’essai."
+  },
+  "workerpools.s.givenUpRequestProbing": {
+    "en": "7df55ed536d4e065",
+    "text": "Abandonné : {{failed}} thread(s) worker n’ont pas pu démarrer et le pool a cessé d’en démarrer. Chaque requête est traitée par le processus frontal. Un autre thread worker est en cours d’essai."
+  },
   "workerpools.s.notStarted": {
     "en": "62c83c1852ddfcd4",
     "text": "Non démarré : {{setting}} vaut {{configured}}, et ce processus n’a démarré aucun thread worker — il n’a pas été démarré en tant que processus frontal d’un service, ou le pool a été mis au repos au démarrage."

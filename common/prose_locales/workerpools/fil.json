@@ -19,6 +19,22 @@
     "en": "ced50089d8744adc",
     "text": "Sumuko na: {{failed}} worker thread ang hindi nakapagsimula at tumigil ang pool sa pagsisimula ng mga ito. Ang front process ang sumasagot sa bawat request."
   },
+  "workerpools.s.givenUpSurfaceRetry": {
+    "en": "2bd6c8a7d6d36521",
+    "text": "Sumuko na: {{failed}} worker thread ang hindi nakapagsimula at tumigil ang pool sa pagsisimula ng mga ito. Pumupunta ang mga hosted surface sa request pool. Susubukan ang isa pang worker thread sa loob ng {{retryS}} segundo."
+  },
+  "workerpools.s.givenUpRequestRetry": {
+    "en": "58247b5d1f427501",
+    "text": "Sumuko na: {{failed}} worker thread ang hindi nakapagsimula at tumigil ang pool sa pagsisimula ng mga ito. Ang front process ang sumasagot sa bawat request. Susubukan ang isa pang worker thread sa loob ng {{retryS}} segundo."
+  },
+  "workerpools.s.givenUpSurfaceProbing": {
+    "en": "1a1aea378ae79a4f",
+    "text": "Sumuko na: {{failed}} worker thread ang hindi nakapagsimula at tumigil ang pool sa pagsisimula ng mga ito. Pumupunta ang mga hosted surface sa request pool. Sinusubukan na ang isa pang worker thread."
+  },
+  "workerpools.s.givenUpRequestProbing": {
+    "en": "7df55ed536d4e065",
+    "text": "Sumuko na: {{failed}} worker thread ang hindi nakapagsimula at tumigil ang pool sa pagsisimula ng mga ito. Ang front process ang sumasagot sa bawat request. Sinusubukan na ang isa pang worker thread."
+  },
   "workerpools.s.notStarted": {
     "en": "62c83c1852ddfcd4",
     "text": "Hindi nagsimula: {{configured}} ang {{setting}}, at walang sinimulang worker thread ang process na ito — hindi ito sinimulan bilang front process ng isang serbisyo, o pinahinto ang pool sa start."

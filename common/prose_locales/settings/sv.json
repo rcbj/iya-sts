@@ -1512,12 +1512,20 @@
     "text": "Startgräns för begärandearbetare (ms)"
   },
   "workers.startTimeoutMs|description": {
-    "en": "d618aed19286a7b1",
-    "text": "Hur lång tid en begärande- eller ytarbetare får ta på sig att få upp sitt tillstånd (lagret, nycklarna, de skapade raderna och koordineringen) innan den rapporterar att den inte kunde starta. Tre misslyckanden i rad och poolen slutar starta arbetare och besvarar allt i processen som håller socketarna. Höj värdet där en arbetares start är långsam — en stor uppsättning sfärnycklar som varje start certifierar om, en kall databas (#311)."
+    "en": "81d7608fc4c1da1f",
+    "text": "Hur lång tid en begärande- eller ytarbetare får ta på sig att få upp sitt tillstånd (lagret, nycklarna, de skapade raderna och koordineringen) innan den rapporterar att den inte kunde starta. Tre misslyckanden i rad och poolen slutar starta arbetare tills workers.giveUpRetryMs och prövar sedan en; tills den är uppe stannar begärandena i frontprocessen. Höj värdet där en arbetares start är långsam — en stor uppsättning sfärnycklar som varje start certifierar om, en kall databas (#311)."
   },
   "workers.startTimeoutMs|restartReason": {
     "en": "7ac1de67a7c566c0",
     "text": "en arbetare läser den en gång, när den startar"
+  },
+  "workers.giveUpRetryMs|label": {
+    "en": "4e9da2141c451b07",
+    "text": "Väntan innan nytt försök efter uppgivande (ms)"
+  },
+  "workers.giveUpRetryMs|description": {
+    "en": "e4e6fa0869cb03c2",
+    "text": "Hur länge poolen väntar, efter att tre arbetare i rad inte kunde starta, innan den prövar EN arbetare igen. Väntan fördubblas efter varje försök som också misslyckas, och blir aldrig längre än en timme. Tills den arbetaren rapporterar att den är redo stannar begärandena där uppgivandet lade dem: frontprocessen, eller protokollpoolen för de värdade ytorna. En arbetare som kommer upp häver uppgivandet och resten av poolen startas. 0 är det gamla beteendet: uppgiven tills den här processen startar om. Läses när en avsvalning ställs in (#333)."
   },
   "workers.requestCount|label": {
     "en": "d742f198c4f9ad17",

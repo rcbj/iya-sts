@@ -1512,12 +1512,20 @@
     "text": "Límite de arranque de un worker de solicitudes (ms)"
   },
   "workers.startTimeoutMs|description": {
-    "en": "d618aed19286a7b1",
-    "text": "Cuánto puede tardar un worker de solicitudes o de superficies en poner en marcha su estado (el almacén, las claves, las filas emitidas y la coordinación) antes de informar de que no pudo arrancar. Con tres fallos seguidos, el pool deja de crear workers y responde a todo en el proceso que tiene los sockets. Auméntelo donde el arranque de un worker sea lento — un conjunto grande de claves de dominio que cada arranque vuelve a certificar, una base de datos en frío (#311)."
+    "en": "81d7608fc4c1da1f",
+    "text": "Cuánto puede tardar un worker de solicitudes o de superficies en poner en marcha su estado (el almacén, las claves, las filas emitidas y la coordinación) antes de informar de que no pudo arrancar. Con tres fallos seguidos, el pool deja de crear workers hasta workers.giveUpRetryMs y luego prueba uno; hasta que esté listo, las solicitudes se quedan en el proceso frontal. Auméntelo donde el arranque de un worker sea lento — un conjunto grande de claves de dominio que cada arranque vuelve a certificar, una base de datos en frío (#311)."
   },
   "workers.startTimeoutMs|restartReason": {
     "en": "7ac1de67a7c566c0",
     "text": "un worker lo lee una sola vez, al arrancar"
+  },
+  "workers.giveUpRetryMs|label": {
+    "en": "4e9da2141c451b07",
+    "text": "Espera de reintento tras el abandono (ms)"
+  },
+  "workers.giveUpRetryMs|description": {
+    "en": "e4e6fa0869cb03c2",
+    "text": "Cuánto espera el pool, después de que tres workers seguidos no pudieron arrancar, antes de probar UN worker otra vez. La espera se duplica tras cada intento que también falla, y nunca pasa de una hora. Hasta que ese worker informa de que está listo, las solicitudes se quedan donde las dejó el abandono: el proceso frontal, o el pool de protocolo para las superficies alojadas. Un worker que arranca levanta el abandono y se crea el resto del pool. 0 es el comportamiento anterior: abandonado hasta que este proceso se reinicia. Se lee cuando se arma un enfriamiento (#333)."
   },
   "workers.requestCount|label": {
     "en": "d742f198c4f9ad17",

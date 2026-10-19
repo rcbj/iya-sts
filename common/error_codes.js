@@ -1211,9 +1211,12 @@ const CODES = [
       'each was answered 502.',
     spec: '' },
   { code: 'STS-WORKER-0023',
-    summary: 'Request workers kept exiting immediately without serving ' +
-      'anything, so the pool stopped forking them and every request ' +
-      'is handled in the front process.',
+    summary: 'Request workers kept failing to start, so the pool stopped ' +
+      'forking them. Unless workers.giveUpRetryMs is 0 it tries one ' +
+      'again after that wait, doubled after each failed attempt and ' +
+      'never longer than an hour. Until a worker is ready, requests ' +
+      'stay in the front process (the hosted surfaces stay on the ' +
+      'protocol workers).',
     spec: '' },
   { code: 'STS-WORKER-0024',
     summary: 'The service refused to start: workers.dispatch names paths to ' +
@@ -1338,6 +1341,13 @@ const CODES = [
       'ahead of it (#616: an LDAP search streaming its entries) could not ' +
       'be handed to the caller waiting in the front process — its socket ' +
       'write threw. The operation itself still ends with its answer.',
+    spec: '' },
+  { code: 'STS-WORKER-0050',
+    summary: 'After giving up, the pool scheduled another attempt to ' +
+      'start one worker, after workers.giveUpRetryMs (doubled after ' +
+      'each failed attempt, and never longer than an hour). Until a ' +
+      'worker is ready, requests stay in the front process, or the ' +
+      'hosted surfaces stay on the protocol workers.',
     spec: '' },
   // ===== STORE =============================================================
   { code: 'STS-STORE-0001',
