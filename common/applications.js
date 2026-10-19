@@ -6678,9 +6678,11 @@ const SIMPLE_FIELD_ATTRIBUTES = [
   'samlEntityId', 'samlAssertionConsumerService', 'samlSingleLogoutService',
   'samlSpMetadataUrl', 'samlSigningCertificate', 'samlEncryptionCertificate',
   'saml2NameIdFormat', 'saml2SignAssertion', 'saml2EncryptAssertion',
-  // #426: whether this identity provider may start a sign-in.
+  // #426: whether this identity provider may start a sign-in. Not the
+  // OAuth pair (`oauthThirdPartyInitiatedLogin`, `oauthInitiateLoginUri`):
+  // that sub-tab's simple set is rcbj's two working applications' fields,
+  // no more (tests/subtab_views.js), so they are under Advanced there.
   'saml2IdpInitiatedSso', 'saml11IdpInitiatedSso', 'wsfedIdpInitiatedSso',
-  'oauthThirdPartyInitiatedLogin', 'oauthInitiateLoginUri',
   // WS-Federation, WS-Trust, Kerberos: their identifiers and addresses.
   'wsfedRealm', 'wsfedReplyUrl', 'wsfedSignOutUri', 'wstrustAppliesTo',
   'krb5ServicePrincipalName',
