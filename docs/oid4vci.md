@@ -286,7 +286,8 @@ the credential's own status and from whether an administrator revoked it, so
 every page that shows it agrees. Four things change it: a suspension,
 reinstatement or revocation on the Credential status tab at
 `/admin/vc#vc-tab-status`, a revocation or restore on
-`/admin/tokens`, a global sign-out, and a disabled account.
+`/admin/tokens`, an administrator's global sign-out, and a disabled account.
+The person's own Global logout on `/logout` changes none of them.
 
 `oid4vci.statusListTtlS` is how long a verifier may keep a list (it is also the
 HTTP `max-age`), and `oid4vci.statusListLifetimeS` how long the list says it is
@@ -465,8 +466,9 @@ See [Configuration](configuration.md) for how a value is resolved. Every
 * **One status index per credential, and the bit is computed.** The same index
   in every list, and a status derived from the credential's own entry and its
   revocation mark, means `/admin/tokens`, the Credential status tab at
-  `/admin/vc#vc-tab-status`, a global sign-out
-  and the sign-in door cannot disagree.
+  `/admin/vc#vc-tab-status`, an administrator's global sign-out
+  and the sign-in door cannot disagree. The person's own Global logout
+  on `/logout` leaves the credential's status as it was.
 * **The sign-in register is written at issuance, where the facts are known.**
   In development the credential endpoint accepts tokens it did not issue, so a
   credential's `sub` could name anybody. Only the realm's own record of a
@@ -514,7 +516,6 @@ See [Configuration](configuration.md) for how a value is resolved. Every
   endpoints issue the access token
 * [OAuth security profiles](oauth-security.md), for DPoP
 * [PKI](pki.md), for the certificate chains `x5u` and `x5c` name
-* [Signing out](signing-out.md), for the global sign-out that disowns
-  credentials
+* [Signing out](signing-out.md), for which sign-out disowns a credential
 * [Trust realms](trust-realms.md)
 * [What is not checked](what-is-not-checked.md)

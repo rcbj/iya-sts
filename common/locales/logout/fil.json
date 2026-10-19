@@ -5,7 +5,7 @@
   "startAgainEnd": ".",
   "inventory.holding": "Lahat ng hawak pa ng serbisyong ito para kay <code>{username}</code>, sa bawat protocol family na sinasalita nito.",
   "inventory.globalButton": "Global logout — tapusin ang lahat sa ibaba",
-  "inventory.globalNote": "Ang default. Ganito mismo ang ginagawa ng isang POST sa <code>/logout</code> na walang napili.",
+  "inventory.globalNote": "Ang default. Ganito mismo ang ginagawa ng isang POST sa <code>/logout</code> na walang napili. Mananatiling balido ang mga verifiable credential, at ang mga DID na nakatali sa mga ito.",
   "inventory.selectedButton": "Tapusin ang mga naka-tsek",
   "inventory.liveCount": "<strong>{total} aktibong item</strong> sa {families, plural, one {# family} other {# na family}}. May ilan na hindi kayang tapusin ninuman — nakalista ang mga ito kasama ang dahilan, dahil ang sign-out na nagtatago sa mga ito ay magmumukhang kumpleto kahit hindi.",
   "inventory.anyUserOpen": "Walang tinitingnang password ang serbisyong ito kahit saan, kaya ang <code>?username=</code> ay puwedeng tumukoy sa kahit sino at walang ibinibigay na hindi pa totoo — isang request lang ang kailangan para mag-sign in bilang sila. Pinapatay iyon ng <code>logout.anyUser</code>.",

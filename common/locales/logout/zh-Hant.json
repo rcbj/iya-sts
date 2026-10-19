@@ -5,7 +5,7 @@
   "startAgainEnd": "。",
   "inventory.holding": "本服務在其支援的每個協定系列中仍為 <code>{username}</code> 保留的全部內容。",
   "inventory.globalButton": "全域登出 — 結束下方的所有內容",
-  "inventory.globalNote": "預設選項。向 <code>/logout</code> 傳送未選取任何內容的 POST 要求，效果與此完全相同。",
+  "inventory.globalNote": "預設選項。向 <code>/logout</code> 傳送未選取任何內容的 POST 要求，效果與此完全相同。可驗證憑證及其所綁定的 DID 保持有效。",
   "inventory.selectedButton": "結束已勾選的項目",
   "inventory.liveCount": "<strong>{total} 個有效項目</strong>，分布在 {families, plural, other {# 個系列}}中。其中一些任何人都無法結束 — 它們連同原因一併列出，因為隱藏它們的登出看似完整，實則不然。",
   "inventory.anyUserOpen": "本服務在任何地方都不檢查密碼，因此 <code>?username=</code> 可以指定任何人，且不會授予原本不具備的任何權限 — 以其身分登入只需一個要求。<code>logout.anyUser</code> 可關閉此功能。",

@@ -5,7 +5,7 @@
   "startAgainEnd": ".",
   "inventory.holding": "Tout ce que ce service détient encore pour <code>{username}</code>, dans chacune des familles de protocoles qu’il parle.",
   "inventory.globalButton": "Déconnexion globale — tout terminer ci-dessous",
-  "inventory.globalNote": "Le choix par défaut. Un POST vers <code>/logout</code> sans rien de sélectionné fait exactement ceci.",
+  "inventory.globalNote": "Le choix par défaut. Un POST vers <code>/logout</code> sans rien de sélectionné fait exactement ceci. Les justificatifs vérifiables, et les DID auxquels ils sont liés, restent valides.",
   "inventory.selectedButton": "Terminer les éléments cochés",
   "inventory.liveCount": "<strong>{total} élément(s) actif(s)</strong> dans {families, plural, one {# famille} other {# familles}}. Certains ne peuvent être terminés par personne — ils sont indiqués avec la raison, car une déconnexion qui les masquerait paraîtrait complète alors qu’elle ne l’est pas.",
   "inventory.anyUserOpen": "Ce service ne vérifie aucun mot de passe, nulle part : <code>?username=</code> désigne donc n’importe qui et n’accorde rien qui ne soit déjà possible — se connecter sous son nom ne demande qu’une requête. <code>logout.anyUser</code> désactive cela.",

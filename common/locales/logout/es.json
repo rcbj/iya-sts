@@ -5,7 +5,7 @@
   "startAgainEnd": ".",
   "inventory.holding": "Todo lo que este servicio aún conserva para <code>{username}</code>, en cada familia de protocolos que habla.",
   "inventory.globalButton": "Cierre de sesión global — terminar todo lo de abajo",
-  "inventory.globalNote": "La opción predeterminada. Un POST a <code>/logout</code> sin nada seleccionado hace exactamente esto.",
+  "inventory.globalNote": "La opción predeterminada. Un POST a <code>/logout</code> sin nada seleccionado hace exactamente esto. Las credenciales verificables, y los DID a los que están vinculadas, siguen siendo válidas.",
   "inventory.selectedButton": "Terminar los elementos marcados",
   "inventory.liveCount": "<strong>{total} elemento(s) activo(s)</strong> en {families, plural, one {# familia} other {# familias}}. Algunos no los puede terminar nadie — aparecen con el motivo, porque un cierre de sesión que los ocultara parecería completo sin serlo.",
   "inventory.anyUserOpen": "Este servicio no comprueba ninguna contraseña en ningún sitio, así que <code>?username=</code> nombra a cualquiera y no concede nada que no fuera ya posible — iniciar sesión como esa persona cuesta una sola solicitud. <code>logout.anyUser</code> lo desactiva.",
