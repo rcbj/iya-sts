@@ -80,7 +80,7 @@ for GCP's reason.
 
 | AWS | GCP | Azure | Why this and not the obvious alternative |
 |---|---|---|---|
-| ECS on Fargate, a service per AZ | a zonal MIG per zone, COS | **A Flexible scale set per zone with one instance, Ubuntu 24.04 LTS, Docker from Ubuntu's archive**. `node-a`'s is made first. | Container Apps proxies what it publishes. Container Instances has no zonal load-balanced service that follows its instances. Neither gives 389/636/88/gRPC plus a client certificate at the node. AKS is a cluster to keep. Ubuntu's unattended-upgrades is the nearest thing to COS. A scale set rather than a bare VM because it **repairs**: the Application Health extension asks `/healthcheck`, and a failing node is replaced after `PT30M`. |
+| ECS on Fargate, a service per AZ | a zonal MIG per zone, COS | **A Flexible scale set per zone with one instance, Ubuntu 24.04 LTS, Docker from Ubuntu's archive**. `node-a`'s is made first. | Container Apps proxies what it publishes. Container Instances has no zonal load-balanced service that follows its instances. Neither gives 389/636/88/gRPC plus a client certificate at the node. AKS is a cluster to keep. Ubuntu's unattended-upgrades is the nearest thing to COS. A scale set rather than a bare VM because it **repairs**: the Application Health extension asks `/healthcheck`, and three consecutive failures replace the node once the `PT30M` repair grace has passed. |
 | task definition | systemd units | **The same units**, in order: `sts-disk` → `sts-registry` → `sts-secrets` → `sts-cert` → `sts-schema` (→ `sts-global-schema` in the primary cell) → `sts-node`. `sts-node` is enabled, so a reboot starts it again. | `Requires=`/`After=` is `dependsOn: SUCCESS` |
 | ECS `secrets` | `sts-secrets` from Secret Manager | `sts-secrets` from **Key Vault** over REST with the VM's managed identity, into env files on `/run` | Nothing secret is in the VM's model. The database passwords are read by the SERVICE through `common/secrets.js`'s `azure` provider (`AZURE_CLIENT_ID` names the identity), and the KEK is a Key Vault KEY it wraps with (`azure-keys`, *The key-encryption key*, below) |
 | ECR pull | `docker-credential-gcr` | `/etc/sts/registry-login.sh`: an Entra ID token from the metadata endpoint, exchanged at the registry. It runs before every start of the node. | The registry's token lasts about three hours, and systemd restarts the node long after boot |
@@ -96,6 +96,19 @@ for GCP's reason.
 | a project key / cell keys per region | a key ring per region | **A key vault per region** with `iya-sts` (single-cell and the global tier) and `iya-sts-cell` (a cell's own data), both purge-protected | A key is regional and never replicated, which is the residency line. The global tier needs no multi-region key here: a cross-region replica uses its own region's key |
 | ECR, replicated | Artifact Registry | **ACR Premium, geo-replicated** into every region an environment uses | Premium is the tier that replicates. Nodes pull from their own region |
 | the deployer role and its boundaries | an impersonated SA | **A custom role granted only on the foundation's resource groups** | *The deployer*, below |
+
+**THREE CONSECUTIVE FAILURES REPLACE THE NODE (#330).** The load balancer's
+`probe_threshold` is 3. Azure applies that count to failures and to
+successes, so a node returns to rotation only after three good answers;
+`number_of_probes` is the older name of the same count and is kept equal.
+The probe stops traffic. The scale set replaces the VM from the Application
+Health extension's own three probes (`numberOfProbes`) once the repair
+grace (`PT30M`) has passed. That grace is the first boot: Docker, the image
+pulls and the init units. The extension's `gracePeriod` of 600 seconds is
+the ten minutes a restarted service gets before those probes count. Both
+checks are an HTTPS GET of `/healthcheck`, so a node whose LDAPS never
+binds is not replaced for that. The inter-cell probe uses the same count
+and only removes the node from that pool.
 
 ## The vault, and why it belongs to the foundation
 

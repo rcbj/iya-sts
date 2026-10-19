@@ -85,6 +85,13 @@ resource "azurerm_lb_backend_address_pool" "nodes" {
   loadbalancer_id = azurerm_lb.public.id
 }
 
+# Three consecutive failures take a node out of rotation, and three
+# consecutive successes put it back (#330). `probe_threshold` is the count
+# Azure honors, and it applies in both directions; `number_of_probes` is
+# the older name of the same count and is kept equal. The probe stops
+# traffic. The scale set replaces the VM from the Application Health
+# extension's own three probes, once the repair grace has passed
+# (nodes.tf). A node that is still starting is inside that grace.
 resource "azurerm_lb_probe" "https" {
   name                = "https"
   loadbalancer_id     = azurerm_lb.public.id
@@ -93,7 +100,7 @@ resource "azurerm_lb_probe" "https" {
   request_path        = "/healthcheck"
   interval_in_seconds = 10
   number_of_probes    = 3
-  probe_threshold     = 2
+  probe_threshold     = 3
 }
 
 resource "azurerm_lb_rule" "published" {
