@@ -681,10 +681,11 @@ remembers a failure as a success.
   recorded `abandoned` (`STS-SCHED-0011`), and the late outcome is fenced out
   (`STS-SCHED-0003`). `ctx.stillOwner()` is the question a job asks before a
   step it cannot take back.
-* **It never starts at require time, in a standby or — for a cluster job — in
-  a request worker.** `server.js` calls `start('front')` after the state is
-  restored and before it binds; `common/request_worker.ts` calls
-  `start('per-process')`.
+* **It never starts at require time or in a standby, and a request worker
+  never SCHEDULES a cluster job — but since #408 it RUNS one's body.**
+  `server.js` calls `start('front')` after the state is restored and before
+  it binds; `common/request_worker.ts` calls `start('per-process')`. See
+  *Where a cluster run's body runs*, below.
 * **Everything the page draws is in the store** (`scheduler.runs`, a
   persisted per-realm `realms.map`): runs, the leader's row, each process's
   latest per-process run, and the command rows. A manual run or a step-down
@@ -787,13 +788,79 @@ standing), and they are live realms whose jobs ought to run.
 heartbeats — without the hold-off it would take the lease straight back on its
 next beat. It is the one addition this feature made to `cluster.js`.
 
-**The jobs registered today**, and where each is argued:
+**WHERE A CLUSTER RUN'S BODY RUNS (#408, 2026-10-19).** The leader is a
+front process, the thread that answers the main port, LDAPS and the KDC,
+and #408 found sixteen of fifty-nine jobs doing synchronous work there for
+tens of milliseconds to minutes (a key generation, a walk of every session,
+a CRL encoded per authority). A time limit is a `Promise.race` and cannot
+interrupt that. rcbj's decisions: every cluster job moves off the front by
+default, onto an EXISTING request worker (no dedicated job worker), and the
+per-process jobs and the algorithmic fixes are a follow-up. `scheduler.ts`'s
+*WHERE A CLUSTER RUN RUNS* has the argument; what a maintainer needs:
+
+* **Only `run()` moves.** The lease, the claim, the fence, the time limit and
+  the run row stay with the leader. `runClaimed()` hands `{ runId, jobId,
+  realm, trigger, params, clockOffsetMs }` to the ready protocol-pool worker
+  with the fewest requests in flight, then the shortest event-loop delay
+  (`request_pool.js`'s `schedulerRunner()`). The worker runs it with
+  `runDelegated()`, flushes, announces its commit, and answers. The leader
+  writes the outcome as before, and the row says where it ran (`ranIn`).
+  Never a surface worker: those are kept for a person waiting on a page.
+* **Nothing new is needed for correctness**, because a cluster job already
+  runs on whichever node leads and reaches the others through the store. In
+  the worker its writes replicate like a request's. The commit is announced
+  BEFORE the answer, so the pool's read-your-write generation moves for them
+  (no request finished to make `CommitAnnouncer` say so otherwise). A key set
+  or hierarchy it makes goes up the key and PKI channels, each change at a
+  newer generation (`receivePublishedKeys()`). A directory sign-out it makes
+  goes to the front on the channel (`{ ldapDrop }`), since no response is in
+  flight.
+* **Fenced, not interrupted.** At its time limit, on a lost lease or a
+  removed realm, the leader sends `{ schedulerFence }` and stops waiting. The
+  worker's `ctx.stillOwner()` answers false from then on. The front's timer
+  now fires on time, because its thread was never the one held. A worker
+  that ends under a run fails it at once with `STS-SCHED-0019`.
+* **Inline, as before #408,** where there is no ready worker: none
+  configured, a pool that gave up, or a store that does not coordinate,
+  where there are no workers at all. Also for a job a worker answers it has
+  not registered (an owner that registers only in the front process, at
+  `listen()` or a first use there). That job is logged `STS-SCHED-0020` once
+  and runs on the front for the process's life.
+* **An exemption is a reason**: `onFront: '<why>'` on the registration. An
+  empty or non-string one is refused (`STS-SCHED-0009`), and
+  `tests/scheduler_workers.js` F holds it. Two jobs carry one:
+  `scheduler.history`, which reads the whole of `scheduler.runs`, which a
+  worker does not restore (#617), and `keys.data-key-reencrypt`, whose
+  `keystore.resealOwnRows()` re-seals the rows THIS process holds sealed in
+  memory before a superseded key is destroyed. The other cluster jobs were
+  audited against front-only state (sockets, the run store, memory nothing
+  replicates) and found to work through the store or the pool's channels.
+  The ticket key and the TUF root are persisted shared maps, the SPIFFE
+  authorities are a persisted realm map, key rotations bump the key set's
+  generation, and every outbound delivery is claimed per row.
+* **Nice: a run held for load, never for long.** A due SCHEDULED run of a
+  job whose `nice` (0–19, default 10) is above 0 waits before its claim,
+  while even the least-loaded worker is heavy. Heavy means
+  `scheduler.niceBusyThreshold` requests in flight, or a 99th-percentile loop
+  delay of `scheduler.niceLagMs` in its last ten-second report
+  (`persistence.event-loop-lag` sends `{ loopLag }` up; a report over 30 s
+  old is none). A run is held at most `scheduler.niceMaxDeferS` × nice/19,
+  and never more than half its interval. That bound is measured from when
+  the run was FIRST held, in the leader's memory keyed by runId, so a new
+  slot or a lost lease drops it. Past the bound it runs regardless. Each
+  hold and each forcing through is one info line, and the row keeps
+  `deferredMs`. Never held: a manual run, an on-demand job (registered nice
+  0), a job of nice 0, and an inline run. The front has no queue to measure,
+  and its loop delay is mostly the I/O it exists to do.
+
+**The jobs registered today**, and where each is argued. Every cluster
+row's body runs on a request worker except the two marked **front**:
 
 | Job | Kind, scope | Owner and argument |
 |---|---|---|
 | `authn.session-expiry` | cluster, service | `authn/authn.ts`, `authn/CLAUDE.md` |
 | `pki.crl-directory-refresh` | cluster, service | `common/pki_revocation.js` |
-| `scheduler.history` | cluster, service; every ten minutes — the run history past its bound (per job, `scheduler.runHistoryCount` runs or `scheduler.runHistoryHours`, whichever keeps more, the latest always) and every row naming a removed realm, in batches of 2000, at most 25 a run, each written down before the next; pins a kept row whose expiry is near (#338) | `cluster/scheduler.ts`, *The run history's bound*, above |
+| `scheduler.history` | cluster, service, **front**; every ten minutes — the run history past its bound (per job, `scheduler.runHistoryCount` runs or `scheduler.runHistoryHours`, whichever keeps more, the latest always) and every row naming a removed realm, in batches of 2000, at most 25 a run, each written down before the next; pins a kept row whose expiry is near (#338) | `cluster/scheduler.ts`, *The run history's bound*, above |
 | `signing.rotate` | cluster, realm; hourly, deciding per unit from the NEXT key's age | `common/signing_rotation.ts` (#42) |
 | `signing.retire` | cluster, realm; hourly | `common/signing_rotation.ts` (#42) |
 | `signing.rotate-now` | cluster, realm; manual only, ON in every mode — what `/admin/keys` and `POST /admin-api/keys/rotate` queue | `common/signing_rotation.ts` (#48) |
@@ -846,6 +913,7 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `devices.android-status-recheck` | cluster, service (loops over realms); daily and on a list's activation — the people and devices MARKED as holding an Android-attested key, asked of the store asynchronously, a realm skipped when neither the list nor the registrations moved since its last complete recheck (#615) | `common/attestation_revocation.ts`, `common/CLAUDE.md` 3cf |
 | `oauth2.expired-token-purge` | cluster, service; hourly — a token record past its expiry and `oauth2.expiredTokenRetentionS`, and the revocation of an expired token, dated by the `exp` the revocation carries since #345 (not per-process: the revocation set is replicated, so one delete on the leader reaches every process) | `common/admin_stats.js` (P5; the ticket's "tracked tokens"), `common/CLAUDE.md` 3b |
 | `oauth2.client-secret-expiry` | cluster, realm; daily — warns (audit + log) about secrets expiring within `oauth2.clientSecretExpiryWarningDays` or applications whose every secret has expired, and removes expired secrets an application holds an unexpired one beside (never its last) | `common/signing_rotation.ts`, `common/applications.js` (P5) |
+| `keys.data-key-reencrypt` | cluster, service, **front**; hourly — re-seals every value under a superseded data key and destroys one nothing is sealed under; on the front because `keystore.resealOwnRows()` re-seals the rows the running process holds sealed in memory (#408) | `common/data_key_rotation.ts`, `common/CLAUDE.md` (*Rotation, re-sealing, destruction*) |
 
 **The timers still outside it** are listed, each with the reason it stays, in
 `tests/no_periodic_timers.js`, which fails on a new one and on an entry whose

@@ -887,6 +887,15 @@ class DataKeyRotation {
                 'been superseded for keys.dataKeyRetireAfterDays.',
       owner: 'common/data_key_rotation.ts',
       kind: 'cluster', scope: 'service',
+      // ON THE FRONT (#408): `keystore.resealOwnRows()` re-seals the key and
+      // PKI rows THIS process holds sealed in memory, and the count that
+      // follows decides a superseded key may be destroyed. Run in a request
+      // worker, the front's own sealed copies would stay under the key the
+      // pass then destroys, and the front could no longer open its signing
+      // keys once their plaintext was purged.
+      onFront: 'it re-seals the key and certificate-authority rows the ' +
+               'front process holds sealed in its own memory before a ' +
+               'superseded key is destroyed',
       everyMs: function (): number {
         return self.reencryptIntervalMs();
       },
