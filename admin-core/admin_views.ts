@@ -1592,6 +1592,7 @@ class AdminViews {
    * live.
    *
    * @returns the rows
+   * @throws when the session index could not be read
    */
   signOnSessionRows() {
     const { log, sessionStartedAt } = this.deps;
@@ -1600,9 +1601,15 @@ class AdminViews {
     const rows = [];
     // The injected map is who is cached. The list is every session the
     // index names while the window is on, and the map while it is off.
-    authn.sessionsMatching(function () {
+    // Null is an unread page. An empty row list would draw nobody signed in.
+    const matched = authn.sessionsMatching(function () {
       return true;
-    }).forEach(function (session) {
+    });
+    if (matched == null) {
+      log.debug("Leaving AdminViews.signOnSessionRows(). Unread.");
+      throw new Error('the sign-on sessions could not be read');
+    }
+    matched.forEach(function (session) {
       const id = session && session.id;
       rows.push({
         id: id,

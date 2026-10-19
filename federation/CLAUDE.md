@@ -1475,7 +1475,9 @@ sign-out that matches nothing is recorded (`STS-FED-0122`) — a partner looping
 on a sign-out for a session that already ended looks exactly like one that
 works — and answered `Requester`/`UnknownPrincipal` (SAML) or 200 (the two
 OpenID Connect channels: there is nothing left to end, and a 400 would make
-the partner retry forever).
+the partner retry forever). A failed read of the session index is not that
+no-match (`STS-AUTHN-0338`): nothing is ended and `STS-FED-0122` is not
+recorded.
 
 **HOW IT ENDS: `logout/logout.ts`'s `endPartnerSession()`**, a selective
 `terminate()` of the session and the relying parties riding on it, so the

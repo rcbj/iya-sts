@@ -2451,6 +2451,13 @@ class Saml11Sso {
       const there = (session.saml11RelyingParties || {})[rpId];
       return !!there && there.nameId === nameId && !sessionEnded(session);
     }) : [];
+    // Null is an unread page. STS-SAML-0096 is a real miss: no live
+    // session gave this relying party the NameIdentifier.
+    if (live == null) {
+      log.debug("Leaving Saml11Sso.queryReleasePolicy(). Unread.");
+      return { refuse: true, errorCode: 'STS-AUTHN-0338',
+               why: 'the sessions could not be read' };
+    }
     if (!live.length) {
       log.debug("Leaving Saml11Sso.queryReleasePolicy(). Unknown subject.");
       return { refuse: true, errorCode: 'STS-SAML-0096',
@@ -2750,6 +2757,18 @@ class Saml11Sso {
         }
         return this.answerQuery(req, res, request, query, attributeQuery,
                                 authnQuery, scoped, requestId, answer);
+      }).catch((e) => {
+        // The cell that holds the session could not be asked, because
+        // the index could not be read. That is not a query with no subject.
+        log.error(errorCodes.tag('STS-AUTHN-0338') +
+                  'saml11: a query could not be placed because the ' +
+                  'sessions could not be read: ' + ((e && e.message) || e));
+        if (res.headersSent) {
+          return undefined;
+        }
+        errorCodes.mark(res, 'STS-AUTHN-0338');
+        return answer(STATUS_RESPONDER, 'the sessions could not be read',
+                      '', requestId, '');
       });
     }
 
@@ -2819,8 +2838,11 @@ class Saml11Sso {
         errorCodes.mark(res, policy.errorCode);
         log.debug("Leaving Saml11Sso.answerQuery(). A query was refused in " +
                   "product mode.");
-        // error-code: none — marked above: STS-SAML-0039, 0096 or 0077.
-        return answer(STATUS_REQUESTER, 'this realm is in PRODUCT mode, ' +
+        // error-code: none — marked above: STS-AUTHN-0338, STS-SAML-0039,
+        // 0096 or 0077. An unread index is the responder's failure.
+        const status = policy.errorCode === 'STS-AUTHN-0338'
+          ? STATUS_RESPONDER : STATUS_REQUESTER;
+        return answer(status, 'this realm is in PRODUCT mode, ' +
                       'which answers a query only for a registered, ' +
                       'authenticated relying party about a subject it ' +
                       'holds a live session for: ' + policy.why, '',
@@ -2882,9 +2904,21 @@ class Saml11Sso {
       // they sign in".
       // ---------------------------------------------------------------------
       const now = Date.now();
-      const live = (typeof sessionsOf === 'function' ? sessionsOf(username) :
-                    [])
-        .filter((one) => {
+      const held = typeof sessionsOf === 'function' ? sessionsOf(username)
+                                                    : [];
+      // Null is an unread username index. Signing Success and "no
+      // authentication is recorded" would be a statement this service
+      // could not make.
+      if (held == null) {
+        log.debug("Leaving Saml11Sso.answerQuery(). The sessions of " +
+                  username + " could not be read.");
+        errorCodes.mark(res, 'STS-AUTHN-0338');
+        return answer(STATUS_RESPONDER,
+                      'the sessions of "' + username + '" could not be ' +
+                      'read, so whether an authentication was recorded ' +
+                      'cannot be said', '', requestId, rpId, rpId);
+      }
+      const live = held.filter((one) => {
           return one && one.authenticated !== false && !one.rpSurface &&
                  (!one.expires || one.expires > now);
         })[0];

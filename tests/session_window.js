@@ -8,7 +8,8 @@
 // authn.sessionWindow defaults to auto (#350). Without minted persistence
 // the full map stays. A miss loads a sealed session. Eviction forgets the
 // memory copy after the commit and does not end the session. A read error
-// is not absence.
+// is not absence. A failed index read is unread, not an empty list and
+// not the rows still in the cache.
 
 delete process.env.CONFIG_FILE;
 
@@ -1114,9 +1115,14 @@ function partialWalkCase(t) {
   const localName = keystore.keyedDigest('session-username', 'walk-local');
   const missName = keystore.keyedDigest('session-username', 'walk-miss');
   const parentKey = keystore.keyedDigest('session-parent', 'walk-parent');
+  const keepParent = keystore.keyedDigest('session-parent', 'walk-keep');
   const seen = [];
   let countNull = false;
   let localNull = false;
+  let partnerNull = false;
+  let bodyBad = false;
+  let childrenNull = false;
+  let pageNull = false;
   queryFn = function (name, args) {
     seen.push(name);
     const realm = args && args[0];
@@ -1128,6 +1134,10 @@ function partialWalkCase(t) {
       return { n: 11 };
     }
     if (name === 'session.read') {
+      if (bodyBad && (second === 'walk-bad' || second === 'walk-bad-fed' ||
+                      second === 'walk-bad-page')) {
+        return { body: 'not-a-seal' };
+      }
       const body = bodies[second];
       if (!body) {
         return null;
@@ -1144,6 +1154,12 @@ function partialWalkCase(t) {
       return [];
     }
     if (name === 'session.children') {
+      if (childrenNull && second === keepParent) {
+        return null;
+      }
+      if (bodyBad && second === parentKey) {
+        return ['walk-bad', 'walk-child'];
+      }
       if (second !== parentKey) {
         return [];
       }
@@ -1160,10 +1176,24 @@ function partialWalkCase(t) {
       return ['walk-keyed'];
     }
     if (name === 'session.partner' && realm === REALM &&
+        partnerNull && second === 'rel-unread') {
+      return null;
+    }
+    if (name === 'session.partner' && realm === REALM &&
+        bodyBad && second === 'rel-bad') {
+      return ['walk-bad-fed'];
+    }
+    if (name === 'session.partner' && realm === REALM &&
         second === 'rel-walk') {
       return ['walk-fed'];
     }
     if (name === 'session.page') {
+      if (pageNull) {
+        return null;
+      }
+      if (bodyBad) {
+        return ['walk-bad-page'];
+      }
       if (realm !== REALM || second) {
         return [];
       }
@@ -1243,13 +1273,77 @@ function partialWalkCase(t) {
       user: { username: 'walk-local', sub: '' }
     });
     authn.sessions.set(local.id, local);
-    localNull = true;
     seen.length = 0;
+    const paged = authn.sessionsOf('walk-local');
+    t.equal(paged && paged.length, 1,
+            'an empty username key list still pages and keeps the ' +
+            'unflushed row');
+    t.check(seen.indexOf('session.page') >= 0,
+            'an empty username key list does page');
+    seen.length = 0;
+    localNull = true;
     const unflushed = authn.sessionsOf('walk-local');
-    t.equal(unflushed.length, 1,
-            'an unflushed row is still found when the username read fails');
+    t.equal(unflushed, null,
+            'a failed username read is not the unflushed row');
     t.equal(seen.indexOf('session.page'), -1,
             'a failed username read is not the miss that pages');
+    const fedLocal = sessionBody('walk-fed-local', {
+      fedPartnerSession: { relationship: 'rel-unread' },
+      user: { username: 'walk-fed-local', sub: '' }
+    });
+    authn.sessions.set(fedLocal.id, fedLocal);
+    partnerNull = true;
+    t.equal(authn.sessionsForRelationship('rel-unread'), null,
+            'a failed partner read is not the unflushed map');
+    t.equal(authn.sessions.get('walk-fed-local').id, 'walk-fed-local',
+            'the unflushed federated row is still held');
+    partnerNull = false;
+    bodyBad = true;
+    t.equal(authn.sessionsForRelationship('rel-bad'), null,
+            'a partner body that will not open is unread');
+    t.equal(authn.derivedFrom('walk-parent'), null,
+            'a child body that will not open is unread');
+    const pageBlow = thrownMessage(function () {
+      logout.liveSessions();
+    });
+    t.check(/could not be read/.test(pageBlow),
+            'a page body that will not open fails the live list', pageBlow);
+    bodyBad = false;
+    const keep = sessionBody('walk-keep', {
+      user: { username: 'walk-keep', sub: '' }
+    });
+    authn.sessions.set(keep.id, keep);
+    childrenNull = true;
+    t.equal(authn.derivedFrom('walk-keep'), null,
+            'a failed children read is not an empty generation');
+    t.equal(authn.endSessionById('walk-keep', 'a test sign-out'), null,
+            'the parent is not ended while its children are unread');
+    t.equal(authn.sessions.get('walk-keep') &&
+            authn.sessions.get('walk-keep').id, 'walk-keep',
+            'the parent stays in the map');
+    t.equal(audits('session.end', 'walk-keep').length, 0,
+            'an unread children walk audits no session.end');
+    childrenNull = false;
+    pageNull = true;
+    const liveBlow = thrownMessage(function () {
+      logout.liveSessions();
+    });
+    t.check(/could not be read/.test(liveBlow),
+            'an unread page fails the live list', liveBlow);
+    const inventoryBlow = thrownMessage(function () {
+      logout.inventoryFor(held);
+    });
+    t.check(/could not be read/.test(inventoryBlow),
+            'an unread page fails the inventory', inventoryBlow);
+    const rowsBlow = thrownMessage(function () {
+      adminViews.signOnSessionRows();
+    });
+    t.check(/could not be read/.test(rowsBlow),
+            'an unread page fails the console list', rowsBlow);
+    pageNull = false;
+    localNull = false;
+    bodyBad = false;
+    partnerNull = false;
     authn.sessions.delete('walk-local');
     t.equal(authn.sessions.get('walk-keyed'), undefined,
             'the keyed row is not cached before the sign-in');

@@ -1693,7 +1693,10 @@ matches. `sessionsOf` filters `username_key` and, on a miss, pages the
 index. It does not filter `subject_key` and it does not call `holderKeyOf`,
 so a `urn:uuid:` subject is still found by the username. The keyed scan
 finds `credential_key`. A walk that sees only the cache, and treats the
-rest as gone, is the bug this exists to prevent. The window, the cache
+rest as gone, is the bug this exists to prevent. A failed index read is
+unread (`null`), not an empty list and not the rows still in the cache,
+and a sign-out does not end the parent while its children could not be
+read (`STS-AUTHN-0338`, recorded, never sent). The window, the cache
 size and the read timeout are properties of the process. The window is
 fixed at start: turning it off while running is refused, because a start
 that skipped the session bodies would then answer committed sessions as

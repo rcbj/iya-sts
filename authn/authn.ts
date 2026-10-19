@@ -2304,7 +2304,8 @@ class Authn {
    * @param parentId - the parent session id
    * @param store - the partition to look in; the ambient one by default
    * @param alsoRealm - one further realm whose partition is walked
-   * @returns the derived sessions found
+   * @returns the derived sessions found, or null when a children read
+   *   failed. Null is not an empty generation.
    */
   derivedFrom(parentId, store?, alsoRealm?) {
     const { realms, log, errorCodes } = this.deps;
@@ -2339,7 +2340,8 @@ class Authn {
       asked.push(also);
     }
     // Unflushed children are already in the map. The index names children
-    // this process has not loaded. A failed index read keeps the map hits.
+    // this process has not loaded. A failed read is not that shorter list:
+    // the caller must not delete the parent while a child could not be read.
     if (this.windowOn()) {
       const parentKey = keystore.keyedDigest('session-parent',
                                               String(parentId));
@@ -2347,30 +2349,43 @@ class Authn {
         log.error(errorCodes.tag('STS-AUTHN-0338') +
                   'authn: a session could not be read: the parent digest ' +
                   'is missing.');
-      } else {
-        asked.forEach(function (realmId) {
-          const keys = sessionWindow.indexKeys('session.children',
-                                                [realmId, parentKey]);
-          if (!keys) {
-            return;
+        log.debug("Leaving Authn.derivedFrom(). Unread.");
+        return null;
+      }
+      for (let i = 0; i < asked.length; i++) {
+        const realmId = asked[i];
+        const keys = sessionWindow.indexKeys('session.children',
+                                              [realmId, parentKey]);
+        if (keys === null) {
+          log.error(errorCodes.tag('STS-AUTHN-0338') +
+                    'authn: a session could not be read: the children of ' +
+                    parentId + ' in ' + realmId + '.');
+          log.debug("Leaving Authn.derivedFrom(). Unread.");
+          return null;
+        }
+        for (let j = 0; j < keys.length; j++) {
+          const loaded = sessionWindow.loadByDigest(realmId, keys[j]);
+          if (!loaded.ok && loaded.error) {
+            log.error(errorCodes.tag('STS-AUTHN-0338') +
+                      'authn: a session could not be read: a child of ' +
+                      parentId + ' would not open.');
+            log.debug("Leaving Authn.derivedFrom(). Unread.");
+            return null;
           }
-          keys.forEach(function (digest) {
-            const loaded = sessionWindow.loadByDigest(realmId, digest);
-            if (!loaded.ok || !loaded.session) {
-              return;
-            }
-            const held = loaded.session;
-            const id = String(held.id || '');
-            if (!id || held.derivedFrom !== parentId || seen[id]) {
-              return;
-            }
-            if (String(held.derivedFromRealm || realmId) !== here) {
-              return;
-            }
-            seen[id] = true;
-            found.push({ id: id, session: held, realm: realmId });
-          });
-        });
+          if (!loaded.ok || !loaded.session) {
+            continue;
+          }
+          const held = loaded.session;
+          const id = String(held.id || '');
+          if (!id || held.derivedFrom !== parentId || seen[id]) {
+            continue;
+          }
+          if (String(held.derivedFromRealm || realmId) !== here) {
+            continue;
+          }
+          seen[id] = true;
+          found.push({ id: id, session: held, realm: realmId });
+        }
       }
     }
     log.debug("Leaving Authn.derivedFrom(). " + found.length +
@@ -6675,10 +6690,18 @@ class Authn {
     // live in the realm the console session's person signed in through, which
     // is the console session's own `derivedFromRealm`, named here.
     if (id && session) {
-      this.derivedFrom(id, undefined,
+      const children = this.derivedFrom(id, undefined,
                        session.rpSurface === 'admin'
-                         ? session.derivedFromRealm : '')
-        .forEach(function (child) {
+                         ? session.derivedFromRealm : '');
+      // Null is a children read that failed, already recorded as
+      // STS-AUTHN-0338. The parent stays: deleting it would leave a
+      // committed child signed in, with no cascade and no logout.
+      if (children == null) {
+        log.debug("Leaving Authn.dropSession(). The derived sessions " +
+                  "could not be read.");
+        return null;
+      }
+      children.forEach(function (child) {
         log.info('authn: ending the ' + (child.session.rpSurface || 'relying ' +
             'party') +
                  ' session ' + child.id + ' (realm ' + child.realm + ') with ' +
@@ -6909,7 +6932,8 @@ class Authn {
    * The comparison is on the username exactly as typed.
    *
    * @param username - the username
-   * @returns the sessions
+   * @returns the sessions, or null when the index could not be read.
+   *   Null is not an empty list and not the realm map.
    */
   sessionsOf(username) {
     const { log, realms, errorCodes } = this.deps;
@@ -6939,39 +6963,58 @@ class Authn {
       const nameKey = keystore.keyedDigest('session-username', wanted);
       // A missing digest is not an empty username. The filter cannot run,
       // so the page is the walk. Returning nobody would hide the row.
-      let missed = !nameKey;
+      let page = false;
       if (!nameKey) {
         log.error(errorCodes.tag('STS-AUTHN-0338') +
                   'authn: a session could not be read: the username ' +
                   'digest is missing.');
+        page = true;
       } else {
         const keys = sessionWindow.indexKeys('session.username',
                                               [realmId, nameKey]);
-        // null is a failed read, already logged. It is not a miss, and
-        // it is not nobody: paging the same store does not repair it.
+        // null is a failed read. It is not a miss, and the realm map is
+        // not every session of this username. Paging does not repair it.
         if (keys === null) {
-          missed = false;
-        } else if (!keys.length) {
-          missed = true;
+          log.error(errorCodes.tag('STS-AUTHN-0338') +
+                    'authn: a session could not be read: the username ' +
+                    'index.');
+          log.debug("Leaving Authn.sessionsOf(). Unread.");
+          return null;
+        }
+        if (!keys.length) {
+          page = true;
         } else {
-          keys.forEach(function (digest) {
-            const loaded = sessionWindow.loadByDigest(realmId, digest);
+          for (let i = 0; i < keys.length; i++) {
+            const loaded = sessionWindow.loadByDigest(realmId, keys[i]);
+            if (!loaded.ok && loaded.error) {
+              log.error(errorCodes.tag('STS-AUTHN-0338') +
+                        'authn: a session could not be read: a session ' +
+                        'of ' + wanted + ' would not open.');
+              log.debug("Leaving Authn.sessionsOf(). Unread.");
+              return null;
+            }
             if (loaded.ok && loaded.session) {
               take(loaded.session);
             }
-          });
+          }
         }
       }
-      if (missed) {
+      if (page) {
         const rows = this.indexedSessions(realmId, null);
-        if (rows) {
-          rows.forEach(function (row) {
-            take(row.session);
-          });
+        if (!rows) {
+          log.error(errorCodes.tag('STS-AUTHN-0338') +
+                    'authn: a session could not be read: the page for ' +
+                    wanted + '.');
+          log.debug("Leaving Authn.sessionsOf(). Unread.");
+          return null;
         }
+        rows.forEach(function (row) {
+          take(row.session);
+        });
       }
       // Unflushed rows are not in the index yet. realmMap is those rows,
-      // not the facade, whose forEach pages the index.
+      // not the facade, whose forEach pages the index. Only after a read
+      // that returned a key list.
       sessions.realmMap().forEach(function (session) {
         take(session);
       });
@@ -6998,10 +7041,11 @@ class Authn {
    * is the realm map.
    *
    * @param relationship - the federation relationship id
-   * @returns the sessions, ended ones included
+   * @returns the sessions, ended ones included, or null when the index
+   *   could not be read. Null is not an empty list and not the realm map.
    */
   sessionsForRelationship(relationship) {
-    const { log, realms } = this.deps;
+    const { log, realms, errorCodes } = this.deps;
     log.debug("Entering Authn.sessionsForRelationship(). " + relationship);
     const wanted = String(relationship || '');
     const out = [];
@@ -7025,14 +7069,28 @@ class Authn {
       const realmId = realms.currentId();
       const keys = sessionWindow.indexKeys('session.partner',
                                             [realmId, wanted]);
-      if (keys) {
-        keys.forEach(function (digest) {
-          const loaded = sessionWindow.loadByDigest(realmId, digest);
-          if (loaded.ok && loaded.session) {
-            take(loaded.session);
-          }
-        });
+      // null is a failed read. The unflushed map is not the relationship.
+      if (keys === null) {
+        log.error(errorCodes.tag('STS-AUTHN-0338') +
+                  'authn: a session could not be read: the partner index ' +
+                  'for ' + wanted + '.');
+        log.debug("Leaving Authn.sessionsForRelationship(). Unread.");
+        return null;
       }
+      for (let i = 0; i < keys.length; i++) {
+        const loaded = sessionWindow.loadByDigest(realmId, keys[i]);
+        if (!loaded.ok && loaded.error) {
+          log.error(errorCodes.tag('STS-AUTHN-0338') +
+                    'authn: a session could not be read: a session of ' +
+                    wanted + ' would not open.');
+          log.debug("Leaving Authn.sessionsForRelationship(). Unread.");
+          return null;
+        }
+        if (loaded.ok && loaded.session) {
+          take(loaded.session);
+        }
+      }
+      // A query that returned a list still adds rows not flushed yet.
       sessions.realmMap().forEach(function (session) {
         take(session);
       });
@@ -7046,7 +7104,8 @@ class Authn {
   }
 
   // The index plus rows this process has not flushed. Null when the index
-  // could not be read; that failure is already logged.
+  // could not be read or a listed body would not open. The cache is not
+  // merged into that failure: a partial page is not the whole store.
   private indexedSessions(realmId, store) {
     const { log } = this.deps;
     log.debug("Entering Authn.indexedSessions().");
@@ -7057,18 +7116,22 @@ class Authn {
     }
     const out = [];
     const seen: Record<string, boolean> = {};
-    keys.forEach(function (digest) {
-      const loaded = sessionWindow.loadByDigest(realmId, digest);
+    for (let i = 0; i < keys.length; i++) {
+      const loaded = sessionWindow.loadByDigest(realmId, keys[i]);
+      if (!loaded.ok && loaded.error) {
+        log.debug("Leaving Authn.indexedSessions(). Unread.");
+        return null;
+      }
       if (!loaded.ok || !loaded.session || !loaded.session.id) {
-        return;
+        continue;
       }
       const id = String(loaded.session.id);
       if (seen[id]) {
-        return;
+        continue;
       }
       seen[id] = true;
       out.push({ id: id, session: loaded.session });
-    });
+    }
     if (store) {
       store.forEach(function (session, id) {
         if (!session || seen[id]) {
@@ -7132,18 +7195,21 @@ class Authn {
    * and without expiring them.
    *
    * @param test - the predicate
-   * @returns the matching sessions
+   * @returns the matching sessions, or null when the page could not be
+   *   read. Null is not an empty list, and the cache is not walked.
    */
   sessionsMatching(test) {
-    const { log, realms } = this.deps;
+    const { log, realms, errorCodes } = this.deps;
     log.debug("Entering Authn.sessionsMatching().");
     const out = [];
     if (this.windowOn()) {
       const rows = this.indexedSessions(realms.currentId(),
                                          sessions.realmMap());
       if (!rows) {
-        log.debug("Leaving Authn.sessionsMatching(). 0 session(s).");
-        return out;
+        log.error(errorCodes.tag('STS-AUTHN-0338') +
+                  'authn: a session could not be read: the page.');
+        log.debug("Leaving Authn.sessionsMatching(). Unread.");
+        return null;
       }
       rows.forEach(function (row) {
         if (test(row.session)) {

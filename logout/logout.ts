@@ -586,9 +586,16 @@ class Logout {
     keys.forEach((key) => { out.set(String(key || ''), []); });
     // holderKeyOf moves when a urn:uuid subject resolves, so it is not a
     // column. The page is every sealed body; a cached subset is not.
-    authn.sessionsMatching(function () {
+    // Null is an unread page. An empty map would let a global sign-out
+    // end nobody and audit that it ended nothing.
+    const matched = authn.sessionsMatching(function () {
       return true;
-    }).forEach((session) => {
+    });
+    if (matched == null) {
+      log.debug("Leaving Logout.sessionsByKey(). Unread.");
+      throw new Error('the sessions could not be read');
+    }
+    matched.forEach((session) => {
       const username = (session.user && session.user.username) || '';
       const sub = (session.user && session.user.sub) || '';
       const list = out.get(stats.holderKeyOf(username, sub));
@@ -2189,6 +2196,8 @@ class Logout {
    * arrival sessions nobody has signed in to are left out.
    *
    * @returns the live sessions
+   * @throws when the session index could not be read. The cache is not
+   *   the list.
    */
   liveSessions() {
     const { log, authn, config, krb5Principals, ldapServer, stats } = this.deps;
@@ -2203,9 +2212,16 @@ class Logout {
     // drops a session when it is next looked up, so one still in the map with a
     // past `expires` is a session that has ended and has not been swept — and
     // this page is what is LIVE.
-    authn.sessionsMatching(function () {
+    const matched = authn.sessionsMatching(function () {
       return true;
-    }).forEach((session) => {
+    });
+    // Null is an unread page, already recorded as STS-AUTHN-0338. The
+    // rows still cached are not who is signed in.
+    if (matched == null) {
+      log.debug("Leaving Logout.liveSessions(). Unread.");
+      throw new Error('the sessions could not be read');
+    }
+    matched.forEach((session) => {
       // ---------------------------------------------------------------------
       // AN ARRIVAL SESSION IS NOT SOMEBODY BEING SIGNED IN, so it is not on
       // this list. `authn.startArrivalSession()` gives every browser one the
