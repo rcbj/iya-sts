@@ -4296,6 +4296,9 @@ class AdminConsole {
       // The copy buttons (2026-10-01): small, beside the value they copy.
       'button.copybtn{padding:1px 7px;margin-left:6px;font-size:.8em;' +
       'vertical-align:baseline}' +
+      // An application's identity-provider-initiated sign-in URL (#426):
+      // greyed while its switch is off, still selectable to copy.
+      '.launch-card.muted>p>code{color:#888}' +
       'a.btn{display:inline-block;padding:5px 10px;border-radius:5px;' +
       'border:1px solid #12107c;background:#12107c;color:#fff;font-size:.8em;' +
       'text-decoration:none}' +
@@ -8755,7 +8758,10 @@ const SETTING_HOMES = [
   { group: 'OAuth 2.0 / OIDC per-client', pages: ['/admin/token-lifetimes'] },
   { group: 'WS-Trust', pages: ['/admin/wstrust'] },
   // `WS-Federation` had one row, the mock relying party's wctx lifetime, and
-  // went with it (#592); its assertions' row is homed above.
+  // went with it (#592); its assertions' row is homed above. It came back with
+  // #426: who may start a sign-in, the relying party or this identity
+  // provider, which is a question about the protocol page's own endpoints.
+  { group: 'WS-Federation', pages: ['/admin/wsfed'] },
   // THE LISTENERS PAGE (#423, rcbj: "Put all the listener configuration,
   // including TLS on its own page under Server Settings->Listeners"): the
   // TLS group moved here from /admin/tls, which keeps the truststore and the

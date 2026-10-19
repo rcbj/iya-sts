@@ -1907,6 +1907,30 @@
     "en": "d6543ad76912e1b1",
     "text": "I alla lägen (#123): avsluta en webbläsares inloggningssession, så återkallas varje uppdateringstoken som utfärdats PÅ den sessionen utan offline_access — OpenID Connect Back-Channel Logout 1.0 avsnitt 2.7:s SHOULD, och RFC 9700 avsnitt 2.2.2:s MAY. En token som beviljats offline_access behålls: att överleva sessionen är vad det omfånget är till för (OIDC Core avsnitt 11). Det är det som gör att /oauth2/logout och WS-Federations wsignout1.0 betyder något för bakkanalen: utan det avslutar utloggningen cookien och lämnar en långlivad autentiseringsuppgift i klientens händer. PÅ som standard; av, eller FALSE på en klients post, återskapar klienten som uppdaterar sig tillbaka in. En token hittas via den session den UTFÄRDADES på."
   },
+  "oauth2.thirdPartyInitiatedLogin|label": {
+    "en": "b7e8b085293fbd62",
+    "text": "Inloggning initierad av identitetsleverantören (inloggning initierad av tredje part)"
+  },
+  "oauth2.thirdPartyInitiatedLogin|description": {
+    "en": "d652b991521afa8d",
+    "text": "Om /launch/{app} skickar en person till en OpenID Connect-klients initiate_login_uri (OpenID Connect Core avsnitt 4) med iss, login_hint och target_link_uri, och om användarportalen erbjuder den länken. AV som standard; oauthThirdPartyInitiatedLogin i en klients post åsidosätter det för den klienten. Klienten startar sedan en vanlig auktoriseringsbegäran, så allt efter länken är klientens egen inloggning."
+  },
+  "oauth2.spInitiatedSso|label": {
+    "en": "a4cd88a5fec219e4",
+    "text": "Inloggning initierad av klienten"
+  },
+  "oauth2.spInitiatedSso|description": {
+    "en": "2ac22081ca9a60d6",
+    "text": "Om /oauth2/authorize besvarar en klient som inte just har startats. PÅ som standard; oauthSpInitiatedSso i en klients post åsidosätter det. Avstängt besvaras en auktoriseringsbegäran från den klienten bara när den följer på en /launch av den i samma session inom oauth2.launchWindowS, en gång per start; alla andra avvisas med unauthorized_client. Beviljanden som inte passerar auktoriseringsslutpunkten påverkas inte."
+  },
+  "oauth2.launchWindowS|label": {
+    "en": "9c1c1df5174c8754",
+    "text": "Startfönster (sekunder)"
+  },
+  "oauth2.launchWindowS|description": {
+    "en": "40b4f249f1f0c2d3",
+    "text": "Hur länge efter att /launch/{app} skickat en person till en klients initiate_login_uri som den klientens auktoriseringsbegäran fortfarande räknas som att den följer på starten, för en klient vars egen start är avstängd (oauth2.spInitiatedSso)."
+  },
   "oauth2.eddsaCurve|label": {
     "en": "6637f461a494b5b2",
     "text": "EdDSA-kurva"
@@ -4363,13 +4387,21 @@
     "en": "d5e8553e9978dfda",
     "text": "Om en OSIGNERAD <samlp:AuthnRequest> — och en osignerad <samlp:LogoutRequest> från en tjänsteleverantör — avvisas. **`auto` är PÅ i produktläge och AV i utvecklingsläge.** `on` och `off` avgör oavsett läge; en tjänsteleverantör vars inlästa metadata säger AuthnRequestsSigned=\"true\" hålls till det även när detta är avstängt. Det är också vad WantAuthnRequestsSigned i den här identitetsleverantörens metadata säger.\n\nEn signatur som FINNS verifieras i alla lägen — HTTP Redirect-bindningens frågesträngssignatur (avsnitt 3.4.4.1) eller HTTP POST-bindningens inneslutna — mot tjänsteleverantörens REGISTRERADE signeringscertifikat (samlSigningCertificate, från dess metadata eller angivet på SAML 2.0-sidan), aldrig mot certifikatet som begäran bär, och en signatur som inte verifieras avvisas. Utan registrerat certifikat registreras en signatur som inte verifierad, vilket räknas som OSIGNERAD när detta är påslaget."
   },
-  "saml2.unsolicitedSso|label": {
+  "saml2.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
-    "text": "Identitetsleverantörsinitierad inloggning"
+    "text": "Inloggning initierad av identitetsleverantören"
   },
-  "saml2.unsolicitedSso|description": {
-    "en": "aff7c855f4363724",
-    "text": "Om /saml2/unsolicited[/{sp}] skickar ett OOMBETT Response (saml-profiles-2.0-os avsnitt 4.1.5) — en inloggning som startats hos den här identitetsleverantören, för en tjänsteleverantör som inte bad om det: `providerId` (eller sökvägssegmentet) anger den, `shire` en av dess registrerade assertion consumer services, `target` RelayState. Tjänsteleverantören måste vara registrerad i produktläge, adressen måste vara en som dess metadata eller dess post registrerat, och utfärdandepolicyn tillfrågas som för vilken inloggning som helst. Intyget bär inget InResponseTo, så en tjänsteleverantör avgör själv om den godtar ett; stäng av detta för en sfär vars leverantörer bara ska besvaras."
+  "saml2.idpInitiatedSso|description": {
+    "en": "9982a49370bf40a8",
+    "text": "Om /saml2/unsolicited[/{sp}] — och /launch/{app} för SAML 2.0 — skickar ett OBEGÄRT Response (saml-profiles-2.0-os avsnitt 4.1.5): en inloggning som startas vid den här identitetsleverantören för en tjänsteleverantör som inte bad om den. AV som standard; saml2IdpInitiatedSso i en applikations post åsidosätter det för enbart den tjänsteleverantören. Intyget bär ingen InResponseTo, så tjänsteleverantören kan inte skilja ett Response som skickades till den från ett som någon annan tryckt in i dess webbläsare; slå bara på detta för leverantörer som förväntar sig inloggning initierad av identitetsleverantören. Tjänsteleverantören måste vara registrerad i produktläge, adressen måste vara en som dess metadata eller dess post registrerat, och utfärdandepolicyn tillfrågas som för vilken inloggning som helst."
+  },
+  "saml2.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "Inloggning initierad av tjänsteleverantören"
+  },
+  "saml2.spInitiatedSso|description": {
+    "en": "92e8e438813d4044",
+    "text": "Om en <samlp:AuthnRequest> besvaras vid /saml2/sso — den inloggning som en tjänsteleverantör startar. PÅ som standard; saml2SpInitiatedSso i en applikations post åsidosätter det för den tjänsteleverantören. Avstängt besvaras en begäran med ett RequestDenied-Response, och tjänsteleverantören kan bara loggas in till via inloggning initierad av identitetsleverantören."
   },
   "saml2.defaultSingleLogoutService|label": {
     "en": "a81a00ce8c57908e",
@@ -4515,6 +4547,22 @@
     "en": "2e68718a26d4706c",
     "text": "Skapa en applikationspost under ou=applications första gången en förlitande part anges — genom att ett TARGET kommer in, genom att ett metadatadokument hämtas eller genom att en artefakt löses upp. Avstängt betyder att webbläsarprofilerna fortfarande fungerar och att /admin/saml11 förblir tom, vilket är vad någon som kör ett lasttest vill och ingen annan."
   },
+  "saml11.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Inloggning initierad av identitetsleverantören"
+  },
+  "saml11.idpInitiatedSso|description": {
+    "en": "37300a932ffca76b",
+    "text": "Om en SAML 1.1-inloggning som STARTAS HÄR besvaras: /saml11/sso/{rp} med ett TARGET och ingen shire, och /launch/{app} för SAML 1.1. AV som standard; saml11IdpInitiatedSso i en applikations post åsidosätter det för den förlitande parten. Den förlitande parten tar emot ett Response som den inte bad om, och kan inte skilja det från ett som någon annan tryckt in i dess webbläsare."
+  },
+  "saml11.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "Inloggning initierad av tjänsteleverantören"
+  },
+  "saml11.spInitiatedSso|description": {
+    "en": "f4b88ca2b7aa9fbc",
+    "text": "Om en SAML 1.1-inloggning som den förlitande parten startat — Shibboleth 1.3:s AuthnRequest-profil, en begäran som bär `shire` — besvaras. PÅ som standard; saml11SpInitiatedSso i en applikations post åsidosätter det. En sådan begäran är en vanlig osignerad URL, så att stänga av detta stänger dörren snarare än bevisar vem som öppnade den."
+  },
   "saml11.requestTtlMin|label": {
     "en": "f2c40fce66df42af",
     "text": "Livslängd för kvarhållet flöde (minuter)"
@@ -4578,6 +4626,22 @@
   "wstrust.jwtCertificateHeader|description": {
     "en": "d75340dbe09a7542",
     "text": "Om en JWT som den här STS:en returnerar i ett RequestSecurityTokenResponse anger certifikatkedjan för nyckeln som signerade den. Ett SAML-intyg bär sitt certifikat i sin egen XML-signatur och påverkas inte. `x5u` — standardvärdet — är kedjans adress på den här tjänsten, `/pki/chain/{scope}/{sha256}.pem`, ungefär hundra byte; `x5c` är kedjan inbäddad, lövet först och tjänstens rot sist, base64 DER, flera kilobyte; `both` är båda och `none` ingen av dem. I båda fallen är det vad en förlitande part som bara har token behöver för att nå varje certifikats CRL-distributionspunkter, OCSP-svarare och caIssuers-adress. En nyckel som ännu inte är certifierad under den här sfärens JOSE Issuing CA, och en HMAC-signatur, får ingen av dem. RFC 7515 avsnitt 4.1.5 kräver att hämtningen av `x5u` sker över TLS: med global.https avstängt är adressen `http://` och en strikt verifierare vägrar följa den. JWE-huvuden får aldrig något — ingen certifierad nyckel i den här tjänsten krypterar något. Kan anges per sfär."
+  },
+  "wsfed.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Inloggning initierad av identitetsleverantören"
+  },
+  "wsfed.idpInitiatedSso|description": {
+    "en": "62f920d6663c4e4f",
+    "text": "Om /wsfed/initiate/{rp} — och /launch/{app} för WS-Federation — loggar in en person till en förlitande part som inte bad om det, med POST till dess registrerade wsfedReplyUrl. AV som standard; wsfedIdpInitiatedSso i en applikations post åsidosätter det för den förlitande parten. Den förlitande parten tar emot ett svar som den inte bad om, och kan inte skilja det från ett som någon annan tryckt in i dess webbläsare."
+  },
+  "wsfed.spInitiatedSso|label": {
+    "en": "705a2297f2762532",
+    "text": "Inloggning initierad av den förlitande parten"
+  },
+  "wsfed.spInitiatedSso|description": {
+    "en": "d16076a2c90701e3",
+    "text": "Om en wsignin1.0 vid /wsfed — den inloggning som en förlitande part startar — besvaras. PÅ som standard; wsfedSpInitiatedSso i en applikations post åsidosätter det. En wsignin1.0 är en osignerad URL, så att stänga av detta stänger dörren snarare än bevisar vem som öppnade den."
   },
   "wsfed.assertionLifetimeMin|label": {
     "en": "92ee206f116fd412",

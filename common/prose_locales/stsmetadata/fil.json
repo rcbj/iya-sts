@@ -268,8 +268,8 @@
     "text": "partial: PAREHONG browser profile — Browser/Artifact (section 4.1) at Browser/POST (4.2) — bawat isa ay may confirmation method na kinakailangan ng section nito, na magkaibang halaga at hindi mapagpapalit. WALANG REQUEST MESSAGE SA SAML 1.1, kaya parehong sinimulan ng identity provider: nagsisimula ang isang flow kapag dumating ang browser na may dalang TARGET, hindi kailanman nagpapakilala ang relying party sa protocol, at ang pagkabigo ay isang PAHINA sa halip na Response dahil walang sasagutin. Tinatanggap at ina-advertise ang hindi standard na AuthnRequest profile ng Shibboleth (urn:mace:shibboleth:1.0:profiles:AuthnRequest), dahil ito ang ipinapadala ng bawat tunay na SAML 1.1 service provider. Ginagamit ang `shire` gaya ng pagkapadala sa development mode at dapat nakarehistro sa entry ng relying party sa PRODUCT mode (2026-09-12). Naka-sign ang Browser/POST Response gaya ng kinakailangan ng section 4.1.2.4, kasama ang assertion nito; ang pag-off ng alinmang signature ay development test case na binabalewala ng product mode (#181)."
   },
   "stsmetadata.specs.ws-federation.coverage": {
-    "en": "2abb20f4fd0f6ab0",
-    "text": "partial: ang Web (Passive) Requestor Profile ng section 13 — wsignin1.0 na may wtrealm, wreply, wctx, wct, wfresh, wauth, whr at wreq, ang sign-in response bilang form POST, at wsignout1.0/wsignoutcleanup1.0 na may mga front-channel cleanup request; bilang federation relying party (#167), tinatapos lang ng cleanup ng isang partner, na unsigned ayon sa specification, ang session matapos itong kumpirmahin ng tao sa isang pahinang may tunay na button, at ang sign-out dito ay nagpapadala sa partner ng wsignout1.0. Signed federation metadata (section 3.1) sa path ng AD FS. HINDI naipatupad, at bawat isa ay pinangangalanan sa halip na manahimik: ang active (SOAP) requestor profile lampas sa sinasagot na ng /sts, wresultptr, ang attribute service (wattr1.0) at ang pseudonym service (wpseudo1.0) na parehong sumasagot ng 501, wreqptr (tinatanggihan — ang pag-dereference ng URL mula sa isang query parameter ay server-side request forgery), token encryption sa profile na ito (walang dalang recipient certificate ang passive request), at anumang pagpapatupad ng authorization o policy. Ginagamit ang wreply gaya ng pagkapadala sa development mode at dapat isang nakarehistrong wsfedReplyUrl sa PRODUCT mode (2026-09-12)."
+    "en": "df4a48ab6e7784a2",
+    "text": "partial: ang Web (Passive) Requestor Profile ng section 13 — wsignin1.0 na may wtrealm, wreply, wctx, wct, wfresh, wauth, whr at wreq, ang sign-in response bilang form POST, at wsignout1.0/wsignoutcleanup1.0 na may mga front-channel cleanup request; bilang federation relying party (#167), tinatapos lang ng cleanup ng isang partner, na unsigned ayon sa specification, ang session matapos itong kumpirmahin ng tao sa isang pahinang may tunay na button, at ang sign-out dito ay nagpapadala sa partner ng wsignout1.0. Signed federation metadata (section 3.1) sa path ng AD FS. HINDI naipatupad, at bawat isa ay pinangangalanan sa halip na manahimik: ang active (SOAP) requestor profile lampas sa sinasagot na ng /sts, wresultptr, ang attribute service (wattr1.0) at ang pseudonym service (wpseudo1.0) na parehong sumasagot ng 501, wreqptr (tinatanggihan — ang pag-dereference ng URL mula sa isang query parameter ay server-side request forgery), token encryption sa profile na ito (walang dalang recipient certificate ang passive request), at anumang pagpapatupad ng authorization o policy. Ginagamit ang wreply gaya ng pagkapadala sa development mode at dapat isang nakarehistrong wsfedReplyUrl sa PRODUCT mode (2026-09-12). Lampas sa specification, na walang ganitong request: isang sign-in na sinimulan ng identity provider sa /wsfed/initiate/{rp} (#712), naka-off hangga't hindi nag-o-opt in ang isang relying party, at nagpo-post lang sa nakarehistrong wsfedReplyUrl nito."
   },
   "stsmetadata.specs.xmldsig.coverage": {
     "en": "668af5821905c8e5",
@@ -2107,6 +2107,18 @@
     "en": "604e81aecab74125",
     "text": "ANG PAREHONG DOKUMENTO, BAWAT APPLICATION (#494): ang entityID nito ay ang nag-iisang issuer ng realm, ang OAuth issuer nito, gaya ng saanman (#523). Ang segment ay ang identifier ng application (ang wtrealm nito) o ang slug nito. Ang segment na hindi nagpapangalan ng REHISTRADONG application ay 404 sa parehong mode (STS-WSFED-0019). no-store."
   },
+  "stsmetadata.endpoints./wsfed/initiate/:rp.what": {
+    "en": "b12c32c1473198ea",
+    "text": "NON-SPEC (#712): walang itinatakda ang WS-Federation 1.2 na request para simulan ng identity provider na ito ang isang sign-in, kaya sariling link ito ng serbisyong ito. Ang segment ay identifier (ang wtrealm nito) o slug ng isang REHISTRADONG relying party (kung hindi ay 404, STS-WSFED-0024). NAKA-OFF hangga't hindi ito ino-on ng wsfed.idpInitiatedSso o ng wsfedIdpInitiatedSso ng entry (403, STS-WSFED-0025). Tinatanggihan ang wreply (STS-WSFED-0026): napupunta lang ang response sa unang wsfedReplyUrl na nakarehistro para rito, hindi kailanman sa isang naobserbahan (STS-WSFED-0027 kapag wala). Ibinabalik ang wctx nang byte por byte; ang tokenType at trust ay may parehong kahulugan gaya sa /wsfed. Ang issuance ay gaya ng sa isang wsignin1.0 — ang session, ang issuance policy, session-presented, ang realm na itinatala para sa /logout — at ang pagtanggi dahil sa risk ay nagse-step up sa tao nang isang beses."
+  },
+  "stsmetadata.endpoints./wsfed/initiate/:rp.effect": {
+    "en": "8beda07914540942",
+    "text": "isina-sign in ang tao kung kailangan, pagkatapos ay nagpo-POST ng section 13.2.2 sign-in response sa nakarehistrong reply address ng relying party"
+  },
+  "stsmetadata.endpoints./wsfed/initiate.what": {
+    "en": "9eaa4f8f36279f9e",
+    "text": "NON-SPEC (#712): /wsfed/initiate/{rp} na ang relying party ay nasa ?wtrealm= sa halip na sa isang path segment, para sa identifier na hindi maayos na nadadala ng path ang mga slash. Pareho ang mga patakaran."
+  },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
     "text": "Isang description page: ang mga endpoint, ang apat na binding, at kung paano gumagana ang per-service-provider na metadata. Ganito rin sumasagot ang GET /sts at GET /wsfed sa parehong dahilan — ang endpoint na nagbabalik ng 400 sa taong gusto lang malaman kung ano ito ay masamang unang impresyon. Iginuguhit sa browser mula #584; ang ?format=json, o isang Accept na mas gusto ang JSON, ay sumasagot ng view nito bilang data."
@@ -2140,8 +2152,8 @@
     "text": "pareho, at ito ang parehong endpoint"
   },
   "stsmetadata.endpoints./saml2/unsolicited.what": {
-    "en": "c4aa05f623f432ed",
-    "text": "Isang UNSOLICITED na Response (saml-profiles-2.0-os section 4.1.5, #189): pinangangalanan ng providerId ang service provider (o ng path segment), ng shire ang isa sa mga rehistradong assertion consumer service nito (ang default kung hindi), ng target ang RelayState, at ng binding ang post, simplesign o artifact (ang sariling binding ng endpoint kung hindi; hindi kailanman HTTP-Redirect). Isina-sign in ang tao sa pamamagitan ng /authn/login kapag walang session; walang dalang InResponseTo ang Response at ang assertion nito. Dapat rehistrado ang service provider sa product, at ino-off ito ng saml2.unsolicitedSso para sa isang realm."
+    "en": "46085ccec8b2cb1c",
+    "text": "Isang UNSOLICITED na Response (saml-profiles-2.0-os section 4.1.5, #189): pinangangalanan ng providerId ang service provider (o ng path segment), ng shire ang isa sa mga rehistradong assertion consumer service nito (ang default kung hindi), ng target ang RelayState, at ng binding ang post, simplesign o artifact (ang sariling binding ng endpoint kung hindi; hindi kailanman HTTP-Redirect). Isina-sign in ang tao sa pamamagitan ng /authn/login kapag walang session; walang dalang InResponseTo ang Response at ang assertion nito. Dapat rehistrado ang service provider sa product, at sinasagot lang ito kung saan naka-on ang saml2.idpInitiatedSso para rito — NAKA-OFF bilang default, at ino-on ito ng saml2IdpInitiatedSso sa entry nito (#711). Ang step-up na hinihingi ng issuance policy dahil sa risk ng session ay nagpapadala sa tao para mag-re-authenticate at bumalik, nang isang beses."
   },
   "stsmetadata.endpoints./saml2/unsolicited.effect": {
     "en": "d57fa6373c895dd8",
@@ -2208,8 +2220,8 @@
     "text": "ANG PAREHONG DOKUMENTO, BAWAT APPLICATION, at ang parehong patakarang sinusunod ng sa SAML 2.0: sa development ay walang nagbabalik ng 404, dahil ang identifier na walang nagparehistro ay naipaparehistro SA PAGTATANONG; sa product (#112) ito, ang /saml11/sso/{rp} at ang /saml11/responder/{rp} ay 404 para sa anumang hindi rehistradong SAML 1.1 relying party (STS-SAML-0083). Ang segment ay ang percent-encoded na identifier o isang slug, at ang slug ay ANG PAREHONG ginagamit ng /saml2 — iisang handle ang isang application sa dalawang profile, kung hindi ay ipapakita ng console ang isang entry bilang dalawa. Ang providerID ay ang nag-iisang issuer ng realm (#523)."
   },
   "stsmetadata.endpoints./saml11/sso.what": {
-    "en": "64a3ea22439a5c86",
-    "text": "Ang pangalan sa SAML 1.1 para sa tinatawag ng SAML 2.0 na Single Sign-On service, at hindi lang bokabularyo ang pagkakaiba: WALANG REQUEST MESSAGE. Nagsisimula ang flow sa isang TARGET at wala nang iba, kaya pinangangalanan ang relying party ng providerId parameter ng Shibboleth, ng path segment, o — kung wala ang dalawa — HINUHULAAN MULA SA ORIGIN ng TARGET, na nilo-log bilang hula. Wala itong sariling sign-in screen at hindi kailangan ng POST-to-GET na sayaw: dumarating ang flow bilang top-level GET, kung saan dinadala ang SameSite=Lax cookie. Walang baybay sa protocol na ito ang ForceAuthn, IsPassive at RequestedAuthnContext, kaya wala ang mga ito sa halip na hindi naipatupad."
+    "en": "112515a67fb513e6",
+    "text": "Ang pangalan sa SAML 1.1 para sa tinatawag ng SAML 2.0 na Single Sign-On service, at hindi lang bokabularyo ang pagkakaiba: WALANG REQUEST MESSAGE. Nagsisimula ang flow sa isang TARGET at wala nang iba, kaya pinangangalanan ang relying party ng providerId parameter ng Shibboleth, ng path segment, o — kung wala ang dalawa — HINUHULAAN MULA SA ORIGIN ng TARGET, na nilo-log bilang hula. Wala itong sariling sign-in screen at hindi kailangan ng POST-to-GET na sayaw: dumarating ang flow bilang top-level GET, kung saan dinadala ang SameSite=Lax cookie. Walang baybay sa protocol na ito ang ForceAuthn, IsPassive at RequestedAuthnContext, kaya wala ang mga ito sa halip na hindi naipatupad. Ang request na may dalang shire (ang Shibboleth AuthnRequest profile) ay pagsisimula ng relying party at sinasagot kung saan naka-on ang saml11.spInitiatedSso para rito; ang may TARGET lang ay sign-in na sinimulan dito at sinasagot lang kung saan naka-on ang saml11.idpInitiatedSso — NAKA-OFF bilang default (#711)."
   },
   "stsmetadata.endpoints./saml11/sso.effect": {
     "en": "c9f861ab9965a369",
@@ -2334,6 +2346,14 @@
   "stsmetadata.endpoints./oauth2/authorize.effect": {
     "en": "3535569413867e97",
     "text": "kailangan ng client_id at redirect_uri — sumasagot ng 400 kapag sinundan nang walang laman, pagkatapos ay nagre-redirect sa sign-in screen kapag naibigay na ang mga ito"
+  },
+  "stsmetadata.endpoints./launch/:app.what": {
+    "en": "46e9ad826baa3150",
+    "text": "ISANG LINK BAWAT APPLICATION NA NAGSISIMULA RITO NG SIGN-IN SA APPLICATION NA IYON (#426): ang Sign in link ng user portal at ang URL sa itaas ng bawat protocol sub-tab sa console. Ang ?protocol= ay saml2, saml11, wsfed o oidc, kung hindi ay ang iisang naka-on, kung hindi ay ang appLaunchProtocol ng entry; ang ?target= ay kung saan lalapag pagkatapos. Sinusuri nito na naka-on ang sign-in na sinimulan ng identity provider para sa application sa protocol na iyon (naka-off bilang default) at ipinapadala ang browser sa /saml2/unsolicited/{sp}, /saml11/sso/{rp} o /wsfed/initiate/{rp}, na nagsa-sign in sa tao gaya ng sa anumang sign-in at muling sinusuri ang switch; para sa OpenID Connect, isina-sign in nito ang tao rito, itinatala ang launch sa session at ipinapadala sila sa initiate_login_uri ng client (OpenID Connect Core section 4), na nagsisimula ng isang ordinaryong authorization request. 404 ang hindi kilalang application."
+  },
+  "stsmetadata.endpoints./launch/:app.effect": {
+    "en": "9fd32046b05133a5",
+    "text": "ipinapadala ang browser sa isang protocol endpoint; wala itong ini-issue mismo"
   },
   "stsmetadata.endpoints./logout.what": {
     "en": "926917f15c6fd9a9",

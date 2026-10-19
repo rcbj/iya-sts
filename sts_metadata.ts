@@ -1549,7 +1549,11 @@ const SPECS: Spec[] = [
               'profile (a passive request carries no recipient certificate), ' +
               'and any authorization or policy enforcement. wreply is used ' +
               'as sent in development mode and must be a registered ' +
-              'wsfedReplyUrl in PRODUCT mode (2026-09-12).' },
+              'wsfedReplyUrl in PRODUCT mode (2026-09-12). Beyond the ' +
+              'specification, which has no such request: an ' +
+              'identity-provider-initiated sign-in at ' +
+              '/wsfed/initiate/{rp} (#712), off until a relying party opts ' +
+              'in, posting only to its registered wsfedReplyUrl.' },
   { id: 'xmldsig', name: 'XML Signature and XML Encryption',
     where: 'W3C',
     url: 'https://www.w3.org/TR/xmldsig-core1/',
@@ -6895,6 +6899,31 @@ const ENDPOINTS: EndpointEntry[] = [
           'the application\'s identifier (its wtrealm) or its slug. A ' +
           'segment naming no REGISTERED application is a 404 in both modes ' +
           '(STS-WSFED-0019). no-store.' },
+  { path: '/wsfed/initiate/:rp', group: 'WS-Federation',
+    name: 'Identity-provider-initiated sign-in',
+    specs: ['ws-federation', 'saml11', 'saml2', 'xmldsig', 'ws-trust'],
+    effect: 'signs the person in if need be, then POSTs a section 13.2.2 ' +
+            'sign-in response to the relying party\'s registered reply ' +
+            'address',
+    what: 'NON-SPEC (#712): WS-Federation 1.2 defines no request for this ' +
+          'identity provider to start a sign-in, so the link is this ' +
+          'service\'s. The segment is a REGISTERED relying party\'s ' +
+          'identifier (its wtrealm) or slug (else 404, STS-WSFED-0024). OFF ' +
+          'until wsfed.idpInitiatedSso or the entry\'s wsfedIdpInitiatedSso ' +
+          'turns it on (403, STS-WSFED-0025). A wreply is refused ' +
+          '(STS-WSFED-0026): the response goes only to the first ' +
+          'wsfedReplyUrl registered for it, never an observed one ' +
+          '(STS-WSFED-0027 when there is none). wctx is echoed byte for ' +
+          'byte; tokenType and trust mean what they mean at /wsfed. The ' +
+          'issuance is a wsignin1.0\'s — the session, the issuance policy, ' +
+          'session-presented, the realm recorded for /logout — and a ' +
+          'denial on risk steps the person up once.' },
+  { path: '/wsfed/initiate', group: 'WS-Federation',
+    name: 'Identity-provider-initiated sign-in, by wtrealm',
+    specs: ['ws-federation', 'saml11', 'saml2', 'xmldsig', 'ws-trust'],
+    what: 'NON-SPEC (#712): /wsfed/initiate/{rp} with the relying party as ' +
+          '?wtrealm= rather than a path segment, for an identifier whose ' +
+          'slashes a path carries badly. The same rules.' },
 
   // --- SAML 2.0 ---
   // The profile whose absence this file documented at length until 2026-08-24.
@@ -6981,8 +7010,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'binding otherwise; never HTTP-Redirect). Signs the person in ' +
           'through /authn/login when there is no session; the Response ' +
           'and its assertion carry no InResponseTo. The service provider ' +
-          'must be registered in product, and saml2.unsolicitedSso turns ' +
-          'it off for a realm.' },
+          'must be registered in product, and it is answered only where ' +
+          'saml2.idpInitiatedSso is on for it — OFF by default, ' +
+          'saml2IdpInitiatedSso on its entry turning it on (#711). A ' +
+          'step-up the issuance policy asks for on the session\'s risk ' +
+          'sends the person to re-authenticate and back, once.' },
   { path: '/saml2/unsolicited/:sp', group: 'SAML 2.0',
     name: 'Identity-provider-initiated sign-in for ONE service provider',
     specs: ['saml2', 'saml2-profiles'],
@@ -7123,7 +7155,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'arrives as a top-level GET, which a SameSite=Lax cookie is ' +
           'carried on. ForceAuthn, IsPassive and RequestedAuthnContext have ' +
           'no spelling in this protocol, so they are absent rather than ' +
-          'unimplemented.' },
+          'unimplemented. A request carrying shire (the Shibboleth ' +
+          'AuthnRequest profile) is the relying party\'s start and is ' +
+          'answered where saml11.spInitiatedSso is on for it; one with ' +
+          'only a TARGET is a sign-in started here and is answered only ' +
+          'where saml11.idpInitiatedSso is — OFF by default (#711).' },
   { path: '/saml11/sso/:rp', group: 'SAML 1.1',
     name: 'Inter-site transfer service for ONE relying party',
     specs: ['saml11', 'saml11-profiles'],
@@ -7470,6 +7506,24 @@ const ENDPOINTS: EndpointEntry[] = [
   // a group of its own, because it is the other end of what that group does —
   // and deliberately not under any protocol, which is the whole point of it.
   // ---------------------------------------------------------------------
+  { path: '/launch/:app', group: 'Authentication',
+    name: 'Identity-provider-initiated sign-in',
+    specs: ['saml2-profiles', 'saml11', 'ws-federation', 'oidc'],
+    effect: 'sends the browser to a protocol endpoint; issues nothing itself',
+    what: 'ONE LINK PER APPLICATION THAT STARTS A SIGN-IN TO IT HERE (#426): ' +
+          'the user portal\'s Sign in link and the URL at the top of each ' +
+          'protocol sub-tab in the console. ?protocol= is saml2, saml11, ' +
+          'wsfed or oidc, else the one switched on, else the entry\'s ' +
+          'appLaunchProtocol; ?target= is where to land afterwards. It ' +
+          'checks that identity-provider-initiated sign-in is on for the ' +
+          'application in that protocol (off by default) and sends the ' +
+          'browser to /saml2/unsolicited/{sp}, /saml11/sso/{rp} or ' +
+          '/wsfed/initiate/{rp}, which sign the person in as for any ' +
+          'sign-in and check the switch again; for OpenID Connect it signs ' +
+          'the person in here, records the launch on the session and sends ' +
+          'them to the client\'s initiate_login_uri (OpenID Connect Core ' +
+          'section 4), which starts an ordinary authorization request. An ' +
+          'unknown application is a 404.' },
   { path: '/logout', group: 'Authentication', name: 'Sign out of everything',
     specs: ['oidc-fclogout', 'oidc-bclogout', 'rfc7009', 'ws-federation',
             'saml2', 'rfc4120', 'rfc4511'],

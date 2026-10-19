@@ -65,6 +65,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | `common/vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** (except `pqc.js`, `pqc_x509.js`, `xmldsig.js`). `common/vendored/CLAUDE.md`. |
 | `home/` | The front door, `GET /`, and `/home-api`. `home/CLAUDE.md`. |
 | `logout/` | The protocol-independent sign-out at `/logout`, and the one model of a live session. `logout/CLAUDE.md`. |
+| `launch/` | `/launch/{app}`, the one identity-provider-initiated sign-in link per application (#426). `launch/CLAUDE.md`. |
 | `portal/` | The user portal, a static application over `/account-api`. `portal/CLAUDE.md`. |
 | `account-api/` | `/account-api`, the portal's only door. `account-api/CLAUDE.md`. |
 | `oauth-oidc/` | The authorization server and OpenID provider. `oauth-oidc/CLAUDE.md`. |
@@ -550,6 +551,7 @@ preference; this table says what the constraint is and the named file says why.
 | 23e–g | `acme/acme`, `est/est`, `scep/scep` | After `admin-ui/admin` (18), whose shell each `_admin.ts` draws with, and after `ldap/ldap_server` (21), whose slot `common/cert_enrollment.ts` reads entries through. Each one require, then two `register()` calls (the family, then its `_admin`). No constraint between the three. | `acme/CLAUDE.md`, `est/CLAUDE.md`, `scep/CLAUDE.md` |
 | 23g-ii | `oidfed/oidfed_admin` | After the console (18), whose shell it draws `/admin/oidfed` with; the family itself is 14b. | `oidfed/CLAUDE.md` |
 | 23h | `debugger/debugger_server` | A socket owner: builds its OWN express app and registers nothing on this one. After `authn`, `oauth2`, `tls/tls_server` and the console, all of which it reads. | `debugger/CLAUDE.md` |
+| 23a-launch | `launch/launch` | After every family it hands the browser to (9, 10, 10a, 10b) and `authn` (8); its one path collides with nothing. Its link builder `common/launch_links.ts` is a library the account API (8a-acct) and the management API (19) require earlier, which moves no route. | `launch/CLAUDE.md` |
 | 23a | `logout/logout` | Second to last: it reads nine modules' stores. | `logout/CLAUDE.md` |
 | 24 | `sts_metadata` | **Last, for everybody.** It reads the router to list what everything else registered; its `wire` step hands `PROTOCOLS` to the crypto page (20a). | *Adding an endpoint*, below |
 
@@ -1134,6 +1136,8 @@ the file the row names.
 | ~~Perform back-channel logout~~ — reversed 2026-09-17 (#36) | `oauth-oidc/CLAUDE.md` (3aq), `logout/CLAUDE.md`, `authn/CLAUDE.md`, `federation/CLAUDE.md` |
 | ~~Fake WS-Federation's `wauth`~~ — reversed 2026-09-17 (#36), as a step-up | `ws-federation/CLAUDE.md`, `authn/CLAUDE.md` |
 | Dereference WS-Federation's `wreqptr` | `ws-federation/CLAUDE.md` |
+| Post an unsolicited ID Token to an OpenID Connect client's `redirect_uri` — its identity-provider-initiated sign-in is Core section 4 (#426) | `launch/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
+| Start a sign-in at this identity provider for an application that did not opt in — off by default in every protocol (#426) | `launch/CLAUDE.md` |
 | ~~Verify a SAML AuthnRequest's signature, or consume SP metadata~~ — reversed 2026-09-17 (#37) | `saml/CLAUDE.md`, `saml/request_signature.ts`, `saml/sp_metadata.ts` |
 | Encrypt an assertion it holds no certificate for — **product refuses**, development sends it in CLEAR | `saml/CLAUDE.md` |
 | Dial a service provider's metadata URL WHILE ISSUING | `saml/CLAUDE.md` |

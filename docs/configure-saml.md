@@ -244,13 +244,33 @@ GET /saml2/unsolicited?providerId=<sp>&shire=<ACS URL>&target=<RelayState>
 The Shibboleth job uses
 `shire=https://sp.example.com/Shibboleth.sso/SAML2/POST&target=https://sp.example.com/peer/env`.
 The Redirect binding is refused here. In product mode, the SP and the
-`shire` must both be registered. To turn this off, set
-`saml2.unsolicitedSso` (**Identity-provider-initiated sign-in**, on by
-default) to `false`:
+`shire` must both be registered.
+
+**It is off until the SP opts in.** `saml2.idpInitiatedSso`
+(**Identity-provider-initiated sign-in**) is `false` by default, and the link
+answers a 403 page (`STS-SAML-0091`) for an SP that has not opted in. Turn it
+on for one SP on its application entry:
 
 ```bash
-api config/set '{"key":"saml2.unsolicitedSso","value":false}'
+api applications/set '{"application":"https://sp.example.com/shibboleth",
+  "attribute":"saml2IdpInitiatedSso","value":"TRUE"}'
 ```
+
+or for every SP in the realm (an entry's own value still wins):
+
+```bash
+api config/set '{"key":"saml2.idpInitiatedSso","value":true}'
+```
+
+An unsolicited Response carries no `InResponseTo`, so the SP cannot tell it
+from one an attacker pushed into a browser; turn it on only for SPs that
+expect it. A sign-in started here is held to the issuance policy like any
+other, and a step-up on risk sends the person to re-authenticate once and
+back to the link rather than refusing.
+
+`saml2.spInitiatedSso` (`saml2SpInitiatedSso` per SP, on by default) is the
+other door: off, the SP's own AuthnRequest is answered `RequestDenied`
+(`STS-SAML-0111`) and it can be signed in to only from a link here.
 
 ## Signed AuthnRequests
 

@@ -1957,6 +1957,18 @@ class ProtocolStack {
                require('../debugger/debugger_server'),
                'DebuggerServer');
 
+    // THE IDENTITY-PROVIDER-INITIATED SIGN-IN DOOR (#426, #713) — 23a-launch.
+    // `GET /launch/{app}` sends the browser to SAML 2.0's, SAML 1.1's or
+    // WS-Federation's own endpoint, or to an OpenID Connect client's
+    // initiate_login_uri. After every family it hands off to (10a, 10b, 10,
+    // 9) and after `authn` (8), whose session it reads; its one path
+    // collides with nothing, so the position is for a reader. Its link
+    // builder, `common/launch_links.ts`, is a library the account API and
+    // the management API require earlier, which moves no route.
+    require('../launch/launch');
+    this.build('launch/launch', require('../launch/launch'), 'Launch');
+    this.register(app, require('../launch/launch'), 'launch/launch');
+
     // -------------------------------------------------------------------------
     // THE PROTOCOL-INDEPENDENT LOGOUT — SECOND TO LAST, AND THE POSITION IS THE
     // WHOLE OF ITS ARGUMENT.

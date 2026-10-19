@@ -268,8 +268,8 @@
     "text": "partial: BÅDA webbläsarprofilerna — Browser/Artifact (avsnitt 4.1) och Browser/POST (4.2) — var och en med den bekräftelsemetod som dess avsnitt kräver, vilka är olika värden och inte utbytbara. DET FINNS INGET FÖRFRÅGNINGSMEDDELANDE I SAML 1.1, så båda initieras av identitetsleverantören: ett flöde börjar när en webbläsare anländer med ett TARGET, den förlitande parten identifierar sig aldrig i protokollet, och ett misslyckande är en SIDA snarare än ett Response eftersom det inte finns något att svara på. Shibboleths icke-standardiserade AuthnRequest-profil (urn:mace:shibboleth:1.0:profiles:AuthnRequest) accepteras och annonseras, eftersom det är vad varje riktig SAML 1.1-tjänsteleverantör skickar. `shire` används som den skickas i utvecklingsläge och måste vara registrerad på den förlitande partens post i PRODUKTläge (2026-09-12). Browser/POST-svaret signeras som avsnitt 4.1.2.4 kräver, med sitt intyg; att stänga av någon av signaturerna är ett testfall för utvecklingsläge som produktläge ignorerar (#181)."
   },
   "stsmetadata.specs.ws-federation.coverage": {
-    "en": "2abb20f4fd0f6ab0",
-    "text": "partial: Web (Passive) Requestor Profile i avsnitt 13 — wsignin1.0 med wtrealm, wreply, wctx, wct, wfresh, wauth, whr och wreq, inloggningssvaret som en formulär-POST, och wsignout1.0/wsignoutcleanup1.0 med rensningsförfrågningar via främre kanalen; som förlitande part i en federation (#167) avslutar en partners rensning, osignerad enligt specifikationen, sessionen först efter att personen bekräftat den på en sida med en riktig knapp, och en utloggning här skickar wsignout1.0 till partnern. Signerad federationsmetadata (avsnitt 3.1) på AD FS-sökvägen. INTE implementerat, och vart och ett namnges i stället för att förtigas: den aktiva (SOAP-)begärarprofilen utöver det som /sts redan besvarar, wresultptr, attributtjänsten (wattr1.0) och pseudonymtjänsten (wpseudo1.0) som båda svarar 501, wreqptr (nekas — att avreferera en URL från en frågeparameter är en server-side request forgery), tokenkryptering i den här profilen (en passiv förfrågan bär inget mottagarcertifikat), och all tillämpning av auktorisering eller policy. wreply används som det skickas i utvecklingsläge och måste vara en registrerad wsfedReplyUrl i PRODUKTläge (2026-09-12)."
+    "en": "df4a48ab6e7784a2",
+    "text": "partial: Web (Passive) Requestor Profile i avsnitt 13 — wsignin1.0 med wtrealm, wreply, wctx, wct, wfresh, wauth, whr och wreq, inloggningssvaret som en formulär-POST, och wsignout1.0/wsignoutcleanup1.0 med rensningsförfrågningar via främre kanalen; som förlitande part i en federation (#167) avslutar en partners rensning, osignerad enligt specifikationen, sessionen först efter att personen bekräftat den på en sida med en riktig knapp, och en utloggning här skickar wsignout1.0 till partnern. Signerad federationsmetadata (avsnitt 3.1) på AD FS-sökvägen. INTE implementerat, och vart och ett namnges i stället för att förtigas: den aktiva (SOAP-)begärarprofilen utöver det som /sts redan besvarar, wresultptr, attributtjänsten (wattr1.0) och pseudonymtjänsten (wpseudo1.0) som båda svarar 501, wreqptr (nekas — att avreferera en URL från en frågeparameter är en server-side request forgery), tokenkryptering i den här profilen (en passiv förfrågan bär inget mottagarcertifikat), och all tillämpning av auktorisering eller policy. wreply används som det skickas i utvecklingsläge och måste vara en registrerad wsfedReplyUrl i PRODUKTläge (2026-09-12). Utöver specifikationen, som saknar en sådan begäran: en inloggning initierad av identitetsleverantören vid /wsfed/initiate/{rp} (#712), avstängd tills en förlitande part väljer att använda den, med POST endast till dess registrerade wsfedReplyUrl."
   },
   "stsmetadata.specs.xmldsig.coverage": {
     "en": "668af5821905c8e5",
@@ -2107,6 +2107,18 @@
     "en": "604e81aecab74125",
     "text": "SAMMA DOKUMENT, PER APPLIKATION (#494): dess entityID är sfärens enda utfärdare, dess OAuth-utfärdare, som överallt (#523). Segmentet är applikationens identifierare (dess wtrealm) eller dess slug. Ett segment som inte namnger någon REGISTRERAD applikation ger 404 i båda lägena (STS-WSFED-0019). no-store."
   },
+  "stsmetadata.endpoints./wsfed/initiate/:rp.what": {
+    "en": "b12c32c1473198ea",
+    "text": "NON-SPEC (#712): WS-Federation 1.2 definierar ingen begäran för att den här identitetsleverantören ska starta en inloggning, så länken är den här tjänstens egen. Segmentet är en REGISTRERAD förlitande parts identifierare (dess wtrealm) eller slug (annars 404, STS-WSFED-0024). AV tills wsfed.idpInitiatedSso eller postens wsfedIdpInitiatedSso slår på det (403, STS-WSFED-0025). En wreply nekas (STS-WSFED-0026): svaret går bara till den första wsfedReplyUrl som registrerats för den, aldrig till en observerad (STS-WSFED-0027 när det inte finns någon). wctx återges byte för byte; tokenType och trust betyder det de betyder vid /wsfed. Utfärdandet är en wsignin1.0:s — sessionen, utfärdandepolicyn, session-presented, sfären som registreras för /logout — och ett avslag på grund av risk leder till step-up för personen en gång."
+  },
+  "stsmetadata.endpoints./wsfed/initiate/:rp.effect": {
+    "en": "8beda07914540942",
+    "text": "loggar in personen vid behov och POSTar sedan ett inloggningssvar enligt avsnitt 13.2.2 till den förlitande partens registrerade svarsadress"
+  },
+  "stsmetadata.endpoints./wsfed/initiate.what": {
+    "en": "9eaa4f8f36279f9e",
+    "text": "NON-SPEC (#712): /wsfed/initiate/{rp} med den förlitande parten som ?wtrealm= i stället för ett sökvägssegment, för en identifierare vars snedstreck en sökväg bär dåligt. Samma regler."
+  },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
     "text": "En beskrivningssida: slutpunkterna, de fyra bindningarna och hur metadata per tjänsteleverantör fungerar. GET /sts och GET /wsfed svarar på samma sätt av samma skäl — en slutpunkt som svarar 400 till någon som ville veta vad den var ger ett dåligt första intryck. Ritas i webbläsaren sedan #584; ?format=json, eller en Accept som föredrar JSON, svarar med dess vy som data."
@@ -2140,8 +2152,8 @@
     "text": "detsamma, och det är samma slutpunkt"
   },
   "stsmetadata.endpoints./saml2/unsolicited.what": {
-    "en": "c4aa05f623f432ed",
-    "text": "Ett OBEGÄRT Response (saml-profiles-2.0-os avsnitt 4.1.5, #189): providerId namnger tjänsteleverantören (sökvägssegmentet kan göra det i stället), shire en av dess registrerade assertion consumer services (annars standardtjänsten), target RelayState, och binding post, simplesign eller artifact (annars slutpunktens egen bindning; aldrig HTTP-Redirect). Loggar in personen via /authn/login när det inte finns någon session; Response och dess intyg bär ingen InResponseTo. Tjänsteleverantören måste vara registrerad i produktläge, och saml2.unsolicitedSso stänger av det för en sfär."
+    "en": "46085ccec8b2cb1c",
+    "text": "Ett OBEGÄRT Response (saml-profiles-2.0-os avsnitt 4.1.5, #189): providerId namnger tjänsteleverantören (sökvägssegmentet kan göra det i stället), shire en av dess registrerade assertion consumer services (annars standardtjänsten), target RelayState, och binding post, simplesign eller artifact (annars slutpunktens egen bindning; aldrig HTTP-Redirect). Loggar in personen via /authn/login när det inte finns någon session; Response och dess intyg bär ingen InResponseTo. Tjänsteleverantören måste vara registrerad i produktläge, och den besvaras bara där saml2.idpInitiatedSso är påslaget för den — AV som standard, och saml2IdpInitiatedSso i dess post slår på det (#711). En step-up som utfärdandepolicyn begär utifrån sessionens risk skickar personen för att autentisera sig igen och tillbaka, en gång."
   },
   "stsmetadata.endpoints./saml2/unsolicited.effect": {
     "en": "d57fa6373c895dd8",
@@ -2208,8 +2220,8 @@
     "text": "SAMMA DOKUMENT, PER APPLIKATION, och samma regel som SAML 2.0-dokumentet följer: i utvecklingsläge ger det 404 för ingenting, eftersom en identifierare som ingen registrerat registreras GENOM FÖRFRÅGAN; i produktläge (#112) ger det, /saml11/sso/{rp} och /saml11/responder/{rp} 404 för allt som inte är en registrerad SAML 1.1-förlitande part (STS-SAML-0083). Segmentet är den procentkodade identifieraren eller en slug, och slugen är DENSAMMA som /saml2 använder — en applikation har ett handtag i båda profilerna, annars skulle konsolen visa en post som två. providerID är sfärens enda utfärdare (#523)."
   },
   "stsmetadata.endpoints./saml11/sso.what": {
-    "en": "64a3ea22439a5c86",
-    "text": "SAML 1.1:s namn på det som SAML 2.0 kallar Single Sign-On-tjänsten, och skillnaden är inte bara ordförråd: DET FINNS INGET BEGÄRANMEDDELANDE. Ett flöde börjar med ett TARGET och inget annat, så den förlitande parten namnges av Shibboleths parameter providerId, av sökvägssegmentet, eller — om båda saknas — GISSAS UTIFRÅN URSPRUNGET för TARGET, vilket loggas som en gissning. Den har ingen egen inloggningsskärm och behöver ingen POST-till-GET-dans: flödet kommer som en GET på toppnivå, på vilken en cookie med SameSite=Lax skickas med. ForceAuthn, IsPassive och RequestedAuthnContext har ingen stavning i det här protokollet, så de är frånvarande snarare än oimplementerade."
+    "en": "112515a67fb513e6",
+    "text": "SAML 1.1:s namn på det som SAML 2.0 kallar Single Sign-On-tjänsten, och skillnaden är inte bara ordförråd: DET FINNS INGET BEGÄRANMEDDELANDE. Ett flöde börjar med ett TARGET och inget annat, så den förlitande parten namnges av Shibboleths parameter providerId, av sökvägssegmentet, eller — om båda saknas — GISSAS UTIFRÅN URSPRUNGET för TARGET, vilket loggas som en gissning. Den har ingen egen inloggningsskärm och behöver ingen POST-till-GET-dans: flödet kommer som en GET på toppnivå, på vilken en cookie med SameSite=Lax skickas med. ForceAuthn, IsPassive och RequestedAuthnContext har ingen stavning i det här protokollet, så de är frånvarande snarare än oimplementerade. En begäran som bär shire (Shibboleths AuthnRequest-profil) är den förlitande partens start och besvaras där saml11.spInitiatedSso är påslaget för den; en med enbart ett TARGET är en inloggning som startats här och besvaras bara där saml11.idpInitiatedSso är det — AV som standard (#711)."
   },
   "stsmetadata.endpoints./saml11/sso.effect": {
     "en": "c9f861ab9965a369",
@@ -2334,6 +2346,14 @@
   "stsmetadata.endpoints./oauth2/authorize.effect": {
     "en": "3535569413867e97",
     "text": "kräver client_id och redirect_uri — svarar 400 när den följs utan dem, och omdirigerar sedan till inloggningsskärmen när de anges"
+  },
+  "stsmetadata.endpoints./launch/:app.what": {
+    "en": "46e9ad826baa3150",
+    "text": "EN LÄNK PER APPLIKATION SOM STARTAR EN INLOGGNING TILL DEN HÄR (#426): användarportalens länk Logga in och URL:en överst på varje protokollflik i konsolen. ?protocol= är saml2, saml11, wsfed eller oidc, annars det som är påslaget, annars postens appLaunchProtocol; ?target= är dit man ska landa efteråt. Den kontrollerar att inloggning initierad av identitetsleverantören är påslagen för applikationen i det protokollet (av som standard) och skickar webbläsaren till /saml2/unsolicited/{sp}, /saml11/sso/{rp} eller /wsfed/initiate/{rp}, som loggar in personen som för vilken inloggning som helst och kontrollerar inställningen igen; för OpenID Connect loggar den in personen här, registrerar starten i sessionen och skickar personen till klientens initiate_login_uri (OpenID Connect Core avsnitt 4), som startar en vanlig auktoriseringsbegäran. En okänd applikation ger 404."
+  },
+  "stsmetadata.endpoints./launch/:app.effect": {
+    "en": "9fd32046b05133a5",
+    "text": "skickar webbläsaren till en protokollslutpunkt; utfärdar ingenting själv"
   },
   "stsmetadata.endpoints./logout.what": {
     "en": "926917f15c6fd9a9",

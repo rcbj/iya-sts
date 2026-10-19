@@ -399,6 +399,10 @@
     "en": "bb7f9df5947fbef1",
     "text": "LA PÁGINA DE INICIO PROPIA DE LA APLICACIÓN: a donde va una persona para llegar a ella, y por tanto donde empieza un inicio de sesión en ella. Es a lo que /portal/applications enlaza cada fila, y una entrada sin ella se dibuja allí sin enlace en lugar de con una dirección adivinada. DECLARADA y nunca derivada — los URI de redirección que tiene al lado son callbacks y no puertas de entrada, así que nada la calcula a partir de ellos. Solo http o https, porque se convierte en un href."
   },
+  "applications.schema.attributes.appLaunchProtocol.what": {
+    "en": "cbbe60c9e914df65",
+    "text": "QUÉ PROTOCOLO usa /launch/{app} para esta aplicación cuando el enlace no nombra ninguno y el inicio de sesión iniciado por el proveedor de identidad está activado para más de uno: saml2, saml11, wsfed u oidc."
+  },
   "applications.schema.attributes.appCorsOrigin.what": {
     "en": "03bcebb131e7b340",
     "text": "LOS ORÍGENES DESDE LOS QUE UNA PÁGINA DE NAVEGADOR PUEDE LLAMAR A ESTE SERVICIO PARA ESTA APLICACIÓN — `https://app.example.com`, un origen exacto por valor, sin ruta y sin comodín. Una solicitud que nombra a esta aplicación como su cliente (un client_id, una credencial Basic, una aserción de cliente o un token de acceso emitido a ella) se responde con Access-Control-Allow-Origin solo cuando su Origin figura aquí; una solicitud que no nombra ningún cliente — descubrimiento, un JWKS, un documento DID, una solicitud previa CORS — se responde para un origen que figure en CUALQUIER aplicación del dominio. VACÍO NO PERMITE NINGÚN ORIGEN DE TERCEROS, en ambos modos. Los orígenes propios de este servicio (sus escuchas, global.publicBaseUrl, el depurador integrado y global.corsOrigins) nunca necesitan figurar. Se normaliza al escribirse: esquema y host en minúsculas, un puerto predeterminado se elimina."
@@ -1019,6 +1023,18 @@
     "en": "4a6e20c0380356cf",
     "text": "TRUE o FALSE: si cerrar sesión revoca los tokens de actualización de este cliente, prevaleciendo sobre oauth2.revokeRefreshOnLogout. FALSE es el caso interesante y es la razón por la que vale la pena tenerlo por cliente — un cliente que puede volver a entrar renovando después de un cierre de sesión es un defecto real en despliegues reales, y esto lo hace reproducible para UN cliente mientras los demás se comportan bien."
   },
+  "applications.schema.attributes.oauthThirdPartyInitiatedLogin.what": {
+    "en": "fff2d88eaeaf4e44",
+    "text": "TRUE o FALSE: si /launch/{app} — y el enlace Iniciar sesión del portal de usuario — puede enviar a una persona al oauthInitiateLoginUri de este cliente (OpenID Connect Core sección 4), anulando oauth2.thirdPartyInitiatedLogin."
+  },
+  "applications.schema.attributes.oauthSpInitiatedSso.what": {
+    "en": "50ec3dfde523d275",
+    "text": "TRUE o FALSE: si /oauth2/authorize responde a este cliente cuando no se acaba de lanzar, anulando oauth2.spInitiatedSso. FALSE responde solo a una solicitud de autorización que sigue a un /launch de este cliente en la misma sesión dentro de oauth2.launchWindowS, una vez por lanzamiento, y rechaza cualquier otra con unauthorized_client."
+  },
+  "applications.schema.attributes.oauthInitiateLoginUri.what": {
+    "en": "bee89c2346a1fa39",
+    "text": "DÓNDE INICIA UN TERCERO UN INICIO DE SESIÓN EN ESTE CLIENTE: el initiate_login_uri de OpenID Connect Core sección 4, al que /launch/{app} y el portal de usuario envían a una persona con iss, login_hint y target_link_uri. Solo https, sin fragmento."
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "SI UN INTERCAMBIO DE TOKENS RFC 8693 REALIZADO POR ESTE CLIENTE RECIBE UN `refresh_token` JUNTO AL TOKEN DE ACCESO INTERCAMBIADO, prevaleciendo sobre oauth2.tokenExchangeRefreshToken solo para él. Una de tres palabras: `never`, `when-requested` (el valor predeterminado de todo el servicio — el cliente lo pide con el `requested_token_type` de RFC 8693 sección 2.1 y solo lo recibe si lo pidió) o `always`.\n\nSE LEE EN EL CLIENTE QUE REALIZA EL INTERCAMBIO y no en la audiencia, porque el token de actualización se entrega al cliente: es la credencial de esa parte para guardar, revocar y finalmente canjear. El sujeto SOBRE el que trata el intercambio no tiene ninguna entrada en este registro en el caso interesante, ya que todo el sentido de un intercambio es un subject_token de otra parte.\n\n**SE APLICA A LAS FAMILIAS OAUTH 2.0 Y OPENID CONNECT Y A NINGUNA OTRA, y a diferencia de todos los demás atributos de aquí, eso SE HACE CUMPLIR.** Una entrada declarada para ninguna de las dos es rechazada por ambas puertas de la consola y por la API de administración, que nombran la familia que hay que marcar primero — porque un valor aquí es una política sobre el endpoint de token, y una entrada que ninguna solicitud de token puede nombrar la llevaría como si estuviera en vigor. El bloque de encima de esta fila lo argumenta. `ldapmodify` llega a este atributo como a cualquier otro y no se comprueba.\n\nUN VALOR QUE NO SEA UNA DE LAS TRES PALABRAS NO ES UN ERROR EN EL MOMENTO DE LA ESCRITURA NI PASA EN SILENCIO: settingFor() emite una advertencia que nombra la entrada, el atributo y lo que contiene, y decide el ajuste de todo el servicio — la misma honestidad de tres estados que recibe cualquier otra anulación de esta entrada."
@@ -1143,6 +1159,22 @@
     "en": "1887a455954e9b4f",
     "text": "Durante cuánto tiempo puede resolverse un artefacto SAML 1.1 generado para esta parte que confía, en segundos, prevaleciendo sobre saml11.artifactTtlS. Lo canjea, una vez, el respondedor SOAP del perfil Browser/Artifact."
   },
+  "applications.schema.attributes.saml2IdpInitiatedSso.what": {
+    "en": "00f7ceacfb9304e7",
+    "text": "TRUE o FALSE: si este proveedor de identidad puede INICIAR un inicio de sesión en este proveedor de servicios — una Response no solicitada (saml-profiles-2.0-os sección 4.1.5) desde /saml2/unsolicited o /launch/{app} —, anulando saml2.idpInitiatedSso. TRUE solo para un proveedor de servicios que la espere: la Response no lleva InResponseTo, así que no puede distinguir una que se le envió de una introducida en su navegador."
+  },
+  "applications.schema.attributes.saml2SpInitiatedSso.what": {
+    "en": "1cab33aadc246c17",
+    "text": "TRUE o FALSE: si se responde al <samlp:AuthnRequest> propio de este proveedor de servicios, anulando saml2.spInitiatedSso. FALSE lo responde con RequestDenied, y deja el inicio de sesión iniciado por el proveedor de identidad como la única vía de entrada."
+  },
+  "applications.schema.attributes.saml11IdpInitiatedSso.what": {
+    "en": "6081871f6aca6a2f",
+    "text": "TRUE o FALSE: si un inicio de sesión SAML 1.1 en esta parte que confía puede EMPEZAR aquí — /saml11/sso/{rp} con un TARGET y sin shire, o /launch/{app} —, anulando saml11.idpInitiatedSso."
+  },
+  "applications.schema.attributes.saml11SpInitiatedSso.what": {
+    "en": "2376052fceb025ab",
+    "text": "TRUE o FALSE: si se responde a un inicio de sesión SAML 1.1 que inició esta parte que confía — el perfil AuthnRequest de Shibboleth 1.3, una solicitud que lleva shire —, anulando saml11.spInitiatedSso. La solicitud es una URL sin firmar, así que FALSE cierra la puerta en lugar de demostrar quién la abrió."
+  },
   "applications.schema.attributes.samlAuthnRequestSigned.what": {
     "en": "2150507140b66231",
     "text": "TRUE cuando el último AuthnRequest de este proveedor de servicios llevaba una firma — un ds:Signature envuelto en el binding POST, o el parámetro Signature de la sección 3.4.4.1 en el binding Redirect. ASIGNADO y no acumulado, porque es un hecho sobre la última solicitud y un historial de booleanos no diría nada."
@@ -1154,6 +1186,14 @@
   "applications.schema.attributes.wsfedReplyUrl.what": {
     "en": "1d6376f1797ef43c",
     "text": "ADONDE SE ENVÍA DE VUELTA UNA RESPUESTA DE INICIO DE SESIÓN para esta aplicación: el `wreply` de la sección 13.2.1, el URI de redirección de WS-Federation. Se escribía en samlAssertionConsumerService hasta el 2026-08-25, lo que ponía un wreply en el atributo que las páginas SAML leen para un assertion consumer service y para el respaldo de Single Logout — un atributo con las direcciones de retorno de dos protocolos, de modo que una aplicación WS-Federation parecía tener un ACS de SAML que nunca había nombrado. Dos hechos, dos atributos. Como el de SAML de al lado, SOLO SE COMPRUEBA EN MODO PRODUCTO: el modo desarrollo no rechaza ningún wreply, porque un servicio que rechazara eliminaría un caso de prueba en lugar de añadirlo; el modo producto solo envía a una dirección de esta lista y un avistamiento nunca añade una. Un wreply que registró el modo desarrollo se marca en appReturnAddressObserved y el modo producto lo rechaza hasta que se confirme; los valores registrados antes de que existiera esa marca no llevan ninguna y siguen necesitando revisión antes de pasar un dominio a producto."
+  },
+  "applications.schema.attributes.wsfedIdpInitiatedSso.what": {
+    "en": "af8a13f7621cb3a1",
+    "text": "TRUE o FALSE: si este proveedor de identidad puede INICIAR un inicio de sesión en esta parte que confía — /wsfed/initiate/{rp} o /launch/{app}, enviando por POST a su wsfedReplyUrl registrada —, anulando wsfed.idpInitiatedSso."
+  },
+  "applications.schema.attributes.wsfedSpInitiatedSso.what": {
+    "en": "d199b15200f6e9de",
+    "text": "TRUE o FALSE: si se responde al wsignin1.0 propio de esta parte que confía, anulando wsfed.spInitiatedSso. Un wsignin1.0 es una URL sin firmar, así que FALSE cierra la puerta en lugar de demostrar quién la abrió."
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
     "en": "493ac4121c2076ca",

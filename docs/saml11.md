@@ -67,6 +67,36 @@ every protocol here uses, so a session from OAuth, SAML 2.0 or WS-Federation is
 reused. A flow is held for `saml11.requestTtlMin` while the person is at the
 screen.
 
+### Who started it, and whether that is allowed
+
+SAML 1.1 has no request message, so **`shire` is what tells the two starts
+apart**:
+
+* a request carrying `shire` (Shibboleth's AuthnRequest profile) is the
+  **relying party's** start, and is answered where `saml11.spInitiatedSso` is
+  on for it — the default; `saml11SpInitiatedSso` FALSE on its entry refuses
+  it with a 403 page (`STS-SAML-0114`);
+* a link carrying only a `TARGET` (and `providerId` or the `{rp}` path
+  segment) is a sign-in **started here**, and is answered only where
+  `saml11.idpInitiatedSso` is on for it. **That is off by default**:
+  `saml11IdpInitiatedSso` TRUE on the relying party's entry turns it on for
+  that relying party, and otherwise the link is refused with a 403 page
+  (`STS-SAML-0113`).
+
+**The request is an unsigned URL**, so turning `saml11.spInitiatedSso` off
+closes a door rather than proving where a request came from: anybody can
+write a URL with a `shire`, or leave it off. Both refusals come before the
+sign-in screen.
+
+A sign-in started here runs what one the relying party started runs: the
+session, the issuance policy with the session's risk, the CAEP
+`session-presented` event, and the record of the relying party on the
+session. When the policy asks for a **step-up on risk**, the person is sent
+to the sign-in screen with the factor demanded and the held flow is answered
+when they come back; a flow back from that one trip and still refused is a
+403 page (`STS-SAML-0115`), not another trip. The re-prompt for a sign-in
+mechanism the relying party does not allow shares the same one trip.
+
 ### Browser/POST and Browser/Artifact
 
 **The two profiles are chosen here.** Nothing in SAML 1.1 lets a relying
@@ -249,6 +279,8 @@ session hold in **both** modes. See [What is not checked](what-is-not-checked.md
 | `saml11.artifactTtlS` | `STS_SAML11_ARTIFACT_TTL_S` | `300` | yes | How long an unresolved artifact lives (it is one-shot regardless); per relying party with `saml11ArtifactTtlS`. |
 | `saml11.autocreateApplications` | `STS_SAML11_AUTOCREATE_APPLICATIONS` | `true` | yes | Create an application entry the first time a relying party is named. |
 | `saml11.requestTtlMin` | `STS_SAML11_REQUEST_TTL_MIN` | `10` | yes | How long a flow is held while the person signs in. |
+| `saml11.idpInitiatedSso` | `STS_SAML11_IDP_INITIATED_SSO` | `false` | yes | Answer a link with a `TARGET` and no `shire` — a sign-in started here. **Off by default**; per relying party with `saml11IdpInitiatedSso`. |
+| `saml11.spInitiatedSso` | `STS_SAML11_SP_INITIATED_SSO` | `true` | yes | Answer a request carrying `shire` — the relying party's own start. Per relying party with `saml11SpInitiatedSso`. The request is unsigned, so off closes a door rather than proving who opened it. |
 | `saml11.assertionCacheMax` | `STS_SAML11_ASSERTION_CACHE_MAX` | `500` | yes | Assertions kept per realm for `AssertionIDReference`, oldest out first. |
 | `saml11.assertionCacheTtlS` | `STS_SAML11_ASSERTION_CACHE_TTL_S` | `3600` | yes | How long a kept assertion with no NotOnOrAfter stays answerable; one with a NotOnOrAfter is kept until then and no longer. |
 | `saml11.maxArtifacts` | `STS_SAML11_MAX_ARTIFACTS` | `10000` | yes | Unresolved artifacts kept per realm; a store full of live ones refuses the next Browser/Artifact sign-in with a 503 page (`STS-SAML-0110`) rather than forget one. |

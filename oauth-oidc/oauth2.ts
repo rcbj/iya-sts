@@ -420,6 +420,8 @@ import PageLocale = require('../common/page_locale');
 // the registry, the access-token profile and the management API lazily, at
 // request time, so this require closes no cycle.
 import RegisteredTargets = require('../common/registered_targets');
+// Identity-provider-initiated sign-in's launch record (#426, #713).
+import LaunchLinks = require('../common/launch_links');
 
 // A loose JSON-shaped object: the tokens, records, requests and results this
 // file builds and passes on. Their shapes are the libraries' own, and those
@@ -11074,6 +11076,33 @@ class OAuth2Server {
     // authentication service, or a later request on the same session — and the
     // response goes out now.
     const session = sessionOf(req);
+    // -----------------------------------------------------------------------
+    // WHO STARTED THIS SIGN-IN (#426, #713). OpenID Connect's identity-
+    // provider-initiated sign-in is Core section 4: /launch/{app} sends the
+    // person to the client's initiate_login_uri and the client starts THIS
+    // request. So a client whose own start is turned off
+    // (`oauthSpInitiatedSso` FALSE, else `oauth2.spInitiatedSso`) is answered
+    // only when a launch of it is on this session and no older than
+    // `oauth2.launchWindowS`; any other request is refused
+    // `unauthorized_client`, RFC 6749 section 4.1.2.1's word for a client not
+    // allowed this method. Checked before the session is required, so a
+    // request that was going to be refused never sends anybody to sign in.
+    // The launch is TAKEN when the response goes out, below — a request that
+    // sends the person to sign in first comes round again and must still
+    // count.
+    // -----------------------------------------------------------------------
+    const clientStarts = applications.settingFor(q.client_id,
+      'oauth2.spInitiatedSso', self.deps.config) !== false;
+    if (!clientStarts &&
+        !LaunchLinks.launchIsFresh(session, q.client_id, self.deps.nowSec(),
+          Number(self.deps.config.value('oauth2.launchWindowS')))) {
+      log.debug("Leaving the authorization endpoint. The client's own start " +
+                "is off and nothing launched it.");
+      errorCodes.mark(res, 'STS-OAUTH-0959');
+      return fail('unauthorized_client', 'Client "' + q.client_id + '" is ' +
+        'signed in to only from this identity provider (OpenID Connect Core ' +
+        'section 4), and this request did not follow a launch of it.');
+    }
     const promptList = String(q.prompt || '').split(/\s+/);
     // `select_account` (#118): "The Authorization Server SHOULD prompt the
     // End-User to select a user account" — which, with one session per
@@ -11372,6 +11401,10 @@ class OAuth2Server {
         }).map(function (one: Json) {
           return one.scope;
         }));
+      // The launch this request followed, if any, is spent (#426, #713).
+      if (LaunchLinks.takeLaunch(session, q.client_id)) {
+        authn.noteSessionChanged(session);
+      }
       return self.issueAuthorizationResponse(req, res, q, session.user,
                                              session.authTime, session,
                                              stepUpAssessed ? stepUpAssessed.acr

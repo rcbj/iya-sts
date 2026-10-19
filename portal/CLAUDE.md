@@ -206,14 +206,24 @@ rather than a list of ones to avoid — this registry accepts an entry from a
 dynamic client registration, so a scheme of somebody's choosing must not be
 able to reach an attribute a signed-in person's page renders as an `href`.
 
-### It is still not a launch button, and that is a refusal rather than a gap
+### The name is not a launch button; the Sign in links beside it are (#426)
 
-The link goes to the application's own front door and hands it nothing, which
+The name goes to the application's own front door and hands it nothing, which
 is where a sign-in starts and is exactly what a person would type themselves.
-It does not START one. This service implements identity-provider-initiated
-sign-on in none of the four browser profiles — `/saml2`'s own page lists it
-among what is not implemented — so a link that began one would have to invent a
-request the application never asked for and is not expecting. The page says so.
+**This heading said "still not a launch button, and that is a refusal rather
+than a gap" until #426**, on the ground that this service implemented
+identity-provider-initiated sign-on in none of the browser profiles. That was
+already out of date — `/saml2/unsolicited` arrived with #189 and the OpenID
+Connect Core section 4 link with #120 — and #426 made it a feature: a row
+carries one **Sign in** link per protocol it can be started in
+(`launches`, from `account_overview.ts`'s `launchableOf()`), each
+`/launch/{app}?protocol=…`, the same URL the console shows on the
+application's protocol sub-tab. A protocol is offered only where the issuance
+policy's dry run permits its family, the application's identity-provider-
+initiated switch is on (off by default), and there is somewhere registered to
+send it. The OpenID Connect link went straight to the client's
+`initiate_login_uri` before #426; it goes through the door now, which records
+the launch and obeys the client's switch. `launch/CLAUDE.md` argues the door.
 
 ### It is paginated, and the cap is a setting since 2026-09-12
 

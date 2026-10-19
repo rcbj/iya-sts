@@ -1970,6 +1970,57 @@ class Saml11Sso {
     const rpId = who.id;
     const providerId = this.providerId();
 
+    // WHO STARTED THIS, AND MAY THEY (#426, #711). SAML 1.1 has no request
+    // message, so the only thing that tells the two apart is `shire`: the
+    // Shibboleth 1.3 AuthnRequest profile (urn:mace:shibboleth:1.0:profiles:
+    // AuthnRequest — `providerId`, `shire`, `target`, `time`) is the relying
+    // party's own start and names where the assertion goes, and a link
+    // carrying only a TARGET (and `providerId` or the path segment) is a
+    // sign-in started HERE, which is what the inter-site transfer service
+    // of section 4.1/4.2 always was. The first answers to
+    // `saml11.spInitiatedSso` for that relying party (on by default), the
+    // second to `saml11.idpInitiatedSso` (OFF by default, #426's decision 1);
+    // `saml11SpInitiatedSso` / `saml11IdpInitiatedSso` on its entry override
+    // each, read through settingFor().
+    //
+    // **THE SERVICE-PROVIDER SWITCH CLOSES A DOOR, IT PROVES NOTHING.** The
+    // AuthnRequest profile's request is a plain unsigned URL, so anybody can
+    // write one with a `shire` — and anybody can leave the `shire` off.
+    // Turning the service-provider switch off refuses requests SHAPED like
+    // the relying party's; it says nothing about where a request came from,
+    // and a link without a `shire` is held to the other switch instead.
+    //
+    // Refused on a page, as every refusal in this profile is (samlError()'s
+    // header): there is no request to answer. Before the relying party is
+    // recorded and before the sign-in screen, so a refused link files no
+    // sighting and makes nobody sign in.
+    const spStarted = String(carried.shire || '') !== '';
+    const startKey = spStarted ? 'saml11.spInitiatedSso'
+                               : 'saml11.idpInitiatedSso';
+    if (!this.settingFor(rpId, startKey)) {
+      pendingFlows.delete(String(params.fid || ''));
+      log.info('saml11: refused a ' + (spStarted
+        ? 'relying-party-initiated (shire)' : 'identity-provider-initiated') +
+        ' sign-in to "' + rpId + '": ' + startKey + ' is off for it.');
+      errorCodes.mark(res, spStarted ? 'STS-SAML-0114' : 'STS-SAML-0113');
+      log.debug("Leaving Saml11Sso.interSiteTransfer(). " + startKey +
+                " is off.");
+      return this.samlError(res, 403, spStarted
+        ? 'Sign-in started by this relying party is turned off'
+        : 'Identity-provider-initiated sign-in is turned off for this ' +
+          'relying party',
+        spStarted
+          ? startKey + ' is off for "' + rpId + '" (the realm setting, or ' +
+            'saml11SpInitiatedSso on its entry), so a request carrying a ' +
+            'shire — the Shibboleth AuthnRequest profile — is not answered ' +
+            'for it. It can be signed in to only from a link here.'
+          : startKey + ' is off for "' + rpId + '" (the realm setting, or ' +
+            'saml11IdpInitiatedSso on its entry), so a link carrying only ' +
+            'a TARGET is not answered for it. Start the sign-in from the ' +
+            'relying party, or turn identity-provider-initiated sign-in on ' +
+            'for it.');
+    }
+
     // THE RELYING PARTY, recorded now that the request has been understood and
     // before anything can go wrong at the sign-in screen. `counts: false`
     // because a browser arriving is not an authentication — the person may
@@ -2129,8 +2180,15 @@ class Saml11Sso {
     // flow back from that trip still unmet is the refusal page below — the
     // screen offers only the allowed mechanisms and refuses any other, so
     // that is a person who cancelled or could not.
+    //
+    // ONE TRIP PER FLOW, WHICHEVER BRANCH TOOK IT (#711): the risk step-up
+    // below records `steppedUpAt` on the same held flow, and either marker
+    // ends the re-prompting. The marker is on the SERVER's copy of the flow,
+    // which this profile holds anyway, so — unlike SAML 2.0's unsolicited
+    // link — the browser has no say in it.
+    const tripped = !!(held && (held.mechanismAt || held.steppedUpAt));
     if (!roleAnswer.allowed && roleAnswer.mechanism &&
-        !(held && held.mechanismAt) && session.authenticated !== false) {
+        !tripped && session.authenticated !== false) {
       const again = held || { id: randomId(18), params: carried };
       again.expires = Date.now() + this.requestTtlMs();
       again.mechanismAt = Date.now();
@@ -2158,6 +2216,40 @@ class Saml11Sso {
                 "allowed sign-in mechanism.");
       return res.set('Cache-Control', 'no-store').redirect(303, whereAgain);
     }
+    // A STEP-UP ON RISK IS A SIGN-IN, NOT AN ERROR (#62 P3, #711) — the
+    // authorization endpoint's branch (oauth-oidc/oauth2.ts), for a profile
+    // whose every sign-in has a person in a browser: the policy denied on
+    // the risk of the session this assertion would rest on and named a
+    // factor, so the person re-authenticates with that factor demanded and
+    // the held flow is answered again. A person holding no such factor is
+    // refused at the screen (STS-RISK-0018); one back from the trip and
+    // still denied is the refusal page below (STS-SAML-0115). Observe-only
+    // risk never denies, and a session with nobody behind it has nobody to
+    // step up.
+    const stepUp = !roleAnswer.allowed && roleAnswer.risk &&
+                   roleAnswer.risk.action === 'step-up' &&
+                   !roleAnswer.risk.observed;
+    if (stepUp && !tripped && session.authenticated !== false) {
+      const again = held || { id: randomId(18), params: carried };
+      again.expires = Date.now() + this.requestTtlMs();
+      again.steppedUpAt = Date.now();
+      pendingFlows.set(again.id, again);
+      errorCodes.mark(res, 'STS-RISK-0017');
+      log.info('saml11: the issuance policy asks for a ' +
+               roleAnswer.risk.factor + ' on the risk of the session of "' +
+               String((session.user || {}).username || '') + '" before an ' +
+               'assertion to "' + rpId + '"; sent to re-authenticate.');
+      const whereStepUp = beginAuthentication({
+        returnTo: req.path + '?fid=' + encodeURIComponent(again.id),
+        hint: String((session.user || {}).username || ''),
+        forceMfa: roleAnswer.risk.factor === 'second-factor',
+        forceKey: roleAnswer.risk.factor === 'security-key',
+        protocol: 'SAML 1.1',
+        application: rpId
+      });
+      log.debug("Leaving Saml11Sso.interSiteTransfer(). A step-up on risk.");
+      return res.set('Cache-Control', 'no-store').redirect(303, whereStepUp);
+    }
     if (!roleAnswer.allowed) {
       log.info('saml11: the issuance policy refused an assertion for "' +
                String((session.user || {}).username) + '" to "' + rpId + '". ' +
@@ -2167,12 +2259,12 @@ class Saml11Sso {
                 "refused it.");
       // A realm being removed (#262) is its own code.
       // A sign-in mechanism still not allowed after the one trip (#457) is
-      // its own.
+      // its own, and so is a risk step-up still unmet after it (#711).
       errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
         : (roleAnswer.mechanism
           ? (roleAnswer.mechanism.secondFactor ? 'STS-SAML-0109'
                                                : 'STS-SAML-0102')
-          : 'STS-SAML-0032'));
+          : (stepUp && tripped ? 'STS-SAML-0115' : 'STS-SAML-0032')));
       log.debug("Leaving Saml11Sso.interSiteTransfer().");
       return this.samlError(res, 403, 'Refused by policy', roleAnswer.why,
         '<p>The person is signed in. The XACML issuance policy would not let ' +

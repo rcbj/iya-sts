@@ -4686,6 +4686,53 @@ const SETTINGS = [
                  'reproduces the client that refreshes its way back. A ' +
                  'token is found by the session it was ISSUED on.' },
 
+  // WHO MAY START A SIGN-IN (#426, #710), the OpenID Connect pair. OpenID
+  // Connect's identity-provider-initiated sign-in is Core section 4,
+  // "Initiating Login from a Third Party" (rcbj on #426): this service sends
+  // the browser to the client's `initiate_login_uri` with `iss`, and the
+  // client starts an ordinary authorization request. So the one thing an
+  // identity provider can refuse on the second half is an authorization
+  // request that did NOT follow a launch, which is what turning the
+  // client's own start off means here: /launch records a launch on the
+  // session, and /oauth2/authorize for such a client takes one, once,
+  // within oauth2.launchWindowS. The unsolicited ID Token some providers
+  // post straight to a redirect_uri is not offered (#426): it carries no
+  // state and no nonce.
+  { key: 'oauth2.thirdPartyInitiatedLogin', group: 'OAuth 2.0 / OIDC',
+    label: 'Identity-provider-initiated sign-in (third-party login)',
+    env: 'STS_OAUTH2_THIRD_PARTY_INITIATED_LOGIN', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether /launch/{app} sends a person to an OpenID Connect ' +
+                 'client\'s initiate_login_uri (OpenID Connect Core section ' +
+                 '4) with iss, login_hint and target_link_uri, and whether ' +
+                 'the user portal offers that link. OFF by default; ' +
+                 'oauthThirdPartyInitiatedLogin on a client\'s entry ' +
+                 'overrides it for that client. The client then starts an ' +
+                 'ordinary authorization request, so everything after the ' +
+                 'link is the client\'s own sign-in.' },
+
+  { key: 'oauth2.spInitiatedSso', group: 'OAuth 2.0 / OIDC',
+    label: 'Client-initiated sign-in',
+    env: 'STS_OAUTH2_SP_INITIATED_SSO', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether /oauth2/authorize answers a client that was not ' +
+                 'just launched. ON by default; oauthSpInitiatedSso on a ' +
+                 'client\'s entry overrides it. Off, an authorization ' +
+                 'request from that client is answered only when it follows ' +
+                 'a /launch of it on the same session within ' +
+                 'oauth2.launchWindowS, once per launch; any other is ' +
+                 'refused with unauthorized_client. Grants that do not pass ' +
+                 'through the authorization endpoint are not affected.' },
+
+  { key: 'oauth2.launchWindowS', group: 'OAuth 2.0 / OIDC',
+    label: 'Launch window (seconds)',
+    env: 'STS_OAUTH2_LAUNCH_WINDOW_S', type: 'int', dflt: 300,
+    min: 10, max: 3600, runtime: true,
+    description: 'How long after /launch/{app} sent a person to a client\'s ' +
+                 'initiate_login_uri that client\'s authorization request ' +
+                 'still counts as following the launch, for a client whose ' +
+                 'own start is turned off (oauth2.spInitiatedSso).' },
+
   { key: 'oauth2.eddsaCurve', group: 'OAuth 2.0 / OIDC',
     label: 'EdDSA curve', env: 'STS_OAUTH2_EDDSA_CURVE', type: 'enum',
     // The two curves `makeStsKeys()` generates an EdDSA key on, and the only
@@ -8885,22 +8932,47 @@ const SETTINGS = [
                  'recorded as not verified, which counts as UNSIGNED when ' +
                  'this is on.' },
 
-  { key: 'saml2.unsolicitedSso', group: 'SAML 2.0',
+  // WHO MAY START A SIGN-IN (#426, #710). Two questions per browser profile,
+  // each a realm default an application's entry overrides
+  // (`saml2IdpInitiatedSso` and its seven siblings in common/applications.js):
+  // may this identity provider START one — an unsolicited Response,
+  // saml-profiles-2.0-os section 4.1.5 — and may the service provider. IDENTITY-PROVIDER-INITIATED IS OFF
+  // until an application opts in (rcbj on #426): an unsolicited Response
+  // carries no InResponseTo, so the service provider cannot tell one it was
+  // sent from one pushed into its browser, and that is a choice a deployment
+  // makes per relying party rather than one this service makes for all of
+  // them. This was `saml2.unsolicitedSso`, ON, until #426; it was renamed with
+  // no alias.
+  { key: 'saml2.idpInitiatedSso', group: 'SAML 2.0',
     label: 'Identity-provider-initiated sign-in',
-    env: 'STS_SAML2_UNSOLICITED_SSO', type: 'bool', dflt: true,
+    env: 'STS_SAML2_IDP_INITIATED_SSO', type: 'bool', dflt: false,
     runtime: true,
-    description: 'Whether /saml2/unsolicited[/{sp}] sends an UNSOLICITED ' +
-                 'Response (saml-profiles-2.0-os section 4.1.5) — a sign-in ' +
-                 'started at this identity provider, for a service provider ' +
-                 'that did not ask: `providerId` (or the path segment) ' +
-                 'names it, `shire` one of its registered assertion ' +
-                 'consumer services, `target` the RelayState. The service ' +
-                 'provider must be registered in product, the address must ' +
-                 'be one its metadata or its entry registered, and the ' +
-                 'issuance policy is asked as for any sign-in. The ' +
-                 'assertion carries no InResponseTo, so a service provider ' +
-                 'decides for itself whether it accepts one; turn this off ' +
-                 'for a realm whose providers should only ever be answered.' },
+    description: 'Whether /saml2/unsolicited[/{sp}] — and /launch/{app} for ' +
+                 'SAML 2.0 — sends an UNSOLICITED Response ' +
+                 '(saml-profiles-2.0-os section 4.1.5): a sign-in started at ' +
+                 'this identity provider for a service provider that did not ' +
+                 'ask. OFF by default; saml2IdpInitiatedSso on an ' +
+                 'application\'s entry overrides it for that service ' +
+                 'provider alone. The assertion carries no InResponseTo, so ' +
+                 'the service provider cannot tell a Response it was sent ' +
+                 'from one pushed into its browser by somebody else; turn ' +
+                 'this on only for providers that expect identity-provider-' +
+                 'initiated sign-in. The service provider must be registered ' +
+                 'in product, the address must be one its metadata or its ' +
+                 'entry registered, and the issuance policy is asked as for ' +
+                 'any sign-in.' },
+
+  { key: 'saml2.spInitiatedSso', group: 'SAML 2.0',
+    label: 'Service-provider-initiated sign-in',
+    env: 'STS_SAML2_SP_INITIATED_SSO', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether an <samlp:AuthnRequest> is answered at ' +
+                 '/saml2/sso — the sign-in a service provider starts. ON by ' +
+                 'default; saml2SpInitiatedSso on an application\'s entry ' +
+                 'overrides it for that service provider. Off, a request is ' +
+                 'answered with a RequestDenied Response, and the service ' +
+                 'provider can be signed in to only through ' +
+                 'identity-provider-initiated sign-in.' },
 
   { key: 'saml2.defaultSingleLogoutService', group: 'SAML 2.0',
     label: 'Fallback logout return address',
@@ -9205,6 +9277,39 @@ const SETTINGS = [
                  'still work and /admin/saml11 stays empty, which is what ' +
                  'somebody driving a load test wants and nobody else does.' },
 
+  // WHO MAY START A SIGN-IN (#426, #710), the SAML 1.1 pair. The profile has
+  // no request message: a flow starts at the inter-site transfer service with
+  // a TARGET (saml-profile-1.1 section 4.1), which is identity-provider-
+  // initiated by construction, and the Shibboleth 1.3 AuthnRequest profile
+  // adds the service provider's own start — a `shire` naming where the
+  // assertion goes. So a request carrying `shire` is the service provider's
+  // and one without is this identity provider's. Neither is signed: the
+  // service-provider switch closes a door rather than proving where a
+  // request came from.
+  { key: 'saml11.idpInitiatedSso', group: 'SAML 1.1',
+    label: 'Identity-provider-initiated sign-in',
+    env: 'STS_SAML11_IDP_INITIATED_SSO', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether a SAML 1.1 sign-in STARTED HERE is answered: ' +
+                 '/saml11/sso/{rp} with a TARGET and no shire, and ' +
+                 '/launch/{app} for SAML 1.1. OFF by default; ' +
+                 'saml11IdpInitiatedSso on an application\'s entry ' +
+                 'overrides it for that relying party. The relying party ' +
+                 'receives a Response it did not ask for, which it cannot ' +
+                 'tell from one pushed into its browser by somebody else.' },
+
+  { key: 'saml11.spInitiatedSso', group: 'SAML 1.1',
+    label: 'Service-provider-initiated sign-in',
+    env: 'STS_SAML11_SP_INITIATED_SSO', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether a SAML 1.1 sign-in the relying party started — ' +
+                 'the Shibboleth 1.3 AuthnRequest profile, a request ' +
+                 'carrying `shire` — is answered. ON by default; ' +
+                 'saml11SpInitiatedSso on an application\'s entry ' +
+                 'overrides it. Such a request is a plain unsigned URL, so ' +
+                 'turning this off closes the door rather than proving who ' +
+                 'opened it.' },
+
   { key: 'saml11.requestTtlMin', group: 'SAML 1.1',
     label: 'Held flow lifetime (minutes)',
     env: 'STS_SAML11_REQUEST_TTL_MIN', type: 'int', dflt: 10, min: 1, max: 120,
@@ -9287,6 +9392,35 @@ const SETTINGS = [
     'Whether a JWT this STS returns in a RequestSecurityTokenResponse names ' +
     'the certificate chain of the key that signed it. A SAML assertion ' +
     'carries its certificate in its own XML Signature and is not affected.'),
+
+  // WHO MAY START A SIGN-IN (#426, #710), the WS-Federation pair. A
+  // wsignin1.0 at /wsfed is the relying party's (WS-Federation 1.2 section
+  // 13.2.1); /wsfed/initiate/{rp} is this identity provider's, posting to the
+  // relying party's REGISTERED reply address only. A wsignin1.0 is unsigned,
+  // so the relying-party switch closes a door rather than proving who opened
+  // it.
+  { key: 'wsfed.idpInitiatedSso', group: 'WS-Federation',
+    label: 'Identity-provider-initiated sign-in',
+    env: 'STS_WSFED_IDP_INITIATED_SSO', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether /wsfed/initiate/{rp} — and /launch/{app} for ' +
+                 'WS-Federation — signs a person in to a relying party that ' +
+                 'did not ask, posting to its registered wsfedReplyUrl. OFF ' +
+                 'by default; wsfedIdpInitiatedSso on an application\'s ' +
+                 'entry overrides it for that relying party. The relying ' +
+                 'party receives a response it did not ask for, which it ' +
+                 'cannot tell from one pushed into its browser by somebody ' +
+                 'else.' },
+
+  { key: 'wsfed.spInitiatedSso', group: 'WS-Federation',
+    label: 'Relying-party-initiated sign-in',
+    env: 'STS_WSFED_SP_INITIATED_SSO', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether a wsignin1.0 at /wsfed — the sign-in a relying ' +
+                 'party starts — is answered. ON by default; ' +
+                 'wsfedSpInitiatedSso on an application\'s entry overrides ' +
+                 'it. A wsignin1.0 is an unsigned URL, so turning this off ' +
+                 'closes the door rather than proving who opened it.' },
 
   // --- WS-Federation -------------------------------------------------------
   // --- WS-Federation assertions --------------------------------------------

@@ -821,5 +821,10 @@
   "passkey.default": "此應用程式的登入使用 <strong>default</strong> 通行金鑰原則。",
   "passkey.byName": "以 <code>{value}</code> 指定它的登入改用 <strong>{name}</strong>。",
   "passkey.open": "在目錄 → 原則中開啟",
-  "passkey.groupNote": "依群組選取的具名原則仍可能對某個人生效：如果指定此人所屬某個群組的原則優先順序數值更低，則對其適用該原則。此領域有 {n} 個依群組選取的具名通行金鑰原則。"
+  "passkey.groupNote": "依群組選取的具名原則仍可能對某個人生效：如果指定此人所屬某個群組的原則優先順序數值更低，則對其適用該原則。此領域有 {n} 個依群組選取的具名通行金鑰原則。",
+  "launch.heading": "身分提供者發起的登入",
+  "launch.lead": "此連結會在這裡發起對該應用程式的 {protocol} 登入。使用者入口網站的<strong>登入</strong>連結就是同一個 URL，它在其他任何地方也能使用——書籤、內部網路頁面或電子郵件。",
+  "launch.off": "此應用程式的這項功能已<strong>關閉</strong>，因此該連結會被拒絕：請在下方將 <code>{attribute}</code> 設為 TRUE，或為該領域開啟 <code>{setting}</code>。",
+  "launch.missing": "它目前還無法運作：該應用程式沒有已註冊的 <code>{attributes}</code>，因此在這裡發起的登入無處可去。",
+  "launch.endpoint": "該協定本身的端點，供需要它的合作夥伴使用："
 }

@@ -344,6 +344,9 @@ var config = {
     breakIdTokenNonce: false,                      // Break the ID Token nonce (development only)
     refreshIdleSeconds: 86400,                     // Refresh token idle timeout (s)
     revokeRefreshOnLogout: true,                   // Revoke refresh tokens on sign-out
+    thirdPartyInitiatedLogin: false,               // Identity-provider-initiated sign-in (third-party login)
+    spInitiatedSso: true,                          // Client-initiated sign-in
+    launchWindowS: 300,                            // Launch window (seconds)
     eddsaCurve: "Ed25519",                         // EdDSA curve
     jwtBearerGrant: true,                          // JWT bearer authorization grant (RFC 7523 section 2.1)
     jwtBearerRequireRegisteredIssuer: true,        // Require a registered assertion issuer
@@ -692,7 +695,8 @@ var config = {
     encryptLogoutNameId: false,                                            // Encrypt the NameID in a LogoutRequest
     autocreateApplications: true,                                          // Register a service provider on sight
     requireSignedAuthnRequests: "auto",                                    // Require signed requests from service providers
-    unsolicitedSso: true,                                                  // Identity-provider-initiated sign-in
+    idpInitiatedSso: false,                                                // Identity-provider-initiated sign-in
+    spInitiatedSso: true,                                                  // Service-provider-initiated sign-in
     defaultSingleLogoutService: "",                                        // Fallback logout return address
     requestTtlMin: 10,                                                     // Held AuthnRequest lifetime (minutes)
     maxArtifacts: 10000,                                                   // Unresolved artifacts kept
@@ -715,6 +719,8 @@ var config = {
     doNotCacheCondition: false,                                            // Mark a Browser/POST assertion DoNotCache
     artifactTtlS: 300,                                                     // Artifact lifetime (seconds)
     autocreateApplications: true,                                          // Register relying parties on sight
+    idpInitiatedSso: false,                                                // Identity-provider-initiated sign-in
+    spInitiatedSso: true,                                                  // Service-provider-initiated sign-in
     requestTtlMin: 10,                                                     // Held flow lifetime (minutes)
     assertionCacheMax: 500,                                                // Assertions kept for AssertionIDReference
     assertionCacheTtlS: 3600,                                              // Kept assertion lifetime without NotOnOrAfter (seconds)
@@ -731,6 +737,8 @@ var config = {
 
   // --- WS-Federation assertions ----------------------------------------
   wsfed: {
+    idpInitiatedSso: false,   // Identity-provider-initiated sign-in
+    spInitiatedSso: true,     // Relying-party-initiated sign-in
     assertionLifetimeMin: 60  // Assertion lifetime (minutes)
   },
 

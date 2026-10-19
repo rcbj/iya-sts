@@ -399,6 +399,10 @@
     "en": "bb7f9df5947fbef1",
     "text": "「應用程式自己的首頁」：人員要到達它所前往的地方，因此也是登入它的起點。/portal/applications 將每一列連結到這裡，沒有此值的項目在那裡會以無連結的方式繪製，而不是使用猜測的位址。由「宣告」而來，從不衍生——旁邊的重新導向 URI 是回呼而不是正門，因此沒有任何東西會從它們計算出此值。僅限 http 或 https，因為它會成為 href。"
   },
+  "applications.schema.attributes.appLaunchProtocol.what": {
+    "en": "cbbe60c9e914df65",
+    "text": "當連結未指名協定、且由身分識別提供者發起的登入在多個協定上開啟時，/launch/{app} 對此應用程式「使用哪個協定」：saml2、saml11、wsfed 或 oidc。"
+  },
   "applications.schema.attributes.appCorsOrigin.what": {
     "en": "03bcebb131e7b340",
     "text": "「瀏覽器頁面可代表此應用程式呼叫本服務的來源」——`https://app.example.com`，每個值一個確切來源，不含路徑也不含萬用字元。將此應用程式指名為其用戶端的請求（client_id、Basic 認證、用戶端斷言，或簽發給它的存取權杖），只有在其 Origin 列於此處時才會以 Access-Control-Allow-Origin 回應；完全未指名用戶端的請求——探索、JWKS、DID 文件、CORS 預檢——則對列在領域中「任何」應用程式上的來源回應。「空白表示不允許任何第三方來源」，在兩種模式下皆然。本服務自己的來源（其接聽程式、global.publicBaseUrl、內嵌偵錯工具與 global.corsOrigins）永遠不需要列出。寫入時會正規化：配置與主機轉為小寫，預設連接埠會被移除。"
@@ -1019,6 +1023,18 @@
     "en": "4a6e20c0380356cf",
     "text": "TRUE 或 FALSE：登出是否撤銷此用戶端的重新整理權杖，覆寫 oauth2.revokeRefreshOnLogout。FALSE 才是值得關注的情況，也是此項值得按用戶端設定的原因——登出後還能藉由重新整理回來的用戶端，是實際部署中真實存在的缺陷，而這讓它能在「一個」用戶端上重現，其餘用戶端則照常運作。"
   },
+  "applications.schema.attributes.oauthThirdPartyInitiatedLogin.what": {
+    "en": "fff2d88eaeaf4e44",
+    "text": "TRUE 或 FALSE：/launch/{app}——以及使用者入口網站的「登入」連結——是否可將某人送往此用戶端的 oauthInitiateLoginUri（OpenID Connect Core section 4），覆寫 oauth2.thirdPartyInitiatedLogin。"
+  },
+  "applications.schema.attributes.oauthSpInitiatedSso.what": {
+    "en": "50ec3dfde523d275",
+    "text": "TRUE 或 FALSE：在此用戶端並非剛被啟動時，/oauth2/authorize 是否回應它，覆寫 oauth2.spInitiatedSso。FALSE 只回應在同一工作階段上、於 oauth2.launchWindowS 之內緊接在此用戶端的 /launch 之後的授權請求，每次啟動一次，其他任何請求都以 unauthorized_client 拒絕。"
+  },
+  "applications.schema.attributes.oauthInitiateLoginUri.what": {
+    "en": "bee89c2346a1fa39",
+    "text": "「由第三方開始登入此用戶端的位置」：OpenID Connect Core section 4 的 initiate_login_uri，/launch/{app} 與使用者入口網站會帶著 iss、login_hint 與 target_link_uri 將某人送往此處。僅限 https，且不得帶有片段。"
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "此用戶端執行的 RFC 8693 權杖交換，是否在交換所得的存取權杖之外再取得一個 `refresh_token`，僅為它覆寫 oauth2.tokenExchangeRefreshToken。為三個詞之一：`never`、`when-requested`（全服務預設值——用戶端以 RFC 8693 第 2.1 節的 `requested_token_type` 提出要求，只有要求了才會取得）或 `always`。\n\n「它是在執行交換的用戶端上讀取」，而不是在對象上讀取，因為重新整理權杖是交給用戶端的：它是該方要持有、撤銷並最終兌換的認證。在值得關注的情況下，交換所「關於」的主體在此登錄中根本沒有項目，因為交換的重點就在於來自別處的 subject_token。\n\n**它適用於 OAuth 2.0 與 OpenID Connect 系列，不適用於其他系列，而且與此處其他每個屬性不同，這一點是「強制執行」的。**未宣告用於任一系列的項目，會被主控台的兩個入口以及管理 API 拒絕，並指出要先勾選的系列——因為此處的值是關於權杖端點的原則，而一個任何權杖請求都無法指名的項目若攜帶它，看起來就像它正在生效。此列上方的區塊論證了這一點。`ldapmodify` 和對待其他屬性一樣可以修改此屬性，且不會受到檢查。\n\n「不屬於三個詞之一的值，在寫入時不算錯誤，但也不會無聲無息」：settingFor() 會發出警告，指出項目、屬性及其內容，並由全服務的設定決定——與此項目上其他每個覆寫一樣，具有相同的三態誠實性。"
@@ -1143,6 +1159,22 @@
     "en": "1887a455954e9b4f",
     "text": "為此依賴方產生的 SAML 1.1 artifact 可被解析的時間，以秒計，覆寫 saml11.artifactTtlS。由 Browser/Artifact 設定檔的 SOAP 回應程式兌換它，僅一次。"
   },
+  "applications.schema.attributes.saml2IdpInitiatedSso.what": {
+    "en": "00f7ceacfb9304e7",
+    "text": "TRUE 或 FALSE：此身分識別提供者是否可以「開始」登入此服務提供者——從 /saml2/unsolicited 或 /launch/{app} 送出的未經請求 Response（saml-profiles-2.0-os section 4.1.5）——覆寫 saml2.idpInitiatedSso。僅對預期會收到這種 Response 的服務提供者設為 TRUE：Response 不攜帶 InResponseTo，因此服務提供者無法分辨它是發給自己的，還是被推入其瀏覽器的。"
+  },
+  "applications.schema.attributes.saml2SpInitiatedSso.what": {
+    "en": "1cab33aadc246c17",
+    "text": "TRUE 或 FALSE：是否回應此服務提供者自己的 <samlp:AuthnRequest>，覆寫 saml2.spInitiatedSso。FALSE 以 RequestDenied 回應，使由身分識別提供者發起的登入成為唯一的進入方式。"
+  },
+  "applications.schema.attributes.saml11IdpInitiatedSso.what": {
+    "en": "6081871f6aca6a2f",
+    "text": "TRUE 或 FALSE：登入此依賴方的 SAML 1.1 登入是否可以在此處「開始」——帶有 TARGET 而沒有 shire 的 /saml11/sso/{rp}，或 /launch/{app}——覆寫 saml11.idpInitiatedSso。"
+  },
+  "applications.schema.attributes.saml11SpInitiatedSso.what": {
+    "en": "2376052fceb025ab",
+    "text": "TRUE 或 FALSE：是否回應此依賴方所開始的 SAML 1.1 登入——Shibboleth 1.3 AuthnRequest 設定檔，即攜帶 shire 的請求——覆寫 saml11.spInitiatedSso。該請求是未簽署的 URL，因此 FALSE 是把門關上，而不是證明是誰開的門。"
+  },
   "applications.schema.attributes.samlAuthnRequestSigned.what": {
     "en": "2150507140b66231",
     "text": "當來自此服務提供者的最近一個 AuthnRequest 攜帶簽章時為 TRUE——POST 繫結上的 enveloped ds:Signature，或 Redirect 繫結上第 3.4.4.1 節的 Signature 參數。是「指派」而非累積，因為它是關於最近一個請求的事實，而一串布林值的歷程毫無意義。"
@@ -1154,6 +1186,14 @@
   "applications.schema.attributes.wsfedReplyUrl.what": {
     "en": "1d6376f1797ef43c",
     "text": "此應用程式之登入回應回傳的位置：第 13.2.1 節的 `wreply`，即 WS-Federation 的重新導向 URI。在 2026-08-25 之前它被寫入 samlAssertionConsumerService，使 wreply 出現在 SAML 頁面為斷言取用者服務與 Single Logout 後備所讀取的屬性中——一個屬性保存兩種協定的回傳位址，導致 WS-Federation 應用程式看起來擁有一個從未指名的 SAML ACS。兩項事實，兩個屬性。與旁邊的 SAML 屬性一樣，它「僅在產品模式下檢查」：開發模式不拒絕任何 wreply，因為會拒絕的服務只會移除測試案例而不是增加；產品模式只回傳至此清單上的位址，且看到的位址絕不會被加入。開發模式記錄的 wreply 會標記於 appReturnAddressObserved，產品模式在確認前會拒絕它；在該標記出現之前記錄的值沒有標記，在領域切換為產品模式前仍需審查。"
+  },
+  "applications.schema.attributes.wsfedIdpInitiatedSso.what": {
+    "en": "af8a13f7621cb3a1",
+    "text": "TRUE 或 FALSE：此身分識別提供者是否可以「開始」登入此依賴方——/wsfed/initiate/{rp} 或 /launch/{app}，POST 至其已註冊的 wsfedReplyUrl——覆寫 wsfed.idpInitiatedSso。"
+  },
+  "applications.schema.attributes.wsfedSpInitiatedSso.what": {
+    "en": "d199b15200f6e9de",
+    "text": "TRUE 或 FALSE：是否回應此依賴方自己的 wsignin1.0，覆寫 wsfed.spInitiatedSso。wsignin1.0 是未簽署的 URL，因此 FALSE 是把門關上，而不是證明是誰開的門。"
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
     "en": "493ac4121c2076ca",

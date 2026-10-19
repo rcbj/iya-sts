@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4402** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4420** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -64,10 +64,10 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 299
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 713
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 714
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
-* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
+* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 29
 * [Federation (`STS-FED`)](#sts-fed) — 146
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
@@ -93,6 +93,7 @@ is an ordinary outcome.
 * [User portal (`STS-PORTAL`)](#sts-portal) — 94
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
+* [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 6
 * [Registries (`STS-REG`)](#sts-reg) — 179
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
@@ -2198,6 +2199,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0956` | A token exchange presented an actor_token whose aud names neither this authorization server (its issuer or token endpoint) nor the exchanging client (its client_id, identifier or oauthAudience). Refused in every mode (#550). | invalid_request (RFC 8693 section 2.2.2) |
 | `STS-OAUTH-0957` | A client asked, on a token whose subject is an application (client_credentials), for an application permission no role it holds authorizes (rolePermission), and the issuance policy left it off the tokens. A delegated permission (oauthDelegatedPermission) needs a person and does not count here (#551). | none — issued without that scope (RFC 6749 section 3.3); invalid_scope when nothing else was asked for |
 | `STS-OAUTH-0958` | An authorization code was presented again under oauth2.codeReplayIdempotent, and the record of its redemption holds no response to replay: it was redeemed while the relaxation was not in force, and only its jtis were kept (#614). Refused, and what it bought is revoked. | 400 invalid_grant (RFC 6749 sections 4.1.2 and 10.5) |
+| `STS-OAUTH-0959` | An authorization request from a client whose own start is turned off (oauthSpInitiatedSso FALSE, else oauth2.spInitiatedSso) did not follow a /launch of that client on the same session within oauth2.launchWindowS (#426, #713). | unauthorized_client (RFC 6749 section 4.1.2.1) |
 
 ## STS-SAML
 
@@ -2297,7 +2299,7 @@ Raised from: saml/.
 | `STS-SAML-0088` | A SAML 2.0 AuthnRequest was refused as a REPLAY: its issuer and ID arrived before, inside the freshness window (the claim scope saml2.authnrequest). #190. | an HTTP 400 page |
 | `STS-SAML-0089` | A SAML 2.0 AuthnRequest was refused because the claim store that records which requests were answered could not be asked (fail closed). #190. | an HTTP 400 page |
 | `STS-SAML-0090` | A SAML 2.0 LogoutRequest with no session cookie (a back-channel logout) named a SessionIndex whose session did not sign into that service provider, or was issued another NameID there. Nothing was ended. #192. | a LogoutResponse with StatusCode Requester / UnknownPrincipal |
-| `STS-SAML-0091` | An identity-provider-initiated sign-in (/saml2/unsolicited) was refused: saml2.unsolicitedSso is off in the realm. #189. | an HTTP 403 page |
+| `STS-SAML-0091` | An identity-provider-initiated sign-in (/saml2/unsolicited) was refused: saml2.idpInitiatedSso is off for that service provider (the realm default, off, unless saml2IdpInitiatedSso on its entry turns it on). #189, #711. | an HTTP 403 page |
 | `STS-SAML-0092` | An identity-provider-initiated sign-in (/saml2/unsolicited) named no service provider (providerId or the path segment). #189. | an HTTP 400 page |
 | `STS-SAML-0093` | An identity-provider-initiated sign-in asked for a binding a Response does not go on (anything but HTTP-POST, POST-SimpleSign or HTTP-Artifact). #189. | an HTTP 400 page |
 | `STS-SAML-0094` | A SAML 2.0 AttributeQuery named a subject no live session here gave the asking service provider (by the NameID it was issued), or that session has ended. #189. | SOAP samlp:Response, Requester / UnknownPrincipal (HTTP 200) |
@@ -2317,6 +2319,11 @@ Raised from: saml/.
 | `STS-SAML-0108` | A SAML 1.1 sign-in reached a session whose second factor the relying party does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-SAML-0109` | A SAML 1.1 flow back from its one sign-in trip still rested on a second factor the relying party does not allow (appMfaMechanism, #475). | HTTP 403 page |
 | `STS-SAML-0110` | A SAML 2.0 or SAML 1.1 artifact could not be issued: the realm already holds saml2.maxArtifacts (saml11.maxArtifacts) unresolved artifacts, and a full store refuses rather than forget one (#614). Nothing was sent to the service provider. | HTTP 503 page — the HTTP-Artifact binding and the SAML 1.1 Browser/Artifact profile can carry no failure without an artifact |
+| `STS-SAML-0111` | A SAML 2.0 AuthnRequest was refused: saml2.spInitiatedSso is off for that service provider (saml2SpInitiatedSso FALSE on its entry, or the realm setting), so it is reached only through identity-provider-initiated sign-in. Refused before the sign-in screen. #711. | Responder / RequestDenied |
+| `STS-SAML-0112` | An identity-provider-initiated SAML 2.0 sign-in (/saml2/unsolicited) came back from its one trip to the sign-in screen and the issuance policy still asked for a step-up on the session's risk; it is not sent round again. #711. | Responder / RequestDenied (no InResponseTo) |
+| `STS-SAML-0113` | A SAML 1.1 sign-in started here — /saml11/sso with a TARGET and no shire — was refused: saml11.idpInitiatedSso is off for that relying party (the realm default, off, unless saml11IdpInitiatedSso on its entry turns it on). #711. | HTTP 403 page |
+| `STS-SAML-0114` | A SAML 1.1 sign-in the relying party started — a request carrying shire, the Shibboleth 1.3 AuthnRequest profile — was refused: saml11.spInitiatedSso is off for that relying party (saml11SpInitiatedSso FALSE on its entry, or the realm setting). The request is unsigned, so this closes a door rather than proving where a request came from. #711. | HTTP 403 page |
+| `STS-SAML-0115` | A SAML 1.1 flow came back from its one trip to the sign-in screen and the issuance policy still asked for a step-up on the session's risk; it is not sent round again. #711. | HTTP 403 page |
 
 ## STS-WSTRUST
 
@@ -2390,6 +2397,12 @@ Raised from: ws-federation/.
 | `STS-WSFED-0021` | Product mode: a wsignin1.0 named a wtrealm that is no registered relying party (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before the sign-in screen and before anything was issued or recorded (#496). | HTTP 404 error page (the profile defines no error response) |
 | `STS-WSFED-0022` | A WS-Federation sign-in reached a session whose second factor the relying party does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-WSFED-0023` | A WS-Federation request back from its one sign-in trip still rested on a second factor the relying party does not allow (appMfaMechanism, #475). | HTTP 403 page |
+| `STS-WSFED-0024` | An identity-provider-initiated sign-in (/wsfed/initiate/{rp} or ?wtrealm=) named no registered relying party, by identifier or slug. Refused in both modes: the response may go only to a reply address registered for it (#712). | HTTP 404 error page (the profile defines no error response) |
+| `STS-WSFED-0025` | An identity-provider-initiated sign-in to a relying party for which it is turned off: wsfed.idpInitiatedSso, or wsfedIdpInitiatedSso on its entry, is FALSE (off by default, #426, #712). | HTTP 403 error page |
+| `STS-WSFED-0026` | An identity-provider-initiated sign-in carried a wreply. Refused rather than ignored: the response goes only to the relying party's registered wsfedReplyUrl (#712). | HTTP 400 error page |
+| `STS-WSFED-0027` | An identity-provider-initiated sign-in to a relying party with no usable registered wsfedReplyUrl: none, only observed ones, or a first one that is not an absolute http(s) URL (#712). | HTTP 400 error page |
+| `STS-WSFED-0028` | A wsignin1.0 from a relying party for which a sign-in it starts is turned off: wsfed.spInitiatedSso, or wsfedSpInitiatedSso on its entry, is FALSE (#426, #712). | HTTP 403 error page (the profile defines no error response) |
+| `STS-WSFED-0029` | An identity-provider-initiated sign-in back from its one step-up on risk (sts_risk_retry=1) was still denied on risk by the issuance policy, and was refused rather than sent round again (#712). | HTTP 403 error page |
 
 ## STS-FED
 
@@ -4867,6 +4880,21 @@ Raised from: logout/.
 | `STS-LOGOUT-0008` | The signed-out document (POST /logout/signed-out, #577) was posted no sign-out result, or one this service did not MAC, made in another trust realm, or expired. | HTTP 400 page |
 | `STS-LOGOUT-0009` | The signed-out document (POST /logout/signed-out, #577) was posted with an origin this service does not answer on, or with none (or null) and no Sec-Fetch-Site: same-origin. | HTTP 403 page |
 | `STS-LOGOUT-0010` | A form was posted to /logout, which is no longer an act (#577): the page's act is POST /authn-api/logout. The browser is sent to the page, which ends nothing. | HTTP 303 to /logout |
+
+## STS-LAUNCH
+
+**Identity-provider-initiated sign-in.** GET /launch/{app}, the one link that starts a sign-in to an application here and hands it to that protocol's own endpoint (#426).
+
+Raised from: launch/, common/launch_links.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-LAUNCH-0001` | A /launch/{app} link named no application this realm has (#713). | HTTP 404 page |
+| `STS-LAUNCH-0002` | A /launch/{app} link named a protocol a sign-in cannot be started in: not saml2, saml11, wsfed or oidc (#713). | HTTP 400 page |
+| `STS-LAUNCH-0003` | A /launch/{app} link named a protocol the application is neither declared nor recorded for (#713). | HTTP 404 page |
+| `STS-LAUNCH-0004` | A /launch/{app} link named no protocol, identity-provider-initiated sign-in is on for the application in more than one, and its appLaunchProtocol names none of them (#713). | HTTP 409 page |
+| `STS-LAUNCH-0005` | A /launch/{app} link was refused because identity-provider-initiated sign-in is off for the application in that protocol (saml2IdpInitiatedSso and its siblings, else the realm setting; off by default, #426). | HTTP 403 page |
+| `STS-LAUNCH-0006` | A /launch/{app} link was refused because the application has nowhere registered to send the sign-in: no assertion consumer service, reply URL or usable initiate_login_uri (#713). | HTTP 409 page |
 
 ## STS-REG
 

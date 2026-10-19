@@ -428,6 +428,11 @@ const SUBSYSTEMS = [
   { id: 'LOGOUT', label: 'Sign-out',
     where: 'logout/',
     what: 'The protocol-independent sign-out and the session inventory.' },
+  { id: 'LAUNCH', label: 'Identity-provider-initiated sign-in',
+    where: 'launch/, common/launch_links.ts',
+    what: 'GET /launch/{app}, the one link that starts a sign-in to an ' +
+          'application here and hands it to that protocol\'s own endpoint ' +
+          '(#426).' },
   { id: 'REG', label: 'Registries',
     where: 'common/applications.js, common/consent.ts, ' +
            'common/app_permissions.ts, common/delegation.js, ' +
@@ -9625,6 +9630,12 @@ const CODES = [
       'in force, and only its jtis were kept (#614). Refused, and what it ' +
       'bought is revoked.',
     spec: '400 invalid_grant (RFC 6749 sections 4.1.2 and 10.5)' },
+  { code: 'STS-OAUTH-0959',
+    summary: 'An authorization request from a client whose own start is ' +
+      'turned off (oauthSpInitiatedSso FALSE, else oauth2.spInitiatedSso) ' +
+      'did not follow a /launch of that client on the same session within ' +
+      'oauth2.launchWindowS (#426, #713).',
+    spec: 'unauthorized_client (RFC 6749 section 4.1.2.1)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -10087,7 +10098,9 @@ const CODES = [
     spec: 'a LogoutResponse with StatusCode Requester / UnknownPrincipal' },
   { code: 'STS-SAML-0091',
     summary: 'An identity-provider-initiated sign-in (/saml2/unsolicited) ' +
-      'was refused: saml2.unsolicitedSso is off in the realm. #189.',
+      'was refused: saml2.idpInitiatedSso is off for that service provider ' +
+      '(the realm default, off, unless saml2IdpInitiatedSso on its entry ' +
+      'turns it on). #189, #711.',
     spec: 'an HTTP 403 page' },
   { code: 'STS-SAML-0092',
     summary: 'An identity-provider-initiated sign-in (/saml2/unsolicited) ' +
@@ -10192,6 +10205,38 @@ const CODES = [
       'one (#614). Nothing was sent to the service provider.',
     spec: 'HTTP 503 page — the HTTP-Artifact binding and the SAML 1.1 ' +
       'Browser/Artifact profile can carry no failure without an artifact' },
+  { code: 'STS-SAML-0111',
+    summary: 'A SAML 2.0 AuthnRequest was refused: saml2.spInitiatedSso is ' +
+      'off for that service provider (saml2SpInitiatedSso FALSE on its ' +
+      'entry, or the realm setting), so it is reached only through ' +
+      'identity-provider-initiated sign-in. Refused before the sign-in ' +
+      'screen. #711.',
+    spec: 'Responder / RequestDenied' },
+  { code: 'STS-SAML-0112',
+    summary: 'An identity-provider-initiated SAML 2.0 sign-in ' +
+      '(/saml2/unsolicited) came back from its one trip to the sign-in ' +
+      'screen and the issuance policy still asked for a step-up on the ' +
+      'session\'s risk; it is not sent round again. #711.',
+    spec: 'Responder / RequestDenied (no InResponseTo)' },
+  { code: 'STS-SAML-0113',
+    summary: 'A SAML 1.1 sign-in started here — /saml11/sso with a TARGET ' +
+      'and no shire — was refused: saml11.idpInitiatedSso is off for that ' +
+      'relying party (the realm default, off, unless ' +
+      'saml11IdpInitiatedSso on its entry turns it on). #711.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-SAML-0114',
+    summary: 'A SAML 1.1 sign-in the relying party started — a request ' +
+      'carrying shire, the Shibboleth 1.3 AuthnRequest profile — was ' +
+      'refused: saml11.spInitiatedSso is off for that relying party ' +
+      '(saml11SpInitiatedSso FALSE on its entry, or the realm setting). ' +
+      'The request is unsigned, so this closes a door rather than proving ' +
+      'where a request came from. #711.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-SAML-0115',
+    summary: 'A SAML 1.1 flow came back from its one trip to the sign-in ' +
+      'screen and the issuance policy still asked for a step-up on the ' +
+      'session\'s risk; it is not sent round again. #711.',
+    spec: 'HTTP 403 page' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
@@ -10486,6 +10531,39 @@ const CODES = [
       'rested on a second factor the relying party does not allow ' +
       '(appMfaMechanism, #475).',
     spec: 'HTTP 403 page' },
+  { code: 'STS-WSFED-0024',
+    summary: 'An identity-provider-initiated sign-in (/wsfed/initiate/{rp} ' +
+      'or ?wtrealm=) named no registered relying party, by identifier or ' +
+      'slug. Refused in both modes: the response may go only to a reply ' +
+      'address registered for it (#712).',
+    spec: 'HTTP 404 error page (the profile defines no error response)' },
+  { code: 'STS-WSFED-0025',
+    summary: 'An identity-provider-initiated sign-in to a relying party for ' +
+      'which it is turned off: wsfed.idpInitiatedSso, or ' +
+      'wsfedIdpInitiatedSso on its entry, is FALSE (off by default, #426, ' +
+      '#712).',
+    spec: 'HTTP 403 error page' },
+  { code: 'STS-WSFED-0026',
+    summary: 'An identity-provider-initiated sign-in carried a wreply. ' +
+      'Refused rather than ignored: the response goes only to the relying ' +
+      'party\'s registered wsfedReplyUrl (#712).',
+    spec: 'HTTP 400 error page' },
+  { code: 'STS-WSFED-0027',
+    summary: 'An identity-provider-initiated sign-in to a relying party with ' +
+      'no usable registered wsfedReplyUrl: none, only observed ones, or a ' +
+      'first one that is not an absolute http(s) URL (#712).',
+    spec: 'HTTP 400 error page' },
+  { code: 'STS-WSFED-0028',
+    summary: 'A wsignin1.0 from a relying party for which a sign-in it ' +
+      'starts is turned off: wsfed.spInitiatedSso, or wsfedSpInitiatedSso ' +
+      'on its entry, is FALSE (#426, #712).',
+    spec: 'HTTP 403 error page (the profile defines no error response)' },
+  { code: 'STS-WSFED-0029',
+    summary: 'An identity-provider-initiated sign-in back from its one ' +
+      'step-up on risk (sts_risk_retry=1) was still denied on risk by the ' +
+      'issuance policy, and was refused rather than sent round again ' +
+      '(#712).',
+    spec: 'HTTP 403 error page' },
   // ===== FED ===============================================================
   { code: 'STS-FED-0001',
     summary: 'A federation endpoint (login or assertion consumer service) ' +
@@ -21115,6 +21193,35 @@ const CODES = [
       '(#577): the page\'s act is POST /authn-api/logout. The browser is ' +
       'sent to the page, which ends nothing.',
     spec: 'HTTP 303 to /logout' },
+  // ===== LAUNCH ============================================================
+  { code: 'STS-LAUNCH-0001',
+    summary: 'A /launch/{app} link named no application this realm has ' +
+      '(#713).',
+    spec: 'HTTP 404 page' },
+  { code: 'STS-LAUNCH-0002',
+    summary: 'A /launch/{app} link named a protocol a sign-in cannot be ' +
+      'started in: not saml2, saml11, wsfed or oidc (#713).',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-LAUNCH-0003',
+    summary: 'A /launch/{app} link named a protocol the application is ' +
+      'neither declared nor recorded for (#713).',
+    spec: 'HTTP 404 page' },
+  { code: 'STS-LAUNCH-0004',
+    summary: 'A /launch/{app} link named no protocol, identity-provider-' +
+      'initiated sign-in is on for the application in more than one, and ' +
+      'its appLaunchProtocol names none of them (#713).',
+    spec: 'HTTP 409 page' },
+  { code: 'STS-LAUNCH-0005',
+    summary: 'A /launch/{app} link was refused because identity-provider-' +
+      'initiated sign-in is off for the application in that protocol ' +
+      '(saml2IdpInitiatedSso and its siblings, else the realm setting; off ' +
+      'by default, #426).',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-LAUNCH-0006',
+    summary: 'A /launch/{app} link was refused because the application has ' +
+      'nowhere registered to send the sign-in: no assertion consumer ' +
+      'service, reply URL or usable initiate_login_uri (#713).',
+    spec: 'HTTP 409 page' },
   // ===== REG ===============================================================
   { code: 'STS-REG-0001',
     summary: 'An application identifier was empty, longer than 512 ' +

@@ -1907,6 +1907,30 @@
     "en": "d6543ad76912e1b1",
     "text": "En todos los modos (#123), al terminar una sesión de inicio de sesión único de navegador se revoca cada token de actualización emitido EN esa sesión sin offline_access — el SHOULD de la sección 2.7 de OpenID Connect Back-Channel Logout 1.0 y el MAY de la sección 2.2.2 de RFC 9700. Un token con offline_access se conserva: sobrevivir a la sesión es para lo que existe ese ámbito (OIDC Core sección 11). Es lo que hace que /oauth2/logout y el wsignout1.0 de WS-Federation signifiquen algo para el back channel: sin esto, cerrar sesión termina la cookie y deja una credencial de larga duración en manos del cliente. ACTIVADO de forma predeterminada; desactivado, o FALSE en la entrada de un cliente, reproduce al cliente que vuelve a entrar a base de actualizaciones. Un token se localiza por la sesión en la que se EMITIÓ."
   },
+  "oauth2.thirdPartyInitiatedLogin|label": {
+    "en": "b7e8b085293fbd62",
+    "text": "Inicio de sesión iniciado por el proveedor de identidad (inicio de sesión de terceros)"
+  },
+  "oauth2.thirdPartyInitiatedLogin|description": {
+    "en": "d652b991521afa8d",
+    "text": "Indica si /launch/{app} envía a una persona al initiate_login_uri de un cliente OpenID Connect (OpenID Connect Core sección 4) con iss, login_hint y target_link_uri, y si el portal de usuario ofrece ese enlace. DESACTIVADO de forma predeterminada; oauthThirdPartyInitiatedLogin en la entrada de un cliente lo anula para ese cliente. El cliente inicia entonces una solicitud de autorización corriente, así que todo lo que sigue al enlace es el inicio de sesión propio del cliente."
+  },
+  "oauth2.spInitiatedSso|label": {
+    "en": "a4cd88a5fec219e4",
+    "text": "Inicio de sesión iniciado por el cliente"
+  },
+  "oauth2.spInitiatedSso|description": {
+    "en": "2ac22081ca9a60d6",
+    "text": "Indica si /oauth2/authorize responde a un cliente que no se acaba de lanzar. ACTIVADO de forma predeterminada; oauthSpInitiatedSso en la entrada de un cliente lo anula. Desactivado, una solicitud de autorización de ese cliente solo se responde cuando sigue a un /launch de él en la misma sesión dentro de oauth2.launchWindowS, una vez por lanzamiento; cualquier otra se rechaza con unauthorized_client. Las concesiones que no pasan por el endpoint de autorización no se ven afectadas."
+  },
+  "oauth2.launchWindowS|label": {
+    "en": "9c1c1df5174c8754",
+    "text": "Ventana de lanzamiento (segundos)"
+  },
+  "oauth2.launchWindowS|description": {
+    "en": "40b4f249f1f0c2d3",
+    "text": "Cuánto tiempo después de que /launch/{app} enviara a una persona al initiate_login_uri de un cliente sigue contando la solicitud de autorización de ese cliente como posterior al lanzamiento, para un cliente cuyo inicio propio está desactivado (oauth2.spInitiatedSso)."
+  },
   "oauth2.eddsaCurve|label": {
     "en": "6637f461a494b5b2",
     "text": "Curva EdDSA"
@@ -4363,13 +4387,21 @@
     "en": "d5e8553e9978dfda",
     "text": "Indica si se rechaza un <samlp:AuthnRequest> SIN FIRMAR — y un <samlp:LogoutRequest> sin firmar de un proveedor de servicios. **`auto` está ACTIVADO en modo producto y DESACTIVADO en desarrollo.** `on` y `off` deciden independientemente del modo; a un proveedor de servicios cuyos metadatos consumidos dicen AuthnRequestsSigned=\"true\" se le exige aunque esto esté desactivado. También es lo que dice el WantAuthnRequestsSigned de los metadatos de este proveedor de identidad.\n\nUna firma PRESENTE se verifica en todo modo — la firma en la cadena de consulta del binding HTTP Redirect (sección 3.4.4.1) o la envuelta del binding HTTP POST — contra los certificados de firma REGISTRADOS del proveedor de servicios (samlSigningCertificate, de sus metadatos o definido en la página SAML 2.0), nunca contra el certificado que lleva la solicitud, y una firma que no se verifica se rechaza. Sin certificado registrado, una firma se registra como no verificada, lo que cuenta como SIN FIRMAR cuando esto está activado."
   },
-  "saml2.unsolicitedSso|label": {
+  "saml2.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inicio de sesión iniciado por el proveedor de identidad"
   },
-  "saml2.unsolicitedSso|description": {
-    "en": "aff7c855f4363724",
-    "text": "Indica si /saml2/unsolicited[/{sp}] envía un Response NO SOLICITADO (saml-profiles-2.0-os sección 4.1.5) — un inicio de sesión que empieza en este proveedor de identidad, para un proveedor de servicios que no lo pidió: `providerId` (o el segmento de ruta) lo nombra, `shire` uno de sus servicios consumidores de aserciones registrados, `target` el RelayState. En modo producto el proveedor de servicios debe estar registrado, la dirección debe ser una que registraron sus metadatos o su entrada, y se consulta la política de emisión como en cualquier inicio de sesión. La aserción no lleva InResponseTo, así que cada proveedor de servicios decide por sí mismo si acepta una; desactívelo para un dominio cuyos proveedores solo deban recibir respuestas."
+  "saml2.idpInitiatedSso|description": {
+    "en": "9982a49370bf40a8",
+    "text": "Indica si /saml2/unsolicited[/{sp}] — y /launch/{app} para SAML 2.0 — envía una Response NO SOLICITADA (saml-profiles-2.0-os sección 4.1.5): un inicio de sesión que empieza en este proveedor de identidad para un proveedor de servicios que no lo pidió. DESACTIVADO de forma predeterminada; saml2IdpInitiatedSso en la entrada de una aplicación lo anula solo para ese proveedor de servicios. La aserción no lleva InResponseTo, así que el proveedor de servicios no puede distinguir una Response que se le envió de una introducida en su navegador por otra persona; actívelo solo para proveedores que esperen un inicio de sesión iniciado por el proveedor de identidad. En modo producto el proveedor de servicios debe estar registrado, la dirección debe ser una que registraron sus metadatos o su entrada, y se consulta la política de emisión como en cualquier inicio de sesión."
+  },
+  "saml2.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "Inicio de sesión iniciado por el proveedor de servicios"
+  },
+  "saml2.spInitiatedSso|description": {
+    "en": "92e8e438813d4044",
+    "text": "Indica si se responde a un <samlp:AuthnRequest> en /saml2/sso — el inicio de sesión que inicia un proveedor de servicios. ACTIVADO de forma predeterminada; saml2SpInitiatedSso en la entrada de una aplicación lo anula para ese proveedor de servicios. Desactivado, una solicitud se responde con una Response RequestDenied, y solo se puede iniciar sesión en el proveedor de servicios mediante el inicio de sesión iniciado por el proveedor de identidad."
   },
   "saml2.defaultSingleLogoutService|label": {
     "en": "a81a00ce8c57908e",
@@ -4515,6 +4547,22 @@
     "en": "2e68718a26d4706c",
     "text": "Crea una entrada de aplicación bajo ou=applications la primera vez que se nombra una parte que confía — al llegar un TARGET, al obtenerse un documento de metadatos o al resolverse un artefacto. Desactivado significa que los perfiles de navegador siguen funcionando y /admin/saml11 permanece vacío, que es lo que quiere quien ejecuta una prueba de carga y nadie más."
   },
+  "saml11.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Inicio de sesión iniciado por el proveedor de identidad"
+  },
+  "saml11.idpInitiatedSso|description": {
+    "en": "37300a932ffca76b",
+    "text": "Indica si se responde a un inicio de sesión SAML 1.1 INICIADO AQUÍ: /saml11/sso/{rp} con un TARGET y sin shire, y /launch/{app} para SAML 1.1. DESACTIVADO de forma predeterminada; saml11IdpInitiatedSso en la entrada de una aplicación lo anula para esa parte que confía. La parte que confía recibe una Response que no pidió, que no puede distinguir de una introducida en su navegador por otra persona."
+  },
+  "saml11.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "Inicio de sesión iniciado por el proveedor de servicios"
+  },
+  "saml11.spInitiatedSso|description": {
+    "en": "f4b88ca2b7aa9fbc",
+    "text": "Indica si se responde a un inicio de sesión SAML 1.1 que inició la parte que confía — el perfil AuthnRequest de Shibboleth 1.3, una solicitud que lleva `shire`. ACTIVADO de forma predeterminada; saml11SpInitiatedSso en la entrada de una aplicación lo anula. Una solicitud así es una URL simple sin firmar, así que desactivar esto cierra la puerta en lugar de demostrar quién la abrió."
+  },
   "saml11.requestTtlMin|label": {
     "en": "f2c40fce66df42af",
     "text": "Vigencia del flujo retenido (minutos)"
@@ -4578,6 +4626,22 @@
   "wstrust.jwtCertificateHeader|description": {
     "en": "d75340dbe09a7542",
     "text": "Indica si un JWT que devuelve este STS en un RequestSecurityTokenResponse nombra la cadena de certificados de la clave que lo firmó. Una aserción SAML lleva su certificado en su propia XML Signature y no se ve afectada. `x5u` — el predeterminado — es la dirección de la cadena en este servicio, `/pki/chain/{scope}/{sha256}.pem`, de unos cien bytes; `x5c` es la cadena en línea, primero la hoja y al final la raíz del servicio, en DER base64, de varios kilobytes; `both` es ambos y `none` ninguno. En cualquier caso, es lo que necesita una parte que confía que solo tiene el token para llegar a los puntos de distribución de CRL, al respondedor OCSP y a la dirección caIssuers de cada certificado. Una clave aún no certificada bajo la CA emisora JOSE de este dominio, y una firma HMAC, no reciben ninguno. RFC 7515 sección 4.1.5 exige que la obtención de `x5u` use TLS: con global.https desactivado la dirección es `http://` y un verificador estricto se negará a seguirla. Los encabezados JWE nunca reciben uno — ninguna clave certificada de este servicio cifra nada. Configurable por dominio."
+  },
+  "wsfed.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Inicio de sesión iniciado por el proveedor de identidad"
+  },
+  "wsfed.idpInitiatedSso|description": {
+    "en": "62f920d6663c4e4f",
+    "text": "Indica si /wsfed/initiate/{rp} — y /launch/{app} para WS-Federation — inicia la sesión de una persona en una parte que confía que no lo pidió, enviando por POST a su wsfedReplyUrl registrada. DESACTIVADO de forma predeterminada; wsfedIdpInitiatedSso en la entrada de una aplicación lo anula para esa parte que confía. La parte que confía recibe una respuesta que no pidió, que no puede distinguir de una introducida en su navegador por otra persona."
+  },
+  "wsfed.spInitiatedSso|label": {
+    "en": "705a2297f2762532",
+    "text": "Inicio de sesión iniciado por la parte que confía"
+  },
+  "wsfed.spInitiatedSso|description": {
+    "en": "d16076a2c90701e3",
+    "text": "Indica si se responde a un wsignin1.0 en /wsfed — el inicio de sesión que inicia una parte que confía. ACTIVADO de forma predeterminada; wsfedSpInitiatedSso en la entrada de una aplicación lo anula. Un wsignin1.0 es una URL sin firmar, así que desactivar esto cierra la puerta en lugar de demostrar quién la abrió."
   },
   "wsfed.assertionLifetimeMin|label": {
     "en": "92ee206f116fd412",

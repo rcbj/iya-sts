@@ -1946,7 +1946,8 @@ class ApplicationsPage {
             t, family);
           return { id: 'cfg-' + family,
             label: family === 'saml2' ? 'SAML 2.0' : 'SAML 1.1',
-            html: observedSaml + familyFields + metadataForm + claims };
+            html: ApplicationsPage.applicationLaunchCard(row, family, t) +
+              observedSaml + familyFields + metadataForm + claims };
         });
       const samlPanels = group.id === 'saml'
         ? kit.subTabbedPanels(group.label, samlFamilyPanels) : '';
@@ -1959,12 +1960,18 @@ class ApplicationsPage {
       // fields: which named passkey policies name this application.
       const passkeyCard = group.id === 'every'
         ? ApplicationsPage.applicationPasskeyPolicyCard(row, t) : '';
+      // #426: the launch URL heads the OAuth and WS-Federation sub-tabs; the
+      // SAML ones head each family's panel above.
+      const launchCard = group.id === 'oauth'
+        ? ApplicationsPage.applicationLaunchCard(row, 'oidc', t)
+        : (group.id === 'wsfed'
+          ? ApplicationsPage.applicationLaunchCard(row, 'wsfed', t) : '');
       // WHAT THE CLIENT WAS SEEN DOING (#706), read-only, at the head of the
       // OAuth sub-tab, above the two lists it may use.
       const observedFlows = group.id === 'oauth'
         ? ApplicationsPage.applicationObservedFlows(row, t) : '';
       return '<div class="subpanel" id="cfg-' + kit.esc(group.id) + '">' +
-        observedFlows +
+        launchCard + observedFlows +
         (group.id === 'saml' ? samlPanels :
           (fieldsFirst ? fieldForm + sections : sections + fieldForm)) +
         passkeyCard + '</div>';
@@ -1985,6 +1992,50 @@ class ApplicationsPage {
       'href="#tab-roles">' + t.html('consoleApplications.a2.tabRoles') +
       '</a>' + t.html('consoleApplications.a2.cfgNoteC')) +
       '<div class="subtabs">' + bar + familiesPanel + groupPanels + '</div>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE IDENTITY-PROVIDER-INITIATED SIGN-IN URL (#426, #713), at the top of
+  // each protocol's sub-tab: `/launch/{app}?protocol=…`, the one link the
+  // user portal's Sign in uses too and that an operator pastes anywhere
+  // else. Drawn whether or not it is on, greyed when it is off, and naming
+  // what it lacks when it could not work — a dead link offered as a live one
+  // is the failure this exists to avoid. The protocol's own endpoint is
+  // underneath, for a partner who wants the native form.
+  // ---------------------------------------------------------------------------
+  /**
+   * The launch URL card for one protocol, or '' when the application cannot
+   * be launched in it.
+   *
+   * @param row - the application, with `page.launchUrls`
+   * @param protocol - `saml2`, `saml11`, `wsfed` or `oidc`
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static applicationLaunchCard(row, protocol, t) {
+    const links = row && row.page ? row.page.launchUrls : null;
+    const one = links ? links[protocol] : null;
+    if (!one || !one.url) {
+      return '';
+    }
+    const state = !one.enabled
+      ? kit.note(t.html('consoleApplications.launch.off',
+          { attribute: one.attribute, setting: one.setting }))
+      : ((one.missing || []).length
+        ? kit.note(t.html('consoleApplications.launch.missing',
+            { attributes: one.missing.join(', ') }))
+        : '');
+    return '<div class="launch-card' + (one.enabled ? '' : ' muted') +
+      '" id="cfg-launch-' + kit.esc(protocol) + '"><h3>' +
+      t.html('consoleApplications.launch.heading') + '</h3>' +
+      kit.note(t.html('consoleApplications.launch.lead',
+                      { protocol: one.label })) +
+      '<p><code>' + kit.esc(one.url) + '</code>' +
+      kit.copyButton(one.url, t) + '</p>' + state +
+      (one.endpoint
+        ? '<p class="note">' + t.html('consoleApplications.launch.endpoint') +
+          ' <code>' + kit.esc(one.endpoint) + '</code></p>'
+        : '') + '</div>';
   }
 
   // ---------------------------------------------------------------------------

@@ -181,7 +181,40 @@ provider's for the same thing:
   otherwise. Never HTTP-Redirect, which a Response must not use.
 
 In product the service provider must be registered, and the issuance policy is
-asked as for any sign-in. `saml2.unsolicitedSso` turns it off for a realm.
+asked as for any sign-in.
+
+**It is off until a service provider opts in.** `saml2.idpInitiatedSso` is
+`false` by default, and `saml2IdpInitiatedSso` TRUE on a service provider's
+application entry (the console's SAML 2.0 sub-tab, or
+`POST /admin-api/applications/set`) turns it on for that service
+provider alone. Off, the link is refused with a 403 page (`STS-SAML-0091`) and
+nothing is sent: an unsolicited Response carries no `InResponseTo`, so a
+service provider cannot tell one it was sent from one pushed into its
+browser, and only a service provider that expects one should get one.
+(Until #426 this was the realm setting `saml2.unsolicitedSso`, on by default;
+it was renamed with no alias.)
+
+**A sign-in started here runs what a requested one runs**: the session, the
+issuance policy with the session's risk, the CAEP `session-presented` event,
+and the record of the service provider on the session that
+[sign-out](signing-out.md) and back-channel logout read. When the policy asks for
+a **step-up on risk** — a second factor or a security key, because the
+session's risk is MEDIUM — the person is sent to the sign-in screen with that
+factor demanded and back to the same link, instead of being refused. So is a
+person whose sign-in mechanism the service provider does not allow. Either
+trip is made **once**: the link comes back marked `reprompted=1`, and a
+request carrying the mark that is still refused gets a `RequestDenied`
+Response (`STS-SAML-0112` for risk, `STS-SAML-0100` or `0107` for the
+mechanism). The mark is not a secret — sending it only gets the refusal one
+trip sooner.
+
+### Who may start a sign-in
+
+`saml2.spInitiatedSso` (`true` by default; `saml2SpInitiatedSso` per service
+provider) decides whether a service provider's own `<samlp:AuthnRequest>` is
+answered. Off, the request is answered with a `Responder` / `RequestDenied`
+Response naming it (`STS-SAML-0111`), before the sign-in screen, and the
+service provider can be signed in to only from a link here.
 
 ### The attribute authority
 
@@ -598,7 +631,8 @@ one-shot artifact are enforced in **both** modes. See
 | `saml2.encryptLogoutNameId` | `STS_SAML2_ENCRYPT_LOGOUT_NAMEID` | `false` | yes | Send `<saml:EncryptedID>` in the LogoutRequests this service sends. |
 | `saml2.autocreateApplications` | `STS_SAML2_AUTOCREATE_APPLICATIONS` | `true` | yes | Create an application entry for a new entityID on its first valid AuthnRequest or metadata request. |
 | `saml2.requireSignedAuthnRequests` | `STS_SAML2_REQUIRE_SIGNED_AUTHN_REQUESTS` | `auto` | yes | Refuse unsigned requests: `auto` (on in product), `on` or `off`; also sets `WantAuthnRequestsSigned`. |
-| `saml2.unsolicitedSso` | `STS_SAML2_UNSOLICITED_SSO` | `true` | yes | Answer `/saml2/unsolicited`: identity-provider-initiated sign-in. |
+| `saml2.idpInitiatedSso` | `STS_SAML2_IDP_INITIATED_SSO` | `false` | yes | Answer `/saml2/unsolicited`: identity-provider-initiated sign-in. **Off by default**; per service provider with `saml2IdpInitiatedSso`. Was `saml2.unsolicitedSso`, on, until #426. |
+| `saml2.spInitiatedSso` | `STS_SAML2_SP_INITIATED_SSO` | `true` | yes | Answer a service provider's AuthnRequest; off, it is answered `RequestDenied`. Per service provider with `saml2SpInitiatedSso`. |
 | `saml2.defaultSingleLogoutService` | `STS_SAML2_DEFAULT_SLO_SERVICE` | *(empty)* | yes | Where a LogoutResponse goes when the service provider registered no SingleLogoutService. |
 | `saml2.requestTtlMin` | `STS_SAML2_REQUEST_TTL_MIN` | `10` | yes | How long an AuthnRequest is held while the person signs in — and how old its `IssueInstant` may be. |
 | `saml2.maxArtifacts` | `STS_SAML2_MAX_ARTIFACTS` | `10000` | yes | Unresolved artifacts kept per realm; a store full of live ones refuses the next HTTP-Artifact sign-in with a 503 page (`STS-SAML-0110`) rather than forget one. |

@@ -1907,6 +1907,30 @@
     "en": "d6543ad76912e1b1",
     "text": "Sa bawat mode (#123), tapusin ang isang browser sign-on session at nire-revoke ang bawat refresh token na in-issue SA session na iyon nang walang offline_access — ang SHOULD ng OpenID Connect Back-Channel Logout 1.0 section 2.7, at ang MAY ng RFC 9700 section 2.2.2. Pinananatili ang token na binigyan ng offline_access: ang paglampas sa session ang mismong layunin ng scope na iyon (OIDC Core section 11). Ito ang nagbibigay ng kahulugan sa /oauth2/logout at sa wsignout1.0 ng WS-Federation para sa back channel: kung wala ito, tinatapos ng pag-sign out ang cookie at iniiwan ang pangmatagalang credential sa kamay ng client. NAKA-ON bilang default; kapag naka-off, o FALSE sa entry ng isang client, inuulit ang client na nagre-refresh pabalik. Hinahanap ang token ayon sa session kung saan ito IN-ISSUE."
   },
+  "oauth2.thirdPartyInitiatedLogin|label": {
+    "en": "b7e8b085293fbd62",
+    "text": "Sign-in na sinimulan ng identity provider (third-party login)"
+  },
+  "oauth2.thirdPartyInitiatedLogin|description": {
+    "en": "d652b991521afa8d",
+    "text": "Kung ipinapadala ng /launch/{app} ang isang tao sa initiate_login_uri ng isang OpenID Connect client (OpenID Connect Core section 4) kasama ang iss, login_hint at target_link_uri, at kung iniaalok ng user portal ang link na iyon. NAKA-OFF bilang default; nangingibabaw dito ang oauthThirdPartyInitiatedLogin sa entry ng isang client para sa client na iyon. Pagkatapos ay nagsisimula ang client ng isang ordinaryong authorization request, kaya ang lahat ng kasunod ng link ay sariling sign-in ng client."
+  },
+  "oauth2.spInitiatedSso|label": {
+    "en": "a4cd88a5fec219e4",
+    "text": "Sign-in na sinimulan ng client"
+  },
+  "oauth2.spInitiatedSso|description": {
+    "en": "2ac22081ca9a60d6",
+    "text": "Kung sinasagot ng /oauth2/authorize ang client na hindi kalalunsad lang. NAKA-ON bilang default; nangingibabaw dito ang oauthSpInitiatedSso sa entry ng isang client. Kapag naka-off, sinasagot lang ang authorization request mula sa client na iyon kapag sumusunod ito sa isang /launch nito sa parehong session sa loob ng oauth2.launchWindowS, isang beses bawat launch; ang iba ay tinatanggihan ng unauthorized_client. Hindi apektado ang mga grant na hindi dumaraan sa authorization endpoint."
+  },
+  "oauth2.launchWindowS|label": {
+    "en": "9c1c1df5174c8754",
+    "text": "Launch window (segundo)"
+  },
+  "oauth2.launchWindowS|description": {
+    "en": "40b4f249f1f0c2d3",
+    "text": "Gaano katagal matapos ipadala ng /launch/{app} ang isang tao sa initiate_login_uri ng isang client ibinibilang pa rin ang authorization request ng client na iyon bilang sumusunod sa launch, para sa client na naka-off ang sariling pagsisimula (oauth2.spInitiatedSso)."
+  },
   "oauth2.eddsaCurve|label": {
     "en": "6637f461a494b5b2",
     "text": "EdDSA curve"
@@ -4363,13 +4387,21 @@
     "en": "d5e8553e9978dfda",
     "text": "Kung tinatanggihan ang HINDI PINIRMAHANG <samlp:AuthnRequest> — at ang hindi pinirmahang <samlp:LogoutRequest> mula sa isang service provider. **Ang `auto` ay NAKA-ON sa product mode at NAKA-OFF sa development.** Ang `on` at `off` ay nagpapasya anuman ang mode; ang service provider na ang na-consume na metadata ay nagsasabing AuthnRequestsSigned=\"true\" ay pinanghahawakan doon kahit naka-off ito. Ito rin ang sinasabi ng WantAuthnRequestsSigned sa metadata ng identity provider na ito.\n\nVine-verify sa bawat mode ang pirmang NAROROON — ang query-string signature ng HTTP Redirect binding (section 3.4.4.1) o ang enveloped na pirma ng HTTP POST binding — laban sa mga NAKA-REGISTER na signing certificate ng service provider (samlSigningCertificate, mula sa metadata nito o itinakda sa pahinang SAML 2.0), hindi kailanman laban sa certificate na dala ng request, at tinatanggihan ang pirmang hindi nagve-verify. Kapag walang naka-register na certificate, nire-record ang pirma bilang hindi na-verify, na binibilang na HINDI PINIRMAHAN kapag naka-on ito."
   },
-  "saml2.unsolicitedSso|label": {
+  "saml2.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
-    "text": "Identity-provider-initiated na sign-in"
+    "text": "Sign-in na sinimulan ng identity provider"
   },
-  "saml2.unsolicitedSso|description": {
-    "en": "aff7c855f4363724",
-    "text": "Kung nagpapadala ang /saml2/unsolicited[/{sp}] ng UNSOLICITED na Response (saml-profiles-2.0-os section 4.1.5) — isang sign-in na sinimulan sa identity provider na ito, para sa service provider na hindi humingi: pinapangalanan ito ng `providerId` (o ng path segment), ng `shire` ang isa sa mga naka-register nitong assertion consumer service, ng `target` ang RelayState. Dapat naka-register ang service provider sa product, dapat ang address ay isa sa ini-register ng metadata o entry nito, at tinatanong ang issuance policy gaya ng sa anumang sign-in. Walang dalang InResponseTo ang assertion, kaya ang service provider ang nagpapasya para sa sarili nito kung tatanggap ito ng isa; i-off ito para sa realm na ang mga provider ay dapat sinasagot lang."
+  "saml2.idpInitiatedSso|description": {
+    "en": "9982a49370bf40a8",
+    "text": "Kung nagpapadala ang /saml2/unsolicited[/{sp}] — at ang /launch/{app} para sa SAML 2.0 — ng UNSOLICITED na Response (saml-profiles-2.0-os section 4.1.5): isang sign-in na sinimulan sa identity provider na ito para sa service provider na hindi humingi. NAKA-OFF bilang default; nangingibabaw dito ang saml2IdpInitiatedSso sa entry ng isang application para sa service provider na iyon lamang. Walang dalang InResponseTo ang assertion, kaya hindi matutukoy ng service provider ang Response na ipinadala rito mula sa itinulak sa browser nito ng ibang tao; i-on lang ito para sa mga provider na umaasa ng sign-in na sinimulan ng identity provider. Dapat rehistrado ang service provider sa product, dapat ang address ay isang nirehistro ng metadata o ng entry nito, at tinatanong ang issuance policy gaya ng sa anumang sign-in."
+  },
+  "saml2.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "Sign-in na sinimulan ng service provider"
+  },
+  "saml2.spInitiatedSso|description": {
+    "en": "92e8e438813d4044",
+    "text": "Kung sinasagot ang isang <samlp:AuthnRequest> sa /saml2/sso — ang sign-in na sinisimulan ng service provider. NAKA-ON bilang default; nangingibabaw dito ang saml2SpInitiatedSso sa entry ng isang application para sa service provider na iyon. Kapag naka-off, sinasagot ang request ng isang RequestDenied na Response, at maisa-sign in lang ang service provider sa pamamagitan ng sign-in na sinimulan ng identity provider."
   },
   "saml2.defaultSingleLogoutService|label": {
     "en": "a81a00ce8c57908e",
@@ -4515,6 +4547,22 @@
     "en": "2e68718a26d4706c",
     "text": "Gumawa ng application entry sa ilalim ng ou=applications sa unang pagkakataong mapangalanan ang isang relying party — sa pagdating ng TARGET, sa pagkuha ng metadata document, o sa pag-resolve ng artifact. Ang off ay nangangahulugang gumagana pa rin ang mga browser profile at nananatiling walang laman ang /admin/saml11, na siyang gusto ng taong nagpapatakbo ng load test at walang iba."
   },
+  "saml11.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Sign-in na sinimulan ng identity provider"
+  },
+  "saml11.idpInitiatedSso|description": {
+    "en": "37300a932ffca76b",
+    "text": "Kung sinasagot ang SAML 1.1 sign-in na SINIMULAN DITO: /saml11/sso/{rp} na may TARGET at walang shire, at /launch/{app} para sa SAML 1.1. NAKA-OFF bilang default; nangingibabaw dito ang saml11IdpInitiatedSso sa entry ng isang application para sa relying party na iyon. Tumatanggap ang relying party ng Response na hindi nito hiningi, na hindi nito matutukoy mula sa itinulak sa browser nito ng ibang tao."
+  },
+  "saml11.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "Sign-in na sinimulan ng service provider"
+  },
+  "saml11.spInitiatedSso|description": {
+    "en": "f4b88ca2b7aa9fbc",
+    "text": "Kung sinasagot ang SAML 1.1 sign-in na sinimulan ng relying party — ang Shibboleth 1.3 AuthnRequest profile, isang request na may dalang `shire`. NAKA-ON bilang default; nangingibabaw dito ang saml11SpInitiatedSso sa entry ng isang application. Payak na unsigned URL ang ganitong request, kaya ang pag-off dito ay nagsasara ng pinto sa halip na patunayan kung sino ang nagbukas nito."
+  },
   "saml11.requestTtlMin|label": {
     "en": "f2c40fce66df42af",
     "text": "Tagal ng hinahawakang flow (minuto)"
@@ -4578,6 +4626,22 @@
   "wstrust.jwtCertificateHeader|description": {
     "en": "d75340dbe09a7542",
     "text": "Kung pinapangalanan ng JWT na ibinabalik ng STS na ito sa isang RequestSecurityTokenResponse ang certificate chain ng key na pumirma rito. Dala ng SAML assertion ang certificate nito sa sarili nitong XML Signature at hindi ito apektado. Ang `x5u` — ang default — ay ang address ng chain sa serbisyong ito, `/pki/chain/{scope}/{sha256}.pem`, mga isandaang byte; ang `x5c` ay ang chain mismo na nakasama, leaf muna at huli ang service Root, base64 DER, ilang kilobyte; ang `both` ay pareho at ang `none` ay wala sa dalawa. Alinman dito, ito ang kailangan ng relying party na token lang ang hawak para maabot ang CRL distribution points, OCSP responder at caIssuers address ng bawat certificate. Walang natatanggap ang key na hindi pa naka-certify sa ilalim ng JOSE Issuing CA ng realm na ito, pati ang HMAC na pirma. Hinihingi ng RFC 7515 section 4.1.5 na gumamit ng TLS ang pag-fetch ng `x5u`: kapag naka-off ang global.https, `http://` ang address at tatanggi itong sundan ng isang mahigpit na verifier. Hindi kailanman binibigyan nito ang mga JWE header — walang ine-encrypt ang anumang certified key ng serbisyong ito. Puwedeng itakda bawat realm."
+  },
+  "wsfed.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Sign-in na sinimulan ng identity provider"
+  },
+  "wsfed.idpInitiatedSso|description": {
+    "en": "62f920d6663c4e4f",
+    "text": "Kung isina-sign in ng /wsfed/initiate/{rp} — at ng /launch/{app} para sa WS-Federation — ang isang tao sa relying party na hindi humingi, nagpo-post sa nakarehistrong wsfedReplyUrl nito. NAKA-OFF bilang default; nangingibabaw dito ang wsfedIdpInitiatedSso sa entry ng isang application para sa relying party na iyon. Tumatanggap ang relying party ng response na hindi nito hiningi, na hindi nito matutukoy mula sa itinulak sa browser nito ng ibang tao."
+  },
+  "wsfed.spInitiatedSso|label": {
+    "en": "705a2297f2762532",
+    "text": "Sign-in na sinimulan ng relying party"
+  },
+  "wsfed.spInitiatedSso|description": {
+    "en": "d16076a2c90701e3",
+    "text": "Kung sinasagot ang isang wsignin1.0 sa /wsfed — ang sign-in na sinisimulan ng relying party. NAKA-ON bilang default; nangingibabaw dito ang wsfedSpInitiatedSso sa entry ng isang application. Unsigned URL ang wsignin1.0, kaya ang pag-off dito ay nagsasara ng pinto sa halip na patunayan kung sino ang nagbukas nito."
   },
   "wsfed.assertionLifetimeMin|label": {
     "en": "92ee206f116fd412",

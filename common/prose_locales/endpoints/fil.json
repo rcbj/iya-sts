@@ -1159,6 +1159,14 @@
     "en": "17543ed2ad8f5b73",
     "text": "Federation metadata para sa IISANG relying party"
   },
+  "endpoints.route./wsfed/initiate/:rp.name": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Sign-in na sinimulan ng identity provider"
+  },
+  "endpoints.route./wsfed/initiate.name": {
+    "en": "fe8976709b142424",
+    "text": "Sign-in na sinimulan ng identity provider, ayon sa wtrealm"
+  },
   "endpoints.route./saml2.name": {
     "en": "35f88743c0a1f5d7",
     "text": "Kung ano ang profile"
@@ -1322,6 +1330,10 @@
   "endpoints.route./oauth2/authorize.name": {
     "en": "91ef8dd96110c183",
     "text": "Authorization endpoint"
+  },
+  "endpoints.route./launch/:app.name": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Sign-in na sinimulan ng identity provider"
   },
   "endpoints.route./logout.name": {
     "en": "1228edbd8a552e3b",

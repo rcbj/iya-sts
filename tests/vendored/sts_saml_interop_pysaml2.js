@@ -92,7 +92,11 @@ async function makeWorld(realmMode) {
   w.sp = (/entityID="([^"]+)"/.exec(md.text) || [])[1];
   kit.must(md.status === 200 && w.sp, "the pysaml2 SP's metadata answered " +
            md.status);
-  await kit.createApplication(realm, w.sp, ["saml2"], {});
+  // saml2IdpInitiatedSso: unsolicited() sends this SP an unsolicited
+  // Response, and identity-provider-initiated sign-in is off until a
+  // service provider opts in (#426, #711).
+  await kit.createApplication(realm, w.sp, ["saml2"],
+                              { saml2IdpInitiatedSso: "TRUE" });
   w.spMetadata = md.text;
   await kit.consumeMetadata(realm, w.sp, md.text);
   const m2 = await fetch(rb + "/saml2/metadata/" + encodeURIComponent(w.sp));

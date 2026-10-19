@@ -90,7 +90,11 @@ async function makeWorld(realmMode) {
     kit.must(md.status === 200 && /EntityDescriptor/.test(xml),
              "the " + source + " SP's metadata answered " + md.status);
     const entityId = (/entityID="([^"]+)"/.exec(xml) || [])[1];
-    await kit.createApplication(realm, entityId, ["saml2"], {});
+    // saml2IdpInitiatedSso: idpInitiated() sends this SP an unsolicited
+    // Response, and identity-provider-initiated sign-in is off until a
+    // service provider opts in (#426, #711).
+    await kit.createApplication(realm, entityId, ["saml2"],
+                                { saml2IdpInitiatedSso: "TRUE" });
     await kit.consumeMetadata(realm, entityId, xml);
     const m2 = await fetch(rb + "/saml2/metadata/" +
                            encodeURIComponent(entityId));

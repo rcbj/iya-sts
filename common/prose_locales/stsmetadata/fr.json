@@ -268,8 +268,8 @@
     "text": "partial : LES DEUX profils navigateur — Browser/Artifact (section 4.1) et Browser/POST (4.2) — chacun avec la méthode de confirmation qu’exige sa section, qui sont des valeurs différentes et non interchangeables. IL N’Y A PAS DE MESSAGE DE REQUÊTE DANS SAML 1.1 ; les deux sont donc initiés par le fournisseur d’identité : un flux démarre lorsqu’un navigateur arrive porteur d’un TARGET, la partie de confiance ne s’identifie jamais dans le protocole, et un échec est une PAGE plutôt qu’une Response, puisqu’il n’y a rien à quoi répondre. Le profil AuthnRequest non standard de Shibboleth (urn:mace:shibboleth:1.0:profiles:AuthnRequest) est accepté et annoncé, car c’est ce qu’envoie tout vrai fournisseur de services SAML 1.1. `shire` est utilisé tel qu’envoyé en mode développement et doit être enregistré sur l’entrée de la partie de confiance en mode PRODUIT (2026-09-12). La Response Browser/POST est signée comme l’exige la section 4.1.2.4, avec son assertion ; désactiver l’une ou l’autre signature est un cas de test de développement que le mode produit ignore (#181)."
   },
   "stsmetadata.specs.ws-federation.coverage": {
-    "en": "2abb20f4fd0f6ab0",
-    "text": "partial : le Web (Passive) Requestor Profile de la section 13 — wsignin1.0 avec wtrealm, wreply, wctx, wct, wfresh, wauth, whr et wreq, la réponse de connexion sous forme de POST de formulaire, et wsignout1.0/wsignoutcleanup1.0 avec des requêtes de nettoyage par le canal frontal ; en tant que partie de confiance de fédération (#167), le nettoyage d’un partenaire, non signé selon la spécification, ne met fin à la session qu’après que la personne l’a confirmé sur une page dotée d’un vrai bouton, et une déconnexion ici envoie wsignout1.0 au partenaire. Métadonnées de fédération signées (section 3.1) au chemin AD FS. NON implémentés, chacun étant nommé plutôt que passé sous silence : le profil de demandeur actif (SOAP) au-delà de ce à quoi /sts répond déjà, wresultptr, le service d’attributs (wattr1.0) et le service de pseudonymes (wpseudo1.0), qui répondent tous deux 501, wreqptr (refusé — déréférencer une URL issue d’un paramètre de requête est une falsification de requête côté serveur), le chiffrement des jetons dans ce profil (une requête passive ne porte aucun certificat de destinataire), et toute application d’autorisation ou de politique. wreply est utilisé tel qu’envoyé en mode développement et doit être une wsfedReplyUrl enregistrée en mode PRODUIT (2026-09-12)."
+    "en": "df4a48ab6e7784a2",
+    "text": "partial : le Web (Passive) Requestor Profile de la section 13 — wsignin1.0 avec wtrealm, wreply, wctx, wct, wfresh, wauth, whr et wreq, la réponse de connexion sous forme de POST de formulaire, et wsignout1.0/wsignoutcleanup1.0 avec des requêtes de nettoyage par le canal frontal ; en tant que partie de confiance de fédération (#167), le nettoyage d’un partenaire, non signé selon la spécification, ne met fin à la session qu’après que la personne l’a confirmé sur une page dotée d’un vrai bouton, et une déconnexion ici envoie wsignout1.0 au partenaire. Métadonnées de fédération signées (section 3.1) au chemin AD FS. NON implémentés, chacun étant nommé plutôt que passé sous silence : le profil de demandeur actif (SOAP) au-delà de ce à quoi /sts répond déjà, wresultptr, le service d’attributs (wattr1.0) et le service de pseudonymes (wpseudo1.0), qui répondent tous deux 501, wreqptr (refusé — déréférencer une URL issue d’un paramètre de requête est une falsification de requête côté serveur), le chiffrement des jetons dans ce profil (une requête passive ne porte aucun certificat de destinataire), et toute application d’autorisation ou de politique. wreply est utilisé tel qu’envoyé en mode développement et doit être une wsfedReplyUrl enregistrée en mode PRODUIT (2026-09-12). Au-delà de la spécification, qui ne prévoit pas une telle requête : une connexion initiée par le fournisseur d’identité sur /wsfed/initiate/{rp} (#712), désactivée tant qu’une partie de confiance ne l’a pas choisie, et envoyée par POST uniquement vers sa wsfedReplyUrl enregistrée."
   },
   "stsmetadata.specs.xmldsig.coverage": {
     "en": "668af5821905c8e5",
@@ -2107,6 +2107,18 @@
     "en": "604e81aecab74125",
     "text": "LE MÊME DOCUMENT, PAR APPLICATION (#494) : son entityID est l’émetteur unique du domaine, son émetteur OAuth, comme partout (#523). Le segment est l’identifiant de l’application (son wtrealm) ou son slug. Un segment ne nommant aucune application ENREGISTRÉE donne une 404 dans les deux modes (STS-WSFED-0019). no-store."
   },
+  "stsmetadata.endpoints./wsfed/initiate/:rp.what": {
+    "en": "b12c32c1473198ea",
+    "text": "NON-SPEC (#712) : WS-Federation 1.2 ne définit aucune requête permettant à ce fournisseur d’identité de démarrer une connexion ; le lien est donc propre à ce service. Le segment est l’identifiant (son wtrealm) ou le slug d’une partie de confiance ENREGISTRÉE (sinon 404, STS-WSFED-0024). DÉSACTIVÉ tant que wsfed.idpInitiatedSso ou le wsfedIdpInitiatedSso de l’entrée ne l’active pas (403, STS-WSFED-0025). Un wreply est refusé (STS-WSFED-0026) : la réponse ne va qu’à la première wsfedReplyUrl enregistrée pour elle, jamais à une adresse observée (STS-WSFED-0027 lorsqu’il n’y en a aucune). wctx est renvoyé octet pour octet ; tokenType et trust ont le même sens que sur /wsfed. L’émission est celle d’un wsignin1.0 — la session, la politique d’émission, session-presented, le domaine enregistré pour /logout — et un refus fondé sur le risque soumet la personne à une authentification renforcée une fois."
+  },
+  "stsmetadata.endpoints./wsfed/initiate/:rp.effect": {
+    "en": "8beda07914540942",
+    "text": "connecte la personne si nécessaire, puis envoie par POST une réponse de connexion de la section 13.2.2 à l’adresse de réponse enregistrée de la partie de confiance"
+  },
+  "stsmetadata.endpoints./wsfed/initiate.what": {
+    "en": "9eaa4f8f36279f9e",
+    "text": "NON-SPEC (#712) : /wsfed/initiate/{rp} avec la partie de confiance en ?wtrealm= plutôt qu’en segment de chemin, pour un identifiant dont les barres obliques passent mal dans un chemin. Les mêmes règles."
+  },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
     "text": "Une page de description : les points de terminaison, les quatre liaisons, et le fonctionnement des métadonnées par fournisseur de services. GET /sts et GET /wsfed répondent de la même manière pour la même raison — un point de terminaison qui renvoie une 400 à quelqu’un qui voulait savoir ce qu’il était fait mauvaise impression. Dessinée dans le navigateur depuis #584 ; ?format=json, ou un Accept qui préfère JSON, renvoie sa vue sous forme de données."
@@ -2140,8 +2152,8 @@
     "text": "la même chose, et c’est le même point de terminaison"
   },
   "stsmetadata.endpoints./saml2/unsolicited.what": {
-    "en": "c4aa05f623f432ed",
-    "text": "Une Response NON SOLLICITÉE (saml-profiles-2.0-os section 4.1.5, #189) : providerId nomme le fournisseur de services (le segment de chemin peut le faire à la place), shire l’un de ses services consommateurs d’assertions enregistrés (sinon celui par défaut), target le RelayState, et binding post, simplesign ou artifact (sinon la liaison propre du point de terminaison ; jamais HTTP-Redirect). Connecte la personne via /authn/login en l’absence de session ; la Response et son assertion ne portent pas d’InResponseTo. Le fournisseur de services doit être enregistré en mode produit, et saml2.unsolicitedSso désactive cette fonction pour un domaine."
+    "en": "46085ccec8b2cb1c",
+    "text": "Une Response NON SOLLICITÉE (saml-profiles-2.0-os section 4.1.5, #189) : providerId nomme le fournisseur de services (le segment de chemin peut le faire à la place), shire l’un de ses services consommateurs d’assertions enregistrés (sinon celui par défaut), target le RelayState, et binding post, simplesign ou artifact (sinon la liaison propre du point de terminaison ; jamais HTTP-Redirect). Connecte la personne via /authn/login en l’absence de session ; la Response et son assertion ne portent pas d’InResponseTo. Le fournisseur de services doit être enregistré en mode produit, et il ne reçoit de réponse que là où saml2.idpInitiatedSso est activé pour lui — DÉSACTIVÉ par défaut, le saml2IdpInitiatedSso de son entrée l’activant (#711). Une authentification renforcée que la politique d’émission demande en raison du risque de la session envoie la personne se réauthentifier puis revenir, une fois."
   },
   "stsmetadata.endpoints./saml2/unsolicited.effect": {
     "en": "d57fa6373c895dd8",
@@ -2208,8 +2220,8 @@
     "text": "LE MÊME DOCUMENT, PAR APPLICATION, et la même règle que suit celui de SAML 2.0 : en développement, il ne renvoie jamais de 404, car un identifiant que personne n’a enregistré est enregistré PAR LA DEMANDE ; en mode produit (#112), lui, /saml11/sso/{rp} et /saml11/responder/{rp} donnent une 404 pour tout ce qui n’est pas une partie de confiance SAML 1.1 enregistrée (STS-SAML-0083). Le segment est l’identifiant encodé en pourcentage ou un slug, et ce slug est LE MÊME que celui qu’utilise /saml2 — une application a un seul identifiant court pour les deux profils, sans quoi la console afficherait une entrée comme deux. Le providerID est l’émetteur unique du domaine (#523)."
   },
   "stsmetadata.endpoints./saml11/sso.what": {
-    "en": "64a3ea22439a5c86",
-    "text": "Le nom que donne SAML 1.1 à ce que SAML 2.0 appelle le service Single Sign-On, et la différence n’est pas que de vocabulaire : IL N’Y A PAS DE MESSAGE DE REQUÊTE. Un flux commence par un TARGET et rien d’autre, si bien que la partie de confiance est nommée par le paramètre providerId de Shibboleth, par le segment de chemin, ou — à défaut des deux — DEVINÉE D’APRÈS L’ORIGINE du TARGET, ce qui est journalisé comme supposition. Il n’a pas d’écran de connexion propre et n’a pas besoin du détour POST-vers-GET : le flux arrive sous forme de GET de premier niveau, sur lequel un cookie SameSite=Lax est transmis. ForceAuthn, IsPassive et RequestedAuthnContext n’ont aucune écriture dans ce protocole ; ils sont donc absents plutôt que non implémentés."
+    "en": "112515a67fb513e6",
+    "text": "Le nom que donne SAML 1.1 à ce que SAML 2.0 appelle le service Single Sign-On, et la différence n’est pas que de vocabulaire : IL N’Y A PAS DE MESSAGE DE REQUÊTE. Un flux commence par un TARGET et rien d’autre, si bien que la partie de confiance est nommée par le paramètre providerId de Shibboleth, par le segment de chemin, ou — à défaut des deux — DEVINÉE D’APRÈS L’ORIGINE du TARGET, ce qui est journalisé comme supposition. Il n’a pas d’écran de connexion propre et n’a pas besoin du détour POST-vers-GET : le flux arrive sous forme de GET de premier niveau, sur lequel un cookie SameSite=Lax est transmis. ForceAuthn, IsPassive et RequestedAuthnContext n’ont aucune écriture dans ce protocole ; ils sont donc absents plutôt que non implémentés. Une requête portant shire (le profil AuthnRequest de Shibboleth) est le démarrage de la partie de confiance et reçoit une réponse là où saml11.spInitiatedSso est activé pour elle ; une requête ne portant qu’un TARGET est une connexion démarrée ici et ne reçoit de réponse que là où saml11.idpInitiatedSso l’est — DÉSACTIVÉ par défaut (#711)."
   },
   "stsmetadata.endpoints./saml11/sso.effect": {
     "en": "c9f861ab9965a369",
@@ -2334,6 +2346,14 @@
   "stsmetadata.endpoints./oauth2/authorize.effect": {
     "en": "3535569413867e97",
     "text": "requiert client_id et redirect_uri — répond 400 lorsqu’il est suivi sans paramètres, puis redirige vers l’écran de connexion une fois ceux-ci fournis"
+  },
+  "stsmetadata.endpoints./launch/:app.what": {
+    "en": "46e9ad826baa3150",
+    "text": "UN LIEN PAR APPLICATION QUI DÉMARRE ICI UNE CONNEXION À CELLE-CI (#426) : le lien Se connecter du portail utilisateur et l’URL en haut de chaque sous-onglet de protocole de la console. ?protocol= vaut saml2, saml11, wsfed ou oidc, sinon celui qui est activé, sinon l’appLaunchProtocol de l’entrée ; ?target= indique où arriver ensuite. Il vérifie que la connexion initiée par le fournisseur d’identité est activée pour l’application dans ce protocole (désactivée par défaut) et envoie le navigateur vers /saml2/unsolicited/{sp}, /saml11/sso/{rp} ou /wsfed/initiate/{rp}, qui connectent la personne comme pour toute connexion et vérifient à nouveau l’interrupteur ; pour OpenID Connect, il connecte la personne ici, enregistre le lancement sur la session et l’envoie vers l’initiate_login_uri du client (OpenID Connect Core section 4), qui démarre une requête d’autorisation ordinaire. Une application inconnue donne une 404."
+  },
+  "stsmetadata.endpoints./launch/:app.effect": {
+    "en": "9fd32046b05133a5",
+    "text": "envoie le navigateur vers un point de terminaison de protocole ; n’émet rien lui-même"
   },
   "stsmetadata.endpoints./logout.what": {
     "en": "926917f15c6fd9a9",

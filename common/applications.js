@@ -927,6 +927,18 @@ const SCHEMA = {
             'it are callbacks and not front doors, so nothing computes this ' +
             'from them. http or https only, because it becomes an href.' },
     // ---------------------------------------------------------------------
+    // WHICH PROTOCOL /launch/{app} STARTS WHEN IT IS NOT TOLD (#426, #713).
+    // An application declared for several browser protocols with
+    // identity-provider-initiated sign-in on for more than one has more than
+    // one way in, and the link has to pick; `?protocol=` still picks for
+    // itself.
+    // ---------------------------------------------------------------------
+    { name: 'appLaunchProtocol', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'WHICH PROTOCOL /launch/{app} uses for this application when ' +
+            'the link names none and identity-provider-initiated sign-in is ' +
+            'on for more than one: saml2, saml11, wsfed or oidc.' },
+    // ---------------------------------------------------------------------
     // THE ORIGINS A BROWSER PAGE MAY CALL THIS SERVICE FROM ON THIS
     // APPLICATION'S BEHALF (2026-09-13).
     //
@@ -2888,6 +2900,46 @@ const SCHEMA = {
             '— a client that can refresh its way back after a sign-out is a ' +
             'real defect in real deployments, and this makes it reproducible ' +
             'for ONE client while the rest behave.' },
+    // WHO MAY START A SIGN-IN, PER CLIENT (#426, #710). OpenID Connect's
+    // identity-provider-initiated sign-in is Core section 4 (rcbj on #426):
+    // /launch/{app} sends the person to `oauthInitiateLoginUri` and the client
+    // starts an ordinary authorization request from there.
+    { name: 'oauthThirdPartyInitiatedLogin', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'oauth2.thirdPartyInitiatedLogin',
+      families: ['oauth2', 'oidc'],
+      what: 'TRUE or FALSE: may /launch/{app} — and the user portal\'s ' +
+            'Sign in link — send a person to this client\'s ' +
+            'oauthInitiateLoginUri (OpenID Connect Core section 4), ' +
+            'overriding oauth2.thirdPartyInitiatedLogin.' },
+    { name: 'oauthSpInitiatedSso', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'oauth2.spInitiatedSso',
+      families: ['oauth2', 'oidc'],
+      what: 'TRUE or FALSE: does /oauth2/authorize answer this client when ' +
+            'it was not just launched, overriding oauth2.spInitiatedSso. ' +
+            'FALSE answers only an authorization request that follows a ' +
+            '/launch of this client on the same session within ' +
+            'oauth2.launchWindowS, once per launch, and refuses any other ' +
+            'with unauthorized_client.' },
+    // ---------------------------------------------------------------------
+    // OPENID CONNECT CORE SECTION 4's `initiate_login_uri`, AS AN ATTRIBUTE OF
+    // ITS OWN (#426, #710). It lived only inside appRegistrationJson until
+    // then — written by RFC 7591 registration and RFC 7592 update and by
+    // nothing else — so a client an administrator created could not have one
+    // and nothing could launch it. Registration writes this now, and the
+    // console and the management API edit it. https only, no fragment
+    // (STS-REG-0188), and initiateLoginUriOf() checks again on the read,
+    // because `ldapmodify` reaches it unchecked.
+    // ---------------------------------------------------------------------
+    { name: 'oauthInitiateLoginUri', kind: 'single',
+      from: 'RFC 7591 initiate_login_uri, the console, the management API, ' +
+            'or by hand',
+      families: ['oauth2', 'oidc'],
+      what: 'WHERE A SIGN-IN TO THIS CLIENT IS STARTED BY A THIRD PARTY: ' +
+            'OpenID Connect Core section 4\'s initiate_login_uri, which ' +
+            '/launch/{app} and the user portal send a person to with iss, ' +
+            'login_hint and target_link_uri. https only, with no fragment.' },
 
     // ---------------------------------------------------------------------
     // THE SIXTH OAUTH OVERRIDE, ADDED 2026-09-01, AND THE FIRST ATTRIBUTE IN
@@ -3267,6 +3319,41 @@ const SCHEMA = {
             'be resolved for, in seconds, overriding saml11.artifactTtlS. ' +
             'The Browser/Artifact profile\'s SOAP responder is what redeems ' +
             'it, once.' },
+    // WHO MAY START A SIGN-IN, PER SERVICE PROVIDER (#426, #710). Each is a
+    // realm default's override, read through settingFor() like the ten
+    // above; IDENTITY-PROVIDER-INITIATED IS OFF until an application opts in
+    // (rcbj on #426), so `saml2IdpInitiatedSso` is the one an operator sets.
+    { name: 'saml2IdpInitiatedSso', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'saml2.idpInitiatedSso',
+      what: 'TRUE or FALSE: may this identity provider START a sign-in to ' +
+            'this service provider — an unsolicited Response ' +
+            '(saml-profiles-2.0-os section 4.1.5) from /saml2/unsolicited ' +
+            'or /launch/{app} — overriding saml2.idpInitiatedSso. TRUE only ' +
+            'for a service provider that expects one: the Response carries ' +
+            'no InResponseTo, so it cannot tell one it was sent from one ' +
+            'pushed into its browser.' },
+    { name: 'saml2SpInitiatedSso', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'saml2.spInitiatedSso',
+      what: 'TRUE or FALSE: is this service provider\'s own ' +
+            '<samlp:AuthnRequest> answered, overriding saml2.spInitiatedSso. ' +
+            'FALSE answers it RequestDenied, leaving identity-provider-' +
+            'initiated sign-in as the only way in.' },
+    { name: 'saml11IdpInitiatedSso', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'saml11.idpInitiatedSso',
+      what: 'TRUE or FALSE: may a SAML 1.1 sign-in to this relying party ' +
+            'START here — /saml11/sso/{rp} with a TARGET and no shire, or ' +
+            '/launch/{app} — overriding saml11.idpInitiatedSso.' },
+    { name: 'saml11SpInitiatedSso', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'saml11.spInitiatedSso',
+      what: 'TRUE or FALSE: is a SAML 1.1 sign-in this relying party ' +
+            'started — the Shibboleth 1.3 AuthnRequest profile, a request ' +
+            'carrying shire — answered, overriding saml11.spInitiatedSso. ' +
+            'The request is an unsigned URL, so FALSE closes the door rather ' +
+            'than proving who opened it.' },
     { name: 'samlAuthnRequestSigned', kind: 'single', from: 'SAML 2.0',
       what: 'TRUE when the last AuthnRequest from this service provider ' +
             'carried a signature — an enveloped ds:Signature on the POST ' +
@@ -3298,6 +3385,21 @@ const SCHEMA = {
             'appReturnAddressObserved and product refuses it until it is ' +
             'confirmed; values recorded before that mark existed carry none ' +
             'and still need reviewing before a realm is switched to product.' },
+    // WHO MAY START A SIGN-IN, PER RELYING PARTY (#426, #710).
+    { name: 'wsfedIdpInitiatedSso', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'wsfed.idpInitiatedSso',
+      what: 'TRUE or FALSE: may this identity provider START a sign-in to ' +
+            'this relying party — /wsfed/initiate/{rp} or /launch/{app}, ' +
+            'posting to its registered wsfedReplyUrl — overriding ' +
+            'wsfed.idpInitiatedSso.' },
+    { name: 'wsfedSpInitiatedSso', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'wsfed.spInitiatedSso',
+      what: 'TRUE or FALSE: is this relying party\'s own wsignin1.0 ' +
+            'answered, overriding wsfed.spInitiatedSso. A wsignin1.0 is an ' +
+            'unsigned URL, so FALSE closes the door rather than proving who ' +
+            'opened it.' },
     { name: 'wsfedSignOutUri', kind: 'multi', from: 'by hand',
       what: 'WHERE A wsignoutcleanup1.0 PING IS SENT for this application — ' +
             'WS-Federation\'s logout URI, and the one this table did not ' +
@@ -4609,6 +4711,17 @@ const EDITABLE = {
   saml11SignResponse: 'set',
   saml11NameIdFormat: 'set',
   saml11ArtifactTtlS: 'set',
+  // Who may start a sign-in (#426, #710).
+  saml2IdpInitiatedSso: 'set',
+  saml2SpInitiatedSso: 'set',
+  saml11IdpInitiatedSso: 'set',
+  saml11SpInitiatedSso: 'set',
+  wsfedIdpInitiatedSso: 'set',
+  wsfedSpInitiatedSso: 'set',
+  oauthThirdPartyInitiatedLogin: 'set',
+  oauthSpInitiatedSso: 'set',
+  oauthInitiateLoginUri: 'set',
+  appLaunchProtocol: 'set',
   // The OAuth 2.0 / OIDC per-client five, the group claim's four and
   // WS-Federation's one. Same rule as the SAML ten above: `set`, because a
   // setting has one answer.
@@ -5687,7 +5800,11 @@ const BOOLEAN_ATTRIBUTES = [
   'saml11SignResponse', 'gnapBearerTokens', 'gnapSkipInteraction',
   'gnapScopedSignals', 'appFederationAutoRedirect',
   'ssfCaepIncludeReasons', 'ssfCaepOmitEventTimestamp',
-  'ssfRiscIncludeReasons', 'ssfRiscOmitEventTimestamp'
+  'ssfRiscIncludeReasons', 'ssfRiscOmitEventTimestamp',
+  // Who may start a sign-in (#426, #710).
+  'saml2IdpInitiatedSso', 'saml2SpInitiatedSso', 'saml11IdpInitiatedSso',
+  'saml11SpInitiatedSso', 'wsfedIdpInitiatedSso', 'wsfedSpInitiatedSso',
+  'oauthThirdPartyInitiatedLogin', 'oauthSpInitiatedSso'
 ];
 
 /**
@@ -5720,6 +5837,10 @@ const BOOLEAN_ATTRIBUTES = [
 // `appDefaultDelegationSemantics` rather than a free text box — and the check
 // at the write, delegationAttributeProblem().
 const DELEGATION_SEMANTICS = ['delegation', 'impersonation'];
+
+// THE PROTOCOLS /launch/{app} CAN START (#426, #713), for the field grid's
+// choices and the check at the write of `appLaunchProtocol`.
+const LAUNCH_PROTOCOLS = ['saml2', 'saml11', 'wsfed', 'oidc'];
 
 // WHAT A CLIENT MAY DECLARE IN `oauthResponseType` AND `oauthGrantType`
 // (#706): every response type the authorization endpoint issues and every
@@ -5764,6 +5885,10 @@ const ATTRIBUTE_CHOICES = {
   },
   oauthResponseType: function () {
     return FLOW_RESPONSE_TYPES.slice(0);
+  },
+  // #426: the protocols /launch/{app} can start.
+  appLaunchProtocol: function () {
+    return LAUNCH_PROTOCOLS.slice(0);
   },
   appDelegationSemantics: function () {
     return DELEGATION_SEMANTICS.slice(0);
@@ -5954,6 +6079,8 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'oauthClaimsCombineAccessToken', 'oauthClaimsCombineIdToken',
   'oauthClaimsCombineUserinfo', 'saml2ClaimsCombine', 'saml11ClaimsCombine',
   'oauthAccessTokenClaim', 'oauthAccessTokenClaimsCombine',
+  // #426: a misspelt protocol would launch nothing.
+  'appLaunchProtocol',
   // #706: a grant or response type this service does not implement is one
   // no request could ever be allowed by.
   'oauthGrantType', 'oauthResponseType'];
@@ -6502,7 +6629,16 @@ const FIELD_SECTIONS = [
                  'oauthClaimsCombineUserinfo', 'oauthAccessTokenClaim',
                  'oauthAccessTokenClaimsCombine'] },
   { id: 'assertion-claims', label: 'Attributes in assertions',
-    attributes: ['saml2ClaimsCombine', 'saml11ClaimsCombine'] }
+    attributes: ['saml2ClaimsCombine', 'saml11ClaimsCombine'] },
+  // #426: who may start a sign-in, on each browser protocol's sub-tab — the
+  // identity provider, the relying party, or both — and where a third party
+  // starts an OpenID Connect one.
+  { id: 'sign-on-initiation', label: 'Who may start a sign-in',
+    attributes: ['saml2IdpInitiatedSso', 'saml2SpInitiatedSso',
+                 'saml11IdpInitiatedSso', 'saml11SpInitiatedSso',
+                 'wsfedIdpInitiatedSso', 'wsfedSpInitiatedSso',
+                 'oauthThirdPartyInitiatedLogin', 'oauthSpInitiatedSso',
+                 'oauthInitiateLoginUri'] }
 ];
 
 // ---------------------------------------------------------------------------
@@ -6542,6 +6678,9 @@ const SIMPLE_FIELD_ATTRIBUTES = [
   'samlEntityId', 'samlAssertionConsumerService', 'samlSingleLogoutService',
   'samlSpMetadataUrl', 'samlSigningCertificate', 'samlEncryptionCertificate',
   'saml2NameIdFormat', 'saml2SignAssertion', 'saml2EncryptAssertion',
+  // #426: whether this identity provider may start a sign-in.
+  'saml2IdpInitiatedSso', 'saml11IdpInitiatedSso', 'wsfedIdpInitiatedSso',
+  'oauthThirdPartyInitiatedLogin', 'oauthInitiateLoginUri',
   // WS-Federation, WS-Trust, Kerberos: their identifiers and addresses.
   'wsfedRealm', 'wsfedReplyUrl', 'wsfedSignOutUri', 'wstrustAppliesTo',
   'krb5ServicePrincipalName',
@@ -7025,10 +7164,13 @@ function homePageOf(source) {
 
 // ---------------------------------------------------------------------------
 // OPENID CONNECT CORE SECTION 4, `initiate_login_uri` (#120): where a third
-// party — the user portal — may start a sign-in AT the relying party. It is a
-// registration member (OpenID Connect Registration section 2) and lives in
-// `appRegistrationJson` only; `oidcRegistrationProblem()` held it to https
-// when it was written, and it is held to that again here because
+// party — /launch/{app} and the user portal — may start a sign-in AT the
+// relying party. It is a registration member (OpenID Connect Registration
+// section 2) and, since #426, the attribute `oauthInitiateLoginUri`, which
+// registration writes and the console and the management API edit; it lived
+// only inside `appRegistrationJson` before, so a client an administrator made
+// could not have one. Held to https with no fragment when it is written
+// (initiateLoginUriProblem(), STS-REG-0188) and again here, because
 // `ldapmodify` reaches the attribute unchecked. '' where there is none.
 // ---------------------------------------------------------------------------
 /**
@@ -7041,27 +7183,41 @@ function initiateLoginUriOf(source) {
   log.debug("Entering initiateLoginUriOf().");
   const holder = source || {};
   const fields = holder.fields || holder;
-  let document = null;
-  try {
-    document = fields.appRegistrationJson
-      ? JSON.parse(String(fields.appRegistrationJson)) : null;
-  } catch (e) {
-    log.debug("Caught in initiateLoginUriOf(): " + ((e && e.message) || e));
-    // registrationOf() reports an unparseable document; here it names none.
-    document = null;
-  }
-  const text = String((document && document.initiate_login_uri) || '').trim();
-  let usable = '';
-  try {
-    const parsed = new URL(text);
-    usable = parsed.protocol === 'https:' && !parsed.hash ? text : '';
-  } catch (e) {
-    log.debug("Caught in initiateLoginUriOf(): " + ((e && e.message) || e));
-    // Not a URL: no sign-in link.
-    usable = '';
-  }
+  const text = String(valuesOf(fields.oauthInitiateLoginUri)[0] || '').trim();
+  const usable = initiateLoginUriProblem(text) ? '' : text;
   log.debug("Leaving initiateLoginUriOf().");
   return usable;
+}
+
+/**
+ * Says what is wrong with a value for `oauthInitiateLoginUri`: OpenID Connect
+ * Registration section 2 requires https, and a fragment cannot be carried
+ * through the query Core section 4 appends.
+ *
+ * @param value - the value
+ * @returns the problem, or '' when it is usable
+ */
+function initiateLoginUriProblem(value) {
+  log.debug("Entering initiateLoginUriProblem().");
+  const text = String(value == null ? '' : value).trim();
+  let problem = '';
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol !== 'https:') {
+      problem = 'oauthInitiateLoginUri must be an https URL (OpenID Connect ' +
+                'Registration section 2).';
+    } else if (parsed.hash) {
+      problem = 'oauthInitiateLoginUri may not carry a fragment: OpenID ' +
+                'Connect Core section 4 appends a query to it.';
+    }
+  } catch (e) {
+    log.debug("Caught in initiateLoginUriProblem(): " +
+              ((e && e.message) || e));
+    // Not a URL at all.
+    problem = 'oauthInitiateLoginUri must be an absolute https URL.';
+  }
+  log.debug("Leaving initiateLoginUriProblem().");
+  return problem;
 }
 
 // ---------------------------------------------------------------------------
@@ -10989,6 +11145,14 @@ function normaliseFields(value) {
         return;
       }
     }
+    if (name === 'oauthInitiateLoginUri' && values[0]) {
+      const problem = initiateLoginUriProblem(values[0]);
+      if (problem) {
+        errors.push(problem);
+        code = code || 'STS-REG-0188';
+        return;
+      }
+    }
     if (name === 'gnapOwnerLookupUri') {
       const problem = ownerLookupUriProblem(values[0]);
       if (problem) {
@@ -12826,6 +12990,13 @@ function applyRegistrationFields(record, registration, statement) {
   // what a registration SAID, and homePageOf() refuses to draw a link to
   // anything that is not http or https when it reads.
   setField(record, 'appHomePageUrl', meta.client_uri);
+  // OpenID Connect Core section 4's `initiate_login_uri` (#426): an attribute
+  // of its own, so /launch/{app} and the console read and edit it where they
+  // read every other fact about the client. Held to https by
+  // oidcRegistrationProblem() before this runs, and REPLACED rather than
+  // kept, for #289's reason below: an RFC 7592 update that drops it means it.
+  delete record.fields.oauthInitiateLoginUri;
+  setField(record, 'oauthInitiateLoginUri', meta.initiate_login_uri);
   // REPLACED, NOT ADDED TO (#289): the endpoints hold the client to these two
   // lists, and RFC 7592 section 2.2 replaces the whole registration, so an
   // update that narrows grant_types must narrow what the client may use. A
@@ -14597,6 +14768,14 @@ function updateApplication(identifier, change) {
       log.debug("Leaving updateApplication(). The home page is not a usable " +
                 "URL.");
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0011');
+    }
+  }
+  if (attribute === 'oauthInitiateLoginUri' && mode === 'set' && value) {
+    const problem = initiateLoginUriProblem(value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable " +
+                "initiate_login_uri.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0188');
     }
   }
   if (attribute === 'gnapOwnerLookupUri' && mode === 'set' && value) {
@@ -19651,6 +19830,8 @@ module.exports = {
   // this module exists to prevent.
   homePageOf: homePageOf,
   initiateLoginUriOf: initiateLoginUriOf,
+  initiateLoginUriProblem: initiateLoginUriProblem,
+  LAUNCH_PROTOCOLS: LAUNCH_PROTOCOLS,
   homePageProblem: homePageProblem,
   ownerLookupUriProblem: ownerLookupUriProblem,
   // THE CORS ORIGINS (2026-09-13): the one entry's list, the entry a request

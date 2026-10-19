@@ -268,8 +268,8 @@
     "text": "partial：两种浏览器配置文件——Browser/Artifact（第 4.1 节）和 Browser/POST（4.2）——各自带有其所在章节要求的确认方法，这两个值不同，不可互换。SAML 1.1 中没有请求消息，因此两者都是身份提供方发起的：流程在浏览器携带 TARGET 到达时开始，依赖方从不在协议中表明自己的身份，失败时给出的是一个页面而不是 Response，因为没有可应答的对象。Shibboleth 的非标准 AuthnRequest 配置文件（urn:mace:shibboleth:1.0:profiles:AuthnRequest）会被接受并公布，因为每个真实的 SAML 1.1 服务提供方发送的都是它。`shire` 在开发模式下按发送的值使用，在产品模式下（2026-09-12）必须在依赖方的条目上注册。Browser/POST Response 按第 4.1.2.4 节的要求与其断言一起签名；关闭任一签名是开发模式的测试用例，产品模式会忽略它（#181）。"
   },
   "stsmetadata.specs.ws-federation.coverage": {
-    "en": "2abb20f4fd0f6ab0",
-    "text": "partial：第 13 节的 Web（被动）请求方配置文件——带 wtrealm、wreply、wctx、wct、wfresh、wauth、whr 和 wreq 的 wsignin1.0，以表单 POST 形式发送的登录响应，以及带前通道清理请求的 wsignout1.0/wsignoutcleanup1.0；作为联合依赖方（#167），伙伴的清理请求（按规范未签名）只有在此人于一个带真实按钮的页面上确认后才会结束会话，此处的注销会向伙伴发送 wsignout1.0。在 AD FS 路径上提供已签名的联合元数据（第 3.1 节）。未实现的内容，每项都明确指出而不是保持沉默：超出 /sts 已应答范围的主动（SOAP）请求方配置文件、wresultptr、属性服务（wattr1.0）和假名服务（wpseudo1.0）——两者都应答 501、wreqptr（被拒绝——从查询参数中解引用 URL 就是服务器端请求伪造）、本配置文件中的令牌加密（被动请求不携带接收方证书），以及任何授权或策略执行。wreply 在开发模式下按发送的值使用，在产品模式下（2026-09-12）必须是已注册的 wsfedReplyUrl。"
+    "en": "df4a48ab6e7784a2",
+    "text": "partial：第 13 节的 Web（被动）请求方配置文件——带 wtrealm、wreply、wctx、wct、wfresh、wauth、whr 和 wreq 的 wsignin1.0，以表单 POST 形式发送的登录响应，以及带前通道清理请求的 wsignout1.0/wsignoutcleanup1.0；作为联合依赖方（#167）时，合作方的清理请求（规范未要求签名）只有在此人于一个带真实按钮的页面上确认后才会结束会话，而在这里注销会向合作方发送 wsignout1.0。位于 AD FS 路径上的已签名联合元数据（第 3.1 节）。未实现的，每一项都被点名而不是保持沉默：超出 /sts 已应答范围的主动（SOAP）请求方配置文件、wresultptr、都返回 501 的属性服务（wattr1.0）和假名服务（wpseudo1.0）、wreqptr（被拒绝——解引用来自查询参数的 URL 就是服务器端请求伪造）、此配置文件中的令牌加密（被动请求不携带接收方证书），以及任何授权或策略执行。在开发模式下 wreply 按原样使用，在产品模式下必须是已注册的 wsfedReplyUrl（2026-09-12）。超出规范之外（规范中没有此类请求）：位于 /wsfed/initiate/{rp} 的身份提供方发起的登录（#712），在依赖方选择加入之前为关闭状态，只 POST 到其已注册的 wsfedReplyUrl。"
   },
   "stsmetadata.specs.xmldsig.coverage": {
     "en": "668af5821905c8e5",
@@ -2107,6 +2107,18 @@
     "en": "604e81aecab74125",
     "text": "按应用提供的同一文档（#494）：其 entityID 是本领域唯一的颁发者，即其 OAuth 颁发者，与各处一致（#523）。路径段是应用的标识符（其 wtrealm）或其 slug。指向任何已注册应用以外的路径段，在两种模式下都返回 404（STS-WSFED-0019）。no-store。"
   },
+  "stsmetadata.endpoints./wsfed/initiate/:rp.what": {
+    "en": "b12c32c1473198ea",
+    "text": "NON-SPEC (#712)：WS-Federation 1.2 没有定义由此身份提供方发起登录的请求，因此该链接是本服务自己的。路径段是已注册依赖方的标识符（其 wtrealm）或 slug（否则返回 404，STS-WSFED-0024）。在 wsfed.idpInitiatedSso 或条目的 wsfedIdpInitiatedSso 将其开启之前为关闭状态（403，STS-WSFED-0025）。wreply 会被拒绝（STS-WSFED-0026）：响应只发往为其注册的第一个 wsfedReplyUrl，绝不发往观察到的地址（没有时为 STS-WSFED-0027）。wctx 逐字节回显；tokenType 和 trust 的含义与在 /wsfed 处相同。签发与 wsignin1.0 的相同——会话、签发策略、session-presented、为 /logout 记录的领域——而基于风险的拒绝会让此人进行一次升级认证。"
+  },
+  "stsmetadata.endpoints./wsfed/initiate/:rp.effect": {
+    "en": "8beda07914540942",
+    "text": "必要时让此人登录，然后将第 13.2.2 节的登录响应 POST 到依赖方已注册的应答地址"
+  },
+  "stsmetadata.endpoints./wsfed/initiate.what": {
+    "en": "9eaa4f8f36279f9e",
+    "text": "NON-SPEC (#712)：以 ?wtrealm= 而不是路径段指明依赖方的 /wsfed/initiate/{rp}，用于其斜杠不便放在路径中的标识符。规则相同。"
+  },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
     "text": "说明页面：各端点、四种绑定，以及按服务提供方划分的元数据如何运作。GET /sts 和 GET /wsfed 出于同样的原因以同样的方式应答——对一个只想知道它是什么的人返回 400 的端点，会给人留下糟糕的第一印象。自 #584 起在浏览器中绘制；?format=json，或偏好 JSON 的 Accept，以数据形式返回其视图。"
@@ -2140,8 +2152,8 @@
     "text": "同上，而且是同一个端点"
   },
   "stsmetadata.endpoints./saml2/unsolicited.what": {
-    "en": "c4aa05f623f432ed",
-    "text": "主动发起的 Response（saml-profiles-2.0-os section 4.1.5，#189）：providerId 指定服务提供方（也可由路径段指定），shire 指定其已注册的断言消费服务之一（否则使用默认的），target 指定 RelayState，binding 为 post、simplesign 或 artifact（否则使用端点自身的绑定；绝不使用 HTTP-Redirect）。没有会话时经由 /authn/login 让此人登录；Response 及其断言不带 InResponseTo。在产品模式下服务提供方必须已注册，saml2.unsolicitedSso 可为某个领域关闭此功能。"
+    "en": "46085ccec8b2cb1c",
+    "text": "未经请求的 Response（saml-profiles-2.0-os 第 4.1.5 节，#189）：providerId 指明服务提供方（也可以由路径段指明），shire 指明其已注册的断言使用者服务之一（否则为默认服务），target 为 RelayState，binding 为 post、simplesign 或 artifact（否则为该端点自己的绑定；绝不是 HTTP-Redirect）。没有会话时通过 /authn/login 让此人登录；Response 及其断言不带 InResponseTo。在产品模式下服务提供方必须已注册，并且只有在 saml2.idpInitiatedSso 对它开启时才会得到应答——默认关闭，由其条目上的 saml2IdpInitiatedSso 开启（#711）。签发策略基于会话风险要求的升级认证会将此人送去重新进行身份验证再返回，仅一次。"
   },
   "stsmetadata.endpoints./saml2/unsolicited.effect": {
     "en": "d57fa6373c895dd8",
@@ -2208,8 +2220,8 @@
     "text": "按应用提供的同一文档，并遵循与 SAML 2.0 相同的规则：在开发模式下它不会因任何情况返回 404，因为无人注册的标识符会因这次请求而被注册；在产品模式下（#112），它以及 /saml11/sso/{rp} 和 /saml11/responder/{rp} 对任何不是已注册 SAML 1.1 依赖方的名称都返回 404（STS-SAML-0083）。路径段是经百分号编码的标识符或 slug，而该 slug 与 /saml2 使用的完全相同——一个应用在两种配置文件中只有一个句柄，否则控制台会把一个条目显示成两个。providerID 是本领域唯一的颁发者（#523）。"
   },
   "stsmetadata.endpoints./saml11/sso.what": {
-    "en": "64a3ea22439a5c86",
-    "text": "SAML 1.1 对 SAML 2.0 所称单点登录服务的叫法，而区别不只是用词：它没有请求消息。流程只以一个 TARGET 开始，别无其他，因此依赖方由 Shibboleth 的 providerId 参数或路径段指定，两者都没有时则根据 TARGET 的源进行猜测，并作为猜测记录在日志中。它没有自己的登录界面，也不需要 POST 转 GET 的周折：流程以顶层 GET 到达，SameSite=Lax Cookie 会随之携带。ForceAuthn、IsPassive 和 RequestedAuthnContext 在此协议中没有对应写法，因此它们是不存在，而不是未实现。"
+    "en": "112515a67fb513e6",
+    "text": "SAML 1.1 对 SAML 2.0 所称单点登录服务的叫法，而区别不只在于用词：这里没有请求消息。流程仅以一个 TARGET 开始，因此依赖方由 Shibboleth 的 providerId 参数或路径段指明，或者——两者都没有时——根据 TARGET 的来源猜测，并作为猜测记录日志。它没有自己的登录界面，也不需要 POST 转 GET 的周折：流程以顶层 GET 到达，SameSite=Lax 的 Cookie 会随之携带。ForceAuthn、IsPassive 和 RequestedAuthnContext 在此协议中没有对应写法，因此它们是不存在而不是未实现。携带 shire 的请求（Shibboleth AuthnRequest 配置文件）是依赖方发起的，在 saml11.spInitiatedSso 对其开启时得到应答；只带 TARGET 的请求是在这里发起的登录，只有在 saml11.idpInitiatedSso 开启时才会得到应答——默认关闭（#711）。"
   },
   "stsmetadata.endpoints./saml11/sso.effect": {
     "en": "c9f861ab9965a369",
@@ -2334,6 +2346,14 @@
   "stsmetadata.endpoints./oauth2/authorize.effect": {
     "en": "3535569413867e97",
     "text": "需要 client_id 和 redirect_uri——不带参数访问时应答 400，提供参数后则重定向到登录界面"
+  },
+  "stsmetadata.endpoints./launch/:app.what": {
+    "en": "46e9ad826baa3150",
+    "text": "每个应用一个链接，在这里发起对该应用的登录（#426）：用户门户的“登录”链接，以及控制台中每个协议子选项卡顶部的 URL。?protocol= 为 saml2、saml11、wsfed 或 oidc，否则取已开启的那一个，再否则取条目的 appLaunchProtocol；?target= 是之后要到达的位置。它检查该应用在该协议中是否开启了身份提供方发起的登录（默认关闭），并将浏览器发送到 /saml2/unsolicited/{sp}、/saml11/sso/{rp} 或 /wsfed/initiate/{rp}，这些端点会像任何登录一样让此人登录并再次检查开关；对于 OpenID Connect，它在这里让此人登录，在会话上记录这次启动，并将其发送到客户端的 initiate_login_uri（OpenID Connect Core 第 4 节），由后者发起一个普通的授权请求。未知应用返回 404。"
+  },
+  "stsmetadata.endpoints./launch/:app.effect": {
+    "en": "9fd32046b05133a5",
+    "text": "将浏览器发送到某个协议端点；自身不签发任何东西"
   },
   "stsmetadata.endpoints./logout.what": {
     "en": "926917f15c6fd9a9",

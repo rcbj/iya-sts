@@ -146,6 +146,8 @@ import claimAttributes = require('../common/claim_attributes');
 import scimMap = require('../scim/scim_map');
 import groupClaims = require('../common/group_claims');
 import applications = require('../common/applications');
+// The one identity-provider-initiated sign-in link per protocol (#426).
+import LaunchLinks = require('../common/launch_links');
 // A PERSON's assertion key pairs, for the Credentials section of their own
 // page (2026-09-13). A library: it holds no store and registers no route.
 import personAssertions = require('../common/person_assertions');
@@ -10313,6 +10315,12 @@ class AdminViews {
       // #609: the named passkey policies naming this application, read-only
       // on the Every protocol sub-tab.
       passkeyPolicies: self.applicationPasskeyPolicies(row),
+      // #426, #713: the identity-provider-initiated sign-in URL for each
+      // protocol the application can be launched in, drawn at the top of that
+      // protocol's sub-tab — `{ <protocol>: { url, enabled, missing,
+      // endpoint, … } }`, the same URL the user portal links and the door
+      // answers.
+      launchUrls: LaunchLinks.linksFor(row, base),
       cors: listOf('appCorsOrigin').map(function (stored) {
         return { stored: stored,
                  canonical: applications.corsOriginsOf(
