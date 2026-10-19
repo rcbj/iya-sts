@@ -1776,11 +1776,15 @@ it is runtime, needs no rebind, and an open connection keeps its protocol.
 Off, the server still parses HTTP/1.1 only, because nothing offers `h2`; a
 client that offers ONLY `h2` is refused in the handshake with
 `no_application_protocol` (RFC 7301 section 3.2), which is the point of
-turning it off for one. Plain express cannot run on it (4.22 and 5.3 both throw on the
-first HTTP/2 request: express sets an `http.IncomingMessage` prototype and
-`Http2ServerRequest` keeps its state behind its own), so `common/app.js`
-builds the application through `http2-express`, which picks the prototype by
-protocol; an HTTP/1.1 request gets express's own (the debugger's app too). Four things follow:
+turning it off for one. Plain express cannot run on it (4.22 and 5.3 both
+throw on the first HTTP/2 request: express sets an `http.IncomingMessage`
+prototype and `Http2ServerRequest` keeps its state behind its own), so
+`common/app.js` and the debugger ADAPT their two apps with
+`common/http2_express.ts`, which picks the prototype by protocol; an HTTP/1.1
+request gets express's own. **Not `http2-express`**, which #703 used first:
+it replaced `lazyrouter` on the shared `express.application`, so every
+express app in the process, and named itself in `X-Powered-By`;
+`common/CLAUDE.md` (`http2_express.ts`) has the adapter. Six things follow:
 
 * **A socket is a connection, not a request.** On an HTTP/2 request
   `req.socket` is node's proxy to the session's socket, shared with every
@@ -1803,6 +1807,21 @@ protocol; an HTTP/1.1 request gets express's own (the debugger's app too). Four 
   throws ERR_INVALID_HTTP_TOKEN on a name with a colon. Both forwarders drop
   them: `request_pool.js` (keeping `:authority` as `host`) and the
   debugger's API proxy. A new forwarder owes the same.
+* **The pooling values bound HTTP/1.1 only**, in node: `keepAliveTimeout`,
+  `headersTimeout` and `maxRequestsPerSocket` are read by its HTTP/1.1
+  parser, and node announces 2^32-1 concurrent streams. So
+  `applyHttpPolicy()` also sets the server's SETTINGS
+  (`http.http2MaxConcurrentStreams`, 100 by default, per listener), and
+  `followHttp2Sessions()` holds every session to the keep-alive timeout as an
+  idle timeout (a graceful `close()`: GOAWAY, open streams finish) and to
+  `maxRequestsPerSocket` as a stream count (a GOAWAY after the last). A
+  change reaches open sessions too: new SETTINGS and a new timer. Without it
+  one connection inside `maxConnections` could carry unbounded work for ever.
+* **`:authority` is the host** (RFC 9113 section 8.3.1): the adapter's
+  `init` writes `host` from it, and a request whose `host` names another
+  entity is refused 400, `STS-HTTP-0024` — there, in `request_pool.proxy()`
+  and in the debugger's API proxy, each asking `hostProblem()` itself
+  because the process behind it believes the `host` it is sent.
 
 `tests/main_port_http2.js` holds all of it.
 
