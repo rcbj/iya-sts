@@ -2799,6 +2799,23 @@ minted rows split row by row. Three things it does beyond routing:
   between them is written by the next flush because the shadow only advances
   on success. A global write is not fenced by the cell's membership.
 
+**THE EXPIRY PURGE FOLLOWS THE ROWS (#360).** `purgeExpiredMinted()` runs in
+both databases. `'expired'` names no handle, so each database deletes its
+own rows; a `'stale'` batch's handles are split by `byHandleTier()`, as a
+minted write is. It had been the cell driver's method — an unlisted method is
+bound to the cell — so a global store's expired rows stayed in the global
+`sts_minted`, refused at every read and never deleted.
+
+**AN ORPHAN IS JUDGED AGAINST THE GLOBAL REGISTRY, IN BOTH DATABASES.** The
+realms are global (`loadRealms` is a global method; the conversion moves
+`sts_realms`), so a cell's own `sts_realms` is empty or the snapshot the
+conversion left. The postgres clause used to ask the database it ran in, and
+in a cell that made every row of a realm created after the conversion an
+orphan: its sessions and tokens were deleted an hour after they were
+written. The tiered driver reads the global realms first and hands the list
+to both tiers (the postgres driver's `realms` option); when the registry
+cannot be read, neither tier purges an orphan.
+
 **TWO CHANGE LOGS, TWO FOLLOWERS.** `persistence_replication.js` is a factory
 since #98: the module's own exports are the instance for the process's main
 log (the cell's, or the only one), and `persistence.js`'s `coordinate()`
