@@ -454,7 +454,10 @@ class ProtocolEndpoints {
       '/admin/wstrust': ['/sts', '/sts/cert'].map(route),
       '/admin/wsfed': ['/wsfed',
                        '/FederationMetadata/2007-06/FederationMetadata.xml',
-                       '/wsfed/metadata/:rp'].map(route),
+                       '/wsfed/metadata/:rp',
+                       // Identity-provider-initiated sign-in (#712).
+                       '/wsfed/initiate/:rp',
+                       '/wsfed/initiate'].map(route),
       '/admin/pki': ['/pki/revocation', '/pki/ca/:scope/:ca',
                      '/pki/crl/:scope/:ca', '/pki/ocsp/:scope/:ca',
                      '/pki/chain/:scope/:certificate'].map(route),
