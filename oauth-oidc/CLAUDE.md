@@ -4032,6 +4032,17 @@ attributes the single secret needed (`oauthClientSecretExpiresAt`,
   all), on the Credentials tab and `/admin-api/applications/{action}`.
   Refusals: the cap `STS-REG-0208`, an unknown id `0209`, the pinned
   `adminApi.clientSecret` `0210`, a bad lifetime or description `0211`.
+* **The create sets the first secret's lifetime too (#394)**: `create`
+  takes `lifetimeDays` beside `fields.oauthClientSecret`, and the console
+  draws it beside Generate Secret. It is read by `clientSecretLifetimeOf()`,
+  the add form's own parser, so the two screens cannot accept different
+  things. It is days rather than a date because the add form's field is days.
+  It applies to a typed secret as well as a generated one, since the create
+  cannot tell them apart. Two refusals: a bad lifetime is `STS-REG-0359`, and
+  a lifetime with nothing to stamp is `0360` (an empty secret, or a whole
+  record handed in, which keeps its own `expires`). The empty default and the
+  form's placeholder come from the view's `defaultSecretLifetimeDays`.
+  `tests/application_generate_secret.js` 5.
 * **Administrators are told**: the daily `oauth2.client-secret-expiry` job
   writes `application.secret-expiring` for an application holding a secret
   that expires within `oauth2.clientSecretExpiryWarningDays`,

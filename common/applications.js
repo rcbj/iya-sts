@@ -13510,8 +13510,9 @@ function identifierProblem(identifier) {
  * Counts no authentication. Refused for an unusable identifier, one already
  * registered, no directory, or fields the schema refuses.
  *
- * @param detail - `identifier`, `name`, `kind`, `protocols`, `fields` and
- *   `actor`
+ * @param detail - `identifier`, `name`, `kind`, `protocols`, `fields`,
+ *   `lifetimeDays` (the first client secret's lifetime in days, 0 for never;
+ *   `oauth2.clientSecretLifetimeDays` when empty, #394) and `actor`
  * @returns `ok` and the application as the directory now holds it, or `ok:
  *   false` with `errors`
  */
@@ -13691,6 +13692,44 @@ function createApplication(detail) {
     return errorCodes.mark({ ok: false, errors: modeProblems },
                            'STS-REG-0193');
   }
+  // THE FIRST CLIENT SECRET'S LIFETIME (#394). Until then a create took
+  // only `oauth2.clientSecretLifetimeDays`, so the expiry of a new
+  // application's first secret could be chosen only afterwards, on its page.
+  // `lifetimeDays` is the add form's field, read by the add form's function,
+  // and it applies to whatever secret the create carries — one Generate
+  // Secret minted or one somebody typed, which this function cannot tell
+  // apart and should not. Validated here, before the entry exists, for the
+  // reason everything above is.
+  const lifetime = clientSecretLifetimeOf(info.lifetimeDays);
+  if (!lifetime.ok) {
+    log.debug("Leaving createApplication(). Not a client secret lifetime.");
+    return errorCodes.mark({ ok: false, errors: ['The client secret\'s ' +
+      'lifetime is a whole number of days from 0 (never expires) to 730, ' +
+      'or empty for oauth2.clientSecretLifetimeDays (' +
+      (Number(config.value('oauth2.clientSecretLifetimeDays')) > 0
+        ? Number(config.value('oauth2.clientSecretLifetimeDays')) + ' days'
+        : 'never expires') +
+      '). "' + String(info.lifetimeDays).trim() + '" is not one.'] },
+      'STS-REG-0359');
+  }
+  // A LIFETIME WITH NOTHING TO STAMP IT ON is refused rather than dropped:
+  // the entry would then read as holding a secret that expires when it was
+  // asked to, and it holds none — or holds a record handed in whole, which
+  // keeps the expiry it carries (putClientSecret()).
+  if (lifetime.days !== null) {
+    const secretText = givenSecretText(given.fields.oauthClientSecret);
+    if (!secretText ||
+        isWholeSecretRecord(secretText, parseClientSecretValue(secretText))) {
+      log.debug("Leaving createApplication(). A lifetime and no secret.");
+      return errorCodes.mark({ ok: false, errors: ['A client secret ' +
+        'lifetime of ' + lifetime.days + ' day(s) was given and there is ' +
+        'no new client secret for it to apply to: ' +
+        (secretText ? 'the oauthClientSecret given is a whole record, ' +
+          'which keeps the expiry it carries.'
+          : 'oauthClientSecret is empty. Generate or type a secret, or ' +
+            'leave the lifetime empty.')] }, 'STS-REG-0360');
+    }
+  }
   const record = loaded.record;
   const now = Date.now();
   record.firstAt = now;
@@ -13717,8 +13756,17 @@ function createApplication(detail) {
   // be a second place that decision is made, and the first time the two
   // disagreed would be the first time somebody created an application over one
   // that had just been deleted.
+  //
+  // The client secret goes the way setField() would send it, to
+  // putClientSecret(), with the lifetime this create was given (#394).
   Object.keys(given.fields).forEach(function (name) {
-    setField(record, name, given.fields[name]);
+    if (name === 'oauthClientSecret' && lifetime.days !== null) {
+      putClientSecret(record, given.fields[name],
+                      { expiresAt: expiryOfLifetime(lifetime.days,
+                                                    nowSec()) });
+    } else {
+      setField(record, name, given.fields[name]);
+    }
   });
   // ---------------------------------------------------------------------
   // AN APPLICATION DECLARED FOR SAML GETS AN ENTITYID, added 2026-08-27.
@@ -14955,7 +15003,8 @@ function mintClientSecret() {
 //     client is never silently left holding none.
 //   * `oauth2.clientSecretsMax` caps how many an application holds, and a new
 //     secret takes `oauth2.clientSecretLifetimeDays` unless the add form
-//     names another lifetime.
+//     names another lifetime — or, for an application's first secret, the
+//     create form (#394).
 //
 // A VALUE THAT IS NOT A RECORD IS A SECRET. A bare string arrives from three
 // places — a caller of `create` or `set` handing the secret itself (the
@@ -15263,6 +15312,24 @@ function writeClientSecretRecords(record, records) {
   log.debug("Leaving writeClientSecretRecords().");
 }
 
+// Whether a value handed to putClientSecret() is a record handed in whole,
+// which keeps its own expiry, rather than a secret to be wrapped in a new one.
+function isWholeSecretRecord(given, parsed) {
+  log.debug("Entering isWholeSecretRecord().");
+  log.debug("Leaving isWholeSecretRecord().");
+  return String(given).charAt(0) === '{' && !!parsed && parsed.createdAt > 0;
+}
+
+// The first value of a client secret given to a write, trimmed: the one
+// putClientSecret() takes.
+function givenSecretText(value) {
+  log.debug("Entering givenSecretText().");
+  log.debug("Leaving givenSecretText().");
+  return (Array.isArray(value) ? value : [value]).map(function (one) {
+    return String(one == null ? '' : one).trim();
+  }).filter(Boolean)[0] || '';
+}
+
 /**
  * Makes `secret` the application's client secret — the meaning of a `set`
  * or a `create` naming one. A secret already on the entry changes nothing
@@ -15277,9 +15344,7 @@ function writeClientSecretRecords(record, records) {
  */
 function putClientSecret(record, value, options) {
   log.debug("Entering putClientSecret().");
-  const given = (Array.isArray(value) ? value : [value]).map(function (one) {
-    return String(one == null ? '' : one).trim();
-  }).filter(Boolean)[0] || '';
+  const given = givenSecretText(value);
   const parsed = parseClientSecretValue(given);
   if (!parsed) {
     log.debug("Leaving putClientSecret(). Nothing to write.");
@@ -15292,7 +15357,7 @@ function putClientSecret(record, value, options) {
   }
   // A RECORD handed in whole (a value copied off another entry, an
   // ldapmodify-shaped add) keeps what it says; a bare secret is wrapped.
-  const wrapped = given.charAt(0) === '{' && parsed.createdAt > 0
+  const wrapped = isWholeSecretRecord(given, parsed)
     ? parsed
     : newClientSecretRecord(parsed.secret, options);
   writeClientSecretRecords(record, [wrapped]);
@@ -15558,6 +15623,46 @@ function clientSecretsMax() {
   return Math.max(1, Number(config.value('oauth2.clientSecretsMax')) || 1);
 }
 
+// A CLIENT SECRET'S LIFETIME AS A FORM GIVES IT (#394): the add form's
+// `lifetimeDays`, and since #394 the create's, read by one function so the
+// two cannot accept different things. Whole days from 0 (never expires) to
+// 730 — `oauth2.clientSecretLifetimeDays`' own `max` — and empty (or absent)
+// for that setting. A lifetime in days has no "date in the past" to refuse,
+// which is why the create takes days and not a date: the add form's field,
+// so one lifetime is asked the same way on both screens.
+/**
+ * Reads a client secret's lifetime as a form or a caller gives it.
+ *
+ * @param raw - days, a string of days, empty, or absent
+ * @returns `{ ok: true, days }`, `days` null for the default; or
+ *   `{ ok: false }`
+ */
+function clientSecretLifetimeOf(raw) {
+  log.debug("Entering clientSecretLifetimeOf().");
+  const text = raw === undefined || raw === null ? '' : String(raw).trim();
+  if (text === '') {
+    log.debug("Leaving clientSecretLifetimeOf(). The default.");
+    return { ok: true, days: null };
+  }
+  const days = Number(text);
+  if (!isFinite(days) || days < 0 || days > 730 ||
+      Math.floor(days) !== days) {
+    log.debug("Leaving clientSecretLifetimeOf(). Not one.");
+    return { ok: false, days: null };
+  }
+  log.debug("Leaving clientSecretLifetimeOf().");
+  return { ok: true, days: days };
+}
+
+// The `expiresAt` a lifetime gives a secret made at `at` (seconds): 0 for
+// never, and undefined for the default, which newClientSecretRecord()
+// reads as `oauth2.clientSecretLifetimeDays`.
+function expiryOfLifetime(days, at) {
+  log.debug("Entering expiryOfLifetime().");
+  log.debug("Leaving expiryOfLifetime().");
+  return days === null ? undefined : (days > 0 ? at + days * 86400 : 0);
+}
+
 /**
  * Adds a client secret beside the ones an application holds. The new secret
  * is the newest, so it becomes the primary.
@@ -15577,13 +15682,9 @@ function addClientSecret(identifier, options) {
     return unknownApplication(identifier);
   }
   const description = String(opts.description || '').trim();
-  const rawLifetime = opts.lifetimeDays === undefined ||
-    opts.lifetimeDays === null ? '' : String(opts.lifetimeDays).trim();
-  const lifetime = rawLifetime === '' ? null : Number(rawLifetime);
+  const lifetime = clientSecretLifetimeOf(opts.lifetimeDays);
   if (description.length > 200 || /[\r\n\0]/.test(description) ||
-      (lifetime !== null && (!isFinite(lifetime) || lifetime < 0 ||
-                             lifetime > 730 ||
-                             Math.floor(lifetime) !== lifetime))) {
+      !lifetime.ok) {
     log.debug("Leaving addClientSecret(). Bad lifetime or description.");
     return errorCodes.mark({ ok: false, errors: ['A client secret\'s ' +
       'lifetime is a whole number of days from 0 (never expires) to ' +
@@ -15604,9 +15705,7 @@ function addClientSecret(identifier, options) {
   const at = nowSec();
   const secret = mintClientSecret();
   const added = newClientSecretRecord(secret, {
-    expiresAt: lifetime === null ? undefined
-                                 : (lifetime > 0 ? at + lifetime * 86400
-                                                 : 0),
+    expiresAt: expiryOfLifetime(lifetime.days, at),
     description: description });
   try {
     writeClientSecretRecords(record, [added].concat(held));

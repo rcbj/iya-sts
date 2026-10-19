@@ -162,6 +162,7 @@
   "a1.persistence": "Persistence",
   "a1.notPersistedA": "<strong>Walang anumang pinananatili rito sa prosesong ito.</strong> Mawawala ang entry kapag nag-restart, kasama ng bawat ibang application, tao at group sa directory. Katangian iyan ng buong serbisyo at hindi ng pahinang ito, at mababago ito: ",
   "a1.notPersistedB": " ang nagsusulat ng directory, at naka-off ito bilang default.",
+  "a1.secretLifetime": "Walang lamang lifetime: <code>oauth2.clientSecretLifetimeDays</code> ({days, select, never {hindi nag-e-expire} other {{days} araw}}); 0 ay hindi nag-e-expire. Nalalapat ito sa secret sa kahon, na-generate man o tinype.",
   "a2.credentialBadge": "credential",
   "a2.sealedTitle": "Naka-encrypt ito sa entry gamit ang key-encryption key — ang parehong ginagamit sa pag-seal ng mga signing key ng serbisyong ito at ng certificate authority. Ciphertext ang ipinapakita ng ldapsearch, ldif file, database row o backup; binuksan ito ng pahinang ito.",
   "a2.sealedAtRest": "naka-seal habang nakaimbak",

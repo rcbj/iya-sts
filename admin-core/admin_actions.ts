@@ -4845,7 +4845,10 @@ class AdminActions {
         // guess.
         kind: String(body.kind || ''),
         protocols: asked,
-        fields: this.applicationFieldsFrom(body)
+        fields: this.applicationFieldsFrom(body),
+        // The first client secret's lifetime (#394): the add form's field,
+        // beside Generate Secret on the create form.
+        lifetimeDays: body.lifetimeDays
       });
       log.debug("Leaving AdminActions.applicationsAction(). create " +
                 (result.ok ? 'ok' : 'refused') + ".");

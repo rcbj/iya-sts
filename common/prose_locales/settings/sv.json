@@ -2140,8 +2140,8 @@
     "text": "Klienthemlighetens livslängd (dagar)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "91dc7031f88426d1",
-    "text": "Livslängden, i dagar, för varje klienthemlighet som tjänsten skapar eller får, och därmed det `client_secret_expires_at` som RFC 7591 avsnitt 3.2.1 publicerar för en klient registrerad på POST /oauth2/register — standardvärdet för varje hemlighet som skapas eller ges (en omgenerering, en rotation, en tillagd hemlighet, ett värde inskrivet i konsolen), om inte tilläggsformuläret anger något annat. NOLL, standardvärdet, är det avsnittets eget ”aldrig”. Det stämplas på varje hemlighet när den skapas och flyttas inte av en senare ändring."
+    "en": "6ad202dff164f155",
+    "text": "Livslängden, i dagar, för varje klienthemlighet som tjänsten skapar eller får, och därmed det `client_secret_expires_at` som RFC 7591 avsnitt 3.2.1 publicerar för en klient registrerad på POST /oauth2/register — standardvärdet för varje hemlighet som skapas eller ges (en omgenerering, en rotation, en tillagd hemlighet, ett värde inskrivet i konsolen), om inte tilläggsformuläret anger något annat, eller skapandeformuläret gör det för ett programs första hemlighet. NOLL, standardvärdet, är det avsnittets eget ”aldrig”. Det stämplas på varje hemlighet när den skapas och flyttas inte av en senare ändring."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",

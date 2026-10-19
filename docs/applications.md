@@ -288,6 +288,16 @@ withheld from every reader of the socket — and the console shows it to an
 administrator only, marked as a credential. It is never written to the audit
 log.
 
+**A new application's first secret can be given its expiry when you create
+it.** On **New application**, **Lifetime (days)** sits beside **Generate
+Secret**. It takes whole days from 0 to 730, and 0 means the secret never
+expires. Leave it empty to use `oauth2.clientSecretLifetimeDays`. The lifetime
+applies to the secret in the box, whether you generated it or typed it. A
+lifetime with no secret is refused. With the API, send `lifetimeDays` to
+`POST /admin-api/applications/create` beside `fields.oauthClientSecret`. Later
+secrets are added on the application's **Credentials** tab, whose form takes
+the same field.
+
 **`appSessions` and `appUsers` are counts, not lists.** The ids themselves are
 deliberately not on the entry — an application used by two thousand people
 would otherwise carry two thousand values — so the count increments when the id
