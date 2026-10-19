@@ -38,6 +38,14 @@
 //      session object directly — what a MEDIUM assessment at the sign-in
 //      would have left there — rather than produced by scoring, which
 //      `tests/risk_decisions.js` holds.
+//
+// AND g AGAIN IN PRODUCT MODE (#715), in the same child, `global.mode`
+// overridden and cleared afterwards: a person made with a real password,
+// a wrong one refused at the screen, the right one signing in, then g1-g3
+// under the labels "g1 (product)" and on. a-f run in product over the wire
+// instead, in `tests/vendored/sts_idp_initiated_wsfed.js`; g is here because
+// HTTP cannot put a risk on a session. The comment above that pass says what
+// product changes for it.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -110,6 +118,9 @@ function childMain() {
     const applications = require(ROOT + '/common/applications');
     const authn = require(ROOT + '/authn/authn');
     const wsfed = require(ROOT + '/ws-federation/wsfed');
+    // For g's product pass (#715): a person made on purpose, with a password.
+    const ldap = require(ROOT + '/ldap/ldap_server');
+    const credentials = require(ROOT + '/common/credentials');
 
     const server = http.createServer(app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
@@ -320,6 +331,120 @@ function childMain() {
     delete held.risk;
     config.clearOverride('risk.enforceInDevelopment');
 
+    // --- g, again, in PRODUCT mode (#715) ------------------------------------
+    // The one section HTTP cannot set up — a session's risk comes from
+    // scoring against datasets the suite does not load — so it runs a
+    // second time here, in product, as `tests/scim_auth_discovery.js` does
+    // (`global.mode` overridden for the process, cleared in the `finally`).
+    // `tests/vendored/sts_idp_initiated_wsfed.js` holds a-f in product over
+    // the wire. What product changes for g, and how each is met:
+    //
+    //   * it CHECKS PASSWORDS and creates nobody because a sign-in named
+    //     them, so the person is made beforehand, in development as
+    //     `tests/public_clients_product.js` makes its fixtures, with the
+    //     attributes the realm's attribute policy (#396) requires in product,
+    //     and a real password — and a wrong one is refused first (g0b);
+    //   * risk is ENFORCED rather than observed, so no
+    //     `risk.enforceInDevelopment` is needed — and scoring is turned off
+    //     for the sign-in only (`risk.assessSignIns`), because this child's
+    //     http client is an automated one product scores on its own terms,
+    //     and the risk g is about is the one put on the session below. It is
+    //     turned back on before g1: with it off the issuance policy is handed
+    //     no risk at all (`RiskEngine.factsOf()`);
+    //   * every relying party here is already registered with its reply
+    //     address, which is what product requires of both doors.
+    //
+    // Each refusal's code is counted before and after, because the
+    // development pass above already left one of each in the log.
+    const PERSON_P = 'wi-paula';
+    const PASSWORD_P = 'wsfed-initiation-Product-7!' +
+      require('crypto').randomBytes(6).toString('hex');
+    const codeCount = async function (code) {
+      await sleep(50);
+      return audit.list().filter(function (row) {
+        return row.errorCode === code;
+      }).length;
+    };
+    ldap.createUser(PERSON_P, { invent: false, attributes: {
+      cn: 'Paula Product', givenName: 'Paula', sn: 'Product',
+      mail: 'paula@wsfed-initiation.example' } });
+    credentials.setPassword(PERSON_P, PASSWORD_P);
+    config.setOverride('global.mode', 'product');
+    config.setOverride('risk.assessSignIns', false);
+    try {
+      note(config.value('global.mode') === 'product',
+           'g0 (product). (the process is in product mode)',
+           config.value('global.mode'));
+      const wrongly = browser(port);
+      const wrongAt = String((await wrongly.go('GET', link(RP_OPEN, {
+        wctx: 'product' }))).headers.location || '');
+      const wrong = await authnScreen.submit({ port: port, jar: wrongly.jar,
+        at: wrongAt, fields: { action: 'login', username: PERSON_P,
+                               password: PASSWORD_P + '-not' } });
+      note(/\/authn\/login/.test(wrongAt) && wrong.next !== 'redirect' &&
+           authn.sessionsOf(PERSON_P).length === 0,
+           'g0b (product). a wrong password at the screen the link sends a ' +
+           'person to is refused, and no session is made',
+           wrongAt + ' ' + wrong.next);
+      const paula = browser(port);
+      const startAt = String((await paula.go('GET', link(RP_OPEN, {
+        wctx: 'product' }))).headers.location || '');
+      const signed = await authnScreen.submit({ port: port, jar: paula.jar,
+        at: startAt, fields: { action: 'login', username: PERSON_P,
+                               password: PASSWORD_P } });
+      const returned = String(signed.location || '')
+        .replace(/^https?:\/\/[^/]+/, '');
+      const issued = returned ? await paula.go('GET', returned) : signed;
+      note(issued.status === 200 && formOf(issued).action === REPLY_OPEN &&
+           formOf(issued).wctx === 'product',
+           'g0c (product). with the real password the person is signed in ' +
+           'and the link answers, to the registered address',
+           signed.next + ' ' + issued.status + ' ' + formOf(issued).action);
+      config.clearOverride('risk.assessSignIns');
+
+      const heldP = authn.sessionsOf(PERSON_P)[0];
+      if (heldP) {
+        heldP.risk = { level: 'MEDIUM', score: 2, signals: ['tor-exit'],
+                       assessmentId: 'wi-g-product' };
+      }
+      let before = await codeCount('STS-RISK-0017');
+      r = await paula.go('GET', link(RP_OPEN, { wctx: 'risk' }));
+      const stepToP = String(r.headers.location || '');
+      let recordP = null;
+      new URL(stepToP, 'http://127.0.0.1').searchParams.forEach(function (v) {
+        recordP = recordP || authn.pendingFor(v);
+      });
+      note(heldP && r.status === 303 && /\/authn\/login/.test(stepToP) &&
+           recordP &&
+           /sts_risk_retry=1/.test(String(recordP.returnTo)) &&
+           String(recordP.returnTo).indexOf('/wsfed/initiate/') === 0 &&
+           recordP.forceMfa === true &&
+           await codeCount('STS-RISK-0017') > before,
+           'g1 (product). a denial on risk naming a second factor sends the ' +
+           'person to sign in again with the factor demanded, back to the ' +
+           'link with the one-trip marker (STS-RISK-0017)',
+           r.status + ' ' + JSON.stringify(recordP && { returnTo:
+             recordP.returnTo, forceMfa: recordP.forceMfa }));
+      before = await codeCount('STS-WSFED-0029');
+      r = await paula.go('GET', link(RP_OPEN, { wctx: 'risk',
+                                                sts_risk_retry: '1' }));
+      note(r.status === 403 && await codeCount('STS-WSFED-0029') > before,
+           'g2 (product). a request carrying the marker that is still ' +
+           'denied is refused 403 rather than sent round again ' +
+           '(STS-WSFED-0029)', r.status);
+      before = await codeCount('STS-WSFED-0011');
+      r = await paula.go('GET', signInUrl(RP_PLAIN, REPLY_PLAIN));
+      note(r.status === 403 && await codeCount('STS-WSFED-0011') > before,
+           'g3 (product). the relying party\'s own wsignin1.0 is unchanged: ' +
+           'refused on risk (STS-WSFED-0011), no step-up', r.status);
+      if (heldP) {
+        delete heldP.risk;
+      }
+    } finally {
+      config.clearOverride('risk.assessSignIns');
+      config.clearOverride('global.mode');
+    }
+
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);
@@ -387,7 +512,7 @@ module.exports = {
   describe: 'WS-Federation: /wsfed/initiate/{rp} is off until a relying ' +
             'party opts in, refuses a wreply, posts only to the registered ' +
             'reply address with wctx intact and records the realm for ' +
-            '/logout, steps up once on risk; wsignin1.0 obeys ' +
-            'wsfed.spInitiatedSso',
+            '/logout, steps up once on risk (in development and again in ' +
+            'product); wsignin1.0 obeys wsfed.spInitiatedSso',
   run: run
 };

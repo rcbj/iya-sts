@@ -1072,6 +1072,14 @@ const JOBS = [
   // expected Requester for a replay. Fixed here first; it goes back to the
   // parent with rcbj/id-proto-debugger#353, and this flag comes off then.
   { file: 'sts_saml11.js',               browser: false, local: true },
+  // Identity-provider-initiated WS-Federation sign-in over the wire (#715):
+  // `/wsfed/initiate/{rp}` off by default, registered relying parties only,
+  // no wreply, the registered reply address with wctx intact, the sign-out
+  // inventory, the realm setting through /admin-api and the entry
+  // overrides, in a throwaway realm in the run's mode — product in
+  // single-node and cluster. `tests/wsfed_initiation.js` is the in-process
+  // half, and holds the risk step-up HTTP cannot set up.
+  { file: 'sts_idp_initiated_wsfed.js',  browser: false, local: true },
   // OWNED HERE SINCE 2026-09-21, when it was a byte-identical copy of the
   // parent's: its no-certificate case had to stop registering a signing
   // certificate in development (the service encrypts to one, so the in-clear
