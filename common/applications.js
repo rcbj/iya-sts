@@ -6511,6 +6511,8 @@ const FIELD_EXAMPLES = {
   oauthPostLogoutRedirectUri: 'https://app.example.com/signed-out',
   oauthFrontchannelLogoutUri: 'https://app.example.com/frontchannel-logout',
   oauthBackchannelLogoutUri: 'https://app.example.com/backchannel-logout',
+  // #426: OpenID Connect Core section 4's initiate_login_uri, https only.
+  oauthInitiateLoginUri: 'https://app.example.com/login/initiate',
   oauthGrantType: 'authorization_code',
   oauthResponseType: 'code',
   oauthAllowedScope: 'profile',
