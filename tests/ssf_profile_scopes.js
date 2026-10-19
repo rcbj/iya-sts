@@ -84,7 +84,9 @@ function makeApplications(t) {
       protocols: ['oauth2'],
       fields: { oauthClientId: row[0], oauthAllowedScope: row[1] } });
   });
-  t.check(made.every(function (one) { return one && one.ok; }),
+  t.check(made.every(function (one) {
+    return one && one.ok;
+  }),
           'precondition: the five applications were created',
           JSON.stringify(made));
   log.debug("Leaving makeApplications().");

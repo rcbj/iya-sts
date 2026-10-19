@@ -290,7 +290,9 @@ class SsfScopes {
     const { log } = this.deps;
     log.debug("Entering SsfScopes.tokens().");
     const raw = Array.isArray(held)
-      ? held.map(function (one) { return String(one); })
+      ? held.map(function (one) {
+        return String(one);
+      })
       : String(held == null ? '' : held).split(/\s+/);
     const out: string[] = [];
     raw.forEach(function (one) {
@@ -323,7 +325,9 @@ class SsfScopes {
     }
     const names = this.tokens(held);
     const answer = need === 'write'
-      ? names.some(function (one) { return self.classOf(one) === 'write'; })
+      ? names.some(function (one) {
+        return self.classOf(one) === 'write';
+      })
       : names.some(function (one) {
         return self.classOf(one) === 'read' ||
           one === SsfScopes.PROFILE_MANAGE;
