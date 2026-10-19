@@ -838,7 +838,10 @@ per-process jobs and the algorithmic fixes are a follow-up. `scheduler.ts`'s
   replicates) and found to work through the store or the pool's channels.
   The ticket key and the TUF root are persisted shared maps, the SPIFFE
   authorities are a persisted realm map, key rotations bump the key set's
-  generation, and every outbound delivery is claimed per row.
+  generation, and every outbound delivery is claimed per row. The third,
+  `saml2.sp-metadata-refresh`, stays only because its owner registers it
+  from `server.js`'s `listen()` alone, so no worker has it; registering it
+  in every process would let it move.
 * **Nice: a run held for load, never for long.** A due SCHEDULED run of a
   job whose `nice` (0–19, default 10) is above 0 waits before its claim,
   while even the least-loaded worker is heavy. Heavy means
