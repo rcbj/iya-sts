@@ -219,9 +219,9 @@ persistent (or other stable) NameID.
 
 | `fedSubjectPolicy` | An unlinked subject |
 |---|---|
-| `link-at-first-sign-in` (**default**; empty means it) | naming an existing person: that person is sent to **this service's own sign-in screen**, the name fixed, and must sign in as themselves — their password, and a second factor wherever they hold one or one is required. Only then is the link recorded, the partner's attributes written and the federated session started. Cancel links nothing (`STS-FED-0099`). Naming nobody: a new entry `<relationship>~<name>`, linked at creation, where provisioning allows it |
+| `link-at-first-sign-in` (**default**; empty means it) | naming an existing person: that person is sent to **this service's own sign-in screen**, the name fixed, and must sign in as themselves — their password, and a second factor wherever they hold one or one is required. Only then is the link recorded, the partner's attributes written and the federated session started. Cancel links nothing (`STS-FED-0099`). Naming nobody: a new entry `<relationship>~<subject>`, linked at creation, where provisioning allows it |
 | `pre-linked` | refused 403 (`STS-FED-0091`). Links are made on the console, through `/admin-api` or SCIM |
-| `jit-namespaced` | always a **new** entry `<relationship>~<name>`, linked at creation — never an existing person, whatever its name |
+| `jit-namespaced` | always a **new** entry `<relationship>~<subject>`, linked at creation — never an existing person, whatever its name |
 | `any-existing` | the name the partner sent is matched onto a local person, as this service did before #109. **Development only**: product refuses to set it (`STS-FED-0095`) and refuses a sign-in through a relationship that carries it (`STS-FED-0094`). **Warning:** it lets this partner sign in any local account it can name |
 
 A linked subject signs in the person it is linked to under every policy — even
@@ -262,15 +262,29 @@ is treated as unlinked.
 
 ### Provisioning: dynamic or pre-provisioned
 
-Two switches on each service-provider-side relationship:
+On each service-provider-side relationship (an `ssf` relationship signs nobody
+in, and these fields are not on it):
 
-| Switch | On (default) | Off |
-|---|---|---|
-| `fedAutocreateUsers` | the first sign-in creates the person's entry | the entry must already exist (SCIM, `/admin/users/new`, `/admin-api`); a sign-in for somebody with none is refused 403 *has not been provisioned* (`STS-FED-0090`) |
-| `fedUpdateUserAttributes` | a returning person's attributes are overwritten from the latest assertion | the partner's values are written only when the sign-in creates the entry |
+| Field | What it does |
+|---|---|
+| `fedAutocreateUsers` | the first sign-in creates the person's entry. **Written TRUE when the relationship is created in development, and FALSE in product.** A relationship that stores neither reads the same way. Off, the entry must already exist (SCIM, `/admin/users/new`, `/admin-api`); a sign-in for somebody with none is refused 403 *has not been provisioned* (`STS-FED-0090`). A stored TRUE keeps creating in product |
+| `fedUpdateUserAttributes` | on by default. A returning person's attributes are overwritten from the latest assertion. Off, the partner's values are written only when the sign-in creates the entry |
+| `fedProvisionGroups` | **off** by default, and a missing value is off. On, each group name the assertion carries (`groups`, this realm's `groups.claimName`, and the two WS-Federation group claim URIs; not the role claim) becomes a membership of the person, on every successful sign-in. A group created this way is marked with the relationship (`federationrelationship`). A name that already exists and is not that relationship's — `admin-read` and `admin-write` included — is ignored, audited (`STS-FED-0158`, `federation.group-ignored`) and the sign-in continues. It does not satisfy `fedSubjectGroup`: that rule runs before anybody is added. One value is one group name. A name that cannot be a directory name is ignored the same way |
+| `fedProvisionCap` | how many people this relationship may create. Empty or 0 is unlimited. At the cap a new subject is refused `STS-FED-0090`; a person already linked still signs in. `ldap.maxEntries` remains the realm ceiling. `fedUsers` counts a change of user, and is not this cap |
+| `fedProvisionIdleMinutes` | disable a person whose only sign-in path is this relationship, once `federationLastSeen` is older than this many minutes. Empty or 0 is off. The scheduler job `federation.provision-idle` does it; the entry and the link are kept. A local `userPassword`, or a link through another relationship, is left alone. A passkey this sweep does not see is a local path it does not count. A partner's account-disabled signal stays `STS-FED-0156` and blocks only that partner's sign-ins |
 
-An entry a sign-in creates is named `<relationship>~<name>` and linked at
-creation. A pre-provisioned person is linked to the partner's subject by an
+An entry a sign-in creates is named `<relationship>~<subject>` and linked at
+creation. `<subject>` is the partner's stable identifier, and a `urn:uuid:`
+value is filed as `sub-<uuid>`. It is not the mapped username, so
+`alice@a.example` and `alice@b.example` do not collapse into one entry, and
+`federation.usernamePrefix` is not applied to it. `fedUsernameSource` still
+chooses the name a `link-at-first-sign-in` confirm looks up, and the name
+`any-existing` matches. Under `any-existing` the created name is that mapped
+name, with no namespace. A name that cannot be a directory entry — empty, or
+carrying a character RFC 4514 reserves — is refused `STS-FED-0090` rather
+than written escaped.
+
+A pre-provisioned person is linked to the partner's subject by an
 administrator, the API or SCIM, or links themselves at their first federated
 sign-in under `link-at-first-sign-in`.
 
@@ -551,7 +565,7 @@ development. What the mode changes:
 
 | | Development | Product |
 |---|---|---|
-| A person with no directory entry | created on first sign-in as `<relationship>~<name>`, linked, unless `fedAutocreateUsers` is off | **never created**: the sign-in is refused `STS-FED-0090` |
+| A person with no directory entry | created on first sign-in as `<relationship>~<subject>`, linked, unless `fedAutocreateUsers` is off. A new relationship is created with the switch on | created when `fedAutocreateUsers` is on, as `<relationship>~<subject>`, linked. A new relationship is created with the switch off, and a sign-in for somebody with no entry is then refused `STS-FED-0090`. A relationship that already stores TRUE keeps creating |
 | `fedSubjectPolicy` `any-existing` | the name match of old | refused, when set and at the sign-in |
 | The password at the linking sign-in | not checked (the reserved `invalid` is refused) | verified, with the second factor |
 | Revocation of the partner's signing certificate (`pki.revocationCheck=auto`) | soft-fail: a status that cannot be fetched is accepted | hard-fail: a status that cannot be established is refused |
@@ -616,8 +630,9 @@ These are attributes of the relationship entry, set on `/admin/federation` or
 | `fedEndSessionUrl` | SP | the partner's OpenID Connect `end_session_endpoint`; the ID Token is kept for `id_token_hint` only while this is set |
 | `fedAcceptSignout` | SP | honour the partner's sign-out; `TRUE` by default, and off every one is refused (`STS-FED-0123`) |
 | `fedRequireSignedLogout` | SP | require a SAML logout message to be signed; `TRUE` by default and always in product — **off is a warning**: an unsigned sign-out is anybody signing anybody out |
-| `fedUsernameSource`, `fedAttributeMap` | SP | which incoming value is the username; extra attribute mappings |
-| `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedAllowUnsolicited` | SP | the provisioning switches; accepting a response nobody asked for |
+| `fedUsernameSource`, `fedAttributeMap` | SP | which incoming value the confirm lookup and `any-existing` match; not the name a created entry gets. Extra attribute mappings |
+| `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedAllowUnsolicited` | SP | whether a sign-in creates an entry (TRUE in development, FALSE in product, when the relationship is created); whether a returning person's attributes are overwritten; accepting a response nobody asked for |
+| `fedProvisionGroups`, `fedProvisionCap`, `fedProvisionIdleMinutes` | SP | group memberships from the partner's token, off; how many people the relationship may create, empty for unlimited; idle minutes before a person whose only path is this relationship is disabled, empty for off |
 | `fedSubjectPolicy` | SP | what an unlinked subject may become: `link-at-first-sign-in` (default), `pre-linked`, `jit-namespaced`, `any-existing` (development only — see the warning above) |
 | `fedSubjectGroup`, `fedSubjectDomain`, `fedSubjectPattern` | SP | the rules on top of the policy |
 | `fedMayAssertAdministrators` | SP | let the partner sign in a console administrator; `FALSE` by default — see the warning above |
@@ -696,10 +711,11 @@ relationship refuses until it is filled.
   person leaving this service for a foreign identity provider is the moment a
   deliberate click is worth having, so that page has a button rather than a
   script that submits it.
-* **Federated identities share the local namespace unless told otherwise.**
-  `federation.usernamePrefix` is empty so a development service pointed at a partner returns
-  familiar names; set it when the question is whether the two namespaces
-  should meet.
+* **A created entry is namespaced to the relationship; a confirm lookup is not.**
+  An entry a sign-in creates is `<relationship>~<subject>` even when
+  `federation.usernamePrefix` is empty. That prefix, empty by default, is what
+  makes the `link-at-first-sign-in` confirm lookup and `any-existing` share
+  the local namespace; set it when those two should not meet a local person.
 
 ## In the running service
 

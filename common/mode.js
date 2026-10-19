@@ -1511,6 +1511,26 @@ function matchesFederatedNames() {
   return !isProduct();
 }
 
+// Does a NEW service-provider relationship create a directory entry for a
+// partner's subject nobody has linked (#358)? Development says yes — a mock
+// pointed at a partner is there to see the person arrive. Product says no:
+// a partner is the one source of identities whose volume this service does
+// not control, and creating them is the operator's act (`fedAutocreateUsers`
+// written TRUE), not the default. A relationship that already stores TRUE
+// or FALSE is that value in both modes; this predicate is only what a
+// missing one, and a relationship created now, means.
+/**
+ * Tells whether a new federation relationship creates entries for unlinked
+ * subjects (`fedAutocreateUsers`). A stored TRUE or FALSE wins in both modes.
+ *
+ * @returns true in development mode
+ */
+function defaultsFederatedAutocreate() {
+  log.debug("Entering defaultsFederatedAutocreate().");
+  log.debug("Leaving defaultsFederatedAutocreate().");
+  return !isProduct();
+}
+
 // May a federation partner's SAML LogoutRequest or LogoutResponse arrive
 // UNSIGNED (#167)? saml-profiles-2.0-os section 4.4.4.1 says a logout message
 // on the HTTP-Redirect or HTTP-POST binding MUST be signed, and a signature
@@ -2316,6 +2336,19 @@ const REQUIREMENTS = [
              'the console-administrator refusal.',
     where: 'federation/federation_sp.ts, federation/federation_links.ts, ' +
            'federation/federation.js' },
+  { id: 'federated-autocreate',
+    what: 'A new federation relationship creates a directory entry for a ' +
+          'partner subject nobody has linked',
+    development: 'fedAutocreateUsers is written TRUE when the relationship ' +
+                 'is created, and a relationship that does not store the ' +
+                 'attribute creates. A stored FALSE still creates nobody.',
+    product: 'fedAutocreateUsers is written FALSE when the relationship is ' +
+             'created, and a missing attribute creates nobody ' +
+             '(STS-FED-0090). A relationship that already stores TRUE keeps ' +
+             'creating until it is edited. link-at-first-sign-in still ' +
+             'links an existing mapped person in both modes.',
+    where: 'common/mode.js, federation/federation.js, ' +
+           'federation/federation_sp.ts' },
   { id: 'federated-logout-signature',
     what: 'A federation partner\'s SAML sign-out is signed by that partner',
     development: 'A relationship whose fedRequireSignedLogout is set off ' +
@@ -4004,6 +4037,7 @@ module.exports = {
     acceptsPasswordAloneFromSecondFactorAccounts,
   issuesTicketsOnPasswordAlone: issuesTicketsOnPasswordAlone,
   matchesFederatedNames: matchesFederatedNames,
+  defaultsFederatedAutocreate: defaultsFederatedAutocreate,
   acceptsUnsignedFederatedLogout: acceptsUnsignedFederatedLogout,
   acceptsUnencryptedFederatedAssertions: acceptsUnencryptedFederatedAssertions,
   acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,

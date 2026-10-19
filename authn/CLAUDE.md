@@ -524,9 +524,11 @@ contract:
 * **SCIM's resource `id` is the `entryUUID`** (`scim/CLAUDE.md`). **Everyone moved** (rcbj's
   choice): every `sub` a relying party had stored changed once, and the four owned jobs
   that built the old form now read `subject` off `GET /admin-api/users`.
-* **Federation's two switches**: `fedAutocreateUsers` off means the entry must already
-  exist, and `fedUpdateUserAttributes` decides whether a returning person's attributes are
-  overwritten (`federation/CLAUDE.md`).
+* **Federation's switches**: `fedAutocreateUsers` off means the entry must already
+  exist (a new relationship is written on in development and off in product), and
+  `fedUpdateUserAttributes` decides whether a returning person's attributes are
+  overwritten. `fedProvisionGroups` is off unless the relationship stores it
+  (`federation/CLAUDE.md`).
 * **`deleteOldRdn` is honoured** on a rename, so the old name stops resolving.
 
 `tests/stable_subject.js` and `tests/federation_provisioning.js` are the contract.

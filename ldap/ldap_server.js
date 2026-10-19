@@ -5240,8 +5240,25 @@ persistence.setDirectory(directoryHooks);
 // ---------------------------------------------------------------------------
 function subjectForName(name) {
   log.debug('Entering subjectForName(). name=' + name);
-  const key = stats.identityKeyOf(name);
-  const located = key ? locateEntry(key) : null;
+  // A namespaced federated uid is `<relationship>~<subject>`, and the
+  // subject may be an email (#358). identityKeyOf() would strip the
+  // partner's domain and resolve a different person. The whole name is
+  // tried first. A Kerberos principal that merely contains '~' still
+  // falls through to the fold when nothing is stored under the whole name.
+  const text = String(name == null ? '' : name);
+  const tilde = text.indexOf('~');
+  const at = text.indexOf('@');
+  let located = null;
+  if (tilde > 0 && at > tilde) {
+    const whole = locateEntry(text);
+    if (whole && whole.stored && isPersonEntry(whole.stored)) {
+      located = whole;
+    }
+  }
+  if (!located) {
+    const key = stats.identityKeyOf(name);
+    located = key ? locateEntry(key) : null;
+  }
   const stored = located && located.stored;
   const uuid = stored && isPersonEntry(stored) ? entryUuidOf(stored) : '';
   log.debug('Leaving subjectForName(). ' + (uuid ? 'Found.' : 'Nobody.'));
@@ -20548,6 +20565,169 @@ function writeFederationLink(name, value, add, options) {
            username: usernameOfEntry(stored), links: after };
 }
 
+// A group this relationship created carries `federationrelationship` equal
+// to its id. Anything else — a console group, a group another relationship
+// created, an entry that merely occupies the name — is a collision.
+function markedForRelationship(stored, fedId) {
+  log.debug('Entering markedForRelationship().');
+  const marks = ((stored && stored.attributes &&
+                  stored.attributes.federationrelationship) || [])
+    .map(function (one) { return String(one); });
+  const marked = !!groupRuleFor(stored) &&
+                 marks.indexOf(String(fedId)) >= 0;
+  log.debug('Leaving markedForRelationship().');
+  return marked;
+}
+
+// The group of this name, at `cn=<name>,ou=groups` or anywhere else a
+// group's cn matches. The first hit is enough: a second group of the same
+// name is what the caller exists to refuse.
+function groupByFederatedName(name) {
+  log.debug('Entering groupByFederatedName().');
+  const at = getEntry(groupDnFor(name));
+  if (at) {
+    log.debug('Leaving groupByFederatedName(). At its DN.');
+    return at;
+  }
+  const wanted = String(name).trim().toLowerCase();
+  let found = null;
+  eachGroupEntry(function (stored) {
+    if (found) {
+      return;
+    }
+    const cns = (stored.attributes && stored.attributes.cn) || [];
+    if (cns.some(function (one) {
+      return String(one).trim().toLowerCase() === wanted;
+    })) {
+      found = stored;
+    }
+  });
+  log.debug('Leaving groupByFederatedName(). ' +
+            (found ? 'By cn.' : 'None.'));
+  return found;
+}
+
+// Stamped BEFORE the member is added. A group that exists without the mark
+// is a local group, and adding the person to it is the collision this
+// refuses. A stamp that fails leaves an empty unmarked group; the next
+// sign-in treats that name as taken.
+function stampFederationRelationship(dn, fedId) {
+  log.debug('Entering stampFederationRelationship().');
+  const stored = getEntry(dn);
+  if (!stored) {
+    log.debug('Leaving stampFederationRelationship(). No entry.');
+    return false;
+  }
+  stored.attributes.federationrelationship = [String(fedId)];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  touchDirectory(stored.dn);
+  log.debug('Leaving stampFederationRelationship(). Stamped.');
+  return true;
+}
+
+// Group names from one partner's assertion, for one person (#358). A name
+// that is not a DN value, or that names a group this relationship did not
+// create, is ignored. The caller audits the ignores and the sign-in
+// continues. `memberOf` is never written: addGroupMember does not.
+function applyFederatedGroups(fedId, username, names) {
+  log.debug('Entering applyFederatedGroups(). ' + fedId);
+  const id = String(fedId || '');
+  const who = String(username || '').trim();
+  const joined = [];
+  const ignored = [];
+  const created = [];
+  if (!id || !who) {
+    log.debug('Leaving applyFederatedGroups(). Nothing to apply.');
+    return { joined: joined, ignored: ignored, created: created };
+  }
+  const seen = {};
+  const opts = { actor: 'federation:' + id, channel: 'internal',
+                 origin: 'federation', protocol: 'Federation' };
+  [].concat(names || []).forEach(function (raw) {
+    const name = String(raw == null ? '' : raw).trim();
+    const fold = name.toLowerCase();
+    if (!name || seen[fold]) {
+      return;
+    }
+    seen[fold] = true;
+    if (DN_SHAPED.test(name) || !nameUsableInDn(name)) {
+      ignored.push({ name: name, reason: 'unusable' });
+      return;
+    }
+    const existing = groupByFederatedName(name);
+    if (existing) {
+      if (!markedForRelationship(existing, id)) {
+        ignored.push({ name: name, reason: 'exists' });
+        return;
+      }
+      const added = addGroupMember(existing.dn || name, who, opts);
+      if (added && added.ok) {
+        joined.push(name);
+      } else {
+        ignored.push({ name: name, reason: 'add' });
+      }
+      return;
+    }
+    const made = createGroup(name, Object.assign({ members: [],
+      note: 'created for federation relationship ' + id }, opts));
+    if (!made || !made.ok) {
+      ignored.push({ name: name, reason: 'create' });
+      return;
+    }
+    if (!stampFederationRelationship(made.dn, id)) {
+      ignored.push({ name: name, reason: 'stamp' });
+      return;
+    }
+    created.push(name);
+    const added = addGroupMember(made.dn, who, opts);
+    if (added && added.ok) {
+      joined.push(name);
+    } else {
+      ignored.push({ name: name, reason: 'add' });
+    }
+  });
+  log.debug('Leaving applyFederatedGroups(). ' + joined.length +
+            ' joined, ' + ignored.length + ' ignored.');
+  return { joined: joined, ignored: ignored, created: created };
+}
+
+// People the idle sweep may disable: every federationLink is this
+// relationship's, there is no local password, and the account is not
+// already locked. Holders of the attribute, never every person.
+function federationIdleCandidates(fedId) {
+  log.debug('Entering federationIdleCandidates(). ' + fedId);
+  const id = String(fedId || '');
+  const prefix = id + ' ';
+  const out = [];
+  if (!id) {
+    log.debug('Leaving federationIdleCandidates(). No relationship.');
+    return out;
+  }
+  eachHolderOfAny(['federationlink'], function (stored) {
+    if (!isPersonEntry(stored)) {
+      return;
+    }
+    const links = stored.attributes.federationlink || [];
+    if (!links.length || !links.every(function (value) {
+      return String(value).indexOf(prefix) === 0;
+    })) {
+      return;
+    }
+    const passwords = stored.attributes.userpassword || [];
+    if (passwords.some(function (one) { return String(one) !== ''; })) {
+      return;
+    }
+    if ((stored.attributes.pwdaccountlockedtime || []).length) {
+      return;
+    }
+    const seen = stored.attributes.federationlastseen || [];
+    out.push({ username: usernameOfEntry(stored), dn: stored.dn,
+               lastSeen: seen.length ? String(seen[0]) : '' });
+  });
+  log.debug('Leaving federationIdleCandidates(). ' + out.length);
+  return out;
+}
+
 federation.setDirectory({
   readFederation: readFederation,
   writeFederation: writeFederation,
@@ -20566,7 +20746,9 @@ federation.setDirectory({
   peopleByMail: peopleByMail,
   federationLinksThrough: federationLinksThrough,
   plannedPersonDn: plannedPersonDn,
-  writeFederationLink: writeFederationLink
+  writeFederationLink: writeFederationLink,
+  applyFederatedGroups: applyFederatedGroups,
+  federationIdleCandidates: federationIdleCandidates
 });
 
 // AND THE TWO APPLICATIONS THAT ARE THIS PROCESS, immediately after — because

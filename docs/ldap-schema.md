@@ -150,7 +150,7 @@ uploaded instead.
 | `didSubject`, `didMethod` | the DID this entry is. The entry is found by `didSubject` |
 | `spiffeSubject`, `spiffePath`, `spiffeTrustDomain` | the SPIFFE ID that authenticated. **These are not the same as `spiffeId`** on a registration entry |
 | `spiffeCredentialStatus`, `spiffeCredentialStatusReason`, `spiffeRevokedAt` | whether this identity may still be **issued** an SVID. This is not a certificate status |
-| `federationRelationship`, `federationIssuer`, `federationLastSeen` | where a federated person came from |
+| `federationRelationship`, `federationIssuer`, `federationLastSeen` | where a federated person came from. `federationLastSeen` is what `fedProvisionIdleMinutes` reads |
 | `federationLink` | `<relationship> <issuer> <subject>`: **the one that decides anything**, linking a partner's subject to this person (#109) |
 | `federationAttribute` | which of the entry's other attributes came from a partner's assertion |
 | `oauthConsent` | `<time> <scope> <client_id>`, one value per (application, scope) |
@@ -187,6 +187,8 @@ roster or a role names it for:
 The console groups are created on first grant, and the bootstrap `admin` holds both. `remote-peps` and `xacml-users` are seeded, empty in product mode. In development, demo data adds `cn=developers` and `cn=directory-admins` (which grant nothing), the people `alice`, `bob` and `carol`, and `cn=admin,<base>`.
 
 The names are the defaults of `admin.readGroup`, `admin.writeGroup`, `roles.remotePepGroup` and `roles.xacmlUserGroup`. The directory also treats `groupOfUniqueNames`, `posixGroup` and `groupOfURLs` entries as groups, and reads `uniqueMember` and `memberUid` as well as `member`.
+
+A group `fedProvisionGroups` creates also carries `federationrelationship`, the relationship id that created it. A later sign-in through that relationship may add people only to groups carrying that mark. A token that names `admin-write`, or any other group the relationship did not create, does not add the person to it.
 
 ## Applications: `ou=applications`
 
@@ -235,7 +237,7 @@ draws it with a description of every field.
 | Keys | `fedSigningCertificate` (**decides whose assertions are believed**), `fedJwks`, `fedEncryptionKey` (**withheld**), `fedEncryptionKeyType`, `fedKeyManagementAlgorithm`, `fedContentEncryptionAlgorithm`, `fedSignRequest` |
 | OIDC as client | `fedClientId`, `fedClientSecret` (**withheld**), `fedScope`, `fedResponseType` |
 | Policy | `fedAllowUnsolicited`, `fedAllowUnencrypted`, `fedAcceptSignout`, `fedRequireSignedLogout`, `fedMayAssertAdministrators`, `fedAuthnMechanism`, `fedAuthnRelationship` |
-| Subjects and provisioning | `fedSubjectPolicy`, `fedSubjectPattern`, `fedSubjectDomain`, `fedSubjectGroup`, `fedHomeRealmDomain` (#148, the domains whose `domain_hint` goes to this partner), `fedUsernameSource`, `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedAttributeMap`, `fedRelease` |
+| Subjects and provisioning | `fedSubjectPolicy`, `fedSubjectPattern`, `fedSubjectDomain`, `fedSubjectGroup`, `fedHomeRealmDomain` (#148, the domains whose `domain_hint` goes to this partner), `fedUsernameSource`, `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedProvisionGroups`, `fedProvisionCap`, `fedProvisionIdleMinutes`, `fedAttributeMap`, `fedRelease` |
 | Observation | `fedFirstSeen`, `fedLastSeen`, `fedLastUser`, `fedUsers`, `fedAuthentications`, `fedLastError`, `fedLastErrorAt` |
 
 ## Attribute sources: `ou=attributesources`

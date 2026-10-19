@@ -11509,6 +11509,7 @@ class AdminViews {
       // "yes" and "1" into — and one of those is how a relationship stays
       // disabled while the page says it is on.
       return ['fedEnabled', 'fedAutocreateUsers', 'fedUpdateUserAttributes',
+              'fedProvisionGroups',
               'fedMayAssertAdministrators', 'fedSignRequest',
               'fedAllowUnsolicited', 'fedAcceptSignout',
               'fedRequireSignedLogout', 'fedAllowUnencrypted']
@@ -11648,6 +11649,9 @@ class AdminViews {
           schema: federation.SCHEMA.attributes,
           enumLabels: enumLabels,
           defaultSubjectPolicy: federation.DEFAULT_SUBJECT_POLICY,
+          // What a missing fedAutocreateUsers means in this mode (#358).
+          // The browser bundle cannot require mode.js.
+          autocreateDefault: mode.defaultsFederatedAutocreate(),
           subjectPolicy: federation.subjectPolicyOf(record),
           encrypts: federation.encrypts(record),
           paths: federation.PATHS, base: base, loginHref: login,

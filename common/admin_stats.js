@@ -2908,6 +2908,25 @@ function recordAuthentication(detail) {
     log.debug("Leaving recordAuthentication().");
     return null;
   }
+  // A NAMESPACED FEDERATED UID KEEPS ITS '@' (#358). identityOf() splits on
+  // the last '@' so alice@a.example and a Kerberos principal share a row,
+  // and a confirm-link still wants that. A sign-in that creates
+  // `<relationship>~<subject>` has already chosen that whole string as the
+  // directory name: two partners' subjects that share a local-part are two
+  // people, and folding here would store `rel~alice` and hand the session
+  // the other entry's subject. identityKeyOf() itself is unchanged.
+  // subjectForName() looks the same name up whole before it folds, or the
+  // session would miss the entry this call asks the directory for.
+  if (info.federation) {
+    const form = identity.form;
+    const tilde = form.indexOf('~');
+    const at = form.indexOf('@');
+    if (tilde > 0 && at > tilde) {
+      identity.key = form;
+      identity.name = form;
+      identity.realm = '';
+    }
+  }
   const now = Date.now();
   const record = userRecord(identity);
   record.forms[identity.form] = (record.forms[identity.form] || 0) + 1;
@@ -2925,7 +2944,8 @@ function recordAuthentication(detail) {
   // the JWT recorder is: a throw out here would fail the request that was
   // accepting a credential, which is the tail wagging the dog. It is given the
   // NORMALISED identity rather than `presented`, so that the three spellings of
-  // one person seed one entry.
+  // one person seed one entry. A namespaced federated uid is the exception
+  // just above: its key is the name as presented, '@' included.
   // **THE DIRECTORY IS TOLD FIRST (2026-09-14)**, before the event and the
   // audit row below, where it used to be told last. A person's `sub` is their
   // entry's `entryUUID` now, so the entry an authentication creates has to

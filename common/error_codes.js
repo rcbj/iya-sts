@@ -10741,7 +10741,8 @@ const CODES = [
   { code: 'STS-FED-0090',
     summary: 'A federated sign-in verified, but the directory holds no entry ' +
       'for the person and none was created (dynamic provisioning off on the ' +
-      'relationship, or the directory declined), so no session was started.',
+      'relationship, the relationship\'s fedProvisionCap is already full, ' +
+      'or the directory declined), so no session was started.',
     spec: 'HTTP 403 page' },
   // #109 (2026-09-22): which people a partner may assert.
   { code: 'STS-FED-0091',
@@ -11078,6 +11079,22 @@ const CODES = [
     summary: 'A federation relationship\'s client secret (fedClientSecret) ' +
       'could not be sealed under a durable key-encryption key, so it was ' +
       'not written.',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0158',
+    summary: 'A group name in a partner\'s assertion was not applied: it ' +
+      'names a group this relationship did not create, it cannot be a ' +
+      'directory name, or the directory declined. The sign-in stands ' +
+      '(#358).',
+    spec: 'none (logged; the sign-in proceeds)' },
+  { code: 'STS-FED-0159',
+    summary: 'The scheduler job federation.provision-idle could not disable ' +
+      'a person whose only sign-in path is one relationship and whose ' +
+      'federationLastSeen is past fedProvisionIdleMinutes. The next run ' +
+      'tries again (#358).',
+    spec: 'none — logged' },
+  { code: 'STS-FED-0160',
+    summary: 'fedProvisionCap or fedProvisionIdleMinutes was set to ' +
+      'something that is not empty and not a non-negative integer (#358).',
     spec: 'HTTP 400 (console and API)' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',

@@ -239,13 +239,14 @@ export = class FederationLinks {
              why: '' };
   }
 
-  // `<relationship>~<name>`, the name of an entry `jit-namespaced` creates.
+  // `<relationship>~<name>`, the concatenation. The name an entry is
+  // CREATED under is `provisionedName()`, which folds the stable subject
+  // first. A confirm lookup and `any-existing` do not use this.
   /**
-   * Returns the name of an entry `jit-namespaced` creates,
-   * `<relationship>~<name>`.
+   * Returns `<relationship>~<name>`.
    *
    * @param fedId - the relationship id
-   * @param username - the name the partner asserted
+   * @param username - the local half
    * @returns the namespaced name
    */
   static namespacedName(fedId: unknown, username: unknown): string {
@@ -253,6 +254,73 @@ export = class FederationLinks {
     log.debug("Entering FederationLinks.namespacedName().");
     log.debug("Leaving FederationLinks.namespacedName().");
     return String(fedId || '') + NAMESPACE_SEPARATOR + String(username || '');
+  }
+
+  // The local half of a name an entry is CREATED under (#358). A partner's
+  // `urn:uuid:` subject is this service's own subject form, so it becomes
+  // `sub-<uuid>` the way `usernameFor()` files one — and it is NOT passed
+  // through `identityKeyOf()`, which splits on the last `@`. Two partners
+  // asserting `alice@a.example` and `alice@b.example` must not collapse
+  // into one `rel~alice`. `fedUsernameSource` still chooses the name a
+  // link-at-first-sign-in confirm looks up, and the name `any-existing`
+  // matches; it does not choose this.
+  /**
+   * Returns the local half of a name an entry is created under: a
+   * `urn:uuid:` subject as `sub-<uuid>`, and any other subject whole.
+   *
+   * @param subject - the partner's stable subject
+   * @returns the local name, or the empty string when there is none
+   */
+  static subjectLocalName(subject: unknown): string {
+    const { log } = helpers;
+    log.debug("Entering FederationLinks.subjectLocalName().");
+    const raw = String(subject || '').trim();
+    const local = /^urn:uuid:/i.test(raw)
+      ? 'sub-' + raw.slice('urn:uuid:'.length).toLowerCase()
+      : raw;
+    log.debug("Leaving FederationLinks.subjectLocalName().");
+    return local;
+  }
+
+  // `<relationship>~<subject>`, the name `subjectDecision()` creates under
+  // every policy but `any-existing`. `federation.usernamePrefix` is not
+  // applied: an empty prefix is what makes the confirm lookup share the
+  // local namespace, and a created entry stays in the relationship's own
+  // even then.
+  /**
+   * Returns the name an entry is created under, `<relationship>~<subject>`.
+   *
+   * @param fedId - the relationship id
+   * @param subject - the partner's stable subject
+   * @returns the namespaced name
+   */
+  static provisionedName(fedId: unknown, subject: unknown): string {
+    const { log } = helpers;
+    log.debug("Entering FederationLinks.provisionedName().");
+    const name = FederationLinks.namespacedName(fedId,
+      FederationLinks.subjectLocalName(subject));
+    log.debug("Leaving FederationLinks.provisionedName().");
+    return name;
+  }
+
+  // RFC 4514's reserved characters, the same class as `ldap/ldap_server.js`'s
+  // `DN_RESERVED`. This module does not require that file — requiring it
+  // registers its routes — so the class is repeated here, and the directory
+  // still refuses the write.
+  /**
+   * Says whether a name can be a directory entry: non-empty, and none of
+   * RFC 4514's reserved characters.
+   *
+   * @param name - the name
+   * @returns whether it can
+   */
+  static nameFitsDirectory(name: unknown): boolean {
+    const { log } = helpers;
+    log.debug("Entering FederationLinks.nameFitsDirectory().");
+    const text = String(name == null ? '' : name);
+    const fits = text !== '' && !/[,=+<>#;"\\]/.test(text);
+    log.debug("Leaving FederationLinks.nameFitsDirectory().");
+    return fits;
   }
 
   // -------------------------------------------------------------------------

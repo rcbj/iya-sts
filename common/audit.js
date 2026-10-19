@@ -1192,6 +1192,9 @@ const ACTIONS = [
     label: 'A federation partner confirmed a sign-out this service sent' },
   { action: 'federation.unlink', category: 'directory',
     label: 'A federation link was removed from a person' },
+  { action: 'federation.group-ignored', category: 'directory',
+    label: 'A partner\'s group name was not applied, because it names a ' +
+           'group that relationship did not create (#358)' },
   { action: 'group.add-member', category: 'directory',
     label: 'A member was added to a group' },
   { action: 'group.add-owner', category: 'directory',

@@ -16,6 +16,7 @@ relationship (#373); see *A PARTNER'S SHARED SIGNALS* below.
 | `federation_links.ts` | **The link between a partner's subject and a person** (#109): the `federationLink` format, the stable subject a verified response carries, the one check a requested link goes through (console, `/admin-api`, SCIM), and what removing one ends. A static utility class. |
 | `federation_blocks.ts` | **A partner's stop on one person** (#373): the (relationship, person) pairs a verified `account-disabled` from the partner's own Shared Signals put there, which `federation_sp.ts`'s `subjectDecision()` refuses (`STS-FED-0156`). A leaf store; `ssf/ssf_transmitters.ts` writes it. |
 | `federation_encryption.ts` | **What a partner encrypts to** (#168): each relationship's encryption key — issued under the realm's Intermediate, sealed, rotated with a grace period, retired by the scheduler job `federation.encryption-key-retire`, published — and the policy a partner's `EncryptedAssertion`, `EncryptedID`, `EncryptedAttribute`, WS-Federation token and JWE ID Token or Logout Token is decrypted under. A static utility class. See *A PARTNER'S ENCRYPTED ASSERTION* below. |
+| `federation_provision.ts` | **The idle sweep of a relationship's created people** (#358): the cluster job `federation.provision-idle`. A static utility class. It registers the job at load and `federation_sp.ts` calls `registerIdleJob()` again, which finds the job already there. See *DYNAMIC PROVISIONING* below. |
 
 ---
 
@@ -1734,9 +1735,11 @@ the mapping and before the session:
    second factor wherever one is held or required — `authn.ts` asks exactly as
    it asks anybody — and only when that comes back to `/federation/link/{handle}`
    (`linkEndpoint()`) is the link recorded, the partner's attributes written and
-   the federated session started; one naming nobody gets a namespaced entry.
+   the federated session started; one naming nobody gets
+   `<relationship>~<subject>` when `fedAutocreateUsers` is on, and is refused
+   `STS-FED-0090` when it is off.
    `pre-linked`: refused (`STS-FED-0091`). `jit-namespaced`: a NEW entry
-   `<relationship>~<name>`, never an existing person (a namespaced name already
+   `<relationship>~<subject>`, never an existing person (a namespaced name already
    taken without the link is `STS-FED-0098`). `any-existing`: the old name
    match, development only — `mode.matchesFederatedNames()`; product refuses
    the value at `update()` (`STS-FED-0095`) and a relationship carrying it
@@ -1780,7 +1783,24 @@ went in between. Every entry a sign-in creates is namespaced — rcbj's
 since 2026-09-29 (#325, rcbj)**, for a relationship whose `fedAutocreateUsers`
 is on: that switch is the operator's own, per partner, and until then
 `autoCreateUser()`'s `mode.autoCreates()` gate made product refuse every
-federated newcomer `STS-FED-0090` whatever the switch said. Nothing else
+federated newcomer `STS-FED-0090` whatever the switch said. **A NEW
+relationship is written ON in development and OFF in product** (#358,
+`mode.defaultsFederatedAutocreate()`): `create()` stores `TRUE` or `FALSE`,
+a stored value always wins, and a relationship that already stores `TRUE`
+keeps creating. The created uid is `FederationLinks.provisionedName()` —
+`<relationship>~<subject>`, with a `urn:uuid:` subject becoming
+`sub-<uuid>` — and `fedUsernameSource` is only the confirm-link and
+`any-existing` name, so two partners' `alice@a.example` and
+`alice@b.example` no longer collapse through `identityKeyOf()`.
+The authentication funnel keeps that name whole:
+`recordAuthentication()` files a namespaced federated uid that still
+contains `@` under the name as presented, and `subjectForName()` looks
+that name up before it folds, so the session and the directory name the
+same entry. `identityKeyOf()` itself is unchanged, so a confirm-link and
+a Kerberos principal still fold.
+`federation.usernamePrefix` is not part of that name. A subject that cannot
+be a DN (empty, or `/[,=+<>#;"\\]/`) is refused `STS-FED-0090` rule
+`namespace` rather than escaped. Nothing else
 creates in product mode, and an entry created there carries only the
 identity and what the partner sent — no invented value
 (`mode.inventsClaimValues()`). **It overrides `ldap.autocreateUsers` as
@@ -1805,10 +1825,13 @@ lock, and for its reason: the consequence must not depend on the door.
 rcbj wants both shapes on the service-provider side of every relationship, each a switch
 on the relationship's page (the same list of switches every protocol's relationship draws):
 
-| Switch | On (default) | Off |
+| Switch | On | Off |
 |---|---|---|
-| `fedAutocreateUsers` | the first sign-in CREATES the person's entry — `<relationship>~<name>` and linked, since #109 — no SCIM needed | the entry must ALREADY exist (SCIM, `/admin/users/new`, `/admin-api`) and be linked, or be linked at first sign-in; a sign-in for somebody who has none is refused 403 *has not been provisioned* (`STS-FED-0090`, with `STS-AUTHN-0180` on the session refusal) |
-| `fedUpdateUserAttributes` | a returning person's attributes are overwritten from the latest assertion or token — what this service always did | the partner's values are written only when the sign-in CREATES the entry; a pre-provisioned or since-edited person keeps what the directory says |
+| `fedAutocreateUsers` | the first sign-in CREATES the person's entry — `<relationship>~<subject>` and linked, since #358 (it was `<relationship>~<name>` until then) — no SCIM needed. A new relationship is written on in development and off in product (`mode.defaultsFederatedAutocreate()`); a stored `TRUE` or `FALSE` always wins | the entry must ALREADY exist (SCIM, `/admin/users/new`, `/admin-api`) and be linked, or be linked at first sign-in; a sign-in for somebody who has none is refused 403 *has not been provisioned* (`STS-FED-0090`, with `STS-AUTHN-0180` on the session refusal) |
+| `fedUpdateUserAttributes` | a returning person's attributes are overwritten from the latest assertion or token — what this service always did. On by default | the partner's values are written only when the sign-in CREATES the entry; a pre-provisioned or since-edited person keeps what the directory says |
+| `fedProvisionGroups` | on every successful federated sign-in, a group name in the partner's token becomes a membership, written through the group object. A group this relationship creates is marked `federationrelationship = [<fedId>]`, and a later sign-in may add people only to groups carrying that mark. A name that collides with a group this relationship did not create — the console groups included — is ignored, the sign-in continues, and the audit records `federation.group-ignored` (`STS-FED-0158`). `fedSubjectGroup` is an admission rule and is not satisfied by this flag. Off unless the relationship stores it | the token's group names change no membership |
+| `fedProvisionCap` | empty or `0` means unlimited (the default). A positive count is how many distinct people this relationship may have created; the next newcomer is `STS-FED-0090` rule `cap`. A person already linked still signs in. Junk on `update()` is `STS-FED-0160` | — |
+| `fedProvisionIdleMinutes` | empty or `0` means off (the default). A positive count is how long `federationLastSeen` may sit before the cluster job `federation.provision-idle` disables a person whose only sign-in path is this relationship (`account_state.setDisabled`, the link and the entry kept). A missing or unparsable `federationLastSeen`, a person already disabled, a local `userPassword`, or a link through another relationship is left alone. A passkey with no password is not seen as another path. A disable that fails is `STS-FED-0159` and the sweep continues. Junk on `update()` is `STS-FED-0160`. The job is per cell and is not in `persistence/tiers.js`'s `GLOBAL_JOBS` | — |
 
 **Off used to mean "a session and no entry", and a stable subject is why it cannot.** A
 person's `sub` is their entry's `entryUUID` now (`authn/CLAUDE.md`, *What an authenticated
@@ -1816,13 +1839,19 @@ identity is here*), so a session with no entry has no subject. And the old check
 the entry was looked up, so a person SCIM had already provisioned was never folded onto —
 the pre-provisioned shape did not work at all. `ldap/CLAUDE.md` carries the directory half.
 
-**The username a pre-provisioned person must be created under is whatever the relationship
+**The username a pre-provisioned person is confirmed under is whatever the relationship
 maps them to** — `fedUsernameSource` (a `preferred_username` or an `email`), or the
-subject. **A partner's `urn:uuid:` subject becomes `sub-<uuid>`** and is never looked up in
-this directory: it names an entry in the PARTNER's namespace, and resolving it here would
-file the person under a raw URN or, worse, find a local person holding that value
-(`federation_map.ts`'s `usernameFor()`). Another instance of this service issues exactly
-that form, so a relationship to one wants `fedUsernameSource` set.
+subject. That mapped name is the confirm-link lookup and the `any-existing` name.
+**An entry a sign-in CREATES is `<relationship>~<subject>`**
+(`FederationLinks.provisionedName()`), and `fedUsernameSource` does not choose it:
+`identityKeyOf()` strips everything after the last `@`, so two partners' subjects
+that share a local-part used to become one `rel~alice` (`STS-FED-0098`).
+**A partner's `urn:uuid:` subject becomes `sub-<uuid>`** on both names and is never
+looked up as a raw URN: it names an entry in the PARTNER's namespace, and resolving
+it here would file the person under a raw URN or, worse, find a local person holding
+that value (`federation_map.ts`'s `usernameFor()`). Another instance of this service
+issues exactly that form, so a relationship to one wants `fedUsernameSource` set
+when the operator means to confirm-link onto a local uid.
 
 `tests/federation_provisioning.js` drives a real OIDC federated sign-in between two realms
 of one process — the default realm's OpenID Provider and a service-provider realm of its
