@@ -838,6 +838,21 @@ ldif or multi-cell service is unchanged.
       `DIRECTORY_SEARCH_SCAN` entries. A console or `/admin-api` request's
       synchronous waits also share `ldap.workerDirectoryBudgetMs`
       (`STS-LDAP-0175`, `common/CLAUDE.md`).
+      **A candidate page that is not whole says so** (the review of #692):
+      `matched` counts rows, and a name a DN cannot hold, two entries
+      sharing one RDN value (the walk's `>` steps past both) and the
+      walk's 100,000-row cap each keep a counted row off the page;
+      `candidateSearch.complete` is then false and `incomplete` says
+      which, and the console draws a sentence for each. A rejection the
+      store gives these pages carries no code, so `storeAsked()` marks it
+      `STS-LDAP-0139` and `/admin-api` answers it 503; anything else is a
+      500 (`STS-LDAP-0176`, `mgmt-api/admin_api.ts`'s
+      `answerDirectoryFailure()`). **A known cost, not fixed:** a needle
+      search's `rdnCount` is `position($3 in rdn_value) > 0`, which no
+      index serves, so it reads every direct child of `ou=users` in the
+      realm (the page itself stops at the next match, inside the rdn
+      walk). It is asked asynchronously and once per page; a trigram
+      index or a prefix-only search would be what stops it.
     - **Still a whole walk on a request path**, recorded as `owed` in
       `tests/no_full_directory_walk_in_requests.js`: SCIM's user list for
       any filter but `userName eq` (asked of the name index since #616).
