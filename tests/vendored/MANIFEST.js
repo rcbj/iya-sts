@@ -863,6 +863,16 @@ const JOBS = [
   // `local: true`: this repository's own identity provider and /admin-api,
   // in two throwaway realms.
   { file: 'sts_saml_unregistered.js',    browser: false, local: true },
+  // WHO MAY START A SAML SIGN-IN, OVER THE WIRE (#715): #711's contract —
+  // SAML 2.0's unsolicited Response and SAML 1.1's TARGET-only link off
+  // until an application or the realm opts in, the service provider's own
+  // start refused per application, the relying party in the logout
+  // inventory, the mechanism re-prompt's one trip — in a realm of its own
+  // in the process's mode, so `single-node` and `cluster` run it in product
+  // with real passwords and registered addresses. `tests/saml_initiation.js`
+  // holds the same in process, and the risk step-up HTTP cannot set up.
+  // `local: true`: this repository's own identity providers and /admin-api.
+  { file: 'sts_idp_initiated_saml.js',   browser: false, local: true },
   // THE CRL AND OCSP ENDPOINTS, AND THE REVOCATION PANE (2026-09-11).
   // `local: true` on the FIRST of `tests/CLAUDE.md`'s two questions: most of
   // what it drives is `/admin-api/pki` and a pane on `/admin/pki`, and the
