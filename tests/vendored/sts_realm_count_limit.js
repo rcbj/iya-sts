@@ -214,7 +214,8 @@ async function test() {
     await capAt(atCap, atCap);
     let codes = await codeCount("STS-CORE-0161");
     const refused = await api("POST", "/admin-api/realms/create",
-                              { id: REALM + "-x", name: "Over the cap" });
+                              { id: REALM + "-x", name: "Over the cap",
+                                domain: REALM + "-x.example.net" });
     assert.strictEqual(refused.status, 400,
                        "a create at the cap should be refused. Got " +
                        refused.status + " " + refused.text.slice(0, 400));
@@ -234,7 +235,8 @@ async function test() {
     // ... and through the console's own form (rule 7).
     codes = await codeCount("STS-CORE-0161");
     const fromConsole = await consoleClient.act("/admin/realms",
-      { action: "create", id: REALM + "-c", name: "Over the cap" });
+      { action: "create", id: REALM + "-c", name: "Over the cap",
+        domain: REALM + "-c.example.net" });
     assert.strictEqual(fromConsole.status, 400,
                        "the console's create at the cap should be refused. " +
                        "Got " + fromConsole.status + " " +
@@ -251,7 +253,8 @@ async function test() {
     // LOWERING THE CAP REMOVES NOTHING, and still refuses.
     await capAt(1, atCap);
     const stillRefused = await api("POST", "/admin-api/realms/create",
-                                   { id: REALM + "-y", name: "Still over" });
+                                   { id: REALM + "-y", name: "Still over",
+                                     domain: REALM + "-y.example.net" });
     assert.strictEqual(stillRefused.status, 400,
                        "a create under the lowered cap is still refused");
     assert.strictEqual(await liveCount(), atCap,
