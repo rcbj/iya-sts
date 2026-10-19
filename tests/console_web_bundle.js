@@ -1081,6 +1081,12 @@ function childMain() {
     const globalTab =
       /<section class="tabpanel" id="oauth-tab-global-settings">([\s\S]*?)<\/section>/
         .exec(oauthHtml);
+    // THE ENDPOINT TABLE, NOT THE PATH: a setting's description may name
+    // the authorization endpoint in prose (oauth2.spInitiatedSso, #426, is
+    // about what /oauth2/authorize answers), so what must be on Metadata and
+    // nowhere on Global settings is the endpoint table's row — the URL in a
+    // <code> of its own (`WebPages.endpointTable()`).
+    const endpointRow = /<code>[^<]*\/oauth2\/authorize<\/code>/;
     const metadataWarnings = metadataTab
       ? (metadataTab[1].match(/<details class="warn fold">/g) || []).length
       : 0;
@@ -1093,20 +1099,22 @@ function childMain() {
          metadataWarnings === oauthView.alsoHtml.length &&
          metadataTab[1].indexOf('The authorization server') >= 0 &&
          metadataTab[1].indexOf('is a MODE, and so is') >= 0 &&
-         metadataTab[1].indexOf('/oauth2/authorize') >= 0 &&
+         endpointRow.test(metadataTab[1]) &&
          globalTab[1].indexOf('The authorization server') < 0 &&
          globalTab[1].indexOf('is a MODE, and so is') < 0 &&
-         globalTab[1].indexOf('/oauth2/authorize') < 0,
+         !endpointRow.test(globalTab[1]),
          'D-OAuth. Metadata is the first peer tab and contains the notes and ' +
          'endpoints, separate from Global settings',
          'tabs missing: ' + oauthTabIds.filter(function (id) {
            return oauthHtml.indexOf('id="' + id + '"') < 0;
          }).join(', ') + '; warning folds: ' + metadataWarnings + '/' +
          (oauthView ? oauthView.alsoHtml.length : 0) +
-         '; Metadata: ' + (!!metadataTab &&
-           metadataTab[1].indexOf('/oauth2/authorize') >= 0) +
-         '; Global: ' + (!!globalTab &&
-           globalTab[1].indexOf('/oauth2/authorize') >= 0));
+         '; endpoint table on Metadata: ' + (!!metadataTab &&
+           endpointRow.test(metadataTab[1])) +
+         '; on Global: ' + (!!globalTab && endpointRow.test(globalTab[1])) +
+         '; notes on Global: ' + (!!globalTab &&
+           (globalTab[1].indexOf('The authorization server') >= 0 ||
+            globalTab[1].indexOf('is a MODE, and so is') >= 0)));
     const samlPage = WebPages.pageFor('/admin/saml2');
     const samlView = samlPage ? await viewOf(samlPage, {}) : null;
     const samlHtml = samlView
