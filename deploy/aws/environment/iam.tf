@@ -10,8 +10,13 @@
 # /admin/secrets report, and decrypt them with the project key, only through
 # Secrets Manager; and, where the key-encryption key is the foundation's KMS
 # key (the default since #391), wrap and unwrap the data encryption keys with
-# it directly. Nothing else: no S3, no RDS API, no other secret, no other
-# key. The schema-init container shares it and uses none of it.
+# it directly. Nothing else of the stores: no S3, no RDS API, no other
+# secret, no other key. And, since #323, this environment's SPIFFE target
+# groups: register and deregister targets there, and read the running tasks
+# of this cluster. The schema-init container shares the role and uses none
+# of it. The SPIFFE statement is useless without the matching one in the
+# foundation's WORKLOAD BOUNDARY, which an administrator applies — the same
+# ceiling as the certificate export above.
 #
 # AND, WHERE THERE IS A PUBLIC NAME, ONE MORE THING — `acm:ExportCertificate`
 # on THAT ONE CERTIFICATE, which the `cert-init` container uses and the other
@@ -157,6 +162,44 @@ data "aws_iam_policy_document" "task" {
         }
       }
     }
+  }
+
+  # THE SPIFFE TARGET GROUPS (#323). ECS allows five target groups on a
+  # service and published_ports uses all five, so these groups are not on a
+  # load_balancer block. The node registers and deregisters its address in
+  # the groups named <prefix>-sp-<port> (and a cell's <prefix>-s<port>), and
+  # reads the RUNNING tasks of this cluster to drop an address that is gone.
+  # DescribeTargetGroups cannot be scoped to an ARN. The code then keeps
+  # only this cluster's names, so another environment's groups are not
+  # changed. Inert until an administrator re-applies foundation/: the
+  # workload boundary is the ceiling.
+  statement {
+    sid = "ReconcileSpiffeTargetGroups"
+    actions = [
+      "elasticloadbalancing:RegisterTargets",
+      "elasticloadbalancing:DeregisterTargets",
+      "elasticloadbalancing:DescribeTargetHealth",
+    ]
+    resources = [
+      "arn:${local.partition}:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/${local.prefix}-sp-*/*",
+      "arn:${local.partition}:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/${local.prefix}-s??/*",
+      "arn:${local.partition}:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/${local.prefix}-s???/*",
+      "arn:${local.partition}:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/${local.prefix}-s????/*",
+      "arn:${local.partition}:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/${local.prefix}-s?????/*",
+    ]
+  }
+  statement {
+    sid       = "ListSpiffeTargetGroups"
+    actions   = ["elasticloadbalancing:DescribeTargetGroups"]
+    resources = ["*"]
+  }
+  statement {
+    sid     = "ReadRunningNodeTasks"
+    actions = ["ecs:ListTasks", "ecs:DescribeTasks"]
+    resources = [
+      "arn:${local.partition}:ecs:${local.region}:${local.account_id}:cluster/${local.prefix}",
+      "arn:${local.partition}:ecs:${local.region}:${local.account_id}:task/${local.prefix}/*",
+    ]
   }
 }
 

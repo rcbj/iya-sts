@@ -399,12 +399,18 @@ resource "aws_ecs_task_definition" "node" {
         # The main port is HTTPS on a certificate the cluster issues itself, so
         # the probe does not verify it; it asks whether the service answers.
         # Loopback connections are served without the PROXY header.
+        #
+        # startPeriod is 300 because that is as long as ECS allows one to be
+        # (#330). Failures inside it do not count toward `retries`. A success
+        # ends it early, so this is not the window that protects a slow
+        # start — the service grace below is, and it keeps ignoring this
+        # probe after the start period has closed.
         healthCheck = {
           command     = ["CMD", "node", "-e", "require('https').get({host:'127.0.0.1',port:8081,path:'/healthcheck',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
           interval    = 15
           timeout     = 5
           retries     = 4
-          startPeriod = 180
+          startPeriod = 300
         }
         ulimits = [{ name = "nofile", softLimit = 65536, hardLimit = 65536 }]
         # THE UPLOAD VOLUME, READ-WRITE: the node writes, hashes, reads back
@@ -424,8 +430,27 @@ resource "aws_ecs_task_definition" "node" {
 }
 
 locals {
+  # How long, after a task reaches RUNNING, the scheduler ignores unhealthy
+  # load-balancer and container checks (#330). The listener binds only once
+  # the front has restored its state and — where a pool is configured — the
+  # first worker of each pool has settled (`server.js` calls `bind()` from
+  # `requestPool.start()`). `workers.startTimeoutMs` is 300000 on globalidp
+  # and testidpna, and the front's restore sits in front of that fork. The
+  # target groups go unhealthy in about 30 seconds while nothing is
+  # listening (`nlb.tf`: interval 10, threshold 3); two successes at that
+  # interval are what marks one healthy again. 600 covers the configured
+  # start, the restore in front of it, and those successes, with room. It
+  # does not cover `workers.startTimeoutMs` at its setting maximum
+  # (900000): a deployment that raises the timeout past what this window
+  # holds has to raise this too.
+  #
+  # THE STARTUP PROPERTY STAYS. Every published port's target group is still
+  # on the service. A task whose 636, or any other published port, is still
+  # down when this window ends does not reach steady state. A task that has
+  # already been up is not in this window: three consecutive failures of
+  # any target group replace it (nlb.tf: interval 10, threshold 3).
   service_common = {
-    health_check_grace_period_seconds = 300
+    health_check_grace_period_seconds = 600
   }
 }
 

@@ -375,6 +375,9 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 // console walks this table, DEDUPES BY ATTRIBUTE and draws one field per
 // attribute, listing the families it serves — so the form has eleven identifier
 // fields for sixteen families (fourteen when this was written) and says why.
+// The simplified create form does not draw a primary name (#393): that value
+// is the registry identifier, and fillPrimaryNames() writes it when the
+// create leaves the attribute empty. The advanced view still draws it.
 //
 // **EVERY ONE OF THEM IS MULTI-VALUED BAR ONE.** An application legitimately
 // answers to two client_ids, two entityIDs or two SPNs here — one per
@@ -391,8 +394,11 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 // The five families this service records no identifier for — LDAP, SCIM,
 // SPIFFE, OpenID4VCI, mutual TLS — get a field anyway, because "what is this
 // application called when it talks LDAP to us" is a fact an operator has and
-// this registry had nowhere to put. Nothing will ever write those attributes on
-// its own, so they read as declaration and only ever as declaration.
+// this registry had nowhere to put. A create writes the registry identifier
+// into a family's identifier attribute when that attribute was left empty
+// (`fillPrimaryNames()`, #393), except a certificate subject, a bind DN and
+// a SPIFFE ID, which are not that name. A protocol module still does not
+// invent those three.
 // ---------------------------------------------------------------------------
 /**
  * The declared protocol vocabulary: each family an application may be declared
@@ -1095,10 +1101,12 @@ const SCHEMA = {
             'authenticates as one, so all three declare their name here ' +
             'rather than in three attributes that would be three spellings ' +
             'of one fact. Usually equal to appIdentifier, which is what a ' +
-            'protocol sighting writes; a SECOND value is a client_id this ' +
+            'protocol sighting writes and what a create writes when this is ' +
+            'left empty (#393); a SECOND value is a client_id this ' +
             'application also answers to — a per-environment id — and is why ' +
-            'this accumulates rather than being assigned. Absent on an entry ' +
-            'no OAuth family has been declared for.' },
+            'this accumulates rather than being assigned. A list typed on ' +
+            'the create is the whole list. Absent on an entry no OAuth ' +
+            'family has been declared for.' },
     { name: 'oauthAudience', kind: 'multi',
       from: 'the console, the management API, or by hand',
       what: 'THE AUDIENCE THIS APPLICATION ANSWERS TO — the `aud` an access ' +
@@ -5548,6 +5556,89 @@ const IDENTIFIER_ATTRIBUTES = declarationAttributes().filter(function (row) {
 });
 
 // ---------------------------------------------------------------------------
+// A PRIMARY NAME IS THE REGISTRY IDENTIFIER (#393).
+//
+// The create form used to ask for three strings that were usually one: the
+// registry identifier, a display name, and the ticked family's identifier
+// attribute. The display name was already optional (`blankRecord()` names the
+// entry after its identifier, and a create overwrites that only when a name
+// is given). The family's identifier attribute is the same kind of default.
+//
+// **THREE ATTRIBUTES ARE A DIFFERENT KIND OF NAME AND ARE NEVER FILLED.**
+// `oauthTlsClientAuthSubjectDn` is the certificate subject RFC 8705 matches,
+// one DN, and writing a client_id into it would make mutual TLS match a
+// subject nobody has. `ldapBindDn` is the DN a client binds as, not the key
+// this entry is filed under. `spiffeWorkloadId` is a `spiffe://` URI, and a
+// SPIFFE identity lives under `ou=spiffe` rather than here. Each stays a
+// field of its own on both views of the form.
+//
+// Everything else a family names as its identifier — a client_id, an
+// entityID, a wtrealm, an AppliesTo, an SPN, a GNAP instance id — is the
+// string a sighting already files the entry under. A hand-made entry that
+// left the attribute empty was the odd one out.
+// ---------------------------------------------------------------------------
+const NOT_THE_REGISTRY_IDENTIFIER = [
+  'oauthTlsClientAuthSubjectDn',
+  'ldapBindDn',
+  'spiffeWorkloadId'
+];
+
+/**
+ * Returns the identifier attributes whose primary value is the registry
+ * identifier.
+ *
+ * @returns the attribute names, in protocol-table order
+ */
+function primaryNameAttributeNames() {
+  log.debug("Entering primaryNameAttributeNames().");
+  const names = [];
+  PROTOCOLS.forEach(function (family) {
+    const attribute = family.identifierAttribute;
+    if (!attribute ||
+        NOT_THE_REGISTRY_IDENTIFIER.indexOf(attribute) >= 0 ||
+        names.indexOf(attribute) >= 0) {
+      return;
+    }
+    names.push(attribute);
+  });
+  log.debug("Leaving primaryNameAttributeNames(). " + names.length +
+            " attribute(s).");
+  return names;
+}
+
+const PRIMARY_NAME_ATTRIBUTES = primaryNameAttributeNames();
+
+/**
+ * Returns the primary-name attributes of the families named.
+ *
+ * One attribute shared by several families is returned once. An attribute
+ * that is not the registry identifier is not returned.
+ *
+ * @param protocols - the family ids
+ * @returns the attribute names, in protocol-table order
+ */
+function primaryNameAttributes(protocols) {
+  log.debug("Entering primaryNameAttributes().");
+  const declared = protocols || [];
+  const wanted = [];
+  PROTOCOLS.forEach(function (family) {
+    if (declared.indexOf(family.id) < 0) {
+      return;
+    }
+    const attribute = family.identifierAttribute;
+    if (!attribute ||
+        NOT_THE_REGISTRY_IDENTIFIER.indexOf(attribute) >= 0 ||
+        wanted.indexOf(attribute) >= 0) {
+      return;
+    }
+    wanted.push(attribute);
+  });
+  log.debug("Leaving primaryNameAttributes(). " +
+            (wanted.length ? wanted.join(', ') : 'none') + ".");
+  return wanted;
+}
+
+// ---------------------------------------------------------------------------
 // EVERY PER-APPLICATION FIELD, TYPED, FOR THE CONSOLE'S FIELD GRID
 // (2026-09-30).
 //
@@ -6529,6 +6620,9 @@ function applicationFields() {
       families: scope.families,
       everyFamily: scope.everyFamily,
       declaration: declared.indexOf(row.name) >= 0,
+      // The registry identifier, so the simplified create form does not
+      // draw a second box for it (#393). The advanced view still does.
+      primaryName: PRIMARY_NAME_ATTRIBUTES.indexOf(row.name) >= 0,
       // Shown by its sub-tab's simple view (#500).
       simple: SIMPLE_FIELD_ATTRIBUTES.indexOf(row.name) >= 0,
       group: group.id,
@@ -11969,6 +12063,56 @@ function setField(record, name, value) {
 }
 
 // ---------------------------------------------------------------------------
+// A PRIMARY NAME IS THE REGISTRY IDENTIFIER (#393).
+//
+// A hand-made entry that left a family's identifier attribute empty was the
+// odd one out: `seen()` and `recordAuthentication()` already file the
+// presented string as both the registry identifier and that attribute.
+// `fillPrimaryNames()` writes the identifier when the create left the
+// attribute empty. An explicit value has already been written by the caller
+// and wins, including a list — that list is the whole list, and the
+// identifier is not forced in beside it. The attribute stays multi (or
+// `set`, for the one primary name that holds a single value). Nothing here
+// rewrites an entry that already exists; a later save fills only a family
+// that save newly declared, and only when the body did not name the
+// attribute (`updateApplicationFields()`).
+//
+// Three attributes are a different kind of fact and are not in
+// `primaryNameAttributes()`: a certificate subject, a bind DN and a SPIFFE
+// ID. Defaulting any of them to a short name would record a subject a
+// security check could trust, or a name that is not the entry's key.
+// ---------------------------------------------------------------------------
+/**
+ * Writes the registry identifier into each declared family's primary name
+ * when that attribute is empty.
+ *
+ * @param record - the application record being created
+ * @param protocols - the families the create declared
+ * @returns the attributes that were filled
+ */
+function fillPrimaryNames(record, protocols) {
+  log.debug("Entering fillPrimaryNames().");
+  const filled = [];
+  primaryNameAttributes(protocols).forEach(function (attribute) {
+    if (valuesOf(record.fields[attribute]).length) {
+      log.debug("fillPrimaryNames(): " + attribute + " was given.");
+      return;
+    }
+    setField(record, attribute, record.identifier);
+    filled.push(attribute);
+  });
+  if (filled.indexOf('samlEntityId') >= 0) {
+    log.debug('applications: "' + record.identifier + '" is declared for ' +
+              'SAML and carried no entityID, so its identifier is being ' +
+              'used as one. Its per-service-provider metadata is live from ' +
+              'now. Set samlEntityId explicitly to use a different name.');
+  }
+  log.debug("Leaving fillPrimaryNames(). " +
+            (filled.length ? filled.join(', ') : 'Nothing to fill.'));
+  return filled;
+}
+
+// ---------------------------------------------------------------------------
 // WHO PUT A RETURN ADDRESS ON THE ENTRY, AND THE ONE FUNCTION THAT DECIDES
 // WHETHER IT COUNTS AS REGISTERED (2026-09-12).
 //
@@ -13510,8 +13654,9 @@ function identifierProblem(identifier) {
  * Counts no authentication. Refused for an unusable identifier, one already
  * registered, no directory, or fields the schema refuses.
  *
- * @param detail - `identifier`, `name`, `kind`, `protocols`, `fields` and
- *   `actor`
+ * @param detail - `identifier`, `name`, `kind`, `protocols`, `fields`,
+ *   `lifetimeDays` (the first client secret's lifetime in days, 0 for never;
+ *   `oauth2.clientSecretLifetimeDays` when empty, #394) and `actor`
  * @returns `ok` and the application as the directory now holds it, or `ok:
  *   false` with `errors`
  */
@@ -13691,6 +13836,44 @@ function createApplication(detail) {
     return errorCodes.mark({ ok: false, errors: modeProblems },
                            'STS-REG-0193');
   }
+  // THE FIRST CLIENT SECRET'S LIFETIME (#394). Until then a create took
+  // only `oauth2.clientSecretLifetimeDays`, so the expiry of a new
+  // application's first secret could be chosen only afterwards, on its page.
+  // `lifetimeDays` is the add form's field, read by the add form's function,
+  // and it applies to whatever secret the create carries — one Generate
+  // Secret minted or one somebody typed, which this function cannot tell
+  // apart and should not. Validated here, before the entry exists, for the
+  // reason everything above is.
+  const lifetime = clientSecretLifetimeOf(info.lifetimeDays);
+  if (!lifetime.ok) {
+    log.debug("Leaving createApplication(). Not a client secret lifetime.");
+    return errorCodes.mark({ ok: false, errors: ['The client secret\'s ' +
+      'lifetime is a whole number of days from 0 (never expires) to 730, ' +
+      'or empty for oauth2.clientSecretLifetimeDays (' +
+      (Number(config.value('oauth2.clientSecretLifetimeDays')) > 0
+        ? Number(config.value('oauth2.clientSecretLifetimeDays')) + ' days'
+        : 'never expires') +
+      '). "' + String(info.lifetimeDays).trim() + '" is not one.'] },
+      'STS-REG-0359');
+  }
+  // A LIFETIME WITH NOTHING TO STAMP IT ON is refused rather than dropped:
+  // the entry would then read as holding a secret that expires when it was
+  // asked to, and it holds none — or holds a record handed in whole, which
+  // keeps the expiry it carries (putClientSecret()).
+  if (lifetime.days !== null) {
+    const secretText = givenSecretText(given.fields.oauthClientSecret);
+    if (!secretText ||
+        isWholeSecretRecord(secretText, parseClientSecretValue(secretText))) {
+      log.debug("Leaving createApplication(). A lifetime and no secret.");
+      return errorCodes.mark({ ok: false, errors: ['A client secret ' +
+        'lifetime of ' + lifetime.days + ' day(s) was given and there is ' +
+        'no new client secret for it to apply to: ' +
+        (secretText ? 'the oauthClientSecret given is a whole record, ' +
+          'which keeps the expiry it carries.'
+          : 'oauthClientSecret is empty. Generate or type a secret, or ' +
+            'leave the lifetime empty.')] }, 'STS-REG-0360');
+    }
+  }
   const record = loaded.record;
   const now = Date.now();
   record.firstAt = now;
@@ -13717,49 +13900,23 @@ function createApplication(detail) {
   // be a second place that decision is made, and the first time the two
   // disagreed would be the first time somebody created an application over one
   // that had just been deleted.
+  //
+  // The client secret goes the way setField() would send it, to
+  // putClientSecret(), with the lifetime this create was given (#394).
   Object.keys(given.fields).forEach(function (name) {
-    setField(record, name, given.fields[name]);
+    if (name === 'oauthClientSecret' && lifetime.days !== null) {
+      putClientSecret(record, given.fields[name],
+                      { expiresAt: expiryOfLifetime(lifetime.days,
+                                                    nowSec()) });
+    } else {
+      setField(record, name, given.fields[name]);
+    }
   });
-  // ---------------------------------------------------------------------
-  // AN APPLICATION DECLARED FOR SAML GETS AN ENTITYID, added 2026-08-27.
-  //
-  // Ticking SAML 2.0 or SAML 1.1 on /admin/applications/new and typing no
-  // entityID used to produce an entry that could not be used as a service
-  // provider at all: `samlEntityId` is what /saml2 and /saml11 file an
-  // application under and what their per-service-provider metadata is
-  // published for, so without it the declaration was a note and nothing more.
-  //
-  // THE DEFAULT IS THE IDENTIFIER, and that is not an arbitrary pick — it is
-  // what the same application would have got by arriving on its own. A service
-  // provider that turns up with an AuthnRequest is filed under its entityID,
-  // so identifier and entityID are ALREADY one string on every SAML entry this
-  // registry has ever created for itself. Doing anything else here would make
-  // a hand-made entry the odd one out.
-  //
-  // IT IS A DEFAULT AND NOT A RULE. An explicit `samlEntityId` in the create
-  // wins — the loop above has already run — and this only fills a gap. Nothing
-  // is refused: this service accepts any entityID on sight and creates the
-  // entry, so refusing to CREATE one here would be the only place in the SAML
-  // path that turned somebody away, which is the opposite of what the rest of
-  // this file does.
-  //
-  // The metadata is then live immediately, at /saml2/metadata/{slug} and
-  // /saml11/metadata/{rp}, because those endpoints mint a document for
-  // anything asked of them — see saml/CLAUDE.md's decision 1.
-  const declaredSaml = asked.protocols.filter(function (id) {
-    return id === 'saml2' || id === 'saml11';
-  });
-  if (declaredSaml.length && !valuesOf(record.fields.samlEntityId).length) {
-    setField(record, 'samlEntityId', identifier);
-    log.debug('applications: "' + identifier + '" is declared for ' +
-              declaredSaml.join(' and ') + ' and carried no entityID, so its ' +
-              'identifier is being used as one. Its per-service-provider ' +
-              'metadata is live from now — /admin/applications names the ' +
-              'URL, which carries a slug this module deliberately does not ' +
-              'compute (slugOf() belongs to saml/saml2_sso.ts, and requiring ' +
-              'it here would point this module at a protocol). Set ' +
-              'samlEntityId explicitly to use a different name.');
-  }
+  // A declared family's primary name is the identifier when the create left
+  // the attribute empty (#393). An explicit value, including a list, is
+  // already on the record and is the whole list. SAML metadata is live from
+  // the moment samlEntityId is filled, for the reason fillPrimaryNames() logs.
+  fillPrimaryNames(record, asked.protocols);
   // ---------------------------------------------------------------------
   // AN APPLICATION DECLARED FOR OAUTH 2.0 OR OIDC GETS A CLIENT
   // AUTHENTICATION METHOD, added 2026-09-18.
@@ -13779,8 +13936,8 @@ function createApplication(detail) {
   // client_secret_basic (RFC 7591's own default for a client that has one),
   // a JWK Set or its URI is private_key_jwt, and NOTHING is `none` — a public
   // client, held to PKCE and RFC 9700 in product mode rather than refused.
-  // An explicit `oauthTokenEndpointAuthMethod` wins, as samlEntityId's does
-  // above; this only fills a gap, so every entry this create writes for
+  // An explicit `oauthTokenEndpointAuthMethod` wins, as a primary name's
+  // does above; this only fills a gap, so every entry this create writes for
   // those families says what it will be held to.
   const declaredOauth = asked.protocols.filter(function (id) {
     return id === 'oauth2' || id === 'oidc';
@@ -14955,7 +15112,8 @@ function mintClientSecret() {
 //     client is never silently left holding none.
 //   * `oauth2.clientSecretsMax` caps how many an application holds, and a new
 //     secret takes `oauth2.clientSecretLifetimeDays` unless the add form
-//     names another lifetime.
+//     names another lifetime — or, for an application's first secret, the
+//     create form (#394).
 //
 // A VALUE THAT IS NOT A RECORD IS A SECRET. A bare string arrives from three
 // places — a caller of `create` or `set` handing the secret itself (the
@@ -15263,6 +15421,24 @@ function writeClientSecretRecords(record, records) {
   log.debug("Leaving writeClientSecretRecords().");
 }
 
+// Whether a value handed to putClientSecret() is a record handed in whole,
+// which keeps its own expiry, rather than a secret to be wrapped in a new one.
+function isWholeSecretRecord(given, parsed) {
+  log.debug("Entering isWholeSecretRecord().");
+  log.debug("Leaving isWholeSecretRecord().");
+  return String(given).charAt(0) === '{' && !!parsed && parsed.createdAt > 0;
+}
+
+// The first value of a client secret given to a write, trimmed: the one
+// putClientSecret() takes.
+function givenSecretText(value) {
+  log.debug("Entering givenSecretText().");
+  log.debug("Leaving givenSecretText().");
+  return (Array.isArray(value) ? value : [value]).map(function (one) {
+    return String(one == null ? '' : one).trim();
+  }).filter(Boolean)[0] || '';
+}
+
 /**
  * Makes `secret` the application's client secret — the meaning of a `set`
  * or a `create` naming one. A secret already on the entry changes nothing
@@ -15277,9 +15453,7 @@ function writeClientSecretRecords(record, records) {
  */
 function putClientSecret(record, value, options) {
   log.debug("Entering putClientSecret().");
-  const given = (Array.isArray(value) ? value : [value]).map(function (one) {
-    return String(one == null ? '' : one).trim();
-  }).filter(Boolean)[0] || '';
+  const given = givenSecretText(value);
   const parsed = parseClientSecretValue(given);
   if (!parsed) {
     log.debug("Leaving putClientSecret(). Nothing to write.");
@@ -15292,7 +15466,7 @@ function putClientSecret(record, value, options) {
   }
   // A RECORD handed in whole (a value copied off another entry, an
   // ldapmodify-shaped add) keeps what it says; a bare secret is wrapped.
-  const wrapped = given.charAt(0) === '{' && parsed.createdAt > 0
+  const wrapped = isWholeSecretRecord(given, parsed)
     ? parsed
     : newClientSecretRecord(parsed.secret, options);
   writeClientSecretRecords(record, [wrapped]);
@@ -15558,6 +15732,46 @@ function clientSecretsMax() {
   return Math.max(1, Number(config.value('oauth2.clientSecretsMax')) || 1);
 }
 
+// A CLIENT SECRET'S LIFETIME AS A FORM GIVES IT (#394): the add form's
+// `lifetimeDays`, and since #394 the create's, read by one function so the
+// two cannot accept different things. Whole days from 0 (never expires) to
+// 730 — `oauth2.clientSecretLifetimeDays`' own `max` — and empty (or absent)
+// for that setting. A lifetime in days has no "date in the past" to refuse,
+// which is why the create takes days and not a date: the add form's field,
+// so one lifetime is asked the same way on both screens.
+/**
+ * Reads a client secret's lifetime as a form or a caller gives it.
+ *
+ * @param raw - days, a string of days, empty, or absent
+ * @returns `{ ok: true, days }`, `days` null for the default; or
+ *   `{ ok: false }`
+ */
+function clientSecretLifetimeOf(raw) {
+  log.debug("Entering clientSecretLifetimeOf().");
+  const text = raw === undefined || raw === null ? '' : String(raw).trim();
+  if (text === '') {
+    log.debug("Leaving clientSecretLifetimeOf(). The default.");
+    return { ok: true, days: null };
+  }
+  const days = Number(text);
+  if (!isFinite(days) || days < 0 || days > 730 ||
+      Math.floor(days) !== days) {
+    log.debug("Leaving clientSecretLifetimeOf(). Not one.");
+    return { ok: false, days: null };
+  }
+  log.debug("Leaving clientSecretLifetimeOf().");
+  return { ok: true, days: days };
+}
+
+// The `expiresAt` a lifetime gives a secret made at `at` (seconds): 0 for
+// never, and undefined for the default, which newClientSecretRecord()
+// reads as `oauth2.clientSecretLifetimeDays`.
+function expiryOfLifetime(days, at) {
+  log.debug("Entering expiryOfLifetime().");
+  log.debug("Leaving expiryOfLifetime().");
+  return days === null ? undefined : (days > 0 ? at + days * 86400 : 0);
+}
+
 /**
  * Adds a client secret beside the ones an application holds. The new secret
  * is the newest, so it becomes the primary.
@@ -15577,13 +15791,9 @@ function addClientSecret(identifier, options) {
     return unknownApplication(identifier);
   }
   const description = String(opts.description || '').trim();
-  const rawLifetime = opts.lifetimeDays === undefined ||
-    opts.lifetimeDays === null ? '' : String(opts.lifetimeDays).trim();
-  const lifetime = rawLifetime === '' ? null : Number(rawLifetime);
+  const lifetime = clientSecretLifetimeOf(opts.lifetimeDays);
   if (description.length > 200 || /[\r\n\0]/.test(description) ||
-      (lifetime !== null && (!isFinite(lifetime) || lifetime < 0 ||
-                             lifetime > 730 ||
-                             Math.floor(lifetime) !== lifetime))) {
+      !lifetime.ok) {
     log.debug("Leaving addClientSecret(). Bad lifetime or description.");
     return errorCodes.mark({ ok: false, errors: ['A client secret\'s ' +
       'lifetime is a whole number of days from 0 (never expires) to ' +
@@ -15604,9 +15814,7 @@ function addClientSecret(identifier, options) {
   const at = nowSec();
   const secret = mintClientSecret();
   const added = newClientSecretRecord(secret, {
-    expiresAt: lifetime === null ? undefined
-                                 : (lifetime > 0 ? at + lifetime * 86400
-                                                 : 0),
+    expiresAt: expiryOfLifetime(lifetime.days, at),
     description: description });
   try {
     writeClientSecretRecords(record, [added].concat(held));
@@ -19342,6 +19550,10 @@ module.exports = {
   // document, so neither can offer a field the other has never heard of.
   declarationAttributes: declarationAttributes,
   DECLARATION_ATTRIBUTE_NAMES: DECLARATION_ATTRIBUTE_NAMES,
+  // The identifier attributes a declared family presents as the registry
+  // identifier (#393). A create fills an empty one; a certificate subject,
+  // a bind DN and a SPIFFE ID are not in the list.
+  primaryNameAttributes: primaryNameAttributes,
   // What an application answers to in each family, with the protocol's own
   // word for it. Exported for the delegation pictures — see its header for why
   // the list is built here and not in the renderer.

@@ -472,8 +472,8 @@
     "text": "El Trust Anchor en el que terminó su cadena."
   },
   "applications.schema.attributes.oauthClientId.what": {
-    "en": "1e1a912a88773d34",
-    "text": "EL CLIENT_ID, y el atributo identificador de tres familias: una parte que confía OpenID Connect ES un cliente OAuth, y una billetera que recoge una credencial en el emisor OpenID4VCI se autentica como uno, así que las tres declaran su nombre aquí en lugar de en tres atributos que serían tres formas de escribir un mismo hecho. Normalmente igual a appIdentifier, que es lo que escribe un avistamiento de protocolo; un SEGUNDO valor es un client_id al que esta aplicación también responde — un id por entorno — y es la razón por la que esto se acumula en lugar de asignarse. Ausente en una entrada para la que no se ha declarado ninguna familia OAuth."
+    "en": "be5cd98b933adf94",
+    "text": "EL CLIENT_ID, y el atributo identificador de tres familias: una parte que confía OpenID Connect ES un cliente OAuth, y una billetera que recoge una credencial en el emisor OpenID4VCI se autentica como uno, así que las tres declaran su nombre aquí en lugar de en tres atributos que serían tres formas de escribir un mismo hecho. Normalmente igual a appIdentifier, que es lo que escribe un avistamiento de protocolo y lo que escribe una creación cuando se deja vacío (#393); un SEGUNDO valor es un client_id al que esta aplicación también responde — un id por entorno — y es la razón por la que esto se acumula en lugar de asignarse. Una lista escrita en la creación es la lista completa. Ausente en una entrada para la que no se ha declarado ninguna familia OAuth."
   },
   "applications.schema.attributes.oauthAudience.what": {
     "en": "85845f64442f584e",

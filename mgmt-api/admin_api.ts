@@ -13799,7 +13799,22 @@ class AdminApi {
                                'mode.** The rest are recorded, in the way ' +
                                'being in this registry ' +
                                'at all is a record.\n\n' +
-                               this.familyScopeNote() }
+                               this.familyScopeNote() },
+                lifetimeDays: {
+                  type: ['integer', 'string'],
+                  description: 'The lifetime of the client secret the ' +
+                               'create carries in ' +
+                               '`fields.oauthClientSecret` (#394), as ' +
+                               '`add-secret` takes it: whole days, 0 to ' +
+                               '730, 0 never expiring; omitted or empty, ' +
+                               '`oauth2.clientSecretLifetimeDays` ' +
+                               '(`defaultSecretLifetimeDays` in GET ' +
+                               '/admin-api/applications/new). It is stamped ' +
+                               'on the secret\'s record as its `expires`. ' +
+                               'A lifetime outside that range is refused, ' +
+                               'and so is one given with no secret, or ' +
+                               'with a whole secret record, which keeps the ' +
+                               'expiry it carries.' }
               },
               // THE NEW-APPLICATION FORM'S BOXES (#446): the static console
               // sends /admin/applications/new's field grid here as it is,

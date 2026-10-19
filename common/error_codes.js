@@ -1211,9 +1211,12 @@ const CODES = [
       'each was answered 502.',
     spec: '' },
   { code: 'STS-WORKER-0023',
-    summary: 'Request workers kept exiting immediately without serving ' +
-      'anything, so the pool stopped forking them and every request ' +
-      'is handled in the front process.',
+    summary: 'Request workers kept failing to start, so the pool stopped ' +
+      'forking them. Unless workers.giveUpRetryMs is 0 it tries one ' +
+      'again after that wait, doubled after each failed attempt and ' +
+      'never longer than an hour. Until a worker is ready, requests ' +
+      'stay in the front process (the hosted surfaces stay on the ' +
+      'protocol workers).',
     spec: '' },
   { code: 'STS-WORKER-0024',
     summary: 'The service refused to start: workers.dispatch names paths to ' +
@@ -1338,6 +1341,13 @@ const CODES = [
       'ahead of it (#616: an LDAP search streaming its entries) could not ' +
       'be handed to the caller waiting in the front process — its socket ' +
       'write threw. The operation itself still ends with its answer.',
+    spec: '' },
+  { code: 'STS-WORKER-0050',
+    summary: 'After giving up, the pool scheduled another attempt to ' +
+      'start one worker, after workers.giveUpRetryMs (doubled after ' +
+      'each failed attempt, and never longer than an hour). Until a ' +
+      'worker is ready, requests stay in the front process, or the ' +
+      'hosted surfaces stay on the protocol workers.',
     spec: '' },
   // ===== STORE =============================================================
   { code: 'STS-STORE-0001',
@@ -1840,6 +1850,11 @@ const CODES = [
     summary: 'Active-active mode was refused because global.publicBaseUrl is ' +
       'empty, so each node would name itself by the address it was reached ' +
       'on.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0027',
+    summary: 'Reconciling this cluster\'s SPIFFE target groups with the ' +
+      'running nodes\' addresses failed; the groups stay as they were until ' +
+      'the next run, and the service keeps serving (#323).',
     spec: '' },
   { code: 'STS-CLUSTER-0040',
     summary: 'A cluster mode was configured with persistence.minted off, so ' +
@@ -21799,6 +21814,17 @@ const CODES = [
     summary: 'An application\'s owners could not be written to the ' +
       'directory (#604).',
     spec: 'HTTP 400 (API) or a refusal on the application page' },
+  { code: 'STS-REG-0359',
+    summary: 'An application was not created: the lifetime given for its ' +
+      'first client secret is not a whole number of days from 0 to 730 ' +
+      '(#394).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0360',
+    summary: 'An application was not created: a client secret lifetime was ' +
+      'given with no new client secret for it to apply to — ' +
+      'oauthClientSecret empty, or a whole record carrying its own expiry ' +
+      '(#394).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

@@ -19,9 +19,12 @@
 # ldap, ldaps, pki, kerberos). So these target groups are not on the services'
 # `load_balancer` blocks: this file looks the running nodes up — after every
 # service has reached steady state, which `wait_for_steady_state` makes the
-# apply wait for — and registers their private addresses. A node restarted
-# since the last apply is missing from these two ports until the next one;
-# `spiffe-realm/` has always had that property, argued in deploy/aws/CLAUDE.md.
+# apply wait for — and registers their private addresses. That is the
+# membership at apply time. Between applies the node reconciles the groups
+# itself (`cluster/spiffe_targets.js`; deploy/aws/CLAUDE.md). The task-role
+# grant does nothing until an administrator re-applies foundation/, and an
+# image built without the two AWS clients records the failure and does not
+# register.
 #
 # No PROXY protocol here, unlike every other port: SPIFFE's gRPC listeners do
 # not read the header. The Workload API port stays unhealthy in product mode,

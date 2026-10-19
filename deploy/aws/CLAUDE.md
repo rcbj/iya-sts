@@ -22,7 +22,7 @@ Dockerfile removes this directory from the image.
 | `runner/` | per image | the suite runner image (the tests image plus the S3 client) and the two scripts its task runs | built by CI |
 | `Dockerfile`, `entrypoint.sh` | per run | the Terraform image (AWS CLI v2, Terraform 1.16.2, node): one stack, one environment, one action — `init`, `validate`, `plan`, `apply`, `destroy`, `output`, `output-json`, `ecr-password` (`suite` was removed on 2026-09-21) — the parent project's `infra/` arrangement | the workflow, and `terraform-local.sh` |
 | `terraform-local.sh` | per run | runs that image on a developer machine, with the credentials in the environment or the AWS CLI's session | a person |
-| `reset-environment.js` | per run | removes every realm but the default one and clears the default realm's runtime overrides before a run, so an environment can be reused | both runners |
+| `reset-environment.js` | per run | removes every realm but the default one, clears the default realm's runtime overrides, and removes runtime client-certificate trust anchors a suite job added (#335), before a run, so an environment can be reused | both runners |
 | `run-suite.sh` | per run | **the whole suite against any environment, from this machine** (2026-09-18): every job runs here against the load balancer except the two the nodes must call back to, which run in an ephemeral `suite-callbacks/` task; one merged report (*Running the suite from this machine*, below). **Not a launcher since 2026-09-21, and the ONE AWS suite**: `../../run-tests.sh --target=aws:<env>` and `--target=aws-ephemeral` both run it, and so does `aws-cluster.yml` | `./run-tests.sh` |
 | `suite-callbacks/` | per run | the callback task for one `run-suite.sh` run — a subnet, a NAT gateway the load balancer admits, a task role and a task definition (credential step, remote PEP, the two callback jobs) — applied at the start of the run and DESTROYED at its end, pass, fail or interrupt; state at `environment/<env>/suite-callbacks.tfstate` | `run-suite.sh` |
 | `../../.github/workflows/aws-cluster.yml` | per run | ordered jobs — images, terraform, suite, teardown — in the Terraform image, the suite through `./run-tests.sh --target=aws:<env>` after re-applying `allowed_cidrs` with the suite runner's own address; actions `apply-and-test`, `apply`, `test`, `plan`, `destroy` | GitHub Actions (dispatch only) |
@@ -93,6 +93,12 @@ in this order:
    loads raise and leave raised, resets to the nodes' `LDAP_MAX_ENTRIES =
    ldap_max_entries` — 50,000 since 2026-09-29, one run's bulk loads beside the
    seeded population. It was 200,000 while nothing was deleted between runs.
+5. **runtime client-certificate trust anchors a suite job added (#335)**.
+   The truststore is service-wide and holds 32 (`tls/CLAUDE.md`); removing a
+   realm does not take an anchor with it. `isSuiteTrustAnchor()` names the
+   subjects. The remote PEP's anchor this run posted is kept when
+   `XACML_PEP_CA_PEM` is set, because `pep-credential.sh` adds it before this
+   script runs.
 
 Only the suite's own names go; `node deploy/aws/reset-environment.js --dry-run
 <url>` lists what would. Until #344 nothing in the default realm was deleted, so
@@ -172,6 +178,26 @@ turns that recorded failure into a deployment that stops. The two ways it can
 fail are the two 389 already had — not root, or the port taken — plus one of
 its own: no server certificate at startup (`STS-LDAP-0029`), which cannot
 happen while `global.https` is on.
+
+**A STARTING TASK IS LEFT ALONE FOR TEN MINUTES (#330).**
+`health_check_grace_period_seconds` is 600, and the container probe's
+`startPeriod` is 300 (as long as ECS allows that one to be). The listener
+binds only after the front has restored its state and, where a pool is
+configured, the first worker of each pool has settled — `workers.startTimeoutMs`
+is 300000 on globalidp and testidpna, with the front's restore in front of
+that fork. The load balancer marks a silent port unhealthy in about 30
+seconds; the scheduler ignores that, and the container probe, until the grace
+ends. A port that is still down then fails steady state, which is the
+load-bearing property above. The grace does not cover `workers.startTimeoutMs`
+at its setting maximum (900000); a deployment that raises the timeout past
+what 600 holds has to raise the grace too (`ecs.tf` says how the 600 was
+reached). A task that has already been up is outside the grace: three
+consecutive failures of any target group replace it, about 30 seconds at
+the load balancer's interval of 10 (`unhealthy_threshold` 3). Two successes
+mark a group healthy again. GCP and Azure use the same failure count. The
+container probe is a second way ECS can replace a task, and it is not that
+count: its `retries` stay 4, and it watches only `/healthcheck` on the main
+port.
 
 **THE TWO SIDES OF THE PKI PORT NEED NOT MATCH, and since 2026-09-17 they do
 not** (`var.pki_listener_port`). They were one number because that is the
@@ -1356,16 +1382,23 @@ stack refuses a port the environment already uses (80, 88, 389, 443, 636,
 8081, 8082, the debugger's 8444) and, for any realm but `default`, 8092 and
 8181.
 
-**THE NODES ARE REGISTERED BY ADDRESS, AND A RESTARTED TASK FALLS OUT.** ECS
-keeps a target group's members current only for the target groups on a
-service's `load_balancer` blocks, and **ECS allows five per service — which
-`testidp` already uses** (https, ldap, ldaps, pki, kerberos). So this stack
-looks up the nodes' current private addresses (the in-use interfaces
-carrying `<prefix>-nodes`) and registers them itself. **Re-apply every
-realm's stack after any deploy or task restart**; until then the restarted
-node is missing from these ports, and its old address fails health checks.
-rcbj chose this over a Lambda following ECS task events, which the deployer
-role cannot create.
+**THE NODES ARE REGISTERED BY ADDRESS, AND THE NODE KEEPS THEM CURRENT
+(#323).** ECS keeps a target group's members current only for the target
+groups on a service's `load_balancer` blocks, and **ECS allows five per
+service — which these environments already use** (https, ldap, ldaps, pki,
+kerberos). So this stack looks up the nodes' current private addresses (the
+in-use interfaces carrying `<prefix>-nodes`) and registers them itself.
+That attachment is the membership at apply time. It does not remove a
+target registered any other way, and a task restarted since the apply comes
+back on a new address. `cluster/spiffe_targets.js` reconciles the groups
+after that — the algorithm is that file's. The task role may do it only
+once an administrator has re-applied `foundation/`, because the workload
+boundary is the ceiling and a role policy cannot rise above it. An image
+built without `@aws-sdk/client-elastic-load-balancing-v2` and
+`@aws-sdk/client-ecs` records `STS-CLUSTER-0027` and leaves the groups as
+they were. rcbj chose address registration over a Lambda following ECS task
+events, which the deployer role cannot create. `environment/realm_listeners.tf`
+is the same apply-time registration and is not reconciled here.
 
 **No PROXY protocol on these target groups**, unlike every other port:
 SPIFFE's gRPC listeners do not read the header, and a header in front of gRPC
@@ -1490,7 +1523,7 @@ terraform -chdir=deploy/aws/foundation init -backend-config=bucket=iya-sts-terra
 terraform -chdir=deploy/aws/foundation apply          # once, administrator
 
 # as the deployer role, from here on
-docker build -t <repo>:<tag> --build-arg STS_CLOUD_SDKS="@aws-sdk/client-secrets-manager @aws-sdk/client-kms @aws-sdk/client-sesv2" \
+docker build -t <repo>:<tag> --build-arg STS_CLOUD_SDKS="@aws-sdk/client-secrets-manager @aws-sdk/client-kms @aws-sdk/client-sesv2 @aws-sdk/client-elastic-load-balancing-v2 @aws-sdk/client-ecs" \
   --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem .
 docker build -t <repo>:schema-<tag> -f deploy/aws/schema-init/Dockerfile .
 docker build -t <repo>:cert-<tag> -f deploy/aws/cert-init/Dockerfile .   # only with a public name

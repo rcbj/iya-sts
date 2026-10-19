@@ -109,6 +109,8 @@
   "sched.jobs.spiffe.authority-rotation.describe": "Rotates the realm's SPIFFE X.509 authority once it is past half its lifetime and its JWT authority once it is older than half spiffe.caTtl; the old ones stay published (spiffe.retainedAuthorities).",
   "sched.jobs.spiffe.sigstore-tuf-refresh.title": "sigstore TUF refresh",
   "sched.jobs.spiffe.sigstore-tuf-refresh.describe": "Fetches the sigstore trust root (Fulcio CAs, Rekor and CT log keys) through TUF for the docker workload attestor's image-signature checks; a refresh that fails keeps the last verified set.",
+  "sched.jobs.spiffe.target-reconcile.title": "SPIFFE target reconcile",
+  "sched.jobs.spiffe.target-reconcile.describe": "Registers each running task's private address in this cluster's SPIFFE target groups and deregisters an address no running task still has (#323).",
   "sched.jobs.ssf.dead-letter-sweep.title": "Shared Signals dead-letter sweep",
   "sched.jobs.ssf.dead-letter-sweep.describe": "Deletes this process's expired dead letters, probes dead streams that are due (one node only) and logs the summary of what was dead-lettered since the last sweep.",
   "sched.jobs.ssf.foreign-poll.title": "Federation partners' Shared Signals poll",

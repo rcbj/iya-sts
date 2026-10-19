@@ -65,6 +65,15 @@ and the parent's signing is AWS's.
 | Deployer ROLE with two permissions boundaries, fenced by name, tag and region | Deployer SERVICE ACCOUNT, **impersonated** (no key), fenced by the PROJECT and by creating NO identity | *The deployer*, below |
 | `host-credentials.js` | Nothing | The provider refreshes impersonated tokens itself; the expired-session lock cannot happen |
 
+**THREE CONSECUTIVE FAILURES REPLACE THE NODE (#330).** The one health
+check's `unhealthy_threshold` is 3, at a 10-second interval, and each
+managed instance group autoheals on that check. A new node is left alone
+for `mig_initial_delay_sec` (600). After that, three failures in a row
+recreate it. Two successes mark it healthy again. The check is still the
+one HTTPS GET of `/healthcheck`: a node whose LDAPS never binds is not
+replaced for that. The inter-cell check uses the same failure count and
+only removes the backend from that pool.
+
 ## The certificate
 
 **Google releases the private key of no certificate it issues** —

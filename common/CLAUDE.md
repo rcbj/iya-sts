@@ -1533,16 +1533,23 @@ on the front process's one thread. rcbj met it more than once. `reap()` now asks
 `replacementFor()` and forks one worker into the dead one's POOL AND SLOT — the
 slot names the persistence origin, which the replacement adopts once the dead
 worker's claim lapses (`adoptOrigin()`, inside the worker's start timeout) —
-**not while `stop()` is draining, not once the pool has given up, and never
-past `size()`**. A worker that reports it could not start (`ready: false`) is
-ENDED, where it used to stay alive and never ready, holding its place; so it
-goes through the same path, and a failed start is now any worker that never
-became ready as well as one gone within `QUICK_EXIT_MS` having served nothing.
-`QUICK_EXIT_LIMIT` (3) failed starts in a row still give the pool up, so a
-worker that can never start is tried three times rather than forked for ever.
-`STS-WORKER-0043` names each replacement and `stats().pools[].replaced` counts
-them. `tests/request_worker_replacement.js` drives the real `fork()` and
-`reap()` with a stub worker.
+**not while `stop()` is draining, not once the pool has given up (except the
+one worker its cool-down tries), and never past `size()`**. A worker that
+reports it could not start (`ready: false`) is ENDED, where it used to stay
+alive and never ready, holding its place; so it goes through the same path,
+and a failed start is now any worker that never became ready as well as one
+gone within `QUICK_EXIT_MS` having served nothing. `QUICK_EXIT_LIMIT` (3)
+failed starts in a row still give the pool up, so a worker that can never
+start is tried three times rather than forked for ever. Since #333 that
+give-up is not for the life of the process. `workers.giveUpRetryMs` (five
+minutes; `0` is the old behaviour) later tries ONE worker while routing stays
+where the give-up put it — the front process, or the protocol pool for the
+surfaces. A worker that reports ready clears the give-up and the rest of the
+pool is forked through the start gate. Another three failures doubles the
+wait, up to an hour (`STS-WORKER-0050` names each wait). `STS-WORKER-0043`
+names each replacement and `stats().pools[].replaced` counts them.
+`tests/request_worker_replacement.js` drives the real `fork()` and `reap()`
+with a stub worker.
 
 **WORKERS START ONE AT A TIME (#342, 2026-09-29).** Each worker's start
 restores the whole store into its own heap, and `start()` forked every worker
@@ -1568,7 +1575,8 @@ false`, a failed channel, or an exit). Four decisions:
   set, when it has settled.
 * **The start timeout is each worker's own.** It is armed in the child after
   `begin`, so a worker waiting in the queue uses none of its time.
-* **A queued fork is dropped** when the pool is stopping or has given up. A
+* **A queued fork is dropped** when the pool is stopping or has given up,
+  except the one worker a give-up's cool-down try forks (`probing`, #333). A
   fork that throws is `STS-WORKER-0045`, and the gate moves on to the next.
 
 `stats().starts` reports the width of the gate, the number starting and the
@@ -4968,15 +4976,28 @@ the estate this service issues into, decided once, and a per-application answer
 would be a question two applications could not meaningfully answer differently.
 And not a socket, a port, a key or a limit anywhere.
 
-**AN APPLICATION DECLARED FOR SAML GETS AN ENTITYID.** `createApplication()`
-fills `samlEntityId` from the identifier when `saml2` or `saml11` is ticked and
-no entityID was given — because that is what the same application would have got
-by ARRIVING on its own, where the registry files a service provider under its
-entityID. Without it the declaration was a note and nothing more: `samlEntityId`
-is what both SAML modules file an application under and what their
-per-service-provider metadata is published for. It is a default and not a rule —
-an explicit value wins, and nothing is refused, because this service accepts any
-entityID on sight everywhere else.
+**AN APPLICATION DECLARED FOR A FAMILY GETS THAT FAMILY'S PRIMARY NAME (#393;
+SAML only, from 2026-08-27).** `createApplication()` calls
+`fillPrimaryNames()`, which writes the identifier into each ticked family's
+identifier attribute that was left empty — `oauthClientId`, `samlEntityId`,
+`wsfedRealm` and the rest — because that is what the same application would have
+got by ARRIVING on its own, where a sighting files it under the string it
+presented. Without it a SAML declaration was a note and nothing more, and an
+OAuth client's creator typed one string three times (identifier, name,
+client_id). It is a default and not a rule: an explicit value wins, and a list
+typed on the create is the WHOLE list (the identifier is not forced in beside
+it), so an application that answers to several client ids keeps working. The
+attributes stay `multi`. `updateApplicationFields()` fills a family NEWLY
+declared by a save, once, and only when the body did not name the attribute; a
+re-save of the same families writes nothing, so a deliberately cleared
+client_id stays cleared. **Three identifier attributes are never filled**
+(`NOT_THE_REGISTRY_IDENTIFIER`): `oauthTlsClientAuthSubjectDn`, because RFC 8705
+would then match a subject nobody has; `ldapBindDn`, a DN rather than the key;
+and `spiffeWorkloadId`, a `spiffe://` URI filed under `ou=spiffe`. The field
+grid marks the filled kind `primaryName`: the create form's simplified view
+leaves it out, and the application page folds it into the advanced view while
+its only value is the identifier. Existing entries are not rewritten (no
+migration).
 
 ---
 

@@ -5116,12 +5116,12 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/worker-pools', group: 'Management API',
     name: 'Worker pools', specs: [],
     what: 'NON-SPEC (#327). Everything /admin/worker-pools draws, as JSON: ' +
-          'the request, hosted-surface and post-quantum pools of this node, ' +
-          'each with its state, current, busy, free, maximum and initial ' +
-          'workers, its crashes, failed starts and stops, and its response ' +
-          'time; the post-quantum pool per process; in a cluster every ' +
-          'node by name and the totals, ?node= for one (#332). Mirrors ' +
-          'GET /admin/worker-pools.' },
+          'the request and hosted-surface pools of this node, each a set ' +
+          'of worker threads, with its state, current, busy, free, ' +
+          'maximum and initial workers, its crashes, failed starts and ' +
+          'stops, and its response time. There is no post-quantum pool ' +
+          'since #363. In a cluster, every node by name and the totals, ' +
+          '?node= for one (#332). Mirrors GET /admin/worker-pools.' },
   { path: '/admin-api/node-health', group: 'Management API',
     name: 'Node health', specs: [],
     what: 'NON-SPEC (#329). Everything /admin/node-health draws, as JSON: ' +

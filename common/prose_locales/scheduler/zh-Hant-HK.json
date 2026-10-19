@@ -135,6 +135,14 @@
     "en": "34bd339dcd1027c2",
     "text": "捨棄寬限期已過的每把已淘汰簽署金鑰，並在其簽發 CA 的清單上將其證書標示為已被取代。"
   },
+  "sched.jobs.spiffe.target-reconcile.title": {
+    "en": "da689365a5c7e0b8",
+    "text": "SPIFFE 目標群組協調"
+  },
+  "sched.jobs.spiffe.target-reconcile.describe": {
+    "en": "42a6fe3359b6cc70",
+    "text": "將每個正在執行的工作的私有地址登記到本叢集的 SPIFFE 目標群組中，並取消登記不再有任何正在執行的工作使用的地址（#323）。"
+  },
   "sched.jobs.ssf.dead-letter-sweep.title": {
     "en": "825439e56379bcb0",
     "text": "Shared Signals 無法遞送隊列清理"

@@ -1404,8 +1404,8 @@
     "text": "NO ESTÁNDAR (#74). Todo lo que dibuja /admin/caches, como JSON: cada caché registrada con su tamaño, entradas válidas y caducadas, límite, vida útil, ajustes, aciertos, fallos y tasa de aciertos; con ?cache=, el resumen de esa caché y una página de sus entradas (page, per), cada una con su dominio, clave y tiempo restante. Un nombre desconocido responde 200 con found: false. Ningún valor en caché aparece en la respuesta. Refleja GET /admin/caches."
   },
   "stsmetadata.endpoints./admin-api/worker-pools.what": {
-    "en": "aa9d2b625e5ba68b",
-    "text": "NO ESTÁNDAR (#327). Todo lo que dibuja /admin/worker-pools, como JSON: los grupos de workers de solicitudes, de superficies alojadas y poscuánticos de este nodo, cada uno con su estado, workers actuales, ocupados, libres, máximos e iniciales, sus caídas, arranques y paradas fallidos, y su tiempo de respuesta; el grupo poscuántico por proceso; en un clúster, cada nodo por nombre y los totales, ?node= para uno (#332). Refleja GET /admin/worker-pools."
+    "en": "39bf096a70b38c7b",
+    "text": "NO ESTÁNDAR (#327). Todo lo que dibuja /admin/worker-pools, como JSON: los grupos de workers de solicitudes y de superficies alojadas de este nodo, cada uno un conjunto de hilos de worker, con su estado, workers actuales, ocupados, libres, máximos e iniciales, sus caídas, arranques fallidos y paradas, y su tiempo de respuesta. No hay grupo poscuántico desde #363. En un clúster, cada nodo por nombre y los totales, ?node= para uno (#332). Refleja GET /admin/worker-pools."
   },
   "stsmetadata.endpoints./admin-api/node-health.what": {
     "en": "8ad5e9e21c752f8d",

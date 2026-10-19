@@ -35,7 +35,8 @@
 #      where the two jobs the SERVICE must call back run (see below);
 #   4. waits for the load balancer, mints an /admin-api token, removes what
 #      the previous runs left — realms, bulk-load entries, applications,
-#      overrides (reset-environment.js; STS_SUITE_KEEP_REALMS=1 keeps them),
+#      overrides and suite trust anchors (#335; reset-environment.js;
+#      STS_SUITE_KEEP_REALMS=1 keeps them),
 #      and runs every other job in the tests image on this
 #      machine's network, into tests/report/aws-<environment>/;
 #   5. runs the callback task once, with the two jobs, waits for it, downloads

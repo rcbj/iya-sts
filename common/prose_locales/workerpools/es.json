@@ -19,6 +19,22 @@
     "en": "ced50089d8744adc",
     "text": "Abandonado: {{failed}} hilo(s) de trabajo no pudieron iniciarse y el pool dejó de iniciarlos. Cada solicitud la responde el proceso frontal."
   },
+  "workerpools.s.givenUpSurfaceRetry": {
+    "en": "2bd6c8a7d6d36521",
+    "text": "Abandonado: {{failed}} hilo(s) de trabajo no pudieron iniciarse y el pool dejó de iniciarlos. Las superficies alojadas van al pool de solicitudes. Se prueba otro hilo de trabajo en {{retryS}} segundos."
+  },
+  "workerpools.s.givenUpRequestRetry": {
+    "en": "58247b5d1f427501",
+    "text": "Abandonado: {{failed}} hilo(s) de trabajo no pudieron iniciarse y el pool dejó de iniciarlos. Cada solicitud la responde el proceso frontal. Se prueba otro hilo de trabajo en {{retryS}} segundos."
+  },
+  "workerpools.s.givenUpSurfaceProbing": {
+    "en": "1a1aea378ae79a4f",
+    "text": "Abandonado: {{failed}} hilo(s) de trabajo no pudieron iniciarse y el pool dejó de iniciarlos. Las superficies alojadas van al pool de solicitudes. Se está probando otro hilo de trabajo."
+  },
+  "workerpools.s.givenUpRequestProbing": {
+    "en": "7df55ed536d4e065",
+    "text": "Abandonado: {{failed}} hilo(s) de trabajo no pudieron iniciarse y el pool dejó de iniciarlos. Cada solicitud la responde el proceso frontal. Se está probando otro hilo de trabajo."
+  },
   "workerpools.s.notStarted": {
     "en": "62c83c1852ddfcd4",
     "text": "No iniciado: {{setting}} es {{configured}}, y este proceso no inició ningún hilo worker — no se inició como el proceso frontal de un servicio, o el pool quedó inactivo al iniciar."

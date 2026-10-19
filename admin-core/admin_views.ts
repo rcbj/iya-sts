@@ -8136,18 +8136,26 @@ class AdminViews {
         // section says about this mode.
         fields: applications.applicationFields().map(function (row) {
           return Object.assign({}, self.typedField(row), {
-            // And every field a sub-tab's simple view shows (#500), so the
-            // create form and the application page agree on what is usual.
-            inSimple: !!row.declaration || !!row.overrides ||
-              !!row.simple ||
+            // A primary name (#393) is the registry identifier, so the
+            // simplified create form does not draw it. The advanced view
+            // still does: the attribute stays a list, and a list typed
+            // there is the whole list. Every other declaration, override
+            // and sub-tab simple field stays (#500).
+            inSimple: !row.primaryName &&
+              (!!row.declaration || !!row.overrides || !!row.simple ||
               SAML_KEY_SOURCE_FIELDS.some(function (one) {
                 return one.attribute === row.attribute;
-              })
+              }))
           });
         }),
         fieldGroups: applications.FIELD_GROUPS,
         familyChoices: applications.FAMILY_CHOICES,
         longTextAttributes: applications.LONG_TEXT_ATTRIBUTES || [],
+        // What an empty `lifetimeDays` gives the first client secret (#394),
+        // in days, 0 for never: the create form's placeholder, and what a
+        // caller of the create is told it gets by sending nothing.
+        defaultSecretLifetimeDays:
+          Number(config.value('oauth2.clientSecretLifetimeDays')) || 0,
         persistence: { persistsDirectory:
                          !!persistence.status().persistsDirectory,
                        mode: persistence.status().mode },

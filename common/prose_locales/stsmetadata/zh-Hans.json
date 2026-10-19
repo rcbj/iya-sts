@@ -1404,8 +1404,8 @@
     "text": "非规范（#74）。/admin/caches 绘制的所有内容，以 JSON 形式提供：每个已注册的缓存及其大小、有效和已过期条目、上限、有效期、设置、命中、未命中和命中率；带 ?cache= 时，为该缓存的摘要及其条目的一页（page、per），每个条目附带其领域、键和剩余时间。未知名称以 200 和 found: false 应答。回复中不包含任何缓存值。对应 GET /admin/caches。"
   },
   "stsmetadata.endpoints./admin-api/worker-pools.what": {
-    "en": "aa9d2b625e5ba68b",
-    "text": "非规范（#327）。/admin/worker-pools 绘制的所有内容，以 JSON 形式提供：本节点的请求池、托管界面池和后量子池，每个池附带其状态、当前、忙碌、空闲、最大和初始工作线程数、崩溃、启动失败和停止次数，以及响应时间；按进程列出的后量子池；在集群中按名称列出每个节点及总数，?node= 获取单个节点（#332）。对应 GET /admin/worker-pools。"
+    "en": "39bf096a70b38c7b",
+    "text": "非规范（#327）。/admin/worker-pools 绘制的所有内容，以 JSON 形式提供：本节点的请求池和托管界面池，每个池为一组工作线程，附带其状态、当前、忙碌、空闲、最大和初始工作线程数、崩溃、启动失败和停止次数，以及响应时间。自 #363 起已无后量子池。在集群中按名称列出每个节点及总数，?node= 获取单个节点（#332）。对应 GET /admin/worker-pools。"
   },
   "stsmetadata.endpoints./admin-api/node-health.what": {
     "en": "8ad5e9e21c752f8d",

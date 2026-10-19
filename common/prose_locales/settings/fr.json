@@ -1512,12 +1512,20 @@
     "text": "Délai de démarrage d’un worker de requêtes (ms)"
   },
   "workers.startTimeoutMs|description": {
-    "en": "d618aed19286a7b1",
-    "text": "Combien de temps un worker de requêtes ou de surface peut mettre à initialiser son état (le stockage, les clés, les lignes émises et la coordination) avant de signaler qu’il n’a pas pu démarrer. Après trois échecs consécutifs, le pool cesse de créer des workers et répond à tout dans le processus qui détient les sockets. Augmentez-le là où le démarrage d’un worker est lent — un jeu de clés de domaine volumineux que chaque démarrage recertifie, une base de données froide (#311)."
+    "en": "81d7608fc4c1da1f",
+    "text": "Combien de temps un worker de requêtes ou de surface peut mettre à initialiser son état (le stockage, les clés, les lignes émises et la coordination) avant de signaler qu’il n’a pas pu démarrer. Après trois échecs consécutifs, le pool cesse de créer des workers jusqu’à workers.giveUpRetryMs, puis en essaie un ; tant qu’il n’est pas prêt, les requêtes restent dans le processus frontal. Augmentez-le là où le démarrage d’un worker est lent — un jeu de clés de domaine volumineux que chaque démarrage recertifie, une base de données froide (#311)."
   },
   "workers.startTimeoutMs|restartReason": {
     "en": "7ac1de67a7c566c0",
     "text": "un worker le lit une seule fois, à son démarrage"
+  },
+  "workers.giveUpRetryMs|label": {
+    "en": "4e9da2141c451b07",
+    "text": "Délai de nouvel essai après abandon (ms)"
+  },
+  "workers.giveUpRetryMs|description": {
+    "en": "e4e6fa0869cb03c2",
+    "text": "Combien de temps le pool attend, après trois workers d’affilée qui n’ont pas pu démarrer, avant d’en essayer UN à nouveau. L’attente double après chaque essai qui échoue lui aussi, et ne dépasse jamais une heure. Tant que ce worker n’a pas signalé qu’il est prêt, les requêtes restent là où l’abandon les a mises : le processus frontal, ou le pool de protocole pour les surfaces hébergées. Un worker qui démarre lève l’abandon et le reste du pool est créé. 0 est l’ancien comportement : abandonné jusqu’au redémarrage de ce processus. Lu au moment où un temps de refroidissement est armé (#333)."
   },
   "workers.requestCount|label": {
     "en": "d742f198c4f9ad17",
@@ -2140,8 +2148,8 @@
     "text": "Durée de vie des secrets clients (jours)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "91dc7031f88426d1",
-    "text": "La durée de vie, en jours, de chaque secret client que ce service crée ou reçoit, et donc le `client_secret_expires_at` que publie RFC 7591 section 3.2.1 pour un client enregistré via POST /oauth2/register — la valeur par défaut pour chaque secret créé ou reçu (une régénération, une rotation, un secret ajouté, une valeur saisie dans la console), sauf si le formulaire d’ajout en indique une autre. ZÉRO, la valeur par défaut, est le « never » de cette section. Elle est apposée sur chaque secret à sa création et n’est pas modifiée par un changement ultérieur."
+    "en": "6ad202dff164f155",
+    "text": "La durée de vie, en jours, de chaque secret client que ce service crée ou reçoit, et donc le `client_secret_expires_at` que publie RFC 7591 section 3.2.1 pour un client enregistré via POST /oauth2/register — la valeur par défaut pour chaque secret créé ou reçu (une régénération, une rotation, un secret ajouté, une valeur saisie dans la console), sauf si le formulaire d’ajout en indique une autre, ou le formulaire de création pour le premier secret d’une application. ZÉRO, la valeur par défaut, est le « never » de cette section. Elle est apposée sur chaque secret à sa création et n’est pas modifiée par un changement ultérieur."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",

@@ -4366,6 +4366,41 @@ class AdminActions {
         changed.push(name);
       }
     });
+    // A FAMILY THIS SAVE ADDED gets its primary name from the identifier
+    // when the attribute is empty and this body did not name it (#393). A
+    // re-save of the same families writes nothing, so an entry that
+    // deliberately has no client_id keeps that. An explicit list, or an
+    // explicit clear, is in `covered` and wins. The protocol change above
+    // has already been written, which is what lets the family's own check
+    // see the new declaration.
+    if (!errors.length && withProtocols) {
+      const previous = valuesOf(entry.fields.appAllowedProtocol);
+      const posted = valuesOf(protocols && protocols.length
+        ? protocols : body.protocols);
+      const addedFamilies = posted.filter(function (id) {
+        return previous.indexOf(id) < 0;
+      });
+      const fresh = applications.get(identifier);
+      const names = fresh && addedFamilies.length
+        ? applications.primaryNameAttributes(addedFamilies) : [];
+      names.forEach(function (name) {
+        if (covered.indexOf(name) >= 0 ||
+            valuesOf(fresh.fields[name]).length) {
+          return;
+        }
+        const verb = modes[name] === 'set' ? 'set' : 'add';
+        const written = applications.updateApplication(identifier, {
+          mode: verb, attribute: name,
+          value: fresh.identifier || identifier });
+        if (written.ok) {
+          changed.push(name);
+        } else {
+          (written.errors || []).forEach(function (one) {
+            errors.push(one);
+          });
+        }
+      });
+    }
     if (errors.length) {
       log.debug("Leaving AdminActions.updateApplicationFields(). " +
                 errors.length + " refusal(s).");
@@ -4848,7 +4883,10 @@ class AdminActions {
         // guess.
         kind: String(body.kind || ''),
         protocols: asked,
-        fields: this.applicationFieldsFrom(body)
+        fields: this.applicationFieldsFrom(body),
+        // The first client secret's lifetime (#394): the add form's field,
+        // beside Generate Secret on the create form.
+        lifetimeDays: body.lifetimeDays
       });
       log.debug("Leaving AdminActions.applicationsAction(). create " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -4901,7 +4939,12 @@ class AdminActions {
                             'against, by exact string comparison, and the ' +
                             'rest are recorded rather than checked.'
                           :
-                          'It carries no identifier and no redirect URI yet. ' +
+                          (declared.length
+                            ? 'Where a ticked family\'s own identifier was ' +
+                              'left empty, the identifier is that name. It ' +
+                              'carries no redirect URI yet. '
+                            : 'It carries no identifier and no redirect ' +
+                              'URI yet. ') +
                             'Give it the ones it is allowed and RFC 9700 ' +
                             'mode will judge it against them; without them a ' +
                             'redirect_uri is judged against the ' +

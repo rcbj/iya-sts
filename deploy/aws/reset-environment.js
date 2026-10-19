@@ -6,11 +6,12 @@
 // File: deploy/aws/reset-environment.js
 //
 // ---------------------------------------------------------------------------
-// PUTS A REUSED AWS ENVIRONMENT BACK BEFORE A SUITE RUN (issue #51, #344):
-// removes every trust realm but the default one, removes what earlier suite
-// runs left in the default realm — the bulk-load people and groups and the
-// applications the jobs registered — and clears every runtime override in the
-// default realm.
+// PUTS A REUSED AWS ENVIRONMENT BACK BEFORE A SUITE RUN (issue #51, #344,
+// #335): removes every trust realm but the default one, removes what earlier
+// suite runs left in the default realm — the bulk-load people and groups and
+// the applications the jobs registered — clears every runtime override in the
+// default realm, and removes runtime client-certificate trust anchors a suite
+// job added.
 //
 //   STS_ADMIN_API_TOKEN=… STS_ADMIN_API_CLIENT_SECRET=… \
 //     node deploy/aws/reset-environment.js [--dry-run] https://<nlb>
@@ -57,7 +58,7 @@
 // administrator (not a bulk name) and its seeded applications are never
 // candidates. `--dry-run` is how to check that before trusting it.
 //
-// THE DEFAULT REALM'S RUNTIME OVERRIDES GO LAST, through
+// THE DEFAULT REALM'S RUNTIME OVERRIDES, through
 // `/admin-api/config/reset`. tests/vendored/admin_api.js requires none to be
 // in force when it starts, and the store keeps them across a restart: the
 // first reuse of the dev cluster found `groups.claim` from an interrupted run
@@ -65,6 +66,19 @@
 // purpose (tests/vendored/bulk_load.js). Resetting that one lands on the
 // nodes' LDAP_MAX_ENTRIES (`ldap_max_entries`, environment/ecs.tf), and is
 // done AFTER the bulk entries are gone so the directory is back under it.
+//
+// THE CLIENT-CERTIFICATE TRUSTSTORE GOES LAST (#335). It is service-wide,
+// holds at most 32 anchors, and is persisted, so a realm removal cannot
+// clear it and a job killed mid-run leaves its CA until the cap fills and
+// the next run's first POST /admin-api/tls/trust/add is refused. Runtime
+// anchors whose subject is one of the suite's test CAs (`isSuiteTrustAnchor`)
+// are removed. A file-source anchor is never one of them. The remote PEP's
+// anchor this run posted is spared when XACML_PEP_CA_PEM is set:
+// pep-credential.sh adds it before this script runs, and the XACML jobs mint
+// roots under the same default subject, so the spare is the fingerprint and
+// not the name. When that variable is set and is not a certificate, nothing
+// in the truststore is removed and the reset fails — sparing an anchor that
+// cannot be named would mean deleting the one the PEP is using.
 //
 // `STS_SUITE_KEEP_REALMS=1` skips all of this.
 //
@@ -80,6 +94,7 @@
 // nothing and exports the name tests `tests/reset_environment.js` holds.
 // ---------------------------------------------------------------------------
 const https = require('https');
+const crypto = require('crypto');
 
 const log = {
   debug: function (message) {
@@ -225,6 +240,102 @@ function isSuiteApplication(row) {
                  });
   log.debug('Leaving isSuiteApplication(). ' + answer);
   return answer;
+}
+
+// CLIENT-CERTIFICATE TRUST ANCHORS A SUITE JOB ADDS (#335). The truststore
+// is service-wide and a realm does not take an anchor with it. A job removes
+// its own when it finishes; this is the backstop for one that was killed.
+// Match the common name only, and only a runtime anchor. The two exact names
+// are the shared root several jobs mint without a subject of their own —
+// `mock-sts test Root CA` is what that root was called before the rename.
+// The prefixes are names a job stamps per run.
+const SUITE_TRUST_CN_EXACT = [
+  'iya-sts test Root CA',
+  'mock-sts test Root CA'
+];
+const SUITE_TRUST_CN_PREFIX = [
+  'global-logout test CA',
+  'console bootstrap test CA',
+  'GNAP mTLS test CA',
+  'pooling test Root',
+  'admin-api-operations truststore',
+  'console-truststore-'
+];
+
+function commonNamesOf(subject) {
+  log.debug('Entering commonNamesOf().');
+  const flat = String(subject || '').replace(/\n/g, ', ');
+  const names = [];
+  const pattern = /(?:^|,\s*)CN=([^,]*)/g;
+  let found = pattern.exec(flat);
+  while (found) {
+    names.push(found[1].trim());
+    found = pattern.exec(flat);
+  }
+  log.debug('Leaving commonNamesOf().');
+  return names;
+}
+
+function isSuiteTrustCn(name) {
+  log.debug('Entering isSuiteTrustCn().');
+  const cn = String(name || '');
+  const answer = SUITE_TRUST_CN_EXACT.indexOf(cn) >= 0 ||
+                 SUITE_TRUST_CN_PREFIX.some(function (prefix) {
+                   return cn.startsWith(prefix);
+                 });
+  log.debug('Leaving isSuiteTrustCn(). ' + answer);
+  return answer;
+}
+
+/**
+ * Tells whether a truststore row is a runtime anchor a suite job added.
+ *
+ * @param {object} anchor - a row from GET /admin-api/tls/trust
+ * @returns {boolean} true when the reset may remove it
+ */
+function isSuiteTrustAnchor(anchor) {
+  log.debug('Entering isSuiteTrustAnchor().');
+  if (!anchor || anchor.source !== 'runtime') {
+    log.debug('Leaving isSuiteTrustAnchor(). Not a runtime anchor.');
+    return false;
+  }
+  const answer = commonNamesOf(anchor.subject).some(isSuiteTrustCn);
+  log.debug('Leaving isSuiteTrustAnchor(). ' + answer);
+  return answer;
+}
+
+function normalisedFingerprint(value) {
+  log.debug('Entering normalisedFingerprint().');
+  const answer = String(value || '').replace(/[^0-9a-f]/gi, '').toUpperCase();
+  log.debug('Leaving normalisedFingerprint().');
+  return answer;
+}
+
+/**
+ * The runtime suite anchors to remove, minus fingerprints this run must keep.
+ *
+ * @param {Array<object>} anchors - the truststore's rows
+ * @param {Array<string>} spareFingerprints - SHA-256, any spelling
+ * @returns {Array<object>} the rows to remove
+ */
+function trustAnchorsToRemove(anchors, spareFingerprints) {
+  log.debug('Entering trustAnchorsToRemove().');
+  const spare = {};
+  (spareFingerprints || []).forEach(function (one) {
+    const key = normalisedFingerprint(one);
+    if (key) {
+      spare[key] = true;
+    }
+  });
+  const gone = (anchors || []).filter(function (anchor) {
+    if (!isSuiteTrustAnchor(anchor)) {
+      return false;
+    }
+    const key = normalisedFingerprint(anchor && anchor.fingerprint256);
+    return key.length > 0 && !spare[key];
+  });
+  log.debug('Leaving trustAnchorsToRemove(). ' + gone.length);
+  return gone;
 }
 
 function request(method, url, token, body, contentType) {
@@ -846,6 +957,93 @@ async function resetOverrides(base, token, dryRun, failed) {
   log.debug('Leaving resetOverrides().');
 }
 
+// The remote PEP's root, posted by pep-credential.sh before this script runs
+// on an in-AWS task. The XACML jobs mint roots under the same default
+// subject, so the spare is this certificate's fingerprint.
+function currentRunAnchor() {
+  log.debug('Entering currentRunAnchor().');
+  const pem = process.env.XACML_PEP_CA_PEM || '';
+  if (!String(pem).trim()) {
+    log.debug('Leaving currentRunAnchor(). None set.');
+    return { fingerprints: [], unreadable: false };
+  }
+  try {
+    const fingerprint = new crypto.X509Certificate(pem).fingerprint256;
+    log.debug('Leaving currentRunAnchor().');
+    return { fingerprints: [fingerprint], unreadable: false };
+  } catch (e) {
+    log.debug('Caught in currentRunAnchor(): ' + ((e && e.message) || e));
+    log.debug('Leaving currentRunAnchor(). Not a certificate.');
+    return { fingerprints: [], unreadable: true };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// THE CLIENT-CERTIFICATE TRUSTSTORE (#335).
+// ---------------------------------------------------------------------------
+async function resetTrustAnchors(base, token, dryRun, failed) {
+  log.debug('Entering resetTrustAnchors().');
+  const spare = currentRunAnchor();
+  if (spare.unreadable) {
+    say('XACML_PEP_CA_PEM is set but is not a certificate, so the remote ' +
+        'PEP anchor this run posted cannot be spared. No trust anchor is ' +
+        'removed.');
+    failed.push('trust anchors (XACML_PEP_CA_PEM is not a certificate, so ' +
+                'the remote PEP anchor could not be spared)');
+    log.debug('Leaving resetTrustAnchors(). Could not spare the PEP anchor.');
+    return;
+  }
+  const held = [];
+  let page = 1;
+  let pages = 1;
+  while (page <= pages) {
+    const r = await requestRetrying('GET', base + '/admin-api/tls/trust' +
+                                    '?per=100&page=' + page, token);
+    if (r.status !== 200 || !r.json || !Array.isArray(r.json.anchors)) {
+      log.debug('Leaving resetTrustAnchors().');
+      throw new Error('GET /admin-api/tls/trust answered ' + brief(r));
+    }
+    pages = Number(r.json.pages) || 1;
+    r.json.anchors.forEach(function (anchor) {
+      held.push(anchor);
+    });
+    page += 1;
+  }
+  const gone = trustAnchorsToRemove(held, spare.fingerprints);
+  const subjects = gone.map(function (anchor) {
+    return String(anchor.subject || '').replace(/\s+/g, ' ');
+  });
+  say(gone.length + ' suite trust anchor(s)' +
+      (spare.fingerprints.length ? ', keeping ' + spare.fingerprints.length +
+       ' this run posted' : '') +
+      (dryRun && subjects.length ? ': ' + subjects.slice(0, 12).join('; ') +
+       (subjects.length > 12 ? '; …' : '') : '') + '.');
+  if (dryRun) {
+    log.debug('Leaving resetTrustAnchors(). Dry run.');
+    return;
+  }
+  let removed = 0;
+  for (const anchor of gone) {
+    const r = await requestRetrying('POST',
+                                    base + '/admin-api/tls/trust/remove',
+                                    token,
+                                    { fingerprint: anchor.fingerprint256 });
+    if (r.status === 200) {
+      removed += 1;
+    } else if (/holds no anchor/i.test(String(r.text || ''))) {
+      log.debug('The anchor was already gone.');
+    } else {
+      failed.push('trust anchor ' +
+                  String(anchor.subject || anchor.fingerprint256)
+                    .replace(/\s+/g, ' ') +
+                  ' (' + brief(r) + ')');
+    }
+  }
+  say('removed ' + removed + ' of ' + gone.length +
+      ' suite trust anchor(s).');
+  log.debug('Leaving resetTrustAnchors().');
+}
+
 async function main(argv) {
   log.debug('Entering main().');
   const args = argv.slice(2);
@@ -874,14 +1072,15 @@ async function main(argv) {
   await resetApplications(base, token, dryRun, failed);
   await resetRiskDatasets(base, token, dryRun, failed);
   await resetOverrides(base, token, dryRun, failed);
+  await resetTrustAnchors(base, token, dryRun, failed);
   if (failed.length) {
     process.stderr.write('reset-environment: not reset: ' +
                          failed.slice(0, 50).join('; ') +
                          (failed.length > 50 ? '; and ' +
                           (failed.length - 50) + ' more' : '') + '\n');
     log.debug('Leaving main().');
-    throw new Error(failed.length + ' realm(s), entries, application(s) or ' +
-                    'setting(s) could not be reset');
+    throw new Error(failed.length + ' realm(s), entries, application(s), ' +
+                    'setting(s) or trust anchor(s) could not be reset');
   }
   log.debug('Leaving main().');
 }
@@ -891,6 +1090,8 @@ module.exports = {
   isSuiteGroup: isSuiteGroup,
   isSuiteApplication: isSuiteApplication,
   suiteVersionTest: suiteVersionTest,
+  isSuiteTrustAnchor: isSuiteTrustAnchor,
+  trustAnchorsToRemove: trustAnchorsToRemove,
   BULK_DOORS: BULK_DOORS
 };
 

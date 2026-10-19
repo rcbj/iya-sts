@@ -136,8 +136,8 @@
     "text": "此應用程式若經過註冊，是如何註冊的：\"administrator\"（在 /admin/applications/new 上或透過管理 API 建立）、\"rfc7591\"（POST /oauth2/register）、\"ldap:<bound DN>\"（在 ou=applications 下的 LDAP 新增，#504；未繫結者為 \"ldap\"）或 \"startup\"（本服務自己植入的客戶端之一）。只是出現的應用程式上沒有此屬性。由此登錄以及 LDAP 新增寫入，後者會保留其作者給定的值；LDAP 修改從不蓋印它。「在產品模式下，它決定了應用程式是否受服務」（#496）：沒有它的項目——開發模式下出現記錄所歸檔的項目——在每個協定入口都會被視為沒有應用程式。"
   },
   "applications.schema.attributes.oauthClientId.what": {
-    "en": "1e1a912a88773d34",
-    "text": "「CLIENT_ID」，也是三個家族的識別碼屬性：OpenID Connect 依賴方「就是」OAuth 客戶端，而在 OpenID4VCI 簽發者處領取憑證的錢包也以 OAuth 客戶端身分驗證，因此三者都在此宣告其名稱，而不是使用三個屬性，那會是同一事實的三種拼寫。通常等於 appIdentifier，也就是協定出現記錄所寫入的值；「第二個」值是此應用程式也會回應的 client_id——依環境區分的 ID——這就是它採累積而非指派的原因。在未宣告任何 OAuth 家族的項目上不存在。"
+    "en": "be5cd98b933adf94",
+    "text": "「CLIENT_ID」，也是三個家族的識別碼屬性：OpenID Connect 依賴方「就是」OAuth 客戶端，而在 OpenID4VCI 簽發者處領取憑證的錢包也以 OAuth 客戶端身分驗證，因此三者都在此宣告其名稱，而不是使用三個屬性，那會是同一事實的三種拼寫。通常等於 appIdentifier，也就是協定出現記錄所寫入的值，也是建立時此項留空所寫入的值（#393）；「第二個」值是此應用程式也會回應的 client_id——依環境區分的 ID——這就是它採累積而非指派的原因。建立時輸入的清單就是完整的清單。在未宣告任何 OAuth 家族的項目上不存在。"
   },
   "applications.schema.attributes.oauthAudience.what": {
     "en": "85845f64442f584e",

@@ -1512,12 +1512,20 @@
     "text": "Limit sa pag-start ng request worker (ms)"
   },
   "workers.startTimeoutMs|description": {
-    "en": "d618aed19286a7b1",
-    "text": "Gaano katagal puwedeng ihanda ng isang request o surface worker ang estado nito (ang store, ang mga key, ang mga minted row at ang coordination) bago nito iulat na hindi ito makapag-start. Tatlong sunod-sunod na pagkabigo at ititigil ng pool ang pag-fork at sasagutin ang lahat sa process na may hawak ng mga socket. Taasan ito kung saan mabagal ang pag-start ng isang worker — isang malaking realm key set na muling sinesertipikahan sa bawat pag-start, isang malamig na database (#311)."
+    "en": "81d7608fc4c1da1f",
+    "text": "Gaano katagal puwedeng ihanda ng isang request o surface worker ang estado nito (ang store, ang mga key, ang mga minted row at ang coordination) bago nito iulat na hindi ito makapag-start. Tatlong sunod-sunod na pagkabigo at ititigil ng pool ang pag-fork hanggang workers.giveUpRetryMs, saka susubukan ang isa; hanggang handa ito, nananatili ang mga request sa front process. Taasan ito kung saan mabagal ang pag-start ng isang worker — isang malaking realm key set na muling sinesertipikahan sa bawat pag-start, isang malamig na database (#311)."
   },
   "workers.startTimeoutMs|restartReason": {
     "en": "7ac1de67a7c566c0",
     "text": "isang beses itong binabasa ng worker, kapag nag-start ito"
+  },
+  "workers.giveUpRetryMs|label": {
+    "en": "4e9da2141c451b07",
+    "text": "Paghihintay ng muling subok pagkatapos sumuko (ms)"
+  },
+  "workers.giveUpRetryMs|description": {
+    "en": "e4e6fa0869cb03c2",
+    "text": "Gaano katagal maghihintay ang pool, pagkatapos na tatlong worker na magkakasunod ay hindi makapag-start, bago subukan muli ang ISANG worker. Dumodoble ang paghihintay pagkatapos ng bawat pagtatangkang nabigo rin, at hindi ito lalampas sa isang oras. Hanggang iulat ng worker na iyon na handa na ito, nananatili ang mga request kung saan inilagay sila ng pagsuko: ang front process, o ang protocol pool para sa mga hosted surface. Ang worker na makapag-start ay inaalis ang pagsuko at fino-fork ang natitira sa pool. Ang 0 ang dating asal: sumuko hanggang mag-restart ang process na ito. Binabasa ito kapag inarmas ang isang cool-down (#333)."
   },
   "workers.requestCount|label": {
     "en": "d742f198c4f9ad17",
@@ -2140,8 +2148,8 @@
     "text": "Lifetime ng client secret (araw)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "91dc7031f88426d1",
-    "text": "Ang lifetime, sa araw, ng bawat client secret na ginagawa o ibinibigay sa serbisyong ito, kaya ang `client_secret_expires_at` na inilalathala ng RFC 7591 section 3.2.1 para sa client na na-register sa POST /oauth2/register — ang default para sa bawat secret na ginagawa o ibinibigay (isang regeneration, isang rotation, isang idinagdag na secret, isang value na na-type sa console), maliban kung nagpapangalan ng iba ang add form. Ang ZERO, ang default, ay ang sariling \"never\" ng section na iyon. Itinatatak ito sa bawat secret kapag ginawa ito at hindi ginagalaw ng pagbabago sa ibang pagkakataon."
+    "en": "6ad202dff164f155",
+    "text": "Ang lifetime, sa araw, ng bawat client secret na ginagawa o ibinibigay sa serbisyong ito, kaya ang `client_secret_expires_at` na inilalathala ng RFC 7591 section 3.2.1 para sa client na na-register sa POST /oauth2/register — ang default para sa bawat secret na ginagawa o ibinibigay (isang regeneration, isang rotation, isang idinagdag na secret, isang value na na-type sa console), maliban kung nagpapangalan ng iba ang add form, o ang create form para sa unang secret ng isang application. Ang ZERO, ang default, ay ang sariling \"never\" ng section na iyon. Itinatatak ito sa bawat secret kapag ginawa ito at hindi ginagalaw ng pagbabago sa ibang pagkakataon."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",

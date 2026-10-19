@@ -3544,9 +3544,11 @@ const SETTINGS = [
   // resizing it would be resizing every other realm's too — and
   // restart-only rather than runtime: a request worker takes seconds to start
   // because it loads the service, and the pool is brought up BEFORE the
-  // listener binds so that cost is paid where nobody is waiting. A table that
-  // said `runtime: true` and meant "on restart" is the lie this file refuses
-  // to tell about a bound port.
+  // listener binds so that cost is paid where nobody is waiting.
+  // `workers.giveUpRetryMs` is the exception. It is read when a pool gives
+  // up, so a change applies to the next cool-down. A table that said
+  // `runtime: true` and meant "on restart" is the lie this file refuses to
+  // tell about a bound port.
   // ---------------------------------------------------------------------
   { key: 'workers.startTimeoutMs', group: 'Global',
     label: 'Request worker start limit (ms)',
@@ -3556,11 +3558,25 @@ const SETTINGS = [
     description: 'How long a request or surface worker may take to bring its ' +
                  'state up (the store, the keys, the minted rows and ' +
                  'coordination) before it reports that it could not start. ' +
-                 'Three failures in a row and the pool stops forking and ' +
-                 'answers everything in the process that holds the sockets. ' +
-                 'Raise it where a worker\'s start is slow — a large realm ' +
-                 'key set that every start re-certifies, a cold database ' +
-                 '(#311).' },
+                 'Three failures in a row and the pool stops forking until ' +
+                 'workers.giveUpRetryMs, then tries one worker; until it ' +
+                 'is up, requests stay in the front process. Raise it ' +
+                 'where a worker\'s start is slow — a large realm key set ' +
+                 'that every start re-certifies, a cold database (#311).' },
+  { key: 'workers.giveUpRetryMs', group: 'Global',
+    label: 'Give-up retry wait (ms)',
+    env: 'STS_WORKERS_GIVE_UP_RETRY_MS', type: 'int', dflt: 300000,
+    min: 0, max: 3600000, runtime: true, perProcess: true,
+    description: 'How long the pool waits, after three workers in a row ' +
+                 'failed to start, before it tries ONE worker again. The ' +
+                 'wait doubles after each attempt that also fails, and ' +
+                 'never grows past an hour. Until that worker reports ' +
+                 'ready, requests stay where the give-up put them: the ' +
+                 'front process, or the protocol pool for the hosted ' +
+                 'surfaces. A worker that comes up clears the give-up and ' +
+                 'the rest of the pool is forked. 0 is the old behaviour: ' +
+                 'given up until this process restarts. Read when a ' +
+                 'cool-down is armed (#333).' },
   { key: 'workers.requestCount', group: 'Global',
     label: 'Request worker threads',
     env: 'STS_WORKERS_REQUEST_COUNT', type: 'int', dflt: 1, min: 0, max: 32,
@@ -5184,7 +5200,9 @@ const SETTINGS = [
                  '/oauth2/register — the default for every secret ' +
                  'mints or is given (a regeneration, a rotation, an added ' +
                  'secret, a value typed on the console), unless the add ' +
-                 'form names another. ZERO, the default, is that section\'s ' +
+                 'form names another, or the create form does for an ' +
+                 'application\'s first secret. ZERO, the default, is that ' +
+                 'section\'s ' +
                  'own "never". It is stamped on each secret when it is ' +
                  'made and is not moved by a later change.' },
 

@@ -95,7 +95,7 @@ as the `iya-sts-deployer` role.
 repo=<account>.dkr.ecr.us-west-2.amazonaws.com/iya-sts
 tag=$(git rev-parse --short=12 HEAD)
 docker build -t $repo:$tag \
-  --build-arg STS_CLOUD_SDKS="@aws-sdk/client-secrets-manager @aws-sdk/client-kms" \
+  --build-arg STS_CLOUD_SDKS="@aws-sdk/client-secrets-manager @aws-sdk/client-kms @aws-sdk/client-elastic-load-balancing-v2 @aws-sdk/client-ecs" \
   --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem .
 docker build -t $repo:schema-$tag -f deploy/aws/schema-init/Dockerfile .
 docker build -t iya-sts-tests -f tests/Dockerfile .

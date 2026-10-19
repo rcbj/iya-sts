@@ -19,6 +19,22 @@
     "en": "ced50089d8744adc",
     "text": "已放棄：{{failed}} 個背景工作執行緒啟動失敗，集區已停止啟動它們。每個請求都由前端程序回應。"
   },
+  "workerpools.s.givenUpSurfaceRetry": {
+    "en": "2bd6c8a7d6d36521",
+    "text": "已放棄：{{failed}} 個背景工作執行緒啟動失敗，集區已停止啟動它們。託管介面改送到請求集區。將在 {{retryS}} 秒後再試一個背景工作執行緒。"
+  },
+  "workerpools.s.givenUpRequestRetry": {
+    "en": "58247b5d1f427501",
+    "text": "已放棄：{{failed}} 個背景工作執行緒啟動失敗，集區已停止啟動它們。每個請求都由前端程序回應。將在 {{retryS}} 秒後再試一個背景工作執行緒。"
+  },
+  "workerpools.s.givenUpSurfaceProbing": {
+    "en": "1a1aea378ae79a4f",
+    "text": "已放棄：{{failed}} 個背景工作執行緒啟動失敗，集區已停止啟動它們。託管介面改送到請求集區。正在再試一個背景工作執行緒。"
+  },
+  "workerpools.s.givenUpRequestProbing": {
+    "en": "7df55ed536d4e065",
+    "text": "已放棄：{{failed}} 個背景工作執行緒啟動失敗，集區已停止啟動它們。每個請求都由前端程序回應。正在再試一個背景工作執行緒。"
+  },
   "workerpools.s.notStarted": {
     "en": "62c83c1852ddfcd4",
     "text": "未啟動：{{setting}} 為 {{configured}}，而此程序未啟動任何背景工作執行緒——它並非以服務的前端程序身分啟動，或集區在啟動時被設為閒置。"

@@ -472,8 +472,8 @@
     "text": "Le Trust Anchor auquel sa chaîne a abouti."
   },
   "applications.schema.attributes.oauthClientId.what": {
-    "en": "1e1a912a88773d34",
-    "text": "LE CLIENT_ID, et l’attribut d’identifiant de trois familles : une partie de confiance OpenID Connect EST un client OAuth, et un portefeuille qui récupère une attestation auprès de l’émetteur OpenID4VCI s’authentifie en tant que tel ; les trois déclarent donc leur nom ici plutôt que dans trois attributs qui seraient trois écritures d’un même fait. Généralement égal à appIdentifier, ce qu’écrit une observation de protocole ; une SECONDE valeur est un client_id auquel cette application répond aussi — un identifiant propre à un environnement — et c’est pourquoi ces valeurs se cumulent plutôt que d’être affectées. Absent d’une entrée pour laquelle aucune famille OAuth n’a été déclarée."
+    "en": "be5cd98b933adf94",
+    "text": "LE CLIENT_ID, et l’attribut d’identifiant de trois familles : une partie de confiance OpenID Connect EST un client OAuth, et un portefeuille qui récupère une attestation auprès de l’émetteur OpenID4VCI s’authentifie en tant que tel ; les trois déclarent donc leur nom ici plutôt que dans trois attributs qui seraient trois écritures d’un même fait. Généralement égal à appIdentifier, ce qu’écrit une observation de protocole et ce qu’écrit une création quand il est laissé vide (#393) ; une SECONDE valeur est un client_id auquel cette application répond aussi — un identifiant propre à un environnement — et c’est pourquoi ces valeurs se cumulent plutôt que d’être affectées. Une liste saisie à la création est la liste entière. Absent d’une entrée pour laquelle aucune famille OAuth n’a été déclarée."
   },
   "applications.schema.attributes.oauthAudience.what": {
     "en": "85845f64442f584e",

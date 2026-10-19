@@ -1223,6 +1223,12 @@ class ProtocolStack {
     // job every process registers here for the same reason, whose owner is
     // a leaf `server.js` loads before the stack.
     require('./process_memory').ensureReportJob(jobScheduler);
+    // AND THE SPIFFE TARGET RECONCILE (#323): `spiffe.target-reconcile`, a
+    // cluster job every process registers here for the same reason. It is
+    // off outside an ECS task. The front process also reconciles once it
+    // is listening and deregisters itself as it stops (`server.js`); a
+    // request worker only registers the job.
+    require('../cluster/spiffe_targets').ensureJob(jobScheduler);
     // 18j. RISK SCORING (#62 P1, 2026-09-22): the store, the datasets and
     // the failure history are LIBRARIES (rule 3) that register no route, and
     // then Monitoring → Risk, for 18a's reason — the console's shell and the
@@ -1396,9 +1402,10 @@ class ProtocolStack {
     this.build('cluster/node_snapshots', require('../cluster/node_snapshots'),
                'NodeSnapshots');
     // 18s. THE WORKER POOLS' PAGE (#327, 2026-09-28). `/admin/worker-pools` —
-    // the request, hosted-surface and post-quantum pools of this node. 18a's
-    // placement and 18a's reason: the console's shell is here, the two pool
-    // modules are libraries it reaches lazily when a page is drawn, and
+    // the request and hosted-surface pools of this node. Worker threads
+    // since #364; no post-quantum pool since #363. 18a's placement and
+    // 18a's reason: the console's shell is here, the pool module is a
+    // library reached lazily when a page is drawn, and
     // `mgmt-api/admin_api` requires it in the ordinary direction.
     require('../admin-ui/worker_pools_admin');
     this.build('admin-ui/worker_pools_admin',

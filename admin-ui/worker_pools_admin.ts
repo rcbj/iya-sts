@@ -136,6 +136,23 @@ const SENTENCES = Object.freeze({
   givenUpRequest: 'Given up: {{failed}} worker thread(s) failed to start ' +
     'and the pool stopped starting them. Every request is answered by ' +
     'the front process.',
+  // The same two, while a cool-down is waiting or its one worker is being
+  // tried (#333). The sentences above stay for a pool whose
+  // workers.giveUpRetryMs is 0, and for a snapshot from a build that does
+  // not say.
+  givenUpSurfaceRetry: 'Given up: {{failed}} worker thread(s) failed to ' +
+    'start and the pool stopped starting them. The hosted surfaces go ' +
+    'to the request pool. Another worker is tried in {{retryS}} seconds.',
+  givenUpRequestRetry: 'Given up: {{failed}} worker thread(s) failed to ' +
+    'start and the pool stopped starting them. Every request is ' +
+    'answered by the front process. Another worker is tried in ' +
+    '{{retryS}} seconds.',
+  givenUpSurfaceProbing: 'Given up: {{failed}} worker thread(s) failed ' +
+    'to start and the pool stopped starting them. The hosted surfaces ' +
+    'go to the request pool. Another worker is being tried now.',
+  givenUpRequestProbing: 'Given up: {{failed}} worker thread(s) failed ' +
+    'to start and the pool stopped starting them. Every request is ' +
+    'answered by the front process. Another worker is being tried now.',
   notStarted: 'Not started: {{setting}} is {{configured}}, and this ' +
     'process started no worker thread — it was not started as the front ' +
     'process of a service, or the pool was idled at start.',
@@ -337,8 +354,25 @@ class WorkerPoolsAdmin {
           : say('requestOff', { setting: setting });
     } else if (pool.gaveUp) {
       state = 'given-up';
-      stateText = say(surface ? 'givenUpSurface' : 'givenUpRequest',
-                      { failed: h.failedStarts || 0 });
+      // STILL GIVEN UP WHILE THE COOL-DOWN RUNS (#333). A snapshot from a
+      // build that does not report the wait falls through to the old
+      // sentence: `giveUpRetryMs` and `giveUpProbing` are absent there.
+      const probing = !!pool.giveUpProbing;
+      const retryMs = Number(pool.giveUpRetryMs) || 0;
+      const failed = h.failedStarts || 0;
+      if (probing) {
+        stateText = say(surface ? 'givenUpSurfaceProbing'
+                                : 'givenUpRequestProbing',
+                        { failed: failed });
+      } else if (retryMs > 0) {
+        stateText = say(surface ? 'givenUpSurfaceRetry'
+                                : 'givenUpRequestRetry',
+                        { failed: failed,
+                          retryS: String(Math.ceil(retryMs / 1000)) });
+      } else {
+        stateText = say(surface ? 'givenUpSurface' : 'givenUpRequest',
+                        { failed: failed });
+      }
     } else if (!h.initial && !running) {
       let why: string | null = null;
       if (surface) {

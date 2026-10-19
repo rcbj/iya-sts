@@ -439,6 +439,14 @@
     "en": "23ca3d0e22f4d09a",
     "text": "透過 TUF 擷取 sigstore 信任根（Fulcio CA、Rekor 與 CT 記錄金鑰），供 docker 工作負載證明者檢查映像檔簽章；重新整理失敗時保留上次驗證的集合。"
   },
+  "sched.jobs.spiffe.target-reconcile.title": {
+    "en": "da689365a5c7e0b8",
+    "text": "SPIFFE 目標群組協調"
+  },
+  "sched.jobs.spiffe.target-reconcile.describe": {
+    "en": "42a6fe3359b6cc70",
+    "text": "將每個正在執行的工作的私有位址註冊到本叢集的 SPIFFE 目標群組中，並取消註冊不再有任何正在執行的工作使用的位址（#323）。"
+  },
   "sched.jobs.ssf.dead-letter-sweep.title": {
     "en": "825439e56379bcb0",
     "text": "Shared Signals 無法遞送佇列清理"

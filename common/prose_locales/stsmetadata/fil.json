@@ -1404,8 +1404,8 @@
     "text": "NON-SPEC (#74). Lahat ng iginuguhit ng /admin/caches, bilang JSON: bawat nakarehistrong cache kasama ang laki, valid at expired na mga entry, hangganan, lifetime, mga setting, hit, miss at hit ratio nito; kapag may ?cache=, ang buod ng cache na iyon at isang page ng mga entry nito (page, per), bawat isa kasama ang realm, key at natitirang oras nito. Ang hindi kilalang pangalan ay sumasagot ng 200 na may found: false. Walang naka-cache na value sa sagot. Sinasalamin ang GET /admin/caches."
   },
   "stsmetadata.endpoints./admin-api/worker-pools.what": {
-    "en": "aa9d2b625e5ba68b",
-    "text": "NON-SPEC (#327). Lahat ng iginuguhit ng /admin/worker-pools, bilang JSON: ang request, hosted-surface at post-quantum pool ng node na ito, bawat isa kasama ang estado, kasalukuyan, abala, libre, maximum at paunang mga worker nito, ang mga crash, nabigong start at stop nito, at ang response time nito; ang post-quantum pool bawat process; sa isang cluster, bawat node ayon sa pangalan at ang mga total, ?node= para sa isa (#332). Sinasalamin ang GET /admin/worker-pools."
+    "en": "39bf096a70b38c7b",
+    "text": "NON-SPEC (#327). Lahat ng iginuguhit ng /admin/worker-pools, bilang JSON: ang request at hosted-surface pool ng node na ito, bawat isa ay isang set ng worker thread, kasama ang estado, kasalukuyan, abala, libre, maximum at paunang mga worker nito, ang mga crash, nabigong start at stop nito, at ang response time nito. Walang post-quantum pool mula noong #363. Sa isang cluster, bawat node ayon sa pangalan at ang mga total, ?node= para sa isa (#332). Sinasalamin ang GET /admin/worker-pools."
   },
   "stsmetadata.endpoints./admin-api/node-health.what": {
     "en": "8ad5e9e21c752f8d",

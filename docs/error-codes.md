@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4378** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4382** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -52,9 +52,9 @@ is an ordinary outcome.
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 92
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 49
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 50
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 83
-* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 31
+* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 87
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 18
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 143
@@ -93,7 +93,7 @@ is an ordinary outcome.
 * [User portal (`STS-PORTAL`)](#sts-portal) — 94
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
-* [Registries (`STS-REG`)](#sts-reg) — 176
+* [Registries (`STS-REG`)](#sts-reg) — 178
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -272,7 +272,7 @@ Raised from: common/request_pool.js, common/request_worker.ts, common/service_st
 | `STS-WORKER-0020` | The IPC channel to a request worker failed. | — |
 | `STS-WORKER-0021` | A request worker died holding answered write requests whose flush it had not reported, so those writes may not have reached the store. | — |
 | `STS-WORKER-0022` | A request worker exited or was killed with requests in flight; each was answered 502. | — |
-| `STS-WORKER-0023` | Request workers kept exiting immediately without serving anything, so the pool stopped forking them and every request is handled in the front process. | — |
+| `STS-WORKER-0023` | Request workers kept failing to start, so the pool stopped forking them. Unless workers.giveUpRetryMs is 0 it tries one again after that wait, doubled after each failed attempt and never longer than an hour. Until a worker is ready, requests stay in the front process (the hosted surfaces stay on the protocol workers). | — |
 | `STS-WORKER-0024` | The service refused to start: workers.dispatch names paths to hand to request workers but the process is not coordinating through a store, which would make workers answer from divergent private copies. | — |
 | `STS-WORKER-0025` | Not one request worker started, so every request is being handled in the front process. | — |
 | `STS-WORKER-0026` | Only some of the configured request workers started. | — |
@@ -299,6 +299,7 @@ Raised from: common/request_pool.js, common/request_worker.ts, common/service_st
 | `STS-WORKER-0047` *(retired)* | A request worker was SIGKILLed while the container cgroup's oom_kill count rose: the kernel's OOM killer ended it because the container reached its memory limit (#341). Retired by #364: a worker is a thread, and the kernel's OOM killer ends the whole process. | — |
 | `STS-WORKER-0048` | A heap limit was due for the front process and it could not restart itself with one (no process.execve, or the call failed), so it runs without a limit; its request workers still get one (#341). | — |
 | `STS-WORKER-0049` | A part of an operation's answer that a request worker sent ahead of it (#616: an LDAP search streaming its entries) could not be handed to the caller waiting in the front process — its socket write threw. The operation itself still ends with its answer. | — |
+| `STS-WORKER-0050` | After giving up, the pool scheduled another attempt to start one worker, after workers.giveUpRetryMs (doubled after each failed attempt, and never longer than an hour). Until a worker is ready, requests stay in the front process, or the hosted surfaces stay on the protocol workers. | — |
 
 ## STS-STORE
 
@@ -426,6 +427,7 @@ Raised from: cluster/.
 | `STS-CLUSTER-0024` | Sweeping the rate-limit windows whose time has passed failed; they are swept on a later count. | — |
 | `STS-CLUSTER-0025` | A node's heartbeat ran late by a heartbeat or more because its event loop was busy; a stall past the membership lifetime costs the node its membership. | — |
 | `STS-CLUSTER-0026` | Active-active mode was refused because global.publicBaseUrl is empty, so each node would name itself by the address it was reached on. | — |
+| `STS-CLUSTER-0027` | Reconciling this cluster's SPIFFE target groups with the running nodes' addresses failed; the groups stay as they were until the next run, and the service keeps serving (#323). | — |
 | `STS-CLUSTER-0040` | A cluster mode was configured with persistence.minted off, so nodes would not share sessions, pending sign-ins, codes or tokens; the service does not start. | — |
 | `STS-CLUSTER-0041` | Standing down from a lease early failed in the store; the lease expires on its own within one node lifetime, and this node does not renew it. | — |
 | `STS-CLUSTER-0162` | The store every node shares could not be asked to spend against a budget (a GNAP right's limits); the operation was refused (#432 phase 5). | — |
@@ -5031,6 +5033,8 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0356` | Adding an owner to an application was refused: it already names the most owners an application may (#604). | HTTP 400 (API) or a refusal on the application page |
 | `STS-REG-0357` | Taking an owner off an application was refused: the value is not one of its owners (#604). | HTTP 400 (API) or a refusal on the application page |
 | `STS-REG-0358` | An application's owners could not be written to the directory (#604). | HTTP 400 (API) or a refusal on the application page |
+| `STS-REG-0359` | An application was not created: the lifetime given for its first client secret is not a whole number of days from 0 to 730 (#394). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0360` | An application was not created: a client secret lifetime was given with no new client secret for it to apply to — oauthClientSecret empty, or a whole record carrying its own expiry (#394). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-DBG
 
