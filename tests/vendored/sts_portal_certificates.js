@@ -220,7 +220,10 @@ async function test() {
     const made = await apiPost("/users/create", {
       username: who, invent: false, credential: "password",
       password: PASSWORD,
-      attributes: { cn: "Portal Certificates " + who, sn: who,
+      // The realm's attribute policy (#396) requires givenName, sn and mail
+      // of every person in product mode.
+      attributes: { cn: "Portal Certificates " + who,
+                    givenName: "Portal", sn: who,
                     mail: who + "@portal-certificates.test" } });
     check(who + " is created with a password", function () {
       assert.strictEqual(made.status, 200,

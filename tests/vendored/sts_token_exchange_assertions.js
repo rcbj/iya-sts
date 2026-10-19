@@ -206,10 +206,14 @@ async function setup() {
   await ok(realmApi + "/pki/build", { organisation: "Exchange Assertion " +
                                       "Test", country: "US" },
            "built a certificate authority");
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
   for (const who of [ALICE, DAVE]) {
     await ok(realmApi + "/users/create",
              { username: who, invent: false,
-               attributes: { cn: who, sn: who } }, "created " + who);
+               attributes: { cn: who, givenName: "Exchange", sn: who,
+                             mail: who + "@" + REALM + ".example.net" } },
+             "created " + who);
   }
   const app = async function (identifier, fields) {
     log.debug("Entering app().");

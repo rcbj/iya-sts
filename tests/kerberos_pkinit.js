@@ -527,9 +527,11 @@ async function productScenario() {
   const P = 'pkmfa' + RUN;
   const K = 'pknokeys' + RUN;
   const PW = 'Correct-Horse-Battery-9!';
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
   [P, K].forEach(function (who) {
     c.ldap.createUser(who, { invent: false, attributes: {
-      mail: who + '@example.com' } });
+      givenName: 'Pk', sn: who, mail: who + '@example.com' } });
   });
   credentials.setPassword(P, PW);
   out.required = credentials.setMfaRequired(P, true).ok;

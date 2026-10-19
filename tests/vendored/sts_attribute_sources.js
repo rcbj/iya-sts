@@ -365,9 +365,12 @@ async function test() {
       await ok(realmApi + "/consent/grant-global-consent",
                { client: CLIENT, scope: one }, "consented " + one);
     }
+    // The realm's attribute policy (#396) requires givenName, sn and mail of
+    // every person in product mode.
     await ok(realmApi + "/users/create", { username: ALICE, invent: false,
       credential: "password", password: PASSWORD,
-      attributes: { cn: "Attr " + ALICE, givenName: "Attr", sn: "Source" } },
+      attributes: { cn: "Attr " + ALICE, givenName: "Attr", sn: "Source",
+                    mail: ALICE + "@attr-source.test" } },
       "created " + ALICE);
     await ok(realmApi + "/claims/add-attribute-claim", { set: "access_token",
       name: "cost_center", attribute: "costCenter" },

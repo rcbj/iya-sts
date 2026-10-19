@@ -111,14 +111,24 @@ async function ok(url, payload, what) {
   return r.body;
 }
 
+function ownerAttributes(who) {
+  log.debug("Entering ownerAttributes().");
+  log.debug("Leaving ownerAttributes().");
+  return { givenName: "Owner", sn: who,
+           mail: who + "@" + REALM + ".example.net" };
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("=== 0. a throwaway realm " + REALM + " ===");
   await ok(base + "/admin-api/realms/create", { id: REALM,
     domain: REALM + ".example.net", name: "Service accounts " + STAMP },
     "created the realm");
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode; a service account is exempt.
   await ok(realmApi + "/users/create", { username: OWNER, invent: false,
-    credential: "none" }, "created the owner");
+    credential: "none", attributes: ownerAttributes(OWNER) },
+    "created the owner");
 
   log.info("=== a. a refused owner creates nobody ===");
   const refused = await postJson(realmApi + "/users/create", {
@@ -180,7 +190,8 @@ async function test() {
 
   log.info("=== c2. more than one owner (#600) ===");
   await ok(realmApi + "/users/create", { username: OWNER_TWO, invent: false,
-    credential: "none" }, "created a second owner");
+    credential: "none", attributes: ownerAttributes(OWNER_TWO) },
+    "created a second owner");
   await ok(realmApi + "/users/set-service-account", { user: ACCOUNT,
     owners: [OWNER, OWNER_TWO] }, "named two owners");
   const two = await send(realmApi + "/users?user=" +

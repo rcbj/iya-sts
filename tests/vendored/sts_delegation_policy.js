@@ -668,12 +668,16 @@ async function test() {
            { id: REALM, domain: REALM + ".example.net",
              name: "Delegation policy" }, "created the realm");
   // ESB and BACK are WS-Trust requesters too: a person entry of the same
-  // name holds the password their UsernameToken carries.
+  // name holds the password their UsernameToken carries. The realm's
+  // attribute policy (#396) requires givenName, sn and mail of every person
+  // in product mode.
   for (const who of [ALICE, BOB, CAROL, ESB, BACK]) {
     await ok(realmApi + "/users/create",
              { username: who, invent: false, credential: "password",
                password: PASSWORD,
-               attributes: { cn: who, sn: who } }, "created " + who);
+               attributes: { cn: who, givenName: who, sn: who,
+                             mail: who + "@" + REALM + ".example.net" } },
+             "created " + who);
   }
   // Every application is a WS-Trust relying party (its URL its AppliesTo,
   // so a token about somebody can be issued FOR it) and a confidential

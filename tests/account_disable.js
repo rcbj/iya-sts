@@ -237,7 +237,13 @@ function childMain() {
          JSON.stringify(madeClient && (madeClient.errors || madeClient.ok)));
     const ALICE = 'ad-alice';
     const OTHER = 'ad-somebody-else';
-    ldap.createUser(ALICE, { invent: false });
+    // The realm's attribute policy (#396) requires givenName, sn and mail of
+    // every person in product mode, and product invents none of them.
+    const personAttributes = function (name) {
+      return { givenName: ['Ad'], sn: [name], mail: [name + '@example.test'] };
+    };
+    ldap.createUser(ALICE, { invent: false,
+                             attributes: personAttributes(ALICE) });
     // A REAL PASSWORD, which development ignores and product verifies — so in
     // product every refusal below is the disable and not a wrong password.
     const PASSWORD = 'Ad-' + crypto.randomBytes(6).toString('hex') +
@@ -261,7 +267,8 @@ function childMain() {
     // The other person D2 and F2 ask about, made the same way: in product a
     // principal nobody provisioned does not exist, so a control about them
     // needs them to.
-    ldap.createUser(OTHER, { invent: false });
+    ldap.createUser(OTHER, { invent: false,
+                             attributes: personAttributes(OTHER) });
     credentials.setPassword(OTHER, PASSWORD);
     if (PRODUCT) {
       // A product KDC derives a person's keys from the password when it is

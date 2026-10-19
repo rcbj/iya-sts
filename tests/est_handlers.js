@@ -310,8 +310,11 @@ async function childMain() {
   // --- 5. product mode passwords --------------------------------------------
   const strong = 'Est-Handlers-9x!Longer';
   await inRealm(P, function () {
+    // The realm's attribute policy (#396) requires givenName, sn and mail of
+    // every person in product mode.
     ldap.createUser(WHO + 'b', { invent: false,
-                             attributes: { mail: 'bob@esth.test' } });
+                             attributes: { mail: 'bob@esth.test',
+                                           givenName: 'Bob', sn: WHO + 'b' } });
     return credentials.setPassword(WHO + 'b', strong);
   });
   const bobCsr = await csr('ec-p256', 'CN=' + WHO + 'b', []);

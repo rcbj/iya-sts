@@ -298,10 +298,12 @@ async function test() {
            { identifier: SECOND, protocols: ["oauth2"],
              fields: { oauthClientId: SECOND } },
            "created a second application");
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
   await ok(realmApi + "/users/create",
            { username: PERSON, invent: false, credential: "none",
-             attributes: { cn: "Appcreds Subject", sn: PERSON,
-                           mail: PERSON + "@appcreds.test" } },
+             attributes: { cn: "Appcreds Subject", givenName: "Appcreds",
+                           sn: PERSON, mail: PERSON + "@appcreds.test" } },
            "created the person the assertions are about");
   await ok(realmApi + "/applications/add",
            { application: CLIENT, attribute: "oauthAssertionIssuer",

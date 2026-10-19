@@ -917,9 +917,14 @@ async function theTokenSaysBothHalves() {
   const person = "dpx-person-" + Date.now().toString(36);
   const password = "Dpx-" + require("crypto").randomBytes(12)
     .toString("base64url") + "-9a!";
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
   await ok("/users/create", { username: person, invent: false,
     credential: "password", password: password,
-    passwordConfirm: password }, "created the person the token is for");
+    passwordConfirm: password,
+    attributes: { givenName: "Dpx", sn: person,
+                  mail: person + "@dpx.example.test" } },
+    "created the person the token is for");
   const redirectUri = SPENDER_REDIRECT_URI;
   const granted = await registry.authorizationCode(base, {
     clientId: SPENDER.id, redirectUri: redirectUri, username: person,

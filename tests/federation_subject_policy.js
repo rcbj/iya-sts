@@ -331,9 +331,13 @@ function childMain() {
       });
     }
     // A person in the SP realm, with a password that verifies in product.
+    // The realm's attribute policy (#396) requires givenName, sn and mail of
+    // every person in product mode.
     function makePerson(name, mail) {
       return inSp(function () {
-        const made = ldap.createUser(name, { invent: false });
+        const made = ldap.createUser(name, { invent: false, attributes: {
+          givenName: 'Subject', sn: name,
+          mail: mail || name + '@sp.example' } });
         const stored = ldap.existingUserEntry(name);
         if (stored && mail) {
           ldap.writePerson(stored.dn, Object.assign({}, stored.attributes,
@@ -768,9 +772,14 @@ function childMain() {
     const IVY = 'fsp-ivy-' + MODE;
     const ivySub = partnerSubjectOf(IVY);
     const EXT = 'urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User';
-    const scimBody = { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User',
-                                 EXT],
-                       userName: IVY };
+    // name and emails: the attribute policy (#396), in product mode — on
+    // the create and on every PUT, which replaces the whole resource.
+    const ivyNames = { name: { givenName: 'Ivy', familyName: IVY },
+                       emails: [{ value: IVY + '@sp.example',
+                                  type: 'work' }] };
+    const scimBody = Object.assign({
+      schemas: ['urn:ietf:params:scim:schemas:core:2.0:User', EXT],
+      userName: IVY }, ivyNames);
     scimBody[EXT] = { federationLinks: [{ relationship: REL,
                                           subject: ivySub }] };
     jar = {};
@@ -789,7 +798,10 @@ function childMain() {
     got = await signIn(IVY, {});
     note(got.r.status === 200, '8b. and a pre-linked relationship signs ' +
          'them in', got.r.status + ' ' + got.r.text.slice(0, 200));
-    const bad = { schemas: scimBody.schemas, userName: 'fsp-bad-' + MODE };
+    const bad = { schemas: scimBody.schemas, userName: 'fsp-bad-' + MODE,
+                  name: { givenName: 'Bad', familyName: 'fsp-bad-' + MODE },
+                  emails: [{ value: 'fsp-bad-' + MODE + '@sp.example',
+                             type: 'work' }] };
     bad[EXT] = { federationLinks: [{ relationship: 'no-such-rel',
                                      subject: 'x' }] };
     jar = {};
@@ -799,7 +811,8 @@ function childMain() {
          '8c. a link through no relationship is refused 400 and creates ' +
          'nobody', scim.status + ' ' + scim.text.slice(0, 200));
     const ivyId = attr(entryOf(IVY), 'entryUUID')[0];
-    const put = { schemas: scimBody.schemas, userName: IVY };
+    const put = Object.assign({ schemas: scimBody.schemas, userName: IVY },
+                              ivyNames);
     put[EXT] = { federationLinks: [] };
     const sessionsBefore = fedSessionsOf(IVY).length;
     jar = {};

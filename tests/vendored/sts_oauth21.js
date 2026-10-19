@@ -306,8 +306,9 @@ async function setUp() {
     await ok(base + prefix + "/admin-api/users/create",
              { username: PERSON, invent: false, credential: "password",
                password: PASSWORD,
-               attributes: { cn: "OAuth 2.1 Person", sn: PERSON,
-                             mail: PERSON + "@oauth21.test" } },
+               // givenName, sn and mail: the attribute policy (#396).
+               attributes: { cn: "OAuth 2.1 Person", givenName: "OAuth",
+                             sn: PERSON, mail: PERSON + "@oauth21.test" } },
              "created the person who signs in, in " + prefix);
   }
   // DECLARES NOTHING: an entry with a client_id and no protocol family, no

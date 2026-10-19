@@ -85,7 +85,10 @@ async function run(t) {
   config.setOverride('global.mode', 'product');
   config.setOverride('risk.breachCheck', 'on');
   try {
-    ldap.createUser('bp-carol', { invent: false });
+    // The realm's attribute policy (#396) requires givenName, sn and mail of
+    // every person in product mode, and product invents none of them.
+    ldap.createUser('bp-carol', { invent: false, attributes: {
+      givenName: 'Carol', sn: 'bp-carol', mail: 'bp-carol@example.test' } });
 
     // --- A. k-anonymity ----------------------------------------------------
     const first = await breached.screen(BREACHED);

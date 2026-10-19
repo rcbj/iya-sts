@@ -663,7 +663,11 @@ function bindChild() {
       const d = require(ROOT + '/ldap/ldap_server.js');
       const credentials = require(ROOT + '/common/credentials');
       const persistence = require(ROOT + '/persistence/persistence');
-      const made = d.createUser('bind-limited', { origin: 'test' });
+      // The realm's attribute policy (#396) requires givenName, sn and mail
+      // of every person in product mode, and invents none of them.
+      const made = d.createUser('bind-limited', { origin: 'test',
+        attributes: { givenName: 'Bind', sn: 'Limited',
+                      mail: 'bind-limited@example.com' } });
       const pw = credentials.setPassword('bind-limited',
                                          'Correct-Horse-9-Battery');
       note(made && made.ok && pw && pw.ok, 'F0. a product-mode person to ' +
