@@ -1562,7 +1562,13 @@ still denied: `RequestDenied` with `STS-SAML-0112` (risk) or `0100` / `0107`
 (mechanism); SAML 1.1's page with `STS-SAML-0115` or `0102` / `0109`.
 
 `tests/saml_initiation.js` holds all of it over HTTP, risk included (a
-session's risk put in place directly, with `risk.enforceInDevelopment`).
+session's risk put in place directly, with `risk.enforceInDevelopment`),
+and runs the risk step-up a second time in product mode (#715).
+**`tests/vendored/sts_idp_initiated_saml.js` is the product-mode
+coverage of the rest** (#715): the two switches of both profiles, the
+realm setting, InResponseTo absent, the relying party in the logout
+inventory and the mechanism re-prompt, over the wire in `single-node`
+and `cluster`, with real passwords and registered addresses.
 The local jobs that send an unsolicited Response — the three SAML peers and
 `sts_xml_schema_validation.js` — and `sts_global_logout.js`'s TARGET-only
 SAML 1.1 flow set the entry's switch on the application they create.
