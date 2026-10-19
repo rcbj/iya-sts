@@ -6145,7 +6145,11 @@ function create(options) {
     // One backfill page, one transaction. The body is read again under the
     // lock: a commit since the page was opened is not indexed from the
     // ciphertext that was opened. `complete` writes the mark in this same
-    // transaction, and only the last page passes it.
+    // transaction, and only the last page passes it. Before the mark, index
+    // rows whose session body is missing or a tombstone are deleted. The
+    // mark has no body, so it is excluded. A resumed walk's new head would
+    // otherwise hide an older build's delete, and a purged tombstone is
+    // not in the change log to replay (#350).
     writeSessionIndexes: function (rows, complete) {
       log.debug("Entering writeSessionIndexes().");
       log.debug("Leaving writeSessionIndexes().");
@@ -6170,6 +6174,16 @@ function create(options) {
           });
         });
         if (complete) {
+          chain = chain.then(function () {
+            return client.query(
+              'DELETE FROM sts_sessions AS s WHERE NOT ' +
+              '(s.realm = $1 AND s.key = $2) AND NOT EXISTS ' +
+              '(SELECT 1 FROM sts_minted AS m WHERE m.handle = $3 AND ' +
+              'm.realm = s.realm AND m.key = s.key AND m.body <> $4)',
+              [SESSION_INDEX_MARK_REALM, SESSION_INDEX_MARK_KEY,
+               'authn.sessions', TOMBSTONE]
+            );
+          });
           chain = chain.then(function () {
             return upsertSessionIndex(client, SESSION_INDEX_MARK_REALM,
                                       SESSION_INDEX_MARK_KEY,

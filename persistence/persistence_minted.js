@@ -2643,16 +2643,24 @@ function backfillSessionIndex() {
     if (done) {
       return null;
     }
-    // Before the first page, so a commit during the walk stays above the
-    // follower's high-water and repairSessionIndex still sees it.
+    // Sampled before the first page, so a commit during the walk stays
+    // above the follower. Published only after the walk returns: the last
+    // transaction has then deleted index rows whose body is gone, and a
+    // resume's fresh head is not a floor while those rows remain (#350).
     const seq = typeof active.latestChangeSeq === 'function'
       ? active.latestChangeSeq() : null;
     return Promise.resolve(seq).then(function (n) {
+      let sampled = null;
       if (seq !== null) {
         const parsed = Number(n);
-        sessionIndexFloor = Number.isFinite(parsed) ? parsed : 0;
+        sampled = Number.isFinite(parsed) ? parsed : 0;
       }
-      return fillFrom('', '');
+      return fillFrom('', '').then(function () {
+        if (sampled !== null) {
+          sessionIndexFloor = sampled;
+        }
+        return null;
+      });
     });
   }).catch(mark);
 }

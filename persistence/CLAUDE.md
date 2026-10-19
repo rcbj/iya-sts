@@ -2564,8 +2564,13 @@ batches of 500 until a completion row commits with the last page. A
 non-empty table is not that mark: another node may already have written a
 live row, and a throw leaves the mark unwritten so the next start walks
 again. A throw is fatal, and a page that has committed is not reported as
-nothing changed. The follower starts at the change seq taken before the
-walk, so a commit during it still reaches the index repair. SQL cannot
+nothing changed. The last page's transaction deletes index rows whose
+session body is missing or a tombstone, and does not delete the completion
+row: a resume's new head would hide an older build's delete, and a body
+`purgeTombstones` already removed is not in the change log. That head is
+published as the follower's floor only after the transaction commits. The
+follower starts at the change seq taken before the walk, so a commit during
+it still reaches the index repair. SQL cannot
 open the bodies. Memory and LDIF are unchanged, and the full in-memory map
 stays resident.
 

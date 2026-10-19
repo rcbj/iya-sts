@@ -447,6 +447,20 @@ async function sqlHalf(t) {
   t.check(pageTx.indexOf(locked[0]) < pageTx.indexOf(inserts[0]) &&
           pageTx.indexOf(inserts[0]) < pageTx.indexOf(inserts[1]),
           'the lock precedes both inserts');
+  const swept = matching(pageTx, /DELETE FROM sts_sessions AS s/i);
+  t.equal(swept.length, 1,
+          'the last page drops index rows with no live body');
+  t.check(swept[0].sql.indexOf('m.body <>') >= 0,
+          'a tombstone counts as no live body');
+  t.equal(swept[0].params[0], '', 'the sweep keeps the mark realm');
+  t.equal(swept[0].params[1], '$session-index-complete$',
+          'and does not delete the mark');
+  t.equal(swept[0].params[2], 'authn.sessions',
+          'and only considers session bodies');
+  t.equal(swept[0].params[3], TOMBSTONE, 'against the tombstone body');
+  t.check(pageTx.indexOf(inserts[0]) < pageTx.indexOf(swept[0]) &&
+          pageTx.indexOf(swept[0]) < pageTx.indexOf(inserts[1]),
+          'the sweep sits between the page and the mark');
 
   statements.length = 0;
   answer.selectBody = 'cipher-b';
@@ -458,6 +472,8 @@ async function sqlHalf(t) {
           'a changed body is still locked');
   t.check(!matching(skipTx, sessionInsert).length,
           'and is not indexed from the ciphertext that was opened');
+  t.check(!matching(skipTx, /DELETE FROM sts_sessions AS s/i).length,
+          'a page that is not last does not sweep');
 
   statements.length = 0;
   answer.selectBody = TOMBSTONE;
@@ -749,6 +765,8 @@ async function backfillCases(t, handle) {
   t.check(order.indexOf('seq') >= 0 &&
           order.indexOf('seq') < order.indexOf('load'),
           'the change seq is taken before the first page');
+  t.equal(minted.sessionIndexChangeFloor(), null,
+          'a walk that throws publishes no floor');
 
   const full = [];
   for (let i = 0; i < 500; i++) {
@@ -798,6 +816,8 @@ async function backfillCases(t, handle) {
           'and it is not marked finished');
   t.equal(splitFailed.sessionIndexCommitted, true,
           'the throw says a page has committed');
+  t.equal(minted.sessionIndexChangeFloor(), null,
+          'a resume head is not the floor until the mark commits');
 
   const okPages = [[good]];
   const okWrote = [];
