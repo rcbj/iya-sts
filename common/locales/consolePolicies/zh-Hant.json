@@ -109,7 +109,7 @@
   "schemaTable.theProfile": "設定檔",
   "schemaTable.aPerson": "人員",
   "attributes.heading": "屬性原則 — 預設設定檔",
-  "attributes.lead": "此領域中每個人都必須有值的屬性，以及此領域自己的自訂屬性。<code>uid</code>、<code>cn</code> 和 <code>sn</code> 一律必填；勾選此處可以賦予人員的任何其他屬性。建立時沒有 <code>cn</code> 的人員會取得一個由其名字和姓氏組成的 <code>cn</code>。在某個屬性成為必填之前建立的人員仍可使用所有其他入口，也不會因此被拒絕登入。",
+  "attributes.lead": "此領域中每個人都必須有值的屬性，以及此領域自己的自訂屬性。<code>uid</code>、<code>cn</code> 和 <code>sn</code> 一律必填；勾選此處可以賦予人員的任何其他屬性。建立時沒有 <code>cn</code> 的人員會取得一個由其名字和姓氏組成的通用名稱。在某個屬性成為必填之前建立的人員仍可使用所有其他入口，也不會因此被拒絕登入。",
   "attributes.enforced": "<strong>已強制執行。</strong>此領域處於 product 模式，因此每個建立人員的入口——此主控台、<code>/admin-api</code>、SCIM、LDAP 新增、首次聯合登入、大量匯入——都會拒絕缺少必填屬性的人員，編輯也不能移除必填屬性。",
   "attributes.notEnforced": "<strong>未強制執行。</strong>此領域處於開發模式，只需使用者名稱即可建立人員。清單仍會儲存並顯示。請在以下頁面用 <code>global.mode</code> 切換領域：",
   "attributes.fromRealm": "此領域自己的設定檔<strong>儲存</strong>在 <code>{dn}</code>。移除它會使此領域回到預設領域的設定檔；若預設領域沒有，則回到內建預設值。",

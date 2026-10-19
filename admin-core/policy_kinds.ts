@@ -507,7 +507,8 @@ PolicyKinds.register({
                    'against and whether it holds several values. It is then ' +
                    'editable on a person\'s page and through ' +
                    '`/admin-api/users/*-attribute`, settable at a create, ' +
-                   'and may be required by this policy. **The realm\'s own**: ' +
+                   'and may be required by this policy. **The realm\'s ' +
+                   'own**: ' +
                    'not inherited from the default realm. The name is an ' +
                    'RFC 4512 descr of at most 64 characters, and may not be ' +
                    'a name the directory already knows, `memberOf`, or ' +

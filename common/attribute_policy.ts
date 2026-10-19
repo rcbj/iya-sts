@@ -1233,9 +1233,8 @@ class AttributePolicy {
                     'yes or no (single or multiple); "' +
                     multiText.slice(0, 32) + '" is neither.');
     }
-    const description = String(given.description === undefined ? ''
-                                                               : given.description)
-      .trim();
+    const description = String(given.description === undefined
+      ? '' : given.description).trim();
     if (description.length > 1024 || CONTROL.test(description)) {
       problems.push('A description is at most 1024 characters with no ' +
                     'control character.');
