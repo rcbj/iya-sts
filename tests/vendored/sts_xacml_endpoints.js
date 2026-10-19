@@ -420,6 +420,10 @@ async function decisionFor(subject, action, resource) {
 // certificate built differently from the one the product uses.
 // ---------------------------------------------------------------------------
 const credentials = require("../tools/pep-credential.js");
+// Roots this job posted. Removed when it finishes, pass or fail (#335): the
+// truststore is service-wide, holds 32, and a realm does not take an anchor
+// with it. tests/CLAUDE.md.
+const addedAnchors = [];
 
 var trusted = null;   // the identity this file registers with — REMOTE_PEPS
 var rogue = null;     // verified, and in no group
@@ -458,6 +462,7 @@ async function mintTheCredentials() {
       "file just built; it answered " + posted.status + " " +
       String(posted.why || posted.body).slice(0, 200) + ". Without the " +
       "anchor every assertion below is about an unverified certificate.");
+    addedAnchors.push(one.anchorPem);
   }
   log.info("Minted a REMOTE_PEPS credential for " + trusted.subject +
            ", an XACML_USER one for " + xacmlUser.subject +
@@ -1799,9 +1804,9 @@ async function theRepositoryIsPerRealm() {
 // The old argument for removing it was that a realm left behind with
 // `xacml.enabled: false` on it must not be met by a later run of this same
 // file. That is answered by the ID rather than by the teardown: it carries
-// `names.runStamp()`, so a second run mints a second realm. Nothing here is
-// process-wide except the truststore anchor, which is posted once and shared
-// on purpose.
+// `names.runStamp()`, so a second run mints a second realm. The truststore
+// anchors this file posts are process-wide; they are removed when the job
+// finishes, pass or fail (#335). The realm is still left standing.
 // ---------------------------------------------------------------------------
 async function createTheRealm() {
   log.debug("Entering createTheRealm().");
@@ -2357,7 +2362,14 @@ program
   .parse(process.argv);
 base = String(program.opts().url || base).replace(/\/+$/, "");
 
-test().catch(function (e) {
+test().then(function () {
+  return credentials.settleAnchors(base, addedAnchors, null);
+}, function (e) {
+  // Cleanup still runs, and the original failure is passed through
+  // settleAnchors(), which rethrows it.
+  log.debug("Caught in test(): " + ((e && e.message) || e));
+  return credentials.settleAnchors(base, addedAnchors, e);
+}).catch(function (e) {
   log.error(e.stack || e.message);
   process.exit(1);
 });

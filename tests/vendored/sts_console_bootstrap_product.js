@@ -40,8 +40,8 @@
 // **ITS REALM IS LEFT STANDING**, by `tests/CLAUDE.md`'s rule. The default
 // realm is touched only by a certificate sign-in, which grants nothing and —
 // in product, the one mode the `admin` half runs in — claims nothing. The
-// certificate's anchor is added to the default realm's truststore, as
-// `sts_global_logout.js` adds its own.
+// certificate's anchor is added to the service-wide truststore and removed
+// when the job finishes (#335), as `sts_global_logout.js` does with its own.
 // ===========================================================================
 
 "use strict";
@@ -54,6 +54,10 @@ const { Command, Option } = require("commander");
 const { usernameFor, runStamp } = require("./random_username.js");
 const consoleSignIn = require("./console_signin.js");
 const facts = require("./service_facts.js");
+const credentials = require("../tools/pep-credential.js");
+// CAs this job posts. Removed when it finishes, pass or fail (#335). The
+// truststore is service-wide and holds 32. tests/CLAUDE.md.
+const addedAnchors = [];
 
 var appconfig;
 let appconfigProblem = null;
@@ -431,6 +435,7 @@ async function signInWithCertificate(commonName) {
   assert.strictEqual(added.status, 200,
     "adding this job's CA through POST /admin-api/tls/trust/add answered " +
     added.status + " " + added.text.slice(0, 200));
+  addedAnchors.push(pki.caPem);
   // THE ANCHOR IS APPLIED WITH `setSecureContext()` AND THE NEXT HANDSHAKE IS
   // JUDGED AGAINST IT, so a sign-in in the same tick can meet the old
   // context — retried, as `sts_global_logout.js` retries it, on a sign-in that
@@ -706,7 +711,14 @@ program
   .parse(process.argv);
 base = String(program.opts().url || base).replace(/\/+$/, "");
 
-test().catch(function (e) {
+test().then(function () {
+  return credentials.settleAnchors(base, addedAnchors, null);
+}, function (e) {
+  // Cleanup still runs, and the original failure is passed through
+  // settleAnchors(), which rethrows it.
+  log.debug("Caught in test(): " + ((e && e.message) || e));
+  return credentials.settleAnchors(base, addedAnchors, e);
+}).catch(function (e) {
   log.error(e.stack || e.message);
   process.exit(1);
 });

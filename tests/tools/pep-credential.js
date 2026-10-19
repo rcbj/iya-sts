@@ -120,6 +120,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
+const crypto = require('crypto');
 const { URL } = require('url');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
@@ -268,6 +269,94 @@ function send(where, type, body, extraHeaders, verify) {
       resolve({ ok: false, why: error.message });
     });
     request.end(body);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// REMOVE AN ANCHOR THIS PROCESS ADDED (#335).
+//
+// The client truststore is service-wide and holds 32. A job that posts a
+// suite CA removes it when the job finishes, pass or fail. The command-line
+// `main()` does not: the remote PEP needs that anchor for the rest of the
+// run, and `deploy/aws/reset-environment.js` spares it by fingerprint.
+// ---------------------------------------------------------------------------
+function removeAnchor(url, pem) {
+  log.debug("Entering removeAnchor().");
+  const base = String(url || '').replace(/\/+$/, '');
+  const token = process.env.STS_ADMIN_API_TOKEN || '';
+  let fingerprint = '';
+  try {
+    fingerprint = new crypto.X509Certificate(pem).fingerprint256;
+  } catch (error) {
+    // A PEM this process cannot read is one failed remove, reported to
+    // forgetAnchors(), rather than an exception that skips the rest of
+    // the list.
+    log.debug("Caught in removeAnchor(): " +
+              ((error && error.message) || error));
+    log.debug("Leaving removeAnchor(). Not a certificate.");
+    return Promise.resolve({ ok: false,
+                             why: 'the anchor is not a certificate' });
+  }
+  log.debug("Leaving removeAnchor().");
+  return send(base + '/admin-api/tls/trust/remove', 'application/json',
+    JSON.stringify({ fingerprint: fingerprint }),
+    token ? { Authorization: 'Bearer ' + token } : {}, true)
+    .then(function (answer) {
+      if (!answer.ok) {
+        answer.why = 'POST /admin-api/tls/trust/remove answered ' +
+          (answer.status || answer.why) + ' ' +
+          String(answer.body || '').slice(0, 200) +
+          (token ? '' : ' (no STS_ADMIN_API_TOKEN was set)');
+      }
+      return answer;
+    });
+}
+
+function forgetAnchors(url, pems) {
+  log.debug("Entering forgetAnchors().");
+  const list = Array.isArray(pems) ? pems.filter(Boolean) : [];
+  log.debug("Leaving forgetAnchors().");
+  return list.reduce(function (chain, pem) {
+    return chain.then(function (problems) {
+      return removeAnchor(url, pem).then(function (answer) {
+        if (!answer.ok) {
+          problems.push(answer.why || ('HTTP ' + answer.status));
+        }
+        return problems;
+      });
+    });
+  }, Promise.resolve([]));
+}
+
+// `failed` is the error the job already threw, or null when it passed. A
+// remove that fails after a passing job fails the job. A remove that fails
+// after a job that already failed is logged and the original error is kept.
+function settleAnchors(url, pems, failed) {
+  log.debug("Entering settleAnchors().");
+  log.debug("Leaving settleAnchors().");
+  return forgetAnchors(url, pems).then(function (problems) {
+    if (problems.length && failed) {
+      log.warn("the trust anchors this job added were not removed: " +
+               problems.join("; ") + "; the job had already failed");
+      throw failed;
+    }
+    if (problems.length) {
+      throw new Error("the trust anchors this job added were not removed: " +
+                      problems.join("; "));
+    }
+    if (failed) {
+      throw failed;
+    }
+  }, function (error) {
+    log.debug("Caught in settleAnchors(): " +
+              ((error && error.message) || error));
+    if (failed) {
+      log.warn("removing the trust anchors this job added failed: " +
+               ((error && error.message) || error) +
+               "; the job had already failed");
+      throw failed;
+    }
+    throw error;
   });
 }
 
@@ -506,9 +595,10 @@ async function main() {
   log.debug("Leaving main().");
 }
 
-// Guarded so that a test can require this file for `mint()` and `trustAnchor()`
-// without it parsing arguments and writing files — the same guard
-// `xacml-pep/pep.js` and `common/request_worker.ts` carry, for the same reason.
+// Guarded so that a test can require this file for `mint()`, `trustAnchor()`,
+// `removeAnchor()`, `forgetAnchors()` and `settleAnchors()` without it parsing
+// arguments and writing files — the same guard `xacml-pep/pep.js` and
+// `common/request_worker.ts` carry, for the same reason.
 if (require.main === module) {
   main().catch(function (error) {
     process.stderr.write((error && error.stack ? error.stack : String(error)) +
@@ -518,4 +608,6 @@ if (require.main === module) {
 }
 
 module.exports = { mint: mint, trustAnchor: postAnchor,
+                   removeAnchor: removeAnchor, forgetAnchors: forgetAnchors,
+                   settleAnchors: settleAnchors,
                    DEFAULT_SUBJECT: DEFAULT_SUBJECT };

@@ -107,6 +107,9 @@ const names = require("./random_username.js");
 const krb5 = require("./krb5_drive.js");
 const facts = require("./service_facts.js");
 const anchors = require("../tools/pep-credential.js");
+// The two scenario CAs this job posts. Removed when it finishes, pass or
+// fail (#335). The truststore is service-wide and holds 32. tests/CLAUDE.md.
+const addedAnchors = [];
 const fixtures = require("./oauth_fixtures.js");
 
 var appconfig;
@@ -717,6 +720,7 @@ async function x509(username) {
     (installed.status || "") + " " + String(installed.why ||
                                             installed.body || "")
       .slice(0, 200));
+  addedAnchors.push(pki.caPem);
 
   // **THE MAIN PORT, SINCE 2026-09-16.** This dialled `STS_MTLS_PORT` (9443),
   // the listener that required a client certificate at the handshake; it and
@@ -1431,7 +1435,14 @@ program
   .parse(process.argv);
 base = String(program.opts().url || base).replace(/\/+$/, "");
 
-test().catch(function (e) {
+test().then(function () {
+  return anchors.settleAnchors(base, addedAnchors, null);
+}, function (e) {
+  // Cleanup still runs, and the original failure is passed through
+  // settleAnchors(), which rethrows it.
+  log.debug("Caught in test(): " + ((e && e.message) || e));
+  return anchors.settleAnchors(base, addedAnchors, e);
+}).catch(function (e) {
   log.error(e.stack || e.message);
   process.exit(1);
 });

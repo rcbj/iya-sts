@@ -41,6 +41,10 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
+const credentials = require("../tools/pep-credential.js");
+// The root section 4 posts. Removed when the job finishes, pass or fail
+// (#335). The truststore is service-wide and holds 32. tests/CLAUDE.md.
+const addedAnchors = [];
 
 var appconfig;
 let appconfigProblem = null;
@@ -362,7 +366,7 @@ async function resumption() {
   log.debug("Entering resumption().");
   log.info("== 4. A session made with a client certificate resumes, on any " +
            "node, and the certificate still signs its holder in");
-  const pki = await require("../tools/pep-credential.js").mint({
+  const pki = await credentials.mint({
     rootSubject: "CN=pooling test Root " + STAMP + ",O=iya-sts tests",
     issuingSubject: "CN=pooling test Issuing CA " + STAMP + ",O=iya-sts tests",
     subject: "CN=pooling-" + STAMP + ",O=iya-sts tests"
@@ -380,6 +384,7 @@ async function resumption() {
   assert.strictEqual(added.status, 200,
     "adding the test Root through POST /admin-api/tls/trust/add answered " +
     added.status + " " + added.text.slice(0, 200));
+  addedAnchors.push(pki.anchorPem);
 
   const ask = [
     { path: "/admin-api/cluster",
@@ -470,6 +475,13 @@ async function main() {
 }
 
 main().then(function () {
+  return credentials.settleAnchors(base, addedAnchors, null);
+}, function (e) {
+  // Cleanup still runs, and the original failure is passed through
+  // settleAnchors(), which rethrows it.
+  log.debug("Caught in main(): " + ((e && e.message) || e));
+  return credentials.settleAnchors(base, addedAnchors, e);
+}).then(function () {
   process.exit(0);
 }, function (e) {
   log.error("sts_main_port_pooling FAILED: " + ((e && e.stack) || e));
