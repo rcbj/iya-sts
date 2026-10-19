@@ -209,7 +209,10 @@ class LaunchLinks {
   static launchUrl(base: string, identifier: string,
                    protocol: string): string {
     helpers.log.debug("Entering LaunchLinks.launchUrl().");
-    const url = String(base || '') + '/launch/' +
+    // THE DOOR IS THE SIGN-IN SERVICE'S (`hosted_applications.js`), and the
+    // portal and the console that draw this link may be on other listeners
+    // (#472): the link is built where `authn` is advertised.
+    const url = helpers.rebaseTo(String(base || ''), 'authn') + '/launch/' +
       encodeURIComponent(String(identifier || '')) +
       (protocol ? '?protocol=' + encodeURIComponent(protocol) : '');
     helpers.log.debug("Leaving LaunchLinks.launchUrl().");
@@ -241,19 +244,25 @@ class LaunchLinks {
       return String((Array.isArray(value) ? value[0] : value) || '');
     };
     const there = String(target || '');
+    // EACH ENDPOINT IS ITS PROTOCOL'S APPLICATION'S (#472), which need not
+    // be on the listener the door answered on: the URL is built where that
+    // application is advertised.
     let url = '';
     if (protocol === 'saml2') {
       const sp = first('samlEntityId') || identifier;
-      url = base + '/saml2/unsolicited/' + encodeURIComponent(sp) +
+      url = helpers.rebaseTo(base, 'saml2') + '/saml2/unsolicited/' +
+        encodeURIComponent(sp) +
         (there ? '?target=' + encodeURIComponent(there) : '');
     } else if (protocol === 'saml11') {
       const rp = first('samlEntityId') || identifier;
-      url = base + '/saml11/sso/' + encodeURIComponent(rp) +
+      url = helpers.rebaseTo(base, 'saml11') + '/saml11/sso/' +
+        encodeURIComponent(rp) +
         '?providerId=' + encodeURIComponent(rp) +
         (there ? '&TARGET=' + encodeURIComponent(there) : '');
     } else if (protocol === 'wsfed') {
       const realm = first('wsfedRealm') || identifier;
-      url = base + '/wsfed/initiate/' + encodeURIComponent(realm) +
+      url = helpers.rebaseTo(base, 'ws-federation') + '/wsfed/initiate/' +
+        encodeURIComponent(realm) +
         (there ? '?wctx=' + encodeURIComponent(there) : '');
     }
     helpers.log.debug("Leaving LaunchLinks.endpointUrl().");

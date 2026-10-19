@@ -102,6 +102,18 @@ sign-in screen comes round a second time and must still count.
 `redirect_uri` is not offered (rcbj on #426): it carries no `state` and no
 `nonce`, so a client cannot tell one it was sent from a forged one.
 
+## Where it is served: the sign-in service's, and pinned in a cell
+
+`/launch` is in the `authn` hosted application (`common/hosted_applications.js`,
+rule 3cg), because it reads and writes the sign-on session and begins the
+sign-in; so `LaunchLinks.launchUrl()` builds the link with
+`helpers.rebaseTo(base, 'authn')`, and `endpointUrl()` each protocol endpoint
+with its own application's (`saml2`, `saml11`, `ws-federation`) — the portal,
+the console and the door may each be on a different listener (#472). In a
+service deployed as cells its `common/cell_placement.ts` row is `affinity`,
+browser-pinned, as `/logout` is: the session it reads, and the OpenID Connect
+launch it records on it, are where the browser is pinned.
+
 ## Which protocol, when the link does not say
 
 `?protocol=` when given (400 if it is not one of the four, 404 if the

@@ -177,6 +177,13 @@ const ROWS: Row[] = [
     why: 'a wallet sign-in\'s acts (#574): its transaction, the pending ' +
          'sign-in it is bound to and the binding cookie\'s hash are where ' +
          'the browser that started it is pinned; no login name is typed' },
+  // THE IDENTITY-PROVIDER-INITIATED DOOR (#426): it reads the sign-on
+  // session, or begins one, and records an OpenID Connect launch on it, so
+  // it is served where the browser is pinned, as /logout is; a browser with
+  // no session starts the sign-in that D9 restarts at home.
+  { prefix: '/launch', strategy: 'affinity', browser: true,
+    why: 'a launch starts a sign-in on the session where the browser is ' +
+         'pinned, and records an OpenID Connect launch on that session' },
   { prefix: '/authn/fingerprint.js', strategy: 'local',
     why: 'a static script' },
   { prefix: '/logout', strategy: 'affinity', browser: true,
