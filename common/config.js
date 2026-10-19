@@ -1169,7 +1169,7 @@ const SETTINGS = [
   // RUNTIME: tls_server.js updates the server's SETTINGS for the next
   // session and sends them to every open one.
   { key: 'http.http2MaxConcurrentStreams', group: 'HTTP connections',
-    label: 'HTTP/2 streams per connection',
+    label: 'Streams per HTTP/2 connection',
     env: 'STS_HTTP_HTTP2_MAX_CONCURRENT_STREAMS', type: 'int', dflt: 100,
     min: 1, max: 1000, runtime: true, perProcess: true,
     description: 'How many requests one HTTP/2 connection may have open at ' +

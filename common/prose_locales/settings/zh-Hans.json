@@ -108,8 +108,8 @@
     "text": "空闲连接保持时间（秒）"
   },
   "http.keepAliveTimeoutS|description": {
-    "en": "15ba4c34c3d3349e",
-    "text": "HTTP 监听器为等待客户端下一个请求而保持空闲 HTTP/1.1 连接打开的时长（秒）（node 自身的默认值为 5）。保持连接就省去了一次 TLS 握手——以及一次客户端证书提示。客户端在一个连接上流水线发送的请求按顺序应答。位于负载均衡器后面时，请使其空闲超时大于此值。"
+    "en": "0fa763b61550474c",
+    "text": "HTTP 监听器为等待客户端下一个请求而保持空闲连接打开的时长（秒）（node 自身的默认值为 5）：即请求之间的 HTTP/1.1 连接，或没有任何帧经过的 HTTP/2 连接，后者随后会被平稳关闭。保持连接就省去了一次 TLS 握手——以及一次客户端证书提示。客户端在一个连接上流水线发送的请求按顺序应答。位于负载均衡器后面时，请使其空闲超时大于此值。"
   },
   "http.headersTimeoutS|label": {
     "en": "af0b2f7be18e5943",
@@ -142,6 +142,14 @@
   "http.http2|description": {
     "en": "76d7c1691efa23fa",
     "text": "当客户端在 TLS 握手中（ALPN）请求 HTTP/2 时，HTTPS 监听器是否提供它。开启（默认值）时，一个连接承载浏览器并行发出的所有请求；对于只请求 HTTP/1.1 的客户端，仍以 HTTP/1.1 应答。关闭时，每个连接都是 HTTP/1.1——适用于 HTTP/2 行为异常的客户端或负载均衡器。新连接立即遵循更改；已打开的连接保持其协议。纯 HTTP 的吊销监听器只支持 HTTP/1.1，因为没有可以提供它的握手。"
+  },
+  "http.http2MaxConcurrentStreams|label": {
+    "en": "27fcdca12afd105b",
+    "text": "每个 HTTP/2 连接的流数"
+  },
+  "http.http2MaxConcurrentStreams|description": {
+    "en": "ec218fbbb4297601",
+    "text": "一个 HTTP/2 连接可同时打开的请求数（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的流会被拒绝，直到有流结束。默认值 100 是 RFC 9113 建议的最小值；node 自身的值没有上限，这会让一个连接承载成千上万个连接的工作量。它限制一个连接上的工作量，正如 http.maxConnections 限制连接数。新连接会立即遵循更改，已打开的连接会收到新值。"
   },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
@@ -10472,24 +10480,24 @@
     "text": "主端口：空闲连接保持时长（秒）"
   },
   "listenerMain.keepAliveTimeoutS|description": {
-    "en": "d48d22c3af904939",
-    "text": "仅针对主端口监听器：http.keepAliveTimeoutS。-1（默认值）时遵循 http.keepAliveTimeoutS；其他任何值只对此监听器作出决定。HTTP 监听器为客户端的下一个请求保持空闲 HTTP/1.1 连接打开的时长（秒）（node 自己的默认值为 5）。保持连接就意味着不必重复 TLS 握手——以及客户端证书提示。客户端在一个连接上流水线发送的请求会按顺序作答。在负载均衡器后面时，请将其空闲超时设得高于此值。"
+    "en": "a895a3ca14fdb99f",
+    "text": "仅针对主端口监听器：http.keepAliveTimeoutS。-1（默认值）时遵循 http.keepAliveTimeoutS；其他任何值只对此监听器作出决定。HTTP 监听器为客户端的下一个请求保持空闲连接打开的时长（秒）（node 自己的默认值为 5）：即请求之间的 HTTP/1.1 连接，或没有任何帧经过的 HTTP/2 连接，后者随后会被平稳关闭。保持连接就意味着不必重复 TLS 握手——以及客户端证书提示。客户端在一个连接上流水线发送的请求会按顺序作答。在负载均衡器后面时，请将其空闲超时设得高于此值。"
   },
   "listenerDebugger.keepAliveTimeoutS|label": {
     "en": "76ffd87245c2ff28",
     "text": "协议调试器：空闲连接保持时长（秒）"
   },
   "listenerDebugger.keepAliveTimeoutS|description": {
-    "en": "c772bcacfb6260cb",
-    "text": "仅针对协议调试器监听器：http.keepAliveTimeoutS。-1（默认值）时遵循 http.keepAliveTimeoutS；其他任何值只对此监听器作出决定。HTTP 监听器为客户端的下一个请求保持空闲 HTTP/1.1 连接打开的时长（秒）（node 自己的默认值为 5）。保持连接就意味着不必重复 TLS 握手——以及客户端证书提示。客户端在一个连接上流水线发送的请求会按顺序作答。在负载均衡器后面时，请将其空闲超时设得高于此值。"
+    "en": "b63e0c1aae9ba585",
+    "text": "仅针对协议调试器监听器：http.keepAliveTimeoutS。-1（默认值）时遵循 http.keepAliveTimeoutS；其他任何值只对此监听器作出决定。HTTP 监听器为客户端的下一个请求保持空闲连接打开的时长（秒）（node 自己的默认值为 5）：即请求之间的 HTTP/1.1 连接，或没有任何帧经过的 HTTP/2 连接，后者随后会被平稳关闭。保持连接就意味着不必重复 TLS 握手——以及客户端证书提示。客户端在一个连接上流水线发送的请求会按顺序作答。在负载均衡器后面时，请将其空闲超时设得高于此值。"
   },
   "listenerRevocation.keepAliveTimeoutS|label": {
     "en": "19f295348b85fba9",
     "text": "吊销（明文 HTTP）：空闲连接保持时长（秒）"
   },
   "listenerRevocation.keepAliveTimeoutS|description": {
-    "en": "0f76cf6236976ee9",
-    "text": "仅针对吊销（明文 HTTP）监听器：http.keepAliveTimeoutS。-1（默认值）时遵循 http.keepAliveTimeoutS；其他任何值只对此监听器作出决定。HTTP 监听器为客户端的下一个请求保持空闲 HTTP/1.1 连接打开的时长（秒）（node 自己的默认值为 5）。保持连接就意味着不必重复 TLS 握手——以及客户端证书提示。客户端在一个连接上流水线发送的请求会按顺序作答。在负载均衡器后面时，请将其空闲超时设得高于此值。"
+    "en": "dec63c7b7c394604",
+    "text": "仅针对吊销（明文 HTTP）监听器：http.keepAliveTimeoutS。-1（默认值）时遵循 http.keepAliveTimeoutS；其他任何值只对此监听器作出决定。HTTP 监听器为客户端的下一个请求保持空闲连接打开的时长（秒）（node 自己的默认值为 5）：即请求之间的 HTTP/1.1 连接，或没有任何帧经过的 HTTP/2 连接，后者随后会被平稳关闭。保持连接就意味着不必重复 TLS 握手——以及客户端证书提示。客户端在一个连接上流水线发送的请求会按顺序作答。在负载均衡器后面时，请将其空闲超时设得高于此值。"
   },
   "listenerMain.headersTimeoutS|label": {
     "en": "8d17a4d86aca9ed5",
@@ -10578,5 +10586,21 @@
   "listenerDebugger.http2|description": {
     "en": "95b887a7622f4880",
     "text": "仅针对协议调试器监听器：http.http2。inherit（默认值）时遵循 http.http2；其他任何值只对此监听器作出决定。当客户端在 TLS 握手中（ALPN）请求 HTTP/2 时，HTTPS 监听器是否提供它。开启（默认值）时，一个连接承载浏览器并行发出的所有请求；对于只请求 HTTP/1.1 的客户端，仍以 HTTP/1.1 应答。关闭时，每个连接都是 HTTP/1.1——适用于 HTTP/2 行为异常的客户端或负载均衡器。新连接立即遵循更改；已打开的连接保持其协议。纯 HTTP 的吊销监听器只支持 HTTP/1.1，因为没有可以提供它的握手。"
+  },
+  "listenerMain.http2MaxConcurrentStreams|label": {
+    "en": "c152ce6a507a8348",
+    "text": "主端口：每个 HTTP/2 连接的流数"
+  },
+  "listenerMain.http2MaxConcurrentStreams|description": {
+    "en": "ba8c8cd0302f4417",
+    "text": "仅针对主端口监听器：http.http2MaxConcurrentStreams。-1（默认值）时遵循 http.http2MaxConcurrentStreams；其他任何值只对此监听器作出决定。一个 HTTP/2 连接可同时打开的请求数（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的流会被拒绝，直到有流结束。默认值 100 是 RFC 9113 建议的最小值；node 自身的值没有上限，这会让一个连接承载成千上万个连接的工作量。它限制一个连接上的工作量，正如 http.maxConnections 限制连接数。新连接会立即遵循更改，已打开的连接会收到新值。"
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|label": {
+    "en": "a6a26cb5d1740fb5",
+    "text": "协议调试器：每个 HTTP/2 连接的流数"
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|description": {
+    "en": "94c52205da70930f",
+    "text": "仅针对协议调试器监听器：http.http2MaxConcurrentStreams。-1（默认值）时遵循 http.http2MaxConcurrentStreams；其他任何值只对此监听器作出决定。一个 HTTP/2 连接可同时打开的请求数（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的流会被拒绝，直到有流结束。默认值 100 是 RFC 9113 建议的最小值；node 自身的值没有上限，这会让一个连接承载成千上万个连接的工作量。它限制一个连接上的工作量，正如 http.maxConnections 限制连接数。新连接会立即遵循更改，已打开的连接会收到新值。"
   }
 }

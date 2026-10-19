@@ -108,8 +108,8 @@
     "text": "Tagal ng pag-iingat sa idle na connection (s)"
   },
   "http.keepAliveTimeoutS|description": {
-    "en": "15ba4c34c3d3349e",
-    "text": "Gaano katagal, sa segundo, pinananatiling bukas ng isang HTTP listener ang idle na HTTP/1.1 connection para sa susunod na request ng client (5 ang sariling default ng node). Ang connection na pinanatili ay isang TLS handshake — at isang client-certificate prompt — na hindi na inuulit. Sinasagot nang sunud-sunod ang mga request na pina-pipeline ng client sa iisang connection. Sa likod ng balancer, panatilihing mas mataas dito ang idle timeout nito."
+    "en": "0fa763b61550474c",
+    "text": "Gaano katagal, sa segundo, pinananatiling bukas ng isang HTTP listener ang idle na connection para sa susunod na request ng client (5 ang sariling default ng node): isang HTTP/1.1 connection sa pagitan ng mga request, o isang HTTP/2 connection na walang dumaang frame, na saka isinasara nang maayos. Ang connection na pinanatili ay isang TLS handshake — at isang client-certificate prompt — na hindi na inuulit. Sinasagot nang sunud-sunod ang mga request na pina-pipeline ng client sa iisang connection. Sa likod ng balancer, panatilihing mas mataas dito ang idle timeout nito."
   },
   "http.headersTimeoutS|label": {
     "en": "af0b2f7be18e5943",
@@ -142,6 +142,14 @@
   "http.http2|description": {
     "en": "76d7c1691efa23fa",
     "text": "Kung nag-aalok ang isang HTTPS listener ng HTTP/2 kapag hiniling ito ng client sa TLS handshake (ALPN). Kapag naka-on, ang default, iisang koneksyon ang nagdadala ng bawat request na sabay-sabay na ginagawa ng browser; sinasagot pa rin ang HTTP/1.1 para sa client na wala nang ibang hinihingi. Kapag naka-off, HTTP/1.1 ang bawat koneksyon — para sa client o balancer na may sirang HTTP/2. Agad na sumusunod sa pagbabago ang bagong koneksyon; pinananatili ng bukas nang koneksyon ang protocol nito. HTTP/1.1 lamang ang plain-HTTP na revocation listener, dahil walang handshake na mapag-aalukan nito."
+  },
+  "http.http2MaxConcurrentStreams|label": {
+    "en": "27fcdca12afd105b",
+    "text": "Mga stream bawat HTTP/2 connection"
+  },
+  "http.http2MaxConcurrentStreams|description": {
+    "en": "ec218fbbb4297601",
+    "text": "Ilang request ang puwedeng sabay-sabay na bukas sa isang HTTP/2 connection (SETTINGS_MAX_CONCURRENT_STREAMS); tinatanggihan ang stream na lampas dito hanggang may matapos. Ang 100, ang default, ang pinakamaliit na halagang inirerekomenda ng RFC 9113; walang limit ang sa node mismo, kaya madadala ng iisang connection ang trabaho ng libu-libo. Nililimitahan nito ang trabaho sa isang connection gaya ng paglimita ng http.maxConnections sa mga connection. Sinusunod agad ng bagong connection ang pagbabago, at pinapadalhan ng bagong halaga ang bukas na."
   },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
@@ -10472,24 +10480,24 @@
     "text": "Main port: tagal ng pagpapanatili ng idle na connection (s)"
   },
   "listenerMain.keepAliveTimeoutS|description": {
-    "en": "d48d22c3af904939",
-    "text": "Para lang sa listener ng Main port: http.keepAliveTimeoutS. Ang -1, ang default, ay sumusunod sa http.keepAliveTimeoutS; ang anumang iba ay nagpapasya para sa listener na ito lang. Gaano katagal, sa segundo, pinananatiling bukas ng isang HTTP listener ang idle na HTTP/1.1 connection para sa susunod na request ng client (5 ang sariling default ng node). Ang connection na pinanatili ay isang TLS handshake — at isang client-certificate prompt — na hindi na inuulit. Sinasagot nang sunud-sunod ang mga request na pina-pipeline ng client sa iisang connection. Sa likod ng balancer, panatilihing mas mataas dito ang idle timeout nito."
+    "en": "a895a3ca14fdb99f",
+    "text": "Para lang sa listener ng Main port: http.keepAliveTimeoutS. Ang -1, ang default, ay sumusunod sa http.keepAliveTimeoutS; ang anumang iba ay nagpapasya para sa listener na ito lang. Gaano katagal, sa segundo, pinananatiling bukas ng isang HTTP listener ang idle na connection para sa susunod na request ng client (5 ang sariling default ng node): isang HTTP/1.1 connection sa pagitan ng mga request, o isang HTTP/2 connection na walang dumaang frame, na saka isinasara nang maayos. Ang connection na pinanatili ay isang TLS handshake — at isang client-certificate prompt — na hindi na inuulit. Sinasagot nang sunud-sunod ang mga request na pina-pipeline ng client sa iisang connection. Sa likod ng balancer, panatilihing mas mataas dito ang idle timeout nito."
   },
   "listenerDebugger.keepAliveTimeoutS|label": {
     "en": "76ffd87245c2ff28",
     "text": "Protocol debugger: tagal ng pagpapanatili ng idle na connection (s)"
   },
   "listenerDebugger.keepAliveTimeoutS|description": {
-    "en": "c772bcacfb6260cb",
-    "text": "Para lang sa listener ng Protocol debugger: http.keepAliveTimeoutS. Ang -1, ang default, ay sumusunod sa http.keepAliveTimeoutS; ang anumang iba ay nagpapasya para sa listener na ito lang. Gaano katagal, sa segundo, pinananatiling bukas ng isang HTTP listener ang idle na HTTP/1.1 connection para sa susunod na request ng client (5 ang sariling default ng node). Ang connection na pinanatili ay isang TLS handshake — at isang client-certificate prompt — na hindi na inuulit. Sinasagot nang sunud-sunod ang mga request na pina-pipeline ng client sa iisang connection. Sa likod ng balancer, panatilihing mas mataas dito ang idle timeout nito."
+    "en": "b63e0c1aae9ba585",
+    "text": "Para lang sa listener ng Protocol debugger: http.keepAliveTimeoutS. Ang -1, ang default, ay sumusunod sa http.keepAliveTimeoutS; ang anumang iba ay nagpapasya para sa listener na ito lang. Gaano katagal, sa segundo, pinananatiling bukas ng isang HTTP listener ang idle na connection para sa susunod na request ng client (5 ang sariling default ng node): isang HTTP/1.1 connection sa pagitan ng mga request, o isang HTTP/2 connection na walang dumaang frame, na saka isinasara nang maayos. Ang connection na pinanatili ay isang TLS handshake — at isang client-certificate prompt — na hindi na inuulit. Sinasagot nang sunud-sunod ang mga request na pina-pipeline ng client sa iisang connection. Sa likod ng balancer, panatilihing mas mataas dito ang idle timeout nito."
   },
   "listenerRevocation.keepAliveTimeoutS|label": {
     "en": "19f295348b85fba9",
     "text": "Revocation (plain HTTP): tagal ng pagpapanatili ng idle na connection (s)"
   },
   "listenerRevocation.keepAliveTimeoutS|description": {
-    "en": "0f76cf6236976ee9",
-    "text": "Para lang sa listener ng Revocation (plain HTTP): http.keepAliveTimeoutS. Ang -1, ang default, ay sumusunod sa http.keepAliveTimeoutS; ang anumang iba ay nagpapasya para sa listener na ito lang. Gaano katagal, sa segundo, pinananatiling bukas ng isang HTTP listener ang idle na HTTP/1.1 connection para sa susunod na request ng client (5 ang sariling default ng node). Ang connection na pinanatili ay isang TLS handshake — at isang client-certificate prompt — na hindi na inuulit. Sinasagot nang sunud-sunod ang mga request na pina-pipeline ng client sa iisang connection. Sa likod ng balancer, panatilihing mas mataas dito ang idle timeout nito."
+    "en": "dec63c7b7c394604",
+    "text": "Para lang sa listener ng Revocation (plain HTTP): http.keepAliveTimeoutS. Ang -1, ang default, ay sumusunod sa http.keepAliveTimeoutS; ang anumang iba ay nagpapasya para sa listener na ito lang. Gaano katagal, sa segundo, pinananatiling bukas ng isang HTTP listener ang idle na connection para sa susunod na request ng client (5 ang sariling default ng node): isang HTTP/1.1 connection sa pagitan ng mga request, o isang HTTP/2 connection na walang dumaang frame, na saka isinasara nang maayos. Ang connection na pinanatili ay isang TLS handshake — at isang client-certificate prompt — na hindi na inuulit. Sinasagot nang sunud-sunod ang mga request na pina-pipeline ng client sa iisang connection. Sa likod ng balancer, panatilihing mas mataas dito ang idle timeout nito."
   },
   "listenerMain.headersTimeoutS|label": {
     "en": "8d17a4d86aca9ed5",
@@ -10578,5 +10586,21 @@
   "listenerDebugger.http2|description": {
     "en": "95b887a7622f4880",
     "text": "Para lang sa listener ng Protocol debugger: http.http2. Ang inherit, ang default, ay sumusunod sa http.http2; ang anumang iba ay nagpapasya para sa listener na ito lang. Kung nag-aalok ang isang HTTPS listener ng HTTP/2 kapag hiniling ito ng client sa TLS handshake (ALPN). Kapag naka-on, ang default, iisang koneksyon ang nagdadala ng bawat request na sabay-sabay na ginagawa ng browser; sinasagot pa rin ang HTTP/1.1 para sa client na wala nang ibang hinihingi. Kapag naka-off, HTTP/1.1 ang bawat koneksyon — para sa client o balancer na may sirang HTTP/2. Agad na sumusunod sa pagbabago ang bagong koneksyon; pinananatili ng bukas nang koneksyon ang protocol nito. HTTP/1.1 lamang ang plain-HTTP na revocation listener, dahil walang handshake na mapag-aalukan nito."
+  },
+  "listenerMain.http2MaxConcurrentStreams|label": {
+    "en": "c152ce6a507a8348",
+    "text": "Main port: mga stream bawat HTTP/2 connection"
+  },
+  "listenerMain.http2MaxConcurrentStreams|description": {
+    "en": "ba8c8cd0302f4417",
+    "text": "Para lang sa listener ng Main port: http.http2MaxConcurrentStreams. Ang -1, ang default, ay sumusunod sa http.http2MaxConcurrentStreams; ang anumang iba ay nagpapasya para sa listener na ito lang. Ilang request ang puwedeng sabay-sabay na bukas sa isang HTTP/2 connection (SETTINGS_MAX_CONCURRENT_STREAMS); tinatanggihan ang stream na lampas dito hanggang may matapos. Ang 100, ang default, ang pinakamaliit na halagang inirerekomenda ng RFC 9113; walang limit ang sa node mismo, kaya madadala ng iisang connection ang trabaho ng libu-libo. Nililimitahan nito ang trabaho sa isang connection gaya ng paglimita ng http.maxConnections sa mga connection. Sinusunod agad ng bagong connection ang pagbabago, at pinapadalhan ng bagong halaga ang bukas na."
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|label": {
+    "en": "a6a26cb5d1740fb5",
+    "text": "Protocol debugger: mga stream bawat HTTP/2 connection"
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|description": {
+    "en": "94c52205da70930f",
+    "text": "Para lang sa listener ng Protocol debugger: http.http2MaxConcurrentStreams. Ang -1, ang default, ay sumusunod sa http.http2MaxConcurrentStreams; ang anumang iba ay nagpapasya para sa listener na ito lang. Ilang request ang puwedeng sabay-sabay na bukas sa isang HTTP/2 connection (SETTINGS_MAX_CONCURRENT_STREAMS); tinatanggihan ang stream na lampas dito hanggang may matapos. Ang 100, ang default, ang pinakamaliit na halagang inirerekomenda ng RFC 9113; walang limit ang sa node mismo, kaya madadala ng iisang connection ang trabaho ng libu-libo. Nililimitahan nito ang trabaho sa isang connection gaya ng paglimita ng http.maxConnections sa mga connection. Sinusunod agad ng bagong connection ang pagbabago, at pinapadalhan ng bagong halaga ang bukas na."
   }
 }

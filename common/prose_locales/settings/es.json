@@ -108,8 +108,8 @@
     "text": "Conexión inactiva conservada durante (s)"
   },
   "http.keepAliveTimeoutS|description": {
-    "en": "15ba4c34c3d3349e",
-    "text": "Cuánto tiempo, en segundos, una escucha HTTP mantiene abierta una conexión HTTP/1.1 inactiva para la siguiente solicitud del cliente (el valor predeterminado propio de node es 5). Una conexión conservada es un handshake TLS — y una petición de certificado de cliente — que no se repite. Las solicitudes que un cliente encadena en una conexión se responden en orden. Detrás de un balanceador, mantenga su tiempo de inactividad por encima de este."
+    "en": "0fa763b61550474c",
+    "text": "Cuánto tiempo, en segundos, una escucha HTTP mantiene abierta una conexión inactiva para la siguiente solicitud del cliente (el valor predeterminado propio de node es 5): una conexión HTTP/1.1 entre solicitudes, o una conexión HTTP/2 por la que no ha pasado ninguna trama, que entonces se cierra de forma ordenada. Una conexión conservada es un handshake TLS — y una petición de certificado de cliente — que no se repite. Las solicitudes que un cliente encadena en una conexión se responden en orden. Detrás de un balanceador, mantenga su tiempo de inactividad por encima de este."
   },
   "http.headersTimeoutS|label": {
     "en": "af0b2f7be18e5943",
@@ -142,6 +142,14 @@
   "http.http2|description": {
     "en": "76d7c1691efa23fa",
     "text": "Indica si un escuchador HTTPS ofrece HTTP/2 cuando un cliente lo pide en el protocolo de enlace TLS (ALPN). Activado, el valor predeterminado, una sola conexión lleva todas las solicitudes que un navegador hace en paralelo; HTTP/1.1 se sigue atendiendo para un cliente que no pide otra cosa. Desactivado, toda conexión es HTTP/1.1 — para un cliente o un balanceador cuyo HTTP/2 falla. Una conexión nueva sigue un cambio de inmediato; una ya abierta conserva su protocolo. El escuchador de revocación en HTTP simple solo habla HTTP/1.1, porque no hay protocolo de enlace en el que ofrecerlo."
+  },
+  "http.http2MaxConcurrentStreams|label": {
+    "en": "27fcdca12afd105b",
+    "text": "Flujos por conexión HTTP/2"
+  },
+  "http.http2MaxConcurrentStreams|description": {
+    "en": "ec218fbbb4297601",
+    "text": "Cuántas solicitudes puede tener abiertas a la vez una conexión HTTP/2 (SETTINGS_MAX_CONCURRENT_STREAMS); un flujo por encima se rechaza hasta que termine otro. 100, el predeterminado, es el valor más pequeño que recomienda RFC 9113; el propio de node no tiene límite, lo que permitiría a una sola conexión llevar el trabajo de miles. Limita el trabajo de una conexión como http.maxConnections limita las conexiones. Una conexión nueva sigue un cambio de inmediato, y a una abierta se le envía el nuevo valor."
   },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
@@ -10472,24 +10480,24 @@
     "text": "Puerto principal: conexión inactiva conservada durante (s)"
   },
   "listenerMain.keepAliveTimeoutS|description": {
-    "en": "d48d22c3af904939",
-    "text": "Solo para la escucha del puerto principal: http.keepAliveTimeoutS. -1, el predeterminado, sigue a http.keepAliveTimeoutS; cualquier otro valor decide solo para esta escucha. Cuánto tiempo, en segundos, una escucha HTTP mantiene abierta una conexión HTTP/1.1 inactiva para la siguiente solicitud del cliente (el predeterminado propio de node es 5). Una conexión conservada es un handshake TLS —y una solicitud de certificado de cliente— que no se repite. Las solicitudes que un cliente encadena (pipelining) en una conexión se responden en orden. Detrás de un balanceador, mantenga su tiempo de inactividad por encima de este."
+    "en": "a895a3ca14fdb99f",
+    "text": "Solo para la escucha del puerto principal: http.keepAliveTimeoutS. -1, el predeterminado, sigue a http.keepAliveTimeoutS; cualquier otro valor decide solo para esta escucha. Cuánto tiempo, en segundos, una escucha HTTP mantiene abierta una conexión inactiva para la siguiente solicitud del cliente (el predeterminado propio de node es 5): una conexión HTTP/1.1 entre solicitudes, o una conexión HTTP/2 por la que no ha pasado ninguna trama, que entonces se cierra de forma ordenada. Una conexión conservada es un handshake TLS —y una solicitud de certificado de cliente— que no se repite. Las solicitudes que un cliente encadena (pipelining) en una conexión se responden en orden. Detrás de un balanceador, mantenga su tiempo de inactividad por encima de este."
   },
   "listenerDebugger.keepAliveTimeoutS|label": {
     "en": "76ffd87245c2ff28",
     "text": "Depurador de protocolos: conexión inactiva conservada durante (s)"
   },
   "listenerDebugger.keepAliveTimeoutS|description": {
-    "en": "c772bcacfb6260cb",
-    "text": "Solo para la escucha del depurador de protocolos: http.keepAliveTimeoutS. -1, el predeterminado, sigue a http.keepAliveTimeoutS; cualquier otro valor decide solo para esta escucha. Cuánto tiempo, en segundos, una escucha HTTP mantiene abierta una conexión HTTP/1.1 inactiva para la siguiente solicitud del cliente (el predeterminado propio de node es 5). Una conexión conservada es un handshake TLS —y una solicitud de certificado de cliente— que no se repite. Las solicitudes que un cliente encadena (pipelining) en una conexión se responden en orden. Detrás de un balanceador, mantenga su tiempo de inactividad por encima de este."
+    "en": "b63e0c1aae9ba585",
+    "text": "Solo para la escucha del depurador de protocolos: http.keepAliveTimeoutS. -1, el predeterminado, sigue a http.keepAliveTimeoutS; cualquier otro valor decide solo para esta escucha. Cuánto tiempo, en segundos, una escucha HTTP mantiene abierta una conexión inactiva para la siguiente solicitud del cliente (el predeterminado propio de node es 5): una conexión HTTP/1.1 entre solicitudes, o una conexión HTTP/2 por la que no ha pasado ninguna trama, que entonces se cierra de forma ordenada. Una conexión conservada es un handshake TLS —y una solicitud de certificado de cliente— que no se repite. Las solicitudes que un cliente encadena (pipelining) en una conexión se responden en orden. Detrás de un balanceador, mantenga su tiempo de inactividad por encima de este."
   },
   "listenerRevocation.keepAliveTimeoutS|label": {
     "en": "19f295348b85fba9",
     "text": "Revocación (HTTP sin cifrar): conexión inactiva conservada durante (s)"
   },
   "listenerRevocation.keepAliveTimeoutS|description": {
-    "en": "0f76cf6236976ee9",
-    "text": "Solo para la escucha de revocación (HTTP sin cifrar): http.keepAliveTimeoutS. -1, el predeterminado, sigue a http.keepAliveTimeoutS; cualquier otro valor decide solo para esta escucha. Cuánto tiempo, en segundos, una escucha HTTP mantiene abierta una conexión HTTP/1.1 inactiva para la siguiente solicitud del cliente (el predeterminado propio de node es 5). Una conexión conservada es un handshake TLS —y una solicitud de certificado de cliente— que no se repite. Las solicitudes que un cliente encadena (pipelining) en una conexión se responden en orden. Detrás de un balanceador, mantenga su tiempo de inactividad por encima de este."
+    "en": "dec63c7b7c394604",
+    "text": "Solo para la escucha de revocación (HTTP sin cifrar): http.keepAliveTimeoutS. -1, el predeterminado, sigue a http.keepAliveTimeoutS; cualquier otro valor decide solo para esta escucha. Cuánto tiempo, en segundos, una escucha HTTP mantiene abierta una conexión inactiva para la siguiente solicitud del cliente (el predeterminado propio de node es 5): una conexión HTTP/1.1 entre solicitudes, o una conexión HTTP/2 por la que no ha pasado ninguna trama, que entonces se cierra de forma ordenada. Una conexión conservada es un handshake TLS —y una solicitud de certificado de cliente— que no se repite. Las solicitudes que un cliente encadena (pipelining) en una conexión se responden en orden. Detrás de un balanceador, mantenga su tiempo de inactividad por encima de este."
   },
   "listenerMain.headersTimeoutS|label": {
     "en": "8d17a4d86aca9ed5",
@@ -10578,5 +10586,21 @@
   "listenerDebugger.http2|description": {
     "en": "95b887a7622f4880",
     "text": "Solo para la escucha del depurador de protocolos: http.http2. inherit, el predeterminado, sigue a http.http2; cualquier otro valor decide solo para esta escucha. Indica si un escuchador HTTPS ofrece HTTP/2 cuando un cliente lo pide en el protocolo de enlace TLS (ALPN). Activado, el valor predeterminado, una sola conexión lleva todas las solicitudes que un navegador hace en paralelo; HTTP/1.1 se sigue atendiendo para un cliente que no pide otra cosa. Desactivado, toda conexión es HTTP/1.1 — para un cliente o un balanceador cuyo HTTP/2 falla. Una conexión nueva sigue un cambio de inmediato; una ya abierta conserva su protocolo. El escuchador de revocación en HTTP simple solo habla HTTP/1.1, porque no hay protocolo de enlace en el que ofrecerlo."
+  },
+  "listenerMain.http2MaxConcurrentStreams|label": {
+    "en": "c152ce6a507a8348",
+    "text": "Puerto principal: flujos por conexión HTTP/2"
+  },
+  "listenerMain.http2MaxConcurrentStreams|description": {
+    "en": "ba8c8cd0302f4417",
+    "text": "Solo para la escucha del puerto principal: http.http2MaxConcurrentStreams. -1, el predeterminado, sigue a http.http2MaxConcurrentStreams; cualquier otro valor decide solo para esta escucha. Cuántas solicitudes puede tener abiertas a la vez una conexión HTTP/2 (SETTINGS_MAX_CONCURRENT_STREAMS); un flujo por encima se rechaza hasta que termine otro. 100, el predeterminado, es el valor más pequeño que recomienda RFC 9113; el propio de node no tiene límite, lo que permitiría a una sola conexión llevar el trabajo de miles. Limita el trabajo de una conexión como http.maxConnections limita las conexiones. Una conexión nueva sigue un cambio de inmediato, y a una abierta se le envía el nuevo valor."
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|label": {
+    "en": "a6a26cb5d1740fb5",
+    "text": "Depurador de protocolos: flujos por conexión HTTP/2"
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|description": {
+    "en": "94c52205da70930f",
+    "text": "Solo para la escucha del depurador de protocolos: http.http2MaxConcurrentStreams. -1, el predeterminado, sigue a http.http2MaxConcurrentStreams; cualquier otro valor decide solo para esta escucha. Cuántas solicitudes puede tener abiertas a la vez una conexión HTTP/2 (SETTINGS_MAX_CONCURRENT_STREAMS); un flujo por encima se rechaza hasta que termine otro. 100, el predeterminado, es el valor más pequeño que recomienda RFC 9113; el propio de node no tiene límite, lo que permitiría a una sola conexión llevar el trabajo de miles. Limita el trabajo de una conexión como http.maxConnections limita las conexiones. Una conexión nueva sigue un cambio de inmediato, y a una abierta se le envía el nuevo valor."
   }
 }

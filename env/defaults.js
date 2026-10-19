@@ -78,7 +78,7 @@ var config = {
     maxRequestsPerSocket: 0, // Requests per connection
     maxConnections: 0,       // Open connections at most
     http2: true,             // Offer HTTP/2
-    http2MaxConcurrentStreams: 100 // HTTP/2 streams per connection
+    http2MaxConcurrentStreams: 100 // Streams per HTTP/2 connection
   },
 
   // --- Admin console ---------------------------------------------------
@@ -1441,7 +1441,7 @@ var config = {
     maxRequestsPerSocket: -1,                 // Main port: requests per connection
     maxConnections: -1,                       // Main port: open connections at most
     http2: "inherit",                         // Main port: offer HTTP/2
-    http2MaxConcurrentStreams: -1             // Main port: HTTP/2 streams per connection
+    http2MaxConcurrentStreams: -1             // Main port: streams per HTTP/2 connection
   },
 
   // --- Listener: LDAPS -------------------------------------------------
@@ -1477,7 +1477,7 @@ var config = {
     maxRequestsPerSocket: -1,                 // Protocol debugger: requests per connection
     maxConnections: -1,                       // Protocol debugger: open connections at most
     http2: "inherit",                         // Protocol debugger: offer HTTP/2
-    http2MaxConcurrentStreams: -1             // Protocol debugger: HTTP/2 streams per connection
+    http2MaxConcurrentStreams: -1             // Protocol debugger: streams per HTTP/2 connection
   },
 
   // --- Listener: SPIRE Server API --------------------------------------
