@@ -472,8 +472,8 @@
     "text": "其信任链终止于的信任锚。"
   },
   "applications.schema.attributes.oauthClientId.what": {
-    "en": "1e1a912a88773d34",
-    "text": "client_id，也是三个协议族的标识符属性：OpenID Connect 依赖方就是 OAuth 客户端，在 OpenID4VCI 颁发方处领取凭据的钱包也以 OAuth 客户端身份进行身份验证，因此三者都在这里声明自己的名称，而不是用三个属性把同一事实写成三种形式。通常等于 appIdentifier，即协议出现记录所写入的值；第二个值是此应用也对应的 client_id——按环境区分的 id——这就是它累积记录而不是赋值的原因。在未声明任何 OAuth 协议族的条目上没有此项。"
+    "en": "be5cd98b933adf94",
+    "text": "client_id，也是三个协议族的标识符属性：OpenID Connect 依赖方就是 OAuth 客户端，在 OpenID4VCI 颁发方处领取凭据的钱包也以 OAuth 客户端身份进行身份验证，因此三者都在这里声明自己的名称，而不是用三个属性把同一事实写成三种形式。通常等于 appIdentifier，即协议出现记录所写入的值，也是创建时此项留空所写入的值（#393）；第二个值是此应用也对应的 client_id——按环境区分的 id——这就是它累积记录而不是赋值的原因。创建时填写的列表就是完整的列表。在未声明任何 OAuth 协议族的条目上没有此项。"
   },
   "applications.schema.attributes.oauthAudience.what": {
     "en": "85845f64442f584e",

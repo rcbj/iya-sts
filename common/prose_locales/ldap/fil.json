@@ -472,8 +472,8 @@
     "text": "Ang Trust Anchor kung saan nagtapos ang chain nito."
   },
   "applications.schema.attributes.oauthClientId.what": {
-    "en": "1e1a912a88773d34",
-    "text": "ANG CLIENT_ID, at ang identifier attribute ng tatlong family: ang OpenID Connect relying party AY isang OAuth client, at ang wallet na kumukuha ng credential sa OpenID4VCI issuer ay nag-a-authenticate bilang isa, kaya idinedeklara ng tatlo ang pangalan nila rito sa halip na sa tatlong attribute na magiging tatlong baybay ng iisang katotohanan. Kadalasang katumbas ng appIdentifier, na siyang isinusulat ng isang protocol sighting; ang IKALAWANG value ay client_id na sinasagot din ng application na ito — isang id bawat environment — at iyan ang dahilan kung bakit naiipon ito sa halip na itakda. Wala sa entry na walang OAuth family na idineklara."
+    "en": "be5cd98b933adf94",
+    "text": "ANG CLIENT_ID, at ang identifier attribute ng tatlong family: ang OpenID Connect relying party AY isang OAuth client, at ang wallet na kumukuha ng credential sa OpenID4VCI issuer ay nag-a-authenticate bilang isa, kaya idinedeklara ng tatlo ang pangalan nila rito sa halip na sa tatlong attribute na magiging tatlong baybay ng iisang katotohanan. Kadalasang katumbas ng appIdentifier, na siyang isinusulat ng isang protocol sighting at ng isang create kapag iniwan itong walang laman (#393); ang IKALAWANG value ay client_id na sinasagot din ng application na ito — isang id bawat environment — at iyan ang dahilan kung bakit naiipon ito sa halip na itakda. Ang listahang tina-type sa create ang buong listahan. Wala sa entry na walang OAuth family na idineklara."
   },
   "applications.schema.attributes.oauthAudience.what": {
     "en": "85845f64442f584e",

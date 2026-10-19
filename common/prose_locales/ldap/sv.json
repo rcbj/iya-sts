@@ -472,8 +472,8 @@
     "text": "Det Trust Anchor som dess kedja slutade vid."
   },
   "applications.schema.attributes.oauthClientId.what": {
-    "en": "1e1a912a88773d34",
-    "text": "CLIENT_ID, och identifierarattributet för tre familjer: en förlitande part i OpenID Connect ÄR en OAuth-klient, och en plånbok som hämtar ett intyg hos OpenID4VCI-utfärdaren autentiserar sig som en, så alla tre deklarerar sitt namn här snarare än i tre attribut som skulle vara tre stavningar av ett faktum. Vanligtvis lika med appIdentifier, vilket är vad en protokollobservation skriver; ett ANDRA värde är ett client_id som den här applikationen också svarar på — ett id per miljö — och är varför detta ackumuleras snarare än tilldelas. Saknas på en post för vilken ingen OAuth-familj har deklarerats."
+    "en": "be5cd98b933adf94",
+    "text": "CLIENT_ID, och identifierarattributet för tre familjer: en förlitande part i OpenID Connect ÄR en OAuth-klient, och en plånbok som hämtar ett intyg hos OpenID4VCI-utfärdaren autentiserar sig som en, så alla tre deklarerar sitt namn här snarare än i tre attribut som skulle vara tre stavningar av ett faktum. Vanligtvis lika med appIdentifier, vilket är vad en protokollobservation skriver och vad en skapelse skriver när detta lämnas tomt (#393); ett ANDRA värde är ett client_id som den här applikationen också svarar på — ett id per miljö — och är varför detta ackumuleras snarare än tilldelas. En lista som skrivs vid skapandet är hela listan. Saknas på en post för vilken ingen OAuth-familj har deklarerats."
   },
   "applications.schema.attributes.oauthAudience.what": {
     "en": "85845f64442f584e",
