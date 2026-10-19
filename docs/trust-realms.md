@@ -472,6 +472,13 @@ doing it from inside the request that found it, and a realm that could move its
 own prefix would be changing the prefix already used to find it. `realms.maxCount`
 can additionally be changed only while the default realm is ambient.
 
+**Upgrading a cluster across the release that added `realms.maxCount` restarts
+every node together.** The setting is one of those every node of a cluster must
+agree on, and adding it changed what the nodes compare, so a node on the older
+release and one on the newer refuse each other (`STS-CLUSTER-0002`) whatever
+their settings are. Stop every node, then start every node on the new image;
+there is no mixed-version window.
+
 ## Removing one
 
 Removing a realm **takes everything it held with it** — its sessions,

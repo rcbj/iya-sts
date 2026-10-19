@@ -2558,6 +2558,13 @@ is 1, because the default realm always exists; the maximum a write may name is
 100000. It is on `AGREEMENT_SETTINGS`, so two nodes that disagree about it
 refuse to join (`STS-CLUSTER-0002`).
 
+**Adding the key changed the must-agree digest itself**, so a node built
+before #368 and one built after it disagree whatever their settings say. **A
+rolling upgrade across this change therefore restarts every node together**
+— stop them all, start them all on the new image. There is no migration shim
+that lets the old and new digest agree for a while: this repository keeps no
+backwards compatibility.
+
 `create()` refuses a new realm once `count()` is at the cap (`STS-CORE-0161`).
 **A restore skips the check** — `spec.restored`, the same skip the mode and
 Kerberos checks already make — because a restart or a replicated create of a
