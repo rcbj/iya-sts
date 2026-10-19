@@ -254,7 +254,9 @@ function trustAnchors(t) {
   ], ['aa:bb']);
   t.check(gone.length === 1 && gone[0].fingerprint256 === 'MOCK',
           'a spared fingerprint stays, and only the other suite anchor goes',
-          gone.map(function (row) { return row.fingerprint256; }).join(','));
+          gone.map(function (row) {
+            return row.fingerprint256;
+          }).join(','));
   t.check(reset.trustAnchorsToRemove([null, undefined, {}], []).length === 0,
           'null and missing rows are left alone');
   t.check(reset.trustAnchorsToRemove([

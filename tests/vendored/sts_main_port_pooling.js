@@ -477,6 +477,9 @@ async function main() {
 main().then(function () {
   return credentials.settleAnchors(base, addedAnchors, null);
 }, function (e) {
+  // Cleanup still runs, and the original failure is passed through
+  // settleAnchors(), which rethrows it.
+  log.debug("Caught in main(): " + ((e && e.message) || e));
   return credentials.settleAnchors(base, addedAnchors, e);
 }).then(function () {
   process.exit(0);

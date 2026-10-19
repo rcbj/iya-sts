@@ -288,6 +288,9 @@ function removeAnchor(url, pem) {
   try {
     fingerprint = new crypto.X509Certificate(pem).fingerprint256;
   } catch (error) {
+    // A PEM this process cannot read is one failed remove, reported to
+    // forgetAnchors(), rather than an exception that skips the rest of
+    // the list.
     log.debug("Caught in removeAnchor(): " +
               ((error && error.message) || error));
     log.debug("Leaving removeAnchor(). Not a certificate.");

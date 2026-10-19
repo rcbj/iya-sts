@@ -1982,6 +1982,9 @@ screenshotDir = program.opts().screenshotDir || "";
 test().then(function () {
   return credentials.settleAnchors(base, addedAnchors, null);
 }, function (e) {
+  // Cleanup still runs, and the original failure is passed through
+  // settleAnchors(), which rethrows it.
+  log.debug("Caught in test(): " + ((e && e.message) || e));
   return credentials.settleAnchors(base, addedAnchors, e);
 }).catch(function (e) {
   log.error(e.stack || e.message);
