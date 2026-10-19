@@ -1485,11 +1485,12 @@ const JOBS = [
   // A person's attributes set, added to and removed from through
   // /admin-api (#228), in a realm of its own.
   { file: 'sts_person_attributes.js',    browser: false, local: true },
-  // Attribute sources against the stack's real PostgreSQL (#94): a
-  // database, a read-only role and a table of the job's own, TLS verified
-  // against the source's own chain, the password read from a shared file,
-  // a sign-in carrying the attribute claim, and refuse on failure. Skips
-  // without STS_TEST_ATTRIBUTE_DB_URL or a shared directory.
+  // Attribute sources against the stack's real PostgreSQL and MariaDB
+  // (#94, #356): a database, a read-only account and a table of the job's
+  // own, TLS verified against the source's own chain, the password read
+  // from a shared file, a sign-in carrying the attribute claim, and refuse
+  // on failure. A dialect whose URL is unset is skipped; both unset, or no
+  // shared directory, skips the job.
   { file: 'sts_attribute_sources.js',    browser: false, local: true },
   // Secret push destinations (#221 P3): the register over /admin-api in a
   // realm of its own — the write credential in no answer and refused by

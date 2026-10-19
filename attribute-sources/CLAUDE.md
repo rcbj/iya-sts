@@ -131,11 +131,27 @@ assertion is minted on the next request:
   rather than by name.
 * **`ctx.stillOwner()`** is asked between sources.
 
-## What has no test yet
+## What the tests cover, and what they still do not
 
-* **No real database.** `tests/attribute_sources.js` holds everything this
-  service decides, but with the driver stubbed. A protocol job against a real
-  PostgreSQL over verified TLS, and MariaDB in the test stack, are still
-  owed. They need a database the runner can create a table in and a CA it
-  trusts.
+* **`tests/attribute_sources.js` stubs the driver.** It holds everything this
+  service decides, and it does not open a database.
+* **`tests/vendored/sts_attribute_sources.js` is the real databases** (#94,
+  MariaDB #356). PostgreSQL on the stack's `postgres`, and MariaDB on the
+  stack's `mariadb`, each over TLS the service verifies against the
+  certificate the job read off the handshake. The six checks run once per
+  dialect. MariaDB runs after the PostgreSQL source is removed, because an
+  attribute has one owner (STS-ATTR-0009). The MariaDB reader is created
+  `mysql_native_password`: `mysql2` does not speak MariaDB's `ed25519`.
+* **It runs in every compose mode**, `memory` included. `sts` waits for
+  `mariadb` to be healthy the way it waits for `postgres`, so a database
+  that will not start fails the suite rather than one job. `./run-coverage.sh`
+  and an AWS target set neither URL, and the job skips. The official MariaDB
+  image has no `openssl`, so `mariadb-tls` mints the certificate with
+  `openbao/generate-tls.js` and the database container chowns the key to
+  `mysql` before `mariadbd` starts. The service image carries `mysql2`
+  because every build of the test stack's `sts` tag passes
+  `STS_CLOUD_SDKS=mysql2`; the runner's client lives in `tests/package.json`,
+  since the peer is not installed by the service's own `npm install`.
+* **SQL Server and Oracle** are still #356's second part: no dialect, no
+  driver in the image, no container.
 * **The console page** has no browser test.
