@@ -328,8 +328,17 @@ class Krb5Delegation {
    * @param kdcKey - `{ etype, key }`, the krbtgt key
    * @returns `{ ok, why }`
    */
-  async verifyEvidence(evidencePart: Json, kdcKey: Json): Promise<Json> {
+  async verifyEvidence(evidencePart: Json, kdcKey: Json,
+                       across?: Json): Promise<Json> {
     log.debug("Entering Krb5Delegation.verifyEvidence().");
+    // ACROSS A TRUST (#430): the evidence is a referral TGT whose PAC the
+    // issuing realm signed with the inter-realm key — server, KDC and
+    // ticket signature alike (issueReferral() argues it) — so `kdcKey` is
+    // this realm's INCOMING key from `across.realm` and the server
+    // signature is checked with it too.
+    const whose = across
+      ? 'the inter-realm key from ' + across.realm
+      : 'this KDC\'s key';
     const ad = evidencePart.authorizationData || [];
     const pacs = kpac.findPacs(ad);
     if (!pacs.length) {
@@ -349,7 +358,9 @@ class Krb5Delegation {
       const ticketBytes = msgs.encEncTicketPart(Object.assign({},
         evidencePart, { authorizationData: replaced }));
       results = await kpac.verifySignatures(kpac.parsePac(pacs[0].bytes),
-        { kdcKey: kdcKey, ticketBytes: ticketBytes });
+        across ? { kdcKey: kdcKey, serverKey: kdcKey,
+                   ticketBytes: ticketBytes }
+               : { kdcKey: kdcKey, ticketBytes: ticketBytes });
     } catch (e) {
       log.debug("Caught in Krb5Delegation.verifyEvidence(): " +
                 ((e && e.message) || e));
@@ -370,7 +381,7 @@ class Krb5Delegation {
       log.debug("Leaving Krb5Delegation.verifyEvidence(). Ticket signature.");
       return { ok: false, why: ticket
         ? 'the evidence ticket\'s PAC ticket signature does not verify with ' +
-          'this KDC\'s key, so the ticket was altered after it was issued ' +
+          whose + ', so the ticket was altered after it was issued ' +
           '— its flags among what is covered (CVE-2020-17049)'
         : 'the evidence ticket\'s PAC has no ticket signature, so nothing ' +
           'binds its flags to what this KDC issued' };
@@ -378,8 +389,16 @@ class Krb5Delegation {
     if (!kdc || kdc.verified !== true) {
       log.debug("Leaving Krb5Delegation.verifyEvidence(). KDC signature.");
       return { ok: false, why: 'the evidence ticket\'s PAC KDC signature ' +
-               'does not verify with this KDC\'s key, so this KDC did not ' +
-               'issue the authorization data it carries' };
+               'does not verify with ' + whose + ', so ' +
+               (across ? across.realm + ' did not sign' : 'this KDC did ' +
+                'not issue') + ' the authorization data it carries' };
+    }
+    const server = across ? named(kpac.TYPE.SERVER_CHECKSUM) : null;
+    if (across && (!server || server.verified !== true)) {
+      log.debug("Leaving Krb5Delegation.verifyEvidence(). Server signature.");
+      return { ok: false, why: 'the evidence ticket\'s PAC server ' +
+               'signature does not verify with ' + whose + ', so its ' +
+               'content is not what ' + across.realm + ' signed' };
     }
     log.debug("Leaving Krb5Delegation.verifyEvidence(). Verified.");
     return { ok: true, why: '' };
@@ -529,6 +548,7 @@ export = {
                  frontRealm?: string): Json =>
     instance.relationship(front, back, realm, frontRealm),
   decide: (question: Json): Json => instance.decide(question),
-  verifyEvidence: (evidencePart: Json, kdcKey: Json): Promise<Json> =>
-    instance.verifyEvidence(evidencePart, kdcKey)
+  verifyEvidence: (evidencePart: Json, kdcKey: Json,
+                   across?: Json): Promise<Json> =>
+    instance.verifyEvidence(evidencePart, kdcKey, across)
 };

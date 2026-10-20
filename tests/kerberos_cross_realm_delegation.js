@@ -26,6 +26,11 @@
 //      refused; S4U_DELEGATION_INFO's names.
 //   X. S4U2SELF THEN S4U2PROXY through the trust, the PAC's delegation
 //      chain checked.
+//   E. EVIDENCE ACROSS A TRUST IS PAC-VERIFIED with the inter-realm key
+//      (CVE-2020-17049 across a trust): the genuine referral verifies, and
+//      a PAC forged under another key, a PAC altered after signing, a
+//      ticket altered after signing, and evidence with no PAC are refused
+//      (STS-KRB-0240).
 //   F. A TGT DELEGATED ACROSS A TRUST ([MS-KILE] 3.3.5.7.5): ok-as-delegate
 //      with ENABLE_TGT_DELEGATION, NO_TGT_DELEGATION and neither,
 //      krb5ForeignTgtDelegation deny narrowing it, a FORWARDED request, and a
@@ -477,6 +482,153 @@ async function rbcdSection(t) {
 }
 
 // ---------------------------------------------------------------------------
+// E. EVIDENCE ACROSS A TRUST IS PAC-VERIFIED.
+// ---------------------------------------------------------------------------
+// The referred evidence (krbtgt/BETA@ALPHA, the user's) opened and resealed
+// with BETA's INCOMING key — the key a forger would need, which is the point:
+// only that key's holder could have changed it, so what is tested is that
+// the PAC inside is checked with it rather than taken on the seal alone.
+async function crossRealmKey(at, from) {
+  log.debug("Entering crossRealmKey().");
+  const key = await inRealm(at, async function () {
+    const principal = principals.find(['krbtgt', at], from);
+    return { principal: principal };
+  });
+  log.debug("Leaving crossRealmKey().");
+  return key;
+}
+
+async function reseal(at, from, ticket, change) {
+  log.debug("Entering reseal().");
+  const out = await inRealm(at, async function () {
+    const principal = principals.find(['krbtgt', at], from);
+    const profile = kcrypto.etypeById(ticket.encPart.etype);
+    const key = await principals.longTermKey(principal, ticket.encPart.etype);
+    const part = msgs.readEncTicketPart(await profile.decrypt(key,
+      kcrypto.KEY_USAGE.KDC_REP_TICKET, ticket.encPart.cipher));
+    const changed = await change(part, { etype: ticket.encPart.etype,
+                                         key: key });
+    // A decoded ticket keeps its DER as `raw`, which the encoder sends as
+    // it is; the resealed one is encoded from its fields.
+    return { realm: ticket.realm, sname: ticket.sname,
+             encPart: Object.assign({}, ticket.encPart, {
+               cipher: await profile.encrypt(key,
+                 kcrypto.KEY_USAGE.KDC_REP_TICKET,
+                 msgs.encEncTicketPart(changed)) }) };
+  });
+  log.debug("Leaving reseal().");
+  return out;
+}
+
+async function evidenceSection(t) {
+  log.debug("Entering evidenceSection().");
+  t.log.info('=== E. evidence across a trust is PAC-verified ===');
+  // R1's shape: HTTP/frontend@ALPHA to HTTP/rbcd@BETA, resource-based.
+  const front = await serviceTgt(t, ALPHA, 'frontend');
+  const self = await walkSelf(front, ALPHA, 'frontend', 'alice', ALPHA);
+  const p = await proxyAcross(front, self.r.ticket, spn('rbcd', BETA), ALPHA,
+                              BETA, true);
+  t.check(p.r.ok, 'precondition: the genuine referred evidence is accepted',
+          show(p.r));
+  if (!p.own) {
+    log.debug("Leaving evidenceSection(). No referral.");
+    return;
+  }
+  const held = await crossRealmKey(BETA, ALPHA);
+  t.check(!!held.principal, 'precondition: ' + BETA + ' holds the ' +
+          'incoming key krbtgt/' + BETA + '@' + ALPHA, '');
+  // E1: the genuine PAC's three signatures verify with that key.
+  let genuine = null;
+  await reseal(BETA, ALPHA, p.first.ticket, async function (part, key) {
+    const pacs = kpac.findPacs(part.authorizationData || []);
+    const placeholder = kpac.wrapPacAsAuthorizationData(new Uint8Array([0]));
+    const ticketBytes = msgs.encEncTicketPart(Object.assign({}, part, {
+      authorizationData: (part.authorizationData || []).map(function (e) {
+        return kpac.findPacs([e]).length ? placeholder[0] : e;
+      }) }));
+    genuine = await kpac.verifySignatures(kpac.parsePac(pacs[0].bytes),
+      { serverKey: key, kdcKey: key, ticketBytes: ticketBytes });
+    return part;
+  });
+  const verified = (genuine || []).filter(function (one) {
+    return one.verified === true;
+  }).map(function (one) { return one.name; });
+  t.check(verified.length === 3,
+          'E1. the GENUINE referral\'s PAC carries server, KDC and ticket ' +
+          'signatures, each made with the inter-realm key — what ' + BETA +
+          ' verifies before it accepts the evidence',
+          JSON.stringify(verified));
+  const refusedAs0240 = function (r) {
+    return !!errorOf(r) && errorOf(r).code === 41 &&
+      /across the trust was not accepted/.test(errorOf(r).eText);
+  };
+  // E2: a PAC FORGED under a key that is not the inter-realm key.
+  const forged = await reseal(BETA, ALPHA, p.first.ticket,
+    async function (part, key) {
+      const pacs = kpac.findPacs(part.authorizationData || []);
+      const wrong = { etype: key.etype, key: kcrypto.randomBytes(
+        kcrypto.etypeById(key.etype).keyBytes) };
+      const placeholder = msgs.encEncTicketPart(Object.assign({}, part, {
+        authorizationData: kpac.wrapPacAsAuthorizationData(
+          new Uint8Array([0])) }));
+      return Object.assign({}, part, {
+        authorizationData: kpac.wrapPacAsAuthorizationData(
+          await kpac.resignPac(pacs[0].bytes, { serverKey: wrong,
+            kdcKey: wrong, includeTicketSignature: true,
+            includeExtendedKdcSignature: false,
+            ticketBytes: placeholder })) });
+    });
+  let r = await proxy(p.own, forged, spn('rbcd', BETA), BETA, true);
+  t.check(refusedAs0240(r),
+          'E2. a PAC FORGED under another key is refused KRB_AP_ERR_MODIFIED ' +
+          '(STS-KRB-0240)', show(r));
+  // E3: the PAC ALTERED after it was signed — the user's name rewritten.
+  const altered = await reseal(BETA, ALPHA, p.first.ticket,
+    async function (part) {
+      const pacs = kpac.findPacs(part.authorizationData || []);
+      const bytes = Uint8Array.from(pacs[0].bytes);
+      const from = Buffer.from('alice', 'utf16le');
+      const at = Buffer.from(bytes).indexOf(from);
+      if (at >= 0) {
+        bytes[at] = 'b'.charCodeAt(0);
+      }
+      return Object.assign({}, part, {
+        authorizationData: kpac.wrapPacAsAuthorizationData(bytes) });
+    });
+  r = await proxy(p.own, altered, spn('rbcd', BETA), BETA, true);
+  t.check(refusedAs0240(r),
+          'E3. a PAC ALTERED after it was signed (its client name ' +
+          'rewritten) is refused (STS-KRB-0240)', show(r));
+  // E4: the TICKET altered after it was signed — a flag added.
+  const flagged = await reseal(BETA, ALPHA, p.first.ticket,
+    async function (part) {
+      const extra = msgs.TICKET_FLAG.OK_AS_DELEGATE;
+      return Object.assign({}, part, { flags: (part.flags || [])
+        .filter(function (f) { return f !== extra; }).concat(
+          (part.flags || []).indexOf(extra) >= 0 ? [] : [extra]) });
+    });
+  r = await proxy(p.own, flagged, spn('rbcd', BETA), BETA, true);
+  t.check(refusedAs0240(r),
+          'E4. the TICKET altered after its PAC was signed (a flag ' +
+          'toggled; CVE-2020-17049\'s shape) is refused by the ticket ' +
+          'signature (STS-KRB-0240)', show(r));
+  // E5: no PAC at all.
+  const bare = await reseal(BETA, ALPHA, p.first.ticket,
+    async function (part) {
+      return Object.assign({}, part, { authorizationData: null });
+    });
+  r = await proxy(p.own, bare, spn('rbcd', BETA), BETA, true);
+  t.check(refusedAs0240(r) && /carries no PAC/.test(errorOf(r).eText),
+          'E5. evidence from across a trust with NO PAC is refused ' +
+          '(STS-KRB-0240)', show(r));
+  // E6: and the genuine one, presented again, still passes.
+  r = await proxy(p.own, p.first.ticket, spn('rbcd', BETA), BETA, true);
+  t.check(r.ok, 'E6. the GENUINE evidence, presented again, is accepted',
+          show(r));
+  log.debug("Leaving evidenceSection().");
+}
+
+// ---------------------------------------------------------------------------
 // X. S4U2SELF, THEN S4U2PROXY, THROUGH THE TRUST.
 // ---------------------------------------------------------------------------
 async function chainSection(t) {
@@ -914,6 +1066,7 @@ async function run(t) {
     await stateSection(t);
     await sidFilteringSection(t);
     await chainSection(t);
+    await evidenceSection(t);
   } finally {
     [ALPHA, BETA, GAMMA].forEach(function (name) {
       realms.remove(IDS[name]);

@@ -884,23 +884,49 @@ async function issueReferral(ctx) {
     }
   }
 
-  const encTicketPart = msgs.encEncTicketPart({
-    flags: flags,
-    key: { etype: etype, key: sessionKey },
-    crealm: base.crealm,
-    cname: base.cname,
-    // Empty for a direct trust; each realm a longer path came through
-    // otherwise, DOMAIN-X500-COMPRESS. See above and crossRealmPath(). An
-    // S4U2Self referral from the user's realm starts the user's journey, so
-    // it starts empty (#430).
-    transited: { type: 1, contents: ctx.transitedReset ?
-                   new Uint8Array(0) : path.contents },
-    authtime: base.authtime,
-    starttime: ctx.at,
-    endtime: endtime,
-    renewTill: base.renewTill,
-    authorizationData: authorizationData
-  });
+  const ticketPartWith = function (ad) {
+    log.debug("Entering ticketPartWith().");
+    log.debug("Leaving ticketPartWith().");
+    return msgs.encEncTicketPart({
+      flags: flags,
+      key: { etype: etype, key: sessionKey },
+      crealm: base.crealm,
+      cname: base.cname,
+      // Empty for a direct trust; each realm a longer path came through
+      // otherwise, DOMAIN-X500-COMPRESS. See above and crossRealmPath(). An
+      // S4U2Self referral from the user's realm starts the user's journey,
+      // so it starts empty (#430).
+      transited: { type: 1, contents: ctx.transitedReset ?
+                     new Uint8Array(0) : path.contents },
+      authtime: base.authtime,
+      starttime: ctx.at,
+      endtime: endtime,
+      renewTill: base.renewTill,
+      authorizationData: ad
+    });
+  };
+  // THE PAC OF A REFERRAL IS SIGNED WITH THE INTER-REALM KEY (#430,
+  // [MS-PAC] 2.8): server, KDC and ticket signature alike, because that is
+  // the one key the realm it arrives in holds, and so the one key it can
+  // verify them with — which it does for S4U2Proxy evidence, the CVE-2020-
+  // 17049 check made across a trust (verifyEvidence() with the incoming
+  // key). Whatever signed the PAC before (a caller's builder, the filter
+  // above) is replaced here. The ticket signature is the two-pass build
+  // buildPacFor() argues. UNCERTAIN: [MS-PAC] does not say in so many words
+  // which key a referral's KDC and ticket signatures are made with; this is
+  // the reading under which the next realm can check them at all.
+  const referralPacs = kpac.findPacs(authorizationData || []);
+  if (referralPacs.length) {
+    const placeholder = ticketPartWith(kpac.wrapPacAsAuthorizationData(
+      new Uint8Array([0])));
+    authorizationData = kpac.wrapPacAsAuthorizationData(
+      await kpac.resignPac(referralPacs[0].bytes, {
+        serverKey: referralKey, kdcKey: referralKey,
+        includeTicketSignature: true, includeExtendedKdcSignature: false,
+        ticketBytes: placeholder
+      }));
+  }
+  const encTicketPart = ticketPartWith(authorizationData);
 
   const useSubkey = !!ctx.authenticator.subkey;
   let replyKey = useSubkey ? ctx.authenticator.subkey.key : ctx.sessionKey;
@@ -1833,10 +1859,15 @@ async function resolveS4u(ctx) {
   // A PREVIOUS key version of the requester still opens its own evidence, for
   // the TGT's reason — see ticketKeyFor().
   let evidenceKeyVersion = '';
+  // The key that opened it: across a trust, the INCOMING inter-realm key,
+  // which is also the key its PAC is verified with (below).
+  let evidenceOpenedWith = null;
   try {
     const evidenceProfile = kcrypto.etypeById(evidence.encPart.etype);
     const opening = await ticketKeyFor(evidenceService, evidence.encPart);
     if (opening.key) {
+      evidenceOpenedWith = { etype: evidence.encPart.etype,
+                             key: opening.key };
       evidencePart = msgs.readEncTicketPart(await evidenceProfile.decrypt(
         opening.key, kcrypto.KEY_USAGE.KDC_REP_TICKET,
         evidence.encPart.cipher));
@@ -1885,18 +1916,35 @@ async function resolveS4u(ctx) {
   // REQUESTER's key, so the requester can rewrite it — set its forwardable
   // flag (CVE-2020-17049, "Bronze Bit") or forge one for anybody — and only a
   // signature it cannot make tells the two apart. Refused in every mode.
-  // ACROSS A TRUST (#430) the PAC is the issuing realm's, signed with keys
-  // this realm does not hold; the ticket's seal under the trust key is what
-  // the requester could not have rewritten. It must carry a PAC — the user
-  // is named nowhere else that a realm vouched for — and that PAC is
-  // SID-filtered here, before anything reads it.
+  // ACROSS A TRUST (#430) the PAC is the issuing realm's, signed — server,
+  // KDC and ticket signature — with the inter-realm key that sealed the
+  // ticket (issueReferral() argues it), and it is verified with that key
+  // here: the same check, made with the key that applies at this hop. Each
+  // realm on a longer path verified the PAC it received the same way before
+  // it re-signed it for the next. It must carry a PAC — the user is named
+  // nowhere else that a realm vouched for — and that PAC is SID-filtered
+  // only after it verified, before anything reads it.
   const acrossPacs = evidenceAcross ?
     kpac.findPacs(evidencePart.authorizationData || []) : [];
   const evidenceCheck = evidenceAcross
-    ? (acrossPacs.length ? { ok: true, why: '' } :
-       { ok: false, why: 'the cross-realm evidence ticket from ' +
-                         evidence.realm + ' carries no PAC' })
+    ? (acrossPacs.length
+      ? await krb5Delegation().verifyEvidence(evidencePart,
+        evidenceOpenedWith, { realm: String(evidence.realm) })
+      : { ok: false, why: 'the cross-realm evidence ticket from ' +
+                          evidence.realm + ' carries no PAC' })
     : await krb5Delegation().verifyEvidence(evidencePart, ctx.kdcKey);
+  if (evidenceAcross && !evidenceCheck.ok) {
+    log.info('krb5: REFUSING S4U2Proxy across the trust with ' +
+             evidence.realm + ' — ' + evidenceCheck.why);
+    log.debug("Leaving resolveS4u(). Evidence across a trust unverified.");
+    return refuseS4u(intent, 41, {
+      errorCode: 'STS-KRB-0240',
+      crealm: ticketPart.crealm, cname: ticketPart.cname,
+      realm: ctx.answeringRealm, sname: body.sname,
+      eText: 'the evidence ticket from across the trust was not accepted: ' +
+             evidenceCheck.why
+    });
+  }
   const evidencePac = evidenceAcross && acrossPacs.length
     ? filterArriving(acrossPacs[0].bytes, String(evidence.realm),
                      ctx.answeringRealm) : null;

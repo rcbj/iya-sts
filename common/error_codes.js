@@ -12562,6 +12562,12 @@ const CODES = [
       'logon domain is in this realm\'s forest across a cross-forest or ' +
       'external boundary, or is not a domain the trust passes.',
     spec: 'KDC_ERR_POLICY (12); [MS-PAC] 4.1.2.2' },
+  { code: 'STS-KRB-0240',
+    summary: 'S4U2Proxy evidence that crossed a Kerberos trust was refused: ' +
+      'its PAC\'s server, KDC or ticket signature does not verify with the ' +
+      'inter-realm key that sealed it, so the ticket or its PAC was altered ' +
+      'or forged after the issuing realm signed it.',
+    spec: '[MS-SFU] 3.2.5.2.3, [MS-PAC] 2.8: KRB_AP_ERR_MODIFIED (41)' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',

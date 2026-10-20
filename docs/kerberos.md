@@ -298,7 +298,11 @@ delegation:
   `SPN@REALM`, and the trusts on both sides must be enabled. Classic
   constrained delegation (`appAllowedToDelegateTo`) stays within a realm
   unless `krb5.crossRealmClassicDelegation` is on in BOTH realms. The
-  forwardable and protected-user rules are the same as within a realm.
+  forwardable and protected-user rules are the same as within a realm, and
+  so is the CVE-2020-17049 check: a referral's PAC is signed with the
+  inter-realm key, and the target's realm verifies its server, KDC and
+  ticket signatures with that key before it reads the user from it
+  (`STS-KRB-0240` when they do not verify).
 * **A TGT delegated across a trust** (ok-as-delegate, and a FORWARDED
   request) follows the trust's two bits ([MS-KILE] 3.3.5.7.5):
   `within-forest` or `enable-tgt-delegation` allows it, `no-tgt-delegation`

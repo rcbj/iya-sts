@@ -1074,16 +1074,25 @@ ticket to Service 1 for the user.
 1. Service 1 sends A the S4U2Proxy TGS-REQ: `cname-in-addl-tkt`, the
    evidence as the additional ticket, PA-PAC-OPTIONS with resource-based
    delegation, `sname` Service 2.
-2. A does not hold Service 2. It answers with a REFERRAL TGT toward B whose
-   PAC is the USER's, taken from the evidence ticket — the evidence turned
-   into a cross-realm TGT for the user. Service 1 also needs, and gets by an
+2. A does not hold Service 2. It first verifies the evidence's PAC with its
+   own krbtgt key, as within a realm, and answers with a REFERRAL TGT toward
+   B whose PAC is the USER's, taken from the evidence ticket — the evidence
+   turned into a cross-realm TGT for the user — and SIGNED WITH THE
+   INTER-REALM KEY: server, KDC and ticket signature alike, the one key B
+   holds to check them with ([MS-PAC] 2.8; which key a referral's KDC and
+   ticket signatures use is not spelled out there, and this reading is
+   **uncertain**). A realm in between verifies what it receives with its
+   incoming key and re-signs with its outgoing one. Service 1 also needs, and gets by an
    ordinary referral, a cross-realm TGT for ITSELF. The client side
    ([MS-SFU] 3.1.5.2.2) follows the path twice, once for each.
 3. Service 1 sends B the S4U2Proxy TGS-REQ presenting its own cross-realm
    TGT, with the user's referral TGT as the additional ticket and
-   PA-PAC-OPTIONS again. B verifies the evidence under its INCOMING key
-   from A, reads the user from the evidence's PAC (its ticket names Service
-   1), and checks resource-based delegation: Service 2's
+   PA-PAC-OPTIONS again. B opens the evidence under its INCOMING key from
+   A and VERIFIES ITS PAC'S SIGNATURES WITH THAT SAME KEY — the
+   CVE-2020-17049 check made with the key that applies at this hop, refused
+   as KRB_AP_ERR_MODIFIED (`STS-KRB-0240`, 2026-10-20: until then the seal
+   under the trust key was taken as enough) — reads the user from the
+   evidence's PAC (its ticket names Service 1), and checks resource-based delegation: Service 2's
    `appAllowedToActOnBehalfOf` must name the foreign actor, written
    `SPN@A`. Forwardable evidence is required for resource-based delegation
    since the CVE-2020-16996 update (3.2.5.2.3), as within a realm.
@@ -1281,10 +1290,18 @@ sends it facts and turns its refusal kinds into codes.
   (`proxy-referral`, its PAC re-signed for the trust); the target's KDC opens
   that evidence with its incoming key (`evidenceAcross`), SID-filters its PAC,
   and checks resource-based delegation against the front end named
-  `SPN@ITS-REALM` (`relationship()`'s `frontRealm`). The evidence is not
-  PAC-verified with this realm's krbtgt — another realm signed it — but it is
-  sealed in the trust key the front end cannot open, so its flags are the
-  issuing realm's word. CLASSIC across realms is refused unless
+  `SPN@ITS-REALM` (`relationship()`'s `frontRealm`). **The evidence IS
+  PAC-verified** (rcbj, 2026-10-20, reversing the first build, which took
+  the seal under the trust key as enough): every referral this KDC issues
+  signs its PAC — server, KDC and ticket signature — with the inter-realm
+  key (`issueReferral()`), and the target's KDC verifies all three with its
+  incoming key (`verifyEvidence(part, key, { realm })`) BEFORE SID filtering
+  reads the PAC; a forged or altered PAC, a ticket altered after signing,
+  or no PAC at all is KRB_AP_ERR_MODIFIED, `STS-KRB-0240`, recorded at
+  `refuseS4u()`. The test is `kerberos_cross_realm_delegation.js`'s E.
+  A plain cross-realm TGT (no S4U) is not PAC-verified on arrival: its PAC
+  is SID-filtered and re-signed, and it is never evidence of anything a
+  service could have rewritten, being sealed in a key no service holds. CLASSIC across realms is refused unless
   `krb5.crossRealmClassicDelegation` (off, runtime, per realm): the front
   end's realm checks its own `appAllowedToDelegateTo` before it refers, and
   the target's realm takes that referral as VOUCHED (`classicVouched`) — both

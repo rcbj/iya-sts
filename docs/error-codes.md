@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4426** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4427** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
 * [Federation (`STS-FED`)](#sts-fed) — 146
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 239
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 240
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 130
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
@@ -2866,6 +2866,7 @@ Raised from: kerberos/.
 | `STS-KRB-0237` | A Kerberos trust record was refused: its forest trust information is malformed, or given to a trust that is not cross-forest (#430 SID filtering). | none (a refused administrative change); [MS-ADTS] 6.1.6.9.3 |
 | `STS-KRB-0238` | A Kerberos trust record was refused: its claims transformation is not one this service implements (drop-all, allow-all). | none (a refused administrative change); [MS-ADTS] 3.1.1.11.2.11 |
 | `STS-KRB-0239` | A PAC arriving across a Kerberos trust may not cross it: its logon domain is in this realm's forest across a cross-forest or external boundary, or is not a domain the trust passes. | KDC_ERR_POLICY (12); [MS-PAC] 4.1.2.2 |
+| `STS-KRB-0240` | S4U2Proxy evidence that crossed a Kerberos trust was refused: its PAC's server, KDC or ticket signature does not verify with the inter-realm key that sealed it, so the ticket or its PAC was altered or forged after the issuing realm signed it. | [MS-SFU] 3.2.5.2.3, [MS-PAC] 2.8: KRB_AP_ERR_MODIFIED (41) |
 
 ## STS-LDAP
 
