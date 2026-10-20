@@ -3821,17 +3821,31 @@ class AdminConsole {
       '4px;border:1px solid ' +
       '#c9c9d4;border-radius:5px;background:#fff;color:#222}.realmpick ' +
       'button{flex:0 0 auto;padding:3px 9px;font-size:.92em}.navsec{margin:0 ' +
-      '0 12px}.navsec:last-child{margin-bottom:4px}' +
-      // The section heading. Not a link and it must not look like one — there
-      // is no page behind a section, which is the same reason it is not a
-      // crumb.
-      '.navhead{margin:0 0 4px;font-size:.7em;text-transform:uppercase;' +
+      '0 4px}.navsec:last-child{margin-bottom:4px}' +
+      // The section heading, a `<summary>` since #750: it opens and closes the
+      // section, and nothing else. Not a link and it must not look like one —
+      // there is no page behind a section, which is the same reason it is not
+      // a crumb — so it keeps the small capitals and gains only a triangle
+      // and a pointer. `list-style:none` and the WebKit pseudo-element take
+      // the browser's own marker off, so the triangle is drawn once, here,
+      // and turns when the section opens. The padding is what makes a
+      // heading this small an easy thing to hit.
+      '.navhead{display:block;cursor:pointer;list-style:none;margin:0;' +
+      'padding:4px 0;font-size:.7em;text-transform:uppercase;' +
       'letter-spacing:.06em;color:#8a8a99;font-weight:700}' +
-      // The section the current page is in. A rule down its left rather than a
-      // background, so that the mark reads as "you are in here" and not as a
-      // second selected item beside the selected one.
-      '.navsec.open{border-left:3px solid ' +
-      '#12107c;margin-left:-14px;padding-left:11px}.navsec.open ' +
+      '.navhead::-webkit-details-marker{display:none}' +
+      '.navhead::before{content:"\\25B8";display:inline-block;width:1.1em;' +
+      'transition:transform .15s}.navsec[open]>.navhead::before{transform:' +
+      'rotate(90deg)}.navsec[open]>.navhead{margin-bottom:4px}' +
+      '.navsec[open]{margin-bottom:10px}.navhead:hover{color:#12107c}' +
+      '.navhead:focus-visible{outline:2px solid #12107c;outline-offset:2px;' +
+      'border-radius:3px}' +
+      // The section the current page is in, open or closed. A rule down its
+      // left rather than a background, so that the mark reads as "you are in
+      // here" and not as a second selected item beside the selected one —
+      // and, on a closed section, as the way back to the page you are on.
+      '.navsec.current{border-left:3px solid ' +
+      '#12107c;margin-left:-14px;padding-left:11px}.navsec.current>' +
       '.navhead{color:#12107c}' +
       // A GROUP INSIDE A SECTION. It is an <li>, so `nav li` has already given
       // it the item metrics; what these rules do is take the item LOOK back off
@@ -4366,7 +4380,7 @@ class AdminConsole {
       '@media (max-width:56rem){.side{position:static;flex:1 1 100%;' +
       'max-height:none;display:block}nav{overflow-y:visible}' +
       '.navsec{display:inline-block;vertical-align:top;min-width:11rem;' +
-      'margin-right:1.2em}.navsec.open{margin-left:0;padding-left:0;' +
+      'margin-right:1.2em}.navsec.current{margin-left:0;padding-left:0;' +
       'border-left:0;border-top:3px solid #12107c;padding-top:6px}}' +
       // ---------------------------------------------------------------------
       // /admin/applications/new's CONDITIONAL FIELDS, and the reason this is

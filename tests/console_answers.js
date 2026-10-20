@@ -29,12 +29,21 @@
 //   F. `revealActiveNav()` scrolls the sidebar's own nav so the active tab
 //      is in its middle after a page is drawn in place, and leaves a page
 //      with no nav or no active tab alone (2026-10-08).
+//   G. THE SIDEBAR'S SECTIONS ARE CLOSED UNTIL THE READER OPENS ONE, AND ONE
+//      IS OPEN AT A TIME (#750): every section is a `<details>` sharing one
+//      `name`, none drawn open on a fresh load — the current page's section
+//      included, which is marked instead — and the one the runtime
+//      remembers opened is drawn open on every page after; `onNavToggle()`
+//      records it, forgets it when it is closed and closes the others where
+//      a browser does not; and `revealActiveNav()` leaves a closed
+//      section's hidden tab alone.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
 
 const WebAnswers = require('../admin-ui/web_answers');
 const ConsoleRuntime = require('../admin-ui/web_runtime');
+const WebShell = require('../admin-ui/web_shell');
 
 const log = require('bunyan').createLogger({
   name: 'console_answers', level: process.env.LOG_LEVEL || 'info' });
@@ -317,6 +326,165 @@ function checkNavReveal(t) {
   log.debug("Leaving checkNavReveal().");
 }
 
+// Three sections the way the shell answer carries them, one holding a group,
+// and the page being drawn in the second.
+const NAV_SHELL = {
+  gate: { session: true, username: 'alice' },
+  sections: [
+    { title: 'Overview', what: 'The start.',
+      items: [{ path: '/admin', label: 'Overview' }] },
+    { title: 'Directory', what: 'People.',
+      items: [{ path: '/admin/users', label: 'Users' },
+              { path: '/admin/groups', label: 'Groups' }] },
+    { title: 'Server configuration', what: 'The process.',
+      items: [{ title: 'Keys', what: 'Key pairs.',
+                items: [{ path: '/admin/keys', label: 'Key pairs' }] }] }
+  ],
+  realm: { id: '', name: 'Default' }, navLabels: {}, version: {},
+  persistence: {}, portalHref: '/portal' };
+
+// Every `<details ...>` opening tag of the sidebar, by its section's key.
+function navSections(html) {
+  const found = {};
+  const re = /<details class="navsec([^"]*)" name="([^"]*)" data-section="([^"]*)"([^>]*)>/g;
+  let m = re.exec(html);
+  while (m) {
+    found[m[3]] = { current: / current/.test(m[1]), name: m[2],
+                    open: / open/.test(m[4]) };
+    m = re.exec(html);
+  }
+  return found;
+}
+
+// A stand-in for one section's `<details>`, enough for onNavToggle().
+function fakeSection(key, open) {
+  return {
+    open: open,
+    classList: { contains: function (name) {
+      return name === 'navsec';
+    } },
+    getAttribute: function (name) {
+      return name === 'data-section' ? key : null;
+    }
+  };
+}
+
+function checkNavSections(t) {
+  log.debug("Entering checkNavSections().");
+  t.log.info('=== G. the sidebar\'s sections ===');
+  const page = { title: 'Users', active: '/admin/users', up: null,
+                 inner: '<p>x</p>', path: '/admin/users' };
+  const fresh = WebShell.frame(NAV_SHELL, page);
+  const drawn = navSections(fresh);
+  const keys = Object.keys(drawn);
+  t.check(keys.join(',') === 'overview,directory,server-configuration' &&
+          keys.every(function (key) {
+            return drawn[key].name === WebShell.NAV_GROUP &&
+                   !drawn[key].open;
+          }) && !/<p class="navhead"/.test(fresh) &&
+          (fresh.match(/<summary class="navhead"/g) || []).length === 3,
+          'G1. every section is a <details> of one named group, its heading '
+          + 'the <summary>, and on a fresh load none is open',
+          JSON.stringify(drawn));
+  t.check(drawn.directory.current && !drawn.overview.current &&
+          !drawn['server-configuration'].current &&
+          /<span class="here"[^>]*aria-current="page">Users<\/span>/
+            .test(fresh),
+          'G2. the closed section holding the page is marked current, and '
+          + 'the page\'s own entry inside it still is',
+          JSON.stringify(drawn));
+  const opened = navSections(WebShell.frame(NAV_SHELL, Object.assign({},
+    page, { openSection: 'server-configuration' })));
+  t.check(opened['server-configuration'].open && !opened.directory.open &&
+          !opened.overview.open && opened.directory.current,
+          'G3. the section the reader opened is the one drawn open, on a '
+          + 'page in another section',
+          JSON.stringify(opened));
+  // THE RUNTIME'S HALF: what a `toggle` records, and the one-open rule
+  // where the browser's `name` does not give it.
+  const directory = fakeSection('directory', true);
+  const overview = fakeSection('overview', true);
+  const rt = new ConsoleRuntime({ location: { pathname: '/admin' },
+    document: { querySelectorAll: function (selector) {
+      return selector === 'aside.side details.navsec[open]'
+        ? [overview, directory].filter(function (one) {
+          return one.open;
+        }) : [];
+    } } });
+  t.check(rt.openSection === '',
+          'G4. a runtime starts with no section open', rt.openSection);
+  rt.onNavToggle(directory);
+  t.check(rt.openSection === 'directory' && overview.open === false &&
+          directory.open === true,
+          'G5. opening a section records it and closes any other',
+          rt.openSection + ' ' + overview.open);
+  rt.onNavToggle(overview);
+  t.check(rt.openSection === 'directory',
+          'G6. the close of another section does not forget the open one',
+          rt.openSection);
+  directory.open = false;
+  rt.onNavToggle(directory);
+  t.check(rt.openSection === '',
+          'G7. closing the open section forgets it', rt.openSection);
+  rt.onNavToggle({ open: true, classList: { contains: function () {
+    return false;
+  } }, getAttribute: function () {
+    return 'usermenu';
+  } });
+  rt.onNavToggle(null);
+  t.check(rt.openSection === '',
+          'G8. a <details> outside the sidebar, or none, is ignored',
+          rt.openSection);
+  // F4's way: the source wires what is held above, or it is held for
+  // nothing.
+  const source = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'admin-ui', 'web_runtime.ts'),
+    'utf8');
+  t.check(/openSection: this\.openSection/.test(source) &&
+          /addEventListener\('toggle', function \(event\) \{\s*self\.onNavToggle\(event && event\.target\);\s*\}, true\)/
+            .test(source),
+          'G9. draw() hands the open section to the shell, and start() '
+          + 'catches every toggle in the capture phase',
+          'not wired');
+  // A CLOSED SECTION'S TAB HAS NO BOX: the open section's heading is what
+  // is centred, and with none open nothing moves.
+  const box = function (top, height) {
+    return function () {
+      return { top: top, height: height };
+    };
+  };
+  const heading = { getBoundingClientRect: box(100 + 900, 20) };
+  const hidden = { getBoundingClientRect: box(0, 0),
+                   closest: function (selector) {
+                     return selector === 'details:not([open])' ? {} : null;
+                   } };
+  const navWith = function (openHeading) {
+    const nav = { scrollTop: 0, clientHeight: 400,
+                  getBoundingClientRect: box(100, 400) };
+    nav.querySelector = function (selector) {
+      if (selector === '.here') {
+        return hidden;
+      }
+      return selector === 'details[open] > summary' ? openHeading : null;
+    };
+    return nav;
+  };
+  const withOpen = navWith(heading);
+  const withNone = navWith(null);
+  [withOpen, withNone].forEach(function (nav) {
+    new ConsoleRuntime({ location: { pathname: '/admin' },
+                         document: { querySelector: function () {
+                           return nav;
+                         } } }).revealActiveNav();
+  });
+  t.check(withOpen.scrollTop === 900 - (400 - 20) / 2 &&
+          withNone.scrollTop === 0,
+          'G10. a tab in a closed section is not scrolled to; the open '
+          + 'section\'s heading is, and with none open nothing moves',
+          withOpen.scrollTop + ' ' + withNone.scrollTop);
+  log.debug("Leaving checkNavSections().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   checkRoundTrips(t);
@@ -324,6 +492,7 @@ function run(t) {
   checkRedraws(t);
   checkShaping(t);
   checkNavReveal(t);
+  checkNavSections(t);
   log.debug("Leaving run().");
 }
 
@@ -331,6 +500,8 @@ module.exports = {
   name: 'console answers',
   describe: 'web_answers.ts draws round trips, secrets shown once and ' +
             'redraws from an answer; shapeFields() keeps the field grid and ' +
-            'carries a checkbox column into its list member',
+            'carries a checkbox column into its list member; the ' +
+            'sidebar\'s sections are closed until one is opened, one at a ' +
+            'time',
   run: run
 };

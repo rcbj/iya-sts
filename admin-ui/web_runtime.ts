@@ -129,6 +129,14 @@ class ConsoleRuntime extends SpaClient {
   // first while one has. Set by an `input` or `change` inside a form, and
   // cleared by every drawing.
   private dirty: boolean;
+  // THE SIDEBAR SECTION THE READER OPENED (#750), by its `data-section`
+  // key, or '' while none is: every drawing draws that one open and every
+  // other closed, so a section opened stays open from page to page in this
+  // tab until the reader closes it or opens another. Held here and nowhere
+  // else — a page is drawn in place, never loaded, so this object outlives
+  // every move between console pages, and a reload, a new tab or a new
+  // sign-in starts with everything closed, which is what was asked for.
+  private openSection: string;
 
   /**
    * Makes the runtime.
@@ -158,6 +166,7 @@ class ConsoleRuntime extends SpaClient {
     this.reauth = null;
     this.submitting = null;
     this.dirty = false;
+    this.openSection = '';
   }
 
   // --- paths ---------------------------------------------------------------
@@ -1251,7 +1260,7 @@ class ConsoleRuntime extends SpaClient {
     this.env.document.body.innerHTML = ConsoleRuntime.realmLinks(
       WebShell.frame(shell, {
         title: title, active: active, up: up, inner: messages + inner,
-        path: this.here(), t: this.t,
+        path: this.here(), t: this.t, openSection: this.openSection,
         accounts: this.accounts, subject: this.subject }), this.prefix);
     // A page just drawn holds nothing typed (#561's unsaved-changes test).
     this.dirty = false;
@@ -1291,7 +1300,14 @@ class ConsoleRuntime extends SpaClient {
       return;
     }
     const nav = doc.querySelector('aside.side nav');
-    const here = nav ? nav.querySelector('.here') : null;
+    // A CLOSED SECTION HIDES ITS ACTIVE TAB (#750): the tab has no box to
+    // centre, so what is brought into view is the section the reader has
+    // open, by its heading — and with none open, nothing is moved.
+    let here = nav ? nav.querySelector('.here') : null;
+    if (here && typeof here.closest === 'function' &&
+        here.closest('details:not([open])')) {
+      here = nav.querySelector('details[open] > summary');
+    }
     if (!nav || !here) {
       return;
     }
@@ -1300,6 +1316,44 @@ class ConsoleRuntime extends SpaClient {
     const offset = (hereBox.top - navBox.top) -
       (nav.clientHeight - hereBox.height) / 2;
     nav.scrollTop = Math.max(0, nav.scrollTop + offset);
+  }
+
+  // A SIDEBAR SECTION OPENED OR CLOSED (#750). `toggle` does not bubble, so
+  // `start()` listens for it in the capture phase and hands every one here;
+  // only a section of the sidebar's nav is acted on. Opening one records it
+  // and closes any other: the shared `name` (WebShell.NAV_GROUP) already does
+  // that in a browser that knows it, where the loop finds nothing open, and
+  // in one that predates it the loop IS the one-open rule. Closing the one
+  // recorded forgets it; the `toggle` for a section the browser closed
+  // because another opened does not, whichever order the two arrive in.
+  /**
+   * Records the sidebar section opened, and closes the others.
+   *
+   * @param target - the element a `toggle` event was fired at
+   * @returns nothing
+   */
+  onNavToggle(target: Json): void {
+    if (!target || !target.classList ||
+        !target.classList.contains('navsec') ||
+        typeof target.getAttribute !== 'function') {
+      return;
+    }
+    const key = String(target.getAttribute('data-section') || '');
+    if (!target.open) {
+      if (this.openSection === key) {
+        this.openSection = '';
+      }
+      return;
+    }
+    this.openSection = key;
+    const doc = this.env.document;
+    const open = doc && doc.querySelectorAll
+      ? doc.querySelectorAll('aside.side details.navsec[open]') : [];
+    for (let i = 0; i < open.length; i++) {
+      if (open[i] !== target) {
+        open[i].open = false;
+      }
+    }
   }
 
   // A SCRIPT A PAGE NAMES (`data-script`): markup drawn by `innerHTML` runs
@@ -2788,6 +2842,11 @@ class ConsoleRuntime extends SpaClient {
     this.env.document.addEventListener('submit', function (event) {
       self.onSubmit(event);
     });
+    // A SIDEBAR SECTION OPENED OR CLOSED (#750): `toggle` does not bubble,
+    // so it is caught on the way down.
+    this.env.document.addEventListener('toggle', function (event) {
+      self.onNavToggle(event && event.target);
+    }, true);
     this.env.document.addEventListener('focusin', function (event) {
       self.closeOtherSearches(event && event.target);
     });
