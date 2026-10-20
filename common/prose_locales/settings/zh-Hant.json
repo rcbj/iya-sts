@@ -5903,6 +5903,14 @@
     "en": "e88d21d50bcd7495",
     "text": "一條跨領域路徑在此 KDC 拒絕繼續轉介之前最多可跨越多少個信任（KDC_ERR_PATH_NOT_ACCEPTED）。直接信任算一次跨越；路徑每經過一個被轉介的領域再加一次。信任本身是領域目錄中的記錄（ou=kerberosTrusts），路徑只會透過標記為可轉移的記錄建立。"
   },
+  "krb5.trustKeyGraceSeconds|label": {
+    "en": "e9a56607c04ebe5c",
+    "text": "輪替後信任金鑰的寬限期（秒）"
+  },
+  "krb5.trustKeyGraceSeconds|description": {
+    "en": "0ee4268f63c3b908",
+    "text": "信任的「輪替金鑰」所取代的傳入領域間金鑰在多長時間內仍可開啟夥伴的票證——夥伴會繼續用它加密，直到其自身一側變更。零（預設值）表示 krb5.ticketLifetimeSeconds 加上 krb5.clockSkew，於檢查該版本時讀取。數字則表示相應的秒數：足以讓夥伴的管理員變更其一側。每個信任保留一個先前版本；超過寬限期後，使用該版本的票證會以 KRB_AP_ERR_BADKEYVER 被拒絕。"
+  },
   "krb5.spnegoAuthentication|label": {
     "en": "0a014fa4b2685cd7",
     "text": "以 Kerberos 票證登入"

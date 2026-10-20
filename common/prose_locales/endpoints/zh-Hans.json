@@ -1039,6 +1039,14 @@
     "en": "e3b666e9c2cf04a5",
     "text": "创建、轮换或删除服务主体，清除某人的密钥，丢弃旧的密钥版本，或轮换 krbtgt 密钥"
   },
+  "endpoints.route./admin-api/kerberos/trusts.name": {
+    "en": "e92d42c7c01ab222",
+    "text": "Kerberos 信任"
+  },
+  "endpoints.route./admin-api/kerberos/trusts/:action.name": {
+    "en": "15792a8aae11b100",
+    "text": "添加、更改、启用、禁用、轮换、删除或配对 Kerberos 信任"
+  },
   "endpoints.route./admin-api/token-lifetimes.name": {
     "en": "ddad2319f680d9f9",
     "text": "令牌有效期"

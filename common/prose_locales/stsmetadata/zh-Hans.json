@@ -32,8 +32,8 @@
     "text": "partial：从内置的 protos 提供六个服务、42 个方法，其中 36 个已实现。未实现的六个各自应答一个原因——AppendBundle 和 PublishJWTAuthority（它们会发布本服务器不持有密钥的颁发机构）、RefreshBundle（它会获取某人注册的 URL），以及三个 WIT 方法。调用方会经过身份验证和授权：TCP 端口使用双向 TLS，调用方的 SPIFFE ID 取自其 X509-SVID 的 URI SAN 并针对信任包验证，每个方法都按 SPIRE 自己的 policy_data.json（local、agent、admin、downstream）检查，Unix 套接字被视为 `local` 而受信任，正如真实的 spire-server 信任其私有套接字一样。RenewAgent 正因此不再是未实现的：它为该连接上的代理续期。没有任何设置可以恢复旧的状态——那时端口是明文的，任何能访问到它的人都可以创建授予任意身份的注册条目：spiffe.authRequired 已于 2026-09-06 移除。"
   },
   "stsmetadata.specs.rfc4120.coverage": {
-    "en": "f830c0cae35e4109",
-    "text": "partial：通过 TCP、UDP 和 MS-KKDCP 进行的 AS 和 TGS 交换，包括预身份验证（PA-ENC-TIMESTAMP）、携带盐值的 PA-ETYPE-INFO2、票据标志、时钟偏差强制检查以及错误目录。两个彼此信任的领域，因此跨领域引荐可以工作。FAST 和 OTP 预身份验证各有其行（RFC 6113、RFC 6560），PKINIT 也是（RFC 4556）；没有请求签名，没有 kpasswd（S4U 属于 [MS-SFU]，有其自己的行）。AP 交换属于接受方（SPNEGO），不在这里。任何用户名都能通过身份验证，且每个用户账户共享同一个密码，设置 krb5.userPassword 会公布它：预身份验证是真正验证的（密码就是密钥，所以必须如此），但每个人的密码都相同，未知用户名会被当场创建而不是被拒绝。这就是开发模式。在产品模式下，固定测试账户、第二个领域和每条委托规则都不存在，不会按需创建任何内容，不公布任何密码，所配置的服务账户只有在 krb5.servicePassword 被设为其公布的默认值以外的值时才存在，并且每个领域的 krbtgt 密钥是随机的，密封保存在目录中，由 krb5.krbtgt-rotate 作业轮换（krb5.krbtgtRotationIntervalDays），被替换的版本会保留，时长为在其下签发的 TGT 最长可存活的时间；“轮换并作废”则什么都不保留。目前没有标准化的后量子 Kerberos 加密类型，因此轮换使用 AES 加密类型。产品模式的 KDC 使用从目录中人员自己的密码派生的密钥对他们进行身份验证（在他们登录一次之后），使用运营方创建的随机密钥对服务主体进行身份验证；持有或必须持有第二因素的人仅凭密码得不到任何票据（在密码验证通过之后返回 KDC_ERR_POLICY）——只能通过带 OTP 预身份验证的 FAST，或通过 PKINIT 使用证书。"
+    "en": "27228a77db708fb3",
+    "text": "partial：通过 TCP、UDP 和 MS-KKDCP 进行的 AS 和 TGS 交换，包括预身份验证（PA-ENC-TIMESTAMP）、携带盐值的 PA-ETYPE-INFO2、票据标志、时钟偏差强制检查以及错误目录。与其他领域的信任是记录，每个伙伴一条（协议 → Kerberos → 信任，/admin-api/kerberos/trusts）：经可传递信任进行引荐并检查 transited，领域间密钥来自共享密码或随机生成，轮换时被替换的密钥有宽限期。FAST 和 OTP 预身份验证各有其行（RFC 6113、RFC 6560），PKINIT 也是（RFC 4556）；没有请求签名，没有 kpasswd（S4U 属于 [MS-SFU]，有其自己的行）。AP 交换属于接受方（SPNEGO），不在这里。任何用户名都能通过身份验证，且每个用户账户共享同一个密码，设置 krb5.userPassword 会公布它：预身份验证是真正验证的（密码就是密钥，所以必须如此），但每个人的密码都相同，未知用户名会被当场创建而不是被拒绝。这就是开发模式。在产品模式下，固定测试账户、第二个领域和每条委托规则都不存在，不会按需创建任何内容，不公布任何密码，所配置的服务账户只有在 krb5.servicePassword 被设为其公布的默认值以外的值时才存在，并且每个领域的 krbtgt 密钥是随机的，密封保存在目录中，由 krb5.krbtgt-rotate 作业轮换（krb5.krbtgtRotationIntervalDays），被替换的版本会保留，时长为在其下签发的 TGT 最长可存活的时间；“轮换并作废”则什么都不保留。目前没有标准化的后量子 Kerberos 加密类型，因此轮换使用 AES 加密类型。产品模式的 KDC 使用从目录中人员自己的密码派生的密钥对他们进行身份验证（在他们登录一次之后），使用运营方创建的随机密钥对服务主体进行身份验证；持有或必须持有第二因素的人仅凭密码得不到任何票据（在密码验证通过之后返回 KDC_ERR_POLICY）——只能通过带 OTP 预身份验证的 FAST，或通过 PKINIT 使用证书。"
   },
   "stsmetadata.specs.rfc6113.coverage": {
     "en": "a3a867d4d0ef4d0b",
@@ -72,12 +72,12 @@
     "text": "full：覆盖所提供的加密类型：aes128/256-cts-hmac-sha1-96（17、18）、aes128/256-cts-hmac-sha256/384（19、20）和 arcfour-hmac-md5（23）。DES 仅可解码，不提供。五者中究竟提供哪些由 krb5.enctypes 决定，开发模式下默认全部五种；在产品模式下 23 从不提供、派生或接受（RFC 8429，#182），剩下四种 AES 类型。编解码器未实现的编号会使服务在启动时停止。同一编解码器也在浏览器中运行。"
   },
   "stsmetadata.specs.ms-sfu.coverage": {
-    "en": "39fb27234501bf05",
-    "text": "partial：S4U2Self（带第 2.2.1 节 S4UByteArray 校验和的 PA-FOR-USER，密钥用途 17 下的 HMAC-MD5）和 S4U2Proxy（带证据票据的 cname-in-addl-tkt），双向授权——前端的 msDS-AllowedToDelegateTo 和后端的 msDS-AllowedToActOnBehalfOfOtherIdentity，两者之间的不对称性得到执行：经典委托需要可转发的证据，基于资源的委托需要带有基于资源位的 PA-PAC-OPTIONS，缺少时以 KDC_ERR_BADOPTION 拒绝。S4U_DELEGATION_INFO 会写入 PAC。未实现：U2U 变体，且不尝试在任一属性上模拟真实域的 ACL——这两个列表是 krb5_principals.js 中的配置，并在 /admin/delegation 上公布。"
+    "en": "350b1523e8a3e0e8",
+    "text": "partial：S4U2Self（带第 2.2.1 节 S4UByteArray 校验和的 PA-FOR-USER，密钥用途 17 下的 HMAC-MD5）和 S4U2Proxy（带证据票据的 cname-in-addl-tkt），双向授权——前端的 msDS-AllowedToDelegateTo 和后端的 msDS-AllowedToActOnBehalfOfOtherIdentity，两者之间的不对称性得到执行：经典委托需要可转发的证据，基于资源的委托需要带有基于资源位的 PA-PAC-OPTIONS，缺少时以 KDC_ERR_BADOPTION 拒绝。S4U_DELEGATION_INFO 会写入 PAC。跨信任：为另一领域的用户执行 S4U2Self，可经过路径所需的任意多个可传递信任（也支持 PA-S4U-X509-USER），以及对另一领域目标的基于资源的 S4U2Proxy，其证据以领域间密钥进行 PAC 验证；经典委派仅在两个领域都设置 krb5.crossRealmClassicDelegation 时才跨越。未实现：U2U 变体，且不尝试在任一属性上模拟真实域的 ACL——这两个列表是 krb5_principals.js 中的配置，并在 /admin/delegation 上公布。"
   },
   "stsmetadata.specs.ms-pac.coverage": {
-    "en": "ce39d54091e6c64a",
-    "text": "partial：每张票据都携带已签名的 PAC——登录信息（KERB_VALIDATION_INFO，NDR）、客户端信息、UPN/DNS 信息、属性以及请求方 SID。按第 2.8.2/2.8.3 节，TGT 有两个签名，服务票据有四个。客户端声明（PAC_CLIENT_CLAIMS_INFO，2.11）在 krb5.pacClaims 开启时生成（#493），从不压缩；在另一领域的 PAC 中到达的声明缓冲区会被解码（包括 XPRESS Huffman）并携带。不生成设备信息和设备声明，且未实现跨信任的 SID 筛选——重新签名的 PAC 会保留它到达时携带的每个 SID。"
+    "en": "22bf6b719bdeefc5",
+    "text": "partial：每张票据都携带已签名的 PAC——登录信息（KERB_VALIDATION_INFO，NDR）、客户端信息、UPN/DNS 信息、属性以及请求方 SID。按第 2.8.2/2.8.3 节，TGT 有两个签名，服务票据有四个。客户端声明（PAC_CLIENT_CLAIMS_INFO，2.11）在 krb5.pacClaims 开启时生成（#493），从不压缩；在另一领域的 PAC 中到达的声明缓冲区会被解码（包括 XPRESS Huffman）并携带。不生成设备信息和设备声明。跨信任到达的 PAC 在重新签名前按第 4.1.2.2 节针对该信任边界的规定进行 SID 筛选——丢弃设备信息，除非信任允许，否则丢弃声明集——引荐的 PAC 以领域间密钥签名。"
   },
   "stsmetadata.specs.rfc4178.coverage": {
     "en": "4c1e4c4761e68531",
@@ -1938,6 +1938,14 @@
   "stsmetadata.endpoints./admin-api/kerberos/principals/:action.what": {
     "en": "7d01c720ab758b8c",
     "text": "create-service | rotate-service | delete-service | clear-person-keys | drop-previous-service-keys | drop-previous-person-keys | reset-person-keytab | rotate-krbtgt | rotate-krbtgt-invalidate——/admin/kerberos/principals 上的控件，经由同一个操作函数。两个 krbtgt 操作（#169）将调度器作业 krb5.krbtgt-rotate-now 的一次运行加入队列，不返回任何密钥；invalidate 形式不保留先前版本，并需要 confirm: \"invalidate\"。create-service 和 rotate-service 接受 `spn`，并返回一个 MIT keytab（格式 0x502），base64 编码，仅此一次——这是此 API 上唯一携带密钥材料的应答，而且该 keytab 无法再次获取；轮换的 keytab 还携带它所保留的先前 kvno。delete-service 和 drop-previous-service-keys 接受 `spn`；clear-person-keys 和 drop-previous-person-keys 接受 `username`。这两个 drop 操作结束先前密钥版本下的票据仍被接受的窗口期。需要 admin:write。"
+  },
+  "stsmetadata.endpoints./admin-api/kerberos/trusts.what": {
+    "en": "5f192604023d5525",
+    "text": "NON-SPEC。以 JSON 形式提供 GET /admin/kerberos 的“信任”选项卡：领域的信任记录，分页（?trustsPage=、?per=），用 ?trust= 获取单条完整记录，每个密钥以 kvno、来源和设置时间描述——从不包含密钥或密码——并附带健康检查结果、表单所依据的内容以及信任设置。需要 admin:read。"
+  },
+  "stsmetadata.endpoints./admin-api/kerberos/trusts/:action.what": {
+    "en": "e13c8c35827785b2",
+    "text": "NON-SPEC。add | update | enable | disable | rotate-key | remove | pair——“信任”选项卡上的控件，通过同一个操作函数。生成的密钥只在 `shown` 中返回一次；信任密码从不返回。rotate-key 在 krb5.trustKeyGraceSeconds 内保留其替换的传入版本；remove 需要 `confirm` 重复伙伴领域；pair 以及带 mirror 的 rotate-key 也会写入伙伴信任领域的记录，属于服务管理员的操作。每个操作都按信任名称审计。需要 admin:write。"
   },
   "stsmetadata.endpoints./admin-api/token-lifetimes.what": {
     "en": "969aa654a3743c72",

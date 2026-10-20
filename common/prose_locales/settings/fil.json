@@ -5903,6 +5903,14 @@
     "en": "e88d21d50bcd7495",
     "text": "Ilang trust ang maaaring tawirin ng isang cross-realm path bago tumanggi ang KDC na ito na i-refer pa ito (KDC_ERR_PATH_NOT_ACCEPTED). Isang pagtawid ang isang direktang trust; nadaragdagan ng isa sa bawat realm na dinaraanan ng referral. Ang mga trust mismo ay mga record sa directory ng realm (ou=kerberosTrusts), at bumubuo lamang ng path sa pamamagitan ng mga record na minarkahang transitive."
   },
+  "krb5.trustKeyGraceSeconds|label": {
+    "en": "e9a56607c04ebe5c",
+    "text": "Grace para sa na-rotate na trust key (s)"
+  },
+  "krb5.trustKeyGraceSeconds|description": {
+    "en": "0ee4268f63c3b908",
+    "text": "Gaano katagal pa nabubuksan ng papasok na inter-realm key na pinalitan ng Rotate key ng isang trust ang mga ticket ng partner, na patuloy na nagse-seal gamit ito hanggang magbago ang sarili nitong panig. ZERO — ang default — ay nangangahulugang krb5.ticketLifetimeSeconds dagdag ang krb5.clockSkew, binabasa kapag sinusuri ang bersyon. Ang isang numero ay ganoong dami ng segundo sa halip: sapat na katagal para mabago ng administrator ng partner ang kanilang panig. Isang naunang bersyon ang pinananatili bawat trust; lampas sa grace nito, tinatanggihan ang ticket sa ilalim nito ng KRB_AP_ERR_BADKEYVER."
+  },
   "krb5.spnegoAuthentication|label": {
     "en": "0a014fa4b2685cd7",
     "text": "Mag-sign in gamit ang Kerberos ticket"

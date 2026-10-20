@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4427** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4431** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
 * [Federation (`STS-FED`)](#sts-fed) — 146
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 240
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 241
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 130
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
@@ -88,8 +88,8 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 237
-* [Management API (`STS-API`)](#sts-api) — 84
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 239
+* [Management API (`STS-API`)](#sts-api) — 85
 * [User portal (`STS-PORTAL`)](#sts-portal) — 94
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
@@ -2867,6 +2867,7 @@ Raised from: kerberos/.
 | `STS-KRB-0238` | A Kerberos trust record was refused: its claims transformation is not one this service implements (drop-all, allow-all). | none (a refused administrative change); [MS-ADTS] 3.1.1.11.2.11 |
 | `STS-KRB-0239` | A PAC arriving across a Kerberos trust may not cross it: its logon domain is in this realm's forest across a cross-forest or external boundary, or is not a domain the trust passes. | KDC_ERR_POLICY (12); [MS-PAC] 4.1.2.2 |
 | `STS-KRB-0240` | S4U2Proxy evidence that crossed a Kerberos trust was refused: its PAC's server, KDC or ticket signature does not verify with the inter-realm key that sealed it, so the ticket or its PAC was altered or forged after the issuing realm signed it. | [MS-SFU] 3.2.5.2.3, [MS-PAC] 2.8: KRB_AP_ERR_MODIFIED (41) |
+| `STS-KRB-0241` | A Kerberos trust's key rotation or pairing was refused: no such key, no source for the new key, a partner that is not a trust realm of this service, or the partner realm's side could not be written. | none — the console and /admin-api (#430) |
 
 ## STS-LDAP
 
@@ -4649,6 +4650,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0856` | Adding an owner to an application, on the application page or through POST /admin-api/applications/add-owner, was refused with no code of the registry's own; where the registry gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the application page |
 | `STS-ADMIN-0857` | Taking an owner off an application, on the application page or through POST /admin-api/applications/remove-owner, was refused with no code of the registry's own; where the registry gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the application page |
 | `STS-ADMIN-0858` | Creating a join token, on the agents page or through POST /admin-api/spiffe/agents/join-token, was refused because ttl was given and is not a positive number (#324). | HTTP 400 |
+| `STS-ADMIN-0859` | A Kerberos trusts action, on the Trusts tab of /admin/kerberos or through POST /admin-api/kerberos/trusts/{action}, was refused: an unknown action, or a trust this realm does not hold (#430). | HTTP 400 |
+| `STS-ADMIN-0860` | Removing a Kerberos trust was refused because confirm did not repeat the partner realm: the removal takes the trust's keys with it (#430). | HTTP 400 |
 
 ## STS-API
 
@@ -4742,6 +4745,7 @@ Raised from: mgmt-api/.
 | `STS-API-0132` | A management API request carrying only an owner's scopes (owner:read, owner:write) reached an operation that is not one an owner may ask: an owner token reaches only the operations on one object of the four kinds it may own (#607). | HTTP 403 |
 | `STS-API-0133` | The access-control policy's owner rule refused a management API request made with an owner's token (#607): the caller does not own the object, the object is closed to its owners, the action is not one an owner may take on its kind, or it would remove the last owner. | HTTP 403 |
 | `STS-API-0134` | A request to close an object to its owners, or open it again, named no kind of the four or no object (#607). | HTTP 400 |
+| `STS-API-0135` | A Kerberos trusts action through POST /admin-api/kerberos/trusts/{action} threw inside this service; the log says why (#430). | HTTP 500 |
 
 ## STS-PORTAL
 

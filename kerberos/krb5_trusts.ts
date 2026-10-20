@@ -633,6 +633,48 @@ class Krb5Trusts {
                     setAt: side.setAt || null } : { held: false };
   }
 
+  // The previous incoming version a rotation keeps, while its grace lasts:
+  // its kvno, when it was retired and until when it is accepted. Null when
+  // none is kept or its grace has passed.
+  private previousView(record: Json): Json | null {
+    this.deps.log.debug("Entering Krb5Trusts.previousView().");
+    const prev = record && record.previousIncoming;
+    const until = prev ? this.graceEnds(prev) : 0;
+    this.deps.log.debug("Leaving Krb5Trusts.previousView().");
+    return prev && until > Date.now()
+      ? { kvno: prev.kvno, source: prev.source, retiredAt: prev.retiredAt,
+          acceptedUntil: new Date(until).toISOString() }
+      : null;
+  }
+
+  /**
+   * How long a retired incoming trust key is still accepted, in seconds:
+   * `krb5.trustKeyGraceSeconds`, or — at its default, zero — the ticket
+   * lifetime plus the clock skew, the longest a ticket issued under the
+   * old key an instant before the rotation can still be presented. Read at
+   * every check, so a change applies to a key already retired.
+   *
+   * @returns the grace in seconds
+   */
+  graceSeconds(): number {
+    const { log, config } = this.deps;
+    log.debug("Entering Krb5Trusts.graceSeconds().");
+    const set = Number(config.value('krb5.trustKeyGraceSeconds'));
+    const out = set > 0 ? set :
+      Number(config.value('krb5.ticketLifetimeSeconds')) +
+      Number(config.value('krb5.clockSkew'));
+    log.debug("Leaving Krb5Trusts.graceSeconds(). " + out);
+    return out;
+  }
+
+  // When a retired version's grace ends, in milliseconds since the epoch.
+  private graceEnds(prev: Json): number {
+    this.deps.log.debug("Entering Krb5Trusts.graceEnds().");
+    const at = Date.parse(String(prev && prev.retiredAt || ''));
+    this.deps.log.debug("Leaving Krb5Trusts.graceEnds().");
+    return Number.isNaN(at) ? 0 : at + this.graceSeconds() * 1000;
+  }
+
   private viewOf(read: Json): Json {
     const { log } = this.deps;
     log.debug("Entering Krb5Trusts.viewOf().");
@@ -655,7 +697,8 @@ class Krb5Trusts {
       claimsTransformation: r.claimsTransformation || 'drop-all',
       boundary: this.boundaryOf(r),
       incoming: Object.assign(this.keyView(r.incoming), {
-        principal: 'krbtgt/' + ourRealm + '@' + r.partnerRealm }),
+        principal: 'krbtgt/' + ourRealm + '@' + r.partnerRealm,
+        previous: this.previousView(r) }),
       outgoing: Object.assign(this.keyView(r.outgoing), {
         principal: 'krbtgt/' + r.partnerRealm + '@' + ourRealm }),
       enabled: r.enabled !== false,
@@ -1067,6 +1110,11 @@ class Krb5Trusts {
       return { ok: false, errors: errors };
     }
     const now = new Date().toISOString();
+    // THE PREVIOUS INCOMING KEY a rotation keeps for its grace (#430 Phase
+    // 4): carried through any other write while this realm still holds an
+    // incoming key, and dropped with it. rotateKey() is what sets it.
+    const keepPrevious = !!(incoming.side && before && before.previousIncoming &&
+                            before2.secrets.previousIncoming);
     const record = {
       v: 1,
       partnerRealm: partnerRealm,
@@ -1090,6 +1138,7 @@ class Krb5Trusts {
       outgoing: outgoing.side,
       forestTrustInfo: forestTrustInfo,
       claimsTransformation: claimsTransformation,
+      previousIncoming: keepPrevious ? before.previousIncoming : null,
       enabled: enabled,
       createdAt: before && before.createdAt ? before.createdAt : now,
       updatedAt: now
@@ -1103,7 +1152,9 @@ class Krb5Trusts {
     }
     log.debug("Leaving Krb5Trusts.validate(). Acceptable.");
     return { ok: true, record: record,
-             secrets: { incoming: incoming.secret, outgoing: outgoing.secret },
+             secrets: { incoming: incoming.secret, outgoing: outgoing.secret,
+                        previousIncoming: keepPrevious ?
+                          before2.secrets.previousIncoming : null },
              shown: Object.keys(shown).length ? shown : null };
   }
 
@@ -1336,6 +1387,510 @@ class Krb5Trusts {
               " <-> " + other.id);
     return { ok: true, here: wroteHere.trust, there: wroteThere.trust,
              shown: Object.keys(shown).length ? shown : null };
+  }
+
+  // =========================================================================
+  // ROTATION, MIRRORING AND WHAT THE CONSOLE SHOWS (#430 Phase 4).
+  // =========================================================================
+  /**
+   * Replaces a trust's keys at the next kvno. The incoming version it
+   * replaces is KEPT and still opens tickets for `graceSeconds()` — the
+   * partner goes on sealing with it until its own side changes — while
+   * nothing new is issued under it; the outgoing key is used from the next
+   * referral. One previous incoming version is kept: a second rotation
+   * within the grace ends the first one's.
+   *
+   * With `mirror` and a trust-realm partner, the partner realm's record is
+   * rotated in the same act with the same keys the other way round, so the
+   * two realms never disagree; without it, the partner's administrator
+   * gives their side the same password (or the keys shown once).
+   *
+   * @param partner - the partner Kerberos realm
+   * @param input - `password` or `generate: true`; `side` (`both` — the
+   *   default — `incoming` or `outgoing`, of the sides held); `mirror`
+   * @returns `{ ok, trust, there, shown, errors }`
+   */
+  rotateKey(partner: string, input: Json): Json {
+    const { log, realms } = this.deps;
+    log.debug("Entering Krb5Trusts.rotateKey(). partner=" + partner);
+    const given = input || {};
+    const existing = this.readOne(partner);
+    if (!existing) {
+      log.debug("Leaving Krb5Trusts.rotateKey(). Not held.");
+      return { ok: false, errors: [{ code: 'STS-KRB-0215', message: 'this ' +
+        'realm holds no trust with ' + partner }] };
+    }
+    const r = existing.record;
+    const side = String(given.side || 'both');
+    if (['both', 'incoming', 'outgoing'].indexOf(side) === -1) {
+      log.debug("Leaving Krb5Trusts.rotateKey(). Bad side.");
+      return { ok: false, errors: [{ code: 'STS-KRB-0241', message: 'side ' +
+        'is both, incoming or outgoing' }] };
+    }
+    const sides = ['incoming', 'outgoing'].filter(function (one: string):
+      boolean {
+      return (side === 'both' || side === one) && !!r[one];
+    });
+    if (!sides.length) {
+      log.debug("Leaving Krb5Trusts.rotateKey(). No such key.");
+      return { ok: false, errors: [{ code: 'STS-KRB-0241', message: 'the ' +
+        'trust with ' + partner + ' holds no ' + (side === 'both' ? '' :
+        side + ' ') + 'key to rotate' }] };
+    }
+    if (typeof given.password !== 'string' && given.generate !== true) {
+      log.debug("Leaving Krb5Trusts.rotateKey(). No source.");
+      return { ok: false, errors: [{ code: 'STS-KRB-0241', message: 'a ' +
+        'rotation needs the new key\'s source: password, or generate' }] };
+    }
+    const mirror = given.mirror === true || String(given.mirror) === 'true';
+    const other = mirror ? realms.get(String(r.partnerTrustRealm || '')) :
+      null;
+    if (mirror && (r.type !== 'trust-realm' || !other)) {
+      log.debug("Leaving Krb5Trusts.rotateKey(). Nothing to mirror.");
+      return { ok: false, errors: [{ code: 'STS-KRB-0241', message: 'only ' +
+        'a trust with another trust realm of this service can be rotated ' +
+        'on both sides at once (mirror)' }] };
+    }
+    // ONE KEY PER SIDE, made once: a generated key goes to both records as
+    // given keys, so the mirror holds exactly what this realm holds.
+    const enctypes = (r.enctypes || []).slice();
+    const self = this;
+    const sourceFor = function (current: Json): Json {
+      const kvno = (Number(current.kvno) || 0) + 1;
+      if (typeof given.password === 'string') {
+        return { password: given.password, kvno: kvno };
+      }
+      const made = self.keySide({ generate: true }, 'rotated', enctypes, null,
+                                null);
+      return { keys: made.secret.keys, kvno: kvno };
+    };
+    const asked: Json = {};
+    sides.forEach(function (one: string): void {
+      asked[one] = sourceFor(r[one]);
+    });
+    const checked = this.validate(asked, existing);
+    if (!checked.ok) {
+      log.debug("Leaving Krb5Trusts.rotateKey(). Refused.");
+      return checked;
+    }
+    if (asked.incoming) {
+      this.retire(checked, r.incoming, existing.secrets.incoming);
+    }
+    let mirrored: Json = null;
+    if (mirror && other) {
+      const hereName = this.ourKerberosRealm();
+      const there = realms.run(other, function (): Json {
+        const theirs = self.readOne(hereName);
+        if (!theirs) {
+          return { ok: false, errors: [{ code: 'STS-KRB-0241', message:
+            'realm "' + other.id + '" holds no trust with ' + hereName +
+            ' to rotate; pair the two first' }] };
+        }
+        const swapped: Json = {};
+        if (asked.outgoing && theirs.record.incoming) {
+          swapped.incoming = Object.assign({}, asked.outgoing);
+        }
+        if (asked.incoming && theirs.record.outgoing) {
+          swapped.outgoing = Object.assign({}, asked.incoming);
+        }
+        const out = self.validate(swapped, theirs);
+        if (out.ok && swapped.incoming) {
+          self.retire(out, theirs.record.incoming, theirs.secrets.incoming);
+        }
+        return out;
+      });
+      if (!there.ok) {
+        log.debug("Leaving Krb5Trusts.rotateKey(). The mirror refused.");
+        return there;
+      }
+      mirrored = there;
+    }
+    const wrote = this.store(checked);
+    if (!wrote.ok) {
+      log.debug("Leaving Krb5Trusts.rotateKey(). Not written.");
+      return wrote;
+    }
+    let thereTrust: Json = null;
+    if (mirrored) {
+      const wroteThere = realms.run(other, function (): Json {
+        return self.store(mirrored);
+      });
+      if (!wroteThere.ok) {
+        log.debug("Leaving Krb5Trusts.rotateKey(). The mirror was not " +
+                  "written.");
+        return { ok: false, trust: wrote.trust, errors: [{ code:
+          'STS-KRB-0241', message: 'this realm\'s side was rotated and ' +
+          'realm "' + other.id + '"\'s was not: ' + ((wroteThere.errors ||
+          [])[0] || {}).message + '. Rotate it there with the same ' +
+          'password.' }] };
+      }
+      thereTrust = wroteThere.trust;
+    }
+    const shown: Json = {};
+    sides.forEach(function (one: string): void {
+      if (asked[one].keys) {
+        shown[one] = asked[one].keys;
+      }
+    });
+    log.debug("Leaving Krb5Trusts.rotateKey(). " + sides.join(', ') +
+              (thereTrust ? ', mirrored' : ''));
+    return { ok: true, trust: wrote.trust, there: thereTrust,
+             rotated: sides,
+             shown: Object.keys(shown).length ? shown : null };
+  }
+
+  // Moves the incoming version a checked write replaces into the previous
+  // slot, retired now.
+  private retire(checked: Json, side: Json, secret: Json): void {
+    this.deps.log.debug("Entering Krb5Trusts.retire().");
+    if (side && secret) {
+      checked.record.previousIncoming = {
+        kvno: side.kvno, source: side.source, setAt: side.setAt || null,
+        retiredAt: new Date().toISOString()
+      };
+      checked.secrets.previousIncoming = secret;
+    }
+    this.deps.log.debug("Leaving Krb5Trusts.retire().");
+  }
+
+  /**
+   * The key of a RETIRED incoming version of an inter-realm principal,
+   * while its grace lasts: what `ticketKeyFor()` in the KDC opens a ticket
+   * sealed under the previous kvno with.
+   *
+   * @param principal - the inter-realm principal (`trustPrincipal()`)
+   * @param etype - the ticket's enctype
+   * @param kvno - the ticket's kvno
+   * @returns `{ key, kvno, expiresAt }`, or null when that version is not
+   *   kept or its grace has passed
+   */
+  async previousKey(principal: Json, etype: number,
+                    kvno: number): Promise<Json | null> {
+    const { log, kcrypto } = this.deps;
+    log.debug("Entering Krb5Trusts.previousKey(). kvno=" + kvno);
+    const which = principal && principal.trustKey;
+    if (!which || which.direction !== 'incoming') {
+      log.debug("Leaving Krb5Trusts.previousKey(). Not an incoming key.");
+      return null;
+    }
+    const read = this.readOne(which.partner);
+    const prev = read ? read.record.previousIncoming : null;
+    const secret = read ? (read.secrets || {}).previousIncoming : null;
+    const until = prev ? this.graceEnds(prev) : 0;
+    if (!prev || !secret || Number(prev.kvno) !== Number(kvno) ||
+        until <= Date.now()) {
+      log.debug("Leaving Krb5Trusts.previousKey(). Not kept.");
+      return null;
+    }
+    let key: Uint8Array | null = null;
+    if (typeof secret.password === 'string') {
+      key = await kcrypto.etypeById(etype).stringToKey(secret.password,
+        new Uint8Array(Buffer.from(String(principal.salt), 'utf8')), null);
+    } else if (secret.keys && secret.keys[String(etype)]) {
+      key = new Uint8Array(Buffer.from(String(secret.keys[String(etype)]),
+                                       'base64'));
+    }
+    log.debug("Leaving Krb5Trusts.previousKey(). " + (key ? 'Kept.' :
+                                                       'No such enctype.'));
+    return key ? { key: key, kvno: Number(prev.kvno), expiresAt: until } :
+      null;
+  }
+
+  /**
+   * Writes the matching record of a trust with another trust realm of this
+   * service ON THAT REALM, in one act: the partner's record for this realm,
+   * its incoming key this realm's outgoing and the other way round, the
+   * same attributes and enctypes. Where the partner already holds a record
+   * for this realm, its KEYS are made to match and nothing else is changed.
+   *
+   * @param partner - the partner Kerberos realm of a `trust-realm` record
+   * @returns `{ ok, here, there, created, errors }`
+   */
+  mirror(partner: string): Json {
+    const { log, realms } = this.deps;
+    log.debug("Entering Krb5Trusts.mirror(). partner=" + partner);
+    const existing = this.readOne(partner);
+    if (!existing) {
+      log.debug("Leaving Krb5Trusts.mirror(). Not held.");
+      return { ok: false, errors: [{ code: 'STS-KRB-0215', message: 'this ' +
+        'realm holds no trust with ' + partner }] };
+    }
+    const r = existing.record;
+    const other = r.type === 'trust-realm' ?
+      realms.get(String(r.partnerTrustRealm || '')) : null;
+    if (!other) {
+      log.debug("Leaving Krb5Trusts.mirror(). Not a trust realm.");
+      return { ok: false, errors: [{ code: 'STS-KRB-0241', message: 'only ' +
+        'a trust with another trust realm of this service can be paired ' +
+        'from here; an external partner\'s administrator writes their ' +
+        'side' }] };
+    }
+    const hereId = realms.currentId();
+    const hereName = this.ourKerberosRealm();
+    const asGiven = function (side: Json, secret: Json): Json {
+      if (!side || !secret) {
+        return null;
+      }
+      return typeof secret.password === 'string'
+        ? { password: secret.password, kvno: side.kvno }
+        : { keys: secret.keys, kvno: side.kvno };
+    };
+    const theirIncoming = asGiven(r.outgoing, existing.secrets.outgoing);
+    const theirOutgoing = asGiven(r.incoming, existing.secrets.incoming);
+    const self = this;
+    const there = realms.run(other, function (): Json {
+      const theirs = self.readOne(hereName);
+      if (theirs) {
+        const checked = self.validate({ incoming: theirIncoming,
+                                        outgoing: theirOutgoing }, theirs);
+        return checked.ok ? Object.assign(self.store(checked),
+                                          { created: false }) : checked;
+      }
+      const checked = self.validate({
+        partnerRealm: hereName, type: 'trust-realm',
+        partnerTrustRealm: hereId,
+        attributes: (r.attributes || []).slice(),
+        enctypes: (r.enctypes || []).slice(),
+        claimsTransformation: r.claimsTransformation,
+        incoming: theirIncoming, outgoing: theirOutgoing,
+        enabled: r.enabled !== false
+      }, null);
+      return checked.ok ? Object.assign(self.store(checked),
+                                        { created: true }) : checked;
+    });
+    if (!there.ok) {
+      log.debug("Leaving Krb5Trusts.mirror(). Refused there.");
+      return there;
+    }
+    log.debug("Leaving Krb5Trusts.mirror(). " + (there.created ? 'Created' :
+                                                'Matched') + " in " +
+              other.id);
+    return { ok: true, here: this.viewOf(existing), there: there.trust,
+             created: !!there.created, otherRealm: other.id };
+  }
+
+  /**
+   * What the console's health column says of one record, as findings:
+   * `{ kind, level, text }`, `level` one of `ok`, `warn` and `bad`. `kind`
+   * names the finding for a translated sentence; `text` is the English.
+   *
+   * @param view - a record's public view (`list()`, `get()`)
+   * @returns the findings
+   */
+  health(view: Json): Json[] {
+    const { log, realms, mode, config } = this.deps;
+    log.debug("Entering Krb5Trusts.health(). " + (view && view.partnerRealm));
+    const out: Json[] = [];
+    const v = view || {};
+    if (v.enabled === false) {
+      out.push({ kind: 'disabled', level: 'bad', text: 'Disabled: it ' +
+        'refers nobody and accepts nothing; its keys are kept.' });
+    }
+    const quarantined = (v.attributes || []).indexOf('quarantined') !== -1;
+    if (!quarantined) {
+      const refused = mode.requiresSidFilteringOnTrusts() &&
+        !!config.value('krb5.requireSidFilteringInProduct');
+      out.push(refused
+        ? { kind: 'unfilteredRefused', level: 'bad', text: 'Not ' +
+            'quarantined, and this realm is in product mode with ' +
+            'krb5.requireSidFilteringInProduct on: the trust is not used ' +
+            '(STS-KRB-0229).' }
+        : { kind: 'unfiltered', level: 'warn', text: 'Not quarantined: ' +
+            'SIDs of domains other than the partner\'s cross it as its ' +
+            'boundary allows, and product mode will not use it while ' +
+            'krb5.requireSidFilteringInProduct is on.' });
+    }
+    out.push(v.incoming && v.incoming.held
+      ? { kind: 'incomingHeld', level: 'ok',
+          params: { kvno: String(v.incoming.kvno) },
+          text: 'Incoming key held ' +
+          '(kvno ' + v.incoming.kvno + '): the partner\'s tickets are ' +
+          'accepted.' }
+      : { kind: 'incomingMissing', level: 'warn', text: 'No incoming key: ' +
+          'no ticket from the partner is accepted (outbound only).' });
+    if (!(v.outgoing && v.outgoing.held)) {
+      out.push({ kind: 'outgoingMissing', level: 'warn', text: 'No ' +
+        'outgoing key: nobody is referred to the partner (inbound only).' });
+    }
+    out.push((v.suffixes || []).length
+      ? { kind: 'routed', level: 'ok',
+          params: { suffixes: v.suffixes.join(', ') }, text: 'Routes ' +
+          v.suffixes.join(', ') + '.' }
+      : { kind: 'unrouted', level: 'warn', text: 'Routes no DNS suffix: ' +
+          'a service name is never referred to the partner, only a realm ' +
+          'named outright.' });
+    if (v.type === 'trust-realm' && v.partnerTrustRealm) {
+      const other = realms.get(String(v.partnerTrustRealm));
+      const self = this;
+      const ours = this.ourKerberosRealm();
+      const theirs = other ? realms.run(other, function (): Json {
+        return self.readOne(ours);
+      }) : null;
+      out.push(theirs
+        ? { kind: 'paired', level: 'ok',
+            params: { realm: String(v.partnerTrustRealm) },
+            text: 'Trust realm "' +
+            v.partnerTrustRealm + '" holds the matching record.' }
+        : { kind: 'unpaired', level: 'warn',
+            params: { realm: String(v.partnerTrustRealm) },
+            text: 'Trust realm "' +
+            v.partnerTrustRealm + '" holds no record for this realm: ' +
+            'Pair writes it.' });
+    }
+    log.debug("Leaving Krb5Trusts.health(). " + out.length);
+    return out;
+  }
+
+  /**
+   * What an application's Kerberos delegation attributes mean across this
+   * realm's trusts, for the console's *Across trusts* panel and `GET
+   * /admin-api/applications?application=`: each foreign front end its
+   * resource-based delegation accepts, each foreign target its classic
+   * delegation names, each realm it may impersonate users of, and how its
+   * unconstrained delegation meets the trusts' TGT-delegation bits.
+   *
+   * @param attributes - the application's attributes (arrays of strings)
+   * @returns the panel
+   */
+  applicationAcross(attributes: Json): Json {
+    const { log, config, realms } = this.deps;
+    log.debug("Entering Krb5Trusts.applicationAcross().");
+    const self = this;
+    const ours = this.ourKerberosRealm();
+    const values = function (name: string): string[] {
+      const v = (attributes || {})[name];
+      return (Array.isArray(v) ? v : (v === undefined || v === null ||
+              v === '' ? [] : [v])).map(String);
+    };
+    const realmOf = function (value: string): string {
+      const at = value.lastIndexOf('@');
+      return at > 0 ? value.slice(at + 1) : '';
+    };
+    const trustState = function (realmName: string, needs: string): Json {
+      // The trust a ticket from (or a referral to) `realmName` crosses:
+      // the record for that realm, or the transitive one routing it.
+      const direct = self.readOne(realmName);
+      const hop = needs === 'incoming' ? '' : self.nextHopForRealm(realmName);
+      const via = direct || (hop ? self.readOne(hop) : null) ||
+        self.allRead().filter(function (read: Json): boolean {
+          return (read.record.attributes || []).indexOf('non-transitive') ===
+            -1 && self.inNamespace(read.record, realmName);
+        })[0] || null;
+      const problems: Json[] = [];
+      if (!via) {
+        problems.push({ kind: 'missing', params: { realm: realmName },
+                        text: 'this realm holds no trust ' +
+          'reaching ' + realmName });
+      } else {
+        const r = via.record;
+        if (r.enabled === false) {
+          problems.push({ kind: 'disabled',
+                          params: { partner: r.partnerRealm },
+                          text: 'the trust with ' +
+            r.partnerRealm + ' is disabled' });
+        }
+        if (!r[needs]) {
+          problems.push({ kind: needs === 'incoming' ? 'notAccepting' :
+                          'notReferring',
+            params: { partner: r.partnerRealm },
+            text: 'the trust with ' + r.partnerRealm + ' holds no ' + needs +
+                  ' key' });
+        }
+        if (!self.honoured(r)) {
+          problems.push({ kind: 'unfilteredProduct',
+                          params: { partner: r.partnerRealm },
+                          text: 'the trust with ' +
+            r.partnerRealm + ' is not quarantined, and product mode does ' +
+            'not use it while krb5.requireSidFilteringInProduct is on' });
+        }
+      }
+      return { realm: realmName, via: via ? via.record.partnerRealm : '',
+               path: via ? (via.record.partnerRealm === realmName ?
+                 [realmName] : [via.record.partnerRealm, realmName]) : [],
+               ok: !problems.length, problems: problems };
+    };
+    const classicHere = !!config.value('krb5.crossRealmClassicDelegation');
+    const classicThere = function (realmName: string): Json {
+      const read = self.readOne(realmName);
+      const other = read && read.record.type === 'trust-realm'
+        ? realms.get(String(read.record.partnerTrustRealm || '')) : null;
+      if (!other) {
+        return null;
+      }
+      return !!realms.run(other, function (): unknown {
+        return config.value('krb5.crossRealmClassicDelegation');
+      });
+    };
+    const frontEnds = values('appAllowedToActOnBehalfOf')
+      .filter(function (one: string): boolean {
+        const realm = realmOf(one);
+        return !!realm && realm !== ours;
+      }).map(function (one: string): Json {
+        return Object.assign({ actor: one },
+                             trustState(realmOf(one), 'incoming'));
+      });
+    const targets = values('appAllowedToDelegateTo')
+      .filter(function (one: string): boolean {
+        const realm = realmOf(one);
+        return !!realm && realm !== ours;
+      }).map(function (one: string): Json {
+        const realm = realmOf(one);
+        const there = classicThere(realm);
+        const state = trustState(realm, 'outgoing');
+        const refused: Json[] = [];
+        if (!classicHere) {
+          refused.push({ kind: 'classicOffHere', text: 'classic ' +
+            'delegation across realms is off in this realm ' +
+            '(krb5.crossRealmClassicDelegation)' });
+        }
+        if (there === false) {
+          refused.push({ kind: 'classicOffThere', params: { realm: realm },
+                         text: 'classic ' +
+            'delegation across realms is off in ' + realm });
+        }
+        return Object.assign({ target: one, classicRefused:
+                                 refused.length > 0,
+                               classicProblems: refused }, state);
+      });
+    const selfRealms = values('krb5S4uSelfRealm').map(function (one: string):
+      Json {
+      return Object.assign({ accepted: self.acceptsRealm(one) },
+                           trustState(one, 'incoming'));
+    });
+    const unconstrained = values('krb5TrustedForDelegation')
+      .some(function (one: string): boolean {
+        return one === 'true' || one === 'TRUE';
+      });
+    const tgtTrusts = this.list().map(function (view: Json): Json {
+      return { partner: view.partnerRealm,
+               allowed: self.tgtDelegationAllowed(view.partnerRealm),
+               attributes: view.attributes };
+    });
+    const foreign = values('krb5ForeignTgtDelegation')[0] || 'inherit';
+    log.debug("Leaving Krb5Trusts.applicationAcross().");
+    return {
+      realm: ours,
+      frontEnds: frontEnds,
+      targets: targets,
+      selfRealms: selfRealms,
+      tgtDelegation: {
+        unconstrained: unconstrained,
+        foreignTgtDelegation: foreign,
+        trusts: tgtTrusts.map(function (one: Json): Json {
+          return Object.assign({}, one, {
+            delivered: unconstrained && one.allowed && foreign !== 'deny'
+          });
+        })
+      },
+      choices: {
+        krb5S4uSelfRealm: this.list().filter(function (view: Json): boolean {
+          return !!view.incoming.held;
+        }).map(function (view: Json): string {
+          return view.partnerRealm;
+        }),
+        krb5ForeignTgtDelegation: ['inherit', 'deny']
+      }
+    };
   }
 
   /**
@@ -2337,5 +2892,16 @@ export = {
   policyFacts: slot.forward('policyFacts'),
   tgtDelegationAllowed: slot.forward('tgtDelegationAllowed'),
   sidFilter: slot.forward('sidFilter'),
-  boundaryOf: slot.forward('boundaryOf')
+  boundaryOf: slot.forward('boundaryOf'),
+  rotateKey: slot.forward('rotateKey'),
+  previousKey: slot.forward('previousKey'),
+  graceSeconds: slot.forward('graceSeconds'),
+  mirror: slot.forward('mirror'),
+  health: slot.forward('health'),
+  applicationAcross: slot.forward('applicationAcross'),
+  CONTRADICTIONS: CONTRADICTIONS,
+  REQUIRES: REQUIRES,
+  DEFAULT_ATTRIBUTES: DEFAULT_ATTRIBUTES,
+  DEFAULT_ENCTYPES: DEFAULT_ENCTYPES,
+  CLAIMS_TRANSFORMATIONS: CLAIMS_TRANSFORMATIONS
 };

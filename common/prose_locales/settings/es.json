@@ -5903,6 +5903,14 @@
     "en": "e88d21d50bcd7495",
     "text": "Cuántas confianzas puede cruzar una ruta entre dominios antes de que este KDC se niegue a referirla más allá (KDC_ERR_PATH_NOT_ACCEPTED). Una confianza directa es un cruce; cada dominio por el que se refiere una ruta suma uno. Las confianzas mismas son registros en el directorio del dominio (ou=kerberosTrusts), y una ruta solo se construye a través de registros marcados como transitivos."
   },
+  "krb5.trustKeyGraceSeconds|label": {
+    "en": "e9a56607c04ebe5c",
+    "text": "Gracia para una clave de confianza rotada (s)"
+  },
+  "krb5.trustKeyGraceSeconds|description": {
+    "en": "0ee4268f63c3b908",
+    "text": "Cuánto tiempo la clave entre dominios entrante que reemplazó Rotar clave de una confianza sigue abriendo los tickets del socio, que sigue sellando con ella hasta que cambie su propio lado. CERO — el valor predeterminado — significa krb5.ticketLifetimeSeconds más krb5.clockSkew, leído cuando se comprueba la versión. Un número es esa cantidad de segundos en su lugar: lo bastante para que el administrador del socio cambie su lado. Se conserva una versión anterior por confianza; pasada su gracia, un ticket con ella se rechaza con KRB_AP_ERR_BADKEYVER."
+  },
   "krb5.spnegoAuthentication|label": {
     "en": "0a014fa4b2685cd7",
     "text": "Iniciar sesión con un ticket de Kerberos"

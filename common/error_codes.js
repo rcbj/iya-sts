@@ -12568,6 +12568,12 @@ const CODES = [
       'inter-realm key that sealed it, so the ticket or its PAC was altered ' +
       'or forged after the issuing realm signed it.',
     spec: '[MS-SFU] 3.2.5.2.3, [MS-PAC] 2.8: KRB_AP_ERR_MODIFIED (41)' },
+  { code: 'STS-KRB-0241',
+    summary: 'A Kerberos trust\'s key rotation or pairing was refused: no ' +
+      'such key, no source for the new key, a partner that is not a trust ' +
+      'realm of this service, or the partner realm\'s side could not be ' +
+      'written.',
+    spec: 'none — the console and /admin-api (#430)' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -20280,6 +20286,17 @@ const CODES = [
       'POST /admin-api/spiffe/agents/join-token, was refused because ttl ' +
       'was given and is not a positive number (#324).',
     spec: 'HTTP 400' },
+  { code: 'STS-ADMIN-0859',
+    summary: 'A Kerberos trusts action, on the Trusts tab of ' +
+      '/admin/kerberos or through POST /admin-api/kerberos/trusts/{action}, ' +
+      'was refused: an unknown action, or a trust this realm does not ' +
+      'hold (#430).',
+    spec: 'HTTP 400' },
+  { code: 'STS-ADMIN-0860',
+    summary: 'Removing a Kerberos trust was refused because confirm did ' +
+      'not repeat the partner realm: the removal takes the trust\'s keys ' +
+      'with it (#430).',
+    spec: 'HTTP 400' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -20684,6 +20701,11 @@ const CODES = [
     summary: 'A request to close an object to its owners, or open it again, ' +
       'named no kind of the four or no object (#607).',
     spec: 'HTTP 400' },
+  { code: 'STS-API-0135',
+    summary: 'A Kerberos trusts action through POST ' +
+      '/admin-api/kerberos/trusts/{action} threw inside this service; the ' +
+      'log says why (#430).',
+    spec: 'HTTP 500' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

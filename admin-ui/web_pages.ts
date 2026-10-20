@@ -58,6 +58,7 @@ import GrantsPage = require('../oauth-oidc/web_grants');
 import GroupsPage = require('./web_groups');
 import KerberosPrincipalsPage =
   require('../kerberos/web_kerberos_principals');
+import KerberosTrustsPage = require('../kerberos/web_kerberos_trusts');
 import LogoutPage = require('../logout/web_logout');
 import LdapPage = require('../ldap/web_ldap');
 import ListenersPage = require('./web_listeners');
@@ -987,13 +988,16 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/kerberos',
     compose: {
       kerberosClaims: '/admin-api/kerberos/claims',
-      kerberosPrincipals: '/admin-api/kerberos/principals'
+      kerberosPrincipals: '/admin-api/kerberos/principals',
+      kerberosTrusts: '/admin-api/kerberos/trusts'
     },
     composeWhen: {
       kerberosClaims: ['user'],
-      kerberosPrincipals: ['per', 'peoplePage', 'servicesPage']
+      kerberosPrincipals: ['per', 'peoplePage', 'servicesPage'],
+      kerberosTrusts: ['per', 'trustsPage', 'trust']
     },
-    composeAlways: ['kerberosClaims', 'kerberosPrincipals'],
+    composeAlways: ['kerberosClaims', 'kerberosPrincipals',
+                    'kerberosTrusts'],
     render: function (view: Json, ctx?: Json): string {
       return ProtocolSettingsPage.render(view, ctx || WebKit.context());
     } },
@@ -1571,12 +1575,14 @@ class WebPages {
       return null;
     }
     if (page.path === '/admin/kerberos') {
-      if (!view.kerberosClaims || !view.kerberosPrincipals) {
+      if (!view.kerberosClaims || !view.kerberosPrincipals ||
+          !view.kerberosTrusts) {
         throw new Error('The Kerberos page is missing a tab view.');
       }
       const endpoints: Json[] = [];
       const seen: Json = {};
-      [view, view.kerberosClaims, view.kerberosPrincipals]
+      [view, view.kerberosClaims, view.kerberosPrincipals,
+       view.kerberosTrusts]
         .forEach(function (answer) {
           (Array.isArray(answer.protocolEndpoints)
             ? answer.protocolEndpoints : []).forEach(function (row: Json) {
@@ -1613,7 +1619,13 @@ class WebPages {
         { id: 'kerberos-tab-principals',
           label: context.t.text('console.nav.kerberos-principals'),
           html: KerberosPrincipalsPage.body(context,
-            view.kerberosPrincipals) }
+            view.kerberosPrincipals) },
+        // THE TRUSTS (#430 Phase 4): the realm's trust records, their
+        // health, and the forms that add, change, rotate, pair and remove
+        // them.
+        { id: 'kerberos-tab-trusts',
+          label: context.t.text('consoleKerberosTrusts.tab'),
+          html: KerberosTrustsPage.body(context, view.kerberosTrusts) }
       ];
       const rendered = panels.map(function (one) {
         return { id: one.id, label: one.label,
@@ -1977,16 +1989,17 @@ class WebPages {
     const paths = {
       '/admin/kerberos': 'kerberos-tab-settings',
       '/admin/kerberos/claims': 'kerberos-tab-claims',
-      '/admin/kerberos/principals': 'kerberos-tab-principals'
+      '/admin/kerberos/principals': 'kerberos-tab-principals',
+      '/admin/kerberos/trusts': 'kerberos-tab-trusts'
     };
     html = html.replace(
-      /href="(\/admin\/kerberos(?:\/claims|\/principals)?)(\?[^"#]*)?(#[^"]*)?"/g,
+      /href="(\/admin\/kerberos(?:\/claims|\/principals|\/trusts)?)(\?[^"#]*)?(#[^"]*)?"/g,
       function (_match: string, path: string, query: string): string {
         return 'href="/admin/kerberos' + (query || '') + '#' + paths[path] +
           '"';
       });
     html = html.replace(
-      /(<input\b[^>]*\bname="back"[^>]*\bvalue=")(\/admin\/kerberos(?:\/claims|\/principals)?)(\?[^"]*)?(")/gi,
+      /(<input\b[^>]*\bname="back"[^>]*\bvalue=")(\/admin\/kerberos(?:\/claims|\/principals|\/trusts)?)(\?[^"]*)?(")/gi,
       function (_match: string, before: string, path: string,
                 query: string, after: string): string {
         return before + '/admin/kerberos' + (query || '') + '#' + paths[path] +

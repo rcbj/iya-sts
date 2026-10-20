@@ -627,8 +627,12 @@ function retiredSection(t) {
               'the environment refuses the start, naming #430\'s trust ' +
               'records', String(child.stderr).slice(0, 300));
     });
+  // By NAME: krb5.trustKeyGraceSeconds (#430 Phase 4) is a setting about
+  // the records, not one of the four they replaced.
+  const retired = ['krb5.trustedRealm', 'krb5.trustPassword',
+                   'krb5.trustedDomainSid', 'krb5.trustedKrbtgtPassword'];
   t.check(!config.SETTINGS.some(function (row) {
-    return /^krb5\.trust/.test(row.key);
+    return retired.indexOf(row.key) !== -1;
   }), 'F5. and none of the four is a setting any more');
   log.debug("Leaving retiredSection().");
 }

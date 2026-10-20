@@ -1687,6 +1687,85 @@ class ApplicationsPage {
    * @param state - optional; a redraw: `draft`, the posted form
    * @returns the section as HTML
    */
+  // ACROSS TRUSTS (#430 Phase 4), on the Kerberos sub-tab: drawn from the
+  // answer's `page.krb5Across`, computed on the server
+  // (`krb5Trusts.applicationAcross()`). Read-only: krb5S4uSelfRealm and
+  // krb5ForeignTgtDelegation are fields of the grid above it, and the
+  // delegation attributes it reads stay on Every protocol → Delegation and
+  // Impersonation.
+  /**
+   * Draws the read-only *Across trusts* panel of an application's Kerberos
+   * sub-tab.
+   *
+   * @param ctx - the render context
+   * @param row - the application's view, `page.krb5Across` in it
+   * @returns the section's HTML, or '' when the answer carries none
+   */
+  static applicationAcrossTrustsSection(ctx, row) {
+    const t = ctx.t;
+    const a = row && row.page ? row.page.krb5Across : null;
+    if (!a) {
+      return '';
+    }
+    const k = 'consoleKerberosTrusts.across.';
+    const problems = function (list) {
+      return (list || []).length
+        ? (list || []).map(function (one) {
+            return '<div class="state-invalid">' + kit.esc(t.text(
+              k + 'problem.' + one.kind, one.params || {})) + '</div>';
+          }).join('')
+        : '<span class="state-valid">' + t.html(k + 'ok') + '</span>';
+    };
+    const path = function (one) {
+      return (one.path || []).length
+        ? kit.codeList([a.realm].concat(one.path))
+        : '<span class="sub">' + t.html(k + 'noPath') + '</span>';
+    };
+    const table = function (heads, rows, empty) {
+      return rows.length
+        ? '<table><tr>' + heads.map(function (h) {
+            return '<th>' + t.html(k + h) + '</th>';
+          }).join('') + '</tr>' + rows.join('') + '</table>'
+        : kit.note(t.html(k + empty));
+    };
+    const fronts = table(['thActor', 'thPath', 'thState'],
+      (a.frontEnds || []).map(function (one) {
+        return '<tr><td><code>' + kit.esc(one.actor) + '</code></td><td>' +
+          path(one) + '</td><td>' + problems(one.problems) + '</td></tr>';
+      }), 'noFrontEnds');
+    const targets = table(['thTarget', 'thPath', 'thState'],
+      (a.targets || []).map(function (one) {
+        return '<tr><td><code>' + kit.esc(one.target) + '</code></td><td>' +
+          path(one) + '</td><td>' +
+          problems((one.classicProblems || []).concat(one.problems || [])) +
+          '</td></tr>';
+      }), 'noTargets');
+    const selfRealms = table(['thRealm', 'thPath', 'thState'],
+      (a.selfRealms || []).map(function (one) {
+        return '<tr><td><code>' + kit.esc(one.realm) + '</code></td><td>' +
+          path(one) + '</td><td>' + problems(one.problems) + '</td></tr>';
+      }), 'noSelfRealms');
+    const tgt = a.tgtDelegation || {};
+    const tgtRows = (tgt.trusts || []).map(function (one) {
+      return '<tr><td><code>' + kit.esc(one.partner) + '</code></td><td>' +
+        (one.allowed ? t.html(k + 'yes') : t.html(k + 'no')) + '</td><td>' +
+        (one.delivered ? '<span class="state-valid">' + t.html(k + 'yes') +
+         '</span>' : t.html(k + 'no')) + '</td></tr>';
+    });
+    return '<h4 id="cfg-krb5-across">' + t.html(k + 'heading') + '</h4>' +
+      kit.note(t.html(k + 'intro')) +
+      '<h5>' + t.html(k + 'hFrontEnds') + '</h5>' + fronts +
+      '<h5>' + t.html(k + 'hTargets') + '</h5>' + targets +
+      '<h5>' + t.html(k + 'hSelf') + '</h5>' + selfRealms +
+      '<h5>' + t.html(k + 'hTgt') + '</h5>' +
+      kit.note(kit.esc(t.text(tgt.unconstrained ? k + 'unconstrainedOn' :
+                              k + 'unconstrainedOff',
+                              { setting: String(tgt.foreignTgtDelegation ||
+                                                'inherit') }))) +
+      table(['thPartner', 'thTrustAllows', 'thDelivered'], tgtRows,
+            'noTrusts');
+  }
+
   static applicationFieldsSection(ctx, row, carryBack, state?) {
     const t = ctx.t;
     const draft = state && state.draft ? state.draft : null;
@@ -1839,7 +1918,10 @@ class ApplicationsPage {
         (group.id === 'krb5'
           ? ApplicationsPage.applicationClaimsSection(ctx, row, carryBack,
               ['kerberos-pac'], 'cfg-krb5-claims',
-              t.text('consoleApplications.a2.pacClaims'))
+              t.text('consoleApplications.a2.pacClaims')) +
+            // ACROSS TRUSTS (#430 Phase 4): what its delegation attributes
+            // mean across the realm's trusts, read-only.
+            ApplicationsPage.applicationAcrossTrustsSection(ctx, row)
           : '');
       // The sub-tab's own fields, in one form.
       const fieldForm =

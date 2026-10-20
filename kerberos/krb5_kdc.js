@@ -338,6 +338,33 @@ function kdcTime(offsetSeconds) {
 async function ticketKeyFor(principal, encPart) {
   log.debug("Entering ticketKeyFor().");
   const kvno = encPart.kvno;
+  // AN INTER-REALM KEY JUST ROTATED (#430 Phase 4): the partner goes on
+  // sealing with the version it replaced until its own side changes, so a
+  // ticket naming that kvno opens with the RETIRED key while the trust's
+  // grace lasts (krb5.trustKeyGraceSeconds), and is KRB_AP_ERR_BADKEYVER
+  // after it — the stored-key rule below, for a key the trust record holds.
+  if (principal && principal.trustKey && kvno !== null &&
+      kvno !== undefined && kvno !== principal.kvno) {
+    const register = principals.trustRegister();
+    const kept = register
+      ? await register.previousKey(principal, encPart.etype, kvno) : null;
+    const name = principal.name.join('/') + '@' + principal.realm;
+    if (kept) {
+      log.info('krb5: opening a ticket for ' + name + ' under the PREVIOUS ' +
+               'trust key version ' + kvno + ' (current ' + principal.kvno +
+               '), accepted until ' + new Date(kept.expiresAt).toISOString() +
+               '.');
+      log.debug("Leaving ticketKeyFor(). A retired trust key.");
+      return { key: kept.key, retained: kept };
+    }
+    log.debug("Leaving ticketKeyFor(). A trust key version not kept.");
+    return {
+      key: null,
+      eText: 'the ticket was encrypted with key version ' + kvno + ' of ' +
+             name + ', which holds version ' + principal.kvno + ' and keeps ' +
+             'no earlier one still in its grace (krb5.trustKeyGraceSeconds)'
+    };
+  }
   if (!principal.directoryKeys || kvno === null || kvno === undefined ||
       kvno === principal.kvno) {
     log.debug("Leaving ticketKeyFor().");

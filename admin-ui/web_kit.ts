@@ -246,6 +246,9 @@ const LIST_PARAMS = {
   // The Kerberos principals' two lists (2026-09-12), paged separately and
   // sharing one `per`. Spent by every row button's `back`.
   '/admin/kerberos/principals': ['per', 'peoplePage', 'servicesPage'],
+  // The Kerberos trusts' one list (#430 Phase 4), and the record drilled
+  // into. Spent by every row button's `back`.
+  '/admin/kerberos/trusts': ['per', 'trustsPage', 'trust'],
   // The back-channel deliveries' filter, search and paging (2026-09-17),
   // spent by the Retry button's `back`.
   '/admin/logout': ['family', 'per', 'page', 'deliveryState', 'deliveryq',

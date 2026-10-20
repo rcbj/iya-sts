@@ -1039,6 +1039,14 @@
     "en": "e3b666e9c2cf04a5",
     "text": "Créer, renouveler ou supprimer un principal de service, effacer les clés d’une personne, abandonner les versions de clé précédentes, ou renouveler la clé krbtgt"
   },
+  "endpoints.route./admin-api/kerberos/trusts.name": {
+    "en": "e92d42c7c01ab222",
+    "text": "Approbations Kerberos"
+  },
+  "endpoints.route./admin-api/kerberos/trusts/:action.name": {
+    "en": "15792a8aae11b100",
+    "text": "Ajouter, modifier, activer, désactiver, renouveler, supprimer ou appairer une approbation Kerberos"
+  },
   "endpoints.route./admin-api/token-lifetimes.name": {
     "en": "ddad2319f680d9f9",
     "text": "Durées de vie des jetons"

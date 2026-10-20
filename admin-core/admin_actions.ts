@@ -971,6 +971,18 @@ const KERBEROS_PRINCIPAL_ACTIONS = ['create-service', 'rotate-service',
                                     'reset-person-keytab', 'rotate-krbtgt',
                                     'rotate-krbtgt-invalidate'];
 
+// THE KERBEROS TRUSTS (#430 Phase 4): seven acts on the realm's trust
+// records, each one function of `kerberos/krb5_trusts.ts`, which validates,
+// seals and writes; this adds the form's shapes, the confirmation a removal
+// needs, the house sentence and the audit row. `pair` writes the matching
+// record on ANOTHER trust realm, so it is a service administrator's act
+// (`admin-ui/admin_scope.ts`), and so is `rotate-key` with `mirror`.
+/**
+ * The actions `kerberosTrustsAction()` answers.
+ */
+const KERBEROS_TRUST_ACTIONS = ['add', 'update', 'enable', 'disable',
+                                'rotate-key', 'remove', 'pair'];
+
 interface AdminActionsDeps {
   log: typeof helpers.log;
   b64uDecode: typeof helpers.b64uDecode;
@@ -1032,6 +1044,8 @@ interface AdminActionsDeps {
   // build a default instance in a process that loads the console without the
   // root.
   krbtgtRotation: () => any;
+  // The Kerberos trust records (#430 Phase 4), lazily.
+  krb5Trusts: () => any;
 }
 
 /**
@@ -1120,6 +1134,9 @@ class AdminActions {
       krb5PersonKeys: krb5PersonKeys,
       krbtgtRotation: function () {
         return require('../kerberos/krb5_krbtgt_rotation');
+      },
+      krb5Trusts: function () {
+        return require('../kerberos/krb5_trusts');
       }
     };
   }
@@ -9535,6 +9552,223 @@ class AdminActions {
   }
 
   // ---------------------------------------------------------------------------
+  // THE KERBEROS TRUSTS, AS THE TRUSTS TAB POSTS THEM AND `POST
+  // /admin-api/kerberos/trusts/{action}` CALLS THEM (#430 Phase 4).
+  // ---------------------------------------------------------------------------
+  // A form's fields into the library's input: `direction` and `keySource`
+  // become the two key sides, the lists arrive as arrays or comma- and
+  // line-separated text, and `forestTrustInfo` as JSON, an object, or the
+  // two textareas' lines (`<sid> <dns name> <netbios name> [disabled]`, and
+  // `<name> [disabled]`).
+  private trustInput(asked, existing) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.trustInput().");
+    const list = function (value) {
+      if (Array.isArray(value)) {
+        return value.map(String);
+      }
+      return value === undefined || value === null ? undefined :
+        String(value).split(/[,\n]/).map(function (one) {
+          return one.trim();
+        }).filter(Boolean);
+    };
+    const input: any = {};
+    ['partnerRealm', 'netbiosName', 'partnerSid', 'type', 'partnerTrustRealm',
+     'claimsTransformation'].forEach(function (name) {
+      if (asked[name] !== undefined && asked[name] !== '') {
+        input[name] = String(asked[name]).trim();
+      }
+    });
+    ['attributes', 'suffixes', 'enctypes'].forEach(function (name) {
+      const value = list(asked[name]);
+      if (value !== undefined) {
+        input[name] = value;
+      }
+    });
+    // An attribute form ALWAYS posts its checkboxes, so none ticked is an
+    // empty list; `attributesShown` says the form drew them.
+    if (asked.attributesShown !== undefined && asked.attributes === undefined) {
+      input.attributes = [];
+    }
+    if (asked.enabled !== undefined) {
+      input.enabled = !(asked.enabled === false ||
+                        String(asked.enabled) === 'false');
+    }
+    const ft = asked.forestTrustInfo !== undefined ? asked.forestTrustInfo :
+      (asked.forestDomains !== undefined || asked.forestNames !== undefined
+        ? { domains: String(asked.forestDomains || '').split('\n')
+              .map(function (line) {
+                return line.trim().split(/\s+/);
+              }).filter(function (parts) {
+                return parts[0];
+              }).map(function (parts) {
+                return { sid: parts[0], dnsName: parts[1] || '',
+                         netbiosName: parts[2] || '',
+                         sidEnabled: parts[3] !== 'disabled' };
+              }),
+            topLevelNames: String(asked.forestNames || '').split('\n')
+              .map(function (line) {
+                return line.trim().split(/\s+/);
+              }).filter(function (parts) {
+                return parts[0];
+              }).map(function (parts) {
+                return { name: parts[0], enabled: parts[1] !== 'disabled' };
+              }) }
+        : undefined);
+    if (ft !== undefined) {
+      const empty = ft && typeof ft === 'object' &&
+        !(ft.domains || []).length && !(ft.topLevelNames || []).length;
+      input.forestTrustInfo = ft === '' || empty ? null : ft;
+    }
+    // THE KEYS. A side the direction names and the record does not hold
+    // takes the key source; a side it does not name is dropped; a side
+    // already held is kept — its key changes through rotate-key.
+    const direction = asked.direction === undefined ? undefined :
+      String(asked.direction);
+    const source = String(asked.keySource || (typeof asked.password ===
+      'string' && asked.password ? 'password' : ''));
+    const fresh = source === 'generate' ? { generate: true }
+      : (source === 'password' ? { password: String(asked.password || '') }
+         : undefined);
+    const wanted = direction === undefined
+      ? (existing ? null : ['incoming', 'outgoing'])
+      : (direction === 'inbound' ? ['incoming'] : direction === 'outbound' ?
+         ['outgoing'] : ['incoming', 'outgoing']);
+    if (wanted) {
+      ['incoming', 'outgoing'].forEach(function (side) {
+        const held = !!(existing && existing[side] && existing[side].held);
+        if (wanted.indexOf(side) < 0) {
+          if (held || !existing) {
+            input[side] = null;
+          }
+        } else if (!held) {
+          input[side] = fresh;
+        }
+      });
+    }
+    log.debug("Leaving AdminActions.trustInput().");
+    return input;
+  }
+
+  /**
+   * Adds, changes, enables, disables, rotates the keys of, removes or pairs
+   * a Kerberos trust record of the realm the call is in.
+   *
+   * @param body - the parsed form or JSON body; `action` names the act,
+   *   `partnerRealm` the record
+   * @param context - who is acting (`actor`) and through which door (`via`)
+   * @returns `{ ok, errors, trust, shown, … }`; never a key but a generated
+   *   one, once, in `shown`
+   */
+  kerberosTrustsAction(body, context) {
+    const { log, numberWord, realms, auditLog } = this.deps;
+    const asked = body || {};
+    const action = String(asked.action || '');
+    log.debug("Entering AdminActions.kerberosTrustsAction(). action=" +
+              action);
+    const actor = String((context || {}).actor || '');
+    const via = String((context || {}).via || 'console');
+    if (KERBEROS_TRUST_ACTIONS.indexOf(action) < 0) {
+      log.debug("Leaving AdminActions.kerberosTrustsAction(). Unknown " +
+                "action.");
+      return this.refused('STS-ADMIN-0859', { ok: false, errors: [
+        'Unknown action "' + action + '". There are ' +
+        numberWord(KERBEROS_TRUST_ACTIONS.length) + ': ' +
+        KERBEROS_TRUST_ACTIONS.join(', ') + '.'] });
+    }
+    const trusts = this.deps.krb5Trusts();
+    const partner = String(asked.partnerRealm || '').trim();
+    const existing = partner ? trusts.get(partner) : null;
+    if (action !== 'add' && !(action === 'pair' && asked.otherRealm) &&
+        !existing) {
+      log.debug("Leaving AdminActions.kerberosTrustsAction(). No record.");
+      return this.refused('STS-ADMIN-0859', { ok: false, errors: [
+        action + ' names a trust by partnerRealm, and this realm holds ' +
+        (partner ? 'none with ' + partner : 'none unnamed') + '.'] });
+    }
+    let result;
+    let detail = '';
+    if (action === 'add') {
+      result = trusts.add(this.trustInput(asked, null));
+      detail = 'added a trust with ' + partner;
+    } else if (action === 'update') {
+      const input = this.trustInput(asked, existing);
+      delete input.partnerRealm;
+      result = trusts.update(partner, input);
+      detail = 'changed the trust with ' + partner;
+    } else if (action === 'enable' || action === 'disable') {
+      result = trusts.setEnabled(partner, action === 'enable');
+      detail = (action === 'enable' ? 'enabled' : 'disabled') +
+               ' the trust with ' + partner;
+    } else if (action === 'rotate-key') {
+      const source = String(asked.keySource || (asked.password ? 'password' :
+                                                ''));
+      result = trusts.rotateKey(partner, {
+        side: asked.side, mirror: asked.mirror,
+        password: source === 'password' ? String(asked.password || '') :
+          undefined,
+        generate: source === 'generate'
+      });
+      detail = 'rotated the ' + ((result && result.rotated) || []).join(' and ') +
+               ' key(s) of the trust with ' + partner +
+               (result && result.there ? ', on both realms' : '');
+    } else if (action === 'remove') {
+      if (String(asked.confirm || '') !== partner) {
+        log.debug("Leaving AdminActions.kerberosTrustsAction(). Not " +
+                  "confirmed.");
+        return this.refused('STS-ADMIN-0860', { ok: false, errors: [
+          'Removing a trust takes its keys with it, so it is confirmed by ' +
+          'typing the partner realm, ' + partner + ', into confirm.'] });
+      }
+      result = trusts.remove(partner);
+      detail = 'removed the trust with ' + partner;
+    } else {
+      // PAIR: the matching record on the other trust realm for a record
+      // held here, or — with `otherRealm` — both records at once.
+      if (asked.otherRealm) {
+        const source = String(asked.keySource || (asked.password ? 'password' :
+                                                  'generate'));
+        const input = this.trustInput(asked, null);
+        result = trusts.pair(String(asked.otherRealm), {
+          direction: asked.direction === 'inbound' ? 'incoming' :
+            (asked.direction === 'outbound' ? 'outgoing' : 'both'),
+          password: source === 'password' ? String(asked.password || '') :
+            undefined,
+          attributes: input.attributes, enctypes: input.enctypes,
+          suffixes: input.suffixes,
+          partnerSuffixes: this.trustInput({ suffixes:
+            asked.partnerSuffixes }, null).suffixes
+        });
+        detail = 'paired this realm with trust realm ' + asked.otherRealm;
+      } else {
+        result = trusts.mirror(partner);
+        detail = (result && result.created ? 'wrote' : 'matched the keys ' +
+                  'of') + ' the record for this realm in trust realm ' +
+                 (result && result.otherRealm || '') + ', pairing the ' +
+                 'trust with ' + partner;
+      }
+    }
+    if (!result || !result.ok) {
+      const errors = ((result && result.errors) || []);
+      const out = { ok: false, errors: errors.map(function (one) {
+        return typeof one === 'string' ? one : String(one.message);
+      }) };
+      const code = errors.length && errors[0] && errors[0].code ?
+        String(errors[0].code) : 'STS-ADMIN-0859';
+      log.debug("Leaving AdminActions.kerberosTrustsAction(). Refused.");
+      return this.refused(code, out);
+    }
+    // THE AUDIT ROW NAMES THE TRUST AND THE ACT, never a key or a password.
+    auditLog.audit({ action: 'krb5.trust.' + action, actor: actor,
+                     target: partner || String(asked.otherRealm || ''),
+                     protocol: 'Kerberos', channel: 'http',
+                     detail: detail + ' (via ' + via + ')' });
+    log.debug("Leaving AdminActions.kerberosTrustsAction(). ok.");
+    return Object.assign({ ok: true, trustRealm: realms.currentId(),
+                           action: action }, result);
+  }
+
+  // ---------------------------------------------------------------------------
   // THE TWO KEY LISTS, AS FUNCTIONS. `/admin-api` asks which settings each of
   // these two pages owns, and the console answered with an inline lambda in its
   // own exports — `function () { return TOKEN_LIFETIME_KEYS.slice(); }` — which
@@ -9609,6 +9843,8 @@ export = {
   truststoreAction: slot.forward('truststoreAction'),
   KERBEROS_PRINCIPAL_ACTIONS: KERBEROS_PRINCIPAL_ACTIONS,
   kerberosPrincipalsAction: slot.forward('kerberosPrincipalsAction'),
+  KERBEROS_TRUST_ACTIONS: KERBEROS_TRUST_ACTIONS,
+  kerberosTrustsAction: slot.forward('kerberosTrustsAction'),
   // The thirty actions, the tables they dispatch on, and the pure helpers
   // they share with the pages that draw their buttons.
   FORM_FURNITURE: FORM_FURNITURE,

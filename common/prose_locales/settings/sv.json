@@ -5903,6 +5903,14 @@
     "en": "e88d21d50bcd7495",
     "text": "Hur många förtroenden en väg mellan sfärer får korsa innan den här KDC:n vägrar att hänvisa den vidare (KDC_ERR_PATH_NOT_ACCEPTED). Ett direkt förtroende är en korsning; varje sfär som en väg hänvisas genom lägger till en. Förtroendena själva är poster i sfärens katalog (ou=kerberosTrusts), och en väg byggs bara genom poster som är markerade som transitiva."
   },
+  "krb5.trustKeyGraceSeconds|label": {
+    "en": "e9a56607c04ebe5c",
+    "text": "Respittid för en roterad förtroendenyckel (s)"
+  },
+  "krb5.trustKeyGraceSeconds|description": {
+    "en": "0ee4268f63c3b908",
+    "text": "Hur länge den inkommande nyckeln mellan sfärer som ett förtroendes Rotera nyckel ersatte fortfarande öppnar partnerns biljetter, som den fortsätter att försegla med tills dess egen sida ändras. NOLL — standard — betyder krb5.ticketLifetimeSeconds plus krb5.clockSkew, läst när versionen kontrolleras. Ett tal är så många sekunder i stället: länge nog för partnerns administratör att ändra sin sida. En tidigare version behålls per förtroende; efter dess respittid nekas en biljett under den med KRB_AP_ERR_BADKEYVER."
+  },
   "krb5.spnegoAuthentication|label": {
     "en": "0a014fa4b2685cd7",
     "text": "Logga in med en Kerberos-biljett"

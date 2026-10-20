@@ -918,6 +918,7 @@ var config = {
     crossRealmClassicDelegation: false,                    // Classic delegation across trusts
     requireSidFilteringInProduct: true,                    // Require SID filtering on trusts
     maxReferralHops: 5,                                    // Most trusts a referral path crosses
+    trustKeyGraceSeconds: 0,                               // Grace for a rotated trust key (s)
     spnegoAuthentication: true,                            // Sign in with a Kerberos ticket
     personKeys: true,                                      // Kerberos keys for directory people
     retainedKeyVersions: 1,                                // Previous key versions kept

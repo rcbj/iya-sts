@@ -310,9 +310,37 @@ delegation:
   set to `deny` refuses it whatever the trust says — that attribute only
   narrows. Protected users are refused as always.
 
-**Not yet:** the console tab and `/admin-api` operations that manage a
-record — #430's later phase. Until the console's tab exists, a record is managed through the
-library `kerberos/krb5_trusts.ts` and seen with `ldapsearch`. The four
+**Managing trusts.** Protocols → Kerberos → **Trusts** lists the realm's
+records, paged, each with its keys described (kvno, source, when set — never
+the key), its attributes, the last key change and a health column: whether
+the incoming key is held, the suffixes routed, a warning when the trust is
+not quarantined (and that product mode will not use it while
+`krb5.requireSidFilteringInProduct` is on), a disabled trust, and for a
+partner that is another trust realm here, whether that realm holds the
+matching record. Each row can be edited, enabled or disabled, have its keys
+rotated, be removed (by typing the partner realm), and — for a trust realm
+here — be **paired**, which writes the matching record on the other realm in
+one act. The same seven acts are `POST /admin-api/kerberos/trusts/{add,
+update,enable,disable,rotate-key,remove,pair}`, and `GET
+/admin-api/kerberos/trusts` (with `?trust=<partner>` for one record) is the
+tab as JSON. A realm's own administrators manage its trusts; pairing, and a
+rotation of both sides at once, write another realm's directory and are a
+service administrator's.
+
+**Rotating a trust key** makes new keys at the next kvno, from a new
+password or generated (shown once). The incoming key it replaces still opens
+the partner's tickets for `krb5.trustKeyGraceSeconds` — by default the
+ticket lifetime plus the clock skew — so the partner's administrator has that
+long to change their side; past it a ticket under the old kvno is refused
+`KRB_AP_ERR_BADKEYVER`.
+
+An application's **Configuration → Kerberos** sub-tab has an *Across trusts*
+section: its `krb5S4uSelfRealm` and `krb5ForeignTgtDelegation` fields, and a
+read-only account of what its delegation attributes mean across the trusts —
+each foreign front end its resource-based delegation accepts and the trust
+path it needs, each foreign target of its classic delegation and whether
+classic delegation across realms is refused, and how its unconstrained
+delegation meets each trust's TGT-delegation bits. The four
 settings that built the development trust (`krb5.trustedRealm`,
 `krb5.trustPassword`, `krb5.trustedDomainSid`, `krb5.trustedKrbtgtPassword`)
 were removed with no replacement setting: a start that still names one is
@@ -872,6 +900,7 @@ modes**, and a replay is refused in both. See
 | `krb5.maxReferralHops` | `KRB5_MAX_REFERRAL_HOPS` | `5` | yes | How many trusts one cross-realm path may cross before the KDC refuses to refer it further (`KDC_ERR_PATH_NOT_ACCEPTED`). |
 | `krb5.crossRealmClassicDelegation` | `KRB5_CROSS_REALM_CLASSIC_DELEGATION` | `false` | yes | Whether classic constrained delegation may cross a trust; both realms must turn it on. Resource-based delegation crosses without it. |
 | `krb5.requireSidFilteringInProduct` | `KRB5_REQUIRE_SID_FILTERING_IN_PRODUCT` | `true` | yes | In product mode, use a trust only while it is `quarantined`. |
+| `krb5.trustKeyGraceSeconds` | `KRB5_TRUST_KEY_GRACE_SECONDS` | `0` | yes | How long a rotated trust's previous incoming key is still accepted; `0` is the ticket lifetime plus the clock skew. |
 | `krb5.spnegoAuthentication` | `KRB5_SPNEGO_AUTHENTICATION` | `true` | yes | Whether `/authn/spnego` may turn a ticket into a browser session. |
 | `krb5.spnegoLoginButton` | `KRB5_SPNEGO_LOGIN_BUTTON` | `true` | yes | Show "Sign in with Kerberos" on `/authn/login`. |
 | `krb5.personKeys` | `KRB5_PERSON_KEYS` | `true` | yes | Product mode only: derive and store people's keys from their passwords; off, the KDC refuses every person. |

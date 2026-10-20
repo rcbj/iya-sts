@@ -11313,6 +11313,19 @@ const SETTINGS = [
                  'referred through adds one. The trusts themselves are ' +
                  'records in the realm\'s directory (ou=kerberosTrusts), and ' +
                  'a path is built only through records marked transitive.' },
+  { key: 'krb5.trustKeyGraceSeconds', group: 'Kerberos',
+    label: 'Grace for a rotated trust key (s)',
+    env: 'KRB5_TRUST_KEY_GRACE_SECONDS', type: 'int', dflt: 0, min: 0,
+    max: 31536000, runtime: true,
+    description: 'How long the incoming inter-realm key a trust\'s Rotate ' +
+                 'key replaced still opens the partner\'s tickets, which ' +
+                 'it goes on sealing with until its own side changes. ZERO ' +
+                 '— the default — means krb5.ticketLifetimeSeconds plus ' +
+                 'krb5.clockSkew, read when the version is checked. A ' +
+                 'number is that many seconds instead: long enough for the ' +
+                 'partner\'s administrator to change their side. One ' +
+                 'previous version is kept per trust; past its grace a ' +
+                 'ticket under it is refused KRB_AP_ERR_BADKEYVER.' },
 
   // ---------------------------------------------------------------------
   // THE TWO THAT TURN A KERBEROS TICKET INTO A SIGN-IN, and they are two

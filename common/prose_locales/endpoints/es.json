@@ -1039,6 +1039,14 @@
     "en": "e3b666e9c2cf04a5",
     "text": "Crear, rotar o eliminar un principal de servicio, borrar las claves de una persona, descartar versiones de clave anteriores o rotar la clave krbtgt"
   },
+  "endpoints.route./admin-api/kerberos/trusts.name": {
+    "en": "e92d42c7c01ab222",
+    "text": "Confianzas Kerberos"
+  },
+  "endpoints.route./admin-api/kerberos/trusts/:action.name": {
+    "en": "15792a8aae11b100",
+    "text": "Añadir, cambiar, habilitar, deshabilitar, rotar, eliminar o emparejar una confianza Kerberos"
+  },
   "endpoints.route./admin-api/token-lifetimes.name": {
     "en": "ddad2319f680d9f9",
     "text": "Vigencias de los tokens"

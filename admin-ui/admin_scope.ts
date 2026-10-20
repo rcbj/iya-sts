@@ -318,6 +318,27 @@ class AdminScope {
         log.debug("Leaving the risk action rule. Allowed.");
         return '';
       },
+      // KERBEROS TRUSTS (#430 Phase 4): a realm administrator manages their
+      // realm's trust records — add, change, enable, disable, rotate,
+      // remove — and nothing that writes ANOTHER realm's directory: `pair`
+      // writes the partner trust realm's record, and so does a rotation
+      // with `mirror`. Those are a service administrator's acts.
+      '/admin/kerberos/trusts': function (body, realmId) {
+        log.debug("Entering the Kerberos trusts action rule.");
+        const action = String((body && body.action) || '').trim();
+        const mirrored = !!body && (body.mirror === true ||
+                                    String(body.mirror) === 'true');
+        if (action === 'pair' || (action === 'rotate-key' && mirrored)) {
+          log.debug("Leaving the Kerberos trusts action rule. Another " +
+                    "realm.");
+          return (action === 'pair' ? 'Pairing a trust' : 'Rotating both ' +
+                  'sides of a trust') + ' writes the partner trust realm\'s ' +
+                 'record as well, and a realm administrator of "' + realmId +
+                 '" may change that realm only.';
+        }
+        log.debug("Leaving the Kerberos trusts action rule. Allowed.");
+        return '';
+      },
       '/admin/keys/export': function (body) {
         return self.tlsServerKeyRule(body);
       },

@@ -12,8 +12,8 @@
     "text": "partial，缺口在於 TCP 呼叫端的證明。七個方法中實作了五個——FetchX509SVID、FetchX509Bundles、FetchJWTSVID、FetchJWTBundles、ValidateJWTSVID——透過 Unix socket 與 TCP 提供，串流保持開啟並在 SVID 存留期過半時重新傳送，讓客戶端的輪替路徑得以執行。必要的 `workload.spiffe.io: true` 標頭「確實」會強制執行——在產品模式下一律如此，在開發模式下除非 spiffe.requireSecurityHeader 為關閉（#181）。FetchWITSVID 與 FetchWITBundles 回應 Unimplemented，因為 Workload Identity Token 的格式尚未在本服務可據以實作的文件中定案，而自行發明一種就等於發明一種認證格式。「不會要求任何認證資料，而且也絕不能有」——Workload Endpoint 規格規定端點「不得」要求直接驗證其客戶端，且「不得」要求 TLS——因此所需要的是「證明」。Unix socket 上的呼叫端由 unix、docker、k8s 與 systemd 工作負載證明器依據核心對連線程序的描述加以證明（#40、#170）——docker 證明器除了 Docker Engine 也會詢問 Podman，且在 spiffe.dockerSigstoreEnabled 開啟時，要求一個能以其 Rekor 套件組驗證的 cosign 映像簽章，並加入 SPIRE 的映像簽章選擇器（線上 Rekor 查詢與新的 sigstore 套件組格式尚未完成）。透過 TCP 的呼叫端沒有可詢問的程序，只能以其傳輸、端點與來源地址（`transport:`、`endpoint:`、`peer:`）識別，因此第 3 節僅在網絡會驗證來源地址的情況下才允許 TCP：「產品」模式除非 spiffe.workloadTcpSourceAuthenticated 如此宣告，否則不會繫結 TCP 連接埠，也不會繫結在萬用地址上，並拒絕只選擇傳輸與端點的註冊項目（#166）。開發模式則對任何能到達它的人提供 TCP。"
   },
   "stsmetadata.specs.rfc4120.coverage": {
-    "en": "f830c0cae35e4109",
-    "text": "partial：透過 TCP、UDP 與 MS-KKDCP 的 AS 與 TGS 交換，具備預先驗證（PA-ENC-TIMESTAMP）、攜帶 salt 的 PA-ETYPE-INFO2、票證旗標、時鐘偏差強制執行與錯誤目錄。兩個彼此信任的領域，因此跨領域轉介可以運作。FAST 與 OTP 預先驗證各有其專屬列（RFC 6113、RFC 6560），PKINIT（RFC 4556）亦然；沒有請求簽章，沒有 kpasswd（S4U 屬於 [MS-SFU]，有其專屬列）。AP 交換屬於接受端（SPNEGO），而不在此處。「任何」用戶名稱都能通過驗證，且每個用戶帳戶共用「同一個」密碼，由設定 krb5.userPassword 公布：預先驗證是真正驗證的（密碼即金鑰，所以必須如此），但每個人的密碼都相同，而且未知的用戶名稱會當場建立而不是被拒絕。「那是開發模式」。在產品模式下，測試用帳戶、第二個領域與每條委派規則都不存在，不會依需求建立任何東西，不會公布任何密碼，已設定的服務帳戶只有在 krb5.servicePassword 設為其公布預設值以外的值時才存在，而每個領域的 krbtgt 金鑰是「隨機」的，密封存放於目錄中，並由 krb5.krbtgt-rotate 工作（krb5.krbtgtRotationIntervalDays）輪替，被取代的版本會保留到其下 TGT 可存活的最長時間；「輪替並使失效」則不保留任何版本。目前沒有標準化的後量子 Kerberos enctype，因此輪替使用 AES enctype。產品模式的 KDC 以衍生自目錄中「人員」自己密碼的金鑰驗證他們（在他們登入一次之後），並以營運者建立的隨機金鑰驗證服務主體；持有或必須持有第二因素的人，僅憑密碼「得不到」票證（在密碼驗證通過後回應 KDC_ERR_POLICY）——只能透過搭配 OTP 預先驗證的 FAST，或透過 PKINIT 使用證書。"
+    "en": "27228a77db708fb3",
+    "text": "partial：透過 TCP、UDP 與 MS-KKDCP 的 AS 與 TGS 交換，具備預先驗證（PA-ENC-TIMESTAMP）、攜帶 salt 的 PA-ETYPE-INFO2、票證旗標、時鐘偏差強制執行與錯誤目錄。與其他領域的信任是記錄，每個夥伴一筆（通訊協定 → Kerberos → 信任，/admin-api/kerberos/trusts）：經可轉移信任進行轉介並檢查 transited，領域間金鑰來自共用密碼或隨機產生，輪替時被取代的金鑰有寬限期。FAST 與 OTP 預先驗證各有其專屬列（RFC 6113、RFC 6560），PKINIT（RFC 4556）亦然；沒有請求簽章，沒有 kpasswd（S4U 屬於 [MS-SFU]，有其專屬列）。AP 交換屬於接受端（SPNEGO），而不在此處。「任何」用戶名稱都能通過驗證，且每個用戶帳戶共用「同一個」密碼，由設定 krb5.userPassword 公布：預先驗證是真正驗證的（密碼即金鑰，所以必須如此），但每個人的密碼都相同，而且未知的用戶名稱會當場建立而不是被拒絕。「那是開發模式」。在產品模式下，測試用帳戶、第二個領域與每條委派規則都不存在，不會依需求建立任何東西，不會公布任何密碼，已設定的服務帳戶只有在 krb5.servicePassword 設為其公布預設值以外的值時才存在，而每個領域的 krbtgt 金鑰是「隨機」的，密封存放於目錄中，並由 krb5.krbtgt-rotate 工作（krb5.krbtgtRotationIntervalDays）輪替，被取代的版本會保留到其下 TGT 可存活的最長時間；「輪替並使失效」則不保留任何版本。目前沒有標準化的後量子 Kerberos enctype，因此輪替使用 AES enctype。產品模式的 KDC 以衍生自目錄中「人員」自己密碼的金鑰驗證他們（在他們登入一次之後），並以營運者建立的隨機金鑰驗證服務主體；持有或必須持有第二因素的人，僅憑密碼「得不到」票證（在密碼驗證通過後回應 KDC_ERR_POLICY）——只能透過搭配 OTP 預先驗證的 FAST，或透過 PKINIT 使用證書。"
   },
   "stsmetadata.specs.rfc6113.coverage": {
     "en": "a3a867d4d0ef4d0b",
@@ -40,8 +40,8 @@
     "text": "partial：AS 交換中的匿名 PKINIT——針對 WELLKNOWN/ANONYMOUS 的未簽署 AuthPack、位於 WELLKNOWN:ANONYMOUS 中帶有匿名旗標且不指名任何人的 TGT，以及 PA-PKINIT-KX（KDC 對工作階段金鑰的貢獻）——作為沒有主機 keytab 之客戶端的 FAST ARMOR（krb5.anonymousPkinit）。依原則它僅止於此：只簽發此領域的 TGT，且 TGS 會拒絕匿名票證。「未」實作：TGS 交換中的匿名票證（第 4.2 節），以及已驗證的客戶端要求匿名票證。"
   },
   "stsmetadata.specs.ms-pac.coverage": {
-    "en": "ce39d54091e6c64a",
-    "text": "partial：每張票證都攜帶已簽署的 PAC——登入資訊（KERB_VALIDATION_INFO，NDR）、客戶端資訊、UPN/DNS 資訊、屬性與請求者 SID。依第 2.8.2／2.8.3 節，TGT 有兩個簽章，服務票證有四個。krb5.pacClaims 開啟時（#493）會產生「客戶端宣告」（PAC_CLIENT_CLAIMS_INFO，2.11），從不壓縮；在其他領域的 PAC 中抵達的宣告緩衝區會被解碼（包括 XPRESS Huffman）並攜帶。不產生裝置資訊與「裝置」宣告，跨信任關係的「SID 篩選」也「未」實作——重新簽署的 PAC 會保留其抵達時的每個 SID。"
+    "en": "22bf6b719bdeefc5",
+    "text": "partial：每張票證都攜帶已簽署的 PAC——登入資訊（KERB_VALIDATION_INFO，NDR）、客戶端資訊、UPN/DNS 資訊、屬性與請求者 SID。依第 2.8.2／2.8.3 節，TGT 有兩個簽章，服務票證有四個。krb5.pacClaims 開啟時（#493）會產生「客戶端宣告」（PAC_CLIENT_CLAIMS_INFO，2.11），從不壓縮；在其他領域的 PAC 中抵達的宣告緩衝區會被解碼（包括 XPRESS Huffman）並攜帶。不產生裝置資訊與「裝置」宣告。跨信任抵達的 PAC 在重新簽署前依第 4.1.2.2 節針對該信任邊界的規定進行 SID 篩選——捨棄裝置資訊，除非信任允許，否則捨棄宣告集——轉介的 PAC 以領域間金鑰簽署。"
   },
   "stsmetadata.specs.rfc4178.coverage": {
     "en": "4c1e4c4761e68531",

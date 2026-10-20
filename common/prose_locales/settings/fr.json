@@ -5903,6 +5903,14 @@
     "en": "e88d21d50bcd7495",
     "text": "Combien de confiances un chemin inter-domaines peut franchir avant que ce KDC refuse de le référer plus loin (KDC_ERR_PATH_NOT_ACCEPTED). Une confiance directe compte pour un franchissement ; chaque domaine par lequel un chemin est référé en ajoute un. Les confiances elles-mêmes sont des enregistrements dans l’annuaire du domaine (ou=kerberosTrusts), et un chemin n’est construit qu’à travers des enregistrements marqués transitifs."
   },
+  "krb5.trustKeyGraceSeconds|label": {
+    "en": "e9a56607c04ebe5c",
+    "text": "Délai de grâce d’une clé d’approbation renouvelée (s)"
+  },
+  "krb5.trustKeyGraceSeconds|description": {
+    "en": "0ee4268f63c3b908",
+    "text": "Pendant combien de temps la clé inter-royaumes entrante qu’a remplacée Renouveler la clé d’une approbation ouvre encore les tickets du partenaire, qui continue de sceller avec elle jusqu’à ce que son propre côté change. ZÉRO — la valeur par défaut — signifie krb5.ticketLifetimeSeconds plus krb5.clockSkew, lu au moment où la version est vérifiée. Un nombre est ce nombre de secondes à la place : assez long pour que l’administrateur du partenaire change son côté. Une version précédente est conservée par approbation ; passé son délai de grâce, un ticket sous elle est refusé KRB_AP_ERR_BADKEYVER."
+  },
   "krb5.spnegoAuthentication|label": {
     "en": "0a014fa4b2685cd7",
     "text": "Connexion avec un ticket Kerberos"
