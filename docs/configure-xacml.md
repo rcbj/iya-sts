@@ -36,7 +36,7 @@ below, and the console's settings forms.
 | `/admin/xacml#xacml-tab-decide` | the **Try a decision** tab | **Ask the PDP** about a subject, an action and a resource. |
 | `/admin/roles` | **Directory → Roles** | Make roles, give them to people, groups and applications, and preview **Would this be issued?** |
 | `/admin/groups` | **Directory → Groups** | Put an entry in `remote-peps` or `xacml-users`, under **Add a member**. |
-| `/admin/tls/trust` | **Protocols → TLS / mutual TLS → Client-certificate truststore** | **Add anchors**, then **Trust these**: the CA a PEP's or a caller's certificate chains to. |
+| `/admin/tls/trust` | **Protocols → Client-certificate truststore** | **Add anchors**, then **Trust these**: the CA a PEP's or a caller's certificate chains to. |
 | `/admin/delegation-settings` | **Protocols → Delegation** | The four `delegation.*` settings, saved with **Save Delegation**. |
 | `/admin/xacml/monitor` | **Monitoring → XACML decisions** | Decisions and enforcements per PEP. |
 
@@ -235,7 +235,7 @@ Taken from `sts_xacml_endpoints.js` and `sts_xacml_editor.js`, which use the
 common name `xacml-user-1` in the realm's `xacml-users` group.
 
 **Console:**
-1. **Protocols → TLS / mutual TLS → Client-certificate truststore**: under
+1. **Protocols → Client-certificate truststore**: under
    **Add anchors**, paste the PEM of the CA that issued the caller's
    certificate and click **Trust these**. The truststore is service-wide.
 2. **Directory → Users**: make sure there is an entry for the certificate's
