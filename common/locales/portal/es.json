@@ -515,5 +515,11 @@
   "done.codesSaved": "Sus {n} códigos de recuperación están guardados. Solo se almacenan sus hashes, así que este servicio nunca podrá volver a mostrárselos: conserve la copia que hizo.",
   "done.keyOff": "Su clave de firma {rfc} está quitada. A partir de ahora se rechazará todo lo que siga firmando con ella.",
   "done.passkeyMany": "Su llave de acceso está lista. Tiene {n}: si pierde una, las demás le siguen permitiendo iniciar sesión.",
-  "done.renamed": "Se cambió el nombre a «{name}»."
+  "done.renamed": "Se cambió el nombre a «{name}».",
+  "accounts.menu": "Cambiar de cuenta",
+  "accounts.menuTitle": "Las demás cuentas con sesión iniciada en este navegador y un inicio de sesión con otra cuenta. El cambio afecta solo a esta pestaña.",
+  "accounts.switchTitle": "Usar esta pestaña como {user}. Las demás pestañas conservan su cuenta.",
+  "accounts.another": "Iniciar sesión con otra cuenta",
+  "accounts.anotherTitle": "Iniciar sesión como otra persona en esta pestaña. Las cuentas que ya tienen la sesión iniciada en este navegador la conservan, y las demás pestañas conservan la suya.",
+  "accounts.unsaved": "Esta página tiene cambios sin guardar. ¿Cambiar de cuenta de todos modos? Se perderán."
 }

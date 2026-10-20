@@ -515,5 +515,11 @@
   "done.codesSaved": "您的 {n} 个恢复码已保存。只存储了它们的哈希，因此本服务永远无法再向您显示——请保管好您留存的副本。",
   "done.keyOff": "您的 {rfc} 签名密钥已移除。从现在起，任何仍用它签名的内容都会被拒绝。",
   "done.passkeyMany": "您的通行密钥已就绪。您持有 {n} 个——即使丢失一个，其他的仍可让您登录。",
-  "done.renamed": "已重命名为“{name}”。"
+  "done.renamed": "已重命名为“{name}”。",
+  "accounts.menu": "切换账户",
+  "accounts.menuTitle": "在此浏览器中已登录的其他账户，以及使用其他账户登录。切换只影响此标签页。",
+  "accounts.switchTitle": "以 {user} 的身份使用此标签页。其他标签页保持各自的账户。",
+  "accounts.another": "使用其他账户登录",
+  "accounts.anotherTitle": "在此标签页中以另一个人的身份登录。已在此浏览器中登录的账户保持登录状态，其他标签页保持各自的账户。",
+  "accounts.unsaved": "此页面有尚未保存的更改。仍要切换账户吗？这些更改将会丢失。"
 }

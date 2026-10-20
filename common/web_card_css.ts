@@ -170,6 +170,22 @@ class WebCardCss {
     'argin:.2em 0}';
 
   /**
+   * The account control every public surface draws beside the chooser with
+   * several accounts on (#561, `web_accounts.ts`): small and to one side,
+   * as the chooser is, its panel a short list and one link. No page draws
+   * it with the setting off, so these rules then style nothing.
+   */
+  static readonly ACCOUNTS_CSS =
+    'details.sts-accounts{float:right;clear:right;font-size:.75em;margin:0' +
+    ' 0 6px 8px;position:relative}details.sts-accounts>summary{cursor:poin' +
+    'ter;color:#12107c}details.sts-accounts .sts-accounts-panel{position:a' +
+    'bsolute;right:0;z-index:20;min-width:14rem;background:#fff;border:1px' +
+    ' solid #d5d5dd;border-radius:6px;box-shadow:0 6px 24px rgba(0,0,0,.08' +
+    ');padding:8px 10px}details.sts-accounts p{margin:0 0 4px;color:#666}d' +
+    'etails.sts-accounts ul{margin:0 0 6px;padding-left:1.1em}details.sts-' +
+    'accounts li span{color:#777}a.sts-accounts-another{color:#12107c}';
+
+  /**
    * The stylesheet of the sign-in screen and the federation chooser, shared
    * with the consent screen; the wide card's rules after the chooser's.
    */
@@ -217,7 +233,9 @@ class WebCardCss {
     // The description pages' last (#584), scoped to their own card.
     WebCardCss.DESCRIBE_CSS +
     // The diagnostic pages' last (#583), scoped to `.diag` and `.tls`.
-    WebCardCss.DIAG_CSS;
+    WebCardCss.DIAG_CSS +
+    // The account control's (#561), scoped to its own classes.
+    WebCardCss.ACCOUNTS_CSS;
 }
 
 export = WebCardCss;

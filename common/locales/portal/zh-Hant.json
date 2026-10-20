@@ -515,5 +515,11 @@
   "done.codesSaved": "已儲存您的 {n} 個復原碼。只儲存了它們的雜湊，因此本服務永遠無法再向您顯示——請保管好您做的副本。",
   "done.keyOff": "已移除您的 {rfc} 簽章金鑰。從現在起，任何仍以它簽署的內容都會被拒絕。",
   "done.passkeyMany": "您的密碼金鑰已就緒。您持有 {n} 個——如果遺失一個，其他的仍可讓您登入。",
-  "done.renamed": "已重新命名為「{name}」。"
+  "done.renamed": "已重新命名為「{name}」。",
+  "accounts.menu": "切換帳戶",
+  "accounts.menuTitle": "在此瀏覽器中已登入的其他帳戶，以及使用其他帳戶登入。切換只影響此分頁。",
+  "accounts.switchTitle": "以 {user} 的身分使用此分頁。其他分頁保留各自的帳戶。",
+  "accounts.another": "使用其他帳戶登入",
+  "accounts.anotherTitle": "在此分頁中以另一個人的身分登入。已在此瀏覽器中登入的帳戶會保持登入，其他分頁保留各自的帳戶。",
+  "accounts.unsaved": "此頁面有尚未儲存的變更。仍要切換帳戶嗎？這些變更將會遺失。"
 }

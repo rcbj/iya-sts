@@ -515,5 +515,11 @@
   "done.codesSaved": "Dina {n} återställningskoder är sparade. Endast deras hashar lagras, så tjänsten kan aldrig visa dem för dig igen — behåll kopian du gjorde.",
   "done.keyOff": "Din {rfc}-signeringsnyckel är borttagen. Allt som fortfarande signerar med den nekas från och med nu.",
   "done.passkeyMany": "Din nyckel är klar. Du har {n} — om en försvinner loggar de andra fortfarande in dig.",
-  "done.renamed": "Namnet ändrat till ”{name}”."
+  "done.renamed": "Namnet ändrat till ”{name}”.",
+  "accounts.menu": "Byt konto",
+  "accounts.menuTitle": "De andra kontona som är inloggade i den här webbläsaren, och en inloggning med ett annat konto. Bytet gäller bara den här fliken.",
+  "accounts.switchTitle": "Använd den här fliken som {user}. Andra flikar behåller sina konton.",
+  "accounts.another": "Logga in med ett annat konto",
+  "accounts.anotherTitle": "Logga in som en annan person i den här fliken. Konton som redan är inloggade i den här webbläsaren förblir inloggade, och andra flikar behåller sina.",
+  "accounts.unsaved": "Den här sidan har ändringar som inte har sparats. Byta konto ändå? De går förlorade."
 }

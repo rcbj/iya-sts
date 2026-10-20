@@ -29,10 +29,15 @@
 // parameters a page reads to draw itself (`REFRESH_KEPT` and `<list>Page`),
 // for #538's reason: a value a link put on the URL is never drawn back.
 //
+// **THE ACCOUNT MENU (#561)** follows Sign out, and only where the browser's
+// account list said `authn.multipleAccounts` is on (`accountMenu()`):
+// otherwise the header is the one it always was, to the byte.
+//
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_portal_kit');
+import WebAccounts = require('../common/web_accounts');
 
 type Json = any;
 
@@ -55,6 +60,11 @@ class PortalShell {
    * Where the Sign out form posts; the runtime answers it.
    */
   static readonly SIGNOUT_PATH = kit.BASE + '/signout';
+  /**
+   * The account menu's list of the browser's other accounts (#561), drawn
+   * again in place when another tab changes them.
+   */
+  static readonly ACCOUNTS_ID = 'sts-account-switch';
 
   /**
    * The parameters of a page's query that a redraw of it keeps.
@@ -229,6 +239,7 @@ class PortalShell {
       '<button class="secondary" title="' +
       kit.esc(t.text('portal.shell.signOutTitle')) + '">' +
       t.html('portal.shell.signOut') + '</button></form>' +
+      PortalShell.accountMenu(page.accounts, page.subject, t) +
       PortalShell.chooser(t, me && me.locale, returnTo) + '</div></header>' +
       '<div class="shell"><div class="side"><div class="card">' +
       PortalShell.navBar(page.active, t) + '</div></div><div class="main">' +
@@ -236,6 +247,61 @@ class PortalShell {
       (page.message ? '<div class="ok">' + kit.esc(page.message) + '</div>'
                     : '') +
       page.cards + '</div></div>', true, me && me.version);
+  }
+
+  // THE ACCOUNT MENU (#561): a `<details>`, as the console's is, so it opens
+  // with no script; its controls are BUTTONS the runtime answers on the
+  // press (`PortalRuntime.switchAccount()`, `signInAnother()`), because a
+  // switch is an act — it asks over unsaved changes, aborts what is in
+  // flight and discards the tab's views — and carries an account's key,
+  // never a sid. Sign out is the header's own button, which the runtime
+  // sends to `/logout` with this tab's account as the hint.
+  /**
+   * Draws the account menu, where the browser's account list is on.
+   *
+   * @param list - `GET /authn-api/accounts`'s answer, or nothing
+   * @param subject - this tab's subject
+   * @param t - the translator
+   * @returns the menu's HTML, or '' with the list off
+   */
+  static accountMenu(list: Json, subject: string, t: Json): string {
+    if (!list || !list.enabled) {
+      return '';
+    }
+    return '<details class="usermenu"><summary title="' +
+      kit.esc(t.text('portal.accounts.menuTitle')) + '">' +
+      t.html('portal.accounts.menu') + '</summary>' +
+      '<div class="usermenupanel" id="' + PortalShell.ACCOUNTS_ID + '">' +
+      PortalShell.accountItems(list, subject, t) + '</div></details>';
+  }
+
+  /**
+   * Draws the account menu's items: a button per other signed-in account,
+   * and Sign in with another account.
+   *
+   * @param list - the browser's account list
+   * @param subject - this tab's subject
+   * @param t - the translator
+   * @returns the items' HTML
+   */
+  static accountItems(list: Json, subject: string, t: Json): string {
+    const others = WebAccounts.live(list).filter(function (one: Json) {
+      return String(one.sub || '') !== String(subject || '');
+    });
+    return others.map(function (one: Json): string {
+      const name = WebAccounts.nameOf(one);
+      return '<button type="button" class="linklike" ' +
+        'data-account-action="switch" data-account-key="' +
+        kit.esc(one.key) + '" title="' +
+        kit.esc(t.text('portal.accounts.switchTitle', { user: name })) +
+        '">' + kit.esc(name) +
+        (one.username && one.username !== name
+          ? ' <span>' + kit.esc(one.username) + '</span>' : '') +
+        '</button>';
+    }).join('') +
+      '<button type="button" class="linklike" data-account-action="another" ' +
+      'title="' + kit.esc(t.text('portal.accounts.anotherTitle')) + '">' +
+      t.html('portal.accounts.another') + '</button>';
   }
 
   /**

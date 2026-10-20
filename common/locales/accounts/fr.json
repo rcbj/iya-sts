@@ -1,0 +1,7 @@
+{
+  "summary": "Comptes",
+  "title": "Les comptes connectés dans ce navigateur",
+  "listLabel": "Connectés dans ce navigateur",
+  "another": "Se connecter avec un autre compte",
+  "anotherTitle": "Ouvre le portail utilisateur et vous demande de vous connecter, ce qui ajoute un compte à ce navigateur. Les comptes déjà connectés le restent."
+}
