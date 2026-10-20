@@ -676,12 +676,18 @@ per-realm stores:
   **`sts_accounts_<realm>` outside the default realm**, so one realm's sign-in
   does not overwrite another's set the way the one `sts_session` slot is
   shared (*`consoleSession()`*, below). The row keeps the handle's SHA-256.
-* **THE HANDLE ROTATES WHEN A SESSION IS ADDED OR RE-AUTHENTICATED, NOT ON
-  EVERY CHANGE** — the plan said every change, and the code says why not: a
-  session that expires on the sweep, is evicted at `authn.maxSessions` or is
-  ended by an administrator changes its set on a request (or a job) with no
-  response to that browser, and a rotation there would lose the browser its
-  set. Two tabs acting at once would race the same way.
+* **THE HANDLE ROTATES WHEN A SESSION IS ADDED OR RE-AUTHENTICATED, AND ON
+  EVERY SELECTION AT THE PICKER** (the last since batch 10, rcbj's decision
+  1 on #561: a selection changes who the browser acts as, so a copied
+  `sts_accounts` value goes stale at the next choice the person makes; the
+  cookie keeps the attributes above). **Not on every change** — the plan
+  said every change, and the code says why not: a session that expires on
+  the sweep, is evicted at `authn.maxSessions` or is ended by an
+  administrator changes its set on a request (or a job) with no response to
+  that browser, and a rotation there would lose the browser its set. A
+  hint's silent choice and a ticket's spend do not rotate either: they ride
+  every protocol request, and two tabs' requests in flight would race the
+  way two sign-ins do (*At once, and under failure*, below).
 * **THE SET LISTS SIDS AND DECIDES NOTHING.** Whether a listed session is
   live is the session store's answer every time (`accountSessionLive()`:
   held, eligible, neither clock run out), and the one chosen is then held to
@@ -823,13 +829,26 @@ every shipped language), on `ARRIVAL_PATHS`; `hosted_applications.js`'s
 | Operation | What |
 |---|---|
 | `GET /authn-api/pending/{id}/accounts` | the view: the set's accounts (pruned first), `another.open`, `max`, the protocol's rows; `csrf` |
-| `POST …/accounts/select` `{ account }` | continue as a signed-in account: checked again (`honouredSession()`), a `forceMfa` record with a one-factor session goes to the sign-in as that account, otherwise the account becomes the browser's default (`makeDefaultSession()` mints it a fresh handle — the browser lost the old one when another sign-in wrote the cookie) and the flow resumes with a ticket; a signed-out account goes to the sign-in with its name filled in; anything else 409 `STS-AUTHN-0345` |
+| `POST …/accounts/select` `{ account }` | continue as a signed-in account: checked again (`honouredSession()`), a `forceMfa` record with a one-factor session goes to the sign-in as that account, otherwise the account becomes the browser's default (`makeDefaultSession()` mints it a fresh handle — the browser lost the old one when another sign-in wrote the cookie), **the set's handle rotates** (appended after the session cookie) and the flow resumes with a ticket; a signed-out account goes to the sign-in with its name filled in; anything else 409 `STS-AUTHN-0345`; a set cookie that opens nothing — another tab's selection retired it — 409 `STS-AUTHN-0348`, the picker drawn again, never a second set made around the session cookie |
 | `POST …/accounts/another` | the sign-in the picker stood in front of (`record.afterAccounts`), the hint cleared; 409 `STS-AUTHN-0340` when every place is live |
 | `POST …/accounts/forget` `{ account }` | a remembered account only (409 `STS-AUTHN-0347` for a live one); `next: stay` |
 | `GET /authn-api/accounts` | access `session`: `browserAccounts()`, plus `anotherAccount` with the setting on. A GET is not bound (no CSRF token): the cookie alone, from the page's own origin |
 
 Bound as every act here (JSON, Origin, CSRF); a body refused is
 `STS-AUTHN-0342`; a realm with the setting off answers 400 `STS-AUTHN-0343`.
+
+**A SET THAT COULD NOT BE READ IS A 503 AT THE PICKER** (batch 10, rcbj's
+decision 3 on #561), with `Retry-After: 5` and `no-store`, as #350 answers a
+failed session read (`refuseUnread()`): `refuseAccountsUnread()`, asked by
+the view and by every act. `STS-AUTHN-0344` where the set's own row threw,
+`STS-AUTHN-0338` where a session it lists could not be read; recorded,
+never sent. A failed read is not absence, so the request whose set cannot
+be read acts as NOBODY (`resolveAccount()`'s `unread`, never the cookie's
+account in its place), no D12 set is made around the cookie, and
+`beginAuthentication()` sends it to the picker (`pick = 'unread'`, with no
+`account.ambiguous` row) rather than to the sign-in screen, which would add
+a second session for an account the browser may already hold. Nothing is
+written; the cookies stay.
 
 * **`beginAuthentication()` IS A WRAPPER NOW**: the old body is
   `beginAuthenticationHere()`, and the wrapper sends the browser to the
@@ -871,9 +890,9 @@ Bound as every act here (JSON, Origin, CSRF); a body refused is
   `accountChoiceCounts()` adding every process's rows — answered by
   `GET /admin-api/sessions` as `accountChoices` and drawn as a tab of
   `/admin/sessions` since #731 (`mgmt-api/CLAUDE.md`).
-* **Codes**: `STS-AUTHN-0340` to `0347` and `STS-OAUTH-0960` — written as
-  0337 to 0344 and 0959, renumbered on merge because #350 and #714 held
-  those.
+* **Codes**: `STS-AUTHN-0340` to `0348` and `STS-OAUTH-0960` — 0340 to 0347
+  and 0960 written as 0337 to 0344 and 0959, renumbered on merge because
+  #350 and #714 held those; 0348 added in batch 10.
 * **With the bounded session window on (#350)** the realm map is a cache,
   so a set reads its members as `sessionById()` does
   (`accountSessionRead()`): through the window, never `sessions.get()`. A
@@ -894,8 +913,20 @@ Bound as every act here (JSON, Origin, CSRF); a body refused is
 together — each request built from the cookie jar before either answer is
 taken — and what it measured is part of the design:
 
-* **TWO SELECTIONS AT ONCE** are two flows' choices: each resumes as the
-  account its own tab chose, whichever answer wrote the default last.
+* **TWO SELECTIONS AT ONCE** are two flows' choices, and since every
+  selection rotates the handle (decision 1) the second one, sent before the
+  first answer arrived, carries the handle the first retired: it is
+  refused (`STS-AUTHN-0348`) and chosen again from the picker drawn afresh,
+  and each flow then resumes as the account its own tab chose. Making a
+  set around the session cookie for it instead (D12) split the browser in
+  two, and the first flow's ticket then named a set the browser no longer
+  presented.
+* **A TICKET FOR THIS PATH FROM A SET THE REQUEST DOES NOT CARRY CHOOSES
+  NOBODY** (batch 10) — with no name filled in, since it may be another
+  browser's. Ignored, it fell through to *the only live session* of the set
+  the browser did present: another account. A request carrying no set at
+  all, or a set with no live session, is answered nobody for such a ticket
+  too, never the cookie's account.
 * **TWO SIGN-INS AT ONCE CAN COST THE BROWSER ONE PLACE IN ITS SET, AND
   THAT IS THE PRICE OF ROTATING THE HANDLE.** The first answer rotates the
   set's handle; the second request left with the old one, so its set does
@@ -915,9 +946,48 @@ taken — and what it measured is part of the design:
   (`STS-AUTHN-0344`); a set gone from under a session does not stop the
   session ending.
 
+### With device-bound sessions (#725), both on
+
+Each account's session meets its OWN binding gate: the account set's choice
+goes through `honouredSession()` with the cookie's (the `ignoreBinding`
+argument carried into it), so a bound session chosen by ticket, hint or as
+the only live one is honoured only beside its own bound cookie, and without
+it the request is nobody — never the other account. What composing them
+took (`device_bound_sessions.ts`):
+
+* **A BOUND COOKIE PER BINDING.** A binding made while
+  `authn.multipleAccounts` is on names its cookie
+  `sts_session_bound_<DBSC session id>` and records the name on the binding
+  (`dbsc.cookie`); one name for two bound accounts would have each refresh
+  overwrite the other's cookie. Made with the setting off it is
+  `sts_session_bound`, as before.
+* **THE ENDPOINTS FIND THE ACCOUNT BY THE BROWSER'S PROOF**, since no
+  ticket or hint names one there and `sessionOf()` answers nobody with two
+  signed in: `bindingSessionOf(req, pick)` asks `pick` of each live session
+  of the set — registration's challenge MAC is over one session id,
+  refresh's `Sec-Secure-Session-Id` is one binding's — and holds the one
+  picked to `honouredSession()` (the binding gate aside); the others are
+  not touched, so one account's refresh is no use of another. None picked
+  with accounts signed in: registration 400 `STS-AUTHN-0397`, refresh 401
+  `STS-AUTHN-0401`, ending nothing.
+* **A BINDING ENDED FOR A WRONG KEY OR A REPLAY ENDS THAT ACCOUNT ALONE**:
+  `logout.endBoundSession()` ends the session, which `dropSession()` moves
+  to its set's remembered accounts; its own bound cookie is cleared, and
+  `sts_session` only where it names that session (`sessionCookieNames()`),
+  never another account's.
+* **THE SAME PERSON SIGNING IN WHERE THE KEY IS NOT PROVED** replaces the
+  bound session in the set, as with the setting off it replaces the
+  browser's session: one live session per person per browser.
+* `mergeSessionRows()` keeps `accountSetId` from the copy that has it.
+
+Nothing changes with either setting off. `tests/device_bound_sessions.js`
+cases 9–12.
+
 **Tests**: `tests/multi_account_sessions.js` (the contract of steps 1 and 2,
-the setting-off parity among it); `tests/multi_account_concurrency.js` (the
-above); the picker's two drawings in `tests/tools/web_surfaces.js`.
+the setting-off parity among it; the rotation on selection; section 11, the
+unread set's 503); `tests/multi_account_concurrency.js` (the above);
+`tests/session_window.js`'s `accountSetCase()` (an unread member's 503); the
+picker's two drawings in `tests/tools/web_surfaces.js`.
 
 ## THE WALLET DOOR (2026-09-17, #38)
 
@@ -3310,7 +3380,7 @@ where.
 | Step | What happens |
 |---|---|
 | sign-in | the answer that sets `sts_session` carries `Secure-Session-Registration: (ES256 RS256);path="…/authn/dbsc/register";challenge="…"` — from `startSessionHere()` and `reauthenticateSession()`, only for a chosen, authenticated browser session not yet bound (`deviceBound.offer()`) |
-| registration | the browser posts a `dbsc+jwt` proof of its new key over that challenge (`Secure-Session-Response`, the `jwk` in the header); the key goes on the session as `dbsc: { id, alg, jwk, jkt, boundAt, refreshes, refreshedAt }`, and the answer is the JSON session instructions, the `sts_session_bound` cookie and a first `Secure-Session-Challenge` |
+| registration | the browser posts a `dbsc+jwt` proof of its new key over that challenge (`Secure-Session-Response`, the `jwk` in the header); the key goes on the session as `dbsc: { id, alg, jwk, jkt, boundAt, refreshes, refreshedAt }` (and `cookie` with several accounts on), and the answer is the JSON session instructions, the `sts_session_bound` cookie (`sts_session_bound_<id>` with several accounts on — *With device-bound sessions*, above) and a first `Secure-Session-Challenge` |
 | use | `sessionOf()` honours a bound session only beside a current bound cookie minted for its binding (`deviceBound.honours()`); `sessionOf(req, true)` skips that, and only the two endpoints pass it |
 | refresh | `Sec-Secure-Session-Id`, no proof → **403** with `Secure-Session-Challenge`; a proof of the bound key over a current challenge → a new bound cookie |
 | the cookie elsewhere | a refresh signed by another key (or another alg), or replaying a spent challenge, ENDS the session through `logout.endBoundSession()` |

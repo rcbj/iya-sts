@@ -19,8 +19,11 @@
 //   1. two sign-ins at once: every session that signed in is live, nobody
 //      is answered as another account, and the stale set cookie opens
 //      nothing (the lost place is the measured cost, `authn/CLAUDE.md`);
-//   2. two selections at once, in two flows: each flow resumes as the
-//      account its own tab chose, whichever answer wrote the default last;
+//   2. two selections at once, in two flows: every selection rotates the
+//      set's handle (rcbj's decision 1), so the second, sent with the
+//      handle the first retired, is refused and chosen again from a
+//      picker drawn afresh — each flow then resumes as the account its own
+//      tab chose, and none as the other;
 //   3. two sign-outs at once: both accounts are signed out, the third is
 //      untouched and is then the browser's only account;
 //   4. a session revoked while a flow that chose it is in flight: the
@@ -344,14 +347,30 @@ function partSelections(t) {
       const s = authn.sessionOf(req);
       return s ? s.id : '';
     };
+    // EVERY SELECTION ROTATES THE SET'S HANDLE (rcbj's decision 1, batch
+    // 10), so the second select, sent before the first answer arrived,
+    // carries the retired handle: it is refused and its picker drawn again
+    // (STS-AUTHN-0348) — never a second set, never the other account.
     t.check(/client_id=one/.test(String(a1.location)) &&
-            /client_id=two/.test(String(a2.location)),
-            '2. each select answers its own flow', JSON.stringify([a1, a2]));
+            a2.next === 'refused' && actTwo.res.statusCode === 409 &&
+            !actTwo.res.cookies.length,
+            '2. the first select answers its flow; the second, carrying the ' +
+            'handle the first retired, is refused (409) and writes nothing' +
+            (reversed ? ' (answers taken in reverse)' : ''),
+            JSON.stringify([a1, a2]));
     t.equal(resume(a1.location), alice.id, '2. the first flow resumes as ' +
             'alice, the account its tab chose' +
             (reversed ? ' (reverse)' : ''));
-    t.equal(resume(a2.location), bob.id, '2. the second flow resumes as ' +
-            'bob, the account its tab chose' + (reversed ? ' (reverse)' : ''));
+    const again = b.req('/authn-api/pending/' + two.id + '/accounts/select');
+    authn.accountsAct(again, again.res, authn.pendingForAccounts(two.id),
+                      { action: 'select', account: keyOf(bob, '') });
+    const a3 = answerOf(again.res) || {};
+    b.take(again.res);
+    t.check(/client_id=two/.test(String(a3.location)),
+            '2. chosen again from the picker drawn afresh, the second flow ' +
+            'answers its own address', JSON.stringify(a3));
+    t.equal(resume(a3.location), bob.id, '2. and resumes as bob, the ' +
+            'account its tab chose' + (reversed ? ' (reverse)' : ''));
     t.equal(actsAs(b), '', '2. and a request of neither flow names nobody: ' +
             'a choice is a flow\'s, never the browser\'s');
   });

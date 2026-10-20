@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4534** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4535** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 340
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 341
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 717
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1482,10 +1482,11 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0341` | A protocol hint (login_hint, id_token_hint, a SAML Subject) named an account that has no live session in this browser's account set. No other account is used in its place: the person is sent to sign in, with the hint's name filled in. | none — the sign-in screen, or login_required with prompt=none |
 | `STS-AUTHN-0342` | An act at the account picker carried a body it does not take (an account key of the wrong shape, an unknown member). | HTTP 400, { ok: false, errors } |
 | `STS-AUTHN-0343` | The account picker or one of its operations was reached in a realm where authn.multipleAccounts is off, or for a sign-in that is not waiting on an account choice. | HTTP 400, { ok: false, errors } |
-| `STS-AUTHN-0344` | Reading or writing a browser's account set threw. The request goes on as if the browser held no set: its sign-on cookie alone decides, as with authn.multipleAccounts off. | — |
+| `STS-AUTHN-0344` | Reading or writing a browser's account set threw. A failed READ is not absence: the request acts as no account (never the sign-on cookie's in its place), no set is made around the cookie, and the account picker answers 503 with Retry-After. A failed WRITE leaves the session as it is, outside the set. | HTTP 503 with Retry-After at the account picker; the code is not in the body |
 | `STS-AUTHN-0345` | The account picker was asked to continue as an account that is not live in this browser's account set: its session ended between the page being drawn and the click (an expiry, a sign-out elsewhere, an administrator), or the account was never in the set. Nothing was selected and the picker is drawn again. | HTTP 409, { ok: false, next: refused, errors } |
 | `STS-AUTHN-0346` | A request carried an account selection ticket (sts_account) that is unknown, already spent, expired, issued to another browser's account set, for another address, or naming a session no longer live. It was taken off the request and ignored: the request resolves its account as if it carried none. | none — the parameter is removed before the protocol sees it |
 | `STS-AUTHN-0347` | The account picker was asked to forget an account that is still signed in. Only a signed-out account can be forgotten; a signed-in one is signed out at /logout. | HTTP 409, { ok: false, next: refused, errors } |
+| `STS-AUTHN-0348` | An act at the account picker carried an account set cookie that opens no set: another tab's selection rotated the set's handle while this request was in flight. Refused rather than a second set made around the session cookie; the picker is drawn again (#561, batch 10). | HTTP 409, next: refused; the code is not in the body |
 | `STS-AUTHN-0350` | A passkey enrolment was refused: the lane it named is neither "classical" nor "pqc" (#643). | — |
 | `STS-AUTHN-0351` | A post-quantum passkey enrolment was refused: this realm does not offer a post-quantum passkey beside a classical one (webauthn.pqcAlongsideClassical is off, or webauthn.pqcOnly is on). One already enrolled goes on signing in (#643). | — |
 | `STS-AUTHN-0352` | A post-quantum passkey enrolment was refused: the verifier knows no ML-DSA algorithm, so the post-quantum lane would offer nothing (#643). | RFC 9964 |

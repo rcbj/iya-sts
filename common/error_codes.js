@@ -6356,10 +6356,13 @@ const CODES = [
       'not waiting on an account choice.',
     spec: 'HTTP 400, { ok: false, errors }' },
   { code: 'STS-AUTHN-0344',
-    summary: 'Reading or writing a browser\'s account set threw. The ' +
-      'request goes on as if the browser held no set: its sign-on cookie ' +
-      'alone decides, as with authn.multipleAccounts off.',
-    spec: '' },
+    summary: 'Reading or writing a browser\'s account set threw. A failed ' +
+      'READ is not absence: the request acts as no account (never the ' +
+      'sign-on cookie\'s in its place), no set is made around the cookie, ' +
+      'and the account picker answers 503 with Retry-After. A failed ' +
+      'WRITE leaves the session as it is, outside the set.',
+    spec: 'HTTP 503 with Retry-After at the account picker; the code is ' +
+      'not in the body' },
   { code: 'STS-AUTHN-0345',
     summary: 'The account picker was asked to continue as an account that ' +
       'is not live in this browser\'s account set: its session ended ' +
@@ -6381,6 +6384,13 @@ const CODES = [
     spec: 'HTTP 409, { ok: false, next: refused, errors }' },
   // THE TWO PASSKEY LANES (#643). 0337-0349 are left for the branches in
   // flight when these were numbered, so that no two changes claim one code.
+  { code: 'STS-AUTHN-0348',
+    summary: 'An act at the account picker carried an account set cookie ' +
+      'that opens no set: another tab\'s selection rotated the set\'s ' +
+      'handle while this request was in flight. Refused rather than a ' +
+      'second set made around the session cookie; the picker is drawn ' +
+      'again (#561, batch 10).',
+    spec: 'HTTP 409, next: refused; the code is not in the body' },
   { code: 'STS-AUTHN-0350',
     summary: 'A passkey enrolment was refused: the lane it named is neither ' +
       '"classical" nor "pqc" (#643).',

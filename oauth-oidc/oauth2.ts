@@ -11452,11 +11452,14 @@ class OAuth2Server {
       errorCodes.mark(res, 'STS-OAUTH-0960');
       log.debug("Leaving OAuth2Server.authorizeEndpoint(). Several " +
                 "accounts, and prompt=none.");
-      return fail('account_selection_required', 'This browser is signed ' +
-        'in to ' + accountChoice.accounts + ' accounts and the request ' +
-        'names none of them, and prompt=none forbids showing the account ' +
-        'picker (OIDC Core section 3.1.2.6). Send login_hint or ' +
-        'id_token_hint, or retry without prompt=none.');
+      // No count (#561, the reason of rcbj's decision on SAML's
+      // NoPassive): the description rides the redirect to the client, and
+      // how many people use a browser is nobody's there. The error code
+      // itself is what OIDC Core says to send.
+      return fail('account_selection_required', 'The request names none ' +
+        'of the accounts signed in here, and prompt=none forbids showing ' +
+        'the account picker (OIDC Core section 3.1.2.6). Send login_hint ' +
+        'or id_token_hint, or retry without prompt=none.');
     }
     if (String(q.prompt || '').split(/\s+/).indexOf('none') >= 0) {
       // OIDC: prompt=none must not show any UI.

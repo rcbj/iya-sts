@@ -78,6 +78,12 @@ Logout Tokens, and the session's audit row. A request that presents
 not ended, because the browser that holds the key renews the cookie before it
 sends anything.
 
+**With [several accounts in one browser](multiple-accounts.md) on**, each
+account binds on its own: a binding's cookie is named
+`sts_session_bound_<id>` after its DBSC session, each account is honoured
+only beside its own, and a refresh that ends one account's session leaves the
+others signed in.
+
 **A browser that does not support DBSC ignores the header** and keeps an
 ordinary session. `/admin/sessions` and the portal's Overview say whether a
 session is bound. The challenges and the bound cookie are MACs under a secret

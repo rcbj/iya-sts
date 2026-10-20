@@ -32,7 +32,10 @@
 //   8. the full-set rule: the oldest remembered is dropped, and a set of
 //      live accounts refuses (STS-AUTHN-0340);
 //   9. a browser holding a session and no set gets one around it (D12);
-//  10. the account list and the audit actor name no sid but the session.
+//  10. the account list and the audit actor name no sid but the session;
+//  11. a set that cannot be read acts as nobody and its picker answers 503
+//      with Retry-After (rcbj's decision 3) — and section 6 asserts that
+//      every selection rotates the set's handle (decision 1).
 //
 // WHY IN PROCESS. Which row a session is, what the set holds and whether a
 // ticket was spent are facts about the stores; an HTTP caller sees cookies
@@ -392,6 +395,7 @@ function partOn(t) {
   t.check(b.jar[authn.SESSION_COOKIE].split('.')[0] === alice.id,
           'alice is the browser\'s default before the choice (her ' +
           're-authentication made her so)');
+  const handleBefore = b.jar[AccountSets.cookieName()];
   const act = b.req('/authn-api/pending/' + id + '/accounts/select');
   authn.accountsAct(act, act.res, record, { action: 'select',
                                             account: bobPick });
@@ -404,6 +408,45 @@ function partOn(t) {
   b.take(act.res);
   t.check(b.jar[authn.SESSION_COOKIE].split('.')[0] === bob.id,
           'and bob became the browser\'s default (sts_session): a switch');
+  // rcbj's decision 1: EVERY selection rotates the set's handle.
+  const setLine = act.res.cookies.filter(function (line) {
+    return line.indexOf(AccountSets.cookieName() + '=') === 0;
+  })[0] || '';
+  const sessionAt = act.res.cookies.findIndex(function (line) {
+    return line.indexOf(authn.SESSION_COOKIE + '=') === 0;
+  });
+  const setAt = act.res.cookies.indexOf(setLine);
+  t.check(!!setLine && b.jar[AccountSets.cookieName()] !== handleBefore &&
+          b.jar[AccountSets.cookieName()].split('.')[0] ===
+            handleBefore.split('.')[0] &&
+          /; HttpOnly/.test(setLine) && /SameSite=Lax/.test(setLine) &&
+          /; Path=\//.test(setLine) && (sessionAt < 0 || sessionAt < setAt),
+          'the selection rotated the sts_accounts handle (the same set, a ' +
+          'new value, its attributes as at a sign-in, after the session ' +
+          'cookie)', JSON.stringify(act.res.cookies));
+  const stale = { headers: { cookie: AccountSets.cookieName() + '=' +
+                             handleBefore }, query: {}, url: '/' };
+  t.equal(AccountSets.setOf({ [AccountSets.cookieName()]: handleBefore }),
+          null, 'and the value from before the selection opens nothing');
+  t.equal(authn.accountChoiceNeeded(stale), null,
+          'a request carrying only the stale value holds no set');
+  // A selection that does not switch (bob is already the default) rotates
+  // too: it is the choice, not the switch, that changes the handle.
+  const pathAgain = authn.beginAuthentication({
+    returnTo: '/oauth2/authorize?client_id=c', details: [],
+    protocol: 'OAuth 2.0 / OIDC', application: '',
+    request: b.req('/oauth2/authorize') });
+  const idAgain = decodeURIComponent(pathAgain.split('authn=')[1]);
+  const handleMid = b.jar[AccountSets.cookieName()];
+  const actAgain = b.req('/authn-api/pending/' + idAgain + '/accounts/select');
+  authn.accountsAct(actAgain, actAgain.res,
+                    authn.pendingForAccounts(idAgain),
+                    { action: 'select', account: bobPick });
+  b.take(actAgain.res);
+  t.check(b.jar[AccountSets.cookieName()] !== handleMid &&
+          b.jar[authn.SESSION_COOKIE].split('.')[0] === bob.id,
+          'selecting the account that is already the default rotates the ' +
+          'handle as well');
   t.equal(authn.pendingForAccounts(id), null, 'the pending record is spent');
   const resumed = b.req(answer.location);
   authn.spendAccountTicket(resumed);
@@ -607,6 +650,81 @@ function partAdopt(t) {
   log.debug("Leaving partAdopt().");
 }
 
+// rcbj's decision 3 on #561: A SET THAT COULD NOT BE READ is a 503 with
+// Retry-After at the picker, not a sign-in, not a picker drawn from what
+// could be read, and not the cookie's account in place of the browser's
+// choice.
+function partUnread(t) {
+  log.debug("Entering partUnread().");
+  t.log.info('=== 11. a set that cannot be read: the picker is 503 ===');
+  const errorCodes = require('../common/error_codes');
+  const b = browser();
+  signIn(b, 'mas-ur-alice');
+  const bob = signIn(b, 'mas-ur-bob').session;
+  const before = setOf(b);
+  const realSetOf = AccountSets.setOf;
+  AccountSets.setOf = function () {
+    throw new Error('account set store unavailable');
+  };
+  try {
+    const req = b.req('/oauth2/authorize?client_id=c');
+    t.equal(authn.sessionOf(req), null, 'a request whose set cannot be ' +
+            'read acts as nobody — not the cookie\'s account (bob)');
+    t.equal((authn.accountChoiceNeeded(b.req('/oauth2/authorize')) || {})
+      .reason, 'unread', 'and accountChoiceNeeded() says the set is unread');
+    const path = authn.beginAuthentication({
+      returnTo: '/oauth2/authorize?client_id=c', details: [],
+      protocol: 'OAuth 2.0 / OIDC', application: '',
+      request: b.req('/oauth2/authorize') });
+    t.check(/^\/authn\/accounts\?authn=/.test(path),
+            'a sign-in that needs the set goes to the picker, not to the ' +
+            'sign-in screen', path);
+    const id = decodeURIComponent(path.split('authn=')[1]);
+    const view = b.req('/authn-api/pending/' + id + '/accounts');
+    const headers = {};
+    view.res.set = function (name, value) {
+      if (String(name).toLowerCase() === 'set-cookie') {
+        view.res.cookies.push(String(value));
+      }
+      headers[String(name).toLowerCase()] = String(value);
+      return view.res;
+    };
+    t.equal(authn.refuseAccountsUnread(view, view.res), true,
+            'the picker refuses to draw');
+    const answer = answerOf(view.res) || {};
+    t.check(view.res.statusCode === 503 && headers['retry-after'] === '5' &&
+            headers['cache-control'] === 'no-store' &&
+            answer.error === 'unavailable' &&
+            !/STS-[A-Z]+-\d{4}/.test(String(view.res.body)) &&
+            errorCodes.codeOf(view.res) === 'STS-AUTHN-0344',
+            'with 503, Retry-After and no-store, the code recorded ' +
+            '(STS-AUTHN-0344) and not sent', view.res.statusCode + ' ' +
+            JSON.stringify(headers) + ' ' + view.res.body);
+    const act = b.req('/authn-api/pending/' + id + '/accounts/select');
+    act.res.set = function (name, value) {
+      if (String(name).toLowerCase() === 'set-cookie') {
+        act.res.cookies.push(String(value));
+      }
+      return act.res;
+    };
+    authn.accountsAct(act, act.res, authn.pendingForAccounts(id),
+                      { action: 'select', account: 'urn:uuid:anyone' });
+    t.equal(act.res.statusCode, 503, 'and so does a choice made at it');
+    t.equal(act.res.cookies.length, 0, 'nothing is written: no cookie, ' +
+            'no set made around the session cookie');
+  } finally {
+    AccountSets.setOf = realSetOf;
+  }
+  const after = setOf(b);
+  t.check(!!(after && after.sessions[bob.id]) &&
+          after.handleHash === before.handleHash,
+          'once it can be read again the set is as it was');
+  const ok = b.req('/authn-api/pending/x/accounts');
+  t.equal(authn.refuseAccountsUnread(ok, ok.res), false,
+          'and the picker draws');
+  log.debug("Leaving partUnread().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   realms.run(realms.DEFAULT_REALM, function () {
@@ -614,6 +732,7 @@ function run(t) {
     partAdopt(t);
     withSettings({ 'authn.multipleAccounts': true }, function () {
       partOn(t);
+      partUnread(t);
     });
     made.forEach(function (sid) {
       if (authn.sessionById(sid)) {

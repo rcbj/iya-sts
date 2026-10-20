@@ -1113,6 +1113,52 @@ function accountSetCase(t) {
   kept = AccountSets.byId(row.id);
   t.check(!!(kept && kept.sessions && kept.sessions[other.id]),
           'and keeps one whose read FAILED: a failed read is not absence');
+  // THE PICKER OF A SET WITH AN UNREAD MEMBER IS A 503 (rcbj's decision 3
+  // on #561), with Retry-After, as an unread cookie is above — never a
+  // picker drawn from the members that could be read.
+  config.setOverride('authn.multipleAccounts', 'true');
+  try {
+    const handle = AccountSets.rotate(kept);
+    AccountSets.save(kept);
+    const headers = {};
+    let status = 0;
+    let sent = '';
+    const res = { headersSent: false, locals: {},
+      set: function (name, value) {
+        headers[String(name).toLowerCase()] = String(value);
+        return res;
+      },
+      status: function (code) {
+        status = code;
+        return res;
+      },
+      type: function () {
+        return res;
+      },
+      send: function (payload) {
+        sent = String(payload);
+        return res;
+      } };
+    const req = { headers: { cookie: AccountSets.cookieName() + '=' +
+                             handle }, query: {}, url: '/', res: res };
+    t.equal(authn.refuseAccountsUnread(req, res), true,
+            'the picker of a set with an unread member refuses to draw');
+    t.check(status === 503 && headers['retry-after'] === '5' &&
+            /unavailable/.test(sent) && !/STS-/.test(sent) &&
+            errorCodes.codeOf(res) === 'STS-AUTHN-0338',
+            'with 503 and Retry-After, STS-AUTHN-0338 recorded and not sent',
+            status + ' ' + JSON.stringify(headers) + ' ' + sent);
+    const begun = authn.beginAuthentication({
+      returnTo: '/oauth2/authorize?client_id=c', details: [],
+      protocol: 'OAuth 2.0 / OIDC', application: '',
+      request: { headers: req.headers, query: {}, url: '/oauth2/authorize' }
+    });
+    t.check(/^\/authn\/accounts\?authn=/.test(begun),
+            'and a sign-in that needs the set goes to that picker, not to ' +
+            'the sign-in screen', begun);
+  } finally {
+    config.clearOverride('authn.multipleAccounts');
+  }
   AccountSets.remove(row.id);
   freshWindow();
   log.debug("Leaving accountSetCase().");

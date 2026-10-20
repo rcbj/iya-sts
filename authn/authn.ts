@@ -2024,8 +2024,8 @@ class Authn {
 
   // The browser's account set: the one this request created or rotated, or
   // the one its cookie names. Null when it has none, or when reading it
-  // threw — a set that cannot be read is a browser with none, which is the
-  // setting-off behaviour and never a refusal.
+  // threw — which marks the request (`stsAccountSetUnread`), because a set
+  // that could not be read is not a browser with none.
   private accountSetOf(req) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Authn.accountSetOf().");
@@ -2042,6 +2042,11 @@ class Authn {
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0344') + 'authn: a browser\'s ' +
                 'account set could not be read: ' + ((e && e.message) || e));
+      // NOT ABSENCE (#350's rule, rcbj's decision 3 on #561): the request
+      // remembers that its set could not be read, so `resolveAccount()`
+      // answers nobody rather than the cookie's account, no set is made
+      // around the cookie in its place, and the picker answers 503.
+      req.stsAccountSetUnread = true;
       log.debug("Leaving Authn.accountSetOf(). Threw.");
       return null;
     }
@@ -2163,7 +2168,7 @@ class Authn {
     const { log, audit, stats } = this.deps;
     log.debug("Entering Authn.ensureAccountSet().");
     const have = this.accountSetOf(req);
-    if (have || !create || !req) {
+    if (have || !create || !req || req.stsAccountSetUnread) {
       log.debug("Leaving Authn.ensureAccountSet(). " +
                 (have ? 'It has one.' : 'None, and none made.'));
       return have;
@@ -2219,6 +2224,21 @@ class Authn {
     const self = this;
     log.debug("Entering Authn.resolveAccount().");
     const row = this.ensureAccountSet(req, create);
+    if (!row && req && req.stsAccountSetUnread) {
+      // The set could not be read (STS-AUTHN-0344): nobody, as for a member
+      // below — the cookie's account could be the one this browser did not
+      // choose.
+      log.debug("Leaving Authn.resolveAccount(). The set could not be read.");
+      return { sid: '', reason: 'unread', row: null, live: 0 };
+    }
+    if (!row && req && req.stsAccountSelectionEnded) {
+      // A ticket that chose a session this browser cannot present (below,
+      // and `spendAccountTicket()`): nobody, not the cookie's account.
+      log.debug("Leaving Authn.resolveAccount(). No set, and a ticket that " +
+                "chose nobody here.");
+      return { sid: '', reason: 'hint-unmatched', row: null, live: 0,
+               hint: String(req.stsAccountSelectionEnded.username || '') };
+    }
     if (!row) {
       log.debug("Leaving Authn.resolveAccount(). No set.");
       return { fallback: true };
@@ -2237,6 +2257,12 @@ class Authn {
     const live = Object.keys(row.sessions || {}).filter(function (sid) {
       return self.accountSessionLive(sid);
     });
+    if (!live.length && req && req.stsAccountSelectionEnded) {
+      log.debug("Leaving Authn.resolveAccount(). No live session, and a " +
+                "ticket that chose nobody here.");
+      return { sid: '', reason: 'hint-unmatched', row: row, live: 0,
+               hint: String(req.stsAccountSelectionEnded.username || '') };
+    }
     if (!live.length) {
       log.debug("Leaving Authn.resolveAccount(). No live session in it.");
       return { fallback: true, row: row };
@@ -2456,6 +2482,17 @@ class Authn {
       if (ended) {
         req.stsAccountSelectionEnded = {
           username: String(row.username || ''), sid: String(row.sid) };
+      }
+      // A LIVE TICKET FOR THIS PATH FROM A SET THIS REQUEST DOES NOT CARRY
+      // chooses nobody too (batch 10, with rcbj's decision 1): a set
+      // rotated by one tab's choice while another tab's request was in
+      // flight can leave a flow's ticket naming a set the browser no longer
+      // presents. Falling through would answer "the only live session" of
+      // the set it does present — another account. Nobody, then, with NO
+      // name filled in: the ticket may as well be another browser's, and
+      // its account's name is not this browser's to be shown.
+      if (!ended && row && row.path === path) {
+        req.stsAccountSelectionEnded = { username: '', sid: '' };
       }
       log.info(errorCodes.tag('STS-AUTHN-0346') + 'authn: an account ' +
                'selection ticket on ' + path + ' was ignored: ' + why +
@@ -9808,11 +9845,18 @@ class Authn {
     if (req && choice !== 'never') {
       if (choice === 'always') {
         const row = this.freshAccountSet(req);
-        pick = row && AccountSets.size(row) ? 'select_account' : '';
+        pick = row && AccountSets.size(row) ? 'select_account'
+          : (req.stsAccountSetUnread ? 'unread' : '');
       } else {
         const need = this.accountChoiceNeeded(req);
         if (need && need.reason === 'ambiguous') {
           pick = 'ambiguous';
+        } else if (need && need.reason === 'unread') {
+          // THE SET COULD NOT BE READ (rcbj's decision 3 on #561): to the
+          // picker, which answers 503 with Retry-After until it can be —
+          // never the sign-in screen, which would add a second session for
+          // an account the browser may already hold.
+          pick = 'unread';
         } else if (need && need.reason === 'hint-unmatched') {
           unmatched = String(need.hint || '');
           log.info(errorCodes.tag('STS-AUTHN-0341') + 'authn: a hint named ' +
@@ -9885,6 +9929,12 @@ class Authn {
     record.accountChoiceReason = why;
     record.afterAccounts = String(target);
     pending.set(record.id, record);
+    if (why === 'unread') {
+      // Not a choice anybody failed to make: the picker's 503 is the
+      // record (STS-AUTHN-0338, -0344), and no `account.ambiguous` row.
+      log.debug("Leaving Authn.routeToAccounts(). The set is unread.");
+      return ACCOUNTS_PATH + '?authn=' + encodeURIComponent(record.id);
+    }
     const row = this.accountSetOf(req);
     stats.recordAccountChoice('ambiguous');
     audit.audit({
@@ -12730,6 +12780,56 @@ class Authn {
   // choice is checked again on the server — the page is not a boundary.
   // ===========================================================================
   /**
+   * Answers the account picker 503 with Retry-After where this browser's
+   * account set, or a session it lists, could not be read (rcbj's decision
+   * 3 on #561) — as #350 answers a failed session read (`refuseUnread()`),
+   * and never a picker drawn from what could be read, or a redirect to sign
+   * in: either would let a store outage stand for an account signed out.
+   * `STS-AUTHN-0344` for the set's own row, `STS-AUTHN-0338` for a session
+   * it lists. Nothing is written and the cookie stays.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns true when it answered
+   */
+  refuseAccountsUnread(req, res) {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.refuseAccountsUnread().");
+    if (!AccountSets.enabled() || !req || !res) {
+      log.debug("Leaving Authn.refuseAccountsUnread(). Off.");
+      return false;
+    }
+    const row = this.accountSetOf(req);
+    const code = !row && req.stsAccountSetUnread ? 'STS-AUTHN-0344'
+      : row && Object.keys(row.sessions || {}).some(function (sid) {
+        return !!self.accountSessionRead(sid).error;
+      }) ? 'STS-AUTHN-0338' : '';
+    if (!code) {
+      log.debug("Leaving Authn.refuseAccountsUnread(). Readable.");
+      return false;
+    }
+    // At debug: the read's own failure was logged where it happened, and a
+    // line per refused request is the log the no-per-event rule keeps out.
+    log.debug(errorCodes.tag(code) + 'authn: the account picker answered ' +
+              '503: this browser\'s account set could not be read.');
+    if (!res.headersSent && typeof res.status === 'function') {
+      errorCodes.mark(res, code);
+      res.set('Retry-After', '5');
+      this.answerJson(res, 503, {
+        ok: false, error: 'unavailable',
+        error_description: 'This browser\'s accounts could not be read. ' +
+                           'Try again.',
+        errors: ['This browser\'s accounts could not be read just now. ' +
+                 'Try again in a moment.'] });
+    } else {
+      errorCodes.mark(res, code);
+    }
+    log.debug("Leaving Authn.refuseAccountsUnread(). 503.");
+    return true;
+  }
+
+  /**
    * The account picker's view for a pending sign-in (#561): the browser's
    * accounts (key, names, state, times), whether Use another account is
    * open, and the protocol's rows. Never a sid.
@@ -12828,9 +12928,34 @@ class Authn {
    * @param body - `{ action, account }`
    */
   accountsAct(req, res, record, body): void {
-    const { log, audit, stats } = this.deps;
+    const { log, audit, stats, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering Authn.accountsAct(). " + body.action);
+    if (this.refuseAccountsUnread(req, res)) {
+      log.debug("Leaving Authn.accountsAct(). The set could not be read.");
+      return;
+    }
+    // A SET COOKIE THAT OPENS NOTHING, AT THE PICKER, IS ANOTHER TAB'S
+    // SELECTION (#561, with rcbj's decision 1 that every selection rotates
+    // the handle): this request left before that answer arrived, so it
+    // carries the handle the other selection retired. Making a set around
+    // the session cookie here (D12) would split the browser into two sets
+    // and leave one tab's ticket for a set the browser no longer holds. So
+    // the act is refused and the picker drawn again, from the cookie the
+    // browser holds by then. A browser with NO set cookie is D12's case
+    // and goes on below.
+    if (this.cookiesOf(req)[AccountSets.cookieName()] &&
+        !this.accountSetOf(req)) {
+      stats.recordAccountChoice('selectFailed');
+      log.info(errorCodes.tag('STS-AUTHN-0348') + 'authn: an act at the ' +
+               'account picker carried an account set cookie that opens ' +
+               'no set — another selection rotated it — and was refused.');
+      this.accountsRefused(res, 409, 'STS-AUTHN-0348',
+        'The accounts in this browser changed in another tab. Choose ' +
+        'again.');
+      log.debug("Leaving Authn.accountsAct(). A stale set cookie.");
+      return;
+    }
     const row = this.freshAccountSet(req);
     const key = String(body.account || '');
     const liveSid = row
@@ -12927,7 +13052,20 @@ class Authn {
       this.makeDefaultSession(res, session);
     }
     row.lastActiveSid = liveSid;
+    // THE SET'S HANDLE ROTATES ON EVERY SELECTION (rcbj's decision 1 on
+    // #561), not only when an account is added: choosing an account is a
+    // change of who the browser acts as, so a `sts_accounts` value copied
+    // before it goes stale at the next choice the person makes. Appended
+    // AFTER `makeDefaultSession()`, which writes the session cookie by
+    // replacing; the attributes are `AccountSets.cookieLine()`'s, as at a
+    // sign-in. The ticket below is minted for the set's id, which a
+    // rotation does not change, and the resumed request carries the new
+    // handle. Two selections in flight at once cost what two sign-ins do
+    // (`authn/CLAUDE.md`, *At once, and under failure*).
+    const rotated = AccountSets.rotate(row);
     AccountSets.save(row);
+    AccountSets.writeCookie(res, rotated);
+    req.stsAccountSetId = row.id;
     stats.recordAccountChoice('selected');
     const detail = { accountSet: row.id, sessionId: liveSid,
                      sub: String(session.user.sub || ''),
@@ -17599,6 +17737,7 @@ export = {
   // signed-in accounts in one browser*, has each one's contract.
   hintAccount: slot.forward('hintAccount'),
   accountSessionsOf: slot.forward('accountSessionsOf'),
+  refuseAccountsUnread: slot.forward('refuseAccountsUnread'),
   bindingSessionOf: slot.forward('bindingSessionOf'),
   sessionCookieNames: slot.forward('sessionCookieNames'),
   afterAccountSignOut: slot.forward('afterAccountSignOut'),

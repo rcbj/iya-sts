@@ -132,7 +132,14 @@ accounts signed in:
   the scheduler job `authn.account-set-expiry`, or at once with Forget.
 * **A request that cannot show the picker cannot choose.** `prompt=none` and
   SAML `IsPassive` are answered with their protocol's "a choice is needed"
-  error; send a hint, or retry without them.
+  error; send a hint, or retry without them. Neither answer says how many
+  accounts the browser holds.
+* **Every choice at the picker renews the `sts_accounts` cookie**, so a copy
+  of it taken earlier opens nothing. A choice made in a second tab before the
+  first tab's answer arrived is refused, and that tab's picker asks again.
+* **When the list cannot be read** (the session store is unavailable), the
+  picker answers `503` with `Retry-After` instead of drawing a partial list or
+  sending the person to sign in again; try again once the store is back.
 * **Choosing an account never gets past what the application asked for.** A
   demand for a second factor that the chosen account's session does not meet
   sends the person to sign in again as that account.

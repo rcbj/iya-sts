@@ -756,7 +756,9 @@ const ACCOUNT_OPERATIONS: Operation[] = [
     description: 'The account picker\'s view: this browser\'s signed-in ' +
       'accounts and the signed-out ones it remembers — each by its key, ' +
       'names, state and times, never a sid — whether Use another account ' +
-      'is open, and the protocol\'s own rows; and `csrf`.' },
+      'is open, and the protocol\'s own rows; and `csrf`. 503 with ' +
+      'Retry-After where the browser\'s account set, or a session it ' +
+      'lists, could not be read.' },
   { method: 'POST', path: API + '/pending/:id/accounts/select',
     operationId: 'selectAccount', access: 'pending',
     mirrors: 'POST /authn/accounts', action: 'select',
@@ -766,7 +768,9 @@ const ACCOUNT_OPERATIONS: Operation[] = [
     description: 'The account is checked again: its session must still be ' +
       'live in this browser, and a demand for two factors it does not ' +
       'meet sends the person to sign in again as that account. A ' +
-      'signed-out account goes to the sign-in with its name filled in.' },
+      'signed-out account goes to the sign-in with its name filled in. ' +
+      'Every selection rotates the sts_accounts handle. 503 with ' +
+      'Retry-After where the browser\'s accounts could not be read.' },
   { method: 'POST', path: API + '/pending/:id/accounts/another',
     operationId: 'useAnotherAccount', access: 'pending',
     mirrors: 'POST /authn/accounts', action: 'another',
@@ -1574,6 +1578,12 @@ class AuthnApi {
     const record = this.accountsPendingOf(req, res);
     if (!record) {
       log.debug("Leaving AuthnApi.accountsGet(). Refused.");
+      return;
+    }
+    // A SET THAT COULD NOT BE READ is a 503 with Retry-After (rcbj's
+    // decision 3 on #561), never a picker drawn from what could be read.
+    if (authn.refuseAccountsUnread(req, res)) {
+      log.debug("Leaving AuthnApi.accountsGet(). Unread.");
       return;
     }
     authn.answerJson(res, 200, { ok: true,
