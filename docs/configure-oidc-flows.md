@@ -22,6 +22,38 @@ exchange and the assertion grants) are on that page too.
 * TOC
 {:toc}
 
+## Where a client is configured in the console
+
+A relying party is an application entry. In the console:
+
+* **Create it** on **Directory → Applications → New application ›**
+  (`/admin/applications/new`). Under **What it is called**, the
+  **Identifier** is also the `client_id` unless you give `oauthClientId`
+  another value. Under **Protocol families it is declared for**, tick
+  **OAuth 2.0** and **OpenID Connect**. **Its fields** then shows the
+  attributes most clients need, by name: `oauthRedirectUri`,
+  `oauthPostLogoutRedirectUri`, `oauthClientSecret` (with **Generate
+  Secret** and its **Lifetime (days)**), `oauthTokenEndpointAuthMethod`,
+  `oauthGrantType`, `oauthResponseType`, `oauthAllowedScope` and others.
+  **Show every field (advanced view)** shows the rest. Click **Create the
+  application**.
+* **Change it** on its page (`/admin/applications?application=<id>`),
+  **Configuration** tab, **OAuth 2.0 / OpenID Connect** sub-tab. Change the
+  fields and click **Save OAuth 2.0 / OpenID Connect**. A field the sub-tab
+  does not show at first is under **Advanced view (every field)**. A list has
+  one box per value: **+** adds a value and the bin deletes one. A field with
+  a fixed set of values, such as `oauthGrantType`, offers them to choose from.
+* **Change one attribute by name** is on the **Directory entry** tab, folded.
+  Its **Set**, **Add to** and **Remove from** forms write any editable
+  attribute.
+
+Through the API, `applications/set` writes a single-valued attribute, and
+`applications/add` / `applications/remove` add or remove one value of a list.
+A write against the attribute's kind (a `set` of a list, say) is refused
+(`STS-REG-0008`). `oauthScope` records the scopes a client has asked for. It
+grants nothing, and an `add` to it is refused (`STS-REG-0361`). The scopes a
+client may be issued are `oauthAllowedScope`.
+
 ## Two things to know first
 
 **A client is held to the response types and grant types it declares.**
@@ -37,14 +69,15 @@ is refused. Through the API, write each response type as one value, its words
 separated by spaces (`code id_token`); it is stored with its words in that
 order whatever order they were given in. What a client has actually used is
 recorded separately, in `oauthResponseTypeObserved` and
-`oauthGrantTypeObserved`, and shown read-only at the top of the application's
-**OAuth 2.0 / OpenID Connect** sub-tab, one line each.
+`oauthGrantTypeObserved`, and shown read-only at the top of the
+**Configuration** tab's **OAuth 2.0 / OpenID Connect** sub-tab, one line
+each.
 
 **How responses are signed and encrypted is an attribute too.** The JARM
 algorithms, the signing and encryption algorithms for the ID Token and
 UserInfo, and `default_acr_values` / `default_max_age` are held on the
 application entry, whether a registration wrote them or an administrator set
-them on the console or through `/admin-api`:
+them in the console or through `/admin-api`:
 
 | Registration member | Attribute |
 |---|---|
@@ -69,10 +102,11 @@ api applications/set '{"application":"parmon-a",
 
 **Consent is on by default.** Unless the person has already approved the
 client, the flow stops at `/oauth2/consent`. For a first-party client, grant
-consent for everybody in advance. In the console that is **Consent**
-(`/admin/consent`) → **Consent a scope for everybody** → pick the
+consent for everybody in advance. In the console that is **Monitoring →
+Consent** (`/admin/consent`) → **Consent a scope for everybody** → pick the
 **Application**, type the **Scope**, then **Consent it for everybody**. The
-API call is:
+value lands in the client's `oauthGlobalConsent`, which the create form also
+offers. The API call is:
 
 ```bash
 api consent/grant-global-consent '{"client":"parmon-a","scope":"openid"}'
@@ -101,15 +135,14 @@ accepts `S256` and, in development only, `plain`.
 Taken from `sts_oauth2_monitor.js` and `sts_oidc_core.js`.
 
 **Console:**
-1. Go to **Directory → Applications → New application ›**. Set **Identifier** to `parmon-a`.
-2. Tick **OAuth 2.0** and **OpenID Connect**.
-3. Fill in the fields that appear:
-   - `oauthClientId`: `parmon-a`.
-   - **Where responses go back to**: `https://rp.parmon.example.test/cb`.
-   - **The client secret**: click **Generate Secret**.
+1. Go to **Directory → Applications → New application ›**. Set **Identifier** to `parmon-a`; it is the `client_id` too.
+2. Under **Protocol families it is declared for**, tick **OAuth 2.0** and **OpenID Connect**.
+3. In **Its fields**:
+   - `oauthRedirectUri`: `https://rp.parmon.example.test/cb`.
+   - `oauthClientSecret`: click **Generate Secret**, and copy the value.
+   - `oauthTokenEndpointAuthMethod`: tick `client_secret_basic`, and nothing else.
 4. Click **Create the application**.
-5. On the application's page, **Tick** `client_secret_basic` under `oauthTokenEndpointAuthMethod`, and nothing else.
-6. Grant consent for `openid` on **Consent**, as described above.
+5. Grant consent for `openid` on **Consent**, as described above.
 
 **API:**
 ```bash
@@ -213,9 +246,9 @@ POST /realm/<id>/oauth2/register
 The token must carry the `openid` scope, or the answer is 403
 `insufficient_scope`.
 
-* **Which claims are released** is set per scope on **Protocols → OAuth2 /
-  OIDC → UserInfo claims** (`/admin/userinfo-claims`) and **Claims**
-  (`/admin/claims`). Product mode takes every value from the person's
+* **Which claims are released** is set per scope on **Protocols → OAuth 2.0
+  / OIDC** (`/admin/oauth2`), on its **UserInfo claims** and **Custom claims**
+  tabs (`/admin/userinfo-claims` and `/admin/claims` open the same tabs). Product mode takes every value from the person's
   directory entry, so fill the entry in:
   ```bash
   api users/create '{"username":"alice","invent":false,"credential":"password",
@@ -339,9 +372,11 @@ Taken from `sts_native_sso.js`.
 
 **Console:** create a public client (see
 [the public-client recipe](configure-oauth2-grants.md#a-public-client-a-browser-or-native-app))
-declared for **OpenID Connect**. Then, on its page:
-- **Set** `oauthNativeSso` to `TRUE`.
-- **Set** `oauthNativeSsoGroup` to `vendor.one`.
+declared for **OpenID Connect**. Then, on its **Configuration** tab's
+**OAuth 2.0 / OpenID Connect** sub-tab, under **Advanced view (every field)**:
+- set `oauthNativeSso` to `TRUE`;
+- set `oauthNativeSsoGroup` to `vendor.one`;
+- click **Save OAuth 2.0 / OpenID Connect**.
 
 **API:**
 ```bash
@@ -381,9 +416,10 @@ may set `native_sso` only inside a trusted software statement.
 The RP sends the person to `GET` or `POST /oauth2/logout` with
 `post_logout_redirect_uri`, `id_token_hint` or `client_id`, and `state`.
 
-**The return address must be registered.** In the console, use **Where a
-sign-out goes** on the new-application form, or **Add to**
-`oauthPostLogoutRedirectUri` on an existing client. Through the API:
+**The return address must be registered.** In the console, it is the
+`oauthPostLogoutRedirectUri` field, on the new-application form or on the
+client's **OAuth 2.0 / OpenID Connect** sub-tab (**+** adds a value). Through
+the API:
 
 ```bash
 api applications/add '{"application":"parmon-a",
@@ -543,7 +579,7 @@ given.
   `true`, or the request carries a software statement from a trusted issuer
   (`oauth2.softwareStatementOpensRegistration`, on by default). An
   administrator issues software statements from the application page's
-  **Software statements** section (API `applications/issue-software-statement`).
+  **Software statements** tab (API `applications/issue-software-statement`).
 
 ```bash
 api config/set '{"key":"oauth2.openRegistration","value":true}'
@@ -558,9 +594,9 @@ POST /oauth2/register
 ```
 
 A registered client appears in the Applications list like any other, marked
-as registered through RFC 7591. The application page's **Revoke the RFC 7591
-registration** button (API `applications/revoke-registration`) ends the
-registration.
+as registered through RFC 7591. **Revoke the RFC 7591 registration**, on the
+application page's **Remove** tab (API `applications/revoke-registration`),
+ends the registration.
 
 ## Related
 
