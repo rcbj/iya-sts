@@ -3424,10 +3424,12 @@ class Credentials {
       // username's bytes, and the field is absent.
       userHandle: Credentials.isUserHandle(credential.userHandle)
         ? String(credential.userHandle) : undefined,
-      // THE LANE IT WAS CREATED IN (#643): `classical` or `pqc`, as the
-      // enrolment was begun — never the browser's say. `keyLane()` reads a
-      // row with none as classical.
-      lane: lane,
+      // THE LANE IT WAS CREATED IN (#643), as the enrolment was begun —
+      // never the browser's say: `pqc` for the post-quantum lane, and absent
+      // for the classical one, which is what every key before the lanes
+      // records and what `keyLane()` reads as classical. So with the switch
+      // off a row is written exactly as it was.
+      lane: lane === 'pqc' ? 'pqc' : undefined,
       // Who made or holds it, and which source said so (`keyProvider()`).
       provider: String(credential.provider || '').slice(0, 120),
       providerSource: ['mds', 'table'].indexOf(
