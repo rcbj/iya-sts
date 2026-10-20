@@ -342,7 +342,9 @@ async function boot() {
   // configuration; `opts.token` overrides the access token; `opts.attestation`
   // is a key attestation JWT for the proof header; `opts.proofType`
   // `attestation` sends it as the proof itself; `opts.holders` sends a proof
-  // for each of several holder keys, a batch.
+  // for each of several holder keys, a batch. `opts.kid` (a DID URL, or a
+  // function of the holder answering one) names the key by `kid` instead of
+  // `jwk` (#693); `opts.keepJwk` sends both.
   // ---------------------------------------------------------------------
   async function issue(username, holder, opts) {
     const o = opts || {};
@@ -373,7 +375,14 @@ async function boot() {
       // one c_nonce, as OpenID4VCI 1.0 section 8.2's `proofs.jwt` does.
       const keys = o.holders || [holder];
       proofs = { jwt: keys.map(function (one) {
-        return jws(Object.assign({}, header, { alg: one.alg, jwk: one.jwk }),
+        const h = Object.assign({}, header, { alg: one.alg, jwk: one.jwk });
+        if (o.kid) {
+          h.kid = typeof o.kid === 'function' ? o.kid(one) : o.kid;
+          if (!o.keepJwk) {
+            delete h.jwk;
+          }
+        }
+        return jws(h,
           { aud: base + prefix, iat: Math.floor(Date.now() / 1000),
             nonce: cNonce }, one);
       }) };
