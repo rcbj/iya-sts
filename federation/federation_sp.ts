@@ -3359,7 +3359,10 @@ class FederationSp {
       return undefined;
     }
     const { context, record } = found;
-    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+    // The form's body as every POST here is read (`paramsOf()`'s parser),
+    // and never the query string.
+    const parsed = this.deps.parseBody(req);
+    const body = parsed && typeof parsed === 'object' ? parsed : {};
     const token = String(body.csrf || '');
     const held = String(context.csrf || '');
     if (!token || !held || !stsCrypto.constantTimeEquals(token, held)) {

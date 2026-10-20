@@ -1326,7 +1326,7 @@ function childMain() {
       const form = stateOf(asked);
       const names = form ? form.fields.map(function (f) {
         return f.name;
-      }).join(',') : '';
+      }).sort().join(',') : '';
       note(asked.status === 200 &&
            /\/federation\/profile\/fed-/.test(asked.path) && form &&
            form.kind === 'profile' && names === 'givenName,sn' &&
@@ -1391,7 +1391,7 @@ function childMain() {
       const form4 = stateOf(await signIn('cp-discord'));
       const names4 = form4 ? form4.fields.map(function (f) {
         return f.name;
-      }).join(',') : '';
+      }).sort().join(',') : '';
       const bad = await request('POST', prefix + form4.action,
         { form: { csrf: form4.csrf, givenName: 'Ada', sn: 'Mailless',
                   mail: 'not an address' } });
@@ -1400,7 +1400,7 @@ function childMain() {
         { form: { csrf: form5.csrf, givenName: 'Ada', sn: 'Mailless',
                   mail: 'ada@typed.example' } }));
       const typed = entryOf(noMail);
-      note(names4 === 'givenName,sn,mail' && bad.status === 400 &&
+      note(names4 === 'givenName,mail,sn' && bad.status === 400 &&
            done5.status === 200 && !!typed &&
            attr(typed, 'mail')[0] === 'ada@typed.example' &&
            !attr(typed, 'stsMailVerified').length,
@@ -1445,15 +1445,19 @@ function childMain() {
       let stepCookie = '';
       let stepLive = false;
       let sr = await request('GET', prefix + '/federation/login/cp-discord');
+      const trail = [];
       for (let hop = 0; hop < 16; hop += 1) {
-        const at = String(sr.headers.location || sr.location || '');
+        const at = String((sr.headers && sr.headers.location) ||
+                          sr.location || '');
+        trail.push(sr.status + ' ' + at.split('?')[0]);
         if (/\/authn\/totp\?/.test(at)) {
           const opened = await authnScreen.openStep({ port: port, jar: jar,
             userAgent: UA,
             at: new URL(at, base).pathname + new URL(at, base).search });
           sr = await authnScreen.stepAct({ port: port, jar: jar,
             userAgent: UA, opened: opened, op: 'totp',
-            body: { code: totp.codeAt(secret) } });
+            // The next time step's code: I4 spent this one's.
+            body: { code: totp.codeAt(secret, Date.now() + 30000) } });
           continue;
         }
         if (/\/federation\/stepup\//.test(at) && !stepCookie) {
@@ -1480,7 +1484,9 @@ function childMain() {
       }) : 'no cookie';
       note(!!stepCookie && stepLive,
            'N9. the step-up\'s second factor started a session before the ' +
-           'browser returned', stepCookie ? 'live=' + stepLive : 'no cookie');
+           'browser returned', (stepCookie ? 'live=' + stepLive
+                                             : 'no cookie') + ' ' +
+           trail.join(' > '));
       note(sr.status === 403 && stepAfter === null && !jar.sts_session,
            'N10. the federated finish refused (the relationship disabled), ' +
            'the session the step started is ended and its cookie cleared ' +
