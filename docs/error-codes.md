@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4488** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4500** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -63,8 +63,8 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 309
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 714
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 317
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 715
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 29
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 85
 * [User portal (`STS-PORTAL`)](#sts-portal) — 98
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
-* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
+* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 180
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -1477,6 +1477,14 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0337` | A new session was not admitted because the realm is at authn.maxSessions and this insert did not free a row (#350). An arrival continues with no cookie. A chosen sign-in is drawn again, or the API answers its existing failure, and the audit action is session.refuse. | none — the sign-in screen is drawn again, or no cookie is set; the code is not in the body. Logged at most once a minute per process, with a count |
 | `STS-AUTHN-0338` | A read of a sign-on session or of the session index failed. It is not treated as absence. A browser is answered 503 with Retry-After and keeps its cookie. An arrival is not minted. A sign-out does not end the session and does not audit STS-AUTHN-0011. The sweep skips that realm. | HTTP 503 with Retry-After; the body is { error: unavailable }. The code is not in the body |
 | `STS-AUTHN-0339` | authn.sessionWindow is on and minted persistence is not enabled, or this process is one of several cells, or the minted key is not a digest. The process does not start. auto in that state is logged once and the full map stays. | none — the process does not start. Logged, never sent |
+| `STS-AUTHN-0340` | A sign-in would have added a session to a browser's account set in which every place (authn.maxBrowserAccounts) is held by a signed-in account, or the picker's Use another account was pressed there. Refused; one account must be signed out first. | the sign-in screen is drawn again with the sentence; HTTP 409 from the picker |
+| `STS-AUTHN-0341` | A protocol hint (login_hint, id_token_hint, a SAML Subject) named an account that has no live session in this browser's account set. No other account is used in its place: the person is sent to sign in, with the hint's name filled in. | none — the sign-in screen, or login_required with prompt=none |
+| `STS-AUTHN-0342` | An act at the account picker carried a body it does not take (an account key of the wrong shape, an unknown member). | HTTP 400, { ok: false, errors } |
+| `STS-AUTHN-0343` | The account picker or one of its operations was reached in a realm where authn.multipleAccounts is off, or for a sign-in that is not waiting on an account choice. | HTTP 400, { ok: false, errors } |
+| `STS-AUTHN-0344` | Reading or writing a browser's account set threw. The request goes on as if the browser held no set: its sign-on cookie alone decides, as with authn.multipleAccounts off. | — |
+| `STS-AUTHN-0345` | The account picker was asked to continue as an account that is not live in this browser's account set: its session ended between the page being drawn and the click (an expiry, a sign-out elsewhere, an administrator), or the account was never in the set. Nothing was selected and the picker is drawn again. | HTTP 409, { ok: false, next: refused, errors } |
+| `STS-AUTHN-0346` | A request carried an account selection ticket (sts_account) that is unknown, already spent, expired, issued to another browser's account set, for another address, or naming a session no longer live. It was taken off the request and ignored: the request resolves its account as if it carried none. | none — the parameter is removed before the protocol sees it |
+| `STS-AUTHN-0347` | The account picker was asked to forget an account that is still signed in. Only a signed-out account can be forgotten; a signed-in one is signed out at /logout. | HTTP 409, { ok: false, next: refused, errors } |
 | `STS-AUTHN-0350` | A passkey enrolment was refused: the lane it named is neither "classical" nor "pqc" (#643). | — |
 | `STS-AUTHN-0351` | A post-quantum passkey enrolment was refused: this realm does not offer a post-quantum passkey beside a classical one (webauthn.pqcAlongsideClassical is off, or webauthn.pqcOnly is on). One already enrolled goes on signing in (#643). | — |
 | `STS-AUTHN-0352` | A post-quantum passkey enrolment was refused: the verifier knows no ML-DSA algorithm, so the post-quantum lane would offer nothing (#643). | RFC 9964 |
@@ -2210,6 +2218,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0957` | A client asked, on a token whose subject is an application (client_credentials), for an application permission no role it holds authorizes (rolePermission), and the issuance policy left it off the tokens. A delegated permission (oauthDelegatedPermission) needs a person and does not count here (#551). | none — issued without that scope (RFC 6749 section 3.3); invalid_scope when nothing else was asked for |
 | `STS-OAUTH-0958` | An authorization code was presented again under oauth2.codeReplayIdempotent, and the record of its redemption holds no response to replay: it was redeemed while the relaxation was not in force, and only its jtis were kept (#614). Refused, and what it bought is revoked. | 400 invalid_grant (RFC 6749 sections 4.1.2 and 10.5) |
 | `STS-OAUTH-0959` | An authorization request from a client whose own start is turned off (oauthSpInitiatedSso FALSE, else oauth2.spInitiatedSso) did not follow a /launch of that client on the same session within oauth2.launchWindowS (#426, #713). | unauthorized_client (RFC 6749 section 4.1.2.1) |
+| `STS-OAUTH-0960` | An authorization request with prompt=none arrived from a browser holding more than one signed-in account, and nothing in it (an account chosen in this flow, login_hint, id_token_hint) says which; prompt=none forbids showing the account picker (#561). | account_selection_required (OpenID Connect Core 1.0 section 3.1.2.6) |
 
 ## STS-SAML
 
@@ -4946,6 +4955,9 @@ Raised from: logout/.
 | `STS-LOGOUT-0008` | The signed-out document (POST /logout/signed-out, #577) was posted no sign-out result, or one this service did not MAC, made in another trust realm, or expired. | HTTP 400 page |
 | `STS-LOGOUT-0009` | The signed-out document (POST /logout/signed-out, #577) was posted with an origin this service does not answer on, or with none (or null) and no Sec-Fetch-Site: same-origin. | HTTP 403 page |
 | `STS-LOGOUT-0010` | A form was posted to /logout, which is no longer an act (#577): the page's act is POST /authn-api/logout. The browser is sent to the page, which ends nothing. | HTTP 303 to /logout |
+| `STS-LOGOUT-0011` | A sign-out at the JSON door of /logout came from a browser holding several signed-in accounts (authn.multipleAccounts, #561) and named none of them, so nothing was ended; the answer lists the accounts by key. | HTTP 409, error account_choice_required |
+| `STS-LOGOUT-0012` | The account chosen at the sign-out's account step (#561) is not signed in in this browser any more — its session ended between the page and the choice, or the key names an account of another browser. Nothing was ended and the step is drawn again. | HTTP 409 from POST /authn-api/logout/accounts |
+| `STS-LOGOUT-0013` | The sign-out's account step (#561) was asked for in a trust realm with authn.multipleAccounts off, where a browser holds one session and there is no account to choose. | HTTP 400 from /authn-api/logout/accounts |
 
 ## STS-LAUNCH
 

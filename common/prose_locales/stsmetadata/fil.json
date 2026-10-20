@@ -2415,6 +2415,14 @@
     "en": "6cf5af064bdc580d",
     "text": "itinatanong kung saan sa mga federated identity provider ng isang application magsa-sign in; kailangan ng ?authn= id, kaya sumasagot ng 400 kapag sinundan nang walang laman"
   },
+  "stsmetadata.endpoints./authn/accounts.what": {
+    "en": "133e09e2d14aa686",
+    "text": "ILANG NAKA-SIGN IN NA ACCOUNT SA ISANG BROWSER (#561), kapag naka-on ang authn.multipleAccounts (naka-off ito bilang default). Ang isang request mula sa browser na may hawak na higit sa isang naka-sign in na account na walang pinapangalanan sa mga ito — walang account na pinili sa flow nito, walang login_hint o id_token_hint na nagpapangalan ng isa — ay ipinapadala rito, gayundin ang prompt=select_account ng OpenID Connect (Core section 3.1.2.1). Ipinagpapatuloy ng bawat naka-sign in na account ang flow bilang sarili nito, muling sinusuri ang session nito, at ang hinihinging dalawang factor na hindi nito natutugunan ay sinasagot sa pag-sign in muli bilang ito; ang bawat naka-sign out na account na natatandaan ng browser ay maaaring ma-sign in muli o makalimutan; ang Gumamit ng ibang account ay ang karaniwang sign-in. Isang static na page, iginuguhit mula sa /authn-api/pending/{id}/accounts."
+  },
+  "stsmetadata.endpoints./authn/accounts.effect": {
+    "en": "ac430d30ba3b9a6a",
+    "text": "itinatanong kung alin sa mga naka-sign in na account ng browser ang ipagpapatuloy ng isang sign-in; nangangailangan ng ?authn= id, kaya ang pagsunod dito nang wala nito ay sumasagot ng 400"
+  },
   "stsmetadata.endpoints./authn/spnego.what": {
     "en": "23818b4a272ea292",
     "text": "INTEGRATED AUTHENTICATION, AT ANG NAG-IISANG SIGN-IN DITO NA NAKASANDAL SA CREDENTIAL NA TUNAY NA VINE-VERIFY NG SERBISYONG ITO. Sa ibang lugar, ang na-type na username AY ang identity; hindi ganoon kaya gumana ang Kerberos, dahil ang password doon ay ang key — kaya sinusuri ng pintong ito ang tunay na service ticket laban sa tunay na long-term key, sa pamamagitan ng sariling acceptor ng serbisyong ito at walang sariling protocol code. Kasing-permissive pa rin ng pinapayagan ng protocol ang KDC sa likod nito (anumang username, iisang shared password, account na ginagawa sa unang pagkakita), na siyang nagpapanatiling maluwag ang development mode — tunay ang verification, hindi ang account policy. AVAILABLE ITO SA BAWAT APPLICATION at hindi nakarehistro sa alinman: inaalok ito ng button sa /authn/login para sa anumang flow na kasalukuyang nagaganap, ipinapadala ng appAuthnMechanism: spnego sa application entry ang mga tao ng application na iyon nang diretso rito, at ginagawa ng fedAuthnMechanism: spnego sa identity-provider-side na federation relationship na matugunan ng Kerberos ticket ang banyagang partner na hindi pa kailanman nakarinig ng Kerberos. Ang aangkinin ng session pagkatapos ay binabasa mula sa sariling mga flag ng TICKET — amr [\"pwd\"] para sa pre-authent, [\"hwk\"] para sa hw-authent, pareho para sa pareho, at wala talaga para sa ticket na walang inaangkin sa dalawa, dahil hindi magpapangalan ang serbisyong ito ng factor na walang credential na nagpatunay. Tumatanggap ito ng ?authn= at HINDI KAILANMAN returnTo: nasa pending record ang return address, kaya walang open-redirect surface dito. Ang client na hindi makakuha ng ticket ay makakakita ng page na may link sa sign-in screen, dahil dead end ang simpleng 401 Negotiate sa bawat browser na hindi naka-configure para sa host na ito. Ino-off ito ng krb5.spnegoAuthentication, at sumasagot ito pagkatapos ng 403 na sinasabi iyon sa halip na 404."
@@ -2535,6 +2543,26 @@
     "en": "278e1af859a5f658",
     "text": "NON-SPEC (#571). Ang view ng chooser, muling nire-resolve mula sa entry ng application."
   },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts.what": {
+    "en": "6b11ee5ab38d4107",
+    "text": "NON-SPEC (#561). Ang view ng account picker: ang mga naka-sign in at natatandaang account ng browser, bawat isa ayon sa key nito at hindi kailanman sa sid, at ang CSRF token na dala ng mga act nito."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/select.what": {
+    "en": "32d3c868fcbeef9a",
+    "text": "NON-SPEC (#561). Muling sinusuri ang session ng account; ipinagpapatuloy ng sagot ang flow gamit ang isang single-use na selection ticket."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/another.what": {
+    "en": "e292828cb4e3c235",
+    "text": "NON-SPEC (#561). Gumamit ng ibang account: ang karaniwang sign-in, tinatanggihan habang naka-sign in ang bawat puwesto ng browser."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/forget.what": {
+    "en": "ca27920f84beeb19",
+    "text": "NON-SPEC (#561). Isang account lamang na nag-sign out sa browser na ito; walang session na ginagalaw."
+  },
+  "stsmetadata.endpoints./authn-api/accounts.what": {
+    "en": "f96dbce662dca61d",
+    "text": "NON-SPEC (#561). Ang mga naka-sign in at natatandaang account ng browser at ang mga estado nito, para sa isang account menu — hindi kailanman sid o token; walang laman kapag naka-off ang authn.multipleAccounts."
+  },
   "stsmetadata.endpoints./authn-api/pending/:id/password.what": {
     "en": "f09b8dc5712df29f",
     "text": "NON-SPEC (#571). Ang Sign In button: JSON, isang Origin ng serbisyong ito at ang X-CSRF-Token ng session ng browser. May rate limit, may risk score at pinagpapasyahan ng issuance policy gaya ng sa form; pinangangalanan ng sagot ang susunod na step."
@@ -2590,6 +2618,14 @@
   "stsmetadata.endpoints./authn-api/logout.effect": {
     "en": "c2016f561ef917cf",
     "text": "tinatapos ng POST ang mga session at binabawi ang hawak ng tao"
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.what": {
+    "en": "ff574754aa7ad4ab",
+    "text": "HINDI-SPEC (#561). Sumasagot ang GET ng hakbang ng account ng pag-sign out — ang mga naka-sign in na account ng browser ayon sa susi nito, hindi kailanman isang sid; pumipili ang POST na may CSRF token ng isa (susunod ang pahina ng pag-sign out nito) o isina-sign out ang lahat. 400 kung naka-off ang authn.multipleAccounts."
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.effect": {
+    "en": "69d6a2e59b3f0a48",
+    "text": "Isina-sign out ng POST na may all ang bawat account sa browser"
   },
   "stsmetadata.endpoints./authn-api/consent/:id.what": {
     "en": "b0e6e117fd23a284",

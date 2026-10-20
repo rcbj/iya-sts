@@ -38,5 +38,10 @@
   "tab.details": "Details",
   "list.colProtocol": "Protocol",
   "inventory.listNote": "Tick them in the list above. Nothing ticked ends nothing.",
-  "inventory.detailsNote": "Tick tokens and credentials in the tables above. Nothing ticked ends nothing."
+  "inventory.detailsNote": "Tick tokens and credentials in the tables above. Nothing ticked ends nothing.",
+  "accounts.intro": "This browser is signed in to {count} accounts. Choose the one to sign out, or sign out of every account in this browser.",
+  "accounts.current": "(this browser’s default)",
+  "accounts.all": "Every account in this browser",
+  "accounts.continue": "Continue",
+  "accounts.note": "One account shows what it is still signed into, to end it all or what you tick. Every account ends everything each of them holds, as each one’s global logout does."
 }

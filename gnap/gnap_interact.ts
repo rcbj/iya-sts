@@ -852,6 +852,42 @@ class GnapInteract {
     return spent;
   }
 
+  // ---------------------------------------------------------------------------
+  // WHICH ACCOUNT, WHERE THE BROWSER HOLDS SEVERAL (#561). Two hints, both
+  // SOFT (`authn.hintAccount()`): the session this approval page was first
+  // drawn for, recorded on the interaction (`accountSid`) so that the
+  // page's own `/gnap-api` calls — which carry no selection ticket — act as
+  // the account the GET resolved; and the grant request's `user`
+  // (`userHint`, RFC 9635 section 2.4), the subject the client named.
+  // Soft, because a person at the browser who is not that user is a case
+  // with a meaning of its own here (#432's owner approval), not a reason to
+  // send them to sign in. A sid names a session only in THIS browser's set,
+  // whose cookie proves the browser holds it. Nothing changes with
+  // `authn.multipleAccounts` off.
+  // ---------------------------------------------------------------------------
+  private hintAccountFor(req: Req, grant: any): void {
+    const { log, authn } = this.deps;
+    log.debug("Entering GnapInteract.hintAccountFor().");
+    authn.hintAccount(req, {
+      sid: String((grant.interaction && grant.interaction.accountSid) || ''),
+      loginHint: String(grant.userHint || ''), soft: true });
+    log.debug("Leaving GnapInteract.hintAccountFor().");
+  }
+
+  // The session the approval page was drawn for, recorded on the
+  // interaction for the page's own calls (above). Only with the setting on,
+  // so a grant is otherwise written exactly as it was.
+  private noteAccountFor(grant: any, session: any): void {
+    const { log, authn, store } = this.deps;
+    log.debug("Entering GnapInteract.noteAccountFor().");
+    if (authn.multipleAccounts() && session && grant.interaction &&
+        grant.interaction.accountSid !== session.id) {
+      grant.interaction.accountSid = String(session.id);
+      store.saveGrant(grant);
+    }
+    log.debug("Leaving GnapInteract.noteAccountFor().");
+  }
+
   private approvalGrant(req: Req, res: Res): any {
     const { log, validation, store } = this.deps;
     log.debug("Entering GnapInteract.approvalGrant().");
@@ -1141,6 +1177,7 @@ class GnapInteract {
       log.debug("Leaving GnapInteract.apiApprovalView(). No grant.");
       return;
     }
+    this.hintAccountFor(req, grant);
     const session: any = authn.sessionOf(req);
     const present = session
       ? String(session.user.username || '').toLowerCase() : '';
@@ -1346,6 +1383,7 @@ class GnapInteract {
             });
         });
       }
+      self.hintAccountFor(req, grant);
       const session = authn.sessionOf(req);
       if (!session) {
         log.debug("Leaving GET /gnap/approve. To the sign-in screen.");
@@ -1365,6 +1403,7 @@ class GnapInteract {
       }
       // An EXISTING session is being honoured: CAEP session-presented.
       notePresented(session, 'GNAP', req);
+      self.noteAccountFor(grant, session);
       // #432 phase 6: another person's grant goes to its owner's portal, and
       // a session short of the rights' acr is stepped up — both before the
       // page, and before a remembered approval could stand in for it.
@@ -1423,6 +1462,7 @@ class GnapInteract {
         log.debug("Leaving POST /gnap-api/approve. No grant.");
         return undefined;
       }
+      self.hintAccountFor(req, grant);
       const session = authn.sessionOf(req);
       if (!session) {
         log.debug("Leaving POST /gnap-api/approve. No session; back to the " +

@@ -879,6 +879,7 @@ row's body runs on a request worker except those marked **front**:
 | Job | Kind, scope | Owner and argument |
 |---|---|---|
 | `authn.session-expiry` | cluster, service | `authn/authn.ts`, `authn/CLAUDE.md` |
+| `authn.account-set-expiry` | cluster, realm; hourly — every browser's account set brought up to date, a remembered account past `authn.rememberedAccountDays` dropped, an empty set deleted (#561) | `authn/authn.ts`, `authn/CLAUDE.md` |
 | `pki.crl-directory-refresh` | cluster, service | `common/pki_revocation.js` |
 | `scheduler.history` | cluster, service, **front**; every ten minutes — the run history past its bound (per job, `scheduler.runHistoryCount` runs or `scheduler.runHistoryHours`, whichever keeps more, the latest always) and every row naming a removed realm, in batches of 2000, at most 25 a run, each written down before the next; pins a kept row whose expiry is near (#338) | `cluster/scheduler.ts`, *The run history's bound*, above |
 | `signing.rotate` | cluster, realm; hourly, deciding per unit from the NEXT key's age | `common/signing_rotation.ts` (#42) |

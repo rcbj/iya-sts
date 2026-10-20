@@ -2415,6 +2415,14 @@
     "en": "6cf5af064bdc580d",
     "text": "frågar vid vilken av en applikations federerade identitetsleverantörer man ska logga in; kräver ett ?authn=-id, så att följa den utan det ger 400"
   },
+  "stsmetadata.endpoints./authn/accounts.what": {
+    "en": "133e09e2d14aa686",
+    "text": "FLERA INLOGGADE KONTON I EN WEBBLÄSARE (#561), när authn.multipleAccounts är på (det är av som standard). En begäran från en webbläsare med fler än ett inloggat konto som inte namnger något av dem — inget konto valt i dess flöde, ingen login_hint eller id_token_hint som namnger ett — skickas hit, liksom OpenID Connects prompt=select_account (Core avsnitt 3.1.2.1). Varje inloggat konto fortsätter flödet som sig självt, med sin session kontrollerad igen, och ett krav på två faktorer som det inte uppfyller besvaras med en ny inloggning som det; varje utloggat konto som webbläsaren kommer ihåg kan loggas in igen eller glömmas; Använd ett annat konto är den vanliga inloggningen. En statisk sida, ritad från /authn-api/pending/{id}/accounts."
+  },
+  "stsmetadata.endpoints./authn/accounts.effect": {
+    "en": "ac430d30ba3b9a6a",
+    "text": "frågar vilket av webbläsarens inloggade konton en inloggning fortsätter som; kräver ett ?authn=-id, så att följa den utan svarar 400"
+  },
   "stsmetadata.endpoints./authn/spnego.what": {
     "en": "23818b4a272ea292",
     "text": "INTEGRERAD AUTENTISERING, OCH DEN ENDA INLOGGNINGEN HÄR SOM VILAR PÅ EN AUTENTISERINGSUPPGIFT SOM DEN HÄR TJÄNSTEN VERKLIGEN HAR VERIFIERAT. Överallt annars ÄR det inskrivna användarnamnet identiteten; Kerberos kan inte fungera så, eftersom lösenordet där är nyckeln — så den här dörren kontrollerar en verklig tjänstebiljett mot en verklig långtidsnyckel, via tjänstens egen acceptor och utan egen protokollkod. KDC:n bakom den är fortfarande så tillåtande som protokollet medger (vilket användarnamn som helst, ett delat lösenord, ett konto som skapas vid första anblick), vilket är det som håller utvecklingsläget tillåtande — verifieringen är verklig, kontopolicyn är det inte. Den är TILLGÄNGLIG FÖR VARJE APPLIKATION och registrerad för ingen: en knapp på /authn/login erbjuder den för vilket flöde som redan pågår, appAuthnMechanism: spnego på en applikationspost skickar den applikationens personer direkt hit, och fedAuthnMechanism: spnego på en federationsrelation på identitetsleverantörssidan låter en Kerberos-biljett tillfredsställa en utomstående partner som aldrig har hört talas om Kerberos. Det som sessionen sedan påstår läses av BILJETTENS egna flaggor — amr [\"pwd\"] för pre-authent, [\"hwk\"] för hw-authent, båda för båda, och ingenting alls för en biljett som påstår ingen av dem, eftersom den här tjänsten inte namnger en faktor som ingen autentiseringsuppgift belägger. Den tar ?authn= och ALDRIG en returnTo: returadressen finns på den väntande posten, så det finns ingen yta för öppen omdirigering här alls. En klient som inte kan få en biljett möts av en sida med en länk till inloggningsskärmen, eftersom en ren 401 Negotiate är en återvändsgränd i varje webbläsare som inte är konfigurerad för den här värden. krb5.spnegoAuthentication stänger av den, och den svarar då 403 med det angivet i stället för 404."
@@ -2535,6 +2543,26 @@
     "en": "278e1af859a5f658",
     "text": "NON-SPEC (#571). Väljarens vy, upplöst på nytt från applikationens post."
   },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts.what": {
+    "en": "6b11ee5ab38d4107",
+    "text": "NON-SPEC (#561). Kontoväljarens vy: webbläsarens inloggade och ihågkomna konton, vart och ett med sin nyckel och aldrig ett sid, och CSRF-token som dess handlingar bär."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/select.what": {
+    "en": "32d3c868fcbeef9a",
+    "text": "NON-SPEC (#561). Kontots session kontrolleras igen; svaret återupptar flödet med en urvalsbiljett för engångsbruk."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/another.what": {
+    "en": "e292828cb4e3c235",
+    "text": "NON-SPEC (#561). Använd ett annat konto: den vanliga inloggningen, nekad så länge varje plats i webbläsaren är inloggad."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/forget.what": {
+    "en": "ca27920f84beeb19",
+    "text": "NON-SPEC (#561). Endast ett konto som loggade ut i den här webbläsaren; ingen session berörs."
+  },
+  "stsmetadata.endpoints./authn-api/accounts.what": {
+    "en": "f96dbce662dca61d",
+    "text": "NON-SPEC (#561). Webbläsarens inloggade och ihågkomna konton och deras tillstånd, för en kontomeny — aldrig ett sid eller en token; tom där authn.multipleAccounts är av."
+  },
   "stsmetadata.endpoints./authn-api/pending/:id/password.what": {
     "en": "f09b8dc5712df29f",
     "text": "NON-SPEC (#571). Knappen Logga in: JSON, en Origin från den här tjänsten och webbläsarsessionens X-CSRF-Token. Hastighetsbegränsad, riskbedömd och avgjord av utfärdandepolicyn som formuläret var; svaret namnger nästa steg."
@@ -2590,6 +2618,14 @@
   "stsmetadata.endpoints./authn-api/logout.effect": {
     "en": "c2016f561ef917cf",
     "text": "POST avslutar sessioner och återkallar det personen innehar"
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.what": {
+    "en": "ff574754aa7ad4ab",
+    "text": "UTANFÖR SPECIFIKATION (#561). GET svarar utloggningens kontosteg — webbläsarens inloggade konton efter nyckel, aldrig ett sid; POST med CSRF-token väljer ett (dess utloggningssida följer) eller loggar ut alla. 400 där authn.multipleAccounts är av."
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.effect": {
+    "en": "69d6a2e59b3f0a48",
+    "text": "POST med all loggar ut alla konton i webbläsaren"
   },
   "stsmetadata.endpoints./authn-api/consent/:id.what": {
     "en": "b0e6e117fd23a284",

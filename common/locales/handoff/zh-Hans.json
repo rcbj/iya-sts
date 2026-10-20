@@ -110,5 +110,9 @@
   "federation.partners.partner": "合作方",
   "federation.partners.signOutThere": "同时在那里退出登录",
   "federation.partners.signOutAt": "在 {partner} 退出登录",
-  "federation.partners.note": "您是通过这些身份提供方登录此处的，您在那里的会话仍然有效。每一项都是链接或表单，而不是自动重定向：本页不运行任何脚本，前往合作方需要您有意点击。"
+  "federation.partners.note": "您是通过这些身份提供方登录此处的，您在那里的会话仍然有效。每一项都是链接或表单，而不是自动重定向：本页不运行任何脚本，前往合作方需要您有意点击。",
+  "wsfed.chooseAccount.title": "哪个账户？— WS-Federation",
+  "wsfed.chooseAccount.heading": "应退出哪个账户？",
+  "wsfed.chooseAccount.intro": "此浏览器中有 {count} 个账户已登录 <code>{realm}</code>。请选择要退出的账户；其他账户保持登录。",
+  "wsfed.chooseAccount.signOut": "退出 <strong>{who}</strong>"
 }

@@ -1375,6 +1375,10 @@
     "en": "afae7eb3e60fb142",
     "text": "联合伙伴选择器"
   },
+  "endpoints.route./authn/accounts.name": {
+    "en": "c3b323e274fa067a",
+    "text": "账号选择器"
+  },
   "endpoints.route./authn/spnego.name": {
     "en": "0a014fa4b2685cd7",
     "text": "使用 Kerberos 票据登录"
@@ -1447,6 +1451,26 @@
     "en": "cb0f4ae92fef3ded",
     "text": "可供选择的联合身份合作方"
   },
+  "endpoints.route./authn-api/pending/:id/accounts.name": {
+    "en": "23c7f520afd7c0cb",
+    "text": "登录可以继续使用的账号"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/select.name": {
+    "en": "4c05cbd10261e5fe",
+    "text": "以浏览器中的某个账号继续"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/another.name": {
+    "en": "8ffce6dab3c9d713",
+    "text": "使用其他账号登录"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/forget.name": {
+    "en": "ee74996a1d01a953",
+    "text": "忘记一个已退出的账号"
+  },
+  "endpoints.route./authn-api/accounts.name": {
+    "en": "e263821d69f3f785",
+    "text": "此浏览器持有的账号"
+  },
   "endpoints.route./authn-api/pending/:id/password.name": {
     "en": "673a50377a1ff20b",
     "text": "使用密码登录"
@@ -1490,6 +1514,10 @@
   "endpoints.route./authn-api/logout.name": {
     "en": "196d3a7dc50ac8ef",
     "text": "注销会终止什么，以及注销本身"
+  },
+  "endpoints.route./authn-api/logout/accounts.name": {
+    "en": "ee44950fe4f4a290",
+    "text": "退出登录针对哪个账户"
   },
   "endpoints.route./authn-api/consent/:id.name": {
     "en": "1f22b542171d33ef",

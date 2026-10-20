@@ -1485,13 +1485,37 @@ class FederationSlo {
   // WS-FEDERATION: wsignoutcleanup1.0 / wsignout1.0 — CONFIRMED BY THE
   // PERSON (decision 4). WS-Federation 1.2 section 13.2.4.
   // =========================================================================
-  private browserFederatedSession(req, record) {
+  // WHICH OF THE BROWSER'S SESSIONS THE PARTNER SIGNED IN (#561). With
+  // `authn.multipleAccounts` on the browser may hold several accounts, and
+  // `sessionOf()` answers nobody where two are live and nothing names one —
+  // so a partner's sign-out would find "nothing to sign out" while one of
+  // them is exactly its session. The set's live sessions are asked instead:
+  // the browser's own answer first where it is the partner's, otherwise the
+  // most recent of the set's that this relationship signed in. `sid`, on the
+  // confirmed POST, names the one the confirmation was drawn for, which must
+  // still be live in THIS browser's set. Off, the cookie's session, as it
+  // always was.
+  private browserFederatedSession(req, record, sid?) {
     const { authn, log } = this.deps;
     log.debug("Entering FederationSlo.browserFederatedSession().");
+    const partners = function (one) {
+      const held = one && one.fedPartnerSession;
+      return !!(held && held.relationship === record.fedId);
+    };
     const session = authn.sessionOf(req);
-    const held = session && session.fedPartnerSession;
-    log.debug("Leaving FederationSlo.browserFederatedSession().");
-    return held && held.relationship === record.fedId ? session : null;
+    if (!authn.multipleAccounts()) {
+      log.debug("Leaving FederationSlo.browserFederatedSession().");
+      return partners(session) ? session : null;
+    }
+    const theirs = authn.accountSessionsOf(req).filter(partners);
+    const found = sid
+      ? theirs.filter(function (one) {
+        return String(one.id) === String(sid);
+      })[0] || null
+      : (partners(session) ? session : theirs[theirs.length - 1] || null);
+    log.debug("Leaving FederationSlo.browserFederatedSession(). " +
+              theirs.length + " of the set's.");
+    return found;
   }
 
   private wsfedConfirmation(req, res, record, params) {
@@ -1556,7 +1580,8 @@ class FederationSlo {
     const handle = String(params.confirm || '');
     const context = /^fed-[A-Za-z0-9_-]{1,64}$/.test(handle)
       ? fedSp.takeContext(handle) : null;
-    const session = this.browserFederatedSession(req, record);
+    const session = this.browserFederatedSession(req, record,
+      context && context.sessionId);
     if (!context || context.kind !== 'wsfed-signout' ||
         context.id !== record.fedId || !session ||
         session.id !== context.sessionId) {
@@ -1581,7 +1606,14 @@ class FederationSlo {
     const ended = this.endSessions([session], record, 'WS-Federation ' +
                                    'sign-out, confirmed', baseUrlOf(req),
                                    true);
-    this.deps.authn.clearSessionCookie(res);
+    // THE COOKIE (#561): with several accounts on, cleared only where the
+    // session that ended was the browser's default, the next live account
+    // then made the default — `logout/logout.ts`'s `endFor()` does the same.
+    if (this.deps.authn.multipleAccounts()) {
+      this.deps.authn.afterAccountSignOut(req, res);
+    } else {
+      this.deps.authn.clearSessionCookie(res);
+    }
     log.debug("Leaving FederationSlo.wsfedConfirmed(). Ended.");
     // In the person's language (#539). No language chooser: the POST that
     // drew it ended the session and spent its confirmation.

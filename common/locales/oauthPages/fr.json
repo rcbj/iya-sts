@@ -25,5 +25,9 @@
   "signedOut.frontNone": "Il n’y avait aucune session à terminer. Le cookie a tout de même été effacé.",
   "signedOut.returnHeading": "Revenir à la partie utilisatrice",
   "signedOut.returnAuto": "Cette page y retourne d’elle-même au bout de {seconds, plural, one {# seconde} other {# secondes}}, une fois que les notifications ci-dessus ont eu le temps de se charger ; le lien est destiné aux navigateurs qui ne suivent pas un rafraîchissement.",
-  "signedOut.returnLink": "Un lien et non une redirection : les notifications ci-dessus se chargent avec cette page, et une redirection 302 les abandonnerait avant leur envoi."
+  "signedOut.returnLink": "Un lien et non une redirection : les notifications ci-dessus se chargent avec cette page, et une redirection 302 les abandonnerait avant leur envoi.",
+  "logout.askWhichApp": "L’application <code>{app}</code> a demandé à vous déconnecter, et ce navigateur est connecté à {count} comptes. Lequel faut-il déconnecter ? Sa session ici prend fin, et chaque application à laquelle il est connecté par elle en est avertie.",
+  "logout.askWhich": "Une application a demandé à vous déconnecter, et ce navigateur est connecté à {count} comptes. Lequel faut-il déconnecter ? Sa session ici prend fin, et chaque application à laquelle il est connecté par elle en est avertie.",
+  "logout.signOutAccount": "Déconnecter <strong>{who}</strong>",
+  "logout.whyWhich": "Demandé parce que la requête ne nommait aucun des comptes connectés dans ce navigateur (RP-Initiated Logout 1.0, section 2). Les autres comptes restent connectés."
 }

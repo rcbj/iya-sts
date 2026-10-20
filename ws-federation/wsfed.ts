@@ -1255,6 +1255,17 @@ class WsFederation {
     const where = beginAuthentication({
       returnTo: returnTo,
       protocol: 'WS-Federation',
+      // WHETHER THE ACCOUNT PICKER COMES FIRST (#561), where the browser
+      // holds several accounts: never when `wfresh` was given. The return
+      // address drops `wfresh` (above), so an account chosen at the picker
+      // would be answered on the way back however old its authentication
+      // was; a fresh sign-in is what section 13.2.1 asks for, and signing in
+      // as an account already in the set re-authenticates its session. Read
+      // only with `authn.multipleAccounts` on; this protocol carries no hint
+      // about WHICH account (`whr` names a home realm, not a person).
+      accountChoice: params.wfresh !== undefined && params.wfresh !== null &&
+                     params.wfresh !== '' ? 'never' : '',
+      request: req,
       forceMfa: !!screen.forceMfa,
       forceKey: !!screen.forceKey,
       // WHICH RELYING PARTY, so that an entry naming a federation relationship
@@ -1843,10 +1854,106 @@ class WsFederation {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // WHICH ACCOUNT A SIGN-OUT ENDS, IN A BROWSER HOLDING SEVERAL (#561, the
+  // plan's section 5). Only with `authn.multipleAccounts` on; off, both
+  // messages end the session the cookie names, as they always did.
+  //
+  //   * `wsignoutcleanup1.0` stays NON-INTERACTIVE, as section 13.2.4 needs
+  //     it to be (it arrives as an image): it ends EVERY session of this
+  //     browser's set that signed in to `wtrealm`.
+  //   * `wsignout1.0` ends the one session of the set that signed in to
+  //     `wtrealm`; with more than one, it ASKS which — a page of links, each
+  //     this same GET with the account's key (`sts_signout_account`), which
+  //     names only this browser's own accounts. A sign-out naming no realm,
+  //     or a realm none of them signed in to, ends the default session.
+  //
+  // Answers the sessions to end ([] for the default, as always), or null
+  // where the page that asks was drawn.
+  // ---------------------------------------------------------------------------
+  private signOutAccounts(req, res, params, cleanupOnly): any[] {
+    const { log } = this.deps;
+    log.debug("Entering WsFederation.signOutAccounts().");
+    if (!authn.multipleAccounts()) {
+      log.debug("Leaving WsFederation.signOutAccounts(). Off.");
+      return [];
+    }
+    const realm = String(params.wtrealm || '');
+    const there = realm ? authn.accountSessionsOf(req).filter((one) => {
+      return !!(one.wsfedRealms &&
+                Object.prototype.hasOwnProperty.call(one.wsfedRealms, realm));
+    }) : [];
+    if (cleanupOnly) {
+      log.debug("Leaving WsFederation.signOutAccounts(). Cleanup: " +
+                there.length + ".");
+      return there.map((one) => { return String(one.id); });
+    }
+    const picked = String(params.sts_signout_account || '');
+    const chosen = picked ? authn.signedInAccounts(req).filter((one) => {
+      return one.key === picked;
+    })[0] : null;
+    if (chosen) {
+      log.debug("Leaving WsFederation.signOutAccounts(). The one chosen.");
+      return [String(chosen.sid)];
+    }
+    if (there.length > 1) {
+      this.askWhichAccount(req, res, params, there);
+      log.debug("Leaving WsFederation.signOutAccounts(). Asked.");
+      return null;
+    }
+    log.debug("Leaving WsFederation.signOutAccounts(). " + there.length);
+    return there.map((one) => { return String(one.id); });
+  }
+
+  // The page `wsignout1.0` asks with (#561): one link per account that
+  // signed in to the relying party, each the same sign-out with the
+  // account's key. Links, because the message is a GET that signs out on
+  // arrival already; no script.
+  private askWhichAccount(req, res, params, sessions): void {
+    const { log, xmlEscape } = this.deps;
+    log.debug("Entering WsFederation.askWhichAccount().");
+    const t = PageLocale.forPage({
+      application: params.wtrealm ? String(params.wtrealm) : '' });
+    const back = this.requeryString(params, ['sts_signout_account']);
+    const accounts = authn.signedInAccounts(req);
+    const links = sessions.map((one) => {
+      const account = accounts.filter((a) => {
+        return a.sid === String(one.id);
+      })[0];
+      const href = realms.currentPrefix() + PASSIVE_PATH + '?' + back +
+        (back ? '&' : '') + 'sts_signout_account=' +
+        encodeURIComponent(account ? account.key : '');
+      return '<li><a href="' + xmlEscape(href) + '">' +
+        t.html('handoff.wsfed.chooseAccount.signOut',
+               { who: String((one.user && one.user.username) || '') }) +
+        '</a></li>';
+    }).join('');
+    const inner = '<h1>' + t.html('handoff.wsfed.chooseAccount.heading') +
+      '</h1><p class="sub">' + t.html('handoff.wsfed.signOut.sub') +
+      '</p><p>' + t.html('handoff.wsfed.chooseAccount.intro',
+                         { realm: String(params.wtrealm || ''),
+                           count: sessions.length }) + '</p><ul>' + links +
+      '</ul>';
+    res.status(200).type('text/html').set('Cache-Control', 'no-store')
+       .send(this.page(t.text('handoff.wsfed.chooseAccount.title'), inner,
+                       t));
+    log.debug("Leaving WsFederation.askWhichAccount().");
+  }
+
   private signOut(req, res, params, cleanupOnly) {
     const { app, endSession, log, xmlEscape } = this.deps;
     log.debug("Entering WsFederation.signOut(). cleanupOnly=" + !!cleanupOnly);
-    const session = endSession(req, res);
+    const named = this.signOutAccounts(req, res, params, cleanupOnly);
+    if (named === null) {
+      log.debug("Leaving WsFederation.signOut(). Asked which account.");
+      return;
+    }
+    // Every session the sign-out names (#561), or the cookie's, as always.
+    const endedAll = named.length
+      ? named.map((sid) => { return endSession(req, res, sid); })
+          .filter(Boolean)
+      : [endSession(req, res)].filter(Boolean);
+    const session = endedAll[0] || null;
     const targets = this.cleanupTargetsFor(session);
     const names = targets.map((one) => { return one.realm; });
     const realms = {};
@@ -1874,7 +1981,12 @@ class WsFederation {
         ? t.html('handoff.wsfed.sessionEnded',
                  { username: session.user.username })
         : t.html('handoff.common.noSession')) +
-      '</div>';
+      '</div>' +
+      // The other sessions a cleanup ended (#561), one sentence each.
+      endedAll.slice(1).map((one) => {
+        return '<div class="ok">' + t.html('handoff.wsfed.sessionEnded',
+          { username: one.user.username }) + '</div>';
+      }).join('');
     if (cleanupOnly) {
       // A cleanup request arriving HERE (rather than at a relying party) ends
       // the session and stops. It deliberately does not fan out further

@@ -4739,7 +4739,20 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   // second fetch of /tls/sign-in does not mint a second session for somebody
   // who already has one — which would leave a global sign-out reporting two
   // where the person experienced one.
-  const existing = authn.sessionOf(req);
+  //
+  // NOT WITH SEVERAL ACCOUNTS IN ONE BROWSER (#561): there "the browser's
+  // session" is not one thing. `sessionOf()` answers nobody for a browser
+  // holding two accounts and naming neither, and answered the cookie's
+  // default — perhaps somebody else entirely — for one holding one; either
+  // way the certificate's holder would be told they were "already" signed in
+  // as whoever that was. So the question is asked of the CERTIFICATE'S
+  // account, below, once its name is known: `startSession()` re-authenticates
+  // that account's session where the browser's set holds it live (one live
+  // session per person per browser, `authn/CLAUDE.md`) and adds one where it
+  // does not. Still one session per person per browser, however many
+  // fetches. Unchanged with `authn.multipleAccounts` off.
+  const several = authn.multipleAccounts();
+  const existing = several ? null : authn.sessionOf(req);
   if (existing) {
     log.debug('Leaving startCertificateSessionIn(). One was already open.');
     return { started: false, id: existing.id, username: existing.user &&
@@ -4787,6 +4800,10 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
              why: 'the certificate names nobody: it has neither a common ' +
                   'name nor a subject' };
   }
+  // WHICH OF THE BROWSER'S ACCOUNTS THIS IS (#561), for the answer: the
+  // certificate's account live in the set is re-authenticated, any other
+  // added.
+  const held = several ? certificateAccountHeld(req, username) : null;
   let session = null;
   try {
     session = authn.startSession(res, username, ['swk'], '1',
@@ -4844,7 +4861,7 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
            'certificate ' +
            '(' + mode + ' listener). The chain verified and ' + revocationSaid);
   log.debug('Leaving startCertificateSessionIn(). Started ' + session.id + '.');
-  return { started: true, id: session.id, username: username,
+  const answer = { started: true, id: session.id, username: username,
            subject: subject,
            // The realm the session is in: the certificate's issuing authority's
            // for one this service issued, the default realm's otherwise.
@@ -4853,6 +4870,30 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
                  'truststore and ' + revocationSaid + '. The session is this ' +
                  'service tracking that the holder got in, which is what ' +
                  'lets a global sign-out end it.' };
+  // With several accounts on (#561), what became of the browser's set: the
+  // certificate's account `reauthenticated` where it was already signed in
+  // here, `added` beside the others where it was not. Absent off, so the
+  // answer is then the one it always was.
+  if (several) {
+    answer.account = held ? 'reauthenticated' : 'added';
+  }
+  return answer;
+}
+
+// THE CERTIFICATE'S ACCOUNT, LIVE IN THIS BROWSER'S SET (#561): the session
+// the set holds for that person, or null. By name, as `startSession()`
+// matches a re-authentication — the certificate names a login name, not a
+// subject. [] — so null — with `authn.multipleAccounts` off.
+function certificateAccountHeld(req, username) {
+  log.debug('Entering certificateAccountHeld().');
+  const wanted = String(username || '').toLowerCase();
+  const found = authn.accountSessionsOf(req).filter(function (one) {
+    return !!(one && one.user && wanted &&
+              String(one.user.username || '').toLowerCase() === wanted);
+  })[0] || null;
+  log.debug('Leaving certificateAccountHeld(). ' +
+            (found ? 'Held.' : 'Not held.'));
+  return found;
 }
 
 // ---------------------------------------------------------------------------
@@ -5433,8 +5474,13 @@ function placeCertificateSignIn(req, res) {
       : '';
     name = (identity && identity.accepted && identity.username) || common ||
            (cert && cert.subject ? dnRfc4514(cert.subject) : '');
+    // With several accounts on (#561) "held" is the CERTIFICATE'S account
+    // live in this browser's set, for `startCertificateSessionIn()`'s
+    // reason: the browser's other accounts are not this person, and one
+    // signed in here does not make this one a sign-in nobody needs.
     held = !!inCertificateRealm(identity, function () {
-      return authn.sessionOf(req);
+      return authn.multipleAccounts()
+        ? certificateAccountHeld(req, name) : authn.sessionOf(req);
     });
   } catch (e) {
     log.debug('Caught in placeCertificateSignIn(): ' +

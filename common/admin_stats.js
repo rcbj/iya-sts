@@ -2031,6 +2031,83 @@ function scimCountsAll() {
   return merged;
 }
 
+// ---------------------------------------------------------------------------
+// SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561): what the account sets
+// did, counted per realm — selections made, requests that could not tell
+// which account they were for (`ambiguous`), selections refused, accounts
+// added, forgotten and expired (a signed-out account dropped at
+// `authn.rememberedAccountDays`). The plan's TR-3: an operator asking "is
+// the picker being shown more than it should be" reads `ambiguous` beside
+// `selected`.
+//
+// `merge: 'own'` for the reason `scimCounts` is: a count is an INCREMENT, so
+// each process keeps its own row and `accountChoiceCounts()` adds them up.
+// Written only by `recordAccountChoice()`, which cannot throw.
+// ---------------------------------------------------------------------------
+const ACCOUNT_CHOICE_KINDS = ['selected', 'ambiguous', 'selectFailed',
+                              'added', 'forgotten', 'expired', 'switched'];
+
+const accountCounts = realms.obj(function () {
+  const out = {};
+  ACCOUNT_CHOICE_KINDS.forEach(function (kind) {
+    out[kind] = 0;
+  });
+  return out;
+}, { persist: 'admin_stats.accountCounts', merge: 'own' });
+
+/**
+ * Counts one thing a browser's account set did (#561). Never throws.
+ *
+ * @param kind - one of `selected`, `ambiguous`, `selectFailed`, `added`,
+ *   `forgotten`, `expired`, `switched`
+ * @param n - how many; 1 by default
+ */
+function recordAccountChoice(kind, n) {
+  log.debug("Entering recordAccountChoice(). " + kind);
+  try {
+    const name = String(kind || '');
+    if (ACCOUNT_CHOICE_KINDS.indexOf(name) < 0) {
+      log.debug("Leaving recordAccountChoice(). Not a kind.");
+      return;
+    }
+    const by = Math.max(1, Math.floor(Number(n) || 1));
+    accountCounts[name] = (Number(accountCounts[name]) || 0) + by;
+  } catch (e) {
+    // A counter must never fail the sign-in it counts.
+    log.debug("Caught in recordAccountChoice(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving recordAccountChoice().");
+}
+
+/**
+ * Every process's account-set counts for the ambient realm, added up.
+ *
+ * @returns kind → count
+ */
+function accountChoiceCounts() {
+  log.debug("Entering accountChoiceCounts().");
+  const out = {};
+  ACCOUNT_CHOICE_KINDS.forEach(function (kind) {
+    out[kind] = Number(accountCounts[kind]) || 0;
+  });
+  try {
+    replication.remoteRows('admin_stats.accountCounts', undefined, '')
+      .forEach(function (theirs) {
+        if (!theirs || typeof theirs !== 'object') {
+          return;
+        }
+        ACCOUNT_CHOICE_KINDS.forEach(function (kind) {
+          out[kind] += Number(theirs[kind]) || 0;
+        });
+      });
+  } catch (e) {
+    // Another process's rows are a refinement; this one's are the answer.
+    log.debug("Caught in accountChoiceCounts(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving accountChoiceCounts().");
+  return out;
+}
+
 /**
  * Summarises the SCIM traffic for `/admin/scim` and `GET /admin-api/scim`.
  *
@@ -6814,6 +6891,10 @@ module.exports = {
   ISSUED_FAMILIES: ISSUED_FAMILIES,
   recordCall: recordCall,
   recordAuthentication: recordAuthentication,
+  // #561: the account sets' counters.
+  recordAccountChoice: recordAccountChoice,
+  accountChoiceCounts: accountChoiceCounts,
+  ACCOUNT_CHOICE_KINDS: ACCOUNT_CHOICE_KINDS,
   noteWebauthnEnrolled: noteWebauthnEnrolled,
   knownUser: knownUser,
   setUserObserver: setUserObserver,

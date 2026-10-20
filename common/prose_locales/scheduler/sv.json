@@ -7,6 +7,14 @@
     "en": "e753a576c8530ce3",
     "text": "Läser nästa sida av sfärens personer från varje attributkälla vars schemalagda intervall har förfallit, in på deras poster (#94). attributeSources.refreshBatch personer per källa och körning."
   },
+  "sched.jobs.authn.account-set-expiry.title": {
+    "en": "849356c9b70cc0f3",
+    "text": "Utgång för kontouppsättningar"
+  },
+  "sched.jobs.authn.account-set-expiry.describe": {
+    "en": "d643d71a0089a802",
+    "text": "Uppdaterar varje webbläsares kontouppsättning (#561): ett konto vars session har upphört sparas som utloggat, ett som har sparats längre än authn.rememberedAccountDays tas bort, och en tom uppsättning raderas."
+  },
   "sched.jobs.authn.session-expiry.title": {
     "en": "0d2b2447af869e65",
     "text": "Sessionsutgång"

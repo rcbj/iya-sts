@@ -4,6 +4,7 @@
   "request.access": "Accès : <code>{scope}</code>. Expire le {when}.",
   "request.noScope": "(aucun indiqué)",
   "request.warning": "<strong>N’approuvez qu’un appareil qui se trouve devant vous</strong> et dont vous avez vous-même lancé la connexion. Quelqu’un qui vous a envoyé ce code vous demande de LE connecter en votre nom.",
+  "request.as": "Vous approuvez en tant que <strong>{name}</strong> : l’appareil sera connecté avec ce compte. Pour approuver avec un autre des comptes connectés dans ce navigateur, changez d’abord de compte.",
   "request.approve": "Approuver",
   "request.deny": "Refuser",
   "find.heading": "Connecter un appareil",

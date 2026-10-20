@@ -1694,6 +1694,39 @@ in development too now (`return_address.ts`; SAML 1.1 on its own page,
 The service provider and relying party a test needs are the test peer's
 (`tests/peer/peer_saml.js`, #586). `common/CLAUDE.md` 3cm has the record.
 
+## SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561, 2026-10-19)
+
+`authn/CLAUDE.md`, *Several signed-in accounts in one browser*, is the
+design. With `authn.multipleAccounts` off nothing here changes; on:
+
+* **THE AUTHNREQUEST'S `<saml:Subject>` NAMEID IS THE HINT**
+  (`accountHintOf()`), handed to `authn.hintAccount()` before `sessionOf()`
+  at step 4 — the `login_hint` of this protocol, read as a login name
+  because `nameIdValueFor()` answers the username or the mail address. A
+  NameID naming nobody live here answers no session, never another
+  account, and the sign-in screen is drawn with it filled in. **A
+  `transient` NameID is no hint** (`subjectHintFormat`): it names a session
+  of some other sign-in, nobody's account.
+* **`ForceAuthn` is `accountChoice: 'never'`**: a fresh sign-in, never the
+  picker; signing in as an account already in the set re-authenticates that
+  session.
+* **`IsPassive` with a choice to make is `NoPassive`**: the picker is user
+  interface. The status message says how many accounts the request named
+  none of, and `authn.noteAccountAmbiguous()` writes the `account.ambiguous`
+  row. An `IsPassive` request with a `<Subject>` naming a live account is
+  answered as that account.
+* **Front-channel Single Logout ends the session of the set** its
+  SessionIndex names (checked against this service provider and the NameID
+  by `sessionNamedBy()`), else the one that was issued the NameID there
+  (`sloAccountOf()`); otherwise the browser's default, as always. The back
+  channel is unchanged.
+* **SAML 1.1 has neither a hint nor `IsPassive`** (decision 1 above), so a
+  browser with several accounts reaches the picker through
+  `beginAuthentication()` with no change here; the identity-provider-
+  initiated sign-ins and the mechanism re-prompts likewise.
+
+`tests/multi_account_protocols.js` 4–5 and `tests/multi_account_logout.js` 7.
+
 ## The description page is a static surface's shell (#584, 2026-10-12)
 
 `GET /saml2` and `GET /saml11` are this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `saml/web_saml_description.ts` from the `describeSaml2` and `describeSaml11` catalogs, with `/saml2/description.js` and `/saml11/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. Neither page had a JSON form before; it is the view, which names no mock service provider or relying party since #592. The bare `GET /saml2/sso`, `/saml2/ars`, `/saml11/sso` and `/saml11/responder` descriptions are a specification's endpoints answering a parameterless GET and stay server-drawn. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.

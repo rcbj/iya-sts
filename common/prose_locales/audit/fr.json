@@ -1403,6 +1403,26 @@
     "en": "775ac5b1f475f76f",
     "text": "Les métadonnées SAML d’un fournisseur de services ont été actualisées"
   },
+  "audit.actions.account.add.label": {
+    "en": "0fc7d9b61dee994d",
+    "text": "Une session a rejoint l’ensemble de comptes d’un navigateur"
+  },
+  "audit.actions.account.select.label": {
+    "en": "1fcc762640b7ba22",
+    "text": "Un compte a été choisi dans le sélecteur de comptes"
+  },
+  "audit.actions.account.switch.label": {
+    "en": "0b9681ea51a0edfa",
+    "text": "Le compte par défaut d’un navigateur a changé"
+  },
+  "audit.actions.account.forget.label": {
+    "en": "17a75cbf0a350b17",
+    "text": "Un navigateur a oublié un compte déconnecté"
+  },
+  "audit.actions.account.ambiguous.label": {
+    "en": "cc103c68ea2f6ef9",
+    "text": "Une requête n’a pas indiqué à quel compte du navigateur elle était destinée"
+  },
   "audit.actions.session.reauthenticate.label": {
     "en": "f6867c3c6a1d35bd",
     "text": "La même personne s’est reconnectée sur une session active"

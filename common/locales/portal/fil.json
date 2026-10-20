@@ -528,5 +528,11 @@
   "done.passkeyMany": "Handa na ang iyong passkey. May hawak kang {n} — kung mawala ang isa, maisa-sign in ka pa rin ng iba.",
   "done.sessionsEndedOne": "Natapos na ang session na na-sign in gamit ito.",
   "done.sessionsEndedMany": "Natapos na ang {n} session na na-sign in gamit ito.",
-  "done.renamed": "Pinalitan ang pangalan ng \"{name}\"."
+  "done.renamed": "Pinalitan ang pangalan ng \"{name}\".",
+  "accounts.menu": "Lumipat ng account",
+  "accounts.menuTitle": "Ang ibang mga account na naka-sign in sa browser na ito, at pag-sign in gamit ang ibang account. Ang tab na ito lang ang binabago ng paglipat.",
+  "accounts.switchTitle": "Gamitin ang tab na ito bilang {user}. Pananatilihin ng ibang mga tab ang kanilang account.",
+  "accounts.another": "Mag-sign in gamit ang ibang account",
+  "accounts.anotherTitle": "Mag-sign in bilang ibang tao sa tab na ito. Mananatiling naka-sign in ang mga account na naka-sign in na sa browser na ito, at pananatilihin ng ibang mga tab ang kanila.",
+  "accounts.unsaved": "May mga pagbabago sa pahinang ito na hindi pa nase-save. Lumipat pa rin ng account? Mawawala ang mga ito."
 }

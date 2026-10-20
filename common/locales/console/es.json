@@ -192,5 +192,9 @@
   "nav.keys": "Pares de claves",
   "nav.crypto-metadata": "Criptografía",
   "shell.language": "Idioma",
-  "shell.browserLanguage": "Usar el idioma de mi navegador"
+  "shell.browserLanguage": "Usar el idioma de mi navegador",
+  "shell.menu.switch": "Cambiar a otra cuenta",
+  "shell.menu.switch.title": "Usar esta pestaña como {user}. Las demás pestañas conservan su cuenta.",
+  "shell.menu.another": "Iniciar sesión con otra cuenta",
+  "shell.menu.another.title": "Iniciar sesión como otra persona en esta pestaña. Las cuentas que ya tienen la sesión iniciada en este navegador la conservan, y las demás pestañas conservan la suya."
 }

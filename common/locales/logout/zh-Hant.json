@@ -38,5 +38,10 @@
   "tab.details": "詳細資訊",
   "list.colProtocol": "協定",
   "inventory.listNote": "請在上方清單中勾選。未勾選任何項目則不會結束任何內容。",
-  "inventory.detailsNote": "請在上方表格中勾選權杖和憑證。未勾選任何項目則不會結束任何內容。"
+  "inventory.detailsNote": "請在上方表格中勾選權杖和憑證。未勾選任何項目則不會結束任何內容。",
+  "accounts.intro": "此瀏覽器已登入 {count} 個帳戶。請選擇要登出的帳戶，或登出此瀏覽器中的所有帳戶。",
+  "accounts.current": "（此瀏覽器的預設帳戶）",
+  "accounts.all": "此瀏覽器中的所有帳戶",
+  "accounts.continue": "繼續",
+  "accounts.note": "選擇一個帳戶會顯示它仍登入的所有內容，可全部結束或只結束您勾選的項目。所有帳戶會結束每個帳戶持有的一切，與各帳戶的全域登出相同。"
 }

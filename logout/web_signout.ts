@@ -89,6 +89,12 @@ class SignoutSurface extends WebSurface {
    */
   async submit(form: Json, submitter: Json): Promise<void> {
     const fields = this.formFields(form, submitter);
+    // THE ACCOUNT STEP (#561): which account to sign out, or every one.
+    if (form.getAttribute && form.getAttribute('data-sts-step') ===
+        'accounts') {
+      await this.chooseAccount(fields);
+      return;
+    }
     const select = fields.select === undefined ? []
       : [].concat(fields.select);
     if (fields.scope === 'selected' && !select.length) {
@@ -116,7 +122,54 @@ class SignoutSurface extends WebSurface {
     if (fields.username) {
       body.username = String(fields.username);
     }
+    if (fields.account) {
+      body.account = String(fields.account);
+    }
     await this.signedOut(await this.send(String(op.path), body));
+  }
+
+  /**
+   * Sends the account step's choice (#561): one account goes to that
+   * person's inventory, drawn in place; every account is signed out, and
+   * its result followed as the act's is.
+   *
+   * @param fields - the step's fields
+   * @returns nothing
+   */
+  async chooseAccount(fields: Json): Promise<void> {
+    if (!fields.account) {
+      this.flash = { error: 'Choose an account, or every account.' };
+      this.redraw();
+      return;
+    }
+    if (!await this.ensureFormTable()) {
+      this.flash = { error: 'The service\'s API could not be reached.' };
+      this.redraw();
+      return;
+    }
+    const op = this.formTable['POST /logout/accounts'];
+    if (!op) {
+      this.flash = { error: 'This control has no API operation ' +
+        '(/logout/accounts), so the page refuses it rather than guess.' };
+      this.redraw();
+      return;
+    }
+    const answer = await this.send(String(op.path),
+                                   { account: String(fields.account) });
+    const json = answer.json;
+    if (json && json.ok && json.next === 'inventory' && json.location) {
+      await this.go(String(json.location));
+      return;
+    }
+    if (json && !json.ok && json.view) {
+      this.flash = { error: (json.errors || []).join(' ') };
+      this.view = { page: (this.view && this.view.page) ||
+                          this.find('/logout'),
+                    query: {}, json: json.view };
+      this.drawView();
+      return;
+    }
+    await this.signedOut(answer);
   }
 
   /**

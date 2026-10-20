@@ -743,6 +743,30 @@
     "en": "33bc4846535a784f",
     "text": "通過密碼步驟的人必須在多久之內出示第二因素——安全金鑰、驗證器應用程式的代碼或復原碼——否則該步驟過期，登入必須重新開始。這是被猜測的代碼能被嘗試的唯一時間窗，因此它比畫面本身的計時更短；速率限制器則限制其中的嘗試次數。"
   },
+  "authn.multipleAccounts|label": {
+    "en": "96144493272617dc",
+    "text": "一個瀏覽器中登入多個帳號"
+  },
+  "authn.multipleAccounts|description": {
+    "en": "d0b4899bdae1c43d",
+    "text": "允許一個瀏覽器同時持有多人的單一登入工作階段，並在其間選擇。開啟時，另一個人登入會在瀏覽器的帳號集（`sts_accounts` Cookie）中加入一個工作階段，而不是結束原有的工作階段；當有多個帳號已登入、而請求未說明針對哪個帳號時——此流程中未選擇帳號，也沒有指明帳號的 login_hint、id_token_hint 或 SAML Subject——請求會被送到 /authn/accounts 的帳號選擇器，prompt=select_account 也會顯示它。每個工作階段保留各自的有效期限、閒置逾時、升級驗證狀態與登出。關閉（預設）時，瀏覽器只有一個工作階段，另一個人登入會結束它。無論開啟或關閉，都在下一個請求時生效，且不會結束任何工作階段：開啟後，瀏覽器既有的工作階段成為其帳號集的第一個帳號；關閉後，瀏覽器的預設工作階段單獨繼續，其他工作階段照常到期。"
+  },
+  "authn.maxBrowserAccounts|label": {
+    "en": "19115cee7c688f64",
+    "text": "一個瀏覽器最多記住的帳號數"
+  },
+  "authn.maxBrowserAccounts|description": {
+    "en": "fa642faef7e66a0f",
+    "text": "開啟多帳號登入時，一個瀏覽器的帳號集最多容納的帳號數，已登入與已登出合計。超出上限的登入會先移除登出時間最早的已登出帳號；當每個位置都被已登入帳號佔用時，登入會被拒絕（STS-AUTHN-0340），選擇器會提示必須先登出一個帳號。"
+  },
+  "authn.rememberedAccountDays|label": {
+    "en": "9e38d0738504c1e3",
+    "text": "已登出帳號的保留時間（天）"
+  },
+  "authn.rememberedAccountDays|description": {
+    "en": "a1fe0b6f510982c4",
+    "text": "開啟多帳號登入時，帳號選擇器在多長時間內繼續提供在此瀏覽器中登出的帳號——其使用者名稱、顯示名稱與主體，從不包括憑證，保存在伺服器上——以便重新登入或忘記它。之後由排程工作 `authn.account-set-expiry` 將其移除。"
+  },
   "oidcRp.maxFlows|label": {
     "en": "f517b7686e6225fc",
     "text": "每個領域進行中的主控台與入口網站登入"

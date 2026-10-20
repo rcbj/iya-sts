@@ -25,5 +25,9 @@
   "signedOut.frontNone": "No había ninguna sesión que terminar. De todos modos, se borró la cookie.",
   "signedOut.returnHeading": "Volver a la parte que confía",
   "signedOut.returnAuto": "Esta página vuelve allí por sí sola tras {seconds, plural, one {# segundo} other {# segundos}}, una vez que las notificaciones de arriba hayan tenido tiempo de cargarse; el enlace es para un navegador que no sigue una actualización automática.",
-  "signedOut.returnLink": "Un enlace y no una redirección: las notificaciones de arriba se cargan con esta página, y una redirección 302 las abandonaría antes de enviarse."
+  "signedOut.returnLink": "Un enlace y no una redirección: las notificaciones de arriba se cargan con esta página, y una redirección 302 las abandonaría antes de enviarse.",
+  "logout.askWhichApp": "La aplicación <code>{app}</code> pidió cerrar su sesión, y este navegador tiene iniciada la sesión de {count} cuentas. ¿De cuál debe cerrarse la sesión? Su sesión aquí termina, y se avisa a todas las aplicaciones en las que se inició sesión con ella.",
+  "logout.askWhich": "Una aplicación pidió cerrar su sesión, y este navegador tiene iniciada la sesión de {count} cuentas. ¿De cuál debe cerrarse la sesión? Su sesión aquí termina, y se avisa a todas las aplicaciones en las que se inició sesión con ella.",
+  "logout.signOutAccount": "Cerrar la sesión de <strong>{who}</strong>",
+  "logout.whyWhich": "Se pregunta porque la solicitud no nombró ninguna de las cuentas con sesión iniciada en este navegador (RP-Initiated Logout 1.0, sección 2). Las demás cuentas siguen con la sesión iniciada."
 }

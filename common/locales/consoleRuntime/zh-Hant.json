@@ -13,5 +13,7 @@
   "signedInAgain": "已重新登入",
   "signedInAgain.text": "主控台會從您離開的地方繼續。您可以關閉此視窗。",
   "openConsole": "開啟主控台",
-  "copied": "已複製"
+  "copied": "已複製",
+  "accounts.unsaved": "此頁面有尚未儲存的變更。仍要切換帳戶嗎？這些變更將會遺失。",
+  "accounts.otherAccount": "該登入屬於另一個帳戶，因此此分頁沒有採用。請以 {user} 的身分重新登入，或從帳戶選單中切換帳戶。"
 }

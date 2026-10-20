@@ -2230,6 +2230,16 @@ class FederationSp {
         'that sign-in ended without one (' + asked + '). Nothing was linked ' +
         'and nothing was written.');
     }
+    // THE PERSON THE LINK IS FOR, WHERE THE BROWSER HOLDS SEVERAL ACCOUNTS
+    // (#561): the linking sign-in returns here with a selection ticket for
+    // the session it made, and the name is handed over as well, so the
+    // session asked about is that person's whatever else this browser
+    // holds — never the browser's default, who may be somebody else, and
+    // never nobody because two accounts are live. A name naming nobody live
+    // here answers no session (a hint never falls back to another account),
+    // which is refused below as it always was. A no-op with
+    // `authn.multipleAccounts` off.
+    authn.hintAccount(req, { loginHint: String(context.username || '') });
     const session = authn.sessionOf(req);
     const events = session && Array.isArray(session.events)
       ? session.events : [];
@@ -3192,7 +3202,16 @@ class FederationSp {
         // 303, for the reason `authn.js`'s returnToCaller() gives at length:
         // this may follow a POST carrying an assertion, and 302's behaviour
         // after a POST is historically ambiguous where 303's is defined.
-        res.redirect(303, returnTo);
+        //
+        // WITH A SELECTION TICKET FOR THE SESSION JUST STARTED (#561):
+        // this door resumes the flow itself rather than through
+        // `returnToCaller()`, so it mints what that function mints — without
+        // it, a browser holding several accounts would land on the account
+        // picker after signing in. Unchanged with `authn.multipleAccounts`
+        // off.
+        res.redirect(303, self.deps.authn.accountTicketFor(req, returnTo,
+                                                           { sid:
+                                                             session.id }));
         return;
       }
       // THE LINKING STEP'S OUTCOME (#580) is a page of the federation

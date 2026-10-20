@@ -2415,6 +2415,14 @@
     "en": "6cf5af064bdc580d",
     "text": "demande auprès duquel des fournisseurs d’identité fédérés d’une application se connecter ; requiert un identifiant ?authn=, si bien qu’il répond 400 lorsqu’il est suivi sans paramètres"
   },
+  "stsmetadata.endpoints./authn/accounts.what": {
+    "en": "133e09e2d14aa686",
+    "text": "PLUSIEURS COMPTES CONNECTÉS DANS UN MÊME NAVIGATEUR (#561), lorsque authn.multipleAccounts est activé (il est désactivé par défaut). Une requête d’un navigateur détenant plus d’un compte connecté qui n’en nomme aucun — aucun compte choisi dans son flux, aucun login_hint ni id_token_hint en nommant un — est envoyée ici, de même que le prompt=select_account d’OpenID Connect (section 3.1.2.1 de Core). Chaque compte connecté poursuit le flux en son nom, sa session vérifiée de nouveau, et une exigence de deux facteurs qu’il ne satisfait pas reçoit pour réponse une nouvelle connexion en son nom ; chaque compte déconnecté que le navigateur mémorise peut être reconnecté ou oublié ; Utiliser un autre compte est la connexion ordinaire. Une page statique, dessinée à partir de /authn-api/pending/{id}/accounts."
+  },
+  "stsmetadata.endpoints./authn/accounts.effect": {
+    "en": "ac430d30ba3b9a6a",
+    "text": "demande avec lequel des comptes connectés du navigateur une connexion se poursuit ; exige un identifiant ?authn=, si bien que la suivre telle quelle répond 400"
+  },
   "stsmetadata.endpoints./authn/spnego.what": {
     "en": "23818b4a272ea292",
     "text": "AUTHENTIFICATION INTÉGRÉE, ET LA SEULE CONNEXION ICI QUI REPOSE SUR UN IDENTIFIANT QUE CE SERVICE A RÉELLEMENT VÉRIFIÉ. Partout ailleurs, le nom d’utilisateur saisi EST l’identité ; Kerberos ne peut pas fonctionner ainsi, car le mot de passe y est la clé — cette porte vérifie donc un véritable ticket de service au regard d’une véritable clé à long terme, par l’accepteur propre à ce service et sans code de protocole propre. Le KDC qui se trouve derrière reste aussi permissif que le protocole le permet (n’importe quel nom d’utilisateur, un mot de passe partagé, un compte créé à la première apparition), ce qui garde le mode développement permissif — la vérification est réelle, la politique de comptes ne l’est pas. Elle est DISPONIBLE POUR TOUTE APPLICATION et enregistrée pour aucune : un bouton sur /authn/login la propose pour le flux déjà en cours, appAuthnMechanism: spnego sur une entrée d’application y envoie directement les personnes de cette application, et fedAuthnMechanism: spnego sur une relation de fédération côté fournisseur d’identité permet à un ticket Kerberos de satisfaire un partenaire étranger qui n’a jamais entendu parler de Kerberos. Ce que la session revendique ensuite est lu dans les indicateurs propres du TICKET — amr [\"pwd\"] pour pre-authent, [\"hwk\"] pour hw-authent, les deux pour les deux, et rien du tout pour un ticket ne revendiquant ni l’un ni l’autre, car ce service ne nommera pas un facteur dont aucun identifiant n’atteste. Elle prend ?authn= et JAMAIS un returnTo : l’adresse de retour est dans l’enregistrement en attente, il n’y a donc ici aucune surface de redirection ouverte. Un client qui ne peut pas obtenir de ticket arrive sur une page contenant un lien vers l’écran de connexion, car une simple 401 Negotiate est une impasse dans tout navigateur non configuré pour cet hôte. krb5.spnegoAuthentication la désactive, et elle répond alors 403 en le disant plutôt que 404."
@@ -2535,6 +2543,26 @@
     "en": "278e1af859a5f658",
     "text": "NON-SPEC (#571). La vue du sélecteur, résolue de nouveau à partir de l’entrée de l’application."
   },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts.what": {
+    "en": "6b11ee5ab38d4107",
+    "text": "NON-SPEC (#561). La vue du sélecteur de comptes : les comptes connectés et mémorisés du navigateur, chacun par sa clé et jamais par un sid, et le jeton CSRF que portent ses actions."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/select.what": {
+    "en": "32d3c868fcbeef9a",
+    "text": "NON-SPEC (#561). La session du compte est vérifiée de nouveau ; la réponse reprend le flux avec un ticket de sélection à usage unique."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/another.what": {
+    "en": "e292828cb4e3c235",
+    "text": "NON-SPEC (#561). Utiliser un autre compte : la connexion ordinaire, refusée tant que chaque place du navigateur est connectée."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/forget.what": {
+    "en": "ca27920f84beeb19",
+    "text": "NON-SPEC (#561). Uniquement un compte qui s’est déconnecté dans ce navigateur ; aucune session n’est touchée."
+  },
+  "stsmetadata.endpoints./authn-api/accounts.what": {
+    "en": "f96dbce662dca61d",
+    "text": "NON-SPEC (#561). Les comptes connectés et mémorisés du navigateur et leurs états, pour un menu de comptes — jamais un sid ni un jeton ; vide lorsque authn.multipleAccounts est désactivé."
+  },
   "stsmetadata.endpoints./authn-api/pending/:id/password.what": {
     "en": "f09b8dc5712df29f",
     "text": "NON-SPEC (#571). Le bouton Se connecter : JSON, un Origin de ce service et le X-CSRF-Token de la session du navigateur. Limité en débit, évalué pour le risque et décidé par la politique d’émission comme l’était le formulaire ; la réponse nomme l’étape suivante."
@@ -2590,6 +2618,14 @@
   "stsmetadata.endpoints./authn-api/logout.effect": {
     "en": "c2016f561ef917cf",
     "text": "POST met fin aux sessions et révoque ce que la personne détient"
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.what": {
+    "en": "ff574754aa7ad4ab",
+    "text": "HORS SPÉCIFICATION (#561). GET répond l’étape des comptes de la déconnexion — les comptes connectés du navigateur par leur clé, jamais un sid ; POST avec le jeton CSRF en choisit un (sa page de déconnexion suit) ou les déconnecte tous. 400 là où authn.multipleAccounts est désactivé."
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.effect": {
+    "en": "69d6a2e59b3f0a48",
+    "text": "POST avec all déconnecte tous les comptes du navigateur"
   },
   "stsmetadata.endpoints./authn-api/consent/:id.what": {
     "en": "b0e6e117fd23a284",

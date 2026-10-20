@@ -3777,6 +3777,15 @@ class AdminConsole {
       // in the head row and wrong in a stacked panel — so it is a block here,
       // separated from the link by the same hairline the nav uses, and its
       // button fills the width so the whole row is the target.
+      // THE BROWSER'S OTHER ACCOUNTS (#561), drawn only with several
+      // accounts on: buttons that read as the menu's links, under the same
+      // hairline as the sign-out.
+      '.usermenuaccounts{margin:6px 0 0;border-top:1px solid #eee;' +
+      'padding-top:6px}.usermenuaccounts button.linklike{display:block;' +
+      'width:100%;text-align:left;background:none;border:0;padding:6px ' +
+      '8px;border-radius:5px;color:#12107c;font-size:.85em;cursor:pointer}' +
+      '.usermenuaccounts button.linklike:hover{background:#eef2fb}' +
+      '.usermenuaccounts button span{color:#777;font-size:.9em}' +
       '.usermenupanel form.signout{display:block;margin:6px 0 ' +
       '0;border-top:1px solid #eee;padding-top:6px}.usermenupanel ' +
       'form.signout button{width:100%}h2{font-size:1.05em;margin:1.8em 0 ' +

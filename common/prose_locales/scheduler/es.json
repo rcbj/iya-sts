@@ -7,6 +7,14 @@
     "en": "e753a576c8530ce3",
     "text": "Lee la siguiente página de personas del dominio desde cada fuente de atributos cuyo intervalo programado haya vencido, sobre sus entradas (#94). attributeSources.refreshBatch personas por fuente y por ejecución."
   },
+  "sched.jobs.authn.account-set-expiry.title": {
+    "en": "849356c9b70cc0f3",
+    "text": "Caducidad de los conjuntos de cuentas"
+  },
+  "sched.jobs.authn.account-set-expiry.describe": {
+    "en": "d643d71a0089a802",
+    "text": "Actualiza el conjunto de cuentas de cada navegador (#561): una cuenta cuya sesión terminó se recuerda con la sesión cerrada, una recordada durante más de authn.rememberedAccountDays se elimina, y un conjunto vacío se borra."
+  },
   "sched.jobs.authn.session-expiry.title": {
     "en": "0d2b2447af869e65",
     "text": "Caducidad de sesiones"

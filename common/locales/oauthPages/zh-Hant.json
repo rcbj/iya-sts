@@ -25,5 +25,9 @@
   "signedOut.frontNone": "沒有需要結束的工作階段。Cookie 仍已清除。",
   "signedOut.returnHeading": "返回信賴方",
   "signedOut.returnAuto": "本頁會在 {seconds, plural, other {# 秒}}後自動返回該處，讓上方的通知有時間載入；此連結供不跟隨自動重新整理的瀏覽器使用。",
-  "signedOut.returnLink": "這是連結而非重新導向：上方的通知隨本頁一起載入，而 302 重新導向會在它們送出之前就放棄它們。"
+  "signedOut.returnLink": "這是連結而非重新導向：上方的通知隨本頁一起載入，而 302 重新導向會在它們送出之前就放棄它們。",
+  "logout.askWhichApp": "應用程式 <code>{app}</code> 要求讓您登出，而此瀏覽器已登入 {count} 個帳戶。應登出哪一個？它在此處的工作階段將結束，並通知透過它登入的每個應用程式。",
+  "logout.askWhich": "有應用程式要求讓您登出，而此瀏覽器已登入 {count} 個帳戶。應登出哪一個？它在此處的工作階段將結束，並通知透過它登入的每個應用程式。",
+  "logout.signOutAccount": "登出 <strong>{who}</strong>",
+  "logout.whyWhich": "之所以詢問，是因為該請求沒有指明此瀏覽器中已登入的任何帳戶（RP-Initiated Logout 1.0 第 2 節）。其他帳戶保持登入。"
 }

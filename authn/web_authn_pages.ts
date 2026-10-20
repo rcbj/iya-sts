@@ -28,6 +28,8 @@
 
 import WebAuthnLogin = require('./web_authn_login');
 import WebAuthnSelect = require('./web_authn_select');
+// THE ACCOUNT PICKER (#561).
+import WebAuthnAccounts = require('./web_authn_accounts');
 import WebAuthnPassword = require('./web_authn_password');
 import WebAuthnMfa = require('./web_authn_mfa');
 import WebAuthnEmail = require('./web_authn_email');
@@ -116,6 +118,21 @@ const PAGES = [
     },
     title: function (view: Json, ctx: Json): string {
       return WebAuthnSelect.title(view, ctx);
+    } },
+  // THE ACCOUNT PICKER (#561): a browser holding several signed-in
+  // accounts chooses which a sign-in continues as, keyed by the pending
+  // sign-in as the chooser is.
+  { path: '/authn/accounts',
+    operation: function (query: Json): string {
+      return '/authn-api/pending/' + encodeURIComponent(String(query.authn ||
+                                                               '')) +
+        '/accounts';
+    },
+    render: function (view: Json, ctx: Json): string {
+      return WebAuthnAccounts.render(view, ctx);
+    },
+    title: function (view: Json, ctx: Json): string {
+      return WebAuthnAccounts.title(view, ctx);
     } },
   { path: '/authn/password-change',
     operation: function (query: Json): string {

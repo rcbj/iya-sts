@@ -245,12 +245,8 @@ function iframePage() {
 // node's in `tests/session_management.js`; the value hashed is not a
 // secret the page did not already hold.
 // ---------------------------------------------------------------------------
-/**
- * The OP iframe's script: it answers a relying party's `postMessage` with
- * `changed`, `unchanged` or `error`, hashing with Web Crypto where it works and
- * a plain SHA-256 where it does not.
- */
-const IFRAME_SCRIPT = [
+// The script's head, shared by both scripts below, up to the salt.
+const SCRIPT_HEAD = [
   '(function () {',
   '  "use strict";',
   '  var NAME = ' + JSON.stringify(COOKIE) + ';',
@@ -351,7 +347,12 @@ const IFRAME_SCRIPT = [
   '      answer("error");',
   '      return;',
   '    }',
-  '    var salt = sessionState.slice(dot + 1);',
+  '    var salt = sessionState.slice(dot + 1);'
+];
+
+// The single-state tail: the script as it always was, byte for byte, which
+// is what is served with `authn.multipleAccounts` off.
+const SCRIPT_TAIL = [
   '    var input = clientId + " " + e.origin + " " + browserState() + " " +',
   '                salt;',
   '    var decide = function (digest) {',
@@ -375,7 +376,106 @@ const IFRAME_SCRIPT = [
   '  });',
   '})();',
   ''
-].join('\n');
+];
+
+/**
+ * The OP iframe's script: it answers a relying party's `postMessage` with
+ * `changed`, `unchanged` or `error`, hashing with Web Crypto where it works and
+ * a plain SHA-256 where it does not.
+ */
+const IFRAME_SCRIPT = SCRIPT_HEAD.concat(SCRIPT_TAIL).join('\n');
+
+// ---------------------------------------------------------------------------
+// SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561, the plan's section 7).
+//
+// With `authn.multipleAccounts` on, the cookie carries the browser states of
+// EVERY live session in the browser's account set, joined by `.` (a browser
+// state is base64url, which has no `.`), and the iframe answers `unchanged`
+// when the relying party's `session_state` is the hash of ANY of them. So
+// making another account the browser's default tells no relying party
+// "changed", and signing one account out changes only the relying parties
+// of that account's session, whose state leaves the list. Each value is
+// hashed exactly as section 3.2 hashes the one, in turn, and the empty
+// cookie is the one empty state, so a browser with no account answers as
+// it always did. Served only with the setting on (`scriptFor()`); off, the
+// script above is unchanged.
+// ---------------------------------------------------------------------------
+const ACCOUNTS_TAIL = [
+  '    var states = browserState().split(".");',
+  '    var at2 = 0;',
+  '    var next = function () {',
+  '      if (at2 >= states.length) { answer("changed"); return; }',
+  '      var input = clientId + " " + e.origin + " " + states[at2++] + " " +',
+  '                  salt;',
+  '      var decide = function (digest) {',
+  '        if (b64url(digest) + "." + salt === sessionState) {',
+  '          answer("unchanged");',
+  '          return;',
+  '        }',
+  '        next();',
+  '      };',
+  '      var byHand = function () { decide(sha256(utf8(input))); };',
+  '      var subtle = window.crypto && window.crypto.subtle;',
+  '      var pending = null;',
+  '      try {',
+  '        pending = subtle && typeof TextEncoder === "function" ?',
+  '          subtle.digest("SHA-256", new TextEncoder().encode(input)) :',
+  '          null;',
+  '      } catch (err) {',
+  '        pending = null;',
+  '      }',
+  '      if (pending && typeof pending.then === "function") {',
+  '        pending.then(decide, byHand);',
+  '      } else {',
+  '        byHand();',
+  '      }',
+  '    };',
+  '    next();',
+  '  });',
+  '})();',
+  ''
+];
+
+/**
+ * The OP iframe's script for a realm with `authn.multipleAccounts` on
+ * (#561): `unchanged` when the `session_state` is the hash of any browser
+ * state the cookie lists.
+ */
+const IFRAME_SCRIPT_ACCOUNTS = SCRIPT_HEAD.concat(ACCOUNTS_TAIL).join('\n');
+
+// The script to serve: the one-state script, or the list's (#561).
+/**
+ * Returns the OP iframe's script to serve.
+ *
+ * @param accounts - whether the realm has `authn.multipleAccounts` on
+ * @returns the script
+ */
+function scriptFor(accounts) {
+  log.debug("Entering scriptFor().");
+  log.debug("Leaving scriptFor().");
+  return accounts ? IFRAME_SCRIPT_ACCOUNTS : IFRAME_SCRIPT;
+}
+
+// The cookie value for several browser states (#561): each non-empty one
+// once, in order, joined by `.`.
+/**
+ * Joins browser states into the cookie value the list's script reads.
+ *
+ * @param states - the browser states; empty ones are dropped
+ * @returns the value, or '' for none
+ */
+function browserStatesValue(states) {
+  log.debug("Entering browserStatesValue().");
+  const out = [];
+  (states || []).forEach(function (one) {
+    const state = String(one || '');
+    if (state && out.indexOf(state) < 0) {
+      out.push(state);
+    }
+  });
+  log.debug("Leaving browserStatesValue(). " + out.length);
+  return out.join('.');
+}
 
 /**
  * OpenID Connect Session Management 1.0 (#121): the OP browser state, the
@@ -388,6 +488,9 @@ module.exports = {
   IFRAME_PATH: IFRAME_PATH,
   SCRIPT_PATH: SCRIPT_PATH,
   IFRAME_SCRIPT: IFRAME_SCRIPT,
+  IFRAME_SCRIPT_ACCOUNTS: IFRAME_SCRIPT_ACCOUNTS,
+  scriptFor: scriptFor,
+  browserStatesValue: browserStatesValue,
   enabled: enabled,
   browserStateOf: browserStateOf,
   cookieLine: cookieLine,

@@ -743,6 +743,30 @@
     "en": "33bc4846535a784f",
     "text": "Gaano katagal ang taong nakapasa na sa password step para ipakita ang kanilang second factor — isang security key, code mula sa authenticator app o recovery code — bago mag-expire ang step at kailangang simulan ulit ang sign-in. Ito ang window kung saan masusubukan man lang ang nahulaang code, kaya mas maikli ito kaysa sa sariling orasan ng screen; nililimitahan ng rate limiter ang mga pagtatangka sa loob nito."
   },
+  "authn.multipleAccounts|label": {
+    "en": "96144493272617dc",
+    "text": "Ilang naka-sign in na account sa iisang browser"
+  },
+  "authn.multipleAccounts|description": {
+    "en": "d0b4899bdae1c43d",
+    "text": "Hayaang maghawak ang isang browser ng mga sign-on session para sa ilang tao nang sabay, at pumili sa pagitan nila. Kapag naka-on, ang pag-sign in ng ibang tao ay NAGDARAGDAG ng session sa account set ng browser (ang cookie na `sts_accounts`) sa halip na tapusin ang dati nitong session; ang isang request na hindi nagsasabi kung para saang account ito — walang account na pinili sa flow na ito, walang login_hint, id_token_hint o SAML Subject na nagpapangalan ng isa — habang higit sa isa ang naka-sign in ay ipinapadala sa account picker sa /authn/accounts, at ipinapakita ito ng prompt=select_account. Pinapanatili ng bawat session ang sarili nitong lifetime, idle timeout, step-up state at sign-out. Kapag naka-off, ang default, iisa ang session ng browser at tinatapos ito ng pag-sign in ng ibang tao. Nagkakabisa sa susunod na request sa alinmang direksyon, at walang tinatapos: kapag in-on, ang kasalukuyang session ng browser ang nagiging unang account ng set nito; kapag in-off, mag-isang nagpapatuloy ang default na session ng browser at nag-e-expire ang iba gaya ng dati."
+  },
+  "authn.maxBrowserAccounts|label": {
+    "en": "19115cee7c688f64",
+    "text": "Pinakamaraming account na natatandaan ng isang browser"
+  },
+  "authn.maxBrowserAccounts|description": {
+    "en": "fa642faef7e66a0f",
+    "text": "Kapag naka-on ang ilang naka-sign in na account, ang pinakamaraming account na hawak ng account set ng isang browser, pinagsama ang naka-sign in at naka-sign out. Ang isang sign-in na lalampas dito ay unang nag-aalis ng naka-sign out na account na pinakamatagal nang nag-sign out; kapag ang bawat puwesto ay hawak ng naka-sign in na account, tinatanggihan ang sign-in (STS-AUTHN-0340) at sinasabi ng picker na kailangan munang i-sign out ang isang account."
+  },
+  "authn.rememberedAccountDays|label": {
+    "en": "9e38d0738504c1e3",
+    "text": "Gaano katagal natatandaan ang naka-sign out na account (araw)"
+  },
+  "authn.rememberedAccountDays|description": {
+    "en": "a1fe0b6f510982c4",
+    "text": "Kapag naka-on ang ilang naka-sign in na account, kung gaano katagal patuloy na iniaalok ng account picker ang isang account na nag-sign out sa browser na ito — ang username, display name at subject nito, hindi kailanman isang credential, na nakatago sa server — para ma-sign in muli o makalimutan ito. Inaalis ito pagkatapos noon ng scheduler job na `authn.account-set-expiry`."
+  },
   "oidcRp.maxFlows|label": {
     "en": "f517b7686e6225fc",
     "text": "Mga kasalukuyang sign-in ng console at portal, bawat realm"
