@@ -9601,6 +9601,22 @@ const CODES = [
       'in force, and only its jtis were kept (#614). Refused, and what it ' +
       'bought is revoked.',
     spec: '400 invalid_grant (RFC 6749 sections 4.1.2 and 10.5)' },
+  { code: 'STS-OAUTH-0970',
+    summary: 'An authorization request asked for phr or phrh (OpenID ' +
+      'Connect EAP ACR Values 1.0), and the authentication performed — ' +
+      'after one sign-in for it — was not phishing-resistant: a password, a ' +
+      'one-time code, an emailed code or link, a recovery code, or a key ' +
+      'enrolled in the same sign-in (#723).',
+    spec: 'RFC 9470 section 5 (unmet_authentication_requirements); EAP ACR ' +
+      'Values 1.0 section 2' },
+  { code: 'STS-OAUTH-0971',
+    summary: 'An authorization request asked for phrh, and the ' +
+      'authentication was phishing-resistant (phr) without evidence that ' +
+      'its key is hardware-protected: a backup-eligible (synced) passkey, a ' +
+      'key whose attestation is not trusted, or a client certificate ' +
+      '(#723).',
+    spec: 'RFC 9470 section 5 (unmet_authentication_requirements); EAP ACR ' +
+      'Values 1.0 section 2' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

@@ -181,6 +181,10 @@ interface IssuanceQuestion {
   // See `common/mfa_mechanisms.ts`.
   mfaMechanisms?: string[] | null;
   allowedMfaMechanisms?: string[] | null;
+  // WHETHER THE AUTHENTICATION WAS PHISHING-RESISTANT (#723): OpenID Connect
+  // EAP ACR Values 1.0's `phr` and `phrh` earned, or [`none`], sent by the
+  // gate on every browser issuance. See `common/phishing_resistance.ts`.
+  phishingResistance?: string[] | null;
   // WHO MAY ACT FOR WHOM (#186): present, this is the exchange question
   // `issuance_gate.checkExchange()` asks, answered with a verdict
   // (`decideExchange()`).
@@ -671,6 +675,7 @@ class XacmlRolePep {
     this.authenticationAttributes(req, asked.authentication);
     this.mechanismAttributes(req, asked);
     this.mfaAttributes(req, asked);
+    this.phishingAttributes(req, asked);
     this.deviceAttributes(req, asked);
     // THE PROTOCOL DECLARATION, only where the gate named both halves: the
     // declaration on the resource (it is a fact about the application), the
@@ -779,6 +784,26 @@ class XacmlRolePep {
                     asked.allowedMfaMechanisms.map(String))
       .environment(AUTHN.MFA_MECHANISM, asked.mfaMechanisms.map(String));
     log.debug("Leaving XacmlRolePep.mfaAttributes().");
+  }
+
+  // -------------------------------------------------------------------------
+  // WHETHER THE AUTHENTICATION WAS PHISHING-RESISTANT (#723), as an
+  // environment bag: `phr`, `phrh`, or `none` — never empty when sent, so a
+  // rule that holds on `none` is inapplicable to every issuance the gate did
+  // not describe (a token grant, WS-Trust, Kerberos). Sent whenever the gate
+  // named it.
+  // -------------------------------------------------------------------------
+  private phishingAttributes(req: any, asked: IssuanceQuestion): void {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.phishingAttributes().");
+    if (!Array.isArray(asked.phishingResistance) ||
+        !asked.phishingResistance.length) {
+      log.debug("Leaving XacmlRolePep.phishingAttributes(). None.");
+      return;
+    }
+    req.environment(AUTHN.PHISHING_RESISTANCE,
+                    asked.phishingResistance.map(String));
+    log.debug("Leaving XacmlRolePep.phishingAttributes().");
   }
 
   // -------------------------------------------------------------------------

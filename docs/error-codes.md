@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4398** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4400** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 296
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 713
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 715
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
@@ -2195,6 +2195,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0956` | A token exchange presented an actor_token whose aud names neither this authorization server (its issuer or token endpoint) nor the exchanging client (its client_id, identifier or oauthAudience). Refused in every mode (#550). | invalid_request (RFC 8693 section 2.2.2) |
 | `STS-OAUTH-0957` | A client asked, on a token whose subject is an application (client_credentials), for an application permission no role it holds authorizes (rolePermission), and the issuance policy left it off the tokens. A delegated permission (oauthDelegatedPermission) needs a person and does not count here (#551). | none — issued without that scope (RFC 6749 section 3.3); invalid_scope when nothing else was asked for |
 | `STS-OAUTH-0958` | An authorization code was presented again under oauth2.codeReplayIdempotent, and the record of its redemption holds no response to replay: it was redeemed while the relaxation was not in force, and only its jtis were kept (#614). Refused, and what it bought is revoked. | 400 invalid_grant (RFC 6749 sections 4.1.2 and 10.5) |
+| `STS-OAUTH-0970` | An authorization request asked for phr or phrh (OpenID Connect EAP ACR Values 1.0), and the authentication performed — after one sign-in for it — was not phishing-resistant: a password, a one-time code, an emailed code or link, a recovery code, or a key enrolled in the same sign-in (#723). | RFC 9470 section 5 (unmet_authentication_requirements); EAP ACR Values 1.0 section 2 |
+| `STS-OAUTH-0971` | An authorization request asked for phrh, and the authentication was phishing-resistant (phr) without evidence that its key is hardware-protected: a backup-eligible (synced) passkey, a key whose attestation is not trusted, or a client certificate (#723). | RFC 9470 section 5 (unmet_authentication_requirements); EAP ACR Values 1.0 section 2 |
 
 ## STS-SAML
 

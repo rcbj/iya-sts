@@ -636,7 +636,12 @@ const AUTHN_ATTRIBUTE = {
   ALLOWED_MFA_MECHANISM: 'urn:sts:xacml:allowed-mfa-mechanism',
   // The obligation the `mfa-mechanism` rule's Deny carries (#475): the PEP
   // reads it as "sign in again with one of the allowed second factors".
-  MFA_MECHANISM_OBLIGATION: 'urn:sts:xacml:obligation:mfa-mechanism'
+  MFA_MECHANISM_OBLIGATION: 'urn:sts:xacml:obligation:mfa-mechanism',
+  // A BAG (#723): OpenID Connect EAP ACR Values 1.0's `phr` and `phrh` as
+  // the authentication earned them (`common/phishing_resistance.ts`), or
+  // `none` — never empty when sent, so a rule on `none` speaks only to an
+  // issuance the gate described: the four browser kinds.
+  PHISHING_RESISTANCE: 'urn:sts:xacml:phishing-resistance'
 };
 
 // ---------------------------------------------------------------------------
@@ -1212,6 +1217,28 @@ const TEMPLATES: TemplateRow[] = [
               '3.1.3.1 does not count email as an authenticator; this is ' +
               'the policy an operator writes when an application must not ' +
               'rest on one.' },
+      { name: 'requirePhishingResistant',
+        label: 'Applications that require a phishing-resistant sign-in ' +
+               '(phr, #723)',
+        dflt: '', type: 'string',
+        help: 'Application handles, comma separated. A browser issuance to ' +
+              'one of these is refused unless the authentication behind it ' +
+              'was phishing-resistant in the sense of OpenID Connect EAP ' +
+              'ACR Values 1.0 — a passkey or security key already ' +
+              'registered, or a TLS client certificate — whatever the ' +
+              'client asked for. Empty adds no rule. Set the application\'s ' +
+              'default acr values (oauthDefaultAcrValues) to phr as well, so ' +
+              'the sign-in screen asks for the key rather than refusing a ' +
+              'password afterwards.' },
+      { name: 'requireHardwareProtected',
+        label: 'Applications that require a hardware-protected key (phrh, ' +
+               '#723)',
+        dflt: '', type: 'string',
+        help: 'Application handles, comma separated. As the row above, and ' +
+              'the key must also be hardware-protected: a passkey whose ' +
+              'attestation this realm trusts and whose backup-eligible flag ' +
+              'is clear. A synced passkey, an unattested key and a client ' +
+              'certificate are refused. Empty adds no rule.' },
       { name: 'decideDevices',
         label: 'Decide on the registered device (#164)',
         dflt: 'yes', type: 'string',
@@ -1283,6 +1310,8 @@ const TEMPLATES: TemplateRow[] = [
       const permitEmpty = B.yes(given.permitWhenNothingRequired, true);
       const decideRisk = B.yes(given.decideRisk, true);
       const refuseEmail = B.yes(given.refuseEmailFactor, false);
+      const phrApps = B.listOf(given.requirePhishingResistant || '');
+      const phrhApps = B.listOf(given.requireHardwareProtected || '');
       const decideDevices = B.yes(given.decideDevices, true);
       const decideProtocols = B.yes(given.decideProtocols, true);
       const decideMechanisms = B.yes(given.decideAuthnMechanisms, true);
@@ -1508,6 +1537,75 @@ const TEMPLATES: TemplateRow[] = [
             B.apply(F1 + 'string-bag', [
               B.value(TYPE.STRING, 'email-code'),
               B.value(TYPE.STRING, 'email-link')])]),
+          obligations: [{ id: AUTHN_ATTRIBUTE.OBLIGATION,
+                          on: model.EFFECT.DENY, assignments: [] }],
+          advice: []
+        });
+      }
+
+      // -------------------------------------------------------------------
+      // A PHISHING-RESISTANT AUTHENTICATION, REQUIRED BY AN APPLICATION
+      // (#723). Two Deny rules, each only for the applications listed (the
+      // resource-id the PEP sends is the application handle), each reading
+      // `PHISHING_RESISTANCE`, which the gate sends on a browser issuance
+      // and which always holds a value there — `none` when neither class
+      // was earned — so neither rule speaks to an issuance the gate did not
+      // describe. The authentication obligation, `refuseEmail`'s: a refusal
+      // about the authentication, which the PEP enforces where the role
+      // question was waived too. A step-up is the client's to ask for —
+      // `acr_values=phr`, or the application's default acr values — and
+      // this is the operator's floor under it.
+      // -------------------------------------------------------------------
+      const appIn = function appIn(handles: string[]): any {
+        log.debug("Entering appIn().");
+        log.debug("Leaving appIn().");
+        return B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(model.CATEGORY.RESOURCE, model.ATTRIBUTE.RESOURCE_ID,
+                       TYPE.STRING),
+          B.apply(F1 + 'string-bag', handles.map(function (one) {
+            return B.value(TYPE.STRING, one);
+          }))]);
+      };
+      const earned = function earned(value: string): any {
+        log.debug("Entering earned().");
+        log.debug("Leaving earned().");
+        return B.apply(F1 + 'string-is-in', [
+          B.value(TYPE.STRING, value),
+          B.designator(env, AUTHN_ATTRIBUTE.PHISHING_RESISTANCE,
+                       TYPE.STRING)]);
+      };
+      if (phrApps.length) {
+        riskRules.push({
+          id: options.idBase + ':rule:phishing-resistant',
+          effect: model.EFFECT.DENY,
+          description: 'Refuse ' + phrApps.join(', ') + ' an issuance on ' +
+                       'an authentication that was not phishing-resistant ' +
+                       '(OpenID Connect EAP ACR Values 1.0, phr).',
+          target: null,
+          condition: B.apply(F1 + 'and', [appIn(phrApps), earned('none')]),
+          obligations: [{ id: AUTHN_ATTRIBUTE.OBLIGATION,
+                          on: model.EFFECT.DENY, assignments: [] }],
+          advice: []
+        });
+      }
+      if (phrhApps.length) {
+        riskRules.push({
+          id: options.idBase + ':rule:hardware-protected',
+          effect: model.EFFECT.DENY,
+          description: 'Refuse ' + phrhApps.join(', ') + ' an issuance on ' +
+                       'an authentication whose key was not shown to be ' +
+                       'hardware-protected (OpenID Connect EAP ACR Values ' +
+                       '1.0, phrh).',
+          target: null,
+          condition: B.apply(F1 + 'and', [
+            appIn(phrhApps),
+            B.apply(F1 + 'integer-greater-than', [
+              B.apply(F1 + 'string-bag-size', [
+                B.designator(env, AUTHN_ATTRIBUTE.PHISHING_RESISTANCE,
+                             TYPE.STRING)]),
+              B.value(TYPE.INTEGER, '0')]),
+            B.apply(F1 + 'not', [earned('phrh')])]),
           obligations: [{ id: AUTHN_ATTRIBUTE.OBLIGATION,
                           on: model.EFFECT.DENY, assignments: [] }],
           advice: []
