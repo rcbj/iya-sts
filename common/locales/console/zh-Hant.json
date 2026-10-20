@@ -82,7 +82,7 @@
   "nav.oid4vci": "OpenID4VCI",
   "nav.vc": "可驗證憑證",
   "nav.vc-claims": "憑證宣告",
-  "nav.vc-status": "憑證狀態",
+  "nav.vc-monitor": "可驗證憑證",
   "nav.oid4vp": "OpenID4VP",
   "nav.vc-verifier-config": "驗證者請求",
   "nav.xacml": "XACML",

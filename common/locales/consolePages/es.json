@@ -115,7 +115,7 @@
   "title.users": "Usuarios",
   "title.users-new": "Nuevo usuario",
   "title.vc": "Claims de credenciales",
-  "title.vc-status": "Estado de credenciales",
+  "title.vc-monitor": "Credenciales verificables (supervisión)",
   "title.xacml-editor": "Editor de políticas",
   "title.xacml": "XACML",
   "title.xacml-decide": "Probar una decisión",

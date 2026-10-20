@@ -1368,8 +1368,8 @@
     "text": "NON-SPEC (#62). import, activate, rollback, delete at accept-terms: ang limang form ng console."
   },
   "stsmetadata.endpoints./admin-api/vc-status.what": {
-    "en": "7f1665c0e218a80d",
-    "text": "NON-SPEC. GET /admin/vc-status sa JSON."
+    "en": "eec9bcadeeee15fa",
+    "text": "NON-SPEC. GET /admin/vc/monitor sa JSON."
   },
   "stsmetadata.endpoints./admin-api/vc-status/:action.what": {
     "en": "75977b65b4ede272",
@@ -3028,8 +3028,8 @@
     "text": "sumasagot ng 501 hangga't hindi naka-on ang vcApi.enabled sa realm"
   },
   "stsmetadata.endpoints./vc-api/credentials/status.what": {
-    "en": "860c7bcc627e7889",
-    "text": "Binabawi, sinususpinde o inaalis ang suspensiyon ng isang kredensyal na inilabas ng VC API na ito na may status — ang aksiyong ginagawa ng /admin/vc-status, isa sa tatlong nagtatakwil sa isang kredensyal. Pinal ang pagbawi. vc-api:issue."
+    "en": "c602841e9954afe7",
+    "text": "Binabawi, sinususpinde o inaalis ang suspensiyon ng isang kredensyal na inilabas ng VC API na ito na may status — ang aksiyong ginagawa ng /admin/vc/monitor, isa sa tatlong nagtatakwil sa isang kredensyal. Pinal ang pagbawi. vc-api:issue."
   },
   "stsmetadata.endpoints./vc-api/credentials/status.effect": {
     "en": "d47c04a75b0029c4",

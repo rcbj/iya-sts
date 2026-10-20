@@ -6,19 +6,30 @@
 // File: web_vc_status.ts
 //
 // ---------------------------------------------------------------------------
-// MONITORING → CREDENTIAL STATUS, DRAWN FROM ITS VIEW ALONE (#446,
-// 2026-10-05).
+// MONITORING → VERIFIABLE CREDENTIALS, DRAWN FROM ITS VIEW ALONE (#446,
+// 2026-10-05; a page of its own under Monitoring since #752).
 //
-// Draws Credential status from the answer of `GET /admin-api/vc-status`: where
-// this realm's status lists are published, and every credential that carries
-// an index in them, with the controls that suspend, reinstate and revoke one
-// — and, since #598, the one that publishes a Bitstring Status List.
+// Draws the page from the answer of `GET /admin-api/vc-status`: where this
+// realm's status lists are published, and every credential that carries an
+// index in them, with the controls that suspend, reinstate and revoke one —
+// and, since #598, the one that publishes a Bitstring Status List.
+//
+// **IT WAS THE CREDENTIAL STATUS TAB OF `/admin/vc` UNTIL #752**, and moved
+// at rcbj's ask "for consistency": every other Protocols family whose
+// traffic or issued artifacts are read and acted on has its Monitoring page
+// beside the Protocols one (`/admin/xacml/monitor`, `/admin/gnap/monitor`,
+// `/admin/scim/monitor`), and what this draws answers "what has this realm
+// issued, and is each one still good" — the section's question, not
+// "what is the issuer configured to do". The settings the lists are built
+// with (`oid4vci.statusListTtlS`, `oid4vci.statusListLifetimeS`) stay on
+// the OpenID4VCI tab of `/admin/vc`. The page is cut into tabs like its
+// neighbours (`WebPages.protocolTabs()`): the tiles, the note and where the
+// lists are served are Metadata, the credentials one tab.
 //
 // A `web_` MODULE, on `web_kit.ts`'s terms: it requires other `web_` modules
 // only, logs nothing, and is bundled for a browser by `build-typescript.sh`.
 // Its methods were `VcStatusAdmin`'s in `admin-ui/vc_status_admin.ts`, moved
-// with their comments; that module still draws the page until the console's
-// cutover, by calling `render()` with its view passed through JSON.
+// with their comments.
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_kit');
@@ -26,14 +37,15 @@ import kit = require('./web_kit');
 type Json = any;
 
 /**
- * The console path of Verifiable Credentials → Credential status.
+ * The console path of Monitoring → Verifiable Credentials.
  */
-const PAGE = '/admin/vc-status';
+const PAGE = '/admin/vc/monitor';
 
 /**
- * Draws Credential status from the answer of `GET /admin-api/vc-status`: where
- * this realm's status lists are published, and every credential that carries
- * an index in them, with the controls that suspend, reinstate and revoke one.
+ * Draws Monitoring → Verifiable Credentials from the answer of
+ * `GET /admin-api/vc-status`: where this realm's status lists are published,
+ * and every credential that carries an index in them, with the controls that
+ * suspend, reinstate and revoke one.
  *
  * A static utility class; it holds no state and takes no dependencies.
  */
@@ -128,8 +140,11 @@ class VcStatusPage {
         kit.esc(new Date(r.expiresAt).toISOString()) + '</small></td><td>' +
         controls + '</td></tr>';
     }).join('');
-    return tiles + about + where + '<h3>' +
-      t.html('consoleVcStatus.credentialsHeading') + '</h3>' + nav.head +
+    // THE CREDENTIALS ARE THE PAGE'S ONE TAB (#752); `list-page` is the
+    // anchor `kit.pageNavPair()` returns a page turn to.
+    return tiles + about + where + '<h2 id="list-page" ' +
+      'data-tab="credentials">' +
+      t.html('consoleVcStatus.credentialsHeading') + '</h2>' + nav.head +
       '<table class="grid"><thead><tr><th>' +
       t.html('consoleVcStatus.thIndex') + '</th><th>' +
       t.html('consoleVcStatus.thFormat') + '</th>' +

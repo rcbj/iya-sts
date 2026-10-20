@@ -82,7 +82,7 @@
   "nav.oid4vci": "OpenID4VCI",
   "nav.vc": "Verifierbara intyg",
   "nav.vc-claims": "Intygsanspråk",
-  "nav.vc-status": "Intygsstatus",
+  "nav.vc-monitor": "Verifierbara intyg",
   "nav.oid4vp": "OpenID4VP",
   "nav.vc-verifier-config": "Verifierarbegäran",
   "nav.xacml": "XACML",

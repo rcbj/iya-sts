@@ -82,7 +82,7 @@
   "nav.oid4vci": "OpenID4VCI",
   "nav.vc": "Verifiable Credentials",
   "nav.vc-claims": "Credential claims",
-  "nav.vc-status": "Credential status",
+  "nav.vc-monitor": "Verifiable Credentials",
   "nav.oid4vp": "OpenID4VP",
   "nav.vc-verifier-config": "Verifier request",
   "nav.xacml": "XACML",

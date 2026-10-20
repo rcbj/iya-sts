@@ -1368,8 +1368,8 @@
     "text": "NO ESTÁNDAR (#62). import, activate, rollback, delete y accept-terms: los cinco formularios de la consola."
   },
   "stsmetadata.endpoints./admin-api/vc-status.what": {
-    "en": "7f1665c0e218a80d",
-    "text": "NO ESTÁNDAR. GET /admin/vc-status sobre JSON."
+    "en": "eec9bcadeeee15fa",
+    "text": "NO ESTÁNDAR. GET /admin/vc/monitor sobre JSON."
   },
   "stsmetadata.endpoints./admin-api/vc-status/:action.what": {
     "en": "75977b65b4ede272",
@@ -3028,8 +3028,8 @@
     "text": "responde 501 hasta que vcApi.enabled esté activado en el dominio"
   },
   "stsmetadata.endpoints./vc-api/credentials/status.what": {
-    "en": "860c7bcc627e7889",
-    "text": "Revoca, suspende o levanta la suspensión de una credencial que esta VC API emitió con un estado — el acto que realiza /admin/vc-status, uno de los tres que desautorizan una credencial. Una revocación es definitiva. vc-api:issue."
+    "en": "c602841e9954afe7",
+    "text": "Revoca, suspende o levanta la suspensión de una credencial que esta VC API emitió con un estado — el acto que realiza /admin/vc/monitor, uno de los tres que desautorizan una credencial. Una revocación es definitiva. vc-api:issue."
   },
   "stsmetadata.endpoints./vc-api/credentials/status.effect": {
     "en": "d47c04a75b0029c4",

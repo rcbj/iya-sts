@@ -6088,7 +6088,9 @@ const TAG_DESCRIPTIONS = {
                             'a typed attribute and a directory one.',
   'Credential claims': 'What an issued Verifiable Credential carries.',
   'Credential status': 'The status lists every issued Verifiable ' +
-    'Credential names, and suspending, reinstating or revoking one.',
+    'Credential names, and suspending, reinstating or revoking one: ' +
+    'Monitoring → Verifiable Credentials (`/admin/vc/monitor`) in the ' +
+    'console.',
   'Verifier request': 'What this realm\'s OID4VP Verifier asks a wallet ' +
   'for.',
   'Token lifetimes': 'How long an access token, an ID Token and a refresh ' +

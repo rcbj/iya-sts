@@ -1368,8 +1368,8 @@
     "text": "非規格端點（#62）。import、activate、rollback、delete 與 accept-terms：主控台的五個表單。"
   },
   "stsmetadata.endpoints./admin-api/vc-status.what": {
-    "en": "7f1665c0e218a80d",
-    "text": "非規格端點。以 JSON 提供的 GET /admin/vc-status。"
+    "en": "eec9bcadeeee15fa",
+    "text": "非規格端點。以 JSON 提供的 GET /admin/vc/monitor。"
   },
   "stsmetadata.endpoints./admin-api/vc-status/:action.what": {
     "en": "75977b65b4ede272",
@@ -3028,8 +3028,8 @@
     "text": "在本領域開啟 vcApi.enabled 之前回應 501"
   },
   "stsmetadata.endpoints./vc-api/credentials/status.what": {
-    "en": "860c7bcc627e7889",
-    "text": "撤銷、暫停或解除暫停本 VC API 帶狀態簽發的憑證——即 /admin/vc-status 執行的動作，是否認憑證的三種動作之一。撤銷是最終的。vc-api:issue。"
+    "en": "c602841e9954afe7",
+    "text": "撤銷、暫停或解除暫停本 VC API 帶狀態簽發的憑證——即 /admin/vc/monitor 執行的動作，是否認憑證的三種動作之一。撤銷是最終的。vc-api:issue。"
   },
   "stsmetadata.endpoints./vc-api/credentials/status.effect": {
     "en": "d47c04a75b0029c4",

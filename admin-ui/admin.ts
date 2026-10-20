@@ -1017,8 +1017,9 @@ const SECTIONS = [
                'its own tab.' },
       { path: '/admin/vc', label: 'Verifiable Credentials',
         blurb: 'Metadata and endpoints, separate OpenID4VCI and OpenID4VP ' +
-               'settings, credential claims and status, and the verifier ' +
-               'request, each on its own tab.' },
+               'settings, credential claims and the verifier request, each ' +
+               'on its own tab. What has been issued, and each ' +
+               'credential\'s status, is under Monitoring.' },
       // The decision and enforcement counts remain under Monitoring:
       // `/admin/xacml/monitor` reports what happened, not configuration.
       { path: '/admin/xacml', label: 'XACML',
@@ -2045,6 +2046,28 @@ const SECTIONS = [
                    'challenges created and redeemed, refusals by error code ' +
                    'and failInfo, and the most recent requests.' }
         ] },
+      // WHAT THIS REALM'S ISSUER HAS ISSUED, AND WHETHER EACH IS STILL GOOD
+      // (#752). It was the Credential status tab of Protocols → Verifiable
+      // Credentials, and moved here at rcbj's ask "for consistency": that
+      // page is what the issuer and verifier are CONFIGURED to do, and every
+      // other family whose results are read and acted on has its Monitoring
+      // page beside the Protocols one — the XACML, GNAP and SCIM rows here.
+      // After the certificate enrollments, because both answer "what has
+      // been issued". The suspend, reinstate and revoke controls came with
+      // it: an act on something already issued, which is what Tokens and
+      // Grants in this section carry too. Drawn by `admin-ui/web_vc_status.ts`
+      // from `GET /admin-api/vc-status`.
+      { path: '/admin/vc/monitor', label: 'Verifiable Credentials',
+        blurb: 'Every Verifiable Credential this realm has issued that ' +
+               'carries a status-list index, newest first, with its format, ' +
+               'its configuration and its status &mdash; VALID, SUSPENDED or ' +
+               'INVALID &mdash; and who set it; and where the Token Status ' +
+               'List and the two Bitstring Status Lists are served. Suspend, ' +
+               'Reinstate and Revoke act on one credential, in every list ' +
+               'at once, and a credential that is not VALID signs nobody in ' +
+               'at <code>/authn/wallet</code>. What the lists are built with ' +
+               'is on <a href="/admin/vc">Protocols &rarr; Verifiable ' +
+               'Credentials</a>.' },
       // THE AUTHORIZATION SERVER'S OWN TRAFFIC (2026-09-13), filed here and
       // not under Protocols beside `/admin/oauth2` for the XACML monitor's
       // reason: that page is what the server is CONFIGURED to do and this is
@@ -4573,7 +4596,7 @@ class AdminConsole {
        'saml-tab-global-settings', 'saml-tab-shared-settings',
        'saml-tab-saml2', 'saml-tab-saml11', 'saml-tab-assertions',
        'saml-tab-attributes', 'vc-tab-metadata', 'vc-tab-oid4vci',
-       'vc-tab-claims', 'vc-tab-status', 'vc-tab-oid4vp',
+       'vc-tab-claims', 'vc-tab-oid4vp',
        'vc-tab-verifier-request', 'xacml-tab-metadata',
        'xacml-tab-settings', 'xacml-tab-policies', 'xacml-tab-editor',
        'xacml-tab-peps', 'xacml-tab-decide', 'ssf-tab-metadata',
@@ -10118,8 +10141,8 @@ const PROTOCOL_SETTINGS_PAGES = [
            'Status List entry, served at <code>/oid4vci/status-lists</code> ' +
            'and signed with the credential key — which may be post-quantum. ' +
            '<code>oid4vci.statusListTtlS</code> is how long a verifier may ' +
-           'keep a list; <a href="/admin/vc#vc-tab-status">Credential status</a> ' +
-           'suspends and revokes.',
+           'keep a list; <a href="/admin/vc/monitor">Monitoring &rarr; ' +
+           'Verifiable Credentials</a> suspends and revokes.',
            '<strong>Key attestations.</strong> A wallet may say how its key ' +
            'is kept (OpenID4VCI Appendix D); one signed by a certificate in ' +
            '<code>oid4vci.keyAttestationTrustedCertificates</code> is ' +
@@ -10185,8 +10208,8 @@ const PROTOCOL_SETTINGS_PAGES = [
            'relay to a victim, which is why it is off.',
            '<strong>Every credential\'s status is consulted.</strong> One ' +
            'this realm issued is read from ' +
-           '<a href="/admin/vc#vc-tab-status">' +
-           'Credential status</a>; one a trusted foreign issuer signed has ' +
+           '<a href="/admin/vc/monitor">Monitoring &rarr; Verifiable ' +
+           'Credentials</a>; one a trusted foreign issuer signed has ' +
            'its status list fetched, kept for its ttl and at most <code>' +
            'oid4vp.statusListMaxCacheS</code>, and a credential whose status ' +
            'cannot be read is refused. <strong>So is one that names no ' +

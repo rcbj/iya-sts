@@ -73,7 +73,7 @@
 //   * an administrator revoked its row on `/admin/tokens` (the issued
 //     register's mark, read by handle, so a restore undoes it);
 //   * its status-list entry is not VALID — revoked or suspended on
-//     `/admin/vc-status` or by the two acts above, which also set the bit so
+//     `/admin/vc/monitor` or by the two acts above, which also set the bit so
 //     a verifier elsewhere learns it (`vc_status.ts`);
 //   * its HOLDER removed it on `/portal/wallet` (#661, 2026-10-16,
 //     `removeForSubject()`): that one credential, stamped removed, its

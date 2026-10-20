@@ -1278,24 +1278,14 @@ function childMain() {
 
     const vcPage = WebPages.pageFor('/admin/vc');
     const vcView = vcPage ? await viewOf(vcPage, {}) : null;
-    if (vcView && vcView.vcStatus) {
-      vcView.vcStatus.rows = [{
-        idx: 1,
-        format: 'dc+sd-jwt',
-        configId: 'IdentityCredential',
-        status: 'VALID',
-        explicit: 'VALID',
-        via: 'fixture',
-        changedAt: 0,
-        expiresAt: 1
-      }];
-    }
     const vcHtml = vcView
       ? WebPages.render('/admin/vc', vcView, WebKit.context({}, true))
       : '';
+    // FIVE TABS SINCE #752: Credential status left for Monitoring →
+    // Verifiable Credentials (D-VC-monitor, below).
     const vcTabIds = [
       'vc-tab-metadata', 'vc-tab-oid4vci', 'vc-tab-claims',
-      'vc-tab-status', 'vc-tab-oid4vp', 'vc-tab-verifier-request'
+      'vc-tab-oid4vp', 'vc-tab-verifier-request'
     ];
     const vcTabs = {};
     vcTabIds.forEach(function (id) {
@@ -1309,9 +1299,14 @@ function childMain() {
       return !!vcTabs[id];
     }) && /<section class="tabpanel first" id="vc-tab-metadata">/.test(
       vcHtml),
-      'D-VC-tabs. the combined Verifiable Credentials page has six peer tabs ' +
-      'with Metadata first',
+      'D-VC-tabs. the combined Verifiable Credentials page has five peer ' +
+      'tabs with Metadata first',
       vcTabIds.filter(function (id) { return !vcTabs[id]; }).join(', '));
+    note(!!vcView && vcView.vcStatus === undefined &&
+         vcHtml.indexOf('id="vc-tab-status"') < 0 &&
+         vcHtml.indexOf('id="vc-status-suspend-') < 0,
+         'D-VC-no-status. the combined page neither asks for the status ' +
+         'lists nor draws a Credential status tab (#752)');
     note(vcExpectedEndpoints.length > 0 &&
          vcExpectedEndpoints.every(function (row) {
            return vcTabs['vc-tab-metadata'] &&
@@ -1367,23 +1362,68 @@ function childMain() {
     note(!!vcTabs['vc-tab-claims'] &&
          vcTabs['vc-tab-claims'][1].indexOf(
            'action="/admin/vc#vc-tab-claims"') >= 0 &&
-         !!vcTabs['vc-tab-status'] &&
-         vcTabs['vc-tab-status'][1].indexOf(
-           'action="/admin/vc#vc-tab-status"') >= 0 &&
          !!vcTabs['vc-tab-verifier-request'] &&
          vcTabs['vc-tab-verifier-request'][1].indexOf(
            'action="/admin/vc#vc-tab-verifier-request"') >= 0,
-         'D-VC-forms. claim, status and verifier-request actions return to ' +
-         'their own tabs',
+         'D-VC-forms. claim and verifier-request actions return to their ' +
+         'own tabs',
          'claims=' + (vcTabs['vc-tab-claims']
            ? vcTabs['vc-tab-claims'][1].indexOf(
              'action="/admin/vc#vc-tab-claims"') : -1) +
-         '; status=' + (vcTabs['vc-tab-status']
-           ? vcTabs['vc-tab-status'][1].indexOf(
-             'action="/admin/vc#vc-tab-status"') : -1) +
          '; verifier=' + (vcTabs['vc-tab-verifier-request']
            ? vcTabs['vc-tab-verifier-request'][1].indexOf(
              'action="/admin/vc#vc-tab-verifier-request"') : -1));
+
+    // MONITORING → VERIFIABLE CREDENTIALS (#752): what the Credential status
+    // tab drew, on a page of its own, cut into tabs as its neighbours are —
+    // the tiles, the note and where the lists are served on Metadata, the
+    // credentials (one row fixed here, since a fresh realm has issued none)
+    // on their own tab with their controls posting to the page.
+    const vcMonitorPage = WebPages.pageFor('/admin/vc/monitor');
+    const vcMonitorView = vcMonitorPage
+      ? await viewOf(vcMonitorPage, {}) : null;
+    if (vcMonitorView) {
+      vcMonitorView.rows = [{
+        idx: 1,
+        format: 'dc+sd-jwt',
+        configId: 'IdentityCredential',
+        status: 'VALID',
+        explicit: 'VALID',
+        via: 'fixture',
+        changedAt: 0,
+        expiresAt: 1
+      }];
+    }
+    const vcMonitorHtml = vcMonitorView
+      ? WebPages.render('/admin/vc/monitor', vcMonitorView,
+                        WebKit.context({}, true))
+      : '';
+    const vcMonitorTab = function (id) {
+      const found = new RegExp(
+        '<section class="tabpanel(?: first)?" id="' + id +
+        '">([\\s\\S]*?)<\\/section>').exec(vcMonitorHtml);
+      return found ? found[1] : null;
+    };
+    const vcMonitorMeta = vcMonitorTab('vc-monitor-tab-metadata');
+    const vcMonitorCreds = vcMonitorTab('vc-monitor-tab-credentials');
+    note(!!vcMonitorPage &&
+         vcMonitorPage.operation === '/admin-api/vc-status' &&
+         WebPages.titleOf(vcMonitorPage) ===
+           'Verifiable Credentials (monitoring)' &&
+         !!vcMonitorMeta && !!vcMonitorCreds &&
+         vcMonitorMeta.indexOf(WebKit.esc(vcMonitorView.tokenStatusList)) >=
+           0 &&
+         vcMonitorMeta.indexOf('Bitstring Status Lists') >= 0 &&
+         vcMonitorMeta.indexOf('id="vc-status-publish-revocation"') >= 0 &&
+         vcMonitorCreds.indexOf('id="vc-status-suspend-1"') >= 0 &&
+         vcMonitorCreds.indexOf('id="vc-status-revoke-1"') >= 0 &&
+         vcMonitorCreds.indexOf('action="/admin/vc/monitor"') >= 0 &&
+         vcMonitorCreds.indexOf('IdentityCredential') >= 0,
+         'D-VC-monitor. Monitoring → Verifiable Credentials draws the status ' +
+         'lists on Metadata and the credentials, with their Suspend and ' +
+         'Revoke posting to the page, on their own tab',
+         'metadata=' + !!vcMonitorMeta + '; credentials=' +
+         !!vcMonitorCreds);
 
     const xacmlPage = WebPages.pageFor('/admin/xacml');
     const xacmlView = xacmlPage ? await viewOf(xacmlPage, {}) : null;
@@ -2017,6 +2057,37 @@ function childMain() {
          consolePages.filter(function (page) {
            return page === '/admin/vc' || vcChildren.indexOf(page) >= 0;
          }).join(', '));
+    // AND ITS MONITORING TWIN (#752), filed under Monitoring, shown to a
+    // realm administrator as the tab was (a realm's page, not the
+    // service's), and reached from the tab's old addresses.
+    const sectionHolding = function (path) {
+      const holds = function (items) {
+        return (items || []).some(function (item) {
+          return item.path === path || holds(item.items);
+        });
+      };
+      const found = admin.shellJson(null, null, null).sections.filter(
+        function (section) {
+          return holds(section.items);
+        })[0];
+      return found ? found.title : '';
+    };
+    const scope = require(ROOT_DIR + '/admin-ui/admin_scope');
+    const realmState = { authority: 'realm', realm: 'any' };
+    note(consolePages.indexOf('/admin/vc/monitor') >= 0 &&
+         sectionHolding('/admin/vc/monitor') === 'Monitoring' &&
+         sectionHolding('/admin/vc') === 'Protocols' &&
+         scope.pageVisible(realmState, '/admin/vc/monitor') &&
+         scope.pageVisible(realmState, '/admin/vc') &&
+         WebPages.movedTo('/admin/vc', '#vc-tab-status') ===
+           '/admin/vc/monitor' &&
+         WebPages.movedTo('/admin/vc-status', '') === '/admin/vc/monitor' &&
+         WebPages.movedTo('/admin/vc', '#vc-tab-claims') === null &&
+         WebPages.movedTo('/admin/vc', '') === null,
+         'E-VC-monitor. Monitoring → Verifiable Credentials is under ' +
+         'Monitoring, a realm\'s page, and where the Credential status ' +
+         'tab\'s old addresses go',
+         sectionHolding('/admin/vc/monitor'));
     const xacmlChildren = [
       '/admin/xacml/policies', '/admin/xacml/editor',
       '/admin/xacml/peps', '/admin/xacml/decide'
