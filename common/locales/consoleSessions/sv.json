@@ -8,6 +8,8 @@
   "thSince": "Sedan",
   "thExpires": "Går ut",
   "thCarries": "Bär",
+  "deviceBound": "Bunden till sin webbläsares {alg}-nyckel (DBSC)",
+  "deviceBoundTitle": "Device Bound Session Credentials: den här sessionen behöver en kortlivad cookie som bara ett bevis för webbläsarens nyckel förnyar. Förnyad {n} gång(er).",
   "thCredentials": "Autentiseringsuppgifter",
   "leadBefore": "<strong>Varje session som den här tjänsten håller just nu</strong>, över de tre protokoll som har en. En session är tillstånd som DEN HÄR TJÄNSTEN håller och som gör någon autentiserad just nu; en token, ett intyg, en biljett och ett SVID är saker den har DELAT UT, de överlever varje session här, och de finns under ",
   "leadTokens": "Token",

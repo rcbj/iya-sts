@@ -11,6 +11,7 @@ than living under `oauth-oidc/` where the screen used to be rendered.
 | `web_authn.ts`, `web_authn_pages.ts`, `web_authn_login.ts`, `web_authn_select.ts`, `web_authn_password.ts` | **The sign-in surface in the browser (#571)**: the runtime (`authn-spa.js`, served at `/authn/signin.js`) and the renderers of `/authn/login`, `/authn/select-idp` and `/authn/password-change`. `web_` modules (`common/CLAUDE.md` 3cl). **The screen's explanations fold (rcbj, 2026-10-12)**: the federation, Kerberos and wallet blurbs and the notes at its foot go through the console's `WebKit.note()` (`admin-ui/web_kit.ts`), so a paragraph longer than a line is a `<details>` whose summary is its first sentence; the rules are `common/web_card_css.ts`'s `FOLD_CSS`. |
 | `web_authn_mfa.ts`, `web_authn_email.ts` | **The steps after the screen in the browser (#572, #573)**: the renderers of `/authn/totp`, `/authn/webauthn`, `/authn/backup-code`, `/authn/password-factor`, `/authn/mfa-setup`, and of the emailed factor's three pages. See *The steps after the screen*, below. |
 | `email_factor.ts` | The emailed code and sign-in link (#64): their views and acts since #573. See *The emailed code and the emailed sign-in link*, below. |
+| `device_bound_sessions.ts` | **Device Bound Session Credentials (#725)**: the registration header, `POST /authn/dbsc/register` and `/authn/dbsc/refresh`, and the bound-cookie check `sessionOf()` asks. See *The session bound to a key the browser holds*, below. |
 | `webauthn.js` | The relying party's half of WebAuthn Level 3. |
 | `webauthn_policy.ts` | The ceremony's options, the four policy settings that refuse, and the attestation policy's settings (#105), kept out of `webauthn.js` so that file stays loadable on its own. |
 | `webauthn_attestation.ts` | **A registration's attestation statement, verified (#105)**: WebAuthn Level 3 section 7.1 steps 21-25 and all eight section 8 formats, the trust anchors (the realm's and the FIDO Metadata Service's), MDS status reports, revocation, and the record a key carries. A library (rule 3). See *The attestation statement*, below. |
@@ -2801,3 +2802,79 @@ factor is waived only when all of these hold:
 A skipped sign-in is ONE factor (`amr ["pwd"]`, acr "1") and is audited as
 `authn.second-factor.skipped`. The cookie is appended AFTER the session
 cookie, because `res.set()` replaces the header.
+
+## THE SESSION BOUND TO A KEY THE BROWSER HOLDS (#725, 2026-10-19; rule 3cr)
+
+`sts_session` is a bearer cookie, and #544 named what that costs: a copied
+cookie is the person until the session ends, and the passkey ceremony that
+made it is never asked again. `device_bound_sessions.ts` is the relying-party
+side of the W3C WebAppSec **Device Bound Session Credentials** draft (Editor's
+Draft, 8 September 2026), per realm, **off by default**
+(`authn.deviceBoundSessions`). The draft's names are used as it writes them,
+and where they differ from #725's wording the draft won; the ticket says
+where.
+
+| Step | What happens |
+|---|---|
+| sign-in | the answer that sets `sts_session` carries `Secure-Session-Registration: (ES256 RS256);path="…/authn/dbsc/register";challenge="…"` — from `startSessionHere()` and `reauthenticateSession()`, only for a chosen, authenticated browser session not yet bound (`deviceBound.offer()`) |
+| registration | the browser posts a `dbsc+jwt` proof of its new key over that challenge (`Secure-Session-Response`, the `jwk` in the header); the key goes on the session as `dbsc: { id, alg, jwk, jkt, boundAt, refreshes, refreshedAt }`, and the answer is the JSON session instructions, the `sts_session_bound` cookie and a first `Secure-Session-Challenge` |
+| use | `sessionOf()` honours a bound session only beside a current bound cookie minted for its binding (`deviceBound.honours()`); `sessionOf(req, true)` skips that, and only the two endpoints pass it |
+| refresh | `Sec-Secure-Session-Id`, no proof → **403** with `Secure-Session-Challenge`; a proof of the bound key over a current challenge → a new bound cookie |
+| the cookie elsewhere | a refresh signed by another key (or another alg), or replaying a spent challenge, ENDS the session through `logout.endBoundSession()` |
+
+Five things are load-bearing:
+
+* **NOTHING ABOUT A CHALLENGE OR A COOKIE IS STORED.** Both are HMACs under
+  the cluster secret `dbsc` over the realm, the session, the DBSC session id
+  (the cookie adds the key's thumbprint) and an expiry, so any node accepts
+  what another minted the moment it is minted. A bound cookie written to the
+  session row instead would be refused by every node replication had not
+  reached — a person signed out every ten minutes in cluster mode. The only
+  writes are the binding (once) and the refresh count, through
+  `noteSessionChanged()`; `mergeSessionRows()` keeps a copy that has a
+  binding over one that has none, and the larger count of two copies of one.
+* **A CHALLENGE IS SPENT ONCE FOR THE CLUSTER**, `cluster_claims` scope
+  `authn.dbsc-challenge`, AFTER the signature verifies (so a wrong key is
+  detected whatever it signed) and fail-closed: a store that cannot be asked
+  is a 503, which the draft says a browser backs off from without ending its
+  session.
+* **NO REFUSAL IS A 403.** Section 8.8 reads a 403 as "sign the cached
+  challenge and try again", and every other 4xx as "end the DBSC session". A
+  refusal on 403 would be a loop; a stale or foreign challenge at refresh is
+  therefore the 403 exchange, and a refusal is 400, 401 or 409.
+* **WITHOUT ITS BOUND COOKIE A BOUND SESSION IS NOT SIGNED IN — AND NOT
+  ENDED.** The browser that holds the key renews the cookie before it sends
+  the request (section 10.1), so a request without one is a copied
+  `sts_session` or a skipped refresh, and neither is the person's doing. The
+  same check gates RE-AUTHENTICATION: `startSessionHere()` appends an event
+  to a bound session only for a request that carries its bound cookie, and
+  from anywhere else the sign-in is a session of its own.
+* **AN UNKNOWN DBSC SESSION ID ENDS ONLY THE BROWSER'S** (`STS-AUTHN-0401`, a
+  401). A browser can hold a registration left from a session somebody else's
+  sign-in replaced, and it refreshes it with the NEW session's cookie; ending
+  the cookie's session for that would sign the newer person out. Only a
+  wrong key and a replay end a session.
+
+**Off, nothing is offered and a bound session is an ordinary one again**,
+because the refresh endpoint that keeps its cookie alive answers 404 with it.
+A browser that does not speak DBSC ignores the header and is unaffected
+whatever the setting says. The console's `/admin/sessions` row and the
+portal's Overview say whether a session is bound (`deviceBindingOf()`,
+`signOnFactsFor().deviceBound`).
+
+**What is not built**, and why: federated sessions (`provider_key` and the
+well-known document) and site-scoped sessions, which this service — one
+origin per listener — has no use for yet; reading `Secure-Session-Skipped`;
+and #725's *a policy row can require binding for an application*.
+Registration is asynchronous after the sign-in's answer, so the first
+issuance after a sign-in races it, and "required" needs a deferral or
+re-prompt design of its own (a decision asked of rcbj on #725).
+
+`tests/device_bound_sessions.js` holds it over HTTP in a child process: no
+offer while off, an ES256 registration, the session honoured with its bound
+cookie and not without (and not ended), the 403 challenge and a signed
+refresh renewing the cookie, a replay and another key each ending the
+session, an unknown id leaving it alone, and a browser that never registers
+unchanged. **No test drives a real browser's DBSC** (none in the suite's
+images ships it enabled), and RS256 proofs are covered only by the shared
+verifier.

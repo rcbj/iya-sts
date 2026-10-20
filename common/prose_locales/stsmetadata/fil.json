@@ -491,6 +491,10 @@
     "en": "ad2559da570e5a62",
     "text": "partial, sa panig ng relying party: vine-verify ang registration (section 7.1) at assertion (section 7.2) — challenge, origin, RP ID hash, mga user presence at verification flag, BE/BS, ang alg ng credential laban sa pubKeyCredParams, ang 1023-byte na credential id, ang signature counter, at ang signature sa authenticatorData || SHA-256(clientDataJSON), para sa mga key na ES256/384/512, RS256/384/512, PS256/384/512, EdDSA at ML-DSA-44/65/87 (RFC 9964). Mula #105, vine-verify ang ATTESTATION STATEMENT sa lahat ng walong format ng section 8 (packed, tpm, android-key, android-safetynet, fido-u2f, none, apple, compound) sa ilalim ng webauthn.attestationPolicy — ang by-mode ay verify-if-present sa product at off sa development — ang chain nito laban sa mga naka-configure na anchor at sa mga root ng FIDO Metadata Service, kinokonsulta ang revocation nito, at tinatanggihan ang model na iniuulat ng MDS na compromised. Kulang: walang RP ID allow-list ang enterprise attestation (section 5.4.7), at hindi pinoproseso ang mga authentication extension. Isinulat nang hiwalay sa sariling decoder ng debugger para masuri ang dalawa laban sa isa't isa (tests/webauthn_cross_impl.js)."
   },
+  "stsmetadata.specs.dbsc.coverage": {
+    "en": "5eac46b3be2eaa5f",
+    "text": "partial, ang panig ng server ng isang origin-scoped na session bawat sign-on: Secure-Session-Registration na nag-aalok ng ES256 at RS256, ang dbsc+jwt na proof sa registration (sinuri ang jwk, typ, alg at jti nito at vine-verify ang signature) at sa refresh (vine-verify gamit ang bound key), ang JSON na session instructions na may iisang bound cookie, ang palitan ng 403 at Secure-Session-Challenge, at Sec-Secure-Session-Id. Bawat challenge ay ginagastos nang isang beses para sa buong cluster. Kulang: mga federated session (provider_key, ang well-known na dokumento), mga site-scoped na session at scope rule, ang authorization na parameter, at ang pagbasa ng Secure-Session-Skipped. Naka-off bilang default (authn.deviceBoundSessions)."
+  },
   "stsmetadata.specs.rfc4226.coverage": {
     "en": "ffd9d22cf4ecfd57",
     "text": "full para sa kailangan dito ng RFC 6238: ang dynamic truncation ng section 5.3 sa HMAC-SHA-1, SHA-256 o SHA-512, anim hanggang walong digit, na ang counter ay walong-byte na big-endian value. Sinusuri laban sa sariling mga test vector ng Appendix D ng specification (tests/totp.js), na siyang dahilan ng pagpapatupad nito sa halip na kumuha ng library: may nagkamali na sa bawat isa sa apat na hakbang ng truncation na iyon, at ang inilathalang vector lang ang check na nakakahuli nito. HINDI saklaw: ang counter-based HOTP bilang authentication mechanism — walang bahagi rito ang may hawak na counter na umuusad sa paggamit, dahil ang nag-iisang caller ay ang time-based na construction sa ibaba."
@@ -2419,6 +2423,22 @@
     "en": "17dd6720ad2140f5",
     "text": "itinatatag ang sign-on session kapag na-verify ang recovery code, at GINAGAMIT ito"
   },
+  "stsmetadata.endpoints./authn/dbsc/register.what": {
+    "en": "53d3d9c56dd2c67d",
+    "text": "Kapag naka-on ang authn.deviceBoundSessions, iniaalok ng sagot na nagse-set ng session cookie ang path na ito sa Secure-Session-Registration. Nagpapadala ang browser sa Secure-Session-Response ng dbsc+jwt na proof ng isang bagong key sa ibabaw ng challenge na iyon; itinatala ng session ang key, at ang sagot ay ang session instructions, ang sts_session_bound na cookie at isang unang Secure-Session-Challenge. Isang beses lamang na-bind ang isang session. 404 habang naka-off ang setting."
+  },
+  "stsmetadata.endpoints./authn/dbsc/register.effect": {
+    "en": "13fa3023584c26d5",
+    "text": "ibinibind ang sign-on session sa key na pinatunayan ng browser, at sine-set ang bound cookie nito"
+  },
+  "stsmetadata.endpoints./authn/dbsc/refresh.what": {
+    "en": "d0b2ae088239737b",
+    "text": "Dito nagpapadala ang browser, kasama ang Sec-Secure-Session-Id, kapag nag-expire ang bound cookie. Kung walang proof, ang sagot ay 403 na may Secure-Session-Challenge. Kung may proof ng bound key sa ibabaw ng kasalukuyang challenge, isang bagong bound cookie ang sine-set. Ang proof na pinirmahan ng ibang key, o na umuulit ng challenge na nagastos na, ay nagtatapos sa session gaya ng isang sign-out. Ang id na hindi pinagbind-an ng session ay tinatanggihan, at hindi ginagalaw ang session."
+  },
+  "stsmetadata.endpoints./authn/dbsc/refresh.effect": {
+    "en": "b3b7096158b27b3f",
+    "text": "nire-renew ang bound cookie, o tinatapos ang session para sa proof na hindi galing sa bound key"
+  },
   "stsmetadata.endpoints./authn/email-code.what": {
     "en": "8f3396e530fddf0f",
     "text": "NON-SPEC (#64). Isang anim na digit na code na ipinapadala sa VERIFIED na address ng tao, bilang first factor (ang \"Email me a sign-in code\" ng sign-in screen) o second (pinili sa /portal/mfa), kung pinapayagan ito ng authentication policy — NAKA-OFF bilang default, dahil hindi itinuturing ng NIST SP 800-63B-4 section 3.1.3.1 na authenticator ang email. Walang ipinapadala ang page kapag iginuguhit ito; nagpapadala ng code ang /authn-api/mfa/{id}/email/send at nagsusuri ng isa ang /authn-api/mfa/{id}/email/code (#573). Pinananatili lamang bilang scrypt hash sa step, valid nang hanggang sampung minuto, minsan para sa cluster, may limitadong bilang ng maling code bawat step, naka-rate limit tulad ng one-time code step. Bilang first factor ay pareho ang page umiiral man o hindi ang account o may verified na address man ito. amr [\"otp\"] at acr \"1\" kapag mag-isa, ang amr ng first factor dagdag ang \"otp\" at acr \"mfa\" bilang second; hindi nito kailanman natutugunan ang risk step-up. Isang page ng sign-in surface mula noong #573."
@@ -3382,6 +3402,10 @@
   "stsmetadata.protocols.WebAuthn / CTAP.what": {
     "en": "874b55535d57222c",
     "text": "Isang second factor sa sign-in screen na pinagpapadalhan ng bawat protocol dito ng tao: mga registration at assertion ceremony laban sa tunay na security key, na sinusuri ang attestation at ang authenticator data sa halip na i-parse lamang."
+  },
+  "stsmetadata.protocols.Device Bound Session Credentials.what": {
+    "en": "83d1f60fe8862d70",
+    "text": "Ang sign-on session na naka-bind sa isang key na hawak ng browser, na nakasandig sa TPM kung kaya nito. Humihinto sa paggana ang kinopyang session cookie kapag nag-expire ang panandaliang bound cookie sa tabi nito, dahil proof lamang ng key na iyon ang nagre-renew dito; ang proof ng anumang ibang key ay nagtatapos sa session. Naka-off bilang default at bawat realm; ang browser na walang suporta ay nananatili sa karaniwang session."
   },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "20b73dffc821e4a2",

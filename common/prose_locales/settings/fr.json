@@ -675,6 +675,22 @@
     "en": "3d8175702c053473",
     "text": "Combien de temps une session peut rester INUTILISÉE avant de se terminer, en plus de la durée de vie absolue ci-dessus. **Zéro, la valeur par défaut, signifie aucun délai d’inactivité**, ce que ce service a toujours fait. Défini, une session que quelqu’un cesse d’utiliser se termine ce nombre de secondes après sa dernière requête, selon la première des deux limites atteinte — et une requête à la console d’administration ou au portail utilisateur compte comme une utilisation de la session d’authentification unique sous-jacente, si bien qu’un opérateur qui travaille dans la console n’en est pas déconnecté par une horloge d’inactivité sur une session qu’il ne présente pas. Il s’applique en direct : il vaut pour les sessions qui existent déjà, car il est vérifié là où une session est lue plutôt qu’apposé là où elle est créée."
   },
+  "authn.deviceBoundSessions|label": {
+    "en": "454fe488dcb65a89",
+    "text": "Lier les sessions à la clé du navigateur (DBSC)"
+  },
+  "authn.deviceBoundSessions|description": {
+    "en": "b88d9840f0b7c19c",
+    "text": "Activé, une connexion demande au navigateur de lier la session d’authentification unique à une clé qu’il détient (W3C Device Bound Session Credentials). Un navigateur qui le fait doit ensuite renouveler un second cookie de courte durée avec une preuve de cette clé, si bien qu’un cookie de session copié cesse de fonctionner quand ce cookie expire ; un renouvellement signé par une autre clé, ou qui rejoue un défi déjà consommé, met fin à la session. Un navigateur qui ne le prend pas en charge garde une session ordinaire. Désactivé, la valeur par défaut, rien n’est proposé, et une session déjà liée est traitée comme une session ordinaire."
+  },
+  "authn.deviceBoundCookieLifetimeS|label": {
+    "en": "0589864dcb16bffb",
+    "text": "Durée de vie du cookie lié (secondes)"
+  },
+  "authn.deviceBoundCookieLifetimeS|description": {
+    "en": "eb2c0a8e31f615d9",
+    "text": "Combien de temps vit le cookie dont une session liée à l’appareil a besoin avant que le navigateur doive à nouveau prouver sa clé, et donc combien de temps une paire de cookies copiée continue de fonctionner. Jamais au-delà de la fin de la session elle-même. Lu quand un cookie est émis."
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "Nombre maximal de sessions d’authentification unique par domaine"

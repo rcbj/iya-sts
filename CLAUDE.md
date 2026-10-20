@@ -488,6 +488,7 @@ preference; this table says what the constraint is and the named file says why.
 | 8-api | `authn/authn_api` | Just after `authn` (#571), whose views and acts it reaches through that module's exports; `/authn-api/*` collides with nothing. | `authn/CLAUDE.md` |
 | 7 | `ws-trust/wstrust` | After `authn` since 2026-09-05 (it calls `startSession()`); the number predates the move. | `ws-trust/CLAUDE.md` |
 | 8-email | `authn/email_factor` (and `common/mail_factor`) | Just after `authn`, whose pending steps it reads through that module's exports (#64). | `authn/CLAUDE.md` |
+| 8-dbsc | `authn/device_bound_sessions` | Just after `authn` (#725), which requires it as a library; it reaches `authn` and `logout` lazily, and `/authn/dbsc/*` collides with nothing. | `authn/CLAUDE.md` |
 | 8a | `portal/portal` | After `authn`, whose session every portal route reads. | `portal/CLAUDE.md` |
 | 8a-mail | `common/mail`, `common/mail_uses`, `portal/portal_mail` | Built before the portal, whose `registerRoutes()` registers `portal_mail`'s pages. Libraries; the directory fills the channel's slot at 21. | `common/CLAUDE.md` |
 | 8a-acct | `portal/account_*` (seven), then `account-api/account_api` | Just after the portal (#568): the account API's `register()` gathers every portal page module's operations, so all must be built first. | `account-api/CLAUDE.md` |
@@ -662,6 +663,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3cl | `common/web_*.ts` and friends (#570): the static surfaces' foundation | `common/CLAUDE.md` |
 | 3cm | The mock relying parties (#581) — deleted by #592; number kept | `common/CLAUDE.md` |
 | 3cn | `ownership.ts` (#607): owners, and OWNER_READ / OWNER_WRITE | `common/CLAUDE.md`, `xacml/CLAUDE.md`, `mgmt-api/CLAUDE.md` |
+| 3cr | `device_bound_sessions.ts` (#725): the sign-on session bound to the browser's key (DBSC) | `authn/CLAUDE.md` |
 | 3co | `attribute_policy.ts` (#396): what every person must hold, and a realm's custom attributes | `common/CLAUDE.md`, `ldap/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |

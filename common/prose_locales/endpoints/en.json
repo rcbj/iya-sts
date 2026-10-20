@@ -342,6 +342,8 @@
   "endpoints.route./authn/password-factor.name": "Password as the second factor",
   "endpoints.route./authn/webauthn.name": "WebAuthn security-key step",
   "endpoints.route./authn/backup-code.name": "Recovery code second-factor step",
+  "endpoints.route./authn/dbsc/register.name": "Device-bound session registration",
+  "endpoints.route./authn/dbsc/refresh.name": "Device-bound session refresh",
   "endpoints.route./authn/email-code.name": "Emailed code step",
   "endpoints.route./authn/email-link.name": "Emailed sign-in link: the waiting page",
   "endpoints.route./authn/email-link/open.name": "Emailed sign-in link: where it lands",

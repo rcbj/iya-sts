@@ -491,6 +491,10 @@
     "en": "ad2559da570e5a62",
     "text": "partial，依賴方端：註冊（第 7.1 節）與斷言（第 7.2 節）都會驗證——挑戰、來源、RP ID 雜湊、使用者在場與使用者驗證旗標、BE/BS、認證的 alg 是否符合 pubKeyCredParams、1023 位元組的認證 id、簽章計數器，以及對 authenticatorData || SHA-256(clientDataJSON) 的簽章，支援 ES256/384/512、RS256/384/512、PS256/384/512、EdDSA 與 ML-DSA-44/65/87（RFC 9964）金鑰。自 #105 起，「證明陳述」會以第 8 節全部八種格式（packed、tpm、android-key、android-safetynet、fido-u2f、none、apple、compound）在 webauthn.attestationPolicy 下驗證——by-mode 在產品模式下為 verify-if-present，在開發模式下為 off——其憑證鏈依已設定的錨點與 FIDO Metadata Service 的根憑證驗證，查詢其撤銷狀態，並拒絕 MDS 回報為遭入侵的型號。尚缺：企業證明（第 5.4.7 節）沒有 RP ID 允許清單，且不處理驗證延伸。與偵錯工具自己的解碼器獨立撰寫，讓兩者可以相互核對（tests/webauthn_cross_impl.js）。"
   },
+  "stsmetadata.specs.dbsc.coverage": {
+    "en": "5eac46b3be2eaa5f",
+    "text": "partial，每次登入一個限定於來源的工作階段的伺服器端：Secure-Session-Registration 提供 ES256 與 RS256，註冊時的 dbsc+jwt 證明（檢查其 jwk、typ、alg 與 jti 並驗證簽章）與重新整理時的證明（以綁定金鑰驗證），帶有一個綁定 cookie 的 JSON 工作階段指示，403 與 Secure-Session-Challenge 的交換，以及 Sec-Secure-Session-Id。每個挑戰在整個叢集中只消耗一次。缺少：聯合工作階段（provider_key、well-known 文件）、限定於網站的工作階段與範圍規則、authorization 參數，以及讀取 Secure-Session-Skipped。預設關閉（authn.deviceBoundSessions）。"
+  },
   "stsmetadata.specs.rfc4226.coverage": {
     "en": "ffd9d22cf4ecfd57",
     "text": "full——就 RFC 6238 對它的需求而言：第 5.3 節基於 HMAC-SHA-1、SHA-256 或 SHA-512 的動態截斷，六至八位數，計數器為八位元組 big-endian 值。依規格自己的附錄 D 測試向量驗證（tests/totp.js），這正是自行實作而不採用函式庫的意義所在：該截斷的四個步驟每一個都曾有人做錯，而公布的測試向量是唯一能抓出錯誤的檢查。「未」涵蓋：以計數器為基礎的 HOTP 作為驗證機制——此處沒有任何東西持有會隨使用而遞增的計數器，因為唯一的呼叫端是下方以時間為基礎的建構方式。"
@@ -2419,6 +2423,22 @@
     "en": "17dd6720ad2140f5",
     "text": "復原碼驗證通過後建立單一登入工作階段，並將其「用掉」"
   },
+  "stsmetadata.endpoints./authn/dbsc/register.what": {
+    "en": "53d3d9c56dd2c67d",
+    "text": "當 authn.deviceBoundSessions 開啟時，設定工作階段 cookie 的回應會在 Secure-Session-Registration 中提供此路徑。瀏覽器在 Secure-Session-Response 中送出針對該挑戰的新金鑰的 dbsc+jwt 證明；工作階段記錄該金鑰，回應包含工作階段指示、sts_session_bound cookie 與第一個 Secure-Session-Challenge。一個工作階段只綁定一次。設定關閉時回應 404。"
+  },
+  "stsmetadata.endpoints./authn/dbsc/register.effect": {
+    "en": "13fa3023584c26d5",
+    "text": "將登入工作階段綁定到瀏覽器所證明的金鑰，並設定其綁定 cookie"
+  },
+  "stsmetadata.endpoints./authn/dbsc/refresh.what": {
+    "en": "d0b2ae088239737b",
+    "text": "當綁定 cookie 過期時，瀏覽器帶著 Sec-Secure-Session-Id 向此處送出請求。沒有證明時，回應為帶有 Secure-Session-Challenge 的 403。帶有綁定金鑰針對目前挑戰的證明時，會設定新的綁定 cookie。由其他金鑰簽署的證明，或重送已消耗挑戰的證明，會像登出一樣結束工作階段。並非該工作階段所綁定的 id 會被拒絕，工作階段保持不變。"
+  },
+  "stsmetadata.endpoints./authn/dbsc/refresh.effect": {
+    "en": "b3b7096158b27b3f",
+    "text": "更新綁定 cookie，或在證明並非來自綁定金鑰時結束工作階段"
+  },
   "stsmetadata.endpoints./authn/email-code.what": {
     "en": "8f3396e530fddf0f",
     "text": "非規範（#64）。寄送至該人「已驗證」地址的六位數代碼，作為第一要素（登入畫面的「以電子郵件傳送登入代碼給我」）或第二要素（在 /portal/mfa 上選擇加入），前提是驗證原則允許——預設「關閉」，因為 NIST SP 800-63B-4 section 3.1.3.1 不將電子郵件視為驗證器。頁面繪製時不寄送任何東西；/authn-api/mfa/{id}/email/send 寄送代碼，/authn-api/mfa/{id}/email/code 檢查代碼（#573）。僅以 scrypt 雜湊保存於步驟上，最多有效十分鐘，在叢集中只能使用一次，每個步驟的錯誤代碼次數有上限，速率限制與一次性代碼步驟相同。作為第一要素時，無論帳戶是否存在或是否有已驗證地址，頁面都相同。單獨使用時為 amr [\"otp\"] 與 acr \"1\"，作為第二要素時為第一要素的 amr 加上 \"otp\" 與 acr \"mfa\"；它永遠不會滿足風險升級驗證。自 #573 起是登入介面的一個頁面。"
@@ -3382,6 +3402,10 @@
   "stsmetadata.protocols.WebAuthn / CTAP.what": {
     "en": "874b55535d57222c",
     "text": "此處每個協定都會將人送往的登入畫面上的第二要素：以真實安全金鑰進行的註冊與判斷提示儀式，證明與驗證器資料都會經過檢查，而不只是剖析。"
+  },
+  "stsmetadata.protocols.Device Bound Session Credentials.what": {
+    "en": "83d1f60fe8862d70",
+    "text": "綁定到瀏覽器所持金鑰的登入工作階段，可行時由 TPM 保護。複製的工作階段 cookie 會在其旁邊的短期綁定 cookie 過期時失效，因為只有該金鑰的證明才能更新它；任何其他金鑰的證明都會結束工作階段。預設關閉，依領域設定；不支援它的瀏覽器保留一般工作階段。"
   },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "20b73dffc821e4a2",

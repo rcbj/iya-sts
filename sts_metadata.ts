@@ -2556,6 +2556,22 @@ const SPECS: Spec[] = [
               'authentication extensions are not processed. Written ' +
               'independently of the debugger\'s own decoder so the two can ' +
               'be checked against each other (tests/webauthn_cross_impl.js).' },
+  // #725: the sign-on session bound to a key the browser holds.
+  { id: 'dbsc', name: 'Device Bound Session Credentials',
+    where: 'W3C WebAppSec (Editor\'s Draft)',
+    url: 'https://w3c.github.io/webappsec-dbsc/',
+    coverage: 'partial, the server side of one origin-scoped session per ' +
+              'sign-on: Secure-Session-Registration offering ES256 and ' +
+              'RS256, the dbsc+jwt proof at registration (its jwk, typ, ' +
+              'alg and jti checked and the signature verified) and at ' +
+              'refresh (verified with the bound key), the JSON session ' +
+              'instructions with one bound cookie, the 403 and ' +
+              'Secure-Session-Challenge exchange, and Sec-Secure-Session-Id. ' +
+              'Every challenge is spent once for the cluster. Missing: ' +
+              'federated sessions (provider_key, the well-known document), ' +
+              'site-scoped sessions and scope rules, the authorization ' +
+              'parameter, and reading Secure-Session-Skipped. Off by ' +
+              'default (authn.deviceBoundSessions).' },
   { id: 'rfc4226', name: 'RFC 4226 — HOTP: An HMAC-Based One-Time Password ' +
                          'Algorithm',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc4226',
@@ -7733,6 +7749,32 @@ const ENDPOINTS: EndpointEntry[] = [
           'enrolling a second factor, once, in common/credentials.ts. A ' +
           'page of the sign-in surface since #572.' },
   // #64: the emailed code and the emailed sign-in link.
+  // #725: Device Bound Session Credentials.
+  { path: '/authn/dbsc/register', group: 'Authentication',
+    name: 'Device-bound session registration',
+    specs: ['dbsc'],
+    effect: 'binds the sign-on session to the key the browser proves, and ' +
+            'sets its bound cookie',
+    what: 'Where authn.deviceBoundSessions is on, the answer that sets ' +
+          'the session cookie offers this path in ' +
+          'Secure-Session-Registration. The browser posts a dbsc+jwt proof ' +
+          'of a new key over that challenge in Secure-Session-Response; ' +
+          'the session records the key, and the answer is the session ' +
+          'instructions, the sts_session_bound cookie and a first ' +
+          'Secure-Session-Challenge. A session is bound once. 404 while ' +
+          'the setting is off.' },
+  { path: '/authn/dbsc/refresh', group: 'Authentication',
+    name: 'Device-bound session refresh',
+    specs: ['dbsc'],
+    effect: 'renews the bound cookie, or ends the session for a proof that ' +
+            'is not the bound key\'s',
+    what: 'The browser posts here, with Sec-Secure-Session-Id, when the ' +
+          'bound cookie runs out. Without a proof the answer is a 403 with ' +
+          'Secure-Session-Challenge. With a proof of the bound key over a ' +
+          'current challenge, a new bound cookie is set. A proof signed by ' +
+          'another key, or replaying a challenge already spent, ends the ' +
+          'session as a sign-out does. An id the session is not bound as ' +
+          'is refused, and the session is left alone.' },
   { path: '/authn/email-code', group: 'Authentication',
     name: 'Emailed code step',
     specs: ['rfc8176', 'nist-800-63b'],
@@ -9527,6 +9569,16 @@ const PROTOCOLS: Protocol[] = [
           '(section 3.2.2). amr "otp" (RFC 8176 has no value for email); it ' +
           'never meets a risk step-up, and the issuance policy may refuse a ' +
           'session standing on one (refuseEmailFactor).' },
+  // #725: the session bound to a key the browser holds, after the
+  // credential mechanisms it protects the session of.
+  { name: 'Device Bound Session Credentials', groups: ['Authentication'],
+    specs: ['dbsc'],
+    what: 'The sign-on session bound to a key the browser holds, TPM-backed ' +
+          'where it can. A copied session cookie stops working when the ' +
+          'short-lived bound cookie beside it runs out, because only a ' +
+          'proof of that key renews it; a proof by any other key ends the ' +
+          'session. Off by default and per realm; a browser without it ' +
+          'keeps an ordinary session.' },
   { name: 'Verifiable Credentials (OID4VCI / OID4VP)',
     groups: ['VC Issuance (OID4VCI)', 'VC Presentation (OID4VP)',
              'Decentralized Identifiers', 'W3C VC API'],

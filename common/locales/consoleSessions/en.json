@@ -8,6 +8,8 @@
   "thSince": "Since",
   "thExpires": "Expires",
   "thCarries": "Carries",
+  "deviceBound": "Bound to its browser's {alg} key (DBSC)",
+  "deviceBoundTitle": "Device Bound Session Credentials: this session needs a short-lived cookie that only a proof of the browser's key renews. Renewed {n} time(s).",
   "thCredentials": "Credentials",
   "leadBefore": "<strong>Every session this service is holding right now</strong>, across the three protocols that have one. A session is state THIS SERVICE holds that makes somebody currently authenticated; a token, an assertion, a ticket and an SVID are things it has HANDED OUT, they outlive every session here, and they are ",
   "leadTokens": "Tokens",

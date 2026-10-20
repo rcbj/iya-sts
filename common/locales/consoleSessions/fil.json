@@ -8,6 +8,8 @@
   "thSince": "Mula",
   "thExpires": "Mag-e-expire",
   "thCarries": "Dala",
+  "deviceBound": "Naka-bind sa {alg} key ng browser nito (DBSC)",
+  "deviceBoundTitle": "Device Bound Session Credentials: kailangan ng session na ito ng panandaliang cookie na proof lamang ng key ng browser ang nagre-renew. Na-renew nang {n} beses.",
   "thCredentials": "Mga credential",
   "leadBefore": "<strong>Bawat session na hawak ng serbisyong ito ngayon mismo</strong>, sa tatlong protocol na may session. Ang session ay state na hawak ng SERBISYONG ITO na nagpapanatiling authenticated ang isang tao ngayon; ang token, assertion, ticket at SVID ay mga bagay na IBINIGAY na nito, mas tumatagal pa sila kaysa sa bawat session dito, at nasa ",
   "leadTokens": "Tokens",

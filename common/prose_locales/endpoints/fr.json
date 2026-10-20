@@ -1371,6 +1371,14 @@
     "en": "305d816e110db5e1",
     "text": "Étape de second facteur par code de récupération"
   },
+  "endpoints.route./authn/dbsc/register.name": {
+    "en": "5577cc2228ead966",
+    "text": "Enregistrement d’une session liée à l’appareil"
+  },
+  "endpoints.route./authn/dbsc/refresh.name": {
+    "en": "3defb4fd7920ec00",
+    "text": "Renouvellement d’une session liée à l’appareil"
+  },
   "endpoints.route./authn/email-code.name": {
     "en": "f889f4695b9ab9f3",
     "text": "Étape du code envoyé par courriel"

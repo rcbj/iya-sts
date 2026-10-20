@@ -265,7 +265,16 @@ class SessionsPage {
             '">—</span>');
     const out = '<tr>' +
       '<td>' + kit.esc(row.kind) +
-      '<div class="sub">' + kit.shortened(row.handle, 28) + '</div></td>' +
+      '<div class="sub">' + kit.shortened(row.handle, 28) + '</div>' +
+      // Bound to a key its browser holds (#725).
+      (row.deviceBound && row.deviceBound.bound
+        ? '<div class="sub" title="' +
+          kit.esc(t.text('consoleSessions.deviceBoundTitle',
+                         { n: row.deviceBound.refreshes || 0 })) + '">' +
+          t.html('consoleSessions.deviceBound',
+                 { alg: row.deviceBound.alg || '' }) + '</div>'
+        : '') +
+      '</td>' +
       '<td>' + kit.esc(row.protocol) +
       (row.acr ? '<div class="sub">acr ' + kit.esc(row.acr) +
         (row.amr.length ? ', amr ' + kit.esc(row.amr.join(' ')) : '') +

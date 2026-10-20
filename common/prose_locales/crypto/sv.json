@@ -107,6 +107,14 @@
     "en": "270607a9609c73d2",
     "text": "scrypt, via crypto.hashSecret(), i inloggningssteget"
   },
+  "crypto.sentences.dbscMac": {
+    "en": "6d623cb602324457",
+    "text": "HMAC-SHA-256 under klusterhemligheten dbsc, över sfären, sessionen och en giltighetstid"
+  },
+  "crypto.sentences.dbscKey": {
+    "en": "00612e39f9ee2ec1",
+    "text": "den publika JWK:n och dess RFC 7638-tumavtryck, på sessionen"
+  },
   "crypto.sentences.jweGcmNote": {
     "en": "738d45485f10fb8b",
     "text": "AEAD: en nyckel, en tagg."
@@ -1350,6 +1358,34 @@
   "crypto.families.email-codes-and-links.algorithms.2.what": {
     "en": "7b4099bae09b5ac9",
     "text": "I vila"
+  },
+  "crypto.families.device-bound-session-credentials.signs": {
+    "en": "51177dacf9719f29",
+    "text": "Ingenting. En utmaning och en bunden cookie är MAC:ar, inte signaturer: bara den här tjänsten kontrollerar dem."
+  },
+  "crypto.families.device-bound-session-credentials.verifies": {
+    "en": "d8ef54ef33b1612f",
+    "text": "Webbläsarens dbsc+jwt-bevis, genom crypto.verifyCompactJws() med algoritmen fastlåst: vid registreringen med nyckeln i bevisets eget huvud, och vid varje förnyelse med nyckeln som sessionen bands till."
+  },
+  "crypto.families.device-bound-session-credentials.hashes": {
+    "en": "886bd748da150493",
+    "text": "Den bundna nyckeln som dess RFC 7638-tumavtryck, och varje utmaning som det sammandrag som cluster_claims förbrukar den under."
+  },
+  "crypto.families.device-bound-session-credentials.whatItDoesNot": {
+    "en": "f8a4e58cdc2ad4fa",
+    "text": "Den godtar aldrig alg none, aldrig en andra nyckel för samma session och aldrig en utmaning två gånger."
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.0.what": {
+    "en": "7fbb3ccf9640651f",
+    "text": "Bevis"
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.1.what": {
+    "en": "d2e757eb4313c2c9",
+    "text": "Utmaning och bunden cookie"
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.2.what": {
+    "en": "e3a367643d49d35f",
+    "text": "Bunden nyckel"
   },
   "crypto.families.verifiable-credentials-oid4vci-oid4vp.signs": {
     "en": "30d11da1c63a38f1",

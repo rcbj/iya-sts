@@ -287,6 +287,10 @@ function theProtocolListIsHonest(doc, page) {
                     // THE EMAILED CODE AND LINK (#64): a third credential
                     // mechanism that is not a protocol, beside the other two.
                     "Email codes and links",
+                    // DEVICE BOUND SESSION CREDENTIALS (#725): the session
+                    // those mechanisms start, bound to the browser's key;
+                    // the same endpoint group.
+                    "Device Bound Session Credentials",
                     "Verifiable Credentials (OID4VCI / OID4VP)"];
   assert.ok(Array.isArray(doc.protocols),
     "the document should carry the protocol list; it has none.");

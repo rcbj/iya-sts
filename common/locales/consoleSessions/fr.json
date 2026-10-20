@@ -8,6 +8,8 @@
   "thSince": "Depuis",
   "thExpires": "Expire",
   "thCarries": "Porte",
+  "deviceBound": "Liée à la clé {alg} de son navigateur (DBSC)",
+  "deviceBoundTitle": "Device Bound Session Credentials : cette session a besoin d’un cookie de courte durée que seule une preuve de la clé du navigateur renouvelle. Renouvelé {n} fois.",
   "thCredentials": "Justificatifs",
   "leadBefore": "<strong>Chaque session que ce service détient en ce moment</strong>, dans les trois protocoles qui en ont une. Une session est un état que CE SERVICE détient et qui rend quelqu’un actuellement authentifié ; un jeton, une assertion, un ticket et un SVID sont des choses qu’il a REMISES, qui survivent à toute session d’ici, et ils se trouvent dans ",
   "leadTokens": "Jetons",

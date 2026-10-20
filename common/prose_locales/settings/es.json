@@ -675,6 +675,22 @@
     "en": "3d8175702c053473",
     "text": "Cuánto tiempo puede pasar una sesión SIN USARSE antes de terminar, además de la vigencia absoluta de arriba. **Cero, el valor predeterminado, significa sin tiempo de inactividad**, que es lo que este servicio ha hecho siempre. Si se define, una sesión que alguien deja de usar termina esa cantidad de segundos después de su última solicitud, sea cual sea el primero de los dos límites en llegar — y una solicitud a la consola de administración o al portal de usuario cuenta como uso de la sesión de inicio de sesión único que hay detrás, de modo que a un operador que trabaja en la consola no le cierra la sesión un reloj de inactividad sobre una sesión que no está presentando. Es en vivo: se aplica a las sesiones que ya existen, porque se comprueba donde se lee una sesión y no se sella donde se crea."
   },
+  "authn.deviceBoundSessions|label": {
+    "en": "454fe488dcb65a89",
+    "text": "Vincular las sesiones a la clave del navegador (DBSC)"
+  },
+  "authn.deviceBoundSessions|description": {
+    "en": "b88d9840f0b7c19c",
+    "text": "Activado, un inicio de sesión pide al navegador que vincule la sesión de inicio de sesión único a una clave que posee (W3C Device Bound Session Credentials). Un navegador que lo hace debe renovar después una segunda cookie de corta duración con una prueba de esa clave, de modo que una cookie de sesión copiada deja de funcionar cuando esa cookie caduca; una renovación firmada por otra clave, o que repite un desafío ya consumido, termina la sesión. Un navegador que no lo admite conserva una sesión normal. Desactivado, el valor predeterminado, no se ofrece nada, y una sesión ya vinculada se trata como una sesión normal."
+  },
+  "authn.deviceBoundCookieLifetimeS|label": {
+    "en": "0589864dcb16bffb",
+    "text": "Duración de la cookie vinculada (segundos)"
+  },
+  "authn.deviceBoundCookieLifetimeS|description": {
+    "en": "eb2c0a8e31f615d9",
+    "text": "Cuánto vive la cookie que necesita una sesión vinculada al dispositivo antes de que el navegador deba volver a demostrar su clave, y por tanto cuánto sigue funcionando un par de cookies copiado. Nunca más allá del final de la propia sesión. Se lee cuando se emite una cookie."
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "Máximo de sesiones de inicio de sesión único por dominio"

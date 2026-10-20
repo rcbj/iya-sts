@@ -107,6 +107,14 @@
     "en": "270607a9609c73d2",
     "text": "scrypt，透過 crypto.hashSecret()，存於登入步驟上"
   },
+  "crypto.sentences.dbscMac": {
+    "en": "6d623cb602324457",
+    "text": "以叢集密鑰 dbsc 計算的 HMAC-SHA-256，涵蓋領域、工作階段與一個到期時間"
+  },
+  "crypto.sentences.dbscKey": {
+    "en": "00612e39f9ee2ec1",
+    "text": "公開 JWK 及其 RFC 7638 指紋，記錄在工作階段上"
+  },
   "crypto.sentences.jweGcmNote": {
     "en": "738d45485f10fb8b",
     "text": "AEAD：一把金鑰，一個標籤。"
@@ -1350,6 +1358,34 @@
   "crypto.families.email-codes-and-links.algorithms.2.what": {
     "en": "7b4099bae09b5ac9",
     "text": "靜態儲存"
+  },
+  "crypto.families.device-bound-session-credentials.signs": {
+    "en": "51177dacf9719f29",
+    "text": "不簽署。挑戰與綁定 cookie 是 MAC，而不是簽章：只有本服務會檢查它們。"
+  },
+  "crypto.families.device-bound-session-credentials.verifies": {
+    "en": "d8ef54ef33b1612f",
+    "text": "瀏覽器的 dbsc+jwt 證明，透過固定演算法的 crypto.verifyCompactJws() 驗證：註冊時使用其自身標頭中的金鑰，每次重新整理時使用工作階段所綁定的金鑰。"
+  },
+  "crypto.families.device-bound-session-credentials.hashes": {
+    "en": "886bd748da150493",
+    "text": "綁定金鑰以其 RFC 7638 指紋形式保存，每個挑戰以 cluster_claims 消耗它時所用的摘要形式保存。"
+  },
+  "crypto.families.device-bound-session-credentials.whatItDoesNot": {
+    "en": "f8a4e58cdc2ad4fa",
+    "text": "它從不接受 alg none，從不為同一個工作階段接受第二把金鑰，也從不接受同一個挑戰兩次。"
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.0.what": {
+    "en": "7fbb3ccf9640651f",
+    "text": "證明"
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.1.what": {
+    "en": "d2e757eb4313c2c9",
+    "text": "挑戰與綁定 cookie"
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.2.what": {
+    "en": "e3a367643d49d35f",
+    "text": "綁定金鑰"
   },
   "crypto.families.verifiable-credentials-oid4vci-oid4vp.signs": {
     "en": "30d11da1c63a38f1",
