@@ -360,6 +360,25 @@ const VOCABULARY = Object.freeze({
   // each after this prefix under its own name
   // (`urn:sts:xacml:passkey-policy:backupEligibility`).
   PASSKEY_POLICY_PREFIX: 'urn:sts:xacml:passkey-policy:',
+  // THE FACTS OF AN ACCOUNT RECOVERY (#724), carried in the `recovery`
+  // group of a `recover-account` question. resource, strings: the recovery
+  // DOOR (`forgot-password`, `password-reset`, `admin-password`,
+  // `activation`, `recovery-code`, `email-code`, `email-link`; absent at a
+  // session no recovery door led to), WHERE the question is asked (`door`,
+  // before anything is written; `session`, at the start of a session), and
+  // the kind of CREDENTIAL that answered at a session (`password`,
+  // `webauthn`, `backup-code`, ...). Booleans: whether the door is
+  // SELF-SERVICE (the person's own, rather than an operator's), whether the
+  // person holds a passkey the recovery would replace (COVERED), and
+  // whether a recovery is PENDING on their entry (a door was spent and no
+  // passkey has signed them in since).
+  PASSKEY_RECOVERY_DOOR: 'urn:sts:xacml:passkey:recovery-door',
+  PASSKEY_RECOVERY_AT: 'urn:sts:xacml:passkey:recovery-at',
+  PASSKEY_RECOVERY_CREDENTIAL: 'urn:sts:xacml:passkey:recovery-credential',
+  PASSKEY_RECOVERY_SELF_SERVICE:
+    'urn:sts:xacml:passkey:recovery-self-service',
+  PASSKEY_RECOVERY_COVERED: 'urn:sts:xacml:passkey:recovery-covered',
+  PASSKEY_RECOVERY_PENDING: 'urn:sts:xacml:passkey:recovery-pending',
   // environment, an integer: the rank of
   // `webauthn.attestationMinCertificationLevel`, absent when it is `none`.
   PASSKEY_REQUIRED_RANK: 'urn:sts:xacml:passkey:required-certification-rank'
@@ -710,6 +729,9 @@ class AuthorizationRequest {
   //            enterpriseSerialAttribute, postQuantumRequired }  always
   //   settings { attestationPolicy, allowedAaguids, requiredRank,
   //              requireFips }                 with `attestation`
+  //   recovery { door, at, credential, selfService, covered, pending }
+  //                                            with `recovery` (#724)
+  //   policy.recoveryAssurance                 always (#724)
   // An empty string and an unknown value are left out, never sent as '', so
   // no rule reads an absent fact as a value.
   passkey(facts) {
@@ -794,6 +816,19 @@ class AuthorizationRequest {
                      one(policy.enterpriseSerialAttribute));
     this.environment(P + 'postQuantumRequired',
                      one(policy.postQuantumRequired));
+    this.environment(P + 'recoveryAssurance', one(policy.recoveryAssurance));
+    const recovery = given.recovery || null;
+    if (has('recovery') && recovery) {
+      this.resource(V.PASSKEY_RECOVERY_DOOR, one(recovery.door));
+      this.resource(V.PASSKEY_RECOVERY_AT, one(recovery.at));
+      this.resource(V.PASSKEY_RECOVERY_CREDENTIAL, one(recovery.credential));
+      this.resource(V.PASSKEY_RECOVERY_SELF_SERVICE,
+                    [recovery.selfService === true], T.BOOLEAN);
+      this.resource(V.PASSKEY_RECOVERY_COVERED,
+                    [recovery.covered === true], T.BOOLEAN);
+      this.resource(V.PASSKEY_RECOVERY_PENDING,
+                    [recovery.pending === true], T.BOOLEAN);
+    }
     const settings = given.settings || null;
     if (has('attestation') && settings) {
       this.setting('webauthn.attestationPolicy',

@@ -191,6 +191,18 @@
     "en": "9f66bf08890386c9",
     "text": "Quelqu’un a configuré un second facteur requis à la connexion"
   },
+  "audit.actions.authn.recovery.refused.label": {
+    "en": "d8ba643a9e0a83b8",
+    "text": "La politique des clés d’accès a refusé une récupération de compte en libre-service"
+  },
+  "audit.actions.authn.recovery.limited.label": {
+    "en": "497fee88cee8044f",
+    "text": "Une connexion après une récupération de compte a été limitée à l’enregistrement d’une clé d’accès"
+  },
+  "audit.actions.authn.recovery.completed.label": {
+    "en": "6c8028e5950a3cd4",
+    "text": "Une clé d’accès a connecté quelqu’un après une récupération de compte"
+  },
   "audit.actions.authn.sign-in.started-over.label": {
     "en": "2773b5e084cf4499",
     "text": "Quelqu’un a quitté une étape de connexion et a recommencé la connexion"

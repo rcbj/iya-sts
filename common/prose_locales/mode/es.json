@@ -251,6 +251,18 @@
     "en": "cddc7c3db475d360",
     "text": "Ese AS-REQ se rechaza con KDC_ERR_POLICY (12), STS-KRB-0135, después de verificarse la contraseña (una incorrecta sigue siendo KDC_ERR_PREAUTH_FAILED), siempre que la persona tenga una aplicación de autenticación o una llave de seguridad con el rol mfa, o se le exija un segundo factor. Una persona con aplicación de autenticación obtiene un ticket mediante el blindaje FAST de RFC 6113 con preautenticación OTP de RFC 6560 — contraseña y código en un solo intercambio — y lleva el indicador `otp` de RFC 8129. Una contraseña de aplicación nunca es una clave Kerberos."
   },
+  "mode.requirements.recovery-assurance.what": {
+    "en": "3c8ef817d4ad4971",
+    "text": "Una recuperación de cuenta no es más débil que la llave de acceso que sustituye, de forma predeterminada"
+  },
+  "mode.requirements.recovery-assurance.development": {
+    "en": "523ca60d0edeedd0",
+    "text": "El recoveryAssurance de la política de llaves de acceso es any de forma predeterminada: un enlace de restablecimiento de contraseña, un enlace de activación, un código de recuperación o un código o enlace enviado por correo restablece el acceso de inmediato, sea cual sea la llave de acceso que tenga la persona."
+  },
+  "mode.requirements.recovery-assurance.product": {
+    "en": "7491bb7b906772bb",
+    "text": "Es not-weaker de forma predeterminada: para una persona que tiene una llave de acceso, el primer inicio de sesión tras una recuperación que no sea con llave de acceso no llega a ninguna aplicación (STS-AUTHN-0381). La pantalla de inicio de sesión le pide que registre una llave de acceso que cumpla la política de llaves de acceso y que después inicie sesión con ella. El valor propio de un dominio prevalece en ambos modos."
+  },
   "mode.requirements.resource-metadata-import.what": {
     "en": "fb298f641de33009",
     "text": "Una importación de metadatos de recurso protegido RFC 9728 se somete a las reglas que sigue un cliente del documento"

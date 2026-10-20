@@ -67,6 +67,7 @@
   "mfaSetup.title": "设置第二因素",
   "mfaSetup.heading": "设置第二因素",
   "mfaSetup.subProved": "您正在登录的应用不接受您刚刚为 <code>{name}</code> 提供的第二因素。请设置一个它接受的因素；在此之前不会登录。",
+  "mfaSetup.subRecovery": "<code>{name}</code> 是在没有其通行密钥的情况下恢复的，在通行密钥让您登录之前，此领域不允许它访问任何应用。请在此注册一个新的通行密钥，然后使用它登录。在此之前不会登录。",
   "mfaSetup.subOptional": "您拥有管理员角色，而 <code>{name}</code> 尚无第二因素。建议现在设置一个；您也可以忽略此步骤，仅用密码登录，下次还会再询问您。",
   "mfaSetup.subRequired": "<code>{name}</code> 需要第二因素，而您尚未设置。设置完成之前不会登录。",
   "mfaSetup.totpHeading": "身份验证器应用",

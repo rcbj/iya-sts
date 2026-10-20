@@ -191,6 +191,18 @@
     "en": "9f66bf08890386c9",
     "text": "有人在登录时设置了必需的第二因素"
   },
+  "audit.actions.authn.recovery.refused.label": {
+    "en": "d8ba643a9e0a83b8",
+    "text": "通行密钥策略拒绝了一次自助账户恢复"
+  },
+  "audit.actions.authn.recovery.limited.label": {
+    "en": "497fee88cee8044f",
+    "text": "账户恢复后的一次登录被限制为只能注册通行密钥"
+  },
+  "audit.actions.authn.recovery.completed.label": {
+    "en": "6c8028e5950a3cd4",
+    "text": "账户恢复后，通行密钥让某人登录了"
+  },
   "audit.actions.authn.sign-in.started-over.label": {
     "en": "2773b5e084cf4499",
     "text": "有人离开了登录步骤并重新开始登录"

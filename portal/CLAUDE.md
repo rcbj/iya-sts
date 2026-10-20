@@ -1832,6 +1832,15 @@ three differences:
   `ssf/account_signals.ts`. It signs nobody in: the page links to `/portal`,
   where the ordinary sign-in happens with the new password, for
   `/portal/activate`'s magic-link argument.
+* **A RECOVERY FOR A PASSKEY HOLDER (#724, `common/CLAUDE.md` 3cq).** The
+  POST asks the recovery question before it claims the link
+  (`recoveryCheck()`): under `recoveryAssurance: operator-only` a link the
+  person asked for themselves (`stsPasswordResetSource: self`) is refused
+  403, `STS-AUTHN-0380`, with its own sentence, and stays unspent; an
+  administrator's is not. A spent link then leaves a pending recovery
+  (`credentials.noteRecovery()`), and `/portal/activate`'s finish does the
+  same for somebody who held a passkey before the link was issued. The
+  sign-in after either is held by `authn.ts` (`authn/CLAUDE.md`).
 
 ## SEVERAL NODES: A LINK IS CLAIMED BEFORE ANYTHING IS SET (2026-09-14, #46)
 

@@ -1509,6 +1509,29 @@ function requiresSidFilteringOnTrusts() {
   return isProduct();
 }
 
+// Does a way back into an account that asks for no passkey — a password
+// reset link, an activation link, a recovery code, an emailed code or link —
+// restore access to applications at once, for a person who holds a passkey
+// (#724, 2026-10-19)? It is the DEFAULT of the passkey policy's
+// `recoveryAssurance` row, never a rule of its own: a realm's row says
+// otherwise in either mode. Development says yes (`any`), what this service
+// did before the row existed. Product says no (`not-weaker`): the session a
+// recovery leads to may only register a passkey satisfying the profile, and
+// reaches no application until a passkey has signed the person in — rcbj's
+// decision on #724, 2026-10-19 ("not-weaker in product is fine for now").
+// `common/passkey_policy.ts` asks it for the built-in default.
+/**
+ * Tells whether an account recovery restores access before a passkey has
+ * signed the person in, by default (`recoveryAssurance: any`).
+ *
+ * @returns true in development mode
+ */
+function recoversWeakerThanPasskeys() {
+  log.debug("Entering recoversWeakerThanPasskeys().");
+  log.debug("Leaving recoversWeakerThanPasskeys().");
+  return !isProduct();
+}
+
 // May a federation partner's asserted NAME be matched straight onto an
 // existing local person, which is `fedSubjectPolicy: any-existing` (#109,
 // 2026-09-22)? Development says yes — it is what this service did before the
@@ -2472,6 +2495,22 @@ const REQUIREMENTS = [
              'one exchange — and it carries the RFC 8129 indicator `otp`. An ' +
              'app password is never a Kerberos key.',
     where: 'kerberos/krb5_kdc.js, kerberos/krb5_fast.ts' },
+  // #724 (2026-10-19).
+  { id: 'recovery-assurance',
+    what: 'An account recovery is no weaker than the passkey it replaces, ' +
+          'by default',
+    development: 'The passkey policy\'s recoveryAssurance defaults to any: ' +
+                 'a password reset link, an activation link, a recovery ' +
+                 'code or an emailed code or link restores access at once, ' +
+                 'whatever passkey the person holds.',
+    product: 'It defaults to not-weaker: for a person who holds a passkey, ' +
+             'the first sign-in after a recovery that is not a passkey ' +
+             'sign-in reaches no application (STS-AUTHN-0381). The sign-in ' +
+             'screen asks them to register a passkey that satisfies the ' +
+             'passkey policy, and then to sign in with it. A realm\'s own ' +
+             'row says otherwise in either mode.',
+    where: 'common/passkey_policy.ts, authn/authn.ts, ' +
+           'portal/account_reset.ts' },
   { id: 'resource-metadata-import',
     what: 'An RFC 9728 protected resource metadata import is held to the ' +
           'rules a client of the document follows',
@@ -4083,6 +4122,7 @@ module.exports = {
     acceptsPasswordAloneFromSecondFactorAccounts,
   issuesTicketsOnPasswordAlone: issuesTicketsOnPasswordAlone,
   requiresSidFilteringOnTrusts: requiresSidFilteringOnTrusts,
+  recoversWeakerThanPasskeys: recoversWeakerThanPasskeys,
   matchesFederatedNames: matchesFederatedNames,
   defaultsFederatedAutocreate: defaultsFederatedAutocreate,
   acceptsUnsignedFederatedLogout: acceptsUnsignedFederatedLogout,

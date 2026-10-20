@@ -385,6 +385,14 @@ const ACTIONS = [
     label: 'A second factor was set up at a sign-in of elevated risk' },
   { action: 'authn.mfa.enrolled', category: 'authentication',
     label: 'Somebody set up a required second factor at sign-in' },
+  // #724: account recovery held to the passkey it replaces.
+  { action: 'authn.recovery.refused', category: 'authentication',
+    label: 'The passkey policy refused a self-service account recovery' },
+  { action: 'authn.recovery.limited', category: 'authentication',
+    label: 'A sign-in after an account recovery was limited to registering ' +
+           'a passkey' },
+  { action: 'authn.recovery.completed', category: 'authentication',
+    label: 'A passkey signed somebody in after an account recovery' },
   { action: 'authn.sign-in.started-over', category: 'authentication',
     label: 'Somebody left a sign-in step and started the sign-in over' },
 

@@ -67,6 +67,7 @@
   "mfaSetup.title": "Set up a second factor",
   "mfaSetup.heading": "Set up a second factor",
   "mfaSetup.subProved": "The application you are signing in to does not accept the second factor you just gave for <code>{name}</code>. Set up one it does accept; nothing is signed in until you have.",
+  "mfaSetup.subRecovery": "<code>{name}</code> was recovered without its passkey, and this realm lets it reach no application until a passkey has signed you in. Register a new passkey here; you will then sign in with it. Nothing is signed in until you do.",
   "mfaSetup.subOptional": "You hold an administrator role, and <code>{name}</code> has no second factor yet. Setting one up now is recommended; you can ignore this and sign in with your password, and you will be asked again next time.",
   "mfaSetup.subRequired": "A second factor is required for <code>{name}</code>, and you do not have one yet. Nothing is signed in until one is set up.",
   "mfaSetup.totpHeading": "An authenticator app",

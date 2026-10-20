@@ -197,6 +197,37 @@
 // it. Selected per application or group like every row, which is how
 // "application X requires a post-quantum passkey" is said (#535).
 //
+// #724 (2026-10-19) added `recoveryAssurance`: whether a way back into the
+// account that asks for no passkey — a password reset link, an activation
+// link, a recovery code, an emailed code or link — may restore access for a
+// person who holds a passkey.
+//
+//   recoveryAssurance        `any` IN DEVELOPMENT, `not-weaker` IN PRODUCT
+//                            (rcbj's decision on #724, 2026-10-19: "not-weaker
+//                            in product is fine for now"; the built-in
+//                            default asks `mode.recoversWeakerThanPasskeys()`).
+//                            `any` is what this service did before. Under
+//                            `not-weaker` the first session after a recovery
+//                            that is not a passkey sign-in reaches no
+//                            application (STS-AUTHN-0381): the sign-in
+//                            screen asks for a passkey to be registered,
+//                            held to this profile's registration rules, and
+//                            then for a sign-in with it. Under
+//                            `operator-only` the self-service doors are
+//                            refused for such a person as well
+//                            (STS-AUTHN-0380) and only an operator's reset
+//                            or activation link remains, the session it leads
+//                            to limited as under `not-weaker`. THE ONLY
+//                            OPTIONAL ROW ON A SAVE: absent, the built-in
+//                            default is kept, so a caller that sent the whole
+//                            profile before the row existed is not refused.
+//                            The refusals are rules of the issuance policy
+//                            (`recover-account`), as #536's are. The pending
+//                            recovery is `stsRecoveryPending` on the person's
+//                            entry, and the reset link records who issued it
+//                            (`stsPasswordResetSource`): SCHEMA's
+//                            `personAttributes`.
+//
 // One profile per realm, inherited from the default realm (answer 3); named
 // policies chosen by application or group are #535.
 //
@@ -237,6 +268,9 @@ import config = require('./config');
 // THE ISSUANCE GATE (#536): whether a passkey may be registered or may sign
 // somebody in is a question to the issuance policy, asked through it.
 import issuanceGate = require('./issuance_gate');
+// THE BUILT-IN DEFAULT OF `recoveryAssurance` (#724), which differs by mode.
+// A leaf over `config` and `error_codes`, both already below this module.
+import mode = require('./mode');
 // THE AMBIENT SELECTION (#535), for the rest of a request.
 import { AsyncLocalStorage } from 'async_hooks';
 
@@ -253,6 +287,8 @@ interface PolicyField {
   min?: number;
   max?: number;
   unit?: string;
+  // #724: a row a save may leave out, keeping the built-in default.
+  optional?: boolean;
   label: string;
   what: string;
 }
@@ -379,7 +415,15 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
   postQuantumSignIn: 'only a post-quantum (ML-DSA) passkey signs a person ' +
     'in; a classical one may still be registered',
   postQuantumEverywhere: 'only a post-quantum (ML-DSA) passkey is ' +
-    'registered or signs a person in'
+    'registered or signs a person in',
+  recoveryAny: 'an account recovery restores access at once, whatever ' +
+    'passkey the person holds',
+  recoveryNotWeaker: 'after an account recovery, a person who holds a ' +
+    'passkey reaches no application until a passkey satisfying this ' +
+    'policy has signed them in',
+  recoveryOperatorOnly: 'a person who holds a passkey recovers their ' +
+    'account only through an administrator, and then reaches no ' +
+    'application until a passkey satisfying this policy has signed them in'
 });
 
 const SELECTORS = [
@@ -482,6 +526,34 @@ const POST_QUANTUM_REQUIRED_VALUES = ['off', 'sign-in',
  */
 const POST_QUANTUM_ALGORITHMS: ReadonlyArray<string> =
   Object.freeze(['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87']);
+ * What `recoveryAssurance` may be (#724).
+ */
+const RECOVERY_ASSURANCE = ['any', 'not-weaker', 'operator-only'];
+/**
+ * The recovery doors (#724), and which are the person's own. An operator's
+ * door — a reset link or a generated password an administrator gave out, an
+ * activation link — is not self-service.
+ */
+const RECOVERY_DOORS: Readonly<Record<string, { selfService: boolean }>> =
+  Object.freeze({
+    'forgot-password': { selfService: true },
+    'password-reset': { selfService: true },
+    'admin-reset': { selfService: false },
+    'admin-password': { selfService: false },
+    'activation': { selfService: false },
+    'recovery-code': { selfService: true },
+    'email-code': { selfService: true },
+    'email-link': { selfService: true }
+  });
+/**
+ * The credential kinds a sign-in names that are themselves a recovery door
+ * (#724): a recovery code, an emailed code or link.
+ */
+const RECOVERY_CREDENTIALS: Readonly<Record<string, string>> = Object.freeze({
+  'backup-code': 'recovery-code',
+  'email-code': 'email-code',
+  'email-link': 'email-link'
+});
 
 /**
  * The policy's fields: one table read as the schema, the console form, the API
@@ -650,7 +722,23 @@ const FIELDS: PolicyField[] = [
     what: 'ON BY DEFAULT: one "Use passkey" step whose request lists every ' +
           'one of the person\'s passkeys, and the browser offers whichever ' +
           'is present. Off, a person with more than one is shown a choice ' +
-          'per passkey, by its name, and the request names only that one.' }
+          'per passkey, by its name, and the request names only that one.' },
+  { key: 'recoveryAssurance', attribute: 'stsPasskeyRecoveryAssurance',
+    type: 'enum', values: RECOVERY_ASSURANCE.slice(), dflt: 'any',
+    optional: true,
+    label: 'Account recovery for a person who holds a passkey',
+    what: '`any` BY DEFAULT IN DEVELOPMENT, `not-weaker` IN PRODUCT. ' +
+          'Whether a way back into the account that asks for no passkey ' +
+          '— a password reset link, an activation link, a recovery code, ' +
+          'an emailed code or link — restores access for a person who ' +
+          'holds one. `any`: at once. `not-weaker`: the first sign-in ' +
+          'after it that is not a passkey sign-in reaches no application; ' +
+          'the person registers a passkey that satisfies this policy and ' +
+          'signs in with it. `operator-only`: as not-weaker, and the ' +
+          'self-service doors (the forgot-password form, a recovery code ' +
+          'or an emailed code or link at sign-in) are refused; only an ' +
+          'administrator\'s reset link, generated password or activation ' +
+          'link remains. Left out of a save, the built-in default is kept.' }
 ];
 
 /**
@@ -664,9 +752,26 @@ FIELDS.forEach(function (field) {
 /**
  * The built-in value of every field, in force where no entry says otherwise.
  */
+// `recoveryAssurance` (#724) is the one row whose built-in default differs
+// by mode, so it is a GETTER asking `mode.js` each time it is read — the
+// mode is a setting, and a copy taken at load would keep development's
+// answer in a process switched to product. `Object.assign()` copies its
+// value at the time of the copy, which is what `read()` and the console's
+// defaults want.
 const DEFAULTS: Readonly<Record<string, boolean | string | number>> =
   Object.freeze(FIELDS.reduce(function (out, field) {
-    out[field.key] = field.dflt;
+    if (field.key === 'recoveryAssurance') {
+      Object.defineProperty(out, field.key, {
+        enumerable: true,
+        get: function recoveryAssuranceDefault(): string {
+          log.debug("Entering recoveryAssuranceDefault().");
+          log.debug("Leaving recoveryAssuranceDefault().");
+          return mode.recoversWeakerThanPasskeys() ? 'any' : 'not-weaker';
+        }
+      });
+    } else {
+      out[field.key] = field.dflt;
+    }
     return out;
   }, {} as Record<string, boolean | string | number>));
 
@@ -689,7 +794,21 @@ const SCHEMA = {
   })).concat([
     { name: 'description',
       what: 'What the profile is for, for the next person.' }
-  ])
+  ]),
+  // #724: what a recovery leaves on a PERSON's entry.
+  personAttributes: [
+    { name: 'stsRecoveryPending',
+      what: 'A recovery restored access to this person, who holds a ' +
+            'passkey, and no passkey has signed them in since: the door ' +
+            'and when, as `<door> <ISO 8601 instant>`. While the passkey ' +
+            'policy\'s recoveryAssurance is not-weaker or operator-only, ' +
+            'a sign-in that is not a passkey reaches no application. ' +
+            'Maintained by this service.' },
+    { name: 'stsPasswordResetSource',
+      what: 'Who issued the password reset link on this entry: `self` (the ' +
+            'forgot-password form) or `operator` (an administrator). ' +
+            'Written and cleared with the link. Maintained by this service.' }
+  ]
 };
 
 /**
@@ -725,6 +844,14 @@ class PasskeyPolicy {
    * The sentences `describe()` makes, as templates (#543).
    */
   static readonly SENTENCES = SENTENCES;
+  /**
+   * The recovery doors, and which are the person's own (#724).
+   */
+  static readonly RECOVERY_DOORS = RECOVERY_DOORS;
+  /**
+   * The credential kinds that are themselves a recovery door (#724).
+   */
+  static readonly RECOVERY_CREDENTIALS = RECOVERY_CREDENTIALS;
 
   private directory: DirectoryHooks | null = null;
   private warnedAboutNoDirectory = false;
@@ -1723,6 +1850,60 @@ class PasskeyPolicy {
   }
 
   /**
+   * What an account recovery may restore for a person who holds a passkey
+   * (#724): `any`, `not-weaker` or `operator-only`.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the row's value, the built-in default where it is unreadable
+   */
+  recoveryAssurance(profile?: PasskeyProfile | null): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.recoveryAssurance().");
+    const rules = profile || this.read();
+    const value = String(rules.recoveryAssurance || '');
+    log.debug("Leaving PasskeyPolicy.recoveryAssurance(). " + value);
+    return RECOVERY_ASSURANCE.indexOf(value) >= 0 ? value
+      : String(DEFAULTS.recoveryAssurance);
+  }
+
+  // =========================================================================
+  // THE RECOVERY QUESTION (#724). A door that restores access without a
+  // passkey asks it BEFORE it writes anything (`at: 'door'`), and every
+  // session asks it at its start (`at: 'session'`, `authn.ts`'s
+  // `startSessionHere()`). The facts are the caller's, because this leaf
+  // reads no credential: the DOOR (one of RECOVERY_DOORS, or '' at a
+  // session no door led to), whether the person holds a passkey
+  // (`covered`), whether a recovery is pending on their entry, and at a
+  // session the kind of credential that answered. The issuance policy
+  // decides (`recover-account`); the reason picks the sentence.
+  // =========================================================================
+  /**
+   * Asks the issuance policy whether a recovery may restore access, or a
+   * session after one may reach an application (#724).
+   *
+   * @param facts - `{ username, door, at, credential, covered, pending }`
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `{ code, why, reason }`, or null where the policy allows it
+   */
+  recoveryRefusal(facts: Record<string, any>,
+                  profile?: PasskeyProfile | null):
+      { code: string; why: string; reason: string } | null {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.recoveryRefusal().");
+    const given = facts || {};
+    const out = this.refusalFor('recovery', {
+      username: String(given.username || ''),
+      recovery: { door: String(given.door || ''),
+                  at: String(given.at || 'door'),
+                  credential: String(given.credential || ''),
+                  covered: given.covered === true,
+                  pending: given.pending === true } }, profile);
+    log.debug("Leaving PasskeyPolicy.recoveryRefusal(). " +
+              (out ? out.code : 'allowed'));
+    return out;
+  }
+
+  /**
    * The attribute holding a person's security-key serials, or empty (#532).
    *
    * @param profile - a profile already read; read afresh when omitted
@@ -1860,7 +2041,8 @@ class PasskeyPolicy {
     };
     const groups: string[] = [];
     const out: Record<string, any> = {
-      action: at === 'registration' ? 'register-passkey' : 'use-passkey',
+      action: at === 'registration' ? 'register-passkey'
+        : (at === 'recovery' ? 'recover-account' : 'use-passkey'),
       subject: String(given.username || ''),
       realm: String(typeof realms.currentId === 'function'
         ? realms.currentId() || '' : ''),
@@ -1906,6 +2088,17 @@ class PasskeyPolicy {
       out.postQuantum = PasskeyPolicy.isPostQuantum(algorithm);
       out.lane = given.lane === 'pqc' ? 'pqc' : 'classical';
     }
+    if (has('recovery') && given.recovery) {
+      groups.push('recovery');
+      const r = given.recovery;
+      const door = String(r.door || '');
+      out.recovery = {
+        door: door, at: String(r.at || ''),
+        credential: String(r.credential || ''),
+        selfService: !!(RECOVERY_DOORS[door] &&
+                        RECOVERY_DOORS[door].selfService),
+        covered: r.covered === true, pending: r.pending === true };
+    }
     out.groups = groups;
     const pin = this.pinLengthRule(rules);
     out.policy = {
@@ -1919,7 +2112,8 @@ class PasskeyPolicy {
       enterpriseSerialAttribute: attribute,
       postQuantumRequired: POST_QUANTUM_REQUIRED_VALUES.indexOf(
         String(rules.postQuantumRequired)) >= 0
-        ? String(rules.postQuantumRequired) : 'off'
+        ? String(rules.postQuantumRequired) : 'off',
+      recoveryAssurance: this.recoveryAssurance(rules)
     };
     log.debug("Leaving PasskeyPolicy.question(). " + out.action + ' [' +
               groups.join(', ') + ']');
@@ -2031,6 +2225,17 @@ class PasskeyPolicy {
             'one issued to you: its serial is not on your directory entry ' +
             '(' + policy.enterpriseSerialAttribute + '). Use the key your ' +
             'organisation issued you.';
+    } else if (reason === 'recovery-self-service') {
+      why = 'This account is protected by a passkey, and this realm lets ' +
+            'it be recovered only by whoever manages it (the passkey ' +
+            'policy\'s recoveryAssurance is operator-only). Sign in with ' +
+            'your passkey, or ask an administrator for a reset or ' +
+            'activation link.';
+    } else if (reason === 'recovery-enrol-first') {
+      why = 'This account was recovered without its passkey, and this ' +
+            'realm lets it reach no application until a passkey has signed ' +
+            'you in (the passkey policy\'s recoveryAssurance). Register a ' +
+            'new passkey, then sign in with it.';
     } else {
       const sentences = (facts.attestationSentences || {}) as
         Record<string, string>;
@@ -2096,7 +2301,11 @@ class PasskeyPolicy {
         ? SENTENCES.postQuantumEverywhere
         : (rules.postQuantumRequired === 'sign-in'
           ? SENTENCES.postQuantumSignIn
-          : SENTENCES.postQuantumOff)
+          : SENTENCES.postQuantumOff),
+      rules.recoveryAssurance === 'operator-only'
+        ? SENTENCES.recoveryOperatorOnly
+        : (rules.recoveryAssurance === 'not-weaker'
+          ? SENTENCES.recoveryNotWeaker : SENTENCES.recoveryAny)
     ];
     log.debug("Leaving PasskeyPolicy.describe().");
     return out;
@@ -2211,6 +2420,10 @@ class PasskeyPolicy {
           body.form === 'console') {
         raw = 'false';
       }
+      if (raw === undefined && field.optional) {
+        // LEFT OUT, the built-in default stays (#724): see the header.
+        return;
+      }
       if (raw === undefined) {
         problems.push('`' + field.key + '` (' + field.label + ') is ' +
                       'required. A save replaces the whole profile, so ' +
@@ -2313,6 +2526,9 @@ class PasskeyPolicy {
     };
     FIELDS.forEach(function (field) {
       const value = checked.values[field.key];
+      if (value === undefined && field.optional) {
+        return;
+      }
       attributes[field.attribute] = field.type === 'bool'
         ? (value ? 'TRUE' : 'FALSE') : String(value);
     });
@@ -2449,6 +2665,10 @@ export = {
   pinLengthRefusal: slot.forward('pinLengthRefusal'),
   question: slot.forward('question'),
   refusalFor: slot.forward('refusalFor'),
+  recoveryAssurance: slot.forward('recoveryAssurance'),
+  recoveryRefusal: slot.forward('recoveryRefusal'),
+  RECOVERY_DOORS: PasskeyPolicy.RECOVERY_DOORS,
+  RECOVERY_CREDENTIALS: PasskeyPolicy.RECOVERY_CREDENTIALS,
   describe: slot.forward('describe'),
   enforced: slot.forward('enforced')
 };

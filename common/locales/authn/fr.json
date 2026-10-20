@@ -67,6 +67,7 @@
   "mfaSetup.title": "Configurer un deuxième facteur",
   "mfaSetup.heading": "Configurer un deuxième facteur",
   "mfaSetup.subProved": "L’application à laquelle vous vous connectez n’accepte pas le deuxième facteur que vous venez de fournir pour <code>{name}</code>. Configurez-en un qu’elle accepte ; aucune connexion n’a lieu tant que ce n’est pas fait.",
+  "mfaSetup.subRecovery": "<code>{name}</code> a été récupéré sans sa clé d’accès, et ce domaine ne lui laisse atteindre aucune application tant qu’une clé d’accès ne vous a pas connecté. Enregistrez ici une nouvelle clé d’accès ; vous vous connecterez ensuite avec elle. Aucune connexion n’a lieu tant que ce n’est pas fait.",
   "mfaSetup.subOptional": "Vous détenez un rôle d’administrateur, et <code>{name}</code> n’a pas encore de deuxième facteur. Il est recommandé d’en configurer un maintenant ; vous pouvez ignorer cette étape et vous connecter avec votre mot de passe, et la question vous sera reposée la prochaine fois.",
   "mfaSetup.subRequired": "Un deuxième facteur est exigé pour <code>{name}</code>, et vous n’en avez pas encore. Aucune connexion n’a lieu tant qu’il n’est pas configuré.",
   "mfaSetup.totpHeading": "Une application d’authentification",

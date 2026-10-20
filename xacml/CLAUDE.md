@@ -1479,6 +1479,18 @@ two assertion doors for the attestation rules).
   neither answers, `common/passkey_rules.js` reads the same rules from the
   facts.
 * **Not members of `ISSUANCE`.**
+* **A THIRD QUESTION, `recover-account` (#724; `common/CLAUDE.md` 3cq).**
+  Whether a way back into an account that asks for no passkey may restore
+  access, and whether a session after one may reach an application. Fact
+  group `recovery`: the door, where it is asked (`door` or `session`), the
+  credential that answered, and whether the door is self-service, whether
+  the person holds a passkey (`covered`) and whether a recovery is pending.
+  Two Deny rules after the `use-passkey` Permit: `recovery-self-service`
+  (`STS-AUTHN-0380`, under `recoveryAssurance: operator-only`) and
+  `recovery-enrol-first` (`STS-AUTHN-0381`, under `not-weaker` or
+  `operator-only`, at a session a passkey did not answer). Then a Permit.
+  `common/passkey_rules.js` reads both, and `tests/recovery_assurance.js`
+  holds the two to one truth table.
 
 #### The subject, and the application
 

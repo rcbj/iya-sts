@@ -1095,6 +1095,14 @@
     "en": "128deae048d6edbf",
     "text": "ACTIVADO DE FORMA PREDETERMINADA: un solo paso \"Usar llave de acceso\" cuya solicitud enumera todas las llaves de acceso de la persona, y el navegador ofrece la que esté presente. Desactivado, a una persona con más de una se le muestra una opción por llave de acceso, por su nombre, y la solicitud indica solo esa."
   },
+  "passkey.FIELDS.recoveryAssurance.label": {
+    "en": "f1e6580ee3b2ee9c",
+    "text": "Recuperación de cuenta para una persona que tiene una llave de acceso"
+  },
+  "passkey.FIELDS.recoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "`any` DE FORMA PREDETERMINADA EN DESARROLLO, `not-weaker` EN PRODUCTO. Si una forma de volver a la cuenta que no pide ninguna llave de acceso — un enlace de restablecimiento de contraseña, un enlace de activación, un código de recuperación, un código o enlace enviado por correo — restablece el acceso de una persona que tiene una. `any`: de inmediato. `not-weaker`: el primer inicio de sesión posterior que no sea con llave de acceso no llega a ninguna aplicación; la persona registra una llave de acceso que cumpla esta política e inicia sesión con ella. `operator-only`: como not-weaker, y se rechazan las puertas de autoservicio (el formulario de contraseña olvidada, un código de recuperación o un código o enlace enviado por correo al iniciar sesión); solo queda el enlace de restablecimiento, la contraseña generada o el enlace de activación de un administrador. Si se omite al guardar, se mantiene el valor predeterminado integrado."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "La clase de este servicio para una política de llaves de acceso: cómo se comportan las llaves de acceso en este dominio. La entrada lleva el nombre del PERFIL (`cn=default`)."
@@ -1167,6 +1175,10 @@
     "en": "128deae048d6edbf",
     "text": "ACTIVADO DE FORMA PREDETERMINADA: un solo paso \"Usar llave de acceso\" cuya solicitud enumera todas las llaves de acceso de la persona, y el navegador ofrece la que esté presente. Desactivado, a una persona con más de una se le muestra una opción por llave de acceso, por su nombre, y la solicitud indica solo esa."
   },
+  "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "`any` DE FORMA PREDETERMINADA EN DESARROLLO, `not-weaker` EN PRODUCTO. Si una forma de volver a la cuenta que no pide ninguna llave de acceso — un enlace de restablecimiento de contraseña, un enlace de activación, un código de recuperación, un código o enlace enviado por correo — restablece el acceso de una persona que tiene una. `any`: de inmediato. `not-weaker`: el primer inicio de sesión posterior que no sea con llave de acceso no llega a ninguna aplicación; la persona registra una llave de acceso que cumpla esta política e inicia sesión con ella. `operator-only`: como not-weaker, y se rechazan las puertas de autoservicio (el formulario de contraseña olvidada, un código de recuperación o un código o enlace enviado por correo al iniciar sesión); solo queda el enlace de restablecimiento, la contraseña generada o el enlace de activación de un administrador. Si se omite al guardar, se mantiene el valor predeterminado integrado."
+  },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
     "text": "Las aplicaciones (identificador o client_id) a las que se aplica una política de llaves de acceso con nombre, en un inicio de sesión para una de ellas."
@@ -1182,6 +1194,14 @@
   "passkey.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "Para qué sirve el perfil, para la próxima persona que lo lea."
+  },
+  "passkey.SCHEMA.personAttributes.stsRecoveryPending.what": {
+    "en": "bb82df307a8e5b9a",
+    "text": "Una recuperación restableció el acceso de esta persona, que tiene una llave de acceso, y ninguna llave de acceso ha iniciado su sesión desde entonces: la puerta y el momento, como `<door> <ISO 8601 instant>`. Mientras el recoveryAssurance de la política de llaves de acceso sea not-weaker u operator-only, un inicio de sesión que no sea con llave de acceso no llega a ninguna aplicación. Lo mantiene este servicio."
+  },
+  "passkey.SCHEMA.personAttributes.stsPasswordResetSource.what": {
+    "en": "110d1231fc9be5f4",
+    "text": "Quién emitió el enlace de restablecimiento de contraseña de esta entrada: `self` (el formulario de contraseña olvidada) u `operator` (un administrador). Se escribe y se borra con el enlace. Lo mantiene este servicio."
   },
   "passkey.SELECTORS.selectApplications.what": {
     "en": "03ba679923c40b45",
@@ -1298,6 +1318,18 @@
   "passkey.sentences.postQuantumEverywhere": {
     "en": "79742dacfba54ede",
     "text": "solo una llave de acceso poscuántica (ML-DSA) se registra o inicia la sesión de una persona"
+  },
+  "passkey.sentences.recoveryAny": {
+    "en": "7383156c8eb1e363",
+    "text": "una recuperación de cuenta restablece el acceso de inmediato, sea cual sea la llave de acceso que tenga la persona"
+  },
+  "passkey.sentences.recoveryNotWeaker": {
+    "en": "37557fd6d60301ce",
+    "text": "tras una recuperación de cuenta, una persona que tiene una llave de acceso no llega a ninguna aplicación hasta que una llave de acceso que cumpla esta política haya iniciado su sesión"
+  },
+  "passkey.sentences.recoveryOperatorOnly": {
+    "en": "1a8f0b4a3319a435",
+    "text": "una persona que tiene una llave de acceso solo recupera su cuenta a través de un administrador, y después no llega a ninguna aplicación hasta que una llave de acceso que cumpla esta política haya iniciado su sesión"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

@@ -67,6 +67,7 @@
   "mfaSetup.title": "Configure un segundo factor",
   "mfaSetup.heading": "Configure un segundo factor",
   "mfaSetup.subProved": "La aplicación en la que está iniciando sesión no acepta el segundo factor que acaba de usar para <code>{name}</code>. Configure uno que sí acepte; no se inicia ninguna sesión hasta que lo haga.",
+  "mfaSetup.subRecovery": "<code>{name}</code> se recuperó sin su llave de acceso, y este dominio no le deja llegar a ninguna aplicación hasta que una llave de acceso haya iniciado su sesión. Registre aquí una nueva llave de acceso; después iniciará sesión con ella. No se inicia ninguna sesión hasta que lo haga.",
   "mfaSetup.subOptional": "Tiene un rol de administrador y <code>{name}</code> todavía no tiene segundo factor. Se recomienda configurar uno ahora; puede ignorar esto e iniciar sesión con su contraseña, y se le volverá a preguntar la próxima vez.",
   "mfaSetup.subRequired": "Se exige un segundo factor para <code>{name}</code> y todavía no tiene ninguno. No se inicia ninguna sesión hasta que configure uno.",
   "mfaSetup.totpHeading": "Una aplicación de autenticación",

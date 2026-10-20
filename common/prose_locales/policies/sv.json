@@ -1095,6 +1095,14 @@
     "en": "128deae048d6edbf",
     "text": "PÅSLAGEN SOM STANDARD: ett enda steg ”Använd nyckel” vars begäran listar var och en av personens nycklar, och webbläsaren erbjuder den som finns till hands. Avstängd visas en person med fler än en ett val per nyckel, efter dess namn, och begäran anger bara den."
   },
+  "passkey.FIELDS.recoveryAssurance.label": {
+    "en": "f1e6580ee3b2ee9c",
+    "text": "Kontoåterställning för en person som har en nyckel"
+  },
+  "passkey.FIELDS.recoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "`any` SOM STANDARD I UTVECKLING, `not-weaker` I PRODUKT. Om en väg tillbaka in i kontot som inte kräver någon nyckel — en länk för att återställa lösenordet, en aktiveringslänk, en återställningskod, en kod eller länk som skickats via e-post — återger åtkomsten för en person som har en. `any`: genast. `not-weaker`: den första inloggningen därefter som inte är en nyckelinloggning når inget program; personen registrerar en nyckel som uppfyller den här policyn och loggar in med den. `operator-only`: som not-weaker, och självbetjäningsdörrarna (formuläret för glömt lösenord, en återställningskod eller en kod eller länk via e-post vid inloggning) nekas; bara en administratörs återställningslänk, genererade lösenord eller aktiveringslänk återstår. Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "Den här tjänstens klass för en nyckelpolicy: hur nycklar beter sig i den här sfären. Posten namnges efter PROFILEN (`cn=default`)."
@@ -1167,6 +1175,10 @@
     "en": "128deae048d6edbf",
     "text": "PÅSLAGEN SOM STANDARD: ett enda steg ”Använd nyckel” vars begäran listar var och en av personens nycklar, och webbläsaren erbjuder den som finns till hands. Avstängd visas en person med fler än en ett val per nyckel, efter dess namn, och begäran anger bara den."
   },
+  "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "`any` SOM STANDARD I UTVECKLING, `not-weaker` I PRODUKT. Om en väg tillbaka in i kontot som inte kräver någon nyckel — en länk för att återställa lösenordet, en aktiveringslänk, en återställningskod, en kod eller länk som skickats via e-post — återger åtkomsten för en person som har en. `any`: genast. `not-weaker`: den första inloggningen därefter som inte är en nyckelinloggning når inget program; personen registrerar en nyckel som uppfyller den här policyn och loggar in med den. `operator-only`: som not-weaker, och självbetjäningsdörrarna (formuläret för glömt lösenord, en återställningskod eller en kod eller länk via e-post vid inloggning) nekas; bara en administratörs återställningslänk, genererade lösenord eller aktiveringslänk återstår. Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
     "text": "Applikationerna (identifierare eller client_id) som en namngiven nyckelpolicy gäller för, vid en inloggning till en av dem."
@@ -1182,6 +1194,14 @@
   "passkey.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "Vad profilen är till för, för nästa person."
+  },
+  "passkey.SCHEMA.personAttributes.stsRecoveryPending.what": {
+    "en": "bb82df307a8e5b9a",
+    "text": "En återställning återgav åtkomsten för den här personen, som har en nyckel, och ingen nyckel har loggat in hen sedan dess: dörren och när, som `<door> <ISO 8601 instant>`. Så länge nyckelpolicyns recoveryAssurance är not-weaker eller operator-only når en inloggning som inte är en nyckel inget program. Underhålls av den här tjänsten."
+  },
+  "passkey.SCHEMA.personAttributes.stsPasswordResetSource.what": {
+    "en": "110d1231fc9be5f4",
+    "text": "Vem som utfärdade länken för lösenordsåterställning på den här posten: `self` (formuläret för glömt lösenord) eller `operator` (en administratör). Skrivs och rensas tillsammans med länken. Underhålls av den här tjänsten."
   },
   "passkey.SELECTORS.selectApplications.what": {
     "en": "03ba679923c40b45",
@@ -1298,6 +1318,18 @@
   "passkey.sentences.postQuantumEverywhere": {
     "en": "79742dacfba54ede",
     "text": "bara en postkvantnyckel (ML-DSA) registreras eller loggar in en person"
+  },
+  "passkey.sentences.recoveryAny": {
+    "en": "7383156c8eb1e363",
+    "text": "en kontoåterställning återger åtkomsten genast, oavsett vilken nyckel personen har"
+  },
+  "passkey.sentences.recoveryNotWeaker": {
+    "en": "37557fd6d60301ce",
+    "text": "efter en kontoåterställning når en person som har en nyckel inget program förrän en nyckel som uppfyller den här policyn har loggat in hen"
+  },
+  "passkey.sentences.recoveryOperatorOnly": {
+    "en": "1a8f0b4a3319a435",
+    "text": "en person som har en nyckel återställer sitt konto bara genom en administratör, och når sedan inget program förrän en nyckel som uppfyller den här policyn har loggat in hen"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

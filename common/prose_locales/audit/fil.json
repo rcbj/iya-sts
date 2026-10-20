@@ -191,6 +191,18 @@
     "en": "9f66bf08890386c9",
     "text": "May taong nag-set up ng kinakailangang second factor sa sign-in"
   },
+  "audit.actions.authn.recovery.refused.label": {
+    "en": "d8ba643a9e0a83b8",
+    "text": "Tinanggihan ng patakaran sa passkey ang isang self-service na pag-recover ng account"
+  },
+  "audit.actions.authn.recovery.limited.label": {
+    "en": "497fee88cee8044f",
+    "text": "Ang isang sign-in pagkatapos ng pag-recover ng account ay nilimitahan sa pag-register ng passkey"
+  },
+  "audit.actions.authn.recovery.completed.label": {
+    "en": "6c8028e5950a3cd4",
+    "text": "Nag-sign in ng isang tao ang passkey pagkatapos ng pag-recover ng account"
+  },
   "audit.actions.authn.sign-in.started-over.label": {
     "en": "2773b5e084cf4499",
     "text": "May umalis sa isang hakbang ng pag-sign in at nagsimula muli"

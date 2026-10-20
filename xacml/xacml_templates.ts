@@ -458,7 +458,14 @@ const TRANSFER_ATTRIBUTE = {
 //
 //   * REGISTER_ACTION when `credentials.addKey()` is about to write a key;
 //   * USE_ACTION when a passkey has answered a sign-in (at the session's
-//     start, and at the two assertion doors for the attestation rules).
+//     start, and at the two assertion doors for the attestation rules);
+//   * RECOVER_ACTION (#724) when a way back into an account that does not
+//     ask for a passkey — a password reset link, an activation link, a
+//     recovery code, an emailed code or link — is about to be used, or a
+//     session is starting for somebody who used one: whether the person's
+//     passkey policy (`recoveryAssurance`) lets that recovery restore
+//     access, and whether the session may reach an application before a
+//     passkey has signed them in.
 //
 // The answer's passkey obligation carries VERDICT (`allow` / `refuse`), CODE
 // (the error code the door records — STS-AUTHN-0312 to 0317, 0320, 0321, the
@@ -479,6 +486,13 @@ const TRANSFER_ATTRIBUTE = {
 const PASSKEY_ATTRIBUTE = {
   REGISTER_ACTION: 'register-passkey',
   USE_ACTION: 'use-passkey',
+  RECOVER_ACTION: 'recover-account',
+  RECOVERY_DOOR: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_DOOR,
+  RECOVERY_AT: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_AT,
+  RECOVERY_CREDENTIAL: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_CREDENTIAL,
+  RECOVERY_SELF_SERVICE: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_SELF_SERVICE,
+  RECOVERY_COVERED: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_COVERED,
+  RECOVERY_PENDING: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_PENDING,
   FACTS: xacmlRequest.VOCABULARY.PASSKEY_FACTS,
   BACKUP_ELIGIBLE: xacmlRequest.VOCABULARY.PASSKEY_BACKUP_ELIGIBLE,
   MIN_PIN_LENGTH: xacmlRequest.VOCABULARY.PASSKEY_MIN_PIN_LENGTH,
@@ -511,7 +525,7 @@ const PASSKEY_ATTRIBUTE = {
   VERDICTS: ['allow', 'refuse'],
   // The fact groups a question may carry.
   GROUPS: ['backup-eligible', 'pin-length', 'serial', 'attestation',
-           'algorithm'],
+           'algorithm', 'recovery'],
   // The reasons the built-in rules give, and the code each records, per
   // action. A door words its refusal by the reason.
   REASONS: {
@@ -526,7 +540,10 @@ const PASSKEY_ATTRIBUTE = {
     'attestation-unlisted': { register: '', use: 'STS-AUTHN-0316' },
     'attestation-level': { register: '', use: 'STS-AUTHN-0316' },
     'attestation-fips': { register: '', use: 'STS-AUTHN-0316' },
-    'post-quantum': { register: 'STS-AUTHN-0355', use: 'STS-AUTHN-0356' }
+    'post-quantum': { register: 'STS-AUTHN-0355', use: 'STS-AUTHN-0356' },
+    // #724: a RECOVER_ACTION question records the `use` column.
+    'recovery-self-service': { register: '', use: 'STS-AUTHN-0380' },
+    'recovery-enrol-first': { register: '', use: 'STS-AUTHN-0381' }
   } as Record<string, { register: string; use: string }>,
   // The certification levels in rank order, `none` first.
   LEVELS: ['none', 'L1', 'L1plus', 'L2', 'L2plus', 'L3', 'L3plus']
@@ -1195,7 +1212,12 @@ const TEMPLATES: TemplateRow[] = [
               'metadata that could not be read); and, at both, a passkey ' +
               'whose signature algorithm is not post-quantum (ML-DSA) where ' +
               'the policy\'s postQuantumRequired requires one at that stage ' +
-              '(#718). No leaves the rules out — ' +
+              '(#718); and recover-account ' +
+              '(#724: under the passkey policy\'s recoveryAssurance, a ' +
+              'self-service recovery refused for a person holding a ' +
+              'passkey under operator-only, and a session after any ' +
+              'recovery limited to registering a passkey under not-weaker ' +
+              'and operator-only). No leaves the rules out — ' +
               'and the passkey doors then ask the BUILT-IN policy instead, ' +
               'so the rules are never switched off by rebuilding this ' +
               'document.' },
@@ -2704,6 +2726,49 @@ const TEMPLATES: TemplateRow[] = [
           effect: model.EFFECT.PERMIT,
           description: 'Let every other passkey sign somebody in.',
           target: actionIs(PK.USE_ACTION), condition: null,
+          obligations: pkVerdict(model.EFFECT.PERMIT, 'allow', '', ''),
+          advice: [] },
+        // -----------------------------------------------------------------
+        // ACCOUNT RECOVERY NO WEAKER THAN THE PASSKEY IT REPLACES (#724).
+        // Both rules need a person who HOLDS a passkey (`covered`): with
+        // none there is nothing for a recovery to be weaker than. The
+        // self-service rule is first, so under operator-only a recovery
+        // code at sign-in is refused rather than limited.
+        // -----------------------------------------------------------------
+        pkRule(PK.RECOVER_ACTION, 'recovery-self-service',
+          'Under recoveryAssurance operator-only, refuse a SELF-SERVICE ' +
+          'recovery — the forgot-password request and its link, a ' +
+          'recovery code or an emailed code or link at sign-in — for a ' +
+          'person who holds a passkey. An operator\'s reset or ' +
+          'activation link remains.',
+          and([carries('recovery'),
+               fact(R2, PK.RECOVERY_COVERED, true),
+               fact(R2, PK.RECOVERY_SELF_SERVICE, true),
+               stringIs(env, pkSetting('recoveryAssurance'),
+                        'operator-only')])),
+        pkRule(PK.RECOVER_ACTION, 'recovery-enrol-first',
+          'Under recoveryAssurance not-weaker or operator-only, a session ' +
+          'for a person who holds a passkey, started after a recovery ' +
+          '(one is pending on their entry, or this sign-in is itself a ' +
+          'recovery code or an emailed code or link) by anything but a ' +
+          'passkey, reaches no application: it is limited to registering ' +
+          'a passkey that satisfies the policy.',
+          and([carries('recovery'),
+               stringIs(R2, PK.RECOVERY_AT, 'session'),
+               fact(R2, PK.RECOVERY_COVERED, true),
+               anyOf([fact(R2, PK.RECOVERY_PENDING, true),
+                      sizeIs('string-bag-size',
+                             strBag(R2, PK.RECOVERY_DOOR),
+                             'integer-greater-than')]),
+               not(stringIs(R2, PK.RECOVERY_CREDENTIAL, 'webauthn')),
+               anyOf([stringIs(env, pkSetting('recoveryAssurance'),
+                               'not-weaker'),
+                      stringIs(env, pkSetting('recoveryAssurance'),
+                               'operator-only')])])),
+        { id: options.idBase + ':rule:passkey-recover-allowed',
+          effect: model.EFFECT.PERMIT,
+          description: 'Let every other recovery restore access.',
+          target: actionIs(PK.RECOVER_ACTION), condition: null,
           obligations: pkVerdict(model.EFFECT.PERMIT, 'allow', '', ''),
           advice: [] }] : [];
 

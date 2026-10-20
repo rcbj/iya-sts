@@ -668,6 +668,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3cr | `device_bound_sessions.ts` (#725): the sign-on session bound to the browser's key (DBSC) | `authn/CLAUDE.md` |
 | 3co | `attribute_policy.ts` (#396): what every person must hold, and a realm's custom attributes | `common/CLAUDE.md`, `ldap/CLAUDE.md` |
 | 3cp | `phishing_resistance.ts` (#723): OpenID Connect EAP's `phr` and `phrh`, earned, requested and required | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `xacml/CLAUDE.md` |
+| 3cq | `recoveryAssurance` (#724): account recovery no weaker than the passkey it replaces | `common/CLAUDE.md`, `authn/CLAUDE.md`, `xacml/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |

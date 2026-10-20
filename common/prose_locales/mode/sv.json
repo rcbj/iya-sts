@@ -251,6 +251,18 @@
     "en": "cddc7c3db475d360",
     "text": "Den AS-REQ:en avvisas med KDC_ERR_POLICY (12), STS-KRB-0135, efter att lösenordet verifierats (ett felaktigt ger fortfarande KDC_ERR_PREAUTH_FAILED), när personen har en autentiseringsapp eller en säkerhetsnyckel i mfa-rollen, eller en andra faktor krävs av dem. En person med en autentiseringsapp får en biljett via RFC 6113 FAST-armering med RFC 6560 OTP-förautentisering — lösenord och kod i ett utbyte — och den bär RFC 8129-indikatorn `otp`. Ett applösenord är aldrig en Kerberos-nyckel."
   },
+  "mode.requirements.recovery-assurance.what": {
+    "en": "3c8ef817d4ad4971",
+    "text": "En kontoåterställning är som standard inte svagare än nyckeln den ersätter"
+  },
+  "mode.requirements.recovery-assurance.development": {
+    "en": "523ca60d0edeedd0",
+    "text": "Nyckelpolicyns recoveryAssurance är any som standard: en länk för lösenordsåterställning, en aktiveringslänk, en återställningskod eller en kod eller länk via e-post återger åtkomsten genast, oavsett vilken nyckel personen har."
+  },
+  "mode.requirements.recovery-assurance.product": {
+    "en": "7491bb7b906772bb",
+    "text": "Den är not-weaker som standard: för en person som har en nyckel når den första inloggningen efter en återställning som inte är en nyckelinloggning inget program (STS-AUTHN-0381). Inloggningsskärmen ber hen registrera en nyckel som uppfyller nyckelpolicyn och sedan logga in med den. En sfärs eget värde gäller i båda lägena."
+  },
   "mode.requirements.resource-metadata-import.what": {
     "en": "fb298f641de33009",
     "text": "En import av RFC 9728-metadata för skyddade resurser hålls till de regler som en klient av dokumentet följer"

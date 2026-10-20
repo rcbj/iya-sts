@@ -67,6 +67,7 @@
   "mfaSetup.title": "Mag-set up ng pangalawang factor",
   "mfaSetup.heading": "Mag-set up ng pangalawang factor",
   "mfaSetup.subProved": "Hindi tinatanggap ng application na sina-sign in-an mo ang pangalawang factor na kabibigay mo lang para sa <code>{name}</code>. Mag-set up ng isang tinatanggap nito; walang mai-sign in hangga't hindi mo ito nagagawa.",
+  "mfaSetup.subRecovery": "Na-recover ang <code>{name}</code> nang wala ang passkey nito, at hindi ito pinapayagan ng realm na ito na makarating sa anumang application hangga't hindi ka nai-sign in ng isang passkey. Mag-register dito ng bagong passkey; pagkatapos ay mag-sign in ka gamit ito. Walang mai-sign in hangga't hindi mo ito nagagawa.",
   "mfaSetup.subOptional": "May hawak kang administrator role, at wala pang pangalawang factor ang <code>{name}</code>. Inirerekomendang mag-set up ng isa ngayon; puwede mo itong balewalain at mag-sign in gamit ang iyong password, at tatanungin ka ulit sa susunod.",
   "mfaSetup.subRequired": "Kailangan ng pangalawang factor para sa <code>{name}</code>, at wala ka pa nito. Walang mai-sign in hangga't hindi pa ito naise-set up.",
   "mfaSetup.totpHeading": "Isang authenticator app",

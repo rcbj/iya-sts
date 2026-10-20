@@ -191,6 +191,18 @@
     "en": "9f66bf08890386c9",
     "text": "Alguien configuró un segundo factor obligatorio al iniciar sesión"
   },
+  "audit.actions.authn.recovery.refused.label": {
+    "en": "d8ba643a9e0a83b8",
+    "text": "La política de llaves de acceso rechazó una recuperación de cuenta de autoservicio"
+  },
+  "audit.actions.authn.recovery.limited.label": {
+    "en": "497fee88cee8044f",
+    "text": "Un inicio de sesión tras una recuperación de cuenta se limitó a registrar una llave de acceso"
+  },
+  "audit.actions.authn.recovery.completed.label": {
+    "en": "6c8028e5950a3cd4",
+    "text": "Una llave de acceso inició la sesión de alguien tras una recuperación de cuenta"
+  },
   "audit.actions.authn.sign-in.started-over.label": {
     "en": "2773b5e084cf4499",
     "text": "Alguien dejó un paso del inicio de sesión y empezó de nuevo"

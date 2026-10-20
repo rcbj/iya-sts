@@ -220,8 +220,9 @@ function answers(t) {
     });
   });
   const said = passkeyPolicy.describe(passkeyPolicy.read());
-  // Eleven since #718's postQuantumRequired sentence.
-  t.check(said.length === 11 && /with no username/.test(said[0]) &&
+  // Twelve since #724 (`recoveryAssurance`), after #718's
+  // postQuantumRequired.
+  t.check(said.length === 12 && /with no username/.test(said[0]) &&
           /synced \(backup-eligible\) passkeys are accepted/.test(said[3]),
           'P4c. the rules in sentences', JSON.stringify(said));
   log.debug('Leaving answers().');
@@ -420,7 +421,9 @@ function kind(t) {
           'P7. the fourth kind on Directory → Policies, with its two ' +
           'actions', JSON.stringify(policyKinds.actions()));
   const view = adminViews.policiesView({});
-  t.check(!!view.passkey && view.passkey.fields.length === 17 &&
+  // Eighteen since #724 (`recoveryAssurance`), after #718's
+  // postQuantumRequired.
+  t.check(!!view.passkey && view.passkey.fields.length === 18 &&
           view.passkey.fields.some(function (field) {
             return field.key === 'securityKeyResidentKey' &&
                    field.type === 'enum' && field.values.length === 3;
