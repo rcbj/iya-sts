@@ -1845,7 +1845,7 @@ class Authn {
           return null;
         }
         const chosen = this.honouredSession(req, resolved.sid,
-                                            sessions.get(resolved.sid));
+                                            this.accountSessionRead(resolved.sid).session);
         log.debug("Leaving Authn.sessionOf(). The account set's choice (" +
                   resolved.how + ").");
         return chosen;
@@ -2021,11 +2021,61 @@ class Authn {
   private accountSessionLive(sid) {
     const { log } = this.deps;
     log.debug("Entering Authn.accountSessionLive().");
-    const session = sid ? sessions.get(String(sid)) : null;
+    const session = this.accountSessionRead(sid).session;
     const live = !!(session && this.accountEligible(session) &&
                     !this.sessionEnded(session));
     log.debug("Leaving Authn.accountSessionLive(). " + live);
     return live;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SESSION A SET LISTS, READ THE WAY #350'S READERS READ ONE. With
+  // `authn.sessionWindow` on (and `auto` turns it on whenever minted
+  // persistence is) the realm map holds only the window's resident rows, so
+  // a set member evicted from it is NOT in `sessions.get()` and is still
+  // live: reading the map would have made the expiry job move every
+  // non-resident account to remembered, and the picker forget it. So the
+  // window when it is on, the map when it is off, as `sessionById()` reads.
+  //
+  // `{ session }`, null where the store holds none, or `{ session: null,
+  // error: true }` where the read FAILED — which is not absence (#350): a
+  // caller that would end, forget or substitute on absence keeps the member
+  // instead (`accountSessionKept()`), and `resolveAccount()` answers nobody
+  // rather than choosing among the members it could read.
+  // ---------------------------------------------------------------------------
+  private accountSessionRead(sid): { session: any; error?: boolean } {
+    const { log, realms } = this.deps;
+    log.debug("Entering Authn.accountSessionRead().");
+    const key = String(sid || '');
+    if (!key) {
+      log.debug("Leaving Authn.accountSessionRead(). No sid.");
+      return { session: null };
+    }
+    if (this.windowOn()) {
+      const read = sessionWindow.get(realms.currentId(), key);
+      if (!read.ok && read.error) {
+        log.debug("Leaving Authn.accountSessionRead(). Unread.");
+        return { session: null, error: true };
+      }
+      log.debug("Leaving Authn.accountSessionRead(). Through the window.");
+      return { session: read.ok ? read.session : null };
+    }
+    log.debug("Leaving Authn.accountSessionRead().");
+    return { session: sessions.get(key) || null };
+  }
+
+  // Whether a set should KEEP listing a session: it is live, or its read
+  // failed and nothing can be said about it. What the prune, the expiry job
+  // and the full-set count ask, so that a store that could not answer for a
+  // moment never signs an account out of its browser's set (#350's rule that
+  // a failed read is not absence).
+  private accountSessionKept(sid) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.accountSessionKept().");
+    const kept = this.accountSessionLive(sid) ||
+                 !!this.accountSessionRead(sid).error;
+    log.debug("Leaving Authn.accountSessionKept(). " + kept);
+    return kept;
   }
 
   // What a set remembers of a session's account: its subject, its name and
@@ -2126,6 +2176,17 @@ class Authn {
       log.debug("Leaving Authn.resolveAccount(). No set.");
       return { fallback: true };
     }
+    // A MEMBER WHOSE READ FAILED (#350) is not absent, so choosing among
+    // the others — "the only live one" — could act as the wrong person.
+    // Nobody, then: the request is sent to sign in, never substituted.
+    const unread = Object.keys(row.sessions || {}).some(function (sid) {
+      return !!self.accountSessionRead(sid).error;
+    });
+    if (unread) {
+      log.debug("Leaving Authn.resolveAccount(). A member could not be " +
+                "read.");
+      return { sid: '', reason: 'unread', row: row, live: 0 };
+    }
     const live = Object.keys(row.sessions || {}).filter(function (sid) {
       return self.accountSessionLive(sid);
     });
@@ -2170,7 +2231,7 @@ class Authn {
       return String(hint.sid);
     }
     const users = live.map(function (sid) {
-      return { sid: sid, user: (sessions.get(sid) || {}).user || {} };
+      return { sid: sid, user: (this.accountSessionRead(sid).session || {}).user || {} };
     });
     const bySub = hint.sub ? users.filter(function (one) {
       return String(one.user.sub || '') === String(hint.sub);
@@ -2382,7 +2443,7 @@ class Authn {
     const self = this;
     log.debug("Entering Authn.liveAccountCount().");
     let n = row ? Object.keys(row.sessions || {}).filter(function (sid) {
-      return self.accountSessionLive(sid);
+      return self.accountSessionKept(sid);
     }).length : 0;
     if (defaultFound && this.accountEligible(defaultFound.session) &&
         this.accountSessionLive(defaultFound.id) &&
@@ -2401,12 +2462,12 @@ class Authn {
     const self = this;
     log.debug("Entering Authn.accountSessionFor().");
     const sid = row ? Object.keys(row.sessions || {}).filter(function (one) {
-      const session = sessions.get(one);
+      const session = this.accountSessionRead(one).session;
       return self.accountSessionLive(one) &&
         self.sameIdentity(session.user, username);
     })[0] : '';
     log.debug("Leaving Authn.accountSessionFor(). " + (sid ? 'One.' : 'None.'));
-    return sid ? { id: sid, session: sessions.get(sid) } : null;
+    return sid ? { id: sid, session: this.accountSessionRead(sid).session } : null;
   }
 
   // ---------------------------------------------------------------------------
@@ -2434,7 +2495,7 @@ class Authn {
         this.stampAccountSet(defaultFound.id, defaultFound.session, row.id);
       }
       AccountSets.prune(row, function (sid) {
-        return sid === session.id || self.accountSessionLive(sid);
+        return sid === session.id || self.accountSessionKept(sid);
       });
       const added = !row.sessions[session.id];
       const done = AccountSets.addSession(row, session.id,
@@ -2548,7 +2609,7 @@ class Authn {
       return (Number(row.sessions[a].addedAt) || 0) -
              (Number(row.sessions[b].addedAt) || 0);
     }).map(function (sid) {
-      const session = sessions.get(sid);
+      const session = this.accountSessionRead(sid).session;
       const entry = row.sessions[sid];
       const account = self.accountOf(session);
       return { key: AccountSets.keyOf(account), sub: account.sub,
@@ -2585,7 +2646,7 @@ class Authn {
     const row = this.ensureAccountSet(req, true);
     if (row) {
       const done = AccountSets.prune(row, function (sid) {
-        return self.accountSessionLive(sid);
+        return self.accountSessionKept(sid);
       });
       if (done.ended || done.expired) {
         AccountSets.save(row);
@@ -2642,7 +2703,7 @@ class Authn {
       return (Number(row.sessions[a].addedAt) || 0) -
              (Number(row.sessions[b].addedAt) || 0);
     }).map(function (sid) {
-      return sessions.get(sid);
+      return this.accountSessionRead(sid).session;
     }) : [];
     log.debug("Leaving Authn.accountSessionsOf(). " + out.length);
     return out;
@@ -2713,7 +2774,7 @@ class Authn {
     const self = this;
     log.debug("Entering Authn.sweepAccountSets().");
     const done = AccountSets.sweep(function (sid) {
-      return self.accountSessionLive(sid);
+      return self.accountSessionKept(sid);
     });
     if (done.expired) {
       stats.recordAccountChoice('expired', done.expired);
@@ -7706,9 +7767,6 @@ class Authn {
         sessions.delete(id);
       }
     }
-    // THE ACCOUNT IS REMEMBERED AS SIGNED OUT in its browser's set (#561),
-    // whoever ended the session: the picker offers it again, or forgets it.
-    this.accountSessionEnded(session);
     // -------------------------------------------------------------------------
     // AND EVERY SESSION DERIVED FROM IT (2026-09-06).
     //
@@ -7897,6 +7955,12 @@ class Authn {
     if (deleteAfter && id) {
       sessions.delete(id);
     }
+    // THE ACCOUNT IS REMEMBERED AS SIGNED OUT in its browser's set (#561),
+    // whoever ended the session: the picker offers it again, or forgets it.
+    // Here, after the delete, and not where the session is first read: with
+    // the window on (#350) a children read that fails returns above with the
+    // session NOT ended, and its account must stay signed in in the set.
+    this.accountSessionEnded(session);
     if (session) {
       const planned = this.planBackchannel(session, via || 'a sign-out',
                                            'sign-out');
@@ -8617,7 +8681,7 @@ class Authn {
     const row = sid ? this.accountSetOf(req) : null;
     const inSet = !!(row && row.sessions && row.sessions[sid] &&
                      this.accountSessionLive(sid));
-    const found = inSet ? { id: sid, session: sessions.get(sid) }
+    const found = inSet ? { id: sid, session: this.accountSessionRead(sid).session }
                         : this.cookieSession(req, SESSION_COOKIE);
     const id = found ? found.id : '';
     const presented = inSet || !!this.cookiesOf(req)[SESSION_COOKIE];
@@ -9340,7 +9404,7 @@ class Authn {
     let given = opts;
     if (req && choice !== 'never' && !opts.hint && !opts.lockedUsername) {
       const resolved = this.resolveAccount(req, false);
-      const chosen = resolved.sid ? sessions.get(resolved.sid) : null;
+      const chosen = resolved.sid ? this.accountSessionRead(resolved.sid).session : null;
       if (chosen && chosen.user && chosen.user.username) {
         given = Object.assign({}, opts, { hint: chosen.user.username });
       }
@@ -12397,7 +12461,7 @@ class Authn {
     // may have ended between the page and the click, or its account been
     // disabled.
     const session = this.honouredSession(req, liveSid,
-                                         sessions.get(liveSid));
+                                         this.accountSessionRead(liveSid).session);
     if (!session) {
       stats.recordAccountChoice('selectFailed');
       this.accountsRefused(res, 409, 'STS-AUTHN-0345',
@@ -14807,7 +14871,7 @@ class Authn {
     if (AccountSets.enabled() && req) {
       const resolved = this.resolveAccount(req, false);
       if (!resolved.fallback) {
-        const chosen = resolved.sid ? sessions.get(resolved.sid) : null;
+        const chosen = resolved.sid ? this.accountSessionRead(resolved.sid).session : null;
         log.debug("Leaving Authn.auditActorOf(). The account set's.");
         return chosen && chosen.user ? String(chosen.user.username || '')
                                      : '';
