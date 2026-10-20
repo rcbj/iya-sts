@@ -223,7 +223,7 @@ receiver's certificate is issued by a private CA, name that CA in
 `ssf.pushAllowedHosts` (empty means any host).
 
 **Console:** on **Protocols → Shared Signals**, tab **Shared Signals**, fill in
-**CA certificates for pushes** (`ssf.pushCaFile`) with a PEM file path the
+**CA certificates for push delivery** (`ssf.pushCaFile`) with a PEM file path the
 service can read, and click **Save SSF**.
 
 **API:**
@@ -395,8 +395,9 @@ api applications/set '{"application":"ssf-conf-a","attribute":"ssfCaepReasonLang
   "value":"fr"}'
 ```
 
-The full list of override attributes is in the application attribute
-reference, `GET /admin-api/applications/schema`.
+The **Set** form's attribute list offers every override attribute on an
+application declared for Shared Signals, and refuses a value the setting would
+not take.
 
 ## Send CAEP and RISC events
 
