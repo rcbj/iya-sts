@@ -10002,7 +10002,24 @@ function readPasswordHistory(key) {
 // password that fails quality or history, and it is what an LDAP client's error
 // handling expects to meet there.
 // ---------------------------------------------------------------------------
-function passwordWriteRefusal(dn, attributes, previous, touched, written) {
+// One hash of exactly this value from `screenedThen()`'s map, used once:
+// each is a fresh salt, so no two entries may share one.
+function takePrehashed(prehashed, value) {
+  log.debug('Entering takePrehashed().');
+  const list = prehashed && typeof prehashed.get === 'function'
+    ? prehashed.get(String(value)) : null;
+  const hash = list && list.length ? list.shift() : undefined;
+  log.debug('Leaving takePrehashed(). ' + (hash ? 'One.' : 'None.'));
+  return hash;
+}
+
+// `prehashed`, when the operation's asynchronous stage made one, maps each
+// clear password the request carried to hashes computed on libuv's thread
+// pool (#756, `screenedThen()`); one is handed to `preparePassword()` so the
+// write does not run scrypt on this thread. Absent, or holding none for this
+// value, the hash is made here as before.
+function passwordWriteRefusal(dn, attributes, previous, touched, written,
+                              prehashed) {
   log.debug('Entering passwordWriteRefusal(). dn=' + dn);
   const before = previous || {};
   const keyOf = function (lower) {
@@ -10058,7 +10075,8 @@ function passwordWriteRefusal(dn, attributes, previous, touched, written) {
   const prepared = credentials.preparePassword(usernameOfEntry({ dn: dn }),
                                                value, {
     current: had === undefined ? '' : String(had),
-    history: (before.pwdhistory || []).map(String)
+    history: (before.pwdhistory || []).map(String),
+    hashOfThisPassword: takePrehashed(prehashed, value)
   });
   if (!prepared.ok) {
     log.info('ldap: a userPassword for ' + dn + ' was refused: ' +
@@ -17018,7 +17036,7 @@ function ldapAddNow(req, res, next) {
     }
     const policyRefusal = passwordWriteRefusal(dn, attributes, {},
       Object.keys(attributes).map(function (key) { return key.toLowerCase(); }),
-      addedPassword);
+      addedPassword, req.stsPrehashed);
     if (policyRefusal) {
       log.debug('Leaving the LDAP add handler. The password was refused.');
       return next(ldapRefusal(req, '', 'an add of ' + dn +
@@ -17167,10 +17185,18 @@ function screenedThen(req, next, passwords, run) {
     // Not loaded in this process: nothing to screen with.
     breached = null;
   }
-  if (!breached || !passwords.length || !breached.enabled()) {
+  if (!passwords.length) {
     log.debug('Leaving screenedThen(). Nothing to screen.');
     return run(next);
   }
+  // A CLEAR PASSWORD IS ALSO HASHED HERE, ON LIBUV'S THREAD POOL (#756),
+  // whether or not the breach screen is on: `preparePassword()` is
+  // synchronous inside the body, and its scrypt held the worker's event loop
+  // for about 70 ms a write — a third of a request worker under a password
+  // load. The body takes the hash for the value it is setting
+  // (`takePrehashed()`); every policy, history and breach decision is still
+  // made there, against the entry as it is when the body runs.
+  const screening = !!breached && breached.enabled();
   req.stsAsyncOperation = true;
   let answered = false;
   const answerOnce = function (err) {
@@ -17184,10 +17210,33 @@ function screenedThen(req, next, passwords, run) {
     log.debug('Leaving runOnce().');
     return run(answerOnce);
   };
-  log.debug('Leaving screenedThen(). Screening.');
-  return Promise.all(passwords.map(function (one) {
-    return breached.screen(one);
-  })).then(runOnce, function (e) {
+  log.debug('Leaving screenedThen(). Screening and hashing.');
+  const hashed = Promise.all(passwords.map(function (one) {
+    return stsCrypto.hashSecretAsync(one).then(function (hash) {
+      return { password: one, hash: hash };
+    }, function (e) {
+      // The body hashes it itself, as it did before #756.
+      log.debug('Caught in screenedThen(): ' + ((e && e.message) || e));
+      return null;
+    });
+  })).then(function (pairs) {
+    const byPassword = new Map();
+    pairs.forEach(function (pair) {
+      if (!pair) {
+        return;
+      }
+      const list = byPassword.get(pair.password) || [];
+      list.push(pair.hash);
+      byPassword.set(pair.password, list);
+    });
+    req.stsPrehashed = byPassword;
+  });
+  const screened = screening
+    ? Promise.all(passwords.map(function (one) {
+      return breached.screen(one);
+    }))
+    : Promise.resolve();
+  return Promise.all([screened, hashed]).then(runOnce, function (e) {
     log.debug('Caught in screenedThen(): ' + ((e && e.message) || e));
     // screen() never rejects; this is its belt and braces.
     return runOnce();
@@ -17654,7 +17703,7 @@ function ldapModifyNow(req, res, next) {
     const policyRefusal = passwordWriteRefusal(stored.dn, working,
       stored.attributes, req.changes.map(function (change) {
         return String(change.modification.type || '').toLowerCase();
-      }), modifiedPassword);
+      }), modifiedPassword, req.stsPrehashed);
     if (policyRefusal) {
       log.debug('Leaving the LDAP modify handler. The password was refused.');
       return next(ldapRefusal(req, '', 'a modify of ' + dn +

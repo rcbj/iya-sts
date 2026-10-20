@@ -15944,11 +15944,14 @@ class Authn {
       // factor right after, so the password-only-door refusal does not
       // apply. It passes no `door`, so an app password is NEVER accepted
       // here.
-      const credential = credentials.verify(username, String(body.password ||
-                                                             ''),
-                                            { via: 'the sign-in screen',
-                                              allowPasswordReset: true,
-                                              secondFactor: 'asked-next' });
+      // ON LIBUV'S THREAD POOL (#756): the synchronous door held a request
+      // worker for the whole scrypt (about 70 ms), a fifth of a worker under
+      // a sign-in load. The answer is `verify()`'s; the rate limit above was
+      // already awaited, so the await adds no interleaving that was not there.
+      const credential = await credentials.verifyAsync(username,
+        String(body.password || ''),
+        { via: 'the sign-in screen', allowPasswordReset: true,
+          secondFactor: 'asked-next' });
       if (!credential.ok) {
         log.info('authn: the sign-in for "' + username + '" was refused (' +
                  credential.reason + '): ' + credential.detail);
@@ -16350,7 +16353,8 @@ class Authn {
       log.debug('Leaving Authn.mfaPasswordAct(). Rate limited.');
       return;
     }
-    const credential = credentials.verify(step.username,
+    // On the thread pool, as the sign-in screen's check (#756).
+    const credential = await credentials.verifyAsync(step.username,
       String(body.password || ''),
       { via: 'the password-factor screen', secondFactor: 'asked-next' });
     if (!credential.ok) {

@@ -2105,7 +2105,9 @@ class Credentials {
    * @param username - the person
    * @param password - the new password
    * @param opts - `current` and `history` from an entry the caller holds,
-   *   and `generated` for a password this service just made up
+   *   `generated` for a password this service just made up, and
+   *   `hashOfThisPassword`, a hash of exactly this password the caller
+   *   already made with `crypto.hashSecretAsync()` (#756)
    * @returns `{ ok: true, hash, history, … }`, or a refusal with its reason
    *   and code
    */
@@ -2235,7 +2237,15 @@ class Credentials {
     const history = next.concat(storedHistory).slice(0, profile.history);
     log.debug('Leaving Credentials.preparePassword(). Prepared; ' +
               history.length + ' remembered.');
-    return { ok: true, hash: crypto.hashSecret(password), history: history,
+    // A HASH THE CALLER ALREADY MADE OFF THE EVENT LOOP (#756): an LDAP
+    // write hashes its clear password on libuv's thread pool before this
+    // synchronous body runs. It is only ever a hash of this same plaintext
+    // (the caller looks it up by the value), and it must be one of ours;
+    // anything else is ignored and the hash is made here.
+    const given = options.hashOfThisPassword;
+    const hash = typeof given === 'string' && crypto.isHashedSecret(given)
+      ? given : crypto.hashSecret(password);
+    return { ok: true, hash: hash, history: history,
              profile: profile.name };
   }
 

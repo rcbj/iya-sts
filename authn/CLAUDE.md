@@ -2935,6 +2935,14 @@ no CAEP event**, because the signals the request asked for are the ADMIN doors'
 (`admin-core/admin_actions.ts`); the portal's own enrolment pages do not emit
 either. `tests/admin_credential_controls.js` section 7 drives it over HTTP.
 
+**THE SCREEN'S PASSWORD CHECK RUNS ON LIBUV'S THREAD POOL (#756,
+2026-10-20).** `screenAct()` and the password-factor step
+(`mfaPasswordAct()`) await `credentials.verifyAsync()` — `verify()`'s answer,
+with the scrypt comparison off the request worker's event loop, where it
+held the worker about 70 ms a sign-in (a fifth of a worker under a sign-in
+load). Both already awaited the rate limit just before, so the await adds no
+interleaving. `tests/password_scrypt_off_loop.js` section A.
+
 ## THE PASSWORD-ONLY DOORS REFUSE A SECOND-FACTOR PERSON'S PASSWORD, AND APP PASSWORDS ARE WHAT THEY TAKE (2026-09-22, #101)
 
 **This file owns the rule; `common/credentials.ts` implements it** —
