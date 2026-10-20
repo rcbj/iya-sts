@@ -438,6 +438,10 @@ class WalletFlow {
     if (query.wallet) {
       body.wallet = String(query.wallet);
     }
+    // An enrolment's account among this browser's (vc_signin.ts, startable()).
+    if (query.enrol === '1' && query.login_hint) {
+      body.login_hint = String(query.login_hint);
+    }
     const answer = await this.surface.send(String(op.path), body);
     const json = answer.json;
     if (json && json.ok && json.go) {

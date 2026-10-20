@@ -203,7 +203,10 @@ const QUERY = validation.z.looseObject({
   // from a session somebody already holds — to enrol its key rather than to
   // sign in with it.
   siop: validation.types.opt(validation.types.oneOf(['1'])),
-  enrol: validation.types.opt(validation.types.oneOf(['1']))
+  enrol: validation.types.opt(validation.types.oneOf(['1'])),
+  // The portal's own account, on an enrolment (2026-10-20): which of this
+  // browser's sessions the enrolment is for (startable(), below).
+  login_hint: validation.types.opt(validation.types.opaque)
 });
 
 type RouteApp = typeof app;
@@ -608,13 +611,24 @@ class VcSignin {
   // `{ ctx, selfIssued, enrolFor }`, or null once it has sent a refusal.
   // ---------------------------------------------------------------------------
   private startable(req: any, res: any, query: Json): Json {
-    const { log, errorCodes } = this.deps;
+    const { log, authn, errorCodes } = this.deps;
     log.debug("Entering VcSignin.startable().");
     const selfIssued = query.siop === '1';
     // AN ENROLMENT STARTS HERE WITH NO RECORD: it is given one at the start,
     // and it is for the person this browser is signed in as, or for nobody.
     let enrolFor = '';
     if (query.enrol === '1') {
+      // WHICH OF THIS BROWSER'S ACCOUNTS (2026-10-20, rcbj on 8081): with
+      // `authn.multipleAccounts` on and two sessions live, sessionOf()
+      // answers nobody for a request that names none, so the portal's
+      // Enrol link was refused for every person who had used Switch user.
+      // The portal names its own account as `login_hint`, and a hint only
+      // CHOOSES among the sessions this browser already holds — one naming
+      // nobody here is not soft, so it answers nobody and is refused as
+      // before. It grants nothing a session in the set did not have.
+      if (query.login_hint) {
+        authn.hintAccount(req, { loginHint: String(query.login_hint) });
+      }
       enrolFor = this.personOf(req);
       if (!selfIssued || !enrolFor || query.mfa) {
         errorCodes.mark(res, 'STS-VC-0093');
@@ -859,6 +873,9 @@ class VcSignin {
     // AN ENROLMENT'S PERSON must still be the one signed in here: a sign-out,
     // or another person signing in on this browser, ends it.
     if (ctx.enrol) {
+      // The enrolment's own person is the hint (startable()'s reason): the
+      // check is that THEY are still signed in here, whoever else is too.
+      authn.hintAccount(req, { loginHint: String(tx.signIn.enrol.username) });
       if (this.personOf(req).toLowerCase() !==
           String(tx.signIn.enrol.username).toLowerCase()) {
         errorCodes.mark(res, 'STS-VC-0093');
