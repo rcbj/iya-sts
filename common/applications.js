@@ -11987,8 +11987,8 @@ const loadCount = cacheRegistry.register({
   maxEntries: function () {
     return MAX_LOAD_MEMO;
   },
-  bound: 'MAX_LOAD_MEMO (' + MAX_LOAD_MEMO + ') identifiers per realm; ' +
-    'past it the kept answers are dropped.',
+  bound: 'Enforced: MAX_LOAD_MEMO (' + MAX_LOAD_MEMO + ') identifiers per ' +
+    'realm; past it the kept answers are dropped.',
   lifetime: function () {
     return 'Until anything under the realm\'s ou=applications changes; ' +
       'the next read then asks the directory again.';

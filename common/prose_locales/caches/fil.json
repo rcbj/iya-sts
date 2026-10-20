@@ -52,8 +52,8 @@
     "text": "Ang entry ng isang application at ang na-parse nitong record, ayon sa identifier, para hindi basahin at i-parse ng mga pagsusuri ng isang sign-in ang entry sa bawat tanong."
   },
   "caches.store.applications.load.bound": {
-    "en": "38c179a5cfbc2761",
-    "text": "MAX_LOAD_MEMO (256) na identifier bawat realm; lampas doon, itinatapon ang mga naitabing sagot."
+    "en": "2f0f2fdc2a335270",
+    "text": "Ipinapatupad: MAX_LOAD_MEMO (256) na identifier bawat realm; lampas doon, itinatapon ang mga naitabing sagot."
   },
   "caches.store.applications.load.lifetime": {
     "en": "a1430f3b77ef4dc8",

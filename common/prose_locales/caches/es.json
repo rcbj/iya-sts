@@ -52,8 +52,8 @@
     "text": "La entrada de una aplicación y su registro analizado, por identificador, para que las comprobaciones de un inicio de sesión no lean ni analicen la entrada en cada pregunta."
   },
   "caches.store.applications.load.bound": {
-    "en": "38c179a5cfbc2761",
-    "text": "MAX_LOAD_MEMO (256) identificadores por dominio; por encima, se descartan las respuestas conservadas."
+    "en": "2f0f2fdc2a335270",
+    "text": "Aplicado: MAX_LOAD_MEMO (256) identificadores por dominio; por encima, se descartan las respuestas conservadas."
   },
   "caches.store.applications.load.lifetime": {
     "en": "a1430f3b77ef4dc8",

@@ -52,8 +52,8 @@
     "text": "En applikations post och dess tolkade post, efter identifierare, så att en inloggnings kontroller inte läser och tolkar posten för varje fråga."
   },
   "caches.store.applications.load.bound": {
-    "en": "38c179a5cfbc2761",
-    "text": "MAX_LOAD_MEMO (256) identifierare per sfär; därutöver kastas de sparade svaren."
+    "en": "2f0f2fdc2a335270",
+    "text": "Upprätthållen: MAX_LOAD_MEMO (256) identifierare per sfär; därutöver kastas de sparade svaren."
   },
   "caches.store.applications.load.lifetime": {
     "en": "a1430f3b77ef4dc8",

@@ -52,8 +52,8 @@
     "text": "按标识符保存的单个应用条目及其解析后的记录，使登录过程中的各项检查不必每次都读取并解析该条目。"
   },
   "caches.store.applications.load.bound": {
-    "en": "38c179a5cfbc2761",
-    "text": "每个领域最多 MAX_LOAD_MEMO（256）个标识符；超出后丢弃已保存的应答。"
+    "en": "2f0f2fdc2a335270",
+    "text": "强制：每个领域最多 MAX_LOAD_MEMO（256）个标识符；超出后丢弃已保存的应答。"
   },
   "caches.store.applications.load.lifetime": {
     "en": "a1430f3b77ef4dc8",

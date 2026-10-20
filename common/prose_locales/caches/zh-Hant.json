@@ -52,8 +52,8 @@
     "text": "依識別碼保存的單一應用程式項目及其剖析後的記錄，讓登入時的各項檢查不必每次都讀取並剖析該項目。"
   },
   "caches.store.applications.load.bound": {
-    "en": "38c179a5cfbc2761",
-    "text": "每個領域最多 MAX_LOAD_MEMO（256）個識別碼；超過後會捨棄已保存的回應。"
+    "en": "2f0f2fdc2a335270",
+    "text": "強制：每個領域最多 MAX_LOAD_MEMO（256）個識別碼；超過後會捨棄已保存的回應。"
   },
   "caches.store.applications.load.lifetime": {
     "en": "a1430f3b77ef4dc8",

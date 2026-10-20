@@ -12,7 +12,7 @@
   "caches.store.applications.listing.lifetime": "Until anything under the realm's ou=applications changes; the next read then parses it again.",
   "caches.store.applications.load.title": "Application entries read by identifier",
   "caches.store.applications.load.description": "One application's entry and its parsed record, by identifier, so the checks a sign-in makes do not read and parse the entry per question.",
-  "caches.store.applications.load.bound": "MAX_LOAD_MEMO (256) identifiers per realm; past it the kept answers are dropped.",
+  "caches.store.applications.load.bound": "Enforced: MAX_LOAD_MEMO (256) identifiers per realm; past it the kept answers are dropped.",
   "caches.store.applications.load.lifetime": "Until anything under the realm's ou=applications changes; the next read then asks the directory again.",
   "caches.store.applications.ssf-allowed-events.title": "Shared Signals receiver permissions",
   "caches.store.applications.ssf-allowed-events.description": "Which application owns a Shared Signals stream and which events it may receive, per principal, so a session event does not walk every registered application.",
