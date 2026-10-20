@@ -467,6 +467,124 @@ function jwtInside(t) {
   log.debug("Leaving jwtInside().");
 }
 
+// M. RFC 8693 section 4.4's `may_act` on a JWT inside OnBehalfOf / ActAs
+// (#747). The token exchange refuses, in every mode, a verified subject
+// token whose `may_act` names somebody other than the actor; WS-Trust puts
+// the same two facts to the same policy rule, the requester in the
+// actor's seat. Read only off a token that VERIFIES, as the exchange reads
+// it: development believes an unverified JWT's subject and still does not
+// take its `may_act` as the subject's word.
+function mayActInside(t) {
+  log.debug("Entering mayActInside().");
+  const wstrust = require('../ws-trust/wstrust');
+  const saml2 = require('../saml/saml2');
+  const signed = function (name, audience) {
+    log.debug("Entering signed().");
+    log.debug("Leaving signed().");
+    return saml2.buildSamlAssertion(name, audience, 5);
+  };
+  const bst = function (token) {
+    log.debug("Entering bst().");
+    log.debug("Leaving bst().");
+    return '<wsse:BinarySecurityToken ValueType="' + JWT + '">' + token +
+      '</wsse:BinarySecurityToken>';
+  };
+  const sign = function (claims) {
+    log.debug("Entering sign().");
+    log.debug("Leaving sign().");
+    return helpers.signJwtAs(claims, 'RS256', null, {});
+  };
+  ['development', 'product'].forEach(function (m) {
+    t.log.info('=== M. may_act inside OnBehalfOf / ActAs, ' + m + ' ===');
+    const ask = function (body, tokenType) {
+      log.debug("Entering ask().");
+      log.debug("Leaving ask().");
+      return inMode(m, function () {
+        return wstrust.handleRst(rst(signed('wj-front', IDP), BACK, body,
+                                     tokenType),
+                                 'application/soap+xml', { base: AS_BASE });
+      });
+    };
+    const issuer = String(require('../oauth-oidc/oauth2').issuerOf(AS_BASE));
+    const now = Math.floor(Date.now() / 1000);
+    const jwt = function (jti, mayAct) {
+      log.debug("Entering jwt().");
+      const claims = { sub: helpers.subjectForName('wj-alice'), aud: FRONT,
+                       iat: now, exp: now + 300, iss: issuer,
+                       jti: 'wj-m-' + m + '-' + jti };
+      if (mayAct) {
+        claims.may_act = mayAct;
+      }
+      log.debug("Leaving jwt().");
+      return sign(claims);
+    };
+    const elsewhere = { sub: 'wj-somebody-else' };
+    [['ActAs', actAs], ['OnBehalfOf', onBehalfOf]].forEach(function (pair) {
+      const via = pair[0];
+      const wrap = pair[1];
+      [['a JWT', JWT], ['a SAML assertion', '']].forEach(function (asked) {
+        let r = ask(wrap(bst(jwt(via + '-1' + asked[1], elsewhere))),
+                    asked[1]);
+        t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0033' &&
+                /wst:RequestFailed</.test(String(r.body)),
+                'M1 (' + m + ', ' + via + ', ' + asked[0] + '). a JWT ' +
+                'whose may_act names somebody other than the requester is ' +
+                'refused in every mode: STS-WSTRUST-0033, wst:RequestFailed',
+                r.status + ' ' + r.errorCode + ' ' +
+                String(r.body).slice(0, 400));
+        [['its client_id', { sub: 'wj-front-client' }],
+         ['its client subject', { sub: 'urn:sts:client:wj-front-client' }]]
+          .forEach(function (named) {
+            r = ask(wrap(bst(jwt(via + '-2' + named[0] + asked[1],
+                                 named[1]))), asked[1]);
+            t.check(r.status === 200,
+                    'M2 (' + m + ', ' + via + ', ' + asked[0] + '). a ' +
+                    'may_act naming the requester by ' + named[0] + ' is ' +
+                    'accepted', r.status + ' ' + r.errorCode + ' ' +
+                    String(r.body).slice(0, 400));
+          });
+        r = ask(wrap(bst(jwt(via + '-3' + asked[1], null))), asked[1]);
+        t.check(r.status === 200,
+                'M3 (' + m + ', ' + via + ', ' + asked[0] + '). a JWT with ' +
+                'no may_act is decided as before', r.status + ' ' +
+                r.errorCode + ' ' + String(r.body).slice(0, 400));
+      });
+      // A may_act naming the requester under ANOTHER issuer: the claim's
+      // `iss` must match too (`mayActNames()`), and a requester that
+      // authenticated with an assertion has no OAuth issuer to match.
+      let r = ask(wrap(bst(jwt(via + '-4', { sub: 'wj-front-client',
+                                             iss: 'https://other.example' }))),
+                  JWT);
+      t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0033',
+              'M4 (' + m + ', ' + via + '). a may_act whose iss is not the ' +
+              'actor\'s is refused', r.status + ' ' + r.errorCode);
+      // An UNVERIFIED JWT's may_act is nobody's word: development reads the
+      // token for its subject and decides without the claim, as the
+      // exchange does with a subject_token it cannot verify; product
+      // refuses the token itself (STS-WSTRUST-0026).
+      const good = jwt(via + '-5', elsewhere).split('.');
+      const forged = good[0] + '.' + good[1] + '.' +
+        Buffer.from('not-the-signature').toString('base64url');
+      r = ask(wrap(bst(forged)), JWT);
+      t.check(m === 'product'
+        ? (r.status === 500 && r.errorCode === 'STS-WSTRUST-0026')
+        : r.status === 200,
+              'M5 (' + m + ', ' + via + '). an unverified JWT\'s may_act ' +
+              'is not read: ' + (m === 'product'
+                ? 'the token is refused (STS-WSTRUST-0026)'
+                : 'development decides without it'),
+              r.status + ' ' + r.errorCode + ' ' +
+              String(r.body).slice(0, 300));
+    });
+    // And a SAML assertion inside the element carries no may_act: unchanged.
+    const r = ask(actAs(signed('wj-alice', 'wj-front')), JWT);
+    t.check(r.status === 200,
+            'M6 (' + m + '). a SAML assertion inside ActAs is unchanged',
+            r.status + ' ' + r.errorCode);
+  });
+  log.debug("Leaving mayActInside().");
+}
+
 // R. A JWT this STS issued, as the requester's credential (#519).
 function jwtCredential(t) {
   log.debug("Entering jwtCredential().");
@@ -825,6 +943,7 @@ function run(t) {
       fixtures(t);
       inBothModes(t);
       jwtInside(t);
+      mayActInside(t);
       jwtCredential(t);
       applicationCredential(t);
       credentialAudience(t);
@@ -843,6 +962,7 @@ module.exports = {
             'client_id the requester\'s application, RFC 8693 act in this ' +
             'service\'s OAuth shape, and the SAML assertion untouched ' +
             '(#476); a JWT this STS issued accepted inside OnBehalfOf / ' +
-            'ActAs (#477) and as the requester\'s credential (#519)',
+            'ActAs (#477) and as the requester\'s credential (#519), its ' +
+            'may_act decided as the token exchange decides it (#747)',
   run: run
 };

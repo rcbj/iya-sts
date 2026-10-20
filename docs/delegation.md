@@ -381,9 +381,13 @@ refused in both modes: there is no unverified reading of XML to fall back on.
   `/admin/delegation`; its subject is not added to `/admin/users`, which lists
   a delegated subject only once the policy has allowed the act (or, in
   development, recorded that it would have refused it).
-* `may_act` is not read here: the delegated token is always a SAML assertion,
-  which has no such claim. A **JWT** issued about a person who set
-  `stsMayAct` carries `may_act`, as an access token does.
+* **`may_act` is read off a JWT inside either element**, as the token
+  exchange reads it off a subject token: only when the JWT verifies with this
+  realm's own key, and compared with the requester, who is the actor. One
+  naming somebody else is refused **in every mode** with `wst:RequestFailed`.
+  A SAML assertion has no such claim. A **JWT** issued about a person who set
+  `stsMayAct` carries `may_act`, as an access token does, so the next hop's
+  requester must be the delegate it names.
 
 See [WS-Trust](ws-trust.html).
 
