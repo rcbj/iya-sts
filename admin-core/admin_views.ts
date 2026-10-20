@@ -13710,6 +13710,19 @@ class AdminViews {
     const { log, credentials, totp, webauthnPolicy, backupCodes } = this.deps;
     log.debug("Entering AdminViews.mfaJson(). key=" + key);
     const mech = credentials.mechanismsFor(key);
+    // THE PASSKEY POLICY THAT HOLDS THIS PERSON (#718), selected for them
+    // as a sign-in with no application selects it, so each key row can say
+    // whether it would still sign them in. Lazily, as `forApplication()`
+    // reaches it above.
+    const passkeyPolicy = require('../common/passkey_policy');
+    const postQuantumRefusals = passkeyPolicy.withSelection(key, '',
+      function () {
+        return (mech.keys || []).map(function (one) {
+          const refused = passkeyPolicy.postQuantumRefusal(
+            credentials.keyAlgorithm(one), 'sign-in');
+          return refused ? String(refused.why || '') : '';
+        });
+      });
     if (!mech) {
       log.debug("Leaving AdminViews.mfaJson(). No credential store.");
       return null;
@@ -13748,7 +13761,7 @@ class AdminViews {
       // carries none, so there is no shape of this reply in which a caller
       // holding `admin:read` is handed a working second factor.
       backupCodes: mech.backupCodes,
-      keys: (mech.keys || []).map(function (one) {
+      keys: (mech.keys || []).map(function (one, index) {
         return { credentialId: one.credentialId, role: one.role,
                  label: one.label || null, signCount: one.signCount || 0,
                  enrolledAt: one.enrolledAt || 0,
@@ -13788,7 +13801,11 @@ class AdminViews {
                  deviceSerial: (one.attestation &&
                                 one.attestation.deviceSerial) || null,
                  // WHETHER IT SIGNS IN WITH NO USERNAME (#474), and why not.
-                 withoutUsername: credentials.withoutUsername(one) };
+                 withoutUsername: credentials.withoutUsername(one),
+                 // A CLASSICAL KEY THE PERSON'S PROFILE NO LONGER LETS SIGN
+                 // THEM IN (#718): the refusal's sentence, English as every
+                 // refusal is, or ''.
+                 postQuantumRefused: postQuantumRefusals[index] || '' };
       }),
       primaryKeys: mech.primaryKeys,
       mfaKeys: mech.mfaKeys,

@@ -2311,6 +2311,60 @@ algorithm (`credentialLane`).
 ceremonies), and `tests/vendored/sts_passkey_dual_lane.js` over
 `/account-api` and the sign-in screen.
 
+## A POST-QUANTUM PASSKEY REQUIRED (#718, 2026-10-19)
+
+The passkey policy's `postQuantumRequired` (`off`, `sign-in`,
+`registration-and-sign-in`; `common/CLAUDE.md` 3ch) is decided by the
+issuance policy like every passkey row (`xacml/CLAUDE.md`). What this
+module does with it:
+
+* **The fact is the ALGORITHM, never the lane.** `passkeySignInRefusal()`
+  hands over the key ROW's algorithm and lane through
+  `credentials.keyAlgorithm()` (which also reads a row that recorded no
+  algorithm), the ceremony's where no row was found; `question()` alone
+  decides whether it is post-quantum. With #643's switch off an ML-DSA key
+  is made in the one lane and its row records no lane — it signs in.
+* **Both roles**, at the one line every passkey door reaches
+  (`startSessionHere()`): the passwordless step, the step after a password
+  and the usernameless sign-in. `refusedSession()` draws 0356's sentence
+  on the screen, as it does 0313's and 0315's.
+* **The passkey step's `allowCredentials` names only the person's
+  post-quantum keys** while the selected profile requires one at sign-in
+  (rcbj's decision 3), each key judged by `postQuantumRefusal()`, the
+  policy's own reading. **A person holding keys of the step's role and none
+  of them post-quantum is told before any ceremony**: `webauthnFacts()`
+  carries the refusal as `problem` (the page's error box) and
+  `postQuantumRefused`, and `mfaWebauthnOptions()` refuses to arm it
+  (STS-AUTHN-0356, a `session.refuse` row). The step's MODE is decided on
+  what they hold, so such a person is never offered an enrolment instead.
+  An assertion posted anyway is refused at the session's start.
+* **The usernameless sign-in cannot be narrowed** — its `allowCredentials`
+  is empty by definition — so it is refused after the ceremony, at the same
+  line.
+* **The refusal changes the key's standing**, so the first time per key and
+  reason `notePasskeyStanding()` marks the row
+  (`credentials.noteKeyPolicyRefused()`, a `policyRefused` map beside #530's
+  `attestationRefused`) and sends one CAEP `credential-change` by `policy`.
+* **Enrolment under `registration-and-sign-in`** offers only ML-DSA
+  (`webauthnPolicy.algorithmsOffered()`, all three where the list names
+  none, for `pqcOnly`'s reason), and with both lanes on `lanes()` is
+  `["pqc"]` and `enrolmentLane()` turns a classical choice or none into the
+  post-quantum lane — at `beginKeyEnrolment()` and on the sign-in step —
+  so no classical-lane credential replaces the person's classical passkey
+  on the device for nothing. A classical credential answering anyway is
+  section 7.1's STS-AUTHN-0228 (not offered); `addKey()`, the one writer,
+  refuses one written by value with STS-AUTHN-0355.
+* **The device link** (`common/device_enrolment.ts`) is an assertion with a
+  key and does not reach `startSessionHere()`, so it asks the same
+  question itself — the `algorithm` group only, at the begin and at the
+  finish (0356). It has never asked the BE or PIN rules, and still does
+  not.
+
+**Tests**: `tests/passkey_post_quantum_required.js` (in process, real ES256
+and ML-DSA ceremonies), `tests/passkey_xacml.js` section E, and
+`tests/vendored/sts_passkey_post_quantum_required.js` over `/admin-api`,
+`/account-api` and the sign-in screen.
+
 ## THE WEBAUTHN ADDRESS RULES (2026-09-12)
 
 Two changes to what a ceremony is held to, both about the address a request

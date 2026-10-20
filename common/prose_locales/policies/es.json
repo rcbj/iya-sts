@@ -1023,6 +1023,14 @@
     "en": "dcf08d219b55b2ed",
     "text": "DESACTIVADO DE FORMA PREDETERMINADA. Las reglas de atestación (la configuración webauthn.attestation*: la política, la lista de AAGUID, el nivel de certificación y FIPS) se comprueban cuando se registra una llave de acceso. Activado, se vuelven a comprobar en cada inicio de sesión contra lo que se registró entonces y contra el FIDO Metadata Service tal como está ahora, así que una llave registrada antes de que se endureciera una regla, o cuyo modelo se haya informado después como comprometido, deja de iniciar sesión de nadie. Una llave sin atestación de confianza no cumple ninguna regla que la exija."
   },
+  "passkey.FIELDS.postQuantumRequired.label": {
+    "en": "011c5d09e4f351f3",
+    "text": "Exigir una llave de acceso poscuántica"
+  },
+  "passkey.FIELDS.postQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off` (el valor predeterminado) acepta una llave de acceso sea cual sea su algoritmo de firma. `sign-in` solo acepta una llave de acceso POSCUÁNTICA, cuyo algoritmo es ML-DSA-44, ML-DSA-65 o ML-DSA-87 (RFC 9964), cuando inicia la sesión de alguien, como primera credencial o como segundo factor; una clásica aún puede registrarse. `registration-and-sign-in` también rechaza una clásica en el registro, y el registro entonces solo ofrece ML-DSA. Decide el algoritmo, no el carril en que se creó una llave. Se rechaza mientras el dominio no ofrezca ningún ML-DSA (webauthn.algorithms no nombra ninguno, y ni webauthn.pqcOnly ni webauthn.pqcAlongsideClassical está activado)."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Sugerencias que envía \"Crear una llave de acceso\""
@@ -1122,6 +1130,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyEnforceAttestationAtSignIn.what": {
     "en": "dcf08d219b55b2ed",
     "text": "DESACTIVADO DE FORMA PREDETERMINADA. Las reglas de atestación (la configuración webauthn.attestation*: la política, la lista de AAGUID, el nivel de certificación y FIPS) se comprueban cuando se registra una llave de acceso. Activado, se vuelven a comprobar en cada inicio de sesión contra lo que se registró entonces y contra el FIDO Metadata Service tal como está ahora, así que una llave registrada antes de que se endureciera una regla, o cuyo modelo se haya informado después como comprometido, deja de iniciar sesión de nadie. Una llave sin atestación de confianza no cumple ninguna regla que la exija."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off` (el valor predeterminado) acepta una llave de acceso sea cual sea su algoritmo de firma. `sign-in` solo acepta una llave de acceso POSCUÁNTICA, cuyo algoritmo es ML-DSA-44, ML-DSA-65 o ML-DSA-87 (RFC 9964), cuando inicia la sesión de alguien, como primera credencial o como segundo factor; una clásica aún puede registrarse. `registration-and-sign-in` también rechaza una clásica en el registro, y el registro entonces solo ofrece ML-DSA. Decide el algoritmo, no el carril en que se creó una llave. Se rechaza mientras el dominio no ofrezca ningún ML-DSA (webauthn.algorithms no nombra ninguno, y ni webauthn.pqcOnly ni webauthn.pqcAlongsideClassical está activado)."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1274,6 +1286,18 @@
   "passkey.sentences.aggregate": {
     "en": "fa8fc40822659fe4",
     "text": "las llaves de acceso de una persona se ofrecen como una sola opción de inicio de sesión"
+  },
+  "passkey.sentences.postQuantumOff": {
+    "en": "a8e0e01781dab9b0",
+    "text": "una llave de acceso inicia sesión y se registra sea cual sea su algoritmo de firma"
+  },
+  "passkey.sentences.postQuantumSignIn": {
+    "en": "2282f9fa1ff20b26",
+    "text": "solo una llave de acceso poscuántica (ML-DSA) inicia la sesión de una persona; una clásica aún puede registrarse"
+  },
+  "passkey.sentences.postQuantumEverywhere": {
+    "en": "79742dacfba54ede",
+    "text": "solo una llave de acceso poscuántica (ML-DSA) se registra o inicia la sesión de una persona"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

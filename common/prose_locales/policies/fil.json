@@ -1023,6 +1023,14 @@
     "en": "dcf08d219b55b2ed",
     "text": "NAKA-OFF BILANG DEFAULT. Sinusuri ang mga patakaran sa attestation (ang mga setting na webauthn.attestation*: ang policy, ang listahan ng AAGUID, ang certification level at FIPS) kapag nirerehistro ang passkey. Kapag naka-on, sinusuri ulit ang mga ito sa bawat pag-sign in laban sa itinala noon at sa FIDO Metadata Service sa kasalukuyan, kaya ang key na nirehistro bago hinigpitan ang isang patakaran, o na ang model ay iniulat nang compromised mula noon, ay humihinto sa pag-sign in ng sinuman. Ang key na walang pinagkakatiwalaang attestation ay bumabagsak sa bawat patakarang humihingi nito."
   },
+  "passkey.FIELDS.postQuantumRequired.label": {
+    "en": "011c5d09e4f351f3",
+    "text": "Mag-require ng post-quantum na passkey"
+  },
+  "passkey.FIELDS.postQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "Tinatanggap ng `off` (ang default) ang passkey anuman ang algorithm nito sa pag-sign. Ang `sign-in` ay tumatanggap lang ng POST-QUANTUM na passkey, isang may algorithm na ML-DSA-44, ML-DSA-65 o ML-DSA-87 (RFC 9964), kapag nagsa-sign in ito ng tao, bilang unang credential o bilang second factor; puwede pa ring i-register ang classical. Tinatanggihan din ng `registration-and-sign-in` ang classical sa pag-register, at ML-DSA lang ang inaalok noon ng enrolment. Ang algorithm ang nagpapasya, hindi ang lane kung saan ginawa ang key. Tinatanggihan habang walang inaalok na ML-DSA ang realm (walang pinapangalanan ang webauthn.algorithms, at hindi naka-on ang webauthn.pqcOnly o ang webauthn.pqcAlongsideClassical)."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Mga hint na ipinapadala ng \"Create a passkey\""
@@ -1122,6 +1130,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyEnforceAttestationAtSignIn.what": {
     "en": "dcf08d219b55b2ed",
     "text": "NAKA-OFF BILANG DEFAULT. Sinusuri ang mga patakaran sa attestation (ang mga setting na webauthn.attestation*: ang policy, ang listahan ng AAGUID, ang certification level at FIPS) kapag nirerehistro ang passkey. Kapag naka-on, sinusuri ulit ang mga ito sa bawat pag-sign in laban sa itinala noon at sa FIDO Metadata Service sa kasalukuyan, kaya ang key na nirehistro bago hinigpitan ang isang patakaran, o na ang model ay iniulat nang compromised mula noon, ay humihinto sa pag-sign in ng sinuman. Ang key na walang pinagkakatiwalaang attestation ay bumabagsak sa bawat patakarang humihingi nito."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "Tinatanggap ng `off` (ang default) ang passkey anuman ang algorithm nito sa pag-sign. Ang `sign-in` ay tumatanggap lang ng POST-QUANTUM na passkey, isang may algorithm na ML-DSA-44, ML-DSA-65 o ML-DSA-87 (RFC 9964), kapag nagsa-sign in ito ng tao, bilang unang credential o bilang second factor; puwede pa ring i-register ang classical. Tinatanggihan din ng `registration-and-sign-in` ang classical sa pag-register, at ML-DSA lang ang inaalok noon ng enrolment. Ang algorithm ang nagpapasya, hindi ang lane kung saan ginawa ang key. Tinatanggihan habang walang inaalok na ML-DSA ang realm (walang pinapangalanan ang webauthn.algorithms, at hindi naka-on ang webauthn.pqcOnly o ang webauthn.pqcAlongsideClassical)."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1274,6 +1286,18 @@
   "passkey.sentences.aggregate": {
     "en": "fa8fc40822659fe4",
     "text": "iniaalok ang mga passkey ng tao bilang iisang pagpipilian sa pag-sign in"
+  },
+  "passkey.sentences.postQuantumOff": {
+    "en": "a8e0e01781dab9b0",
+    "text": "nagsa-sign in at nare-register ang passkey anuman ang algorithm nito sa pag-sign"
+  },
+  "passkey.sentences.postQuantumSignIn": {
+    "en": "2282f9fa1ff20b26",
+    "text": "post-quantum (ML-DSA) na passkey lang ang nagsa-sign in ng tao; puwede pa ring i-register ang classical"
+  },
+  "passkey.sentences.postQuantumEverywhere": {
+    "en": "79742dacfba54ede",
+    "text": "post-quantum (ML-DSA) na passkey lang ang nare-register o nagsa-sign in ng tao"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

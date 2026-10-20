@@ -211,6 +211,7 @@
   "keys.rolePrimary": "en lugar de una contraseña",
   "keys.roleMfa": "segundo paso después de su contraseña",
   "keys.syncedRefused": "Esta llave de acceso se puede sincronizar, y este dominio ahora solo acepta llaves de acceso vinculadas a un dispositivo, así que no le permitirá iniciar sesión. Quítela y registre una llave de seguridad o una llave de acceso guardada en un solo dispositivo.",
+  "keys.postQuantumRefused": "Esta llave de acceso firma con un algoritmo clásico, y este dominio ahora solo acepta llaves de acceso poscuánticas (ML-DSA), así que no le permitirá iniciar sesión. Quítela y registre una llave de acceso poscuántica.",
   "keys.removeAndRegister": "Quítela y registre otra.",
   "keys.details": "Detalles",
   "keys.used": "Uso",

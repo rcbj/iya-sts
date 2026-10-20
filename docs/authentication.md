@@ -343,6 +343,7 @@ row says `disallow`. See [XACML](xacml.md).
 | `credentialLabel` | empty | The name a new passkey is given; `{provider}` and `{kind}` are filled in. |
 | `aggregateDevices` | on | A person's passkeys are one sign-in choice; off, one per passkey (below). |
 | `enterpriseSerialAttribute` | empty | The attribute of a person's entry holding the serials of the security keys issued to them; set, a key registers only if its enterprise attestation names one of them (below). |
+| `postQuantumRequired` | `off` | `sign-in` accepts only a **post-quantum** (ML-DSA) passkey at sign-in; `registration-and-sign-in` refuses a classical one at registration too (below). |
 
 **Both portal buttons ask for a discoverable credential by default.** *Create
 a passkey* always asks `residentKey: required`. *Use a security key* asks
@@ -407,6 +408,43 @@ can be registered at all. With it on, every other key is accepted, and the
 rule then binds only the keys that report: **it is weaker, and is meant for a
 realm moving its keys over one at a time.** The browser must also pass the
 extension on; one that does not is a key that reports nothing.
+
+**A post-quantum passkey required** (`postQuantumRequired`). A passkey is
+*post-quantum* when its signature algorithm is ML-DSA-44, ML-DSA-65 or
+ML-DSA-87 (RFC 9964), which a quantum computer is not expected to break; a
+*classical* one signs with ES256, RS256 or another algorithm that one could.
+The **algorithm** decides, as the key recorded it when it was registered —
+not the kind of passkey the person chose. With
+`webauthn.pqcAlongsideClassical` off, an authenticator that can make ML-DSA
+does so, and that key counts as post-quantum.
+
+- `off`, the default, accepts any passkey.
+- `sign-in`: a classical passkey **does not sign anybody in**, as the first
+  factor, as the step after a password, or with no username
+  (`STS-AUTHN-0356`, a `session.refuse` audit row). A classical one may still
+  be registered.
+- `registration-and-sign-in`: a classical passkey is **not registered**
+  either (`STS-AUTHN-0355`), and every registration then offers only ML-DSA
+  (with `webauthn.pqcAlongsideClassical` on, only the post-quantum kind).
+
+While it is required at sign-in, the passkey step asks the authenticator only
+for the person's post-quantum passkeys, and a person holding none is told so
+before any prompt appears. A sign-in with no username cannot be narrowed that
+way, so it is refused after the prompt. `/portal/keys` and the console mark a
+classical passkey that no longer signs its owner in, and the first time each
+one is refused a CAEP `credential-change` is sent. Like every row, it can be
+set on a named policy, so a single application or group can require
+post-quantum passkeys while the rest of the realm does not.
+
+A save that requires it is **refused while the realm offers no ML-DSA**
+(`STS-AUTHN-0357`): with `webauthn.algorithms` naming none, and neither
+`webauthn.pqcOnly` nor `webauthn.pqcAlongsideClassical` on, nobody could
+register a passkey that satisfies it. If `webauthn.algorithms` changes
+afterwards, registration offers all three ML-DSA algorithms anyway.
+
+A realm that keeps an issuance policy of its own, built from the
+`role-issuance` template before this row existed, decides passkeys with that
+document: rebuild it from the template for the realm to be held to the row.
 
 **The attestation rules at sign-in** (`enforceAttestationAtSignIn`). The
 `webauthn.attestation*` settings — the attestation policy, the list of

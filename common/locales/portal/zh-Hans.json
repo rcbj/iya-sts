@@ -211,6 +211,7 @@
   "keys.rolePrimary": "代替密码",
   "keys.roleMfa": "密码之后的第二步",
   "keys.syncedRefused": "此通行密钥可以同步，而此领域现在只接受绑定设备的通行密钥，因此它无法让您登录。请移除它，然后注册一个安全密钥或保存在单一设备上的通行密钥。",
+  "keys.postQuantumRefused": "此通行密钥使用经典算法签名，而此领域现在只接受后量子（ML-DSA）通行密钥，因此它无法让您登录。请移除它，然后注册一个后量子通行密钥。",
   "keys.removeAndRegister": "移除它并注册另一个。",
   "keys.details": "详细信息",
   "keys.used": "用途",

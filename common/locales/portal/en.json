@@ -211,6 +211,7 @@
   "keys.rolePrimary": "instead of a password",
   "keys.roleMfa": "second step after your password",
   "keys.syncedRefused": "This passkey can be synced, and this realm now accepts only device-bound passkeys, so it will not sign you in. Remove it and register a security key or a passkey kept on one device.",
+  "keys.postQuantumRefused": "This passkey signs with a classical algorithm, and this realm now accepts only post-quantum (ML-DSA) passkeys, so it will not sign you in. Remove it and register a post-quantum passkey.",
   "keys.removeAndRegister": "Remove it and register another.",
   "keys.details": "Details",
   "keys.used": "Used",

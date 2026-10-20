@@ -24,6 +24,15 @@
 //   C. THE PASSKEY POLICY ASKS: `refusalFor()` through the gate answers the
 //      code and the sentence the door always said, under a profile saved in
 //      a throwaway realm.
+//   E. THE POST-QUANTUM REQUIREMENT (#718), in A's, B's and C's terms: the
+//      row's three values at both actions (`off` refuses nothing,
+//      `sign-in` refuses a classical key at use-passkey only,
+//      `registration-and-sign-in` at both, STS-AUTHN-0355 and 0356); the
+//      ALGORITHM decides, so an ML-DSA key with no lane is allowed and a
+//      classical key in the pqc lane is not; the rule comes after the
+//      existing ones; a question without the `algorithm` group never trips
+//      it; and the strict reading agrees with the document over a grid of
+//      every fact it reads.
 //   D. A REALM'S OWN ISSUANCE POLICY IS HONOURED through the issuance PEP:
 //      a rule letting synced passkeys sign in makes it so in that realm only;
 //      a registration, which its document has no verdict on, still falls to
@@ -66,7 +75,8 @@ function policyRows(fields) {
   return Object.assign({
     backupEligibility: 'allow', enforcePinLength: false, minPinLength: 4,
     pinLengthOnlyIfSupported: false, enforceAttestationAtSignIn: false,
-    enterpriseSerialAttribute: '' }, fields || {});
+    enterpriseSerialAttribute: '', postQuantumRequired: 'off' },
+    fields || {});
 }
 
 // A question, as `passkey_policy.ts`'s `question()` builds one.
@@ -403,6 +413,167 @@ function noPasskeysAtAll(idBase) {
   };
 }
 
+// The `algorithm` facts as `passkey_policy.ts`'s `question()` gives them:
+// `postQuantum` computed from the name by the policy's own reading, so the
+// truth table asks what the doors' questions carry.
+function algorithmFacts(algorithm, lane) {
+  log.debug('Entering algorithmFacts().');
+  log.debug('Leaving algorithmFacts().');
+  return { algorithm: algorithm,
+           postQuantum: passkeyPolicy.isPostQuantum(algorithm),
+           lane: lane === 'pqc' ? 'pqc' : 'classical' };
+}
+
+function postQuantumRules(t) {
+  log.debug('Entering postQuantumRules().');
+  t.log.info('=== E. the post-quantum requirement (#718) ===');
+  const R = PK.REGISTER_ACTION;
+  const U = PK.USE_ACTION;
+  const expect = function (label, q, code) {
+    log.debug('Entering expect().');
+    const got = builtIn(q);
+    const ok = code
+      ? got.verdict === 'refuse' && got.code === code &&
+        got.reason === 'post-quantum'
+      : got.verdict === 'allow';
+    t.check(ok && got.decidedBy === 'built-in', label, JSON.stringify(got));
+    log.debug('Leaving expect().');
+  };
+  const es256 = algorithmFacts('ES256', 'classical');
+  const mldsa = algorithmFacts('ML-DSA-65', '');
+  const off = { postQuantumRequired: 'off' };
+  const signIn = { postQuantumRequired: 'sign-in' };
+  const both = { postQuantumRequired: 'registration-and-sign-in' };
+  expect('E1. off: a classical key registers', question(R, ['algorithm'],
+         es256, off), '');
+  expect('E1b. and signs in', question(U, ['algorithm'], es256, off), '');
+  expect('E2. sign-in: a classical key still registers',
+         question(R, ['algorithm'], es256, signIn), '');
+  expect('E2b. and does not sign in (STS-AUTHN-0356)',
+         question(U, ['algorithm'], es256, signIn), 'STS-AUTHN-0356');
+  expect('E3. registration-and-sign-in: a classical key is not registered ' +
+         '(STS-AUTHN-0355)', question(R, ['algorithm'], es256, both),
+         'STS-AUTHN-0355');
+  expect('E3b. and does not sign in (STS-AUTHN-0356)',
+         question(U, ['algorithm'], es256, both), 'STS-AUTHN-0356');
+  expect('E4. an ML-DSA key whose row records no lane — made with #643\'s ' +
+         'switch off — registers under registration-and-sign-in',
+         question(R, ['algorithm'], mldsa, both), '');
+  expect('E4b. and signs in', question(U, ['algorithm'], mldsa, both), '');
+  expect('E4c. the ALGORITHM decides: a classical key in the pqc lane is ' +
+         'refused',
+         question(U, ['algorithm'], algorithmFacts('ES256', 'pqc'), signIn),
+         'STS-AUTHN-0356');
+  expect('E4d. and each ML-DSA set (44, 87) is post-quantum',
+         question(U, ['algorithm'], algorithmFacts('ML-DSA-44', ''), both),
+         '');
+  expect('E4e. ML-DSA-87 too',
+         question(R, ['algorithm'], algorithmFacts('ML-DSA-87', 'pqc'), both),
+         '');
+  expect('E5. a question without the algorithm group never trips the rule',
+         question(U, ['backup-eligible'], { backupEligible: false }, both),
+         '');
+  const first = builtIn(question(U, ['backup-eligible', 'algorithm'],
+    Object.assign({ backupEligible: true }, es256),
+    { backupEligibility: 'disallow', postQuantumRequired: 'sign-in' }));
+  t.check(first.verdict === 'refuse' && first.code === 'STS-AUTHN-0313' &&
+          first.reason === 'backup-eligible',
+          'E6. the rule comes after the existing ones: a synced classical ' +
+          'key is refused for being synced (STS-AUTHN-0313)',
+          JSON.stringify(first));
+  const named = builtIn(question(U, ['algorithm'],
+    { algorithm: 'ES256', postQuantum: false, lane: 'classical' }, signIn));
+  t.check(named.verdict === 'refuse' &&
+          PK.GROUPS.indexOf('algorithm') >= 0 &&
+          JSON.stringify(PK.REASONS['post-quantum']) ===
+            JSON.stringify({ register: 'STS-AUTHN-0355',
+                             use: 'STS-AUTHN-0356' }),
+          'E7. the template names the group and the reason\'s two codes',
+          JSON.stringify(PK.REASONS['post-quantum']));
+  // The strict reading against the document over every value the rule and
+  // the rules before it at sign-in read.
+  const built = verdicts.builtInPolicy('');
+  const disagreements = [];
+  let asked = 0;
+  [R, U].forEach(function (action) {
+    ['off', 'sign-in', 'registration-and-sign-in'].forEach(function (row) {
+      ['ES256', 'RS256', 'ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87', '']
+        .forEach(function (alg) {
+          ['', 'classical', 'pqc'].forEach(function (lane) {
+            [undefined, false, true].forEach(function (be) {
+              ['allow', 'disallow'].forEach(function (bePolicy) {
+                [true, false].forEach(function (carried) {
+                  const facts = carried ? algorithmFacts(alg, lane) : {};
+                  if (be !== undefined) {
+                    facts.backupEligible = be;
+                  }
+                  const groups = ['backup-eligible']
+                    .concat(carried ? ['algorithm'] : []);
+                  const q = question(action, groups, facts,
+                    { backupEligibility: bePolicy,
+                      postQuantumRequired: row });
+                  const doc = verdicts.decide(q,
+                    { policy: built, builtIn: true }, {});
+                  const read = passkeyRules.strictReading(q);
+                  asked += 1;
+                  if (doc.verdict !== read.verdict ||
+                      doc.code !== read.code || doc.reason !== read.reason) {
+                    disagreements.push({ q: q, document: doc, facts: read });
+                  }
+                });
+              });
+            });
+          });
+        });
+    });
+  });
+  t.check(built && asked > 1000 && !disagreements.length,
+          'E8. the strict reading and the built-in document agree on all ' +
+          asked + ' post-quantum questions',
+          JSON.stringify(disagreements.slice(0, 3)));
+  log.debug('Leaving postQuantumRules().');
+}
+
+function postQuantumAsked(t, realm) {
+  log.debug('Entering postQuantumAsked().');
+  realms.run(realm, function () {
+    // C's profile with the row set, so D, which reads C's, finds it again.
+    const before = { backupEligibility: 'disallow', enforcePinLength: true,
+                     minPinLength: 6 };
+    const saved = passkeyPolicy.save('default', withDefaults(Object.assign(
+      { postQuantumRequired: 'sign-in' }, before)));
+    t.check(saved && saved.ok, 'precondition: the realm requires a ' +
+            'post-quantum passkey at sign-in',
+            JSON.stringify(saved && saved.errors));
+    const q = passkeyPolicy.question('sign-in', {
+      username: 'nobody-' + RUN, algorithm: 'ML-DSA-65' });
+    t.check(q.groups.join(',') === 'algorithm' &&
+            q.algorithm === 'ML-DSA-65' && q.postQuantum === true &&
+            q.lane === 'classical' &&
+            q.policy.postQuantumRequired === 'sign-in',
+            'E9. the question computes postQuantum from the algorithm ' +
+            'itself, reads no lane as classical, and carries the row',
+            JSON.stringify(q));
+    const refused = passkeyPolicy.postQuantumRefusal(
+      { name: 'ES256', lane: 'classical' }, 'sign-in');
+    t.check(refused && refused.code === 'STS-AUTHN-0356' &&
+            /signs with ES256/.test(refused.why) &&
+            /postQuantumRequired/.test(refused.why),
+            'E10. postQuantumRefusal() answers the sign-in code and the ' +
+            'sentence naming the algorithm and the row',
+            JSON.stringify(refused));
+    t.check(passkeyPolicy.postQuantumRefusal({ name: 'ES256' },
+                                             'registration') === null &&
+            passkeyPolicy.postQuantumRefusal({ name: 'ML-DSA-44' },
+                                             'sign-in') === null &&
+            passkeyPolicy.postQuantumRefusal({}, 'sign-in') === null,
+            'E11. and nothing for a classical registration under sign-in, ' +
+            'an ML-DSA key, or a key whose algorithm is unknown');
+    passkeyPolicy.save('default', withDefaults(before));
+  });
+  log.debug('Leaving postQuantumAsked().');
+}
+
 function realmPolicy(t, realm) {
   log.debug('Entering realmPolicy().');
   t.log.info('=== D. a realm\'s own issuance policy is honoured ===');
@@ -465,6 +636,7 @@ async function run(t) {
   try {
     theBuiltInRules(t);
     theStrictReading(t);
+    postQuantumRules(t);
   } finally {
     gate.setDecider(deciderBefore || rolePep.decide);
   }
@@ -476,6 +648,7 @@ async function run(t) {
                                 name: 'passkey xacml ' + RUN }).realm;
   try {
     thePolicyAsks(t, realm);
+    postQuantumAsked(t, realm);
     realmPolicy(t, realm);
   } finally {
     gate.setDecider(deciderBefore || rolePep.decide);
@@ -488,6 +661,7 @@ module.exports = {
   name: 'passkey_xacml',
   describe: 'the passkey refusals as rules of the issuance policy (#536): ' +
             'the built-in rules and their codes, the rules read from the ' +
-            'facts, the passkey policy asking, and a realm\'s own policy',
+            'facts, the passkey policy asking, the post-quantum ' +
+            'requirement (#718), and a realm\'s own policy',
   run: run
 };

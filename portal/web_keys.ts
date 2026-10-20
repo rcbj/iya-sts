@@ -138,6 +138,11 @@ class KeysPages {
           kit.esc(one.attestationRefused) + ' ' +
           t.html('portal.keys.removeAndRegister') + '</div>'
         : '') +
+      // A CLASSICAL KEY WHERE A POST-QUANTUM ONE IS REQUIRED (#718).
+      (one.postQuantumRefused
+        ? '<div class="meta" id="passkey-post-quantum-refused">' +
+          t.html('portal.keys.postQuantumRefused') + '</div>'
+        : '') +
       // ONE WHOSE MINIMUM PIN THE REALM NO LONGER ACCEPTS (#529).
       (one.pinRefused
         ? '<div class="meta" id="passkey-pin-refused">' +

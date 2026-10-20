@@ -211,6 +211,7 @@
   "keys.rolePrimary": "i stället för ett lösenord",
   "keys.roleMfa": "andra steg efter ditt lösenord",
   "keys.syncedRefused": "Den här nyckeln kan synkroniseras, och den här sfären godtar nu endast enhetsbundna nycklar, så den loggar inte in dig. Ta bort den och registrera en säkerhetsnyckel eller en nyckel som finns på en enda enhet.",
+  "keys.postQuantumRefused": "Den här nyckeln signerar med en klassisk algoritm, och den här sfären godtar nu endast postkvantnycklar (ML-DSA), så den loggar inte in dig. Ta bort den och registrera en postkvantnyckel.",
   "keys.removeAndRegister": "Ta bort den och registrera en annan.",
   "keys.details": "Detaljer",
   "keys.used": "Används",

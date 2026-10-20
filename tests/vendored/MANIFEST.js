@@ -998,6 +998,15 @@ const JOBS = [
   // enrolment in its realm.
   // `local: true`: this repository's own portal, sign-in screen and API.
   { file: 'sts_passkey_dual_lane.js', browser: false, local: true },
+  // A POST-QUANTUM PASSKEY REQUIRED (#718): the passkey policy's
+  // postQuantumRequired set through `/admin-api`, then an ES256 key and an
+  // ML-DSA-65 key (no lane on its row) each signing in, the save refused
+  // where no ML-DSA is offered, the portal's and the console's warnings and
+  // enrolment narrowed to ML-DSA. A realm of its own, because the row holds
+  // every passkey in its realm. `local: true`: this repository's own API,
+  // portal and sign-in screen.
+  { file: 'sts_passkey_post_quantum_required.js', browser: false,
+    local: true },
   // AN APPLICATION'S PASSKEY POLICY (#609): the named passkey policies
   // naming an application, read back through `GET /admin-api/applications`'s
   // `page.passkeyPolicies` in precedence order with the one that applies

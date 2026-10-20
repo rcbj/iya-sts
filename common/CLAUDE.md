@@ -12159,6 +12159,35 @@ issuance policy DECIDES:
 * **#535's selection of which profile applies stays code.** It chooses the
   settings and decides nothing.
 
+**#718 ADDED `postQuantumRequired` (2026-10-19)**: `off`, `sign-in` or
+`registration-and-sign-in`, on the default and named profiles
+(`stsPasskeyPostQuantumRequired`), the policy's first row decided from its
+first day by the issuance policy. rcbj's decisions on the ticket: three
+values, both roles, and the passkey step's `allowCredentials` narrowed to
+post-quantum keys while required.
+
+* **The fact is the key's ALGORITHM.** A door hands over the algorithm it
+  holds and never its own reading; `question()` computes `postQuantum` from
+  it in ONE place (`isPostQuantum()`, `POST_QUANTUM_ALGORITHMS` — RFC
+  9964's ML-DSA-44, -65, -87, and the one copy: `webauthn_policy.ts`'s
+  `PQC_ALGS` is this list, since that module requires this one) and carries
+  the algorithm and the lane beside it as the `algorithm` fact group. The
+  lane is not the fact because a key made with #643's switch off has none.
+* **`requiresPostQuantum(at)`** says whether the selected profile requires
+  it at a stage; **`postQuantumRefusal(keyAlgorithm, at)`** asks the policy
+  about the one fact group, `backupEligibleRefusal()`'s pattern, and is what
+  the passkey step's filter, the portal's and the console's key rows and
+  the device link ask.
+* **A save requiring it while the realm offers no ML-DSA is refused**
+  (`STS-AUTHN-0357`): `webauthn_policy.ts`'s `offersPostQuantum()`, reached
+  through a lazy dependency, answers whether `webauthn.algorithms` names one,
+  `webauthn.pqcOnly` is on, or the post-quantum lane is offered — read
+  before the requirement's own narrowing, which would answer yes always.
+* `STS-AUTHN-0355` (registration) and `0356` (sign-in); the
+  `credentials.ts` half is `noteKeyPolicyRefused()`, #530's mark
+  generalised to a map by reason. `authn/CLAUDE.md` (*A post-quantum
+  passkey required*) argues the doors.
+
 ### `credentials.ts`'s half of the passkey lanes (#643, 2026-10-19)
 
 The lanes are argued in `authn/CLAUDE.md` (*Two lanes*); what this file

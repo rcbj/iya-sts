@@ -1023,6 +1023,14 @@
     "en": "dcf08d219b55b2ed",
     "text": "DÉSACTIVÉ PAR DÉFAUT. Les règles d’attestation (les paramètres webauthn.attestation* : la politique, la liste d’AAGUID, le niveau de certification et FIPS) sont vérifiées lors de l’enregistrement d’une clé d’accès. Activé, elles sont vérifiées à nouveau à chaque connexion, par rapport à ce qui a été enregistré alors et au FIDO Metadata Service tel qu’il est aujourd’hui ; une clé enregistrée avant le durcissement d’une règle, ou dont le modèle a depuis été signalé compromis, cesse donc de connecter qui que ce soit. Une clé sans attestation de confiance échoue à toute règle qui en exige une."
   },
+  "passkey.FIELDS.postQuantumRequired.label": {
+    "en": "011c5d09e4f351f3",
+    "text": "Exiger une clé d’accès post-quantique"
+  },
+  "passkey.FIELDS.postQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off` (la valeur par défaut) accepte une clé d’accès quel que soit son algorithme de signature. `sign-in` n’accepte qu’une clé d’accès POST-QUANTIQUE, dont l’algorithme est ML-DSA-44, ML-DSA-65 ou ML-DSA-87 (RFC 9964), lorsqu’elle connecte quelqu’un, comme premier identifiant ou comme second facteur ; une clé classique peut encore être enregistrée. `registration-and-sign-in` refuse aussi une clé classique à l’enregistrement, et l’enregistrement ne propose alors que ML-DSA. C’est l’algorithme qui décide, pas la voie dans laquelle une clé a été créée. Refusé tant que le domaine ne propose aucun ML-DSA (webauthn.algorithms n’en nomme aucun, et ni webauthn.pqcOnly ni webauthn.pqcAlongsideClassical n’est activé)."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Indications qu’envoie « Créer une clé d’accès »"
@@ -1122,6 +1130,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyEnforceAttestationAtSignIn.what": {
     "en": "dcf08d219b55b2ed",
     "text": "DÉSACTIVÉ PAR DÉFAUT. Les règles d’attestation (les paramètres webauthn.attestation* : la politique, la liste d’AAGUID, le niveau de certification et FIPS) sont vérifiées lors de l’enregistrement d’une clé d’accès. Activé, elles sont vérifiées à nouveau à chaque connexion, par rapport à ce qui a été enregistré alors et au FIDO Metadata Service tel qu’il est aujourd’hui ; une clé enregistrée avant le durcissement d’une règle, ou dont le modèle a depuis été signalé compromis, cesse donc de connecter qui que ce soit. Une clé sans attestation de confiance échoue à toute règle qui en exige une."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off` (la valeur par défaut) accepte une clé d’accès quel que soit son algorithme de signature. `sign-in` n’accepte qu’une clé d’accès POST-QUANTIQUE, dont l’algorithme est ML-DSA-44, ML-DSA-65 ou ML-DSA-87 (RFC 9964), lorsqu’elle connecte quelqu’un, comme premier identifiant ou comme second facteur ; une clé classique peut encore être enregistrée. `registration-and-sign-in` refuse aussi une clé classique à l’enregistrement, et l’enregistrement ne propose alors que ML-DSA. C’est l’algorithme qui décide, pas la voie dans laquelle une clé a été créée. Refusé tant que le domaine ne propose aucun ML-DSA (webauthn.algorithms n’en nomme aucun, et ni webauthn.pqcOnly ni webauthn.pqcAlongsideClassical n’est activé)."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1274,6 +1286,18 @@
   "passkey.sentences.aggregate": {
     "en": "fa8fc40822659fe4",
     "text": "les clés d’accès d’une personne sont proposées comme un seul choix de connexion"
+  },
+  "passkey.sentences.postQuantumOff": {
+    "en": "a8e0e01781dab9b0",
+    "text": "une clé d’accès connecte et s’enregistre quel que soit son algorithme de signature"
+  },
+  "passkey.sentences.postQuantumSignIn": {
+    "en": "2282f9fa1ff20b26",
+    "text": "seule une clé d’accès post-quantique (ML-DSA) connecte une personne ; une clé classique peut encore être enregistrée"
+  },
+  "passkey.sentences.postQuantumEverywhere": {
+    "en": "79742dacfba54ede",
+    "text": "seule une clé d’accès post-quantique (ML-DSA) est enregistrée ou connecte une personne"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",
