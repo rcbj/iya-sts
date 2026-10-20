@@ -12119,8 +12119,9 @@ const CODES = [
     spec: 'none (a refused administrative change)' },
   { code: 'STS-KRB-0124',
     summary: 'A trust realm was given a krb5.realm another realm already ' +
-      'answers to (another realm\'s, the default realm\'s, or ' +
-      'krb5.trustedRealm), compared without regard to case.',
+      'answers to (another realm\'s, the default realm\'s, or the ' +
+      'development partner realm the default realm answers as), compared ' +
+      'without regard to case.',
     spec: 'none (a refused administrative change)' },
   { code: 'STS-KRB-0125',
     summary: 'A trust realm\'s krb5.realm was changed or cleared while its ' +
@@ -12565,6 +12566,142 @@ const CODES = [
     summary: 'The Kerberos acceptor\'s random key was not made: this node ' +
       'could not ask the shared store whether another node was making it.',
     spec: '' },
+  // #430 (2026-10-19): Kerberos trusts as records, and the path across them.
+  { code: 'STS-KRB-0213',
+    summary: 'A Kerberos trust record was refused: its partner realm is not ' +
+      'a domain-style Kerberos realm name, or an update tried to change it.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0214',
+    summary: 'A Kerberos trust record was refused: its partner is this ' +
+      'realm\'s own Kerberos realm, or this realm has no Kerberos realm.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0215',
+    summary: 'A Kerberos trust act was refused: the realm already holds a ' +
+      'trust with that partner (or the most it may), or holds none to ' +
+      'change or remove.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0216',
+    summary: 'A Kerberos trust record was refused: its type is unknown, or ' +
+      'a trust-realm partner names no trust realm in this process answering ' +
+      'as that Kerberos realm.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0217',
+    summary: 'A Kerberos trust record was refused: it names an attribute ' +
+      'outside the closed set, or two that contradict each other.',
+    spec: 'none (a refused administrative change); [MS-ADTS] 6.1.6.7.9' },
+  { code: 'STS-KRB-0218',
+    summary: 'A Kerberos trust record was refused: its NetBIOS name or its ' +
+      'partner domain SID is not well formed.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0219',
+    summary: 'A Kerberos trust record was refused: a routed suffix is not a ' +
+      'DNS name, or is this realm\'s own domain.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0220',
+    summary: 'A Kerberos trust record was refused: its enctypes name none, ' +
+      'one this KDC does not implement, one the mode withholds, or one a ' +
+      'kept generated key was not made for.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0221',
+    summary: 'A Kerberos trust record was refused: it holds neither an ' +
+      'incoming nor an outgoing key, or a pairing named no direction.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0222',
+    summary: 'A Kerberos trust record was refused: a key has no source, a ' +
+      'trust password is too short, a given key is the wrong length, or a ' +
+      'kvno is out of range.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0223',
+    summary: 'A Kerberos trust record was not written: its keys could not ' +
+      'be sealed, or the directory refused the entry.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0224',
+    summary: 'A stored Kerberos trust record was not used: its data is not ' +
+      'JSON, names no partner, or its keys will not open. Said once per ' +
+      'realm and record.',
+    spec: 'logged; no referral through it and no ticket accepted from it' },
+  { code: 'STS-KRB-0225',
+    summary: 'The Kerberos trust register was given a directory without all ' +
+      'three of its functions, or could not be loaded at all; the KDC holds ' +
+      'no trust there.',
+    spec: 'logged' },
+  { code: 'STS-KRB-0226',
+    summary: 'A referral was refused: the path would cross more trusts than ' +
+      'krb5.maxReferralHops allows.',
+    spec: 'KDC_ERR_PATH_NOT_ACCEPTED (28); RFC 4120 section 3.3.3.2' },
+  { code: 'STS-KRB-0227',
+    summary: 'A cross-realm ticket was refused: it came through a ' +
+      'non-transitive trust for somebody not of the partner\'s own realm, ' +
+      'or would be referred onward through one.',
+    spec: 'KDC_ERR_PATH_NOT_ACCEPTED (28); [MS-ADTS] 6.1.6.7.9' },
+  { code: 'STS-KRB-0228',
+    summary: 'A cross-realm ticket\'s path failed the transited-policy ' +
+      'check: a realm on it is outside the trust\'s routed namespace, is ' +
+      'this realm, is elided, or no enabled trust accepts its issuer.',
+    spec: 'KDC_ERR_PATH_NOT_ACCEPTED (28); RFC 4120 sections 2.7, 3.3.3.2' },
+  { code: 'STS-KRB-0229',
+    summary: 'A cross-realm ticket-granting ticket was refused: the trust ' +
+      'it came through is disabled, or holds no incoming key.',
+    spec: 'KDC_ERR_S_PRINCIPAL_UNKNOWN (7)' },
+  // #430 Phases 2 and 3: delegation across a Kerberos trust.
+  { code: 'STS-KRB-0230',
+    summary: 'An S4U request or a forwarded TGT across a Kerberos trust was ' +
+      'refused by the issuance policy: the trust is disabled, or does not ' +
+      'accept the user\'s realm (no incoming key).',
+    spec: 'KDC_ERR_POLICY (12)' },
+  { code: 'STS-KRB-0231',
+    summary: 'S4U2Self for a user of another Kerberos realm was refused: ' +
+      'the service does not list that realm in krb5S4uSelfRealm.',
+    spec: 'KDC_ERR_POLICY (12); [MS-SFU] 3.1.5.1.1.2' },
+  { code: 'STS-KRB-0232',
+    summary: 'Classic constrained delegation across a Kerberos trust was ' +
+      'refused: krb5.crossRealmClassicDelegation is off.',
+    spec: 'KDC_ERR_POLICY (12) or KDC_ERR_BADOPTION (13); [MS-SFU] 3.2.5.2' },
+  { code: 'STS-KRB-0233',
+    summary: 'A TGT was not delegated across a Kerberos trust: [MS-KILE] ' +
+      '3.3.5.7.5\'s conditions on the trust\'s attributes do not hold, or ' +
+      'the service refuses it (krb5ForeignTgtDelegation deny).',
+    spec: 'KDC_ERR_BADOPTION (13); [MS-KILE] 3.3.5.7.5' },
+  { code: 'STS-KRB-0234',
+    summary: 'S4U2Self across Kerberos realms could not be referred: no ' +
+      'enabled trust routes the user\'s or the requester\'s realm.',
+    spec: 'KDC_ERR_WRONG_REALM (68)' },
+  { code: 'STS-KRB-0235',
+    summary: 'An S4U request would be referred across a Kerberos trust ' +
+      'whose outgoing key this realm cannot use.',
+    spec: 'KDC_ERR_S_PRINCIPAL_UNKNOWN (7)' },
+  { code: 'STS-KRB-0236',
+    summary: 'A cross-realm S4U2Proxy evidence ticket came through a ' +
+      'Kerberos trust this realm cannot use (disabled, not honoured, or no ' +
+      'incoming key).',
+    spec: 'KDC_ERR_S_PRINCIPAL_UNKNOWN (7)' },
+  { code: 'STS-KRB-0237',
+    summary: 'A Kerberos trust record was refused: its forest trust ' +
+      'information is malformed, or given to a trust that is not ' +
+      'cross-forest (#430 SID filtering).',
+    spec: 'none (a refused administrative change); [MS-ADTS] 6.1.6.9.3' },
+  { code: 'STS-KRB-0238',
+    summary: 'A Kerberos trust record was refused: its claims ' +
+      'transformation is not one this service implements (drop-all, ' +
+      'allow-all).',
+    spec: 'none (a refused administrative change); [MS-ADTS] 3.1.1.11.2.11' },
+  { code: 'STS-KRB-0239',
+    summary: 'A PAC arriving across a Kerberos trust may not cross it: its ' +
+      'logon domain is in this realm\'s forest across a cross-forest or ' +
+      'external boundary, or is not a domain the trust passes.',
+    spec: 'KDC_ERR_POLICY (12); [MS-PAC] 4.1.2.2' },
+  { code: 'STS-KRB-0240',
+    summary: 'S4U2Proxy evidence that crossed a Kerberos trust was refused: ' +
+      'its PAC\'s server, KDC or ticket signature does not verify with the ' +
+      'inter-realm key that sealed it, so the ticket or its PAC was altered ' +
+      'or forged after the issuing realm signed it.',
+    spec: '[MS-SFU] 3.2.5.2.3, [MS-PAC] 2.8: KRB_AP_ERR_MODIFIED (41)' },
+  { code: 'STS-KRB-0241',
+    summary: 'A Kerberos trust\'s key rotation or pairing was refused: no ' +
+      'such key, no source for the new key, a partner that is not a trust ' +
+      'realm of this service, or the partner realm\'s side could not be ' +
+      'written.',
+    spec: 'none — the console and /admin-api (#430)' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -20277,6 +20414,17 @@ const CODES = [
       'POST /admin-api/spiffe/agents/join-token, was refused because ttl ' +
       'was given and is not a positive number (#324).',
     spec: 'HTTP 400' },
+  { code: 'STS-ADMIN-0859',
+    summary: 'A Kerberos trusts action, on the Trusts tab of ' +
+      '/admin/kerberos or through POST /admin-api/kerberos/trusts/{action}, ' +
+      'was refused: an unknown action, or a trust this realm does not ' +
+      'hold (#430).',
+    spec: 'HTTP 400' },
+  { code: 'STS-ADMIN-0860',
+    summary: 'Removing a Kerberos trust was refused because confirm did ' +
+      'not repeat the partner realm: the removal takes the trust\'s keys ' +
+      'with it (#430).',
+    spec: 'HTTP 400' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -20681,6 +20829,11 @@ const CODES = [
     summary: 'A request to close an object to its owners, or open it again, ' +
       'named no kind of the four or no object (#607).',
     spec: 'HTTP 400' },
+  { code: 'STS-API-0135',
+    summary: 'A Kerberos trusts action through POST ' +
+      '/admin-api/kerberos/trusts/{action} threw inside this service; the ' +
+      'log says why (#430).',
+    spec: 'HTTP 500' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
@@ -22108,6 +22261,10 @@ const CODES = [
       'scopes a client ASKED FOR, written as requests arrive, and what it ' +
       'may be issued is oauthAllowedScope. A remove is allowed (#708).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0362',
+    summary: 'An application\'s krb5S4uSelfRealm was given a Kerberos realm ' +
+      'none of this realm\'s trusts accepts tickets from (#430).',
+    spec: 'none (a refused administrative change)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

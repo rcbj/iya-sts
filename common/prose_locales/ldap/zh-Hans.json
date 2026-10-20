@@ -1219,6 +1219,14 @@
     "en": "3b66e9eeaaad2290",
     "text": "TRUE 或 FALSE，默认 FALSE：此 Kerberos 服务受信任可进行委托——不受约束的委托（Active Directory 的 TRUSTED_FOR_DELEGATION）。它的服务票据带有 ok-as-delegate，告诉客户端可以把它的 TGT 转发到这里；持有被转发 TGT 的任何人都可以在任何地方以此人的身份行事。受保护者的 TGT 永远不可转发，因此无论此项如何设置都不会被转发。约束委托（appAllowedToDelegateTo、appAllowedToActOnBehalfOf）是更安全的替代方案。"
   },
+  "applications.schema.attributes.krb5S4uSelfRealm.what": {
+    "en": "1549deb6e1db2854",
+    "text": "此服务可为其用户获取 S4U2SELF 票据的 KERBEROS 领域，除其自身领域外。为空表示仅限其自身领域。值必须是此领域的信任接受其票据的领域——持有传入密钥的信任，或可传递信任所路由的领域——并在写入时检查。"
+  },
+  "applications.schema.attributes.krb5ForeignTgtDelegation.what": {
+    "en": "8f20493c35397916",
+    "text": "`inherit`（默认）或 `deny`：此服务对跨信任委派给它的 TGT 的态度——其为另一领域用户签发的票据上的 ok-as-delegate。`inherit` 遵循信任的属性（[MS-KILE] 3.3.5.7.5）；`deny` 无论属性如何都拒绝。它只会收窄：这里不会启用信任未启用的内容。"
+  },
   "applications.schema.attributes.krb5ServiceKeys.what": {
     "en": "35f24692c1cc40a5",
     "text": "服务主体的随机长期密钥，每种加密类型一个，保存在一个值中：一个 JSON 文档，在密钥旁指明 SPN、领域和 kvno；只要密钥加密密钥的寿命长于进程，它就以该密钥密封。之所以用一个值而不是每种加密类型一个值，是为了让密钥无法在密封不失效的情况下被移到另一个条目或另一个 kvno 上。它等同于密码：在每个页面和每个 /admin-api 回复中都被隐去，它唯一一次离开本服务，是作为创建或轮换时交出的 keytab。"

@@ -1219,6 +1219,14 @@
     "en": "3b66e9eeaaad2290",
     "text": "TRUE 或 FALSE，預設為 FALSE：此 Kerberos 服務「受信任可進行委派」——不受限制的委派（Active Directory 的 TRUSTED_FOR_DELEGATION）。其服務票證攜帶 ok-as-delegate，告訴用戶端可以將其 TGT 轉送到此處；持有轉送之 TGT 的人可以在任何地方以該人身分行事。受保護人員的 TGT 永遠不可轉送，因此無論此處如何設定都絕不會被轉送。受限制的委派（appAllowedToDelegateTo、appAllowedToActOnBehalfOf）是較安全的替代方案。"
   },
+  "applications.schema.attributes.krb5S4uSelfRealm.what": {
+    "en": "1549deb6e1db2854",
+    "text": "此服務可為其使用者取得 S4U2SELF 票證的 KERBEROS 領域，除其自身領域外。空白表示僅限其自身領域。值必須是此領域的信任接受其票證的領域——持有傳入金鑰的信任，或可轉移信任所路由的領域——並於寫入時檢查。"
+  },
+  "applications.schema.attributes.krb5ForeignTgtDelegation.what": {
+    "en": "8f20493c35397916",
+    "text": "`inherit`（預設）或 `deny`：此服務對跨信任委派給它的 TGT 的態度——其為另一領域使用者簽發的票證上的 ok-as-delegate。`inherit` 遵循信任的屬性（[MS-KILE] 3.3.5.7.5）；`deny` 無論屬性如何都拒絕。它只會收窄：這裡不會啟用信任未啟用的內容。"
+  },
   "applications.schema.attributes.krb5ServiceKeys.what": {
     "en": "35f24692c1cc40a5",
     "text": "服務主體的隨機長期金鑰，每種 enctype 一把，放在「一個」值中：一份 JSON 文件，在金鑰旁指名 SPN、領域與 kvno，只要金鑰加密金鑰的存續比程序更久，即以其「密封」。之所以是一個值而非每種 enctype 一個，是為了讓金鑰無法被搬到另一個項目或另一個 kvno 而不導致密封失效。等同密碼：它在每個頁面與每個 /admin-api 回覆中都被「隱藏」，唯一離開本服務的時機，是建立或輪替時交出的 keytab。"

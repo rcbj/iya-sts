@@ -369,8 +369,12 @@ const SPECS: Spec[] = [
       'partial: the AS and TGS exchanges over TCP, UDP and MS-KKDCP, with ' +
               'pre-authentication (PA-ENC-TIMESTAMP), PA-ETYPE-INFO2 ' +
               'carrying the salt, ticket flags, clock-skew enforcement and ' +
-              'the error catalogue. Two realms with a trust between them, so ' +
-              'cross-realm referrals work. FAST and OTP pre-authentication are ' +
+              'the error catalogue. Trusts with other realms are records, ' +
+              'one per partner (Protocols → Kerberos → Trusts, ' +
+              '/admin-api/kerberos/trusts): referrals through transitive ' +
+              'trusts with transited checked, inter-realm keys from a ' +
+              'shared password or generated, rotated with a grace for the ' +
+              'one replaced. FAST and OTP pre-authentication are ' +
               'their own rows (RFC 6113, RFC 6560), and so is PKINIT (RFC ' +
               '4556); no request signatures, no kpasswd (S4U is [MS-SFU], ' +
               'its own row). The AP ' +
@@ -549,7 +553,13 @@ const SPECS: Spec[] = [
               'needs forwardable evidence and resource-based needs ' +
               'PA-PAC-OPTIONS with the resource-based bit, refused with ' +
               'KDC_ERR_BADOPTION without it. S4U_DELEGATION_INFO is written ' +
-              'into the PAC. NOT implemented: the U2U variants, and no ' +
+              'into the PAC. ACROSS TRUSTS: S4U2Self for a user of another ' +
+              'realm through as many transitive trusts as the path needs ' +
+              '(PA-S4U-X509-USER too), and resource-based S4U2Proxy to a ' +
+              'target in another realm, its evidence PAC-verified with the ' +
+              'inter-realm key; classic delegation crosses only where both ' +
+              'realms set krb5.crossRealmClassicDelegation. NOT ' +
+              'implemented: the U2U variants, and no ' +
               'attempt is made to model a real domain\'s ACL on either ' +
               'attribute — the two lists are configuration in ' +
               'krb5_principals.js and are published at /admin/delegation.' },
@@ -565,9 +575,11 @@ const SPECS: Spec[] = [
               'produced while krb5.pacClaims is on (#493), never ' +
               'compressed; claims buffers arriving in another realm\'s PAC ' +
               'are decoded (XPRESS Huffman included) and carried. Device ' +
-              'info and DEVICE claims are not produced, and SID ' +
-              'FILTERING across a trust is NOT implemented — a re-signed PAC ' +
-              'keeps every SID it arrived with.' },
+              'info and DEVICE claims are not produced. A PAC arriving ' +
+              'across a trust is SID-FILTERED as section 4.1.2.2 says for ' +
+              'the trust\'s boundary before it is re-signed — device info ' +
+              'dropped, a claims set dropped unless the trust allows it — ' +
+              'and a referral\'s PAC is signed with the inter-realm key.' },
   { id: 'rfc4178', name: 'SPNEGO (RFC 4178)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc4178',
@@ -6568,6 +6580,28 @@ const ENDPOINTS: EndpointEntry[] = [
           'clear-person-keys and drop-previous-person-keys take `username`. ' +
           'The two drops end the window in which a ticket under a previous ' +
           'key version is still accepted. Needs admin:write.' },
+  { path: '/admin-api/kerberos/trusts', group: 'Management API',
+    name: 'Kerberos trusts',
+    specs: ['rfc4120', 'ms-pac', 'openapi'],
+    what: 'NON-SPEC. GET /admin/kerberos\'s Trusts tab over JSON: the ' +
+          'realm\'s trust records, paged (?trustsPage=, ?per=), one whole ' +
+          'with ?trust=, each key described by kvno, source and when set ' +
+          '— never the key or the password — with the health findings, ' +
+          'what the forms are drawn from and the trust settings. Needs ' +
+          'admin:read.' },
+  { path: '/admin-api/kerberos/trusts/:action', group: 'Management API',
+    name: 'Add, change, enable, disable, rotate, remove or pair a ' +
+          'Kerberos trust',
+    specs: ['rfc4120', 'rfc3961', 'openapi'],
+    what: 'NON-SPEC. add | update | enable | disable | rotate-key | remove ' +
+          '| pair — the controls on the Trusts tab, through the same action ' +
+          'function. A generated key is returned ONCE in `shown`; a trust ' +
+          'password is never returned. rotate-key keeps the incoming ' +
+          'version it replaces for krb5.trustKeyGraceSeconds; remove needs ' +
+          '`confirm` repeating the partner realm; pair, and rotate-key with ' +
+          'mirror, write the partner trust realm\'s record too and are a ' +
+          'service administrator\'s. Every act is audited by the trust\'s ' +
+          'name. Needs admin:write.' },
   { path: '/admin-api/token-lifetimes', group: 'Management API',
     name: 'Token lifetimes',
     specs: ['rfc6749', 'rfc7519', 'oidc'],

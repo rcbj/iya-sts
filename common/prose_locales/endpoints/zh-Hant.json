@@ -1039,6 +1039,14 @@
     "en": "e3b666e9c2cf04a5",
     "text": "建立、輪替或刪除服務主體、清除個人的金鑰、捨棄先前的金鑰版本，或輪替 krbtgt 金鑰"
   },
+  "endpoints.route./admin-api/kerberos/trusts.name": {
+    "en": "e92d42c7c01ab222",
+    "text": "Kerberos 信任"
+  },
+  "endpoints.route./admin-api/kerberos/trusts/:action.name": {
+    "en": "15792a8aae11b100",
+    "text": "新增、變更、啟用、停用、輪替、移除或配對 Kerberos 信任"
+  },
   "endpoints.route./admin-api/token-lifetimes.name": {
     "en": "ddad2319f680d9f9",
     "text": "權杖存留期"

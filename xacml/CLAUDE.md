@@ -1576,6 +1576,38 @@ in the environment, `urn:sts:xacml:exchange:*`):
    chose. Where neither policy answers, the subject's own choice stands
    (`STS-XACML-0087`): `may_act` restricts, so dropping it would widen.
 
+**THE FACTS OF A QUESTION ASKED ACROSS A KERBEROS TRUST (#430 Phase 1,
+2026-10-19)** are defined in `xacml_request.js`. `exchange:subject-realm`,
+`exchange:actor-realm` and `exchange:target-realm` (the Kerberos realm of each
+party, in its category), and in the environment `exchange:trust-partner`,
+`trust-type` (`external`, `trust-realm`), `trust-direction` (`inbound`,
+`outbound`, `bidirectional`), `trust-attribute` (each of [MS-ADTS]
+6.1.6.7.9's bits by name, as `kerberos/krb5_trusts.ts` records them),
+`trust-path` (the realms crossed, the client's first) and `trust-hops` (an
+integer). **Each is sent only when the question names it**, so every question
+asked before #430 is the request it was, attribute for attribute; an absent
+realm is never an empty value a rule could compare.
+
+**THE CROSS-REALM RULES THAT READ THEM (#430 Phase 3, 2026-10-19)** are five
+Deny rules of the built-in `role-issuance` document, placed just after
+`protected-subject` and refusing as `trust-disabled`, `trust-direction`,
+`self-realm`, `classic-across-realms` and `tgt-delegation` — the KDC asks and
+records (`STS-KRB-0230`–`0233`), and decides none of it with an `if` of its
+own. Phase 3 added four more facts: `exchange:trust-enabled`,
+`exchange:local-realm`, `exchange:mechanism` (now also `forwarded`, a TGT
+delegated across a trust), the actor's `exchange:actor-self-realm` (its
+`krb5S4uSelfRealm` values) and the target's
+`exchange:target-foreign-tgt-delegation` (`inherit` | `deny`, which only
+narrows), plus the setting `krb5.crossRealmClassicDelegation`, sent only when
+the realm has it. A foreign subject or actor named `SPN@REALM` is exempt from
+the rules that ask this realm's registers about it (unregistered target,
+unknown actor, user-actor role, subject group) only across a trust, and the
+delegation and impersonation rules accept RBCD naming the foreign actor and a
+classic list vouched by the front end's realm. `tests/tools/exchange_oracle.js`
+states every one of them independently, and both `exchange_policy` files run
+the across-a-trust product against it. `kerberos/CLAUDE.md` (*Delegation
+across a trust, built*) carries the reasoning.
+
 AND ONE PER-SCOPE RULE: **`exchange-widens-scope`**, at stage `exchange` of the
 per-scope question, refuses in product a scope the verified subject token
 does not carry (`STS-OAUTH-0621`), from two facts the token endpoint sends —

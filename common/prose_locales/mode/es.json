@@ -227,6 +227,18 @@
     "en": "2a529b7dda255daa",
     "text": "En esas cinco puertas se rechaza la propia contraseña de la persona — respondiendo exactamente como a una contraseña incorrecta, y contando como tal contra el límite de frecuencia (STS-AUTHN-0213 solo en la fila de auditoría y en el registro) — siempre que tenga una aplicación de autenticación o una llave de seguridad con el rol mfa, o se le exija un segundo factor (stsMfaRequired, la política de autenticación). En su lugar se acepta una CONTRASEÑA DE APLICACIÓN que haya creado en /portal/app-passwords, limitada a esa puerta. authn.passwordAloneDoors nombra puertas que aceptan la contraseña de todos modos, lo que reduce allí a toda persona así a un solo factor."
   },
+  "mode.requirements.kerberos-sid-filtering.what": {
+    "en": "e3950aa2a75faaec",
+    "text": "Una confianza Kerberos solo se respeta mientras filtra los SID"
+  },
+  "mode.requirements.kerberos-sid-filtering.development": {
+    "en": "75b6728bdcc111d0",
+    "text": "Un registro de confianza con quarantined desactivado se usa como cualquier otro: los tickets se refieren a través de él y se aceptan desde él, y un PAC que llega a través de él se filtra según indica su frontera de confianza, sin la regla de la cuarentena de que solo pasan los SID del dominio de confianza."
+  },
+  "mode.requirements.kerberos-sid-filtering.product": {
+    "en": "e9c9138415ca5310",
+    "text": "Un registro de confianza con quarantined desactivado no refiere a nadie y no acepta nada (STS-KRB-0229 dice por qué) mientras krb5.requireSidFilteringInProduct esté activado, que es el valor predeterminado. Desactivar ese ajuste en el dominio es el operador aceptando los SID del socio."
+  },
   "mode.requirements.kerberos-second-factor.what": {
     "en": "6bb019d0381a77a4",
     "text": "Una persona que tiene o debe tener un segundo factor no obtiene un ticket Kerberos solo con una contraseña"

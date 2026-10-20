@@ -259,6 +259,8 @@
   "endpoints.route./admin-api/kerberos/claims/:action.name": "Add, remove, clear or replace a Kerberos PAC claim",
   "endpoints.route./admin-api/kerberos/principals.name": "Kerberos principals",
   "endpoints.route./admin-api/kerberos/principals/:action.name": "Create, rotate or delete a service principal, clear a person's keys, drop previous key versions, or rotate the krbtgt key",
+  "endpoints.route./admin-api/kerberos/trusts.name": "Kerberos trusts",
+  "endpoints.route./admin-api/kerberos/trusts/:action.name": "Add, change, enable, disable, rotate, remove or pair a Kerberos trust",
   "endpoints.route./admin-api/token-lifetimes.name": "Token lifetimes",
   "endpoints.route./admin-api/token-lifetimes/:action.name": "Token lifetime actions",
   "endpoints.route./admin-api/saml-assertions.name": "SAML assertions",

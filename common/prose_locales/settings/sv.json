@@ -5752,8 +5752,8 @@
     "text": "Kerberos-realm"
   },
   "krb5.realm|description": {
-    "en": "b7b392027324a1ef",
-    "text": "Den Kerberos-realm som den här KDC:n betjänar. Dess form med gemener är domänen, vilket är där standardtjänstdomänerna och PAC:ens domännamn kommer ifrån. I en förtroendesfär är det namnet som port 88 dirigerar sfärens begäranden efter: det måste ställas in före krb5.enabled, inga två sfärer får dela det (inte heller krb5.trustedRealm), och det jämförs utan hänsyn till skiftläge när det kontrolleras."
+    "en": "6542fd41442d0e39",
+    "text": "Den Kerberos-realm som den här KDC:n betjänar. Dess form med gemener är domänen, vilket är där standardtjänstdomänerna och PAC:ens domännamn kommer ifrån. I en förtroendesfär är det namnet som port 88 dirigerar sfärens begäranden efter: det måste ställas in före krb5.enabled, inga två sfärer får dela det (inte heller den partnersfär för utveckling som standardsfären svarar som), och det jämförs utan hänsyn till skiftläge när det kontrolleras."
   },
   "krb5.realm|restartReason": {
     "en": "f45bb3f394b52261",
@@ -5995,53 +5995,37 @@
     "en": "0ed445787254dab6",
     "text": "varje principals PAC-identitet byggs vid start. En FÖRTROENDESFÄR kan ändå bära det: en sfärs principaldatabas byggs när dess Kerberos slås på och byggs om när detta ändras, så inget av sfärens värde förbrukades vid start"
   },
-  "krb5.trustedRealm|label": {
-    "en": "83fea03ad45f6f5a",
-    "text": "Betrodd Kerberos-realm"
+  "krb5.crossRealmClassicDelegation|label": {
+    "en": "d94511f367aa2305",
+    "text": "Klassisk delegering över förtroenden"
   },
-  "krb5.trustedRealm|description": {
-    "en": "18a007649941a47a",
-    "text": "Den andra Kerberos-realmen, för hänvisningar mellan realmer. Ett förtroende är ingen flagga: det är en delad nyckel som innehas av en principal i varje realm."
+  "krb5.crossRealmClassicDelegation|description": {
+    "en": "f95686ad2d2053e6",
+    "text": "Om KLASSISK begränsad delegering (appAllowedToDelegateTo på frontänden) får korsa ett Kerberos-förtroende. Av som standard: den är definierad inom en sfär, och resursbaserad delegering (appAllowedToActOnBehalfOf på målet, som namnger SPN@REALM) är den som korsar. På kontrollerar frontändens sfär sin egen lista innan den hänvisar beviset, och målets sfär tar det som kontrollerat; båda sfärerna måste slå på den."
   },
-  "krb5.trustedRealm|restartReason": {
-    "en": "b7b28d1b7d6102d8",
-    "text": "den andra realmen och förtroendet mellan dem byggs vid start"
+  "krb5.requireSidFilteringInProduct|label": {
+    "en": "f4bc0b8bb8e18123",
+    "text": "Kräv SID-filtrering på förtroenden"
   },
-  "krb5.trustPassword|label": {
-    "en": "e2d7ee2fece4c004",
-    "text": "Förtroendelösenord"
+  "krb5.requireSidFilteringInProduct|description": {
+    "en": "120e89b9d4c0b3e4",
+    "text": "I produktläge används ett Kerberos-förtroende bara medan det filtrerar SID:er (dess quarantined-attribut, på som standard). Att slå av detta på en sfär är operatören som accepterar en partners SID:er ofiltrerade. Utvecklingsläget använder varje förtroende vad detta än säger."
   },
-  "krb5.trustPassword|description": {
-    "en": "ef84f44ff5ee5b94",
-    "text": "Den delade hemlighet som båda realmerna har för förtroendet mellan realmerna."
+  "krb5.maxReferralHops|label": {
+    "en": "ae50da753613f751",
+    "text": "Högsta antal förtroenden en hänvisningsväg korsar"
   },
-  "krb5.trustPassword|restartReason": {
-    "en": "de2c8d7ceb818a8d",
-    "text": "nyckeln mellan realmerna härleds från det vid start"
+  "krb5.maxReferralHops|description": {
+    "en": "e88d21d50bcd7495",
+    "text": "Hur många förtroenden en väg mellan sfärer får korsa innan den här KDC:n vägrar att hänvisa den vidare (KDC_ERR_PATH_NOT_ACCEPTED). Ett direkt förtroende är en korsning; varje sfär som en väg hänvisas genom lägger till en. Förtroendena själva är poster i sfärens katalog (ou=kerberosTrusts), och en väg byggs bara genom poster som är markerade som transitiva."
   },
-  "krb5.trustedDomainSid|label": {
-    "en": "e860150a3e9f46b7",
-    "text": "Betrott domän-SID"
+  "krb5.trustKeyGraceSeconds|label": {
+    "en": "e9a56607c04ebe5c",
+    "text": "Respittid för en roterad förtroendenyckel (s)"
   },
-  "krb5.trustedDomainSid|description": {
-    "en": "7c21d4f2a2b9776a",
-    "text": "Den andra realmens domän-SID. Det skiljer sig från detta med avsikt: SID-filtrering över ett förtroende handlar om vems domän ett SID tillhör."
-  },
-  "krb5.trustedDomainSid|restartReason": {
-    "en": "fc2b22b6756dc2a3",
-    "text": "den betrodda realmens principaler byggs vid start"
-  },
-  "krb5.trustedKrbtgtPassword|label": {
-    "en": "bb06a006346e82df",
-    "text": "krbtgt-lösenord för den betrodda realmen"
-  },
-  "krb5.trustedKrbtgtPassword|description": {
-    "en": "fc3a521802800c0d",
-    "text": "krbtgt-lösenordet för den betrodda realmen."
-  },
-  "krb5.trustedKrbtgtPassword|restartReason": {
-    "en": "5288888535130e80",
-    "text": "den realmens krbtgt-nycklar härleds från det vid start"
+  "krb5.trustKeyGraceSeconds|description": {
+    "en": "0ee4268f63c3b908",
+    "text": "Hur länge den inkommande nyckeln mellan sfärer som ett förtroendes Rotera nyckel ersatte fortfarande öppnar partnerns biljetter, som den fortsätter att försegla med tills dess egen sida ändras. NOLL — standard — betyder krb5.ticketLifetimeSeconds plus krb5.clockSkew, läst när versionen kontrolleras. Ett tal är så många sekunder i stället: länge nog för partnerns administratör att ändra sin sida. En tidigare version behålls per förtroende; efter dess respittid nekas en biljett under den med KRB_AP_ERR_BADKEYVER."
   },
   "krb5.spnegoAuthentication|label": {
     "en": "0a014fa4b2685cd7",

@@ -73,12 +73,12 @@ var config = {
 
   // --- HTTP connections ------------------------------------------------
   http: {
-    keepAliveTimeoutS: 60,   // Idle connection kept for (s)
-    headersTimeoutS: 0,      // Request header timeout (s)
-    maxRequestsPerSocket: 0, // Requests per connection
-    maxConnections: 0,       // Open connections at most
-    http2: true,             // Offer HTTP/2
-    http2MaxConcurrentStreams: 100 // Streams per HTTP/2 connection
+    keepAliveTimeoutS: 60,          // Idle connection kept for (s)
+    headersTimeoutS: 0,             // Request header timeout (s)
+    maxRequestsPerSocket: 0,        // Requests per connection
+    maxConnections: 0,              // Open connections at most
+    http2: true,                    // Offer HTTP/2
+    http2MaxConcurrentStreams: 100  // Streams per HTTP/2 connection
   },
 
   // --- Admin console ---------------------------------------------------
@@ -904,47 +904,47 @@ var config = {
 
   // --- Kerberos --------------------------------------------------------
   krb5: {
-    enabled: true,                                                 // Enable Kerberos
-    realm: "EXAMPLE.COM",                                          // Realm; restart to apply
-    kdcPort: 88,                                                   // KDC port; restart to apply
-    servicePrincipal: "HTTP/web.example.com",                      // Service principal; restart to apply
-    servicePassword: "service-account-password",                   // Service principal password; restart to apply
-    serviceSalt: "",                                               // Service principal salt; restart to apply
-    enctypes: "18,17,20,19,23",                                    // Encryption types; restart to apply
-    kvno: 3,                                                       // Key version number; restart to apply
-    ticketLifetimeSeconds: 36000,                                  // Ticket lifetime (s)
-    renewLifetimeSeconds: 604800,                                  // Renewable lifetime (s)
-    logonServer: "DC01",                                           // PAC logon server
-    pacClaims: false,                                              // PAC client claims (PAC_CLIENT_CLAIMS_INFO)
-    maxRequestBytes: 131072,                                       // Largest KDC request over TCP (bytes)
-    udpMaxReplyBytes: 1465,                                        // Largest KDC reply over UDP (bytes)
-    serviceMaxTokenBytes: 65536,                                   // Largest AP-REQ the acceptor reads (bytes)
-    replayCacheMaxEntries: 10000,                                  // Replay cache size
-    spnegoPendingTtlSeconds: 120,                                  // Unfinished SPNEGO negotiation lifetime (s)
-    spnegoMaxPending: 64,                                          // Unfinished SPNEGO negotiations held
-    clockSkew: 300,                                                // Clock skew (s)
-    clockOffset: 0,                                                // Clock offset (s)
-    userPassword: "password!",                                     // User password; restart to apply
-    unknownUsers: "nosuchuser,nobody",                             // Names that stay unknown
-    autoServicePassword: "auto-service-password",                  // Auto-created service password; restart to apply
-    krbtgtPassword: "krbtgt-mock-password",                        // krbtgt password; restart to apply
-    domainSid: "S-1-5-21-1004336348-1177238915-682003330",         // Domain SID; restart to apply
-    trustedRealm: "PARTNER.COM",                                   // Trusted realm; restart to apply
-    trustPassword: "inter-realm-trust-password",                   // Trust password; restart to apply
-    trustedDomainSid: "S-1-5-21-2035427030-2118130302-1178042555", // Trusted domain SID; restart to apply
-    trustedKrbtgtPassword: "partner-krbtgt-password",              // Trusted realm krbtgt password; restart to apply
-    spnegoAuthentication: true,                                    // Sign in with a Kerberos ticket
-    personKeys: true,                                              // Kerberos keys for directory people
-    retainedKeyVersions: 1,                                        // Previous key versions kept
-    retainedKeyTtlS: 0,                                            // Previous key version lifetime (s)
-    krbtgtRotationIntervalDays: 180,                               // Rotate the krbtgt key every (days)
-    pkinit: true,                                                  // PKINIT (certificate pre-authentication)
-    pkinitRequireFreshness: true,                                  // PKINIT requires a freshness token
-    pkinitLegacyKdf: false,                                        // PKINIT accepts RFC 4556's own key derivation
-    pkinitKdcKeyAlgorithm: "ec-p256",                              // PKINIT KDC key algorithm
-    anonymousPkinit: true,                                         // Anonymous PKINIT (FAST armor)
-    spnegoLoginButton: true,                                       // Offer Kerberos at the sign-in screen
-    s2kparams: "omit"                                              // Send s2kparams
+    enabled: true,                                         // Enable Kerberos
+    realm: "EXAMPLE.COM",                                  // Realm; restart to apply
+    kdcPort: 88,                                           // KDC port; restart to apply
+    servicePrincipal: "HTTP/web.example.com",              // Service principal; restart to apply
+    servicePassword: "service-account-password",           // Service principal password; restart to apply
+    serviceSalt: "",                                       // Service principal salt; restart to apply
+    enctypes: "18,17,20,19,23",                            // Encryption types; restart to apply
+    kvno: 3,                                               // Key version number; restart to apply
+    ticketLifetimeSeconds: 36000,                          // Ticket lifetime (s)
+    renewLifetimeSeconds: 604800,                          // Renewable lifetime (s)
+    logonServer: "DC01",                                   // PAC logon server
+    pacClaims: false,                                      // PAC client claims (PAC_CLIENT_CLAIMS_INFO)
+    maxRequestBytes: 131072,                               // Largest KDC request over TCP (bytes)
+    udpMaxReplyBytes: 1465,                                // Largest KDC reply over UDP (bytes)
+    serviceMaxTokenBytes: 65536,                           // Largest AP-REQ the acceptor reads (bytes)
+    replayCacheMaxEntries: 10000,                          // Replay cache size
+    spnegoPendingTtlSeconds: 120,                          // Unfinished SPNEGO negotiation lifetime (s)
+    spnegoMaxPending: 64,                                  // Unfinished SPNEGO negotiations held
+    clockSkew: 300,                                        // Clock skew (s)
+    clockOffset: 0,                                        // Clock offset (s)
+    userPassword: "password!",                             // User password; restart to apply
+    unknownUsers: "nosuchuser,nobody",                     // Names that stay unknown
+    autoServicePassword: "auto-service-password",          // Auto-created service password; restart to apply
+    krbtgtPassword: "krbtgt-mock-password",                // krbtgt password; restart to apply
+    domainSid: "S-1-5-21-1004336348-1177238915-682003330", // Domain SID; restart to apply
+    crossRealmClassicDelegation: false,                    // Classic delegation across trusts
+    requireSidFilteringInProduct: true,                    // Require SID filtering on trusts
+    maxReferralHops: 5,                                    // Most trusts a referral path crosses
+    trustKeyGraceSeconds: 0,                               // Grace for a rotated trust key (s)
+    spnegoAuthentication: true,                            // Sign in with a Kerberos ticket
+    personKeys: true,                                      // Kerberos keys for directory people
+    retainedKeyVersions: 1,                                // Previous key versions kept
+    retainedKeyTtlS: 0,                                    // Previous key version lifetime (s)
+    krbtgtRotationIntervalDays: 180,                       // Rotate the krbtgt key every (days)
+    pkinit: true,                                          // PKINIT (certificate pre-authentication)
+    pkinitRequireFreshness: true,                          // PKINIT requires a freshness token
+    pkinitLegacyKdf: false,                                // PKINIT accepts RFC 4556's own key derivation
+    pkinitKdcKeyAlgorithm: "ec-p256",                      // PKINIT KDC key algorithm
+    anonymousPkinit: true,                                 // Anonymous PKINIT (FAST armor)
+    spnegoLoginButton: true,                               // Offer Kerberos at the sign-in screen
+    s2kparams: "omit"                                      // Send s2kparams
   },
 
   // --- SCIM ------------------------------------------------------------

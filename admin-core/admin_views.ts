@@ -922,6 +922,9 @@ interface AdminViewsDeps {
   personEditor: typeof personEditor;
   // The krbtgt rotation (#169), lazily, for `admin_actions.ts`'s reason.
   krbtgtRotation: () => any;
+  // The Kerberos trust records (#430 Phase 4), lazily: the composition root
+  // builds the instance at 14c, and a view asks it only when drawn.
+  krb5Trusts: () => any;
   oauth2: typeof oauth2;
   backchannel: typeof backchannel;
   softwareStatement: typeof softwareStatement;
@@ -1104,6 +1107,9 @@ class AdminViews {
       personEditor: personEditor,
       krbtgtRotation: function () {
         return require('../kerberos/krb5_krbtgt_rotation');
+      },
+      krb5Trusts: function () {
+        return require('../kerberos/krb5_trusts');
       },
       oauth2: oauth2,
       backchannel: backchannel,
@@ -7139,6 +7145,110 @@ class AdminViews {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // THE KERBEROS TRUSTS, AS THE TRUSTS TAB OF `/admin/kerberos` AND `GET
+  // /admin-api/kerberos/trusts` BOTH ANSWER IT (#430 Phase 4, 2026-10-20).
+  //
+  // The ambient realm's trust records, paged (`?trustsPage=`, `?per=`), each
+  // with its health findings and its last key change, and `?trust=<partner>`
+  // for one record whole. **NO KEY AND NO PASSWORD IS IN IT**: the records'
+  // public views describe each key (held, kvno, source, when set, the
+  // previous incoming version and until when it is accepted) and carry none.
+  // Beside the rows, what the form is drawn from — the closed attribute set
+  // and its dependency rules, the types, the enctypes, the claims
+  // transformations, the other trust realms a trust-realm partner may name —
+  // and the four settings the trusts read.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds the Trusts tab's JSON and `GET /admin-api/kerberos/trusts`.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
+  kerberosTrustsJson(req) {
+    const { log, config, realms, krb5Principals, krb5Trusts, mode,
+      adminActions } = this.deps;
+    log.debug("Entering AdminViews.kerberosTrustsJson().");
+    const query = (req && req.query) || {};
+    const trusts = krb5Trusts();
+    const kerberos = krb5Principals.kerberosRealmOf();
+    // The codec, for the enctypes' names: a leaf, required where it is read.
+    const kcrypto = require('../kerberos/krb5_crypto');
+    const named = function (ids) {
+      return (ids || []).map(function (id) {
+        return { id: Number(id), name: kcrypto.etypeName(Number(id)) };
+      });
+    };
+    const decorate = function (view) {
+      const setAts = [view.incoming && view.incoming.setAt,
+                      view.outgoing && view.outgoing.setAt]
+        .filter(Boolean).sort();
+      return Object.assign({}, view, {
+        enctypeNames: named(view.enctypes),
+        lastKeyChangeAt: setAts.length ? setAts[setAts.length - 1] : null,
+        health: trusts.health(view)
+      });
+    };
+    const all = kerberos.enabled ? trusts.list() : [];
+    const page = this.pagedRows(query, all,
+                                { name: 'trusts', noun: 'trusts',
+                                  decorate: decorate });
+    const asked = String(Array.isArray(query.trust) ? query.trust[0] :
+                         (query.trust || '')).trim();
+    const one = asked && kerberos.enabled ? trusts.get(asked) : null;
+    const hereId = realms.currentId();
+    const otherRealms = realms.list().filter(function (r) {
+      return r.id !== hereId && krb5Principals.enabledIn(r.id);
+    }).map(function (r) {
+      return { id: r.id, kerberosRealm: String(krb5Principals.nameOf(r.id) ||
+                                               '') };
+    });
+    const graceSetting = Number(config.value('krb5.trustKeyGraceSeconds'));
+    log.debug("Leaving AdminViews.kerberosTrustsJson(). " + all.length +
+              " trust(s).");
+    return {
+      realm: krb5Principals.REALM,
+      trustRealm: hereId,
+      kerberos: kerberos,
+      trusts: page.shown,
+      total: all.length,
+      trustsPaging: this.pagingJson(page.paging),
+      // `?trust=` (the drill-down): the record, or `unknownTrust` naming
+      // what was asked for and is not held.
+      trust: one ? decorate(one) : null,
+      unknownTrust: asked && !one ? asked : '',
+      product: !!mode.requiresSidFilteringOnTrusts(),
+      form: {
+        attributes: Object.keys(trusts.ATTRIBUTE_BITS),
+        defaultAttributes: trusts.DEFAULT_ATTRIBUTES.slice(),
+        contradictions: trusts.CONTRADICTIONS.map(function (row) {
+          return { a: row[0], b: row[1], why: row[2] };
+        }),
+        requires: trusts.REQUIRES.map(function (row) {
+          return { attribute: row[0], needs: row[1], why: row[2] };
+        }),
+        types: trusts.TYPES.slice(),
+        directions: ['bidirectional', 'inbound', 'outbound'],
+        keySources: ['password', 'generate'],
+        enctypes: named(krb5Principals.KDC_ETYPES),
+        defaultEnctypes: trusts.DEFAULT_ENCTYPES.slice(),
+        claimsTransformations: trusts.CLAIMS_TRANSFORMATIONS.slice(),
+        minPasswordLength: trusts.MIN_PASSWORD_LENGTH,
+        trustRealms: otherRealms
+      },
+      settings: {
+        crossRealmClassicDelegation:
+          !!config.value('krb5.crossRealmClassicDelegation'),
+        requireSidFilteringInProduct:
+          !!config.value('krb5.requireSidFilteringInProduct'),
+        maxReferralHops: Number(config.value('krb5.maxReferralHops')),
+        trustKeyGraceSeconds: graceSetting,
+        graceSeconds: trusts.graceSeconds()
+      },
+      actions: adminActions.KERBEROS_TRUST_ACTIONS.slice()
+    };
+  }
+
   // The whole report, for this page and for `GET /admin-api/ssf`. One function,
   // so the page and the API cannot disagree about what this transmitter is
   // doing — which is rule 7's entire subject.
@@ -10405,6 +10515,34 @@ class AdminViews {
     (out as any).ownership = self.ownershipOf('application', row.identifier);
     (out.config as any).fieldWarnings = scopeWarnings.length
       ? { wstrustJwtScope: scopeWarnings } : {};
+    // ACROSS TRUSTS (#430 Phase 4): for a Kerberos service, what its
+    // delegation attributes mean across this realm's trusts, computed here
+    // so the console's read-only panel and `GET /admin-api/applications
+    // ?application=` say the same; and the realms its krb5S4uSelfRealm may
+    // name, offered as the field's choices (with whatever it holds now, so
+    // a value whose trust was removed is still drawn and can be taken out).
+    (out as any).krb5Across = null;
+    if (declared.indexOf('krb5') >= 0) {
+      try {
+        const across = this.deps.krb5Trusts()
+          .applicationAcross(fields);
+        (out as any).krb5Across = across;
+        const offered = across.choices.krb5S4uSelfRealm
+          .concat(configValues.krb5S4uSelfRealm || [])
+          .filter(function (one, i, all) {
+            return all.indexOf(one) === i;
+          });
+        configFields.forEach(function (one) {
+          if (one.attribute === 'krb5S4uSelfRealm' && offered.length) {
+            one.choices = offered;
+          }
+        });
+      } catch (e) {
+        log.debug("Caught in AdminViews.applicationPageData(): " +
+                  ((e && e.message) || e));
+        (out as any).krb5Across = null;
+      }
+    }
     log.debug("Leaving AdminViews.applicationPageData().");
     return out;
   }
@@ -14429,6 +14567,7 @@ export = {
   setTruststore: slot.forward('setTruststore'),
   truststoreJson: slot.forward('truststoreJson'),
   kerberosPrincipalsJson: slot.forward('kerberosPrincipalsJson'),
+  kerberosTrustsJson: slot.forward('kerberosTrustsJson'),
   krbtgtView: slot.forward('krbtgtView'),
   consoleRpSession: slot.forward('consoleRpSession'),
   gateStateFor: slot.forward('gateStateFor'),

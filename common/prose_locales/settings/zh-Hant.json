@@ -5752,8 +5752,8 @@
     "text": "領域"
   },
   "krb5.realm|description": {
-    "en": "b7b392027324a1ef",
-    "text": "此 KDC 服務的 Kerberos 領域。其小寫形式即為網域，預設服務網域與 PAC 的網域名稱都由此而來。在信任領域上，它是連接埠 88 用來路由該領域要求的名稱：必須在 krb5.enabled 之前設定，任兩個領域不得共用它（也不得與 krb5.trustedRealm 相同），檢查時不區分大小寫。"
+    "en": "6542fd41442d0e39",
+    "text": "此 KDC 服務的 Kerberos 領域。其小寫形式即為網域，預設服務網域與 PAC 的網域名稱都由此而來。在信任領域上，它是連接埠 88 用來路由該領域要求的名稱：必須在 krb5.enabled 之前設定，任兩個領域不得共用它（也不得與預設領域在開發模式下所回應的夥伴領域相同），檢查時不區分大小寫。"
   },
   "krb5.realm|restartReason": {
     "en": "f45bb3f394b52261",
@@ -5995,53 +5995,37 @@
     "en": "0ed445787254dab6",
     "text": "每個主體的 PAC 身分在啟動時建構。即便如此，「信任領域」仍可設定它：領域的主體資料庫在其 Kerberos 開啟時建構，並在此值變更時重建，因此領域的值在啟動時並未被使用"
   },
-  "krb5.trustedRealm|label": {
-    "en": "83fea03ad45f6f5a",
-    "text": "受信任的領域"
+  "krb5.crossRealmClassicDelegation|label": {
+    "en": "d94511f367aa2305",
+    "text": "跨信任的傳統委派"
   },
-  "krb5.trustedRealm|description": {
-    "en": "18a007649941a47a",
-    "text": "用於跨領域轉介的第二個領域。信任關係不是一個旗標：它是由兩個領域中各一個主體所持有的共用金鑰。"
+  "krb5.crossRealmClassicDelegation|description": {
+    "en": "f95686ad2d2053e6",
+    "text": "傳統限制委派（前端上的 appAllowedToDelegateTo）是否可以跨越 Kerberos 信任。預設關閉：它在單一領域內定義，而以資源為基礎的委派（目標上的 appAllowedToActOnBehalfOf，命名 SPN@REALM）才是跨越的那種。開啟時，前端所在領域在轉介證據前檢查自己的清單，目標所在領域將其視為已檢查；兩個領域都必須開啟。"
   },
-  "krb5.trustedRealm|restartReason": {
-    "en": "b7b28d1b7d6102d8",
-    "text": "第二個領域及兩者之間的信任關係在啟動時建構"
+  "krb5.requireSidFilteringInProduct|label": {
+    "en": "f4bc0b8bb8e18123",
+    "text": "要求信任過濾 SID"
   },
-  "krb5.trustPassword|label": {
-    "en": "e2d7ee2fece4c004",
-    "text": "信任密碼"
+  "krb5.requireSidFilteringInProduct|description": {
+    "en": "120e89b9d4c0b3e4",
+    "text": "在產品模式下，Kerberos 信任僅在過濾 SID 時使用（其 quarantined 屬性，預設開啟）。在領域上關閉此項，即營運者接受夥伴未經過濾的 SID。開發模式無論此項如何都使用每個信任。"
   },
-  "krb5.trustPassword|description": {
-    "en": "ef84f44ff5ee5b94",
-    "text": "兩個領域為跨領域信任所持有的共用秘密。"
+  "krb5.maxReferralHops|label": {
+    "en": "ae50da753613f751",
+    "text": "轉介路徑最多跨越的信任數"
   },
-  "krb5.trustPassword|restartReason": {
-    "en": "de2c8d7ceb818a8d",
-    "text": "領域間金鑰在啟動時由它衍生"
+  "krb5.maxReferralHops|description": {
+    "en": "e88d21d50bcd7495",
+    "text": "一條跨領域路徑在此 KDC 拒絕繼續轉介之前最多可跨越多少個信任（KDC_ERR_PATH_NOT_ACCEPTED）。直接信任算一次跨越；路徑每經過一個被轉介的領域再加一次。信任本身是領域目錄中的記錄（ou=kerberosTrusts），路徑只會透過標記為可轉移的記錄建立。"
   },
-  "krb5.trustedDomainSid|label": {
-    "en": "e860150a3e9f46b7",
-    "text": "受信任網域 SID"
+  "krb5.trustKeyGraceSeconds|label": {
+    "en": "e9a56607c04ebe5c",
+    "text": "輪替後信任金鑰的寬限期（秒）"
   },
-  "krb5.trustedDomainSid|description": {
-    "en": "7c21d4f2a2b9776a",
-    "text": "另一個領域的網域 SID。它刻意與此領域的不同：跨信任關係的 SID 篩選，關乎 SID 屬於誰的網域。"
-  },
-  "krb5.trustedDomainSid|restartReason": {
-    "en": "fc2b22b6756dc2a3",
-    "text": "受信任領域的主體在啟動時建構"
-  },
-  "krb5.trustedKrbtgtPassword|label": {
-    "en": "bb06a006346e82df",
-    "text": "受信任領域的 krbtgt 密碼"
-  },
-  "krb5.trustedKrbtgtPassword|description": {
-    "en": "fc3a521802800c0d",
-    "text": "受信任領域的 krbtgt 密碼。"
-  },
-  "krb5.trustedKrbtgtPassword|restartReason": {
-    "en": "5288888535130e80",
-    "text": "該領域的 krbtgt 金鑰在啟動時由它衍生"
+  "krb5.trustKeyGraceSeconds|description": {
+    "en": "0ee4268f63c3b908",
+    "text": "信任的「輪替金鑰」所取代的傳入領域間金鑰在多長時間內仍可開啟夥伴的票證——夥伴會繼續用它加密，直到其自身一側變更。零（預設值）表示 krb5.ticketLifetimeSeconds 加上 krb5.clockSkew，於檢查該版本時讀取。數字則表示相應的秒數：足以讓夥伴的管理員變更其一側。每個信任保留一個先前版本；超過寬限期後，使用該版本的票證會以 KRB_AP_ERR_BADKEYVER 被拒絕。"
   },
   "krb5.spnegoAuthentication|label": {
     "en": "0a014fa4b2685cd7",

@@ -1516,6 +1516,31 @@ ever a real certificate would be left in every later job's handshakes. Its
 and asserts a read-only token is refused the write.
 
 
+## `/admin-api/kerberos/trusts` — THE KERBEROS TRUSTS (#430 Phase 4, 2026-10-20)
+
+`GET /admin-api/kerberos/trusts` (`per`, `trustsPage` answered by
+`trustsPaging`, and `trust` for one record whole) and `POST
+/admin-api/kerberos/trusts/{add,update,enable,disable,rotate-key,remove,pair}`,
+mirroring the Trusts tab of `/admin/kerberos` through
+`adminViews.kerberosTrustsJson()` and `adminActions.kerberosTrustsAction()`,
+which require `kerberos/krb5_trusts.ts` lazily (it is built by the
+composition root at 14c). Rule 7: seven controls, seven actions. Three things
+a caller is told:
+
+* **ONE REPLY CARRIES KEY MATERIAL, ONCE**: a key this service generated, in
+  `shown`, `no-store`. A trust password is never returned, and no read
+  carries a key (`tests/vendored/sts_kerberos_trusts_api.js` searches every
+  one).
+* **`remove` WANTS `confirm` REPEATING THE PARTNER REALM**, the console's typed
+  confirmation as a field, because it takes the keys with it.
+* **`pair`, AND `rotate-key` WITH `mirror`, ARE A SERVICE ADMINISTRATOR'S**:
+  each writes the partner trust realm's record, which a realm token may not
+  (`admin-ui/admin_scope.ts`, `STS-API-0112`).
+
+The application view (`GET /admin-api/applications?application=`) carries
+`page.krb5Across` for a Kerberos service, the console's *Across trusts*
+panel; `kerberos/CLAUDE.md` argues all of it.
+
 ## `/admin-api/kerberos/principals` — THE STORED KERBEROS KEYS (2026-09-12)
 
 `GET /admin-api/kerberos/principals` (paged with `per`, `peoplePage` and

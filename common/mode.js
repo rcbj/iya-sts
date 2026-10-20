@@ -1489,6 +1489,26 @@ function issuesTicketsOnPasswordAlone() {
   return !isProduct();
 }
 
+// Must a Kerberos trust FILTER SIDS to be used at all (#430, rcbj's decision
+// 4)? Product says yes: a trust record with `quarantined` off would let the
+// partner assert any SID it likes in a PAC this realm re-signs, and
+// `kerberos/krb5_trusts.ts` does not honour one — unless the realm turns
+// krb5.requireSidFilteringInProduct off, which is the operator saying so.
+// Development uses such a record, as it uses every other configuration, so
+// a client can be exercised against an unfiltered trust.
+/**
+ * Tells whether a Kerberos trust must filter SIDs (`quarantined`) to be
+ * honoured, where the realm has not turned krb5.requireSidFilteringInProduct
+ * off.
+ *
+ * @returns true in product mode
+ */
+function requiresSidFilteringOnTrusts() {
+  log.debug("Entering requiresSidFilteringOnTrusts().");
+  log.debug("Leaving requiresSidFilteringOnTrusts().");
+  return isProduct();
+}
+
 // May a federation partner's asserted NAME be matched straight onto an
 // existing local person, which is `fedSubjectPolicy: any-existing` (#109,
 // 2026-09-22)? Development says yes — it is what this service did before the
@@ -2423,6 +2443,19 @@ const REQUIREMENTS = [
              'accept the password anyway, which lowers every such person to ' +
              'one factor there.',
     where: 'common/credentials.ts, common/app_passwords.ts' },
+  { id: 'kerberos-sid-filtering',
+    what: 'A Kerberos trust is honoured only while it filters SIDs',
+    development: 'A trust record with quarantined off is used like any ' +
+                 'other: tickets are referred through it and accepted from ' +
+                 'it, and a PAC arriving across it is filtered as its ' +
+                 'trust boundary says, without the quarantine\'s rule ' +
+                 'that only the trusted domain\'s SIDs pass.',
+    product: 'A trust record with quarantined off refers nobody and ' +
+             'accepts nothing (STS-KRB-0229 names why) while ' +
+             'krb5.requireSidFilteringInProduct is on, which is the ' +
+             'default. Turning that setting off on the realm is the ' +
+             'operator accepting the partner\'s SIDs.',
+    where: 'kerberos/krb5_trusts.ts, kerberos/krb5_kdc.js' },
   { id: 'kerberos-second-factor',
     what: 'A person who holds or must hold a second factor gets no Kerberos ' +
           'ticket on a password alone',
@@ -4049,6 +4082,7 @@ module.exports = {
   acceptsPasswordAloneFromSecondFactorAccounts:
     acceptsPasswordAloneFromSecondFactorAccounts,
   issuesTicketsOnPasswordAlone: issuesTicketsOnPasswordAlone,
+  requiresSidFilteringOnTrusts: requiresSidFilteringOnTrusts,
   matchesFederatedNames: matchesFederatedNames,
   defaultsFederatedAutocreate: defaultsFederatedAutocreate,
   acceptsUnsignedFederatedLogout: acceptsUnsignedFederatedLogout,

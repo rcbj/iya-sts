@@ -200,9 +200,9 @@ function checkMarker(t) {
   // database when it is turned on, and rebuilds it when one of these changes on
   // that realm. So for a realm none of the ten was consumed at any startup. The
   // KDC's socket (`krb5.kdcPort`; `krb5.servicePort` was the other, until
-  // #595) and the development trust
-  // (`krb5.trustedRealm` and its three) are NOT here, and must not be: those
-  // are bound and built for the process.
+  // #595) is NOT here, and must not be: it is bound for the process. (The
+  // development trust's four settings were beside it until #430 made a trust
+  // a record in the realm's directory.)
   const EXPECTED_REALM_RUNTIME = [
     'oauth2.rfc9700',
     'krb5.realm',

@@ -1219,6 +1219,14 @@
     "en": "3b66e9eeaaad2290",
     "text": "TRUE eller FALSE, standard FALSE: den här Kerberos-tjänsten är BETRODD FÖR DELEGERING — obegränsad (Active Directorys TRUSTED_FOR_DELEGATION). Dess tjänstebiljetter bär ok-as-delegate, vilket säger till en klient att den får vidarebefordra sin TGT hit; den som har en vidarebefordrad TGT kan agera som den personen var som helst. En skyddad persons TGT är aldrig vidarebefordringsbar, så den vidarebefordras aldrig hur detta än är satt. Begränsad delegering (appAllowedToDelegateTo, appAllowedToActOnBehalfOf) är det säkrare alternativet."
   },
+  "applications.schema.attributes.krb5S4uSelfRealm.what": {
+    "en": "1549deb6e1db2854",
+    "text": "DE KERBEROS-SFÄRER VARS ANVÄNDARE DEN HÄR TJÄNSTEN FÅR HÄMTA S4U2SELF-BILJETTER FÖR, utöver sin egen. TOMT BETYDER ENDAST DESS EGEN SFÄR. Ett värde måste vara en sfär vars biljetter den här sfärens förtroenden accepterar — ett förtroende med en inkommande nyckel, eller en sfär som ett transitivt förtroende dirigerar — och kontrolleras vid skrivningen."
+  },
+  "applications.schema.attributes.krb5ForeignTgtDelegation.what": {
+    "en": "8f20493c35397916",
+    "text": "`inherit` (standard) eller `deny`: vad den här tjänsten säger om en TGT som delegeras till den ÖVER ETT FÖRTROENDE — ok-as-delegate på dess biljetter för en användare i en annan sfär. `inherit` följer förtroendets attribut ([MS-KILE] 3.3.5.7.5); `deny` vägrar den vad de än säger. Den kan bara inskränka: ingenting här aktiverar det som förtroendet inte aktiverar."
+  },
   "applications.schema.attributes.krb5ServiceKeys.what": {
     "en": "35f24692c1cc40a5",
     "text": "EN TJÄNSTEPRINCIPALS SLUMPMÄSSIGA LÅNGTIDSNYCKLAR, en per enctype, i ETT värde: ett JSON-dokument som anger SPN:en, sfären och kvno bredvid nycklarna, FÖRSEGLAT under nyckelkrypteringsnyckeln överallt där den nyckeln överlever processen. Ett värde snarare än ett per enctype så att en nyckel inte kan flyttas till en annan post eller ett annat kvno utan att förseglingen bryts. Lösenordsekvivalent: det UNDANHÅLLS från varje sida och varje svar från /admin-api, och den enda gång det lämnar den här tjänsten är som den keytab som en skapning eller rotation lämnar över."

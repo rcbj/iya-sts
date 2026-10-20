@@ -5,8 +5,9 @@ HTTP as SPNEGO (RFC 4559/4178), and **a way of signing in with it**. (The
 Kerberos-protected demonstration service and pages left for the development
 companion on #595 — *The demonstration left the runtime*, at the foot.) Twenty-one files, and they divide into three groups — the
 two stored-key modules of 2026-09-12, the two FAST modules of 2026-09-22, the
-krbtgt rotation of 2026-09-23 and the two PKINIT modules of 2026-10-05 belong
-to the service group and are described at the foot.
+krbtgt rotation of 2026-09-23, the two PKINIT modules of 2026-10-05 and the
+trust register of 2026-10-19 (#430, `krb5_trusts.ts`) belong to the service
+group and are described at the foot.
 
 **The codec**, which knows nothing about this service: `krb5_primitives.js`,
 `krb5_asn1.js`, `krb5_crypto.js`, `krb5_messages.js`, `krb5_ndr.js`,
@@ -944,22 +945,524 @@ negotiation begun under one realm's prefix could be continued under another's.
 than here because they are about a realm's OVERRIDES and must be made before
 anything is built: Kerberos on with no `krb5.realm` of its own
 (`STS-KRB-0123`), a name another realm answers to (`STS-KRB-0124`, compared
-without regard to case, including the default realm's and `krb5.trustedRealm`),
+without regard to case, including the default realm's and the development
+partner realm it answers as, PARTNER.COM — `krb5.trustedRealm` until #430),
 and a rename or clear while it is on (`STS-KRB-0125`, because every key in that
 realm's database is salted with the name).
 
-**What is still the PROCESS's**, and each for a reason that has not changed: the
-KDC's socket (`krb5.kdcPort`; `krb5.servicePort` was the other, until #595),
-and the development-mode second
-realm and its trust (`krb5.trustedRealm` and its three settings). **Trust realms
-do not trust each other's Kerberos** — rcbj's decision — so a realm's KDC holds
-no `krbtgt/<other realm>` and a service in another realm's domain is unknown
-there rather than a referral.
+**What is still the PROCESS's**, for a reason that has not changed: the KDC's
+socket (`krb5.kdcPort`; `krb5.servicePort` was the other, until #595). This
+paragraph also listed *the development-mode second realm and its trust
+(`krb5.trustedRealm` and its three settings)*, and said **trust realms do not
+trust each other's Kerberos** — rcbj's decision of 2026-09-15, so a realm's KDC
+held no `krbtgt/<other realm>`. **#430 REVERSED IT (rcbj's decision 1 on the
+ticket):** two trust realms may trust each other's Kerberos, but only through
+an explicit trust record on each side — *KERBEROS TRUSTS AS RECORDS*, below.
+The development second realm's own database (PARTNER.COM) is still the default
+realm's fixture; its trust is a seeded record.
 
 **What has no test yet:** a person keyed in a non-default realm signing in over
 SPNEGO end to end (the acceptor's realm routing is asserted in
 `tests/kerberos_realm_routing.js` only through the KDC), and two nodes of a
 cluster answering for the same non-default realm.
+
+## DELEGATION ACROSS A TRUST: THE MESSAGE FLOWS (#430 Phase 0, 2026-10-19)
+
+**Written down before any code, as the ticket's plan asks.** Each flow is
+quoted from the specification that defines it; where a specification is
+silent or ambiguous the paragraph says so rather than guessing. Notation:
+realm A holds the front-end service (Service 1), realm B the user or the
+back end, and `krbtgt/B@A` is the ticket-granting ticket A issues for B's
+ticket-granting service — sealed in the key the two share, which A holds
+as its OUTGOING key for B and B holds as its INCOMING key from A.
+
+### The trust attributes the flows read ([MS-ADTS] 6.1.6.7.9 `trustAttributes`)
+
+| Bit | Name | What it changes here |
+|---|---|---|
+| 0x001 | `NON_TRANSITIVE` | Tickets from the partner are accepted only for the partner's own realm: nothing may transit it, in either direction. |
+| 0x004 | `QUARANTINED_DOMAIN` | SID filtering: only SIDs of the partner's own domain survive in a PAC that crosses it (Phase 2). Also a DisableCondition for ok-as-delegate, below. |
+| 0x008 | `FOREST_TRANSITIVE` | A forest trust: the partner's routed name suffixes cover realms behind it, and a path may transit it. |
+| 0x010 | `CROSS_ORGANIZATION` | [MS-KILE] 3.3.5.7.5: the OTHER_ORGANIZATION SID is added to the PAC's ExtraSids, and the target account is ACL-checked (KDC_ERR_POLICY on failure). Phase 2. |
+| 0x020 | `WITHIN_FOREST` | An EnableCondition for ok-as-delegate, below. |
+| 0x040 | `TREAT_AS_EXTERNAL` | A forest trust treated as external for SID filtering ([MS-ADTS] 6.1.6.7.9). |
+| 0x200 | `CROSS_ORGANIZATION_NO_TGT_DELEGATION` | A DisableCondition for ok-as-delegate. |
+| 0x800 | `CROSS_ORGANIZATION_ENABLE_TGT_DELEGATION` | An EnableCondition for ok-as-delegate. |
+
+`trustDirection` ([MS-ADTS] 6.1.6.7.12) is 1 INBOUND, 2 OUTBOUND, 3 both.
+The specification's sentence for INBOUND ("the trusted domain trusts the
+primary domain to perform operations such as name lookups and
+authentication") reads two ways; its second sentence ("If this flag is set,
+then the trustAuthIncoming attribute is present on this object") does not.
+Here **INBOUND means the INCOMING key is held** (`krbtgt/US@PARTNER`: this
+realm accepts the partner's tickets, so the partner's people reach this
+realm's services) and **OUTBOUND means the OUTGOING key is held**
+(`krbtgt/PARTNER@US`: this realm refers its own people to the partner). A
+record stores which keys it holds and derives the direction from them, so
+the two can never disagree.
+
+### Referrals and `transited` (RFC 4120 sections 1.2, 3.3.3.2; RFC 6806)
+
+1. The client asks its own KDC (A) for `HTTP/host@?`. A holds no such
+   service; the host's DNS suffix is routed to a partner (a trust record's
+   suffixes), so A answers an ordinary TGS-REP whose ticket is
+   `krbtgt/<next hop>@A`, sealed in the outgoing key. The reply's `sname`
+   differing from the request is the client's only signal.
+2. The client presents that ticket to the next hop's KDC, naming the next
+   hop as the request's realm. That KDC opens it with its INCOMING key from
+   A (looked up as `krbtgt/<itself>@A` — the ticket's own `realm` field).
+3. If that KDC is not the service's realm either, it refers again
+   (`krbtgt/C@B`), and so on; on every ticket it issues from a cross-realm
+   TGT it adds the realm that ISSUED the presented ticket to `transited`,
+   unless that realm is the client's own (section 3.3.3.2: the client's and
+   the server's realms are never listed). So `A → B → C` leaves the final
+   ticket with `transited` = `B`, and a direct trust leaves it empty.
+4. `transited` is `DOMAIN-X500-COMPRESS` (type 1): realm names separated by
+   commas, a name ending in `.` is prefixed to the name before it, a name
+   starting with `/` is appended to it, an empty first or last element
+   stands for the client's or the server's realm, and an empty middle
+   element for every realm between two on the hierarchy. A KDC that checks
+   the path against its policy sets TRANSITED-POLICY-CHECKED (section 2.7);
+   one that refuses answers KDC_ERR_PATH_NOT_ACCEPTED (28).
+
+**Uncertain:** RFC 4120 lets the KDC that checks be either the last one or
+the service; this KDC checks at every ticket it issues from a cross-realm
+TGT, and sets the flag where it did. Whether the elided-hierarchy form
+(`,,`) is ever acceptable is policy; it is refused here, because a trust
+record names partners and not a hierarchy.
+
+### S4U2Self across realms ([MS-SFU] 3.1.5.1.1.2 and 4.2, KDC side 3.2.5.1.1–3.2.5.1.2)
+
+Service 1 in A, the user in B, possibly with realms between them.
+
+1. Service 1 asks its own KDC for a TGT to B's ticket-granting service,
+   with NO S4U2Self data in the request; with no direct trust A answers a
+   TGT to a realm closer, and Service 1 repeats until it holds
+   `krbtgt/B@<previous>` (4.2 steps 1–2). How it learns the user's realm is
+   its own business: local policy, or an AS-REQ answered with
+   KDC_ERR_WRONG_REALM (RFC 6806).
+2. Service 1 sends B a TGS-REQ presenting that TGT, `sname` its OWN name,
+   with PA-FOR-USER (or PA-S4U-X509-USER) naming the user (step 3).
+3. B cannot issue the ticket: it does not hold Service 1's account. It
+   builds a PAC for the user and returns it in a REFERRAL TGT toward A
+   (step 4). Per 3.2.5.1.1 that referral's `cname`/`crealm` are SERVICE 1's
+   — the requester's — and the PAC's PAC_CLIENT_INFO names
+   `user@userRealm`; the identity being transported is in the PAC, not in
+   the ticket's client name. With realms between, each one repeats steps
+   2–3 back toward A (step 4, last paragraph).
+4. Service 1 presents that referral TGT to A, again with PA-FOR-USER, and A
+   issues the service ticket to Service 1 for the user (3.2.5.1.2: `cname`
+   and `crealm` from PA-FOR-USER), with a PAC combining what B wrote and what
+   A adds ([MS-PAC] 4.1.2.1). FORWARDABLE follows Service 1's
+   TrustedToAuthenticationForDelegation, and never for a user whose
+   DelegationNotAllowed is set.
+
+**What this service must decide that the specification does not:** step 3's
+B must believe Service 1 asked on its own behalf (the presented TGT names
+Service 1), and step 4's A must recognise the referral TGT as one carrying
+an S4U2Self PAC rather than Service 1's own — the only marker being that
+the PAC's client is not the ticket's client. Here that is checked against
+the trust record that admitted the ticket (A must hold an incoming trust
+from the realm that issued it, and that record must accept the user's
+realm). Phase 2.
+
+### S4U2Proxy and resource-based delegation across realms ([MS-SFU] 3.1.5.2.2, 3.2.5.2.3)
+
+Service 1 (front end) in A, Service 2 (back end) in B, evidence a service
+ticket to Service 1 for the user.
+
+1. Service 1 sends A the S4U2Proxy TGS-REQ: `cname-in-addl-tkt`, the
+   evidence as the additional ticket, PA-PAC-OPTIONS with resource-based
+   delegation, `sname` Service 2.
+2. A does not hold Service 2. It first verifies the evidence's PAC with its
+   own krbtgt key, as within a realm, and answers with a REFERRAL TGT toward
+   B whose PAC is the USER's, taken from the evidence ticket — the evidence
+   turned into a cross-realm TGT for the user — and SIGNED WITH THE
+   INTER-REALM KEY: server, KDC and ticket signature alike, the one key B
+   holds to check them with ([MS-PAC] 2.8; which key a referral's KDC and
+   ticket signatures use is not spelled out there, and this reading is
+   **uncertain**). A realm in between verifies what it receives with its
+   incoming key and re-signs with its outgoing one. Service 1 also needs, and gets by an
+   ordinary referral, a cross-realm TGT for ITSELF. The client side
+   ([MS-SFU] 3.1.5.2.2) follows the path twice, once for each.
+3. Service 1 sends B the S4U2Proxy TGS-REQ presenting its own cross-realm
+   TGT, with the user's referral TGT as the additional ticket and
+   PA-PAC-OPTIONS again. B opens the evidence under its INCOMING key from
+   A and VERIFIES ITS PAC'S SIGNATURES WITH THAT SAME KEY — the
+   CVE-2020-17049 check made with the key that applies at this hop, refused
+   as KRB_AP_ERR_MODIFIED (`STS-KRB-0240`, 2026-10-20: until then the seal
+   under the trust key was taken as enough) — reads the user from the
+   evidence's PAC (its ticket names Service 1), and checks resource-based delegation: Service 2's
+   `appAllowedToActOnBehalfOf` must name the foreign actor, written
+   `SPN@A`. Forwardable evidence is required for resource-based delegation
+   since the CVE-2020-16996 update (3.2.5.2.3), as within a realm.
+4. CLASSIC constrained delegation is defined only within a realm: the
+   ServicesAllowedToSendForwardedTicketsTo list is on Service 1's account
+   in A, and nothing in the cross-realm exchange carries it to B. The plan's
+   decision 5 refuses it across realms unless a realm setting allows it.
+
+**Uncertain:** the subsection numbering of [MS-SFU] 3.2.5.2 has moved
+between revisions (an erratum of December 2019 also changed which route
+takes precedence when both are configured: classic first). The citations
+above are the current revision's; the behaviour is what is asserted.
+
+### TGT delegation across a trust ([MS-KILE] 3.3.5.7.5)
+
+The KDC "MUST NOT return a ticket with the ok-as-delegate flag set" unless,
+for the source ticket and the trust it crosses:
+
+* **DisableConditions** = the source ticket lacks ok-as-delegate, OR the
+  trust has `CROSS_ORGANIZATION_NO_TGT_DELEGATION`, OR the trust has
+  `QUARANTINED_DOMAIN`;
+* **EnableConditions** = the trust has `WITHIN_FOREST`, OR
+  `CROSS_ORGANIZATION_ENABLE_TGT_DELEGATION`;
+* ok-as-delegate is set only on EnableConditions and not DisableConditions.
+
+So what the two TGT-delegation bits change is **ok-as-delegate on the
+referral TGT** (and through it on the partner's service tickets), which is
+what tells a client it may forward its TGT to the service — not
+FORWARDABLE, which the client's own request and its account decide.
+A trust with neither bit set across organizations therefore stops
+unconstrained delegation by default. The same section adds, for
+`CROSS_ORGANIZATION`, the OTHER_ORGANIZATION SID and an ACL check on the
+target (KDC_ERR_POLICY). A protected user's TGT is never forwardable, on
+either side of any trust (#186). **Uncertain:** the section speaks of "the
+source ticket" without saying whether a referral issued from a referral
+inherits the first hop's verdict; here each hop applies its own record to
+the ticket it was given.
+
+### Keys
+
+**A password-derived inter-realm key** is RFC 3961 string-to-key over the
+shared password with the principal's DEFAULT SALT (RFC 4120 section 4: the
+realm followed by the name components, no separators) — for
+`krbtgt/B@A` that is `AkrbtgtB`. Both partners compute the same key from
+the same password with no other coordination, which is what lets a trust be
+built with a partner's KDC that is not this one. **A generated key** is
+RFC 3961 random-to-key per enctype, shown once at creation (Phase 4) and
+written to the partner's record by "pair" when the partner is a trust realm
+in this process.
+
+## KERBEROS TRUSTS AS RECORDS (#430 Phase 1, 2026-10-19)
+
+**A TRUST IS A DIRECTORY ENTRY, ONE PER PARTNER** (rcbj's decision 2 on #430),
+`cn=<partner Kerberos realm>,ou=kerberosTrusts,<the realm's base>`, kept by
+`krb5_trusts.ts`. The record is one JSON value (`stsKrb5TrustData`); the keys are
+`stsKrb5TrustKeys`, sealed where keys persist (`keystore.seal()`, label
+`kerberos-trust-keys`), withheld from every read in product (SECRET_ATTRIBUTES)
+and refused over the socket in both modes (`CREDENTIAL_ATTRIBUTE_DOORS`). Six
+attributes of Active Directory's trustedDomain object ([MS-ADTS] 6.1.6.7) are
+written beside it as a MIRROR for `ldapsearch` — `trustPartner`, `flatName`,
+`securityIdentifier`, `trustDirection`, `trustAttributes`, `trustType` — and are
+never read back: the JSON is the truth, so the two cannot disagree in a way that
+matters.
+
+* **THE KEYS HELD ARE THE TRUTH, THE DIRECTION IS DERIVED.** INCOMING is
+  `krbtgt/<us>@<partner>` (this realm accepts the partner's tickets), OUTGOING is
+  `krbtgt/<partner>@<us>` (this realm refers to the partner); `trustDirection` is
+  1, 2 or 3 from which are held. Each has a kvno and a source: a shared
+  PASSWORD, kept and turned into keys by `longTermKey()` with RFC 4120's
+  default salt `<issuing realm>krbtgt<other realm>`, or GENERATED (random per
+  enctype, shown once by the act that made it). Changing enctypes under a
+  generated key is refused rather than leaving a key missing.
+* **NO INTER-REALM PRINCIPAL IS IN THE PRINCIPAL DATABASE ANY MORE.**
+  `krb5_principals.js`'s `find()` answers `krbtgt/X@R` (X not R) from the
+  ambient realm's record — outgoing when R is ours, incoming when X is ours —
+  through `trustPrincipalFor()`, and `krb5_trusts.ts` caches the built principal
+  per realm against a digest of the two stored values (`krb5.trust-keys` on
+  `/admin/caches`). So nothing about a trust is a CONFIGURED principal, a
+  restored row cannot override a record, and the reconcile rules of the
+  database never meet one. A generated key cleared by the key cache's bound is
+  put back from the record (`trustKeyMaterial`).
+* **ROUTING** (`realmForService()` → `routeHost()`): the enabled record with an
+  outgoing key whose routed suffix matches the host most specifically, the
+  realm's own domain winning over a suffix no longer than it. The answer is
+  the NEXT HOP; for a realm behind the partner, the partner's KDC routes on.
+* **THE PATH** (`crossRealmPath()` in `krb5_kdc.js`, `pathProblem()` here):
+  asked before a ticket is issued from a TGT another realm issued, and before
+  any referral. The record for the issuing realm must be enabled with an
+  incoming key; a `non-transitive` one accepts the partner's own people only
+  and refers nobody onward; every realm on the path (the client's, then
+  `transited`) must be in the record's namespace (the partner or under one of
+  its suffixes) and none may be this realm; an elided hierarchy (`,,`) is
+  refused; `krb5.maxReferralHops` (realm-overridable, runtime) bounds the
+  crossings. A pass sets TRANSITED-POLICY-CHECKED (cleared from what is
+  inherited, so only the KDC that checked says so). `transited` is written
+  DOMAIN-X500-COMPRESS: the presented one's realms plus the presented ticket's
+  issuer when that is neither the client's realm nor this one. Refusals are
+  KDC_ERR_PATH_NOT_ACCEPTED (28), `STS-KRB-0226`–`0228`; a ticket through a
+  disabled trust is named as such (`STS-KRB-0229`).
+* **THE DEVELOPMENT PARTNER IS NOT CHECKED.** The default KDC also answers as
+  PARTNER.COM, a fixture of that realm's DATABASE, not a realm with a register;
+  a path into it is carried in `transited` and not checked, and no flag says it
+  was. Its trust is the seeded record of the default realm (outgoing, from the
+  password the retired `krb5.trustPassword` shipped, quarantined, routing
+  `partner.com`), written by the directory's `seed()` with
+  `krb5Trusts.seedEntries()`; a deleted seed stays deleted while the container
+  exists.
+* **TWO TRUST REALMS** pair with `pair(otherRealmId, …)`: both records in one
+  act, mirrored (this realm's outgoing is the other's incoming), from one
+  password or one generated key set, nothing written unless both validate and
+  the first taken back if the second write fails.
+* **THE FOUR SETTINGS ARE RETIRED WITH NO SHIM** (decision 3): REPLACED_SETTINGS
+  refuses a start that names `krb5.trustedRealm`, `krb5.trustPassword`,
+  `krb5.trustedDomainSid` or `krb5.trustedKrbtgtPassword`, in the appconfig file
+  or the environment (`STS-CORE-0105`). Their readers went with them:
+  `cluster.js`'s agreement list, `admin_scope.ts`'s service-only list (a trust is
+  the realm administrator's now, like its people), the three env layers, and
+  `realms.js`'s name check, which asks the principal database what the default
+  realm's KDC answers as.
+* **THE POLICY'S VOCABULARY** (`xacml/xacml_request.js`, defined now, read by
+  rules in Phase 3): `exchange:subject-realm`, `actor-realm`, `target-realm`,
+  and `trust-partner`, `trust-type`, `trust-direction`, `trust-attribute`,
+  `trust-path`, `trust-hops`, sent only for a question that names them, so every
+  existing question is the request it was.
+
+**THE SLOT (rule 3e).** `setDirectory()` takes three functions over
+`ou=kerberosTrusts`, validated whole, filled by `ldap/ldap_server.js` beside the
+key register's. It answers yes both ways round: the register is reached from the
+KDC (15) and the principal database, so a require from here to the directory
+would register every `/admin/ldap/*` page ahead of the KDC's own routes and drag
+the directory into the parent project's COPY closure; and the directory requires
+this register, so a require back is a cycle. **Without a directory** the records
+are a per-realm map of the process (`realms.map()`), seeded on first read the way
+`seed()` seeds a tree — which is what keeps PARTNER.COM's referral working in an
+in-process job that never loads the directory. The composition root builds the
+instance at 14c, right after the KDC is required, BEFORE the directory's facade
+call (a facade called first would build a default instance the root could not
+replace).
+
+**WHAT WAS NOT DONE HERE IS DONE NOW.** This paragraph listed rotating a trust
+key with a grace period and the console tab and `/admin-api` as later phases;
+Phase 4 built them (*THE TRUSTS IN THE CONSOLE AND `/admin-api`*, below), as
+Phases 2 and 3 built SID filtering, ok-as-delegate across a trust, S4U across
+realms, the product honour rule and classic delegation across realms.
+
+**OWED TO THE PARENT PROJECT'S COPY CLOSURE (#430).** `krb5_kdc.js` asks the
+register on EVERY TGS-REQ (`crossRealmPath()`) and `krb5_principals.js` on
+every cross-realm name and every routing miss, both through
+`principals.trustRegister()`, a LAZY `require('./krb5_trusts')` inside a `try`
+— so the four in-process jobs load it at their first TGS-REQ. The commit that
+bumps the `sts/` pin across #430 owes `COPY sts/kerberos/krb5_trusts.js
+./sts/kerberos/`, COMPILED from its `.ts` (the #186 precedent for a lazily
+reached TypeScript module; the 2026-10-13 rule that a module required AT LOAD is
+`.js` in the checkout does not apply to a lazy one), and with it
+`common/instance_slot.js` (compiled) and, reached lazily when a record is read,
+`common/keystore.js` — each wherever the parent's set does not already carry it.
+Everything else it requires at load (`helpers`, `config`, `realms`, `mode`,
+`error_codes`, `crypto`, `cache_registry`, `krb5_crypto`) is already in the
+closure. **A copy WITHOUT it loads and says so** (`STS-KRB-0225`, once) and holds
+no trust — so the parent's referral assertions in `krb5_tgs_ap.js`, which walk
+the PARTNER.COM trust, fail until the line is added. `common/realms.js`'s new
+lazy require of `krb5_principals.js` and `xacml/xacml_request.js`'s new
+vocabulary add nothing.
+
+**TESTS.** `tests/kerberos_trusts.js` (tests/CLAUDE.md has the row); the
+routing and delegation files are unchanged in what they assert, except that the
+development partner is `principals.DEV_PARTNER_REALM` where it was
+`TRUSTED_REALM`.
+
+## DELEGATION ACROSS A TRUST, BUILT (#430 Phases 2 and 3, 2026-10-19)
+
+The flows of *DELEGATION ACROSS A TRUST* above, in `krb5_kdc.js`, with the
+vendored codec untouched. Every decision is the issuance policy's; the KDC
+sends it facts and turns its refusal kinds into codes.
+
+* **S4U2SELF** (`crossRealmSelf()`): four places a KDC stands in the walk,
+  told apart by this realm, the user's (PA-FOR-USER's userRealm) and the
+  requester's (the presented ticket's crealm), and by whether the presented
+  ticket's PAC names somebody other than its cname (`pacIdentity()`). Out
+  toward the user's realm with no S4U information; the user's realm builds
+  their PAC into a referral TGT whose cname stays the SERVICE ([MS-SFU]
+  3.2.5.1.1), not forwardable for a protected user, its `transited` started
+  empty; realms between walk it back (SID-filtered, re-signed); home issues
+  the ticket and asks the policy with the trust's facts. A trust refusal
+  (`trust-*`, `self-realm`) refuses the request (KDC_ERR_POLICY); any other
+  leaves the ticket not forwardable, as within a realm. A request for a
+  service this realm does not hold is resolved BEFORE the plain referral
+  would refer the requester instead (`s4uAsked` in `answerTgsReq()`).
+  **The path check follows the USER** for a ticket walking back
+  (`crossRealmPath()`): the transited path is the user's realm to the
+  service's.
+* **S4U2PROXY** (in `resolveS4u()`): to a target a trust routes, the front
+  end's KDC turns the evidence into a cross-realm TGT for the USER
+  (`proxy-referral`, its PAC re-signed for the trust); the target's KDC opens
+  that evidence with its incoming key (`evidenceAcross`), SID-filters its PAC,
+  and checks resource-based delegation against the front end named
+  `SPN@ITS-REALM` (`relationship()`'s `frontRealm`). **The evidence IS
+  PAC-verified** (rcbj, 2026-10-20, reversing the first build, which took
+  the seal under the trust key as enough): every referral this KDC issues
+  signs its PAC — server, KDC and ticket signature — with the inter-realm
+  key (`issueReferral()`), and the target's KDC verifies all three with its
+  incoming key (`verifyEvidence(part, key, { realm })`) BEFORE SID filtering
+  reads the PAC; a forged or altered PAC, a ticket altered after signing,
+  or no PAC at all is KRB_AP_ERR_MODIFIED, `STS-KRB-0240`, recorded at
+  `refuseS4u()`. The test is `kerberos_cross_realm_delegation.js`'s E.
+  A plain cross-realm TGT (no S4U) is not PAC-verified on arrival: its PAC
+  is SID-filtered and re-signed, and it is never evidence of anything a
+  service could have rewritten, being sealed in a key no service holds. CLASSIC across realms is refused unless
+  `krb5.crossRealmClassicDelegation` (off, runtime, per realm): the front
+  end's realm checks its own `appAllowedToDelegateTo` before it refers, and
+  the target's realm takes that referral as VOUCHED (`classicVouched`) — both
+  realms must turn it on. Forwardable evidence and the protected-user rules
+  are unchanged; `transitedServices` names the front end with its realm.
+* **TGT DELEGATION** ([MS-KILE] 3.3.5.7.5): a referral carries ok-as-delegate
+  only where the trust record enables it (`tgtDelegationAllowed()`) and, past
+  the first hop, the source ticket carried it; a service ticket for a user of
+  another realm carries it only where the referral did, the service has
+  `krb5TrustedForDelegation`, and the policy's `forwarded` question allows it
+  (the trust's bits, the service's `krb5ForeignTgtDelegation`). A FORWARDED
+  request across a trust asks the same question. **UNCERTAIN:** the first
+  hop's "source ticket" is this realm's own TGT, which never carries the flag;
+  it is read as not applicable rather than as a DisableCondition.
+* **THE POLICY** (`xacml_templates.ts`, the `exchange-token` question): five
+  Deny rules read only across a trust — `trust-disabled`, `trust-direction`,
+  `self-realm`, `classic-across-realms`, `tgt-delegation` (codes
+  `STS-KRB-0230`–`0233`) — and the generic rules learn that a foreign actor
+  the target names needs no entry here, that resource-based delegation to a
+  foreign target is the target realm's, that a vouched classic delegation is
+  allowed where the setting is on, and that a forwarded TGT has no source. A
+  foreign user holds the roles every authenticated person holds. The oracle
+  (`tests/tools/exchange_oracle.js`) carries the same rules.
+* **THE SERVICE'S TWO WORDS**: `krb5S4uSelfRealm` (multi; values checked at
+  the write against `acceptsRealm()`, `STS-REG-0362`) and
+  `krb5ForeignTgtDelegation` (`inherit` | `deny`, a closed set).
+
+**OWED TO THE PARENT PROJECT'S COPY CLOSURE**: nothing new beyond Phase 1's
+line for `kerberos/krb5_trusts.js` — `krb5_trusts.ts` now requires
+`krb5_pac.js`, already in the closure, and the KDC's new requires are none.
+`kerberos/krb5_delegation.ts`, already owed since #186, reaches
+`principals.trustRegister()` only.
+
+**TESTS**: `tests/kerberos_cross_realm_delegation.js` (between three trust
+realms, each case and refusal, and SID filtering row by row);
+`tests/exchange_policy.js` (163,840 cross-realm combinations) and
+`tests/exchange_policy_exhaustive.js` (every combination of the cross-realm
+dimensions). Not run: the interop jobs (MIT `kvno -U`, Heimdal `kgetcred`,
+Samba's cross-realm s4u and xrealm tests).
+
+## SID FILTERING: THE RULES (#430 Phase 2, rcbj's scope of 2026-10-19)
+
+**The table is the specification's, row by row**, from [MS-ADTS] 6.1.6.7
+(the trusted domain object's essential attributes: `securityIdentifier`,
+`trustAttributes` 6.1.6.7.9, `msDS-TrustForestTrustInfo` 6.1.6.9.3,
+`trustType`), the filtering it selects in [MS-PAC] 4.1.2.2, the claims
+traversal of [MS-ADTS] 3.1.1.11.2.11 ([MS-CTA]), and [MS-KILE] 3.3.5.7.5 for
+TACO. `krb5_trusts.ts`'s `sidFilter()` marks each row `R<n>` where it is
+enforced, and `tests/kerberos_cross_realm_delegation.js` tests each row as
+`SF-R<n>`. The TRUST BOUNDARY comes from the record's bits (`boundaryOf()`):
+within-forest → WithinForest, or QuarantinedWithinForest with quarantined;
+forest-transitive → CrossForest, External with treat-as-external,
+PrivilegedIdentityManagement with treat-as-external and pim-trust; anything
+else → External, or QuarantinedExternal with quarantined (the default).
+"This realm's forest" is its own domain SID and the SIDs of the partners its
+records mark within-forest.
+
+| # | Rule | Boundaries | PAC fields | Citation | Tested |
+|---|---|---|---|---|---|
+| 1 | AlwaysFilter SIDs never cross: S-1-0-0, S-1-1-0, S-1-2-0, S-1-3-0..3, S-1-5, S-1-5-1..8, S-1-5-5-*, S-1-5-10..14, S-1-5-18..20, S-1-5-32[-*], S-1-5-64-*, S-1-5-R (R<1000, unlisted), S-1-6..9 | all | ExtraSids, resource groups | [MS-PAC] 4.1.2.2 | SF-R1, SF-R1-E2E |
+| 2 | NeverFilter SIDs always cross: S-1-4, S-1-5-15, S-1-5-21-0-0-0-496/497, S-1-5-1000-*, S-1-5-R (R>1000), S-1-10. **UNCERTAIN:** S-1-18-* is in no row (the table predates it) and is kept; whether NeverFilter SIDs cross a quarantined boundary is not said, and they are kept | all | ExtraSids | [MS-PAC] 4.1.2.2; [MS-DTYP] 2.4.2.4 | SF-R2 |
+| 3 | EDC (S-1-5-9) is filtered at CrossForest, External, QuarantinedExternal and PIM; kept within the forest | per row | ExtraSids | [MS-PAC] 4.1.2.2 (EDC) | SF-R3 |
+| 4 | A malformed domain SID never crosses: S-1-5-21, S-1-5-21-x, S-1-5-21-x-y, a domain's own S-1-5-21-X-Y-Z, too many RIDs | all | ExtraSids, resource groups | [MS-PAC] 4.1.2.2 | SF-R4 |
+| 5 | ForestSpecific (S-1-5-21-D-R, R<1000) is filtered at QuarantinedWithinForest, CrossForest, External and QuarantinedExternal unless D is the trusted domain (a CrossForest trust: a domain of its forest trust information). **UNCERTAIN:** "that domain" read as the trusted domain | per row | ExtraSids, resource groups | [MS-PAC] 4.1.2.2 (ForestSpecific) | SF-R5 |
+| 6 | DomainSpecific 1: a SID of this realm's own domain with a constant RID (R<1000) is filtered, every boundary | all | ExtraSids, resource groups | [MS-PAC] 4.1.2.2 (DomainSpecific) | SF-R6 |
+| 7 | DomainSpecific 2: a constant-RID SID whose domain is not the PAC's LogonDomainId is filtered, every boundary. **UNCERTAIN:** the table's `ForestSpecific*` marks are read as also DomainSpecific | all | ExtraSids, resource groups | [MS-PAC] 4.1.2.2 | SF-R7 |
+| 8 | DomainSpecific 3: across CrossForest or External (and QuarantinedExternal), a PAC whose LogonDomainId is in this realm's forest fails — the ticket is refused (`STS-KRB-0239`) | CrossForest, External, QuarantinedExternal | LogonDomainId | [MS-PAC] 4.1.2.2 | SF-R8 |
+| 9 | SIDs local to this realm's forest do not come over a cross-forest or external trust | CrossForest, External, QuarantinedExternal | ExtraSids, resource groups | [MS-PAC] 4.1.2.2 (CrossForest, External) | SF-R9 |
+| 10 | QuarantinedExternal passes only the trusted domain's SIDs (all except on TDO: `securityIdentifier`) | QuarantinedExternal | ExtraSids, resource groups | [MS-PAC] 4.1.2.2; [MS-ADTS] 6.1.6.7.9 TAQD | SF-R10 |
+| 11 | QuarantinedWithinForest passes only S-1-5-9 and the SIDs the TDO describes | QuarantinedWithinForest | ExtraSids, resource groups | [MS-PAC] 4.1.2.2 | SF-R11 |
+| 12 | CrossForest passes only SIDs of the trusted forest's domains whose SID matching is enabled in its forest trust information (LSA_SID_DISABLED_ADMIN, _CONFLICT off); with none recorded, the partner's domain. **Needs the record field `forestTrustInfo`** | CrossForest | ExtraSids, resource groups | [MS-PAC] 4.1.2.2 (FtInfo); [MS-ADTS] 6.1.6.9.3, 6.1.6.9.3.1 | SF-R12 |
+| 13 | TREAT_AS_EXTERNAL makes a cross-forest trust External for filtering (SID history from other forests crosses); evaluated only with FOREST_TRANSITIVE (refused otherwise, `STS-KRB-0217`) | CrossForest → External | all of the above | [MS-ADTS] 6.1.6.7.9 TATE | SF-R13 |
+| 14 | PIM_TRUST with TREAT_AS_EXTERNAL on a forest trust: SIDs local to this forest come over; EDC is filtered. **Needs the record bit `pim-trust`** | PrivilegedIdentityManagement | ExtraSids | [MS-ADTS] 6.1.6.7.9 TAPT; [MS-PAC] 4.1.2.2 | SF-R14 |
+| 15 | Account SIDs (R≥1000) of other domains are not filtered at domain and external boundaries | External | ExtraSids (SID history) | [MS-PAC] 4.1.2.2 | SF-R15 |
+| 16 | Resource groups are the SIDs ResourceGroupDomainSid-RID and cross as those SIDs would; ResourceGroupDomainSid is dropped with the last one | all | ResourceGroupDomainSid, ResourceGroupIds | [MS-PAC] 2.5, 4.1.2.2 | SF-R16 |
+| 17 | A user of a domain the boundary does not pass — a quarantined trust's user not of the trusted domain, a cross-forest trust's user outside the forest trust information — may not cross: the ticket is refused (`STS-KRB-0239`). **UNCERTAIN:** the specification filters SIDs and says nothing of the user's own SID, which cannot be removed without the PAC naming nobody | quarantined, CrossForest | LogonDomainId, UserId | [MS-PAC] 4.1.2.2 (inferred) | SF-R17 |
+| 18 | PAC_DEVICE_INFO's SIDs are subject to the same rules; this service does not decode that buffer, so it is DROPPED on arrival rather than passed unfiltered. **UNCERTAIN, and partial** | all | PAC_DEVICE_INFO | [MS-PAC] 2.12, 4.1.2.2 | SF-R18 |
+| 19 | Claims entering across a trust with no transformation policy are dropped; `claimsTransformation: allow-all` is [MS-CTA]'s issue-every-claim rule. **Partial:** the rest of [MS-CTA]'s rule language is not implemented (`STS-KRB-0238` refuses anything else). **Needs the record field `claimsTransformation`** | all | PAC_CLIENT_CLAIMS_INFO, PAC_DEVICE_CLAIMS_INFO | [MS-ADTS] 3.1.1.11.2.11; [MS-CTA] 2.1 | SF-R19 |
+| 20 | The Member boundary (AlwaysFilter and the member server's own prefix) | Member | — | [MS-PAC] 4.1.2.2 | **No test: cannot apply** — this KDC is not a member server receiving a PAC; its acceptor validates its own realm's tickets |
+| 21 | WithinDomain: no filtering between a domain's own controllers | WithinDomain | — | [MS-PAC] 4.1.2.2 | **No test: cannot apply** — a realm's KDC is one controller; there is no trust within a domain to cross |
+| 22 | WithinForest (not quarantined): only AlwaysFilter and DomainSpecific apply | WithinForest | ExtraSids | [MS-PAC] 4.1.2.2 | SF-R22 |
+| 23 | Invalid SIDs are AlwaysFilter | all | ExtraSids | [MS-PAC] 4.1.2.2 | **No test: cannot arise** — a structurally invalid SID fails NDR decoding, and the vendored codec then refuses the whole PAC before any filtering; `sidClass()` still classes a malformed text as AlwaysFilter |
+| 24 | CROSS_ORGANIZATION adds OTHER_ORGANIZATION (S-1-5-1000) to ExtraSids. **Partial:** its ACL check (ACTRL_DS_CONTROL_ACCESS on the server's account) has no account security descriptor here to check | all with cross-organization | ExtraSids | [MS-KILE] 3.3.5.7.5; [MS-ADTS] 6.1.6.7.9 TACO | SF-R24 |
+
+**24 rows; 21 tested** (20, 21 and 23 say why not). Where filtering happens:
+a service ticket from a cross-realm TGT, an onward referral, an S4U2Self
+referral walking back, and a cross-realm S4U2Proxy evidence ticket
+(`filterArriving()` in `krb5_kdc.js`) — never for the development partner
+PARTNER.COM, which holds no record. **Product does not honour a trust with
+quarantined off** while `krb5.requireSidFilteringInProduct` (on) stays on
+(`mode.requiresSidFilteringOnTrusts()`, a REQUIREMENTS row): it refers nobody
+and accepts nothing, and `STS-KRB-0229` says why.
+
+**Record fields Phase 4's form owes** (each validated, with its code):
+`forestTrustInfo` (`{ domains: [{ sid, dnsName, netbiosName, sidEnabled }],
+topLevelNames: [{ name, enabled }] }`, cross-forest only, `STS-KRB-0237`),
+`claimsTransformation` (`drop-all` | `allow-all`, `STS-KRB-0238`), and the
+attribute bit `pim-trust` (with `treat-as-external` and `forest-transitive`,
+`STS-KRB-0217`). Phase 4's form carries all three.
+
+## THE TRUSTS IN THE CONSOLE AND `/admin-api` (#430 Phase 4, 2026-10-20)
+
+**The library decides, the two doors share one function each.** Protocols →
+Kerberos → **Trusts** (`kerberos/web_kerberos_trusts.ts`) is drawn from `GET
+/admin-api/kerberos/trusts` (`adminViews.kerberosTrustsJson()`), and its seven
+controls post `/admin/kerberos/trusts`, which the console resolves to `POST
+/admin-api/kerberos/trusts/{add,update,enable,disable,rotate-key,remove,pair}`
+(`adminActions.kerberosTrustsAction()`). Everything a record may hold, and
+every refusal, is still `krb5_trusts.ts`'s; the action layer turns a form's
+`direction` and `keySource` into the two key sides, asks `confirm` of a
+removal (`STS-ADMIN-0860`) and writes the audit row, by the trust's name and
+never a key.
+
+**A KEY ALREADY HELD IS CHANGED ONLY BY `rotate-key`.** `update` keeps every
+held key whatever the form's key source says, takes the source only for a
+side its `direction` adds, and drops a side its direction no longer names.
+That keeps the one act that changes a key the one that keeps the old one for
+a grace.
+
+**ROTATION WITH GRACE: ONE PREVIOUS INCOMING VERSION** (`rotateKey()`,
+`previousKey()`). The new keys are at the current kvno plus one; the incoming
+version replaced is the record's `previousIncoming` (its secret sealed beside
+the others), and `ticketKeyFor()` in the KDC opens a ticket naming that kvno
+with it while `krb5.trustKeyGraceSeconds` (zero: the ticket lifetime plus the
+clock skew, as `krb5.retainedKeyTtlS` reads it) has not passed since
+`retiredAt`, and answers KRB_AP_ERR_BADKEYVER (`STS-KRB-0115`) after. Only
+the INCOMING side is kept: the partner seals with it until its own side
+changes, while an outgoing key is used from the next referral and an old one
+is of no use to anybody here. A second rotation inside the grace ends the
+first one's. `mirror` (a trust-realm partner) rotates the partner realm's
+record in the same act, with the same keys the other way round and the SAME
+kvno — the two records hold one principal each and must agree on its kvno.
+
+**PAIR** (`mirror()`, distinct from `pair()`, which writes two records from
+nothing) writes the partner trust realm's record for a record held here, or
+makes its keys match where it has one, changing nothing else there. It and a
+mirrored rotation write ANOTHER realm's directory, so `admin-ui/admin_scope.ts`
+refuses both to a realm administrator (`STS-ADMIN-0787`, and `STS-API-0112`
+for a realm token): a realm administrator manages their realm's trusts and
+nothing else.
+
+**THE HEALTH COLUMN** is `health()`: findings with a `kind` the console
+translates and an English `text` for the API's reader — disabled, not
+quarantined (and, in product with `krb5.requireSidFilteringInProduct`, not
+used), incoming key held or missing, outgoing missing, suffixes routed or
+none, and for a trust-realm partner whether it holds the matching record.
+
+**THE APPLICATION PANEL** is `applicationAcross()`, attached to an
+application's view as `page.krb5Across` when it declares `krb5`: each
+`SPN@REALM` of another realm in `appAllowedToActOnBehalfOf` with the trust
+path it needs and what is wrong with it, each in `appAllowedToDelegateTo`
+flagged where classic delegation across realms is off here or in the other
+trust realm, each `krb5S4uSelfRealm` realm, and each trust's TGT-delegation
+bits against `krb5TrustedForDelegation` and `krb5ForeignTgtDelegation`. Its
+`choices.krb5S4uSelfRealm` (the realms the trusts accept, plus what the entry
+holds) become the field's choices on the Kerberos sub-tab.
+
+**TESTS**: `tests/kerberos_trusts_admin.js` (in process: the acts and view,
+pairing, rotation with grace across two trust realms, who may, the panel, the
+tab) and `tests/vendored/sts_kerberos_trusts_api.js` (`local: true`, over
+HTTP; written and registered, run by the suite). `sts_kerberos_samba.js`
+reads the development trust's partner from the API.
 
 ## PRODUCT MODE, AND THE LITERALS AN AUDIT FOUND IN THIS DIRECTORY (2026-09-12)
 
@@ -976,7 +1479,8 @@ the database they belong to, so the two cannot disagree.
 **What product mode (`mode.seedsDemoData()` false) does NOT create**: every entry in
 `DEFINITIONS` below `krbtgt` — alice, bob and the five misconfigured users, the
 computer account, the four delegation services with their literal passwords and their
-`msDS-*` rules — and the whole second realm (`TRUSTED_DEFINITIONS`, the trust). The
+`msDS-*` rules — and the whole second realm (`TRUSTED_DEFINITIONS`, and since #430
+its trust RECORD, which `krb5_trusts.ts` seeds in development only). The
 realm list is then one realm, so `PARTNER.COM` is `KDC_ERR_WRONG_REALM`.
 
 **What it creates, and the one refusal each carries.** `krbtgt/<realm>` and the account

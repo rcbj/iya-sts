@@ -166,9 +166,11 @@
 // nothing was consumed at startup, and `krb5.realm` and the nine rows that
 // database is built from are `realmRuntime`. What is still consumed for the
 // process stays refused on a realm: the KDC's socket (`krb5.kdcPort`; the
-// protected service's, `krb5.servicePort`, left with #595) and the
-// development-mode trust with `krb5.trustedRealm`. The test is still the rule;
-// a setting whose material stays process-wide is still a no.
+// protected service's, `krb5.servicePort`, left with #595). The
+// development-mode trust with `krb5.trustedRealm` was on that list until #430
+// retired its four settings: a trust is a record per realm now
+// (`kerberos/krb5_trusts.ts`). The test is still the rule; a setting whose
+// material stays process-wide is still a no.
 //
 // ---------------------------------------------------------------------------
 // This module is a LIBRARY (rule 3): it registers no route, and it requires
@@ -11171,8 +11173,9 @@ const SETTINGS = [
   // realm's principal database is BUILT from are `realmRuntime`: restart-only
   // for the process, whose database is built when it starts, and settable on a
   // realm, whose database is built when its Kerberos is turned on and again
-  // whenever one of them changes (kerberos/krb5_principals.js). The sockets and
-  // the development-mode trust with krb5.trustedRealm stay the process's.
+  // whenever one of them changes (kerberos/krb5_principals.js). The sockets
+  // stay the process's. A TRUST is not a setting at all since #430: it is a
+  // record per partner in the realm's directory (kerberos/krb5_trusts.ts).
   { key: 'krb5.enabled', group: 'Kerberos', label: 'Enable Kerberos',
     env: 'KRB5_ENABLED', type: 'bool', dflt: true, runtime: true,
     description: 'Whether this realm\'s KDC answers. ON THE SERVICE AS A ' +
@@ -11200,8 +11203,9 @@ const SETTINGS = [
                  'PAC\'s domain name come from. On a trust realm it is the ' +
                  'name port 88 routes that realm\'s requests by: it must be ' +
                  'set before krb5.enabled, no two realms may share it (nor ' +
-                 'krb5.trustedRealm), and it is compared without regard to ' +
-                 'case when that is checked.' },
+                 'the development partner realm the default realm answers ' +
+                 'as), and it is compared without regard to case when that ' +
+                 'is checked.' },
 
   { key: 'krb5.kdcPort', group: 'Kerberos', label: 'KDC port',
     env: 'KRB5_KDC_PORT', type: 'port', dflt: 88, runtime: false,
@@ -11507,37 +11511,59 @@ const SETTINGS = [
                  'Kerberos ticket says who you are; a Windows service ' +
                  'authorizes on the SIDs in the PAC.' },
 
-  { key: 'krb5.trustedRealm', group: 'Kerberos', label: 'Trusted realm',
-    env: 'KRB5_TRUSTED_REALM', type: 'string', dflt: 'PARTNER.COM',
-    runtime: false,
-    restartReason: 'the second realm and the trust between them are built at ' +
-                   'startup',
-    description: 'The second realm, for cross-realm referrals. A trust is ' +
-                 'not a flag: it is a shared key held by one principal in ' +
-                 'each realm.' },
+  // DELEGATION ACROSS A TRUST (#430 Phases 2 and 3): two words a realm says
+  // about its trusts, read where they are used.
+  { key: 'krb5.crossRealmClassicDelegation', group: 'Kerberos',
+    label: 'Classic delegation across trusts',
+    env: 'KRB5_CROSS_REALM_CLASSIC_DELEGATION', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether CLASSIC constrained delegation ' +
+                 '(appAllowedToDelegateTo on the front end) may cross a ' +
+                 'Kerberos trust. Off by default: it is defined within one ' +
+                 'realm, and resource-based delegation ' +
+                 '(appAllowedToActOnBehalfOf on the target, naming ' +
+                 'SPN@REALM) is the one that crosses. On, the front end\'s ' +
+                 'realm checks its own list before it refers the evidence, ' +
+                 'and the target\'s realm takes that as checked; both realms ' +
+                 'must turn it on.' },
 
-  { key: 'krb5.trustPassword', group: 'Kerberos', label: 'Trust password',
-    env: 'KRB5_TRUST_PASSWORD', type: 'string',
-    dflt: 'inter-realm-trust-password', runtime: false,
-    restartReason: 'the inter-realm key is derived from it at startup',
-    description: 'The shared secret both realms hold for the cross-realm ' +
-                 'trust.' },
+  { key: 'krb5.requireSidFilteringInProduct', group: 'Kerberos',
+    label: 'Require SID filtering on trusts',
+    env: 'KRB5_REQUIRE_SID_FILTERING_IN_PRODUCT', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'In product mode, a Kerberos trust is used only while it ' +
+                 'filters SIDs (its quarantined attribute, on by ' +
+                 'default). Turning this off on a realm is the operator ' +
+                 'accepting a partner\'s SIDs unfiltered. Development uses ' +
+                 'every trust whatever this says.' },
 
-  { key: 'krb5.trustedDomainSid', group: 'Kerberos',
-    label: 'Trusted domain SID',
-    env: 'KRB5_TRUSTED_DOMAIN_SID', type: 'string',
-    dflt: 'S-1-5-21-2035427030-2118130302-1178042555', runtime: false,
-    restartReason: 'the trusted realm\'s principals are built at startup',
-    description: 'The other realm\'s domain SID. It differs from this one on ' +
-                 'purpose: SID filtering across a trust is about whose ' +
-                 'domain a SID belongs to.' },
-
-  { key: 'krb5.trustedKrbtgtPassword', group: 'Kerberos',
-    label: 'Trusted realm krbtgt password',
-    env: 'KRB5_TRUSTED_KRBTGT_PASSWORD', type: 'string',
-    dflt: 'partner-krbtgt-password', runtime: false,
-    restartReason: 'that realm\'s krbtgt keys are derived from it at startup',
-    description: 'The krbtgt password of the trusted realm.' },
+  // A REFERRAL'S LIMIT (#430): how many trusts one path may cross. A path
+  // through transitive trusts is built from the records, and a loop between
+  // two misconfigured records would otherwise refer a client for ever.
+  { key: 'krb5.maxReferralHops', group: 'Kerberos',
+    label: 'Most trusts a referral path crosses',
+    env: 'KRB5_MAX_REFERRAL_HOPS', type: 'int', dflt: 5, min: 1, max: 16,
+    runtime: true,
+    description: 'How many trusts one cross-realm path may cross before this ' +
+                 'KDC refuses to refer it further ' +
+                 '(KDC_ERR_PATH_NOT_ACCEPTED). ' +
+                 'A direct trust is one crossing; each realm a path is ' +
+                 'referred through adds one. The trusts themselves are ' +
+                 'records in the realm\'s directory (ou=kerberosTrusts), and ' +
+                 'a path is built only through records marked transitive.' },
+  { key: 'krb5.trustKeyGraceSeconds', group: 'Kerberos',
+    label: 'Grace for a rotated trust key (s)',
+    env: 'KRB5_TRUST_KEY_GRACE_SECONDS', type: 'int', dflt: 0, min: 0,
+    max: 31536000, runtime: true,
+    description: 'How long the incoming inter-realm key a trust\'s Rotate ' +
+                 'key replaced still opens the partner\'s tickets, which ' +
+                 'it goes on sealing with until its own side changes. ZERO ' +
+                 '— the default — means krb5.ticketLifetimeSeconds plus ' +
+                 'krb5.clockSkew, read when the version is checked. A ' +
+                 'number is that many seconds instead: long enough for the ' +
+                 'partner\'s administrator to change their side. One ' +
+                 'previous version is kept per trust; past its grace a ' +
+                 'ticket under it is refused KRB_AP_ERR_BADKEYVER.' },
 
   // ---------------------------------------------------------------------
   // THE TWO THAT TURN A KERBEROS TICKET INTO A SIGN-IN, and they are two
@@ -17733,6 +17759,15 @@ const ONE_ISSUER = ' It was removed on 2026-10-08 (#523): every SAML Issuer, ' +
   'are the realm\'s OAuth issuer, the iss of every JWT, which follows ' +
   'global.publicBaseUrl. There is no per-protocol or per-application name.';
 
+// What each of #430's four rows says when it is still named.
+const KERBEROS_TRUSTS = ' It was removed on 2026-10-19 (#430): a Kerberos ' +
+  'trust is a record per partner realm in the realm\'s own directory, ' +
+  'under ou=kerberosTrusts — the partner, its domain SID, the incoming and ' +
+  'outgoing inter-realm keys (from a shared password, or generated), its ' +
+  'attributes and the DNS suffixes routed to it — and two trust realms of ' +
+  'this service may trust each other. Development mode seeds the trust with ' +
+  'PARTNER.COM the four settings built, as a record of the default realm.';
+
 /**
  * The settings that were replaced, and what replaced them; one still named
  * anywhere stops the service starting.
@@ -17862,7 +17897,18 @@ const REPLACED_SETTINGS = [
   { key: 'wstrust.issuer', env: 'STS_WSTRUST_ISSUER',
     now: ['global.publicBaseUrl'], why: ONE_ISSUER },
   { key: 'wsfed.entityId', env: 'STS_WSFED_ENTITY_ID',
-    now: ['global.publicBaseUrl'], why: ONE_ISSUER }
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  // #430 (2026-10-19): a Kerberos trust is a record per partner in the
+  // realm's directory (ou=kerberosTrusts), not four process-wide settings.
+  // No shim: the development trust with PARTNER.COM is seeded as a record.
+  { key: 'krb5.trustedRealm', env: 'KRB5_TRUSTED_REALM',
+    now: ['the realm\'s Kerberos trust records'], why: KERBEROS_TRUSTS },
+  { key: 'krb5.trustPassword', env: 'KRB5_TRUST_PASSWORD',
+    now: ['the realm\'s Kerberos trust records'], why: KERBEROS_TRUSTS },
+  { key: 'krb5.trustedDomainSid', env: 'KRB5_TRUSTED_DOMAIN_SID',
+    now: ['the realm\'s Kerberos trust records'], why: KERBEROS_TRUSTS },
+  { key: 'krb5.trustedKrbtgtPassword', env: 'KRB5_TRUSTED_KRBTGT_PASSWORD',
+    now: ['the realm\'s Kerberos trust records'], why: KERBEROS_TRUSTS }
 ];
 
 // The sentence for a replaced key, or '' for any other.

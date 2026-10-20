@@ -1004,8 +1004,9 @@ const NAMED_BY_REALM = [
   // (STS-KRB-0123), because nothing here could choose a name that was the
   // operator's rather than an invention. The domain IS the operator's choice
   // — `IYASEC.IO` is what RFC 4120 section 6.1's convention makes of
-  // `iyasec.io` — so it is seeded, and still refused if another realm or
-  // krb5.trustedRealm already answers to it (kerberosOverrideProblem()).
+  // `iyasec.io` — so it is seeded, and still refused if another realm, or the
+  // development partner realm the default realm answers as, already answers
+  // to it (kerberosOverrideProblem()).
   // Clearing it on the realm brings the 0123 refusal back.
   { key: 'krb5.realm', from: function (domain) {
     return domain.toUpperCase();
@@ -1669,8 +1670,11 @@ function checkOverrides(overrides) {
 //      is a request the KDC cannot route. rcbj's decision was that the operator
 //      names it, so nothing is seeded and turning it on without one is refused.
 //   2. **A NAME ANOTHER REALM ALREADY ANSWERS TO** (STS-KRB-0124) — another
-//      realm's own `krb5.realm`, the default realm's, or `krb5.trustedRealm`,
-//      which the default realm answers for in development. Compared without
+//      realm's own `krb5.realm`, the default realm's, or a Kerberos realm the
+//      default realm's KDC answers as besides its own (the development
+//      partner, PARTNER.COM, since #430 retired `krb5.trustedRealm`; asked of
+//      the principal database, LAZILY — it requires this file). Compared
+//      without
 //      regard to case: Kerberos names are case-sensitive on the wire, and two
 //      realms that differ only in case are two realms a person cannot tell
 //      apart in a krb5.conf.
@@ -1745,13 +1749,24 @@ function kerberosOverrideProblem(id, after, before) {
     if (processName.toUpperCase() === wanted) {
       taken.push('the default realm, whose Kerberos realm is ' + processName);
     }
-    const trusted = String(run(DEFAULT_REALM, function () {
-      return config.value('krb5.trustedRealm');
-    }) || '');
-    if (trusted.toUpperCase() === wanted) {
-      taken.push('krb5.trustedRealm, the second realm the default realm ' +
-                 'answers for in development mode');
+    let alsoServed = [];
+    try {
+      alsoServed = require('../kerberos/krb5_principals.js')
+        .servedIn(DEFAULT_ID).filter(function (one) {
+          return String(one).toUpperCase() !== processName.toUpperCase();
+        });
+    } catch (e) {
+      // A process without the KDC answers as no other realm.
+      log.debug('Caught in kerberosOverrideProblem(): ' +
+                ((e && e.message) || e));
+      alsoServed = [];
     }
+    alsoServed.forEach(function (one) {
+      if (String(one).toUpperCase() === wanted) {
+        taken.push(one + ', the second Kerberos realm the default realm ' +
+                   'answers as in development mode');
+      }
+    });
     realms.forEach(function (other) {
       if (other.id !== id &&
           ownKerberosName(other.overrides).toUpperCase() === wanted) {
@@ -4159,8 +4174,9 @@ function realmSupport() {
             'the name; a realm\'s own /realm/<id>/KdcProxy is pinned to that ' +
             'realm and refuses another realm\'s name with ' +
             'KDC_ERR_WRONG_REALM. What is still the PROCESS\'s: the two ' +
-            'sockets, and the development-mode trust with krb5.trustedRealm ' +
-            '— trust realms do not trust each other\'s Kerberos. Before ' +
+            'sockets. A Kerberos trust is a record in the realm\'s own ' +
+            'directory (ou=kerberosTrusts), so two trust realms may trust ' +
+            'each other\'s Kerberos through a record on each side. Before ' +
             '2026-09-15 there was one KDC, one principal database and one ' +
             'realm name for the whole process. SPNEGO carries the same ' +
             'tickets over HTTP, so its routes answer under each realm\'s ' +

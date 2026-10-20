@@ -4571,6 +4571,7 @@ class AdminConsole {
        'ssf-tab-ssf', 'ssf-tab-caep', 'ssf-tab-risc',
        'kerberos-tab-metadata', 'kerberos-tab-settings',
        'kerberos-tab-claims', 'kerberos-tab-principals',
+       'kerberos-tab-trusts',
        'scim-tab-metadata', 'server', 'clients', 'policies-tab-metadata',
        'tab-password', 'tab-authn', 'tab-serviceAccount', 'tab-passkey',
        'tab-locale', 'tab-profiles', 'listeners-tab-metadata',

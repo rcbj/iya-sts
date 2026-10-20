@@ -227,6 +227,18 @@
     "en": "2a529b7dda255daa",
     "text": "只要此人持有身份验证器应用或 mfa 角色的安全密钥，或者被要求提供第二因素（stsMfaRequired、身份验证策略），在这五个入口，此人自己的密码就会被拒绝——应答方式与密码错误完全相同，并且同样计入速率限制（STS-AUTHN-0213 仅出现在审计行和日志中）。改为接受他在 /portal/app-passwords 上创建的、限定于该入口的应用密码。authn.passwordAloneDoors 指定无论如何都接受密码的入口，这会让每个此类人员在那里降为单一因素。"
   },
+  "mode.requirements.kerberos-sid-filtering.what": {
+    "en": "e3950aa2a75faaec",
+    "text": "Kerberos 信任仅在过滤 SID 时才被承认"
+  },
+  "mode.requirements.kerberos-sid-filtering.development": {
+    "en": "75b6728bdcc111d0",
+    "text": "关闭 quarantined 的信任记录与其他记录一样使用：票据通过它引荐并从它接受，跨越它到达的 PAC 按其信任边界过滤，但不适用隔离规则（仅允许受信任域的 SID 通过）。"
+  },
+  "mode.requirements.kerberos-sid-filtering.product": {
+    "en": "e9c9138415ca5310",
+    "text": "在 krb5.requireSidFilteringInProduct 开启时（默认如此），关闭 quarantined 的信任记录不引荐任何人，也不接受任何内容（STS-KRB-0229 说明原因）。在领域上关闭该设置，即运营者接受伙伴的 SID。"
+  },
   "mode.requirements.kerberos-second-factor.what": {
     "en": "6bb019d0381a77a4",
     "text": "持有或必须持有第二因素的人，仅凭密码无法获得 Kerberos 票据"

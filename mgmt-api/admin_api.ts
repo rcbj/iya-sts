@@ -386,6 +386,90 @@ const FIELD_GRID_MEMBERS = {
                           'list: each one is cleared when the form carries ' +
                           'no value for it.' }
 };
+// THE KERBEROS TRUST RECORD'S FIELDS (#430 Phase 4), the request body of
+// `add` and `update` on `/admin-api/kerberos/trusts`: what the Trusts tab's
+// form posts, under the names `kerberos/krb5_trusts.ts` reads. The lists take
+// a JSON array or the form's text (comma- or line-separated); a checkbox
+// column named `attribute` arrives as `attributes`, and `attributesShown`
+// says the form drew it, so none ticked is an empty list rather than none
+// sent. `forestTrustInfo` is the object, or the form's two text areas.
+const TRUST_FIELDS = {
+    type: 'object',
+    properties: {
+      partnerRealm: { type: 'string',
+                      description: 'The partner Kerberos realm, ' +
+                                   'PARTNER.EXAMPLE.' },
+      netbiosName: { type: 'string',
+                     description: 'Its NetBIOS (flat) name; the realm\'s ' +
+                                  'first label by default.' },
+      partnerSid: { type: 'string',
+                    description: 'Its domain SID, S-1-5-21-a-b-c; a ' +
+                                 'trust realm\'s own by default.' },
+      type: { type: 'string', enum: ['external', 'trust-realm'],
+              description: '`external` — a KDC elsewhere — or ' +
+                           '`trust-realm`, another trust realm of this ' +
+                           'service.' },
+      partnerTrustRealm: { type: 'string',
+                           description: 'For `trust-realm`: that trust ' +
+                                        'realm\'s id.' },
+      direction: { type: 'string',
+                   enum: ['bidirectional', 'inbound', 'outbound'],
+                   description: 'Which keys the record holds.' },
+      keySource: { type: 'string', enum: ['password', 'generate'],
+                   description: 'Where a key it does not hold yet comes ' +
+                                'from.' },
+      password: { type: 'string',
+                  description: 'The shared trust password, for ' +
+                               '`keySource: "password"`. Never shown back.' },
+      attributes: { type: 'array', items: { type: 'string' },
+                    description: '[MS-ADTS] 6.1.6.7.9\'s bits by name.' },
+      attributesShown: { type: 'string',
+                         description: 'Set by the console\'s form: the ' +
+                                      'attribute boxes were drawn.' },
+      suffixes: { type: ['array', 'string'], items: { type: 'string' },
+                  description: 'The DNS suffixes routed to the partner.' },
+      enctypes: { type: ['array', 'string'],
+                  items: { type: ['integer', 'string'] },
+                  description: 'The enctypes its keys are made for, by ' +
+                               'number; AES by default.' },
+      claimsTransformation: { type: 'string',
+                              enum: ['drop-all', 'allow-all'],
+                              description: 'What becomes of a claims set ' +
+                                           'arriving across it.' },
+      forestTrustInfo: { type: ['object', 'string', 'null'],
+                         description: 'A cross-forest trust\'s { domains: ' +
+                                      '[{ sid, dnsName, netbiosName, ' +
+                                      'sidEnabled }], topLevelNames: ' +
+                                      '[{ name, enabled }] }.' },
+      forestDomains: { type: 'string',
+                       description: 'The form\'s text: a domain per line, ' +
+                                    '`<sid> <dns name> <netbios name> ' +
+                                    '[disabled]`.' },
+      forestNames: { type: 'string',
+                     description: 'The form\'s text: a top-level name per ' +
+                                  'line, `<name> [disabled]`.' },
+      enabled: { type: 'boolean',
+                 description: 'Whether it is used; true by default.' }
+    },
+    required: ['partnerRealm'],
+    examples: [{ partnerRealm: 'PARTNER.EXAMPLE', direction: 'bidirectional',
+                 keySource: 'generate', attributes: ['quarantined'],
+                 suffixes: ['partner.example'] }],
+    additionalProperties: false
+};
+
+// The body of the acts that name a trust and nothing else.
+const TRUST_PARTNER_ONLY = {
+  type: 'object',
+  properties: {
+    partnerRealm: { type: 'string',
+                    description: 'The partner Kerberos realm.' }
+  },
+  required: ['partnerRealm'],
+  examples: [{ partnerRealm: 'PARTNER.EXAMPLE' }],
+  additionalProperties: false
+};
+
 const FIELD_GRID_PATTERN = {
   '^field\\.': { type: ['string', 'array'], items: { type: 'string' },
                    description: 'The console form\'s boxes: ' +
@@ -20655,6 +20739,286 @@ class AdminApi {
             },
             responseDescription: '`queued`, the `runId`, and `invalidate: ' +
                                  'true`.' }
+        ] },
+
+      // -----------------------------------------------------------------------
+      // THE KERBEROS TRUSTS (#430 Phase 4, 2026-10-20).
+      //
+      // Rule 7: the Trusts tab of `/admin/kerberos` has seven controls — Add,
+      // and per row Edit, Enable or Disable, Rotate key, Remove and Pair —
+      // and this resource has the same seven, through
+      // `kerberosTrustsAction()` and `kerberosTrustsJson()` in
+      // `admin-core/`, which reach `kerberos/krb5_trusts.ts`.
+      //
+      // **NO KEY AND NO PASSWORD IS IN ANY REPLY**, but one: a key this
+      // service GENERATED (`keySource: "generate"`) is in `shown` once, base64
+      // per enctype, for the partner's administrator to enter on their side.
+      // A trust password is written and never shown back. The audit row of
+      // every act names the trust and never a key.
+      //
+      // **A REALM'S OWN**: a call under a realm prefix reads and writes that
+      // realm's records. `pair` — and `rotate-key` with `mirror` — write the
+      // matching record on ANOTHER trust realm too, so a realm
+      // administrator's token is refused them (`admin-ui/admin_scope.ts`).
+      // -----------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/kerberos/trusts', tag: 'Kerberos',
+        operationId: 'getKerberosTrusts',
+        summary: 'The realm\'s Kerberos trusts, with their keys described ' +
+                 'and never carried',
+        description: 'The trust records of the realm the call is in, paged ' +
+                     'with `?trustsPage=` and `?per=`, and one record whole ' +
+                     'with `?trust=<partner realm>` (`trust`, or ' +
+                     '`unknownTrust` naming a partner this realm holds no ' +
+                     'trust with).\n\nEach row: the partner realm, NetBIOS ' +
+                     'name and domain SID, the type (`external`, ' +
+                     '`trust-realm`), the direction, the [MS-ADTS] ' +
+                     '6.1.6.7.9 attributes by name and as the ' +
+                     '`trustAttributes` mask, the [MS-PAC] 4.1.2.2 ' +
+                     'boundary, the routed DNS suffixes, the enctypes, the ' +
+                     'forest trust information and claims transformation, ' +
+                     'and per key (`incoming`, `outgoing`) whether it is ' +
+                     'held, its kvno, its source and when it was set — the ' +
+                     'incoming side with the PREVIOUS version a rotation ' +
+                     'keeps and until when it is accepted. `health` lists ' +
+                     'the findings the console\'s health column draws ' +
+                     '(`kind`, `level`, `text`).\n\n`form` is what the add ' +
+                     'and edit forms are drawn from: the closed attribute ' +
+                     'set with its contradictions and requirements, the ' +
+                     'types, directions, key sources, enctypes, claims ' +
+                     'transformations, the shortest trust password, and ' +
+                     'the other trust realms a `trust-realm` partner may ' +
+                     'name. `settings` are the four the trusts read. **NO ' +
+                     'KEY MATERIAL IS IN THIS REPLY.**',
+        mirrors: 'GET /admin/kerberos',
+        parameters: this.pagingParameters().filter(function (one) {
+          return one.name === 'per';
+        }).concat(this.detailPagingParameters([
+          { name: 'trusts',
+            description: 'The realm\'s trust records.' }
+        ])).concat(<any[]>[
+          { name: 'trust', in: 'query', required: false,
+            description: 'One partner realm, for its record whole.',
+            schema: { type: 'string' } }
+        ]),
+        responseDescription: 'The trust records with their paging and ' +
+                             'health, the drill-down record, what the forms ' +
+                             'are drawn from, and the trust settings.',
+        responseSchema: { type: 'object',
+                          description: 'The realm\'s Kerberos trusts.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API Kerberos trusts endpoint.");
+          self.sendJson(res, 200, adminViews.kerberosTrustsJson(req));
+          log.debug("Leaving the management API Kerberos trusts endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/kerberos/trusts/:action',
+        tag: 'Kerberos',
+        mirrors: 'POST /admin/kerberos#kerberos-tab-trusts, POST ' +
+                 '/admin/kerberos/trusts',
+        handler: function (req, res) {
+          log.debug("Entering the management API Kerberos trusts action " +
+                    "endpoint.");
+          const body = parseBody(req);
+          let result;
+          try {
+            result = adminActions.kerberosTrustsAction(
+              self.withAction(req, body), { via: 'api',
+                actor: self.callerNameOf(res) || 'admin-api' });
+          } catch (e) {
+            log.error(errorCodes.tag('STS-API-0135') + 'admin-api: a ' +
+                      'Kerberos trusts action threw: ' +
+                      ((e && e.stack) || e));
+            errorCodes.mark(res, 'STS-API-0135');
+            self.sendJson(res, 500, { ok: false, errors: ['The action ' +
+              'failed inside this service; the log says why.'] });
+            log.debug("Leaving the management API Kerberos trusts action " +
+                      "endpoint. Threw.");
+            return;
+          }
+          if (result.ok && result.shown) {
+            // A generated key is in the body.
+            res.set('Cache-Control', 'no-store');
+          }
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                 'STS-ADMIN-0859');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API Kerberos trusts action " +
+                    "endpoint.");
+        },
+        actions: [
+          { action: 'add', operationId: 'addKerberosTrust',
+            summary: 'Add a trust with another Kerberos realm',
+            description: 'Writes a trust record in this realm\'s directory ' +
+                         '(`ou=kerberosTrusts`) for `partnerRealm`. ' +
+                         '`direction` decides which keys it holds — ' +
+                         '`inbound` the incoming `krbtgt/<us>@<partner>` ' +
+                         '(the partner\'s tickets are accepted), `outbound` ' +
+                         'the outgoing `krbtgt/<partner>@<us>` (this realm ' +
+                         'refers to the partner), `bidirectional` both — and ' +
+                         '`keySource` where each comes from: `password`, a ' +
+                         'shared trust password both KDCs derive the key ' +
+                         'from (RFC 3961 string-to-key, RFC 4120\'s default ' +
+                         'salt), written and never shown back; or ' +
+                         '`generate`, random keys returned ONCE in `shown`. ' +
+                         '`attributes` are [MS-ADTS] 6.1.6.7.9\'s bits by ' +
+                         'name (`quarantined` by default); a contradiction ' +
+                         'or a missing requirement is refused. ' +
+                         '`forestTrustInfo` belongs to a cross-forest trust ' +
+                         'only. Refused for this realm\'s own name, a ' +
+                         'partner already held, and every field out of ' +
+                         'shape, each with its own code.',
+            requestBodyRequired: true,
+            requestBody: TRUST_FIELDS,
+            responseDescription: 'The record\'s public view in `trust`, ' +
+                                 'and a generated key once in `shown`.' },
+          { action: 'update', operationId: 'updateKerberosTrust',
+            summary: 'Change a trust\'s fields',
+            description: 'Changes the record for `partnerRealm`: a field ' +
+                         'not given keeps its value. A key already held ' +
+                         'keeps its key — `rotate-key` changes one — and a ' +
+                         '`direction` that adds a side takes `keySource` ' +
+                         'for it, one that drops a side removes that key. ' +
+                         'The partner realm cannot change: every key is ' +
+                         'salted with it.',
+            requestBodyRequired: true,
+            requestBody: TRUST_FIELDS,
+            responseDescription: 'The record\'s public view in `trust`.' },
+          { action: 'enable', operationId: 'enableKerberosTrust',
+            summary: 'Turn a trust on',
+            description: 'The record for `partnerRealm` refers and accepts ' +
+                         'again, with the keys it kept.',
+            requestBodyRequired: true,
+            requestBody: TRUST_PARTNER_ONLY,
+            responseDescription: 'The record\'s public view.' },
+          { action: 'disable', operationId: 'disableKerberosTrust',
+            summary: 'Turn a trust off, keeping its keys',
+            description: 'A disabled trust refers nobody and accepts no ' +
+                         'ticket (`STS-KRB-0229`); its keys are kept, so ' +
+                         '`enable` restores it as it was.',
+            requestBodyRequired: true,
+            requestBody: TRUST_PARTNER_ONLY,
+            responseDescription: 'The record\'s public view.' },
+          { action: 'rotate-key', operationId: 'rotateKerberosTrustKey',
+            summary: 'Replace a trust\'s keys at the next kvno, keeping the ' +
+                     'incoming one for a grace',
+            description: 'New keys for `side` (`both`, the default, ' +
+                         '`incoming` or `outgoing`, of the sides held) at ' +
+                         'the current kvno plus one, from `keySource`. The ' +
+                         'incoming version it replaces still opens the ' +
+                         'partner\'s tickets for `krb5.trustKeyGraceSeconds` ' +
+                         '(by default the ticket lifetime plus the clock ' +
+                         'skew) and is refused KRB_AP_ERR_BADKEYVER after ' +
+                         'it. With `mirror: true` and a `trust-realm` ' +
+                         'partner, that realm\'s record is rotated in the ' +
+                         'same act the other way round — a service ' +
+                         'administrator\'s act. Without it the partner\'s ' +
+                         'administrator gives their side the same password ' +
+                         'or the keys in `shown`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                partnerRealm: { type: 'string',
+                                description: 'The partner Kerberos realm.' },
+                side: { type: 'string',
+                        enum: ['both', 'incoming', 'outgoing'],
+                        description: 'Which keys.' },
+                keySource: { type: 'string', enum: ['password', 'generate'],
+                             description: 'Where the new key comes from.' },
+                password: { type: 'string',
+                            description: 'The new trust password, for ' +
+                                         '`keySource: "password"`.' },
+                mirror: { type: 'boolean',
+                          description: 'Rotate the partner trust realm\'s ' +
+                                       'record too.' }
+              },
+              required: ['partnerRealm', 'keySource'],
+              examples: [{ partnerRealm: 'PARTNER.EXAMPLE',
+                           keySource: 'generate' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The record\'s view, the sides rotated, ' +
+                                 'the partner realm\'s record when ' +
+                                 'mirrored, and a generated key once in ' +
+                                 '`shown`.' },
+          { action: 'remove', operationId: 'removeKerberosTrust',
+            summary: 'Remove a trust and its keys',
+            description: 'Deletes the record for `partnerRealm`, keys and ' +
+                         'all: no referral is made through it and no ticket ' +
+                         'is accepted from it, at once. Confirmed by ' +
+                         '`confirm` repeating the partner realm ' +
+                         '(`STS-ADMIN-0860` otherwise). `disable` keeps the ' +
+                         'keys instead.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                partnerRealm: { type: 'string',
+                                description: 'The partner Kerberos realm.' },
+                confirm: { type: 'string',
+                           description: 'The partner realm again.' }
+              },
+              required: ['partnerRealm', 'confirm'],
+              examples: [{ partnerRealm: 'PARTNER.EXAMPLE',
+                           confirm: 'PARTNER.EXAMPLE' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether it was removed.' },
+          { action: 'pair', operationId: 'pairKerberosTrust',
+            summary: 'Write the matching record on the partner trust realm',
+            description: 'For a record whose partner is another trust ' +
+                         'realm of this service (`partnerRealm`), writes ' +
+                         'that realm\'s record for this one in the same ' +
+                         'act — its incoming key this realm\'s outgoing and ' +
+                         'the other way round, the same attributes and ' +
+                         'enctypes — or, where it already holds one, makes ' +
+                         'its keys match. With `otherRealm` (a trust realm\'s ' +
+                         'id) instead, writes BOTH records from nothing, from ' +
+                         'one password or one generated key set. Either way ' +
+                         'it writes another realm\'s directory, so it is a ' +
+                         'service administrator\'s act.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                partnerRealm: { type: 'string',
+                                description: 'A record held here, to ' +
+                                             'mirror.' },
+                otherRealm: { type: 'string',
+                              description: 'A trust realm\'s id, to pair ' +
+                                           'from nothing.' },
+                direction: { type: 'string',
+                             enum: ['bidirectional', 'inbound', 'outbound'],
+                             description: 'With `otherRealm`: the keys, ' +
+                                          'from this realm\'s side.' },
+                keySource: { type: 'string', enum: ['password', 'generate'],
+                             description: 'With `otherRealm`.' },
+                password: { type: 'string',
+                            description: 'With `keySource: "password"`.' },
+                attributes: { type: 'array',
+                              items: { type: 'string' },
+                              description: 'With `otherRealm`.' },
+                enctypes: { type: ['array', 'string'],
+                            items: { type: ['integer', 'string'] },
+                            description: 'With `otherRealm`.' },
+                suffixes: { type: ['array', 'string'],
+                            items: { type: 'string' },
+                            description: 'With `otherRealm`: what this ' +
+                                         'realm routes to the other.' },
+                partnerSuffixes: { type: ['array', 'string'],
+                                   items: { type: 'string' },
+                                   description: 'With `otherRealm`: what ' +
+                                                'the other routes here.' }
+              },
+              examples: [{ partnerRealm: 'BETA.EXAMPLE' },
+                         { otherRealm: 'beta', keySource: 'generate' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Both records\' views, whether the other ' +
+                                 'was created or matched, and a generated ' +
+                                 'key once in `shown`.' }
         ] },
 
       { method: 'GET', path: BASE + '/audit', tag: 'Audit log',

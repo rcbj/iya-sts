@@ -227,6 +227,18 @@
     "en": "2a529b7dda255daa",
     "text": "Vid de fem dörrarna avvisas personens eget lösenord — besvarat exakt som ett felaktigt lösenord, och räknat mot hastighetsbegränsningen som ett sådant (STS-AUTHN-0213 endast på granskningsraden och i loggen) — när de har en autentiseringsapp eller en säkerhetsnyckel i mfa-rollen, eller en andra faktor krävs av dem (stsMfaRequired, autentiseringspolicyn). Ett APPLÖSENORD som de skapat på /portal/app-passwords, avgränsat till dörren, godtas i stället. authn.passwordAloneDoors anger dörrar som ändå godtar lösenordet, vilket sänker varje sådan person till en faktor där."
   },
+  "mode.requirements.kerberos-sid-filtering.what": {
+    "en": "e3950aa2a75faaec",
+    "text": "Ett Kerberos-förtroende respekteras bara medan det filtrerar SID:er"
+  },
+  "mode.requirements.kerberos-sid-filtering.development": {
+    "en": "75b6728bdcc111d0",
+    "text": "En förtroendepost med quarantined avslaget används som vilken annan som helst: biljetter hänvisas genom den och accepteras från den, och en PAC som kommer över den filtreras som dess förtroendegräns säger, utan karantänens regel att bara den betrodda domänens SID:er passerar."
+  },
+  "mode.requirements.kerberos-sid-filtering.product": {
+    "en": "e9c9138415ca5310",
+    "text": "En förtroendepost med quarantined avslaget hänvisar ingen och accepterar ingenting (STS-KRB-0229 säger varför) medan krb5.requireSidFilteringInProduct är på, vilket är standard. Att slå av den inställningen på sfären är operatören som accepterar partnerns SID:er."
+  },
   "mode.requirements.kerberos-second-factor.what": {
     "en": "6bb019d0381a77a4",
     "text": "En person som har eller måste ha en andra faktor får ingen Kerberos-biljett på enbart ett lösenord"

@@ -227,6 +227,18 @@
     "en": "2a529b7dda255daa",
     "text": "À ces cinq portes, le propre mot de passe de la personne est refusé — avec exactement la même réponse qu’un mauvais mot de passe, et compté comme tel dans la limitation de débit (STS-AUTHN-0213 uniquement sur la ligne d’audit et dans le journal) — dès qu’elle détient une application d’authentification ou une clé de sécurité dans le rôle mfa, ou qu’un second facteur lui est exigé (stsMfaRequired, la politique d’authentification). Un MOT DE PASSE D’APPLICATION qu’elle a créé sur /portal/app-passwords, limité à la porte, est accepté à la place. authn.passwordAloneDoors nomme des portes qui acceptent malgré tout le mot de passe, ce qui ramène chacune de ces personnes à un seul facteur à cet endroit."
   },
+  "mode.requirements.kerberos-sid-filtering.what": {
+    "en": "e3950aa2a75faaec",
+    "text": "Une confiance Kerberos n’est honorée que tant qu’elle filtre les SID"
+  },
+  "mode.requirements.kerberos-sid-filtering.development": {
+    "en": "75b6728bdcc111d0",
+    "text": "Un enregistrement de confiance sans quarantined est utilisé comme n’importe quel autre : les tickets sont référés à travers lui et acceptés depuis lui, et un PAC qui le traverse est filtré selon sa frontière de confiance, sans la règle de la quarantaine selon laquelle seuls les SID du domaine approuvé passent."
+  },
+  "mode.requirements.kerberos-sid-filtering.product": {
+    "en": "e9c9138415ca5310",
+    "text": "Un enregistrement de confiance sans quarantined ne réfère personne et n’accepte rien (STS-KRB-0229 dit pourquoi) tant que krb5.requireSidFilteringInProduct est activé, ce qui est la valeur par défaut. Désactiver ce paramètre sur le domaine, c’est l’opérateur qui accepte les SID du partenaire."
+  },
   "mode.requirements.kerberos-second-factor.what": {
     "en": "6bb019d0381a77a4",
     "text": "Une personne qui détient ou doit détenir un second facteur n’obtient aucun ticket Kerberos sur son seul mot de passe"

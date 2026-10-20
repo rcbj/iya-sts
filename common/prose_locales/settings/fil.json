@@ -5752,8 +5752,8 @@
     "text": "Realm"
   },
   "krb5.realm|description": {
-    "en": "b7b392027324a1ef",
-    "text": "Ang realm na sine-serve ng KDC na ito. Ang lower-case na anyo nito ang domain, kung saan nagmumula ang mga default na service domain at ang domain name ng PAC. Sa isang trust realm, ito ang pangalang ginagamit ng port 88 sa pagruruta ng mga request ng realm na iyon: dapat itong itakda bago ang krb5.enabled, walang dalawang realm ang maaaring magbahagi nito (ni ng krb5.trustedRealm), at inihahambing ito nang hindi pinapansin ang case kapag chine-check iyon."
+    "en": "6542fd41442d0e39",
+    "text": "Ang realm na sine-serve ng KDC na ito. Ang lower-case na anyo nito ang domain, kung saan nagmumula ang mga default na service domain at ang domain name ng PAC. Sa isang trust realm, ito ang pangalang ginagamit ng port 88 sa pagruruta ng mga request ng realm na iyon: dapat itong itakda bago ang krb5.enabled, walang dalawang realm ang maaaring magbahagi nito (ni ng development partner realm na sinasagot ng default realm), at inihahambing ito nang hindi pinapansin ang case kapag chine-check iyon."
   },
   "krb5.realm|restartReason": {
     "en": "f45bb3f394b52261",
@@ -5995,53 +5995,37 @@
     "en": "0ed445787254dab6",
     "text": "binubuo sa startup ang PAC identity ng bawat principal. Maaari pa rin itong dalhin ng isang TRUST REALM: binubuo ang principal database ng realm kapag ino-on ang Kerberos nito at binubuo ulit kapag nagbago ito, kaya walang bahagi ng value ng realm ang nagamit sa startup"
   },
-  "krb5.trustedRealm|label": {
-    "en": "83fea03ad45f6f5a",
-    "text": "Pinagkakatiwalaang realm"
+  "krb5.crossRealmClassicDelegation|label": {
+    "en": "d94511f367aa2305",
+    "text": "Classic na delegation sa kabila ng mga trust"
   },
-  "krb5.trustedRealm|description": {
-    "en": "18a007649941a47a",
-    "text": "Ang pangalawang realm, para sa mga cross-realm referral. Hindi flag ang trust: isa itong shared key na hawak ng isang principal sa bawat realm."
+  "krb5.crossRealmClassicDelegation|description": {
+    "en": "f95686ad2d2053e6",
+    "text": "Kung ang CLASSIC na constrained delegation (appAllowedToDelegateTo sa front end) ay maaaring tumawid sa isang Kerberos trust. Naka-off bilang default: tinutukoy ito sa loob ng iisang realm, at ang resource-based na delegation (appAllowedToActOnBehalfOf sa target, na nagpapangalan ng SPN@REALM) ang tumatawid. Kapag naka-on, sinusuri ng realm ng front end ang sarili nitong listahan bago i-refer ang ebidensya, at itinuturing ito ng realm ng target na nasuri na; dapat itong i-on ng parehong realm."
   },
-  "krb5.trustedRealm|restartReason": {
-    "en": "b7b28d1b7d6102d8",
-    "text": "binubuo sa startup ang pangalawang realm at ang trust sa pagitan nila"
+  "krb5.requireSidFilteringInProduct|label": {
+    "en": "f4bc0b8bb8e18123",
+    "text": "Hingin ang SID filtering sa mga trust"
   },
-  "krb5.trustPassword|label": {
-    "en": "e2d7ee2fece4c004",
-    "text": "Password ng trust"
+  "krb5.requireSidFilteringInProduct|description": {
+    "en": "120e89b9d4c0b3e4",
+    "text": "Sa product mode, ginagamit lamang ang isang Kerberos trust habang nagfi-filter ito ng mga SID (ang quarantined na attribute nito, naka-on bilang default). Ang pag-off nito sa isang realm ay ang operator na tumatanggap ng mga SID ng partner nang hindi fini-filter. Ginagamit ng development ang bawat trust anuman ang sabihin nito."
   },
-  "krb5.trustPassword|description": {
-    "en": "ef84f44ff5ee5b94",
-    "text": "Ang shared secret na hawak ng parehong realm para sa cross-realm trust."
+  "krb5.maxReferralHops|label": {
+    "en": "ae50da753613f751",
+    "text": "Pinakamaraming trust na tinatawid ng isang referral path"
   },
-  "krb5.trustPassword|restartReason": {
-    "en": "de2c8d7ceb818a8d",
-    "text": "hinahango mula rito sa startup ang inter-realm key"
+  "krb5.maxReferralHops|description": {
+    "en": "e88d21d50bcd7495",
+    "text": "Ilang trust ang maaaring tawirin ng isang cross-realm path bago tumanggi ang KDC na ito na i-refer pa ito (KDC_ERR_PATH_NOT_ACCEPTED). Isang pagtawid ang isang direktang trust; nadaragdagan ng isa sa bawat realm na dinaraanan ng referral. Ang mga trust mismo ay mga record sa directory ng realm (ou=kerberosTrusts), at bumubuo lamang ng path sa pamamagitan ng mga record na minarkahang transitive."
   },
-  "krb5.trustedDomainSid|label": {
-    "en": "e860150a3e9f46b7",
-    "text": "Domain SID ng pinagkakatiwalaang domain"
+  "krb5.trustKeyGraceSeconds|label": {
+    "en": "e9a56607c04ebe5c",
+    "text": "Grace para sa na-rotate na trust key (s)"
   },
-  "krb5.trustedDomainSid|description": {
-    "en": "7c21d4f2a2b9776a",
-    "text": "Ang domain SID ng kabilang realm. Sinadyang naiiba ito sa isang ito: ang SID filtering sa isang trust ay tungkol sa kung kaninong domain kabilang ang isang SID."
-  },
-  "krb5.trustedDomainSid|restartReason": {
-    "en": "fc2b22b6756dc2a3",
-    "text": "binubuo sa startup ang mga principal ng pinagkakatiwalaang realm"
-  },
-  "krb5.trustedKrbtgtPassword|label": {
-    "en": "bb06a006346e82df",
-    "text": "Password ng krbtgt ng pinagkakatiwalaang realm"
-  },
-  "krb5.trustedKrbtgtPassword|description": {
-    "en": "fc3a521802800c0d",
-    "text": "Ang krbtgt password ng pinagkakatiwalaang realm."
-  },
-  "krb5.trustedKrbtgtPassword|restartReason": {
-    "en": "5288888535130e80",
-    "text": "hinahango mula rito sa startup ang mga krbtgt key ng realm na iyon"
+  "krb5.trustKeyGraceSeconds|description": {
+    "en": "0ee4268f63c3b908",
+    "text": "Gaano katagal pa nabubuksan ng papasok na inter-realm key na pinalitan ng Rotate key ng isang trust ang mga ticket ng partner, na patuloy na nagse-seal gamit ito hanggang magbago ang sarili nitong panig. ZERO — ang default — ay nangangahulugang krb5.ticketLifetimeSeconds dagdag ang krb5.clockSkew, binabasa kapag sinusuri ang bersyon. Ang isang numero ay ganoong dami ng segundo sa halip: sapat na katagal para mabago ng administrator ng partner ang kanilang panig. Isang naunang bersyon ang pinananatili bawat trust; lampas sa grace nito, tinatanggihan ang ticket sa ilalim nito ng KRB_AP_ERR_BADKEYVER."
   },
   "krb5.spnegoAuthentication|label": {
     "en": "0a014fa4b2685cd7",

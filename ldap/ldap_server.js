@@ -421,6 +421,13 @@ const serverProse = require('../common/server_prose');
 // that loads it in a process with no console, which is what fills the two
 // slots it offers the credential store and the KDC.
 const krb5PersonKeys = require('../kerberos/krb5_person_keys');
+// THE KERBEROS TRUST REGISTER (#430), `ou=kerberosTrusts`, for the policies'
+// reason: a LIBRARY whose store this directory is. It requires `common/`
+// leaves and the vendored codec only, and is built by the composition root
+// beside the KDC (14c) — so this require is a cache hit that moves no route
+// and closes no cycle. What crosses is the three functions its slot below
+// installs, and the seed entries `seed()` writes.
+const krb5Trusts = require('../kerberos/krb5_trusts');
 
 // The port. 389 is the assigned one and this process is root in the container,
 // so it binds it directly; a host run is not root, which is why the variable
@@ -836,6 +843,20 @@ function claimProvidersDn() {
   log.debug("Entering claimProvidersDn().");
   log.debug("Leaving claimProvidersDn().");
   return 'ou=claimproviders,' + baseDn();
+}
+
+// ou=kerberosTrusts IS THE REGISTER OF KERBEROS TRUSTS (#430, 2026-10-19):
+// one entry per partner Kerberos realm, of this service's class
+// `stsKrb5Trust`, modelled on Active Directory's trustedDomain object.
+// `kerberos/krb5_trusts.ts` owns what an entry means; its keys
+// (`stsKrb5TrustKeys`) are sealed where keys persist and withheld from every
+// read (SECRET_ATTRIBUTES). Its own container for `ou=oidfed`'s reason: a
+// trust is a relationship with another realm, not an application of this
+// one.
+function kerberosTrustsDn() {
+  log.debug("Entering kerberosTrustsDn().");
+  log.debug("Leaving kerberosTrustsDn().");
+  return 'ou=kerberosTrusts,' + baseDn();
 }
 
 // ou=attributesources IS THE REGISTER OF ATTRIBUTE SOURCES (#94,
@@ -3144,7 +3165,17 @@ const OWN_NAMES = [
   // value of an `events` entry, appended and never rewritten, merged by
   // value when two nodes append at once (persistence/directory_merge.js).
   // `oidfed/subordinate_events.ts` writes them.
-  'stsOidfedEvent'
+  'stsOidfedEvent',
+
+  // AND THE KERBEROS TRUST REGISTER'S (#430, 2026-10-19): the class of an
+  // `ou=kerberosTrusts` entry, its record as one JSON value, and its keys
+  // (sealed where keys persist, and withheld, SECRET_ATTRIBUTES) — beside
+  // the six names of Active Directory's trustedDomain object ([MS-ADTS]
+  // 6.1.6.7) it mirrors for an `ldapsearch`. `kerberos/krb5_trusts.ts`
+  // writes them.
+  'stsKrb5Trust', 'stsKrb5TrustData', 'stsKrb5TrustKeys',
+  'trustPartner', 'flatName', 'securityIdentifier', 'trustDirection',
+  'trustAttributes', 'trustType'
 ];
 
 // The table itself, built from the two lists. `learnName()` is the ONE way in,
@@ -4336,6 +4367,24 @@ function seed() {
       'Subordinate here is published at the fetch endpoint as signed; an ' +
       'ldapmodify of one changes what this realm vouches for.'
   }, { origin: 'seed' });
+  // THE KERBEROS TRUST REGISTER (#430), structural like the others, with
+  // the development trust with PARTNER.COM in the default realm while it
+  // seeds demonstration data — `krb5_trusts.ts` decides, and answers nothing
+  // anywhere else.
+  putEntry(kerberosTrustsDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'kerberosTrusts',
+    description: 'Kerberos trusts (#430): one entry per partner Kerberos ' +
+      'realm, holding the inter-realm keys this realm shares with it — the ' +
+      'incoming krbtgt/<this realm>@<partner> and the outgoing ' +
+      'krbtgt/<partner>@<this realm> — its attributes and the DNS suffixes ' +
+      'routed to it (kerberos/krb5_trusts.ts). The keys are sealed and ' +
+      'never returned.'
+  }, { origin: 'seed' });
+  krb5Trusts.seedEntries().forEach(function (seeded) {
+    putEntry(kerberosTrustEntryDn(seeded.cn), seeded.attributes,
+             { origin: 'seed' });
+  });
   putEntry(claimProvidersDn(), {
     objectClass: ['top', 'organizationalUnit'],
     ou: 'claimproviders',
@@ -10339,7 +10388,10 @@ const SECRET_ATTRIBUTES = [
   'fedencryptionkey',
   // The realm's Federation Entity Key table (#132): every row carries the
   // private key the realm's federation statements are signed with.
-  'stsoidfedkeys'
+  'stsoidfedkeys',
+  // A Kerberos trust's keys (#430): the shared password or the generated
+  // inter-realm keys, either of which is every ticket the partner accepts.
+  'stskrb5trustkeys'
 ];
 
 const CLIENT_WRITTEN_OPERATIONAL = ['createtimestamp', 'modifytimestamp',
@@ -10773,7 +10825,11 @@ const CREDENTIAL_ATTRIBUTE_DOORS = {
   appenrolledprivatekey: 'EST /serverkeygen',
   stsdevicesecrethash: 'Native SSO, or /admin/devices',
   stsdevicekey: '/portal/devices, or /admin/devices',
-  stsdevicecredentialid: '/portal/devices, or /admin/devices'
+  stsdevicecredentialid: '/portal/devices, or /admin/devices',
+  // A Kerberos trust's keys (#430): written by the trust register, which
+  // seals them and keeps the record that describes them in step.
+  stskrb5trustkeys: 'the Kerberos trust register ' +
+    '(kerberos/krb5_trusts.ts)'
 };
 const CREDENTIAL_ATTRIBUTE_PREFIXES = {
   stsassertion: '/portal/signing-key, or the signing key controls on ' +
@@ -11419,6 +11475,72 @@ function claimSourceTokenHolders() {
   });
   log.debug('Leaving claimSourceTokenHolders(). ' + out.length + '.');
   return out;
+}
+
+// THE KERBEROS TRUST REGISTER (#430): ou=claimproviders' three functions
+// again, over ou=kerberosTrusts, for the same reasons; the container is put
+// back on a write if a restored directory predates it.
+function kerberosTrustEntryDn(cn) {
+  log.debug('Entering kerberosTrustEntryDn().');
+  log.debug('Leaving kerberosTrustEntryDn().');
+  return 'cn=' + escapeDnValue(String(cn)) + ',' + kerberosTrustsDn();
+}
+
+function listKerberosTrustEntries() {
+  log.debug('Entering listKerberosTrustEntries().');
+  const out = entriesUnder(kerberosTrustsDn()).filter(function (stored) {
+    return normalizeDn(stored.dn) !== normalizeDn(kerberosTrustsDn());
+  }).map(function (stored) {
+    const attributes = {};
+    Object.keys(stored.attributes).forEach(function (name) {
+      attributes[name] = stored.attributes[name].slice(0);
+    });
+    return { dn: stored.dn, attributes: attributes };
+  });
+  log.debug('Leaving listKerberosTrustEntries(). ' + out.length + '.');
+  return out;
+}
+
+function writeKerberosTrustEntry(cn, attributes) {
+  log.debug('Entering writeKerberosTrustEntry(). cn=' + cn);
+  const dn = kerberosTrustEntryDn(cn);
+  const existing = getEntry(dn);
+  if (!existing && cappedEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writeKerberosTrustEntry(). The directory is full.');
+    return false;
+  }
+  if (!getEntry(kerberosTrustsDn())) {
+    putEntry(kerberosTrustsDn(), {
+      objectClass: ['top', 'organizationalUnit'],
+      ou: 'kerberosTrusts'
+    }, { origin: 'kerberos trusts' });
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, attributes,
+                          { origin: existing ? existing.origin :
+                                                'kerberos trusts' });
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  log.debug('Leaving writeKerberosTrustEntry(). ' +
+            (existing ? 'Replaced.' : 'Created.'));
+  return true;
+}
+
+function deleteKerberosTrustEntry(cn) {
+  log.debug('Entering deleteKerberosTrustEntry(). cn=' + cn);
+  const stored = getEntry(kerberosTrustEntryDn(cn));
+  if (!stored) {
+    log.debug('Leaving deleteKerberosTrustEntry(). Not here.');
+    return false;
+  }
+  entries.delete(normalizeDn(stored.dn));
+  touchDirectory();
+  log.debug('Leaving deleteKerberosTrustEntry().');
+  return true;
 }
 
 // THE CLAIMS PROVIDER REGISTER (#147): every entry under ou=claimproviders,
@@ -13721,6 +13843,29 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
   log.warn('ldap: kerberos/krb5_person_keys.ts offers no setDirectory(), so ' +
            'no person can hold Kerberos keys and no service principal key ' +
            'can be stored. That is the older register and is not an error.');
+}
+
+// ---------------------------------------------------------------------------
+// THE KERBEROS TRUST REGISTER'S SLOT (#430, 2026-10-19). Rule 3e answers yes
+// both ways round, for the key register's reason one slot up: the register
+// is reached by the KDC (15) and the principal database, so a require from
+// there to this module would register every `/admin/ldap/*` page ahead of
+// the KDC's own routes — and drag the whole directory into the parent
+// project's Kerberos COPY closure — and this module requires the register,
+// so a require back closes a cycle. Three functions, validated whole by the
+// register. They run in the AMBIENT realm, which is what makes the register
+// per realm: the KDC enters the realm a request is for.
+// ---------------------------------------------------------------------------
+if (typeof krb5Trusts.setDirectory === 'function') {
+  krb5Trusts.setDirectory({
+    listKerberosTrustEntries: listKerberosTrustEntries,
+    writeKerberosTrustEntry: writeKerberosTrustEntry,
+    deleteKerberosTrustEntry: deleteKerberosTrustEntry
+  });
+} else {
+  log.warn('ldap: kerberos/krb5_trusts.ts offers no setDirectory(), so ' +
+           'ou=kerberosTrusts is unreachable and Kerberos trusts live in ' +
+           'this process\'s memory only.');
 }
 
 // The SIXTH, and it is the first one that hands over a WRITER as well as

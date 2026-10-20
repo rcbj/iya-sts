@@ -5752,8 +5752,8 @@
     "text": "Dominio"
   },
   "krb5.realm|description": {
-    "en": "b7b392027324a1ef",
-    "text": "El dominio Kerberos que atiende este KDC. Su forma en minúsculas es el dominio DNS, de donde provienen los dominios de servicio predeterminados y el nombre de dominio del PAC. En un dominio de confianza es el nombre por el que el puerto 88 enruta las solicitudes de ese dominio: debe definirse antes que krb5.enabled, ningún par de dominios puede compartirlo (ni krb5.trustedRealm), y al comprobarlo se compara sin distinguir mayúsculas de minúsculas."
+    "en": "6542fd41442d0e39",
+    "text": "El dominio Kerberos que atiende este KDC. Su forma en minúsculas es el dominio DNS, de donde provienen los dominios de servicio predeterminados y el nombre de dominio del PAC. En un dominio de confianza es el nombre por el que el puerto 88 enruta las solicitudes de ese dominio: debe definirse antes que krb5.enabled, ningún par de dominios puede compartirlo (ni el dominio asociado de desarrollo por el que responde el dominio predeterminado), y al comprobarlo se compara sin distinguir mayúsculas de minúsculas."
   },
   "krb5.realm|restartReason": {
     "en": "f45bb3f394b52261",
@@ -5995,53 +5995,37 @@
     "en": "0ed445787254dab6",
     "text": "la identidad PAC de cada principal se construye al arrancar. Un DOMINIO DE CONFIANZA puede tenerlo de todos modos: la base de principales de un dominio se construye cuando se activa su Kerberos y se reconstruye cuando esto cambia, así que nada del valor del dominio se consumió al arrancar"
   },
-  "krb5.trustedRealm|label": {
-    "en": "83fea03ad45f6f5a",
-    "text": "Dominio Kerberos de confianza"
+  "krb5.crossRealmClassicDelegation|label": {
+    "en": "d94511f367aa2305",
+    "text": "Delegación clásica a través de confianzas"
   },
-  "krb5.trustedRealm|description": {
-    "en": "18a007649941a47a",
-    "text": "El segundo dominio Kerberos, para las referencias entre dominios. Una confianza no es un indicador: es una clave compartida que tiene un principal en cada dominio."
+  "krb5.crossRealmClassicDelegation|description": {
+    "en": "f95686ad2d2053e6",
+    "text": "Si la delegación restringida CLÁSICA (appAllowedToDelegateTo en el front end) puede cruzar una confianza Kerberos. Desactivada por defecto: se define dentro de un dominio, y la delegación basada en recursos (appAllowedToActOnBehalfOf en el destino, nombrando SPN@REALM) es la que cruza. Activada, el dominio del front end comprueba su propia lista antes de referir la evidencia, y el dominio del destino la da por comprobada; ambos dominios deben activarla."
   },
-  "krb5.trustedRealm|restartReason": {
-    "en": "b7b28d1b7d6102d8",
-    "text": "el segundo dominio Kerberos y la confianza entre ambos se construyen al arrancar"
+  "krb5.requireSidFilteringInProduct|label": {
+    "en": "f4bc0b8bb8e18123",
+    "text": "Exigir filtrado de SID en las confianzas"
   },
-  "krb5.trustPassword|label": {
-    "en": "e2d7ee2fece4c004",
-    "text": "Contraseña de la confianza"
+  "krb5.requireSidFilteringInProduct|description": {
+    "en": "120e89b9d4c0b3e4",
+    "text": "En modo producto, una confianza Kerberos solo se usa mientras filtra los SID (su atributo quarantined, activado por defecto). Desactivar esto en un dominio es el operador aceptando los SID de un socio sin filtrar. El modo de desarrollo usa cada confianza diga lo que diga esto."
   },
-  "krb5.trustPassword|description": {
-    "en": "ef84f44ff5ee5b94",
-    "text": "El secreto compartido que tienen ambos dominios para la confianza entre dominios."
+  "krb5.maxReferralHops|label": {
+    "en": "ae50da753613f751",
+    "text": "Máximo de confianzas que cruza una ruta de referencia"
   },
-  "krb5.trustPassword|restartReason": {
-    "en": "de2c8d7ceb818a8d",
-    "text": "la clave entre dominios se deriva de ella al arrancar"
+  "krb5.maxReferralHops|description": {
+    "en": "e88d21d50bcd7495",
+    "text": "Cuántas confianzas puede cruzar una ruta entre dominios antes de que este KDC se niegue a referirla más allá (KDC_ERR_PATH_NOT_ACCEPTED). Una confianza directa es un cruce; cada dominio por el que se refiere una ruta suma uno. Las confianzas mismas son registros en el directorio del dominio (ou=kerberosTrusts), y una ruta solo se construye a través de registros marcados como transitivos."
   },
-  "krb5.trustedDomainSid|label": {
-    "en": "e860150a3e9f46b7",
-    "text": "SID del dominio de confianza"
+  "krb5.trustKeyGraceSeconds|label": {
+    "en": "e9a56607c04ebe5c",
+    "text": "Gracia para una clave de confianza rotada (s)"
   },
-  "krb5.trustedDomainSid|description": {
-    "en": "7c21d4f2a2b9776a",
-    "text": "El SID de dominio del otro dominio Kerberos. Difiere de este a propósito: el filtrado de SID a través de una confianza consiste en determinar a qué dominio pertenece un SID."
-  },
-  "krb5.trustedDomainSid|restartReason": {
-    "en": "fc2b22b6756dc2a3",
-    "text": "los principales del dominio de confianza se construyen al arrancar"
-  },
-  "krb5.trustedKrbtgtPassword|label": {
-    "en": "bb06a006346e82df",
-    "text": "Contraseña de krbtgt del dominio de confianza"
-  },
-  "krb5.trustedKrbtgtPassword|description": {
-    "en": "fc3a521802800c0d",
-    "text": "La contraseña de krbtgt del dominio de confianza."
-  },
-  "krb5.trustedKrbtgtPassword|restartReason": {
-    "en": "5288888535130e80",
-    "text": "las claves krbtgt de ese dominio se derivan de ella al arrancar"
+  "krb5.trustKeyGraceSeconds|description": {
+    "en": "0ee4268f63c3b908",
+    "text": "Cuánto tiempo la clave entre dominios entrante que reemplazó Rotar clave de una confianza sigue abriendo los tickets del socio, que sigue sellando con ella hasta que cambie su propio lado. CERO — el valor predeterminado — significa krb5.ticketLifetimeSeconds más krb5.clockSkew, leído cuando se comprueba la versión. Un número es esa cantidad de segundos en su lugar: lo bastante para que el administrador del socio cambie su lado. Se conserva una versión anterior por confianza; pasada su gracia, un ticket con ella se rechaza con KRB_AP_ERR_BADKEYVER."
   },
   "krb5.spnegoAuthentication|label": {
     "en": "0a014fa4b2685cd7",

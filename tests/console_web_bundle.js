@@ -1574,7 +1574,8 @@ function childMain() {
       : '';
     const kerberosTabIds = [
       'kerberos-tab-metadata', 'kerberos-tab-settings',
-      'kerberos-tab-claims', 'kerberos-tab-principals'
+      'kerberos-tab-claims', 'kerberos-tab-principals',
+      'kerberos-tab-trusts'
     ];
     const kerberosTabs = {};
     kerberosTabIds.forEach(function (id) {
@@ -1587,8 +1588,8 @@ function childMain() {
     }) &&
          /<section class="tabpanel first" id="kerberos-tab-metadata">/.test(
            kerberosHtml),
-         'D-Kerberos-tabs. Metadata, Settings, PAC claims and Principals ' +
-         'are tabs on one page, Metadata first',
+         'D-Kerberos-tabs. Metadata, Settings, PAC claims, Principals and ' +
+         'Trusts are tabs on one page, Metadata first',
          kerberosTabIds.filter(function (id) {
            return !kerberosTabs[id];
          }).join(', '));
@@ -1631,7 +1632,14 @@ function childMain() {
          WebForms.resolve(kerberosFormTable,
              '/admin/kerberos#kerberos-tab-principals',
              'rotate-krbtgt') ===
-             '/admin-api/kerberos/principals/rotate-krbtgt',
+             '/admin-api/kerberos/principals/rotate-krbtgt' &&
+         // #430 Phase 4: the Trusts tab's seven controls.
+         ['add', 'update', 'enable', 'disable', 'rotate-key', 'remove',
+          'pair'].every(function (action) {
+           return WebForms.resolve(kerberosFormTable,
+               '/admin/kerberos#kerberos-tab-trusts', action) ===
+               '/admin-api/kerberos/trusts/' + action;
+         }),
          'D-Kerberos-actions. each data tab resolves through its API operation');
 
     // PROTOCOLS → CERT ISSUANCE (2026-10-12): ACME, EST, SCEP and SPIFFE's

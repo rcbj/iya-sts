@@ -1219,6 +1219,14 @@
     "en": "3b66e9eeaaad2290",
     "text": "TRUE ou FALSE, FALSE par défaut : ce service Kerberos est APPROUVÉ POUR LA DÉLÉGATION — sans contrainte (le TRUSTED_FOR_DELEGATION d’Active Directory). Ses tickets de service portent ok-as-delegate, qui indique à un client qu’il peut transférer son TGT ici ; quiconque détient un TGT transféré peut agir au nom de cette personne n’importe où. Le TGT d’une personne protégée n’est jamais transférable ; il n’est donc jamais transféré, quel que soit ce réglage. La délégation contrainte (appAllowedToDelegateTo, appAllowedToActOnBehalfOf) est l’alternative la plus sûre."
   },
+  "applications.schema.attributes.krb5S4uSelfRealm.what": {
+    "en": "1549deb6e1db2854",
+    "text": "LES ROYAUMES KERBEROS DONT CE SERVICE PEUT OBTENIR DES TICKETS S4U2SELF POUR LES UTILISATEURS, en plus du sien. VIDE SIGNIFIE SON PROPRE ROYAUME UNIQUEMENT. Une valeur doit être un royaume dont les confiances de ce royaume acceptent les tickets — une confiance détenant une clé entrante, ou un royaume qu’une confiance transitive achemine — et elle est vérifiée à l’écriture."
+  },
+  "applications.schema.attributes.krb5ForeignTgtDelegation.what": {
+    "en": "8f20493c35397916",
+    "text": "`inherit` (par défaut) ou `deny` : ce que ce service dit d’un TGT qui lui est délégué À TRAVERS UNE CONFIANCE — ok-as-delegate sur ses tickets pour un utilisateur d’un autre royaume. `inherit` suit les attributs de la confiance ([MS-KILE] 3.3.5.7.5) ; `deny` le refuse quoi qu’ils disent. Il ne fait que restreindre : rien ici n’active ce que la confiance n’active pas."
+  },
   "applications.schema.attributes.krb5ServiceKeys.what": {
     "en": "35f24692c1cc40a5",
     "text": "LES CLÉS ALÉATOIRES À LONG TERME D’UN PRINCIPAL DE SERVICE, une par enctype, dans UNE SEULE valeur : un document JSON nommant le SPN, le domaine Kerberos et le kvno à côté des clés, SCELLÉ sous la clé de chiffrement de clés partout où cette clé survit au processus. Une seule valeur plutôt qu’une par enctype, afin qu’une clé ne puisse pas être déplacée vers une autre entrée ou un autre kvno sans que le scellement échoue. Équivalent à un mot de passe : il est RETENU de chaque page et de chaque réponse de /admin-api, et la seule fois où il quitte ce service, c’est sous la forme du keytab que remet une création ou une rotation."
