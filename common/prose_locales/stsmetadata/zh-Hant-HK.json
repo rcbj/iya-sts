@@ -39,6 +39,10 @@
     "en": "7e67adb0d663ac48",
     "text": "partial：AS 交換中的匿名 PKINIT——針對 WELLKNOWN/ANONYMOUS 的未簽署 AuthPack、位於 WELLKNOWN:ANONYMOUS 中帶有匿名旗標且不指名任何人的 TGT，以及 PA-PKINIT-KX（KDC 對工作階段金鑰的貢獻）——作為沒有主機 keytab 之客戶端的 FAST ARMOR（krb5.anonymousPkinit）。依原則它僅止於此：只簽發此領域的 TGT，且 TGS 會拒絕匿名票證。「未」實作：TGS 交換中的匿名票證（第 4.2 節），以及已驗證的客戶端要求匿名票證。"
   },
+  "stsmetadata.specs.ms-sfu.coverage": {
+    "en": "350b1523e8a3e0e8",
+    "text": "partial：S4U2Self（PA-FOR-USER，附第 2.2.1 節的 S4UByteArray 檢查碼，金鑰用途 17 的 HMAC-MD5）與 S4U2Proxy（cname-in-addl-tkt 附證據票證），「雙向」授權——前端的 msDS-AllowedToDelegateTo 與後端的 msDS-AllowedToActOnBehalfOfOtherIdentity，並強制執行兩者之間的不對稱：傳統方式需要可轉送的證據，以資源為基礎的方式需要帶有資源型位元的 PA-PAC-OPTIONS，缺少時以 KDC_ERR_BADOPTION 拒絕。S4U_DELEGATION_INFO 會寫入 PAC。跨信任：為另一領域的用戶執行 S4U2Self，可經過路徑所需的任意多個可轉移信任（亦支援 PA-S4U-X509-USER），以及對另一領域目標的以資源為基礎的 S4U2Proxy，其證據以領域間金鑰進行 PAC 驗證；傳統委派僅在兩個領域都設定 krb5.crossRealmClassicDelegation 時才跨越。「未」實作：U2U 變體；也不嘗試模擬真實網域在任一屬性上的 ACL——兩份清單是 krb5_principals.js 中的設定，並公布於 /admin/delegation。"
+  },
   "stsmetadata.specs.ms-pac.coverage": {
     "en": "22bf6b719bdeefc5",
     "text": "partial：每張票證都攜帶已簽署的 PAC——登入資訊（KERB_VALIDATION_INFO，NDR）、客戶端資訊、UPN/DNS 資訊、屬性與請求者 SID。依第 2.8.2／2.8.3 節，TGT 有兩個簽章，服務票證有四個。krb5.pacClaims 開啟時（#493）會產生「客戶端宣告」（PAC_CLIENT_CLAIMS_INFO，2.11），從不壓縮；在其他領域的 PAC 中抵達的宣告緩衝區會被解碼（包括 XPRESS Huffman）並攜帶。不產生裝置資訊與「裝置」宣告。跨信任抵達的 PAC 在重新簽署前依第 4.1.2.2 節針對該信任邊界的規定進行 SID 篩選——捨棄裝置資訊，除非信任允許，否則捨棄宣告集——轉介的 PAC 以領域間金鑰簽署。"
