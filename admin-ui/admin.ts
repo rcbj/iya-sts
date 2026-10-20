@@ -5420,9 +5420,19 @@ class AdminConsole {
    *   sessions and users, and the path of every page
    */
   consoleJson() {
-    const { log, stats, config, sessions } = this.deps;
+    const { log, stats, config, sessions, credentials } = this.deps;
     log.debug("Entering AdminConsole.consoleJson().");
     const snap = stats.snapshot();
+    // USERS KNOWN IS THE DIRECTORY'S COUNT (rcbj, 2026-10-20), the number
+    // Directory → Users draws as "In the directory": every person under
+    // `ou=users`, counted without listing them. It was the statistics
+    // register's, which holds only the identities this process has SEEN and
+    // at most `MAX_USERS` of them, so the index and the Users page disagreed
+    // on any realm with people nobody had signed in as, and on every
+    // bulk-loaded one. Where the directory offers no tally (no store, a
+    // test's stub) the register's count stands, as the Users page's tiles
+    // fall back to the list's.
+    const tally = credentials.directoryFactorCounts();
     // sessions.size is who this process has cached. While the window is
     // on, the index count is who holds a session. A failed count stays
     // null: the cache size would report a partial map as the whole store.
@@ -5436,7 +5446,7 @@ class AdminConsole {
       calls: snap.calls.total, tokensHeld: snap.tokens.held,
       tokensRevoked: snap.tokens.revoked,
       artifactsHeld: snap.artifacts.held, signOnSessions: signOnSessions,
-      usersKnown: snap.users.known,
+      usersKnown: tally ? tally.people : snap.users.known,
       usersAuthenticatedHere: snap.users.authenticatedHere,
       pages: NAV.filter(function (n) { return !n.hidden; })
         .map(function (n) { return n.path; })

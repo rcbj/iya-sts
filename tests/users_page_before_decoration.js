@@ -659,6 +659,13 @@ function body(t, tally) {
   const roster8 = adminViews.mfaRosterJson({ query: { per: String(PER) } });
   t.equal(JSON.stringify(roster8.directoryCounts), JSON.stringify(wanted),
           '7i. /admin-api/mfa carries the same tiles');
+  // The console's index (rcbj, 2026-10-20): its "Users known" is the number
+  // the Users page draws as "In the directory", not the statistics
+  // register's, which counts only who it has seen and at most MAX_USERS.
+  const admin = require('../admin-ui/admin');
+  t.equal(admin.consoleJson().usersKnown, wanted.people,
+          '7j. the console index\'s usersKnown is the Users page\'s ' +
+          'directory count');
   log.debug("Leaving body().");
 }
 
