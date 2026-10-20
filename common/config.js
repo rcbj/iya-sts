@@ -2645,6 +2645,34 @@ const SETTINGS = [
                  'key already enrolled goes on signing in. Most ' +
                  'authenticators support no ML-DSA yet and cannot register ' +
                  'while this is on.' },
+  // A CLASSICAL AND A POST-QUANTUM PASSKEY SIDE BY SIDE (#643), per realm,
+  // off by default. `authn/webauthn_policy.ts` reads it (`lanes()`), and
+  // refuses it on beside `webauthn.pqcOnly` at every write (its
+  // `laneWriteRule()`, STS-AUTHN-0353).
+  { key: 'webauthn.pqcAlongsideClassical', group: 'WebAuthn',
+    label: 'Post-quantum passkey alongside a classical one',
+    path: 'webauthn.pqcAlongsideClassical',
+    env: 'STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On lets a person hold a classical passkey and a ' +
+                 'post-quantum (ML-DSA) passkey at the same time, on the ' +
+                 'same authenticator where it can make both. Each passkey ' +
+                 'is created in a LANE the person chooses: the classical ' +
+                 'lane requests `webauthn.algorithms` without ML-DSA ' +
+                 '(`ES256` and `RS256` where that leaves none), the ' +
+                 'post-quantum lane requests ML-DSA only. Each lane has its ' +
+                 'own user handle, so the second passkey does not replace ' +
+                 'the first on the authenticator, and its own exclude list; ' +
+                 'a credential manager shows the post-quantum one under a ' +
+                 'name that says its algorithm — `<username>+ml-dsa` when it ' +
+                 'is created, `<username>+ml-dsa-65` (for example) once ' +
+                 'every post-quantum passkey the person holds uses that one ' +
+                 '— which is never a name anybody signs in with. ' +
+                 '`webauthn.maxKeysPerPerson` counts both lanes. ' +
+                 'Cannot be on while `webauthn.pqcOnly` is. Off, every ' +
+                 'ceremony is as it was, and a post-quantum passkey already ' +
+                 'registered goes on signing in; a new one cannot be ' +
+                 'created.' },
 
   { key: 'webauthn.userVerification', group: 'WebAuthn',
     label: 'User verification', path: 'webauthn.userVerification',

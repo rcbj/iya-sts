@@ -173,7 +173,10 @@ const FACTOR_PASSWORD_BODY = vz.object({
 }).strict();
 
 const KEY_BODY = vz.object({
-  key: vt.opt(vt.base64url)
+  key: vt.opt(vt.base64url),
+  // THE LANE A REGISTRATION IS MADE IN (#643): `classical` or `pqc`, where
+  // the realm offers both. Kept on the step; the answer never names it.
+  lane: vt.opt(vt.oneOf(['classical', 'pqc']))
 }).strict();
 
 const CREDENTIAL_BODY = vz.object({
@@ -463,7 +466,9 @@ const OPERATIONS: Operation[] = [
     description: 'The step\'s challenge, the RP ID, the user (its handle ' +
       'and display name), the keys allowed and excluded and the passkey ' +
       'policy\'s options, for `navigator.credentials.create()` or ' +
-      '`.get()` as `mode` says.' },
+      '`.get()` as `mode` says. `lane` (`classical` or `pqc`) chooses the ' +
+      'lane a registration is made in where the realm offers both (#643): ' +
+      'its handle, its algorithms and its exclude list.' },
   { method: 'POST', path: API + '/mfa/:id/webauthn',
     operationId: 'finishPasskeyStep', access: 'mfa',
     mirrors: 'POST /authn/webauthn', action: 'webauthn',
@@ -1364,7 +1369,8 @@ class AuthnApi {
         await authn.mfaPasswordAct(req, res, id, body);
         break;
       case 'passkeyStepOptions':
-        authn.mfaWebauthnOptions(req, res, id, String(body.key || ''));
+        authn.mfaWebauthnOptions(req, res, id, String(body.key || ''),
+                                 String(body.lane || ''));
         break;
       case 'finishPasskeyStep':
         authn.mfaWebauthnAct(req, res, id, body);

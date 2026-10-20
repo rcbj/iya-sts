@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4398** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4403** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 296
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 301
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 713
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1473,6 +1473,11 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0334` | Counting this realm's people for the users list's headline (#610) threw; the list is drawn without the directory's count. | — |
 | `STS-AUTHN-0335` | Counting this realm's credential holders, or which names seen signing in are people in its directory, for the users list's tiles (#610) threw; those tiles are drawn from the list instead. | — |
 | `STS-AUTHN-0336` | Writing the Android marker (stsAndroidAttestedCredential) of a person whose security keys say it is missing or wrong, during the Android attestation recheck's backfill, threw; that person's keys are rechecked only once a later write of them derives it (#615). | — |
+| `STS-AUTHN-0350` | A passkey enrolment was refused: the lane it named is neither "classical" nor "pqc" (#643). | — |
+| `STS-AUTHN-0351` | A post-quantum passkey enrolment was refused: this realm does not offer a post-quantum passkey beside a classical one (webauthn.pqcAlongsideClassical is off, or webauthn.pqcOnly is on). One already enrolled goes on signing in (#643). | — |
+| `STS-AUTHN-0352` | A post-quantum passkey enrolment was refused: the verifier knows no ML-DSA algorithm, so the post-quantum lane would offer nothing (#643). | RFC 9964 |
+| `STS-AUTHN-0353` | A settings write was refused: webauthn.pqcAlongsideClassical and webauthn.pqcOnly cannot both be on (#643). | — |
+| `STS-AUTHN-0354` | A sign-in was refused at the screen: the typed name ends in a post-quantum passkey's suffix (+ml-dsa, +ml-dsa-<n>, +pqc), which is the name a credential manager shows and never a username (#643). | — |
 
 ## STS-OAUTH
 
