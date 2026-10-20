@@ -273,11 +273,18 @@ class FederationPage {
         '"><button type="submit">' +
         t.html('consoleFederation.buttonAddProvider') +
         '</button></div></form>';
-      return '<tr><td>' + kit.esc(p.label) + (p.docs
-          ? '<span class="sub"><a href="' + kit.esc(p.docs) + '">' +
-            t.html('consoleFederation.providerDocs') + '</a></span>'
-          : '') + '</td><td>' + kit.esc(p.protocol) + '</td><td>' +
-        kit.esc(p.note) + '</td><td>' + form + '</td></tr>';
+      // The documentation is a column of its own: inside the Provider cell
+      // the link ran on from the name with nothing between them. The link
+      // shows the documentation's host, which says where it goes and needs
+      // no translation; a profile's `docs` is always an https URL.
+      const docsHost = /^https?:\/\/([^/]+)/.exec(p.docs || '');
+      const docs = p.docs
+        ? '<a href="' + kit.esc(p.docs) + '">' +
+          kit.esc(docsHost ? docsHost[1] : p.docs) + '</a>'
+        : '';
+      return '<tr><td>' + kit.esc(p.label) + '</td><td>' +
+        kit.esc(p.protocol) + '</td><td>' + kit.esc(p.note) + '</td><td>' +
+        docs + '</td><td>' + form + '</td></tr>';
     }).join('');
     return '<h2 data-tab="consumer">' +
       t.html('consoleFederation.headingConsumer') + '</h2>' +
@@ -289,6 +296,7 @@ class FederationPage {
       '<table><tr><th>' + t.html('consoleFederation.thProvider') +
       '</th><th>' + t.html('consoleFederation.thProtocol') + '</th><th>' +
       t.html('consoleFederation.thWhatItIs') + '</th><th>' +
+      t.html('consoleFederation.thDocumentation') + '</th><th>' +
       t.html('consoleFederation.thAddOne') + '</th></tr>' + rows +
       '</table>';
   }

@@ -264,6 +264,7 @@
   "consumerListLink": "List the consumer and social providers only",
   "thProvider": "Provider",
   "thAddOne": "Add one",
+  "thDocumentation": "Documentation",
   "labelClientId": "Client ID",
   "labelClientSecret": "Client secret",
   "buttonAddProvider": "Add",

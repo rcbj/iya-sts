@@ -264,6 +264,7 @@
   "consumerListLink": "只列出消费者和社交提供方",
   "thProvider": "提供方",
   "thAddOne": "添加",
+  "thDocumentation": "文档",
   "labelClientId": "客户端 ID",
   "labelClientSecret": "客户端密钥",
   "buttonAddProvider": "添加",

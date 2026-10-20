@@ -264,6 +264,7 @@
   "consumerListLink": "N’afficher que les fournisseurs grand public et sociaux",
   "thProvider": "Fournisseur",
   "thAddOne": "En ajouter un",
+  "thDocumentation": "Documentation",
   "labelClientId": "ID client",
   "labelClientSecret": "Secret client",
   "buttonAddProvider": "Ajouter",

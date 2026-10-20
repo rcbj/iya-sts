@@ -264,6 +264,7 @@
   "consumerListLink": "只列出消費者與社群提供者",
   "thProvider": "提供者",
   "thAddOne": "新增",
+  "thDocumentation": "文件",
   "labelClientId": "用戶端 ID",
   "labelClientSecret": "用戶端密鑰",
   "buttonAddProvider": "新增",

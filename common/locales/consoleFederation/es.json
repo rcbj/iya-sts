@@ -264,6 +264,7 @@
   "consumerListLink": "Mostrar solo los proveedores de consumo y sociales",
   "thProvider": "Proveedor",
   "thAddOne": "Añadir uno",
+  "thDocumentation": "Documentación",
   "labelClientId": "ID de cliente",
   "labelClientSecret": "Secreto de cliente",
   "buttonAddProvider": "Añadir",
