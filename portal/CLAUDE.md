@@ -816,6 +816,13 @@ authorization request and the sign-out's address are the bytes they were.
   Sign out — `tests/portal_refresh.js` 6 holds Refresh and Sign out side by
   side — with a button per other signed-in account and *Sign in with
   another account*. Sign out goes to `/logout?login_hint=<username>`.
+  **Since #751 its summary reads *Switch user*** and its panel is drawn with
+  no other account signed in too (saying so, `portal.accounts.none`), ending
+  on the line that the account the tab leaves stays signed in
+  (`portal.accounts.kept`) — the console's group, for the console's reasons
+  (`admin-ui/CLAUDE.md` 8c-iv). Off, still not drawn.
+  `tests/vendored/sts_multi_account_tabs.js` 2a switches a real tab to bob
+  and back to alice from it, nothing typed.
 * **A SWITCH** asks over a form typed in, aborts what is in flight —
   `sendOnce()`, `ownerJson()` (the owner token's requests, #607) and the
   token requests — and discards `me`, the page for nobody's locale

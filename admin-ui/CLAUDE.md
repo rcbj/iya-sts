@@ -3823,6 +3823,38 @@ they were (`tests/multi_account_tabs.js` 6).
   nobody in), and one answered after a switch is not kept
   (`tests/multi_account_concurrency_tabs.js` 2, 3). The portal's runtime
   is the same (`portal/CLAUDE.md`).
+* **SWITCH USER IS A GROUP OF ITS OWN (#751, 2026-10-20)** — rcbj: "an
+  option to switch users while keeping the current user signed in". Nothing
+  about the mechanism changed; what changed is that the menu SAYS it.
+  `accountItems()` draws the *Switch user* heading whether or not another
+  account is signed in (with none, `console.shell.menu.switch.none`), the
+  buttons, *Sign in with another account*, and a line that the account the
+  tab leaves stays signed in (`…switch.kept`). **Off it is still not
+  drawn, to the byte** (`tests/multi_account_tabs.js` 6): with the setting
+  off a sign-in as somebody else ENDS the browser's session, so an option
+  promising otherwise would be false — the choice the request left open,
+  kept conservative and the owner's to reverse.
+* **A SWITCH AND THE POPUP'S SIGN-IN AGAIN (#508, #731) CANNOT BE CONFUSED**,
+  and `tests/multi_account_tabs.js` 9 holds why: a switch is a whole-page
+  navigation whose record carries `expect` (the subject chosen), never the
+  popup's `popup.` state, and it is started only by a menu button; the popup
+  is started only by the session-ended bar and asks for the tab's KEPT
+  account by its hint. Once a switch lands the kept account is the one
+  switched to, so the popup then protects THAT one and refuses the account
+  left — which is still signed in, and a press away in the menu.
+* **AN ACCOUNT THE CONSOLE REFUSES (#751)**: a person holding no console role
+  gets the frame with no sections (#454) and so the menu as anybody does. But
+  `GET /admin-api/console` itself can refuse — product mode before the
+  bootstrap claim (`STS-ADMIN-0797`), a policy — and `route()` used to return
+  silently, leaving a tab just switched to such an account BLANK, with no
+  menu to switch back from. `ensureShell()` now keeps the refusal
+  (`shellRefusal`) and reads the account list anyway, and
+  `drawShellRefused()` draws a page saying what the API answered, the
+  Switch user group in `#sts-account-switch` (so another tab's change
+  redraws it) and Sign out; off, Sign out alone. Its words are
+  `consoleRuntime.accounts.refused.*`, English where no catalog is in hand
+  yet (`drawReauthBar()`'s rule) — which, the shell having failed, is a
+  first load's case.
 * **NONE OF IT IS A BOUNDARY.** `/admin-api` decides from the token's own
   subject and session; a tab that kept a stale view would still be refused
   what its account may not do.

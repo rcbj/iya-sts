@@ -9,5 +9,6 @@
   "nav.tls-trust": "客戶端證書信任存放區",
   "nav.users": "用戶",
   "nav.database": "數據庫",
-  "nav.sts-metadata": "服務元數據"
+  "nav.sts-metadata": "服務元數據",
+  "shell.menu.switch": "切換用戶"
 }

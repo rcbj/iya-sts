@@ -57,5 +57,6 @@
   "apps.notDestinationsWhat": "{n} 個{n, plural, one {項目} other {項目}}。已註冊的應用程式不一定是用戶登入的地方——Shared Signals 接收端、SCIM 佈建客戶端、LDAP 繫結者、SPIFFE 工作負載或 WS-Trust 信賴方，都是本服務知道的應用程式，而不是您可以進入的入口。",
   "apps.notLookedWhat": "{total} 個項目中的 {skipped} 個。此頁面會為其列出的每個應用程式評估核發原則，並在 {limit} 個時停止（portal.applicationScanLimit），因為這項工作是在回應本服務所有通訊端的那唯一一個線程上進行。",
   "signedOut.why": "只登出入口網站並不會讓您真正登出：此入口網站是本服務的一般 OpenID Connect 客戶端（<code>sts-user-portal</code>），因此下一頁會再次執行登入流程，遇到單一登入工作階段，然後不需輸入任何內容就讓您重新進入。",
-  "done.tlsRevoked": "該 TLS 客戶端證書已撤銷。從現在起，出示它的瀏覽器都會被拒絕。"
+  "done.tlsRevoked": "該 TLS 客戶端證書已撤銷。從現在起，出示它的瀏覽器都會被拒絕。",
+  "accounts.menu": "切換用戶"
 }

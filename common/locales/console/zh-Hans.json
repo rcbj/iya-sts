@@ -193,8 +193,10 @@
   "nav.crypto-metadata": "密码学",
   "shell.language": "语言",
   "shell.browserLanguage": "使用浏览器的语言",
-  "shell.menu.switch": "切换到其他账户",
+  "shell.menu.switch": "切换用户",
   "shell.menu.switch.title": "以 {user} 的身份使用此标签页。其他标签页保持各自的账户。",
+  "shell.menu.switch.none": "此浏览器中尚无其他已登录的账户。",
+  "shell.menu.switch.kept": "此标签页离开的账户仍保持登录，您可以在这里切换回去。",
   "shell.menu.another": "使用其他账户登录",
   "shell.menu.another.title": "在此标签页中以另一个人的身份登录。已在此浏览器中登录的账户保持登录状态，其他标签页保持各自的账户。"
 }

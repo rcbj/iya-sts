@@ -137,6 +137,11 @@ class ConsoleRuntime extends SpaClient {
   // every move between console pages, and a reload, a new tab or a new
   // sign-in starts with everything closed, which is what was asked for.
   private openSection: string;
+  // WHAT `GET /admin-api/console` ANSWERED WHEN IT REFUSED THIS TAB'S
+  // ACCOUNT (#751): `{ status, json }`, so `route()` draws a page that says
+  // so — with the account menu's Switch user group where the setting is on
+  // — rather than leaving the tab blank. Null otherwise.
+  private shellRefusal: Json;
 
   /**
    * Makes the runtime.
@@ -167,6 +172,7 @@ class ConsoleRuntime extends SpaClient {
     this.submitting = null;
     this.dirty = false;
     this.openSection = '';
+    this.shellRefusal = null;
   }
 
   // --- paths ---------------------------------------------------------------
@@ -1200,7 +1206,17 @@ class ConsoleRuntime extends SpaClient {
   async ensureShell(): Promise<boolean> {
     if (!this.shell || this.shellPrefix !== this.prefix) {
       const shell = await this.apiJson('GET', '/admin-api/console');
+      this.shellRefusal = null;
       if (!shell || shell.status !== 200) {
+        // REFUSED, NOT A SIGN-IN BEGUN (#751): an account switched to that
+        // the console will not open for — product mode before the bootstrap
+        // administrator's claim (STS-ADMIN-0797), or a policy's refusal —
+        // is told so with the browser's other accounts beside it, so the
+        // way back is on the page. The list is read as the shell would.
+        if (shell) {
+          this.shellRefusal = { status: shell.status, json: shell.json };
+          await this.readAccounts('');
+        }
         return false;
       }
       this.shell = shell.json;
@@ -1404,6 +1420,47 @@ class ConsoleRuntime extends SpaClient {
       '</div></div></div>';
   }
 
+  // A PERSON THE CONSOLE WILL NOT OPEN FOR (#751). A person holding no
+  // console role is answered the frame with nothing in it (#454) and gets
+  // the gate's banner and the menu as any reader does; this is the other
+  // case, `GET /admin-api/console` itself refused, which until #751 left
+  // the tab blank — and a tab just switched to such an account, with no
+  // menu to switch back from, was a dead end. The page says what the API
+  // answered, and with several accounts on it carries the Switch user group
+  // (`WebShell.accountItems()`, in `#sts-account-switch` so a change in
+  // another tab redraws it) and Sign out; off, Sign out alone. Nothing here
+  // is a boundary: the API refused, and still refuses.
+  /**
+   * Draws the page for an account the console's shell answer refused.
+   *
+   * @param refusal - `{ status, json }`, what the shell answer was
+   * @returns nothing
+   */
+  drawShellRefused(refusal: Json): void {
+    const t = this.t;
+    const json = (refusal && refusal.json) || {};
+    const why = String(json.error_description || json.error || '');
+    const title = t.has('consoleRuntime.accounts.refused.title')
+      ? t.text('consoleRuntime.accounts.refused.title')
+      : 'The console will not open for this account';
+    const text = (t.has('consoleRuntime.accounts.refused.text')
+      ? t.text('consoleRuntime.accounts.refused.text',
+               { status: String(refusal.status) })
+      : 'The management API answered ' + String(refusal.status) +
+        ' for the account this tab is signed in as.') +
+      (why ? ' ' + why : '');
+    const menu = this.accounts.enabled
+      ? '<div id="' + WebShell.ACCOUNTS_ID + '" class="usermenuaccounts">' +
+        WebShell.accountItems(this.accounts, this.subject, t) + '</div>'
+      : '';
+    this.env.document.title = title + ' — IYA STS admin';
+    this.env.document.body.innerHTML = ConsoleRuntime.realmLinks(
+      '<div class="shell"><div class="main"><div class="card"><h1>' +
+      kit.esc(title) + '</h1>' + kit.note(kit.esc(text)) + menu +
+      WebShell.signOutControl({ session: true }, t) +
+      '</div></div></div>', this.prefix);
+  }
+
   // The page row by its path; a drill-down is the same row with its
   // parameter set, drawn by the row's own `drill`. A drill-down's way up is
   // what `AdminConsole.upTo()` gave: the section, with the list's own state.
@@ -1426,6 +1483,9 @@ class ConsoleRuntime extends SpaClient {
     // fetched leaves it undrawn.
     const identity = this.identity;
     if (!await this.ensureShell() || identity !== this.identity) {
+      if (identity === this.identity && this.shellRefusal) {
+        this.drawShellRefused(this.shellRefusal);
+      }
       return;
     }
     const query = ConsoleRuntime.queryOf(this.env.location.search);
@@ -2681,6 +2741,7 @@ class ConsoleRuntime extends SpaClient {
     }
     this.shell = null;
     this.shellPrefix = '';
+    this.shellRefusal = null;
     this.me = null;
     this.formTable = null;
     this.spec = null;

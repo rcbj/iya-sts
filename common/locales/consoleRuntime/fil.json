@@ -15,5 +15,7 @@
   "openConsole": "Buksan ang console",
   "copied": "Nakopya na",
   "accounts.unsaved": "May mga pagbabago sa pahinang ito na hindi pa nase-save. Lumipat pa rin ng account? Mawawala ang mga ito.",
-  "accounts.otherAccount": "Ibang account ang sign-in na iyon, kaya hindi ito tinanggap ng tab na ito. Mag-sign in muli bilang {user}, o lumipat ng account mula sa account menu."
+  "accounts.otherAccount": "Ibang account ang sign-in na iyon, kaya hindi ito tinanggap ng tab na ito. Mag-sign in muli bilang {user}, o lumipat ng account mula sa account menu.",
+  "accounts.refused.title": "Hindi magbubukas ang console para sa account na ito",
+  "accounts.refused.text": "Sumagot ng {status} ang management API para sa account na naka-sign in sa tab na ito."
 }

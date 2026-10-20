@@ -958,8 +958,21 @@ class WebShell {
   // in flight and discards the tab's views — which the runtime does on the
   // press (`ConsoleRuntime.switchAccount()`), and an account's key is
   // carried, never a sid.
+  //
+  // **SWITCH USER IS A GROUP OF ITS OWN SINCE #751** (rcbj: "an option to
+  // switch users while keeping the current user signed in"). The heading is
+  // drawn whether or not another account is signed in yet — with none it
+  // says so, so the option is where the reader looks for it rather than
+  // appearing only once a second account exists — and a line under the
+  // buttons says what #561 already did and the reader could not see: the
+  // account this tab leaves STAYS SIGNED IN, and switching back is a press
+  // here, not a password. Still only with the setting on: off, the menu is
+  // the one it was before #561, to the byte (`tests/multi_account_tabs.js`
+  // 6) — signing in as somebody else there ENDS the browser's session, so an
+  // option promising otherwise would be false.
   /**
-   * Draws the account menu's list of the browser's other accounts.
+   * Draws the account menu's Switch user group: the browser's other
+   * accounts, Sign in with another account, and what a switch keeps.
    *
    * @param list - `GET /authn-api/accounts`'s answer
    * @param subject - this tab's subject
@@ -971,9 +984,10 @@ class WebShell {
     const others = WebAccounts.live(list).filter(function (one) {
       return String(one.sub || '') !== String(subject || '');
     });
-    return (others.length
-      ? '<p class="usermenuwho">' + t.html('console.shell.menu.switch') +
-        '</p>' + others.map(function (one) {
+    return '<p class="usermenuwho">' + t.html('console.shell.menu.switch') +
+      '</p>' +
+      (others.length
+        ? others.map(function (one) {
           return '<button type="button" class="linklike" ' +
             'data-account-action="switch" data-account-key="' +
             kit.esc(one.key) + '" title="' +
@@ -984,10 +998,13 @@ class WebShell {
               ? ' <span>' + kit.esc(one.username) + '</span>' : '') +
             '</button>';
         }).join('')
-      : '') +
+        : '<p class="usermenuwho" data-account-none="1">' +
+          t.html('console.shell.menu.switch.none') + '</p>') +
       '<button type="button" class="linklike" data-account-action="another" ' +
       'title="' + kit.esc(t.text('console.shell.menu.another.title')) + '">' +
-      t.html('console.shell.menu.another') + '</button>';
+      t.html('console.shell.menu.another') + '</button>' +
+      '<p class="usermenuwho">' + t.html('console.shell.menu.switch.kept') +
+      '</p>';
   }
 
   // ---------------------------------------------------------------------------
