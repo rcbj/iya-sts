@@ -141,5 +141,21 @@
   "secondFactor.emailLinkInstead": "M’envoyer plutôt un lien de connexion par e-mail",
   "home.title": "Poursuivre la connexion",
   "home.text": "Votre compte est conservé dans une autre région de ce service. Continuez pour vous y connecter.",
-  "home.continue": "Continuer"
+  "home.continue": "Continuer",
+  "accounts.title": "Choisissez un compte — service d’authentification",
+  "accounts.heading": "Choisissez un compte",
+  "accounts.at": "Service d’authentification à <code>{base}</code>",
+  "accounts.blurb": "Ce navigateur est connecté à plusieurs comptes. Choisissez celui avec lequel continuer, ou connectez-vous avec un autre compte.",
+  "accounts.blurbNamed": "Choisissez le compte avec lequel continuer vers <code>{application}</code>, ou connectez-vous avec un autre compte.",
+  "accounts.signedIn": "Connectés",
+  "accounts.signedOut": "Déconnectés dans ce navigateur",
+  "accounts.signedInAt": "Connecté le {when}",
+  "accounts.signedOutAt": "Déconnecté le {when}",
+  "accounts.select": "Continuer",
+  "accounts.signInAgain": "Se reconnecter",
+  "accounts.forget": "Oublier",
+  "accounts.anotherHeading": "Un autre compte",
+  "accounts.another": "Utiliser un autre compte",
+  "accounts.full": "Ce navigateur est connecté à {max} comptes, le maximum qu’il peut contenir. Déconnectez-vous de l’un d’eux pour en utiliser un autre.",
+  "accounts.signingInFor": "Connexion pour : <code>{protocol}</code>"
 }

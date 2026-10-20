@@ -89,6 +89,10 @@ const FINGERPRINT_SCRIPT = '/authn/fingerprint.js';
 // `/authn`.
 const CONSENT_PATH = '/oauth2/consent';
 
+// The account picker's page (#561), whose three buttons are three
+// operations told apart by `action`, as the screen's are.
+const ACCOUNTS_PATH = '/authn/accounts';
+
 // How long a pressed ceremony waits before asking once more, where it was
 // refused as pending just after it aborted the autofill.
 const PENDING_RETRY_MS = 300;
@@ -453,6 +457,36 @@ class AuthnSurface extends WebSurface {
     await this.next(answer);
   }
 
+  // --- the account picker (#561) -------------------------------------------
+
+  /**
+   * Sends the account picker's act — Continue or Sign in again (`select`),
+   * Forget, or Use another account — to the operation the index names for
+   * the button pressed, with the account's key (never a sid).
+   *
+   * @param fields - the form's fields: `action` and `account`
+   * @returns nothing
+   */
+  async accountsAct(fields: Json): Promise<void> {
+    if (!await this.ensureIndex()) {
+      this.refused('The service\'s API could not be reached.');
+      return;
+    }
+    const action = String(fields.action || '');
+    const op = this.operationFor(ACCOUNTS_PATH, action);
+    if (!op) {
+      this.refused('This control has no API operation (' + ACCOUNTS_PATH +
+                   ' ' + action + '), so the page refuses it rather than ' +
+                   'guess.');
+      return;
+    }
+    const body = action === 'another' ? {}
+      : { account: String(fields.account || '') };
+    const answer = await this.send(String(op.path)
+      .replace('{id}', encodeURIComponent(this.idHere())), body);
+    await this.next(answer);
+  }
+
   // --- the act ---------------------------------------------------------------
 
   /**
@@ -497,7 +531,8 @@ class AuthnSurface extends WebSurface {
   operationFor(path: string, action: string): Json {
     const rows = (this.indexRows || []).filter(function (op: Json) {
       return op.method === 'POST' && op.mirrors === 'POST ' + path &&
-        (path !== '/authn/login' || op.action === action);
+        ((path !== '/authn/login' && path !== ACCOUNTS_PATH) ||
+         op.action === action);
     });
     return rows.length ? rows[0] : null;
   }
@@ -560,6 +595,10 @@ class AuthnSurface extends WebSurface {
     }
     if (path === CONSENT_PATH) {
       await this.consentAct(fields);
+      return;
+    }
+    if (path === ACCOUNTS_PATH) {
+      await this.accountsAct(fields);
       return;
     }
     if (STEP_ACTS[path]) {

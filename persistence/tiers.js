@@ -348,6 +348,9 @@ const CELL_MINTED = [
   // somebody's sign-in. Each cell's console shows what that cell saw.
   'acme.accountKeys', 'acme.accounts', 'acme.authorizations',
   'acme.certificates', 'acme.orders', 'acme.renewalInfo', 'acme.usedNonces',
+  // A browser's account set and its selection tickets (#561), and their
+  // counters: a browser and its sessions are pinned to one cell.
+  'admin_stats.accountCounts', 'authn.accountSets', 'authn.accountTickets',
   'admin_stats.artifacts', 'admin_stats.calls', 'admin_stats.claimSets',
   'admin_stats.nums', 'admin_stats.scimCounts', 'admin_stats.tokens',
   'admin_stats.users', 'attribute_sources.status', 'audit.events',

@@ -1455,6 +1455,11 @@ let dropped = 0;
 // anyway, because a session lookup must never be able to fail a request.
 // ---------------------------------------------------------------------------
 let actorResolver = null;
+// The session the actor acted as (#561), filled beside it by the same
+// module: with several signed-in accounts in one browser a row names the
+// account the request resolved to, and this says which of its sessions.
+// The same contract — no side effects, never throws, '' for none.
+let actorSessionResolver = null;
 
 // ---------------------------------------------------------------------------
 // WHERE THE ACT CAME FROM: THE CLIENT'S ADDRESS ON EVERY ROW (2026-09-18).
@@ -1582,6 +1587,39 @@ function setActorResolver(fn) {
   log.debug("An audit actor resolver was installed; HTTP events will now " +
             "name the signed-in user where there is one.");
   log.debug("Leaving setActorResolver().");
+}
+
+/**
+ * Installs the function that names the session an HTTP request acted as,
+ * for `recordHttp()`'s `detail.sessionId` (#561).
+ *
+ * @param fn - a function from a request to a session id, '' for none
+ */
+function setActorSessionResolver(fn) {
+  log.debug("Entering setActorSessionResolver().");
+  actorSessionResolver = fn;
+  log.debug("Leaving setActorSessionResolver().");
+}
+
+// The session id the resolver names, or ''. Never throws.
+function actorSessionOfRequest(req) {
+  log.debug("Entering actorSessionOfRequest().");
+  if (!actorSessionResolver) {
+    log.debug("Leaving actorSessionOfRequest(). No resolver.");
+    return '';
+  }
+  try {
+    const sid = String(actorSessionResolver(req) || '');
+    log.debug("Leaving actorSessionOfRequest().");
+    return sid;
+  } catch (e) {
+    // The actor resolver's reason: a nicety on a row must not fail the
+    // request it decorates.
+    log.error(errorCodes.tag('STS-REG-0047') + 'the audit actor session ' +
+              'resolver threw and was ignored: ' + e.message);
+    log.debug("Leaving actorSessionOfRequest(). Threw.");
+    return '';
+  }
 }
 
 function actorOfRequest(req) {
@@ -2051,6 +2089,9 @@ function recordHttp(req, res, detail) {
   // what the resolver reads. Nothing but that gate writes the member.
   const caller = res.locals && res.locals.apiCaller;
   const actor = (caller && String(caller.name || '')) || actorOfRequest(req);
+  // WHICH SESSION (#561): named only where the resolver names one — with
+  // several accounts in one browser — so a row is unchanged otherwise.
+  const actorSession = caller ? '' : actorSessionOfRequest(req);
   const posted = (action === 'admin.change' || action === 'api.change')
     ? actionOf(req) : '';
   const statusOutcome = outcomeOfStatus(res.statusCode);
@@ -2075,7 +2116,7 @@ function recordHttp(req, res, detail) {
              // AS AN OWNER (#607): the management API's gate let the call
              // through on the owner rule, so a delegated change reads as one.
              (caller && caller.owner ? ' as an owner' : ''),
-    detail: {
+    detail: Object.assign({
       method: req.method,
       status: res.statusCode,
       route: info.route || '',
@@ -2084,7 +2125,7 @@ function recordHttp(req, res, detail) {
       query: queryText(req.query),
       postedAction: posted,
       via: caller && caller.owner ? 'owner' : ''
-    }
+    }, actorSession ? { sessionId: actorSession } : {})
   });
   log.debug("Leaving recordHttp(). Recorded as " + action + ".");
   return row;
@@ -2476,6 +2517,7 @@ module.exports = {
   directoryActionFor: directoryActionFor,
   objectKindOf: objectKindOf,
   setActorResolver: setActorResolver,
+  setActorSessionResolver: setActorSessionResolver,
   withSource: withSource,
   currentAddress: ambientAddress,
   currentRequest: ambientRequest,

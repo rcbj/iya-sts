@@ -7571,6 +7571,24 @@ const ENDPOINTS: EndpointEntry[] = [
           'two partners are left the sign-in screen is drawn instead. A ' +
           'static page since #571, drawn from ' +
           '/authn-api/pending/{id}/partners.' },
+  { path: '/authn/accounts', group: 'Authentication',
+    name: 'Account picker',
+    specs: ['oidc'],
+    effect: 'asks which of the browser\'s signed-in accounts a sign-in ' +
+            'continues as; needs an ?authn= id, so following it bare ' +
+            'answers 400',
+    what: 'SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561), where ' +
+          'authn.multipleAccounts is on (it is off by default). A request ' +
+          'from a browser holding more than one signed-in account that ' +
+          'names none of them — no account chosen in its flow, no ' +
+          'login_hint or id_token_hint naming one — is sent here, and so is ' +
+          'OpenID Connect\'s prompt=select_account (Core section 3.1.2.1). ' +
+          'Each signed-in account continues the flow as itself, its ' +
+          'session checked again and a demand for two factors it does not ' +
+          'meet answered by signing in again as it; each signed-out account ' +
+          'the browser remembers can be signed in to again or forgotten; ' +
+          'Use another account is the ordinary sign-in. A static page, ' +
+          'drawn from /authn-api/pending/{id}/accounts.' },
   { path: '/authn/spnego', group: 'Authentication',
     name: 'Sign in with a Kerberos ticket',
     specs: ['rfc4559', 'rfc4178', 'rfc4120', 'rfc3961', 'rfc8129',
@@ -7882,6 +7900,29 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'The federation partners to choose between', specs: [],
     what: 'NON-SPEC (#571). The chooser\'s view, resolved again from the ' +
           'application\'s entry.' },
+  { path: '/authn-api/pending/:id/accounts', group: 'Authentication',
+    name: 'The accounts a sign-in may continue as', specs: [],
+    what: 'NON-SPEC (#561). The account picker\'s view: the browser\'s ' +
+          'signed-in and remembered accounts, each by its key and never a ' +
+          'sid, and the CSRF token its acts carry.' },
+  { path: '/authn-api/pending/:id/accounts/select', group: 'Authentication',
+    name: 'Continue as one of the browser\'s accounts', specs: [],
+    what: 'NON-SPEC (#561). The account\'s session is checked again; the ' +
+          'answer resumes the flow with a single-use selection ticket.' },
+  { path: '/authn-api/pending/:id/accounts/another',
+    group: 'Authentication',
+    name: 'Sign in as another account', specs: [],
+    what: 'NON-SPEC (#561). Use another account: the ordinary sign-in, ' +
+          'refused while every place the browser has is signed in.' },
+  { path: '/authn-api/pending/:id/accounts/forget', group: 'Authentication',
+    name: 'Forget a signed-out account', specs: [],
+    what: 'NON-SPEC (#561). Only an account that signed out in this ' +
+          'browser; no session is touched.' },
+  { path: '/authn-api/accounts', group: 'Authentication',
+    name: 'The accounts this browser holds', specs: [],
+    what: 'NON-SPEC (#561). The browser\'s signed-in and remembered ' +
+          'accounts and their states, for an account menu — never a sid ' +
+          'or a token; empty where authn.multipleAccounts is off.' },
   { path: '/authn-api/pending/:id/password', group: 'Authentication',
     name: 'Sign in with a password', specs: [],
     what: 'NON-SPEC (#571). The Sign In button: JSON, an Origin of this ' +

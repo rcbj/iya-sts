@@ -73,12 +73,12 @@ var config = {
 
   // --- HTTP connections ------------------------------------------------
   http: {
-    keepAliveTimeoutS: 60,   // Idle connection kept for (s)
-    headersTimeoutS: 0,      // Request header timeout (s)
-    maxRequestsPerSocket: 0, // Requests per connection
-    maxConnections: 0,       // Open connections at most
-    http2: true,             // Offer HTTP/2
-    http2MaxConcurrentStreams: 100 // Streams per HTTP/2 connection
+    keepAliveTimeoutS: 60,          // Idle connection kept for (s)
+    headersTimeoutS: 0,             // Request header timeout (s)
+    maxRequestsPerSocket: 0,        // Requests per connection
+    maxConnections: 0,              // Open connections at most
+    http2: true,                    // Offer HTTP/2
+    http2MaxConcurrentStreams: 100  // Streams per HTTP/2 connection
   },
 
   // --- Admin console ---------------------------------------------------
@@ -186,6 +186,9 @@ var config = {
     maxSessions: 100000,            // Most sign-on sessions per realm
     pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
     mfaStepTtlS: 300,               // How long a second-factor step waits (seconds)
+    multipleAccounts: false,        // Several signed-in accounts in one browser
+    maxBrowserAccounts: 10,         // Most accounts one browser remembers
+    rememberedAccountDays: 30,      // How long a signed-out account is remembered (days)
     passwordAloneDoors: "",         // Password-only doors that accept a password alone
     unauthenticatedSessions: false  // Offer "Continue without signing in"
   },

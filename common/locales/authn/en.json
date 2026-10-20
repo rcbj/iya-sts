@@ -141,5 +141,21 @@
   "secondFactor.emailLinkInstead": "Email me a sign-in link instead",
   "home.title": "Continue signing in",
   "home.text": "Your account is held in another region of this service. Continue to sign in there.",
-  "home.continue": "Continue"
+  "home.continue": "Continue",
+  "accounts.title": "Choose an account — authentication service",
+  "accounts.heading": "Choose an account",
+  "accounts.at": "Authentication service at <code>{base}</code>",
+  "accounts.blurb": "This browser is signed in to more than one account. Choose the one to continue with, or sign in with another account.",
+  "accounts.blurbNamed": "Choose the account to continue to <code>{application}</code> with, or sign in with another account.",
+  "accounts.signedIn": "Signed in",
+  "accounts.signedOut": "Signed out in this browser",
+  "accounts.signedInAt": "Signed in {when}",
+  "accounts.signedOutAt": "Signed out {when}",
+  "accounts.select": "Continue",
+  "accounts.signInAgain": "Sign in again",
+  "accounts.forget": "Forget",
+  "accounts.anotherHeading": "Another account",
+  "accounts.another": "Use another account",
+  "accounts.full": "This browser is signed in to {max} accounts, the most it may hold. Sign out of one of them to use another.",
+  "accounts.signingInFor": "Signing in for: <code>{protocol}</code>"
 }

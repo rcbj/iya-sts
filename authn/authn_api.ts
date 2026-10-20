@@ -249,6 +249,16 @@ const LOGOUT_QUERY = vz.object({
   username: vt.opt(vt.name)
 });
 
+// ---------------------------------------------------------------------------
+// THE ACCOUNT PICKER'S BODY (#561): the account's KEY — its subject, or
+// `name:<username>` for one with none (`authn/account_sets.ts`'s
+// `keyOf()`) — and nothing else. Never a sid: the picker is drawn without
+// one and the server finds the session by the key in this browser's set.
+// ---------------------------------------------------------------------------
+const ACCOUNT_BODY = vz.object({
+  account: vz.string().min(1).max(600)
+}).strict();
+
 /**
  * One operation of the API.
  */
@@ -673,6 +683,76 @@ const LOGOUT_OPERATIONS: Operation[] = [
 ];
 
 OPERATIONS.push.apply(OPERATIONS, LOGOUT_OPERATIONS);
+
+// ---------------------------------------------------------------------------
+// SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561): the account picker's
+// view and acts, keyed by the pending sign-in as the chooser's are, and the
+// browser's account list, keyed by the session cookie as the sign-out is.
+// The logic is `authn.ts`'s (`accountsView()`, `accountsAct()`,
+// `browserAccounts()`); every act is bound as every act here is.
+// ---------------------------------------------------------------------------
+const ACCOUNTS_ANSWER = {
+  type: 'object',
+  description: '`redirect`: go to `location` with a GET — the request the ' +
+    'person was choosing an account for, continuing as the chosen ' +
+    'account, or the sign-in that adds one. `stay`: the account was ' +
+    'forgotten; draw the picker again. `refused` (409): `errors` says why, ' +
+    'in English — the account\'s session ended, it is still signed in ' +
+    '(forget), or the browser holds as many accounts as it may.',
+  properties: {
+    ok: { type: 'boolean' },
+    next: { type: 'string', enum: ['redirect', 'stay', 'refused'] },
+    location: { type: 'string' },
+    errors: { type: 'array', items: { type: 'string' } }
+  }
+};
+
+const ACCOUNT_OPERATIONS: Operation[] = [
+  { method: 'GET', path: API + '/pending/:id/accounts',
+    operationId: 'getAccountChoice', access: 'pending',
+    mirrors: 'GET /authn/accounts', handler: 'accountsGet',
+    summary: 'The accounts a sign-in may continue as',
+    description: 'The account picker\'s view: this browser\'s signed-in ' +
+      'accounts and the signed-out ones it remembers — each by its key, ' +
+      'names, state and times, never a sid — whether Use another account ' +
+      'is open, and the protocol\'s own rows; and `csrf`.' },
+  { method: 'POST', path: API + '/pending/:id/accounts/select',
+    operationId: 'selectAccount', access: 'pending',
+    mirrors: 'POST /authn/accounts', action: 'select',
+    handler: 'accountsPost', body: ACCOUNT_BODY, answer: ACCOUNTS_ANSWER,
+    refusedCode: 'STS-AUTHN-0342',
+    summary: 'Continues as one of this browser\'s accounts',
+    description: 'The account is checked again: its session must still be ' +
+      'live in this browser, and a demand for two factors it does not ' +
+      'meet sends the person to sign in again as that account. A ' +
+      'signed-out account goes to the sign-in with its name filled in.' },
+  { method: 'POST', path: API + '/pending/:id/accounts/another',
+    operationId: 'useAnotherAccount', access: 'pending',
+    mirrors: 'POST /authn/accounts', action: 'another',
+    handler: 'accountsPost', body: EMPTY_BODY, answer: ACCOUNTS_ANSWER,
+    refusedCode: 'STS-AUTHN-0342',
+    summary: 'Signs in as another account',
+    description: 'The sign-in the picker stood in front of, with nothing ' +
+      'filled in; refused while every place the browser has is a ' +
+      'signed-in account.' },
+  { method: 'POST', path: API + '/pending/:id/accounts/forget',
+    operationId: 'forgetAccount', access: 'pending',
+    mirrors: 'POST /authn/accounts', action: 'forget',
+    handler: 'accountsPost', body: ACCOUNT_BODY, answer: ACCOUNTS_ANSWER,
+    refusedCode: 'STS-AUTHN-0342',
+    summary: 'Forgets a signed-out account',
+    description: 'Only an account that signed out in this browser; a ' +
+      'signed-in one is signed out at /logout. No session is touched.' },
+  { method: 'GET', path: API + '/accounts', operationId: 'getAccounts',
+    access: 'session', mirrors: null, handler: 'accountsList',
+    summary: 'The accounts this browser holds',
+    description: 'Each signed-in and remembered account of the browser\'s ' +
+      'account set — key, subject, names, state, times, and whether it is ' +
+      'the browser\'s default — never a sid or a token; `enabled` false ' +
+      'and no accounts where authn.multipleAccounts is off.' }
+];
+
+OPERATIONS.push.apply(OPERATIONS, ACCOUNT_OPERATIONS);
 
 // ---------------------------------------------------------------------------
 // THE OAUTH CONSENT SCREEN'S OPERATIONS (#576; rcbj's decision on #576: the
@@ -1411,6 +1491,99 @@ class AuthnApi {
     helpers.log.debug("Entering AuthnApi.logout().");
     helpers.log.debug("Leaving AuthnApi.logout().");
     return require('../logout/logout');
+  }
+
+  // The pending sign-in the picker is for; null with the refusal sent. A
+  // realm with several accounts off has no picker at all.
+  private accountsPendingOf(req: Json, res: Json): Json {
+    const { log, authn, errorCodes } = this.deps;
+    log.debug("Entering AuthnApi.accountsPendingOf().");
+    const id = this.idOf(req, res);
+    if (id === null) {
+      log.debug("Leaving AuthnApi.accountsPendingOf(). No id.");
+      return null;
+    }
+    const enabled = authn.multipleAccounts();
+    const record = enabled ? authn.pendingForAccounts(id) : null;
+    if (!record) {
+      errorCodes.mark(res, enabled ? 'STS-AUTHN-0003' : 'STS-AUTHN-0343');
+      this.refuse(res, 400, 'There is no sign-in waiting on an account ' +
+        'choice under that id, or it has expired. Start the request again ' +
+        'from the application that sent you here.');
+      log.debug("Leaving AuthnApi.accountsPendingOf(). Nothing waiting.");
+      return null;
+    }
+    log.debug("Leaving AuthnApi.accountsPendingOf().");
+    return record;
+  }
+
+  /**
+   * `GET /authn-api/pending/{id}/accounts`: the account picker's view.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns nothing
+   */
+  accountsGet(req: Json, res: Json): void {
+    const { log, authn } = this.deps;
+    log.debug("Entering AuthnApi.accountsGet().");
+    const record = this.accountsPendingOf(req, res);
+    if (!record) {
+      log.debug("Leaving AuthnApi.accountsGet(). Refused.");
+      return;
+    }
+    authn.answerJson(res, 200, { ok: true,
+      view: authn.accountsView(req, record), csrf: this.csrfOf(req),
+      uiLocales: String(record.uiLocales || '') });
+    log.debug("Leaving AuthnApi.accountsGet().");
+  }
+
+  /**
+   * `POST /authn-api/pending/{id}/accounts/…`: an act at the account
+   * picker, handed to `accountsAct()`.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param op - the operation
+   * @returns nothing
+   */
+  accountsPost(req: Json, res: Json, op: Operation): void {
+    const { log, authn } = this.deps;
+    log.debug("Entering AuthnApi.accountsPost(). " + op.operationId);
+    if (this.idOf(req, res) === null || !this.bound(req, res)) {
+      log.debug("Leaving AuthnApi.accountsPost(). Refused at the door.");
+      return;
+    }
+    const body = this.bodyOf(req, res, op);
+    if (!body) {
+      log.debug("Leaving AuthnApi.accountsPost(). The body.");
+      return;
+    }
+    const record = this.accountsPendingOf(req, res);
+    if (!record) {
+      log.debug("Leaving AuthnApi.accountsPost(). Nothing waiting.");
+      return;
+    }
+    authn.accountsAct(req, res, record, { action: String(op.action),
+                                          account: body.account });
+    log.debug("Leaving AuthnApi.accountsPost().");
+  }
+
+  /**
+   * `GET /authn-api/accounts`: the accounts this browser holds, never a
+   * sid or a token.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns nothing
+   */
+  accountsList(req: Json, res: Json): void {
+    const { log, authn } = this.deps;
+    log.debug("Entering AuthnApi.accountsList().");
+    const listed = authn.browserAccounts(req);
+    authn.answerJson(res, 200, Object.assign({ ok: true }, listed,
+                                             { csrf: this.csrfOf(req) }));
+    log.debug("Leaving AuthnApi.accountsList().");
   }
 
   /**

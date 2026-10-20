@@ -141,5 +141,21 @@
   "secondFactor.emailLinkInstead": "改为通过电子邮件发送登录链接",
   "home.title": "继续登录",
   "home.text": "您的账户保存在本服务的另一个区域。请继续，在那里登录。",
-  "home.continue": "继续"
+  "home.continue": "继续",
+  "accounts.title": "选择账号 — 身份验证服务",
+  "accounts.heading": "选择账号",
+  "accounts.at": "身份验证服务位于 <code>{base}</code>",
+  "accounts.blurb": "此浏览器已登录多个账号。请选择要继续使用的账号，或使用其他账号登录。",
+  "accounts.blurbNamed": "请选择继续访问 <code>{application}</code> 所用的账号，或使用其他账号登录。",
+  "accounts.signedIn": "已登录",
+  "accounts.signedOut": "已在此浏览器中退出",
+  "accounts.signedInAt": "登录于 {when}",
+  "accounts.signedOutAt": "退出于 {when}",
+  "accounts.select": "继续",
+  "accounts.signInAgain": "重新登录",
+  "accounts.forget": "忘记",
+  "accounts.anotherHeading": "其他账号",
+  "accounts.another": "使用其他账号",
+  "accounts.full": "此浏览器已登录 {max} 个账号，已达上限。请退出其中一个账号后再使用其他账号。",
+  "accounts.signingInFor": "登录用于：<code>{protocol}</code>"
 }

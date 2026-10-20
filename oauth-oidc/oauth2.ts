@@ -11073,6 +11073,20 @@ class OAuth2Server {
     // Already signed in? Then this is the second pass — back from the
     // authentication service, or a later request on the same session — and the
     // response goes out now.
+    //
+    // WHICH ACCOUNT, WHERE THE BROWSER HOLDS SEVERAL (#561): `login_hint`, and
+    // the `sub` and `sid` of a VERIFIED `id_token_hint` (OIDC Core section
+    // 3.1.2.1), are handed to the sign-in service before the session is
+    // asked for, so the session answered is the one they name. They change
+    // nothing with `authn.multipleAccounts` off.
+    authn.hintAccount(req, {
+      loginHint: String(q.login_hint || ''),
+      sub: idTokenHint && idTokenHint.ok
+        ? String(pairwiseSubjects.localFor(idTokenHint.sub) ||
+                 idTokenHint.sub || '') : '',
+      sid: idTokenHint && idTokenHint.ok && idTokenHint.claims
+        ? String(idTokenHint.claims.sid || '') : ''
+    });
     const session = sessionOf(req);
     const promptList = String(q.prompt || '').split(/\s+/);
     // `select_account` (#118): "The Authorization Server SHOULD prompt the
@@ -11385,6 +11399,24 @@ class OAuth2Server {
           return fail('server_error', e.message);
         });
     }
+    // SEVERAL ACCOUNTS AND NOTHING TO CHOOSE BY (#561): OIDC Core section
+    // 3.1.2.6 names this case — "the End-User is REQUIRED to select a
+    // session" — and prompt=none forbids drawing the picker that would ask.
+    // `accountChoiceNeeded()` is null with `authn.multipleAccounts` off, so
+    // the branch below is then exactly what it was.
+    const accountChoice = promptNone ? authn.accountChoiceNeeded(req) : null;
+    if (accountChoice && accountChoice.reason === 'ambiguous') {
+      authn.noteAccountAmbiguous(req, 'OAuth 2.0 / OIDC',
+                                 'account_selection_required was answered');
+      errorCodes.mark(res, 'STS-OAUTH-0959');
+      log.debug("Leaving OAuth2Server.authorizeEndpoint(). Several " +
+                "accounts, and prompt=none.");
+      return fail('account_selection_required', 'This browser is signed ' +
+        'in to ' + accountChoice.accounts + ' accounts and the request ' +
+        'names none of them, and prompt=none forbids showing the account ' +
+        'picker (OIDC Core section 3.1.2.6). Send login_hint or ' +
+        'id_token_hint, or retry without prompt=none.');
+    }
     if (String(q.prompt || '').split(/\s+/).indexOf('none') >= 0) {
       // OIDC: prompt=none must not show any UI.
       errorCodes.mark(res, 'STS-OAUTH-0170');
@@ -11458,6 +11490,14 @@ class OAuth2Server {
               ? (nameForSubject(pairwiseSubjects.localFor(idTokenHint.sub) ||
                                 idTokenHint.sub) || '') : ''),
       forceMfa: forceMfa, forceKey: !!screen.forceKey,
+      // WHETHER THE ACCOUNT PICKER COMES FIRST (#561), where the browser
+      // holds several accounts: `prompt=login` asks for a fresh sign-in, so
+      // never; `prompt=select_account` (OIDC Core section 3.1.2.1) always.
+      // Read only with `authn.multipleAccounts` on; off, select_account is
+      // the sign-in screen, as it was (the plan's D10).
+      accountChoice: promptList.indexOf('login') >= 0 ? 'never'
+        : (promptList.indexOf('select_account') >= 0 ? 'always' : ''),
+      request: req,
       protocol: 'OAuth 2.0 / OIDC',
       // WHICH APPLICATION this is, so that an entry naming a federation
       // relationship sends the person to that partner instead of to the sign-in

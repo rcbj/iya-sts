@@ -6294,6 +6294,54 @@ const CODES = [
       'keys are rechecked only once a later write of them derives it ' +
       '(#615).',
     spec: '' },
+  // SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561): authn/account_sets.ts
+  // and the account picker, `authn/CLAUDE.md`.
+  { code: 'STS-AUTHN-0337',
+    summary: 'The account picker was asked to continue as an account that ' +
+      'is not live in this browser\'s account set: its session ended ' +
+      'between the page being drawn and the click (an expiry, a sign-out ' +
+      'elsewhere, an administrator), or the account was never in the set. ' +
+      'Nothing was selected and the picker is drawn again.',
+    spec: 'HTTP 409, { ok: false, next: refused, errors }' },
+  { code: 'STS-AUTHN-0338',
+    summary: 'A request carried an account selection ticket (sts_account) ' +
+      'that is unknown, already spent, expired, issued to another ' +
+      'browser\'s account set, for another address, or naming a session no ' +
+      'longer live. It was taken off the request and ignored: the request ' +
+      'resolves its account as if it carried none.',
+    spec: 'none — the parameter is removed before the protocol sees it' },
+  { code: 'STS-AUTHN-0339',
+    summary: 'The account picker was asked to forget an account that is ' +
+      'still signed in. Only a signed-out account can be forgotten; a ' +
+      'signed-in one is signed out at /logout.',
+    spec: 'HTTP 409, { ok: false, next: refused, errors }' },
+  { code: 'STS-AUTHN-0340',
+    summary: 'A sign-in would have added a session to a browser\'s account ' +
+      'set in which every place (authn.maxBrowserAccounts) is held by a ' +
+      'signed-in account, or the picker\'s Use another account was pressed ' +
+      'there. Refused; one account must be signed out first.',
+    spec: 'the sign-in screen is drawn again with the sentence; HTTP 409 ' +
+      'from the picker' },
+  { code: 'STS-AUTHN-0341',
+    summary: 'A protocol hint (login_hint, id_token_hint, a SAML Subject) ' +
+      'named an account that has no live session in this browser\'s ' +
+      'account set. No other account is used in its place: the person is ' +
+      'sent to sign in, with the hint\'s name filled in.',
+    spec: 'none — the sign-in screen, or login_required with prompt=none' },
+  { code: 'STS-AUTHN-0342',
+    summary: 'An act at the account picker carried a body it does not take ' +
+      '(an account key of the wrong shape, an unknown member).',
+    spec: 'HTTP 400, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0343',
+    summary: 'The account picker or one of its operations was reached in a ' +
+      'realm where authn.multipleAccounts is off, or for a sign-in that is ' +
+      'not waiting on an account choice.',
+    spec: 'HTTP 400, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0344',
+    summary: 'Reading or writing a browser\'s account set threw. The ' +
+      'request goes on as if the browser held no set: its sign-on cookie ' +
+      'alone decides, as with authn.multipleAccounts off.',
+    spec: '' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -9601,6 +9649,13 @@ const CODES = [
       'in force, and only its jtis were kept (#614). Refused, and what it ' +
       'bought is revoked.',
     spec: '400 invalid_grant (RFC 6749 sections 4.1.2 and 10.5)' },
+  { code: 'STS-OAUTH-0959',
+    summary: 'An authorization request with prompt=none arrived from a ' +
+      'browser holding more than one signed-in account, and nothing in it ' +
+      '(an account chosen in this flow, login_hint, id_token_hint) says ' +
+      'which; prompt=none forbids showing the account picker (#561).',
+    spec: 'account_selection_required (OpenID Connect Core 1.0 section ' +
+      '3.1.2.6)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4398** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4407** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -63,8 +63,8 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 296
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 713
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 304
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 714
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
@@ -1473,6 +1473,14 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0334` | Counting this realm's people for the users list's headline (#610) threw; the list is drawn without the directory's count. | — |
 | `STS-AUTHN-0335` | Counting this realm's credential holders, or which names seen signing in are people in its directory, for the users list's tiles (#610) threw; those tiles are drawn from the list instead. | — |
 | `STS-AUTHN-0336` | Writing the Android marker (stsAndroidAttestedCredential) of a person whose security keys say it is missing or wrong, during the Android attestation recheck's backfill, threw; that person's keys are rechecked only once a later write of them derives it (#615). | — |
+| `STS-AUTHN-0337` | The account picker was asked to continue as an account that is not live in this browser's account set: its session ended between the page being drawn and the click (an expiry, a sign-out elsewhere, an administrator), or the account was never in the set. Nothing was selected and the picker is drawn again. | HTTP 409, { ok: false, next: refused, errors } |
+| `STS-AUTHN-0338` | A request carried an account selection ticket (sts_account) that is unknown, already spent, expired, issued to another browser's account set, for another address, or naming a session no longer live. It was taken off the request and ignored: the request resolves its account as if it carried none. | none — the parameter is removed before the protocol sees it |
+| `STS-AUTHN-0339` | The account picker was asked to forget an account that is still signed in. Only a signed-out account can be forgotten; a signed-in one is signed out at /logout. | HTTP 409, { ok: false, next: refused, errors } |
+| `STS-AUTHN-0340` | A sign-in would have added a session to a browser's account set in which every place (authn.maxBrowserAccounts) is held by a signed-in account, or the picker's Use another account was pressed there. Refused; one account must be signed out first. | the sign-in screen is drawn again with the sentence; HTTP 409 from the picker |
+| `STS-AUTHN-0341` | A protocol hint (login_hint, id_token_hint, a SAML Subject) named an account that has no live session in this browser's account set. No other account is used in its place: the person is sent to sign in, with the hint's name filled in. | none — the sign-in screen, or login_required with prompt=none |
+| `STS-AUTHN-0342` | An act at the account picker carried a body it does not take (an account key of the wrong shape, an unknown member). | HTTP 400, { ok: false, errors } |
+| `STS-AUTHN-0343` | The account picker or one of its operations was reached in a realm where authn.multipleAccounts is off, or for a sign-in that is not waiting on an account choice. | HTTP 400, { ok: false, errors } |
+| `STS-AUTHN-0344` | Reading or writing a browser's account set threw. The request goes on as if the browser held no set: its sign-on cookie alone decides, as with authn.multipleAccounts off. | — |
 
 ## STS-OAUTH
 
@@ -2195,6 +2203,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0956` | A token exchange presented an actor_token whose aud names neither this authorization server (its issuer or token endpoint) nor the exchanging client (its client_id, identifier or oauthAudience). Refused in every mode (#550). | invalid_request (RFC 8693 section 2.2.2) |
 | `STS-OAUTH-0957` | A client asked, on a token whose subject is an application (client_credentials), for an application permission no role it holds authorizes (rolePermission), and the issuance policy left it off the tokens. A delegated permission (oauthDelegatedPermission) needs a person and does not count here (#551). | none — issued without that scope (RFC 6749 section 3.3); invalid_scope when nothing else was asked for |
 | `STS-OAUTH-0958` | An authorization code was presented again under oauth2.codeReplayIdempotent, and the record of its redemption holds no response to replay: it was redeemed while the relaxation was not in force, and only its jtis were kept (#614). Refused, and what it bought is revoked. | 400 invalid_grant (RFC 6749 sections 4.1.2 and 10.5) |
+| `STS-OAUTH-0959` | An authorization request with prompt=none arrived from a browser holding more than one signed-in account, and nothing in it (an account chosen in this flow, login_hint, id_token_hint) says which; prompt=none forbids showing the account picker (#561). | account_selection_required (OpenID Connect Core 1.0 section 3.1.2.6) |
 
 ## STS-SAML
 

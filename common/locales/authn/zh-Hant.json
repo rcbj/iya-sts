@@ -141,5 +141,21 @@
   "secondFactor.emailLinkInstead": "改以電子郵件傳送登入連結",
   "home.title": "繼續登入",
   "home.text": "您的帳戶保存在本服務的另一個區域。請繼續，在那裡登入。",
-  "home.continue": "繼續"
+  "home.continue": "繼續",
+  "accounts.title": "選擇帳號 — 身分驗證服務",
+  "accounts.heading": "選擇帳號",
+  "accounts.at": "身分驗證服務位於 <code>{base}</code>",
+  "accounts.blurb": "此瀏覽器已登入多個帳號。請選擇要繼續使用的帳號，或使用其他帳號登入。",
+  "accounts.blurbNamed": "請選擇繼續前往 <code>{application}</code> 所用的帳號，或使用其他帳號登入。",
+  "accounts.signedIn": "已登入",
+  "accounts.signedOut": "已在此瀏覽器中登出",
+  "accounts.signedInAt": "登入於 {when}",
+  "accounts.signedOutAt": "登出於 {when}",
+  "accounts.select": "繼續",
+  "accounts.signInAgain": "重新登入",
+  "accounts.forget": "忘記",
+  "accounts.anotherHeading": "其他帳號",
+  "accounts.another": "使用其他帳號",
+  "accounts.full": "此瀏覽器已登入 {max} 個帳號，已達上限。請登出其中一個帳號後再使用其他帳號。",
+  "accounts.signingInFor": "登入用於：<code>{protocol}</code>"
 }
