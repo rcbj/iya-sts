@@ -1327,9 +1327,21 @@
     "en": "51cd295b713684de",
     "text": "簽署金鑰表單因其 CSRF 權杖而被拒絕"
   },
+  "audit.actions.portal.siop.enrol.label": {
+    "en": "9c4ac2b8893fae20",
+    "text": "某人以錢包證明並登記了一個自行簽發主體"
+  },
   "audit.actions.portal.siop.remove.label": {
     "en": "b6f77328c0b99b89",
     "text": "某人移除了自行簽發主體"
+  },
+  "audit.actions.siop.key.pinned.label": {
+    "en": "a2cc99b16a4a406e",
+    "text": "一個登記時未固定金鑰的 did:web 自行簽發主體被固定到其登入所用的金鑰（僅限開發模式）"
+  },
+  "audit.actions.siop.key.refused.label": {
+    "en": "ce5975b773d8c9d7",
+    "text": "一次 did:web 自行簽發登入被拒絕：金鑰不是登記時固定的金鑰，或沒有固定任何金鑰"
   },
   "audit.actions.portal.vc.offer.label": {
     "en": "631dece03539cd4a",

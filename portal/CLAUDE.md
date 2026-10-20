@@ -1527,6 +1527,18 @@ never whose it is (`STS-PORTAL-0087` when it is not theirs).
 administrator enrols by value from `/admin/users` and `/admin-api`
 (`oid4vc/CLAUDE.md`, 3ba).
 
+**Since #693 (2026-10-20) each row says HOW it was enrolled** — *Proved with
+your wallet* (`proof: wallet`) or *Added by an administrator* (`admin`, by
+value, unproven) — because a subject released to a relying party must be one
+the person proved, and the person is the one who can tell. **Proving a
+subject that is already theirs proves it again** rather than being refused:
+that is how an administrator's entry becomes a proved one, and how a did:web
+whose document now names another key is re-pinned — the one re-pin flow,
+chosen because it costs nothing new: the same link, the same transaction,
+the same `siop.enrol()`. The enrolment writes `portal.siop.enrol` (the
+removal's shape, `STS-VC-0094` on a refusal) from `oid4vc/vc_signin.ts`,
+where the enrolment happens. The pin itself is `oid4vc/CLAUDE.md`'s (3ba).
+
 ## `/portal/wallet`: A CREDENTIAL ABOUT YOURSELF, INTO YOUR OWN WALLET (2026-10-12, #589)
 
 The third page here that HANDS SOMEBODY A CREDENTIAL, and the first whose

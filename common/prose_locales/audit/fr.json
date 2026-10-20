@@ -1327,9 +1327,21 @@
     "en": "51cd295b713684de",
     "text": "Un formulaire de clé de signature a été refusé en raison de son jeton CSRF"
   },
+  "audit.actions.portal.siop.enrol.label": {
+    "en": "9c4ac2b8893fae20",
+    "text": "Une personne a enrôlé un sujet auto-émis en le prouvant avec un portefeuille"
+  },
   "audit.actions.portal.siop.remove.label": {
     "en": "b6f77328c0b99b89",
     "text": "Une personne a retiré un sujet auto-émis"
+  },
+  "audit.actions.siop.key.pinned.label": {
+    "en": "a2cc99b16a4a406e",
+    "text": "Un sujet auto-émis did:web enrôlé sans clé épinglée a été épinglé à la clé avec laquelle il s’est connecté (développement uniquement)"
+  },
+  "audit.actions.siop.key.refused.label": {
+    "en": "ce5975b773d8c9d7",
+    "text": "Une connexion auto-émise did:web a été refusée : la clé n’était pas celle épinglée à l’enrôlement, ou aucune n’était épinglée"
   },
   "audit.actions.portal.vc.offer.label": {
     "en": "631dece03539cd4a",

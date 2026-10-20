@@ -1588,8 +1588,8 @@
     "text": "非規格端點（#218）。以 JSON 提供的 GET /admin/devices/monitor：註冊、移除與逐出的計數及逐日時間軸（?days=）。"
   },
   "stsmetadata.endpoints./admin-api/users/self-issued-subjects.what": {
-    "en": "02ba0c938388e35a",
-    "text": "非規格端點（#129）。為某人註冊的 DID 與 JWK 指紋，各附其標籤與註冊者，並說明 oid4vp.signInSelfIssued 是否開啟。POST /admin-api/users/enrol-self-issued-subject 以值註冊一個；/admin-api/users/remove-self-issued-subject 會將其移除。對應此人 /admin/users 頁面上的自我簽發 ID 區塊。"
+    "en": "5992e8bdddc060a8",
+    "text": "非規格端點（#129）。為某人註冊的 DID 與 JWK 指紋，各附其標籤、註冊者與註冊方式（由當事人的錢包證明，或依值），did:web 並附其固定的金鑰（#693），並說明 oid4vp.signInSelfIssued 是否開啟。POST /admin-api/users/enrol-self-issued-subject 以值註冊一個，並取得 did:web 的文件以固定其金鑰；/admin-api/users/remove-self-issued-subject 會將其移除。對應此人 /admin/users 頁面上的自我簽發 ID 區塊。"
   },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",

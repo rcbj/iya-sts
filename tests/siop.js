@@ -21,13 +21,22 @@
 //      that refuses — iss, the thumbprint, a private sub_jwk, the signature,
 //      aud, nonce, exp, iat, `none`;
 //   4. a did:jwk subject, and a kid naming another DID;
-//   5. a did:web subject: never fetched unenrolled; fetched, and its kid held
-//      to the authentication relationship, once enrolled;
+//   5. a did:web subject: never fetched unenrolled; enrolled by value only
+//      with its authentication keys fetched and pinned (#693); fetched, and
+//      its kid held to the authentication relationship and the pin, once
+//      enrolled; never fetched for a stale token; a changed key refused;
 //   6. whom it signs in: the enrolled person, or nobody (STS-VC-0091);
 //   7. the request the Verifier builds: id_token and vp_token id_token,
 //      form_post, and the four Client Identifier prefixes — the DID URL kid,
 //      the attestation in the `jwt` header, a configured attestation checked,
-//      and the Entity Configuration.
+//      and the Entity Configuration;
+//   8. provenance (#693): by value or proved, and a value from before it;
+//   9. a did:web enrolled before the pin: product refuses, development pins
+//      on first use;
+//  10. a did:web enrolled by proof, inside its own enrolment only, once, and
+//      proved again to re-pin a changed key;
+//  11. what a fetch may reach: an internal address refused in product, and
+//      a by-value did:web with no key to pin refused.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -75,6 +84,215 @@ function idToken(pair, claims, header) {
                            { algorithm: 'ES256', header: header || {} });
 }
 
+// A did:web's document, naming one key as its authentication method `#k1`.
+function didWebDoc(did, jwk) {
+  log.debug("Entering didWebDoc().");
+  log.debug("Leaving didWebDoc().");
+  return { id: did,
+           verificationMethod: [{ id: did + '#k1', type: 'JsonWebKey2020',
+                                  controller: did, publicKeyJwk: jwk }],
+           authentication: ['#k1'] };
+}
+
+// THE FOUR PREREQUISITES OF #693, in process: provenance, the pin (and an
+// enrolment from before it, per mode), a did:web enrolled by proof inside
+// its own enrolment transaction only, and the by-value refusal.
+async function prerequisites(t, expect) {
+  log.debug("Entering prerequisites().");
+  const credentials = require('../common/credentials');
+  const mode = require('../common/mode');
+  const docs = {};
+  let dials = 0;
+  const audited = [];
+  const stubbed = new siop.Siop(Object.assign(siop.Siop.defaultDeps(), {
+    fetchDocument: function (url) {
+      dials += 1;
+      return docs[url] ? Promise.resolve(docs[url])
+                       : Promise.reject(new Error('it answered 404'));
+    },
+    audit: function (event) {
+      audited.push(event);
+    } }));
+  const tokenFor = function (pair, did, claims) {
+    log.debug("Entering tokenFor().");
+    log.debug("Leaving tokenFor().");
+    return idToken(pair, Object.assign({ iss: did, sub: did }, claims || {}),
+                   { kid: did + '#k1' });
+  };
+  // An enrolment transaction's expectation: one dial, counted.
+  const enrolling = function (username) {
+    log.debug("Entering enrolling().");
+    const state = { dialled: 0 };
+    log.debug("Leaving enrolling().");
+    return { state: state, expect: Object.assign({}, expect, {
+      enrolment: { username: username, mayDial: function () {
+        state.dialled += 1;
+        return state.dialled === 1;
+      } } }) };
+  };
+  ['siop-carol', 'siop-dave'].forEach(function (name) {
+    ldap.createUser(name, { invent: false,
+      attributes: { givenName: name, sn: 'Self' } });
+  });
+
+  t.log.info('=== 8. provenance (#693) ===');
+  t.check(siop.list('siop-alice').every(function (one) {
+            return one.proof === 'admin';
+          }) && siop.provenSubjectsOf('siop-alice').length === 0,
+          '8a. what an administrator enrolled is by value, and not proved');
+  const carolPair = keyPair();
+  const carolDid = 'did:web:carol.test:wallet';
+  const carolUrl = 'https://carol.test/wallet/did.json';
+  docs[carolUrl] = didWebDoc(carolDid, carolPair.jwk);
+  const carolPrint = stsCrypto.jwkThumbprint(keyPair().jwk);
+  // Two values as they were written before #693: no `proof`, no pin.
+  credentials.writeSelfIssuedSubjects('siop-carol', [
+    JSON.stringify({ subject: 'urn:ietf:params:oauth:jwk-thumbprint:sha-256:' +
+                              carolPrint, label: '',
+                     enrolledAt: new Date().toISOString(),
+                     by: 'self (SIOPv2)' }),
+    JSON.stringify({ subject: carolDid, label: '',
+                     enrolledAt: new Date().toISOString(), by: 'an-admin' })]);
+  const carolHeld = siop.list('siop-carol');
+  t.check(carolHeld[0].proof === 'wallet' && carolHeld[1].proof === 'admin' &&
+          siop.provenSubjectsOf('siop-carol').length === 1,
+          '8b. a value from before #693 reads as proved when the self path ' +
+          'wrote it, and as by value otherwise', JSON.stringify(carolHeld));
+
+  t.log.info('=== 9. an enrolment from before the pin, per mode ===');
+  t.check(mode.pinsSelfIssuedKeysOnFirstUse() === true,
+          '9a. development pins on first use');
+  config.setOverride('global.mode', 'product');
+  let legacy;
+  try {
+    t.check(mode.pinsSelfIssuedKeysOnFirstUse() === false,
+            '9b. product does not');
+    legacy = await stubbed.verifyIdToken(tokenFor(carolPair, carolDid),
+                                         expect);
+  } finally {
+    config.clearOverride('global.mode');
+  }
+  t.check(!legacy.ok && legacy.errorCode === 'STS-VC-0127' &&
+          !siop.list('siop-carol')[1].pinnedKeys &&
+          audited.some(function (e) {
+            return e.action === 'siop.key.refused' &&
+                   e.errorCode === 'STS-VC-0127';
+          }),
+          '9c. product refuses an unpinned did:web (STS-VC-0127), audited, ' +
+          'and pins nothing', JSON.stringify(legacy.checks));
+  const tofu = await stubbed.verifyIdToken(tokenFor(carolPair, carolDid),
+                                           expect);
+  t.check(tofu.ok && JSON.stringify(siop.list('siop-carol')[1].pinnedKeys) ===
+            JSON.stringify([stsCrypto.jwkThumbprint(carolPair.jwk)]) &&
+          audited.some(function (e) {
+            return e.action === 'siop.key.pinned' && e.actor === 'siop-carol';
+          }),
+          '9d. development signs it in and pins that key, audited',
+          JSON.stringify(tofu.checks));
+  const carolNew = keyPair();
+  docs[carolUrl] = didWebDoc(carolDid, carolNew.jwk);
+  const afterPin = await stubbed.verifyIdToken(tokenFor(carolNew, carolDid),
+                                               expect);
+  t.check(!afterPin.ok && afterPin.errorCode === 'STS-VC-0126',
+          '9e. and once pinned, another key is refused in development too');
+
+  t.log.info('=== 10. a did:web enrolled by proof ===');
+  const davePair = keyPair();
+  const daveDid = 'did:web:dave.test';
+  docs['https://dave.test/.well-known/did.json'] =
+    didWebDoc(daveDid, davePair.jwk);
+  const daveEnrol = enrolling('siop-dave');
+  let before = dials;
+  const wrongNonce = await stubbed.verifyIdToken(tokenFor(davePair, daveDid,
+    { nonce: 'not-this-one' }), daveEnrol.expect);
+  t.check(!wrongNonce.ok && dials === before && daveEnrol.state.dialled === 0,
+          '10a. an enrolment answered for another nonce dials nothing');
+  const proved = await stubbed.verifyIdToken(tokenFor(davePair, daveDid),
+                                             daveEnrol.expect);
+  t.check(proved.ok && dials === before + 1 &&
+          proved.keyThumbprint === stsCrypto.jwkThumbprint(davePair.jwk),
+          '10b. inside its own enrolment an unenrolled did:web is fetched, ' +
+          'once, and the key that signed the proof is named',
+          JSON.stringify(proved.checks));
+  before = dials;
+  const twice = await stubbed.verifyIdToken(tokenFor(davePair, daveDid),
+                                            daveEnrol.expect);
+  t.check(!twice.ok && twice.errorCode === 'STS-VC-0128' && dials === before,
+          '10c. one enrolment fetches one document (STS-VC-0128)');
+  const daveIn = siop.enrol('siop-dave', daveDid, 'w', 'self (SIOPv2)',
+    { proof: siop.PROOF_WALLET, pinnedKeys: [proved.keyThumbprint] });
+  t.check(daveIn.ok && daveIn.enrolled.proof === 'wallet' &&
+          siop.provenSubjectsOf('siop-dave').map(function (one) {
+            return one.subject;
+          }).join() === daveDid,
+          '10d. enrolled as proved, its key pinned, and a proven subject',
+          JSON.stringify(daveIn));
+  const daveSignIn = await stubbed.verifyIdToken(tokenFor(davePair, daveDid),
+                                                 expect);
+  t.check(daveSignIn.ok && stubbed.signInOutcome(daveSignIn).username ===
+            'siop-dave',
+          '10e. and it signs its person in with the pinned key');
+  // A changed document, proved again inside an enrolment: the re-pin.
+  const carolAgain = enrolling('siop-carol');
+  const reproved = await stubbed.verifyIdToken(tokenFor(carolNew, carolDid),
+                                               carolAgain.expect);
+  const repinned = siop.enrol('siop-carol', carolDid, '', 'self (SIOPv2)',
+    { proof: siop.PROOF_WALLET, pinnedKeys: [reproved.keyThumbprint] });
+  const carolNow = await stubbed.verifyIdToken(tokenFor(carolNew, carolDid),
+                                               expect);
+  t.check(reproved.ok && repinned.ok && repinned.again &&
+          repinned.enrolled.proof === 'wallet' && carolNow.ok &&
+          siop.list('siop-carol').length === 2,
+          '10f. proving an enrolled did:web again re-pins it to the new key, ' +
+          'proved, in place', JSON.stringify(repinned));
+  t.check(/already enrolled/.test(siop.enrol('siop-carol', carolDid, '',
+    'an-admin', { pinnedKeys: [reproved.keyThumbprint] }).error || ''),
+          '10g. an administrator\'s second enrolment of it is still refused');
+
+  t.log.info('=== 11. what a fetch may reach ===');
+  const real = new siop.Siop(Object.assign(siop.Siop.defaultDeps(), {
+    audit: function () {
+      return null;
+    } }));
+  const insideDid = 'did:web:127.0.0.1%3A9:inside';
+  const insidePair = keyPair();
+  config.setOverride('global.mode', 'product');
+  let inside;
+  try {
+    inside = await real.verifyIdToken(tokenFor(insidePair, insideDid),
+                                      enrolling('siop-dave').expect);
+  } finally {
+    config.clearOverride('global.mode');
+  }
+  t.check(!inside.ok && inside.errorCode === 'STS-VC-0128' &&
+          inside.checks.some(function (c) {
+            return c.name === 'subject key' &&
+                   /own network|internal|outbound/.test(c.detail);
+          }),
+          '11a. in product an enrolment\'s did:web at an internal address is ' +
+          'refused by fetchPublished(), unfetched (STS-VC-0128)',
+          JSON.stringify(inside.checks));
+  before = dials;
+  const unfetchable = await stubbed.enrolByValue('siop-dave',
+    'did:web:nowhere.test', '', 'an-admin');
+  t.check(!unfetchable.ok && unfetchable.code === 'STS-ADMIN-0871' &&
+          dials === before + 1 && !siop.ownerOf('did:web:nowhere.test'),
+          '11b. a by-value did:web whose document cannot be fetched is ' +
+          'refused (STS-ADMIN-0871), not enrolled unpinned');
+  docs['https://keyless.test/.well-known/did.json'] = {
+    id: 'did:web:keyless.test', authentication: ['#k1'] };
+  const keyless = await stubbed.enrolByValue('siop-dave',
+    'did:web:keyless.test', '', 'an-admin');
+  t.check(!keyless.ok && keyless.code === 'STS-ADMIN-0871',
+          '11c. so is one whose document names no authentication key');
+  before = dials;
+  const taken = await stubbed.enrolByValue('siop-dave', carolDid, '',
+                                           'an-admin');
+  t.check(!taken.ok && dials === before,
+          '11d. and one that is somebody else\'s is refused before any fetch');
+  log.debug("Leaving prerequisites().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   try {
@@ -82,6 +300,7 @@ async function run(t) {
   } finally {
     config.clearOverride('oid4vp.clientIdPrefix');
     config.clearOverride('oid4vp.verifierAttestation');
+    config.clearOverride('global.mode');
   }
   log.debug("Leaving run().");
 }
@@ -201,7 +420,7 @@ async function body(t) {
   t.log.info('=== 5. a did:web subject ===');
   const webDid = 'did:web:wallet.test%3A8443:alice';
   let fetched = [];
-  const doc = { id: webDid,
+  let doc = { id: webDid,
     verificationMethod: [{ id: webDid + '#k1', type: 'JsonWebKey2020',
                            controller: webDid,
                            publicKeyJwk: alicePair.jwk },
@@ -209,29 +428,76 @@ async function body(t) {
                            controller: webDid,
                            publicKeyJwk: other.jwk }],
     authentication: ['#k1'] };
+  const audited = [];
   const stubbed = new siop.Siop(Object.assign(siop.Siop.defaultDeps(), {
     fetchDocument: function (url) {
       fetched.push(url);
       return Promise.resolve(doc);
+    },
+    audit: function (event) {
+      audited.push(event);
     } }));
   const webToken = idToken(alicePair, { iss: webDid, sub: webDid },
                            { kid: webDid + '#k1' });
   const unenrolledWeb = await stubbed.verifyIdToken(webToken, expect);
   t.check(!unenrolledWeb.ok && fetched.length === 0,
           '5a. an unenrolled did:web is refused WITHOUT being fetched');
-  t.check(siop.enrol('siop-alice', webDid, 'web wallet', 'tester').ok,
-          '5b. enrolled');
+  t.check(/pinned/.test(siop.enrol('siop-alice', webDid, 'web wallet',
+                                   'tester').error || ''),
+          '5b. a did:web is not enrolled with no key to pin (#693)');
+  const byValue = await stubbed.enrolByValue('siop-alice', webDid,
+                                             'web wallet', 'tester');
+  t.check(byValue.ok && fetched.length === 1 &&
+          JSON.stringify(byValue.enrolled.pinnedKeys) ===
+            JSON.stringify([stsCrypto.jwkThumbprint(alicePair.jwk)]) &&
+          byValue.enrolled.proof === 'admin',
+          '5c. enrolled by value: its document fetched once, and only its ' +
+          'authentication key pinned, as unproven (#693)',
+          JSON.stringify(byValue));
   const enrolledWeb = await stubbed.verifyIdToken(webToken, expect);
-  t.check(enrolledWeb.ok && fetched[0] ===
-          'https://wallet.test:8443/alice/did.json',
-          '5c. then fetched from its did:web URL, and verified',
-          JSON.stringify({ fetched: fetched, checks: enrolledWeb.checks }));
+  t.check(enrolledWeb.ok && fetched[1] ===
+          'https://wallet.test:8443/alice/did.json' &&
+          enrolledWeb.checks.some(function (c) {
+            return c.name === 'pinned key' && c.ok;
+          }),
+          '5d. then fetched from its did:web URL, verified, and its key the ' +
+          'pinned one', JSON.stringify({ fetched: fetched,
+                                         checks: enrolledWeb.checks }));
   const notAuth = await stubbed.verifyIdToken(idToken(other,
     { iss: webDid, sub: webDid }, { kid: webDid + '#k2' }), expect);
   t.check(!notAuth.ok && notAuth.checks.some(function (c) {
     return /authentication relationship/.test(c.detail);
-  }), '5d. a key outside the authentication relationship is refused');
-
+  }), '5e. a key outside the authentication relationship is refused');
+  const fetchedBefore = fetched.length;
+  const stale = await stubbed.verifyIdToken(idToken(alicePair,
+    { iss: webDid, sub: webDid, nonce: 'replayed' }, { kid: webDid + '#k1' }),
+    expect);
+  t.check(!stale.ok && fetched.length === fetchedBefore &&
+          stale.checks.some(function (c) {
+            return c.name === 'subject key' && /not fetched/.test(c.detail);
+          }),
+          '5f. a token for another nonce makes this service dial nothing ' +
+          '(#693)', JSON.stringify(stale.checks));
+  const moved = keyPair();
+  const keptDoc = doc;
+  doc = { id: webDid,
+    verificationMethod: [{ id: webDid + '#k1', type: 'JsonWebKey2020',
+                           controller: webDid, publicKeyJwk: moved.jwk }],
+    authentication: ['#k1'] };
+  const changed = await stubbed.verifyIdToken(idToken(moved,
+    { iss: webDid, sub: webDid }, { kid: webDid + '#k1' }), expect);
+  const changedOutcome = stubbed.signInOutcome(changed);
+  t.check(!changed.ok && changed.errorCode === 'STS-VC-0126' &&
+          !changedOutcome.ok &&
+          changedOutcome.errorCode === 'STS-VC-0126' &&
+          audited.some(function (e) {
+            return e.action === 'siop.key.refused' &&
+                   e.errorCode === 'STS-VC-0126' && e.actor === 'siop-alice';
+          }),
+          '5g. a document whose key changed is refused (STS-VC-0126), ' +
+          'whoever controls the host now, and audited (#693)',
+          JSON.stringify({ checks: changed.checks, audited: audited }));
+  doc = keptDoc;
   t.log.info('=== 6. whom it signs in ===');
   const signsIn = siop.signInOutcome(good);
   t.check(signsIn.ok && signsIn.username === 'siop-alice',
@@ -326,13 +592,15 @@ async function body(t) {
           '7f. openid_federation: the realm\'s Entity Identifier, and the ' +
           'openid_credential_verifier metadata naming the request-signing ' +
           'key', JSON.stringify(vm).slice(0, 300));
+  await prerequisites(t, expect);
   log.debug("Leaving body().");
 }
 
 module.exports = {
   name: 'siop',
   describe: 'SIOPv2 as the relying party (#129): subjects, enrolment, ' +
-            'section 11.1, whom it signs in, and the Client Identifier ' +
-            'prefixes',
+            'section 11.1, whom it signs in, the Client Identifier ' +
+            'prefixes, and #693\'s did:web pin, provenance and enrolment ' +
+            'by proof',
   run: run
 };

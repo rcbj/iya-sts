@@ -42,6 +42,11 @@ class SelfIssuedPages {
         kit.esc(one.label || '') + '</td><td>' +
         kit.esc(one.enrolledAt ? t.date(one.enrolledAt) : '') +
         (one.by ? ' (' + kit.esc(one.by) + ')' : '') + '</td><td>' +
+        // How it was enrolled (#693): proved with the person's wallet, or
+        // by an administrator, unproven.
+        (one.proof === 'wallet' ? t.html('portalSelfIssued.proofWallet')
+                                : t.html('portalSelfIssued.proofAdmin')) +
+        '</td><td>' +
         '<form method="post" action="' + kit.esc(PATH) + '">' +
         '<input type="hidden" name="action" value="remove">' +
         '<input type="hidden" name="subject" value="' + kit.esc(one.subject) +
@@ -55,14 +60,15 @@ class SelfIssuedPages {
       (held.length
         ? '<table><tr><th>' + t.html('portalSelfIssued.subject') +
           '</th><th>' + t.html('portalSelfIssued.label') + '</th><th>' +
-          t.html('portalSelfIssued.enrolled') + '</th><th></th></tr>' +
+          t.html('portalSelfIssued.enrolled') + '</th><th>' +
+          t.html('portalSelfIssued.how') + '</th><th></th></tr>' +
           rows.join('') + '</table>'
         : '<p id="siop-none">' + t.html('portalSelfIssued.none') + '</p>') +
       (view.enabled
         ? '<p><a class="button" id="siop-enrol" href="/authn/wallet?siop=1' +
           '&amp;enrol=1">' + t.html('portalSelfIssued.enrol') +
           '</a></p><p class="sub">' + t.html('portalSelfIssued.enrolNote') +
-          '</p>'
+          ' ' + t.html('portalSelfIssued.reprove') + '</p>'
         : '<p class="sub" id="siop-off">' + t.html('portalSelfIssued.off') +
           '</p>') + '</div>';
   }

@@ -203,6 +203,18 @@
     "en": "e773ade2b33e515a",
     "text": "Se rechaza. Una clave principal se añade en /portal/keys detrás de una sesión, mediante un enlace de activación o por un operador."
   },
+  "mode.requirements.siop-did-web-pin.what": {
+    "en": "a8f5db1a7e30f55d",
+    "text": "Un sujeto autoemitido did:web solo inicia sesión con una clave fijada cuando se inscribió"
+  },
+  "mode.requirements.siop-did-web-pin.development": {
+    "en": "df2d670db990d330",
+    "text": "Un did:web inscrito antes de fijar las claves, sin ninguna clave fijada, inicia sesión con la clave que su documento nombre en su próximo inicio de sesión, y esa clave queda fijada entonces (confianza en el primer uso), con una línea de registro y una fila de auditoría."
+  },
+  "mode.requirements.siop-did-web-pin.product": {
+    "en": "f2869db882e1f25d",
+    "text": "Ese inicio de sesión se rechaza (STS-VC-0127), se audita, y la persona vuelve a inscribir el DID demostrándolo en /portal/self-issued. En ambos modos se rechaza una clave que la fijación no nombra (STS-VC-0126)."
+  },
   "mode.requirements.webauthn-attestation.what": {
     "en": "8c22563b2f23268b",
     "text": "La declaración de atestación de una llave de seguridad se verifica antes de registrar la llave"

@@ -1588,8 +1588,8 @@
     "text": "ICKE-SPEC (#218). GET /admin/devices/monitor som JSON: antalen och tidslinjen dag för dag över registreringar, borttagningar och utkastningar (?days=)."
   },
   "stsmetadata.endpoints./admin-api/users/self-issued-subjects.what": {
-    "en": "02ba0c938388e35a",
-    "text": "ICKE-SPEC (#129). De DID:er och JWK-tumavtryck som registrerats för en person, var och en med sin etikett och vem som registrerade den, bredvid om oid4vp.signInSelfIssued är på. POST /admin-api/users/enrol-self-issued-subject registrerar en efter värde; /admin-api/users/remove-self-issued-subject tar bort en. Speglar blocket Självutfärdade ID:n på personens /admin/users-sida."
+    "en": "5992e8bdddc060a8",
+    "text": "ICKE-SPEC (#129). De DID:er och JWK-tumavtryck som registrerats för en person, var och en med sin etikett, vem som registrerade den och hur (bevisad av personens plånbok, eller efter värde), och en did:web med sina fästa nycklar (#693), bredvid om oid4vp.signInSelfIssued är på. POST /admin-api/users/enrol-self-issued-subject registrerar en efter värde och hämtar en did:webs dokument för att fästa dess nycklar; /admin-api/users/remove-self-issued-subject tar bort en. Speglar blocket Självutfärdade ID:n på personens /admin/users-sida."
   },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",

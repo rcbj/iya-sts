@@ -400,13 +400,35 @@ never the Self-Issued OP itself.
     `remove-self-issued-subject`, `GET /admin-api/users/self-issued-subjects`).
 
   A subject belongs to one person per realm, and a person may hold ten.
+  **Each enrolment records how it was made**: `proof: "wallet"` (the person
+  proved it) or `"admin"` (by value, unproven), shown on both pages and in
+  the API's list. Proving a subject already enrolled for you proves it
+  again — that is how an administrator's entry becomes a proved one. A
+  wallet enrolment is audited (`portal.siop.enrol`).
 * **What is checked** (SIOPv2 section 11.1): `iss` equals `sub`; a JWK
   Thumbprint subject is the thumbprint of `sub_jwk` (a private key there is
   refused); a DID subject's `kid` is one of its authentication methods; the
   signature (never `none`); `aud` is this Verifier's Client Identifier;
   `nonce`; `exp`; and `iat` no older than `oid4vp.siopIdTokenMaxAgeS`. A
-  `did:web` is fetched only once it is enrolled, through the outbound policy
-  every fetch here obeys.
+  `did:web` is fetched only once it is enrolled — or for its own enrolment,
+  below — through the outbound policy every fetch here obeys, and only for
+  a token whose `aud`, `nonce`, `exp` and `iat` already passed.
+* **A `did:web`'s key is pinned.** Its document lives on a host whose owner
+  can change, so the enrolment records the RFC 7638 thumbprint of the key:
+  the one that signed the proof, or — enrolled by an administrator — every
+  `authentication` key the document names at that moment (the document is
+  fetched then, and an enrolment it cannot be fetched for is refused,
+  `STS-ADMIN-0871`). A later ID Token signed by any other key is refused in
+  both modes (`STS-VC-0126`) and audited (`siop.key.refused`); the person
+  enrols the DID again on `/portal/self-issued`, which re-pins it. A
+  `did:web` enrolled before pinning has no pin: development pins the key it
+  next signs in with, product refuses it (`STS-VC-0127`) until it is
+  enrolled again. `did:jwk`, `did:key` and JWK thumbprints are their key.
+* **A `did:web` can be enrolled by proof.** Inside a person's own
+  enrolment — started from a session they hold — a `did:web` nobody has
+  enrolled is resolved, once per enrolment, after the token's other checks
+  passed (`STS-VC-0128` if it cannot be fetched, or for a second fetch).
+  In product mode an address inside the service's own network is refused.
 * **With a presentation** (`response_type=vp_token id_token`), the ID Token
   must be signed by the presentation's holder key.
 * **A verification start** takes `response_type` `id_token` (or `vp_token

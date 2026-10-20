@@ -4090,8 +4090,31 @@ class VcVerifier {
     log.debug("Entering VcVerifier.answerSelfIssued().");
     const types = String(record.responseType).split(' ');
     const withVp = types.indexOf('vp_token') >= 0;
+    // A PERSON'S OWN ENROLMENT (#693) may resolve a did:web nobody has
+    // enrolled yet — the only way to enrol one by proof — and fetches its
+    // document at most ONCE: the mark is written to the transaction, through
+    // the store, before the fetch, so a second answer racing this one finds
+    // it spent. The transaction exists only for a person signed in here
+    // (`vc_signin.ts` starts it from their session), and `siop.ts` dials
+    // only after the token's nonce, aud, exp and iat have passed.
+    const enrolFor = record.signIn && record.signIn.enrol && !withVp
+      ? record.signIn.enrol : null;
+    const enrolment = enrolFor ? {
+      username: String(enrolFor.username),
+      mayDial: function (): boolean {
+        log.debug("Entering mayDial().");
+        if (enrolFor.dialled) {
+          log.debug("Leaving mayDial(). Already fetched once.");
+          return false;
+        }
+        enrolFor.dialled = new Date().toISOString();
+        vpTransactions.set(String(record.state), record);
+        log.debug("Leaving mayDial(). The one fetch.");
+        return true;
+      } } : null;
     const idv = await siop.verifyIdToken(body.id_token,
-      { clientId: record.clientId, nonce: record.nonce });
+      { clientId: record.clientId, nonce: record.nonce,
+        enrolment: enrolment });
     let answer: any = null;
     let checks = idv.checks.slice(0);
     let ok = idv.ok;
@@ -4133,9 +4156,13 @@ class VcVerifier {
         // is the one the transaction was started by; whether it may be
         // enrolled (nobody else's, not too many) is `siop.enrol()`'s, asked
         // when the browser collects this.
+        // The key that signed the proof is what a did:web's enrolment pins
+        // (#693); `siop.enrol()` ignores it for any other subject.
         outcome = { ok: true, errorCode: '', reason: '',
                     username: String(record.signIn.enrol.username),
-                    subject: idv.subject, enrol: true };
+                    subject: idv.subject, enrol: true,
+                    pinnedKeys: idv.keyThumbprint ? [idv.keyThumbprint]
+                                                  : [] };
       } else {
         outcome = siop.signInOutcome(idv);
       }

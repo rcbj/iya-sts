@@ -16,7 +16,10 @@
 // into pasting on somebody else's behalf. An administrator may enrol by value
 // from /admin/users and POST /admin-api/users/enrol-self-issued-subject. The
 // wallet sign-in comes back to `/portal/self-issued?enrolled=1`, which the
-// view's operation turns into the page's notice.
+// view's operation turns into the page's notice. Since #693 each row says
+// how it was enrolled (`proof`), proving a subject that is already yours
+// proves it again (and re-pins a did:web whose document changed), and the
+// enrolment is audited (`portal.siop.enrol`, in `oid4vc/vc_signin.ts`).
 //
 // **SINCE #568 THESE ARE TWO `/account-api` OPERATIONS**, and the page is
 // drawn in the browser by `web_self_issued.ts`. **THE IDENTITY IS THE
@@ -98,7 +101,11 @@ class PortalSelfIssued {
                return { subject: String(one.subject),
                         label: String(one.label || ''),
                         enrolledAt: one.enrolledAt || null,
-                        by: String(one.by || '') };
+                        by: String(one.by || ''),
+                        // How it was enrolled (#693): `wallet`, proved by
+                        // the person, or `admin`, by an administrator's
+                        // value.
+                        proof: String(one.proof || siop.PROOF_ADMIN) };
              }) };
   }
 
@@ -153,7 +160,9 @@ class PortalSelfIssued {
         summary: 'The wallet keys that sign you in with SIOPv2',
         description: '`subjects`: each enrolled self-issued subject (a DID ' +
           'or a JWK thumbprint), its label, when and by whom it was ' +
-          'enrolled. `enabled`: whether the self-issued sign-in is on. A ' +
+          'enrolled, and how (`proof`: `wallet`, proved by you, or ' +
+          '`admin`, by an administrator). `enabled`: whether the ' +
+          'self-issued sign-in is on. A ' +
           'key is enrolled by proving it, at /authn/wallet?siop=1&enrol=1, ' +
           'which comes back with `enrolled=1`; `notice` then says so.',
         query: SELF_ISSUED_QUERY,

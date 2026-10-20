@@ -367,10 +367,16 @@ portal's `/portal/self-issued` page lets a person enrol a key.
 
 * **The person**, on `/portal/self-issued`: **Enrol a wallet**. The wallet
   answers a SIOPv2 request from the session the person already holds, and the
-  key that signed it is enrolled. Nothing is typed.
+  key that signed it is enrolled — a `did:web` too, whose document is fetched
+  once for that enrolment and whose key is pinned. Nothing is typed. The row
+  says **Proved with your wallet**, and the enrolment is audited
+  (`portal.siop.enrol`).
 * **An administrator**: on the person's page under **Directory → Users**,
-  section **Self-issued IDs**, enter the **Subject** (a `did:jwk`, or the JWK
-  thumbprint) and a **Label**, then click **Enrol**. Through the API:
+  section **Self-issued IDs**, enter the **Subject** (a `did:jwk`, a
+  `did:web`, or the JWK thumbprint) and a **Label**, then click **Enrol**.
+  The row's **How** says **By value, unproven**. A `did:web`'s document is
+  fetched as you enrol it and its authentication keys are pinned; if it
+  cannot be fetched the enrolment is refused. Through the API:
 
 ```bash
 api users/enrol-self-issued-subject '{"user":"<username>",
@@ -381,7 +387,15 @@ api users/remove-self-issued-subject '{"user":"<username>","subject":"<thumbprin
 ```
 
 Enrolling the same key twice is refused. A person may hold ten, and a subject
-belongs to one person per realm. A removed key signs nobody in.
+belongs to one person per realm. A removed key signs nobody in. Each listed
+subject carries `proof` (`wallet` or `admin`), and a `did:web` its
+`pinnedKeys`.
+
+**If a `did:web` wallet's key changed**, its sign-ins are refused
+(`STS-VC-0126`) until the person clicks **Enrol a wallet** again and proves
+the DID with the new key, which re-pins it. A `did:web` enrolled before
+pinning is pinned on its next sign-in in development mode and refused
+(`STS-VC-0127`) in product mode until it is enrolled again the same way.
 
 **3. Without signing anybody in**, a verification can exercise a Self-Issued
 OP:

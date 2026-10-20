@@ -2299,6 +2299,11 @@ class UsersPage {
         kit.esc(one.label || '') + '</td><td>' +
         kit.esc(one.enrolledAt ? kit.whenText(one.enrolledAt) : '—') +
         (one.by ? t.html('consoleUsers.mfaSection.by', { who: one.by }) : '') +
+        // HOW IT WAS ENROLLED (#693): proved by the person's wallet, or by
+        // value from this console or the API, unproven.
+        '</td><td>' + (one.proof === 'wallet'
+          ? t.html('consoleUsers.mfaSection.siopProofWallet')
+          : t.html('consoleUsers.mfaSection.siopProofAdmin')) +
         '</td><td>' +
         (state.write
           ? '<form method="post" action="/admin/users">' +
@@ -2322,6 +2327,7 @@ class UsersPage {
         ? '<table><tr><th>' + t.html('consoleUsers.mfaSection.thSubject') +
           '</th><th>' + t.html('consoleUsers.mfaSection.thLabel') +
           '</th><th>' + t.html('consoleUsers.mfaSection.enrolled') + '</th>' +
+          '<th>' + t.html('consoleUsers.mfaSection.siopThProof') + '</th>' +
           '<th></th></tr>' + siopView.subjects.map(siopRow).join('') +
           '</table>'
         : kit.note(t.html('consoleUsers.mfaSection.siopNone'))) +

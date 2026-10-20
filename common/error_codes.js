@@ -15906,6 +15906,35 @@ const CODES = [
     summary: 'The trusted list at /oid4vci/trusted-list could not be signed: ' +
       'the signer threw. The message is in the log.',
     spec: 'HTTP 500 text/plain' },
+  { code: 'STS-VC-0126',
+    summary: 'A self-issued ID Token for an enrolled did:web was signed by ' +
+      'a key its enrolment did not pin: the DID document now names another ' +
+      'key. Refused in both modes and audited (siop.key.refused); the ' +
+      'person enrols the DID again by proving it on /portal/self-issued ' +
+      '(#693).',
+    spec: 'HTTP 403 refusal at /authn-api/wallet (the sign-in signs nobody ' +
+      'in)' },
+  { code: 'STS-VC-0127',
+    summary: 'A self-issued ID Token for a did:web enrolled before key ' +
+      'pinning, with no key pinned, was refused in product mode and ' +
+      'audited (siop.key.refused): the person enrols it again by proving ' +
+      'it. Development pins the key on first use instead ' +
+      '(mode.pinsSelfIssuedKeysOnFirstUse(), #693).',
+    spec: 'HTTP 403 refusal at /authn-api/wallet (the sign-in signs nobody ' +
+      'in)' },
+  { code: 'STS-VC-0128',
+    summary: 'A SIOPv2 enrolment\'s did:web was not resolved: its DID ' +
+      'document could not be fetched (an internal address in product mode, ' +
+      'a redirect, a failure, too large), or this enrolment transaction had ' +
+      'already fetched one document, which is all it may (#693).',
+    spec: 'the enrolment signs nobody in: HTTP 403 refusal at ' +
+      '/authn-api/wallet' },
+  { code: 'STS-VC-0129',
+    summary: 'A did:web enrolled with no pinned key signed in in ' +
+      'development mode and its key could not be pinned: the directory did ' +
+      'not store the change. The sign-in stands; the pin is tried again at ' +
+      'the next (#693).',
+    spec: 'logged' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -20845,6 +20874,12 @@ const CODES = [
       'with no sign-out model installed, so no session it signed in was ' +
       'ended (#722). The removal stands.',
     spec: 'logged; the removal is answered as done' },
+  { code: 'STS-ADMIN-0871',
+    summary: 'enrol-self-issued-subject was refused for a did:web: its DID ' +
+      'document could not be fetched, names another id, or names no ' +
+      'authentication method with a publicKeyJwk, so there was no key to ' +
+      'pin (#693).',
+    spec: 'HTTP 400 (API)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -21253,6 +21288,11 @@ const CODES = [
     summary: 'A Kerberos trusts action through POST ' +
       '/admin-api/kerberos/trusts/{action} threw inside this service; the ' +
       'log says why (#430).',
+    spec: 'HTTP 500' },
+  { code: 'STS-API-0136',
+    summary: 'A management API users action that answers later (a by-value ' +
+      'did:web enrolment, which fetches the DID document) failed inside ' +
+      'this service; the log says why (#693).',
     spec: 'HTTP 500' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +

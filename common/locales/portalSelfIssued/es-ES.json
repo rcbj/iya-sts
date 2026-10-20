@@ -3,5 +3,7 @@
   "enrol": "Registrar una cartera",
   "enrolNote": "Se le pide a su cartera un ID Token autoemitido, y la clave que lo firmó se registra para usted: demuestra que la posee; no se escribe nada.",
   "off": "El inicio de sesión con un identificador autoemitido está desactivado aquí, así que no se puede registrar ninguna cartera desde esta página. Las claves de arriba siguen registradas.",
-  "doneEnrolled": "La clave de su cartera está registrada. A partir de ahora inicia su sesión."
+  "doneEnrolled": "La clave de su cartera está registrada. A partir de ahora inicia su sesión.",
+  "proofWallet": "Demostrado con su cartera",
+  "reprove": "Registrar una clave que ya está aquí la demuestra de nuevo: hágalo si cambió la clave did:web de su cartera, y una entrada de un administrador pasa a ser una que usted demostró."
 }
