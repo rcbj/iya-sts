@@ -28,11 +28,13 @@
 //      arrive cost at most a stale menu, change no tab's account, and a
 //      message of another kind is ignored.
 //   6. SETTING OFF: nothing kept, no hint, no prompt, the frames and the
-//      sign-out address to the byte what they were, and `accounts=another`
-//      dropped.
+//      sign-out address to the byte what they were, `accounts=another`
+//      dropped, and — the shell carrying no `data-sts-accounts` — the list
+//      never fetched.
 //   7. THE PORTAL: the same switch, abort (the owner token's request too)
 //      and subject check, and `?accounts=another` from another page becomes
-//      its authorization request with `prompt=login`.
+//      its authorization request with `prompt=login`; the device page names
+//      the account an approval is, with more than one signed in.
 //   8. A STATIC SURFACE: the control is drawn beside the chooser with the
 //      setting on — its words fetched only then — never under
 //      `/authn/spnego` or on the picker, and a change an act made is
@@ -46,6 +48,7 @@ const ConsoleRuntime = require('../admin-ui/web_runtime');
 const WebShell = require('../admin-ui/web_shell');
 const PortalRuntime = require('../portal/web_portal_runtime');
 const PortalShell = require('../portal/web_portal_shell');
+const DevicePages = require('../portal/web_device');
 const WebSurface = require('../common/web_surface');
 const WebAccounts = require('../common/web_accounts');
 const WebMessages = require('../common/web_messages');
@@ -196,7 +199,18 @@ function browser(pathname, storage, server) {
     navigator: { languages: ['en'] },
     document: {
       title: '', body: body,
-      documentElement: { getAttribute: function () { return null; },
+      // THE SHELL'S `data-sts-accounts` (#561): `on` where the server's
+      // list is on, as `ShellDocument` draws it, unless a case names it.
+      documentElement: { getAttribute: function (attr) {
+                           if (attr !== 'data-sts-accounts') {
+                             return null;
+                           }
+                           if (server.attribute !== undefined) {
+                             return server.attribute;
+                           }
+                           return server.list && server.list.enabled
+                             ? 'on' : null;
+                         },
                          setAttribute: function () {} },
       createElement: function () {
         return { setAttribute: function () {}, innerHTML: '' };
@@ -526,6 +540,20 @@ async function consoleChecks(t) {
             .indexOf('data-account-key="urn:uuid:bob"') > 0,
           '6. off, the console\'s frame is the one it was; on, its menu ' +
           'offers the other account');
+  // THE SHELL SAYS OFF, so the list is never asked for — not even of a
+  // server that would answer it on: no extra request on any page load.
+  const quiet = await consoleTab({ list: listOf([ALICE, BOB]),
+                                   attribute: null }, storageOf(),
+                                 'urn:uuid:alice');
+  t.check(quiet.rt.accounts.enabled === false &&
+          !quiet.b.calls.some(function (c) {
+            return /\/authn-api\/accounts$/.test(c.url);
+          }) &&
+          !off.b.calls.some(function (c) {
+            return /\/authn-api\/accounts$/.test(c.url);
+          }),
+          '6. off in the shell, the account list is never fetched',
+          JSON.stringify(quiet.b.calls.map(function (c) { return c.url; })));
   off.rt.signOut();
   t.check(off.b.location.assigned[off.b.location.assigned.length - 1] ===
           ORIGIN + '/logout',
@@ -641,6 +669,26 @@ async function portalChecks(t) {
             .indexOf('data-account-key="urn:uuid:bob"') > 0,
           '6. off, the portal\'s frame is the one it was; on, its menu ' +
           'offers the other account');
+  // THE DEVICE PAGE names the account an approval is this tab's, with more
+  // than one signed in; otherwise it is the page it was.
+  const deviceView = { enabled: true, typed: 'ABCD-EFGH',
+    record: { clientId: 'tv', userCode: 'ABCD-EFGH', scope: 'openid',
+              expiresAt: Date.now() + 60000 } };
+  const deviceCtx = function (accounts) {
+    return Object.assign({}, page, { me: me, accounts: accounts,
+      t: Object.assign({}, T, { date: function () {
+        return 'soon';
+      } }) });
+  };
+  const plain = DevicePages.render(deviceView, deviceCtx(undefined));
+  t.check(DevicePages.render(deviceView, deviceCtx(WebAccounts.off())) ===
+            plain &&
+          DevicePages.render(deviceView, deviceCtx(listOf([ALICE]))) ===
+            plain && !/device-as/.test(plain) &&
+          /id="device-as"/.test(DevicePages.render(deviceView,
+            deviceCtx(listOf([ALICE, BOB])))),
+          '7. the device page names the approving account with two signed ' +
+          'in, and is the page it was otherwise');
   log.debug("Leaving portalChecks().");
 }
 
@@ -691,8 +739,14 @@ async function surfaceChecks(t) {
           !/sts-accounts/.test(off.b.env.document.body.innerHTML) &&
           !offOff.b.calls.some(function (c) {
             return /\/web\/locales\/accounts\//.test(c.url);
+          }) &&
+          ![off, offOff].some(function (one) {
+            return one.b.calls.some(function (c) {
+              return /\/authn-api\/accounts$/.test(c.url);
+            });
           }),
-          '8. off, the page is the one it was and the words are not fetched',
+          '8. off, the page is the one it was, and neither the list nor ' +
+          'the words are fetched',
           offOff.b.env.document.body.innerHTML);
   const spnego = await draw('/authn', '/authn/spnego', listOf([ALICE, BOB]));
   const picker = await draw('/authn', '/authn/accounts', listOf([ALICE]));

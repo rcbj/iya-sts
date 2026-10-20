@@ -12,10 +12,20 @@
 // — the client and the scopes, and a warning — with Approve and Deny as a
 // second, separate act (section 5.4). A real submit button and no script.
 //
+// WHICH ACCOUNT APPROVES, WHERE THE BROWSER HOLDS SEVERAL (#561): the
+// approval is this tab's account's — the access token's subject, on the
+// sign-on session it was issued on (`portal_device.ts`) — and the device is
+// then signed in as that person. With more than one account signed in to
+// this browser that is no longer obvious, and section 5.4's whole defence is
+// showing the person what they are authorizing; so the request names the
+// account it will be approved as (`device-as`). Drawn only then: with
+// `authn.multipleAccounts` off, or one account, the page is the one it was.
+//
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_portal_kit');
+import WebAccounts = require('../common/web_accounts');
 
 type Json = any;
 type PortalPage = import('../types/account-api').PortalPage;
@@ -77,6 +87,23 @@ class DevicePages {
    * @param ctx - the render context
    * @returns the HTML
    */
+  /**
+   * The sentence naming the account the request will be approved as, where
+   * the browser holds more than one signed-in account; '' otherwise.
+   *
+   * @param t - the translator
+   * @param ctx - the render context: `me`, `accounts`
+   * @returns the HTML, or ''
+   */
+  static approvingAs(t: Json, ctx: Json): string {
+    const me = (ctx && ctx.me && ctx.me.user) || null;
+    if (!me || WebAccounts.live(ctx.accounts).length < 2) {
+      return '';
+    }
+    return '<p id="device-as">' + t.html('portalDevice.request.as',
+      { name: String(me.username || '') }) + '</p>';
+  }
+
   static render(view: Json, ctx: Json): string {
     const t = ctx.t;
     const record = view.record;
@@ -88,6 +115,7 @@ class DevicePages {
           scope: record.scope || t.text('portalDevice.request.noScope'),
           when: t.date(record.expiresAt) }) + '</p>' +
         '<p>' + t.html('portalDevice.request.warning') + '</p>' +
+        DevicePages.approvingAs(t, ctx) +
         DevicePages.answer(record, 'approve',
                            t.html('portalDevice.request.approve'), false) +
         DevicePages.answer(record, 'deny',

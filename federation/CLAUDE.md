@@ -2035,6 +2035,24 @@ accounts would land on the account picker after signing in through a
 partner. Unchanged with the setting off. Federation's own Single Logout and
 `endPartnerSession()` are already per session and did not change.
 
+**Two doors that asked `sessionOf()` alone were made to name their person**
+(review of #561, with the setting on; off, each is what it was):
+
+* **The linking step** (`/federation/link/{handle}`) hands the name it is
+  linking to `authn.hintAccount()` before asking for the session, so the fresh
+  local sign-in it checks is THAT person's whatever else the browser holds —
+  never the default, who may be somebody else, and never nobody because two
+  accounts are live. The sign-in also returns with a selection ticket
+  (`returnToCaller()`), which comes first; the hint is what holds where a
+  ticket is not spent.
+* **WS-Federation's confirmed sign-out** (`browserFederatedSession()`) looks
+  through the browser's live sessions (`authn.accountSessionsOf()`) for the
+  one this relationship signed in — the browser's own answer first, otherwise
+  the most recent of the set's — and the confirmed POST must name the session
+  the confirmation was drawn for, still live in this browser's set. The
+  cookie is then handled by `authn.afterAccountSignOut()`: cleared only where
+  the default ended.
+
 ## A NEWCOMER THE ATTRIBUTE POLICY WOULD REFUSE (#396, 2026-10-19)
 
 Where `fedAutocreateUsers` lets a first sign-in create the person, product mode

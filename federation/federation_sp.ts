@@ -2201,6 +2201,16 @@ class FederationSp {
         'that sign-in ended without one (' + asked + '). Nothing was linked ' +
         'and nothing was written.');
     }
+    // THE PERSON THE LINK IS FOR, WHERE THE BROWSER HOLDS SEVERAL ACCOUNTS
+    // (#561): the linking sign-in returns here with a selection ticket for
+    // the session it made, and the name is handed over as well, so the
+    // session asked about is that person's whatever else this browser
+    // holds — never the browser's default, who may be somebody else, and
+    // never nobody because two accounts are live. A name naming nobody live
+    // here answers no session (a hint never falls back to another account),
+    // which is refused below as it always was. A no-op with
+    // `authn.multipleAccounts` off.
+    authn.hintAccount(req, { loginHint: String(context.username || '') });
     const session = authn.sessionOf(req);
     const events = session && Array.isArray(session.events)
       ? session.events : [];

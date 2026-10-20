@@ -46,9 +46,10 @@
 // `authn.multipleAccounts` on: beside the chooser, the browser's signed-in
 // accounts and a link that starts the user portal's sign-in with
 // `prompt=login` (`web_accounts.ts`'s control). Read once as the surface
-// starts (`loadAccounts()`), from this page's own origin; OFF — the setting
-// off, or nothing answering there — draws exactly the page it drew before,
-// fetches none of the control's words, and asks the list nothing again.
+// starts (`loadAccounts()`), from this page's own origin, and only where the
+// shell carries `data-sts-accounts="on"` (`WebAccounts.announced()`); OFF —
+// the setting off, or nothing answering there — asks nothing, draws exactly
+// the page it drew before, and fetches none of the control's words.
 // Never on a page that is a specification's exchange
 // (`NO_ACCOUNT_CONTROL`), and never on the picker, which is that list.
 // After an act the list is read again, and a change the act made is

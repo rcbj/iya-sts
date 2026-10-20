@@ -261,6 +261,11 @@ function partOff(t) {
           'and a hint changes nothing: the cookie alone decides');
   t.equal(authn.accountChoiceNeeded(req), null,
           'accountChoiceNeeded() is null with the setting off');
+  const answered = accountsListAnswer(b);
+  t.check(answered.status === 200 && answered.json.enabled === false &&
+          !('anotherAccount' in answered.json),
+          'accountsList() off: enabled false and no anotherAccount',
+          answered.text.slice(0, 300));
   log.debug("Leaving partOff().");
 }
 
@@ -532,11 +537,53 @@ function partOn(t) {
           'GET /authn-api/accounts lists the browser\'s accounts');
   t.check(JSON.stringify(list).indexOf(alice.id) < 0,
           'and names no sid');
+  // THE OPERATION ITSELF (`authn_api.ts`'s `accountsList()`): with the
+  // setting on it adds `anotherAccount`, where every public page's Sign in
+  // with another account starts — the user portal's advertised address with
+  // `?accounts=another`, which the portal's runtime turns into its own
+  // authorization request with prompt=login.
+  const answered = accountsListAnswer(b);
+  t.check(answered.status === 200 && answered.json.ok === true &&
+          answered.json.enabled === true &&
+          answered.json.anotherAccount ===
+            'https://sts.example.test/portal?accounts=another' &&
+          answered.text.indexOf(alice.id) < 0,
+          'accountsList() answers the list with anotherAccount, the ' +
+          'portal\'s address asking for another account, and no sid',
+          answered.text.slice(0, 300));
   const audited = b.req('/oauth2/authorize');
   authn.hintAccount(audited, { loginHint: 'mas-alice' });
   t.equal(authn.auditActorSessionOf(audited), alice.id,
           'the audit actor\'s session is the one the request resolved to');
   log.debug("Leaving partOn().");
+}
+
+// `GET /authn-api/accounts` as `authn_api.ts` answers it, for this browser:
+// the handler driven directly, on a request whose Host is the service's.
+function accountsListAnswer(b) {
+  log.debug("Entering accountsListAnswer().");
+  const AuthnApi = require('../authn/authn_api').AuthnApi;
+  const api = new AuthnApi(AuthnApi.defaultDeps());
+  const req = b.req('/authn-api/accounts');
+  req.protocol = 'https';
+  req.headers.host = 'sts.example.test';
+  req.get = function (name) {
+    log.debug("Entering get().");
+    log.debug("Leaving get().");
+    return req.headers[String(name).toLowerCase()];
+  };
+  api.accountsList(req, req.res);
+  let json = null;
+  try {
+    json = JSON.parse(String(req.res.body || ''));
+  } catch (e) {
+    log.debug("Caught in accountsListAnswer(): " + ((e && e.message) || e));
+    // Not JSON: the check reads the text.
+    json = {};
+  }
+  log.debug("Leaving accountsListAnswer().");
+  return { status: req.res.statusCode, json: json || {},
+           text: String(req.res.body || '') };
 }
 
 function partAdopt(t) {

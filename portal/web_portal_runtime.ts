@@ -704,7 +704,11 @@ class PortalRuntime extends SpaClient {
                   origin: this.env.location.origin, me: this.me,
                   locale: this.me ? this.me.locale : nobody.locale,
                   version: this.me ? this.me.version : nobody.version,
-                  here: this.prefix + this.here() };
+                  here: this.prefix + this.here(),
+                  // The browser's accounts (#561), for a page that acts for
+                  // this tab's account and must say which; OFF with the
+                  // setting off, when no page draws anything from it.
+                  accounts: this.accounts };
     const flash = this.flash || {};
     this.flash = null;
     const body = v.page.render(v.json, ctx);

@@ -4,6 +4,7 @@
   "request.access": "Access: <code>{scope}</code>. Expires {when}.",
   "request.noScope": "(none named)",
   "request.warning": "<strong>Approve only a device in front of you</strong> that you started signing in yourself. Somebody who sent you this code is asking you to sign THEM in as you.",
+  "request.as": "You are approving as <strong>{name}</strong>: the device will be signed in as this account. To approve as another of the accounts signed in to this browser, switch accounts first.",
   "request.approve": "Approve",
   "request.deny": "Deny",
   "find.heading": "Sign in a device",

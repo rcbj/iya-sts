@@ -770,7 +770,9 @@ setting on, so a row is otherwise unchanged.
   which IS `returnToCaller()`, on the same response the session was started
   on, so they were ticketed already. The certificate sign-in
   (`GET /tls/sign-in`) resumes nothing — it answers JSON naming who was
-  signed in, and its caller names that account on its next request — and
+  signed in, and its caller names that account on its next request; its
+  "already signed in" check asks about the CERTIFICATE'S account, not the
+  browser's (`tls/CLAUDE.md`, *Several accounts in one browser*) — and
   WS-Trust's session is a side effect of a SOAP exchange with no browser
   flow to resume; neither needed a ticket.
 

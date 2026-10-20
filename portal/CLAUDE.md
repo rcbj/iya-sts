@@ -796,6 +796,19 @@ authorization request and the sign-out's address are the bytes they were.
   the page is today's. The address is the portal's ADVERTISED one, which
   `GET /authn-api/accounts` answers as `anotherAccount`, because a page on
   another listener (#472) cannot work it out.
+* **THE DEVICE PAGE SAYS WHICH ACCOUNT APPROVES** (`/portal/device`,
+  `web_device.ts`'s `approvingAs()`). An approval is this tab's account's —
+  the access token's subject, on the sign-on session it was issued on — and
+  nothing else in the request is per account, so nothing acted as the wrong
+  account; but RFC 8628 section 5.4's defence is showing the person what
+  they authorize, and with two accounts signed in "you" is no longer
+  obvious. So, with more than one live account in the browser's list, the
+  request names the account it will be approved as (`device-as`,
+  `portalDevice.request.as`); otherwise the page is the one it was. A
+  `verification_uri_complete` opened in a new tab has no account of its own
+  and signs in as any tab does: the picker where nothing chooses.
+* **THE LIST IS FETCHED ONLY WHERE THE SHELL SAYS SO** (`data-sts-accounts`,
+  `common/CLAUDE.md` 3cl `web_accounts.ts`).
 
 ## A Refresh button beside Sign out (2026-10-09, #538)
 

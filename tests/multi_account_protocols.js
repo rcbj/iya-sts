@@ -18,7 +18,9 @@
 //      <Subject> naming the first changes nothing; no sts_accounts cookie;
 //   2. IsPassive with no session is NoPassive with today's sentence;
 //   3. Session Management's OP iframe script is byte for byte the script
-//      before #561 (its SHA-256), and its cookie one state.
+//      before #561 (its SHA-256), and its cookie one state; no static
+//      surface's shell carries `data-sts-accounts`, which ON every one
+//      does — so a page asks for the account list only with the setting on.
 //   ON:
 //   4. SAML 2.0: ForceAuthn goes to a fresh sign-in, never the picker, and
 //      adds the account; a request naming nobody goes to the picker; a
@@ -273,10 +275,35 @@ function childMain() {
          '3. off: the OP iframe\'s script is byte for byte the one before ' +
          '#561', crypto.createHash('sha256').update(r.text).digest('hex'));
 
+    // THE SHELLS SAY NOTHING with the setting off, so no runtime asks for
+    // the account list (`WebAccounts.announced()`): the front door, the
+    // sign-out, the portal and the console, as `ShellDocument` draws them.
+    const SHELLS = ['/', '/logout', '/portal', '/admin'];
+    const shells = async function () {
+      const out = [];
+      for (const one of SHELLS) {
+        const got = await get({}, one);
+        out.push({ path: one, status: got.status,
+                   on: /<html[^>]* data-sts-accounts="on"/.test(got.text),
+                   any: /data-sts-accounts/.test(got.text) });
+      }
+      return out;
+    };
+    let drawn = await shells();
+    note(drawn.every(function (one) {
+      return one.status === 200 && !one.any;
+    }), '3b. off: no static surface\'s shell carries data-sts-accounts, ' +
+        'so no page asks for the account list', JSON.stringify(drawn));
+
     // =====================================================================
     // ON
     // =====================================================================
     on(true);
+    drawn = await shells();
+    note(drawn.every(function (one) {
+      return one.status === 200 && one.on;
+    }), '3c. on: every static surface\'s shell says data-sts-accounts="on"',
+        JSON.stringify(drawn));
     const jar = {};
     f = await drive(jar, authnRequest({}), ALICE);
     note(f.saml && f.saml.nameId === ALICE && !!jar[AccountSets.cookieName()],

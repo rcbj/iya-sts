@@ -226,6 +226,9 @@ import realms = require('../common/realms');
 // sessions can draw it and nothing else can make it say anything.
 import zlib = require('zlib');
 import ShellDocument = require('../common/shell_document');
+// The account control's rules (#561), which every card surface's stylesheet
+// carries and this page's own did not (`SIGNOUT_CSS`).
+import WebCardCss = require('../common/web_card_css');
 import clusterSecrets = require('../cluster/cluster_secrets');
 // The origins this service answers on (a LIBRARY, rule 3), for the
 // signed-out document's Origin check: the list the CORS answer is built from.
@@ -344,6 +347,16 @@ const LOGOUT_CSS = 'body{font-family:system-ui,-apple-system,"Segoe UI",' +
   '.tabs:has(#logout-details:target)>.tabbar a[href="#logout-details"]' +
   '{background:#fff;font-weight:700;border-color:#555}}' +
   'table.sessions td:first-child{width:3rem}';
+
+// THE STATIC PAGE'S STYLESHEET, `/logout/signout.css`: the page's rules and,
+// after them, the account control's (#561) — `WebSurface` draws the browser's
+// accounts beside the chooser with `authn.multipleAccounts` on, and every
+// other card surface styles it from `WebCardCss.CARD_CSS`, which this page
+// does not carry. The rules are scoped to the control's own classes, so with
+// the setting off, when no control is drawn, they style nothing. The
+// server-drawn document (`page()`) draws no control and keeps `LOGOUT_CSS`
+// exactly as it was.
+const SIGNOUT_CSS = LOGOUT_CSS + WebCardCss.ACCOUNTS_CSS;
 
 // A FAMILIES row, a live-session row, an inventory: open records, as the
 // JavaScript built them.
@@ -4352,7 +4365,7 @@ class Logout {
     });
     app.get(SIGNOUT_STYLE_PATH, (req, res) => {
       log.debug("Entering the sign-out's stylesheet.");
-      res.set('Cache-Control', 'no-cache').type('text/css').send(LOGOUT_CSS);
+      res.set('Cache-Control', 'no-cache').type('text/css').send(SIGNOUT_CSS);
       log.debug("Leaving the sign-out's stylesheet.");
     });
 

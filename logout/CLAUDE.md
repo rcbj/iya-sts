@@ -331,7 +331,13 @@ cleared exactly where it was (`tests/multi_account_logout.js` 1).
   session's end does that, as for any ending). Signing alice out of a
   browser whose default is bob leaves bob's cookie alone.
 
-The words are the `logout.accounts.*` keys, in every shipped catalog. The
+The words are the `logout.accounts.*` keys, in every shipped catalog. **The
+page's stylesheet carries the account control's rules** (`SIGNOUT_CSS`, which
+is `LOGOUT_CSS` and `WebCardCss.ACCOUNTS_CSS` after it): every other card
+surface styles the control from `WebCardCss.CARD_CSS`, which this page does
+not load, so the control `WebSurface` draws beside the chooser was unstyled
+here. The rules are scoped to the control's classes and style nothing with the
+setting off; the server-drawn document keeps `LOGOUT_CSS` as it was. The
 protocols' own sign-outs choose their session in their directories:
 RP-Initiated Logout (`oauth-oidc/CLAUDE.md`), SAML 2.0 front-channel Single
 Logout (`saml/CLAUDE.md`), WS-Federation's two messages

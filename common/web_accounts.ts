@@ -16,7 +16,11 @@
 // page draw it, and this is what they share:
 //
 //   * THE LIST (`fetchList()`): that operation, asked of THIS page's own
-//     origin with the cookie (`credentials: 'same-origin'`). Never of another
+//     origin with the cookie (`credentials: 'same-origin'`) — and ONLY
+//     where the shell says the setting is on (`announced()`, the
+//     `data-sts-accounts` attribute `common/shell_document.ts` draws). Off,
+//     nothing is asked: the page makes exactly the requests it made before
+//     #561, not one more on each load. Never of another
 //     listener's: `common/cors.js` sends no `Access-Control-Allow-Credentials`
 //     to anybody, so a cross-origin read of a cookie-bound answer cannot be
 //     made here, and a page whose origin does not answer `/authn-api` draws
@@ -57,6 +61,8 @@ class WebAccounts {
   static readonly CHANNEL = 'sts-accounts';
   // The list's operation, under the realm's prefix.
   static readonly PATH = '/authn-api/accounts';
+  // The shell's attribute that says the setting is on (`announced()`).
+  static readonly ATTRIBUTE = 'data-sts-accounts';
   // What a link to the portal carries to ask for a sign-in as another
   // account; the portal's runtime reads it (`PortalRuntime.route()`).
   static readonly ANOTHER_PARAM = 'accounts';
@@ -75,6 +81,20 @@ class WebAccounts {
   }
 
   /**
+   * Whether the shell this page was drawn from says several accounts are on
+   * in its realm: `<html data-sts-accounts="on">`. Without it the list is
+   * never asked for.
+   *
+   * @param env - the browser's objects; its `document` is read
+   * @returns whether the attribute says `on`
+   */
+  static announced(env: Json): boolean {
+    const root = env && env.document && env.document.documentElement;
+    return !!root && typeof root.getAttribute === 'function' &&
+      String(root.getAttribute(WebAccounts.ATTRIBUTE) || '') === 'on';
+  }
+
+  /**
    * Fetches the browser's accounts from this page's own origin.
    *
    * @param env - the browser's objects: `fetch`, `location`
@@ -82,7 +102,8 @@ class WebAccounts {
    * @returns the list, or OFF where it could not be read or is off
    */
   static async fetchList(env: Json, prefix: string): Promise<Json> {
-    if (!env || typeof env.fetch !== 'function' || !env.location) {
+    if (!env || typeof env.fetch !== 'function' || !env.location ||
+        !WebAccounts.announced(env)) {
       return WebAccounts.off();
     }
     try {

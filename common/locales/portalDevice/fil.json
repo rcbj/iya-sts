@@ -4,6 +4,7 @@
   "request.access": "Access: <code>{scope}</code>. Mag-e-expire sa {when}.",
   "request.noScope": "(walang binanggit)",
   "request.warning": "<strong>Aprubahan lang ang device na nasa harap mo</strong> at ikaw mismo ang nagsimulang mag-sign in. Kung may nagpadala sa iyo ng code na ito, hinihiling niyang i-sign in mo SIYA bilang ikaw.",
+  "request.as": "Nag-aapruba ka bilang <strong>{name}</strong>: mai-sign in ang device bilang account na ito. Para mag-apruba bilang ibang account na naka-sign in sa browser na ito, magpalit muna ng account.",
   "request.approve": "Aprubahan",
   "request.deny": "Tanggihan",
   "find.heading": "Mag-sign in ng device",
