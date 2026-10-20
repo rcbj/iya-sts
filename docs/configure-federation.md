@@ -133,9 +133,9 @@ What each protocol needs before the relationship is ready:
 
 `fedPeer` is the **Partner** box on the create form. It is the partner's
 entityID, issuer or `wtrealm`, and every assertion's issuer is checked
-against it. In product, a SAML 2.0, WS-Federation or OpenID Connect
-relationship also needs its encryption key, which is issued when the
-relationship is created.
+against it. In product, an enterprise SAML 2.0, WS-Federation or OpenID
+Connect relationship also needs its encryption key, which is issued when the
+relationship is created ([below](#encrypted-assertions)).
 
 **The URLs to give the partner** are on the relationship's page under **What
 to configure at the partner**, and in `endpoints` on the API read:
@@ -318,7 +318,7 @@ partner, and its certificate trusted (`federation.outboundCaFile` for a
 private CA). `fedTokenAuth` chooses `client_secret_basic` (the default) or
 `client_secret_post`.
 
-The paths in the two loops above are this service's own, for an iya-sts
+The `/oauth2/...` paths above are this service's own, for an iya-sts
 partner. For any other partner, take them from its discovery document.
 
 ### An OpenID Provider found through OpenID Federation
@@ -556,28 +556,29 @@ answered. Register the partner as an application first (for SAML 2.0, see
 that application and adds two things: a **release list** and **how this
 service authenticates people for the partner**.
 
-The values are from the in-process tests `tests/attribute_claims.js` and
-`tests/federation_map_bands.js`; no over-HTTP job creates an
-identity-provider-side relationship.
+No over-HTTP job creates an identity-provider-side relationship. The values
+are from two in-process tests.
 
 **Console:**
-1. **Add a relationship**: **Id** `ac-out`, **This service is** *Identity
-   provider*, **Protocol** *SAML 2.0*, **Partner** the partner's entityID,
-   then **Add**.
+1. **Add a relationship**: **Id** `fmb-broker`, **This service is**
+   *Identity provider*, **Protocol** *OpenID Connect*, **Partner** the
+   partner's own identifier (`https://sp.example`), then **Add**.
 2. In **Settings**, **Set** `fedApplication` to the identifier of the
-   partner's application entry.
+   partner's application entry (`fmb-partner-app`).
 3. In **Lists**, **Add** `email` to `fedRelease`.
-4. Optionally **Set** `fedAuthnMechanism`.
+4. Optionally pick a `fedAuthnMechanism` and **Set** it.
 5. **Turn on** `fedEnabled`.
 
 **API:**
 ```bash
-api federation/create '{"id":"ac-out","role":"identity-provider","protocol":"saml2",
+api federation/create '{"id":"fmb-broker","role":"identity-provider","protocol":"oidc",
   "peer":"https://sp.example","application":"fmb-partner-app"}'
-api federation/add-value '{"id":"ac-out","field":"fedRelease","value":"email"}'
-api federation/set '{"id":"ac-out","field":"fedAuthnMechanism","value":"password-mfa"}'
-api federation/enable '{"id":"ac-out"}'
+api federation/add-value '{"id":"fmb-broker","field":"fedRelease","value":"email"}'
+api federation/enable '{"id":"fmb-broker"}'
 ```
+
+The release value `email` is from `tests/attribute_claims.js`; the rest from
+`tests/federation_map_bands.js`.
 
 **`fedRelease` can only remove.** It narrows what the claim and attribute
 pages, the groups claim and a client's own claims request would add. It never
@@ -601,9 +602,10 @@ api federation/set '{"id":"fmb-broker","field":"fedAuthnRelationship","value":"f
 
 # Encrypted assertions
 
-Every SAML 2.0, WS-Federation and OpenID Connect service-provider-side
-relationship holds an encryption key pair, issued under the realm's
-Intermediate when the relationship is created. The partner encrypts to it.
+Every enterprise SAML 2.0, WS-Federation and OpenID Connect
+service-provider-side relationship holds an encryption key pair, issued under
+the realm's Intermediate when the relationship is created. (A consumer
+provider's relationship is created with none.) The partner encrypts to it.
 Taken from `sts_federation_encryption.js` (relationships `enc-saml`,
 `enc-self-ec`, `enc-oidc`, `enc-oidc-self`).
 
