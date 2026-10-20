@@ -787,6 +787,38 @@ must be https (`didWebUrl()`), so the fetch is driven in process with a
 stubbed `fetchDocument` and, for the internal-address refusal, the real
 `fetchPublished()`.
 
+### #693's phase 2: the preferred DID and the `did` claim (2026-10-20)
+
+* **ONE PREFERRED DID, AND ONLY A PROVED ONE.** `siop.setPreferred(username,
+  subject)` marks one value `preferred: true` and clears it from every
+  other ('' clears all); `siop.preferredSubjectOf(username)` is the one
+  reader. It refuses a subject enrolled by value (`not-proved`), a JWK
+  thumbprint (`not-a-did` — it names a key, and a claim called `did`
+  carrying one would say something false) and one not enrolled. **`list()`
+  reads `preferred` as false on any row that is not `proof: 'wallet'`**,
+  whoever wrote it, so a hand-edited entry cannot make an administrator's
+  value releasable. The mark lives ON the existing JSON value rather than in
+  a second attribute, so removing the subject removes it and the one-writer
+  rule (`enrol()`, `remove()`, now `setPreferred()`) holds. **Proving the
+  subject again keeps the mark** (`enrol()` carries it across a re-proof):
+  re-pinning a did:web is not a change of mind. Setting the mark sends no
+  CAEP event — it changes nothing that signs anybody in.
+* **Two doors, the portal's rule and rule 7**: `/portal/self-issued`'s POST
+  takes `action: prefer | unprefer` beside `remove` (the identity is the
+  token's; `STS-PORTAL-0615`, audited `portal.siop.prefer`), and the
+  console's users page and `POST /admin-api/users/set-preferred-self-issued-subject`
+  are one act (`STS-ADMIN-0872`, audited `admin.siop.preferred`; an absent
+  `subject` clears).
+* **What releases it is `oauth-oidc/did_claim.ts`** — the scope, the
+  consent, the pairwise rule and the rest are argued in
+  `oauth-oidc/CLAUDE.md` (*The `did` claim*). It reaches this library
+  LAZILY, at the decision.
+* **Holder binding** (the other half of phase 2) reads
+  `provenSubjectsOf()` too; it is built separately.
+
+`tests/did_claim.js` holds both doors, the refusals, the by-value row's own
+`preferred` ignored, the re-proof and the removal in process.
+
 ## THE x509 CLIENT IDENTIFIER PREFIXES: `x509_san_dns` AND `x509_hash` (#230, 2026-09-26)
 
 Found by #187: the OIDF `oid4vp-1final-verifier-test-plan` has signed

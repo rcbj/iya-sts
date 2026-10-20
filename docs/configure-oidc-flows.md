@@ -737,6 +737,63 @@ GET /oauth2/authorize?response_type=code&client_id=<id>&scope=openid
 [Security profiles → Phishing-resistant sign-in](oauth-security.md#phishing-resistant-sign-in-phr-phrh)
 has the table of what earns which value.
 
+## Release a person's DID as a claim
+
+A person's **preferred DID** — a DID they proved with their wallet on
+`/portal/self-issued` and marked *preferred* there — can be released to a
+client as the `did` claim, in the ID Token and the UserInfo response. It is
+off by default, and every step below is needed.
+
+1. **Turn it on** for the realm:
+
+   ```bash
+   api config/set '{"key":"oauth2.didClaim","value":true}'
+   ```
+
+   The discovery document now lists `did` in `scopes_supported` and
+   `claims_supported`.
+
+2. **Allow the scope** on the client: add `did` to its
+   `oauthAllowedScope`, on the console or:
+
+   ```bash
+   api applications/add '{"application":"parmon-a","attribute":"oauthAllowedScope","value":"did"}'
+   ```
+
+   This is needed in development mode too, although development grants an
+   undeclared scope: the claim reads the declaration.
+
+3. **The client asks for it**: `scope=openid did` on the authorization
+   request.
+
+4. **The person consents** on `/oauth2/consent`, which lists `did` as
+   releasing their DID. Only their own answer counts: a global consent on
+   the application does not, and with `oauth2.consentRequired` off nobody is
+   asked, so nothing is released.
+
+5. **The person has a preferred, proved DID**: they enrol one by proving it
+   with their wallet (*Enrol a wallet* on `/portal/self-issued`) and press
+   *Make preferred*. An administrator's by-value entry cannot be preferred,
+   and neither can a JWK thumbprint.
+
+What comes back:
+
+```json
+{ "sub": "urn:uuid:…", "did": "did:jwk:eyJrdHkiOiJFQyIs…" }
+```
+
+in the ID Token's payload and in the UserInfo response. The claim is
+**absent** — never an error — when any condition fails, and the log says
+why under its code (`STS-OAUTH-0972` to `0977`, once per client and reason in
+ten minutes). In particular a client whose `oauthSubjectType` is `pairwise`
+or `ephemeral` is not told it, because a DID would let it correlate the
+person anyway; set `oauthDidClaimWithPairwise` to `TRUE` on that client only
+if it is meant to know the person by their DID. A `did` named in a claims
+request is not a way round any of this. UserInfo decides again on every
+call, so clearing the mark or removing the DID takes it out of the next
+response for a token already issued; withdrawing the consent revokes the
+client's tokens.
+
 ## Subject types: public, pairwise, ephemeral
 
 | `oauthSubjectType` | `sub` in the ID Token and UserInfo |
