@@ -671,3 +671,55 @@ key it was not built for falls through to the unindexed read. Each
 row, back-channel deliveries and CAEP — and `quiet` moves its info line to
 debug for a caller that logs one line for the set (`account_state.ts`).
 
+## A REMOVED CREDENTIAL ENDS THE SESSIONS IT SIGNED IN, AND NO OTHER (#722, 2026-10-19)
+
+**Removing a passkey ended nothing until then**: the portal's remove and the
+console's `clear-key` sent CAEP `credential-change` and wrote an audit row,
+and every session the key had signed in kept working until it expired — so a
+person who found an unfamiliar passkey on their account and removed it left
+whoever enrolled it signed in. A password reset already signed the person out
+everywhere (`admin_actions.ts`'s `signOutEverywhere()`); a removal is the
+narrower act.
+
+**`endFactorSessions(username, factor, opts)` is the one function**, and it
+is a selective `terminate()` — the same act `/logout` and `/admin/logout`
+perform, with the same audit row (`logout.selective`), the same refusals and
+every projection following from `endSessionById()`: the derived sessions, the
+refresh revocation, front- and back-channel logout and CAEP
+`session-revoked`, once for the cluster under the `authn.session-end` claim.
+
+* **WHICH SESSIONS**: every session of the person one of whose authentication
+  events `authn.sessionNamesFactor()` says the factor completed
+  (`authn/CLAUDE.md`). Every other survives — the one the person is removing
+  the key FROM included, unless that key signed it in.
+* **WHAT ELSE**: the selection also names the `token` and `code` rows whose
+  `sessionId` is one of those sessions, so the access tokens and the
+  `offline_access` refresh tokens a stranger's session was issued go too — a
+  session's end alone revokes only its online refresh tokens. GNAP grants
+  follow by `endsWithSession`. No OpenID Provider Command is sent: that is a
+  global sign-out's.
+* **WHERE**: the sessions are read from `authn.sessions`, the persisted and
+  replicated store, so a session another process or node signed in is found
+  and ended here.
+* **THE DOORS**: the portal's three removals (`portal/account_keys.ts`'s
+  remove, `portal/account_mfa.ts`'s `remove` and `email-factor-off`) through
+  `account-api/account_api.ts`'s `ctx.endFactorSessions()`, initiating entity
+  `user`; the console's and the API's `clear-key`, `clear-totp`,
+  `clear-backup-codes` and `clear-email-factor` through the console's
+  `setLogoutReader()` slot, which carries the function, initiating entity
+  `admin`. Each answer carries `sessionsEnded` and a sentence saying so (the
+  portal's in the person's language, `portal.done.sessionsEnded*`), and each
+  door's audit row counts it. The portal's recovery codes have no removal —
+  replacing a set is the person's own new set, not a removal — so only the
+  console clears them.
+* **A FAILURE NEVER UNDOES THE REMOVAL**, which has already been written and
+  signalled: a session still live afterwards is `STS-AUTHN-0370`, a throw
+  `STS-AUTHN-0371` (both logged and audited), a portal that cannot reach this
+  module `STS-PORTAL-0600`, a console with no reader installed
+  `STS-ADMIN-0870`.
+
+**Tests**: `tests/credential_removal_sessions.js` — two keys through real
+ceremonies and the code grant, one removed at each door, its session's cookie
+and refresh token refused and the other key's still good; the app, the
+recovery codes and the emailed factor with the sessions each did and did not
+complete.

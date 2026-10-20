@@ -105,7 +105,9 @@ grew a gate.
    closes a cycle AND drags every `/ldap` route into the router ahead of the
    console's own.
 
-   It carries ONE object — `FAMILIES`, `inventoryFor`, `terminate` — and
+   It carries ONE object — `FAMILIES`, `inventoryFor`, `terminate`,
+   `liveSessions` and, since #722, `endFactorSessions` (the four credential
+   removals on `/admin/users`, `logout/CLAUDE.md`) — and
    `setLogoutReader()` validates it whole and refuses it whole, for the reason
    the directory WRITER's slot gives: a module that filled a combined slot with
    only the readers would leave `/admin/logout` listing what is live and unable

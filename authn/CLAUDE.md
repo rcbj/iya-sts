@@ -2770,6 +2770,26 @@ email SHALL NOT be used for out-of-band authentication. Where they are on:
 does not accept in the role it answered in gets no session (STS-AUTHN-0268,
 -0269), held second factors excepted by the contract `totp.enabled` kept.
 
+## WHICH FACTOR COMPLETED A SESSION: `sessionNamesFactor()` (#722, 2026-10-19)
+
+When a credential is removed, `logout/logout.ts`'s `endFactorSessions()` ends
+the sessions it signed in (`logout/CLAUDE.md`), and asks THIS module which
+those are, because the authentication event is this module's record. A
+session is named when ANY of its events — the sign-in or a
+re-authentication, never only the latest — has a `context.credential` that
+matches:
+
+| Removed | An event names it when |
+|---|---|
+| a passkey or security key (`webauthn`, with its credential id) | `kind` `webauthn` and `fingerprint` the id's (`credentialFingerprint()`; the id itself is never kept), as the first factor or as a step |
+| the authenticator app (`totp`) | `kind` `totp` |
+| the recovery codes (`backup-code`) | `kind` `backup-code` |
+| the emailed second factor (`email`) | `kind` `email-code` or `email-link` AND an `amr` of more than one method: clearing the second factor leaves a session an emailed link began as the FIRST factor (`amr` `["otp"]`) alone |
+
+`MAX_SESSION_EVENTS` keeps the first event and the latest, so the event that
+BEGAN a session is never dropped; only a middle one can be, and reaching a
+middle event means holding the session already.
+
 ## A REMEMBERED BROWSER, AND THE SECOND FACTOR IT MAY SKIP (#265, 2026-09-26)
 
 The sign-in screen draws a "Remember this browser" checkbox while
