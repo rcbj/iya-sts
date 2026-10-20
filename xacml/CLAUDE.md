@@ -1465,7 +1465,14 @@ two assertion doors for the attestation rules).
   in `passkey_policy.ts`'s `question()`, and always sent with its group, so
   an absent fact is never read as "classical"; the lane is there for a
   realm's own rules. The remote PEP (`xacml-pep/`, `rust/`) carries no
-  passkey vocabulary, so it did not change.
+  passkey vocabulary, so it did not change. **A realm's own issuance
+  document built from the template between #536 and #718 does not carry
+  the rule**: it answers `use-passkey` with its `passkey-use-allowed`
+  Permit, which carries the obligation, so it DECIDES and the built-in rule
+  is not asked — the realm's document is the realm's, by design. Such a
+  realm rebuilds its document from the template to be held to the row; a
+  document built before #536 answers no passkey verdict and falls to the
+  built-in rules as it always did.
 * **Arranged as the transfer questions are**: `xacml_passkey_verdicts.js`
   serves both the PEP and the gate. A realm's own document decides where it
   carries the obligation; otherwise the built-in document decides. Where

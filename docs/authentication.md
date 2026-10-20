@@ -442,6 +442,10 @@ A save that requires it is **refused while the realm offers no ML-DSA**
 register a passkey that satisfies it. If `webauthn.algorithms` changes
 afterwards, registration offers all three ML-DSA algorithms anyway.
 
+A realm that keeps an issuance policy of its own, built from the
+`role-issuance` template before this row existed, decides passkeys with that
+document: rebuild it from the template for the realm to be held to the row.
+
 **The attestation rules at sign-in** (`enforceAttestationAtSignIn`). The
 `webauthn.attestation*` settings — the attestation policy, the list of
 allowed authenticator models (`webauthn.attestationAllowedAaguids`), the

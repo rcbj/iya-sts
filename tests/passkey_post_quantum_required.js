@@ -334,7 +334,9 @@ function childMain() {
       return daveKey.register(b.challenge, b.userHandle);
     }));
     const bobRow = rowOf('pqr-bob', bobKey.credentialId);
-    note(enrolled.every(function (one) { return one.done.ok; }) &&
+    note(enrolled.every(function (one) {
+      return one.done.ok;
+    }) &&
          !('lane' in bobRow) && bobRow.algorithm === 'ML-DSA-65',
          '(the keys: ES256 for alice, both roles, and dave; ML-DSA-65 for ' +
          'bob, whose row records no lane; ES256 and ML-DSA-44 for carol)',
