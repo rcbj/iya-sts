@@ -17988,6 +17988,34 @@ function list() {
   return rows;
 }
 
+// Every application's `appOwner` values, read off the kept listing with no
+// view built (#759): `ownership.ownsAnything()` asks it on every scope
+// decision, and read the owners out of `list()`, a view of every
+// application, to find them. Strings, in `list()`'s order, one list per
+// application that names an owner.
+/**
+ * Returns the owners every application in the ambient realm names.
+ *
+ * @returns one list of owner values per application that has any
+ */
+function ownerValues() {
+  log.debug("Entering ownerValues().");
+  const kept = listing();
+  if (!kept) {
+    log.debug("Leaving ownerValues(). No store.");
+    return [];
+  }
+  const out = [];
+  kept.items.forEach(function (item) {
+    const owners = valuesOf(item.record.fields.appOwner).map(String);
+    if (owners.length) {
+      out.push(owners);
+    }
+  });
+  log.debug("Leaving ownerValues(). " + out.length);
+  return out;
+}
+
 // The applications carrying one value, as views, in `list()`'s order — what
 // the lookups below used to get by filtering the whole of `list()`.
 function lookedUp(mapName, wanted, attribute) {
@@ -20297,6 +20325,7 @@ module.exports = {
   list: list,
   // The clock `list()` is kept by (#625).
   listingVersion: listingVersion,
+  ownerValues: ownerValues,
   // OpenID Federation registrations (#134).
   federatedRegistrations: federatedRegistrations,
   federationExpired: federationExpired,

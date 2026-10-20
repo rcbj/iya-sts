@@ -1455,6 +1455,26 @@ let directoryVersion = 0;
 let groupsVersion = 0;
 
 // ---------------------------------------------------------------------------
+// THE SERVICE ACCOUNTS' CLOCK (#759), on the group clock's design.
+//
+// `serviceAccountNames()` walked the holders of the flag through the store —
+// a synchronous round trip — and the XACML scope decision asks it on every
+// sign-in (`ownership.ownsAnything()`, OWNER_READ and OWNER_WRITE): about 7%
+// of a request worker under a sign-in load. Its answer can change only by a
+// write to an entry that IS a service account or WAS one, so the names are
+// kept per realm (`serviceAccountListings`) until this clock moves, and
+// `noteServiceAccountsTouched()`, from `touchDirectory()`, moves it exactly
+// as `noteGroupsTouched()` moves the group clock: a write naming no DN; a DN
+// the kept answer holds; an entry that is one now, where this process holds
+// it (the realm's Map, or the window without asking the store); and a
+// windowed key it does not hold, which is not known. A write to anyone else
+// — every sign-in's consent and password write on an ordinary person — is a
+// Set lookup and a held lookup, and the kept answer survives it.
+// `tests/sign_in_owner_reads.js`.
+// ---------------------------------------------------------------------------
+let serviceAccountsVersion = 0;
+
+// ---------------------------------------------------------------------------
 // WHAT HAS BEEN WRITTEN SINCE AN LDAP ADD ASKED ITS NAMES (#625).
 //
 // One watch per add whose names are out being asked (`askBeforeTheAdd()`),
@@ -1539,6 +1559,7 @@ function touchDirectory(dn, after) {
   log.debug("Entering touchDirectory().");
   directoryVersion++;
   noteGroupsTouched(dn, after);
+  noteServiceAccountsTouched(dn, after);
   // And any add holding names it asked first is told what this write
   // touched (#625).
   noteHeldNamesTouched(dn, after);
@@ -2457,6 +2478,13 @@ const groupIndexes = realms.keyed(function () {
 
 const NO_GROUPS = new Map();
 
+// The service accounts' names and DNs per realm, kept by
+// `serviceAccountsVersion`; `usersDn` because a settings change moves the
+// container and moves no clock.
+const serviceAccountListings = realms.keyed(function () {
+  return { names: null, dnKeys: new Set(), version: -1, usersDn: '' };
+});
+
 // WHETHER THIS MODULE HAS FINISHED LOADING (#145), declared up here for the
 // group index's reason above: `putEntry()` runs during the seed, while this
 // file is still loading, and its membership note reads `groupRuleFor()`,
@@ -2539,6 +2567,38 @@ function noteGroupsTouched(dn, after) {
     return;
   }
   log.debug('Leaving noteGroupsTouched(). Not a group; the index stands.');
+}
+
+// Whether a write may have changed the service accounts (#759); see
+// `serviceAccountsVersion`. Hot path (every write): no Entering/Leaving
+// pair, the exception the code style allows, stated as it requires.
+function noteServiceAccountsTouched(dn, after) {
+  if (!moduleLoaded || dn === undefined || dn === null || dn === '') {
+    serviceAccountsVersion++;
+    return;
+  }
+  const key = normalizeDn(dn);
+  if (serviceAccountListings().dnKeys.has(key)) {
+    serviceAccountsVersion++;
+    return;
+  }
+  let now = after;
+  if (now === undefined) {
+    if (directoryWindow) {
+      const held = directoryWindow.heldIn(realms.currentId(), key);
+      if (!held.known) {
+        serviceAccountsVersion++;
+        return;
+      }
+      now = held.entry;
+    } else {
+      now = entries.get(key) || null;
+    }
+  }
+  if (now && now.attributes &&
+      serviceAccounts.isServiceAccount(now.attributes)) {
+    serviceAccountsVersion++;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -20678,17 +20738,34 @@ function keepServiceAccountClass(attributes) {
 
 // Every service account in the ambient realm, by username. Only the holders
 // of the flag are visited (#349's walk), and only those pay isPersonEntry().
+// KEPT PER REALM BY `serviceAccountsVersion` (#759): the walk asks the store,
+// and a sign-in's scope decision asked it every time. A copy is handed out,
+// so no caller can change the kept list.
 function serviceAccountNames() {
   log.debug('Entering serviceAccountNames().');
+  const held = serviceAccountListings();
+  const users = normalizeDn(usersDn());
+  if (held.names && held.version === serviceAccountsVersion &&
+      held.usersDn === users) {
+    log.debug('Leaving serviceAccountNames(). Kept, ' + held.names.length);
+    return held.names.slice(0);
+  }
+  const version = serviceAccountsVersion;
   const out = [];
+  const keys = new Set();
   eachHolderOfAny(['stsserviceaccount'], function (entry) {
     if (serviceAccounts.isServiceAccount(entry.attributes) &&
         isPersonEntry(entry)) {
       out.push(usernameOfEntry(entry));
+      keys.add(normalizeDn(entry.dn));
     }
   });
+  held.names = out;
+  held.dnKeys = keys;
+  held.version = version;
+  held.usersDn = users;
   log.debug('Leaving serviceAccountNames(). ' + out.length);
-  return out;
+  return out.slice(0);
 }
 
 // An OWNER (rcbj: "a person or a group"): a DN, a username or a `urn:uuid:`
