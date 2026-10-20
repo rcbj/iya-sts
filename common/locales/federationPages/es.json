@@ -33,5 +33,10 @@
   "index.configure": "Configurar las relaciones en la consola",
   "index.signInScreen": "La pantalla de inicio de sesión",
   "index.buttonsOn": "La pantalla de inicio de sesión ofrece cada socio utilizable como un botón.",
-  "index.buttonsOff": "federation.loginButtons está desactivado, así que la pantalla de inicio de sesión no ofrece ningún socio."
+  "index.buttonsOff": "federation.loginButtons está desactivado, así que la pantalla de inicio de sesión no ofrece ningún socio.",
+  "profile.title": "Algunos datos",
+  "profile.heading": "Algunos datos antes de crear su cuenta",
+  "profile.lead": "{partner} inició su sesión, pero no envió todo lo que este servicio necesita para crear su cuenta. Indique los datos siguientes para terminar.",
+  "profile.submit": "Crear mi cuenta",
+  "profile.note": "Estos datos se guardan en su cuenta aquí. Una dirección de correo electrónico que escriba se registra como no verificada."
 }

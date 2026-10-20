@@ -10,5 +10,6 @@
   "doneConnected": "{provider} est connecté à votre compte.",
   "noSession": "Ce service ne sait plus de quelle connexion cette page fait partie, donc une connexion lancée depuis celle-ci ne pourrait pas aboutir. Reconnectez-vous et connectez le compte depuis là.",
   "riskRefused": "Aucun compte ne peut être connecté depuis cette connexion. Reconnectez-vous et connectez le compte depuis là.",
-  "notConnectable": "Ce fournisseur ne peut pas être connecté pour le moment."
+  "notConnectable": "Ce fournisseur ne peut pas être connecté pour le moment.",
+  "onlyWayIn": "Cette connexion est le seul moyen de vous connecter à ce compte, elle ne peut donc pas être supprimée. Ajoutez d’abord un autre moyen de connexion — un mot de passe, une clé d’accès ou un autre compte connecté — puis supprimez-la."
 }

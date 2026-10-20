@@ -10,5 +10,6 @@
   "doneConnected": "{provider} är anslutet till ditt konto.",
   "noSession": "Denna tjänst vet inte längre vilken inloggning den här sidan hör till, så en anslutning som startas härifrån kan inte slutföras. Logga in igen och anslut därifrån.",
   "riskRefused": "Ett konto kan inte anslutas från den här inloggningen. Logga in igen och anslut därifrån.",
-  "notConnectable": "Den leverantören kan inte anslutas nu."
+  "notConnectable": "Den leverantören kan inte anslutas nu.",
+  "onlyWayIn": "Den här anslutningen är det enda sättet att logga in på kontot, så den kan inte kopplas från. Lägg först till ett annat sätt att logga in – ett lösenord, en nyckel eller ett annat anslutet konto – och koppla sedan från den."
 }

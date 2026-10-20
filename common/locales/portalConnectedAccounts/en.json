@@ -10,5 +10,6 @@
   "doneConnected": "{provider} is connected to your account.",
   "noSession": "This service no longer knows which sign-in this page is part of, so a connection started from it could not be finished. Sign in again and connect from there.",
   "riskRefused": "An account cannot be connected from this sign-in. Sign in again and connect from there.",
-  "notConnectable": "That provider cannot be connected now."
+  "notConnectable": "That provider cannot be connected now.",
+  "onlyWayIn": "This connection is the only way you can sign in to this account, so it cannot be disconnected. Add another way to sign in first — a password, a passkey or another connected account — then disconnect it."
 }

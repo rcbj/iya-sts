@@ -71,6 +71,7 @@ interface PortalConnectedAccountsDeps {
   config: { value(key: string): any };
   now(): number;
   // Each reached when a request arrives (the file's header).
+  credentials: () => Json;
   federation: () => Json;
   federationSp: () => Json;
   links: () => Json;
@@ -119,6 +120,11 @@ class PortalConnectedAccounts {
         helpers.log.debug("Entering now().");
         helpers.log.debug("Leaving now().");
         return Date.now();
+      },
+      credentials: function credentials(): Json {
+        helpers.log.debug("Entering credentials().");
+        helpers.log.debug("Leaving credentials().");
+        return require('../common/credentials');
       },
       federation: function federation(): Json {
         helpers.log.debug("Entering federation().");
@@ -203,6 +209,46 @@ class PortalConnectedAccounts {
   }
 
   /**
+   * Whether the person keeps a way to sign in once their connection through
+   * a relationship is removed: a password or a passkey that signs in
+   * (`credentials.mechanismsFor().usable`, the one answer to "can they get
+   * in at all"), or a link through another relationship that signs people
+   * in and is enabled. A second factor alone is not a way in.
+   *
+   * @param username - the person
+   * @param relationship - the relationship being disconnected
+   * @returns whether another way in remains
+   */
+  otherWayIn(username: string, relationship: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering PortalConnectedAccounts.otherWayIn().");
+    let held: Json = null;
+    try {
+      held = this.deps.credentials().mechanismsFor(username);
+    } catch (e) {
+      log.debug("Caught in PortalConnectedAccounts.otherWayIn(): " +
+                ((e && e.message) || e));
+      held = null;
+    }
+    if (held && held.usable) {
+      log.debug("Leaving PortalConnectedAccounts.otherWayIn(). A password " +
+                "or a passkey.");
+      return true;
+    }
+    const federation = this.deps.federation();
+    const another = this.linksOf(username).some(function (l: Json): boolean {
+      if (l.relationship === relationship) {
+        return false;
+      }
+      const record = federation.get(l.relationship);
+      return !!record && record.fedRole === 'service-provider' &&
+             federation.signsIn(record) && federation.isEnabled(record);
+    });
+    log.debug("Leaving PortalConnectedAccounts.otherWayIn(). " + another);
+    return another;
+  }
+
+  /**
    * Whether the sign-on session authenticated recently enough to connect:
    * its latest event within `federation.connectRecentAuthMinutes`.
    *
@@ -258,6 +304,16 @@ class PortalConnectedAccounts {
         log.debug("Leaving PortalConnectedAccounts.act(). Not connected.");
         return ctx.refuse(res, 400, 'STS-PORTAL-0613',
                           t.text('portalConnectedAccounts.notConnected'),
+                          { view: this.view(who) });
+      }
+      // NEVER THE ONLY WAY IN (rcbj's decision 4 on #729): a person a
+      // provider created has no password, and removing that provider's
+      // connection would leave an account nobody can sign in to. Refused,
+      // and the person is told to add another way first.
+      if (!this.otherWayIn(who, String(body.id))) {
+        log.debug("Leaving PortalConnectedAccounts.act(). The only way in.");
+        return ctx.refuse(res, 409, 'STS-PORTAL-0614',
+                          t.text('portalConnectedAccounts.onlyWayIn'),
                           { view: this.view(who) });
       }
       gone.forEach(function (l: Json): void {
@@ -354,7 +410,9 @@ class PortalConnectedAccounts {
           'otherwise the answer is `stepUp`, a sign-in again. The answer ' +
           'sets the `sts_fed_link` cookie, which finishes the connect only ' +
           'in the browser holding it. `disconnect` removes your connection ' +
-          'and ends the sessions it started.',
+          'and ends the sessions it started; it is refused (409) while the ' +
+          'connection is your only way to sign in — no password, passkey ' +
+          'or other connection.',
         body: ACT_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {

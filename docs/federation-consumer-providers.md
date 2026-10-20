@@ -256,6 +256,22 @@ sets itself, such as `state`, `nonce` and `redirect_uri`, are refused.
   `discord~80351110224678912`. Relationships of this category default to
   `fedSubjectPolicy` `jit-namespaced`, with `fedAutocreateUsers` on in both
   modes.
+* **A relationship creates at most `fedProvisionCap` people**, and on these
+  relationships it is never unlimited by default. A new relationship is
+  given `federation.consumerProvisionCap` (10000 unless the realm says
+  otherwise), and an empty `fedProvisionCap` means that setting. Set `0` on
+  the relationship for no limit. At the cap a newcomer is refused
+  (`STS-FED-0090`); people already connected still sign in.
+* **A newcomer is asked for what the provider did not send.** In product
+  mode the realm's attribute policy (Directory > Policies > Attribute
+  policy, `givenName`, `sn` and `mail` by default) must be met by every new
+  person. When the provider sends no surname, or no address, the person is
+  shown a short form asking for exactly the missing values before the
+  account is created (`/federation/profile/{handle}`). The policy is not
+  relaxed. This covers Sign in with Apple, which sends the name on the first
+  authorization only. An address typed there is recorded as unverified. The
+  form is good for one sign-in, in the browser it started in, and for five
+  tries.
 * **An email address is never used to find an existing person**, whether or
   not it is verified. A local person with the same name and the same address
   is left exactly as they were. `any-existing` is refused on these
@@ -280,6 +296,10 @@ as themselves, select **Connect**, and sign in at the provider. From then on,
 a sign-in through that provider is them. **Disconnect** removes the connection
 and ends the sessions it started. Only a consumer provider's connection can be
 removed there. An enterprise partner's link is an administrator's.
+**Disconnect is refused when the connection is the account's only way in**
+(`STS-PORTAL-0614`): no password, no passkey that signs in, and no other
+connected account. The page tells the person to add another way to sign in
+first.
 
 A connect needs:
 
@@ -321,7 +341,9 @@ with three signals of their own:
   federated sign-in for a step-up, the person answers with an authenticator
   app or security key they hold here. That is never a password and never an
   enrolment. Someone who holds neither is refused (`STS-RISK-0018`). The
-  session then records `federated` plus the factor, with `acr` `mfa`.
+  session then records `federated` plus the factor, with `acr` `mfa`. If the
+  sign-in is then refused anyway, the session the second factor started is
+  ended (`STS-FED-0192`): no session outlives a refused sign-in.
 * **The policy is told the category.** The issuance request carries:
   * `urn:sts:xacml:authn-category`: `consumer` or `enterprise`;
   * `urn:sts:xacml:authn-provider`: the provider;
@@ -393,6 +415,10 @@ the response ([Error codes](error-codes.md)).
 | `STS-FED-0178` | a step-up after a provider was not finished | the person must answer with a factor they hold here, in the same browser |
 | `STS-RISK-0018` | a step-up was asked of someone who holds no second factor here | expected for a newcomer; an existing person can add an authenticator app on the portal |
 | `STS-FED-0182`, `STS-FED-0183`, `STS-FED-0111` | a connect from the portal was refused | the provider account is someone else's; an administrator's account; another browser |
+| `STS-FED-0188` | a newcomer was asked for details the provider did not send | expected in product mode; the realm's attribute policy names what every person must hold |
+| `STS-FED-0189`, `STS-FED-0190`, `STS-FED-0191` | the details form was refused, drawn again, or given up on | a stale or copied form; a value its attribute does not accept; five tries |
+| `STS-FED-0192` | a sign-in refused after its step-up ended the session the second factor started | the refusal beside it says why the sign-in was refused |
+| `STS-PORTAL-0614` | a disconnect was refused | the connection is the account's only way in; add a password, a passkey or another connection first |
 | `STS-FED-0185` | Apple's client secret could not be signed | `fedTeamId`, `fedKeyId`, `fedClientSigningKey` (a P-256 `.p8`) and the client ID |
 | `STS-FED-0186`, `STS-FED-0187` | an Apple notification was refused | not signed by Apple, already accepted, or too old; or the relationship takes none |
 | `STS-FED-0180` | an extra authorization parameter was refused | it names a parameter iya-sts sets itself |

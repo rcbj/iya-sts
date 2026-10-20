@@ -8432,6 +8432,26 @@ const SETTINGS = [
                  'are asked to sign in again first: a connection lets the ' +
                  'provider sign them in from then on.' },
 
+  // HOW MANY PEOPLE A CONSUMER PROVIDER MAY CREATE, BY DEFAULT (#565, rcbj's
+  // decision 1 on #729): a consumer relationship keeps automatic account
+  // creation on, and its fedProvisionCap is never unlimited by default. The
+  // value is written onto a consumer relationship when it is created, where
+  // an administrator reads and changes it, and it is what a consumer
+  // relationship's empty fedProvisionCap means. 0 on the relationship is
+  // still unlimited — an administrator saying so.
+  { key: 'federation.consumerProvisionCap', group: 'Federation',
+    label: 'Consumer providers: accounts each may create',
+    env: 'STS_FEDERATION_CONSUMER_PROVISION_CAP', type: 'int', dflt: 10000,
+    min: 1, max: 100000000, runtime: true,
+    description: 'How many people a consumer or social provider\'s ' +
+                 'relationship may create, unless the relationship\'s own ' +
+                 'fedProvisionCap says otherwise. Written onto a consumer ' +
+                 'relationship when it is created, and used for one whose ' +
+                 'fedProvisionCap is empty. At the cap a newcomer is ' +
+                 'refused (STS-FED-0090) and a person already connected ' +
+                 'still signs in. An enterprise partner is not affected: ' +
+                 'its empty fedProvisionCap is unlimited.' },
+
   { key: 'federation.outbound', group: 'Federation',
     label: 'Make back-channel requests to partners',
     env: 'STS_FEDERATION_OUTBOUND', type: 'bool', dflt: true, runtime: true,

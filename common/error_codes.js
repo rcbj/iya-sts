@@ -11574,6 +11574,43 @@ const CODES = [
       'relationship that takes none: unknown, not usable, or not a provider ' +
       'whose profile receives notifications (#565).',
     spec: 'HTTP 404' },
+  // A CONSUMER NEWCOMER ASKED FOR WHAT THE PROVIDER DID NOT SEND, AND A
+  // STEP-UP'S SESSION ENDED WITH ITS REFUSAL (rcbj's decisions 2 and 3 on
+  // #729).
+  { code: 'STS-FED-0188',
+    summary: 'A consumer provider signed in a newcomer without a value this ' +
+      'realm\'s attribute policy requires of every person (product mode), ' +
+      'so the person was sent to /federation/profile/{handle} to give ' +
+      'exactly the missing values before the account is created (#729). ' +
+      'Nothing was created yet.',
+    spec: 'HTTP 303 to the form; the code is not in the body' },
+  { code: 'STS-FED-0189',
+    summary: 'A /federation/profile/{handle} submission did not carry the ' +
+      'token the step was given, so nothing was created and the step was ' +
+      'spent (#729).',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0190',
+    summary: 'A /federation/profile/{handle} submission left a required ' +
+      'value empty or gave one its attribute does not accept (too long, a ' +
+      'control character, not an address, or refused by the attribute\'s ' +
+      'own rules), so the form was drawn again under a new handle (#729).',
+    spec: 'HTTP 400 page, the form again' },
+  { code: 'STS-FED-0191',
+    summary: 'A /federation/profile/{handle} form was sent five times ' +
+      'without the values this service needs, so the step was ended and ' +
+      'nothing was created (#729).',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-FED-0192',
+    summary: 'A federated sign-in was refused after its step-up on risk, so ' +
+      'the session the step-up\'s local second factor had started was ended ' +
+      'through the ordinary sign-out (audit row, CAEP, back-channel Logout ' +
+      'Tokens) and its cookie cleared: no session outlives a refused ' +
+      'sign-in (#729).',
+    spec: 'none — the refusal\'s own page; logged' },
+  { code: 'STS-FED-0193',
+    summary: 'The session a refused step-up had started could not be ended ' +
+      '(#729). The refusal stands.',
+    spec: 'none — logged' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
@@ -21576,6 +21613,13 @@ const CODES = [
     summary: 'A disconnect on /portal/connected-accounts named a provider ' +
       'the person has no connection to (#565).',
     spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0614',
+    summary: 'A disconnect on /portal/connected-accounts was refused: the ' +
+      'consumer provider is the account\'s only way in — no password, no ' +
+      'passkey that signs in, and no other connection — so removing it ' +
+      'would lock the person out (#729). They are told to add another way ' +
+      'first.',
+    spec: 'HTTP 409 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },

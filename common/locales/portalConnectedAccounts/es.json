@@ -10,5 +10,6 @@
   "doneConnected": "{provider} está conectado a su cuenta.",
   "noSession": "Este servicio ya no sabe de qué inicio de sesión forma parte esta página, así que una conexión iniciada desde ella no podría completarse. Inicie sesión de nuevo y conecte desde allí.",
   "riskRefused": "No se puede conectar una cuenta desde este inicio de sesión. Inicie sesión de nuevo y conecte desde allí.",
-  "notConnectable": "Ese proveedor no se puede conectar ahora."
+  "notConnectable": "Ese proveedor no se puede conectar ahora.",
+  "onlyWayIn": "Esta conexión es la única forma de iniciar sesión en esta cuenta, así que no se puede desconectar. Añada primero otra forma de iniciar sesión —una contraseña, una llave de acceso u otra cuenta conectada— y después desconéctela."
 }

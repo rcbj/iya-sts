@@ -2081,7 +2081,13 @@ The ones a reader of this directory needs:
   `create()` and enabling refuse (`STS-FED-0171`). Enterprise relationships
   are untouched in either position.
 * **THE CONSUMER DEFAULTS** are written at creation: `jit-namespaced`,
-  auto-create on, `fedUsernameSource` empty. So a newcomer is
+  auto-create on, `fedUsernameSource` empty, and `fedProvisionCap` from
+  `federation.consumerProvisionCap` (10000; rcbj's decision 1 on #729: a
+  consumer relationship keeps creating people, but never without limit by
+  default). `provisionCapOf()` reads a consumer relationship's EMPTY cap as
+  that setting, so one written by `ldapmodify` is bounded too; `0` is an
+  administrator saying unlimited, and an enterprise partner's empty cap is
+  still unlimited. So a newcomer is
   `<relationship>~<subject>` and an address is never a matching key.
   `any-existing` is refused on a consumer relationship in EVERY mode
   (`STS-FED-0172`). A consumer relationship encrypts nothing
@@ -2115,6 +2121,43 @@ The ones a reader of this directory needs:
   person, just now, finishes the sign-in with `amr` `['federated', <factor>]`
   and `acr` `mfa`; otherwise it is `STS-FED-0178`. A newcomer is not offered
   one, since they hold nothing.
+* **A NEWCOMER IS ASKED FOR WHAT THE ATTRIBUTE POLICY NEEDS AND THE PROVIDER
+  DID NOT SEND** (rcbj's decision 2 on #729). In product mode the attribute
+  policy (#396) refuses a create missing a required value (`STS-FED-0158`),
+  which a consumer provider that sends no surname — or Apple, which sends
+  the name on the FIRST authorization only — would hit at the door. Nothing
+  in the policy is relaxed: `startFederatedSession()` asks the policy of the
+  entry this sign-in would write (`profileMissing()`, `cn` never asked since
+  it is made of the names) BEFORE the session, and a consumer newcomer is
+  sent (303, `STS-FED-0188`) to `/federation/profile/{handle}`, a page of
+  the federation surface (common/CLAUDE.md 3cl, script required, the shell's
+  CSP) asking for exactly those values. The partner's answer is held under a
+  single-use handle, bound by LINK_COOKIE, and the form carries a token held
+  with it (`STS-FED-0189`). The POST spends the handle; each value is held
+  to `ldap/person_editor.ts`'s `checkCreateValues()` (an address to its
+  shape), and a bad one draws the form again under a new handle
+  (`STS-FED-0190`), five times at most (`STS-FED-0191`). The values then ride
+  `profileSupplied` back through `completeSignIn()`, so the subject decision,
+  the creation question and the policy are asked again, and only onto an
+  entry this sign-in CREATES (`withProfileValues()`). A typed address is
+  unverified. An enterprise partner keeps the refusal: its mapping is where
+  a missing attribute is supplied.
+* **NO SESSION OUTLIVES A REFUSED SIGN-IN** (rcbj's decision 3 on #729). The
+  step-up's second factor starts a local session before the browser returns
+  to `/federation/stepup/{handle}`; `holdStepUpSession()` holds it on the
+  response when the STEP started it (latest event the step's, first event no
+  older than the step), and any refusal of the federated finish — the
+  endpoint's own, or one `completeSignIn()` reaches through `refuse()` —
+  ends it through `authn.endSessionById()` (the sign-out's cascade) and
+  clears the cookie (`STS-FED-0192`). A refusal drawn elsewhere is caught on
+  the response's `finish`, server-side. A person already signed in keeps the
+  session they had.
+* **THE PORTAL'S DISCONNECT NEVER REMOVES THE ONLY WAY IN** (rcbj's decision 4
+  on #729, `portal/portal_connected_accounts.ts`): refused (409,
+  `STS-PORTAL-0614`) unless the person keeps a password or a passkey that
+  signs in (`credentials.mechanismsFor().usable`) or a link through another
+  enabled relationship, with a sentence telling them to add another way
+  first.
 * **ISSUER ALIASES** (Google's bare `accounts.google.com`) are accepted only
   while `fedPeer` is still the profile's: a relationship pointed elsewhere has
   no business accepting Google's spelling. `common/crypto.js`'s
@@ -2147,9 +2190,12 @@ a local one lands on an entry of their own), the realm switch at every door,
 category over HTTP between two realms of one service through the
 `generic-oidc` profile. It covers the realm switch at creation and at the
 login endpoint, creation from the profile, the list's category, a newcomer's
-own entry with a namesake left alone, and any-existing refused. **Not covered
-yet:** a consumer provider on an application's chooser beside an enterprise
-partner, and any profile against its live provider.
+own entry with a namesake left alone, and any-existing refused. The first
+file's section N holds rcbj's #729 decisions 2-4, and its A11 decision 1.
+**Not covered yet:** a consumer provider on an application's chooser beside
+an enterprise partner, the details form after Apple's second authorization
+(the mechanism is the generic one N drives), and any profile against its
+live provider.
 
 ### Sign in with Apple (#565)
 

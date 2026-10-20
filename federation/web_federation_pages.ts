@@ -81,6 +81,10 @@ const PAGES = [
   // Where a step-up after a partner returns (#565): a refusal, or the
   // signed-in page.
   { path: '/federation/stepup/:id', embedded: true, operation: none,
+    render: draw, title: title },
+  // What a consumer provider's newcomer is asked for (#729): the form, or a
+  // refusal.
+  { path: '/federation/profile/:id', embedded: true, operation: none,
     render: draw, title: title }
 ];
 

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4515** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4522** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 29
-* [Federation (`STS-FED`)](#sts-fed) — 164
+* [Federation (`STS-FED`)](#sts-fed) — 170
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 242
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 130
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 240
 * [Management API (`STS-API`)](#sts-api) — 85
-* [User portal (`STS-PORTAL`)](#sts-portal) — 98
+* [User portal (`STS-PORTAL`)](#sts-portal) — 99
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
@@ -2612,6 +2612,12 @@ Raised from: federation/.
 | `STS-FED-0185` | Sign in with Apple's client secret could not be signed for a token request (#565): fedTeamId, fedKeyId, fedClientId or fedClientSigningKey is missing, the key will not open, or it is not a P-256 key. | HTTP 500 (the federation surface) |
 | `STS-FED-0186` | A provider's server-to-server notification was refused (#565): it did not verify against the relationship's keys, named another issuer or audience, carried no event or no jti, or had already been accepted once. | HTTP 400 |
 | `STS-FED-0187` | A provider's server-to-server notification arrived for a relationship that takes none: unknown, not usable, or not a provider whose profile receives notifications (#565). | HTTP 404 |
+| `STS-FED-0188` | A consumer provider signed in a newcomer without a value this realm's attribute policy requires of every person (product mode), so the person was sent to /federation/profile/{handle} to give exactly the missing values before the account is created (#729). Nothing was created yet. | HTTP 303 to the form; the code is not in the body |
+| `STS-FED-0189` | A /federation/profile/{handle} submission did not carry the token the step was given, so nothing was created and the step was spent (#729). | HTTP 403 page |
+| `STS-FED-0190` | A /federation/profile/{handle} submission left a required value empty or gave one its attribute does not accept (too long, a control character, not an address, or refused by the attribute's own rules), so the form was drawn again under a new handle (#729). | HTTP 400 page, the form again |
+| `STS-FED-0191` | A /federation/profile/{handle} form was sent five times without the values this service needs, so the step was ended and nothing was created (#729). | HTTP 400 page |
+| `STS-FED-0192` | A federated sign-in was refused after its step-up on risk, so the session the step-up's local second factor had started was ended through the ordinary sign-out (audit row, CAEP, back-channel Logout Tokens) and its cookie cleared: no session outlives a refused sign-in (#729). | none — the refusal's own page; logged |
+| `STS-FED-0193` | The session a refused step-up had started could not be ended (#729). The refusal stands. | none — logged |
 
 ## STS-OIDFED
 
@@ -4926,6 +4932,7 @@ Raised from: portal/.
 | `STS-PORTAL-0610` | A connect on /portal/connected-accounts was refused (#565): the token is on no sign-on session this service still holds, so the provider's return could not be bound to one. | HTTP 400 JSON |
 | `STS-PORTAL-0611` | A connect on /portal/connected-accounts was refused (#565): the sign-on session's risk is MEDIUM or HIGH, and connecting a provider is never done from a session risk scoring doubts. | HTTP 403 JSON |
 | `STS-PORTAL-0613` | A disconnect on /portal/connected-accounts named a provider the person has no connection to (#565). | HTTP 400 JSON |
+| `STS-PORTAL-0614` | A disconnect on /portal/connected-accounts was refused: the consumer provider is the account's only way in — no password, no passkey that signs in, and no other connection — so removing it would lock the person out (#729). They are told to add another way first. | HTTP 409 JSON |
 
 ## STS-ACCOUNT
 

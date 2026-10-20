@@ -7390,6 +7390,23 @@ const ENDPOINTS: EndpointEntry[] = [
           'any browser whose latest authentication is not that second ' +
           'factor, as that person, just now (STS-FED-0178). The session\'s ' +
           'amr is federated and the factor proved; its acr is mfa.' },
+  { path: '/federation/profile/:handle', group: 'Federation',
+    name: 'Give the details a consumer provider did not send (#729)',
+    specs: ['oidc', 'rfc6749'],
+    effect: 'CREATES the account a consumer provider\'s newcomer signs in ' +
+            'to, once they have given what the realm requires',
+    what: 'Where a consumer or social provider\'s newcomer is sent when ' +
+          'this realm\'s attribute policy requires a value the provider ' +
+          'did not send (STS-FED-0188), in product mode: GET draws a form ' +
+          'asking for exactly the missing values, POST takes them. The ' +
+          'provider\'s verified answer is held server-side under a ' +
+          'single-use handle bound by a cookie to the browser it arrived ' +
+          'in (STS-FED-0111), and the form carries a token held with it ' +
+          '(STS-FED-0189). A value its attribute does not accept draws the ' +
+          'form again (STS-FED-0190), five times at most (STS-FED-0191). ' +
+          'Then the sign-in finishes as it began: the subject decision, the ' +
+          'creation question and the issuance policy are asked again. A ' +
+          'typed address is unverified. Nothing in the policy is relaxed.' },
   { path: '/federation/notifications/:id', group: 'Federation',
     name: 'A provider\'s server-to-server notification (#565)',
     specs: ['rfc7519'],

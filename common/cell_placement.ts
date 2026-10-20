@@ -315,6 +315,9 @@ const ROWS: Row[] = [
     segment: 3, why: 'a link handle is found where it was minted (D10)' },
   { prefix: '/federation/stepup', strategy: 'artifact', browser: true,
     segment: 3, why: 'a step-up handle is found where it was minted (#565)' },
+  { prefix: '/federation/profile', strategy: 'artifact', browser: true,
+    segment: 3, why: 'a consumer newcomer\'s details handle is found where ' +
+                     'it was minted (#729)' },
   // A PROVIDER'S NOTIFICATION (#565) has no browser and names a subject, not
   // a cell: verified and spent where it arrives, and fanned out to every
   // peer (#727, `federation-provider-notification`), as a partner's sign-out

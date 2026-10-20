@@ -301,6 +301,19 @@ const LINK_VIA = 'Federation link';
 // factor is recorded as, for the step-up endpoint to recognise.
 const STEPUP_PATH = federation.PATHS.stepup;
 const STEPUP_VIA = 'Federation step-up';
+// WHERE A CONSUMER NEWCOMER GIVES WHAT THE PROVIDER DID NOT SEND (#565,
+// rcbj's decision 2 on #729): the values this realm's attribute policy
+// requires of every person, asked for on a short form of the federation
+// surface before the account is created. Five tries at one form, and a value
+// is at most 256 characters, as `person_editor.ts` holds a create's values to
+// the attribute's own rules besides.
+const PROFILE_PATH = federation.PATHS.profile;
+const PROFILE_MAX_ATTEMPTS = 5;
+const PROFILE_VALUE_MAX = 256;
+// The shape of an address a person types (`ldap/person_editor.ts`'s).
+const PROFILE_EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// A control character, never in a value a person types.
+const PROFILE_CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 // HOW OLD A PROVIDER NOTIFICATION WITH NO `exp` MAY BE (#565): its `iat`
 // bounds it instead, and the once-ever history keeps it that long. A day,
 // which covers a provider's own retries.
@@ -546,6 +559,14 @@ class FederationSp {
     app.get(STEPUP_PATH + '/:handle', (req, res) => {
       return this.stepUpEndpoint(req, res);
     });
+    // GET|POST /federation/profile/{handle} — what a consumer provider's
+    // newcomer is asked for before the account is created (#565, #729).
+    app.get(PROFILE_PATH + '/:handle', (req, res) => {
+      return this.profileEndpoint(req, res);
+    });
+    app.post(PROFILE_PATH + '/:handle', (req, res) => {
+      return this.profileSubmit(req, res);
+    });
     // POST /federation/notifications/{id} — a provider's signed
     // server-to-server notification (#565: Sign in with Apple).
     app.post(federation.PATHS.notifications + '/:id', (req, res) => {
@@ -772,6 +793,9 @@ class FederationSp {
     log.debug("Entering FederationSp.refuse(). what=" + what);
     const id = (record && record.fedId) || '';
     if (id) federation.recordFailure(id, what + ': ' + why);
+    // A SESSION A STEP-UP'S SECOND FACTOR STARTED does not outlive the
+    // refusal of the sign-in it was for (rcbj's decision 3 on #729).
+    this.endStepUpSession(res, what);
     if (FederationPages.onSurface(res)) {
       FederationPages.send(res, status,
                            FederationPages.refusedView(what, why, id));
@@ -2923,6 +2947,10 @@ class FederationSp {
         'already been used, or it expired (federation.requestTtlMin). Start ' +
         'the federated sign-in again.');
     }
+    // THE SESSION THIS STEP'S SECOND FACTOR STARTED, if it did (rcbj's
+    // decision 3 on #729): held on the response, so a refusal of the
+    // federated finish — here, or anywhere completeSignIn() goes — ends it.
+    this.holdStepUpSession(req, res, context);
     const record = federation.get(context.id);
     if (!record || record.fedRole !== 'service-provider' ||
         !federation.signsIn(record) || !federation.isUsable(record)) {
@@ -2981,6 +3009,468 @@ class FederationSp {
         amr: this.federatedAmr(proved), acr: 'mfa', steppedUp: true }));
   }
 
+  // ---------------------------------------------------------------------------
+  // NO SESSION OUTLIVES A REFUSED SIGN-IN (rcbj's decision 3 on #729).
+  //
+  // The step-up's second factor is a local sign-in, and its finisher starts
+  // a session before the browser returns to `/federation/stepup/{handle}`:
+  // that is how the endpoint knows the factor was proved. When the federated
+  // finish is then refused — the browser, the freshness, the relationship,
+  // the subject decision, the policy, an attribute source — that session was
+  // a half of a sign-in that did not happen, and it is ENDED through
+  // `authn.endSessionById()` (`dropSession()`, so the audit row, CAEP and
+  // the back-channel Logout Tokens are the ones every sign-out has) and its
+  // cookie cleared. Only a session the step STARTED: its latest event is
+  // the step's second factor, as the person the step was for, and its first
+  // event is no older than the step. A person who was already signed in
+  // keeps the session they had (`startSession()` re-authenticated it).
+  // ---------------------------------------------------------------------------
+  private holdStepUpSession(req, res, context): void {
+    const { authn, log } = this.deps;
+    log.debug("Entering FederationSp.holdStepUpSession().");
+    let session: any = null;
+    try {
+      session = authn.sessionOf(req);
+    } catch (e) {
+      log.debug("Caught in FederationSp.holdStepUpSession(): " +
+                ((e && e.message) || e));
+      session = null;
+    }
+    const events = session && Array.isArray(session.events)
+      ? session.events : [];
+    const latest = events.length ? events[events.length - 1] : null;
+    const started = !!session && !!latest && latest.via === STEPUP_VIA &&
+      !(Number(session.eventsDropped || 0) > 0) &&
+      String((session.user && session.user.username) || '').toLowerCase() ===
+        String(context.username || '').toLowerCase() &&
+      authn.sessionStartedAt(session) >=
+        Number(context.stepStartedAt || 0) - 1000;
+    if (!started || !res || !res.locals) {
+      log.debug("Leaving FederationSp.holdStepUpSession(). The step started " +
+                "no session.");
+      return;
+    }
+    const held = { id: String(session.id || ''),
+                   username: String(context.username || ''),
+                   realm: realms.current(), ended: false };
+    res.locals.fedStepUpSession = held;
+    // AND AFTER THE ANSWER, for a refusal drawn by something other than
+    // refuse() (an authentication page, an error): the session is ended
+    // server-side, in its own realm, where the cookie can no longer be
+    // cleared. A success replaced the session (`startSession()`'s
+    // `request`) and answers below 400.
+    const self = this;
+    if (typeof res.on === 'function') {
+      res.on('finish', function (): void {
+        log.debug("Entering the step-up session's finish check.");
+        if (!held.ended && Number(res.statusCode) >= 400) {
+          realms.run(held.realm, function (): void {
+            self.endStepUpSession(res, 'answered ' + res.statusCode);
+          });
+        }
+        log.debug("Leaving the step-up session's finish check.");
+      });
+    }
+    log.debug("Leaving FederationSp.holdStepUpSession(). Held " + held.id +
+              ".");
+  }
+
+  // Ends the session holdStepUpSession() held, once. Never throws: the
+  // refusal it follows has been decided.
+  private endStepUpSession(res, why: string): void {
+    const { authn, log } = this.deps;
+    log.debug("Entering FederationSp.endStepUpSession().");
+    const held = res && res.locals ? res.locals.fedStepUpSession : null;
+    if (!held || held.ended || !held.id) {
+      log.debug("Leaving FederationSp.endStepUpSession(). None held.");
+      return;
+    }
+    held.ended = true;
+    try {
+      authn.endSessionById(held.id, 'a refused federated sign-in after its ' +
+                           'step-up (' + why + ')', 'policy');
+      if (!res.headersSent) {
+        authn.clearSessionCookie(res);
+      }
+      log.info(errorCodes.tag('STS-FED-0192') + 'federation: the federated ' +
+               'sign-in of "' + held.username + '" was refused after its ' +
+               'step-up (' + why + '), so the session its second factor ' +
+               'started was ended.');
+    } catch (e) {
+      log.debug("Caught in FederationSp.endStepUpSession(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-FED-0193') + 'federation: the session ' +
+                'a refused step-up started for "' + held.username +
+                '" could not be ended: ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving FederationSp.endStepUpSession().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT A CONSUMER NEWCOMER IS ASKED FOR (rcbj's decision 2 on #729).
+  //
+  // A consumer provider's newcomer is created by the sign-in, and in product
+  // mode this realm's attribute policy (#396, `common/attribute_policy.ts`)
+  // refuses a create that leaves a required attribute empty — so a provider
+  // that sends no surname, or Apple, which sends the name on the FIRST
+  // authorization only, would refuse the person at the door (STS-FED-0158).
+  // Nothing in the policy is relaxed: the person is asked for EXACTLY the
+  // required values the provider did not send, on a short form of the
+  // federation surface (`/federation/profile/{handle}`, common/CLAUDE.md
+  // 3cl), and the account is created from the provider's values and theirs.
+  //
+  // * The answer is the entry as this sign-in would write it — `uid`, the
+  //   mapped attributes, a `cn` made of the names (`deriveCommonName()`) —
+  //   asked of the policy as the directory asks it (`autoCreateUser()`).
+  //   `cn` is never asked: it is made of the names asked for.
+  // * Asked only where the policy is enforced (product mode), and only of a
+  //   name a person can be given a value for (`mail`, or one
+  //   `ldap/person_editor.ts` knows). Anything else keeps the refusal.
+  // * The step is the federation surface's own: the partner's verified
+  //   answer is held under a single-use handle, the browser bound to it by
+  //   LINK_COOKIE as the linking step's is, and the form carries a token
+  //   held with the handle. A wrong value draws the form again under a new
+  //   handle, five times at most.
+  // * A typed address is UNVERIFIED (`mailVerified` false), whatever the
+  //   provider said of the address it did not send.
+  // ---------------------------------------------------------------------------
+  private profileMissing(username: string, mapped): string[] {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.profileMissing().");
+    const policy = require('../common/attribute_policy');
+    const prospective: any = Object.assign({ uid: [String(username)] },
+                                           (mapped && mapped.attributes) || {});
+    policy.deriveCommonName(prospective);
+    const refusal = policy.createRefusal(prospective);
+    if (!refusal) {
+      log.debug("Leaving FederationSp.profileMissing(). Nothing missing.");
+      return [];
+    }
+    // `cn` is made of the names asked for, and asked only where it is not.
+    const filled: any = Object.assign({}, prospective);
+    refusal.missing.forEach(function (name: string): void {
+      if (name.toLowerCase() !== 'cn') {
+        filled[name] = ['x'];
+      }
+    });
+    policy.deriveCommonName(filled);
+    const cnStill = policy.missingFrom(filled).some(function (n: string) {
+      return n.toLowerCase() === 'cn';
+    });
+    const asked = refusal.missing.filter(function (name: string): boolean {
+      const lower = name.toLowerCase();
+      return lower !== 'uid' && (lower !== 'cn' || cnStill);
+    });
+    log.debug("Leaving FederationSp.profileMissing(). " + asked.join(', '));
+    return asked;
+  }
+
+  // Whether a person can be asked for a value of an attribute: `mail`, or
+  // one the person editor holds a create's values to.
+  private profileAskable(name: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.profileAskable(). " + name);
+    if (name.toLowerCase() === 'mail') {
+      log.debug("Leaving FederationSp.profileAskable(). The address.");
+      return true;
+    }
+    let known = false;
+    try {
+      known = require('../ldap/person_editor')
+        .checkCreateValues(name, ['x']) !== null;
+    } catch (e) {
+      log.debug("Caught in FederationSp.profileAskable(): " +
+                ((e && e.message) || e));
+      known = false;
+    }
+    log.debug("Leaving FederationSp.profileAskable(). " + known);
+    return known;
+  }
+
+  // The label a field is drawn with: the catalogue's, which is the console's
+  // (a custom attribute's is its definition's), or the name.
+  private profileLabelOf(name: string): string {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.profileLabelOf(). " + name);
+    let label = name;
+    try {
+      const row = require('../common/attribute_policy').catalogue()
+        .filter(function (one: any): boolean {
+          return String(one.name).toLowerCase() === name.toLowerCase();
+        })[0];
+      label = (row && row.label) || name;
+    } catch (e) {
+      log.debug("Caught in FederationSp.profileLabelOf(): " +
+                ((e && e.message) || e));
+      label = name;
+    }
+    log.debug("Leaving FederationSp.profileLabelOf().");
+    return String(label);
+  }
+
+  // Holds the partner's answer and sends the browser to the form.
+  private beginProfile(req, res, record, result, decision, asked: string[]) {
+    const { config, randomId, errorCodes, log } = this.deps;
+    log.debug("Entering FederationSp.beginProfile(). " + decision.username);
+    const binding = randomId(24);
+    const handle = this.putContext({
+      kind: 'profile', id: record.fedId, username: decision.username,
+      asked: asked.slice(0), attempts: 0, csrf: randomId(24), problem: '',
+      bindingHash: this.bindingHashOf(binding),
+      result: Object.assign({}, result)
+    });
+    res.append('Set-Cookie', LINK_COOKIE + '=' + binding + '; Path=/; ' +
+               'HttpOnly; SameSite=Lax; Max-Age=' +
+               Math.max(60, Math.floor(this.contextTtlMs() / 1000)) +
+               (config.value('global.https') ? '; Secure' : ''));
+    res.set('Cache-Control', 'no-store');
+    log.info('federation: ' + record.fedId + ' signed in a newcomer, ' +
+             decision.username + ', without ' + asked.join(', ') + ', which ' +
+             'this realm\'s attribute policy requires; asking them.');
+    errorCodes.mark(res, 'STS-FED-0188');
+    log.debug("Leaving FederationSp.beginProfile(). To the form.");
+    return res.redirect(303, realms.currentPrefix() + PROFILE_PATH + '/' +
+                             encodeURIComponent(handle));
+  }
+
+  // The form's view, for the handle that holds it.
+  private profileView(record, context, handle: string): any {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.profileView().");
+    const profile = consumerProviders.profileFor(record.fedProvider);
+    const self = this;
+    const view = {
+      kind: 'profile', relationship: String(record.fedId),
+      partner: String(record.fedName || record.fedId),
+      provider: String((profile && profile.label) || ''),
+      action: PROFILE_PATH + '/' + encodeURIComponent(handle),
+      csrf: String(context.csrf || ''),
+      problem: String(context.problem || ''),
+      fields: [].concat(context.asked || []).map(function (name: string) {
+        return { name: name, label: self.profileLabelOf(name),
+                 type: name.toLowerCase() === 'mail' ? 'email' : 'text',
+                 max: PROFILE_VALUE_MAX };
+      })
+    };
+    log.debug("Leaving FederationSp.profileView().");
+    return view;
+  }
+
+  // The context a profile handle names, the relationship and the browser
+  // checked; or the refusal already answered (null).
+  private profileContext(req, res, spend: boolean): any {
+    const { federation, authn, errorCodes, log } = this.deps;
+    log.debug("Entering FederationSp.profileContext().");
+    const handle = String(req.params.handle || '');
+    const valid = /^fed-[A-Za-z0-9_-]{1,64}$/.test(handle);
+    let context = valid
+      ? (spend ? this.takeContext(handle) : this.heldContext(handle)) : null;
+    if (context && !spend && Number(context.expires) < Date.now()) {
+      context = null;
+    }
+    if (!context || context.kind !== 'profile') {
+      errorCodes.mark(res, 'STS-FED-0100');
+      log.debug("Leaving FederationSp.profileContext(). No such step.");
+      this.refuse(res, null, 400, 'There is no sign-in waiting',
+        'The step "' + handle + '" is not one this service started, it has ' +
+        'already been used, or it expired (federation.requestTtlMin). Start ' +
+        'the sign-in again.');
+      return null;
+    }
+    const presented = String(authn.cookiesOf(req)[LINK_COOKIE] || '');
+    if (!presented || !this.sameBinding(this.bindingHashOf(presented),
+                                        String(context.bindingHash || ''))) {
+      if (spend) {
+        res.append('Set-Cookie', LINK_COOKIE + '=; Path=/; HttpOnly; ' +
+                   'SameSite=Lax; Max-Age=0');
+      }
+      errorCodes.mark(res, 'STS-FED-0111');
+      log.debug("Leaving FederationSp.profileContext(). Another browser.");
+      this.refuse(res, null, 403, 'Authentication failed',
+        'This step was started in a different browser, or the cookie that ' +
+        'ties it to the one it began in is gone. Start the sign-in again, ' +
+        'in one browser.');
+      return null;
+    }
+    const record = federation.get(context.id);
+    if (!record || record.fedRole !== 'service-provider' ||
+        !federation.signsIn(record) || !federation.isUsable(record) ||
+        consumerProviders.categoryOf(record) !== 'consumer') {
+      errorCodes.mark(res, record && federation.isEnabled(record)
+        ? 'STS-FED-0006' : 'STS-FED-0005');
+      log.debug("Leaving FederationSp.profileContext(). Not usable now.");
+      this.refuse(res, record || null, 403, 'That relationship is not usable',
+        'The relationship "' + context.id + '" is disabled, ' +
+        'half-configured or gone since the provider answered.');
+      return null;
+    }
+    log.debug("Leaving FederationSp.profileContext().");
+    return { context: context, record: record, handle: handle };
+  }
+
+  // ---------------------------------------------------------------------------
+  // GET /federation/profile/{handle} — THE FORM (rcbj's decision 2 on #729).
+  // The surface's shell with the view in it; SCRIPT IS REQUIRED. Nothing is
+  // spent: the POST spends the handle.
+  // ---------------------------------------------------------------------------
+  private profileEndpoint(req, res) {
+    const { errorCodes, log } = this.deps;
+    log.debug("Entering the federation profile endpoint.");
+    FederationPages.mark(res);
+    if (!this.enabled()) {
+      errorCodes.mark(res, 'STS-FED-0001');
+      FederationPages.send(res, 404, FederationPages.notHereView('off'));
+      log.debug("Leaving the federation profile endpoint. Federation is off.");
+      return undefined;
+    }
+    const found = this.profileContext(req, res, false);
+    if (!found) {
+      log.debug("Leaving the federation profile endpoint. Refused.");
+      return undefined;
+    }
+    FederationPages.send(res, 200,
+      this.profileView(found.record, found.context, found.handle),
+      { application: String((found.context.result || {}).application || '') });
+    log.debug("Leaving the federation profile endpoint. The form.");
+    return undefined;
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST /federation/profile/{handle} — THE VALUES. The handle is spent, the
+  // browser and the form's token checked, each value held to its attribute's
+  // rules; then the held answer finishes as the sign-in it was, with the
+  // values beside the provider's — the subject decision, the creation
+  // question and the policy asked again.
+  // ---------------------------------------------------------------------------
+  private profileSubmit(req, res) {
+    const { errorCodes, log } = this.deps;
+    log.debug("Entering the federation profile submission.");
+    FederationPages.mark(res);
+    if (!this.enabled()) {
+      errorCodes.mark(res, 'STS-FED-0001');
+      FederationPages.send(res, 404, FederationPages.notHereView('off'));
+      log.debug("Leaving the federation profile submission. Federation is " +
+                "off.");
+      return undefined;
+    }
+    const found = this.profileContext(req, res, true);
+    if (!found) {
+      log.debug("Leaving the federation profile submission. Refused.");
+      return undefined;
+    }
+    const { context, record } = found;
+    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+    const token = String(body.csrf || '');
+    const held = String(context.csrf || '');
+    if (!token || !held || !stsCrypto.constantTimeEquals(token, held)) {
+      res.append('Set-Cookie', LINK_COOKIE + '=; Path=/; HttpOnly; ' +
+                 'SameSite=Lax; Max-Age=0');
+      errorCodes.mark(res, 'STS-FED-0189');
+      log.debug("Leaving the federation profile submission. No token.");
+      return this.refuse(res, record, 403, 'Authentication failed',
+        'The form did not carry the token this step was given, so nothing ' +
+        'was created. Start the sign-in again.');
+    }
+    const values: Record<string, string> = {};
+    const problems: string[] = [];
+    [].concat(context.asked || []).forEach((name: string) => {
+      const raw = body[name];
+      const value = String(Array.isArray(raw) ? (raw[0] === undefined ? ''
+                                                                : raw[0])
+                                              : (raw === undefined ||
+                                                 raw === null ? '' : raw))
+        .trim();
+      const label = this.profileLabelOf(name);
+      if (!value) {
+        problems.push(label + ' is required.');
+        return;
+      }
+      if (value.length > PROFILE_VALUE_MAX || PROFILE_CONTROL.test(value)) {
+        problems.push(label + ' is at most ' + PROFILE_VALUE_MAX +
+                      ' characters, with no control characters.');
+        return;
+      }
+      if (name.toLowerCase() === 'mail') {
+        if (!PROFILE_EMAIL_SHAPE.test(value)) {
+          problems.push(label + ' is not an email address.');
+          return;
+        }
+        values[name] = value;
+        return;
+      }
+      let checked: any = null;
+      try {
+        checked = require('../ldap/person_editor')
+          .checkCreateValues(name, [value]);
+      } catch (e) {
+        log.debug("Caught in the federation profile submission: " +
+                  ((e && e.message) || e));
+        checked = { error: 'The value for ' + label + ' could not be ' +
+                           'checked.' };
+      }
+      if (!checked || checked.error) {
+        problems.push(String((checked && checked.error) ||
+                             label + ' cannot be given here.'));
+        return;
+      }
+      values[checked.name || name] = String((checked.values || [value])[0]);
+    });
+    if (problems.length) {
+      const attempts = Number(context.attempts || 0) + 1;
+      if (attempts >= PROFILE_MAX_ATTEMPTS) {
+        res.append('Set-Cookie', LINK_COOKIE + '=; Path=/; HttpOnly; ' +
+                   'SameSite=Lax; Max-Age=0');
+        errorCodes.mark(res, 'STS-FED-0191');
+        log.debug("Leaving the federation profile submission. Too many " +
+                  "tries.");
+        return this.refuse(res, record, 400, 'Authentication failed',
+          'The form was sent ' + attempts + ' times without the values ' +
+          'this service needs, so nothing was created. Start the sign-in ' +
+          'again.');
+      }
+      const again = Object.assign({}, context, {
+        attempts: attempts, problem: problems.join(' ') });
+      delete again.handle;
+      delete again.startedAt;
+      delete again.expires;
+      const next = this.putContext(again);
+      errorCodes.mark(res, 'STS-FED-0190');
+      log.debug("Leaving the federation profile submission. Asked again.");
+      FederationPages.send(res, 400, this.profileView(record, again, next),
+        { application: String((context.result || {}).application || '') });
+      return undefined;
+    }
+    res.append('Set-Cookie', LINK_COOKIE + '=; Path=/; HttpOnly; ' +
+               'SameSite=Lax; Max-Age=0');
+    log.info('federation: the newcomer ' + context.username + ' through ' +
+             record.fedId + ' gave ' + Object.keys(values).join(', ') +
+             '; finishing the sign-in.');
+    log.debug("Leaving the federation profile submission. Finishing.");
+    return this.completeSignIn(req, res, record,
+      Object.assign({}, context.result, { profileSupplied: values }));
+  }
+
+  // The values a newcomer gave, on the mapped attributes this sign-in
+  // writes; only where the partner sent none.
+  private withProfileValues(mapped, supplied): any {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.withProfileValues().");
+    const attributes = Object.assign({}, (mapped && mapped.attributes) || {});
+    Object.keys(supplied || {}).forEach(function (name: string): void {
+      const already = Object.keys(attributes).some(function (k: string) {
+        return k.toLowerCase() === name.toLowerCase() &&
+               [].concat(attributes[k] || []).some(function (v: any) {
+                 return String(v).trim() !== '';
+               });
+      });
+      if (!already) {
+        attributes[name] = [String(supplied[name])];
+      }
+    });
+    log.debug("Leaving FederationSp.withProfileValues().");
+    return Object.assign({}, mapped, { attributes: attributes });
+  }
+
   // The SHA-256 of a linking cookie's value, which is what the context holds.
   private bindingHashOf(value) {
     const { log } = this.deps;
@@ -3015,6 +3505,13 @@ class FederationSp {
     } = this.deps;
     log.debug("Entering FederationSp.finishSignIn(). " + decision.username);
     const username = decision.username;
+    // WHAT A NEWCOMER GAVE (rcbj's decision 2 on #729), beside what the
+    // provider sent, for the account this sign-in creates and no other.
+    const supplied = result.profileSupplied && decision.create === true
+      ? result.profileSupplied : null;
+    if (supplied) {
+      mapped = this.withProfileValues(mapped, supplied);
+    }
     const protocolLabel = (federation.protocolRow(record.fedProtocol) ||
                            {}).label ||
       record.fedProtocol;
@@ -3090,7 +3587,13 @@ class FederationSp {
         // does — a federation partner is a trusted source, rcbj's ticket says
         // so — unless the partner itself says it is not, which an OpenID
         // provider does with `email_verified: false`. That one is honoured.
-        mailVerified: !this.partnerDisownsMail(result.bag),
+        // An address the newcomer TYPED (#729) is unverified, whatever the
+        // provider said of the one it did not send.
+        mailVerified: !this.partnerDisownsMail(result.bag) &&
+                      !(supplied && Object.keys(supplied).some(
+                        function (n: string): boolean {
+                          return n.toLowerCase() === 'mail';
+                        })),
         mapped: mapped.mapped.length,
         unmapped: mapped.unmapped.map((one) => { return one.incoming; })
       },
@@ -3207,6 +3710,17 @@ class FederationSp {
         return this.refuse(res, record, 403, 'Authentication failed',
           'The assertion verified, and this service will not create an ' +
           'account from it.');
+      }
+      // WHAT THE ATTRIBUTE POLICY NEEDS AND THE PROVIDER DID NOT SEND
+      // (rcbj's decision 2 on #729): a consumer provider's newcomer is
+      // asked for it before anything is created. See profileMissing().
+      if (consumerProviders.categoryOf(record) === 'consumer') {
+        const asked = this.profileMissing(username, mapped);
+        if (asked.length && asked.every((n) => this.profileAskable(n))) {
+          log.debug("Leaving FederationSp.startFederatedSession(). Asking " +
+                    "for " + asked.join(', ') + ".");
+          return this.beginProfile(req, res, record, result, decision, asked);
+        }
       }
     }
     const session = authn.startSession(res, username, amr,

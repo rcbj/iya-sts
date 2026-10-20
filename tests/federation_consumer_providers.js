@@ -44,7 +44,13 @@
 //      the local one, which is left exactly as it was; any-existing refused
 //      on a consumer relationship;
 //   H. the provider's MFA claim satisfying nothing, and the credential
-//      fingerprint on the risk input being the relationship.
+//      fingerprint on the risk input being the relationship;
+//   N. rcbj's decisions on #729: a consumer newcomer asked for exactly what
+//      the attribute policy requires and the provider did not send, then
+//      created (the token, the browser, a bad value, five tries, a typed
+//      address unverified); a step-up's session ended when the federated
+//      finish is refused; the portal's disconnect refusing the only way in.
+//      A11 holds decision 1, the default fedProvisionCap.
 //
 // WHY A CHILD PROCESS: it loads the whole protocol stack, serves it on a
 // loopback port, creates a realm and flips settings.
@@ -370,6 +376,25 @@ function childMain() {
          'A6. created disabled, jit-namespaced, auto-create on',
          [d0.fedSubjectPolicy, d0.fedAutocreateUsers, d0.fedEnabled]
            .join(' '));
+    // A11. NEVER UNLIMITED BY DEFAULT (rcbj's decision 1 on #729): the
+    // realm's federation.consumerProvisionCap is written onto the entry, and
+    // a consumer relationship's empty cap means it; an enterprise one's
+    // empty cap is still unlimited.
+    const capOf = inSp(function () {
+      const blank = Object.assign({}, federation.get('cp-discord'),
+                                  { fedProvisionCap: '' });
+      return { written: d0.fedProvisionCap,
+               blank: federation.provisionCapOf(blank),
+               enterprise: federation.provisionCapOf({ fedProvisionCap: '' }),
+               zero: federation.provisionCapOf(Object.assign({}, blank,
+                 { fedProvisionCap: '0' })) };
+    });
+    note(capOf.written === '10000' && capOf.blank === 10000 &&
+         capOf.enterprise === 0 && capOf.zero === 0,
+         'A11. a consumer relationship is created with ' +
+         'federation.consumerProvisionCap (10000), its empty cap means that ' +
+         'setting, 0 is unlimited, and an enterprise partner is untouched',
+         JSON.stringify(capOf));
     const go = made.google.relationship || {};
     note(made.google.ok && go.fedProtocol === 'oidc' &&
          !federation.encrypts(go) && !go.fedEncryptionKeyType,
@@ -1253,6 +1278,273 @@ function childMain() {
                                                             elsewhere]));
     note(channelModule.opNames().indexOf('federation-provider-notification') >=
          0, 'M7. the inter-cell operation is registered');
+
+    // ===== N. RCBJ'S #729 DECISIONS 2, 3 AND 4 ==============================
+    // In a block of its own: its names are its own.
+    {
+      // N1-N8 (decision 2): a consumer newcomer missing what the realm's
+      // attribute policy requires is asked for exactly that, and then created.
+      // Enforcement and invention are product mode's, stubbed on `mode` (the
+      // policy and the directory ask it at each call), so the rest of this
+      // child stays in development mode.
+      const modeLib = require(ROOT + '/common/mode');
+      const realIncomplete = modeLib.createsIncompletePeople;
+      const realInvents = modeLib.inventsClaimValues;
+      modeLib.createsIncompletePeople = function () { return false; };
+      modeLib.inventsClaimValues = function () { return false; };
+      function stateOf(r) {
+        const m = /data-sts-state="([^"]*)"/.exec(String((r && r.text) || ''));
+        if (!m) {
+          return null;
+        }
+        const text = m[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+          .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+        try {
+          return JSON.parse(text).view;
+        } catch (e) {
+          return null;
+        }
+      }
+      async function follow(r) {
+        for (let hop = 0; hop < 12; hop += 1) {
+          const at = String(r.headers.location || '');
+          if (r.status >= 300 && r.status < 400 && at) {
+            r = await request('GET', new URL(at, base).toString());
+            continue;
+          }
+          return r;
+        }
+        return r;
+      }
+      const prefix = '/realm/' + SP;
+      people.discord = { profile: { id: '9500', username: 'nosurname',
+        email: 'ns@example.com', verified: true } };
+      const newcomer = inSp(function () {
+        return links.provisionedName('cp-discord', '9500');
+      });
+      const asked = await signIn('cp-discord');
+      const form = stateOf(asked);
+      const names = form ? form.fields.map(function (f) {
+        return f.name;
+      }).join(',') : '';
+      note(asked.status === 200 &&
+           /\/federation\/profile\/fed-/.test(asked.path) && form &&
+           form.kind === 'profile' && names === 'givenName,sn' &&
+           !entryOf(newcomer),
+           'N1. a newcomer whose provider sent no names is sent to ' +
+           '/federation/profile and asked for exactly givenName and sn; ' +
+           'nobody is created yet', asked.status + ' ' + asked.path + ' ' +
+           names + ' ' + JSON.stringify(entryOf(newcomer) &&
+                                        entryOf(newcomer).dn));
+      const csp = String(asked.headers['content-security-policy'] || '');
+      note(/script-src 'self'/.test(csp) && /frame-ancestors/.test(csp) &&
+           /federation\/pages\.js/.test(asked.text) &&
+           /<noscript>/.test(asked.text),
+           'N2. the form is the federation surface\'s shell: script-src ' +
+           '\'self\', frame-ancestors kept, script required', csp);
+      const forged = await request('POST', prefix + form.action,
+        { form: { csrf: 'not-the-token', givenName: 'Nora', sn: 'Surname' } });
+      const replay = await request('POST', prefix + form.action,
+        { form: { csrf: form.csrf, givenName: 'Nora', sn: 'Surname' } });
+      note(forged.status === 403 && replay.status === 400 &&
+           !entryOf(newcomer),
+           'N3. a submission without the step\'s token is refused, the ' +
+           'handle is spent, and nobody is created (STS-FED-0189)',
+           forged.status + ' ' + replay.status);
+      const again = await signIn('cp-discord');
+      const form2 = stateOf(again);
+      const savedJar = Object.assign({}, jar);
+      jar = {};
+      const otherBrowser = await request('POST', prefix + form2.action,
+        { form: { csrf: form2.csrf, givenName: 'Nora', sn: 'Surname' } });
+      note(otherBrowser.status === 403 && !entryOf(newcomer),
+           'N4. a submission from a browser without the step\'s cookie is ' +
+           'refused (STS-FED-0111)', otherBrowser.status);
+      jar = savedJar;
+      const form3 = stateOf(await signIn('cp-discord'));
+      const empty = await request('POST', prefix + form3.action,
+        { form: { csrf: form3.csrf, givenName: 'Nora', sn: '  ' } });
+      const redrawn = stateOf(empty);
+      note(empty.status === 400 && redrawn && redrawn.kind === 'profile' &&
+           /required/.test(redrawn.problem) &&
+           redrawn.action !== form3.action && !entryOf(newcomer),
+           'N5. an empty value draws the form again under a new handle and ' +
+           'creates nobody (STS-FED-0190)', empty.status + ' ' +
+           JSON.stringify(redrawn && redrawn.problem));
+      const done = await follow(await request('POST', prefix + redrawn.action,
+        { form: { csrf: redrawn.csrf, givenName: 'Nora', sn: 'Surname',
+                  mail: 'smuggled@example.com', title: 'Admin' } }));
+      const created = entryOf(newcomer);
+      note(done.status === 200 && !!created &&
+           attr(created, 'givenName')[0] === 'Nora' &&
+           attr(created, 'sn')[0] === 'Surname' &&
+           attr(created, 'mail')[0] === 'ns@example.com' &&
+           !attr(created, 'title').length && attr(created, 'cn').length > 0,
+           'N6. the values given finish the sign-in: the account is created ' +
+           'with them beside the provider\'s address, a cn made of the ' +
+           'names, and nothing the form was not asking for',
+           done.status + ' ' + JSON.stringify(created && created.attributes));
+      people.discord = { profile: { id: '9501', username: 'noaddress' } };
+      const noMail = inSp(function () {
+        return links.provisionedName('cp-discord', '9501');
+      });
+      const form4 = stateOf(await signIn('cp-discord'));
+      const names4 = form4 ? form4.fields.map(function (f) {
+        return f.name;
+      }).join(',') : '';
+      const bad = await request('POST', prefix + form4.action,
+        { form: { csrf: form4.csrf, givenName: 'Ada', sn: 'Mailless',
+                  mail: 'not an address' } });
+      const form5 = stateOf(bad);
+      const done5 = await follow(await request('POST', prefix + form5.action,
+        { form: { csrf: form5.csrf, givenName: 'Ada', sn: 'Mailless',
+                  mail: 'ada@typed.example' } }));
+      const typed = entryOf(noMail);
+      note(names4 === 'givenName,sn,mail' && bad.status === 400 &&
+           done5.status === 200 && !!typed &&
+           attr(typed, 'mail')[0] === 'ada@typed.example' &&
+           !attr(typed, 'stsMailVerified').length,
+           'N7. an address the provider did not send is asked for, held to ' +
+           'an address\'s shape, and recorded UNVERIFIED',
+           names4 + ' ' + bad.status + ' ' + done5.status + ' ' +
+           JSON.stringify(typed && typed.attributes));
+      people.discord = { profile: { id: '9502', username: 'stubborn' } };
+      let tries = stateOf(await signIn('cp-discord'));
+      let last = null;
+      for (let i = 0; i < 5 && tries; i += 1) {
+        last = await request('POST', prefix + tries.action,
+          { form: { csrf: tries.csrf, givenName: '', sn: '', mail: '' } });
+        tries = stateOf(last);
+        if (tries && tries.kind !== 'profile') {
+          break;
+        }
+      }
+      note(last && last.status === 400 && tries && tries.kind === 'refused' &&
+           !entryOf(inSp(function () {
+             return links.provisionedName('cp-discord', '9502');
+           })),
+           'N8. five submissions without the values end the step and create ' +
+           'nobody (STS-FED-0191)', last && last.status + ' ' +
+           JSON.stringify(tries));
+      modeLib.createsIncompletePeople = realIncomplete;
+      modeLib.inventsClaimValues = realInvents;
+
+      // N9-N10 (decision 3): a federated finish refused after its step-up
+      // ends the session the step's second factor started. Pat is stepped up
+      // as in I4, and the relationship is disabled before the browser returns
+      // to /federation/stepup.
+      inSp(function () {
+        config.setOverride('risk.enforceInDevelopment', 'true');
+        config.setOverride('risk.mediumScorePercent', '1');
+        config.setOverride('risk.highScorePercent', '1000000');
+        config.setOverride('risk.minimumHistory', '1');
+      });
+      people.discord = { profile: { id: '7001', username: 'pat',
+        email: 'pat@example.com', verified: true } };
+      jar = {};
+      let stepCookie = '';
+      let stepLive = false;
+      let sr = await request('GET', prefix + '/federation/login/cp-discord');
+      for (let hop = 0; hop < 16; hop += 1) {
+        const at = String(sr.headers.location || sr.location || '');
+        if (/\/authn\/totp\?/.test(at)) {
+          const opened = await authnScreen.openStep({ port: port, jar: jar,
+            userAgent: UA,
+            at: new URL(at, base).pathname + new URL(at, base).search });
+          sr = await authnScreen.stepAct({ port: port, jar: jar,
+            userAgent: UA, opened: opened, op: 'totp',
+            body: { code: totp.codeAt(secret) } });
+          continue;
+        }
+        if (/\/federation\/stepup\//.test(at) && !stepCookie) {
+          stepCookie = String(jar.sts_session || '');
+          stepLive = !!inSp(function () {
+            return authn.sessionOf({ headers: {
+              cookie: 'sts_session=' + stepCookie, 'user-agent': UA } }, true);
+          });
+          inSp(function () {
+            federation.update('cp-discord', { field: 'fedEnabled',
+                                              value: 'FALSE' });
+          });
+        }
+        if (at && ((sr.status >= 300 && sr.status < 400) ||
+                   sr.next === 'redirect')) {
+          sr = await request('GET', new URL(at, base).toString());
+          continue;
+        }
+        break;
+      }
+      const stepAfter = stepCookie ? inSp(function () {
+        return authn.sessionOf({ headers: {
+          cookie: 'sts_session=' + stepCookie, 'user-agent': UA } }, true);
+      }) : 'no cookie';
+      note(!!stepCookie && stepLive,
+           'N9. the step-up\'s second factor started a session before the ' +
+           'browser returned', stepCookie ? 'live=' + stepLive : 'no cookie');
+      note(sr.status === 403 && stepAfter === null && !jar.sts_session,
+           'N10. the federated finish refused (the relationship disabled), ' +
+           'the session the step started is ended and its cookie cleared ' +
+           '(STS-FED-0192)', sr.status + ' ' + JSON.stringify(stepAfter &&
+                                                             stepAfter.id) +
+           ' ' + JSON.stringify(jar));
+      inSp(function () {
+        federation.update('cp-discord', { field: 'fedEnabled', value: 'TRUE' });
+        ['risk.enforceInDevelopment', 'risk.mediumScorePercent',
+         'risk.highScorePercent', 'risk.minimumHistory'].forEach(function (k) {
+          config.clearOverride(k);
+        });
+      });
+
+      // N11-N13 (decision 4): the portal's disconnect refuses the only way in.
+      const pca = require(ROOT + '/portal/portal_connected_accounts');
+      const page = new pca.PortalConnectedAccounts(
+        pca.PortalConnectedAccounts.defaultDeps());
+      const stubCtx = {
+        translatorFor: function () {
+          return { text: function (k) { return k; } };
+        },
+        refuse: function (res, status, code, message) {
+          return { status: status, code: code, message: message };
+        },
+        json: function (res, status, value) {
+          return { status: status, value: value };
+        }
+      };
+      const onlyWay = inSp(function () {
+        return page.act(stubCtx, {}, {}, { username: newcomer },
+                        { action: 'disconnect', id: 'cp-discord' });
+      });
+      note(onlyWay.status === 409 && onlyWay.code === 'STS-PORTAL-0614' &&
+           onlyWay.message === 'portalConnectedAccounts.onlyWayIn' &&
+           attr(entryOf(newcomer), 'federationLink').some(function (v) {
+             return /^cp-discord /.test(v);
+           }),
+           'N11. disconnecting the provider that is a newcomer\'s only way ' +
+           'in is refused, the person told to add another way, and the ' +
+           'link kept',
+           JSON.stringify(onlyWay));
+      const withSecond = inSp(function () {
+        federation.writeFederationLink(newcomer,
+          'cp-github https://github.com 9599', true, {});
+        return page.otherWayIn(newcomer, 'cp-discord');
+      });
+      const withPassword = inSp(function () {
+        return page.otherWayIn(RAE, 'cp-discord');
+      });
+      note(withSecond === true && withPassword === true,
+           'N12. another connection, or a password, is another way in',
+           withSecond + ' ' + withPassword);
+      const nowAllowed = inSp(function () {
+        return page.act(stubCtx, {}, {}, { username: newcomer },
+                        { action: 'disconnect', id: 'cp-discord' });
+      });
+      note(nowAllowed.status === 200 &&
+           !attr(entryOf(newcomer), 'federationLink').some(function (v) {
+             return /^cp-discord /.test(v);
+           }),
+           'N13. with another way in, the disconnect is made',
+           JSON.stringify(nowAllowed));
+    }
 
     // ===== B. THE REALM SWITCH ==============================================
     inSp(function () {

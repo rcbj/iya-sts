@@ -33,5 +33,10 @@
   "index.configure": "Configurer les relations dans la console",
   "index.signInScreen": "L'écran de connexion",
   "index.buttonsOn": "L'écran de connexion propose chaque partenaire utilisable sous forme de bouton.",
-  "index.buttonsOff": "federation.loginButtons est désactivé, l'écran de connexion ne propose donc aucun partenaire."
+  "index.buttonsOff": "federation.loginButtons est désactivé, l'écran de connexion ne propose donc aucun partenaire.",
+  "profile.title": "Quelques informations",
+  "profile.heading": "Quelques informations avant la création de votre compte",
+  "profile.lead": "{partner} vous a connecté, mais n’a pas transmis tout ce dont ce service a besoin pour créer votre compte. Indiquez les informations ci-dessous pour terminer.",
+  "profile.submit": "Créer mon compte",
+  "profile.note": "Ces informations sont conservées sur votre compte ici. Une adresse e-mail que vous saisissez est enregistrée comme non vérifiée."
 }

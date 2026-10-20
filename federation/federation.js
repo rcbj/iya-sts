@@ -249,6 +249,10 @@ const PATHS = {
   // Where a second factor asked for on risk, after a partner, returns to
   // (#565): the federated sign-in is finished there.
   stepup: '/federation/stepup',
+  // Where a consumer provider's newcomer gives the values this realm's
+  // attribute policy requires and the provider did not send (#565, rcbj's
+  // decision 2 on #729): the account is created once they have.
+  profile: '/federation/profile',
   // A PARTNER'S SIGN-OUT (#167). `slo` is the one path every browser-borne
   // sign-out arrives at — a SAML LogoutRequest or LogoutResponse, a
   // WS-Federation wsignoutcleanup1.0, and the browser coming back from an
@@ -1209,8 +1213,13 @@ const SCHEMA = {
             'anybody is added.' },
     { name: 'fedProvisionCap', kind: 'single', role: 'service-provider',
       from: 'this register',
-      what: 'HOW MANY PEOPLE THIS RELATIONSHIP MAY CREATE. Empty or 0 is ' +
-            'unlimited. At the cap a new subject is refused STS-FED-0090; ' +
+      what: 'HOW MANY PEOPLE THIS RELATIONSHIP MAY CREATE. 0 is ' +
+            'unlimited. Empty is unlimited for an enterprise partner; a ' +
+            'CONSUMER or social provider\'s relationship is never ' +
+            'unlimited by default: it is created with ' +
+            'federation.consumerProvisionCap (10000 unless the realm says ' +
+            'otherwise) written here, and an empty value means that ' +
+            'setting. At the cap a new subject is refused STS-FED-0090; ' +
             'a person already linked still signs in. ldap.maxEntries ' +
             'remains the realm ceiling. Not a count of sign-ins — ' +
             'fedUsers is that.' },
@@ -2207,15 +2216,28 @@ function nonNegativeIntOf(value) {
 }
 
 /**
- * Returns how many people a relationship may create. 0 is unlimited.
+ * Returns how many people a relationship may create. 0 is unlimited. A
+ * consumer relationship whose fedProvisionCap is empty takes
+ * federation.consumerProvisionCap (#565, rcbj's decision 1 on #729): a
+ * consumer provider's people are the public, and its relationship is never
+ * unlimited unless an administrator writes 0.
  *
  * @param record - the federation relationship
  * @returns the cap, or 0 when there is none
  */
 function provisionCapOf(record) {
   log.debug("Entering provisionCapOf().");
+  const stored = String((record && record.fedProvisionCap) || '').trim();
+  if (stored === '' && record &&
+      consumerProviders.categoryOf(record) === 'consumer') {
+    const fallback = nonNegativeIntOf(
+      config.value('federation.consumerProvisionCap'));
+    log.debug("Leaving provisionCapOf(). The consumer default, " +
+              fallback + ".");
+    return fallback;
+  }
   log.debug("Leaving provisionCapOf().");
-  return nonNegativeIntOf(record && record.fedProvisionCap);
+  return nonNegativeIntOf(stored);
 }
 
 /**
@@ -4016,6 +4038,15 @@ function create(spec) {
     record.fedSubjectPolicy = 'jit-namespaced';
     record.fedAutocreateUsers = boolText(true);
     record.fedUsernameSource = '';
+    // NEVER UNLIMITED BY DEFAULT (rcbj's decision 1 on #729): the realm's
+    // federation.consumerProvisionCap, written onto the entry where an
+    // administrator reads and changes it, unless the create named one.
+    const askedCap = String(info.fedProvisionCap === undefined ||
+                            info.fedProvisionCap === null
+                              ? '' : info.fedProvisionCap).trim();
+    record.fedProvisionCap = /^[0-9]+$/.test(askedCap) ? askedCap
+      : String(nonNegativeIntOf(
+        config.value('federation.consumerProvisionCap')));
   }
   // Phrased to need no indefinite article. "a OpenID Connect" and "an SAML
   // 2.0" are both wrong, and the usual a/an-by-first-letter rule produces
