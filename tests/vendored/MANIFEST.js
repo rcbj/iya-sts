@@ -1165,6 +1165,13 @@ const JOBS = [
   // documented exception. `local: true`: this repository's KDC.
   { file: 'sts_kerberos_samba.js',       browser: false, local: true,
     timeoutMs: 900000 },
+  // KERBEROS TRUSTS OVER /admin-api (#430 Phase 4): two throwaway trust
+  // realms and the seven acts of /admin-api/kerberos/trusts between them —
+  // add, pair, rotate-key with mirror (kvno and grace), disable, enable and
+  // remove — each read back, every read searched for key material, and an
+  // application's Across trusts panel in its applications answer.
+  // `local: true`: this repository's trust records and API.
+  { file: 'sts_kerberos_trusts_api.js',  browser: false, local: true },
   // HEIMDAL'S CLIENT TOOLS BESIDE MIT'S (#205, 2026-09-26): kinit, klist,
   // kgetcred, kvno, ktutil, gss-token and a Heimdal-GSSAPI curl, built into
   // the tests image from a pinned commit — AS and TGS per realm (FAST-armored

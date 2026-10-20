@@ -53,8 +53,9 @@
 // Each module runs under exactly one. xrealm_tests runs against the DEFAULT
 // realm's development trust with PARTNER.COM — since #430 a trust RECORD
 // seeded in development (kerberos/krb5_trusts.ts), where it was the setting
-// krb5.trustedRealm; where the default realm is in product mode there is
-// none, and the module is recorded as not applicable.
+// krb5.trustedRealm, and read from GET /admin-api/kerberos/trusts since its
+// Phase 4; where the default realm is in product mode there is none, and
+// the module is recorded as not applicable.
 //
 // WHAT FAILS THIS JOB: any test that FAILS or ERRORS and is not in
 // EXCEPTIONS below — each also recorded on #204 with its reason — and fewer
@@ -542,6 +543,27 @@ function stripPrefix(id) {
   return String(id).split(MODULE_PREFIX).join("");
 }
 
+// The partner of the default realm's first usable trust: enabled, holding
+// both keys, quarantined or not in development. '' when there is none (a
+// product-mode realm seeds none), or when the API will not say.
+async function trustedRealmOf(apiBase) {
+  log.debug("Entering trustedRealmOf().");
+  const r = await fetch(apiBase + "/kerberos/trusts?per=100",
+                        { headers: { Accept: "application/json" } });
+  if (r.status !== 200) {
+    log.debug("Leaving trustedRealmOf(). Status " + r.status + ".");
+    return "";
+  }
+  const body = await r.json();
+  const usable = (body.trusts || []).filter(function (one) {
+    return one.enabled && one.incoming && one.incoming.held &&
+           one.outgoing && one.outgoing.held;
+  })[0];
+  log.debug("Leaving trustedRealmOf(). " + (usable ? usable.partnerRealm :
+                                             "none"));
+  return usable ? String(usable.partnerRealm) : "";
+}
+
 async function test() {
   log.debug("Entering test().");
   if (String(process.env.STS_TEST_UNPUBLISHED || "").split(",")
@@ -573,10 +595,9 @@ async function test() {
   log.info("=== 0. the realm, its principals and their keys ===");
   await setUp(k);
   k.defaultRealm = String(await facts.setting(api, "krb5.realm") || "");
-  // The development trust's partner (#430): a seeded record, no longer a
-  // setting this job can read. The Kerberos trusts API arrives with #430's
-  // console phase; until then the seed's partner is the fact.
-  k.trustedRealm = "PARTNER.COM";
+  // The development trust's partner (#430): a trust RECORD, read from GET
+  // /admin-api/kerberos/trusts — the first enabled one holding both keys.
+  k.trustedRealm = await trustedRealmOf(api);
   k.defaultPassword = String(await facts.setting(api, "krb5.userPassword") ||
                              "");
   const product = await facts.isProduct(api);
