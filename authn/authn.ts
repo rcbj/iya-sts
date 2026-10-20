@@ -7370,7 +7370,11 @@ class Authn {
                      code === 'STS-AUTHN-0298' ||
                      code === 'STS-AUTHN-0305' ||
                      code === 'STS-AUTHN-0313' ||
-                     code === 'STS-AUTHN-0315') && said.refusedWhy
+                     code === 'STS-AUTHN-0315' ||
+                     // A classical passkey where a post-quantum one is
+                     // required (#718): the sentence names the algorithm
+                     // and the row, and what to do instead.
+                     code === 'STS-AUTHN-0356') && said.refusedWhy
       ? String(said.refusedWhy)
       : 'Authentication failed for ' + username + '.';
     log.info('authn: the session for "' + username + '" was refused at the ' +

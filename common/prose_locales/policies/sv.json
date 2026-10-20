@@ -1023,6 +1023,14 @@
     "en": "dcf08d219b55b2ed",
     "text": "AVSTÄNGD SOM STANDARD. Attesteringsreglerna (inställningarna webauthn.attestation*: policyn, AAGUID-listan, certifieringsnivån och FIPS) kontrolleras när en nyckel registreras. Påslagen kontrolleras de igen vid varje inloggning mot det som registrerades då och mot FIDO Metadata Service som den ser ut nu, så en nyckel som registrerades innan en regel skärptes, eller vars modell sedan dess rapporterats komprometterad, slutar logga in någon. En nyckel utan betrodd attestering misslyckas med varje regel som kräver en."
   },
+  "passkey.FIELDS.postQuantumRequired.label": {
+    "en": "011c5d09e4f351f3",
+    "text": "Kräv en postkvantnyckel"
+  },
+  "passkey.FIELDS.postQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off` (standardvärdet) godtar en nyckel oavsett signaturalgoritm. `sign-in` godtar bara en POSTKVANTNYCKEL, en vars algoritm är ML-DSA-44, ML-DSA-65 eller ML-DSA-87 (RFC 9964), när den loggar in någon, som första inloggningsuppgift eller som andra faktor; en klassisk nyckel kan fortfarande registreras. `registration-and-sign-in` nekar en klassisk nyckel även vid registrering, och registreringen erbjuder då bara ML-DSA. Det är algoritmen som avgör, inte det spår nyckeln skapades i. Nekas så länge sfären inte erbjuder någon ML-DSA (webauthn.algorithms namnger ingen, och varken webauthn.pqcOnly eller webauthn.pqcAlongsideClassical är på)."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Tips som ”Skapa en nyckel” skickar"
@@ -1122,6 +1130,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyEnforceAttestationAtSignIn.what": {
     "en": "dcf08d219b55b2ed",
     "text": "AVSTÄNGD SOM STANDARD. Attesteringsreglerna (inställningarna webauthn.attestation*: policyn, AAGUID-listan, certifieringsnivån och FIPS) kontrolleras när en nyckel registreras. Påslagen kontrolleras de igen vid varje inloggning mot det som registrerades då och mot FIDO Metadata Service som den ser ut nu, så en nyckel som registrerades innan en regel skärptes, eller vars modell sedan dess rapporterats komprometterad, slutar logga in någon. En nyckel utan betrodd attestering misslyckas med varje regel som kräver en."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off` (standardvärdet) godtar en nyckel oavsett signaturalgoritm. `sign-in` godtar bara en POSTKVANTNYCKEL, en vars algoritm är ML-DSA-44, ML-DSA-65 eller ML-DSA-87 (RFC 9964), när den loggar in någon, som första inloggningsuppgift eller som andra faktor; en klassisk nyckel kan fortfarande registreras. `registration-and-sign-in` nekar en klassisk nyckel även vid registrering, och registreringen erbjuder då bara ML-DSA. Det är algoritmen som avgör, inte det spår nyckeln skapades i. Nekas så länge sfären inte erbjuder någon ML-DSA (webauthn.algorithms namnger ingen, och varken webauthn.pqcOnly eller webauthn.pqcAlongsideClassical är på)."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1274,6 +1286,18 @@
   "passkey.sentences.aggregate": {
     "en": "fa8fc40822659fe4",
     "text": "en persons nycklar erbjuds som ett enda inloggningsval"
+  },
+  "passkey.sentences.postQuantumOff": {
+    "en": "a8e0e01781dab9b0",
+    "text": "en nyckel loggar in och registreras oavsett signaturalgoritm"
+  },
+  "passkey.sentences.postQuantumSignIn": {
+    "en": "2282f9fa1ff20b26",
+    "text": "bara en postkvantnyckel (ML-DSA) loggar in en person; en klassisk kan fortfarande registreras"
+  },
+  "passkey.sentences.postQuantumEverywhere": {
+    "en": "79742dacfba54ede",
+    "text": "bara en postkvantnyckel (ML-DSA) registreras eller loggar in en person"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

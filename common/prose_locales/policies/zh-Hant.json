@@ -1023,6 +1023,14 @@
     "en": "dcf08d219b55b2ed",
     "text": "預設關閉。證明規則（webauthn.attestation* 設定：原則、AAGUID 清單、認證等級與 FIPS）會在註冊密碼金鑰時檢查。開啟時，每次登入都會依當時記錄的內容與 FIDO Metadata Service 的現況再次檢查，因此在規則收緊之前註冊的金鑰，或其型號後來被回報遭入侵的金鑰，將不再能讓任何人登入。沒有受信任證明的金鑰，無法通過任何要求證明的規則。"
   },
+  "passkey.FIELDS.postQuantumRequired.label": {
+    "en": "011c5d09e4f351f3",
+    "text": "要求後量子密碼金鑰"
+  },
+  "passkey.FIELDS.postQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off`（預設值）接受任何簽章演算法的密碼金鑰。`sign-in` 在密碼金鑰讓某人登入時（作為第一憑證或第二因素）只接受後量子密碼金鑰，即演算法為 ML-DSA-44、ML-DSA-65 或 ML-DSA-87（RFC 9964）的密碼金鑰；傳統密碼金鑰仍可註冊。`registration-and-sign-in` 在註冊時也拒絕傳統密碼金鑰，此時註冊只提供 ML-DSA。決定因素是演算法，而不是金鑰建立時所在的通道。當領域不提供任何 ML-DSA 時（webauthn.algorithms 未列出任何 ML-DSA，且 webauthn.pqcOnly 與 webauthn.pqcAlongsideClassical 皆未開啟）將被拒絕。"
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "「Create a passkey」送出的提示"
@@ -1122,6 +1130,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyEnforceAttestationAtSignIn.what": {
     "en": "dcf08d219b55b2ed",
     "text": "預設關閉。證明規則（webauthn.attestation* 設定：原則、AAGUID 清單、認證等級與 FIPS）會在註冊密碼金鑰時檢查。開啟時，每次登入都會依當時記錄的內容與 FIDO Metadata Service 的現況再次檢查，因此在規則收緊之前註冊的金鑰，或其型號後來被回報遭入侵的金鑰，將不再能讓任何人登入。沒有受信任證明的金鑰，無法通過任何要求證明的規則。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off`（預設值）接受任何簽章演算法的密碼金鑰。`sign-in` 在密碼金鑰讓某人登入時（作為第一憑證或第二因素）只接受後量子密碼金鑰，即演算法為 ML-DSA-44、ML-DSA-65 或 ML-DSA-87（RFC 9964）的密碼金鑰；傳統密碼金鑰仍可註冊。`registration-and-sign-in` 在註冊時也拒絕傳統密碼金鑰，此時註冊只提供 ML-DSA。決定因素是演算法，而不是金鑰建立時所在的通道。當領域不提供任何 ML-DSA 時（webauthn.algorithms 未列出任何 ML-DSA，且 webauthn.pqcOnly 與 webauthn.pqcAlongsideClassical 皆未開啟）將被拒絕。"
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1274,6 +1286,18 @@
   "passkey.sentences.aggregate": {
     "en": "fa8fc40822659fe4",
     "text": "某人的密碼金鑰作為單一登入選項提供"
+  },
+  "passkey.sentences.postQuantumOff": {
+    "en": "a8e0e01781dab9b0",
+    "text": "無論簽章演算法為何，密碼金鑰都可以登入與註冊"
+  },
+  "passkey.sentences.postQuantumSignIn": {
+    "en": "2282f9fa1ff20b26",
+    "text": "只有後量子（ML-DSA）密碼金鑰能讓人登入；傳統密碼金鑰仍可註冊"
+  },
+  "passkey.sentences.postQuantumEverywhere": {
+    "en": "79742dacfba54ede",
+    "text": "只有後量子（ML-DSA）密碼金鑰能被註冊或讓人登入"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

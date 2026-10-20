@@ -1023,6 +1023,14 @@
     "en": "dcf08d219b55b2ed",
     "text": "默认关闭。证明规则（webauthn.attestation* 设置：策略、AAGUID 列表、认证级别和 FIPS）在注册通行密钥时检查。开启时，每次登录都会依据当时记录的内容和 FIDO Metadata Service 的当前状态再次检查，因此在规则收紧之前注册的密钥，或其型号后来被报告为已泄露的密钥，将无法再让任何人登录。没有可信证明的密钥无法通过任何要求证明的规则。"
   },
+  "passkey.FIELDS.postQuantumRequired.label": {
+    "en": "011c5d09e4f351f3",
+    "text": "要求后量子通行密钥"
+  },
+  "passkey.FIELDS.postQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off`（默认值）接受任何签名算法的通行密钥。`sign-in` 在通行密钥让某人登录时（作为第一凭据或第二因素）只接受后量子通行密钥，即算法为 ML-DSA-44、ML-DSA-65 或 ML-DSA-87（RFC 9964）的通行密钥；经典通行密钥仍可注册。`registration-and-sign-in` 在注册时也拒绝经典通行密钥，此时注册只提供 ML-DSA。决定因素是算法，而不是密钥创建时所在的通道。当领域不提供任何 ML-DSA 时（webauthn.algorithms 未列出任何 ML-DSA，且 webauthn.pqcOnly 和 webauthn.pqcAlongsideClassical 均未开启）将被拒绝。"
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "“创建通行密钥”发送的提示"
@@ -1122,6 +1130,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyEnforceAttestationAtSignIn.what": {
     "en": "dcf08d219b55b2ed",
     "text": "默认关闭。证明规则（webauthn.attestation* 设置：策略、AAGUID 列表、认证级别和 FIPS）在注册通行密钥时检查。开启时，每次登录都会依据当时记录的内容和 FIDO Metadata Service 的当前状态再次检查，因此在规则收紧之前注册的密钥，或其型号后来被报告为已泄露的密钥，将无法再让任何人登录。没有可信证明的密钥无法通过任何要求证明的规则。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off`（默认值）接受任何签名算法的通行密钥。`sign-in` 在通行密钥让某人登录时（作为第一凭据或第二因素）只接受后量子通行密钥，即算法为 ML-DSA-44、ML-DSA-65 或 ML-DSA-87（RFC 9964）的通行密钥；经典通行密钥仍可注册。`registration-and-sign-in` 在注册时也拒绝经典通行密钥，此时注册只提供 ML-DSA。决定因素是算法，而不是密钥创建时所在的通道。当领域不提供任何 ML-DSA 时（webauthn.algorithms 未列出任何 ML-DSA，且 webauthn.pqcOnly 和 webauthn.pqcAlongsideClassical 均未开启）将被拒绝。"
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1274,6 +1286,18 @@
   "passkey.sentences.aggregate": {
     "en": "fa8fc40822659fe4",
     "text": "个人的通行密钥作为一个登录选项提供"
+  },
+  "passkey.sentences.postQuantumOff": {
+    "en": "a8e0e01781dab9b0",
+    "text": "无论签名算法如何，通行密钥都可以登录和注册"
+  },
+  "passkey.sentences.postQuantumSignIn": {
+    "en": "2282f9fa1ff20b26",
+    "text": "只有后量子（ML-DSA）通行密钥能让人登录；经典通行密钥仍可注册"
+  },
+  "passkey.sentences.postQuantumEverywhere": {
+    "en": "79742dacfba54ede",
+    "text": "只有后量子（ML-DSA）通行密钥能被注册或让人登录"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",
