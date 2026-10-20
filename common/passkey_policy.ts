@@ -526,6 +526,7 @@ const POST_QUANTUM_REQUIRED_VALUES = ['off', 'sign-in',
  */
 const POST_QUANTUM_ALGORITHMS: ReadonlyArray<string> =
   Object.freeze(['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87']);
+/**
  * What `recoveryAssurance` may be (#724).
  */
 const RECOVERY_ASSURANCE = ['any', 'not-weaker', 'operator-only'];

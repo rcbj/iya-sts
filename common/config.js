@@ -17823,7 +17823,12 @@ const ONE_ISSUER = ' It was removed on 2026-10-08 (#523): every SAML Issuer, ' +
   'global.publicBaseUrl. There is no per-protocol or per-application name.';
 
 // What each of #430's four rows says when it is still named.
-const KERBEROS_TRUSTS = ' It was removed on 2026-10-19 (#430): a Kerberos ' +
+// The sentence NAMES the rows' `now` — "the realm's Kerberos trust records"
+// — because a setting refused at a write is answered with this sentence
+// alone, and `tests/outbound_tls.js` holds every replaced key to naming what
+// replaced it.
+const KERBEROS_TRUSTS = ' It was removed on 2026-10-19 (#430) and replaced ' +
+  'by the realm\'s Kerberos trust records: a Kerberos ' +
   'trust is a record per partner realm in the realm\'s own directory, ' +
   'under ou=kerberosTrusts — the partner, its domain SID, the incoming and ' +
   'outgoing inter-realm keys (from a shared password, or generated), its ' +
