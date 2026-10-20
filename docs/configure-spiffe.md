@@ -271,16 +271,22 @@ addresses, which you declare, and only on an address you name. Taken from
 `tests/spiffe_workload_tcp_product.js`:
 
 ```bash
-api config/set-many '{"spiffe.workloadTcpSourceAuthenticated":true,
-  "spiffe.grpcHost":"10.1.2.3","spiffe.workloadPort":8092}'
-api spiffe/entries/create '{"spiffeId":"spiffe://example.org/web",
-  "selectors":"transport:tcp, endpoint:10.1.2.3:8092, peer:10.1.2.20"}'
+# on a realm: applied when the realm's sockets are reconciled
+api realms/set '{"id":"acme","key":"spiffe.workloadTcpSourceAuthenticated","value":true}'
+api realms/set '{"id":"acme","key":"spiffe.grpcHost","value":"10.1.2.3"}'
+api realms/set '{"id":"acme","key":"spiffe.workloadPort","value":8092}'
+
+curl -sk -X POST "$BASE/realm/acme/admin-api/spiffe/entries/create" \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"spiffeId":"spiffe://acme.example.net/web",
+       "selectors":"transport:tcp, endpoint:10.1.2.3:8092, peer:10.1.2.20"}'
 ```
 
-These are restart settings for the default realm: set them in its
-appconfig file or environment (`STS_SPIFFE_WORKLOAD_TCP_SOURCE_AUTHENTICATED`,
-`STS_SPIFFE_GRPC_HOST`, `STS_SPIFFE_WORKLOAD_PORT`) and restart. On a realm,
-`realms/set` applies them when the realm's sockets are reconciled.
+For the default realm these three are restart settings: set
+`STS_SPIFFE_WORKLOAD_TCP_SOURCE_AUTHENTICATED=true`, `STS_SPIFFE_GRPC_HOST`
+and `STS_SPIFFE_WORKLOAD_PORT` in the environment or the appconfig file, and
+restart. The addresses here are this page's examples; the test binds
+`127.0.0.1` and selects `peer:127.0.0.1`.
 
 * `peer:` matches **exactly**. `peer:10.0.0.0/24` is a selector no caller
   carries.
@@ -349,6 +355,12 @@ STS_SPIFFE_JOIN_TOKEN=<token> node spiffe/workload_agent.js \
 | `--join-token-file` | a file holding the token, instead of `STS_SPIFFE_JOIN_TOKEN` |
 | `--require-security-header`, `--attest-workloads` | both on by default; `false` turns one off |
 | `--native` | the peer-credentials module, when it is not in `spiffe/native/` |
+
+The bundle URL is fetched with Node's own certificate verification, so the
+service's TLS certificate must chain to a CA the agent's Node trusts. Where it
+chains to the service's own Root, give the agent `--trust-bundle-file` (the
+PEM of the bundle's `x509-svid` certificates) instead, which is what
+`sts_spiffe_grpc.js` does.
 
 The agent needs the native peer-credentials module, which is built only in the
 image. Without it, it creates no socket and exits (`STS-SPIFFE-0148`). Point the
