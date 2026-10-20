@@ -844,7 +844,10 @@ for `did:jwk` and `did:key` only. Four pieces:
    is unchanged. The issued register keeps the DID as `holderDid` in every
    format. **The Verifier reads `cnf.kid` and a did:key subject**
    (`cnfKeyOf()`, `ldpFacts()`), only for did:jwk and did:key and never by a
-   fetch, so a DID-bound credential signs in like any other.
+   fetch, so a DID-bound credential signs in like any other. The sign-in
+   compares a JOSE credential's `sub` with the register row, and accepts the
+   `holderDid` recorded for that credential as well as the person's subject,
+   because a DID-bound jwt_vc_json's `sub` is the DID.
 4. **THE TRADE IS LINKABILITY.** Every copy of a batch, and every later
    credential from that configuration, carries the same DID, which is what
    per-copy keys and the rounded validity times exist to prevent. That is why
