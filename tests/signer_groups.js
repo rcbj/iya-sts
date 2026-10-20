@@ -239,6 +239,50 @@ async function inProcess(t) {
           'the XML group is certified by the XML Signing CA, the JOSE groups ' +
           'by the JOSE one');
 
+  // D2. THE MEMBERS ARE READ AT CERTIFICATION TIME (2026-10-20, CI run
+  // 39464473145): a node that lost the store's arbitration certified the
+  // members it had GENERATED, its certificates won the slots, and the
+  // winner's keys went without `x5c` on the cluster. A caller passing a
+  // question instead of a list gets the members the realm holds when each
+  // certificate is issued — here a stale answer first and the realm's own
+  // after it, which must issue nothing over the stale one.
+  t.log.info('=== D2. certification follows the members held now ===');
+  const rsaCertBefore = certOf('tokens', 'RS256');
+  // The stale answer is ONE group's members under other kids: certified as
+  // given it would report that group's four certificates and stop, where
+  // the members held now are every group's.
+  const stale = (members || []).filter(function (one) {
+    return one.group === 'tokens';
+  }).map(function (one) {
+    return Object.assign({}, one, {
+      publicJwk: Object.assign({}, one.publicJwk,
+                               { kid: one.publicJwk.kid + '-stale' })
+    });
+  });
+  const certifiable = (members || []).filter(function (one) {
+    return !(one.kind === 'pq' && one.pairedSlot && one.group !== 'xml');
+  }).length;
+  let asked = 0;
+  const reread = await pki.certifySignerGroups(REALM, function () {
+    log.debug("Entering the members-now question.");
+    asked += 1;
+    log.debug("Leaving the members-now question.");
+    return asked === 1 ? stale : members;
+  });
+  t.check(reread.ok && reread.certified === 0 &&
+          reread.unchanged === certifiable,
+          'members replaced between the first read and the first ' +
+          'certificate are dropped, and all ' + certifiable + ' of the ' +
+          'ones held now are found already certified',
+          JSON.stringify(reread));
+  t.check(asked > 2, 'the question is asked again before each certificate (' +
+          asked + ' time(s))');
+  t.equal(certOf('tokens', 'RS256') &&
+          certOf('tokens', 'RS256').certificatePem,
+          rsaCertBefore && rsaCertBefore.certificatePem,
+          'and the tokens group\'s certificate is still the one over the ' +
+          'key the realm signs with');
+
   t.log.info('=== E. the set carries the groups through the keystore ===');
   const blob = keystore.serialise(keys);
   t.equal((blob.signerGroups || []).length, 42,

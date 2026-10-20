@@ -6429,7 +6429,19 @@ function certifySignerGroupsLater(realmId, members) {
       // No certificate authority in this process: the keys still sign.
       return;
     }
-    Promise.resolve(pki.certifySignerGroups(realmId, publicHalves))
+    // WHAT THE REALM HOLDS WHEN EACH CERTIFICATE IS ISSUED, rather than what
+    // this process generated (2026-10-20): on a cluster another node's
+    // members can win the store while the branch is awaited, and the
+    // certificates over the loser's keys displaced the winner's.
+    // pki.certifySignerGroups() argues it; the generated members stand in
+    // only while nothing is held yet.
+    const heldNow = function () {
+      log.debug("Entering heldNow().");
+      const held = keystore.signerGroupsHeldFor(realmId);
+      log.debug("Leaving heldNow().");
+      return (held && held.length) ? held : publicHalves;
+    };
+    Promise.resolve(pki.certifySignerGroups(realmId, heldNow))
       .then(function (done) {
         if (done && !done.ok && (done.errors || []).length) {
           log.debug('The "' + realmId + '" realm\'s signer groups were ' +
