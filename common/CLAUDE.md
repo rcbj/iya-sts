@@ -3446,6 +3446,13 @@ with `Cannot find module` naming a file the operator never mentioned.
    deliberately NOT `sessionOf()`: that function deletes an expired session as
    it finds it, and an observer that quietly ended sessions while reporting on
    them would be changing the thing it describes.
+   **Its sibling `setActorSessionResolver()` (#561)** names the SESSION the
+   actor acted as, which `recordHttp()` puts in `detail.sessionId` — only
+   where it names one, which is where a browser holds several signed-in
+   accounts (`authn/CLAUDE.md`), so a row is otherwise unchanged. The same
+   contract: no side effects, never throws. `admin_stats.js`'s
+   `recordAccountChoice()` and `accountChoiceCounts()` are those account
+   sets' counters (`merge: 'own'`, `scimCounts`' reason).
 
    **EVERY ROW CARRIES THE CLIENT'S ADDRESS (2026-09-18), which reverses what
    this file decided when it was written** — a row named the CHANNEL and never

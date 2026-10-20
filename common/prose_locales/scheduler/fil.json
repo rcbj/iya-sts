@@ -7,6 +7,14 @@
     "en": "e753a576c8530ce3",
     "text": "Binabasa ang susunod na page ng mga tao ng realm mula sa bawat attribute source na dapat nang i-refresh ayon sa nakaiskedyul na interval nito, papunta sa kanilang mga entry (#94). attributeSources.refreshBatch na tao bawat source bawat run."
   },
+  "sched.jobs.authn.account-set-expiry.title": {
+    "en": "849356c9b70cc0f3",
+    "text": "Pag-expire ng mga account set"
+  },
+  "sched.jobs.authn.account-set-expiry.describe": {
+    "en": "d643d71a0089a802",
+    "text": "Ina-update ang account set ng bawat browser (#561): ang account na natapos ang session ay natatandaang naka-sign out, ang natatandaan nang higit sa authn.rememberedAccountDays ay inaalis, at binubura ang set na walang laman."
+  },
   "sched.jobs.authn.session-expiry.title": {
     "en": "0d2b2447af869e65",
     "text": "Pag-expire ng session"

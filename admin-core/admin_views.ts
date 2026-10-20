@@ -1601,7 +1601,7 @@ class AdminViews {
     const nowMs = Date.now();
     const rows = [];
     sessions.forEach(function (session, id) {
-      rows.push({
+      rows.push(Object.assign({
         id: id,
         username: (session.user && session.user.username) || '',
         sub: (session.user && session.user.sub) || '',
@@ -1623,7 +1623,12 @@ class AdminViews {
         // the list wsignout1.0 has to fan out to, and seeing it is the only way
         // to know in advance what a sign-out is about to do.
         wsfedRealms: Object.keys(session.wsfedRealms || {})
-      });
+      },
+      // THE BROWSER'S ACCOUNT SET IT BELONGS TO (#561), where it is in one —
+      // several signed-in accounts in one browser, `authn/CLAUDE.md`. Only
+      // then, so a row is unchanged with `authn.multipleAccounts` off.
+      session.accountSetId ? { accountSet: String(session.accountSetId) }
+                           : {}));
     });
     rows.sort(function (a, b) { return b.startedAt - a.startedAt; });
     log.debug("Leaving AdminViews.signOnSessionRows(). " + rows.length +

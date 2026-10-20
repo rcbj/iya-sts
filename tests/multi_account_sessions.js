@@ -154,6 +154,11 @@ function browser() {
   return b;
 }
 
+// Every session this file made, ended when it is done: the suite runs in
+// one process, and a session left expired would be counted by the next
+// file's sweep (`scheduler_jobs.js` asserts how many one run ends).
+const made = [];
+
 // A sign-in by this browser, as the sign-in screen's acts make one.
 function signIn(b, username, extra) {
   log.debug("Entering signIn(). " + username);
@@ -162,6 +167,9 @@ function signIn(b, username, extra) {
   const session = authn.startSession(req.res, username, ['pwd'], '1',
                                      'OAuth 2.0 / OIDC', detail);
   b.take(req.res);
+  if (session) {
+    made.push(session.id);
+  }
   log.debug("Leaving signIn().");
   return { session: session, res: req.res, req: req, detail: detail };
 }
@@ -537,6 +545,11 @@ function run(t) {
     partAdopt(t);
     withSettings({ 'authn.multipleAccounts': true }, function () {
       partOn(t);
+    });
+    made.forEach(function (sid) {
+      if (authn.sessionById(sid)) {
+        authn.endSessionById(sid, 'the end of multi_account_sessions.js');
+      }
     });
   });
   log.debug("Leaving run().");

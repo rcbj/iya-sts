@@ -5103,8 +5103,17 @@ the decisions rcbj made on #118:
 
   An expired hint is still a hint. An encrypted one is refused by name.
 * **`select_account`** is the sign-in screen, where whoever signs in is the
-  account selected. **An essential `acr` in a claims request** is a step-up
-  requirement: `step_up.ts`'s `essentialAcrValuesOf()`.
+  account selected — with `authn.multipleAccounts` off. **On (#561) it is
+  the account picker** (`beginAuthentication({ accountChoice: 'always' })`),
+  `prompt=login` is `accountChoice: 'never'`, `login_hint` and a verified
+  `id_token_hint`'s `sub` and `sid` go to `authn.hintAccount()` before
+  `sessionOf()`, and `prompt=none` from a browser whose accounts nothing in
+  the request chooses between is answered `account_selection_required`
+  (section 3.1.2.6, `STS-OAUTH-0959`). The consent screen resumes the
+  authorization request with `authn.accountTicketFor()`, so it acts as the
+  account that consented. `authn/CLAUDE.md`, *Several signed-in accounts in
+  one browser*, argues all of it. **An essential `acr` in a claims request**
+  is a step-up requirement: `step_up.ts`'s `essentialAcrValuesOf()`.
 * **`offline_access`** (section 11): `offlineAccessScope()` strips it without a
   code, and without `prompt=consent` or a recorded consent to it. **A refresh
   token without it is online**: it carries `sid` inside its JWE, and the refresh

@@ -1347,6 +1347,10 @@
     "en": "afae7eb3e60fb142",
     "text": "Selector de socios de federación"
   },
+  "endpoints.route./authn/accounts.name": {
+    "en": "c3b323e274fa067a",
+    "text": "Selector de cuentas"
+  },
   "endpoints.route./authn/spnego.name": {
     "en": "0a014fa4b2685cd7",
     "text": "Iniciar sesión con un ticket Kerberos"
@@ -1418,6 +1422,26 @@
   "endpoints.route./authn-api/pending/:id/partners.name": {
     "en": "cb0f4ae92fef3ded",
     "text": "Los socios de federación entre los que elegir"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts.name": {
+    "en": "23c7f520afd7c0cb",
+    "text": "Las cuentas con las que puede continuar un inicio de sesión"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/select.name": {
+    "en": "4c05cbd10261e5fe",
+    "text": "Continuar con una de las cuentas del navegador"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/another.name": {
+    "en": "8ffce6dab3c9d713",
+    "text": "Iniciar sesión con otra cuenta"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/forget.name": {
+    "en": "ee74996a1d01a953",
+    "text": "Olvidar una cuenta con la sesión cerrada"
+  },
+  "endpoints.route./authn-api/accounts.name": {
+    "en": "e263821d69f3f785",
+    "text": "Las cuentas que tiene este navegador"
   },
   "endpoints.route./authn-api/pending/:id/password.name": {
     "en": "673a50377a1ff20b",
