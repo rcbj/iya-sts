@@ -193,8 +193,10 @@
   "nav.crypto-metadata": "Cryptography",
   "shell.language": "Language",
   "shell.browserLanguage": "Use my browser's language",
-  "shell.menu.switch": "Switch to another account",
+  "shell.menu.switch": "Switch user",
   "shell.menu.switch.title": "Use this tab as {user}. Other tabs keep the accounts they are.",
+  "shell.menu.switch.none": "No other account is signed in in this browser yet.",
+  "shell.menu.switch.kept": "The account this tab leaves stays signed in, so you can switch back to it here.",
   "shell.menu.another": "Sign in with another account",
   "shell.menu.another.title": "Sign in as a different person in this tab. The accounts already signed in in this browser stay signed in, and other tabs keep theirs."
 }

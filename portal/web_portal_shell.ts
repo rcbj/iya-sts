@@ -275,9 +275,16 @@ class PortalShell {
       PortalShell.accountItems(list, subject, t) + '</div></details>';
   }
 
+  // **SWITCH USER (#751)**: the summary reads *Switch user*, and the panel
+  // is drawn whether or not another account is signed in yet — with none it
+  // says so — closing on the line that says the account this tab leaves
+  // STAYS SIGNED IN, which #561 did and nothing on the page said. The
+  // console's group is the same (`admin-ui/web_shell.ts`,
+  // `accountItems()`); off, neither is drawn.
   /**
    * Draws the account menu's items: a button per other signed-in account,
-   * and Sign in with another account.
+   * or a line saying there is none, Sign in with another account, and what
+   * a switch keeps.
    *
    * @param list - the browser's account list
    * @param subject - this tab's subject
@@ -288,20 +295,24 @@ class PortalShell {
     const others = WebAccounts.live(list).filter(function (one: Json) {
       return String(one.sub || '') !== String(subject || '');
     });
-    return others.map(function (one: Json): string {
-      const name = WebAccounts.nameOf(one);
-      return '<button type="button" class="linklike" ' +
-        'data-account-action="switch" data-account-key="' +
-        kit.esc(one.key) + '" title="' +
-        kit.esc(t.text('portal.accounts.switchTitle', { user: name })) +
-        '">' + kit.esc(name) +
-        (one.username && one.username !== name
-          ? ' <span>' + kit.esc(one.username) + '</span>' : '') +
-        '</button>';
-    }).join('') +
+    return (others.length
+      ? others.map(function (one: Json): string {
+        const name = WebAccounts.nameOf(one);
+        return '<button type="button" class="linklike" ' +
+          'data-account-action="switch" data-account-key="' +
+          kit.esc(one.key) + '" title="' +
+          kit.esc(t.text('portal.accounts.switchTitle', { user: name })) +
+          '">' + kit.esc(name) +
+          (one.username && one.username !== name
+            ? ' <span>' + kit.esc(one.username) + '</span>' : '') +
+          '</button>';
+      }).join('')
+      : '<p class="usermenunote" data-account-none="1">' +
+        t.html('portal.accounts.none') + '</p>') +
       '<button type="button" class="linklike" data-account-action="another" ' +
       'title="' + kit.esc(t.text('portal.accounts.anotherTitle')) + '">' +
-      t.html('portal.accounts.another') + '</button>';
+      t.html('portal.accounts.another') + '</button>' +
+      '<p class="usermenunote">' + t.html('portal.accounts.kept') + '</p>';
   }
 
   /**

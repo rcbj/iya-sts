@@ -532,10 +532,12 @@
   "done.sessionsEndedOne": "Sessionen som loggades in med den har avslutats.",
   "done.sessionsEndedMany": "De {n} sessioner som loggades in med den har avslutats.",
   "done.renamed": "Namnet ändrat till ”{name}”.",
-  "accounts.menu": "Byt konto",
+  "accounts.menu": "Byt användare",
   "accounts.menuTitle": "De andra kontona som är inloggade i den här webbläsaren, och en inloggning med ett annat konto. Bytet gäller bara den här fliken.",
   "accounts.switchTitle": "Använd den här fliken som {user}. Andra flikar behåller sina konton.",
   "accounts.another": "Logga in med ett annat konto",
   "accounts.anotherTitle": "Logga in som en annan person i den här fliken. Konton som redan är inloggade i den här webbläsaren förblir inloggade, och andra flikar behåller sina.",
+  "accounts.none": "Inget annat konto är inloggat i den här webbläsaren ännu.",
+  "accounts.kept": "Kontot som den här fliken lämnar förblir inloggat, så du kan byta tillbaka till det här.",
   "accounts.unsaved": "Den här sidan har ändringar som inte har sparats. Byta konto ändå? De går förlorade."
 }

@@ -532,10 +532,12 @@
   "done.sessionsEndedOne": "以它登入的工作階段已結束。",
   "done.sessionsEndedMany": "以它登入的 {n} 個工作階段已結束。",
   "done.renamed": "已重新命名為「{name}」。",
-  "accounts.menu": "切換帳戶",
+  "accounts.menu": "切換使用者",
   "accounts.menuTitle": "在此瀏覽器中已登入的其他帳戶，以及使用其他帳戶登入。切換只影響此分頁。",
   "accounts.switchTitle": "以 {user} 的身分使用此分頁。其他分頁保留各自的帳戶。",
   "accounts.another": "使用其他帳戶登入",
   "accounts.anotherTitle": "在此分頁中以另一個人的身分登入。已在此瀏覽器中登入的帳戶會保持登入，其他分頁保留各自的帳戶。",
+  "accounts.none": "此瀏覽器中尚無其他已登入的帳戶。",
+  "accounts.kept": "此分頁離開的帳戶仍保持登入，您可以在這裡切換回去。",
   "accounts.unsaved": "此頁面有尚未儲存的變更。仍要切換帳戶嗎？這些變更將會遺失。"
 }

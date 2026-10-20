@@ -84,6 +84,10 @@ const STYLE =
   '#2c5cc5;padding:6px 8px}.usermenupanel button.linklike:hover{' +
   'background:#eef2fb}.usermenupanel button span{color:#777;font-size:' +
   '.9em}' +
+  // What the Switch user group says rather than offers (#751): there is no
+  // other account yet, and the one this tab leaves stays signed in.
+  '.usermenupanel p.usermenunote{margin:4px 8px;color:#666;font-size:' +
+  '.8em}' +
   'p.sub{color:#666;font-size:.9em;margin:0 0 ' +
   '18px}label{display:block;font-size:.85em;font-weight:600;margin:12px 0 ' +
   '4px}input[type=text],input[type=password]{width:100%;padding:9px ' +

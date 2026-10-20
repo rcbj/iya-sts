@@ -15,5 +15,7 @@
   "openConsole": "Ouvrir la console",
   "copied": "Copié",
   "accounts.unsaved": "Cette page contient des modifications non enregistrées. Changer de compte quand même ? Elles seront perdues.",
-  "accounts.otherAccount": "Cette connexion concernait un autre compte, cet onglet ne l’a donc pas acceptée. Reconnectez-vous en tant que {user}, ou changez de compte depuis le menu du compte."
+  "accounts.otherAccount": "Cette connexion concernait un autre compte, cet onglet ne l’a donc pas acceptée. Reconnectez-vous en tant que {user}, ou changez de compte depuis le menu du compte.",
+  "accounts.refused.title": "La console ne s’ouvre pas pour ce compte",
+  "accounts.refused.text": "L’API de gestion a répondu {status} pour le compte avec lequel cet onglet est connecté."
 }

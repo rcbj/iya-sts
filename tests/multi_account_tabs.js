@@ -39,6 +39,15 @@
 //      setting on — its words fetched only then — never under
 //      `/authn/spnego` or on the picker, and a change an act made is
 //      announced with nothing about whose.
+//   9. SWITCH USER (#751): both menus draw the group whether or not another
+//      account is signed in — with none, a line saying so — with Sign in
+//      with another account and the line that the account left stays
+//      signed in; a switch is a whole-page sign-in naming the account, never
+//      the popup, and once it lands the popup's sign-in again (#731) asks
+//      for the account switched TO and refuses the one left; and an account
+//      the console's shell answer refuses gets a page with the Switch user
+//      group and Sign out (Sign out alone with the setting off), not a
+//      blank tab.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -256,6 +265,15 @@ function browser(pathname, storage, server) {
             });
           }
         });
+      }
+      // A PATH THE CASE ANSWERS ITSELF (#751): `{ status, json }`.
+      const named = server.answers && Object.keys(server.answers)
+        .filter(function (path) {
+          return u.indexOf(path) >= 0;
+        })[0];
+      if (named) {
+        return answer(server.answers[named].status,
+                      server.answers[named].json);
       }
       if (/\/authn-api\/accounts$/.test(u)) {
         return server.list ? answer(200, server.list)
@@ -772,10 +790,128 @@ async function surfaceChecks(t) {
   log.debug("Leaving surfaceChecks().");
 }
 
+async function switchUserChecks(t) {
+  log.debug("Entering switchUserChecks().");
+  // --- 9. Switch user (#751) -----------------------------------------------
+  const shell = { gate: { session: true, username: 'alice' }, sections: [],
+                  realm: { id: '', name: 'Default' }, navLabels: {},
+                  version: {}, persistence: {}, portalHref: '/portal' };
+  const page = { title: 'Users', active: '/admin/users', up: null,
+                 inner: '<p>x</p>', path: '/admin/users' };
+  const alone = WebShell.frame(shell, Object.assign({}, page,
+    { accounts: listOf([ALICE]), subject: ALICE.sub }));
+  const two = WebShell.frame(shell, Object.assign({}, page,
+    { accounts: listOf([ALICE, BOB]), subject: ALICE.sub }));
+  t.check(/Switch user/.test(alone) && /data-account-none/.test(alone) &&
+          /No other account is signed in/.test(alone) &&
+          /data-account-action="another"/.test(alone) &&
+          /stays signed in/.test(alone) &&
+          !/data-account-action="switch"/.test(alone),
+          '9. the console\'s Switch user group is drawn with no other ' +
+          'account, saying so, with Sign in with another account and what ' +
+          'a switch keeps', alone);
+  t.check(/Switch user/.test(two) && !/data-account-none/.test(two) &&
+          two.indexOf('data-account-key="urn:uuid:bob"') > 0 &&
+          two.indexOf('data-account-key="urn:uuid:alice"') < 0 &&
+          /stays signed in/.test(two),
+          '9. with another account, the console\'s group offers it and not ' +
+          'the tab\'s own');
+  const T = { html: function (k) { return k; }, text: function (k) {
+    return k; }, has: function () { return true; }, locale: 'en' };
+  const me = { user: { username: 'alice' }, locale: { offered: [] },
+               version: {} };
+  const ppage = { active: '/portal/consents', query: {}, message: '',
+                  error: '', cards: '<div class="card"></div>', prefix: '',
+                  t: T };
+  const palone = PortalShell.frame(me, Object.assign({}, ppage,
+    { accounts: listOf([ALICE]), subject: ALICE.sub }));
+  const ptwo = PortalShell.frame(me, Object.assign({}, ppage,
+    { accounts: listOf([ALICE, BOB]), subject: ALICE.sub }));
+  t.check(/portal\.accounts\.menu/.test(palone) &&
+          /data-account-none/.test(palone) &&
+          /portal\.accounts\.none/.test(palone) &&
+          /portal\.accounts\.kept/.test(palone) &&
+          /data-account-action="another"/.test(palone) &&
+          !/data-account-none/.test(ptwo) &&
+          ptwo.indexOf('data-account-key="urn:uuid:bob"') > 0 &&
+          /portal\.accounts\.kept/.test(ptwo),
+          '9. the portal\'s menu is drawn with no other account, saying so, ' +
+          'and offers another where there is one; both say what a switch ' +
+          'keeps', palone);
+  // THE ENGLISH the portal's catalog gives those keys.
+  const en = i18n.translator(['en']);
+  t.check(en.text('portal.accounts.menu') === 'Switch user' &&
+          en.text('console.shell.menu.switch') === 'Switch user' &&
+          /stays signed in/.test(en.text('portal.accounts.kept')),
+          '9. both menus read Switch user in English');
+
+  // A SWITCH IS NOT THE POPUP, and once it lands the popup's sign-in again
+  // protects the account switched to (#731's rule, unchanged).
+  const server = { list: listOf([ALICE, BOB]), tokenSub: BOB.sub };
+  const tab = await consoleTab(server, storageOf(), ALICE.sub);
+  await tab.rt.switchAccount(BOB.key);
+  const switched = lastAuthorize(tab.b);
+  t.check(switched && switched.searchParams.get('login_hint') === 'bob' &&
+          !/^popup\./.test(switched.searchParams.get('state') || '') &&
+          !tab.rt.reauth,
+          '9. a switch is a whole-page sign-in naming the account, never ' +
+          'the sign-in-again popup', switched && switched.toString());
+  await callback(tab, '/admin/callback');
+  t.check(tab.rt.subject === BOB.sub &&
+          JSON.parse(tab.b.env.sessionStorage.store['sts-console-account'])
+            .username === 'bob',
+          '9. the switch lands: the tab is the account switched to');
+  tab.rt.view = { page: { path: '/admin/users' }, json: {}, query: {} };
+  tab.rt.accessToken = '';
+  tab.rt.refreshToken = '';
+  server.tokenSub = ALICE.sub;
+  void tab.rt.signInAgain();
+  await until(function () { return tab.rt.reauth && tab.rt.reauth.url; });
+  const popupUrl = new URL(tab.rt.reauth.url);
+  await tab.rt.onPopupAnswer({ state: tab.rt.reauth.state, code: 'c' });
+  t.check(popupUrl.searchParams.get('login_hint') === 'bob' &&
+          tab.rt.subject === BOB.sub && tab.rt.accessToken === '' &&
+          /another account/.test(
+            (tab.b.elements['reauth-bar'] || {}).innerHTML || ''),
+          '9. after a switch, the popup asks for the account switched to and ' +
+          'refuses the account left (#731), which stays signed in');
+
+  // AN ACCOUNT THE CONSOLE REFUSES: the page says so and keeps the way
+  // back.
+  const refusedAnswer = { status: 403, json: { error: 'insufficient_role',
+    error_description: 'This console is not claimed yet.' } };
+  const refused = await consoleTab({ list: listOf([ALICE, BOB]),
+    answers: { '/admin-api/console': refusedAnswer } }, storageOf(),
+    BOB.sub);
+  await refused.rt.ensureKey();
+  await refused.rt.route();
+  const body = refused.b.env.document.body.innerHTML;
+  t.check(/will not open for this account/.test(body) && /403/.test(body) &&
+          /not claimed yet/.test(body) &&
+          body.indexOf('id="' + WebShell.ACCOUNTS_ID + '"') > 0 &&
+          body.indexOf('data-account-key="urn:uuid:alice"') > 0 &&
+          /data-account-action="another"/.test(body) &&
+          body.indexOf('action="' + WebShell.SIGNOUT_PATH + '"') > 0,
+          '9. an account the console refuses gets a page saying so, with ' +
+          'Switch user and Sign out, not a blank tab', body);
+  const refusedOff = await consoleTab({ list: null, attribute: null,
+    answers: { '/admin-api/console': refusedAnswer } }, storageOf(),
+    BOB.sub);
+  await refusedOff.rt.ensureKey();
+  await refusedOff.rt.route();
+  const offBody = refusedOff.b.env.document.body.innerHTML;
+  t.check(/will not open for this account/.test(offBody) &&
+          !/data-account-action/.test(offBody) &&
+          offBody.indexOf('action="' + WebShell.SIGNOUT_PATH + '"') > 0,
+          '9. off, that page offers Sign out alone', offBody);
+  log.debug("Leaving switchUserChecks().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   await consoleChecks(t);
   await portalChecks(t);
+  await switchUserChecks(t);
   try {
     await surfaceChecks(t);
   } finally {

@@ -532,10 +532,12 @@
   "done.sessionsEndedOne": "La session ouverte avec ce moyen est terminée.",
   "done.sessionsEndedMany": "Les {n} sessions ouvertes avec ce moyen sont terminées.",
   "done.renamed": "Renommée en « {name} ».",
-  "accounts.menu": "Changer de compte",
+  "accounts.menu": "Changer d’utilisateur",
   "accounts.menuTitle": "Les autres comptes connectés dans ce navigateur, et une connexion avec un autre compte. Le changement ne concerne que cet onglet.",
   "accounts.switchTitle": "Utiliser cet onglet en tant que {user}. Les autres onglets conservent leur compte.",
   "accounts.another": "Se connecter avec un autre compte",
   "accounts.anotherTitle": "Se connecter en tant qu’une autre personne dans cet onglet. Les comptes déjà connectés dans ce navigateur le restent, et les autres onglets conservent le leur.",
+  "accounts.none": "Aucun autre compte n’est encore connecté dans ce navigateur.",
+  "accounts.kept": "Le compte que cet onglet quitte reste connecté : vous pouvez y revenir d’ici.",
   "accounts.unsaved": "Cette page contient des modifications non enregistrées. Changer de compte quand même ? Elles seront perdues."
 }
