@@ -422,8 +422,11 @@ async function run(t) {
   });
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
+      // THE OLD DEFAULT, SET EXPLICITLY (#751): part 5 holds the 303 to
+      // returnTo with no account ticket on it, a browser with one session.
       env: Object.assign(clean, { LOG_LEVEL: 'fatal', STS_LOG_LEVEL: 'fatal',
-                                  SS_ROOT: ROOT, SS_OUT: out }),
+                                  SS_ROOT: ROOT, SS_OUT: out,
+                                  STS_AUTHN_MULTIPLE_ACCOUNTS: 'false' }),
       encoding: 'utf8', timeout: 180000, cwd: ROOT
     });
   let findings = null;
