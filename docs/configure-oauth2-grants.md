@@ -47,29 +47,54 @@ api() {   # api <path under /admin-api> '<json body>'
 
 | What | Console | API |
 |---|---|---|
-| Register an application | **Applications → New application ›** (`/admin/applications/new`), then **Create the application** | `POST /admin-api/applications/create` with `{identifier, name, kind?, protocols, fields}` |
-| Change one attribute of it | the application's page (`/admin/applications?application=<id>`), section **Change what it is allowed to do**: the **Set** form, then **Set** | `POST /admin-api/applications/set` with `{application, attribute, value}` (an empty value clears it) |
-| Add or remove one value of a list attribute | same section: the **Add to** / **Remove from** forms, then **Add** / **Remove** | `POST /admin-api/applications/add` and `/remove`, with the same three members |
-| Change a setting | the protocol's settings page, then the group's **Save <group>** button; **Reset** on a row puts that row back | `POST /admin-api/config/set` with `{key, value}`, `/config/set-many` with `{"<key>": value, …}`, `/config/reset` with `{key}` |
+| Register an application | **Directory → Applications → New application ›** (`/admin/applications/new`), then **Create the application** | `POST /admin-api/applications/create` with `{identifier, name?, protocols, fields, lifetimeDays?}` |
+| Change one of its fields | the application's page (`/admin/applications?application=<id>`), **Configuration** tab, the protocol's sub-tab (for example **OAuth 2.0 / OpenID Connect**), then **Save <sub-tab>** | `POST /admin-api/applications/set` with `{application, attribute, value}`, for a single-valued attribute (an empty value clears it) |
+| Add or remove one value of a list | the same sub-tab: **+** adds a box, the bin deletes one, then **Save <sub-tab>**; or the **Directory entry** tab → **Change one attribute by name** → **Add to** / **Remove from** | `POST /admin-api/applications/add` and `/remove`, with the same three members |
+| Change a setting | **Protocols → OAuth 2.0 / OIDC** (`/admin/oauth2`), **Global settings** tab, then the group's **Save <group>** button; **Reset** on a row puts that row back | `POST /admin-api/config/set` with `{key, value}`, `/config/set-many` with `{"<key>": value, …}`, `/config/reset` with `{key}` |
+
+`applications/set` on a list attribute is refused (`STS-REG-0008`): use
+`add` and `remove` for those.
 
 Settings are per [trust realm](trust-realms.md). A console page saves to the
 realm it is shown in, and `/realm/<id>/admin-api/config/...` saves to that
 realm. To give a new realm its settings from the start, use
 `POST /admin-api/realms/create` with an `overrides` object. The OAuth 2.1 job
-does this:
+(`sts_oauth21.js`) does this:
 
 ```bash
 api realms/create '{"id":"r1","domain":"r1.example.net","name":"r1",
   "overrides":{"oauth2.oauth21":true,"oauth2.consentRequired":false}}'
 ```
 
-**The new-application form lacks four attributes.** It does not offer
-`oauthTokenEndpointAuthMethod`, `oauthGrantType`, `oauthScope` or
-`oauthAllowedScope`. In the console, create the application first and then set
-those in **Change what it is allowed to do**. Through the API they can all go
-in `fields` on the create. If you give a client secret when you create the
-application, the auth method becomes `client_secret_basic` unless you name
-another.
+**The new-application form.** Under **What it is called** you type the
+**Identifier** and, if you like, a **Name**. Under **Protocol families it is
+declared for** you tick the families. Under **Its fields** the form shows a
+grid of attributes, by their attribute names, for the families ticked. The
+*simplified view* shows the fields most clients need, among them
+`oauthRedirectUri`, `oauthConfidential`, `oauthTokenEndpointAuthMethod`,
+`oauthGrantType`, `oauthResponseType`, `oauthAllowedScope`, `oauthAudience`
+and `oauthClientSecret`. **Show every field (advanced view)** shows the rest.
+A list holds one box per value, with **+** to add one. A list with a fixed set
+of values, such as `oauthGrantType`, is a row of checkboxes; a long URN is
+shown by its last two parts (`grant-type:device_code`), with the whole value
+in its tooltip. A `TRUE`/`FALSE` attribute is a choice of **true**, **false**
+or the default.
+
+Three things are filled in for you:
+* **The identifier is the client_id** unless you give `oauthClientId`
+  yourself (#393). The simplified view does not ask for it again. The same
+  goes for a SAML `samlEntityId` and the other families' identifiers.
+* **The auth method follows the credential.** If the create names no
+  `oauthTokenEndpointAuthMethod`, a client secret makes it
+  `client_secret_basic`, an `oauthJwks` or `oauthJwksUri` makes it
+  `private_key_jwt`, and no credential makes it `none`, a public client.
+* **The first secret's lifetime** is the **Lifetime (days)** box beside
+  **Generate Secret**, or `lifetimeDays` on the API create. See
+  [Client secrets](#client-secrets).
+
+`oauthScope` is not a permission. It records the scopes a client has asked
+for, so an `add` to it is refused (`STS-REG-0361`). The scopes a client may be
+issued are `oauthAllowedScope`.
 
 ### What development and product mode change
 
@@ -85,12 +110,16 @@ The same registration behaves differently in the two modes (`global.mode`):
   `S256` from a public client, refuses the implicit and password grants, and
   rotates refresh tokens. A client that declared a confidential method must
   authenticate with it.
+* **Product mode holds a client to its protocol families.** An application
+  declared for OAuth 2.0 alone is refused an ID Token (`STS-XACML-0084`).
+  Declare **OpenID Connect** as well for any client that asks for `openid`.
 * **Scopes in product mode come from `oauthAllowedScope`.** A scope that is
   not listed there is refused with `invalid_scope`. If the list is empty,
   product mode issues only the standard set: `openid profile email address
-  phone offline_access`, plus the realm's OpenID4VCI scopes. This service's
-  own protected scopes (`admin:*`, `scim:*`, the Shared Signals and debugger
-  scopes) must be listed in **both** modes.
+  phone offline_access` and `bound_key` (while `oauth2.keyBinding` is on),
+  plus the realm's OpenID4VCI scopes. This service's own protected scopes must
+  be listed in **both** modes; see
+  [This service's own scopes](#this-services-own-scopes).
 * **`oauthGrantType` restricts the client, in both modes.** The token
   endpoint refuses any grant the list does not name with `unauthorized_client`,
   whether the list came from a dynamic registration (RFC 7591 `grant_types`) or
@@ -98,8 +127,9 @@ The same registration behaves differently in the two modes (`global.mode`):
   refresh token. An empty list restricts nothing. The console offers one
   checkbox per grant this service implements, and a console or API write of
   any other value is refused. What a client has actually used is recorded
-  separately, in `oauthGrantTypeObserved`, shown read-only at the top of the
-  application's **OAuth 2.0 / OpenID Connect** sub-tab.
+  separately, in `oauthGrantTypeObserved`, shown read-only beside
+  `oauthGrantType` on the application's **OAuth 2.0 / OpenID Connect**
+  sub-tab.
 * **Consent is on by default** (`oauth2.consentRequired`). A person approves
   each client on `/oauth2/consent` the first time. Test realms often turn it
   off with `"oauth2.consentRequired": false`. In production, leave it on.
@@ -128,24 +158,27 @@ refused with `unsupported_grant_type`.
 
 A person signs in through a browser and the client exchanges the code it
 receives for tokens. The code is valid for `oauth2.authorizationCodeTtlS`
-(300 s by default) and can be used only once. `oauth2.codeReplayIdempotent`
-relaxes that rule, and is off by default.
+(300 s by default, and never longer). It is presented once: its first token
+request spends it, whatever that request's outcome, and a second presentation
+is refused and revokes what the first one bought. `oauth2.codeReplayIdempotent`
+relaxes that rule. It is off by default; leave it off.
 
 ### A public client (a browser or native app)
 
-Taken from `oauth_fixtures.js` and `oauth2_sts_endpoints.js`.
+Taken from `oauth2_sts_endpoints.js`.
 
 **Console:**
-1. **Applications → New application ›**.
-2. Under **What it is called**, set **Identifier** to `sts-endpoint-test-client-native` (the name is optional).
+1. **Directory → Applications → New application ›**.
+2. Under **What it is called**, set **Identifier** to `sts-endpoint-test-client-native` (the name is optional). It is also the client_id.
 3. Under **Protocol families it is declared for**, tick **OAuth 2.0** and **OpenID Connect**.
-4. In **Where responses go back to**, enter `com.example.oauth2stsendpoints:/callback`, one URI per line.
+4. Under **Its fields**, in the **OAuth 2.0 / OpenID Connect** group:
+   - `oauthRedirectUri`: `com.example.oauth2stsendpoints:/callback`.
+   - `oauthConfidential`: **false**.
+   - `oauthTokenEndpointAuthMethod`: tick `none`, and nothing else.
+   - `oauthGrantType`: tick `authorization_code` and `refresh_token`.
+   - `oauthResponseType`: tick `code`.
+   - `oauthAllowedScope`: `openid`, `profile` and `email`, one box each (**+** adds a box).
 5. Click **Create the application**.
-6. On the application's page, in **Change what it is allowed to do**:
-   - **Tick** `none` under `oauthTokenEndpointAuthMethod`, and nothing else.
-   - **Set** `oauthConfidential` to `FALSE`.
-   - **Tick** `authorization_code` and `refresh_token` under `oauthGrantType`.
-   - **Add to** `oauthAllowedScope` the values `openid`, `profile` and `email`.
 
 **API:**
 ```bash
@@ -154,11 +187,9 @@ api applications/create '{
   "name": "sts-endpoint-test-client-native",
   "protocols": ["oauth2", "oidc"],
   "fields": {
-    "oauthClientId": "sts-endpoint-test-client-native",
     "oauthRedirectUri": ["com.example.oauth2stsendpoints:/callback"],
     "oauthResponseType": ["code"],
     "oauthGrantType": ["authorization_code", "refresh_token"],
-    "oauthScope": ["openid", "profile", "email"],
     "oauthAllowedScope": ["openid", "profile", "email"],
     "oauthTokenEndpointAuthMethod": "none",
     "oauthConfidential": "FALSE"
@@ -170,22 +201,22 @@ api applications/create '{
 Taken from `sts_token_revocation.js`.
 
 **Console:** create the application as for the public client above, with
-**Identifier** `rv-a` and redirect URI `https://rp.revoke.example.test/cb`. In
-**The client secret**, click **Generate Secret**, and copy the value before
-you create the application. Then, on the application's page:
-- **Tick** `client_secret_basic` under `oauthTokenEndpointAuthMethod`, and nothing else.
-- **Add to** `oauthAllowedScope` the value `openid`.
+**Identifier** `rv-a` and `oauthRedirectUri` `https://rp.revoke.example.test/cb`.
+Beside `oauthClientSecret`, click **Generate Secret**, and copy the value
+before you create the application. Leave **Lifetime (days)** empty for the
+realm's default. Then:
+- `oauthTokenEndpointAuthMethod`: tick `client_secret_basic`, and nothing else.
+- `oauthAllowedScope`: `openid`.
 
-An application that already exists gets a secret from the **Credentials →
-Client secret** button: **Generate a client secret**, or **Regenerate the
-client secret**.
+An application that already exists gets a secret on its **Credentials** tab,
+under **Client secrets**. See [Client secrets](#client-secrets).
 
 **API:**
 ```bash
 SECRET=$(openssl rand -base64 32)
 api applications/create '{
   "identifier": "rv-a", "name": "rv-a", "kind": "oauth2-client",
-  "protocols": ["oauth2"],
+  "protocols": ["oauth2", "oidc"],
   "fields": {
     "oauthClientId": ["rv-a"],
     "oauthRedirectUri": ["https://rp.revoke.example.test/cb"],
@@ -198,6 +229,7 @@ api applications/create '{
 
 `POST /admin-api/applications/generate-secret` with `{}` returns a random
 secret and stores nothing, if you would rather have the service choose one.
+Pass it in `fields.oauthClientSecret`.
 
 ### The requests
 
@@ -217,14 +249,14 @@ authorization request. [OAuth 2.1 mode](oauth-security.md) (`oauth2.oauth21`)
 lets a public client that used PKCE leave it out. RFC 9700 mode alone does
 not.
 
-**Settings** (console: **OAuth 2.0 / OIDC settings**, `/admin/oauth2`):
+**Settings** (console: **Protocols → OAuth 2.0 / OIDC**, **Global settings** tab):
 
 | Setting | Default | Why you would change it |
 |---|---|---|
 | `oauth2.rfc9700` | `false` | Turns on RFC 9700 mode in development. Product mode implies it. |
 | `oauth2.oauth21` | `false` | Turns on OAuth 2.1 mode, which implies RFC 9700 mode. |
 | `oauth2.consentRequired` | `true` | Asks the person to approve each client. |
-| `oauth2.authorizationCodeTtlS` | `300` | Sets how long a code is valid. |
+| `oauth2.authorizationCodeTtlS` | `300` | Sets how long a code is valid: 30 to 300 seconds. |
 
 ## Client credentials
 
