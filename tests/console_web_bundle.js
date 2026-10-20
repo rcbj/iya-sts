@@ -1967,6 +1967,21 @@ function childMain() {
          'D-notdo-product. in product mode /admin draws none of it',
          JSON.stringify({ testDouble: (dashDrawn.product || {})
                           .testDouble }));
+    // *Reading it from a test* names the API, in both modes (#753): every
+    // `/admin/*` path answers the console's one document, so the examples
+    // are `/admin-api` operations, and the API is gated.
+    const testNotes = [dashDrawn.development, dashDrawn.product]
+      .filter(function (one) {
+        return !!one && typeof one.here === 'string';
+      });
+    note(testNotes.length === 2 && testNotes.every(function (one) {
+      return one.here.indexOf('/admin-api/metrics') >= 0 &&
+        one.here.indexOf('/admin-api/tokens/revoke') >= 0 &&
+        one.here.indexOf('?format=json') < 0 &&
+        one.here.indexOf('not gated') < 0 &&
+        one.here.indexOf('admin:read') >= 0;
+    }), 'D-dash-test. /admin\'s notes for a test name /admin-api ' +
+        'operations and their scopes, and no ?format=json', '');
     note(WebPages.render('/admin/not-converted', {}) === null,
          'D3. a page that is not converted is not drawn', '');
     // THE RENDER CONTEXT: what a page draws that is the reader's and not

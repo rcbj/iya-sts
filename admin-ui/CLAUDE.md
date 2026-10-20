@@ -1269,6 +1269,14 @@ front-channel logout*, with the two doors that do end a session beside it.
 **An entry added here must be true in development mode**; one that holds in
 both modes still belongs only if an operator would look for the control.
 
+**The section below it, *Reading it from a test*, was stale too** and was
+fixed in the same change: it said every page answers `?format=json` and that
+`/admin-api` "is not gated at all". Every `/admin/*` path answers the
+console's one document since #446, so its examples are now `/admin-api`
+operations, and the note says what the API asks for (an access token for it,
+`admin:read` or `admin:write`, a 401 with a JSON body without one) and that
+`adminApi.authRequired` off opens it in development mode only.
+
 ---
 
 ## ONE PAGE OF THIS CONSOLE IS NOT IN THIS DIRECTORY

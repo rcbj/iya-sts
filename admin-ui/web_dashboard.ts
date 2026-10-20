@@ -71,36 +71,41 @@ class DashboardPage {
       kit.note(t.html('consoleDashboard.test.noteA') + ' ' +
       link('/admin-api', '/admin-api') +
       t.html('consoleDashboard.test.noteB')) +
+      // THE EXAMPLES ARE THE API'S OPERATIONS (#753): every `/admin/*` path
+      // answers the static console's one document since #446, so a
+      // `?format=json` there is the shell, not the page's view.
       '<ul><li><code>GET ' + kit.esc(json.base) +
-      '/admin/metrics?format=json</code></li>' +
+      '/admin-api/metrics</code></li>' +
       kit.bullet('<code>GET ' + kit.esc(json.base) +
-                  '/admin/groups?format=json</code>' +
+                  '/admin-api/groups</code>' +
       t.html('consoleDashboard.test.and') + ' ' +
       '<code>GET ' + kit.esc(json.base) +
-      '/admin/groups?group=cn=developers,ou=groups,...&amp;format=json' +
+      '/admin-api/groups?group=cn=developers,ou=groups,...' +
       '</code> ' + t.html('consoleDashboard.test.groups')) +
       kit.bullet('<code>GET ' + kit.esc(json.base) +
-                  '/admin/users?format=json</code>' +
+                  '/admin-api/users</code>' +
       t.html('consoleDashboard.test.and') + ' ' +
       '<code>GET ' + kit.esc(json.base) +
-      '/admin/users?user=alice&amp;format=json</code> ' +
+      '/admin-api/users?user=alice</code> ' +
       t.html('consoleDashboard.test.users')) +
       kit.bullet('<code>GET ' + kit.esc(json.base) +
-      '/admin/tokens?format=json&amp;page=1&amp;per=100</code> ' +
+      '/admin-api/tokens?page=1&amp;per=100</code> ' +
       t.html('consoleDashboard.test.tokens')) +
       kit.bullet('<code>GET ' + kit.esc(json.base) +
-      '/admin/sts-metadata?format=json</code> ' +
+      '/admin-api/sts-metadata</code> ' +
       t.html('consoleDashboard.test.metadata')) +
       kit.bullet('<code>GET ' + kit.esc(json.base) +
-      '/admin/delegation/map?format=json</code> ' +
+      '/admin-api/console/delegation/map</code> ' +
       t.html('consoleDashboard.test.map')) +
-      '<li><code>POST ' + kit.esc(json.base) + '/admin/tokens</code> ' +
+      '<li><code>POST ' + kit.esc(json.base) +
+      '/admin-api/tokens/revoke</code> ' +
       t.html('consoleDashboard.test.with') + ' ' +
-      '<code>{"action":"revoke","target":"&lt;jti or ' +
+      '<code>{"target":"&lt;jti or ' +
       'token&gt;"}</code></li><li><code>POST ' + kit.esc(json.base) +
-      '/admin/claims</code> ' + t.html('consoleDashboard.test.with') + ' ' +
+      '/admin-api/claims/replace</code> ' +
+      t.html('consoleDashboard.test.with') + ' ' +
       '<code>' +
-      '{"action":"replace","set":"id_token","claims":[{"name":"dept",' +
+      '{"set":"id_token","claims":[{"name":"dept",' +
       '"value":"engineering"}]}</code></li></ul>';
     return inner;
   }
