@@ -3645,7 +3645,7 @@ class FederationSp {
   // The authorization request's parameters, for the query or — for an OP
   // discovered through a federation (#134) — for a signed request object.
   private authorizationParams(base, record, context) {
-    const { log } = this.deps;
+    const { federation, log } = this.deps;
     log.debug("Entering FederationSp.authorizationParams().");
     const responseType = String(record.fedResponseType || 'code');
     const params = new URLSearchParams();
@@ -3683,13 +3683,16 @@ class FederationSp {
     }
     // THE PROVIDER'S EXTRA PARAMETERS (#565), never one set above: an
     // `ldapmodify` could write a reserved name the console refuses, so it is
-    // skipped here too.
+    // skipped here too — the WHOLE reserved list, not only what this flow
+    // happened to set, since a `response_mode` or `code_challenge_method`
+    // this flow leaves out is still this service's to decide.
+    const reserved: string[] = federation.RESERVED_AUTHORIZE_PARAMS || [];
     [].concat(record.fedAuthorizeParams || []).forEach(function (one) {
       const text = String(one || '');
       const at = text.indexOf('=');
       const name = at > 0 ? text.slice(0, at).trim() : '';
       if (name && !params.has(name) &&
-          ['request', 'request_uri'].indexOf(name.toLowerCase()) < 0) {
+          reserved.indexOf(name.toLowerCase()) < 0) {
         params.set(name, text.slice(at + 1));
       }
     });

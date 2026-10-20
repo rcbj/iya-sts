@@ -5142,6 +5142,9 @@ module.exports = {
   prose: prose,
   clientSecretOf: clientSecretOf,
   clientSigningKeyOf: clientSigningKeyOf,
+  // The authorization request parameters fedAuthorizeParams may not name
+  // (#565), for federation_sp.ts's request builder.
+  RESERVED_AUTHORIZE_PARAMS: RESERVED_AUTHORIZE_PARAMS,
   PATHS: PATHS,
   ROLES: ROLES,
   ROLE_IDS: ROLE_IDS,
