@@ -238,16 +238,29 @@ const WALLET_DC_API_BODY = vz.object(Object.assign({}, WALLET_IDS, {
 // the page was drawn for — honoured only where naming is open, or where it
 // is the caller's own). The view's query is `username` alone.
 // ---------------------------------------------------------------------------
+// `account` (#561) is the account step's choice carried by every form after
+// it: an account's KEY, read only with `authn.multipleAccounts` on, choosing
+// only among this browser's own accounts. `login_hint` preselects one at the
+// step and chooses nothing.
 const LOGOUT_BODY = vz.object({
   scope: vt.opt(vt.oneOf(['global', 'selected'])),
   select: vz.array(vz.string().max(validation.CAP.TOKEN)).max(10000)
     .optional(),
-  username: vt.opt(vt.name)
+  username: vt.opt(vt.name),
+  account: vz.string().min(1).max(600).optional()
 }).strict();
 
 const LOGOUT_QUERY = vz.object({
-  username: vt.opt(vt.name)
+  username: vt.opt(vt.name),
+  account: vz.string().min(1).max(600).optional(),
+  login_hint: vz.string().max(512).optional()
 });
+
+// THE SIGN-OUT'S ACCOUNT STEP (#561): an account's key, or `all` — every
+// account in this browser.
+const LOGOUT_ACCOUNT_BODY = vz.object({
+  account: vz.string().min(1).max(600)
+}).strict();
 
 // ---------------------------------------------------------------------------
 // THE ACCOUNT PICKER'S BODY (#561): the account's KEY — its subject, or
@@ -651,8 +664,10 @@ const LOGOUT_ANSWER = {
     'ended (`ownSessionEnded`).',
   properties: {
     ok: { type: 'boolean' },
-    next: { type: 'string', enum: ['signed-out'] },
+    next: { type: 'string', enum: ['signed-out', 'inventory'] },
     username: { type: 'string' },
+    account: { type: 'string' },
+    location: { type: 'string' },
     ownSessionEnded: { type: 'boolean' },
     scope: { type: 'string', enum: ['global', 'selected'] },
     form: { type: 'object' },
@@ -679,7 +694,28 @@ const LOGOUT_OPERATIONS: Operation[] = [
     description: 'A `scope` of `global`, or no selection, ends everything ' +
       'the person holds; `select` ends those rows only, each looked up ' +
       'again now. The answer is the result, or the signed-out document ' +
-      'that carries what the browser must still do.' }
+      'that carries what the browser must still do.' },
+  // SEVERAL ACCOUNTS IN ONE BROWSER (#561): the step `/logout` draws first
+  // where the browser holds more than one signed-in account.
+  { method: 'GET', path: API + '/logout/accounts',
+    operationId: 'getSignOutAccounts', access: 'session',
+    mirrors: 'GET /logout/accounts', handler: 'logoutAccountsView',
+    summary: 'Which account a sign-out is for',
+    description: 'The sign-out\'s account step: this browser\'s signed-in ' +
+      'accounts, each by its key, names and whether it is the browser\'s ' +
+      'default — never a sid — the one `login_hint` names, preselected, ' +
+      'and `csrf`. 400 where authn.multipleAccounts is off.' },
+  { method: 'POST', path: API + '/logout/accounts',
+    operationId: 'chooseSignOutAccount', access: 'session',
+    mirrors: 'POST /logout/accounts', action: 'account',
+    handler: 'logoutAccountsAct', body: LOGOUT_ACCOUNT_BODY,
+    answer: LOGOUT_ANSWER, refusedCode: 'STS-LOGOUT-0003',
+    summary: 'Chooses the account to sign out, or every account',
+    description: 'An account\'s key answers `next: inventory` and the ' +
+      'address of that person\'s sign-out page; `all` signs every account ' +
+      'in this browser out — each person\'s own global sign-out — and ' +
+      'answers as `POST /authn-api/logout` does. 409 for an account no ' +
+      'longer signed in here.' }
 ];
 
 OPERATIONS.push.apply(OPERATIONS, LOGOUT_OPERATIONS);
@@ -1617,6 +1653,61 @@ class AuthnApi {
   }
 
   /**
+   * `GET /authn-api/logout/accounts` (#561): the sign-out's account step.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns nothing
+   */
+  logoutAccountsView(req: Json, res: Json): void {
+    const { log, authn, validation, errorCodes } = this.deps;
+    log.debug("Entering AuthnApi.logoutAccountsView().");
+    const asked = validation.checkParsed(req.query || {}, 'query',
+                                         LOGOUT_QUERY);
+    if (!asked.ok) {
+      errorCodes.mark(res, 'STS-LOGOUT-0003');
+      this.refuse(res, 400, String(asked.detail || 'The query is refused.'));
+      log.debug("Leaving AuthnApi.logoutAccountsView(). The query.");
+      return;
+    }
+    const seen = AuthnApi.logout().signOutAccountsView(req);
+    if (seen.code) {
+      errorCodes.mark(res, seen.code);
+    }
+    authn.answerJson(res, seen.status, Object.assign({}, seen.json,
+      { csrf: this.csrfOf(req) }));
+    log.debug("Leaving AuthnApi.logoutAccountsView(). " + seen.status);
+  }
+
+  /**
+   * `POST /authn-api/logout/accounts` (#561): the account step's choice.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param op - the operation
+   * @returns nothing
+   */
+  logoutAccountsAct(req: Json, res: Json, op: Operation): void {
+    const { log, authn, errorCodes } = this.deps;
+    log.debug("Entering AuthnApi.logoutAccountsAct().");
+    if (!this.bound(req, res)) {
+      log.debug("Leaving AuthnApi.logoutAccountsAct(). Refused at the door.");
+      return;
+    }
+    const body = this.bodyOf(req, res, op);
+    if (!body) {
+      log.debug("Leaving AuthnApi.logoutAccountsAct(). The body.");
+      return;
+    }
+    const done = AuthnApi.logout().signOutAccountsAct(req, res, body);
+    if (done.code) {
+      errorCodes.mark(res, done.code);
+    }
+    authn.answerJson(res, done.status, done.json);
+    log.debug("Leaving AuthnApi.logoutAccountsAct(). " + done.status);
+  }
+
+  /**
    * `POST /authn-api/logout`: the sign-out.
    *
    * @param req - the request
@@ -1813,6 +1904,14 @@ class AuthnApi {
              description: 'Whom the page is about, where naming somebody ' +
                'is open (development mode and `logout.anyUser`), or the ' +
                'caller\'s own name; the browser\'s session otherwise.',
+             schema: { type: 'string' } },
+           { name: 'account', in: 'query', required: false,
+             description: 'With authn.multipleAccounts on (#561): one of ' +
+               'this browser\'s signed-in accounts, by its key.',
+             schema: { type: 'string' } },
+           { name: 'login_hint', in: 'query', required: false,
+             description: 'With authn.multipleAccounts on (#561): the ' +
+               'account the sign-out\'s account step preselects.',
              schema: { type: 'string' } }] : [];
     }
     if (op.access === 'wallet') {

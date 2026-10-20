@@ -38,5 +38,10 @@
   "tab.details": "Détails",
   "list.colProtocol": "Protocole",
   "inventory.listNote": "Cochez-les dans la liste ci-dessus. Rien de coché ne termine rien.",
-  "inventory.detailsNote": "Cochez les jetons et les identifiants dans les tableaux ci-dessus. Rien de coché ne termine rien."
+  "inventory.detailsNote": "Cochez les jetons et les identifiants dans les tableaux ci-dessus. Rien de coché ne termine rien.",
+  "accounts.intro": "Ce navigateur est connecté à {count} comptes. Choisissez celui à déconnecter, ou déconnectez tous les comptes de ce navigateur.",
+  "accounts.current": "(le compte par défaut de ce navigateur)",
+  "accounts.all": "Tous les comptes de ce navigateur",
+  "accounts.continue": "Continuer",
+  "accounts.note": "Un compte montre ce à quoi il est encore connecté, pour tout terminer ou ce que vous cochez. Tous les comptes termine tout ce que chacun détient, comme le fait la déconnexion globale de chacun."
 }

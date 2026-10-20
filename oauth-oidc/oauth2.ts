@@ -11806,7 +11806,24 @@ class OAuth2Server {
       }
     }
     // --- 4. confirmation ---------------------------------------------------
+    // WHICH ACCOUNT, IN A BROWSER HOLDING SEVERAL (#561, the plan's section
+    // 5). The VERIFIED hint's `sid` names the session to end where it is
+    // live in THIS browser's account set — the set's cookie proves the
+    // browser holds it, so a bare sid stays as untrusted as it always was —
+    // and is otherwise no hint (soft). The account a person chose on the
+    // page below comes back as `sts_signout_account`, a key that names only
+    // this browser's own accounts. Neither is read with
+    // `authn.multipleAccounts` off.
+    const several = authn.multipleAccounts();
+    if (several && hinted && hinted.sid) {
+      authn.hintAccount(req, { sid: String(hinted.sid), soft: true });
+    }
+    if (several && q.sts_signout_account) {
+      authn.hintAccountKey(req, String(q.sts_signout_account));
+    }
     const session = sessionOf(req);
+    // Several accounts and nothing that chose one: the page asks which.
+    const choices = several && !session ? authn.signedInAccounts(req) : [];
     // The sign-on cookie, by name — `sts_session`, which `SameSite=Lax` keeps
     // off a cross-site POST.
     const cookiePresented = /(?:^|;\s*)sts_session=/.test(
@@ -11840,6 +11857,11 @@ class OAuth2Server {
       (session && !(hintIsThisSession &&
                     self.logoutHintMatches(session, q.logout_hint))) ||
       (!session && req.method === 'POST' && !cookiePresented));
+    if (choices.length > 1) {
+      log.debug("Leaving OAuth2Server.logoutRequest(). Asking which " +
+                "account.");
+      return self.logoutConfirmPage(req, res, q, null, client, t, choices);
+    }
     if (mustAsk) {
       log.debug("Leaving OAuth2Server.logoutRequest(). Asking.");
       return self.logoutConfirmPage(req, res, q, session, client, t);
@@ -11849,7 +11871,9 @@ class OAuth2Server {
     // function — one browser session shared by both protocols means signing
     // out of either signs out of both.
     const backchannelMark = backchannel.mark();
-    const ended = endSession(req, res);
+    // The session the request resolved to, where the browser holds several
+    // (#561); `endSession()` ignores it with the setting off.
+    const ended = endSession(req, res, several && session ? session.id : '');
     return self.logoutFinish(req, res, ended, backchannelMark, returnTo,
                              refusedNote, t, frontDoor);
   }
@@ -11859,7 +11883,8 @@ class OAuth2Server {
   // carry; no script (the root CLAUDE.md: a form needs none).
   private logoutConfirmPage(req: Req, res: Res, q: Json, session: Json,
                             client: Json,
-                            t: ReturnType<typeof PageLocale.forPage>): Json {
+                            t: ReturnType<typeof PageLocale.forPage>,
+                            accounts?: Json[]): Json {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering OAuth2Server.logoutConfirmPage().");
     const names = ['post_logout_redirect_uri', 'client_id',
@@ -11889,6 +11914,38 @@ class OAuth2Server {
     // Four sentences rather than one assembled from pieces: word order
     // differs between the languages.
     const params = { app: String(app), who: who };
+    // SEVERAL ACCOUNTS AND NO HINT THAT CHOSE ONE (#561): the page asks
+    // which, a form per account — each its own confirmation value, so the
+    // form for one account can end only that account's session, and the
+    // account's key (`sts_signout_account`), which chooses only among this
+    // browser's own. Still a real form and no script.
+    if (accounts && accounts.length > 1) {
+      const self = this;
+      const forms = accounts.map(function (one: Json): string {
+        const held = authn.sessionById(String(one.sid));
+        return '<form method="post" action="logout">' + carried +
+          '<input type="hidden" name="sts_signout_account" value="' +
+          xmlEscape(String(one.key)) + '">' +
+          '<input type="hidden" name="confirm_for" value="' +
+          xmlEscape(self.logoutConfirmFor(held)) + '">' +
+          '<button type="submit" name="confirm" value="yes">' +
+          t.html('oauthPages.logout.signOutAccount',
+                 { who: String(one.username) }) + '</button></form>';
+      }).join('');
+      log.debug("Leaving OAuth2Server.logoutConfirmPage(). Which account.");
+      return this.logoutAnswer(res, 200,
+        t.text('oauthPages.logout.confirmTitle'),
+        '<p>' + (app
+          ? t.html('oauthPages.logout.askWhichApp',
+                   { app: String(app), count: accounts.length })
+          : t.html('oauthPages.logout.askWhich',
+                   { count: accounts.length })) + '</p>' + forms +
+        '<form method="post" action="logout">' + carried +
+        '<button type="submit" name="confirm" value="no">' +
+        t.html('oauthPages.logout.stay') + '</button></form>' +
+        '<p class="sub">' + t.html('oauthPages.logout.whyWhich') + '</p>',
+        t, chooser);
+    }
     const ask = app
       ? (who ? t.html('oauthPages.logout.askAppWho', params)
              : t.html('oauthPages.logout.askApp', params))

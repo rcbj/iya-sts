@@ -3468,6 +3468,21 @@ class Logout {
     log.debug("Entering Logout.subjectOf().");
     const asked = String((body &&
                           body.username) || req.query.username || '').trim();
+    // WHICH ACCOUNT, IN A BROWSER HOLDING SEVERAL (#561). The account step
+    // and every form after it name the account by its KEY (`account`), which
+    // chooses that account's session only where it is live in THIS browser's
+    // set — the set's cookie proves it is the browser's to name. A name the
+    // page posts (`username`) is a SOFT hint: the caller's own account among
+    // several, and no hint where it names none of them. Off, neither is read.
+    if (authn.multipleAccounts()) {
+      const account = String((body && body.account) ||
+                             (req.query || {}).account || '');
+      if (account) {
+        authn.hintAccountKey(req, account);
+      } else if (asked) {
+        authn.hintAccount(req, { loginHint: asked, soft: true });
+      }
+    }
     if (asked) {
       if (!this.anyUserAllowed()) {
         // A NAME THAT IS THE CALLER'S OWN IS NOT SOMEBODY ELSE, and refusing it
@@ -3542,6 +3557,23 @@ class Logout {
       asked + '". To sign another person out, use /admin/logout (the ' +
       'console\'s Admin Write role) or POST /admin-api/logout (an access ' +
       'token carrying admin:write).';
+  }
+
+  // The JSON door's answer to a browser holding several accounts that named
+  // none (#561): 409, the accounts by key, and how to name one.
+  private accountChoiceRequired(req?, res?) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Logout.accountChoiceRequired().");
+    const step = this.accountStep(req, true) || { accounts: [] };
+    errorCodes.mark(res, 'STS-LOGOUT-0011');
+    res.status(409).type('application/json').set('Cache-Control', 'no-store')
+       .send(JSON.stringify({ error: 'account_choice_required',
+         error_description: 'This browser is signed in to ' +
+           step.accounts.length + ' accounts and the request names none ' +
+           'of them. Name one with account (its key), or sign every ' +
+           'account out at POST /authn-api/logout/accounts.',
+         accounts: step.accounts }, null, 2));
+    log.debug("Leaving Logout.accountChoiceRequired().");
   }
 
   // The JSON door's refusal of a name (`GET|POST /logout` asked for JSON).
@@ -3642,12 +3674,196 @@ class Logout {
     const endedOwn = !!ownSessionId && result.terminated.some((one) => {
       return one.id === 'session:' + ownSessionId;
     });
-    if (endedOwn) {
+    // SEVERAL ACCOUNTS IN ONE BROWSER (#561, the plan's section 5): the
+    // cookie is the browser's DEFAULT session's, which need not be the
+    // session of the person signed out — so it is cleared only where the
+    // default itself ended, and the next live account then becomes the
+    // default (`authn.afterAccountSignOut()`). Off, as it always was.
+    if (authn.multipleAccounts()) {
+      authn.afterAccountSignOut(req, res);
+    } else if (endedOwn) {
       authn.clearSessionCookie(res);
     }
     log.debug("Leaving Logout.endFor(). " + result.terminated.length +
               " ended.");
     return { result: result, endedOwn: endedOwn };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ACCOUNT STEP (#561, the plan's section 5). A browser holding more
+  // than one signed-in account is asked FIRST which to sign out — one of
+  // them, or every account in this browser — and then shown that person's
+  // inventory, today's page. `login_hint` (the console and the portal pass
+  // the tab's own account) preselects one; it chooses nothing by itself,
+  // because a sign-out is the person's act. Null with `authn.multipleAccounts`
+  // off or fewer than two accounts, where the page is what it always was.
+  // ---------------------------------------------------------------------------
+  private accountStep(req?, always?: boolean): Loose {
+    const { log, authn } = this.deps;
+    log.debug("Entering Logout.accountStep().");
+    if (!authn.multipleAccounts()) {
+      log.debug("Leaving Logout.accountStep(). Off.");
+      return null;
+    }
+    const accounts = authn.signedInAccounts(req);
+    if (accounts.length < 2 && !always) {
+      log.debug("Leaving Logout.accountStep(). " + accounts.length +
+                " account(s): no step.");
+      return null;
+    }
+    const hint = String((req.query || {}).login_hint || '').trim()
+      .toLowerCase();
+    const named = hint ? accounts.filter(function (one) {
+      return [one.username, one.sub, one.key].some(function (value) {
+        return String(value || '').toLowerCase() === hint;
+      });
+    })[0] : null;
+    log.debug("Leaving Logout.accountStep(). " + accounts.length +
+              " accounts.");
+    return { state: 'accounts',
+      accounts: accounts.map(function (one) {
+        return { key: one.key, username: one.username,
+                 displayName: one.displayName, current: one.current };
+      }),
+      preselected: named ? named.key : '',
+      naming: this.namingOf() };
+  }
+
+  // The account a subject's session is, by key, for the forms after the
+  // step to carry; '' with the setting off or for a named subject.
+  private accountKeyOf(req?, subject?): string {
+    const { log, authn } = this.deps;
+    log.debug("Entering Logout.accountKeyOf().");
+    const sid = subject && subject.session ? String(subject.session.id) : '';
+    const found = sid && authn.multipleAccounts()
+      ? authn.signedInAccounts(req).filter(function (one) {
+        return one.sid === sid;
+      })[0] : null;
+    log.debug("Leaving Logout.accountKeyOf().");
+    return found ? String(found.key) : '';
+  }
+
+  /**
+   * `GET /authn-api/logout/accounts` (#561): the sign-out's account step —
+   * the browser's signed-in accounts (key, names, which is the default; no
+   * sid), the one `login_hint` names, and who may be named here.
+   *
+   * @param req - the request
+   * @returns `{ status, code, json }` for the API to send
+   */
+  signOutAccountsView(req?): Loose {
+    const { log, authn } = this.deps;
+    log.debug("Entering Logout.signOutAccountsView().");
+    if (!authn.multipleAccounts()) {
+      log.debug("Leaving Logout.signOutAccountsView(). Off.");
+      return this.accountsOff();
+    }
+    log.debug("Leaving Logout.signOutAccountsView().");
+    return { status: 200, json: { ok: true,
+                                  view: this.accountStep(req, true) } };
+  }
+
+  /**
+   * `POST /authn-api/logout/accounts` (#561): the account step's choice.
+   * An account's key answers `next: inventory` and the address of that
+   * person's inventory; `all` signs every account in this browser out, each
+   * as that person's own global sign-out does, and answers as the act does.
+   *
+   * @param req - the request
+   * @param res - the response, for the cookies
+   * @param body - `{ account }`, already validated
+   * @returns `{ status, code, json }` for the API to send
+   */
+  signOutAccountsAct(req?, res?, body?): Loose {
+    const { log, authn, stats } = this.deps;
+    log.debug("Entering Logout.signOutAccountsAct().");
+    if (!authn.multipleAccounts()) {
+      log.debug("Leaving Logout.signOutAccountsAct(). Off.");
+      return this.accountsOff();
+    }
+    const asked = String((body && body.account) || '');
+    const accounts = authn.signedInAccounts(req);
+    if (asked !== 'all') {
+      const one = accounts.filter(function (a) {
+        return a.key === asked;
+      })[0];
+      if (!one) {
+        log.debug("Leaving Logout.signOutAccountsAct(). Not here.");
+        return { status: 409, code: 'STS-LOGOUT-0012', json: { ok: false,
+          next: 'refused',
+          errors: ['That account is not signed in in this browser any ' +
+                   'more. Choose again.'],
+          view: this.accountStep(req, true) } };
+      }
+      log.debug("Leaving Logout.signOutAccountsAct(). One account.");
+      return { status: 200, json: { ok: true, next: 'inventory',
+        account: one.key,
+        location: LOGOUT_PATH + '?account=' + encodeURIComponent(one.key) } };
+    }
+    // EVERY ACCOUNT IN THIS BROWSER: each person's own global sign-out, the
+    // act the inventory's first button performs for them — their sessions,
+    // tokens and codes wherever they are, their credentials spared — one
+    // after another, and one result drawn from all of them.
+    const results = accounts.map((one) => {
+      return this.terminate(stats.identityKeyOf(one.username), [], {
+        issuer: this.issuerFor(req), base: this.deps.baseUrlOf(req),
+        browser: true, actor: one.username, initiatingEntity: 'user',
+        by: 'the person\'s own sign-out at /logout, of every account in ' +
+            'the browser', spareCredentials: true });
+    });
+    authn.afterAccountSignOut(req, res);
+    const result = Logout.mergedResult(results);
+    const answer: Loose = { ok: true, next: 'signed-out',
+      username: accounts.map(function (one) {
+        return one.username;
+      }).join(', '), ownSessionEnded: true, scope: 'global' };
+    if (this.fansOut(result)) {
+      answer.form = { method: 'POST',
+        action: realms.currentPrefix() + SIGNED_OUT_PATH,
+        fields: { result: this.sealResult(result) } };
+      log.debug("Leaving Logout.signOutAccountsAct(). Every account; the " +
+                "signed-out document.");
+      return { status: 200, json: answer };
+    }
+    answer.view = this.resultView(result,
+                                  this.inventoryFor(result.key,
+                                                    this.issuerFor(req)));
+    log.debug("Leaving Logout.signOutAccountsAct(). Every account.");
+    return { status: 200, json: answer };
+  }
+
+  // The account step's refusal with `authn.multipleAccounts` off.
+  private accountsOff(): Loose {
+    const { log } = this.deps;
+    log.debug("Entering Logout.accountsOff().");
+    log.debug("Leaving Logout.accountsOff().");
+    return { status: 400, code: 'STS-LOGOUT-0013', json: { ok: false,
+      errors: ['This trust realm does not keep several signed-in accounts ' +
+               'per browser (authn.multipleAccounts is off), so there is no ' +
+               'account to choose.'] } };
+  }
+
+  // Several people's results as the one result a page draws: every list
+  // joined, the first person's key (what the signed-out document reads the
+  // remaining inventory of), every message.
+  private static mergedResult(results: Loose[]): Loose {
+    helpers.log.debug("Entering Logout.mergedResult().");
+    const join = function (name: string): Loose[] {
+      return [].concat.apply([], results.map(function (one) {
+        return one[name] || [];
+      }));
+    };
+    helpers.log.debug("Leaving Logout.mergedResult().");
+    return { ok: true, key: results.length ? results[0].key : '',
+      scope: 'global', terminated: join('terminated'),
+      skipped: join('skipped'), unknown: join('unknown'),
+      notifications: join('notifications'), cleanups: join('cleanups'),
+      logoutRequests: join('logoutRequests'),
+      partnerLogouts: join('partnerLogouts'),
+      backchannel: join('backchannel'),
+      message: results.map(function (one) {
+        return one.message;
+      }).join(' ') };
   }
 
   // ---------------------------------------------------------------------------
@@ -3694,6 +3910,15 @@ class Logout {
   signOutView(req?): Loose {
     const { log } = this.deps;
     log.debug("Entering Logout.signOutView().");
+    // SEVERAL ACCOUNTS (#561): the account step first, unless the request
+    // already names whom (`account`, or a `username` where naming is open).
+    const query = req.query || {};
+    const step = query.account || query.username ? null
+      : this.accountStep(req);
+    if (step) {
+      log.debug("Leaving Logout.signOutView(). The account step.");
+      return { status: 200, json: { ok: true, view: step } };
+    }
     const subject = this.subjectOf(req, null);
     if (subject.refused || !subject.key) {
       log.debug("Leaving Logout.signOutView(). Refused.");
@@ -3702,9 +3927,12 @@ class Logout {
     const inventory = this.inventoryFor(subject.key, this.issuerFor(req));
     log.debug("Leaving Logout.signOutView(). " + inventory.total +
               " live item(s).");
+    const account = this.accountKeyOf(req, subject);
     return { status: 200, json: { ok: true, view: Object.assign({
       state: 'inventory', username: subject.username,
-      named: !!subject.named, naming: this.namingOf() }, inventory) } };
+      named: !!subject.named, naming: this.namingOf() },
+      // The account the forms carry back (#561), only with the setting on.
+      account ? { account: account } : {}, inventory) } };
   }
 
   /**
@@ -3974,6 +4202,18 @@ class Logout {
                   "naming somebody else is closed.");
         return;
       }
+      if (!subject.key && this.accountStep(req)) {
+        // SEVERAL ACCOUNTS AND NONE NAMED (#561): the page asks which,
+        // rather than sending the browser to sign in; a program is told
+        // which accounts there are and to name one (`account`).
+        if (json) {
+          this.accountChoiceRequired(req, res);
+        } else {
+          this.shell(req, res);
+        }
+        log.debug("Leaving the logout endpoint. Several accounts.");
+        return;
+      }
       if (!subject.key) {
         if (json) {
           // A program is told to name somebody rather than redirected to a
@@ -4042,6 +4282,11 @@ class Logout {
         this.refusedNamedUser(req, res, subject.asked);
         log.debug("Leaving the logout action endpoint. A name was given and " +
                   "naming somebody else is closed.");
+        return;
+      }
+      if (!subject.key && this.accountStep(req)) {
+        this.accountChoiceRequired(req, res);
+        log.debug("Leaving the logout action endpoint. Several accounts.");
         return;
       }
       if (!subject.key) {

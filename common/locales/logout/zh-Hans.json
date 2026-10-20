@@ -38,5 +38,10 @@
   "tab.details": "详细信息",
   "list.colProtocol": "协议",
   "inventory.listNote": "请在上方列表中勾选。未勾选任何项目则不会结束任何内容。",
-  "inventory.detailsNote": "请在上方表格中勾选令牌和凭据。未勾选任何项目则不会结束任何内容。"
+  "inventory.detailsNote": "请在上方表格中勾选令牌和凭据。未勾选任何项目则不会结束任何内容。",
+  "accounts.intro": "此浏览器已登录 {count} 个账户。请选择要退出的账户，或退出此浏览器中的所有账户。",
+  "accounts.current": "（此浏览器的默认账户）",
+  "accounts.all": "此浏览器中的所有账户",
+  "accounts.continue": "继续",
+  "accounts.note": "选择一个账户会显示它仍登录的所有内容，可全部结束或只结束您勾选的项目。所有账户会结束每个账户持有的一切，与各账户的全局退出相同。"
 }

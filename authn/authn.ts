@@ -7133,15 +7133,27 @@ class Authn {
   /**
    * Ends the session the request's cookie names and clears the cookie.
    *
-   * Only a cookie carrying the current handle ends anything.
+   * Only a cookie carrying the current handle ends anything. With
+   * `authn.multipleAccounts` on (#561), `sid` may name another session of
+   * this browser's account set, which the set's cookie proves the browser
+   * holds — a bare sid is never enough — and that one is ended instead;
+   * the cookie is then cleared only where the browser's default session
+   * ended, and the next live account becomes the default
+   * (`afterAccountSignOut()`). Off, `sid` is ignored.
    *
    * @param req - the request
    * @param res - the response
+   * @param sid - a session of this browser's account set, or nothing
    * @returns the ended session, or null
    */
-  endSession(req, res) {
+  endSession(req, res, sid?) {
     const { log } = this.deps;
     log.debug("Entering Authn.endSession().");
+    if (AccountSets.enabled()) {
+      const ended = this.endAccountSession(req, res, String(sid || ''));
+      log.debug("Leaving Authn.endSession(). Several accounts.");
+      return ended;
+    }
     // ONLY A COOKIE CARRYING THE CURRENT HANDLE ENDS ANYTHING. The sid is not a
     // secret — every relying party that received an ID Token holds it — so a
     // sign-out endpoint that honoured `sts_session=<sid>` would let any of them
@@ -7160,6 +7172,142 @@ class Authn {
                                                   : 'There was no session to ' +
                                                     'drop.'));
     return session || null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SIGN-OUT IN A BROWSER HOLDING SEVERAL ACCOUNTS (#561, the plan's
+  // section 5). `endSession()`'s body with the setting on: the session a
+  // protocol named (`sid`) where it is live in THIS browser's set, else the
+  // one the cookie names, as always; the cookie only where it was the
+  // browser's default; the next live account made the default.
+  // ---------------------------------------------------------------------------
+  private endAccountSession(req, res, sid) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.endAccountSession().");
+    const row = sid ? this.accountSetOf(req) : null;
+    const inSet = !!(row && row.sessions && row.sessions[sid] &&
+                     this.accountSessionLive(sid));
+    const found = inSet ? { id: sid, session: sessions.get(sid) }
+                        : this.cookieSession(req, SESSION_COOKIE);
+    const id = found ? found.id : '';
+    const presented = inSet || !!this.cookiesOf(req)[SESSION_COOKIE];
+    const session = this.dropSession(id,
+                                     'the sign-out endpoint for this browser',
+                                     presented, req, 'user');
+    this.afterAccountSignOut(req, res);
+    log.debug("Leaving Authn.endAccountSession(). " +
+              (session ? 'Dropped ' + id + (inSet ? ', named in the set.'
+                                                  : ', the cookie\'s.')
+                       : 'Nothing to drop.'));
+    return session || null;
+  }
+
+  /**
+   * Puts a browser's cookies right after one or more of its accounts signed
+   * out (#561): with the browser's default session (`sts_session`) ended,
+   * the cookie is cleared and the most recently added live account of the
+   * set becomes the default; with it still live, the cookie is left alone.
+   * The OP browser states of OpenID Connect Session Management are written
+   * again for the accounts still signed in. A no-op with
+   * `authn.multipleAccounts` off.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns `{ defaultEnded, defaultNow }`: whether the default had ended,
+   *   and the sid that is the default now ('' for none)
+   */
+  afterAccountSignOut(req, res) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.afterAccountSignOut().");
+    if (!AccountSets.enabled() || !req || !res) {
+      log.debug("Leaving Authn.afterAccountSignOut(). Off.");
+      return { defaultEnded: false, defaultNow: '' };
+    }
+    const found = this.cookieSession(req, SESSION_COOKIE);
+    const defaultLive = !!(found && this.accountSessionLive(found.id));
+    const live = this.accountSessionsOf(req);
+    let now = defaultLive ? found.id : '';
+    if (!defaultLive) {
+      this.clearSessionCookie(res);
+      const next = live.length ? live[live.length - 1] : null;
+      if (next) {
+        this.appendDefaultSession(res, next);
+        now = String(next.id);
+      }
+    }
+    const library = this.sessionManagementLibrary();
+    if (library && library.enabled() && typeof res.append === 'function') {
+      library.writeCookie(res, library.browserStatesValue(
+        live.map(library.browserStateOf)));
+    }
+    log.debug("Leaving Authn.afterAccountSignOut(). Default " +
+              (defaultLive ? 'kept.' : (now ? 'moved.' : 'gone.')));
+    return { defaultEnded: !defaultLive, defaultNow: now };
+  }
+
+  // The next default after a sign-out, its cookie APPENDED after the clear
+  // (`clearSessionCookie()` appends too), so the later line is the one the
+  // browser keeps. A fresh handle, as `makeDefaultSession()` mints one, and
+  // its OP browser state kept, for that function's reason.
+  private appendDefaultSession(res, session) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.appendDefaultSession(). sid=" + session.id);
+    const browserState = session.browserState;
+    const value = this.mintSessionHandle(session);
+    if (browserState) {
+      session.browserState = browserState;
+    }
+    sessions.set(session.id, session);
+    if (typeof res.append === 'function') {
+      res.append('Set-Cookie', this.sessionCookieLine(SESSION_COOKIE, value));
+    }
+    log.debug("Leaving Authn.appendDefaultSession().");
+  }
+
+  /**
+   * Hands a request an account KEY as its hint (#561): the key a page drew
+   * an account by (`AccountSets.keyOf()`: its subject, or `name:<username>`
+   * for one with none) — sign-out's account step, and the account a
+   * protocol's sign-out page asked about. A no-op for an empty key.
+   *
+   * @param req - the request
+   * @param key - the account's key
+   */
+  hintAccountKey(req, key) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.hintAccountKey().");
+    const k = String(key || '');
+    if (k) {
+      this.hintAccount(req, k.indexOf('name:') === 0
+        ? { loginHint: k.slice(5) } : { sub: k });
+    }
+    log.debug("Leaving Authn.hintAccountKey().");
+  }
+
+  /**
+   * The signed-in accounts of this browser's set, for a sign-out that asks
+   * which (#561): each `{ key, sub, username, displayName, current, sid }`
+   * — the sid for the server's own use (a protocol page's confirmation
+   * value), never to be drawn. [] with `authn.multipleAccounts` off.
+   *
+   * @param req - the request
+   * @returns the accounts, in the order they joined the set
+   */
+  signedInAccounts(req) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.signedInAccounts().");
+    const found = req ? this.cookieSession(req, SESSION_COOKIE) : null;
+    const out = this.accountSessionsOf(req).map(function (session) {
+      const account = self.accountOf(session);
+      return { key: AccountSets.keyOf(account), sub: account.sub,
+               username: account.username,
+               displayName: account.displayName || account.username,
+               current: !!(found && found.id === session.id),
+               sid: String(session.id) };
+    });
+    log.debug("Leaving Authn.signedInAccounts(). " + out.length);
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -15223,6 +15371,9 @@ export = {
   // signed-in accounts in one browser*, has each one's contract.
   hintAccount: slot.forward('hintAccount'),
   accountSessionsOf: slot.forward('accountSessionsOf'),
+  afterAccountSignOut: slot.forward('afterAccountSignOut'),
+  hintAccountKey: slot.forward('hintAccountKey'),
+  signedInAccounts: slot.forward('signedInAccounts'),
   accountChoiceNeeded: slot.forward('accountChoiceNeeded'),
   accountTicketFor: slot.forward('accountTicketFor'),
   spendAccountTicket: slot.forward('spendAccountTicket'),

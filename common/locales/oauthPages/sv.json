@@ -25,5 +25,9 @@
   "signedOut.frontNone": "Det fanns ingen session att avsluta. Kakan har rensats ändå.",
   "signedOut.returnHeading": "Tillbaka till den förlitande parten",
   "signedOut.returnAuto": "Den här sidan återvänder dit av sig själv efter {seconds, plural, one {# sekund} other {# sekunder}}, när aviseringarna ovan har hunnit laddas; länken är till för en webbläsare som inte följer en uppdatering.",
-  "signedOut.returnLink": "En länk och inte en omdirigering: aviseringarna ovan laddas med den här sidan, och en 302 skulle överge dem innan de skickats."
+  "signedOut.returnLink": "En länk och inte en omdirigering: aviseringarna ovan laddas med den här sidan, och en 302 skulle överge dem innan de skickats.",
+  "logout.askWhichApp": "Programmet <code>{app}</code> bad om att logga ut dig, och den här webbläsaren är inloggad på {count} konton. Vilket ska loggas ut? Dess session här avslutas, och varje program som loggats in genom den meddelas.",
+  "logout.askWhich": "Ett program bad om att logga ut dig, och den här webbläsaren är inloggad på {count} konton. Vilket ska loggas ut? Dess session här avslutas, och varje program som loggats in genom den meddelas.",
+  "logout.signOutAccount": "Logga ut <strong>{who}</strong>",
+  "logout.whyWhich": "Frågan ställs eftersom begäran inte namngav något av kontona som är inloggade i den här webbläsaren (RP-Initiated Logout 1.0 avsnitt 2). De andra kontona förblir inloggade."
 }

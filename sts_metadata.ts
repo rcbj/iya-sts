@@ -7985,6 +7985,13 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#577). GET answers what the person the browser\'s ' +
           'session names still holds, and the CSRF token; POST, with that ' +
           'token, signs out of everything or of what was ticked.' },
+  { path: '/authn-api/logout/accounts', group: 'Authentication',
+    name: 'Which account a sign-out is for', specs: [],
+    effect: 'POST with all signs every account in the browser out',
+    what: 'NON-SPEC (#561). GET answers the sign-out\'s account step — ' +
+          'the browser\'s signed-in accounts by key, never a sid; POST ' +
+          'with the CSRF token chooses one (its sign-out page follows) or ' +
+          'signs every one out. 400 where authn.multipleAccounts is off.' },
   { path: '/authn-api/consent/:id', group: 'OAuth 2.0 / OIDC',
     name: 'What the consent screen asks, and the answer', specs: ['rfc9396'],
     effect: 'POST records Allow or Deny and names the authorization request ' +

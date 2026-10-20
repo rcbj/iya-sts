@@ -110,5 +110,9 @@
   "federation.partners.partner": "Partner",
   "federation.partners.signOutThere": "Sign out there too",
   "federation.partners.signOutAt": "Sign out at {partner}",
-  "federation.partners.note": "You signed in here through these identity providers, and your session there is still live. Each is a link or a form rather than an automatic redirect: this page runs no script, and leaving for a partner is a deliberate click."
+  "federation.partners.note": "You signed in here through these identity providers, and your session there is still live. Each is a link or a form rather than an automatic redirect: this page runs no script, and leaving for a partner is a deliberate click.",
+  "wsfed.chooseAccount.title": "Which account? — WS-Federation",
+  "wsfed.chooseAccount.heading": "Which account should be signed out?",
+  "wsfed.chooseAccount.intro": "{count} accounts in this browser are signed in to <code>{realm}</code>. Choose the one to sign out; the others stay signed in.",
+  "wsfed.chooseAccount.signOut": "Sign out <strong>{who}</strong>"
 }

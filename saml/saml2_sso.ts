@@ -5019,7 +5019,17 @@ class Saml2Sso {
     // The session ends here. `endSession()` returns what it dropped, which is
     // how the page below can name the other service providers that were signed
     // in — and which is why the list has to be read BEFORE the answer is built.
-    let session = endSession(req, res);
+    //
+    // WHICH SESSION, IN A BROWSER HOLDING SEVERAL ACCOUNTS (#561, the plan's
+    // section 5): the one in this browser's account set that the
+    // SessionIndex — checked against this service provider and the NameID
+    // by `sessionNamedBy()` — or else the NameID names; otherwise the
+    // browser's default, as always. `endSession()` ends a named session only
+    // where it is in this browser's set, and ignores it with
+    // `authn.multipleAccounts` off.
+    let session = endSession(req, res, this.sloAccountOf(req, spEntityId,
+                                                          sessionIndex,
+                                                          nameId));
     // THE BACK CHANNEL (#192). A LogoutRequest a service provider sends
     // SERVER TO SERVER — Keycloak's broker does, and saml-profiles-2.0-os
     // section 4.4 allows every binding for it — arrives with no browser and
@@ -5142,6 +5152,37 @@ class Saml2Sso {
   // was given this NameID there. `{ session }`, `{ mismatch: true }` when the
   // session exists and the rest does not hold, or `{}` when there is no such
   // session — already ended, which a logout may answer Success to.
+  // The session of this browser's account set a front-channel LogoutRequest
+  // names (#561): its SessionIndex where `sessionNamedBy()` finds that session
+  // signed in to this service provider with this NameID, else the session in
+  // the set that was issued this NameID there; '' for none, or with
+  // `authn.multipleAccounts` off.
+  private sloAccountOf(req, spEntityId, sessionIndex, nameId): string {
+    const { authn } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.sloAccountOf().");
+    if (!authn.multipleAccounts()) {
+      log.debug("Leaving Saml2Sso.sloAccountOf(). Off.");
+      return '';
+    }
+    const named = sessionIndex
+      ? this.sessionNamedBy(spEntityId, sessionIndex, nameId) : {};
+    if (named.session) {
+      log.debug("Leaving Saml2Sso.sloAccountOf(). By SessionIndex.");
+      return String(named.session.id);
+    }
+    const byName = nameId ? authn.accountSessionsOf(req)
+      .filter(function (one) {
+        const there = (one.saml2ServiceProviders || {})[spEntityId];
+        const given = there && there.nameId !== undefined ? there.nameId
+          : ((one.user && one.user.username) || '');
+        return !!there && given === nameId;
+      })[0] : null;
+    log.debug("Leaving Saml2Sso.sloAccountOf(). " +
+              (byName ? 'By NameID.' : 'None.'));
+    return byName ? String(byName.id) : '';
+  }
+
   private sessionNamedBy(spEntityId, sessionIndex, nameId): any {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.sessionNamedBy().");

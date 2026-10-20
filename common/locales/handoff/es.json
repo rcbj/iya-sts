@@ -110,5 +110,9 @@
   "federation.partners.partner": "Socio",
   "federation.partners.signOutThere": "Cerrar sesión también allí",
   "federation.partners.signOutAt": "Cerrar sesión en {partner}",
-  "federation.partners.note": "Inició sesión aquí mediante estos proveedores de identidad, y su sesión allí sigue activa. Cada uno es un enlace o un formulario y no una redirección automática: esta página no ejecuta ningún script, e irse a un socio es un clic deliberado."
+  "federation.partners.note": "Inició sesión aquí mediante estos proveedores de identidad, y su sesión allí sigue activa. Cada uno es un enlace o un formulario y no una redirección automática: esta página no ejecuta ningún script, e irse a un socio es un clic deliberado.",
+  "wsfed.chooseAccount.title": "¿Qué cuenta? — WS-Federation",
+  "wsfed.chooseAccount.heading": "¿De qué cuenta debe cerrarse la sesión?",
+  "wsfed.chooseAccount.intro": "{count} cuentas de este navegador tienen iniciada la sesión en <code>{realm}</code>. Elija la cuenta cuya sesión quiere cerrar; las demás siguen con la sesión iniciada.",
+  "wsfed.chooseAccount.signOut": "Cerrar la sesión de <strong>{who}</strong>"
 }

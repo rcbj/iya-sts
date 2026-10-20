@@ -21146,6 +21146,23 @@ const CODES = [
       '(#577): the page\'s act is POST /authn-api/logout. The browser is ' +
       'sent to the page, which ends nothing.',
     spec: 'HTTP 303 to /logout' },
+  { code: 'STS-LOGOUT-0011',
+    summary: 'A sign-out at the JSON door of /logout came from a browser ' +
+      'holding several signed-in accounts (authn.multipleAccounts, #561) ' +
+      'and named none of them, so nothing was ended; the answer lists the ' +
+      'accounts by key.',
+    spec: 'HTTP 409, error account_choice_required' },
+  { code: 'STS-LOGOUT-0012',
+    summary: 'The account chosen at the sign-out\'s account step (#561) is ' +
+      'not signed in in this browser any more — its session ended between ' +
+      'the page and the choice, or the key names an account of another ' +
+      'browser. Nothing was ended and the step is drawn again.',
+    spec: 'HTTP 409 from POST /authn-api/logout/accounts' },
+  { code: 'STS-LOGOUT-0013',
+    summary: 'The sign-out\'s account step (#561) was asked for in a trust ' +
+      'realm with authn.multipleAccounts off, where a browser holds one ' +
+      'session and there is no account to choose.',
+    spec: 'HTTP 400 from /authn-api/logout/accounts' },
   // ===== REG ===============================================================
   { code: 'STS-REG-0001',
     summary: 'An application identifier was empty, longer than 512 ' +

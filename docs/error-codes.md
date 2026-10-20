@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4407** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4410** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 84
 * [User portal (`STS-PORTAL`)](#sts-portal) — 94
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
-* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
+* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Registries (`STS-REG`)](#sts-reg) — 178
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
@@ -4873,6 +4873,9 @@ Raised from: logout/.
 | `STS-LOGOUT-0008` | The signed-out document (POST /logout/signed-out, #577) was posted no sign-out result, or one this service did not MAC, made in another trust realm, or expired. | HTTP 400 page |
 | `STS-LOGOUT-0009` | The signed-out document (POST /logout/signed-out, #577) was posted with an origin this service does not answer on, or with none (or null) and no Sec-Fetch-Site: same-origin. | HTTP 403 page |
 | `STS-LOGOUT-0010` | A form was posted to /logout, which is no longer an act (#577): the page's act is POST /authn-api/logout. The browser is sent to the page, which ends nothing. | HTTP 303 to /logout |
+| `STS-LOGOUT-0011` | A sign-out at the JSON door of /logout came from a browser holding several signed-in accounts (authn.multipleAccounts, #561) and named none of them, so nothing was ended; the answer lists the accounts by key. | HTTP 409, error account_choice_required |
+| `STS-LOGOUT-0012` | The account chosen at the sign-out's account step (#561) is not signed in in this browser any more — its session ended between the page and the choice, or the key names an account of another browser. Nothing was ended and the step is drawn again. | HTTP 409 from POST /authn-api/logout/accounts |
+| `STS-LOGOUT-0013` | The sign-out's account step (#561) was asked for in a trust realm with authn.multipleAccounts off, where a browser holds one session and there is no account to choose. | HTTP 400 from /authn-api/logout/accounts |
 
 ## STS-REG
 
