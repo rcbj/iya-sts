@@ -68,9 +68,10 @@ registered or does not verify.
 | A person's name and mail in an assertion | Invented where the directory has none. | Read from the person's directory entry, or left out. |
 
 "Registered" means created by an administrator (the console or
-`/admin-api`), by RFC 7591, by an OpenID Federation, or by this service's own
-seeding. An entry that a development-mode request created by being seen does
-not count. So every recipe here registers its relying parties first, in both
+`/admin-api`), by an LDAP add under `ou=applications`, by RFC 7591, by an
+OpenID Federation, or by this service's own seeding. An entry that a
+development-mode request created by being seen does not count, even after it
+is edited. So every recipe here registers its relying parties first, in both
 modes.
 
 ---
@@ -808,8 +809,9 @@ GET /wsfed?wa=wsignout1.0[&wtrealm=<wtrealm>][&wreply=<URL>]
 * **With `wreply`**, the page offers a link back rather than redirecting, so
   the cleanup images can finish.
 * **`wsignoutcleanup1.0`** ends the session and sends no cleanups of its own.
-* **Several accounts in one browser:** `wsignout1.0` asks which account to
-  sign out of when more than one signed in to `wtrealm`.
+* **Several accounts in one browser** (`authn.multipleAccounts`, off by
+  default; see [Multiple accounts](multiple-accounts.md)): `wsignout1.0` asks
+  which account to sign out of when more than one signed in to `wtrealm`.
   `wsignoutcleanup1.0` ends all of them.
 
 `tests/multi_account_logout.js` and `tests/backchannel_logout.js` send these
