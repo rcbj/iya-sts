@@ -56,9 +56,15 @@ it would also hide the one thing on this listener worth checking. The
 certificate is re-keyed on 636 whenever the listener certificate is
 re-issued, for example after a new Root is built on `/admin/pki`.
 
-**No client certificate is asked for on 636.** This listener proves the
-*server* to the client and nothing more; a certificate offered to it is not
-requested and would not be a login if it were. Signing in with a client
+**No client certificate is asked for on 636, by default.** This listener
+proves the *server* to the client and nothing more. Two settings in the
+**Listener: LDAPS** group on `/admin/listeners` change what it asks for:
+`ldap.ldapsDisableOptionalClientCertificate` (on by default) off asks every
+connection for a certificate and requires none, and
+`ldap.ldapsRequireClientCertificate` (off by default) on refuses at the
+handshake a connection without one that chains to the client truststore.
+Either way a certificate is not a login: there is no SASL EXTERNAL, and the
+bind still decides who the connection is. Signing in with a client
 certificate is the main HTTPS port's business (`GET /tls/sign-in`, see
 [TLS](tls.md)). `/admin/ldap/service` says this, so nobody has to work out why
 the certificate they configured was never sent.
@@ -291,7 +297,7 @@ closed.
 | Credentials on the wire | A search never returns a secret attribute (`userPassword`, client secrets, reset tokens, private keys). A filter cannot match on one, and a compare against one is refused. Administrators are included | Returned like any attribute |
 | Write | Anonymous writes nothing. Admin Write in the default realm writes anything, and a realm's own administrator writes that realm. Anybody else may modify only the attributes in `ldap.selfWritableAttributes`, on their own entry. Refusals are 50 | Any connection may add, modify, rename or delete any entry in any realm |
 | `userPassword` | Held to the password policy (19). A pre-hashed `$scrypt$` value is refused, and so is a change to `pwdHistory` or `pwdChangedTime` | Hashed. A pre-hashed value is kept as given, which is how a directory moves between two instances |
-| Seed data | The containers only. The `roles.remotePepGroup` and `roles.xacmlUserGroup` groups are created **empty** | `cn=admin`, alice, bob and carol, `cn=developers`, `cn=directory-admins`, and the two privileged identities `cn=remote-pep-1` and `cn=xacml-user-1` |
+| Seed data | The containers only. The `roles.remotePepGroup` and `roles.xacmlUserGroup` groups are created **empty** | `cn=admin`, alice, bob and carol, `uid=sensitive` (never delegated, `stsNotDelegated`), `cn=developers`, `cn=directory-admins`, and the two privileged identities `cn=remote-pep-1` and `cn=xacml-user-1` |
 | Invented attributes | None | A persona for each auto-created person |
 
 The failed-bind limit is the sign-in screen's: `security.rateLimitPerIdentity`
