@@ -10616,8 +10616,8 @@ const CODES = [
   { code: 'STS-WSTRUST-0018',
     summary: 'An OnBehalfOf or ActAs request was refused by the issuance ' +
       'policy (#186): the subject may not be delegated, the requester may ' +
-      'not act for this subject, the subject token\'s may_act names ' +
-      'somebody else, or no delegation relationship allows the AppliesTo. ' +
+      'not act for this subject, or no delegation relationship allows the ' +
+      'AppliesTo (a may_act naming somebody else is STS-WSTRUST-0033). ' +
       'Product mode only; development records what would have been refused.',
     spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
   { code: 'STS-WSTRUST-0019',
@@ -10702,6 +10702,12 @@ const CODES = [
       '(#519).',
     spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
       'section 11' },
+  { code: 'STS-WSTRUST-0033',
+    summary: 'An OnBehalfOf or ActAs request was refused because the ' +
+      'verified JWT inside the element carries a may_act claim (RFC 8693 ' +
+      'section 4.4) naming a party other than the requester. Held in every ' +
+      'mode, as the token exchange holds it (STS-OAUTH-0620) (#747).',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +

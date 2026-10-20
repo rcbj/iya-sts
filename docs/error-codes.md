@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4536** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4537** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -66,7 +66,7 @@ is an ordinary outcome.
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 341
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 717
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 29
 * [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
@@ -2396,7 +2396,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0015` | The STS endpoint threw an unexpected exception while handling a RequestSecurityToken. | SOAP Fault soap:Receiver (SOAP 1.2) / soap:Server (SOAP 1.1), in the request's SOAP version (HTTP 500) |
 | `STS-WSTRUST-0016` | A token was issued but starting the browser sign-on session the exchange also starts threw; the RSTR is unaffected. | — |
 | `STS-WSTRUST-0017` | A JWT was refused because the directory holds no entry for the person, so there is no subject to issue it about. | SOAP Fault wst:RequestFailed (HTTP 400), WS-Trust 1.4 section 11 |
-| `STS-WSTRUST-0018` | An OnBehalfOf or ActAs request was refused by the issuance policy (#186): the subject may not be delegated, the requester may not act for this subject, the subject token's may_act names somebody else, or no delegation relationship allows the AppliesTo. Product mode only; development records what would have been refused. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0018` | An OnBehalfOf or ActAs request was refused by the issuance policy (#186): the subject may not be delegated, the requester may not act for this subject, or no delegation relationship allows the AppliesTo (a may_act naming somebody else is STS-WSTRUST-0033). Product mode only; development records what would have been refused. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0019` | An OnBehalfOf or ActAs request was refused because its requester may not act for anybody here: it has no entry in this realm, or it is a person who does not hold the role delegation.actorRole names (#186). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0020` | An OnBehalfOf or ActAs request was refused because no issuance policy gave a verdict on it, or a realm's policy refused it with no rule this service names (#186). Product mode only. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0021` | A Cancel request in the WS-Trust 2004/04 namespace, which defines no Cancel binding (no CancelTarget, no RequestedTokenCancelled); it was added in 2005/02 (#188). | SOAP Fault wst:InvalidRequest (HTTP 500), in the request's trust namespace |
@@ -2411,6 +2411,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0030` | Product mode: an RST asked for a token for an AppliesTo that resolves to no registered application (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before anything was issued or recorded (#496). | SOAP Fault wst:InvalidScope (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0031` | Product mode: an RST asked for a token and carried no AppliesTo, so it names no application a token could be for; refused before anything was issued or recorded (#496). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0032` | Product mode: a SAML assertion or JWT presented as the requester's credential is addressed neither to its holder (an audience the holder's application registers) nor to this IdP (its WS-Trust issuer name, SAML entityID, OAuth issuer or /sts address) (#519). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0033` | An OnBehalfOf or ActAs request was refused because the verified JWT inside the element carries a may_act claim (RFC 8693 section 4.4) naming a party other than the requester. Held in every mode, as the token exchange holds it (STS-OAUTH-0620) (#747). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 
 ## STS-WSFED
 
