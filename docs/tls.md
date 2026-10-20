@@ -73,7 +73,7 @@ listener at its next handshake, with no restart and no rebind.
 | `debugger.disableOptionalClientCertificate` / `debugger.requireClientCertificate` | off / off | The protocol debugger's listener. |
 
 "Require" wins over "do not ask". A required certificate is verified against the
-client truststore (Protocols → TLS / mutual TLS → the truststore, and the
+client truststore (Protocols → Client-certificate truststore, and the
 certificates this service issues), so a handshake without one is refused.
 
 > **Warning.** Requiring a client certificate on the main port refuses every
@@ -491,15 +491,16 @@ the recorded identity and the request are what get refused. See [PKI](pki.md).
   verdicts against a server that insists: `required`, and
   `required-and-rejected` (the case an operator hits most). Only
   `not-required`, the main port's posture, is reachable here.
-* **A connection report.** No endpoint reports what the server made of a
-  handshake (the request as it arrived, what TLS negotiated, the client
-  certificate exactly as presented). It is a debugging surface rather than a
-  protocol, and is being taken up in a separate project; nothing here should be
-  read as pointing at a replacement.
+* **A connection report for anybody.** What the server made of a request's
+  connection (what TLS negotiated, the client certificate as presented) is
+  reported only to an administrator, by Monitoring → TLS connection and
+  `GET /admin-api/tls-connection` (above).
 * **Separate TLS ports.** There is no `tls.port` or `tls.mutualPort`; a
   deployment that sets `STS_TLS_PORT` or `STS_MTLS_PORT` gets an "unknown
   setting" warning at startup rather than a silent no-op.
-* **Client certificates on LDAPS.** Port 636 asks for none.
+* **Client certificates on LDAPS by default.** Port 636 asks for none until
+  `ldap.ldapsDisableOptionalClientCertificate` is turned off (see *The
+  listeners* above).
 
 ## Development and product mode
 
@@ -553,10 +554,11 @@ refusal of an application's certificate — is the same in both modes. See
 The remaining `pki.revocation*` settings tune OCSP, CRL caching and LDAP
 distribution points; they are on `/admin/pki` and in
 [*Every setting*](configuration.md#every-setting). This table is a copy of rows in `common/config.js`; the live source is
-`/admin/tls` and `GET /admin-api/config`.
+`/admin/listeners` and `GET /admin-api/config`.
 
 See [Configuration](configuration.md) for how a value is resolved and where it
-is changed: on `/admin/tls` (or `/admin/config` for `global.*`), through
+is changed: on Server configuration → Listeners (`/admin/listeners`, or
+`/admin/config` for `global.*`), through
 `POST /admin-api/config/set`, or in an appconfig file.
 
 ## Design decisions
@@ -645,8 +647,9 @@ is changed: on `/admin/tls` (or `/admin/config` for `global.*`), through
 ## In the running service
 
 * **Protocols → TLS / mutual TLS** (`/admin/tls`): the certificate the main
-  port and LDAPS present, what the service does with a client certificate, and
-  the `tls.*` settings. Whether the port is HTTPS at all is `global.https` on
+  port and LDAPS present and what the service does with a client certificate.
+  The `tls.*` settings are on Server configuration → Listeners
+  (`/admin/listeners`). Whether the port is HTTPS at all is `global.https` on
   `/admin/config`.
 * **Protocols → Client-certificate truststore** (`/admin/tls/trust`): every
   anchor with subject, issuer, serial, validity, SHA-256 fingerprint and source
