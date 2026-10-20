@@ -40,6 +40,9 @@
 //      from that page's `settings` member passed through JSON: nothing the
 //      block says comes from anywhere but the answer a browser would be
 //      given. Both persistence notes are drawn from the block's `context`.
+//
+//   D-notdo (#753): `/admin`'s *What it deliberately does not do* is drawn
+//   in development mode and not in product mode, by both renderers.
 // ===========================================================================
 
 const fs = require('fs');
@@ -1906,6 +1909,64 @@ function childMain() {
          'setting of the report', missing.length + ' missing of ' +
          (report.requirements.length +
           report.developmentOnlySettings.length));
+    // WHAT IT DELIBERATELY DOES NOT DO IS DRAWN IN DEVELOPMENT MODE ONLY
+    // (#753): almost every entry is about what development mode does not
+    // check. The answer carries `testDouble`
+    // (`mode.describesItselfAsTestDouble()`), and the bundle draws from it.
+    const dashConfig = require(ROOT_DIR + '/common/config');
+    const dashPage = WebPages.pageFor('/admin');
+    const dashDrawn = {};
+    for (const wanted of ['development', 'product']) {
+      dashConfig.setOverride('global.mode', wanted);
+      try {
+        const dashView = await viewOf(dashPage, {});
+        const dashCtx = WebKit.context({}, true);
+        dashDrawn[wanted] = {
+          testDouble: dashView.testDouble,
+          verifiesCredentials: 'verifiesCredentials' in dashView,
+          here: WebPages.render('/admin', dashView, dashCtx),
+          bundled: StsConsole
+            ? StsConsole.render('/admin', dashView, dashCtx) : null
+        };
+      } finally {
+        dashConfig.clearOverride('global.mode');
+      }
+    }
+    const notHeading = 'What it deliberately does not do';
+    const dashOk = function (one, drawn) {
+      return !!one && (one.here.indexOf(notHeading) >= 0) === drawn &&
+        one.here === one.bundled && !one.verifiesCredentials;
+    };
+    note(dashOk(dashDrawn.development, true) &&
+         dashDrawn.development.testDouble === true &&
+         dashDrawn.development.here.indexOf('admin.openWhenEmpty') >= 0 &&
+         dashDrawn.development.here.indexOf('script-src') < 0,
+         'D-notdo-dev. in development mode /admin draws what it ' +
+         'deliberately does not do, the bundle the same',
+         JSON.stringify({ testDouble: (dashDrawn.development || {})
+                          .testDouble }));
+    // The entries #753 retired are gone from every catalog, overlays too.
+    const dashLocales = pathC.join(ROOT_DIR, 'common', 'locales',
+                                   'consoleDashboard');
+    const retired = [];
+    fsC.readdirSync(dashLocales).forEach(function (name) {
+      const keys = Object.keys(JSON.parse(fsC.readFileSync(
+        pathC.join(dashLocales, name), 'utf8')));
+      ['not.passwordProduct', 'not.scriptA', 'not.scriptB', 'link.picture']
+        .forEach(function (key) {
+          if (keys.indexOf(key) >= 0) {
+            retired.push(name + ' ' + key);
+          }
+        });
+    });
+    note(retired.length === 0,
+         'D-notdo-keys. no catalog keeps an entry #753 retired',
+         retired.join(', '));
+    note(dashOk(dashDrawn.product, false) &&
+         dashDrawn.product.testDouble === false,
+         'D-notdo-product. in product mode /admin draws none of it',
+         JSON.stringify({ testDouble: (dashDrawn.product || {})
+                          .testDouble }));
     note(WebPages.render('/admin/not-converted', {}) === null,
          'D3. a page that is not converted is not drawn', '');
     // THE RENDER CONTEXT: what a page draws that is the reader's and not

@@ -10,7 +10,8 @@
 //
 // Draws `/admin` from the answer of `GET /admin-api/status`: the totals, every
 // page this reader may see grouped as the sidebar is, what the console
-// deliberately does not do, and where the JSON is.
+// deliberately does not do (in development mode only, #753), and where the
+// JSON is.
 //
 // A `web_` MODULE, on `web_kit.ts`'s terms: it requires other `web_` modules
 // only, logs nothing, and is bundled for a browser by `build-typescript.sh`.
@@ -26,7 +27,7 @@ type Json = any;
 /**
  * Draws `/admin` from the answer of `GET /admin-api/status`: the totals, every
  * page this reader may see grouped as the sidebar is, what the console
- * deliberately does not do, and where the JSON is.
+ * deliberately does not do (in development mode only), and where the JSON is.
  *
  * A static utility class; it holds no state and takes no dependencies.
  */
@@ -65,68 +66,7 @@ class DashboardPage {
       kit.note(t.html('consoleDashboard.what.clients')) +
       kit.note(t.html('consoleDashboard.what.derived')) +
       DashboardPage.consoleGuide('/admin', json.sections, t) +
-      '<h2>' + t.html('consoleDashboard.not.heading') + '</h2>' +
-      kit.note(t.html('consoleDashboard.not.intro')) +
-      '<ul>' +
-      kit.bullet(t.html('consoleDashboard.not.invalidate')) +
-      kit.bullet(t.html('consoleDashboard.not.endSessionA') + ' ' +
-      link('/admin/logout', '/admin/logout') + ' ' +
-      t.html('consoleDashboard.not.endSessionB') + ' ' +
-      link('/logout', '/logout') +
-      t.html('consoleDashboard.not.endSessionC')) +
-      kit.bullet(t.html('consoleDashboard.not.keepTokens')) +
-      kit.bullet(t.html('consoleDashboard.not.restart') + ' ' +
-      (json.persistence.enabled
-        ? t.html('consoleDashboard.not.surviveOn',
-                 { mode: json.persistence.mode }) + ' ' +
-          t.html('consoleDashboard.not.see') + ' ' +
-          link('/admin/persistence',
-               t.html('consoleDashboard.link.persistence')) +
-          t.html('consoleDashboard.not.seeEnd')
-        : t.html('consoleDashboard.not.surviveOff') + ' ' +
-          t.html('consoleDashboard.not.see') + ' ' +
-          link('/admin/persistence',
-               t.html('consoleDashboard.link.persistence')) +
-          t.html('consoleDashboard.not.offByDefault'))) +
-      kit.bullet(t.html('consoleDashboard.not.rememberA') + ' ' +
-      t.html('consoleDashboard.not.forgottenOn') + ' ' +
-      link('/admin/metrics', t.html('consoleDashboard.link.metrics')) +
-      t.html('consoleDashboard.not.droppedOn') + ' ' +
-      link('/admin/audit', t.html('consoleDashboard.link.audit')) +
-      t.html('consoleDashboard.not.rememberB')) +
-      // The console's own door, per mode (#543 round 2): the answer's
-      // `verifiesCredentials` chooses, as `persistence` chooses above.
-      kit.bullet(t.html(json.verifiesCredentials
-        ? 'consoleDashboard.not.passwordProduct'
-        : 'consoleDashboard.not.password')) +
-      kit.bullet(t.html('consoleDashboard.not.enforceA') + ' ' +
-      link('/admin/oauth2', t.html('consoleDashboard.link.oauth')) + ' ' +
-      t.html('consoleDashboard.not.enforceB') + ' ' +
-      link('/admin/scim', 'SCIM') +
-      t.html('consoleDashboard.not.enforceC') + ' ' +
-      link('/admin/federation', t.html('consoleDashboard.link.federation')) +
-      ' ' + t.html('consoleDashboard.not.enforceD')) +
-      kit.bullet(t.html('consoleDashboard.not.delegateA') + ' ' +
-      link('/admin/delegation', t.html('consoleDashboard.link.delegation')) +
-      ' ' + t.html('consoleDashboard.not.delegateB')) +
-      kit.bullet(t.html('consoleDashboard.not.attestA') + ' ' +
-      link('/admin/cert-issuance#cert-spiffe-overview', 'SPIFFE') + ' ' +
-      t.html('consoleDashboard.not.attestB')) +
-      // `{id}` in the SCIM path is a literal brace, which no message may
-      // hold, so the path stays in code between two messages.
-      kit.bullet(t.html('consoleDashboard.not.deleteA') + ' ' +
-      link('/admin/users', t.html('consoleDashboard.link.users')) + ' ' +
-      t.html('consoleDashboard.not.deleteB') + ' ' +
-      link('/admin/scim', 'SCIM') + ' ' +
-      t.html('consoleDashboard.not.deleteC') +
-      ' <code>DELETE /scim/v2/Users/{id}</code> ' +
-      t.html('consoleDashboard.not.deleteD')) +
-      kit.bullet(t.html('consoleDashboard.not.oneRealm')) +
-      kit.bullet(t.html('consoleDashboard.not.scriptA') + ' ' +
-      link('/admin/delegation/map',
-           t.html('consoleDashboard.link.picture')) + ' ' +
-      t.html('consoleDashboard.not.scriptB')) +
-      '</ul>' +
+      DashboardPage.notDone(json, t) +
       '<h2>' + t.html('consoleDashboard.test.heading') + '</h2>' +
       kit.note(t.html('consoleDashboard.test.noteA') + ' ' +
       link('/admin-api', '/admin-api') +
@@ -163,6 +103,81 @@ class DashboardPage {
       '{"action":"replace","set":"id_token","claims":[{"name":"dept",' +
       '"value":"engineering"}]}</code></li></ul>';
     return inner;
+  }
+
+  /**
+   * Draws *What it deliberately does not do*, in development mode only.
+   *
+   * Almost every entry is about what development mode does not check, so a
+   * realm in product mode is drawn none of it (#753). The answer's
+   * `testDouble` is `mode.describesItselfAsTestDouble()`, asked where the
+   * answer is built.
+   *
+   * @param json - the answer of `GET /admin-api/status`
+   * @param t - the page's translator (#539)
+   * @returns the section as HTML, or an empty string in product mode
+   */
+  static notDone(json, t) {
+    if (!json.testDouble) {
+      return '';
+    }
+    const link = function (href, text) {
+      return '<a href="' + href + '">' + text + '</a>';
+    };
+    return '<h2>' + t.html('consoleDashboard.not.heading') + '</h2>' +
+      kit.note(t.html('consoleDashboard.not.intro')) +
+      '<ul>' +
+      kit.bullet(t.html('consoleDashboard.not.invalidate')) +
+      kit.bullet(t.html('consoleDashboard.not.endSessionA') + ' ' +
+      link('/admin/logout', '/admin/logout') + ' ' +
+      t.html('consoleDashboard.not.endSessionB') + ' ' +
+      link('/logout', '/logout') +
+      t.html('consoleDashboard.not.endSessionC')) +
+      kit.bullet(t.html('consoleDashboard.not.keepTokens')) +
+      kit.bullet(t.html('consoleDashboard.not.restart') + ' ' +
+      (json.persistence.enabled
+        ? t.html('consoleDashboard.not.surviveOn',
+                 { mode: json.persistence.mode }) + ' ' +
+          t.html('consoleDashboard.not.see') + ' ' +
+          link('/admin/persistence',
+               t.html('consoleDashboard.link.persistence')) +
+          t.html('consoleDashboard.not.seeEnd')
+        : t.html('consoleDashboard.not.surviveOff') + ' ' +
+          t.html('consoleDashboard.not.see') + ' ' +
+          link('/admin/persistence',
+               t.html('consoleDashboard.link.persistence')) +
+          t.html('consoleDashboard.not.offByDefault'))) +
+      kit.bullet(t.html('consoleDashboard.not.rememberA') + ' ' +
+      t.html('consoleDashboard.not.forgottenOn') + ' ' +
+      link('/admin/metrics', t.html('consoleDashboard.link.metrics')) +
+      t.html('consoleDashboard.not.droppedOn') + ' ' +
+      link('/admin/audit', t.html('consoleDashboard.link.audit')) +
+      t.html('consoleDashboard.not.rememberB')) +
+      kit.bullet(t.html('consoleDashboard.not.password')) +
+      kit.bullet(t.html('consoleDashboard.not.enforceA') + ' ' +
+      link('/admin/oauth2', t.html('consoleDashboard.link.oauth')) + ' ' +
+      t.html('consoleDashboard.not.enforceB') + ' ' +
+      link('/admin/scim', 'SCIM') +
+      t.html('consoleDashboard.not.enforceC') + ' ' +
+      link('/admin/federation', t.html('consoleDashboard.link.federation')) +
+      ' ' + t.html('consoleDashboard.not.enforceD')) +
+      kit.bullet(t.html('consoleDashboard.not.delegateA') + ' ' +
+      link('/admin/delegation', t.html('consoleDashboard.link.delegation')) +
+      ' ' + t.html('consoleDashboard.not.delegateB')) +
+      kit.bullet(t.html('consoleDashboard.not.attestA') + ' ' +
+      link('/admin/cert-issuance#cert-spiffe-overview', 'SPIFFE') + ' ' +
+      t.html('consoleDashboard.not.attestB')) +
+      // `{id}` in the SCIM path is a literal brace, which no message may
+      // hold, so the path stays in code between two messages.
+      kit.bullet(t.html('consoleDashboard.not.deleteA') + ' ' +
+      link('/admin/users', t.html('consoleDashboard.link.users')) + ' ' +
+      t.html('consoleDashboard.not.deleteB') + ' ' +
+      link('/admin/scim', 'SCIM') + ' ' +
+      t.html('consoleDashboard.not.deleteC') +
+      ' <code>DELETE /scim/v2/Users/{id}</code> ' +
+      t.html('consoleDashboard.not.deleteD')) +
+      kit.bullet(t.html('consoleDashboard.not.oneRealm')) +
+      '</ul>';
   }
 
   /**
