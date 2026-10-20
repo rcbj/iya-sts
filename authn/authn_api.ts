@@ -749,7 +749,9 @@ const ACCOUNT_OPERATIONS: Operation[] = [
     description: 'Each signed-in and remembered account of the browser\'s ' +
       'account set — key, subject, names, state, times, and whether it is ' +
       'the browser\'s default — never a sid or a token; `enabled` false ' +
-      'and no accounts where authn.multipleAccounts is off.' }
+      'and no accounts where authn.multipleAccounts is off. With it on, ' +
+      '`anotherAccount` is where Sign in with another account starts: the ' +
+      'user portal, asked to sign in again.' }
 ];
 
 OPERATIONS.push.apply(OPERATIONS, ACCOUNT_OPERATIONS);
@@ -1581,7 +1583,16 @@ class AuthnApi {
     const { log, authn } = this.deps;
     log.debug("Entering AuthnApi.accountsList().");
     const listed = authn.browserAccounts(req);
-    authn.answerJson(res, 200, Object.assign({ ok: true }, listed,
+    // WHERE SIGN IN WITH ANOTHER ACCOUNT GOES (#561, delivery step 6): the
+    // user portal's own authorization request with `prompt=login`, asked by
+    // the marker its runtime reads — at the portal's ADVERTISED address,
+    // which a page on another listener (#472) cannot work out for itself.
+    // Only with the setting on; off, the answer is the one it was.
+    const extra: Json = listed.enabled
+      ? { anotherAccount: helpers.urlOf(req, '/portal') +
+                          '?accounts=another' }
+      : {};
+    authn.answerJson(res, 200, Object.assign({ ok: true }, listed, extra,
                                              { csrf: this.csrfOf(req) }));
     log.debug("Leaving AuthnApi.accountsList().");
   }

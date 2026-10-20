@@ -515,5 +515,11 @@
   "done.codesSaved": "Vos {n} codes de récupération sont enregistrés. Seuls leurs hachages sont stockés : ce service ne pourra donc jamais vous les réafficher — conservez la copie que vous avez faite.",
   "done.keyOff": "Votre clé de signature {rfc} est retirée. Tout ce qui signe encore avec elle sera désormais refusé.",
   "done.passkeyMany": "Votre clé d’accès est prête. Vous en détenez {n} — si l’une est perdue, les autres vous connectent toujours.",
-  "done.renamed": "Renommée en « {name} »."
+  "done.renamed": "Renommée en « {name} ».",
+  "accounts.menu": "Changer de compte",
+  "accounts.menuTitle": "Les autres comptes connectés dans ce navigateur, et une connexion avec un autre compte. Le changement ne concerne que cet onglet.",
+  "accounts.switchTitle": "Utiliser cet onglet en tant que {user}. Les autres onglets conservent leur compte.",
+  "accounts.another": "Se connecter avec un autre compte",
+  "accounts.anotherTitle": "Se connecter en tant qu’une autre personne dans cet onglet. Les comptes déjà connectés dans ce navigateur le restent, et les autres onglets conservent le leur.",
+  "accounts.unsaved": "Cette page contient des modifications non enregistrées. Changer de compte quand même ? Elles seront perdues."
 }

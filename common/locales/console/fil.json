@@ -192,5 +192,9 @@
   "nav.keys": "Mga key pair",
   "nav.crypto-metadata": "Cryptography",
   "shell.language": "Wika",
-  "shell.browserLanguage": "Gamitin ang wika ng aking browser"
+  "shell.browserLanguage": "Gamitin ang wika ng aking browser",
+  "shell.menu.switch": "Lumipat sa ibang account",
+  "shell.menu.switch.title": "Gamitin ang tab na ito bilang {user}. Pananatilihin ng ibang mga tab ang kanilang account.",
+  "shell.menu.another": "Mag-sign in gamit ang ibang account",
+  "shell.menu.another.title": "Mag-sign in bilang ibang tao sa tab na ito. Mananatiling naka-sign in ang mga account na naka-sign in na sa browser na ito, at pananatilihin ng ibang mga tab ang kanila."
 }
