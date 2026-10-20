@@ -610,10 +610,15 @@ function seedsDemoData() {
 // a claim that every one of those endpoints checks what it is handed. It was
 // the literal `true` and said so in product mode too, where passwords are
 // verified and access tokens validated — the one place the document was
-// wrong about the service that served it.
+// wrong about the service that served it. The console's index asks it too
+// (#753): its *What it deliberately does not do* is almost all about what
+// development mode does not check, so it is drawn only where this answers
+// yes.
 /**
- * Tells whether the service metadata document describes this service as a
- * test double: one that checks no password and validates no access token.
+ * Tells whether the service describes itself as a test double, one that
+ * checks no password and validates no access token: the service metadata
+ * document's `testDouble`, and the console index's list of what it does not
+ * do.
  *
  * @returns true in development mode
  */
@@ -2950,14 +2955,16 @@ const REQUIREMENTS = [
     where: 'ldap/ldap_server.js, kerberos/krb5_principals.js, ' +
            'spiffe/spiffe_registry.ts' },
   { id: 'test-double',
-    what: 'The service metadata document says this service is a test double',
+    what: 'The service describes itself as a test double',
     development: '`testDouble` is true in GET /admin-api/sts-metadata: this ' +
                  'service checks no password and validates no access ' +
                  'token, and an endpoint list must not read as a claim that ' +
-                 'it does.',
+                 'it does. The console index draws What it deliberately ' +
+                 'does not do.',
     product: '`testDouble` is false: passwords are verified and access ' +
-             'tokens validated, and the document says so.',
-    where: 'sts_metadata.ts' },
+             'tokens validated, and the document says so. The console ' +
+             'index does not draw that list.',
+    where: 'sts_metadata.ts, admin-ui/admin.ts' },
   { id: 'claim-values',
     what: 'A claim value may be invented',
     development: 'A token names a persona — family name `Mock`, an address ' +

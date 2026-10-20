@@ -1640,6 +1640,10 @@ service actually does. See
 
 ## What the console does not do
 
+The console's own index draws a longer list, *What it deliberately does not
+do*, in development mode only: almost all of it is about what development
+mode does not check. A realm in product mode does not show it.
+
 * **It does not invalidate a SAML assertion, a Kerberos ticket, an SVID or a
   verifiable credential.** None has a revocation mechanism a relying party
   consults, so a button claiming to revoke one would change a number here and
