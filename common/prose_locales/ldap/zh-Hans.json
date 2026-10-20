@@ -623,6 +623,10 @@
     "en": "2b77aa6b404dbdc0",
     "text": "OIDC Core 第 8.1 节的 `sector_identifier_uri`：一个 https URL，其主机就是派生 pairwise `sub` 所针对的扇区，因此同一组织的多个重定向主机看到同一个主体。指明它的注册会获取该 URL，并且其每个重定向 URI 都必须列在它提供的 JSON 数组中；由管理员在这里写入的值是管理员的声明，不会被获取。留空：扇区为重定向 URI 的主机，此时它们必须全部共享同一个主机。"
   },
+  "applications.schema.attributes.oauthDidClaimWithPairwise.what": {
+    "en": "6a260538fdd857e4",
+    "text": "TRUE：即使此客户端使用成对或临时的主体标识符，也可以把此人的首选 DID（`did` 声明，oauth2.didClaim）告知它。其他任何值——对于使用公共主体的客户端则无关紧要——都表示从不告知。成对或临时的 `sub` 的存在，是为了让此客户端无法将此人与其他客户端关联起来，而 DID 在每个被告知的客户端处都是同一个值，会破坏这一点——仅在此客户端本就应通过 DID 识别此人时才设置。注册无法设置它。"
+  },
   "applications.schema.attributes.oauthTokenEndpointAuthSigningAlg.what": {
     "en": "c3cee680e93f74e1",
     "text": "OIDC Core 第 9 节 / RFC 7591 的 `token_endpoint_auth_signing_alg`：此客户端的身份验证断言必须使用的唯一一种 JWS 算法。使用其他任何算法签名的断言在所有模式下都会被拒绝。留空：该方法允许的任何算法。"

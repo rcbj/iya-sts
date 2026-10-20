@@ -623,6 +623,10 @@
     "en": "2b77aa6b404dbdc0",
     "text": "OIDC Core section 8.1 `sector_identifier_uri`: isang https URL na ang HOST ay ang sector na pinag-de-derive-an ng pairwise `sub`, kaya nakikita ng ilang redirect host ng iisang organisasyon ang iisang subject. Ang REGISTRATION na nagpapangalan ng isa ay KINUKUHA ito at dapat nakalista ang bawat redirect URI nito sa JSON array na inihahain nito; ang isinulat dito ng administrator ay pahayag ng administrator at hindi kinukuha. Walang laman: ang sector ay ang host ng mga redirect URI, na dapat magkakapareho lahat."
   },
+  "applications.schema.attributes.oauthDidClaimWithPairwise.what": {
+    "en": "6a260538fdd857e4",
+    "text": "TRUE: maaaring sabihin sa client na ito ang gustong DID ng tao (ang claim na `did`, oauth2.didClaim) kahit gumagamit ito ng pairwise o ephemeral na subject identifier. Anumang iba pa, at para sa client na may public subject ay hindi ito mahalaga: hindi kailanman. Umiiral ang pairwise o ephemeral na `sub` upang hindi maiugnay ng client na ito ang tao sa ibang mga client, at ang DID ay parehong halaga sa bawat client na sinasabihan nito, na sumisira roon — itakda lamang ito kung saan ang client na ito ay talagang dapat makakilala sa tao sa kanilang DID. Hindi maitatakda ng isang registration."
+  },
   "applications.schema.attributes.oauthTokenEndpointAuthSigningAlg.what": {
     "en": "c3cee680e93f74e1",
     "text": "OIDC Core section 9 / RFC 7591 `token_endpoint_auth_signing_alg`: ang NAG-IISANG JWS algorithm na dapat gamitin sa pagpirma ng authentication assertion ng client na ito. Tinatanggihan ang assertion na pinirmahan ng iba, sa bawat mode. Walang laman: anumang algorithm na pinapayagan ng method."

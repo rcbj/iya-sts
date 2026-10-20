@@ -888,6 +888,41 @@ person holding live tokens: CAEP `token-claims-change` carrying the new
 service's `urn:sts:ial` namespace, or `NIST-IAL` for an `nist_800_63A`
 verification. See [the CAEP events](caep-events.md#assurance-level-change).
 
+### A person's DID: the `did` claim
+
+With `oauth2.didClaim` on (off by default), a person's **preferred DID** —
+one they proved with their wallet and marked on `/portal/self-issued`
+([SIOPv2](oid4vp.md#self-issued-id-tokens-siopv2)) — is released as the
+claim **`did`**, asked for with the scope **`did`**, in the ID Token and the
+UserInfo response. Neither name is registered for anything else (IANA's JWT
+claims registry, OpenID Connect's scopes). It is a value the person chose
+to share, and it is the same at every client told it, so the conditions are
+strict and the claim is simply absent when one fails:
+
+* the client declares `did` on `oauthAllowedScope`, **in both modes** — it
+  is in no default set (`STS-OAUTH-0972`);
+* the request asked for the scope and it was granted;
+* **the person consented to it for that client themselves**: the consent
+  screen lists `did` as releasing their DID, and neither a global consent
+  (`oauthGlobalConsent`) nor consent turned off counts (`STS-OAUTH-0973`).
+  Withdrawing it on `/portal/consents` revokes the client's tokens with it;
+* the person has a preferred DID they **proved** — never an
+  administrator's by-value entry, never a JWK thumbprint (`STS-OAUTH-0975`);
+* the account is not disabled (`STS-OAUTH-0976`);
+* the client's subject type is `public`. **A pairwise or ephemeral client
+  is never told it** (`STS-OAUTH-0974`): those subjects exist so that it
+  cannot correlate the person with other clients, which one DID everywhere
+  defeats — unless its entry sets `oauthDidClaimWithPairwise` to `TRUE`.
+
+A claim called `did` from any other layer — a configured or typed claim, a
+claims request (OIDC Core 5.5), a Claims Provider — is removed
+(`STS-OAUTH-0977`), so none of them is a way round those rules. Each code is
+recorded in the log (at most once per client and reason in ten minutes) and
+never sent. The scope and the claim are in the discovery document only while
+the setting is on. SAML assertions never carry it: an attribute there has no
+consent of the person's to stand behind it. The recipe is in
+[Configure OIDC flows](configure-oidc-flows.md#release-a-persons-did-as-a-claim).
+
 ### Enterprise Extensions: `session_expiry`, `tenant`, `aud_sub`, `domain_hint`
 
 OpenID Connect Enterprise Extensions 1.0 (#148), in every mode:
@@ -2103,6 +2138,7 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.consentRequired` | `STS_OAUTH2_CONSENT_REQUIRED` | `true` | yes | Ask the person, on `/oauth2/consent`, before issuing for a scope they have not agreed to for that application. |
 | `oauth2.delegatedPermissionsEnforced` | `STS_OAUTH2_DELEGATED_PERMISSIONS_ENFORCED` | `false` | yes | In development, refuse `invalid_scope` a request, on a person's behalf, for a delegated permission the client has not been granted; off, it is honoured and logged. Product mode always refuses one. Not asked on `client_credentials`, where a role decides (#551). |
 | `oauth2.maxRequestedClaims` | `STS_OAUTH2_MAX_REQUESTED_CLAIMS` | `64` | yes | The most claims one OpenID Connect Core 5.5 claims request may name. |
+| `oauth2.didClaim` | `STS_OAUTH2_DID_CLAIM` | `false` | yes | Release a person's preferred, proved DID as the `did` claim behind the `did` scope (#693). See [A person's DID](#a-persons-did-the-did-claim). |
 
 ### Grants and assertions
 

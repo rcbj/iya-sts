@@ -429,6 +429,18 @@ never the Self-Issued OP itself.
   enrolled is resolved, once per enrolment, after the token's other checks
   passed (`STS-VC-0128` if it cannot be fetched, or for a second fetch).
   In product mode an address inside the service's own network is refused.
+* **A preferred DID, released as a claim.** A person may mark ONE DID they
+  proved with their wallet as *preferred* on `/portal/self-issued` (an
+  administrator may too, from the person's page or with
+  `POST /admin-api/users/set-preferred-self-issued-subject`). An entry
+  enrolled by value, or a JWK thumbprint, cannot be preferred
+  (`STS-PORTAL-0615`, `STS-ADMIN-0872`); removing the preferred subject
+  clears the mark, and proving it again keeps it. Both acts are audited
+  (`portal.siop.prefer`, `admin.siop.preferred`). With `oauth2.didClaim` on
+  (off by default), the preferred DID is released as the `did` claim to a
+  client allowed the `did` scope that the person consented to — see
+  [Configure OIDC flows](configure-oidc-flows.md#release-a-persons-did-as-a-claim)
+  for every condition. It is never released in a SAML assertion.
 * **With a presentation** (`response_type=vp_token id_token`), the ID Token
   must be signed by the presentation's holder key.
 * **A verification start** takes `response_type` `id_token` (or `vp_token

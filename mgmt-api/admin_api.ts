@@ -6565,7 +6565,8 @@ class AdminApi {
                      'one a key whose self-issued ID Token signs them in — ' +
                      'and how (`proof`: `wallet`, proved by the person, or ' +
                      '`admin`, enrolled by value), with a did:web\'s ' +
-                     '`pinnedKeys` (#693). ' +
+                     '`pinnedKeys` and the one proved DID the person ' +
+                     'prefers (`preferred`) (#693). ' +
                      'Beside them, whether signing in that way is on ' +
                      '(`oid4vp.signInSelfIssued`), how many a person may ' +
                      'hold, and the subject syntaxes accepted.',
@@ -8180,6 +8181,41 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'What was removed.' },
+
+          { action: 'set-preferred-self-issued-subject',
+            operationId: 'setUserPreferredSelfIssuedSubject',
+            summary: 'Mark one of somebody\'s proved DIDs as their ' +
+                     'preferred one, or clear the mark',
+            description: 'Marks the subject — a DID the person PROVED with ' +
+                         'their wallet (`proof: wallet`) — as their ' +
+                         'preferred DID, and clears the mark from every ' +
+                         'other; an empty `subject` clears it. The preferred ' +
+                         'DID is what the `did` claim releases to a client ' +
+                         'allowed the `did` scope that the person consented ' +
+                         'to, where `oauth2.didClaim` is on (#693). A ' +
+                         'subject enrolled by value, a JWK thumbprint or one ' +
+                         'not enrolled is refused (STS-ADMIN-0872). The ' +
+                         'person does the same on /portal/self-issued.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                subject: { type: 'string',
+                           description: 'The DID, as listed; empty or ' +
+                                        'absent clears the mark.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice',
+                           subject: 'did:jwk:eyJrdHkiOiJPS1AiLCJjcnYiOiJFZDI' +
+                                    '1NTE5IiwieCI6IjEyMyJ9' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The preferred DID, or none.' },
 
           { action: 'record-verification',
             operationId: 'recordUserVerification',

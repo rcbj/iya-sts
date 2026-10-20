@@ -1649,6 +1649,22 @@ const SCHEMA = {
             'written here by an administrator is the administrator\'s ' +
             'statement and is not fetched. Empty: the sector is the host of ' +
             'the redirect URIs, which must then all share one.' },
+    // THE `did` CLAIM AGAINST A PAIRWISE SUBJECT (#693, phase 2).
+    { name: 'oauthDidClaimWithPairwise', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      families: ['oidc'],
+      familyWhy: 'It decides whether an ID Token and a UserInfo response ' +
+        'may carry the did claim, which only an OpenID Connect client is ' +
+        'given.',
+      what: 'TRUE: this client may be told the person\'s preferred DID (the ' +
+            '`did` claim, oauth2.didClaim) although it uses pairwise or ' +
+            'ephemeral subject identifiers. Anything else, and for a ' +
+            'public-subject client it does not matter: never. A pairwise ' +
+            'or ephemeral `sub` exists so that this client cannot ' +
+            'correlate the person with other clients, and a DID is the ' +
+            'same value at every client that is told it, which defeats ' +
+            'that — set it only where this client is meant to know the ' +
+            'person by their DID anyway. Not settable by a registration.' },
     { name: 'oauthTokenEndpointAuthSigningAlg', kind: 'single',
       from: 'POST /oauth2/register, the console, the management API, or by ' +
             'hand',
@@ -4615,6 +4631,8 @@ const EDITABLE = {
   // OIDC Core sections 8 and 9 (#118). One answer each.
   oauthSubjectType: 'set',
   oauthSectorIdentifierUri: 'set',
+  // The did claim against a pairwise subject (#693). One answer.
+  oauthDidClaimWithPairwise: 'set',
   oauthTokenEndpointAuthSigningAlg: 'set',
   oauthJwks: 'set',
   oauthJwksUri: 'set',
@@ -5818,6 +5836,8 @@ const BOOLEAN_ATTRIBUTES = [
   'oauthTlsClientCertificateBoundAccessTokens', 'oauthConfidential',
   'saml2EncryptAssertion', 'saml2EncryptLogoutNameId',
   'oauthRevokeRefreshOnLogout', 'appNotDelegated', 'appGroupsClaim',
+  // #693: the did claim to a pairwise or ephemeral client.
+  'oauthDidClaimWithPairwise',
   'krb5TrustedForDelegation',
   'saml2SignAssertion', 'saml2SignResponse', 'saml11SignAssertion',
   'saml11SignResponse', 'gnapBearerTokens', 'gnapSkipInteraction',
@@ -18957,6 +18977,28 @@ function httpSignaturesOf(clientId) {
   return { known: !!found, required: required, fields: fields };
 }
 
+// THE `did` CLAIM AGAINST A PAIRWISE SUBJECT (#693): whether the client's
+// entry opts in to being told the person's DID although its `sub` is
+// pairwise or ephemeral. FALSE for anything but TRUE, and for a client
+// nobody registered.
+/**
+ * Says whether a client opts in to the `did` claim although it uses
+ * pairwise or ephemeral subject identifiers (`oauthDidClaimWithPairwise`).
+ *
+ * @param clientId - the client id
+ * @returns true only for TRUE on a known client
+ */
+function didClaimWithPairwiseOf(clientId) {
+  log.debug("Entering didClaimWithPairwiseOf().");
+  const who = String(clientId == null ? '' : clientId).trim();
+  const found = who ? (forClientId(who) || get(who)) : null;
+  const fields = (found && found.fields) || {};
+  const on = String(valuesOf(fields.oauthDidClaimWithPairwise)[0] || '')
+    .trim().toUpperCase() === 'TRUE';
+  log.debug("Leaving didClaimWithPairwiseOf(). " + on);
+  return on;
+}
+
 /**
  * Returns the application whose `oauthClientId` lists a value, matched exactly.
  *
@@ -20044,6 +20086,7 @@ module.exports = {
   attributesFor: attributesFor,
   nativeSsoOf: nativeSsoOf,
   httpSignaturesOf: httpSignaturesOf,
+  didClaimWithPairwiseOf: didClaimWithPairwiseOf,
   recordFromAttributes: recordFromAttributes,
   labelFor: labelFor,
   editableAttributes: editableAttributes,

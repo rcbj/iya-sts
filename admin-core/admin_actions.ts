@@ -390,6 +390,8 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // Self-issued subjects (#129, 2026-09-23).
                        'enrol-self-issued-subject',
                        'remove-self-issued-subject',
+                       // The preferred DID (#693, phase 2).
+                       'set-preferred-self-issued-subject',
                        // Devices (#130, 2026-09-23).
                        'remove-device',
                        // CIBA's test control (#131, 2026-09-23).
@@ -471,6 +473,10 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   // `remove-self-issued-subject` takes one away. `oid4vc/siop.ts` keeps
   // them; a person enrols their own by proving the key on the portal.
   'enrol-self-issued-subject', 'remove-self-issued-subject',
+  // THE PREFERRED DID (#693, phase 2): `set-preferred-self-issued-subject`
+  // marks one subject the person PROVED, a DID, as the one the `did` claim
+  // releases (`subject`; empty clears the mark). `siop.setPreferred()`.
+  'set-preferred-self-issued-subject',
   // A DEVICE (#130, 2026-09-23): `remove-device` deletes one of the person's
   // device entries (`id`), and its Native SSO secret with it — the apps on
   // it are asked to sign in again. `common/devices.ts` keeps them.
@@ -2907,6 +2913,35 @@ class AdminActions {
       log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
                 ".");
       return answer(siop.remove(who, subject, ctx.actor));
+    }
+
+    if (action === 'set-preferred-self-issued-subject') {
+      const { siop } = this.deps;
+      const subject = String(body.subject == null ? '' : body.subject).trim();
+      const done = siop.setPreferred(who, subject);
+      audited('admin.siop.preferred',
+              (done.ok ? '' : 'could not ') +
+              (subject ? 'mark ' + subject + ' as ' + who + '\'s preferred ' +
+                         'DID' : 'clear ' + who + '\'s preferred DID'),
+              { subject: subject || undefined,
+                was: done.ok ? (done.was || undefined) : undefined,
+                errors: done.ok ? undefined : [done.error] },
+              done.ok ? 'success' : 'failure');
+      if (!done.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                  " was refused.");
+        return this.refusedBy('STS-ADMIN-0872',
+                              { ok: false, errors: [done.error] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                ".");
+      return { ok: true, username: who, preferred: done.preferred,
+               message: done.preferred
+                 ? done.preferred + ' is ' + who + '\'s preferred DID: a ' +
+                   'client allowed the did scope, and consented to, is told ' +
+                   'it as the did claim where oauth2.didClaim is on.'
+                 : who + ' has no preferred DID; the did claim is released ' +
+                   'to nobody.' };
     }
 
     if (action === 'set-service-account') {

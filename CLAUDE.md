@@ -1145,6 +1145,7 @@ the file the row names.
 | ~~Verify a SAML AuthnRequest's signature, or consume SP metadata~~ — reversed 2026-09-17 (#37) | `saml/CLAUDE.md`, `saml/request_signature.ts`, `saml/sp_metadata.ts` |
 | Encrypt an assertion it holds no certificate for — **product refuses**, development sends it in CLEAR | `saml/CLAUDE.md` |
 | Dial a service provider's metadata URL WHILE ISSUING | `saml/CLAUDE.md` |
+| Release a person's DID unless they proved it, preferred it and consented to it themselves — to a pairwise or ephemeral client only by its opt-in, and never in a SAML assertion (#693) | `oauth-oidc/CLAUDE.md` (*The `did` claim*) |
 
 ## The parent project's paths into this repository
 

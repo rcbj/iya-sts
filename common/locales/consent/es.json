@@ -6,6 +6,7 @@
   "scope.permission": "{description} — expuesto por <code>{identifier}</code>; el token de acceso irá dirigido a <code>{baseUri}</code>",
   "scope.permissionNamed": "el permiso «{name}»",
   "scope.ordinary": "un ámbito ordinario: este servicio no le atribuye ningún significado y lo pondrá tal cual en el claim scope del token",
+  "scope.did": "su DID preferido: el identificador descentralizado que demostró con su cartera y marcó como preferido en su página de identificadores autoemitidos. Es el mismo valor para cada aplicación a la que se lo comunique, así que podrían reconocerle como una misma persona",
   "detail.understood": "entendido por <code>{resource}</code>; el token de acceso irá dirigido a <code>{audience}</code>",
   "detail.described": "{description} — entendido por <code>{resource}</code>; el token de acceso irá dirigido a <code>{audience}</code>",
   "detailsNote": "Esta solicitud incluye <strong>{count, plural, one {# detalle de autorización} other {# detalles de autorización}}</strong> (RFC 9396). Se le preguntará por ellos cada vez: Permitir acepta exactamente lo que aparece en la lista, solo para esta solicitud.",

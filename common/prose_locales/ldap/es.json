@@ -623,6 +623,10 @@
     "en": "2b77aa6b404dbdc0",
     "text": "`sector_identifier_uri` de OIDC Core sección 8.1: una URL https cuyo HOST es el sector para el que se deriva un `sub` pairwise, de modo que varios hosts de redirección de una organización vean un solo sujeto. Un REGISTRO que nombra una hace que se OBTENGA, y cada uno de sus URI de redirección debe figurar en el array JSON que sirve; una escrita aquí por un administrador es la declaración del administrador y no se obtiene. Vacío: el sector es el host de los URI de redirección, que entonces deben compartir todos uno solo."
   },
+  "applications.schema.attributes.oauthDidClaimWithPairwise.what": {
+    "en": "6a260538fdd857e4",
+    "text": "TRUE: a este cliente se le puede comunicar el DID preferido de la persona (la afirmación `did`, oauth2.didClaim) aunque use identificadores de sujeto por pares o efímeros. Cualquier otro valor, y para un cliente de sujeto público no importa: nunca. Un `sub` por pares o efímero existe para que este cliente no pueda correlacionar a la persona con otros clientes, y un DID es el mismo valor en cada cliente al que se comunica, lo que anula eso: actívelo solo donde este cliente deba conocer a la persona por su DID de todos modos. No lo puede fijar un registro."
+  },
   "applications.schema.attributes.oauthTokenEndpointAuthSigningAlg.what": {
     "en": "c3cee680e93f74e1",
     "text": "`token_endpoint_auth_signing_alg` de OIDC Core sección 9 / RFC 7591: el ÚNICO algoritmo JWS con que debe firmarse la aserción de autenticación de este cliente. Una aserción firmada con cualquier otro se rechaza, en todos los modos. Vacío: cualquier algoritmo que permita el método."

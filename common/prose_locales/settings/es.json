@@ -3843,6 +3843,14 @@
     "en": "2394ee67a689920d",
     "text": "Aplica OpenID Connect Key Binding 1.0 (#150). Activado: el documento de descubrimiento incluye el ámbito `bound_key`, un cliente que no declara ámbitos puede pedirlo, y una solicitud que lo pida debe indicar `dpop_jkt` y usar el flujo de código (si no, se rechaza, STS-OAUTH-0704 y 0705); el ID Token nombra entonces la clave DPoP (`cnf.jwk`, `typ: dpop+id_token`), la solicitud de token debe probarla con `c_s256`, y cada actualización debe venir de la misma clave. **Desactivado, no existe, y el servicio es solo OpenID Connect Core**: `bound_key` no se anuncia, una solicitud que lo incluya no se rechaza — el ámbito se ignora y no se concede, como Core trata un ámbito sobre el que un OP no actúa — y ningún ID Token queda vinculado. Desactívelo donde las partes de confianza pidan todos los ámbitos anunciados y no sepan nada de Key Binding (#315). Una concesión ya vinculada antes de desactivarlo conserva la comprobación de su clave al actualizarse."
   },
+  "oauth2.didClaim|label": {
+    "en": "d0b89f9c74f06728",
+    "text": "La afirmación did"
+  },
+  "oauth2.didClaim|description": {
+    "en": "473d9916a85b21bb",
+    "text": "Comunica el DID preferido de una persona como la afirmación `did`, en el ID Token y en la respuesta de UserInfo, tras el ámbito `did` (#693). Activado, la afirmación se comunica solo cuando el cliente declara `did` en su oauthAllowedScope (en ambos modos; no está en ningún conjunto predeterminado), la solicitud pidió el ámbito, la persona consintió en él para ese cliente ella misma (un consentimiento global no cuenta), la persona marcó como preferido un DID que DEMOSTRÓ con su cartera (nunca uno que escribió un administrador) y la cuenta no está deshabilitada. A un cliente que usa identificadores de sujeto por pares o efímeros nunca se le comunica salvo que su oauthDidClaimWithPairwise sea TRUE, porque un DID estable anula la imposibilidad de vincular para la que existen. Una afirmación llamada `did` procedente de cualquier otra capa se elimina. Desactivado: el ámbito no se anuncia y la afirmación nunca se comunica."
+  },
   "oauth2.sessionManagement|label": {
     "en": "9b2a882aa3250c63",
     "text": "OpenID Connect Session Management"

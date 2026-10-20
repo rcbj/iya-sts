@@ -3843,6 +3843,14 @@
     "en": "2394ee67a689920d",
     "text": "Applique OpenID Connect Key Binding 1.0 (#150). Activé : le document de découverte liste la portée `bound_key`, un client qui ne déclare aucune portée peut la demander, et une requête qui la demande doit indiquer `dpop_jkt` et utiliser le flux par code (refusée sinon, STS-OAUTH-0704 et 0705) ; l’ID Token nomme alors la clé DPoP (`cnf.jwk`, `typ: dpop+id_token`), la requête de jeton doit la prouver avec `c_s256`, et chaque actualisation doit venir de la même clé. **Désactivé, il n’existe pas, et le service est OpenID Connect Core seul** : `bound_key` n’est pas annoncée, une requête qui la porte n’est pas refusée — la portée est ignorée et non accordée, comme Core traite une portée sur laquelle un OP n’agit pas — et aucun ID Token n’est lié. Désactivez-le là où des parties de confiance demandent toutes les portées annoncées et ignorent tout de Key Binding (#315). Une autorisation déjà liée avant la désactivation garde la vérification de sa clé à l’actualisation."
   },
+  "oauth2.didClaim|label": {
+    "en": "d0b89f9c74f06728",
+    "text": "La revendication did"
+  },
+  "oauth2.didClaim|description": {
+    "en": "473d9916a85b21bb",
+    "text": "Communique le DID préféré d’une personne comme la revendication `did`, dans l’ID Token et la réponse UserInfo, derrière la portée `did` (#693). Activé, la revendication n’est communiquée que lorsque le client déclare `did` dans son oauthAllowedScope (dans les deux modes ; elle n’est dans aucun ensemble par défaut), que la requête a demandé la portée, que la personne y a consenti pour ce client elle-même (un consentement global ne compte pas), que la personne a marqué comme préféré un DID qu’elle a PROUVÉ avec son portefeuille (jamais un DID saisi par un administrateur) et que le compte n’est pas désactivé. Un client qui utilise des identifiants de sujet par paire ou éphémères ne le reçoit jamais sauf si son oauthDidClaimWithPairwise vaut TRUE, car un DID stable annule la non-associabilité pour laquelle ils existent. Une revendication nommée `did` venant de toute autre couche est retirée. Désactivé : la portée n’est pas annoncée et la revendication n’est jamais communiquée."
+  },
   "oauth2.sessionManagement|label": {
     "en": "9b2a882aa3250c63",
     "text": "OpenID Connect Session Management"

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4543** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4551** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 341
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 717
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 723
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 29
@@ -88,9 +88,9 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 241
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 242
 * [Management API (`STS-API`)](#sts-api) — 86
-* [User portal (`STS-PORTAL`)](#sts-portal) — 99
+* [User portal (`STS-PORTAL`)](#sts-portal) — 100
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
@@ -2246,6 +2246,12 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0960` | An authorization request with prompt=none arrived from a browser holding more than one signed-in account, and nothing in it (an account chosen in this flow, login_hint, id_token_hint) says which; prompt=none forbids showing the account picker (#561). | account_selection_required (OpenID Connect Core 1.0 section 3.1.2.6) |
 | `STS-OAUTH-0970` | An authorization request asked for phr or phrh (OpenID Connect EAP ACR Values 1.0), and the authentication performed — after one sign-in for it — was not phishing-resistant: a password, a one-time code, an emailed code or link, a recovery code, or a key enrolled in the same sign-in (#723). | RFC 9470 section 5 (unmet_authentication_requirements); EAP ACR Values 1.0 section 2 |
 | `STS-OAUTH-0971` | An authorization request asked for phrh, and the authentication was phishing-resistant (phr) without evidence that its key is hardware-protected: a backup-eligible (synced) passkey, a key whose attestation is not trusted, or a client certificate (#723). | RFC 9470 section 5 (unmet_authentication_requirements); EAP ACR Values 1.0 section 2 |
+| `STS-OAUTH-0972` | The did claim was left out of an ID Token or UserInfo response: the did scope was granted, but the client does not declare it on oauthAllowedScope, which the claim needs in both modes (#693). | none: the claim is absent (logged) |
+| `STS-OAUTH-0973` | The did claim was left out: the person has not consented to the did scope for this client themselves. A global consent (oauthGlobalConsent) and consent turned off do not count for it (#693). | none: the claim is absent (logged) |
+| `STS-OAUTH-0974` | The did claim was left out: the client uses pairwise or ephemeral subject identifiers, and a stable DID would let it correlate the person anyway; it is released to such a client only with oauthDidClaimWithPairwise TRUE (#693). | none: the claim is absent (logged) |
+| `STS-OAUTH-0975` | The did claim was left out: the person has no preferred DID that they proved with their wallet (none is marked, or the only DIDs are an administrator's by-value entries) (#693). | none: the claim is absent (logged) |
+| `STS-OAUTH-0976` | The did claim was left out: the person's account is disabled (#693). | none: the claim is absent (logged) |
+| `STS-OAUTH-0977` | A claim named did from another layer — a configured or typed claim, a claims request (OIDC Core 5.5) or a Claims Provider — was removed from an ID Token or UserInfo response: the name is the DID claim's, released only by its own rules (#693). | none: the claim is absent (logged) |
 
 ## STS-SAML
 
@@ -4748,6 +4754,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0860` | Removing a Kerberos trust was refused because confirm did not repeat the partner realm: the removal takes the trust's keys with it (#430). | HTTP 400 |
 | `STS-ADMIN-0870` | An administrator removed a credential (clear-key, clear-totp, clear-backup-codes or clear-email-factor) in a process with no sign-out model installed, so no session it signed in was ended (#722). The removal stands. | logged; the removal is answered as done |
 | `STS-ADMIN-0871` | enrol-self-issued-subject was refused for a did:web: its DID document could not be fetched, names another id, or names no authentication method with a publicKeyJwk, so there was no key to pin (#693). | HTTP 400 (API) |
+| `STS-ADMIN-0872` | set-preferred-self-issued-subject was refused: the subject is not enrolled for the person, was enrolled by value (unproven), is a JWK thumbprint rather than a DID, or the directory did not store the change (#693). | HTTP 400 (API) |
 
 ## STS-API
 
@@ -4951,6 +4958,7 @@ Raised from: portal/.
 | `STS-PORTAL-0611` | A connect on /portal/connected-accounts was refused (#565): the sign-on session's risk is MEDIUM or HIGH, and connecting a provider is never done from a session risk scoring doubts. | HTTP 403 JSON |
 | `STS-PORTAL-0613` | A disconnect on /portal/connected-accounts named a provider the person has no connection to (#565). | HTTP 400 JSON |
 | `STS-PORTAL-0614` | A disconnect on /portal/connected-accounts was refused: the consumer provider is the account's only way in — no password, no passkey that signs in, and no other connection — so removing it would lock the person out (#729). They are told to add another way first. | HTTP 409 JSON |
+| `STS-PORTAL-0615` | Marking a preferred DID on /portal/self-issued was refused: the subject is not enrolled for the signed-in person, was enrolled by an administrator's value rather than proved with their wallet, is a JWK thumbprint rather than a DID, or the directory did not store the change (#693). | HTTP 400 JSON |
 
 ## STS-ACCOUNT
 

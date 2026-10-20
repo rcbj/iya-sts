@@ -6,6 +6,7 @@
   "scope.permission": "{description} — exponeras av <code>{identifier}</code>, och åtkomsttoken kommer att adresseras till <code>{baseUri}</code>",
   "scope.permissionNamed": "behörigheten ”{name}”",
   "scope.ordinary": "ett vanligt scope: den här tjänsten lägger ingen betydelse i det och lägger det oförändrat i tokens scope-anspråk",
+  "scope.did": "ditt föredragna DID — den decentraliserade identifierare du bevisade med din plånbok och markerade som föredragen på sidan med dina självutfärdade ID:n. Det är samma värde för varje applikation du lämnar det till, så de kan känna igen dig som en och samma person",
   "detail.understood": "förstås av <code>{resource}</code>, och åtkomsttoken kommer att adresseras till <code>{audience}</code>",
   "detail.described": "{description} — förstås av <code>{resource}</code>, och åtkomsttoken kommer att adresseras till <code>{audience}</code>",
   "detailsNote": "Den här begäran innehåller <strong>{count, plural, one {# auktoriseringsdetalj} other {# auktoriseringsdetaljer}}</strong> (RFC 9396). Du tillfrågas om dem varje gång: Tillåt godkänner exakt det som listas, för just den här begäran.",

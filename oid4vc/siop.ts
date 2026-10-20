@@ -63,6 +63,13 @@
 //     `wallet` when its `by` is the self path's (`self (SIOPv2)`) and
 //     `admin` otherwise. `provenSubjectsOf()` is what releases or binds a
 //     subject (#693's phase 2) asks; a sign-in reads neither.
+//   * **THE PREFERRED DID (#693, phase 2).** A person may mark ONE proved
+//     DID as preferred (`preferred: true` on its value; `setPreferred()`),
+//     from the portal or an administrator's console and `/admin-api`. A
+//     value enrolled by value is never preferred, whatever it says, and a
+//     thumbprint is not a DID. `preferredSubjectOf()` is what the `did`
+//     claim releases (`oauth-oidc/did_claim.ts`); removing the subject
+//     removes the mark with it, and proving it again keeps it.
 //   * **THE OUTCOME.** An enrolled subject signs in as its person; an
 //     unenrolled one is refused IN BOTH MODES (rcbj, #129) — there is no
 //     development relaxation, because the signature is the only thing a
@@ -361,7 +368,11 @@ class Siop {
     const out = values.map(function (value) {
       return self.parseValue(value);
     }).filter(Boolean).map(function (one: Json) {
-      return Object.assign({}, one, { proof: Siop.provenanceOf(one) });
+      const proof = Siop.provenanceOf(one);
+      // PREFERRED (#693) only where it was PROVED: a flag on a value an
+      // administrator typed in is read as absent, whoever wrote it.
+      return Object.assign({}, one, { proof: proof,
+        preferred: proof === PROOF_WALLET && one.preferred === true });
     });
     log.debug("Leaving Siop.list(). " + out.length + ".");
     return out;
@@ -385,6 +396,98 @@ class Siop {
     });
     log.debug("Leaving Siop.provenSubjectsOf(). " + out.length + ".");
     return out;
+  }
+
+  // THE PERSON'S PREFERRED DID (#693, phase 2): the one proved subject they
+  // marked, and only while it is a DID — what the `did` claim releases
+  // (`oauth-oidc/did_claim.ts`). null where none is marked, or the marked
+  // one is a JWK thumbprint, which identifies a key and not a DID.
+  /**
+   * Returns the person's preferred subject: the one proved DID they marked,
+   * or null.
+   *
+   * @param username - the person
+   * @returns the row, as `list()` returns it, or null
+   */
+  preferredSubjectOf(username: unknown): Json {
+    const { log } = this.deps;
+    log.debug("Entering Siop.preferredSubjectOf(). user=" + username);
+    const one = this.provenSubjectsOf(username).filter(function (row: Json) {
+      return row.preferred === true && /^did:/.test(String(row.subject));
+    })[0] || null;
+    log.debug("Leaving Siop.preferredSubjectOf(). " +
+              (one ? one.subject : 'none'));
+    return one;
+  }
+
+  // MARKS ONE PROVED DID AS THE PERSON'S PREFERRED ONE (#693, phase 2), and
+  // clears the mark from every other; '' as the subject clears it from all.
+  // Only a subject the person PROVED qualifies (`provenSubjectsOf()`), and
+  // only a DID: a thumbprint names a key, and a claim called `did` carrying
+  // one would say something false. The caller decides who may: the person
+  // from the portal, an administrator for Admin Write. Returns { ok,
+  // preferred } (the subject, '' when cleared) or { ok: false, error, code }.
+  /**
+   * Marks one of a person's proved DIDs as their preferred one, or clears
+   * the mark with an empty subject.
+   *
+   * @param username - the person
+   * @param subject - the subject to prefer, or '' to clear
+   * @returns `{ ok, preferred, was }`, or `{ ok: false, error, code }`
+   */
+  setPreferred(username: unknown, subject: unknown): Json {
+    const { log, credentials } = this.deps;
+    log.debug("Entering Siop.setPreferred(). user=" + username);
+    const name = String(username || '').trim();
+    const clearing = String(subject == null ? '' : subject).trim() === '';
+    const wanted = clearing ? '' : this.normalise(subject);
+    const held = this.list(name);
+    if (!held) {
+      log.debug("Leaving Siop.setPreferred(). No entry.");
+      return { ok: false, code: 'not-found',
+               error: 'there is no directory entry for "' + name +
+                      '" in this realm.' };
+    }
+    const target = held.filter(function (one: Json) {
+      return one.subject === wanted;
+    })[0];
+    if (!clearing && !target) {
+      log.debug("Leaving Siop.setPreferred(). Not enrolled.");
+      return { ok: false, code: 'not-enrolled',
+               error: 'that subject is not enrolled for "' + name + '".' };
+    }
+    if (target && target.proof !== PROOF_WALLET) {
+      log.debug("Leaving Siop.setPreferred(). Not proved.");
+      return { ok: false, code: 'not-proved',
+               error: 'only a subject the person proved with their wallet ' +
+                      'may be preferred; ' + wanted + ' was enrolled by ' +
+                      'value. The person proves it on /portal/self-issued.' };
+    }
+    if (target && !/^did:/.test(wanted)) {
+      log.debug("Leaving Siop.setPreferred(). Not a DID.");
+      return { ok: false, code: 'not-a-did',
+               error: 'only a DID may be preferred; ' + wanted + ' is a JWK ' +
+                      'thumbprint, which names a key and not a DID.' };
+    }
+    const was = (held.filter(function (one: Json) {
+      return one.preferred === true;
+    })[0] || { subject: '' }).subject;
+    const next = held.map(function (one: Json) {
+      const copy = Object.assign({}, one);
+      delete copy.preferred;
+      if (!clearing && one.subject === wanted) {
+        copy.preferred = true;
+      }
+      return copy;
+    });
+    const written = was === wanted ? true :
+      credentials.writeSelfIssuedSubjects(name, next.map(function (one) {
+        return JSON.stringify(one);
+      }));
+    log.debug("Leaving Siop.setPreferred(). " + written);
+    return written ? { ok: true, preferred: wanted, was: was } :
+      { ok: false, code: 'not-stored',
+        error: 'the directory did not store the change.' };
   }
 
   // Whose subject this is in the current realm: a username, or ''.
@@ -507,6 +610,11 @@ class Siop {
       proof: proof };
     if (proof === PROOF_WALLET) {
       record.provedAt = new Date().toISOString();
+    }
+    // PROVING A SUBJECT AGAIN KEEPS IT PREFERRED (#693): the mark is the
+    // person's choice, and re-pinning a did:web is not a change of mind.
+    if (before && before.preferred === true && proof === PROOF_WALLET) {
+      record.preferred = true;
     }
     if (web) {
       record.pinnedKeys = pins.filter(function (one, i) {
@@ -1223,6 +1331,8 @@ export = {
   enrol: slot.forward('enrol'),
   enrolByValue: slot.forward('enrolByValue'),
   provenSubjectsOf: slot.forward('provenSubjectsOf'),
+  preferredSubjectOf: slot.forward('preferredSubjectOf'),
+  setPreferred: slot.forward('setPreferred'),
   authenticationKeys: slot.forward('authenticationKeys'),
   remove: slot.forward('remove'),
   clientMetadata: slot.forward('clientMetadata'),

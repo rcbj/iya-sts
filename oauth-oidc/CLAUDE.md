@@ -4564,6 +4564,69 @@ SSF events naming it for that client, nothing relaxed in development.
 
 Tests: `tests/vendored/sts_ephemeral_subjects.js`.
 
+## THE `did` CLAIM: A PERSON'S PREFERRED DID (2026-10-20, #693 phase 2)
+
+rcbj approved the review's conditions on #693 ("Do all that"): proven DIDs
+only, behind their own scope and consent, never in a default set, refused or
+opt-in for a pairwise or ephemeral client, not for a disabled account.
+`did_claim.ts` is the one place that decides, and `oauth2.ts` calls its
+`apply()` LAST on an ID Token (after the claims request and the Claims
+Providers) and on a UserInfo response (after the aggregated sources, before
+protection).
+
+* **The names**: claim `did`, scope `did`. Neither is in IANA's JWT claims
+  registry or among OpenID Connect's scope values, and `did` is what a
+  reader guesses; a URI buys nothing a private claim needs. Advertised in
+  `scopes_supported` and `claims_supported` only while `oauth2.didClaim`
+  (off by default, per realm) is on.
+* **The conditions**, first failure wins, the claim ABSENT rather than an
+  error (Core 5.5.1's rule for a claim the OP will not release): the
+  setting; the scope granted; the client DECLARES `did` on
+  `oauthAllowedScope` IN BOTH MODES (`STS-OAUTH-0972`) — development's
+  `grantsUndeclaredScopes()` would hand any client under test the scope, and
+  a stable identifier needs an administrator's intent; a public subject, or
+  `oauthDidClaimWithPairwise` TRUE (`STS-OAUTH-0974`); an account that is not
+  disabled (`STS-OAUTH-0976`); **the person's OWN consent record** for
+  `(client, did)` (`STS-OAUTH-0973`); a preferred DID they proved
+  (`STS-OAUTH-0975`).
+* **WHY ONLY THE PERSON'S OWN CONSENT.** `oauthGlobalConsent` is an
+  operator saying "agreed for everybody", and `oauth2.consentRequired` off
+  means nobody was asked; neither is the person choosing to share a value
+  every client told it sees identically. So the claim reads
+  `consent.consentsOf()` directly rather than `outstanding()`, and with
+  consent turned off nothing is released — documented rather than forcing the
+  screen on for one scope, which would have been a second consent rule in the
+  authorization endpoint. The screen says what the scope releases
+  (`releasesDid` on the row, `consent.scope.did`) instead of calling it an
+  ordinary scope. Withdrawing it revokes the client's tokens (the register's
+  own rule); UserInfo decides again on every call, so a cleared mark or a
+  removed DID is gone from the next response for a token already held.
+* **THE PAIRWISE RULE (3bj).** A pairwise or ephemeral `sub` exists so that
+  a client cannot correlate the person with any other; one DID at every
+  client undoes it, so such a client is never told it unless its entry opts
+  in with `oauthDidClaimWithPairwise` (`common/applications.js`; not settable
+  by a registration, since the client would be opting itself in). The `sub`
+  stays pairwise either way.
+* **NO WAY ROUND IT.** `apply()` first deletes a `did` any other layer put
+  there — a typed or configured claim, a claims request (5.5; the scope
+  claims' 3cj rule that a named claim is its own grant does NOT hold for
+  this one), `_claim_names.did` — and `oauth2.ts` never asks a Claims
+  Provider for it (`STS-OAUTH-0977`). The rules' value wins where they
+  release one.
+* **SAML LEFT OUT.** An assertion's attributes have no per-attribute consent
+  of the person's; condition 6 could not hold there, so no SP opt-in was
+  built.
+* **LOGGING.** Each omission's code at the front of an info line, at most
+  once per (client, code) in ten minutes, the remembered keys capped at the
+  insert (no timer) — UserInfo may be polled, and a misconfigured client
+  must not write a line per call.
+
+`tests/did_claim.js` holds every condition, both endpoints over HTTP, the
+discovery document and the bypasses in process. **What has no test**: the
+consent screen drawing the `did` row (a browser page), and an HTTP job — no
+vendored claim job neighbours it, and a proved DID needs the wallet
+round trip the SIOP job drives with thumbprints.
+
 ## 3bk. RFC 8628 DEVICE AUTHORIZATION AND OPENID CONNECT KEY BINDING (2026-09-26, #150)
 
 rcbj's answers were every recommendation: build RFC 8628 here, since Key

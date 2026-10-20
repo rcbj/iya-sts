@@ -535,7 +535,9 @@ class ConsentScreen {
                  permission: p ? { description: p.description || '',
                                    name: p.name || '',
                                    identifier: p.identifier || '',
-                                   baseUri: p.baseUri || '' } : null };
+                                   baseUri: p.baseUri || '' } : null,
+                 // The `did` scope's sentence (#693).
+                 releasesDid: one.releasesDid === true };
       }),
       authorizationDetails: record.authorizationDetails.map(
         function (one: Json): Json {

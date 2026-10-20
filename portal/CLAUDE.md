@@ -1539,6 +1539,14 @@ the same `siop.enrol()`. The enrolment writes `portal.siop.enrol` (the
 removal's shape, `STS-VC-0094` on a refusal) from `oid4vc/vc_signin.ts`,
 where the enrolment happens. The pin itself is `oid4vc/CLAUDE.md`'s (3ba).
 
+**Since #693's phase 2 a proved DID can be marked PREFERRED** here (*Make
+preferred*, *Clear*: `action: prefer | unprefer` on the same POST, naming the
+subject, never the person — `STS-PORTAL-0615`, audited
+`portal.siop.prefer`). Only a row the person proved, and only a DID, offers
+it; the page says whether this realm releases the mark as the `did` claim
+(`didClaim` on the view). What it is and what releases it:
+`oid4vc/CLAUDE.md` and `oauth-oidc/CLAUDE.md` (*The `did` claim*).
+
 ## `/portal/wallet`: A CREDENTIAL ABOUT YOURSELF, INTO YOUR OWN WALLET (2026-10-12, #589)
 
 The third page here that HANDS SOMEBODY A CREDENTIAL, and the first whose

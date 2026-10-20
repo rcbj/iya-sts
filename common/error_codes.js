@@ -9917,6 +9917,39 @@ const CODES = [
       '(#723).',
     spec: 'RFC 9470 section 5 (unmet_authentication_requirements); EAP ACR ' +
       'Values 1.0 section 2' },
+  { code: 'STS-OAUTH-0972',
+    summary: 'The did claim was left out of an ID Token or UserInfo ' +
+      'response: the did scope was granted, but the client does not ' +
+      'declare it on oauthAllowedScope, which the claim needs in both ' +
+      'modes (#693).',
+    spec: 'none: the claim is absent (logged)' },
+  { code: 'STS-OAUTH-0973',
+    summary: 'The did claim was left out: the person has not consented to ' +
+      'the did scope for this client themselves. A global consent ' +
+      '(oauthGlobalConsent) and consent turned off do not count for it ' +
+      '(#693).',
+    spec: 'none: the claim is absent (logged)' },
+  { code: 'STS-OAUTH-0974',
+    summary: 'The did claim was left out: the client uses pairwise or ' +
+      'ephemeral subject identifiers, and a stable DID would let it ' +
+      'correlate the person anyway; it is released to such a client only ' +
+      'with oauthDidClaimWithPairwise TRUE (#693).',
+    spec: 'none: the claim is absent (logged)' },
+  { code: 'STS-OAUTH-0975',
+    summary: 'The did claim was left out: the person has no preferred DID ' +
+      'that they proved with their wallet (none is marked, or the only ' +
+      'DIDs are an administrator\'s by-value entries) (#693).',
+    spec: 'none: the claim is absent (logged)' },
+  { code: 'STS-OAUTH-0976',
+    summary: 'The did claim was left out: the person\'s account is disabled ' +
+      '(#693).',
+    spec: 'none: the claim is absent (logged)' },
+  { code: 'STS-OAUTH-0977',
+    summary: 'A claim named did from another layer — a configured or ' +
+      'typed claim, a claims request (OIDC Core 5.5) or a Claims Provider ' +
+      '— was removed from an ID Token or UserInfo response: the name is ' +
+      'the DID claim\'s, released only by its own rules (#693).',
+    spec: 'none: the claim is absent (logged)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -20880,6 +20913,12 @@ const CODES = [
       'authentication method with a publicKeyJwk, so there was no key to ' +
       'pin (#693).',
     spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0872',
+    summary: 'set-preferred-self-issued-subject was refused: the subject is ' +
+      'not enrolled for the person, was enrolled by value (unproven), is a ' +
+      'JWK thumbprint rather than a DID, or the directory did not store the ' +
+      'change (#693).',
+    spec: 'HTTP 400 (API)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -21739,6 +21778,13 @@ const CODES = [
       'would lock the person out (#729). They are told to add another way ' +
       'first.',
     spec: 'HTTP 409 JSON' },
+  { code: 'STS-PORTAL-0615',
+    summary: 'Marking a preferred DID on /portal/self-issued was refused: ' +
+      'the subject is not enrolled for the signed-in person, was enrolled ' +
+      'by an administrator\'s value rather than proved with their wallet, ' +
+      'is a JWK thumbprint rather than a DID, or the directory did not ' +
+      'store the change (#693).',
+    spec: 'HTTP 400 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },
