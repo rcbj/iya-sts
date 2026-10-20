@@ -103,7 +103,7 @@ whatever it signed, and the page says so.
 
 Both authorities rotate automatically, in both modes. A scheduler job runs every
 hour. It rotates the X.509 authority once it is past half its lifetime, and the
-JWT authority once it is older than half `spiffe.caTtl`. **Rotate now** on
+JWT authority once it is older than half `spiffe.caTtl`. **Rotate** on
 `/admin/cert-issuance#cert-spiffe-overview` rotates either or both by hand. On a cluster, a realm's
 authorities are made once and adopted by every node.
 
@@ -700,7 +700,7 @@ right in a log:
 
 | | Product | Development |
 |---|---|---|
-| Unmatched Workload API caller | Empty SVID list | An entry is created and an SVID issued while `spiffe.autoCreateEntries` is on |
+| Unmatched Workload API caller | Refused `PERMISSION_DENIED` (`STS-SPIFFE-0146`) | An entry is created and an SVID issued while `spiffe.autoCreateEntries` is on; refused `PERMISSION_DENIED` with it off |
 | Asserted selectors (`x-sts-workload-selector`) | Never believed, and `spiffe.acceptAssertedSelectors` cannot be turned on | Believed when `spiffe.acceptAssertedSelectors` is on |
 | `spiffe.attestWorkloads` off | Ignored (logged once, `STS-CORE-0106`): a caller gets only the entries its selectors match. Turning it off is refused (`STS-CORE-0103`) | Every caller is answered with every entry |
 | A caller on the SPIRE Server API's Unix socket | `local` only when the socket was made 0600 in a directory with no group or other bits (`STS-SPIFFE-0117`) and `SO_PEERCRED` says it runs as the service's own uid (`STS-SPIFFE-0118`; `STS-SPIFFE-0119` without the native module). Anybody else needs an administrator's X509-SVID on the TCP port | `local` on the socket's existence, while `spiffe.trustLocalSocket` is on |
