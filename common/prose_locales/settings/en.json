@@ -1834,6 +1834,8 @@
   "risk.accountFailureThreshold|description": "How many refused passwords for one person in the last hour put the account-failures signal on their next sign-in.",
   "risk.networkFailureThreshold|label": "Refused passwords from one network that are a signal",
   "risk.networkFailureThreshold|description": "How many refused passwords from one network (the address prefix risk scoring groups by) in the last hour put the network-failures signal on every sign-in from it. Every person behind one NAT shares this count.",
+  "risk.networkSignupThreshold|label": "Accounts one network may create in an hour before a signal",
+  "risk.networkSignupThreshold|description": "How many accounts federated sign-ins from one network (the address prefix risk scoring groups by) may create in the last hour before the network-signups signal is put on every sign-in from it (#565). A consumer provider makes an account as cheap as an account at the provider, so this is the bound on a network signing up in bulk. Not counted for an address on the realm's operator allow list.",
   "risk.signalFactors|label": "Signal factors",
   "risk.signalFactors|description": "Factors over the built-in ones, as signal=factor, comma-separated (tor-exit=8,new-device=1.5) — what Monitoring → Risk Scoring's calibration suggests, applied without a release. Empty uses every built-in factor. An entry naming no signal, or with a factor that is not a positive number, is ignored and logged (STS-RISK-0026).",
   "risk.calibrationMediumPercent|label": "Calibration: MEDIUM or worse (percent of sign-ins)",

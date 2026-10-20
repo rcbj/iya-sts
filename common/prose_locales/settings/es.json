@@ -7339,6 +7339,14 @@
     "en": "b3df2afcc6f13f99",
     "text": "Cuántas contraseñas rechazadas desde una red (el prefijo de dirección por el que agrupa la puntuación de riesgo) en la última hora ponen la señal network-failures en todo inicio de sesión desde ella. Todas las personas detrás de un mismo NAT comparten este recuento."
   },
+  "risk.networkSignupThreshold|label": {
+    "en": "c6993a7b6026347a",
+    "text": "Cuentas que una red puede crear en una hora antes de una señal"
+  },
+  "risk.networkSignupThreshold|description": {
+    "en": "05e7067b3abe2a57",
+    "text": "Cuántas cuentas pueden crear en la última hora los inicios de sesión federados desde una misma red (el prefijo de dirección por el que agrupa la evaluación de riesgo) antes de que la señal network-signups se ponga en cada inicio de sesión desde ella (#565). Un proveedor de consumo hace una cuenta tan barata como una cuenta en el proveedor, así que este es el límite a que una red se registre en masa. No se cuenta para una dirección de la lista de permitidos del operador del dominio."
+  },
   "risk.signalFactors|label": {
     "en": "0a173b571b34160c",
     "text": "Factores de señal"

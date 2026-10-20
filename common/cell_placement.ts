@@ -306,6 +306,8 @@ const ROWS: Row[] = [
     why: 'the federation pages\' script, the same file in every cell (#580)' },
   { prefix: '/federation/link', strategy: 'artifact', browser: true,
     segment: 3, why: 'a link handle is found where it was minted (D10)' },
+  { prefix: '/federation/stepup', strategy: 'artifact', browser: true,
+    segment: 3, why: 'a step-up handle is found where it was minted (#565)' },
   { prefix: '/federation/backchannel-logout', strategy: 'handler',
     handler: 'federation/federation_slo.ts',
     why: 'a partner\'s sign-out may end sessions in every cell: served ' +

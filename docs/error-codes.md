@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4406** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4410** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
-* [Federation (`STS-FED`)](#sts-fed) — 154
+* [Federation (`STS-FED`)](#sts-fed) — 157
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 130
@@ -80,7 +80,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 122
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 47
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 48
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 355
@@ -2550,6 +2550,9 @@ Raised from: federation/.
 | `STS-FED-0175` | A sign-in through a consumer or social provider was refused at /federation/login/{id} or the assertion consumer service because federation.consumerProviders is off in this realm (#565). | HTTP 403 |
 | `STS-FED-0176` | A consumer provider's address endpoint (fedEmailsUrl, GitHub's /user/emails) did not answer; the sign-in continued with no address written (#565). | none (audited; the sign-in proceeds) |
 | `STS-FED-0177` | A plain OAuth 2.0 sign-in named nobody: the profile endpoint or access token answered, and the rule that names the subject — the consumer provider profile's, fedSubjectClaim, or sub / id / user_id — found no value (#565). | HTTP 502 |
+| `STS-FED-0178` | A federated sign-in was not finished after a step-up on risk: the browser at /federation/stepup/{handle} holds no session whose latest authentication is a second factor made through that step, as the person, after the partner answered — or the step ended with an error (#565). | HTTP 403 |
+| `STS-FED-0179` | A federated sign-in that would have CREATED a person's entry was refused: the issuance policy denied create-account on its risk facts and the partner's category (#565). Nobody was created; an existing person is not asked this question. | HTTP 403 |
+| `STS-FED-0180` | fedAuthorizeParams was refused: a value is not `<name>=<value>`, or names a parameter this service sets itself (response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request, request_uri) (#565). | HTTP 400 (console and API) |
 
 ## STS-OIDFED
 
@@ -3700,6 +3703,7 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0045` | An upload or download meant as Google's Android attestation status list was not one: not JSON, or not an object whose `entries` are keyed by certificate serial (#256). Nothing was loaded. | HTTP 400 (management API); none for the download job |
 | `STS-RISK-0046` | The devices.android-status-refresh job could not download Google's Android attestation status list from devices.androidStatusUrl (#256); the active list, if any, is unchanged. | none — a warning in the log and a failed run |
 | `STS-RISK-0047` | A sign-in's risk assessment, amended with the registered device its WebAuthn ceremony proved (#259), could not be recorded: the history's device feature, the assessment row, the standing or the reactions to a change of level may be missing. The session was decided on the amended assessment. | none — a warning in the log |
+| `STS-RISK-0050` | Not a refusal: the row a federated sign-in that CREATED a person's entry leaves in the risk failures register, under its own door, for the network-signups signal to count. No password signal counts it (#565). | none (a risk register row; the sign-in proceeds) |
 
 ## STS-MAIL
 

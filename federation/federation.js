@@ -243,6 +243,9 @@ const PATHS = {
   metadata: '/federation/metadata',
   // Where the local sign-in of `link-at-first-sign-in` returns to (#109).
   link: '/federation/link',
+  // Where a second factor asked for on risk, after a partner, returns to
+  // (#565): the federated sign-in is finished there.
+  stepup: '/federation/stepup',
   // A PARTNER'S SIGN-OUT (#167). `slo` is the one path every browser-borne
   // sign-out arrives at — a SAML LogoutRequest or LogoutResponse, a
   // WS-Federation wsignoutcleanup1.0, and the browser coming back from an
@@ -1062,6 +1065,16 @@ const SCHEMA = {
             'a REAL foreign service, which is a stronger statement than ' +
             'anything else in this directory — see the header. Never written ' +
             'to the audit log and never printed on a page.' },
+    { name: 'fedAuthorizeParams', kind: 'multi', role: 'service-provider',
+      from: 'this register',
+      what: 'EXTRA AUTHORIZATION REQUEST PARAMETERS, one per value, written ' +
+            '`<name>=<value>`, for a provider that needs one (Twitch\'s ' +
+            '`claims`, to be sent an address). OpenID Connect and OAuth 2.0 ' +
+            'only. The parameters this service sets itself — response_type, ' +
+            'client_id, redirect_uri, state, scope, nonce, code_challenge, ' +
+            'code_challenge_method, response_mode, request and request_uri ' +
+            '— are refused here, because one of them changed here would ' +
+            'undo a check this service makes.' },
     { name: 'fedTokenAuth', kind: 'single', role: 'service-provider',
       from: 'this register',
       enum: ['client_secret_basic', 'client_secret_post'],
@@ -1581,6 +1594,7 @@ const EDITABLE = {
   fedClientId: 'set',
   fedClientSecret: 'set',
   fedTokenAuth: 'set',
+  fedAuthorizeParams: 'multi',
   fedScope: 'set',
   fedResponseType: 'set',
   fedBinding: 'set',
@@ -2586,6 +2600,12 @@ function encryptionRequired(record) {
          !boolOf(record.fedAllowUnencrypted, false);
 }
 
+// The authorization request parameters this service sets itself (#565):
+// `fedAuthorizeParams` may not name one.
+const RESERVED_AUTHORIZE_PARAMS = ['response_type', 'client_id',
+  'redirect_uri', 'state', 'scope', 'nonce', 'code_challenge',
+  'code_challenge_method', 'response_mode', 'request', 'request_uri'];
+
 // What a write may not do to a consumer relationship, or to the fields #565
 // added (#565). Answers null, or the code, the audit sentence and the
 // message, as subjectFieldProblem() does.
@@ -2609,6 +2629,20 @@ function consumerFieldProblem(record, field, value) {
              message: 'Consumer and social providers are off in this ' +
                       'realm, so this relationship cannot be enabled. Turn ' +
                       'on federation.consumerProviders first.' };
+  }
+  if (field === 'fedAuthorizeParams' && value !== '') {
+    const at = value.indexOf('=');
+    const name = at > 0 ? value.slice(0, at).trim() : '';
+    if (!/^[A-Za-z0-9_.-]{1,64}$/.test(name) ||
+        RESERVED_AUTHORIZE_PARAMS.indexOf(name.toLowerCase()) >= 0) {
+      log.debug("Leaving consumerFieldProblem(). Not an extra parameter.");
+      return { code: 'STS-FED-0180',
+               why: 'fedAuthorizeParams "' + name + '" is not a parameter ' +
+                    'that may be added',
+               message: 'fedAuthorizeParams takes `<name>=<value>`, and the ' +
+                        'name may not be one this service sets itself (' +
+                        RESERVED_AUTHORIZE_PARAMS.join(', ') + ').' };
+    }
   }
   if (field === 'fedSubjectClaim' && value !== '') {
     if (record.fedProtocol !== 'oauth2' || consumer) {
@@ -4247,7 +4281,10 @@ function update(id, change) {
     value = value.trim().replace(/^@+/, '').toLowerCase();
   }
   const refusal = subjectFieldProblem(field, value) ||
-                  consumerFieldProblem(record, field, value) ||
+                  // Removing a value is never refused, as below.
+                  (row.editable === 'multi' &&
+                   String(info.mode || 'add') === 'remove'
+                    ? null : consumerFieldProblem(record, field, value)) ||
                   encryptionFieldProblem(record, field, value) ||
                   // Removing a value is never refused: a mapping written
                   // before #94 must be removable.

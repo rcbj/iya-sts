@@ -13635,6 +13635,18 @@ const SETTINGS = [
                  'network-failures signal on every sign-in from it. Every ' +
                  'person behind one NAT shares this count.' },
 
+  { key: 'risk.networkSignupThreshold', group: 'Risk',
+    label: 'Accounts one network may create in an hour before a signal',
+    env: 'STS_RISK_NETWORK_SIGNUP_THRESHOLD', type: 'int', dflt: 10, min: 1,
+    max: 1000000, runtime: true,
+    description: 'How many accounts federated sign-ins from one network ' +
+                 '(the address prefix risk scoring groups by) may create in ' +
+                 'the last hour before the network-signups signal is put on ' +
+                 'every sign-in from it (#565). A consumer provider makes an ' +
+                 'account as cheap as an account at the provider, so this ' +
+                 'is the bound on a network signing up in bulk. Not counted ' +
+                 'for an address on the realm\'s operator allow list.' },
+
   // CALIBRATION (#62): the factors an operator sets, and the shares of
   // sign-ins the calibration report suggests thresholds for.
   { key: 'risk.signalFactors', group: 'Risk',

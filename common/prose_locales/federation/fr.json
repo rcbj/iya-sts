@@ -243,6 +243,10 @@
     "en": "627419de92206a62",
     "text": "LE SECRET DE CE SERVICE CHEZ LE PARTENAIRE, en clair, dans un annuaire où chaque bind réussit. C’est un VÉRITABLE identifiant auprès d’un VÉRITABLE service étranger, ce qui est une affirmation plus forte que tout le reste de cet annuaire — voir l’en-tête. Jamais écrit dans le journal d’audit et jamais affiché sur une page."
   },
+  "fed.schema.attributes.fedAuthorizeParams.what": {
+    "en": "4cf26c17034bb859",
+    "text": "PARAMÈTRES SUPPLÉMENTAIRES DE LA DEMANDE D’AUTORISATION, un par valeur, écrits `<name>=<value>`, pour un fournisseur qui en a besoin (le `claims` de Twitch, pour recevoir une adresse). OpenID Connect et OAuth 2.0 seulement. Les paramètres que ce service fixe lui-même — response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request et request_uri — sont refusés ici, car modifier l’un d’eux ici déferait une vérification que fait ce service."
+  },
   "fed.schema.attributes.fedTokenAuth.what": {
     "en": "d86b5d2b605f0f05",
     "text": "COMMENT CE SERVICE S'AUTHENTIFIE AUPRÈS DU POINT DE TERMINAISON DE JETON DU PARTENAIRE : client_secret_basic (la valeur par défaut, que la section 2.3.1 de la RFC 6749 impose à tout serveur de prendre en charge) ou client_secret_post, pour un partenaire qui ne lit le secret que dans le corps. Sans fedClientSecret, ce service est un client public et aucune des deux ne s'applique."

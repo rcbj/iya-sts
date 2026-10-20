@@ -1275,6 +1275,10 @@
     "en": "b1f3d17607ed42ee",
     "text": "在首次登入時連結夥伴的主體"
   },
+  "endpoints.route./federation/stepup/:handle.name": {
+    "en": "1b454ff71565d1ab",
+    "text": "在因風險而加強驗證後完成聯合登入"
+  },
   "endpoints.route./federation/slo/:id.name": {
     "en": "4974c5129575d272",
     "text": "夥伴的登出，於瀏覽器中（#167）"

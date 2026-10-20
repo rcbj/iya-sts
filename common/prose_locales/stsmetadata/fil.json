@@ -2267,6 +2267,14 @@
     "en": "24adc2ec3eaf8138",
     "text": "nire-record ang federationLink sa entry ng tao, isinusulat ang mga attribute ng partner at SINISIMULAN ang federated session — pagkatapos lamang ng lokal na sign-in bilang taong iyon"
   },
+  "stsmetadata.endpoints./federation/stepup/:handle.what": {
+    "en": "a3ffecd3df95fec0",
+    "text": "Kung saan bumabalik ang ikalawang factor kapag sinagot ng issuance policy ang isang federated na pag-sign in ng step-up (#565). Ang sagot ng partner ang unang factor, iniingatan sa server sa ilalim ng isang single-use handle na itinatali ng cookie sa browser na pinagdatingan nito (STS-FED-0111); pinapatunayan ng tao ang isang authenticator app o security key na hawak niya rito — hindi kailanman password, at hindi kailanman isang ini-enroll sa sandaling iyon — at tinatanggihan ng path na ito ang isang nagamit na o hindi kilalang handle (STS-FED-0100) at anumang browser na ang pinakahuling pagpapatunay ay hindi ang ikalawang factor na iyon, bilang ang taong iyon, ngayon lamang (STS-FED-0178). Ang amr ng session ay federated at ang napatunayang factor; ang acr nito ay mfa."
+  },
+  "stsmetadata.endpoints./federation/stepup/:handle.effect": {
+    "en": "ea2b1532d05c3e5f",
+    "text": "SINISIMULAN ang federated na session na pinag-ingatan ng napatunayang sagot ng partner — pagkatapos lamang ng ikalawang factor na hawak DITO, bilang ang taong iyon"
+  },
   "stsmetadata.endpoints./federation/slo/:id.what": {
     "en": "84d79b5134fbe867",
     "text": "IISANG PATH para sa bawat sign-out na ipinapadala ng partner sa pamamagitan ng browser, sa dahilan ng ACS: isang SAML 2.0 <LogoutRequest> (ang partner na nagsa-sign out ng isang tao) at <LogoutResponse> (ang sagot nito sa atin), sa Redirect o POST binding; isang WS-Federation wsignoutcleanup1.0 o wsignout1.0; at ang browser na bumabalik mula sa end_session_endpoint ng OpenID Provider. Ina-authenticate ang SAML message nang eksakto tulad ng assertion — signed (saml-profiles-2.0-os section 4.4.4.1; fedRequireSignedLogout, naka-off sa development lamang), vine-verify laban sa fedSigningCertificate at wala nang iba, ibinigay ng fedPeer, naka-address dito, sariwa, at tinatanggap nang minsan lamang kailanman (ang used-assertion history) — at tinatapos lamang ang mga session na may dalang NameID at SessionIndex na iyon sa pamamagitan ng relationship na ito, sumasagot ng signed LogoutResponse (UnknownPrincipal kung walang tumugma). Unsigned ang WS-Federation cleanup ayon sa specification nito, kaya gumuguhit ito ng page na may tunay na button at tinatapos ang session sa BROWSER NA ITO lamang kapag pinindot iyon. Walang tinutukoy na sign-out ang SAML 1.1 at OAuth 2.0 at tinatanggihan ang mga ito na pinangangalanan iyon."

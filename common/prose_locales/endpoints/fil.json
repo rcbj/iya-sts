@@ -1275,6 +1275,10 @@
     "en": "b1f3d17607ed42ee",
     "text": "I-link ang subject ng isang partner sa unang sign-in"
   },
+  "endpoints.route./federation/stepup/:handle.name": {
+    "en": "1b454ff71565d1ab",
+    "text": "Tapusin ang isang federated na pag-sign in pagkatapos ng step-up dahil sa risk"
+  },
   "endpoints.route./federation/slo/:id.name": {
     "en": "4974c5129575d272",
     "text": "Ang sign-out ng isang partner, sa browser (#167)"

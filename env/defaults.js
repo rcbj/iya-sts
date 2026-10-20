@@ -1091,6 +1091,7 @@ var config = {
     listsMatchSpecialPurpose: true,                        // Lists match private and reserved addresses
     accountFailureThreshold: 5,                            // Refused passwords for one person that are a signal
     networkFailureThreshold: 20,                           // Refused passwords from one network that are a signal
+    networkSignupThreshold: 10,                            // Accounts one network may create in an hour before a signal
     signalFactors: "",                                     // Signal factors
     calibrationMediumPercent: 5,                           // Calibration: MEDIUM or worse (percent of sign-ins)
     calibrationHighPercent: 1,                             // Calibration: HIGH (percent of sign-ins)

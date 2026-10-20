@@ -243,6 +243,10 @@
     "en": "627419de92206a62",
     "text": "ANG SECRET NG SERBISYONG ITO SA PARTNER, nasa clear, sa isang directory kung saan nagtatagumpay ang bawat bind. TOTOONG credential ito sa isang TOTOONG dayuhang serbisyo, na mas malakas na pahayag kaysa sa anupaman sa directory na ito — tingnan ang header. Hindi kailanman isinusulat sa audit log at hindi kailanman ipini-print sa isang pahina."
   },
+  "fed.schema.attributes.fedAuthorizeParams.what": {
+    "en": "4cf26c17034bb859",
+    "text": "MGA DAGDAG NA PARAMETER NG AUTHORIZATION REQUEST, isa bawat value, isinusulat na `<name>=<value>`, para sa provider na nangangailangan nito (ang `claims` ng Twitch, para mapadalhan ng address). OpenID Connect at OAuth 2.0 lamang. Ang mga parameter na itinatakda mismo ng serbisyong ito — response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request at request_uri — ay tinatanggihan dito, dahil ang pagbago ng isa sa mga ito rito ay sisira sa isang pagsusuring ginagawa ng serbisyong ito."
+  },
   "fed.schema.attributes.fedTokenAuth.what": {
     "en": "d86b5d2b605f0f05",
     "text": "KUNG PAANO NAGPAPATUNAY ANG SERBISYONG ITO SA TOKEN ENDPOINT NG PARTNER: client_secret_basic (ang default, na sinasabi ng RFC 6749 seksiyon 2.3.1 na DAPAT suportahan ng server) o client_secret_post, para sa partner na binabasa lamang ang secret mula sa body. Kung walang fedClientSecret, pampublikong client ang serbisyong ito at wala sa dalawa ang naaangkop."

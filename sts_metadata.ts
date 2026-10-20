@@ -7262,6 +7262,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'person, just now (STS-FED-0101), and asks the subject policy, the ' +
           'rules and the administrator refusal again before writing ' +
           'anything.' },
+  { path: '/federation/stepup/:handle', group: 'Federation',
+    name: 'Finish a federated sign-in after a step-up on risk',
+    specs: ['oidc', 'saml2', 'saml2-profiles', 'ws-federation', 'rfc6749'],
+    effect: 'STARTS the federated session the partner\'s verified answer ' +
+            'was held for — only after a second factor held HERE, as that ' +
+            'person',
+    what: 'Where a second factor returns when the issuance policy answered ' +
+          'a federated sign-in with a step-up (#565). The partner\'s answer ' +
+          'is the first factor, held server-side under a single-use handle ' +
+          'bound by a cookie to the browser it arrived in (STS-FED-0111); ' +
+          'the person proves an authenticator app or a security key they ' +
+          'hold here — never a password, and never one enrolled now — and ' +
+          'this path refuses a spent or unknown handle (STS-FED-0100) and ' +
+          'any browser whose latest authentication is not that second ' +
+          'factor, as that person, just now (STS-FED-0178). The session\'s ' +
+          'amr is federated and the factor proved; its acr is mfa.' },
   { path: '/federation/slo/:id', group: 'Federation',
     name: 'A partner\'s sign-out, in a browser (#167)',
     specs: ['saml2-profiles', 'saml2-bindings', 'saml2', 'ws-federation',

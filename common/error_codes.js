@@ -11203,6 +11203,25 @@ const CODES = [
       'consumer provider profile\'s, fedSubjectClaim, or sub / id / user_id ' +
       '— found no value (#565).',
     spec: 'HTTP 502' },
+  { code: 'STS-FED-0178',
+    summary: 'A federated sign-in was not finished after a step-up on risk: ' +
+      'the browser at /federation/stepup/{handle} holds no session whose ' +
+      'latest authentication is a second factor made through that step, as ' +
+      'the person, after the partner answered — or the step ended with an ' +
+      'error (#565).',
+    spec: 'HTTP 403' },
+  { code: 'STS-FED-0179',
+    summary: 'A federated sign-in that would have CREATED a person\'s entry ' +
+      'was refused: the issuance policy denied create-account on its risk ' +
+      'facts and the partner\'s category (#565). Nobody was created; an ' +
+      'existing person is not asked this question.',
+    spec: 'HTTP 403' },
+  { code: 'STS-FED-0180',
+    summary: 'fedAuthorizeParams was refused: a value is not `<name>=<value>`, ' +
+      'or names a parameter this service sets itself (response_type, ' +
+      'client_id, redirect_uri, state, scope, nonce, code_challenge, ' +
+      'code_challenge_method, response_mode, request, request_uri) (#565).',
+    spec: 'HTTP 400 (console and API)' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
@@ -16105,6 +16124,12 @@ const CODES = [
       'the reactions to a change of level may be missing. The session was ' +
       'decided on the amended assessment.',
     spec: 'none — a warning in the log' },
+  { code: 'STS-RISK-0050',
+    summary: 'Not a refusal: the row a federated sign-in that CREATED a ' +
+      'person\'s entry leaves in the risk failures register, under its own ' +
+      'door, for the network-signups signal to count. No password signal ' +
+      'counts it (#565).',
+    spec: 'none (a risk register row; the sign-in proceeds)' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +

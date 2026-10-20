@@ -7339,6 +7339,14 @@
     "en": "b3df2afcc6f13f99",
     "text": "過去一小時內來自單一網路（風險評分分組所用的位址前置詞）有多少次密碼被拒絕，會在來自該網路的每次登入加上 network-failures 訊號。位於同一 NAT 後方的每個人都共用此計數。"
   },
+  "risk.networkSignupThreshold|label": {
+    "en": "c6993a7b6026347a",
+    "text": "一個網路在一小時內可建立多少帳戶後產生訊號"
+  },
+  "risk.networkSignupThreshold|description": {
+    "en": "05e7067b3abe2a57",
+    "text": "來自同一網路（風險評分用於分組的位址前綴）的聯合登入在最近一小時內最多可建立多少個帳戶，超過後會在來自該網路的每次登入上加上 network-signups 訊號（#565）。消費者提供者讓一個帳戶的成本與在提供者處開一個帳戶相同，因此這是對一個網路大量註冊的限制。對於領域營運者允許清單上的位址不計數。"
+  },
   "risk.signalFactors|label": {
     "en": "0a173b571b34160c",
     "text": "訊號係數"

@@ -2267,6 +2267,14 @@
     "en": "24adc2ec3eaf8138",
     "text": "在該人的項目上記錄 federationLink，寫入合作夥伴的屬性，並「啟動」聯盟工作階段——僅在以該人身分完成本機登入之後"
   },
+  "stsmetadata.endpoints./federation/stepup/:handle.what": {
+    "en": "a3ffecd3df95fec0",
+    "text": "當簽發原則對聯合登入要求加強驗證時，第二因素返回的位置（#565）。合作夥伴的回應是第一因素，以一次性控制代碼保存在伺服器端，並透過 Cookie 繫結到它抵達時所在的瀏覽器（STS-FED-0111）；此人證明自己在此處持有的驗證器應用程式或安全金鑰——絕不是密碼，也絕不是當場註冊的——此路徑會拒絕已用過或未知的控制代碼（STS-FED-0100），以及最近一次驗證不是該第二因素、不是此人或不是剛剛完成的任何瀏覽器（STS-FED-0178）。工作階段的 amr 為 federated 加上所證明的因素；其 acr 為 mfa。"
+  },
+  "stsmetadata.endpoints./federation/stepup/:handle.effect": {
+    "en": "ea2b1532d05c3e5f",
+    "text": "啟動為其保留了合作夥伴已驗證回應的聯合工作階段——僅在此人於此處出示其持有的第二因素之後"
+  },
   "stsmetadata.endpoints./federation/slo/:id.what": {
     "en": "84d79b5134fbe867",
     "text": "合作夥伴透過瀏覽器送出的每一種登出都走「一個路徑」，理由與 ACS 相同：SAML 2.0 <LogoutRequest>（合作夥伴讓某人登出）與 <LogoutResponse>（它對我們的回答），以 Redirect 或 POST 繫結；WS-Federation wsignoutcleanup1.0 或 wsignout1.0；以及從 OpenID 提供者的 end_session_endpoint 返回的瀏覽器。SAML 訊息的驗證方式與判斷提示完全相同——已簽署（saml-profiles-2.0-os section 4.4.4.1；fedRequireSignedLogout，僅在開發模式下關閉）、僅依 fedSigningCertificate 驗證、由 fedPeer 簽發、以此處為收件位址、夠新，且永遠只接受一次（已使用判斷提示歷程）——並只結束透過此關係帶有該 NameID 與 SessionIndex 的工作階段，回應一個已簽署的 LogoutResponse（無相符者時為 UnknownPrincipal）。WS-Federation 清除依其規格不簽署，因此它會繪製一個帶有真正按鈕的頁面，只有在按下時才結束「此」瀏覽器中的工作階段。SAML 1.1 與 OAuth 2.0 沒有定義登出，會被拒絕並指明這一點。"

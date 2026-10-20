@@ -7452,11 +7452,13 @@ function create(options) {
         'AND ($5 = \'\' OR address_prefix = $5::cidr) ' +
         'AND ($6 = \'\' OR door = $6) ' +
         // `excludeDoor` (#231): the password signals leave a replayed
-        // one-time code out (`risk/risk_engine.ts`, TOTP_REPLAY_DOOR).
-        'AND ($7 = \'\' OR door <> $7)';
+        // one-time code out (`risk/risk_engine.ts`, TOTP_REPLAY_DOOR) — and,
+        // since #565, an account a federated sign-in created. One door or a
+        // list of them, so it is an array here.
+        'AND (cardinality($7::text[]) = 0 OR door <> ALL($7::text[]))';
       const params = [realm || '', Number(o.since) || 0, o.subject || '',
                       o.nameHmac || '', o.prefix || '', o.door || '',
-                      o.excludeDoor || ''];
+                      [].concat(o.excludeDoor || []).map(String)];
       log.debug("Leaving riskListFailures().");
       return Promise.all([
         pool.query(

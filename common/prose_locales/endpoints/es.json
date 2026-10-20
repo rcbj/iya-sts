@@ -1275,6 +1275,10 @@
     "en": "b1f3d17607ed42ee",
     "text": "Vincular el sujeto de un socio en el primer inicio de sesión"
   },
+  "endpoints.route./federation/stepup/:handle.name": {
+    "en": "1b454ff71565d1ab",
+    "text": "Terminar un inicio de sesión federado tras una autenticación reforzada por riesgo"
+  },
   "endpoints.route./federation/slo/:id.name": {
     "en": "4974c5129575d272",
     "text": "El cierre de sesión de un socio, en un navegador (#167)"

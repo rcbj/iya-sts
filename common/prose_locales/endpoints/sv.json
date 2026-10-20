@@ -1275,6 +1275,10 @@
     "en": "b1f3d17607ed42ee",
     "text": "Koppla en partners subjekt vid första inloggningen"
   },
+  "endpoints.route./federation/stepup/:handle.name": {
+    "en": "1b454ff71565d1ab",
+    "text": "Slutför en federerad inloggning efter en stegvis höjd autentisering på grund av risk"
+  },
   "endpoints.route./federation/slo/:id.name": {
     "en": "4974c5129575d272",
     "text": "En partners utloggning, i en webbläsare (#167)"

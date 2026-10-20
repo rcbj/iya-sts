@@ -7339,6 +7339,14 @@
     "en": "b3df2afcc6f13f99",
     "text": "Hur många avvisade lösenord från ett nätverk (det adressprefix som riskpoängsättningen grupperar efter) under den senaste timmen som sätter signalen network-failures på varje inloggning därifrån. Varje person bakom en NAT delar detta antal."
   },
+  "risk.networkSignupThreshold|label": {
+    "en": "c6993a7b6026347a",
+    "text": "Konton ett nätverk får skapa på en timme innan en signal"
+  },
+  "risk.networkSignupThreshold|description": {
+    "en": "05e7067b3abe2a57",
+    "text": "Hur många konton federerade inloggningar från ett och samma nätverk (adressprefixet riskbedömningen grupperar efter) får skapa under den senaste timmen innan signalen network-signups läggs på varje inloggning därifrån (#565). En konsumentleverantör gör ett konto lika billigt som ett konto hos leverantören, så detta är gränsen för att ett nätverk registrerar sig i mängd. Räknas inte för en adress på sfärens tillåtelselista från operatören."
+  },
   "risk.signalFactors|label": {
     "en": "0a173b571b34160c",
     "text": "Signalfaktorer"

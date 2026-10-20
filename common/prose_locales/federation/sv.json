@@ -243,6 +243,10 @@
     "en": "627419de92206a62",
     "text": "DEN HÄR TJÄNSTENS HEMLIGHET HOS PARTNERN, i klartext, i en katalog där varje bind lyckas. Det är en VERKLIG autentiseringsuppgift hos en VERKLIG extern tjänst, vilket är ett starkare påstående än något annat i den här katalogen — se rubriken. Skrivs aldrig till granskningsloggen och skrivs aldrig ut på en sida."
   },
+  "fed.schema.attributes.fedAuthorizeParams.what": {
+    "en": "4cf26c17034bb859",
+    "text": "EXTRA PARAMETRAR I AUKTORISERINGSBEGÄRAN, en per värde, skrivna `<name>=<value>`, för en leverantör som behöver en (Twitchs `claims`, för att få en adress). Endast OpenID Connect och OAuth 2.0. De parametrar denna tjänst själv sätter — response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request och request_uri — vägras här, eftersom en av dem ändrad här skulle göra en kontroll denna tjänst gör ogjord."
+  },
   "fed.schema.attributes.fedTokenAuth.what": {
     "en": "d86b5d2b605f0f05",
     "text": "HUR DENNA TJÄNST AUTENTISERAR SIG VID PARTNERNS TOKENSLUTPUNKT: client_secret_basic (standardvärdet, som RFC 6749 avsnitt 2.3.1 säger att en server MÅSTE stödja) eller client_secret_post, för en partner som bara läser hemligheten från meddelandekroppen. Utan fedClientSecret är denna tjänst en publik klient och inget av dem gäller."

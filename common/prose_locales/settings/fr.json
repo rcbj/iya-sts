@@ -7339,6 +7339,14 @@
     "en": "b3df2afcc6f13f99",
     "text": "Le nombre de mots de passe refusés depuis un réseau (le préfixe d’adresse selon lequel la notation du risque regroupe) au cours de la dernière heure qui place le signal network-failures sur chaque connexion en provenant. Toutes les personnes derrière un même NAT partagent ce compteur."
   },
+  "risk.networkSignupThreshold|label": {
+    "en": "c6993a7b6026347a",
+    "text": "Comptes qu’un réseau peut créer en une heure avant un signal"
+  },
+  "risk.networkSignupThreshold|description": {
+    "en": "05e7067b3abe2a57",
+    "text": "Combien de comptes les connexions fédérées depuis un même réseau (le préfixe d’adresse par lequel l’évaluation des risques regroupe) peuvent créer au cours de la dernière heure avant que le signal network-signups soit posé sur chaque connexion depuis ce réseau (#565). Un fournisseur grand public rend un compte aussi bon marché qu’un compte chez le fournisseur : c’est donc la limite à l’inscription en masse depuis un réseau. Non compté pour une adresse figurant sur la liste d’autorisation de l’opérateur du domaine."
+  },
   "risk.signalFactors|label": {
     "en": "0a173b571b34160c",
     "text": "Facteurs des signaux"

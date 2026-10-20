@@ -2267,6 +2267,14 @@
     "en": "24adc2ec3eaf8138",
     "text": "在此人的条目上记录 federationLink，写入合作方的属性并启动联合会话——仅在以该人身份完成本地登录之后"
   },
+  "stsmetadata.endpoints./federation/stepup/:handle.what": {
+    "en": "a3ffecd3df95fec0",
+    "text": "当签发策略对联合登录要求加强验证时，第二因素返回的位置（#565）。合作方的响应是第一因素，以一次性句柄保存在服务器端，并通过 Cookie 绑定到它到达时所在的浏览器（STS-FED-0111）；此人证明自己在此处持有的身份验证器应用或安全密钥——绝不是密码，也绝不是当场注册的——此路径会拒绝已用过或未知的句柄（STS-FED-0100），以及最近一次身份验证不是该第二因素、不是此人或不是刚刚完成的任何浏览器（STS-FED-0178）。会话的 amr 为 federated 加上所证明的因素；其 acr 为 mfa。"
+  },
+  "stsmetadata.endpoints./federation/stepup/:handle.effect": {
+    "en": "ea2b1532d05c3e5f",
+    "text": "启动为其保留了合作方已验证响应的联合会话——仅在此人于此处出示其持有的第二因素之后"
+  },
   "stsmetadata.endpoints./federation/slo/:id.what": {
     "en": "84d79b5134fbe867",
     "text": "合作方经由浏览器发送的每种注销都使用一个路径，理由与 ACS 相同：SAML 2.0 <LogoutRequest>（合作方让某人注销）和 <LogoutResponse>（它对我方请求的答复），使用 Redirect 或 POST 绑定；WS-Federation wsignoutcleanup1.0 或 wsignout1.0；以及从 OpenID 提供方的 end_session_endpoint 返回的浏览器。SAML 消息的认证方式与断言完全相同——已签名（saml-profiles-2.0-os section 4.4.4.1；fedRequireSignedLogout，仅在开发模式下关闭）、只针对 fedSigningCertificate 验证、由 fedPeer 颁发、以此处为目的地、新鲜，并且永远只接受一次（已用断言历史）——并且只结束经由此关系携带该 NameID 和 SessionIndex 的会话，以已签名的 LogoutResponse 应答（无匹配时为 UnknownPrincipal）。WS-Federation 清理按其规范是不签名的，因此它绘制一个带有真正按钮的页面，只有在按下按钮时才结束此浏览器中的会话。SAML 1.1 和 OAuth 2.0 没有定义注销，因此会被拒绝并说明这一点。"

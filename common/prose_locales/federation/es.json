@@ -243,6 +243,10 @@
     "en": "627419de92206a62",
     "text": "EL SECRETO DE ESTE SERVICIO ANTE EL SOCIO, en claro, en un directorio donde todo bind tiene éxito. Es una credencial REAL en un servicio externo REAL, lo cual es una afirmación más fuerte que cualquier otra cosa de este directorio — vea el encabezado. Nunca se escribe en el registro de auditoría ni se imprime en una página."
   },
+  "fed.schema.attributes.fedAuthorizeParams.what": {
+    "en": "4cf26c17034bb859",
+    "text": "PARÁMETROS ADICIONALES DE LA SOLICITUD DE AUTORIZACIÓN, uno por valor, escritos `<name>=<value>`, para un proveedor que los necesite (el `claims` de Twitch, para que se le envíe una dirección). Solo OpenID Connect y OAuth 2.0. Los parámetros que este servicio fija por sí mismo —response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request y request_uri— se rechazan aquí, porque cambiar uno de ellos aquí desharía una comprobación que hace este servicio."
+  },
   "fed.schema.attributes.fedTokenAuth.what": {
     "en": "d86b5d2b605f0f05",
     "text": "CÓMO SE AUTENTICA ESTE SERVICIO EN EL EXTREMO DE TOKENS DEL SOCIO: client_secret_basic (el predeterminado, que la sección 2.3.1 de RFC 6749 dice que un servidor DEBE admitir) o client_secret_post, para un socio que lee el secreto solo del cuerpo. Sin fedClientSecret este servicio es un cliente público y ninguno se aplica."

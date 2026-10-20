@@ -7339,6 +7339,14 @@
     "en": "b3df2afcc6f13f99",
     "text": "在过去一小时内，来自单个网络（风险评分分组所依据的地址前缀）有多少次被拒绝的密码会使来自该网络的每次登录都带上 network-failures 信号。同一 NAT 后的每个人共享此计数。"
   },
+  "risk.networkSignupThreshold|label": {
+    "en": "c6993a7b6026347a",
+    "text": "一个网络在一小时内可创建多少账户后产生信号"
+  },
+  "risk.networkSignupThreshold|description": {
+    "en": "05e7067b3abe2a57",
+    "text": "来自同一网络（风险评分用于分组的地址前缀）的联合登录在最近一小时内最多可创建多少个账户，超过后会在来自该网络的每次登录上加上 network-signups 信号（#565）。消费者提供方让一个账户的成本与在提供方处开一个账户相同，因此这是对一个网络批量注册的限制。对于领域运营方允许列表上的地址不计数。"
+  },
   "risk.signalFactors|label": {
     "en": "0a173b571b34160c",
     "text": "信号系数"

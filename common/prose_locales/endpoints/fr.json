@@ -1275,6 +1275,10 @@
     "en": "b1f3d17607ed42ee",
     "text": "Lier le sujet d’un partenaire à la première connexion"
   },
+  "endpoints.route./federation/stepup/:handle.name": {
+    "en": "1b454ff71565d1ab",
+    "text": "Terminer une connexion fédérée après une authentification renforcée liée au risque"
+  },
   "endpoints.route./federation/slo/:id.name": {
     "en": "4974c5129575d272",
     "text": "La déconnexion d’un partenaire, dans un navigateur (#167)"

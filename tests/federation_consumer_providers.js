@@ -87,10 +87,17 @@ function childMain() {
     const links = require(ROOT + '/federation/federation_links');
     const consumer = require(ROOT + '/federation/consumer_providers');
     const authn = require(ROOT + '/authn/authn');
+    const credentials = require(ROOT + '/common/credentials');
+    const totp = require(ROOT + '/common/totp');
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
 
     const server = http.createServer(app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
+    // A browser's User-Agent, so risk scoring sees a person rather than an
+    // automated client (a key signal, which would ask for a security key).
+    const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, ' +
+               'like Gecko) Chrome/130.0.0.0 Safari/537.36';
     const base = 'http://127.0.0.1:' + port;
 
     // --- THE PROVIDERS ------------------------------------------------------
@@ -98,7 +105,9 @@ function childMain() {
     // who the next sign-in at each provider is; `seen` is what each token
     // endpoint was sent, for the client-authentication checks.
     const people = {};
-    const seen = { discord: [], github: [], google: [] };
+    const seen = { discord: [], github: [], google: [], x: [], tiktok: [],
+                   twitch: [] };
+    const authorizeSeen = { tiktok: [], twitch: [] };
     const failEmails = { on: false };
     const codes = {};
     const signing = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -119,11 +128,16 @@ function childMain() {
           res.end(JSON.stringify(value));
         };
         if (what === 'authorize') {
+          if (authorizeSeen[who]) {
+            authorizeSeen[who].push(Object.fromEntries(
+              url.searchParams.entries()));
+          }
           const code = who + '-' + crypto.randomBytes(8).toString('hex');
           codes[code] = { who: who,
             challenge: url.searchParams.get('code_challenge'),
             nonce: url.searchParams.get('nonce') || '',
-            clientId: url.searchParams.get('client_id'),
+            clientId: url.searchParams.get('client_id') ||
+                      url.searchParams.get('client_key'),
             person: people[who] };
           const back = new URL(url.searchParams.get('redirect_uri'));
           back.searchParams.set('code', code);
@@ -148,6 +162,9 @@ function childMain() {
           const token = 'at-' + crypto.randomBytes(8).toString('hex');
           codes['at:' + token] = grant;
           const answer = { access_token: token, token_type: 'Bearer' };
+          if (who === 'tiktok') {
+            answer.open_id = grant.person.openId;
+          }
           if (who === 'google') {
             answer.id_token = jwt.sign(Object.assign({
               iss: grant.person.iss || googleIssuer, aud: grant.clientId,
@@ -169,7 +186,8 @@ function childMain() {
           json(401, { message: 'Bad credentials' });
           return;
         }
-        if (what === 'users/@me' || what === 'user') {
+        if (what === 'users/@me' || what === 'user' ||
+            what === '2/users/me' || what === 'v2/user/info') {
           json(200, grant.person.profile);
           return;
         }
@@ -201,7 +219,8 @@ function childMain() {
       const remote = url.origin !== base;
       return new Promise(function (resolve) {
         const body = o.form ? new URLSearchParams(o.form).toString() : '';
-        const headers = Object.assign(remote ? {} : { cookie: cookieHeader() },
+        const headers = Object.assign(remote ? {} : { cookie: cookieHeader(),
+                                                      'user-agent': UA },
                                       o.headers || {});
         if (method !== 'GET') {
           headers['content-type'] = 'application/x-www-form-urlencoded';
@@ -506,6 +525,75 @@ function childMain() {
                          'accounts.google.com']),
          'F4. issuersFor(): Google\'s two spellings, and only for Google');
 
+    // ===== J. X AND TIKTOK: A NESTED PROFILE, AND THE TOKEN RESPONSE =======
+    const pointedMore = inSp(function () {
+      const out = [];
+      ['x', 'tiktok'].forEach(function (who) {
+        out.push(federation.create({ fedId: 'cp-' + who, fedProvider: who }));
+        const set = function (field, value) {
+          out.push(federation.update('cp-' + who, { field: field,
+                                                    value: value }));
+        };
+        set('fedSsoUrl', pbase + '/' + who + '/authorize');
+        set('fedTokenUrl', pbase + '/' + who + '/token');
+        set('fedUserinfoUrl', pbase + '/' + who +
+            (who === 'x' ? '/2/users/me' : '/v2/user/info'));
+        set('fedClientId', 'client-' + who);
+        set('fedClientSecret', 'secret-' + who);
+        set('fedEnabled', 'TRUE');
+      });
+      return out;
+    });
+    note(pointedMore.every(function (one) { return one.ok; }),
+         'J1. X and TikTok relationships made from their profiles',
+         JSON.stringify(pointedMore.filter(function (one) {
+           return !one.ok;
+         }).map(function (one) { return one.errors; })));
+    people.x = { profile: { data: { id: '2244994945', username: 'xdev',
+                                    name: 'X Dev' } } };
+    const xr = await signIn('cp-x');
+    const xEntry = entryOf(inSp(function () {
+      return links.provisionedName('cp-x', '2244994945');
+    }));
+    note(xr.status === 200 && attr(xEntry, 'cn')[0] === 'X Dev',
+         'J2. X: the subject and the name come out of data.*',
+         xr.status + ' ' + JSON.stringify(xEntry && xEntry.attributes.cn));
+    people.tiktok = { openId: '-000OQ1lmxtaeNpsWw8MQXpDdSkM',
+      profile: { data: { user: { display_name: 'Tik Tok',
+                                 open_id: '-000OQ1lmxtaeNpsWw8MQXpDdSkM' } },
+                 error: { code: 'ok' } } };
+    const tr = await signIn('cp-tiktok');
+    const tEntry = entryOf(inSp(function () {
+      return links.provisionedName('cp-tiktok',
+                                   '-000OQ1lmxtaeNpsWw8MQXpDdSkM');
+    }));
+    note(tr.status === 200 && !!tEntry,
+         'J3. TikTok: the person is the token response\'s open_id',
+         tr.status + ' ' + tr.text.slice(0, 200));
+    const tAuth = authorizeSeen.tiktok[0] || {};
+    const tToken = (seen.tiktok[0] || { form: {} }).form;
+    note(tAuth.client_key === 'client-tiktok' && !tAuth.client_id &&
+         tToken.client_key === 'client-tiktok' &&
+         tToken.client_secret === 'secret-tiktok' && !tToken.client_id,
+         'J4. the client-key adapter: client_key in the authorization and ' +
+         'token requests, and no client_id', JSON.stringify([tAuth,
+                                                              tToken]));
+    const twitch = inSp(function () {
+      return federation.create({ fedId: 'cp-twitch', fedProvider: 'twitch' });
+    });
+    note(twitch.ok && JSON.stringify((twitch.relationship || {})
+      .fedAuthorizeParams).indexOf('claims=') >= 0,
+         'J5. Twitch is given its claims request as an extra authorization ' +
+         'parameter', JSON.stringify((twitch.relationship || {})
+           .fedAuthorizeParams));
+    const reserved = inSp(function () {
+      return federation.update('cp-twitch', { field: 'fedAuthorizeParams',
+                                              value: 'state=forged',
+                                              mode: 'add' });
+    });
+    note(!reserved.ok, 'J6. fedAuthorizeParams refuses a parameter this ' +
+         'service sets itself', JSON.stringify(reserved.errors));
+
     // ===== G. COLLISION =====================================================
     // A local person named and addressed exactly as the provider's person.
     const local = inSp(function () {
@@ -564,7 +652,8 @@ function childMain() {
          hr.status);
     note(assessed.some(function (one) {
       return one.credential && one.credential.kind === 'federation' &&
-             one.credential.fingerprint === 'cp-google';
+             one.credential.id === 'cp-google' &&
+             one.credential.relationship === 'cp-google';
     }), 'H2. the risk input names the relationship as the credential',
          JSON.stringify(assessed.map(function (one) {
            return one.credential;
@@ -575,6 +664,169 @@ function childMain() {
          'federated, and no more', JSON.stringify(last));
     note(attr(hEntry, 'mail')[0] === 'm@example.com',
          'H4. and the sign-in itself stands');
+
+    // ===== I. RISK: THE SIGNALS AND THE STEP-UP =============================
+    // A sign-in through the federation door, following a second-factor step
+    // where one is asked for: the step's page opened as the surface opens
+    // it, answered with a one-time code, and its redirect followed.
+    async function signInStepping(rel, secret) {
+      jar = {};
+      const trail = { steps: 0 };
+      let r = await request('GET', '/realm/' + SP + '/federation/login/' +
+                                   rel);
+      for (let hop = 0; hop < 16; hop += 1) {
+        const at = String(r.headers.location || r.location || '');
+        if (/\/authn\/totp\?/.test(at)) {
+          trail.steps += 1;
+          const opened = await authnScreen.openStep({ port: port, jar: jar,
+            userAgent: UA,
+            at: new URL(at, base).pathname + new URL(at, base).search });
+          if (!secret) {
+            return { r: opened, trail: trail };
+          }
+          r = await authnScreen.stepAct({ port: port, jar: jar,
+            userAgent: UA, opened: opened, op: 'totp',
+            body: { code: totp.codeAt(secret) } });
+          continue;
+        }
+        if (at && ((r.status >= 300 && r.status < 400) ||
+                   r.next === 'redirect')) {
+          r = await request('GET', new URL(at, base).toString());
+          continue;
+        }
+        return { r: r, trail: trail };
+      }
+      return { r: r, trail: trail };
+    }
+    const assessments = [];
+    authn.assessSignIn = function () {
+      const p = realAssess.apply(this, arguments);
+      return Promise.resolve(p).then(function (one) {
+        assessments.push(one);
+        return one;
+      });
+    };
+    const signalsOf = function (one) {
+      return JSON.stringify(one || {});
+    };
+    // I1. NETWORK-SIGNUPS: several accounts were created from this loopback
+    // network above; a threshold of two puts the signal on the next one.
+    inSp(function () {
+      config.setOverride('risk.networkSignupThreshold', '2');
+    });
+    people.discord = { profile: { id: '6001', username: 'six',
+      email: 'six@example.com', verified: true } };
+    assessments.length = 0;
+    await signIn('cp-discord');
+    note(assessments.some(function (one) {
+      return /network-signups/.test(signalsOf(one));
+    }), 'I1. network-signups: the accounts this network created count',
+         signalsOf(assessments[0]).slice(0, 600));
+    inSp(function () {
+      config.setOverride('risk.networkSignupThreshold', '1000000');
+    });
+    // An existing person linked to two relationships, holding a TOTP here,
+    // and one holding nothing.
+    const PAT = 'fcp-pat';
+    const QUINN = 'fcp-quinn';
+    const secret = inSp(function () {
+      ldap.createUser(PAT, { invent: false, attributes: {
+        givenName: 'Pat', sn: 'Local', mail: 'pat@sp.example' } });
+      ldap.createUser(QUINN, { invent: false, attributes: {
+        givenName: 'Quinn', sn: 'Local', mail: 'quinn@sp.example' } });
+      federation.writeFederationLink(PAT,
+        'cp-discord https://discord.com 7001', true, {});
+      federation.writeFederationLink(PAT,
+        'cp-github https://github.com 7002', true, {});
+      federation.writeFederationLink(QUINN,
+        'cp-discord https://discord.com 7003', true, {});
+      const begun = credentials.beginTotpEnrolment(PAT, {});
+      const confirmed = credentials.confirmTotpEnrolment(PAT,
+        totp.codeAt(begun.secret, Date.now() - 30000));
+      return confirmed && confirmed.ok ? begun.secret : '';
+    });
+    note(!!secret, 'I2. a linked local person holding a TOTP');
+    inSp(function () {
+      config.setOverride('risk.minimumHistory', '1');
+    });
+    people.discord = { profile: { id: '7001', username: 'pat',
+      email: 'pat@example.com', verified: true } };
+    const patFirst = await signIn('cp-discord');
+    people.discord = { profile: { id: '7003', username: 'quinn',
+      email: 'quinn@example.com', verified: true } };
+    await signIn('cp-discord');
+    people.github = { profile: { id: 7002, login: 'pat' },
+      emails: [{ email: 'pat@example.com', primary: true, verified: true }] };
+    assessments.length = 0;
+    const patGithub = await signIn('cp-github');
+    note(patFirst.status === 200 && patGithub.status === 200 &&
+         assessments.some(function (one) {
+           return /new-federated-provider/.test(signalsOf(one));
+         }),
+         'I3. new-federated-provider: a person\'s first sign-in through a ' +
+         'relationship they never used', signalsOf(assessments[0])
+           .slice(0, 600));
+    // I4. A STEP-UP ON RISK: every scored sign-in MEDIUM, and enforced.
+    inSp(function () {
+      config.setOverride('risk.enforceInDevelopment', 'true');
+      config.setOverride('risk.mediumScorePercent', '1');
+      config.setOverride('risk.highScorePercent', '1000000');
+    });
+    people.discord = { profile: { id: '7001', username: 'pat',
+      email: 'pat@example.com', verified: true } };
+    started.length = 0;
+    authn.startSession = function (res, username, amr, acr) {
+      started.push({ username: username, amr: amr, acr: acr });
+      return realStart.apply(this, arguments);
+    };
+    const stepped = await signInStepping('cp-discord', secret);
+    const patSession = started.filter(function (one) {
+      return one.username === PAT && acrIsMfa(one);
+    });
+    function acrIsMfa(one) {
+      return one.acr === 'mfa';
+    }
+    note(stepped.trail.steps === 1 && stepped.r.status === 200,
+         'I4. a MEDIUM federated sign-in is stepped up with a one-time code ' +
+         'held here, and finishes', stepped.trail.steps + ' ' +
+         stepped.r.status + ' ' + String(stepped.r.text || '').slice(0, 200));
+    note(patSession.some(function (one) {
+      return JSON.stringify(one.amr) === '["federated","otp"]';
+    }), 'I5. the federated session is federated + otp, acr mfa',
+         JSON.stringify(started));
+    people.discord = { profile: { id: '7003', username: 'quinn',
+      email: 'quinn@example.com', verified: true } };
+    const refused = await signInStepping('cp-discord', '');
+    note(refused.r.status === 403 && refused.trail.steps === 0,
+         'I6. a person holding no second factor here is refused, never ' +
+         'offered enrolment or a password', refused.r.status + ' ' +
+         refused.trail.steps);
+    // I7. A NEWCOMER ON EVIDENCE: with network-signups' threshold met and
+    // risk enforced, a sign-in that would CREATE somebody is refused —
+    // and nobody is created. A newcomer is assessed under a provisional
+    // subject, since there is no entry to assess them as.
+    inSp(function () {
+      config.setOverride('risk.networkSignupThreshold', '2');
+    });
+    people.discord = { profile: { id: '8008', username: 'bot',
+      email: 'bot@example.com', verified: true } };
+    const botTry = await signIn('cp-discord');
+    const botName = inSp(function () {
+      return links.provisionedName('cp-discord', '8008');
+    });
+    note(botTry.status === 403 && !entryOf(botName),
+         'I7. a newcomer on evidence (network-signups), risk enforced: ' +
+         'refused, and nobody created', botTry.status + ' ' +
+         JSON.stringify(entryOf(botName) && entryOf(botName).dn));
+    authn.startSession = realStart;
+    authn.assessSignIn = realAssess;
+    inSp(function () {
+      ['risk.enforceInDevelopment', 'risk.mediumScorePercent',
+       'risk.highScorePercent', 'risk.minimumHistory',
+       'risk.networkSignupThreshold'].forEach(function (k) {
+        config.clearOverride(k);
+      });
+    });
 
     // ===== B. THE REALM SWITCH ==============================================
     inSp(function () {

@@ -2091,8 +2091,28 @@ The ones a reader of this directory needs:
   rule trusts them (none of the first three does). The session is
   `['federated']` with no `acr`, and what was claimed is kept on the bag as
   `provider_amr`/`provider_acr`. Every federated sign-in now hands the risk
-  engine `credential.fingerprint = fedId`, so each partner is a credential of
-  its own in the history.
+  engine `credential: { kind: 'federation', id: fedId, relationship: fedId }`.
+  The `id` is fingerprinted into the history as every credential's is, so
+  each partner is a credential of its own (`new-federated-provider`), and the
+  plain `relationship` is what an operator's `federation:<id>=<factor>` in
+  `risk.signalFactors` names. **A sign-in that would CREATE the person is
+  assessed under a provisional subject**, `urn:sts:federation-newcomer:<digest
+  of the relationship and the partner subject>`, because there is no entry
+  yet. Without it, the newcomer, the sign-in the evidence signals matter most
+  for, was never assessed at all (`authn.assessSignIn()` answered null for a
+  name with no `sub`). Before the session, a newcomer's sign-in is also the
+  issuance policy's `create-account` question (`STS-FED-0179`).
+* **A STEP-UP ON RISK IS ANSWERED HERE** (`/federation/stepup/{handle}`). The
+  policy may answer a federated sign-in of an EXISTING person with a step-up.
+  The partner's verified answer is then held under a single-use handle,
+  bound to the browser by `LINK_COOKIE` as the linking step's is, and
+  `authn.beginSecondFactorAfterFederation()` asks for an authenticator app or
+  a security key the person holds here. It is never a password and never an
+  enrolment, and holding neither is `STS-RISK-0018`. The step returns to the
+  handle. A session whose latest event is that second factor, as that
+  person, just now, finishes the sign-in with `amr` `['federated', <factor>]`
+  and `acr` `mfa`; otherwise it is `STS-FED-0178`. A newcomer is not offered
+  one, since they hold nothing.
 * **ISSUER ALIASES** (Google's bare `accounts.google.com`) are accepted only
   while `fedPeer` is still the profile's: a relationship pointed elsewhere has
   no business accepting Google's spelling. `common/crypto.js`'s

@@ -243,6 +243,10 @@
     "en": "627419de92206a62",
     "text": "「本服務在夥伴處的秘密」，以明文存放在每次繫結都會成功的目錄中。它是「真正的」外部服務上「真正的」憑證，這比此目錄中其他任何東西都更具分量——請參閱標頭。絕不會寫入稽核記錄，也絕不會印在頁面上。"
   },
+  "fed.schema.attributes.fedAuthorizeParams.what": {
+    "en": "4cf26c17034bb859",
+    "text": "額外的授權請求參數，每個值一個，寫作 `<name>=<value>`，供需要它的提供者使用（Twitch 的 `claims`，以便取得地址）。僅限 OpenID Connect 和 OAuth 2.0。此服務自行設定的參數——response_type、client_id、redirect_uri、state、scope、nonce、code_challenge、code_challenge_method、response_mode、request 與 request_uri——在此處會被拒絕，因為在此變更其中任何一個都會破壞此服務所做的一項檢查。"
+  },
   "fed.schema.attributes.fedTokenAuth.what": {
     "en": "d86b5d2b605f0f05",
     "text": "此服務在合作夥伴權杖端點的驗證方式：client_secret_basic（預設值，RFC 6749 第 2.3.1 節規定伺服器必須支援）或 client_secret_post，用於只從請求本文讀取密鑰的合作夥伴。沒有 fedClientSecret 時，此服務是公開用戶端，兩者皆不適用。"

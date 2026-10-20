@@ -295,6 +295,10 @@ const SLO_PATH = federation.PATHS.slo;
 // authentication event. The linking step reads it back to know the sign-in it
 // is shown was made through ITS screen, as the person, just now.
 const LINK_VIA = 'Federation link';
+// WHERE A STEP-UP AFTER A PARTNER RETURNS (#565), and what its local second
+// factor is recorded as, for the step-up endpoint to recognise.
+const STEPUP_PATH = federation.PATHS.stepup;
+const STEPUP_VIA = 'Federation step-up';
 
 // THE BROWSER THAT STARTED A LINKING SIGN-IN (#109). A cookie carrying a
 // random value whose SHA-256 is on the context, so the linking step is
@@ -523,6 +527,11 @@ class FederationSp {
     // sign-in returns (#109).
     app.get(LINK_PATH + '/:handle', (req, res) => {
       return this.linkEndpoint(req, res);
+    });
+    // GET /federation/stepup/{handle} — where a second factor asked for on
+    // risk after a partner's answer returns (#565).
+    app.get(STEPUP_PATH + '/:handle', (req, res) => {
+      return this.stepUpEndpoint(req, res);
     });
     // GET /federation/metadata/{id}
     app.get(METADATA_PATH + '/:id', (req, res) => {
@@ -2252,6 +2261,197 @@ class FederationSp {
                                link: context.link || decision.link }));
   }
 
+  // ---------------------------------------------------------------------------
+  // WHETHER THE ISSUANCE POLICY LETS THIS SIGN-IN CREATE AN ACCOUNT (#565):
+  // `create-account`, with the sign-in's risk facts and the partner's
+  // category, provider and address verification, the roles waived. Null to
+  // go on — including where there are no risk facts, which is the gate's
+  // own rule: nothing to decide on decides nothing. A refusal is audited by
+  // the policy enforcement point under its own decision.
+  // ---------------------------------------------------------------------------
+  private creationRefusal(username, record, result, amr, assessed, fed) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.creationRefusal().");
+    let engine: any = null;
+    try {
+      engine = require('../risk/risk_engine');
+    } catch (e) {
+      log.debug("Caught in FederationSp.creationRefusal(): " +
+                ((e && e.message) || e));
+      engine = null;
+    }
+    const facts = engine && assessed
+      ? engine.factsOf(engine.riskOf(assessed), amr, result.acr || '',
+                       ['federation'])
+      : null;
+    if (!facts) {
+      log.debug("Leaving FederationSp.creationRefusal(). No risk facts.");
+      return null;
+    }
+    const gate = require('../common/issuance_gate');
+    const answer = gate.check({
+      application: '', kind: gate.ISSUANCE.ACCOUNT,
+      subject: { kind: 'user', name: username, authenticated: true },
+      claims: null, risk: facts, rolesWaived: true, deviceDeferred: true,
+      authenticationEvent: { authority: {
+        kind: 'federation', id: record.fedId,
+        category: String((fed && fed.category) || 'enterprise'),
+        provider: String((fed && fed.provider) || ''),
+        emailVerified: fed && fed.mailVerified === false ? 'false' : 'true' } }
+    });
+    log.debug("Leaving FederationSp.creationRefusal(). " +
+              (answer.allowed ? 'Allowed.' : 'Refused.'));
+    return answer.allowed ? null : answer;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A STEP-UP ON RISK, AFTER A PARTNER (#565). The partner's verified answer
+  // is held in the request-context store under a single-use handle, as the
+  // linking step holds it, and the browser is bound to it by LINK_COOKIE for
+  // that step's reason. `authn.beginSecondFactorAfterFederation()` asks for a
+  // factor the person holds here, on a pending record returning to
+  // `/federation/stepup/{handle}`; nothing is written until that returns.
+  // ---------------------------------------------------------------------------
+  private beginStepUp(req, res, record, result, decision, assessed, factor) {
+    const { authn, config, randomId, errorCodes, log } = this.deps;
+    log.debug("Entering FederationSp.beginStepUp(). " + decision.username);
+    const binding = randomId(24);
+    const handle = this.putContext({
+      kind: 'stepup', id: record.fedId, username: decision.username,
+      stepStartedAt: Date.now(), bindingHash: this.bindingHashOf(binding),
+      result: Object.assign({}, result, { steppedUp: true })
+    });
+    res.append('Set-Cookie', LINK_COOKIE + '=' + binding + '; Path=/; ' +
+               'HttpOnly; SameSite=Lax; Max-Age=' +
+               Math.max(60, Math.floor(this.contextTtlMs() / 1000)) +
+               (config.value('global.https') ? '; Secure' : ''));
+    res.set('Cache-Control', 'no-store');
+    let answer: any = null;
+    try {
+      answer = authn.beginSecondFactorAfterFederation(req, res, {
+        username: decision.username,
+        returnTo: STEPUP_PATH + '/' + encodeURIComponent(handle),
+        via: STEPUP_VIA, assessment: assessed,
+        details: [{ label: 'Signing in through',
+                    value: (record.fedName || record.fedId),
+                    note: 'this sign-in needs a second factor you hold ' +
+                          'here (' + factor + ')' }]
+      });
+    } catch (e) {
+      log.debug("Caught in FederationSp.beginStepUp(): " +
+                ((e && e.message) || e));
+      answer = { handled: false, errorCode: 'STS-RISK-0018' };
+    }
+    if (answer && answer.handled) {
+      log.info('federation: ' + record.fedId + ' signed in ' +
+               decision.username + ' and the issuance policy asked for a ' +
+               'step-up (' + factor + '); a second factor held here is ' +
+               'asked for.');
+      log.debug("Leaving FederationSp.beginStepUp(). Asked.");
+      return undefined;
+    }
+    this.takeContext(handle);
+    res.append('Set-Cookie', LINK_COOKIE + '=; Path=/; HttpOnly; ' +
+               'SameSite=Lax; Max-Age=0');
+    errorCodes.mark(res, 'STS-RISK-0018');
+    log.debug("Leaving FederationSp.beginStepUp(). Nothing answers it.");
+    return this.refuse(res, record, 403, 'Authentication failed',
+      'The assertion verified, and this sign-in needs a second factor held ' +
+      'here, which this account does not have.');
+  }
+
+  // ---------------------------------------------------------------------------
+  // GET /federation/stepup/{handle} — WHERE THE STEP-UP RETURNS (#565).
+  //
+  // The linking endpoint's checks, for a step-up: the handle (spent now), the
+  // browser (LINK_COOKIE, STS-FED-0111), no error from the step, and a
+  // session whose LATEST authentication is a local SECOND FACTOR made
+  // through this step (`STEPUP_VIA`, `acr` `mfa`), as that person, after the
+  // partner answered (STS-FED-0178). Then the held answer finishes as a
+  // federated sign-in whose `amr` is `federated` and the factor proved here,
+  // with `acr` `mfa`: two factors really were presented, one at the partner
+  // and one here — and the subject decision and the policy are asked again,
+  // as everything about the person may have moved while they answered.
+  // ---------------------------------------------------------------------------
+  private stepUpEndpoint(req, res) {
+    const { federation, authn, errorCodes, log } = this.deps;
+    log.debug("Entering the federation step-up endpoint.");
+    FederationPages.mark(res);
+    if (!this.enabled()) {
+      errorCodes.mark(res, 'STS-FED-0001');
+      FederationPages.send(res, 404, FederationPages.notHereView('off'));
+      log.debug("Leaving the federation step-up endpoint. Federation is off.");
+      return undefined;
+    }
+    const handle = String(req.params.handle || '');
+    const context = /^fed-[A-Za-z0-9_-]{1,64}$/.test(handle)
+      ? this.takeContext(handle) : null;
+    if (!context || context.kind !== 'stepup') {
+      errorCodes.mark(res, 'STS-FED-0100');
+      log.debug("Leaving the federation step-up endpoint. No such step.");
+      return this.refuse(res, null, 400, 'There is no sign-in waiting',
+        'The step "' + handle + '" is not one this service started, it has ' +
+        'already been used, or it expired (federation.requestTtlMin). Start ' +
+        'the federated sign-in again.');
+    }
+    const record = federation.get(context.id);
+    if (!record || record.fedRole !== 'service-provider' ||
+        !federation.signsIn(record) || !federation.isUsable(record)) {
+      errorCodes.mark(res, record && federation.isEnabled(record)
+        ? 'STS-FED-0006' : 'STS-FED-0005');
+      log.debug("Leaving the federation step-up endpoint. Not usable now.");
+      return this.refuse(res, record || null, 403, 'That relationship is ' +
+                                                   'not usable',
+        'The relationship "' + context.id + '" is disabled, ' +
+        'half-configured or gone since the partner answered.');
+    }
+    const presented = String(authn.cookiesOf(req)[LINK_COOKIE] || '');
+    res.append('Set-Cookie', LINK_COOKIE + '=; Path=/; HttpOnly; ' +
+               'SameSite=Lax; Max-Age=0');
+    if (!presented || !this.sameBinding(this.bindingHashOf(presented),
+                                        String(context.bindingHash || ''))) {
+      errorCodes.mark(res, 'STS-FED-0111');
+      log.debug("Leaving the federation step-up endpoint. Another browser.");
+      return this.refuse(res, record, 403, 'Authentication failed',
+        'This step was started in a different browser, or the cookie that ' +
+        'ties it to the one it began in is gone. Start the federated ' +
+        'sign-in again, in one browser.');
+    }
+    const session = authn.sessionOf(req);
+    const events = session && Array.isArray(session.events)
+      ? session.events : [];
+    const latest = events.length ? events[events.length - 1] : null;
+    const fresh = !String((req.query || {}).authn_error || '') &&
+      !!session && !!latest &&
+      String((session.user && session.user.username) || '').toLowerCase() ===
+        String(context.username).toLowerCase() &&
+      latest.via === STEPUP_VIA && latest.authenticated !== false &&
+      String(latest.acr || '') === 'mfa' &&
+      ((latest.authority || {}).kind || 'local') === 'local' &&
+      Number(latest.at || 0) * 1000 >= Number(context.stepStartedAt || 0) -
+                                       1000;
+    if (!fresh) {
+      errorCodes.mark(res, 'STS-FED-0178');
+      log.debug("Leaving the federation step-up endpoint. No fresh second " +
+                "factor as " + context.username + ".");
+      return this.refuse(res, record, 403, 'Authentication failed',
+        'This sign-in needed a second factor held here, as ' +
+        context.username + ', made just now, and this browser holds ' +
+        (session ? 'a different authentication' : 'none') + '. Start the ' +
+        'federated sign-in again.');
+    }
+    // The factor proved here, behind `federated`: the session's own record
+    // of what happened, and what meets the step-up the policy asked for.
+    const proved = (latest.amr || []).map(String).filter(function (one) {
+      return one !== 'federated';
+    });
+    log.debug("Leaving the federation step-up endpoint. Finishing " +
+              context.username + ".");
+    return this.completeSignIn(req, res, record,
+      Object.assign({}, context.result, {
+        amr: this.federatedAmr(proved), acr: 'mfa', steppedUp: true }));
+  }
+
   // The SHA-256 of a linking cookie's value, which is what the context holds.
   private bindingHashOf(value) {
     const { log } = this.deps;
@@ -2419,10 +2619,18 @@ class FederationSp {
     const self = this;
     const assessing = authn.assessSignIn(req, username, via,
       { application: record.fedApplication || '',
+        // A newcomer this sign-in would create has no entry to be assessed
+        // as (#565): a provisional subject, one per partner subject.
+        provisionalSubject: decision.create === true
+          ? 'urn:sts:federation-newcomer:' +
+            stsCrypto.digest('sha256', record.fedId + ' ' +
+                             String(result.subject || ''), 'base64url')
+          : undefined,
         // WHICH RELATIONSHIP (#565): each partner is a credential of its
         // own to the risk history, so a provider this person never signed
         // in through before is visible to it.
-        credential: { kind: 'federation', fingerprint: record.fedId } });
+        credential: { kind: 'federation', id: record.fedId,
+                      relationship: record.fedId } });
     log.debug("Leaving FederationSp.finishSignIn(). Assessing.");
     return assessing.then(function (assessed: any): any {
       return self.startFederatedSession(req, res, record, result, mapped,
@@ -2452,10 +2660,26 @@ class FederationSp {
     const said: any = Object.assign({
       request: req,
       // Which credential answered (#62): a partner's assertion.
-      credential: { kind: 'federation', fingerprint: record.fedId },
+      credential: { kind: 'federation', id: record.fedId,
+                    relationship: record.fedId },
       application: record.fedApplication || '',
       risk: assessed || undefined
     }, detail);
+    // THE ACCOUNT THIS SIGN-IN WOULD CREATE IS ITS OWN QUESTION (#565), asked
+    // before the session whose funnel creates it, so a refusal creates
+    // nobody.
+    if (decision.create === true) {
+      const creation = this.creationRefusal(username, record, result, amr,
+        assessed, (detail && detail.federation) || {});
+      if (creation) {
+        errorCodes.mark(res, 'STS-FED-0179');
+        log.debug("Leaving FederationSp.startFederatedSession(). Creation " +
+                  "refused.");
+        return this.refuse(res, record, 403, 'Authentication failed',
+          'The assertion verified, and this service will not create an ' +
+          'account from it.');
+      }
+    }
     const session = authn.startSession(res, username, amr,
                                        result.acr || '', via, said);
     // -------------------------------------------------------------------------
@@ -2522,6 +2746,17 @@ class FederationSp {
             'through SCIM, /admin/users/new or the management API — and ' +
             'linked to the partner\'s subject.'));
     }
+    // A STEP-UP THE POLICY ASKED FOR (#565, the risk design's decision 1):
+    // answered here with a factor the person holds, for a person who already
+    // exists — a newcomer this sign-in would create holds nothing — and only
+    // once per sign-in, so a step-up that comes back still unmet is refused.
+    if (!session && said.riskStepUp && decision.create !== true &&
+        !result.steppedUp &&
+        String(said.refusedWith || '').indexOf('STS-RISK-') === 0) {
+      log.debug("Leaving FederationSp.startFederatedSession(). A step-up.");
+      return this.beginStepUp(req, res, record, result, decision, assessed,
+                              String(said.riskStepUp));
+    }
     if (!session && String(said.refusedWith || '').indexOf('STS-RISK-') ===
         0) {
       log.info('federation: a session for ' + username + ' arriving ' +
@@ -2554,6 +2789,21 @@ class FederationSp {
              ', ' + decision.how + '). ' + mapped.mapped.length +
              ' attribute(s) mapped, ' +
              mapped.unmapped.length + ' unmapped. Session ' + session.id + '.');
+    // AN ACCOUNT THIS SIGN-IN CREATED (#565), recorded for risk scoring's
+    // `network-signups`: who, from which network, when, in the failures
+    // register's shape and under its own door, which no password signal
+    // counts. Reached lazily, as every door reaches the risk libraries, and
+    // never a reason to end the session it follows.
+    if (decision.create === true && decision.how === 'created') {
+      try {
+        const riskFailures = require('../risk/risk_failures');
+        riskFailures.recordFailure(username,
+          riskFailures.FEDERATED_SIGNUP_DOOR, 'STS-RISK-0050');
+      } catch (e) {
+        log.debug("Caught in FederationSp.startFederatedSession(): " +
+                  ((e && e.message) || e));
+      }
+    }
     // GROUP NAMES FROM THE PARTNER (#358), after the session exists and
     // never a reason to end it. fedSubjectGroup already ran, on an entry
     // that was in none of these groups.
@@ -3026,6 +3276,24 @@ class FederationSp {
       params.set('code_challenge', context.pkceChallenge);
       params.set('code_challenge_method', 'S256');
     }
+    // THE TIKTOK ADAPTER (#565): its authorization endpoint calls the client
+    // id `client_key`, and reads nothing else.
+    if (consumerProviders.adapts(record, 'tiktok-client-key')) {
+      params.set('client_key', String(record.fedClientId || ''));
+      params.delete('client_id');
+    }
+    // THE PROVIDER'S EXTRA PARAMETERS (#565), never one set above: an
+    // `ldapmodify` could write a reserved name the console refuses, so it is
+    // skipped here too.
+    [].concat(record.fedAuthorizeParams || []).forEach(function (one) {
+      const text = String(one || '');
+      const at = text.indexOf('=');
+      const name = at > 0 ? text.slice(0, at).trim() : '';
+      if (name && !params.has(name) &&
+          ['request', 'request_uri'].indexOf(name.toLowerCase()) < 0) {
+        params.set(name, text.slice(at + 1));
+      }
+    });
     log.debug("Leaving FederationSp.authorizationParams(). " +
               'response_type=' + responseType);
     return params;
@@ -4319,6 +4587,11 @@ class FederationSp {
         .then(function (assertion) {
           form.client_assertion = assertion;
         });
+    } else if (consumerProviders.adapts(record, 'tiktok-client-key')) {
+      // TIKTOK (#565): the client id is `client_key`, in the body with the
+      // secret, and there is no Basic form.
+      form.client_key = String(record.fedClientId || '');
+      form.client_secret = federation.clientSecretOf(record);
     } else if (federation.clientSecretOf(record) &&
                record.fedTokenAuth === 'client_secret_post') {
       // RFC 6749 section 2.3.1's body form (#565), for a partner that reads

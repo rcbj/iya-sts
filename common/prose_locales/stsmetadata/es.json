@@ -2267,6 +2267,14 @@
     "en": "24adc2ec3eaf8138",
     "text": "registra un federationLink en la entrada de la persona, escribe los atributos del socio e INICIA la sesión federada, solo después de un inicio de sesión local como esa persona"
   },
+  "stsmetadata.endpoints./federation/stepup/:handle.what": {
+    "en": "a3ffecd3df95fec0",
+    "text": "Adonde vuelve un segundo factor cuando la política de emisión respondió a un inicio de sesión federado con una autenticación reforzada (#565). La respuesta del socio es el primer factor, guardada en el servidor bajo un identificador de un solo uso ligado por una cookie al navegador en que llegó (STS-FED-0111); la persona prueba una aplicación de autenticación o una llave de seguridad que tiene aquí —nunca una contraseña, y nunca una inscrita en ese momento— y esta ruta rechaza un identificador ya usado o desconocido (STS-FED-0100) y cualquier navegador cuya última autenticación no sea ese segundo factor, como esa persona, en ese momento (STS-FED-0178). El amr de la sesión es federated y el factor probado; su acr es mfa."
+  },
+  "stsmetadata.endpoints./federation/stepup/:handle.effect": {
+    "en": "ea2b1532d05c3e5f",
+    "text": "INICIA la sesión federada para la que se guardó la respuesta verificada del socio — solo después de un segundo factor que se tiene AQUÍ, como esa persona"
+  },
   "stsmetadata.endpoints./federation/slo/:id.what": {
     "en": "84d79b5134fbe867",
     "text": "UNA SOLA RUTA para cada cierre de sesión que un socio envía a través de un navegador, por la razón del ACS: una <LogoutRequest> de SAML 2.0 (el socio cerrando la sesión de alguien) y una <LogoutResponse> (su respuesta a la nuestra), por el binding Redirect o POST; un wsignoutcleanup1.0 o wsignout1.0 de WS-Federation; y el navegador que vuelve del end_session_endpoint de un OpenID Provider. Un mensaje SAML se autentica exactamente como una aserción: firmado (saml-profiles-2.0-os sección 4.4.4.1; fedRequireSignedLogout, desactivado solo en desarrollo), verificado contra fedSigningCertificate y nada más, emitido por fedPeer, dirigido aquí, reciente y aceptado una sola vez en total (el historial de aserciones usadas), y termina solo las sesiones que llevan ese NameID y SessionIndex a través de esta relación, respondiendo con una LogoutResponse firmada (UnknownPrincipal cuando nada coincidió). Una limpieza de WS-Federation no va firmada según su especificación, así que dibuja una página con un botón real y termina la sesión en ESTE navegador solo cuando se pulsa. SAML 1.1 y OAuth 2.0 no definen cierre de sesión y se rechazan indicándolo."
