@@ -366,6 +366,16 @@ class ProtocolStack {
     this.build('authn/email_factor', require('../authn/email_factor'),
                'EmailFactor');
     this.register(app, require('../authn/email_factor'), 'authn/email_factor');
+    // DEVICE BOUND SESSION CREDENTIALS (#725): `POST /authn/dbsc/register`
+    // and `POST /authn/dbsc/refresh`. `authn` requires it as a library (the
+    // registration header, the bound-cookie check), so it is loaded by now
+    // and this builds and registers it at `authn`'s place; it reaches `authn`
+    // and `logout` lazily, and its two paths collide with nothing.
+    this.build('authn/device_bound_sessions',
+               require('../authn/device_bound_sessions'),
+               'DeviceBoundSessions');
+    this.register(app, require('../authn/device_bound_sessions'),
+                  'authn/device_bound_sessions');
     // WS-Trust 1.0-1.4. **IT MOVED BELOW authn.js ON 2026-09-05 AND THE ORDER
     // IS NOW A DEPENDENCY** where it had been no constraint at all. Issuing a
     // token or an assertion here starts a tracked sign-on session — see

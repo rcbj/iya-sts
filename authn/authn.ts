@@ -551,6 +551,12 @@ import WebCardCss = require('../common/web_card_css');
 // requires the policy above, `crypto`, `pki` and `error_codes`, and reaches
 // the FIDO metadata and revocation lazily — nothing that reaches back here.
 import webauthnAttestation = require('./webauthn_attestation');
+// DEVICE BOUND SESSION CREDENTIALS (#725): the registration header on the
+// answer that sets the session cookie, and the bound cookie a bound session
+// needs. A route module of its own that reaches this one LAZILY, so the
+// require closes no cycle; being converted, requiring it registers nothing
+// and moves no route (rule 1).
+import deviceBound = require('./device_bound_sessions');
 // THE AUTHENTICATOR APP'S MECHANISM (2026-09-13), for the enrolment a required
 // second factor asks for: the otpauth URI, the QR code and the grouped secret.
 // A LEAF requiring `config`, `crypto`, `helpers` and `realms`, none of which
@@ -1423,6 +1429,16 @@ class Authn {
       });
       out.oidcClients = clients;
     }
+    // THE DEVICE BINDING (#725) is made once and never replaced, so a copy
+    // that has one is ahead of a copy that has none whichever is the base,
+    // and two copies of one binding keep the larger refresh count.
+    if (other.dbsc && other.dbsc.jkt) {
+      const mineBinding = base.dbsc && base.dbsc.jkt ? base.dbsc : null;
+      out.dbsc = !mineBinding ? other.dbsc
+        : mineBinding.id !== other.dbsc.id ? mineBinding
+        : Number(other.dbsc.refreshes || 0) >
+          Number(mineBinding.refreshes || 0) ? other.dbsc : mineBinding;
+    }
     ['relyingParties', 'events'].forEach(function (field) {
       if (!Array.isArray(other[field]) || !Array.isArray(base[field])) {
         return;
@@ -1624,9 +1640,12 @@ class Authn {
    * is never returned.
    *
    * @param req - the request
+   * @param ignoreBinding - true to hand out a device-bound session without
+   *   its bound cookie, which only `device_bound_sessions.ts`'s two endpoints
+   *   pass (#725)
    * @returns the session row, or null
    */
-  sessionOf(req) {
+  sessionOf(req, ignoreBinding?) {
     const { log } = this.deps;
     log.debug("Entering Authn.sessionOf().");
     const found = this.cookieSession(req, SESSION_COOKIE);
@@ -1710,6 +1729,17 @@ class Authn {
                        'admin');
       log.debug("Leaving Authn.sessionOf(). The account was deleted; the " +
                 "session was ended.");
+      return null;
+    }
+    // A SESSION BOUND TO A BROWSER KEY NEEDS ITS BOUND COOKIE (#725). Not
+    // honoured without one, and NOT ended: the browser that holds the key
+    // renews the cookie before it sends a request, so a request without it
+    // is a copied `sts_session` or a skipped refresh, and the person's
+    // session stays theirs. An unbound session, and every session while
+    // `authn.deviceBoundSessions` is off, passes as it always did.
+    if (ignoreBinding !== true && !deviceBound.honours(session, req)) {
+      log.debug("Leaving Authn.sessionOf(). A device-bound session without " +
+                "its bound cookie.");
       return null;
     }
     this.noteSessionUsed(sessions.realmMap(), id, session);
@@ -3919,7 +3949,9 @@ class Authn {
       amr: (source.amr || []).slice(),
       acr: source.acr || '',
       authentications: events + (source.eventsDropped || 0),
-      fromParent: fromParent
+      fromParent: fromParent,
+      // Whether the sign-on session is bound to a browser key (#725).
+      deviceBound: deviceBound.bindingOf(source)
     };
   }
 
@@ -4016,6 +4048,8 @@ class Authn {
     if (extra.cookie !== false) {
       this.setCookieHeader(res, this.sessionCookieLine(SESSION_COOKIE,
                                                        cookieValue));
+      // Offered again where the session is not bound yet (#725).
+      deviceBound.offer(res, session);
     }
     const statsExtra = Object.assign({}, extra);
     delete statsExtra.authenticated;
@@ -4969,6 +5003,10 @@ class Authn {
       current.session.authenticated !== false &&
       !current.session.rpSurface && !current.session.credentialKey &&
       !this.sessionEnded(current.session) &&
+      // A device-bound session is re-authenticated only from the browser
+      // that holds its key (#725): from anywhere else the cookie is a copy,
+      // and the sign-in starts a session of its own.
+      deviceBound.honours(current.session, extra.request) &&
       current.session.user && this.sameIdentity(current.session.user,
                                                 username));
     if (extra.request) {
@@ -5501,6 +5539,10 @@ class Authn {
     if (extra.cookie !== false) {
       this.setCookieHeader(res, this.sessionCookieLine(SESSION_COOKIE,
                                                        cookieValue));
+      // DEVICE BOUND SESSION CREDENTIALS (#725): where the realm binds
+      // sessions, the same answer asks the browser for a key. Nothing is
+      // written; a browser that does not speak DBSC ignores the header.
+      deviceBound.offer(res, session);
     }
     // The session itself, as its own audit event. It is deliberately separate
     // from the authentication recorded on the line above: the two are one act
@@ -13845,6 +13887,9 @@ export = {
   // itself would be a second place to get the handle check wrong.
   sessionStartedAt: slot.forward('sessionStartedAt'),
   signOnFactsFor: slot.forward('signOnFactsFor'),
+  // A session's binding to a browser key (#725), for the session rows the
+  // sign-out and the console draw.
+  deviceBindingOf: deviceBound.bindingOf,
   registeredDeviceOf: slot.forward('registeredDeviceOf'),
   cookieSession: slot.forward('cookieSession'),
   MAX_SESSION_EVENTS: MAX_SESSION_EVENTS,

@@ -6294,6 +6294,102 @@ const CODES = [
       'keys are rechecked only once a later write of them derives it ' +
       '(#615).',
     spec: '' },
+  { code: 'STS-AUTHN-0390',
+    summary: 'A Device Bound Session Credentials registration or refresh ' +
+      '(POST /authn/dbsc/register, /authn/dbsc/refresh, #725) reached a ' +
+      'realm whose authn.deviceBoundSessions is off.',
+    spec: 'HTTP 404, { error: invalid_request }' },
+  { code: 'STS-AUTHN-0391',
+    summary: 'A Device Bound Session Credentials registration or refresh ' +
+      'came with no signed-in sign-on session behind its sts_session cookie ' +
+      '(none, expired, or an arrival session).',
+    spec: 'HTTP 401, { error: invalid_request } — the browser ends its ' +
+      'DBSC session' },
+  { code: 'STS-AUTHN-0392',
+    summary: 'A Device Bound Session Credentials registration named a ' +
+      'sign-on session already bound to a key. A session is bound once, ' +
+      'and a second key is never accepted for it.',
+    spec: 'HTTP 409, { error: invalid_request }' },
+  { code: 'STS-AUTHN-0393',
+    summary: 'A Device Bound Session Credentials request carried no ' +
+      'Secure-Session-Response, or one that is neither a structured string ' +
+      'nor a compact JWS.',
+    spec: 'HTTP 400, { error: invalid_request }' },
+  { code: 'STS-AUTHN-0394',
+    summary: 'A Device Bound Session Credentials proof could not be read: ' +
+      'not a compact JWS of JSON objects, a typ other than dbsc+jwt, or no ' +
+      'jti.',
+    spec: 'HTTP 400, { error: invalid_request }' },
+  { code: 'STS-AUTHN-0395',
+    summary: 'A Device Bound Session Credentials registration proof named an ' +
+      'algorithm that was not offered (ES256, RS256), carried no jwk, a jwk ' +
+      'with private members, or a jwk that does not match its alg.',
+    spec: 'HTTP 400, { error: invalid_request }' },
+  { code: 'STS-AUTHN-0396',
+    summary: 'A Device Bound Session Credentials registration proof did not ' +
+      'verify with the key in its own header.',
+    spec: 'HTTP 400, { error: invalid_request }' },
+  { code: 'STS-AUTHN-0397',
+    summary: 'A Device Bound Session Credentials proof signed a challenge ' +
+      'that is expired, or that this service did not mint for that session ' +
+      'and purpose. A registration is refused; a refresh is answered a new ' +
+      'challenge.',
+    spec: 'registration: HTTP 400; refresh: HTTP 403 with ' +
+      'Secure-Session-Challenge' },
+  { code: 'STS-AUTHN-0398',
+    summary: 'A Device Bound Session Credentials registration proof carried ' +
+      'a challenge already spent; nothing was bound.',
+    spec: 'HTTP 400, { error: invalid_request }' },
+  { code: 'STS-AUTHN-0399',
+    summary: 'The cluster store could not record a Device Bound Session ' +
+      'Credentials challenge as spent, so the proof was not accepted (fail ' +
+      'closed).',
+    spec: 'HTTP 503, { error: invalid_request } — the browser backs off ' +
+      'and keeps its session' },
+  { code: 'STS-AUTHN-0400',
+    summary: 'A Device Bound Session Credentials refresh carried no ' +
+      'Sec-Secure-Session-Id.',
+    spec: 'HTTP 400, { error: invalid_request }' },
+  { code: 'STS-AUTHN-0401',
+    summary: 'A Device Bound Session Credentials refresh named a DBSC ' +
+      'session the sign-on session behind its cookie is not bound as (a ' +
+      'registration left from a replaced session). Only the browser\'s ' +
+      'registration is ended; the sign-on session is untouched.',
+    spec: 'HTTP 401, { error: invalid_request } — the browser ends its ' +
+      'DBSC session' },
+  { code: 'STS-AUTHN-0402',
+    summary: 'A Device Bound Session Credentials refresh came without a ' +
+      'proof; a challenge was sent for the browser to sign (the draft\'s ' +
+      'section 8.8 exchange, not a refusal of the person).',
+    spec: 'HTTP 403 with Secure-Session-Challenge' },
+  { code: 'STS-AUTHN-0403',
+    summary: 'A Device Bound Session Credentials refresh was not signed by ' +
+      'the key the session is bound to (another key, or another algorithm). ' +
+      'The session was ended through the sign-out, with CAEP session-revoked.',
+    spec: 'HTTP 401, { error: invalid_request }; both cookies cleared' },
+  { code: 'STS-AUTHN-0404',
+    summary: 'A Device Bound Session Credentials refresh, signed by the ' +
+      'bound key, replayed a challenge already spent. The session was ended ' +
+      'through the sign-out, with CAEP session-revoked.',
+    spec: 'HTTP 401, { error: invalid_request }; both cookies cleared' },
+  { code: 'STS-AUTHN-0405',
+    summary: 'A Device Bound Session Credentials refresh proof carried a ' +
+      'jwk, which the draft\'s section 9.10 forbids at refresh.',
+    spec: 'HTTP 400, { error: invalid_request }' },
+  { code: 'STS-AUTHN-0406',
+    summary: 'A sign-on session bound to a browser key was presented without ' +
+      'a current bound cookie minted for its binding, and was not honoured ' +
+      'for that request. The session is not ended.',
+    spec: 'none — the request is treated as signed out' },
+  { code: 'STS-AUTHN-0407',
+    summary: 'The sign-out could not end a device-bound session whose ' +
+      'refresh failed its proof; it was ended directly, without the ' +
+      'sign-out\'s fan-out.',
+    spec: '' },
+  { code: 'STS-AUTHN-0408',
+    summary: 'A sign-in could not be offered device binding: the response ' +
+      'object takes no header. The session stands, unbound.',
+    spec: '' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

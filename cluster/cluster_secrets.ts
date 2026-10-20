@@ -163,7 +163,13 @@ const DECLARED: Record<string, DeclaredSecret> = {
   // document drawn by the next, which may be another node's.
   'logout-result': { bytes: 32, env: 'STS_LOGOUT_RESULT_SECRET',
     what: 'The key a sign-out\'s result is MACed with on its way to the ' +
-          'signed-out document (logout/logout.ts).' }
+          'signed-out document (logout/logout.ts).' },
+  // #725: a challenge minted by one node is signed by the browser and
+  // presented to another, and a bound cookie renewed by one is presented
+  // to every other the next moment.
+  'dbsc': { bytes: 32, env: 'STS_DBSC_SECRET',
+    what: 'The key a Device Bound Session Credentials challenge and bound ' +
+          'cookie are MACed with (authn/device_bound_sessions.ts).' }
 };
 
 // name -> { text, source: 'process'|'store'|'environment'|'node' }. The TEXT is
