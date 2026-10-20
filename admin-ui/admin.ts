@@ -3631,6 +3631,28 @@ class AdminConsole {
       '#d5d5dd;border-radius:10px;padding:14px 14px ' +
       '8px;font-size:.85em;box-shadow:0 6px 24px rgba(0,0,0,.06);flex:0 1 ' +
       'auto;min-height:0;overflow-y:auto}' +
+      // THE LIST'S SCROLLBAR IS ON ITS LEFT EDGE AND ALWAYS DRAWN (rcbj,
+      // 2026-10-20). `overflow-y:auto` above made the list scroll on its own,
+      // but nobody could see that it did: with every section collapsed (#750)
+      // it seldom overflows, and the overlay scrollbars Linux and macOS
+      // browsers draw stay hidden until the list is already moving. So the
+      // bar is `scroll`, reserved and visible whether or not there is
+      // anything to scroll, and given a width and colours of its own, which is
+      // what makes Chromium and Safari draw a classic bar instead of an
+      // overlay; Firefox reads `scrollbar-width` and `scrollbar-color`.
+      // `direction:rtl` on the box is what puts a vertical scrollbar on the
+      // left, and every child is set back to `ltr` so nothing inside reads
+      // right to left. Only the box is reversed, never the text.
+      // It is `.side>nav` and not `nav`: the pagers and tab bars are <nav>s
+      // too, and none of them is a list to scroll.
+      '.side>nav{overflow-y:scroll;scrollbar-gutter:stable;direction:rtl;' +
+      'scrollbar-width:thin;scrollbar-color:#a7a7c4 #f1f1f6}' +
+      '.side>nav>*{direction:ltr}' +
+      '.side>nav::-webkit-scrollbar{width:10px}' +
+      '.side>nav::-webkit-scrollbar-track{background:#f1f1f6;' +
+      'border-radius:10px}.side>nav::-webkit-scrollbar-thumb{' +
+      'background:#a7a7c4;border-radius:10px;border:2px solid #f1f1f6}' +
+      '.side>nav::-webkit-scrollbar-thumb:hover{background:#12107c}' +
       // THE REALM CHOOSER, first inside the nav card and separated from the
       // sections by a hairline rather than by a card of its own. Its label is
       // `.navhead`'s metrics on purpose: it sits above a list of choices in the
@@ -4207,6 +4229,7 @@ class AdminConsole {
       // sense of.
       '@media (max-width:56rem){.side{position:static;flex:1 1 100%;' +
       'max-height:none;display:block}nav{overflow-y:visible}' +
+      '.side>nav{overflow-y:visible;direction:ltr}' +
       '.navsec{display:inline-block;vertical-align:top;min-width:11rem;' +
       'margin-right:1.2em}.navsec.current{margin-left:0;padding-left:0;' +
       'border-left:0;border-top:3px solid #12107c;padding-top:6px}}' +
