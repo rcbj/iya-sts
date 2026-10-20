@@ -6,10 +6,10 @@
 // File: vc_status_admin.ts
 //
 // ===========================================================================
-// VERIFIABLE CREDENTIALS → CREDENTIAL STATUS (#38's follow-ups): THIS REALM'S
-// STATUS LISTS, AND THE ONE CONTROL THEY HAVE.
+// MONITORING → VERIFIABLE CREDENTIALS (#38's follow-ups; under Monitoring
+// since #752): THIS REALM'S STATUS LISTS, AND THE ONE CONTROL THEY HAVE.
 //
-// `GET /admin/vc-status` draws what `oid4vc/vc_status.ts` publishes for the
+// `/admin/vc/monitor` draws what `oid4vc/vc_status.ts` publishes for the
 // realm the console is in: where the Token Status List (JWT and CWT), its
 // aggregation and the two Bitstring Status List credentials are served, the
 // list size and ttl, how many indexes are allocated, and — paged, newest
@@ -23,6 +23,13 @@
 // (`vc_status.ts`'s header), so there is one answer and this page does not
 // keep a second. A revoked or suspended credential also stops signing anybody
 // in at `/authn/wallet`.
+//
+// **IT WAS THE CREDENTIAL STATUS TAB OF `/admin/vc` UNTIL #752** (rcbj: "for
+// consistency"), and is a Monitoring page now for the question it answers —
+// what this realm has issued and whether each is still good — beside the
+// other families' Monitoring pages; the settings the lists are built with
+// stay on Protocols → Verifiable Credentials. The tab's old address lands
+// here (`WebPages.movedTo()`), and the two operations below did not change.
 //
 // **A REALM'S PAGE**, not a service page: what it shows and changes is the
 // ambient realm's own lists, which is #32's rule for a realm administrator.
@@ -59,9 +66,9 @@ type Res = any;
 type Json = any;
 
 /**
- * The console path of Verifiable Credentials → Credential status.
+ * The console path of Monitoring → Verifiable Credentials.
  */
-const PAGE = '/admin/vc-status';
+const PAGE = '/admin/vc/monitor';
 
 // The acts the control performs, and the status each sets.
 /**
@@ -85,8 +92,8 @@ interface VcStatusAdminDeps {
 }
 
 /**
- * Verifiable Credentials → Credential status: the realm's status lists, every
- * live credential's index and status, and the one control they have.
+ * Monitoring → Verifiable Credentials: the realm's status lists, every live
+ * credential's index and status, and the one control they have.
  */
 class VcStatusAdmin {
   /**
@@ -226,7 +233,8 @@ class VcStatusAdmin {
   }
 
   /**
-   * Registers `GET /admin/vc-status` and its control.
+   * Registers nothing: the static console draws `/admin/vc/monitor` from
+   * the management API's two operations (#446), which call this module.
    *
    * @param app - the shared express app
    */
@@ -247,7 +255,7 @@ const slot = new InstanceSlot<VcStatusAdmin>(
 slot.buildNowUnlessDeferred();
 
 /**
- * Verifiable Credentials → Credential status, `/admin/vc-status`: the realm's
+ * Monitoring → Verifiable Credentials, `/admin/vc/monitor`: the realm's
  * status lists, and the control that suspends, reinstates or revokes one
  * credential.
  * @namespace

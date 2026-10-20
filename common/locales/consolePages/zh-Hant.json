@@ -115,7 +115,7 @@
   "title.users": "使用者",
   "title.users-new": "新增使用者",
   "title.vc": "憑證宣告",
-  "title.vc-status": "憑證狀態",
+  "title.vc-monitor": "可驗證憑證（監控）",
   "title.xacml-editor": "原則編輯器",
   "title.xacml": "XACML",
   "title.xacml-decide": "試行決策",

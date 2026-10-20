@@ -5113,7 +5113,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'accept-terms: the console\'s five forms.' },
   { path: '/admin-api/vc-status', group: 'Management API',
     name: 'Credential status', specs: ['token-status-list', 'openapi'],
-    what: 'NON-SPEC. GET /admin/vc-status over JSON.' },
+    what: 'NON-SPEC. GET /admin/vc/monitor over JSON.' },
   { path: '/admin-api/vc-status/:action', group: 'Management API',
     name: 'Credential status actions', specs: ['openapi'],
     what: 'NON-SPEC. suspend, reinstate and revoke, with { idx }: the ' +
@@ -8922,7 +8922,7 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Change a credential\'s status (VC API)',
     specs: ['vc-api', 'bitstring-status-list'],
     what: 'Revokes, suspends or lifts a suspension of a credential this ' +
-          'VC API issued with a status — the act /admin/vc-status ' +
+          'VC API issued with a status — the act /admin/vc/monitor ' +
           'performs, one of the three that disown a credential. A ' +
           'revocation is final. vc-api:issue.',
     effect: OFF_UNTIL_ENABLED },

@@ -82,7 +82,7 @@
   "nav.oid4vci": "OpenID4VCI",
   "nav.vc": "Verifiable Credentials",
   "nav.vc-claims": "Mga claim ng credential",
-  "nav.vc-status": "Status ng credential",
+  "nav.vc-monitor": "Verifiable Credentials",
   "nav.oid4vp": "OpenID4VP",
   "nav.vc-verifier-config": "Request ng verifier",
   "nav.xacml": "XACML",

@@ -31,7 +31,7 @@ below, and the application attribute editor.
 |---|---|---|
 | `/admin/vc#vc-tab-oid4vp` | **Protocols → Verifiable Credentials**, tab **OpenID4VP** | Every `oid4vp.*` setting, the wallet sign-in's among them, saved with **Save OID4VP**. |
 | `/admin/vc#vc-tab-verifier-request` | the same page, tab **Verifier request** | What the Verifier asks for, in which format, and the **Start a verification** form with the **Open verifications** list. |
-| `/admin/vc#vc-tab-status` | tab **Credential status** | Suspend, reinstate or revoke a credential, which stops it signing in. |
+| `/admin/vc/monitor` | **Monitoring → Verifiable Credentials** | Suspend, reinstate or revoke a credential, which stops it signing in. |
 | `/admin/users` | **Directory → Users**, a person's page | Enrol or remove a person's self-issued IDs. |
 | `/admin/applications?application=<id>` | **Directory → Applications** | `appAuthnMechanism`, and an application's DID. |
 | `/portal/wallet`, `/portal/self-issued` | user portal | A person collects a credential, and enrols their own self-issued ID. |
@@ -286,7 +286,8 @@ api config/set-many '{"oid4vp.walletInvocation":"haip-vp",
 ```
 
 **Disowning a credential.** A credential stops signing in once it is
-suspended or revoked on the **Credential status** tab, revoked on **Tokens**
+suspended or revoked on **Monitoring → Verifiable Credentials**
+(`/admin/vc/monitor`), revoked on **Tokens**
 (`/admin/tokens`), or after an administrator's global sign-out. An ordinary
 sign-out of one application disowns nothing.
 

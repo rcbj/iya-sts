@@ -1148,6 +1148,29 @@ every permission it exposes and every grant in it.
 or `?application=` for one application's group with its rows and graph. Neither
 picture has a form on it.
 
+### Verifiable Credentials — `/admin/vc/monitor`
+
+What this realm's credential issuer has issued, and whether each credential is
+still good. The **Metadata** tab counts the credentials that carry a
+status-list index and how many are valid, suspended and revoked, and says where
+the Token Status List, its aggregation and the two Bitstring Status Lists are
+served, each Bitstring list with a **Publish now**. The **Credentials** tab
+lists every live credential, newest first and paged, with its index, format,
+configuration, status and who set it, and **Suspend**, **Reinstate** and
+**Revoke** on each row. A revoked credential is INVALID, which is final; a
+suspended one can be reinstated. Either stops it signing anybody in at
+`/authn/wallet`. A credential revoked on **Tokens** shows INVALID here too: the
+status is computed from both, so the two pages cannot disagree.
+
+It was the **Credential status** tab of Protocols → Verifiable Credentials
+until #752, and moved here beside the other families' Monitoring pages. Its old
+addresses, `/admin/vc#vc-tab-status` and `/admin/vc-status`, open it. The
+settings the lists are built with, `oid4vci.statusListTtlS` and
+`oid4vci.statusListLifetimeS`, stay on the OpenID4VCI tab of `/admin/vc`. The
+page is a realm's own, so a realm administrator sees it for their realm. API:
+`GET /admin-api/vc-status` and
+`POST /admin-api/vc-status/{suspend,reinstate,revoke,publish}`.
+
 ### Worker pools — `/admin/worker-pools`
 
 `/admin/worker-pools` shows the two pools of worker threads this node runs
@@ -1470,18 +1493,21 @@ for the same POST.
 
 ### Verifiable Credentials — `/admin/vc`
 
-The former separate OpenID4VCI, Credential status, OpenID4VP and Verifier
-request leaves are tabs on this one Protocols page:
+The former separate OpenID4VCI, OpenID4VP and Verifier request leaves are tabs
+on this one Protocols page:
 
 * **Metadata** lists the issuer and verifier endpoints. The explanatory
   OpenID4VCI and OpenID4VP guidance is in disclosures that are collapsed by
   default.
 * **OpenID4VCI** holds issuance settings.
 * **Credential claims** selects claims on issued credentials.
-* **Credential status** manages this realm's issued credential statuses.
 * **OpenID4VP** holds verifier and wallet sign-in settings.
 * **Verifier request** configures what this realm's OpenID4VP Verifier asks
   wallets to present.
+
+What has been issued, and each credential's status, is
+[Monitoring → Verifiable Credentials](#verifiable-credentials--adminvcmonitor),
+which was this page's Credential status tab until #752.
 
 ### Credential claims tab — `/admin/vc#vc-tab-claims`
 

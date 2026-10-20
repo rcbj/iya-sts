@@ -82,7 +82,7 @@
   "nav.oid4vci": "OpenID4VCI",
   "nav.vc": "Attestations vérifiables",
   "nav.vc-claims": "Revendications des attestations",
-  "nav.vc-status": "Statut des attestations",
+  "nav.vc-monitor": "Attestations vérifiables",
   "nav.oid4vp": "OpenID4VP",
   "nav.vc-verifier-config": "Requête du vérificateur",
   "nav.xacml": "XACML",

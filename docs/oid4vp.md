@@ -356,9 +356,8 @@ A credential stops signing anybody in after any of these:
   every credential issued up to that moment. The person's own Global logout
   on `/logout` leaves the credential, and the DID it is bound to, valid;
 * an administrator's revocation on `/admin/tokens`;
-* a status that is not VALID, set on the Credential status tab at
-  `/admin/vc#vc-tab-status` or by either of the
-  above.
+* a status that is not VALID, set on Monitoring → Verifiable Credentials
+  at `/admin/vc/monitor` or by either of the above.
 
 An ordinary sign-out of one application disowns nothing, and the person signs
 back in with the wallet they hold. A credential minted on an access token that
@@ -593,8 +592,9 @@ see [OpenID4VCI](oid4vci.md#configuration). See
   catalogue row showing whether the issuer mints that claim. API:
   `GET /admin-api/verifier-request` and
   `POST /admin-api/verifier-request/{select,add,remove,defaults,format}`.
-* Its **Credential status** tab lets an operator suspend, reinstate or revoke
-  a credential, which stops it signing in.
+* **Monitoring → Verifiable Credentials** (`/admin/vc/monitor`) lets an
+  operator suspend, reinstate or revoke a credential, which stops it signing
+  in. It was the Credential status tab of `/admin/vc` until #752.
 * **Sessions** (`/admin/sessions`): wallet sign-ins appear as any other
   session, and end through the same sign-out doors.
 * **Users** (`/admin/users`): every holder whose presentation verified.

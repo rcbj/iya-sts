@@ -200,6 +200,22 @@ const CERT_PANELS: Json = {
 };
 const CERT_PAGE = '/admin/cert-issuance';
 
+// ADDRESSES WHOSE CONTENT MOVED TO ANOTHER PAGE (#752), keyed by the path —
+// and, for a tab, the path and its fragment — that somebody may still hold
+// in a bookmark, a ticket or an old copy of the documentation. The runtime
+// replaces such an address with the page's before it draws anything
+// (`movedTo()`), so it lands on the content rather than on "not a console
+// page" or on a combined page whose tab is gone. The query rides along: the
+// combined page's `page` and `per` were the status tab's own. A tab folded
+// into a combined page is the other direction and needs no row here — its
+// former path's links are rewritten where they are drawn (`vcTabLinks()`).
+const MOVED: Record<string, string> = {
+  // The Credential status tab of Protocols → Verifiable Credentials, and
+  // the page it had been before the tabs (2026-10-12).
+  '/admin/vc#vc-tab-status': '/admin/vc/monitor',
+  '/admin/vc-status': '/admin/vc/monitor'
+};
+
 /**
  * A tab's name for one of its own parameters on the combined page.
  *
@@ -314,6 +330,9 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/consent': ['globals', 'recorded'],
   '/admin/xacml/monitor': ['figures', 'points'],
   '/admin/gnap/monitor': ['formats', 'applications'],
+  // The status lists' credentials (#752); the tiles, the note and where the
+  // lists are served are Metadata.
+  '/admin/vc/monitor': ['credentials'],
   '/admin/acme/monitor': ['operations', 'profiles', 'codes', 'statuses',
                           'principals', 'recent'],
   '/admin/est/monitor': ['operations', 'profiles', 'principals', 'codes',
@@ -981,14 +1000,19 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/credential-claims',
     compose: {
       oid4vciSettings: '/admin-api/oid4vci-settings',
-      vcStatus: '/admin-api/vc-status',
       oid4vpSettings: '/admin-api/oid4vp-settings',
       verifierRequest: '/admin-api/verifier-request'
     },
-    composeWhen: { vcStatus: ['page', 'per'] },
-    composeAlways: ['vcStatus'],
     render: function (view: Json, ctx?: Json): string {
       return VcClaimsPage.body(ctx || WebKit.context(), view);
+    } },
+  // MONITORING → VERIFIABLE CREDENTIALS (#752): the status lists and every
+  // issued credential's status, which was the Credential status tab of the
+  // page above (`web_vc_status.ts` says why it moved).
+  { path: '/admin/vc/monitor', title: 'Verifiable Credentials (monitoring)',
+    operation: '/admin-api/vc-status',
+    render: function (view: Json, ctx?: Json): string {
+      return VcStatusPage.render(view, ctx || WebKit.context());
     } },
   { path: '/admin/kerberos', title: 'Kerberos',
     operation: '/admin-api/kerberos',
@@ -1105,6 +1129,29 @@ class WebPages {
    * shown once as the console does.
    */
   static readonly answers = WebAnswers;
+
+  /**
+   * Every address whose content moved to another page, and that page.
+   */
+  static readonly MOVED = MOVED;
+
+  /**
+   * Says where an address whose content moved is now: its tab first, then
+   * its path.
+   *
+   * @param path - the realm-relative console path
+   * @param hash - the address's fragment, with its `#`, or ''
+   * @returns the page's path, or null when nothing moved from there
+   */
+  static movedTo(path: string, hash?: string): string | null {
+    const wanted = String(path || '');
+    const tab = hash ? wanted + String(hash) : '';
+    if (tab && Object.prototype.hasOwnProperty.call(MOVED, tab)) {
+      return MOVED[tab];
+    }
+    return Object.prototype.hasOwnProperty.call(MOVED, wanted)
+      ? MOVED[wanted] : null;
+  }
 
   /**
    * Finds the converted page at a console path.
@@ -1783,8 +1830,8 @@ class WebPages {
       return WebKit.tabbedPanels('saml-pages', rendered);
     }
     if (page.path === '/admin/vc') {
-      if (!view.oid4vciSettings || !view.vcStatus ||
-          !view.oid4vpSettings || !view.verifierRequest) {
+      if (!view.oid4vciSettings || !view.oid4vpSettings ||
+          !view.verifierRequest) {
         throw new Error('The Verifiable Credentials page is missing a tab ' +
                         'view.');
       }
@@ -1808,9 +1855,6 @@ class WebPages {
         { id: 'vc-tab-claims',
           label: context.t.text('console.nav.vc-claims'),
           html: VcClaimsPage.body(context, view) },
-        { id: 'vc-tab-status',
-          label: context.t.text('console.nav.vc-status'),
-          html: VcStatusPage.render(view.vcStatus, context) },
         { id: 'vc-tab-oid4vp',
           label: context.t.text('console.nav.oid4vp'),
           html: vpSettings },
@@ -2089,12 +2133,11 @@ class WebPages {
     const paths = {
       '/admin/oid4vci': 'vc-tab-oid4vci',
       '/admin/vc': 'vc-tab-claims',
-      '/admin/vc-status': 'vc-tab-status',
       '/admin/oid4vp': 'vc-tab-oid4vp',
       '/admin/vc-verifier-config': 'vc-tab-verifier-request'
     };
     html = html.replace(
-      /href="(\/admin\/oid4vci|\/admin\/vc|\/admin\/vc-status|\/admin\/oid4vp|\/admin\/vc-verifier-config)(\?[^"#]*)?"/g,
+      /href="(\/admin\/oid4vci|\/admin\/vc|\/admin\/oid4vp|\/admin\/vc-verifier-config)(\?[^"#]*)?"/g,
       function (_match: string, path: string, query: string): string {
         return 'href="/admin/vc' + (query || '') + '#' + paths[path] + '"';
       });

@@ -26,7 +26,7 @@
 //     and `vc_jose_cose.ts`'s;
 //   * a credential's status is an index `vc_status.ts` allocates in the
 //     realm's own Bitstring Status Lists, and a status change is
-//     `setStatus()` — the act `/admin/vc-status` performs, one of the three
+//     `setStatus()` — the act `/admin/vc/monitor` performs, one of the three
 //     ways a credential is DISOWNED (`CLAUDE.md` 3ar);
 //   * the data model's MUSTs are `vc_data_model.ts`, and the JSON-LD safe
 //     mode that refuses an undefined term or a redefined protected one is
@@ -70,10 +70,10 @@
 //     `verified: true` with no proof checked. It is an argument now, never an
 //     option.
 //   * **THE STATUS-LIST "PUBLISH" LEFT** for `/admin-api` (`POST
-//     /admin-api/vc-status/publish`, Admin Write, beside the Credential
-//     status tab's control): it was the W3C suites' hook, a list here is
-//     computed on every read, and an operation that does nothing but say so
-//     is an operator's question, not a protocol's.
+//     /admin-api/vc-status/publish`, Admin Write, beside the controls on
+//     Monitoring → Verifiable Credentials): it was the W3C suites' hook, a
+//     list here is computed on every read, and an operation that does
+//     nothing but say so is an operator's question, not a protocol's.
 //
 // THE ROUTES, under a realm's prefix:
 //

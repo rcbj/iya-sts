@@ -113,7 +113,7 @@ documents it.
 |---|---|---|---|
 | OAuth2 / OIDC | `/admin/oauth2`, `/admin/authorization-servers`, `/admin/token-lifetimes`, `/admin/claims`, `/admin/userinfo-claims` | [OAuth 2.0 and OpenID Connect](oauth-oidc.md), [Security profiles: RFC 9700, OAuth 2.1, DPoP, mTLS](oauth-security.md), [JWT assertions](jwt-assertions.md) | [OAuth 2.0 grants](configure-oauth2-grants.md), [OpenID Connect flows](configure-oidc-flows.md) |
 | SAML | `/admin/saml2`, `/admin/saml11`, `/admin/saml-assertions`, `/admin/saml-attributes` | [SAML 2.0 Web Browser SSO](saml2-sso.md), [SAML 1.1](saml11.md), [SAML assertions as grants (RFC 7522)](saml-assertions.md) | [SAML 2.0 and SAML 1.1](configure-saml.md) |
-| Verifiable Credentials | `/admin/vc` — Metadata, OpenID4VCI settings, Credential claims, Credential status, OpenID4VP settings and Verifier request tabs | [OpenID4VCI and status lists](oid4vci.md), [OpenID4VP and wallet sign-in](oid4vp.md) | [OpenID4VCI](configure-oid4vci.md), [OpenID4VP](configure-oid4vp.md) |
+| Verifiable Credentials | `/admin/vc` — Metadata, OpenID4VCI settings, Credential claims, OpenID4VP settings and Verifier request tabs; what was issued and each credential's status at `/admin/vc/monitor`, under Monitoring | [OpenID4VCI and status lists](oid4vci.md), [OpenID4VP and wallet sign-in](oid4vp.md) | [OpenID4VCI](configure-oid4vci.md), [OpenID4VP](configure-oid4vp.md) |
 | XACML | `/admin/xacml`, `/admin/xacml/policies`, `/admin/xacml/editor`, `/admin/xacml/peps`, `/admin/xacml/decide` | [XACML 3.0 and ALFA](xacml.md), [Remote PEP](remote-pep.md) | [XACML and ALFA](configure-xacml.md) |
 | SCIM | `/admin/scim` | [SCIM 2.0](scim.md) | [SCIM 2.0](configure-scim.md) |
 | Shared Signals, CAEP, RISC | `/admin/ssf`, `/admin/caep`, `/admin/risc` | [Shared Signals](shared-signals.md), [CAEP events](caep-events.md), [Signals received](signals-received.md) | [Shared Signals](configure-shared-signals.md) |
@@ -212,7 +212,7 @@ the diagram and a walk through each layer.
 | SPIFFE — bundle endpoint, Workload API, SPIRE Server API | `/spiffe`, four gRPC sockets | [spiffe](spiffe.md) |
 | OpenID4VCI 1.0 — a Credential Issuer | `/oid4vci/*` | [oid4vci](oid4vci.md) |
 | OpenID4VP 1.0 — a Verifier, and a sign-in with a wallet in any credential format, through the W3C Digital Credentials API | `/oid4vp/*`, `/authn/wallet`, `/admin-api/verifications` | [oid4vp](oid4vp.md) |
-| Token Status List and W3C Bitstring Status List — what this issuer publishes about what it issued | `/oid4vci/status-lists*`, `/admin/vc#vc-tab-status` | [oid4vci](oid4vci.md) |
+| Token Status List and W3C Bitstring Status List — what this issuer publishes about what it issued | `/oid4vci/status-lists*`, `/admin/vc/monitor` | [oid4vci](oid4vci.md) |
 | W3C DID Core with DIF domain linkage | `/.well-known/did.json` | [oid4vp](oid4vp.md) |
 | The W3C VC API (VCALM) — an issuer, holder, verifier and status service over Data Integrity (RDFC, JCS, ecdsa-sd-2023) and VC-JOSE-COSE, and DID resolution; off until a realm turns it on | `/vc-api/*` | [vc-api](vc-api.md) |
 | Shared Signals (SSF 1.0) with CAEP and RISC — a transmitter, and a receiver of its own | `/ssf/*`, `/admin/ssf` | [shared-signals](shared-signals.md) |

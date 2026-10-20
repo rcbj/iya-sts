@@ -3666,8 +3666,9 @@ class AdminApi {
       // operation, as `/admin/caches` and `/admin/caches?cache=` are one page.
       // ---------------------------------------------------------------------
       // THE STATUS LISTS (#38's follow-ups): `vcStatusAdmin.statusView()`
-      // and `statusAction()`, the two functions the Credential status tab
-      // on `/admin/vc` draws.
+      // and `statusAction()`, the two functions Monitoring → Verifiable
+      // Credentials (`/admin/vc/monitor`) draws — the Credential status tab
+      // of `/admin/vc` until #752, which moved the page and not these.
       { method: 'GET', path: BASE + '/vc-status', tag: 'Credential status',
         operationId: 'getCredentialStatus',
         summary: 'This realm\'s credential status lists',
@@ -3682,7 +3683,7 @@ class AdminApi {
                      'INVALID or SUSPENDED), the `explicit` status set here, ' +
                      '`via`, `changedAt`, `allocatedAt` and `expiresAt` — ' +
                      'answered in `rowsPaging`.',
-        mirrors: 'GET /admin/vc',
+        mirrors: 'GET /admin/vc/monitor',
         parameters: [].concat(self.pagingParameters()),
         responseDescription: 'The lists and their credentials.',
         responseSchema: { type: 'object',
@@ -3698,7 +3699,7 @@ class AdminApi {
 
       { method: 'POST', route: BASE + '/vc-status/:action',
         tag: 'Credential status',
-        mirrors: 'POST /admin/vc',
+        mirrors: 'POST /admin/vc/monitor',
         handler: function (req, res) {
           log.debug("Entering the management API credential status action.");
           const result = vcStatusAdmin.statusAction(
@@ -3746,8 +3747,9 @@ class AdminApi {
           // THE STATUS-LIST PUBLISH (#598), moved here from the VC API's
           // test hook `POST /oid4vci/status-lists/bitstring/{purpose}/
           // publish` when the VC API became a product surface: an
-          // operator's act, Admin Write, beside the Credential status tab's
-          // control. `admin-ui/vc_status_admin.ts` argues it.
+          // operator's act, Admin Write, beside the per-credential controls
+          // on Monitoring → Verifiable Credentials.
+          // `admin-ui/vc_status_admin.ts` argues it.
           action: 'publish',
           operationId: 'publishStatusList',
           summary: 'Publish one Bitstring Status List',

@@ -1368,8 +1368,8 @@
     "text": "非规范（#62）。import、activate、rollback、delete 和 accept-terms：控制台的五个表单。"
   },
   "stsmetadata.endpoints./admin-api/vc-status.what": {
-    "en": "7f1665c0e218a80d",
-    "text": "非规范。以 JSON 形式提供的 GET /admin/vc-status。"
+    "en": "eec9bcadeeee15fa",
+    "text": "非规范。以 JSON 形式提供的 GET /admin/vc/monitor。"
   },
   "stsmetadata.endpoints./admin-api/vc-status/:action.what": {
     "en": "75977b65b4ede272",
@@ -3032,8 +3032,8 @@
     "text": "在本领域开启 vcApi.enabled 之前回答 501"
   },
   "stsmetadata.endpoints./vc-api/credentials/status.what": {
-    "en": "860c7bcc627e7889",
-    "text": "撤销、暂停或解除暂停本 VC API 带状态签发的凭证——即 /admin/vc-status 执行的操作，是否认凭证的三种操作之一。撤销是最终的。vc-api:issue。"
+    "en": "c602841e9954afe7",
+    "text": "撤销、暂停或解除暂停本 VC API 带状态签发的凭证——即 /admin/vc/monitor 执行的操作，是否认凭证的三种操作之一。撤销是最终的。vc-api:issue。"
   },
   "stsmetadata.endpoints./vc-api/credentials/status.effect": {
     "en": "d47c04a75b0029c4",

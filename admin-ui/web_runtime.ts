@@ -1475,6 +1475,19 @@ class ConsoleRuntime extends SpaClient {
       await this.finishSignIn();
       return;
     }
+    // AN ADDRESS WHOSE CONTENT MOVED (#752) — the Credential status tab of
+    // `/admin/vc`, now Monitoring → Verifiable Credentials — is replaced in
+    // place by the page's, before a sign-in keeps it to come back to or
+    // anything is fetched, so a bookmark lands on the content. Its query
+    // goes with it; its fragment named the tab that is gone.
+    const moved = path
+      ? WebPages.movedTo(path, this.env.location.hash) : null;
+    if (moved) {
+      this.env.history.replaceState(null, '', this.prefix + moved +
+                                    this.env.location.search);
+      await this.route();
+      return;
+    }
     if (!this.accessToken) {
       await this.beginSignIn(this.hereWithFragment());
       return;
@@ -2548,6 +2561,14 @@ class ConsoleRuntime extends SpaClient {
       return;
     }
     event.preventDefault();
+    // A LINK TO AN ADDRESS WHOSE CONTENT MOVED (#752) goes to the page —
+    // checked first, because a link to a gone tab of the page being read
+    // would otherwise only change the fragment.
+    const moved = WebPages.movedTo(page, url.hash);
+    if (moved) {
+      this.go(moved + url.search);
+      return;
+    }
     if (url.pathname === this.env.location.pathname &&
         url.search === this.env.location.search && url.hash) {
       this.env.location.hash = url.hash;

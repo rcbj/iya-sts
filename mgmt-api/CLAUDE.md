@@ -2066,8 +2066,11 @@ it under `/realm/{id}/admin-api/mode` for a realm's answer.
 ## `/admin-api/vc-status` (#38's follow-ups, 2026-09-17)
 
 Two operations, and both are `admin-ui/vc_status_admin.ts`'s own functions
-(rule 7): `GET /admin-api/vc-status` feeds the Credential status tab on
-`/admin/vc` — where this realm's status lists are served, their size and
+(rule 7): `GET /admin-api/vc-status` feeds Monitoring → Verifiable
+Credentials, `/admin/vc/monitor` (the Credential status tab of `/admin/vc`
+until #752, which moved the page and changed neither operation; their
+`mirrors` name the new page) — where this realm's status lists are served,
+their size and
 lifetimes, the counts, and a page of every issued credential's index and
 status — and `POST /admin-api/vc-status/{suspend|reinstate|revoke}` with
 `{ idx }` is the page's three buttons, through `statusAction()`. The action is

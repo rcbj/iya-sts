@@ -540,7 +540,7 @@ Three acts, all of them read through `vc_issued.disownedReason()`:
 * an administrator's revocation of the credential on `/admin/tokens` (the
   issued register's own mark, read by handle, so a restore undoes it);
 * a status-list entry that is not VALID — set by either of those, or by
-  `/admin/vc-status`;
+  `/admin/vc/monitor` (Monitoring → Verifiable Credentials);
 * its holder's Remove on `/portal/wallet` (#661), of one copy or of every
   copy of one issuance (#670): `removeForSubject()` stamps each copy
   removed, sets its entry INVALID and revokes its register row.
@@ -578,7 +578,7 @@ sign-out cannot be undone by the token it was meant to cut off.
 draft's linkability guidance) through a cluster claim, and free again when the
 credential expires. **A bit is COMPUTED**, never stored twice: the entry's own
 status, or INVALID because the issued register's mark says an administrator
-revoked it — so `/admin/tokens`, `/admin/vc-status`, an administrator's
+revoked it — so `/admin/tokens`, `/admin/vc/monitor`, an administrator's
 global sign-out and the sign-in door cannot disagree. The person's own
 Global logout on `/logout` sets no bit.
 
@@ -643,7 +643,7 @@ since #201 — issued directly by a trusted attester AND the two-certificate pat
 holding RFC 5280, where it was `checkIssued()` and a signature: an expired leaf,
 a CA as the leaf or an unimplemented critical extension vouched for the key.) So
 `/admin/oid4vp`, `/admin/oid4vci` and `/admin-api/config` carry them, and
-`/admin/vc-status` is where the lists themselves are read and changed. **On by default in both modes**: the screen
+`/admin/vc/monitor` is where the lists themselves are read and changed. **On by default in both modes**: the screen
 offers every mechanism the service supports, and this one signs in only an
 entry this realm issued a credential for on a token it verified — in product
 mode, a token from a person who signed in with a verified credential of their
@@ -1200,7 +1200,7 @@ ADAPTER — and what it adapts to is this directory's machinery, not a copy:
 the cryptosuites are `vc_data_integrity.ts`'s, the keys are the realm key
 set's Ed25519, P-256 and P-384 members (`realmKeyFor()`, named by their
 did:key), a credential's status is an index `vc_status.ts` allocates, and a
-status change is `vc_status.setStatus()` — the act `/admin/vc-status`
+status change is `vc_status.setStatus()` — the act `/admin/vc/monitor`
 performs, one of the three that DISOWN a credential (*Disowned*, above).
 
 **A PRODUCT SURFACE SINCE #598 (rcbj's decision 2 on #591), AND OFF BY
@@ -1243,8 +1243,8 @@ header:
   an argument now. A private member under `verificationMethod` is refused
   rather than ignored. The DID queries go through `validation.check()`.
 * **THE STATUS-LIST PUBLISH LEFT** for `POST /admin-api/vc-status/publish`
-  (Admin Write) and a *Publish now* button on the Credential status tab
-  (`admin-ui/vc_status_admin.ts`): it was the suites' hook beside the list,
+  (Admin Write) and a *Publish now* button on Monitoring → Verifiable
+  Credentials (`admin-ui/vc_status_admin.ts`): it was the suites' hook beside the list,
   a list here is computed on every read, and an act that only says so is an
   operator's.
 

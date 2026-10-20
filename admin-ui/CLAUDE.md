@@ -201,8 +201,9 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    and forms return to the selected tab. **Verifiable Credentials is also one
    direct Protocols page**: Metadata holds the endpoint list formerly shown on
    the OpenID4VCI and OpenID4VP settings pages; OpenID4VCI settings, Credential
-   claims, Credential status, OpenID4VP settings and Verifier request each have
-   their own tab. Its issuer and verifier guidance on Metadata is in native
+   claims, OpenID4VP settings and Verifier request each have their own tab.
+   Credential status was a sixth until #752 and is **Monitoring → Verifiable
+   Credentials** now (*Monitoring → Verifiable Credentials*, below). Its issuer and verifier guidance on Metadata is in native
    disclosures, collapsed by default, while the endpoint list stays visible.
    The former leaves are not console destinations, while their distinct
    management API operations continue to feed those tabs. **XACML is one
@@ -651,8 +652,9 @@ Three things about them:
 `SECTIONS` beside the rows: the OAuth 2.0 / OIDC settings page is FIRST in its
 group, because the other four are about one aspect each and this one is the
 family's own configuration; Verifiable Credentials is one direct page with
-Metadata, separate OpenID4VCI and OpenID4VP settings, Credential claims,
-Credential status and Verifier request tabs. SAML and the other ungrouped
+Metadata, separate OpenID4VCI and OpenID4VP settings, Credential claims and
+Verifier request tabs, its status lists under Monitoring since #752. SAML and
+the other ungrouped
 pages appear directly under their protocol section.
 
 ### Rule 7 costs eight GETs and no POST
@@ -6857,11 +6859,11 @@ Three decisions:
   second copy `mode.js`'s header refuses; the page's `?format=json` is
   `report()` itself, which is what `GET /admin-api/mode` answers (rule 7).
 
-## Credential status tab on `/admin/vc`: THIS REALM'S STATUS LISTS, AND THE ONE CONTROL THEY HAVE (#38's follow-ups, 2026-09-17)
+## Monitoring → Verifiable Credentials, `/admin/vc/monitor`: THIS REALM'S STATUS LISTS, AND THE ONE CONTROL THEY HAVE (#38's follow-ups, 2026-09-17; a Monitoring page since #752, 2026-10-20)
 
-The Credential status tab on the combined Verifiable Credentials page, drawn
-by `vc_status_admin.ts` from `oid4vc/vc_status.ts` (`oid4vc/CLAUDE.md`, rule
-3as). It shows where the Token Status List, its aggregation and the two
+Drawn by `web_vc_status.ts` from `GET /admin-api/vc-status`, which answers
+`vc_status_admin.ts`'s `statusView()` over `oid4vc/vc_status.ts`
+(`oid4vc/CLAUDE.md`, rule 3as). It shows where the Token Status List, its aggregation and the two
 Bitstring Status List credentials are served, the list size, `bits` and
 lifetimes, the counts, and — paged, newest first — every live credential's
 index, format, configuration, effective status, the explicit status beside it,
@@ -6882,7 +6884,34 @@ Four decisions:
   a page rather than to a family.
 * **RULE 7**: `GET /admin-api/vc-status` answers `statusView()` and
   `POST /admin-api/vc-status/{suspend|reinstate|revoke}` answers
-  `statusAction()`, the two functions the tab calls.
+  `statusAction()`, the two functions the page calls.
+
+**IT WAS THE CREDENTIAL STATUS TAB OF `/admin/vc` UNTIL #752**, and moved at
+rcbj's ask ("for consistency"). Three things follow, and each is the console's
+rule for a page rather than something new:
+
+* **WHERE IT IS FILED IS THE QUESTION IT ANSWERS.** "What has this realm
+  issued, and is each one still good" is Monitoring's; what the issuer and
+  verifier are CONFIGURED to do stays on Protocols → Verifiable Credentials,
+  the list settings (`oid4vci.statusListTtlS`, `oid4vci.statusListLifetimeS`)
+  with it on the OpenID4VCI tab. The path follows the family monitors'
+  (`/admin/xacml/monitor`, `/admin/gnap/monitor`, `/admin/scim/monitor`) and
+  the row sits after Cert issuance in `SECTIONS`, both answering "what has been
+  issued". It is cut into tabs as its neighbours are (`PROTOCOL_TABS`): the
+  tiles, the note and where the lists are served are Metadata, the credentials
+  the one `credentials` tab. Its controls came with it, as Tokens and Grants
+  carry theirs here.
+* **THE OPERATIONS DID NOT CHANGE**; their `mirrors` name the new page, which
+  is what the form table resolves the page's buttons by (`web_forms.ts`).
+* **THE TAB'S OLD ADDRESSES LAND HERE.** `/admin/vc#vc-tab-status`, and
+  `/admin/vc-status` (the page before the tabs), are rows of `web_pages.ts`'s
+  `MOVED`, and the runtime replaces such an address with the page's, query
+  kept, before a sign-in remembers it or anything is fetched
+  (`WebPages.movedTo()`, read by `route()` and by a click on a link). A
+  hidden `NAV` row could not have done it: that keeps a path a TAB took over
+  known to the trail and `SETTING_HOMES`, and a fragment is not a path. A
+  moved address is a row of `MOVED`; `tests/console_runtime.js` 9c–9d hold
+  both.
 **AND THE ACCOUNT ITSELF, SINCE 2026-09-17 (#36 follow-up).** The state table's
 first row is *Account: enabled / DISABLED*, and the controls above the reset are
 **Disable the account** and **Enable the account** — `usersAction()`'s
@@ -7824,7 +7853,7 @@ module always was, and imports the kit by its relative path.
 | `web_answers.ts` | **What a form's answer draws where a notice is not enough** (#446, the cutover): the three kinds of answer the deleted console handlers answered with a page. A secret shown once — a generated or reset password, an activation or reset link, an app password, a realm's bootstrap password, a keytab, an EAB key, a SCEP challenge, a private key (DID, RFC 8705 client certificate, a person's assertion key, a remote PEP's listener) — drawn in place, never on a URL or in the history (`once()`). A round trip that writes nothing — the grids' "+" and bin, the view switch — drawn again from what the form holds and never sent, because those forms' hidden `action` is the write (`roundTrip()`). A redraw from an answer — a refused create or edit with its boxes, Fill (`GET /admin-api/users/new?invent=`), Generate secret and a loaded RFC 9728 document in the new-application form, the PKI workbench's next draft (`workbench` on a pane action's answer), an OpenID Federation resolution (`redraw()`). `tests/console_answers.js` holds it. |
 | `web_account_api.ts` | `/admin/account-api` (#568): the OpenAPI document of `/account-api`, the user portal's API, drawn by tag from `GET /admin-api/account-api` — each operation, the portal page or form it mirrors, who may call it, its parameters, request body and answers, and the document's own link. **It calls nothing**, unlike the explorer beside it: every account API operation acts on the signed-in person's own account with their token, which a console token is not. Filed under Service beside the explorer. |
 | `web_explorer.ts` | `/admin/api-explorer` for the static console (#446), from `GET /admin-api/console/api-explorer` (#454: the console's own operation; the page documents and calls the MANAGEMENT operations alone, `/admin-api/openapi.json`), whose answer gained `who` and `scope` (the token's subject and scopes, filled by the API's handler), `realmPrefix` and `script`. **No token is embedded**: the page carries `data-console-fetch` and `mgmt-api/admin_api_explorer.js` sends every call, the document included, through `window.stsConsoleFetch`, which the runtime answers with its DPoP-bound token and a proof by its key. The page names its script in `data-script` and the runtime loads it after drawing, since `innerHTML` runs none. The explorer's stylesheet lives here and `admin_api_docs.ts` reads it. |
-| `web_vc_status.ts` | The Credential status tab on `/admin/vc`; its Suspend, Reinstate and Revoke buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
+| `web_vc_status.ts` | Monitoring → Verifiable Credentials, `/admin/vc/monitor` (the Credential status tab on `/admin/vc` until #752): the lists on Metadata, the credentials on a `credentials` tab; its Suspend, Reinstate, Revoke and Publish now buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
 | `../attribute-sources/web_attribute_sources.ts` | The body of `/admin/attribute-sources`. Its operation answered the register WITHOUT the page's `settings` until #446; both now answer `attributeSourcesView()`. |
 | `web_secret_destinations.ts` | **Directory → Secret destinations** (#221 P3, 2026-10-06), from `GET /admin-api/secret-destinations` (`common/secret_destinations.ts`'s `view()`): where a service account's rotated password is pushed, each destination with its location, `credentialSet`, whether it is usable and why not, and — when `ctx.write` says so — Test push, an Edit fold and Remove, and the add form. **Born static**: no page module draws it, and its forms resolve through the operation's `mirrors`. In DIRECTORY, beside Attribute sources, because a destination IS a directory entry (an application entry declared for `secret-destination`); rotation's status is Monitoring's (#221 P4). **The write-credential box is a password input that is never filled**, because the view never carries the credential (`common/CLAUDE.md` 3ce). |
 | `../debugger/web_debugger.ts` | The body of `/admin/debugger` — **the first page whose Settings block comes out of its own view** (`SettingsForms.forms(json.settings, PAGE_PATH)`). |
