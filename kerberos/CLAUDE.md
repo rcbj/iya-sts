@@ -2759,8 +2759,11 @@ every requirement under both names to get round it.
   before. WHOSE role is asked is the next item.
 * **UNDER S4U THE SUBJECT IS A SETTING, `krb5.s4uRoleSubject`** (item 2,
   rcbj: "Obey the spec above all else. Short of that, add a flag that can
-  check the service or the user."). `service` (the DEFAULT, the behaviour
-  the gate had) asks about the TGT's cname, the requesting service; `user`
+  check the service or the user."). **THE DEFAULT IS `user`, rcbj's choice
+  (2026-10-20), and it is a BEHAVIOUR CHANGE from d6ba88e1**, which asked
+  about the requesting service: a front end that held a target's role used
+  to get tickets for anybody; now the person must hold it. `service` asks
+  about the TGT's cname, the requesting service, as d6ba88e1 did; `user`
   asks about the cname of the ticket being issued — the PA-FOR-USER user, or
   the evidence ticket's client, classic or RBCD — once `resolveS4u()` has
   established it, in a second `gate.check()` just after the S4U referral
@@ -2783,14 +2786,13 @@ every requirement under both names to get round it.
   of the armor TGT ... against the AllowedToAuthenticateTo"), is AD's own
   mechanism, and neither document says which "user" that is under S4U. If
   a reader wants to argue a default from it, the words "the PAC of the
-  user" lean toward `user`; the default is `service` so that nothing
-  changes until an operator chooses. No require was added (`config` was already
+  user" lean toward `user`, the default rcbj chose. No require was added (`config` was already
   required), so the parent's COPY closure is unchanged.
 * `tests/kerberos_service_roles.js` holds all of it: the `SPN@REALM` entry
   refused and issued, the bare entry unchanged and preferred, another
   realm's entry not applying, the AS, and K5 — S4U2Self, classic and RBCD
-  S4U2Proxy under unset, `service` and `user`, each with the role held by
-  only the service and by only the user.
+  S4U2Proxy under unset (= `user`), `user` and `service`, each with the
+  role held by only the service and by only the user.
 
 ## PORT 88 IS ANSWERED IN A REQUEST WORKER (2026-10-07, rcbj's decision)
 

@@ -6072,8 +6072,8 @@
     "text": "S4U 下服务所要求的角色由谁持有"
   },
   "krb5.s4uRoleSubject|description": {
-    "en": "9db10e5f8d4eb37d",
-    "text": "在 S4U2Self 和 S4U2Proxy（经典或基于资源）下，KDC 用谁的角色去对照服务条目所要求的角色（appRequiredRole）。service（默认值，也是此设置出现之前的行为）：发出请求的服务，即 TGT 的客户端。user：票据所属的人——PA-FOR-USER 中指定的用户，或证据票据的客户端——在本领域中按其完整名称查询，若其经由信任而来，则按其经过筛选的 SID 查询。两种情况下拒绝均为 KDC_ERR_POLICY。普通的 TGS 请求只有一个主体，不受影响。规范对此未作规定：[MS-SFU] 只决定服务是否可以委派。"
+    "en": "497e1cff316db4ba",
+    "text": "在 S4U2Self 和 S4U2Proxy（经典或基于资源）下，KDC 用谁的角色去对照服务条目所要求的角色（appRequiredRole）。user（默认值）：票据所属的人——PA-FOR-USER 中指定的用户，或证据票据的客户端——在本领域中按其完整名称查询，若其经由信任而来，则按其经过筛选的 SID 查询。service：发出请求的服务，即 TGT 的客户端，这是此设置出现之前 KDC 所检查的。两种情况下拒绝均为 KDC_ERR_POLICY。普通的 TGS 请求只有一个主体，不受影响。规范对此未作规定：[MS-SFU] 只决定服务是否可以委派。"
   },
   "krb5.requireSidFilteringInProduct|label": {
     "en": "f4bc0b8bb8e18123",

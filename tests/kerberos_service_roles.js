@@ -44,11 +44,12 @@
 //       end. For S4U2Self (the requirement on the front end's own entry),
 //       classic S4U2Proxy (on the back end's) and RBCD S4U2Proxy (on
 //       rbcd's), under each value:
-//         service (and the default, unset): front-staff issues, user-staff
-//                  refuses — the requesting service is asked;
-//         user:     user-staff issues, front-staff refuses — alice is
-//                  asked, and the ticket issued names her.
-//       And under `user` an ordinary TGS request is unchanged: bob is still
+//         user (and the default, unset — rcbj's choice): user-staff
+//                  issues, front-staff refuses — alice is asked, and the
+//                  ticket issued names her;
+//         service:  front-staff issues, user-staff refuses — the
+//                  requesting service is asked, as d6ba88e1 did.
+//       And under `user` (the default) an ordinary TGS request is unchanged: bob is still
 //       refused HTTP/web.ksa.test and alice issued it.
 //
 // IN PROCESS because two Kerberos realms on one port is a shape no stack
@@ -373,8 +374,8 @@ async function s4uSection(t) {
           'for alice', show(evidence) + ' ' +
           JSON.stringify(evidence.flagNames || []));
   const cases = [
-    { value: '', subject: 'service', holds: 'front-staff',
-      lacks: 'user-staff' },
+    { value: '', subject: 'user', holds: 'user-staff',
+      lacks: 'front-staff' },
     { value: 'service', subject: 'service', holds: 'front-staff',
       lacks: 'user-staff' },
     { value: 'user', subject: 'user', holds: 'user-staff',

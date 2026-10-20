@@ -4074,12 +4074,13 @@ async function handleTgsReq(request) {
 // neither it nor [MS-SFU] says which "user" that is when a service asks for
 // somebody else. So `krb5.s4uRoleSubject`, per realm and at runtime:
 //
-//   service  the requesting service (the TGT's cname) holds the role — the
-//            behaviour since the gate was added, and the default;
 //   user     the person the ticket is FOR (its cname: the PA-FOR-USER user
 //            under S4U2Self, the evidence ticket's client under S4U2Proxy,
 //            classic or resource-based) holds it, asked after resolveS4u()
-//            has established who that is.
+//            has established who that is — THE DEFAULT, rcbj's choice
+//            (2026-10-20), and a change from the gate as first added;
+//   service  the requesting service (the TGT's cname) holds it — what the
+//            gate asked when it was added (d6ba88e1).
 //
 // A person of another realm is asked about as the presenter across a trust
 // is (#430): `name@REALM`, `crossRealm`, and the SIDs their PAC carried once
@@ -4644,8 +4645,8 @@ async function answerTgsReq(request, state) {
   // the same question `/oauth2/token` and `/saml2/sso` are asked and has
   // nothing to do with delegation. Under S4U the two names differ — the
   // presenter is the service, the ticket is for somebody else — and which
-  // one is asked is `krb5.s4uRoleSubject` (#747 item 2): the presenter here
-  // by default, the person after resolveS4u() when it says `user`. See
+  // one is asked is `krb5.s4uRoleSubject` (#747 item 2): by default the
+  // person, after resolveS4u(); the presenter here when it says `service`. See
   // s4uRoleSubjectOf() for why the specifications leave it to a setting.
   //
   // A requirement belongs to the SERVICE somebody is reaching, and the TGS is
@@ -4691,11 +4692,12 @@ async function answerTgsReq(request, state) {
     String(ticketPart.crealm || '') !== answeringRealm &&
     !!principals.trustRegister();
   const roleQuestionWaived = presenterAcross && isTgtRequest(body.sname);
-  // UNDER S4U WITH `krb5.s4uRoleSubject` = `user` (#747 item 2) the question
-  // is not asked here about the requesting service but after resolveS4u(),
-  // about the person the ticket is for: s4uRoleSubjectOf(), above it.
+  // UNDER S4U, UNLESS `krb5.s4uRoleSubject` = `service` (#747 item 2; the
+  // default is `user`), the question is not asked here about the requesting
+  // service but after resolveS4u(), about the person the ticket is for:
+  // s4uRoleSubjectOf(), above it.
   const roleAskedOfUser = s4uAsked && !roleQuestionWaived &&
-    String(config.value('krb5.s4uRoleSubject') || 'service') === 'user';
+    String(config.value('krb5.s4uRoleSubject') || 'user') !== 'service';
   let presenterSids = [];
   if (presenterAcross && !roleQuestionWaived && !roleAskedOfUser) {
     const presented = carriedPacs(ticketPart);
@@ -5065,8 +5067,9 @@ async function answerTgsReq(request, state) {
     return referred;
   }
   // THE ROLE GATE, ASKED OF THE PERSON THE TICKET IS FOR (#747 item 2):
-  // `krb5.s4uRoleSubject` = `user`, so the question the gate above did not
-  // ask is asked here, now that resolveS4u() has said who that is. The same
+  // `krb5.s4uRoleSubject` = `user` (the default), so the question the gate
+  // above did not ask is asked here, now that resolveS4u() has said who that
+  // is. The same
   // service name, the same refusal (KDC_ERR_POLICY, STS-KRB-0039), and the
   // delegation register's row for the act says it was refused. A request
   // that turned out to be no S4U one (mode `none`) is asked about its

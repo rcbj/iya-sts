@@ -545,19 +545,19 @@ candidate subjects, and `krb5.s4uRoleSubject` chooses:
 
 | Value | Who must hold the role |
 |---|---|
-| `service` (default) | the service that asks — the front end, whose TGT is presented |
-| `user` | the person the ticket is for — the PA-FOR-USER user, or the evidence ticket's client |
+| `user` (default) | the person the ticket is for — the PA-FOR-USER user, or the evidence ticket's client |
+| `service` | the service that asks — the front end, whose TGT is presented |
 
 [MS-SFU] decides only whether the front end may impersonate or delegate, not
-whose roles an extra check like this one reads, so this is a setting, and the
-default keeps the behaviour the KDC had. A person who came across a trust is
+whose roles an extra check like this one reads, so this is a setting. Before
+it existed the KDC asked about the service; the default is now the user. A person who came across a trust is
 asked about as `user@REALM`, with the SIDs their PAC carried after
 filtering. An ordinary TGS request has one subject and is not affected.
 Per realm, at runtime, on **Protocols → Kerberos → Global settings**
 (**Whose role a service requires under S4U**), or:
 
 ```bash
-api realms/set '{"id":"r1","key":"krb5.s4uRoleSubject","value":"user"}'
+api realms/set '{"id":"r1","key":"krb5.s4uRoleSubject","value":"service"}'
 ```
 
 ## A trust between two realms of this service

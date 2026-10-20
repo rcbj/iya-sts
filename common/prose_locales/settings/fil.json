@@ -6072,8 +6072,8 @@
     "text": "Kaninong role ang hinihingi ng isang service sa ilalim ng S4U"
   },
   "krb5.s4uRoleSubject|description": {
-    "en": "9db10e5f8d4eb37d",
-    "text": "Sa ilalim ng S4U2Self at S4U2Proxy (classic o resource-based), kaninong mga role ang sinusuri ng KDC laban sa role na hinihingi ng entry ng isang service (appRequiredRole). service (ang default, at ang gawi hanggang umiral ang setting na ito): ang service na humihiling, ang client ng TGT. user: ang taong para sa kanya ang ticket — ang user na pinangalanan sa PA-FOR-USER, o ang client ng evidence ticket — tinatanong sa realm na ito ayon sa buo niyang pangalan, at ayon sa kanyang mga na-filter na SID, kapag dumating siya sa pamamagitan ng isang trust. Ang pagtanggi ay KDC_ERR_POLICY alinman ang piliin. Ang karaniwang TGS request ay may iisang subject at hindi naaapektuhan. Iniiwang bukas ito ng mga specification: ang [MS-SFU] ay nagpapasya lamang kung maaaring mag-delegate ang service."
+    "en": "497e1cff316db4ba",
+    "text": "Sa ilalim ng S4U2Self at S4U2Proxy (classic o resource-based), kaninong mga role ang sinusuri ng KDC laban sa role na hinihingi ng entry ng isang service (appRequiredRole). user (ang default): ang taong para sa kanya ang ticket — ang user na pinangalanan sa PA-FOR-USER, o ang client ng evidence ticket — tinatanong sa realm na ito ayon sa buo niyang pangalan, at ayon sa kanyang mga na-filter na SID, kapag dumating siya sa pamamagitan ng isang trust. service: ang service na humihiling, ang client ng TGT, na siyang sinusuri ng KDC bago umiral ang setting na ito. Ang pagtanggi ay KDC_ERR_POLICY alinman ang piliin. Ang karaniwang TGS request ay may iisang subject at hindi naaapektuhan. Iniiwang bukas ito ng mga specification: ang [MS-SFU] ay nagpapasya lamang kung maaaring mag-delegate ang service."
   },
   "krb5.requireSidFilteringInProduct|label": {
     "en": "f4bc0b8bb8e18123",
