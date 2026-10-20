@@ -367,6 +367,22 @@
     "en": "d0ae04f76208dec0",
     "text": "Aucune expiration : remplacée lorsque la hiérarchie change ici ou sur un autre nœud, et supprimée avec son domaine."
   },
+  "caches.store.keys.derived-digest-keys.title": {
+    "en": "f9fe85cae4c1d960",
+    "text": "Clés de condensat dérivées"
+  },
+  "caches.store.keys.derived-digest-keys.description": {
+    "en": "168b9cef8ba71a95",
+    "text": "La clé HMAC avec laquelle chaque libellé de condensat à clé est dérivé, afin qu’un condensat n’exécute pas HKDF à chaque appel. Conservée à côté de la clé dont elle est dérivée, comparée à chaque utilisation."
+  },
+  "caches.store.keys.derived-digest-keys.bound": {
+    "en": "ddbdac124aa8d60a",
+    "text": "Appliquée : MAX_DERIVED_DIGEST_KEYS (64) libellés ; au-delà, toutes les clés dérivées sont abandonnées."
+  },
+  "caches.store.keys.derived-digest-keys.lifetime": {
+    "en": "624f872facf2862c",
+    "text": "Jusqu’à ce que la clé dont elle est dérivée change (une nouvelle clé de condensat ou clé de chiffrement de clés), ce qui est vérifié à chaque utilisation."
+  },
   "caches.store.keys.plaintext.title": {
     "en": "51cb646ea755ee9e",
     "text": "Clés de signature déchiffrées"

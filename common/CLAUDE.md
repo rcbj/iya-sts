@@ -6632,6 +6632,16 @@ built at 23b-ii beside the signing rotation. What a maintainer needs:
   (`ensureDigestKey()` at start, `pruneDigestKeys()` for the loser), and never
   rotated, superseded or destroyed. Where DEKs are derived the KEK-derived key
   is kept — nothing a digest names outlives the process there.
+* **THE HMAC KEY EACH LABEL DERIVES IS KEPT (#760, 2026-10-20)**, beside the
+  input it came from (the digest key, or the KEK's bytes), which is compared
+  on every call: HKDF ran per digest, and the minted store asks one for every
+  row it flushes, prefetches or applies — about 5% of a request worker under
+  a sign-in load. A new digest key or KEK derives again at once and the
+  digests are the ones they always were. It holds nothing the process does
+  not already hold in the clear (the KEK and the digest key are resident),
+  so it is outside `keys.plaintextRetention`'s claim, which is about
+  decrypted signing keys. `keys.derived-digest-keys` on `/admin/caches`,
+  label only; `tests/keyed_digest_derivation.js`.
 * **The settings are per process** (`perProcess`): the jobs run once for the
   service, and a realm cannot carry them.
 * **A PASS WITH NOTHING TO DO READS NOTHING (#623).** On 8081, at 1.5M

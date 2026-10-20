@@ -367,6 +367,22 @@
     "en": "d0ae04f76208dec0",
     "text": "不过期：当层级在此处或其他节点上发生变化时被替换，并随其领域一起被丢弃。"
   },
+  "caches.store.keys.derived-digest-keys.title": {
+    "en": "f9fe85cae4c1d960",
+    "text": "派生的摘要密钥"
+  },
+  "caches.store.keys.derived-digest-keys.description": {
+    "en": "168b9cef8ba71a95",
+    "text": "每个带密钥摘要标签所派生的 HMAC 密钥，使计算摘要时不必每次都运行 HKDF。与派生它的密钥一起保存，并在每次使用时比较。"
+  },
+  "caches.store.keys.derived-digest-keys.bound": {
+    "en": "ddbdac124aa8d60a",
+    "text": "强制：MAX_DERIVED_DIGEST_KEYS（64）个标签；超出后丢弃所有派生密钥。"
+  },
+  "caches.store.keys.derived-digest-keys.lifetime": {
+    "en": "624f872facf2862c",
+    "text": "直到派生它的密钥发生变化（新的摘要密钥或密钥加密密钥），每次使用时都会检查。"
+  },
   "caches.store.keys.plaintext.title": {
     "en": "51cb646ea755ee9e",
     "text": "已解密的签名密钥"

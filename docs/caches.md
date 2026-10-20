@@ -137,6 +137,7 @@ They need no setting because a changed certificate is a different entry.
 | Post-quantum keys | the realm's ML-DSA and SLH-DSA keys, generated when first needed | per realm | as for the key set; one per realm | — |
 | Certificate authorities | each realm's CA hierarchy, held decrypted | per process | replaced when the hierarchy changes; one per realm, plus the service Root and the process branch | — |
 | Thumbprint key IDs | the RFC 9278 URI for each key ID | per process | never needed again (512 entries) | — |
+| Derived digest keys | the HMAC key each kind of keyed digest is derived with | per process | until the digest key or key-encryption key it came from changes, checked on every use (64 entries) | — |
 
 The decrypted-key policy only applies where keys persist. In development mode
 there is no stored copy to fall back to, so keys stay in memory.

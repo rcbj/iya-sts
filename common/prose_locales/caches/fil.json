@@ -367,6 +367,22 @@
     "en": "d0ae04f76208dec0",
     "text": "Walang expiry: pinapalitan kapag nagbago ang hierarchy dito o sa ibang node, at tinatanggal kasama ng realm nito."
   },
+  "caches.store.keys.derived-digest-keys.title": {
+    "en": "f9fe85cae4c1d960",
+    "text": "Mga derived na digest key"
+  },
+  "caches.store.keys.derived-digest-keys.description": {
+    "en": "168b9cef8ba71a95",
+    "text": "Ang HMAC key na pinagmumulan ng bawat keyed-digest label, para hindi patakbuhin ng isang digest ang HKDF sa bawat tawag. Itinatabi kasama ng key na pinagmulan nito, na inihahambing sa bawat paggamit."
+  },
+  "caches.store.keys.derived-digest-keys.bound": {
+    "en": "ddbdac124aa8d60a",
+    "text": "Ipinapatupad: MAX_DERIVED_DIGEST_KEYS (64) na label; lampas doon, itinatapon ang lahat ng derived key."
+  },
+  "caches.store.keys.derived-digest-keys.lifetime": {
+    "en": "624f872facf2862c",
+    "text": "Hanggang magbago ang key na pinagmulan nito (bagong digest key o key-encryption key), na sinusuri sa bawat paggamit."
+  },
   "caches.store.keys.plaintext.title": {
     "en": "51cb646ea755ee9e",
     "text": "Mga naka-decrypt na signing key"

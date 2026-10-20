@@ -367,6 +367,22 @@
     "en": "d0ae04f76208dec0",
     "text": "不會過期：階層在此處或其他節點上變更時被取代，並隨其領域一併捨棄。"
   },
+  "caches.store.keys.derived-digest-keys.title": {
+    "en": "f9fe85cae4c1d960",
+    "text": "衍生的摘要金鑰"
+  },
+  "caches.store.keys.derived-digest-keys.description": {
+    "en": "168b9cef8ba71a95",
+    "text": "每個帶金鑰摘要標籤所衍生的 HMAC 金鑰，讓計算摘要時不必每次都執行 HKDF。與衍生它的金鑰一起保存，並在每次使用時比對。"
+  },
+  "caches.store.keys.derived-digest-keys.bound": {
+    "en": "ddbdac124aa8d60a",
+    "text": "強制：MAX_DERIVED_DIGEST_KEYS（64）個標籤；超過後會捨棄所有衍生金鑰。"
+  },
+  "caches.store.keys.derived-digest-keys.lifetime": {
+    "en": "624f872facf2862c",
+    "text": "直到衍生它的金鑰變更（新的摘要金鑰或金鑰加密金鑰），每次使用時都會檢查。"
+  },
   "caches.store.keys.plaintext.title": {
     "en": "51cb646ea755ee9e",
     "text": "已解密的簽署金鑰"
