@@ -301,6 +301,10 @@ const LINK_VIA = 'Federation link';
 // factor is recorded as, for the step-up endpoint to recognise.
 const STEPUP_PATH = federation.PATHS.stepup;
 const STEPUP_VIA = 'Federation step-up';
+// HOW OLD A PROVIDER NOTIFICATION WITH NO `exp` MAY BE (#565): its `iat`
+// bounds it instead, and the once-ever history keeps it that long. A day,
+// which covers a provider's own retries.
+const NOTIFICATION_MAX_AGE_S = 86400;
 
 // THE BROWSER THAT STARTED A LINKING SIGN-IN (#109). A cookie carrying a
 // random value whose SHA-256 is on the context, so the linking step is
@@ -2386,13 +2390,31 @@ class FederationSp {
                                    : String(verified.why ||
                                             'it did not verify'));
       }
+      // FRESH, AS WELL AS ONCE. The history below holds a jti only until
+      // the notification's own end, and Apple's carries `iat` and no `exp`:
+      // an end invented from the moment of acceptance would let a captured
+      // notification be accepted AGAIN once its row was purged. So a
+      // notification with no `exp` is bounded by its `iat` — issued within
+      // NOTIFICATION_MAX_AGE_S, and not in the future past the clock skew —
+      // and its row lives exactly as long as it could be accepted.
+      const nowS = Math.floor(Date.now() / 1000);
+      const skew = Number(this.deps.config.value('oauth2.clockSkewS')) || 0;
+      const exp = Number(verified.payload.exp) || 0;
+      const iat = Number(verified.payload.iat) || 0;
+      if (!exp && (!iat || iat > nowS + skew ||
+                   nowS - iat > NOTIFICATION_MAX_AGE_S + skew)) {
+        log.debug("Leaving the notification's verification. Not fresh.");
+        return refused(iat ? 'it was issued at ' + iat + ', outside the ' +
+                             NOTIFICATION_MAX_AGE_S + ' seconds a ' +
+                             'notification with no exp is accepted for'
+                           : 'it carries neither exp nor iat');
+      }
       // ONCE EVER (rule 3ae): a replayed `consent-revoked` would undo a
       // connection the person made again since.
       return usedAssertions.claim({ format: 'jwt',
         use: 'provider-notification', issuer: String(record.fedPeer),
         identifier: jti,
-        expiresAt: (Number(verified.payload.exp) ||
-                    Math.floor(Date.now() / 1000) + 86400) * 1000
+        expiresAt: (exp || iat + NOTIFICATION_MAX_AGE_S + skew) * 1000
       }).then((claimed: any) => {
         log.debug("Entering the notification's claim.");
         if (!claimed.ok) {

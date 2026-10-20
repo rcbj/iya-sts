@@ -1120,6 +1120,26 @@ function childMain() {
     note(replayed.status === 400 && forged.status === 400,
          'L6. a replayed notification and one not signed by the provider ' +
          'are refused', replayed.status + ' ' + forged.status);
+    // Apple's notification carries iat and no exp: iat bounds it, so a
+    // captured one cannot come back once its history row is purged.
+    const undated = function (jti, iat) {
+      return jwt.sign({ iss: pbase + '/apple', aud: 'com.example.web',
+        jti: jti, iat: iat, events: JSON.stringify({
+          type: 'email-disabled', sub: '001234.abcdef0123456789.0123' }) },
+      signing.privateKey, { algorithm: 'RS256', noTimestamp: true,
+                            keyid: 'fake-google-1' });
+    };
+    const nowS = Math.floor(Date.now() / 1000);
+    const freshNoExp = await request('POST', '/realm/' + SP +
+      '/federation/notifications/cp-apple',
+      { form: { payload: undated('n-3', nowS) } });
+    const staleNoExp = await request('POST', '/realm/' + SP +
+      '/federation/notifications/cp-apple',
+      { form: { payload: undated('n-4', nowS - 3 * 86400) } });
+    note(freshNoExp.status === 200 && staleNoExp.status === 400,
+         'L7. a notification with no exp is accepted while its iat is ' +
+         'recent, and refused once it is days old',
+         freshNoExp.status + ' ' + staleNoExp.status);
 
     // ===== B. THE REALM SWITCH ==============================================
     inSp(function () {

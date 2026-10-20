@@ -2168,7 +2168,11 @@ Three adapters, each in `federation_sp.ts` where its flow is:
   the mapping and never identity.
 * **`apple-notifications`.** `POST /federation/notifications/{id}` takes
   Apple's `{ payload }` JWT, verified against the relationship's keys only
-  and spent once ever by `jti` (use `provider-notification`).
+  and spent once ever by `jti` (use `provider-notification`). Apple's
+  carries `iat` and no `exp`, so one with no `exp` must have an `iat`
+  within a day (`NOTIFICATION_MAX_AGE_S`) and its history row lives that
+  long: an end invented from the moment of acceptance let a captured
+  notification be accepted again once its row was purged.
   `consent-revoked` and `account-delete` REMOVE that subject's link through
   this relationship, and the write hook ends its sessions. The entry is
   never removed. `email-*` is recorded. In a service deployed as cells, a
