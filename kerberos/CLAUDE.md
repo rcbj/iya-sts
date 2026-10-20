@@ -1246,12 +1246,16 @@ every cross-realm name and every routing miss, both through
 bumps the `sts/` pin across #430 owes `COPY sts/kerberos/krb5_trusts.js
 ./sts/kerberos/`, COMPILED from its `.ts` (the #186 precedent for a lazily
 reached TypeScript module; the 2026-10-13 rule that a module required AT LOAD is
-`.js` in the checkout does not apply to a lazy one), and with it
-`common/instance_slot.js` (compiled) and, reached lazily when a record is read,
-`common/keystore.js` — each wherever the parent's set does not already carry it.
-Everything else it requires at load (`helpers`, `config`, `realms`, `mode`,
-`error_codes`, `crypto`, `cache_registry`, `krb5_crypto`) is already in the
-closure. **A copy WITHOUT it loads and says so** (`STS-KRB-0225`, once) and holds
+`.js` in the checkout does not apply to a lazy one), and with it `COPY
+sts/common/instance_slot.js ./sts/common/`, also compiled from its `.ts` (it
+requires nothing). **Those two lines are the whole debt**, checked against the
+parent's `tests/Dockerfile` on 2026-10-19 when #721 was merged:
+`common/keystore.js`, reached lazily when a record is read, is already there
+(with `secrets.js`, `pki_merge.js` and `cluster/cluster_capabilities.js`, which
+it requires), and so is everything `krb5_trusts` requires at load (`helpers`,
+`config`, `realms`, `mode`, `error_codes`, `crypto`, `cache_registry`,
+`krb5_crypto`, `krb5_pac`). `kerberos/web_kerberos_trusts.ts` is the console's
+browser bundle and is reached from none of the three. **A copy WITHOUT it loads and says so** (`STS-KRB-0225`, once) and holds
 no trust — so the parent's referral assertions in `krb5_tgs_ap.js`, which walk
 the PARTNER.COM trust, fail until the line is added. `common/realms.js`'s new
 lazy require of `krb5_principals.js` and `xacml/xacml_request.js`'s new
