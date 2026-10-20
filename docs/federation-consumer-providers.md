@@ -66,6 +66,17 @@ server-to-server notification endpoint at Apple:
 cross-site POST, so the browser binding has to be a `SameSite=None; Secure`
 cookie.
 
+## A provider's security events
+
+A provider that sends Shared Signals about its users is configured exactly as
+an enterprise partner's are: in the relationship's *Shared Signals from this
+partner* section ([Shared Signals](shared-signals.md#receiving-from-a-federation-partner)).
+Its events end the sessions it started and can block its own sign-ins of a
+person, and nothing beyond that relationship. Google's Cross-Account
+Protection uses RISC this way. Whether its stream configuration works with
+this receiver **has not been verified**. Apple's notifications are their own
+endpoint, described above.
+
 ## Who a person becomes
 
 * **A newcomer gets an entry of their own**, named after the relationship and
