@@ -2343,6 +2343,11 @@ const CODES = [
       'open, so it could not decide the entry\'s tier; nothing was ' +
       'converted (#391).',
     spec: 'cell_convert — refused' },
+  { code: 'STS-CELL-0211',
+    summary: 'A provider\'s server-to-server notification could not reach ' +
+      'every cell (#727): it is answered 503 and its once-ever claim is ' +
+      'released, so the provider\'s retry is accepted and fanned out again.',
+    spec: 'HTTP 503 with Retry-After' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
     summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +

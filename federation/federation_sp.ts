@@ -305,6 +305,13 @@ const STEPUP_VIA = 'Federation step-up';
 // bounds it instead, and the once-ever history keeps it that long. A day,
 // which covers a provider's own retries.
 const NOTIFICATION_MAX_AGE_S = 86400;
+// THE INTER-CELL OPERATION A PROVIDER'S NOTIFICATION IS FANNED OUT WITH
+// (#727): each peer removes the links it holds for the subject. See
+// applyNotification().
+const PEER_NOTIFICATION_OP = 'federation-provider-notification';
+// What a notification can lead to: the types that remove a link, and the
+// ones only recorded.
+const UNLINKING_NOTIFICATIONS = ['consent-revoked', 'account-delete'];
 
 // THE BROWSER THAT STARTED A LINKING SIGN-IN (#109). A cookie carrying a
 // random value whose SHA-256 is on the context, so the linking step is
@@ -2411,9 +2418,12 @@ class FederationSp {
       }
       // ONCE EVER (rule 3ae): a replayed `consent-revoked` would undo a
       // connection the person made again since.
+      // BOUND TO THE RESPONSE (#727): a 2xx spends it, anything else releases
+      // it, so a notification a peer cell could not be reached for is
+      // refused 503 and accepted when the provider sends it again.
       return usedAssertions.claim({ format: 'jwt',
         use: 'provider-notification', issuer: String(record.fedPeer),
-        identifier: jti,
+        identifier: jti, request: req,
         expiresAt: (exp || iat + NOTIFICATION_MAX_AGE_S + skew) * 1000
       }).then((claimed: any) => {
         log.debug("Entering the notification's claim.");
@@ -2424,22 +2434,72 @@ class FederationSp {
               'not prove it unused (' + claimed.reason + ')');
         }
         log.debug("Leaving the notification's claim.");
-        return this.applyNotification(res, record, event);
+        return this.applyNotification(res, record, event, req);
       });
     });
   }
 
-  // What a verified provider notification leads to (#565): see
-  // notificationsEndpoint().
-  private applyNotification(res, record, event) {
-    const { federation, links, audit, log } = this.deps;
+  // ---------------------------------------------------------------------------
+  // WHAT A VERIFIED PROVIDER NOTIFICATION LEADS TO (#565), IN EVERY CELL (#727).
+  // The cell it arrives at removes the links it holds — unlinkHere() — and,
+  // in a service deployed as cells, asks every peer to do the same
+  // (`PEER_NOTIFICATION_OP`, the partner sign-out's shape: `endAtPeers()` in
+  // `federation_slo.ts`), because the person may be homed anywhere and the
+  // notification names a subject, not a cell. The match is the relationship
+  // and the subject, as data; each cell builds the one link value from them.
+  //
+  // A PEER THAT CANNOT BE REACHED (STS-CELL-0211) makes the answer 503: the
+  // notification's once-ever claim is bound to the response, so it is
+  // RELEASED, and the provider's retry is accepted and fanned out again.
+  // Removing a link is idempotent, so the cells that did act act again on the
+  // retry and change nothing. A 2xx means every cell holding the subject was
+  // asked and answered.
+  // ---------------------------------------------------------------------------
+  private applyNotification(res, record, event, req?) {
+    const { audit, errorCodes, log } = this.deps;
     log.debug("Entering FederationSp.applyNotification().");
     const type = String(event.type);
-    const value = links.linkValue(record.fedId, record.fedPeer,
-                                  String(event.sub));
+    const sub = String(event.sub);
+    const here = this.unlinkHere(record, type, sub);
+    log.debug("Leaving FederationSp.applyNotification(). Asking the peers.");
+    return this.notifyPeers(record, type, sub).then((peers) => {
+      log.debug("Entering the notification's fan-out answer.");
+      const people = here.people + peers.people;
+      const unlinked = here.unlinked + peers.unlinked;
+      audit.record({ category: 'federation',
+        action: 'federation.provider-notification', target: record.fedId,
+        outcome: peers.failed ? 'partial' : 'success',
+        summary: record.fedId + ' notified ' + type + ' for a subject held ' +
+                 'by ' + people + ' person(s); ' + unlinked +
+                 ' link(s) removed' + (peers.failed ? '; ' + peers.failed +
+                 ' cell(s) could not be asked, so the notification was not ' +
+                 'accepted and the provider may send it again' : '') +
+                 ' (#565, #727)',
+        detail: { relationship: record.fedId, type: type, people: people,
+                  unlinked: unlinked, cellsUnreached: peers.failed } });
+      if (peers.failed) {
+        errorCodes.mark(res, 'STS-CELL-0211');
+        log.debug("Leaving the notification's fan-out answer. Partial.");
+        return res.status(503).set('Retry-After', '60')
+                  .json({ error: 'temporarily_unavailable' });
+      }
+      void req;
+      log.debug("Leaving the notification's fan-out answer. " + type + ".");
+      return res.status(200).json({ ok: true });
+    });
+  }
+
+  // THIS CELL'S PART OF A NOTIFICATION (#565, #727): the people here holding
+  // the subject's link through the relationship, and — for a type that
+  // removes one — the links removed, each through the directory's write hook,
+  // which ends the sessions it started. Never the entry. `{ people, unlinked }`.
+  unlinkHere(record, type, sub) {
+    const { federation, links, log } = this.deps;
+    log.debug("Entering FederationSp.unlinkHere(). " + type);
+    const value = links.linkValue(record.fedId, record.fedPeer, String(sub));
     const holders = federation.peopleLinkedBy(value) || [];
     let unlinked = 0;
-    if (type === 'consent-revoked' || type === 'account-delete') {
+    if (UNLINKING_NOTIFICATIONS.indexOf(String(type)) >= 0) {
       holders.forEach(function (one: any): void {
         const written = federation.writeFederationLink(
           String(one.username || one.uid || ''), value, false, {});
@@ -2448,16 +2508,89 @@ class FederationSp {
         }
       });
     }
-    audit.record({ category: 'federation',
-      action: 'federation.provider-notification', target: record.fedId,
-      outcome: 'success',
-      summary: record.fedId + ' notified ' + type + ' for a subject held ' +
-               'by ' + holders.length + ' person(s); ' + unlinked +
-               ' link(s) removed (#565)',
-      detail: { relationship: record.fedId, type: type,
-                people: holders.length, unlinked: unlinked } });
-    log.debug("Leaving FederationSp.applyNotification(). " + type + ".");
-    return res.status(200).json({ ok: true });
+    log.debug("Leaving FederationSp.unlinkHere(). " + unlinked + " of " +
+              holders.length + ".");
+    return { people: holders.length, unlinked: unlinked };
+  }
+
+  // EVERY PEER CELL'S PART (#727). `{ people, unlinked, failed }`; never
+  // rejects. Nothing is asked in single-cell mode.
+  private notifyPeers(record, type, sub): Promise<{ people: number;
+                                                     unlinked: number;
+                                                     failed: number }> {
+    const { errorCodes, log } = this.deps;
+    log.debug("Entering FederationSp.notifyPeers().");
+    if (!cells.isMulti()) {
+      log.debug("Leaving FederationSp.notifyPeers(). Single-cell.");
+      return Promise.resolve({ people: 0, unlinked: 0, failed: 0 });
+    }
+    const channel = require('./../common/cell_channel');
+    const body = { realm: realms.currentId(), relationship: record.fedId,
+                   type: String(type), sub: String(sub) };
+    const asks = cells.peers().map(function (peer: any) {
+      return channel.call(peer.id, PEER_NOTIFICATION_OP, body)
+        .then(function (answer: any) {
+          return { people: Number(answer && answer.people) || 0,
+                   unlinked: Number(answer && answer.unlinked) || 0,
+                   failed: 0 };
+        }, function (err: any) {
+          log.warn(errorCodes.tag('STS-CELL-0211') + 'federation: cell "' +
+                   peer.id + '" could not be asked to apply ' +
+                   record.fedId + '\'s ' + type + ' notification: ' +
+                   ((err && err.message) || err) + '. The notification is ' +
+                   'not accepted, so the provider may send it again.');
+          return { people: 0, unlinked: 0, failed: 1 };
+        });
+    });
+    log.debug("Leaving FederationSp.notifyPeers(). Asking " + asks.length +
+              " peer(s).");
+    return Promise.all(asks).then(function (answers) {
+      return answers.reduce(function (sum, one) {
+        return { people: sum.people + one.people,
+                 unlinked: sum.unlinked + one.unlinked,
+                 failed: sum.failed + one.failed };
+      }, { people: 0, unlinked: 0, failed: 0 });
+    });
+  }
+
+  /**
+   * Applies, in THIS cell, a provider notification another cell verified and
+   * spent (`PEER_NOTIFICATION_OP`, #727). What this cell checks is that the
+   * relationship exists here and takes notifications — global configuration,
+   * so the same answer the sending cell had — and that the type is one a
+   * notification can carry.
+   *
+   * @param body - `{ realm, relationship, type, sub }`
+   * @param peer - the calling cell
+   * @returns `{ people, unlinked }`
+   * @throws an Error for an unknown realm
+   */
+  notificationForPeer(body: any, peer: string): { people: number;
+                                                  unlinked: number } {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSp.notificationForPeer(). from " + peer);
+    const realmId = String((body && body.realm) || '');
+    const realm = realmId ? realms.get(realmId)
+                          : realms.get(realms.DEFAULT_ID);
+    if (!realm) {
+      log.debug("Leaving FederationSp.notificationForPeer(). No realm.");
+      throw new Error('no such realm');
+    }
+    const self = this;
+    let out = { people: 0, unlinked: 0 };
+    realms.run(realm, function () {
+      const record = federation.get(String(body.relationship || ''));
+      if (!record || record.fedRole !== 'service-provider' ||
+          !consumerProviders.adapts(record, 'apple-notifications') ||
+          !String(body.sub || '')) {
+        return;
+      }
+      out = self.unlinkHere(record, String(body.type || ''),
+                            String(body.sub));
+    });
+    log.debug("Leaving FederationSp.notificationForPeer(). " +
+              out.unlinked + " unlinked.");
+    return out;
   }
 
   // The `form` source (#565): Apple's `user` field, parsed, or undefined.
@@ -6031,6 +6164,13 @@ require('./../common/cell_channel').registerOp(LINK_HOME_OP,
   function (body: any) {
     return FederationSp.answerLinkHome(body);
   });
+// THE PEERS' HALF OF A PROVIDER'S NOTIFICATION (#727): see
+// applyNotification(). Registered once at load; it binds and dials nothing.
+require('./../common/cell_channel').registerOp(PEER_NOTIFICATION_OP,
+  function (body: any, ctx: any) {
+    return slot.get().notificationForPeer(body,
+                                          String((ctx && ctx.peer) || ''));
+  });
 
 /**
  * This service as a federation service provider: signing a person in through a
@@ -6110,6 +6250,9 @@ export = {
   // The portal's connect (#565), reached by `portal/portal_connected_accounts`
   // at request time.
   beginConnect: slot.forward('beginConnect'),
+  // A peer cell's part of a provider's notification (#727): the inter-cell
+  // operation's handler, and a test's way to call it.
+  notificationForPeer: slot.forward('notificationForPeer'),
   /**
    * Forwards to `FederationSp.sessionBoundOf()`.
    */

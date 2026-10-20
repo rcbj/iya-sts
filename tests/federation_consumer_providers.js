@@ -1143,6 +1143,117 @@ function childMain() {
          'recent, and refused once it is days old',
          freshNoExp.status + ' ' + staleNoExp.status);
 
+    // ===== M. A NOTIFICATION IN A SERVICE DEPLOYED AS CELLS (#727) =========
+    // Two cells, this one `cac1`; the channel to the peer stubbed. The link
+    // is put back first: L5 removed it.
+    const cellsModule = require(ROOT + '/common/cells');
+    const channelModule = require(ROOT + '/common/cell_channel');
+    const sp = require(ROOT + '/federation/federation_sp');
+    const swap = function (target, replacements) {
+      const saved = {};
+      Object.keys(replacements).forEach(function (k) {
+        saved[k] = target[k];
+        target[k] = replacements[k];
+      });
+      return function () {
+        Object.keys(saved).forEach(function (k) {
+          target[k] = saved[k];
+        });
+      };
+    };
+    const appleValue = 'cp-apple ' + pbase + '/apple ' +
+                       '001234.abcdef0123456789.0123';
+    const relink = function () {
+      return inSp(function () {
+        return federation.writeFederationLink(aName, appleValue, true, {});
+      });
+    };
+    const calls = [];
+    let peerAnswer = function () {
+      return Promise.resolve({ people: 1, unlinked: 1 });
+    };
+    const restoreCells = swap(cellsModule, {
+      isMulti: function () { return true; },
+      id: function () { return 'cac1'; },
+      peers: function () {
+        return [{ id: 'usw2', url: 'https://usw2:8446' }];
+      }
+    });
+    const restoreChannel = swap(channelModule, {
+      call: function (cellId, name, body) {
+        calls.push({ cellId: cellId, name: name, body: body });
+        return peerAnswer();
+      }
+    });
+    const notifyAt = '/realm/' + SP + '/federation/notifications/cp-apple';
+    try {
+      relink();
+      const fanned = await request('POST', notifyAt,
+        { form: { payload: notice('n-10', 'consent-revoked') } });
+      const asked = calls[0] || {};
+      note(fanned.status === 200 &&
+           asked.name === 'federation-provider-notification' &&
+           asked.cellId === 'usw2' && asked.body &&
+           asked.body.realm === SP && asked.body.relationship === 'cp-apple' &&
+           asked.body.type === 'consent-revoked' &&
+           asked.body.sub === '001234.abcdef0123456789.0123' &&
+           !attr(entryOf(aName), 'federationLink').length,
+           'M1. a notification is applied here and fanned out to every ' +
+           'peer, the relationship and the subject as data',
+           fanned.status + ' ' + JSON.stringify(calls));
+      relink();
+      calls.length = 0;
+      peerAnswer = function () {
+        return Promise.reject(new Error('unreachable'));
+      };
+      const partial = await request('POST', notifyAt,
+        { form: { payload: notice('n-11', 'consent-revoked') } });
+      note(partial.status === 503,
+           'M2. a peer that cannot be reached makes the answer 503',
+           partial.status);
+      relink();
+      peerAnswer = function () {
+        return Promise.resolve({ people: 0, unlinked: 0 });
+      };
+      const retried = await request('POST', notifyAt,
+        { form: { payload: notice('n-11', 'consent-revoked') } });
+      note(retried.status === 200 &&
+           !attr(entryOf(aName), 'federationLink').length,
+           'M3. and its claim was released: the provider\'s retry is ' +
+           'accepted and applied', retried.status);
+      const again = await request('POST', notifyAt,
+        { form: { payload: notice('n-11', 'consent-revoked') } });
+      note(again.status === 400,
+           'M4. once accepted, the same notification is refused', again.status);
+    } finally {
+      restoreChannel();
+      restoreCells();
+    }
+    // The peer's half, as the inter-cell operation calls it.
+    relink();
+    const peerHalf = sp.notificationForPeer({ realm: SP,
+      relationship: 'cp-apple', type: 'account-delete',
+      sub: '001234.abcdef0123456789.0123' }, 'usw2');
+    note(peerHalf.people === 1 && peerHalf.unlinked === 1 &&
+         !attr(entryOf(aName), 'federationLink').length && !!entryOf(aName),
+         'M5. a peer removes the link it holds, and never the entry',
+         JSON.stringify(peerHalf));
+    relink();
+    const recorded = sp.notificationForPeer({ realm: SP,
+      relationship: 'cp-apple', type: 'email-disabled',
+      sub: '001234.abcdef0123456789.0123' }, 'usw2');
+    const elsewhere = sp.notificationForPeer({ realm: SP,
+      relationship: 'cp-discord', type: 'account-delete',
+      sub: '001234.abcdef0123456789.0123' }, 'usw2');
+    note(recorded.people === 1 && recorded.unlinked === 0 &&
+         elsewhere.people === 0 &&
+         attr(entryOf(aName), 'federationLink').indexOf(appleValue) >= 0,
+         'M6. email-disabled removes nothing, and a relationship that takes ' +
+         'no notifications is not acted on', JSON.stringify([recorded,
+                                                            elsewhere]));
+    note(channelModule.opNames().indexOf('federation-provider-notification') >=
+         0, 'M7. the inter-cell operation is registered');
+
     // ===== B. THE REALM SWITCH ==============================================
     inSp(function () {
       config.setOverride('federation.consumerProviders', 'false');
