@@ -97,10 +97,10 @@ certmonger jobs share.
 
 **API:**
 ```bash
-api realms/create '{"id":"certbot-demo","domain":"certbot-demo.example.net",
-  "name":"certbot job"}'
-BASE=https://localhost:8081/realm/certbot-demo     # every call below is in the realm
-api pki/build '{"organisation":"certbot job","country":"US"}'
+api realms/create '{"id":"enroll-demo","domain":"enroll-demo.example.net",
+  "name":"enrollment"}'
+BASE=https://localhost:8081/realm/enroll-demo     # every call below is in the realm
+api pki/build '{"organisation":"Enrollment Demo","country":"US"}'
 ```
 
 **Building again replaces the branch**, and everything it issued then chains
@@ -200,7 +200,7 @@ Taken from `sts_acme_certbot.js`, which drives certbot 5.8.0. The realm's
 directory is `$BASE/enroll/acme/directory`; the EAB reply names it.
 
 ```bash
-DIR=https://localhost:8081/realm/certbot-demo/enroll/acme/directory
+DIR=https://localhost:8081/realm/enroll-demo/enroll/acme/directory
 export REQUESTS_CA_BUNDLE=sts-root.pem
 
 certbot register --server $DIR --agree-tos --no-eff-email \
@@ -312,7 +312,7 @@ Taken from `sts_est_libest.js`. The person is `alice` with the password the
 **First, turn TLS 1.2 back on.** Every listener is TLS 1.3 only by default
 (`tls.disableTls12`), and estclient is built on OpenSSL 1.1 and negotiates TLS
 1.2. The job turns it on for the whole service and resets it afterwards. To
-change only the main port, set `listenerMain.disableTls12` instead; see
+change only the main port, set `listenerMain.disableTls12` to `off` instead; see
 [TLS and mutual TLS](tls.md).
 
 ```bash
@@ -357,7 +357,7 @@ certificate:
 
 ```bash
 api config/set '{"key":"est.defaultProfile","value":"tls-server"}'
-estclient -e -s localhost -p 8081 -o out --path-seg certbot-demo -y web.csr \
+estclient -e -s localhost -p 8081 -o out --path-seg enroll-demo -y web.csr \
   -u alice -h "$PASSWORD"
 ```
 
@@ -395,7 +395,7 @@ openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
   -addext subjectAltName=DNS:estapp.svc.example.test -outform DER -out app.csr.der
 base64 app.csr.der | curl -s --cacert sts-root.pem -u "estapp:$APP_SECRET" \
   -H 'Content-Type: application/pkcs10' --data-binary @- \
-  https://localhost:8081/realm/certbot-demo/.well-known/est/tls-server/simpleenroll \
+  https://localhost:8081/realm/enroll-demo/.well-known/est/tls-server/simpleenroll \
   | base64 -d | openssl pkcs7 -inform DER -print_certs > app.pem
 ```
 
@@ -472,7 +472,7 @@ sscep has no TLS, so it uses the plain-HTTP URL, `http://<host>:8082/realm/<real
 Taken from `sts_scep_sscep.js`:
 
 ```bash
-URL=http://localhost:8082/realm/certbot-demo/enroll/scep/tls-client
+URL=http://localhost:8082/realm/enroll-demo/enroll/scep/tls-client
 sscep getca -u $URL -c ca.crt           # ca.crt-0 is the RA, ca.crt-1 the SCEP Issuing CA
 
 cat > req.cnf <<EOF
@@ -513,15 +513,15 @@ certificate, answer the certificate and the SCEP Issuing CA's CRL.
 
 ## certmonger
 
-Taken from `sts_scep_certmonger.js`. Use the plain-HTTP URL here too:
+Taken from `sts_scep_certmonger.js`, where erin makes her own challenge on
+`/portal/certificates`. Use the plain-HTTP URL here too:
 certmonger passes its CA file only to GetCACaps and GetCACert, so an HTTPS
 enrollment fails unless the service Root is in the host's trust store.
 
 ```bash
-getcert add-scep-ca -c STS -u http://localhost:8082/realm/certbot-demo/enroll/scep/tls-client
-getcert request -c STS -k /etc/pki/tls/private/erin.key \
-  -f /etc/pki/tls/certs/erin.crt -N "CN=erin,O=<organisation>,C=US" \
-  -L "$CHALLENGE" -I erin -w
+getcert add-scep-ca -c STS -u http://localhost:8082/realm/enroll-demo/enroll/scep/tls-client
+getcert request -c STS -k "$PWD/erin.key" -f "$PWD/erin.pem" \
+  -N "CN=erin,O=<organisation>,C=US" -L "$CHALLENGE" -I erin -w
 getcert resubmit -i erin -w     # renew with the same key
 getcert rekey -i erin -w        # renew with a new key
 ```
@@ -610,7 +610,7 @@ certificate's row, with a reason), on **Protocols → PKI**, or through the
 API. The serial is named differently in each:
 
 ```bash
-api acme/revoke-certificate '{"serial":"0a1b2c3d4e5f","reason":"superseded"}'      # sts_acme_enrollment.js
+api acme/revoke-certificate '{"serial":"<serial>","reason":"superseded"}'          # sts_acme_enrollment.js
 api est/revoke-certificate  '{"serialHex":"<serial>","reason":"keyCompromise"}'   # sts_est_enrollment.js
 api scep/revoke-certificate '{"serial":"<serial>","reason":"keyCompromise"}'      # sts_scep_enrollment.js
 ```
