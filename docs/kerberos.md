@@ -60,7 +60,7 @@ client cannot guess.
 
 `GET /admin-api/kerberos/principals` lists the principal database (its
 `database`: every principal with its salt, enctypes, kvno and flags, never a
-password), and Directory → Kerberos principals draws it. The KDC's own
+password), and Protocols → Kerberos → Principals draws it. The KDC's own
 demonstration document `GET /krb5/principals` was deleted (#595).
 
 ### Delegation
@@ -669,8 +669,10 @@ ticket"). Since #169:
 * **Upgrading from a release before #169** gives a product realm a new random
   `krbtgt` key at its first start; TGTs sealed under the old password-derived
   key stop working once, and everybody signs in again.
-* **Not rotated**: `krbtgt/<partner realm>`, the inter-realm trust key, is a
-  secret shared with the partner (development only here).
+* **Not rotated by this job**: the inter-realm trust keys
+  (`krbtgt/<partner realm>@<this realm>` and the incoming one), which are
+  shared with the partner and rotate by hand with **Rotate key** on the
+  Trusts tab ([Kerberos trusts](#kerberos-trusts)).
 * **Post-quantum.** No post-quantum Kerberos enctype is standardised. The
   strongest registered ones — aes256-cts-hmac-sha384-192 (20, RFC 8009) and
   aes256-cts-hmac-sha1-96 (18) — are symmetric, and Grover's algorithm leaves
@@ -767,9 +769,9 @@ a runtime setting, per realm), every ticket this KDC builds carries one
 ### Not implemented
 
 PKINIT's RSA key transport and DH key reuse, anonymous tickets in the TGS
-exchange, OTP PIN change and hashed OTP values, kpasswd, request signatures, SID filtering (see [the PAC](#the-pac) below), device info and device
+exchange, OTP PIN change and hashed OTP values, kpasswd, request signatures, device info and device
 claims in the PAC (a device claims buffer from another realm is decoded and
-carried), compression of a claims set this KDC writes, and rotation of an inter-realm trust key. DES is decoded and never
+carried), and compression of a claims set this KDC writes. DES is decoded and never
 produced: Windows Server 2025 removed it and it is not coming back. The **AP
 exchange** is not missing from the KDC — it belongs to a service rather than to
 a KDC, and it lives in the [SPNEGO acceptor](#spnego-over-http). The UDP
@@ -923,6 +925,11 @@ modes**, and a replay is refused in both. See
 | `krb5.personKeys` | `KRB5_PERSON_KEYS` | `true` | yes | Product mode only: derive and store people's keys from their passwords; off, the KDC refuses every person. |
 | `krb5.retainedKeyVersions` | `KRB5_RETAINED_KEY_VERSIONS` | `1` | yes | How many previous key versions a stored key keeps; `0` keeps none. |
 | `krb5.retainedKeyTtlS` | `KRB5_RETAINED_KEY_TTL_S` | `0` | yes | How long a previous version is kept; `0` means the ticket lifetime plus the clock skew — for the `krbtgt`, the longer of the ticket and renew lifetimes plus the skew. |
+| `krb5.pkinit` | `KRB5_PKINIT` | `true` | yes | Whether the KDC takes PKINIT (RFC 4556) with a certificate this realm issued to the person; off, PA-PK-AS-REQ is neither offered nor read. |
+| `krb5.pkinitRequireFreshness` | `KRB5_PKINIT_REQUIRE_FRESHNESS` | `true` | yes | Whether a PKINIT request must carry an RFC 8070 freshness token. **Warning:** off weakens PKINIT. |
+| `krb5.pkinitLegacyKdf` | `KRB5_PKINIT_LEGACY_KDF` | `false` | yes | Whether a client offering no RFC 8636 KDF may use RFC 4556's own key derivation; off, it is refused `KDC_ERR_NO_ACCEPTABLE_KDF`. **Warning:** on weakens PKINIT. |
+| `krb5.pkinitKdcKeyAlgorithm` | `KRB5_PKINIT_KDC_KEY_ALGORITHM` | `ec-p256` | yes | The key the KDC signs PKINIT replies with (`ec-p256`, `ec-p384`, `rsa-2048`, `rsa-3072`); takes effect when the KDC certificate is next made. |
+| `krb5.anonymousPkinit` | `KRB5_ANONYMOUS_PKINIT` | `true` | yes | Whether the KDC issues RFC 8062 anonymous tickets (`kinit -n`) for FAST armor; needs `krb5.pkinit`. |
 | `krb5.s2kparams` | `KRB5_S2KPARAMS` | `omit` | yes | Whether PA-ETYPE-INFO2 carries s2kparams; `omit` matches Windows Server, `send` exercises a client that reads it. |
 | `logout.kerberosSignOut` | `LOGOUT_KERBEROS_SIGN_OUT` | `true` | yes | Whether a sign-out stamps the instant after which an older TGT is refused `KDC_ERR_TGT_REVOKED`. |
 
@@ -1080,7 +1087,7 @@ about which key sealed which ticket would pass for the wrong reason.
 `GET /admin-api/kerberos/principals` lists the whole database as `database` —
 names, salts, offered etypes, kvno, the pre-auth/revoked/expired/ok-as-delegate
 flags, which entries were created at runtime, and a sentence on what each
-account is *for* — and Directory → Kerberos principals draws it. It publishes
+account is *for* — and Protocols → Kerberos → Principals draws it. It publishes
 no keys and no passwords; the one user password development shares is a
 policy rather than a secret, and is published as the setting
 `krb5.userPassword` — a debugger whose accounts cannot be used without reading
@@ -1225,9 +1232,9 @@ decoded and never produced.
 
 ## In the running service
 
-* **Protocols → Kerberos → Kerberos settings** (`/admin/kerberos`): the realm,
+* **Protocols → Kerberos → Global settings** (`/admin/kerberos`): the realm,
   the two raw ports, the clock skew and offset, the shared user password, the
-  names that stay unknown, the krbtgt and trust keys, and whether
+  names that stay unknown, the development krbtgt password, PKINIT, and whether
   `/authn/spnego` may start a session. Its endpoints are listed on the page.
 * **Protocols → Kerberos → Principals** (`/admin/kerberos/principals`): who the
   KDC holds a stored key for — directory people (with kvno, enctypes, whether
