@@ -11449,13 +11449,13 @@ class OAuth2Server {
     if (accountChoice && accountChoice.reason === 'ambiguous') {
       authn.noteAccountAmbiguous(req, 'OAuth 2.0 / OIDC',
                                  'account_selection_required was answered');
-      errorCodes.mark(res, 'STS-OAUTH-0960');
-      log.debug("Leaving OAuth2Server.authorizeEndpoint(). Several " +
-                "accounts, and prompt=none.");
       // No count (#561, the reason of rcbj's decision on SAML's
       // NoPassive): the description rides the redirect to the client, and
       // how many people use a browser is nobody's there. The error code
       // itself is what OIDC Core says to send.
+      errorCodes.mark(res, 'STS-OAUTH-0960');
+      log.debug("Leaving OAuth2Server.authorizeEndpoint(). Several " +
+                "accounts, and prompt=none.");
       return fail('account_selection_required', 'The request names none ' +
         'of the accounts signed in here, and prompt=none forbids showing ' +
         'the account picker (OIDC Core section 3.1.2.6). Send login_hint ' +
