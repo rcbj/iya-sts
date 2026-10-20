@@ -22,6 +22,38 @@ exchange and the assertion grants) are on that page too.
 * TOC
 {:toc}
 
+## Where a client is configured in the console
+
+A relying party is an application entry. In the console:
+
+* **Create it** on **Directory → Applications → New application ›**
+  (`/admin/applications/new`). Under **What it is called**, the
+  **Identifier** is also the `client_id` unless you give `oauthClientId`
+  another value. Under **Protocol families it is declared for**, tick
+  **OAuth 2.0** and **OpenID Connect**. **Its fields** then shows the
+  attributes most clients need, by name: `oauthRedirectUri`,
+  `oauthPostLogoutRedirectUri`, `oauthClientSecret` (with **Generate
+  Secret** and its **Lifetime (days)**), `oauthTokenEndpointAuthMethod`,
+  `oauthGrantType`, `oauthResponseType`, `oauthAllowedScope` and others.
+  **Show every field (advanced view)** shows the rest. Click **Create the
+  application**.
+* **Change it** on its page (`/admin/applications?application=<id>`),
+  **Configuration** tab, **OAuth 2.0 / OpenID Connect** sub-tab. Change the
+  fields and click **Save OAuth 2.0 / OpenID Connect**. A field the sub-tab
+  does not show at first is under **Advanced view (every field)**. A list has
+  one box per value: **+** adds a value and the bin deletes one. A field with
+  a fixed set of values, such as `oauthGrantType`, offers them to choose from.
+* **Change one attribute by name** is on the **Directory entry** tab, folded.
+  Its **Set**, **Add to** and **Remove from** forms write any editable
+  attribute.
+
+Through the API, `applications/set` writes a single-valued attribute, and
+`applications/add` / `applications/remove` add or remove one value of a list.
+A write against the attribute's kind (a `set` of a list, say) is refused
+(`STS-REG-0008`). `oauthScope` records the scopes a client has asked for. It
+grants nothing, and an `add` to it is refused (`STS-REG-0361`). The scopes a
+client may be issued are `oauthAllowedScope`.
+
 ## Two things to know first
 
 **A client is held to the response types and grant types it declares.**
@@ -37,14 +69,15 @@ is refused. Through the API, write each response type as one value, its words
 separated by spaces (`code id_token`); it is stored with its words in that
 order whatever order they were given in. What a client has actually used is
 recorded separately, in `oauthResponseTypeObserved` and
-`oauthGrantTypeObserved`, and shown read-only at the top of the application's
-**OAuth 2.0 / OpenID Connect** sub-tab, one line each.
+`oauthGrantTypeObserved`, and shown read-only at the top of the
+**Configuration** tab's **OAuth 2.0 / OpenID Connect** sub-tab, one line
+each.
 
 **How responses are signed and encrypted is an attribute too.** The JARM
 algorithms, the signing and encryption algorithms for the ID Token and
 UserInfo, and `default_acr_values` / `default_max_age` are held on the
 application entry, whether a registration wrote them or an administrator set
-them on the console or through `/admin-api`:
+them in the console or through `/admin-api`:
 
 | Registration member | Attribute |
 |---|---|
@@ -69,10 +102,11 @@ api applications/set '{"application":"parmon-a",
 
 **Consent is on by default.** Unless the person has already approved the
 client, the flow stops at `/oauth2/consent`. For a first-party client, grant
-consent for everybody in advance. In the console that is **Consent**
-(`/admin/consent`) → **Consent a scope for everybody** → pick the
+consent for everybody in advance. In the console that is **Monitoring →
+Consent** (`/admin/consent`) → **Consent a scope for everybody** → pick the
 **Application**, type the **Scope**, then **Consent it for everybody**. The
-API call is:
+value lands in the client's `oauthGlobalConsent`, which the create form also
+offers. The API call is:
 
 ```bash
 api consent/grant-global-consent '{"client":"parmon-a","scope":"openid"}'
@@ -93,6 +127,18 @@ Product mode adds more: it refuses an unregistered client, it requires PKCE
 `token`. See
 [OAuth 2.0 and OpenID Connect → development and product mode](oauth-oidc.md).
 
+**An error before the person has signed in is shown on a page, not
+redirected** (RFC 9700 section 4.11.2). The page has a link that carries the
+error on to the client. `oauth2.errorPageAutoRedirectS` (default `0`, at most
+`60`) makes the page also continue by itself after that many seconds. That
+weakens the protection the page exists for, so leave it at `0` unless a
+client cannot cope. A `form_post` error keeps its button whatever the value.
+`tests/error_page_auto_redirect.js` sets it to `5`:
+
+```bash
+api config/set '{"key":"oauth2.errorPageAutoRedirectS","value":5}'
+```
+
 ## Authorization Code flow
 
 `response_type=code`. The RP exchanges the code at `/oauth2/token`. PKCE
@@ -101,15 +147,14 @@ accepts `S256` and, in development only, `plain`.
 Taken from `sts_oauth2_monitor.js` and `sts_oidc_core.js`.
 
 **Console:**
-1. Go to **Directory → Applications → New application ›**. Set **Identifier** to `parmon-a`.
-2. Tick **OAuth 2.0** and **OpenID Connect**.
-3. Fill in the fields that appear:
-   - `oauthClientId`: `parmon-a`.
-   - **Where responses go back to**: `https://rp.parmon.example.test/cb`.
-   - **The client secret**: click **Generate Secret**.
+1. Go to **Directory → Applications → New application ›**. Set **Identifier** to `parmon-a`; it is the `client_id` too.
+2. Under **Protocol families it is declared for**, tick **OAuth 2.0** and **OpenID Connect**.
+3. In **Its fields**:
+   - `oauthRedirectUri`: `https://rp.parmon.example.test/cb`.
+   - `oauthClientSecret`: click **Generate Secret**, and copy the value.
+   - `oauthTokenEndpointAuthMethod`: tick `client_secret_basic`, and nothing else.
 4. Click **Create the application**.
-5. On the application's page, **Tick** `client_secret_basic` under `oauthTokenEndpointAuthMethod`, and nothing else.
-6. Grant consent for `openid` on **Consent**, as described above.
+5. Grant consent for `openid` on **Consent**, as described above.
 
 **API:**
 ```bash
@@ -213,9 +258,9 @@ POST /realm/<id>/oauth2/register
 The token must carry the `openid` scope, or the answer is 403
 `insufficient_scope`.
 
-* **Which claims are released** is set per scope on **Protocols → OAuth2 /
-  OIDC → UserInfo claims** (`/admin/userinfo-claims`) and **Claims**
-  (`/admin/claims`). Product mode takes every value from the person's
+* **Which claims are released** is set per scope on **Protocols → OAuth 2.0
+  / OIDC** (`/admin/oauth2`), on its **UserInfo claims** and **Custom claims**
+  tabs (`/admin/userinfo-claims` and `/admin/claims` open the same tabs). Product mode takes every value from the person's
   directory entry, so fill the entry in:
   ```bash
   api users/create '{"username":"alice","invent":false,"credential":"password",
@@ -339,9 +384,11 @@ Taken from `sts_native_sso.js`.
 
 **Console:** create a public client (see
 [the public-client recipe](configure-oauth2-grants.md#a-public-client-a-browser-or-native-app))
-declared for **OpenID Connect**. Then, on its page:
-- **Set** `oauthNativeSso` to `TRUE`.
-- **Set** `oauthNativeSsoGroup` to `vendor.one`.
+declared for **OpenID Connect**. Then, on its **Configuration** tab's
+**OAuth 2.0 / OpenID Connect** sub-tab, under **Advanced view (every field)**:
+- set `oauthNativeSso` to `TRUE`;
+- set `oauthNativeSsoGroup` to `vendor.one`;
+- click **Save OAuth 2.0 / OpenID Connect**.
 
 **API:**
 ```bash
@@ -376,14 +423,106 @@ If a client without the flag asks for `device_sso`, it gets `invalid_scope`.
 An exchange across groups gets `unauthorized_client`. A dynamic registration
 may set `native_sso` only inside a trusted software statement.
 
+## Third-party-initiated login (/launch)
+
+A sign-in can start here instead of at the client. The person follows this
+service's link `/launch/<client_id>`, signs in if they have no session, and
+is sent to the client's `initiate_login_uri` with `iss`, `login_hint` and
+`target_link_uri` (OpenID Connect Core section 4). The client then sends an
+ordinary authorization request. No ID Token is posted to the client
+unasked. [Identity-provider-initiated sign-in](idp-initiated-sso.md) covers
+the link for every protocol.
+
+**It is off by default**, for every client. While it is off the link is
+refused (`STS-LAUNCH-0005`), and the user portal shows no **Sign in** link for
+the client either.
+
+Taken from `sts_idp_initiated_launch.js`.
+
+**Console:** on the client's **Configuration** tab, **OAuth 2.0 / OpenID
+Connect** sub-tab, **Advanced view (every field)**, under **Who may start a
+sign-in**:
+- set `oauthThirdPartyInitiatedLogin` to `TRUE`;
+- set `oauthInitiateLoginUri` to the client's `initiate_login_uri`, for
+  example `https://rp.launch.example/login`;
+- click **Save OAuth 2.0 / OpenID Connect**.
+
+`appHomePageUrl`, on the **Every protocol** sub-tab (saved with **Save Every
+protocol**), is where the person lands when the link names no `target`.
+
+The sub-tab shows the link at its top, with a copy button, and says what is
+missing while the client cannot be launched.
+
+**API** (the job's public client, which also turns its own start off):
+```bash
+api applications/create '{"identifier":"launch-rp","name":"launch-rp",
+  "kind":"oauth2-client","protocols":["oauth2","oidc"],
+  "fields":{"oauthClientId":["launch-rp"],
+            "oauthRedirectUri":["https://rp.launch.example/cb"],
+            "oauthGrantType":["authorization_code"],"oauthResponseType":["code"],
+            "oauthAllowedScope":["openid"],"oauthTokenEndpointAuthMethod":"none",
+            "appHomePageUrl":"https://rp.launch.example/home",
+            "oauthInitiateLoginUri":"https://rp.launch.example/login",
+            "oauthThirdPartyInitiatedLogin":"TRUE","oauthSpInitiatedSso":"FALSE"}}'
+api consent/grant-global-consent '{"client":"launch-rp","scope":"openid"}'
+```
+
+To turn it on for every client in the realm instead (a client's own value
+still wins):
+```bash
+api config/set '{"key":"oauth2.thirdPartyInitiatedLogin","value":true}'
+```
+
+**Requests:**
+```
+GET /launch/launch-rp
+→ 303 https://rp.launch.example/login?iss=<issuer>&login_hint=<username>
+      &target_link_uri=https://rp.launch.example/home   (plus tenant in a trust realm)
+
+GET /oauth2/authorize?response_type=code&client_id=launch-rp&…   (sent by the client)
+```
+
+* **`target` must be one of the client's registered addresses**: a redirect
+  URI, its `oauthInitiateLoginUri` or its `appHomePageUrl`, https, matched
+  exactly. Any other is refused (400, `STS-LAUNCH-0007`).
+* **`oauthSpInitiatedSso` `FALSE`** (realm setting `oauth2.spInitiatedSso`,
+  on by default) means the client may start a sign-in only right after a
+  launch. Its authorization request is answered once per launch, within
+  `oauth2.launchWindowS` (default `300` seconds). Any other request is refused
+  `unauthorized_client` (`STS-OAUTH-0959`).
+* `/admin-api/applications?application=launch-rp` returns the link as
+  `page.launchUrls`.
+
+## Key-bound ID Tokens (OpenID Connect Key Binding)
+
+A client that asks for the `bound_key` scope, with a `dpop_jkt` and the code
+flow, gets an ID Token bound to its DPoP key (`cnf.jwk`,
+`typ: dpop+id_token`). The token request then proves the key with `c_s256`,
+and every refresh must come from the same key.
+[OAuth 2.0 and OpenID Connect](oauth-oidc.md#key-bound-id-tokens-openid-connect-key-binding)
+describes it.
+
+It is **on by default** (`oauth2.keyBinding`). Turn it off where relying
+parties request every advertised scope and know nothing of Key Binding:
+
+```bash
+api config/set '{"key":"oauth2.keyBinding","value":false}'
+```
+
+Off, `bound_key` leaves `scopes_supported`, a request carrying it is not
+refused, the scope is not granted and nothing is bound. A grant bound before
+still needs its key on refresh. `sts_device_key_binding.js` checks both
+states; its client registers with `"scope":"openid offline_access bound_key"`.
+
 ## RP-Initiated Logout
 
 The RP sends the person to `GET` or `POST /oauth2/logout` with
 `post_logout_redirect_uri`, `id_token_hint` or `client_id`, and `state`.
 
-**The return address must be registered.** In the console, use **Where a
-sign-out goes** on the new-application form, or **Add to**
-`oauthPostLogoutRedirectUri` on an existing client. Through the API:
+**The return address must be registered.** In the console, it is the
+`oauthPostLogoutRedirectUri` field, on the new-application form or on the
+client's **OAuth 2.0 / OpenID Connect** sub-tab (**+** adds a value). Through
+the API:
 
 ```bash
 api applications/add '{"application":"parmon-a",
@@ -484,34 +623,119 @@ that block third-party cookies never send the cookie the iframe reads.
 `sts_session_management.js` registers its RP with
 `redirect_uris: ["https://rp.sessmgmt.example/cb"]`.
 
+## Several accounts in one browser (prompt=select_account)
+
+With `authn.multipleAccounts` on, one browser can stay signed in as several
+people, and an authorization request chooses between them.
+[Several accounts in one browser](multiple-accounts.md) describes it in full.
+It is **off by default** in both modes, and off nothing below happens.
+
+Taken from `sts_multi_account.js`.
+
+**Setting** (console: **Server configuration → Configuration**, the **Web
+security** group; it is per realm):
+```bash
+api config/set '{"key":"authn.multipleAccounts","value":true}'
+```
+
+`authn.maxBrowserAccounts` (default `10`) and `authn.rememberedAccountDays`
+(default `30`) bound the list. No client attribute is involved.
+
+**What the request does:**
+
+| The request carries | With several accounts signed in |
+|---|---|
+| `login_hint=<username>` | that account is answered, with no screen; a hint naming nobody signed in here goes to the sign-in screen |
+| an `id_token_hint` | the account its `sub` and `sid` name |
+| `prompt=select_account` | the account picker (`/authn/accounts`), whatever the hint |
+| `prompt=login` | a fresh sign-in, never the picker |
+| `prompt=none` and nothing that names an account | the error `account_selection_required` |
+| nothing | the account picker |
+
+`max_age` and `acr_values` are asked of the chosen account's session. Logout
+with an `id_token_hint` ends the session its `sid` names and leaves the other
+accounts signed in.
+
 ## Step-up authentication (acr_values, max_age)
 
 A client asks for a stronger or more recent sign-in with `acr_values` and
-`max_age`. A resource server can require one by naming it on its own
-application. The levels are `0` < `1` < `mfa`, plus
-`urn:sts:acr:compliant-device`. If the person cannot meet the requirement,
-the answer is `unmet_authentication_requirements` in every mode.
+`max_age`. The authorization endpoint honours them in every mode. The levels
+are `0` < `1` < `mfa`, so a stronger sign-in meets a request for a weaker
+one. `hwk` is met by two factors that include a security key. The other
+published values, `phr`, `phrh` and `urn:sts:acr:compliant-device`, are not
+on that ladder (see [below](#phishing-resistant-sign-in-phr-and-phrh)).
+`acr_values_supported` in discovery lists them all. If the person cannot meet
+the requirement, the answer is `unmet_authentication_requirements` in every
+mode.
 
 Taken from `sts_step_up.js`.
 
-**Set the requirement on the resource, not on the client:**
+**A resource server states its requirement on its own application.** The
+API itself sends the RFC 9470 challenge (401
+`insufficient_user_authentication` with the `acr_values` it needs); this
+service does not answer for it. In the job, the API is the test peer.
+
 ```bash
 api applications/create '{"identifier":"su-api","name":"su-api","protocols":["oauth2"],
   "fields":{"oauthAudience":["https://api.stepup.example.test/"],
             "oauthStepUpAcrValues":"mfa","oauthStepUpMaxAge":"600"}}'
 ```
 
-**Request:**
+In the console these are the `oauthStepUpAcrValues` and `oauthStepUpMaxAge`
+fields on the API's **OAuth 2.0 / OpenID Connect** sub-tab.
+
+**Request** (the client repeats what the challenge named):
 ```
 GET /oauth2/authorize?response_type=code&client_id=su-client&scope=openid
     &redirect_uri=https://rp.stepup.example.test/cb&nonce=…&code_challenge=…&code_challenge_method=S256
     &acr_values=mfa&max_age=600&resource=https://api.stepup.example.test/
 ```
 
-For this service's own resource servers, use the settings
-`oauth2.stepUpAcrValues` (for example `mfa`) and `oauth2.stepUpMaxAgeS`
-(`-1` turns it off). The person needs a second factor enrolled to reach
-`mfa`; see [Authentication](authentication.md).
+The token carries the most preferred requested value that was met, and
+`auth_time`. A client can also ask by default: `oauthDefaultAcrValues` and
+`oauthDefaultMaxAge` (registration members `default_acr_values` and
+`default_max_age`).
+
+For this service's own resource servers (UserInfo, the OpenID4VCI credential
+endpoints, SCIM and the Shared Signals API), use the settings
+`oauth2.stepUpAcrValues` (empty by default, for example `mfa`) and
+`oauth2.stepUpMaxAgeS` (`-1`, the default, turns it off). The person needs a
+second factor enrolled to reach `mfa`; see [Authentication](authentication.md).
+
+## Phishing-resistant sign-in (phr and phrh)
+
+OpenID Connect EAP ACR Values 1.0 defines `phr` (phishing-resistant) and
+`phrh` (the same, with the key in hardware). They need no setting and no
+client attribute. A client asks with `acr_values=phr` or `acr_values=phrh`,
+with an essential `acr` claims request, or by default through
+`oauthDefaultAcrValues`, and reads the answer in the ID Token's `acr`.
+
+Taken from `tests/eap_acr_values.js`, which signs in with a software
+authenticator over HTTP. `sts_step_up.js` checks that discovery publishes both
+values.
+
+```
+GET /oauth2/authorize?response_type=code&client_id=<id>&scope=openid
+    &redirect_uri=…&nonce=…&code_challenge=…&code_challenge_method=S256
+    &acr_values=phr
+```
+
+* A request naming only `phr` or `phrh` makes the sign-in screen ask for a
+  passkey or security key. A password and a one-time code do not earn either
+  value, and `mfa` does not meet `phr`.
+* `phrh` needs a key whose attestation this realm trusts, with the
+  backup-eligible flag clear. So it needs `webauthn.attestationPolicy` set to
+  `verify-if-present` or `require-trusted` when the key is registered. A
+  synced passkey earns `phr` only.
+* A sign-in that did not earn the value is refused
+  `unmet_authentication_requirements` (`STS-OAUTH-0970`, or `STS-OAUTH-0971`
+  for `phrh` on a key that earned only `phr`).
+* To require it whatever the client asks, use the issuance policy's
+  `requirePhishingResistant` and `requireHardwareProtected` options for the
+  application.
+
+[Security profiles → Phishing-resistant sign-in](oauth-security.md#phishing-resistant-sign-in-phr-phrh)
+has the table of what earns which value.
 
 ## Subject types: public, pairwise, ephemeral
 
@@ -543,7 +767,7 @@ given.
   `true`, or the request carries a software statement from a trusted issuer
   (`oauth2.softwareStatementOpensRegistration`, on by default). An
   administrator issues software statements from the application page's
-  **Software statements** section (API `applications/issue-software-statement`).
+  **Software statements** tab (API `applications/issue-software-statement`).
 
 ```bash
 api config/set '{"key":"oauth2.openRegistration","value":true}'
@@ -558,12 +782,14 @@ POST /oauth2/register
 ```
 
 A registered client appears in the Applications list like any other, marked
-as registered through RFC 7591. The application page's **Revoke the RFC 7591
-registration** button (API `applications/revoke-registration`) ends the
-registration.
+as registered through RFC 7591. **Revoke the RFC 7591 registration**, on the
+application page's **Remove** tab (API `applications/revoke-registration`),
+ends the registration.
 
 ## Related
 
 * [OAuth 2.0 and OpenID Connect](oauth-oidc.md): each feature in depth.
 * [Signing out](signing-out.md) and [Sessions](sessions.md).
+* [Identity-provider-initiated sign-in](idp-initiated-sso.md) and [Several accounts in one browser](multiple-accounts.md).
+* [Security profiles](oauth-security.md): RFC 9700, OAuth 2.1, FAPI, step-up and `phr` / `phrh`.
 * [Configuring OAuth 2.0 grants](configure-oauth2-grants.md) and [Configuring SAML profiles](configure-saml.md).
