@@ -6067,6 +6067,14 @@
     "en": "f95686ad2d2053e6",
     "text": "Si la delegación restringida CLÁSICA (appAllowedToDelegateTo en el front end) puede cruzar una confianza Kerberos. Desactivada por defecto: se define dentro de un dominio, y la delegación basada en recursos (appAllowedToActOnBehalfOf en el destino, nombrando SPN@REALM) es la que cruza. Activada, el dominio del front end comprueba su propia lista antes de referir la evidencia, y el dominio del destino la da por comprobada; ambos dominios deben activarla."
   },
+  "krb5.s4uRoleSubject|label": {
+    "en": "01c225dc88b80527",
+    "text": "De quién es el rol que un servicio exige bajo S4U"
+  },
+  "krb5.s4uRoleSubject|description": {
+    "en": "497e1cff316db4ba",
+    "text": "Bajo S4U2Self y S4U2Proxy (clásica o basada en recursos), de quién son los roles que el KDC compara con el rol que exige la entrada de un servicio (appRequiredRole). user (el valor predeterminado): la persona para quien es el ticket — el usuario nombrado en PA-FOR-USER, o el cliente del ticket de evidencia — consultada en este dominio por su nombre completo, y por sus SID filtrados, cuando llegó a través de una confianza. service: el servicio que pide, el cliente del TGT, que es lo que el KDC comprobaba antes de que existiera este ajuste. Un rechazo es KDC_ERR_POLICY en ambos casos. Una solicitud TGS ordinaria tiene un solo sujeto y no se ve afectada. Las especificaciones dejan esto abierto: [MS-SFU] solo decide si el servicio puede delegar."
+  },
   "krb5.requireSidFilteringInProduct|label": {
     "en": "f4bc0b8bb8e18123",
     "text": "Exigir filtrado de SID en las confianzas"

@@ -35,11 +35,28 @@
 //   K4. THE AS EXCHANGE: a service ticket asked for at the AS
 //       (`kinit -S HTTP/web.ksa.test`) is asked the same question — bob is
 //       refused, alice issued — and a TGT is not asked about.
+//   K5. UNDER S4U, WHOSE ROLE (#747 item 2): `krb5.s4uRoleSubject`. The
+//       development fixtures HTTP/frontend.ksa.test (classic delegation to
+//       HTTP/backend.ksa.test, impersonation allowed) and HTTP/rbcd.ksa.test
+//       (accepting HTTP/frontend by RBCD) act for alice. Two roles:
+//       `front-staff`, held by the front end's own principal name and by
+//       nobody else, and `user-staff`, held by alice and not by the front
+//       end. For S4U2Self (the requirement on the front end's own entry),
+//       classic S4U2Proxy (on the back end's) and RBCD S4U2Proxy (on
+//       rbcd's), under each value:
+//         user (and the default, unset — rcbj's choice): user-staff
+//                  issues, front-staff refuses — alice is asked, and the
+//                  ticket issued names her;
+//         service:  front-staff issues, user-staff refuses — the
+//                  requesting service is asked, as d6ba88e1 did.
+//       And under `user` (the default) an ordinary TGS request is unchanged: bob is still
+//       refused HTTP/web.ksa.test and alice issued it.
 //
 // IN PROCESS because two Kerberos realms on one port is a shape no stack
 // here publishes, and the refusal's e-text is the KDC's own words.
 // INVENTED FIXTURES: the realm ids and names, the domain SIDs, and the roles
-// `web-staff`, `ws-staff` and `no-one-holds-this`.
+// `web-staff`, `ws-staff`, `no-one-holds-this`, `front-staff` and
+// `user-staff`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -281,12 +298,156 @@ async function asSection(t) {
   log.debug("Leaving asSection().");
 }
 
+// The front end's TGT, from the development fixture's password.
+async function frontTgt(t) {
+  log.debug("Entering frontTgt().");
+  const got = await wire.asExchange(T, KSA, 'HTTP/frontend.ksa.test',
+    { password: 'frontend-service-password' });
+  t.check(!!got.tgt, 'precondition: a TGT for HTTP/frontend.ksa.test@' + KSA,
+          JSON.stringify(got.second || got.first));
+  log.debug("Leaving frontTgt().");
+  return got.tgt;
+}
+
+// S4U2Self by the front end for `user`.
+function s4uSelf(tgt, user) {
+  log.debug("Entering s4uSelf(). " + user);
+  log.debug("Leaving s4uSelf().");
+  return wire.tgsExchange(T, tgt, sname('HTTP', 'frontend', KSA), KSA, {
+    padata: async function () {
+      return [await wire.paForUser(tgt, user, KSA)];
+    }
+  });
+}
+
+// S4U2Proxy by the front end with `evidence` to `target`, classic or RBCD.
+function s4uProxy(tgt, evidence, target, rbcd) {
+  log.debug("Entering s4uProxy().");
+  log.debug("Leaving s4uProxy().");
+  return wire.tgsExchange(T, tgt, target, KSA, {
+    kdcOptions: [msgs.KDC_OPTION.CNAME_IN_ADDL_TKT],
+    additionalTickets: [evidence],
+    padata: rbcd ? [wire.paPacOptionsRbcd()] : []
+  });
+}
+
+function setSubject(value) {
+  log.debug("Entering setSubject(). " + value);
+  if (value) {
+    realms.setOverride(IDS[KSA], 'krb5.s4uRoleSubject', value);
+  } else {
+    realms.clearOverride(IDS[KSA], 'krb5.s4uRoleSubject');
+  }
+  log.debug("Leaving setSubject().");
+}
+
+async function s4uSection(t) {
+  log.debug("Entering s4uSection().");
+  t.log.info('=== K5. under S4U, whose role: krb5.s4uRoleSubject ===');
+  inRealm(KSA, function () {
+    require('../kerberos/krb5_delegation').ensureSeeded();
+  });
+  const FRONT_ID = 'HTTP/frontend.ksa.test@' + KSA;
+  const TARGETS = [
+    { label: 'classic S4U2Proxy to HTTP/backend.ksa.test',
+      id: 'HTTP/backend.ksa.test@' + KSA, sname: sname('HTTP', 'backend', KSA),
+      rbcd: false },
+    { label: 'RBCD S4U2Proxy to HTTP/rbcd.ksa.test',
+      id: 'HTTP/rbcd.ksa.test@' + KSA, sname: sname('HTTP', 'rbcd', KSA),
+      rbcd: true }
+  ];
+  const errors = []
+    .concat(grant(KSA, 'front-staff', ['HTTP/frontend.ksa.test']))
+    .concat(grant(KSA, 'user-staff', ['alice']))
+    .concat(requireRoles(KSA, FRONT_ID, []))
+    .concat(requireRoles(KSA, TARGETS[0].id, []))
+    .concat(requireRoles(KSA, TARGETS[1].id, []));
+  t.check(!errors.length, 'precondition: front-staff held by the front ' +
+          'end, user-staff by alice, nothing required yet',
+          JSON.stringify(errors));
+  const tgt = await frontTgt(t);
+  // The evidence, while the front end's own entry requires nothing.
+  const evidence = await s4uSelf(tgt, 'alice');
+  t.check(evidence.ok && evidence.client.name.join('/') === 'alice' &&
+          (evidence.flagNames || []).indexOf('forwardable') >= 0,
+          'precondition: S4U2Self gives the front end a forwardable ticket ' +
+          'for alice', show(evidence) + ' ' +
+          JSON.stringify(evidence.flagNames || []));
+  const cases = [
+    { value: '', subject: 'user', holds: 'user-staff',
+      lacks: 'front-staff' },
+    { value: 'service', subject: 'service', holds: 'front-staff',
+      lacks: 'user-staff' },
+    { value: 'user', subject: 'user', holds: 'user-staff',
+      lacks: 'front-staff' }
+  ];
+  try {
+    for (const c of cases) {
+      setSubject(c.value);
+      const named = 'krb5.s4uRoleSubject ' + (c.value || 'unset (default)');
+      for (const target of TARGETS) {
+        let wrote = requireRoles(KSA, target.id, [c.lacks]);
+        t.check(!wrote.length, 'precondition: ' + target.id + ' requires ' +
+                c.lacks, JSON.stringify(wrote));
+        let r = await s4uProxy(tgt, evidence.ticket, target.sname,
+                               target.rbcd);
+        t.check(refusedFor(r, c.lacks),
+                'K5. ' + named + ': ' + target.label + ' for alice, the ' +
+                'target requiring ' + c.lacks + ', which the ' +
+                (c.subject === 'user' ? 'user' : 'requesting service') +
+                ' lacks: KDC_ERR_POLICY (STS-KRB-0039)', show(r));
+        wrote = requireRoles(KSA, target.id, [c.holds]);
+        t.check(!wrote.length, 'precondition: ' + target.id + ' requires ' +
+                c.holds, JSON.stringify(wrote));
+        r = await s4uProxy(tgt, evidence.ticket, target.sname, target.rbcd);
+        t.check(r.ok && r.client.name.join('/') === 'alice',
+                'K5b. ' + named + ': ' + target.label + ', the target ' +
+                'requiring ' + c.holds + ', which the ' +
+                (c.subject === 'user' ? 'user' : 'requesting service') +
+                ' holds: issued, for alice', show(r));
+        wrote = requireRoles(KSA, target.id, []);
+        t.check(!wrote.length, 'precondition: ' + target.id + ' requires ' +
+                'nothing again', JSON.stringify(wrote));
+      }
+      let wrote = requireRoles(KSA, FRONT_ID, [c.lacks]);
+      t.check(!wrote.length, 'precondition: ' + FRONT_ID + ' requires ' +
+              c.lacks, JSON.stringify(wrote));
+      let r = await s4uSelf(tgt, 'alice');
+      t.check(refusedFor(r, c.lacks),
+              'K5c. ' + named + ': S4U2Self for alice, the front end\'s ' +
+              'own entry requiring ' + c.lacks + ': KDC_ERR_POLICY', show(r));
+      wrote = requireRoles(KSA, FRONT_ID, [c.holds]);
+      t.check(!wrote.length, 'precondition: ' + FRONT_ID + ' requires ' +
+              c.holds, JSON.stringify(wrote));
+      r = await s4uSelf(tgt, 'alice');
+      t.check(r.ok && r.client.name.join('/') === 'alice',
+              'K5d. ' + named + ': S4U2Self for alice, requiring ' +
+              c.holds + ': issued', show(r));
+      wrote = requireRoles(KSA, FRONT_ID, []);
+      t.check(!wrote.length, 'precondition: ' + FRONT_ID + ' requires ' +
+              'nothing again', JSON.stringify(wrote));
+    }
+    setSubject('user');
+    const web = sname('HTTP', 'web', KSA);
+    let r = await wire.tgsExchange(T, await tgtOf(t, KSA, 'bob'), web, KSA);
+    t.check(refusedFor(r, 'web-staff'),
+            'K5e. krb5.s4uRoleSubject user leaves an ordinary TGS request ' +
+            'alone: bob is still refused HTTP/web.ksa.test', show(r));
+    r = await wire.tgsExchange(T, await tgtOf(t, KSA, 'alice'), web, KSA);
+    t.check(r.ok, 'K5f. and alice is issued it', show(r));
+  } finally {
+    setSubject('');
+  }
+  log.debug("Leaving s4uSection().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   setUp(t);
   try {
     await tgsSection(t);
     await asSection(t);
+    await s4uSection(t);
   } finally {
     [KSA, KSB].forEach(function (name) {
       realms.remove(IDS[name]);
@@ -299,6 +460,8 @@ module.exports = {
   name: 'kerberos_service_roles',
   describe: 'A role a Kerberos service requires (appRequiredRole) is ' +
             'enforced at the TGS and the AS whether its entry is named ' +
-            'SPN@REALM or by the bare SPN, and only in its own realm (#747)',
+            'SPN@REALM or by the bare SPN, and only in its own realm; ' +
+            'under S4U it is asked of the service or the user, as ' +
+            'krb5.s4uRoleSubject says (#747)',
   run: run
 };

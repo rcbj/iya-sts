@@ -11653,6 +11653,30 @@ const SETTINGS = [
                  'and the target\'s realm takes that as checked; both realms ' +
                  'must turn it on.' },
 
+  // WHOSE ROLE A SERVICE REQUIRES UNDER S4U (#747 item 2, rcbj 2026-10-20):
+  // [MS-SFU] governs only whether the service may impersonate or delegate,
+  // not whose authorization an access check the KDC adds of its own asks
+  // about, so it is a setting (krb5_kdc.js, s4uRoleSubjectOf()). The default
+  // is `user`, rcbj's choice (2026-10-20), and a behaviour change from the
+  // gate as first added (d6ba88e1), which asked about the service.
+  { key: 'krb5.s4uRoleSubject', group: 'Kerberos',
+    label: 'Whose role a service requires under S4U',
+    env: 'KRB5_S4U_ROLE_SUBJECT', type: 'enum',
+    enumValues: ['user', 'service'], dflt: 'user', runtime: true,
+    description: 'Under S4U2Self and S4U2Proxy (classic or resource-based), ' +
+                 'whose roles the KDC checks against the role a service\'s ' +
+                 'entry requires (appRequiredRole). user (the default): ' +
+                 'the person the ticket is for — the user named in ' +
+                 'PA-FOR-USER, or the evidence ticket\'s client — asked in ' +
+                 'this realm by their whole name, and by their filtered ' +
+                 'SIDs, when they came across a trust. service: the ' +
+                 'service that asks, the TGT\'s client, which is what the ' +
+                 'KDC checked before this setting existed. A refusal is ' +
+                 'KDC_ERR_POLICY either ' +
+                 'way. An ordinary TGS request has one subject and is not ' +
+                 'affected. The specifications leave this open: [MS-SFU] ' +
+                 'decides only whether the service may delegate.' },
+
   { key: 'krb5.requireSidFilteringInProduct', group: 'Kerberos',
     label: 'Require SID filtering on trusts',
     env: 'KRB5_REQUIRE_SID_FILTERING_IN_PRODUCT', type: 'bool', dflt: true,

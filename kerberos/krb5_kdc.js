@@ -1528,6 +1528,10 @@ async function crossRealmSelf(ctx, forUser, intent, x509) {
                   name: forUser.userName.name },
     clientRealm: userRealm,
     impersonated: null,
+    // #747 item 2: what the user holds here, for a role asked of them
+    // (krb5.s4uRoleSubject = user) — the SIDs their PAC carried, filtered.
+    subjectSids: homeArrival && !homeArrival.refused
+      ? (homeArrival.sids || []) : [],
     requester: principals.find(ticketPart.cname.name, ours),
     evidencePart: null,
     transited: [],
@@ -2257,6 +2261,12 @@ async function resolveS4u(ctx) {
   const acrossPartner = targetAcross ? targetRoute
     : (evidenceAcross ? String(evidence.realm)
        : (requesterForeign ? String(ctx.apReq.ticket.realm) : ''));
+  // A user of another realm holds what was granted to their name or to the
+  // SIDs the evidence's PAC carries once filtered (#430) — for the policy
+  // here and, under krb5.s4uRoleSubject = user, for the role gate (#747).
+  const subjectSids = evidencePac ? (evidencePac.sids || [])
+    : (evidencePart.crealm !== ctx.answeringRealm
+      ? pacSids((carriedPacs(evidencePart)[0] || {}).bytes) : []);
   const proxyDecision = krb5Delegation().decide(Object.assign({
     mechanism: 'proxy', requester: ticketPart.cname.name,
     subject: evidencePart.cname.name, subjectRealm: evidencePart.crealm,
@@ -2265,11 +2275,7 @@ async function resolveS4u(ctx) {
   }, acrossPartner ? {
     trustPartner: acrossPartner, requesterRealm: ticketPart.crealm,
     targetRealm: targetAcross ? targetRoute : ctx.answeringRealm,
-    // A user of another realm holds what was granted to their name or to
-    // the SIDs the evidence's PAC carries once filtered (#430).
-    subjectSids: evidencePac ? (evidencePac.sids || [])
-      : (evidencePart.crealm !== ctx.answeringRealm
-        ? pacSids((carriedPacs(evidencePart)[0] || {}).bytes) : [])
+    subjectSids: subjectSids
   } : {}));
   if (!proxyDecision.allowed) {
     log.info('krb5: REFUSING S4U2Proxy — the issuance policy refused it: ' +
@@ -2353,6 +2359,7 @@ async function resolveS4u(ctx) {
     evidencePart: evidencePart,
     // #430: the evidence's PAC as it arrived across a trust, SID-filtered.
     evidencePac: evidencePac,
+    subjectSids: subjectSids,
     requester: requester,
     resourceBased: resourceBased,
     classic: classicAllowed || classicVouched,
@@ -4048,6 +4055,52 @@ async function handleTgsReq(request) {
   return wrapped;
 }
 
+// ---------------------------------------------------------------------------
+// WHOSE ROLE A SERVICE'S REQUIREMENT IS ASKED OF UNDER S4U (#747 item 2,
+// rcbj 2026-10-20: "Obey the spec above all else. Short of that, add a flag
+// that can check the service or the user.").
+//
+// The specifications do not settle it. [MS-SFU] 3.2.5.1 and 3.2.5.2 govern
+// only WHETHER Service 1 may impersonate or delegate — its own
+// TrustedToAuthenticationForDelegation and ServicesAllowedToSendForwarded
+// TicketsTo, or Service 2's ServicesAllowedToReceiveForwardedTicketsFrom
+// checked against a token built "for Service 1 from the PAC data in Service
+// 1's TGT" (3.2.5.2.3) — and say nothing of any other access check on the
+// target. RFC 4120 section 1.3 leaves authorization to the application
+// server and KDC_ERR_POLICY to local policy. The nearest text, [MS-KILE]
+// 3.3.5.7's Authentication Policy check ("the PAC of the user and the PAC
+// of the armor TGT MUST be used to perform an access check ... against the
+// AllowedToAuthenticateTo"), is Active Directory's own mechanism, and
+// neither it nor [MS-SFU] says which "user" that is when a service asks for
+// somebody else. So `krb5.s4uRoleSubject`, per realm and at runtime:
+//
+//   user     the person the ticket is FOR (its cname: the PA-FOR-USER user
+//            under S4U2Self, the evidence ticket's client under S4U2Proxy,
+//            classic or resource-based) holds it, asked after resolveS4u()
+//            has established who that is — THE DEFAULT, rcbj's choice
+//            (2026-10-20), and a change from the gate as first added;
+//   service  the requesting service (the TGT's cname) holds it — what the
+//            gate asked when it was added (d6ba88e1).
+//
+// A person of another realm is asked about as the presenter across a trust
+// is (#430): `name@REALM`, `crossRealm`, and the SIDs their PAC carried once
+// filtered. They are `authenticated` as far as the KDC is concerned — the
+// ticket asserts their identity, which is what protocol transition is.
+// ---------------------------------------------------------------------------
+function s4uRoleSubjectOf(s4u, answeringRealm) {
+  log.debug("Entering s4uRoleSubjectOf().");
+  const name = ((s4u.clientName || {}).name || []).join('/');
+  const realm = String(s4u.clientRealm || '');
+  const across = answeringRealm === principals.REALM &&
+    realm !== answeringRealm && !!principals.trustRegister();
+  log.debug("Leaving s4uRoleSubjectOf(). " + name + "@" + realm +
+            (across ? ', across a trust' : ''));
+  return across
+    ? { kind: 'user', name: name + '@' + realm, authenticated: true,
+        crossRealm: true, sids: s4u.subjectSids || [] }
+    : { kind: 'user', name: name, authenticated: true };
+}
+
 async function answerTgsReq(request, state) {
   log.debug('Entering answerTgsReq().');
   let body = request.reqBody;
@@ -4590,7 +4643,11 @@ async function answerTgsReq(request, state) {
   // attributes, and a refusal that names them. This one asks whether the
   // PRINCIPAL the ticket is for holds a role the service requires, which is
   // the same question `/oauth2/token` and `/saml2/sso` are asked and has
-  // nothing to do with delegation.
+  // nothing to do with delegation. Under S4U the two names differ — the
+  // presenter is the service, the ticket is for somebody else — and which
+  // one is asked is `krb5.s4uRoleSubject` (#747 item 2): by default the
+  // person, after resolveS4u(); the presenter here when it says `service`. See
+  // s4uRoleSubjectOf() for why the specifications leave it to a setting.
   //
   // A requirement belongs to the SERVICE somebody is reaching, and the TGS is
   // where a client normally asks for one. The AS asks the same question for
@@ -4635,8 +4692,14 @@ async function answerTgsReq(request, state) {
     String(ticketPart.crealm || '') !== answeringRealm &&
     !!principals.trustRegister();
   const roleQuestionWaived = presenterAcross && isTgtRequest(body.sname);
+  // UNDER S4U, UNLESS `krb5.s4uRoleSubject` = `service` (#747 item 2; the
+  // default is `user`), the question is not asked here about the requesting
+  // service but after resolveS4u(), about the person the ticket is for:
+  // s4uRoleSubjectOf(), above it.
+  const roleAskedOfUser = s4uAsked && !roleQuestionWaived &&
+    String(config.value('krb5.s4uRoleSubject') || 'user') !== 'service';
   let presenterSids = [];
-  if (presenterAcross && !roleQuestionWaived) {
+  if (presenterAcross && !roleQuestionWaived && !roleAskedOfUser) {
     const presented = carriedPacs(ticketPart);
     const arrived = presented.length
       ? filterArriving(presented[0].bytes, String(apReq.ticket.realm || ''),
@@ -4645,7 +4708,8 @@ async function answerTgsReq(request, state) {
       : null;
     presenterSids = arrived && !arrived.refused ? (arrived.sids || []) : [];
   }
-  const kerberosRoleAnswer = roleQuestionWaived ? { allowed: true, why: '' }
+  const kerberosRoleAnswer = roleQuestionWaived || roleAskedOfUser
+    ? { allowed: true, why: '' }
     : gate.check({
       application: serviceName + '@' + answeringRealm,
       kind: gate.ISSUANCE.KERBEROS_TICKET,
@@ -5001,6 +5065,43 @@ async function answerTgsReq(request, state) {
   if (referred) {
     log.debug("Leaving answerTgsReq(). An S4U referral.");
     return referred;
+  }
+  // THE ROLE GATE, ASKED OF THE PERSON THE TICKET IS FOR (#747 item 2):
+  // `krb5.s4uRoleSubject` = `user` (the default), so the question the gate
+  // above did not ask is asked here, now that resolveS4u() has said who that
+  // is. The same
+  // service name, the same refusal (KDC_ERR_POLICY, STS-KRB-0039), and the
+  // delegation register's row for the act says it was refused. A request
+  // that turned out to be no S4U one (mode `none`) is asked about its
+  // presenter, as above.
+  if (roleAskedOfUser) {
+    const s4uRoleAnswer = gate.check({
+      application: serviceName + '@' + answeringRealm,
+      kind: gate.ISSUANCE.KERBEROS_TICKET,
+      subject: s4u.mode === 'none'
+        ? { kind: 'user', name: presenterName, authenticated: true }
+        : s4uRoleSubjectOf(s4u, answeringRealm),
+      claims: null
+    });
+    if (!s4uRoleAnswer.allowed) {
+      log.info('krb5: the issuance policy refused a service ticket for ' +
+               ((s4u.clientName || {}).name || []).join('/') + ' to ' +
+               serviceName + ' (S4U2' + s4u.mode + ', requested by ' +
+               presenterName + '; krb5.s4uRoleSubject is user). ' +
+               s4uRoleAnswer.why);
+      if (s4u.intent) {
+        delegation.record(Object.assign({}, s4u.intent, {
+          // error-code: none — a delegation-register intent, not an audit row; the KRB-ERROR below carries the code
+          outcome: 'refused',
+          reason: s4uRoleAnswer.why
+        }));
+      }
+      log.debug("Leaving answerTgsReq(). The user lacks the role.");
+      return errorReply(12, { crealm: ticketPart.crealm,
+        errorCode: 'STS-KRB-0039',
+        cname: ticketPart.cname, realm: answeringRealm, sname: body.sname,
+        eText: s4uRoleAnswer.why });
+    }
   }
   const clientName = s4u.clientName;
   const clientRealm = s4u.clientRealm;

@@ -6067,6 +6067,14 @@
     "en": "f95686ad2d2053e6",
     "text": "傳統限制委派（前端上的 appAllowedToDelegateTo）是否可以跨越 Kerberos 信任。預設關閉：它在單一領域內定義，而以資源為基礎的委派（目標上的 appAllowedToActOnBehalfOf，命名 SPN@REALM）才是跨越的那種。開啟時，前端所在領域在轉介證據前檢查自己的清單，目標所在領域將其視為已檢查；兩個領域都必須開啟。"
   },
+  "krb5.s4uRoleSubject|label": {
+    "en": "01c225dc88b80527",
+    "text": "S4U 下服務所要求的角色由誰持有"
+  },
+  "krb5.s4uRoleSubject|description": {
+    "en": "497e1cff316db4ba",
+    "text": "在 S4U2Self 與 S4U2Proxy（傳統或基於資源）下，KDC 以誰的角色對照服務條目所要求的角色（appRequiredRole）。user（預設值）：票證所屬的人——PA-FOR-USER 中指名的使用者，或證據票證的用戶端——在本領域中以其完整名稱查詢，若其經由信任而來，則以其經過篩選的 SID 查詢。service：提出請求的服務，即 TGT 的用戶端，這是此設定出現之前 KDC 所檢查的。兩種情況下拒絕皆為 KDC_ERR_POLICY。一般的 TGS 請求只有一個主體，不受影響。規範對此未作規定：[MS-SFU] 只決定服務是否可以委派。"
+  },
   "krb5.requireSidFilteringInProduct|label": {
     "en": "f4bc0b8bb8e18123",
     "text": "要求信任過濾 SID"

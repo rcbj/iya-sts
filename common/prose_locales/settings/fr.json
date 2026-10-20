@@ -6067,6 +6067,14 @@
     "en": "f95686ad2d2053e6",
     "text": "Si la délégation contrainte CLASSIQUE (appAllowedToDelegateTo sur le frontal) peut traverser une confiance Kerberos. Désactivée par défaut : elle est définie au sein d’un seul royaume, et la délégation basée sur les ressources (appAllowedToActOnBehalfOf sur la cible, nommant SPN@REALM) est celle qui traverse. Activée, le royaume du frontal vérifie sa propre liste avant de référer la preuve, et le royaume de la cible la tient pour vérifiée ; les deux royaumes doivent l’activer."
   },
+  "krb5.s4uRoleSubject|label": {
+    "en": "01c225dc88b80527",
+    "text": "Le rôle de qui un service exige sous S4U"
+  },
+  "krb5.s4uRoleSubject|description": {
+    "en": "497e1cff316db4ba",
+    "text": "Sous S4U2Self et S4U2Proxy (classique ou basée sur les ressources), les rôles de qui le KDC compare au rôle qu’exige l’entrée d’un service (appRequiredRole). user (la valeur par défaut) : la personne à qui le ticket est destiné — l’utilisateur nommé dans PA-FOR-USER, ou le client du ticket de preuve — interrogée dans ce royaume par son nom complet, et par ses SID filtrés, lorsqu’elle est arrivée par une confiance. service : le service qui demande, le client du TGT, ce que le KDC vérifiait avant l’existence de ce paramètre. Un refus est KDC_ERR_POLICY dans les deux cas. Une requête TGS ordinaire a un seul sujet et n’est pas concernée. Les spécifications laissent la question ouverte : [MS-SFU] décide seulement si le service peut déléguer."
+  },
   "krb5.requireSidFilteringInProduct|label": {
     "en": "f4bc0b8bb8e18123",
     "text": "Exiger le filtrage des SID sur les confiances"

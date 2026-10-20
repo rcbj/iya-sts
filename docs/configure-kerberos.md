@@ -537,6 +537,29 @@ The job drives these exchanges with its own client. With MIT Kerberos, the
 front end gets a TGT from its keytab and `kvno -U <user> -P <back-end SPN>`
 asks for both S4U steps; no job here runs that command.
 
+**A role the target requires, under S4U.** When a service's entry requires a
+role (`appRequiredRole`), the KDC asks whether the ticket's subject holds it
+before issuing, and refuses `KDC_ERR_POLICY` (`STS-KRB-0039`) otherwise.
+Under S4U2Self and S4U2Proxy (classic or resource-based) there are two
+candidate subjects, and `krb5.s4uRoleSubject` chooses:
+
+| Value | Who must hold the role |
+|---|---|
+| `user` (default) | the person the ticket is for — the PA-FOR-USER user, or the evidence ticket's client |
+| `service` | the service that asks — the front end, whose TGT is presented |
+
+[MS-SFU] decides only whether the front end may impersonate or delegate, not
+whose roles an extra check like this one reads, so this is a setting. Before
+it existed the KDC asked about the service; the default is now the user. A person who came across a trust is
+asked about as `user@REALM`, with the SIDs their PAC carried after
+filtering. An ordinary TGS request has one subject and is not affected.
+Per realm, at runtime, on **Protocols → Kerberos → Global settings**
+(**Whose role a service requires under S4U**), or:
+
+```bash
+api realms/set '{"id":"r1","key":"krb5.s4uRoleSubject","value":"service"}'
+```
+
 ## A trust between two realms of this service
 
 Taken from `sts_kerberos_trusts_api.js` (#430).

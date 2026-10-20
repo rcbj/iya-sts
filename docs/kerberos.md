@@ -52,7 +52,10 @@ client cannot guess.
   naming the role. The entry is the one `create-service` and the KDC itself
   make, `HTTP/web.example.com@EXAMPLE.COM`; an entry named by the bare SPN,
   `HTTP/web.example.com`, is read first and decides when both exist (#747).
-  A ticket-granting ticket is not asked about.
+  A ticket-granting ticket is not asked about. **Under S4U2Self and
+  S4U2Proxy** the subject is `krb5.s4uRoleSubject`'s choice: `user`, the
+  person the ticket is for (the default), or `service`, the service that
+  asks — see [A role a service requires, under S4U](#a-role-a-service-requires-under-s4u).
 * **Renewable tickets**, bounded by `krb5.ticketLifetimeSeconds` and
   `krb5.renewLifetimeSeconds` (Active Directory's ten hours and seven days).
 * **Cross-realm referrals** through **Kerberos trusts**: one record per
@@ -107,6 +110,36 @@ development mode the fixture accounts' rules are seeded onto their entries
 (including `HTTP/notrusted`, which produces exactly that failure) so both the
 refusals and the successes are reachable; in product mode there are no rules
 until an operator writes one.
+
+### A role a service requires, under S4U
+
+An ordinary TGS request has one subject: the client whose TGT it presents.
+Under S4U2Self and S4U2Proxy there are two — the **service** that asks (its
+TGT is presented) and the **user** the ticket will be for (its `cname`).
+`krb5.s4uRoleSubject` says which one must hold the role the service's entry
+requires (`appRequiredRole`): `user` (the default) or `service` (what the
+KDC checked before the setting existed). It is per realm and changeable at
+runtime; a refusal is `KDC_ERR_POLICY` (`STS-KRB-0039`) either way. With
+the default, a front end reaching a back end that requires a role gets the
+ticket only for a person who holds that role, whatever the front end holds.
+
+**It is a setting because the specifications do not settle it.** [MS-SFU]
+3.2.5.1 and 3.2.5.2 govern only WHETHER the service may impersonate or
+delegate: `TrustedToAuthenticationForDelegation` and
+`ServicesAllowedToSendForwardedTicketsTo` on Service 1, or Service 2's
+`ServicesAllowedToReceiveForwardedTicketsFrom` checked against "a
+Token/Authorization Context … for Service 1 from the PAC data in Service 1's
+TGT" (3.2.5.2.3). The ticket issued carries the user's name ([MS-SFU]
+3.2.5.1.2, 3.2.5.2.4) and the user's PAC. RFC 4120 section 1.3 leaves
+authorization to the application server, and `KDC_ERR_POLICY` is local
+policy. The nearest text, [MS-KILE] 3.3.5.7's Authentication Policy check
+on the service ("the PAC of the user and the PAC of the armor TGT MUST be
+used to perform an access check … against the AllowedToAuthenticateTo"),
+is Active Directory's own mechanism, and neither it nor [MS-SFU] says which
+"user" that is when a service asks on somebody else's behalf. With `user`,
+a person who came across a trust is asked about as `user@REALM`, holding
+only what was granted to that name or to the SIDs their PAC carried after
+filtering (#430).
 
 ### SPNEGO over HTTP
 
@@ -926,6 +959,7 @@ modes**, and a replay is refused in both. See
 | `krb5.domainSid` | `KRB5_DOMAIN_SID` | `S-1-5-21-1004336348-1177238915-682003330` | no | The domain SID every PAC is built under. |
 | `krb5.maxReferralHops` | `KRB5_MAX_REFERRAL_HOPS` | `5` | yes | How many trusts one cross-realm path may cross before the KDC refuses to refer it further (`KDC_ERR_PATH_NOT_ACCEPTED`). |
 | `krb5.crossRealmClassicDelegation` | `KRB5_CROSS_REALM_CLASSIC_DELEGATION` | `false` | yes | Whether classic constrained delegation may cross a trust; both realms must turn it on. Resource-based delegation crosses without it. |
+| `krb5.s4uRoleSubject` | `KRB5_S4U_ROLE_SUBJECT` | `user` | yes | Under S4U2Self and S4U2Proxy, whose roles a service's required role (`appRequiredRole`) is checked against: `user`, the person the ticket is for (the default), or `service`, the service that asks. See *A role a service requires, under S4U*. |
 | `krb5.requireSidFilteringInProduct` | `KRB5_REQUIRE_SID_FILTERING_IN_PRODUCT` | `true` | yes | In product mode, use a trust only while it is `quarantined`. |
 | `krb5.trustKeyGraceSeconds` | `KRB5_TRUST_KEY_GRACE_SECONDS` | `0` | yes | How long a rotated trust's previous incoming key is still accepted; `0` is the ticket lifetime plus the clock skew. |
 | `krb5.spnegoAuthentication` | `KRB5_SPNEGO_AUTHENTICATION` | `true` | yes | Whether `/authn/spnego` may turn a ticket into a browser session. |
