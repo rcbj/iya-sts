@@ -763,6 +763,40 @@ act: every session and credential this identity holds in every protocol. Both
 are drawn, each says which it is. That form is not the portal's, so the
 runtime leaves it to the browser.
 
+## Several accounts in one browser: one per tab, and the account menu (#561, 2026-10-19)
+
+**The console's arrangement, and its reasoning is in `admin-ui/CLAUDE.md`
+8c-iv**; what is the portal's own is here. With `authn.multipleAccounts` off
+none of it is stored, sent or drawn: the header, the sign-in's record, the
+authorization request and the sign-out's address are the bytes they were.
+
+* **THE TAB'S ACCOUNT** is `{ sub, username }` in sessionStorage
+  (`sts-portal-account`), written when `/account-api/me` is read and removed
+  when the list says off, and sent as `login_hint` on every sign-in the
+  runtime starts — a step-up's among them, so a step-up is of this tab's
+  account. `authorizeUrl()` copies a sign-in's extra parameters into the
+  request as before, except the runtime's own (`expect`, `another`,
+  `login_hint`: `OWN_EXTRAS`), which never leave the tab.
+* **THE ACCOUNT MENU** (`PortalShell.accountMenu()`) is a `<details>` AFTER
+  Sign out — `tests/portal_refresh.js` 6 holds Refresh and Sign out side by
+  side — with a button per other signed-in account and *Sign in with
+  another account*. Sign out goes to `/logout?login_hint=<username>`.
+* **A SWITCH** asks over a form typed in, aborts what is in flight —
+  `sendOnce()`, `ownerJson()` (the owner token's requests, #607) and the
+  token requests — and discards `me`, the page for nobody's locale
+  (`nobody`), the form table, the view, the flash, the owner token and
+  its scopes, and the client's tokens and key; an answer for another
+  subject than the one switched to is refused.
+* **`/portal?accounts=another` IS HOW EVERY OTHER PAGE SIGNS IN AS ANOTHER
+  ACCOUNT** (delivery step 6, `common/CLAUDE.md` 3cl). `/authn/login` is
+  not a destination — it needs a pending sign-in — so the public pages'
+  control links here, and `route()` turns the marker into the portal's own
+  authorization request with `prompt=login` and no hint, after reading the
+  list: with the setting off the marker is dropped from the address and
+  the page is today's. The address is the portal's ADVERTISED one, which
+  `GET /authn-api/accounts` answers as `anotherAccount`, because a page on
+  another listener (#472) cannot work it out.
+
 ## A Refresh button beside Sign out (2026-10-09, #538)
 
 Every signed-in page draws **Refresh** to the left of Sign out

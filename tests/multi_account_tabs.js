@@ -367,6 +367,9 @@ async function consoleChecks(t) {
   a.rt.view = { page: { path: '/admin/users' }, json: {}, query: {} };
   a.b.env.sessionStorage.setItem('sts-console-restore', '{"forms":[]}');
   await a.rt.ensureKey();
+  // The metadata read for the old identity; the switch's own sign-in reads
+  // it again (a 404 here, so `{}`), which is not the one discarded.
+  a.rt.metadata = { issuer: 'read before the switch' };
   const identityBefore = a.rt.identity;
   // Declining over unsaved changes leaves the tab as it was.
   a.rt.dirty = true;
@@ -390,7 +393,7 @@ async function consoleChecks(t) {
           a.rt.formTable === null && a.rt.spec === null &&
           a.rt.view === null && a.rt.reauth === null &&
           a.rt.accessToken === '' && a.rt.refreshToken === '' &&
-          a.rt.key === null && a.rt.metadata === null &&
+          a.rt.key === null && !(a.rt.metadata && a.rt.metadata.issuer) &&
           !('sts-console-restore' in a.b.env.sessionStorage.store),
           '2. the switch discards the shell, me, the form table, the ' +
           'schemas, the view, the restore record, the tokens and the key');

@@ -775,7 +775,7 @@ setting on, so a row is otherwise unchanged.
 | `beginAuthentication({ …, accountChoice, request })` | `accountChoice` `'always'` (select_account: the picker whenever the browser holds any account), `'never'` (a fresh sign-in, prompt=login / ForceAuthn), absent (the picker when ambiguous). `request` defaults to `audit.currentRequest()`. With one account resolved and no hint, its name is filled in. |
 | `accountTicketFor(req, target, hint)` | `target` with `sts_account=` added for the live account `hint` names in this browser's set; unchanged otherwise or with the setting off. For any door that resumes a flow outside `returnToCaller()`. |
 | `noteAccountAmbiguous(req, via, answer)` | The `account.ambiguous` row and counter, for a protocol that refuses rather than showing the picker (`account_selection_required`, `NoPassive`). |
-| `browserAccounts(req)` | `{ enabled, accounts, max }`; each account `{ key, sub, username, displayName, state: 'signed-in' \| 'signed-out', signedInAt, authTime, signedOutAt, current }` — never a sid or a token. `GET /authn-api/accounts` answers it with `csrf`; the account menus are next. |
+| `browserAccounts(req)` | `{ enabled, accounts, max }`; each account `{ key, sub, username, displayName, state: 'signed-in' \| 'signed-out', signedInAt, authTime, signedOutAt, current }` — never a sid or a token. `GET /authn-api/accounts` answers it with `csrf`, and with the setting on `anotherAccount` — the portal's advertised address with `?accounts=another`, where every public page's *Sign in with another account* starts (`helpers.urlOf()`, because a page on another listener cannot work it out). The console's and the portal's account menus and the public pages' control read it (`admin-ui/CLAUDE.md` 8c-iv, `portal/CLAUDE.md`, `common/CLAUDE.md` 3cl `web_accounts.ts`). |
 | `auditActorSessionOf(req)` | The sid the request acted as, '' with the setting off. |
 | `ACCOUNTS_PATH`, `accountSetCookieName()`, `ACCOUNT_TICKET_PARAM`, `multipleAccounts()` | `/authn/accounts`; `sts_accounts[_<realm>]` for the ambient realm; `sts_account`; the setting. |
 
@@ -796,7 +796,7 @@ every shipped language), on `ARRIVAL_PATHS`; `hosted_applications.js`'s
 | `POST …/accounts/select` `{ account }` | continue as a signed-in account: checked again (`honouredSession()`), a `forceMfa` record with a one-factor session goes to the sign-in as that account, otherwise the account becomes the browser's default (`makeDefaultSession()` mints it a fresh handle — the browser lost the old one when another sign-in wrote the cookie) and the flow resumes with a ticket; a signed-out account goes to the sign-in with its name filled in; anything else 409 `STS-AUTHN-0337` |
 | `POST …/accounts/another` | the sign-in the picker stood in front of (`record.afterAccounts`), the hint cleared; 409 `STS-AUTHN-0340` when every place is live |
 | `POST …/accounts/forget` `{ account }` | a remembered account only (409 `STS-AUTHN-0339` for a live one); `next: stay` |
-| `GET /authn-api/accounts` | access `session`: `browserAccounts()` |
+| `GET /authn-api/accounts` | access `session`: `browserAccounts()`, plus `anotherAccount` with the setting on. A GET is not bound (no CSRF token): the cookie alone, from the page's own origin |
 
 Bound as every act here (JSON, Origin, CSRF); a body refused is
 `STS-AUTHN-0342`; a realm with the setting off answers 400 `STS-AUTHN-0343`.
