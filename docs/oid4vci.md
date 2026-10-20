@@ -251,10 +251,11 @@ means the whole configured set.
   mandatory. A request is never decompressed, so the request side
   advertises no `zip`.
 * **Deferred issuance.** A credential request on the access token from a
-  deferred offer is answered with a `transaction_id` instead of a credential.
-  `POST /oid4vci/deferred_credential` answers `issuance_pending` until
-  `oid4vci.deferredReadyMs` have passed, with the `interval` set by
-  `oid4vci.deferredIntervalS`.
+  deferred offer is answered `202` with a `transaction_id` and an
+  `interval` instead of a credential. `POST /oid4vci/deferred_credential`,
+  with the same access token, answers `202` with the same `transaction_id`
+  until `oid4vci.deferredReadyMs` have passed, and then the credential; the
+  `interval` is `oid4vci.deferredIntervalS`.
 * **Notifications.** `POST /oid4vci/notification` takes the wallet's
   `notification_id` events. Two Admin Read operations read them back:
   `GET /admin-api/oid4vci/notifications?id=<notification_id>` answers the
@@ -403,7 +404,7 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.txCodeLength` | `OID4VCI_TX_CODE_LENGTH` | `5` | yes | Digits in the Transaction Code. |
 | `oid4vci.txCodeMaxAttempts` | `OID4VCI_TX_CODE_MAX_ATTEMPTS` | `5` | yes | In product mode, how many wrong Transaction Codes a pre-authorized code survives. |
 | `oid4vci.batchSize` | `OID4VCI_BATCH_SIZE` | `4` | yes | How many proofs, and so credentials, one request may carry. |
-| `oid4vci.deferredReadyMs` | `OID4VCI_DEFERRED_READY_MS` | `4000` | yes | How long a deferred credential stays `issuance_pending`. |
+| `oid4vci.deferredReadyMs` | `OID4VCI_DEFERRED_READY_MS` | `4000` | yes | How long a deferred credential stays pending (answered `202`). |
 | `oid4vci.deferredIntervalS` | `OID4VCI_DEFERRED_INTERVAL_S` | `2` | yes | The `interval` a wallet is asked to wait between deferred polls. |
 | `oid4vci.requestEncryptionRequired` | `OID4VCI_REQUEST_ENCRYPTION_REQUIRED` | `false` | yes | Refuse a credential request that is not a JWE. |
 | `oid4vci.requestEncryptionKeyBits` | `OID4VCI_REQUEST_ENCRYPTION_KEY_BITS` | `2048` | yes | The RSA modulus of the realm's request-encryption key; reaches keys made after the change. |
