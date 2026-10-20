@@ -48,6 +48,7 @@ const PortalRuntime = require('../portal/web_portal_runtime');
 const PortalShell = require('../portal/web_portal_shell');
 const WebSurface = require('../common/web_surface');
 const WebAccounts = require('../common/web_accounts');
+const WebMessages = require('../common/web_messages');
 
 const log = require('bunyan').createLogger({
   name: 'multi_account_tabs',
@@ -718,7 +719,14 @@ async function run(t) {
   log.debug("Entering run().");
   await consoleChecks(t);
   await portalChecks(t);
-  await surfaceChecks(t);
+  try {
+    await surfaceChecks(t);
+  } finally {
+    // A SURFACE'S TRANSLATOR IS THE PROCESS'S DEFAULT once it loads
+    // (`WebI18n.load()`), and here it has no catalogs: put back node's own,
+    // or every test after this one in the process draws keys.
+    WebMessages.WebTranslator.setDefault(null);
+  }
   log.debug("Leaving run().");
 }
 
