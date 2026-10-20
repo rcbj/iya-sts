@@ -2062,6 +2062,16 @@ ends somebody else's session.
   the same overshoot the unlocked check already allows. With no cap
   (`authn.maxSessions` below 1) nothing is counted.
   `tests/sustained_load_costs.js` section B.
+* **A hosted surface's received signal visits its own sessions (#767,
+  2026-10-20).** `endRelyingPartySessions()` runs for every signal the
+  console and the portal receive — every password write sends both a CAEP
+  `credential-change` — and after the `session.surface` index it walked
+  every session the process held to find the surface's not yet in the
+  index: about 15% of the two request workers on 8081 under a password
+  load. The store files a session under `rp:<rpSurface>` (`realms.map()`'s
+  `indexBy`, `common/CLAUDE.md` 3b), which is set when the session is made
+  and never changed, and `heldSurfaceSessions()` visits those; the match
+  test is unchanged. `tests/surface_session_signals.js`.
 * **Lowering a cap does not mass-end.** The next insert ends at most one
   own row, and only when that subject is over their own cap. The
   `authn.session-expiry` job then ends at most that realm's

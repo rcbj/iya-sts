@@ -570,6 +570,15 @@ const sessions = realms.map({ persist: 'authn.sessions', tombstone: true,
                               // Not expiresAt: that column stays NULL so the
                               // generic purge cannot end a session (#350).
                               indexOf: sessionIndexOf,
+                              // A hosted surface's sessions, filed by the
+                              // surface (#767): `endRelyingPartySessions()`
+                              // visits those rather than every session held.
+                              // `rpSurface` is set when a session is made and
+                              // never changed on it (`realms.map()`'s rule).
+                              indexBy: function (session: any): string[] {
+                                return session && session.rpSurface
+                                  ? ['rp:' + String(session.rpSurface)] : [];
+                              },
                               // Late-bound to the instance in the slot at
                               // the bottom: a merge happens only once the
                               // store is open, after the root installed it.
@@ -6453,18 +6462,24 @@ class Authn {
         seen[id] = true;
         doomed.push(id);
       });
+      // The held ones the index has not reached yet: only this surface's,
+      // by the store's own index (#767), where this walked every session
+      // the process held — once per signal a surface received, and each
+      // password write sends one.
       if (store) {
-        store.forEach(function (session, id) {
-          if (seen[id] || !matches(session, id)) {
+        self.heldSurfaceSessions(store, surfaceId)
+          .forEach(function (one: { id: string; session: any }): void {
+          if (seen[one.id] || !matches(one.session, one.id)) {
             return;
           }
-          doomed.push(id);
+          doomed.push(one.id);
         });
       }
     } else if (store) {
-      store.forEach(function (session, id) {
-        if (matches(session, id)) {
-          doomed.push(id);
+      self.heldSurfaceSessions(store, surfaceId)
+        .forEach(function (one: { id: string; session: any }): void {
+        if (matches(one.session, one.id)) {
+          doomed.push(one.id);
         }
       });
     }
@@ -6476,6 +6491,33 @@ class Authn {
     log.debug("Leaving Authn.endRelyingPartySessions(). " + doomed.length +
               " ended.");
     return doomed.length;
+  }
+
+  // The sessions a realm's store holds for one hosted surface, by the
+  // store's index (`sessions`' `indexBy`, #767). Each is read back, so a key
+  // the index names is answered only while a session is there.
+  private heldSurfaceSessions(store: any, surfaceId: string):
+    { id: string; session: any }[] {
+    const { log } = this.deps;
+    log.debug("Entering Authn.heldSurfaceSessions(). " + surfaceId);
+    const out: { id: string; session: any }[] = [];
+    if (typeof store.lookup !== 'function') {
+      // A store with no index (a test's stub): the walk, as before #767.
+      store.forEach(function (session: any, id: string): void {
+        out.push({ id: id, session: session });
+      });
+      log.debug("Leaving Authn.heldSurfaceSessions(). Walked.");
+      return out;
+    }
+    (store.lookup('rp:' + String(surfaceId)) || [])
+      .forEach(function (id: string): void {
+      const session = store.get(id);
+      if (session) {
+        out.push({ id: id, session: session });
+      }
+    });
+    log.debug("Leaving Authn.heldSurfaceSessions(). " + out.length);
+    return out;
   }
 
   // Whether this realm fingerprints the browser at the sign-in screen (#62
