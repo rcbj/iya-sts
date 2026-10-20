@@ -285,8 +285,8 @@ random and freed when the credential expires.
 A credential's status is VALID, INVALID or SUSPENDED. It is **computed** from
 the credential's own status and from whether an administrator revoked it, so
 every page that shows it agrees. Four things change it: a suspension,
-reinstatement or revocation on the Credential status tab at
-`/admin/vc#vc-tab-status`, a revocation or restore on
+reinstatement or revocation on **Monitoring → Verifiable Credentials**
+(`/admin/vc/monitor`), a revocation or restore on
 `/admin/tokens`, an administrator's global sign-out, and a disabled account.
 The person's own Global logout on `/logout` changes none of them.
 
@@ -466,8 +466,8 @@ See [Configuration](configuration.md) for how a value is resolved. Every
   control.
 * **One status index per credential, and the bit is computed.** The same index
   in every list, and a status derived from the credential's own entry and its
-  revocation mark, means `/admin/tokens`, the Credential status tab at
-  `/admin/vc#vc-tab-status`, an administrator's global sign-out
+  revocation mark, means `/admin/tokens`, Monitoring → Verifiable
+  Credentials at `/admin/vc/monitor`, an administrator's global sign-out
   and the sign-in door cannot disagree. The person's own Global logout
   on `/logout` leaves the credential's status as it was.
 * **The sign-in register is written at issuance, where the facts are known.**
@@ -498,10 +498,13 @@ See [Configuration](configuration.md) for how a value is resolved. Every
   once. Saving also populates the directory. API:
   `GET /admin-api/credential-claims` and
   `POST /admin-api/credential-claims/select`.
-* Its **Credential status** tab shows this realm's status lists, where they
-  are served, and every issued credential's index and status, with
-  **Suspend**, **Reinstate** and **Revoke**. API: `GET /admin-api/vc-status`
-  and `POST /admin-api/vc-status/{suspend,reinstate,revoke}`.
+* **Monitoring → Verifiable Credentials** (`/admin/vc/monitor`) shows this
+  realm's status lists, where they are served, and every issued credential's
+  index and status, with **Suspend**, **Reinstate** and **Revoke** and a
+  **Publish now** for each Bitstring Status List. It was the Credential
+  status tab of `/admin/vc` until #752, and its old address,
+  `/admin/vc#vc-tab-status`, opens it. API: `GET /admin-api/vc-status` and
+  `POST /admin-api/vc-status/{suspend,reinstate,revoke,publish}`.
 * **Tokens** (`/admin/tokens`): issued credentials among everything else this
   realm issued, with the revocation that disowns one.
 * **The live metadata** at `/.well-known/openid-credential-issuer` is the

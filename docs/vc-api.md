@@ -114,9 +114,8 @@ private member there is refused.
   from a base proof, revealing `options.selectivePointers`.
 * `POST /vc-api/credentials/status` revokes, suspends or lifts the suspension
   of a credential the VC API issued with a status. It is the act
-  [`Credential status`](oid4vci.md#status-lists) performs on
-  [`/admin/vc#vc-tab-status`](oid4vci.md#status-lists); a revocation is
-  final.
+  [Monitoring → Verifiable Credentials](oid4vci.md#status-lists) performs on
+  `/admin/vc/monitor`; a revocation is final.
 * The Bitstring Status List credentials answer as JSON-LD with an
   `eddsa-rdfc-2022` proof when `Accept` asks for JSON-LD or JSON, and as a
   JWT otherwise.
@@ -142,7 +141,7 @@ A status list here is computed on every read, so it is always current. The
 W3C suites' "publish the list now" is an administrator's act:
 `POST /admin-api/vc-status/publish` with `{ "purpose": "revocation" }` (Admin
 Write), or the **Publish now** button beside each Bitstring Status List on
-the Credential status tab. It used to be `…/bitstring/{purpose}/publish`
+Monitoring → Verifiable Credentials (`/admin/vc/monitor`). It used to be `…/bitstring/{purpose}/publish`
 beside the list, which is gone.
 
 ## Not built

@@ -30,10 +30,10 @@ below, and the application attribute editor.
 
 | Page | Console menu | What you do there |
 |---|---|---|
-| `/admin/vc` | **Protocols → Verifiable Credentials** | One page with six tabs: **Metadata**, **OpenID4VCI**, **Credential claims**, **Credential status**, **OpenID4VP** and **Verifier request**. |
+| `/admin/vc` | **Protocols → Verifiable Credentials** | One page with five tabs: **Metadata**, **OpenID4VCI**, **Credential claims**, **OpenID4VP** and **Verifier request**. |
 | `/admin/vc#vc-tab-oid4vci` | the **OpenID4VCI** tab | Every `oid4vci.*` setting, saved with **Save OID4VCI**. |
 | `/admin/vc#vc-tab-claims` | the **Credential claims** tab | Choose which directory attributes a credential carries. |
-| `/admin/vc#vc-tab-status` | the **Credential status** tab | **Suspend**, **Reinstate** or **Revoke** one issued credential. |
+| `/admin/vc/monitor` | **Monitoring → Verifiable Credentials** | **Suspend**, **Reinstate** or **Revoke** one issued credential, on its **Credentials** tab. It was the **Credential status** tab of `/admin/vc`, whose old address opens it. |
 | `/admin/applications?application=<id>` | **Directory → Applications** | Register a wallet as an OAuth client, for the authorization code flow. |
 | `/portal/wallet` | user portal: **Add to your wallet** | A person makes an offer for their own wallet, and sees and removes what was issued to them. |
 
@@ -411,9 +411,9 @@ Status List entry, the W3C formats a Bitstring Status List entry, and the
 index is the same in every list. Taken from `vc_status_list.js`.
 
 **Console:**
-1. Open **Protocols → Verifiable Credentials**, tab **Credential status**.
-2. Find the credential under **Credentials** by its **Index**, **Format** or
-   **Expires**.
+1. Open **Monitoring → Verifiable Credentials** (`/admin/vc/monitor`).
+2. On its **Credentials** tab, find the credential by its **Index**,
+   **Format** or **Expires**.
 3. Click **Suspend**, **Reinstate** or **Revoke**. A revoked credential is
    INVALID, and that is final. A suspended one can be reinstated.
 
