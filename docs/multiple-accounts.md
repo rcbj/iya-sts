@@ -69,12 +69,38 @@ sign-in.
 
 **The user portal and the admin console keep one account per browser tab.** A
 tab remembers which account it is for, so two tabs can show two different
-people side by side, and a reload keeps each tab's account. Each has an account
-menu to switch the tab to another signed-in account or to sign in with another
-one; a switch abandons what the tab was doing (it asks first where a form has
-unsaved changes). Signing out from a tab asks about that tab's account. The
-device sign-in page, `/portal/device`, says which account an approval will sign
-the device in as whenever more than one is signed in.
+people side by side, and a reload keeps each tab's account. Signing out from a
+tab asks about that tab's account. The device sign-in page, `/portal/device`,
+says which account an approval will sign the device in as whenever more than
+one is signed in.
+
+### Switch user, in the console and the portal
+
+Both have **Switch user** in their account menu (the console's under your
+name, the portal's beside Sign out):
+
+* **each other account signed in to this browser** — choosing one signs this
+  tab in as that person with nothing typed, and draws the page again for
+  them;
+* **Sign in with another account** — a fresh sign-in (`prompt=login`) that
+  adds an account to the browser, and this tab becomes it;
+* a line saying **the account this tab leaves stays signed in**, so switching
+  back is a press in the same menu, never a password. With no other account
+  signed in yet the menu says so.
+
+A switch abandons what the tab was doing (it asks first where a form has
+unsaved changes), and changes only this tab. The account switched to gets what
+its own session and roles give it and nothing the previous account had. In the
+console, a person holding no console role sees the console's usual answer for
+them; an account the console refuses outright gets a page that says so, with
+the same Switch user list and Sign out. Switching is a different act from the
+console's *Sign in again* window, which appears when a session ends: that
+window signs the tab's own account in again, and refuses a different person
+rather than switching to them.
+
+With `authn.multipleAccounts` off, the menus have no Switch user: signing in
+as somebody else there ends the browser's session, so there would be nobody
+to switch back to.
 
 ## How each protocol behaves
 

@@ -57,6 +57,18 @@ menu links to the user portal of the realm you signed in through, which signs
 you in from the same sign-on session the console used. A realm's own
 administrator who opens the plain `/portal` is sent to their realm's portal.
 
+**Switch user** is in the same menu, with
+[several accounts in one browser](multiple-accounts.md) turned on in the
+realm (`authn.multipleAccounts`, off by default): the other accounts signed
+in to this browser, each a press away, and **Sign in with another account**.
+The account the tab leaves stays signed in, and other tabs keep theirs.
+The account switched to gets exactly what its own roles give it — a person
+holding no console role gets the console's usual answer for them, and an
+account the console refuses outright gets a page that says so with the same
+Switch user list and Sign out, so the way back is on the page. Switching is
+not the *Sign in again* window that appears when a session ends: that one
+signs the tab's own account in again and refuses anybody else.
+
 **There is no setting that turns the gate off.** What `global.mode` changes is
 whether the password typed at the sign-in screen is *checked*:
 
