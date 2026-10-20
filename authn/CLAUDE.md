@@ -854,7 +854,22 @@ Bound as every act here (JSON, Origin, CSRF); a body refused is
 * **`admin_stats`**: `recordAccountChoice()` — `selected`, `ambiguous`,
   `selectFailed`, `added`, `forgotten`, `expired`, `switched` — and
   `accountChoiceCounts()` adding every process's rows.
-* **Codes**: `STS-AUTHN-0340` to `0347`, `STS-OAUTH-0960` (written as 0337 to 0344 and 0959; renumbered on merge, because #350 and #714 held those).
+* **Codes**: `STS-AUTHN-0340` to `0347` and `STS-OAUTH-0960` — written as
+  0337 to 0344 and 0959, renumbered on merge because #350 and #714 held
+  those.
+* **With the bounded session window on (#350)** the realm map is a cache,
+  so a set reads its members as `sessionById()` does
+  (`accountSessionRead()`): through the window, never `sessions.get()`. A
+  read that FAILED is not absence: the prune, the expiry job and the
+  full-set count keep the member (`accountSessionKept()`), and
+  `resolveAccount()` answers nobody (`reason: 'unread'`) rather than
+  choosing among the members it could read. `dropSession()` moves the
+  account to remembered only after the session is deleted, because a
+  children read that fails returns with the session still live. An
+  evicted session (#350's subject cap) and a removed credential's
+  sessions (#728's `endFactorSessions()`) reach the set through
+  `expireSession()` and `dropSession()`. `tests/session_window.js`,
+  `accountSetCase()`.
 
 **Tests**: `tests/multi_account_sessions.js` (the contract of steps 1 and 2,
 the setting-off parity among it); the picker's two drawings in
