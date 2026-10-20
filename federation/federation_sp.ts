@@ -2562,7 +2562,16 @@ class FederationSp {
         // 303, for the reason `authn.js`'s returnToCaller() gives at length:
         // this may follow a POST carrying an assertion, and 302's behaviour
         // after a POST is historically ambiguous where 303's is defined.
-        res.redirect(303, returnTo);
+        //
+        // WITH A SELECTION TICKET FOR THE SESSION JUST STARTED (#561):
+        // this door resumes the flow itself rather than through
+        // `returnToCaller()`, so it mints what that function mints — without
+        // it, a browser holding several accounts would land on the account
+        // picker after signing in. Unchanged with `authn.multipleAccounts`
+        // off.
+        res.redirect(303, self.deps.authn.accountTicketFor(req, returnTo,
+                                                           { sid:
+                                                             session.id }));
         return;
       }
       // THE LINKING STEP'S OUTCOME (#580) is a page of the federation

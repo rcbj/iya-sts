@@ -1218,6 +1218,17 @@ class WsFederation {
     const where = beginAuthentication({
       returnTo: returnTo,
       protocol: 'WS-Federation',
+      // WHETHER THE ACCOUNT PICKER COMES FIRST (#561), where the browser
+      // holds several accounts: never when `wfresh` was given. The return
+      // address drops `wfresh` (above), so an account chosen at the picker
+      // would be answered on the way back however old its authentication
+      // was; a fresh sign-in is what section 13.2.1 asks for, and signing in
+      // as an account already in the set re-authenticates its session. Read
+      // only with `authn.multipleAccounts` on; this protocol carries no hint
+      // about WHICH account (`whr` names a home realm, not a person).
+      accountChoice: params.wfresh !== undefined && params.wfresh !== null &&
+                     params.wfresh !== '' ? 'never' : '',
+      request: req,
       forceMfa: !!screen.forceMfa,
       forceKey: !!screen.forceKey,
       // WHICH RELYING PARTY, so that an entry naming a federation relationship

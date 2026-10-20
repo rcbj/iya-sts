@@ -9463,8 +9463,16 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.sessionStateOf(). None owed.");
       return null;
     }
-    sessionManagement.writeCookie(res,
-                                  sessionManagement.browserStateOf(session));
+    // SEVERAL ACCOUNTS IN ONE BROWSER (#561, the plan's section 7): the
+    // browser state of every live session in its account set, this one's
+    // first, so that the OP iframe answers `unchanged` to every relying
+    // party of every account still signed in here. With
+    // `authn.multipleAccounts` off the one state, as always.
+    sessionManagement.writeCookie(res, authn.multipleAccounts()
+      ? sessionManagement.browserStatesValue([session]
+        .concat(authn.accountSessionsOf(req))
+        .map(sessionManagement.browserStateOf))
+      : sessionManagement.browserStateOf(session));
     log.debug("Leaving OAuth2Server.sessionStateOf().");
     return { value: value };
   }
@@ -20871,7 +20879,8 @@ class OAuth2Server {
                                           'img-src': null }));
       res.status(200).type('application/javascript')
          .set('Cache-Control', 'no-store')
-         .send(sessionManagement.IFRAME_SCRIPT);
+         // The list's script with `authn.multipleAccounts` on (#561).
+         .send(sessionManagement.scriptFor(authn.multipleAccounts()));
       log.debug("Leaving the OP iframe's script.");
       return undefined;
     });

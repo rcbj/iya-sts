@@ -1964,8 +1964,8 @@ class Authn {
       return { sid: selected, how: 'ticket', row: row, live: live.length };
     }
     const hint = req && req.stsAccountHint;
-    if (hint) {
-      const match = this.matchAccountHint(live, hint);
+    const match = hint ? this.matchAccountHint(live, hint) : '';
+    if (hint && (match || !hint.soft)) {
       log.debug("Leaving Authn.resolveAccount(). " +
                 (match ? 'The hint\'s.' : 'The hint names nobody here.'));
       return match
@@ -1973,6 +1973,9 @@ class Authn {
         : { sid: '', reason: 'hint-unmatched', row: row, live: live.length,
             hint: String(hint.loginHint || '') };
     }
+    // A SOFT hint naming nobody here is no hint (GNAP's `user`, whose
+    // naming somebody other than the person at the browser has a meaning
+    // of its own — `hintAccount()`'s header).
     if (live.length === 1) {
       log.debug("Leaving Authn.resolveAccount(). The only one.");
       return { sid: live[0], how: 'only', row: row, live: 1 };
@@ -2069,8 +2072,15 @@ class Authn {
    * `accountChoiceNeeded()` answer `hint-unmatched`. Empty members are
    * ignored; a hint with none is no hint.
    *
+   * `soft` (#561 step 3, for GNAP) makes a hint that names nobody live
+   * here no hint at all rather than a choice of nobody: the request then
+   * resolves as if it carried none. GNAP's `user` is that kind — a person
+   * at the browser who is not the user the grant request named is a case
+   * RFC 9635 and #432's owner approval give a meaning of their own — and so
+   * is a session id a page recorded for its own later calls.
+   *
    * @param req - the request
-   * @param hint - `{ loginHint, sub, sid }`; `username` is read as
+   * @param hint - `{ loginHint, sub, sid, soft }`; `username` is read as
    *   `loginHint`
    */
   hintAccount(req, hint) {
@@ -2081,7 +2091,8 @@ class Authn {
     const sub = String(h.sub || '').slice(0, 512);
     const sid = String(h.sid || '').slice(0, 128);
     if (req && (loginHint || sub || sid)) {
-      req.stsAccountHint = { loginHint: loginHint, sub: sub, sid: sid };
+      req.stsAccountHint = { loginHint: loginHint, sub: sub, sid: sid,
+                             soft: !!h.soft };
     }
     log.debug("Leaving Authn.hintAccount().");
   }
@@ -2329,7 +2340,15 @@ class Authn {
   private makeDefaultSession(res, session) {
     const { log } = this.deps;
     log.debug("Entering Authn.makeDefaultSession(). sid=" + session.id);
+    // The OP browser state (#121) is KEPT: becoming the default is not a
+    // sign-in, and a fresh state would tell every relying party of this
+    // account "changed" (OpenID Connect Session Management, the plan's
+    // section 7). Only the handle is new.
+    const browserState = session.browserState;
     const value = this.mintSessionHandle(session);
+    if (browserState) {
+      session.browserState = browserState;
+    }
     sessions.set(session.id, session);
     this.setCookieHeader(res, this.sessionCookieLine(SESSION_COOKIE, value));
     log.debug("Leaving Authn.makeDefaultSession().");
@@ -2422,6 +2441,36 @@ class Authn {
     log.debug("Leaving Authn.browserAccounts().");
     return { enabled: true, accounts: this.accountRows(row, req),
              max: AccountSets.maxAccounts() };
+  }
+
+  /**
+   * The live sessions this browser's account set holds (#561), in the order
+   * they joined it, with no side effects: for the OP browser state of
+   * OpenID Connect Session Management, and for sign-out's account choice.
+   *
+   * @param req - the request
+   * @returns the session rows; [] with `authn.multipleAccounts` off or for a
+   *   browser with no set
+   */
+  accountSessionsOf(req) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.accountSessionsOf().");
+    if (!AccountSets.enabled() || !req) {
+      log.debug("Leaving Authn.accountSessionsOf(). Off.");
+      return [];
+    }
+    const row = this.accountSetOf(req);
+    const out = row ? Object.keys(row.sessions || {}).filter(function (sid) {
+      return self.accountSessionLive(sid);
+    }).sort(function (a, b) {
+      return (Number(row.sessions[a].addedAt) || 0) -
+             (Number(row.sessions[b].addedAt) || 0);
+    }).map(function (sid) {
+      return sessions.get(sid);
+    }) : [];
+    log.debug("Leaving Authn.accountSessionsOf(). " + out.length);
+    return out;
   }
 
   /**
@@ -15173,6 +15222,7 @@ export = {
   // SEVERAL ACCOUNTS IN ONE BROWSER (#561): `authn/CLAUDE.md`, *Several
   // signed-in accounts in one browser*, has each one's contract.
   hintAccount: slot.forward('hintAccount'),
+  accountSessionsOf: slot.forward('accountSessionsOf'),
   accountChoiceNeeded: slot.forward('accountChoiceNeeded'),
   accountTicketFor: slot.forward('accountTicketFor'),
   spendAccountTicket: slot.forward('spendAccountTicket'),
