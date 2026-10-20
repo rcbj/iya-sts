@@ -38,6 +38,7 @@
   "options.federatedOwnMany": "此应用通过以下联合身份提供方之一为用户登录。请选择您拥有账户的那一个。此处不输入密码，据本服务所知，对方那里也不检查密码 — 本服务检查的是合作方的签名。",
   "options.federatedOwnOne": "此应用通过一个联合身份提供方为用户登录。此处不输入密码，据本服务所知，对方那里也不检查密码 — 本服务检查的是合作方的签名。",
   "options.federatedAny": "或者通过联合身份提供方登录。此处不输入密码，据本服务所知，对方那里也不检查密码 — 本服务检查的是合作方的签名。",
+  "options.continueWith": "使用 {provider} 继续",
   "options.kerberosWithheldKey": "此请求不提供集成 Kerberos 登录：它要求使用通行密钥。",
   "options.kerberosWithheldMfa": "此请求不提供集成 Kerberos 登录：它要求两个因素，而票据所声明的只是其自身标志所声明的 — 通常只有一个。",
   "options.kerberos": "或者使用 Kerberos 票据登录（如果这台计算机持有票据）。无需输入任何内容，本服务检查的是票据而非名称 — 这是此处唯一基于本服务真正验证过的凭据的登录方式。",

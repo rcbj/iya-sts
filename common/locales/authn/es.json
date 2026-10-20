@@ -38,6 +38,7 @@
   "options.federatedOwnMany": "Esta aplicación inicia la sesión de sus usuarios en uno de estos proveedores de identidad federados. Elija aquel en el que tenga una cuenta. Aquí no se escribe ninguna contraseña, y allí tampoco se comprueba ninguna, hasta donde este servicio puede saber: lo que comprueba es la firma del socio.",
   "options.federatedOwnOne": "Esta aplicación inicia la sesión de sus usuarios en un proveedor de identidad federado. Aquí no se escribe ninguna contraseña, y allí tampoco se comprueba ninguna, hasta donde este servicio puede saber: lo que comprueba es la firma del socio.",
   "options.federatedAny": "O inicie sesión con un proveedor de identidad federado. Aquí no se escribe ninguna contraseña, y allí tampoco se comprueba ninguna, hasta donde este servicio puede saber: lo que comprueba es la firma del socio.",
+  "options.continueWith": "Continuar con {provider}",
   "options.kerberosWithheldKey": "El inicio de sesión integrado con Kerberos no se ofrece para esta solicitud: exige una llave de acceso.",
   "options.kerberosWithheldMfa": "El inicio de sesión integrado con Kerberos no se ofrece para esta solicitud: exige dos factores, y un ticket declara lo que declaren sus propios indicadores, normalmente uno.",
   "options.kerberos": "O inicie sesión con un ticket de Kerberos, si este equipo tiene uno. No se escribe nada y este servicio comprueba el ticket en lugar de un nombre: es el único inicio de sesión aquí que se basa en una credencial que realmente verificó.",

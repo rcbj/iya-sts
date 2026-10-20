@@ -257,7 +257,7 @@ const CERT_COMPOSITION = certComposition();
 // draws nothing for it (PKI's issue forms before a hierarchy exists).
 const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/delegation-settings': ['register', 'settings'],
-  '/admin/federation': ['relationships', 'add', 'settings'],
+  '/admin/federation': ['relationships', 'consumer', 'add', 'settings'],
   '/admin/oidfed': ['keys', 'subordinates', 'collection', 'anchors',
                     'marks', 'resolve', 'settings'],
   '/admin/commands': ['clients', 'send', 'accounts', 'tenants',

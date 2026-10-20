@@ -4063,6 +4063,14 @@
     "en": "89dfe2967675cad2",
     "text": "Magpakita ng button bawat magagamit na service-provider-side relationship sa /authn/login, para matugunan ng isang federated identity ang ANUMANG flow na nagsimula na — isang OAuth 2.0 authorization request, isang WS-Federation sign-in, isang SAML AuthnRequest, ang admin console. Iyon ang buong dahilan kung bakit naroon ang mga button sa halip na sa /federation/login/{id} lang. Ang mga relationship lang na talagang gagana ang iniaalok — mas masahol ang button na humahantong sa pagtanggi kaysa sa walang button."
   },
+  "federation.consumerProviders|label": {
+    "en": "96a08e7b4a520c19",
+    "text": "Mga consumer at social na identity provider"
+  },
+  "federation.consumerProviders|description": {
+    "en": "635dc4f49d935e03",
+    "text": "Pinapayagan ang realm na ito na makipag-federate sa mga consumer at social na provider — Google, Discord, GitHub at ang iba pa sa katalogo — bilang mga relasyon ng sarili nilang kategorya (#565). NAKA-OFF bilang default: ang realm na naka-off ito ay hindi mabibigyan ng isa, hindi makapagpapagana ng isa, at tumatanggi sa bawat pinto sa pag-sign in sa pamamagitan ng isa, kasama ang relasyong isinulat ng ldapmodify. Hindi apektado ang mga enterprise na partner sa alinmang posisyon. Ang bagong dating sa pamamagitan ng consumer provider ay nakakakuha ng sariling entry, at hindi kailanman ginagamit ang address para itugma sa umiiral na tao."
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "Gumawa ng mga back-channel request sa mga partner"

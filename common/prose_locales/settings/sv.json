@@ -4063,6 +4063,14 @@
     "en": "89dfe2967675cad2",
     "text": "Visa en knapp per användbar relation på tjänsteleverantörssidan på /authn/login, så att en federerad identitet kan uppfylla VILKET flöde som helst som redan pågår — en OAuth 2.0-auktoriseringsbegäran, en WS-Federation-inloggning, en SAML AuthnRequest, administratörskonsolen. Det är hela skälet till att knapparna finns där och inte bara på /federation/login/{id}. Endast relationer som faktiskt skulle fungera erbjuds — en knapp som leder till en avvisning vore sämre än ingen knapp."
   },
+  "federation.consumerProviders|label": {
+    "en": "96a08e7b4a520c19",
+    "text": "Konsument- och sociala identitetsleverantörer"
+  },
+  "federation.consumerProviders|description": {
+    "en": "635dc4f49d935e03",
+    "text": "Låter denna sfär federera med konsument- och sociala leverantörer — Google, Discord, GitHub och resten av katalogen — som relationer i en egen kategori (#565). AV som standard: en sfär med den avslagen kan inte få en, kan inte aktivera en och vägrar vid varje dörr en inloggning genom en, även en relation skriven med ldapmodify. Företagspartner påverkas inte i något läge. Den som kommer för första gången genom en konsumentleverantör får en egen post, och en adress används aldrig för att matcha en befintlig person."
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "Gör bakkanalsbegäranden till partner"

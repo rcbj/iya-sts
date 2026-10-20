@@ -183,6 +183,10 @@
     "en": "06ec8c6d5bce784c",
     "text": "L’un de saml2, saml11, wsfed, oidc, oauth2 — les cinq protocoles de connexion — ou ssf, un partenaire qui envoie uniquement des Shared Signals et ne connecte personne."
   },
+  "fed.schema.attributes.fedProvider.what": {
+    "en": "b2f68432f2b706d4",
+    "text": "LE FOURNISSEUR GRAND PUBLIC OU SOCIAL QUE CETTE RELATION REPRÉSENTE (google, discord, github, generic-oidc, generic-oauth2), ou vide pour un partenaire d'entreprise. Fixé à la création de la relation et jamais modifié : le profil du fournisseur a alors écrit ses points de terminaison sur cette entrée, et indique à chaque connexion d'où proviennent le sujet, l'adresse et sa vérification. Une relation qui nomme un fournisseur appartient à la catégorie grand public, qu'un domaine active avec federation.consumerProviders."
+  },
   "fed.schema.attributes.fedPeer.what": {
     "en": "267dac8cafddfb60",
     "text": "L’IDENTIFIANT PROPRE DU PARTENAIRE, quel que soit le nom que lui donne son protocole : un entityID SAML, un émetteur OpenID Connect, un wtrealm WS-Federation. Sur une relation côté fournisseur de services, il est VÉRIFIÉ — une assertion dont l’Issuer n’est pas cette chaîne est refusée — c’est pourquoi ce n’est pas une simple documentation, et depuis le 2026-09-12 il y est OBLIGATOIRE : une relation qui en est dépourvue n’est pas entièrement configurée."
@@ -215,6 +219,10 @@
     "en": "8abc51b744775c8b",
     "text": "Le JWKS du partenaire. RÉCUPÉRÉ — ce qui est exactement l’inverse de ce que fait oauthJwksUri sur une entrée d’application, et la différence constitue tout l’argument de federation_http.js : celle-là est une URL qu’un appelant non authentifié a ENREGISTRÉE, celle-ci une URL qu’un administrateur a CONFIGURÉE. Laissez-la vide et collez plutôt les clés dans fedJwks si ce service ne doit pas effectuer l’appel."
   },
+  "fed.schema.attributes.fedEmailsUrl.what": {
+    "en": "8e6bd0b6ac698403",
+    "text": "UN SECOND POINT DE TERMINAISON DE PROFIL, pour un fournisseur qui publie l'adresse vérifiée d'une personne à part du reste (/user/emails de GitHub). Appelé avec le même jeton d'accès et selon la même politique que fedUserinfoUrl, et seulement pour une relation dont le profil de fournisseur le lit. Son échec coûte l'adresse, jamais la connexion."
+  },
   "fed.schema.attributes.fedJwks.what": {
     "en": "e5d612d3437f7654",
     "text": "Les clés publiques du partenaire sous forme de document JWKS, tel quel. Lu AVANT fedJwksUri et jamais actualisé ; une relation qui le porte n’effectue donc aucune requête sortante pour obtenir des clés."
@@ -235,6 +243,10 @@
     "en": "627419de92206a62",
     "text": "LE SECRET DE CE SERVICE CHEZ LE PARTENAIRE, en clair, dans un annuaire où chaque bind réussit. C’est un VÉRITABLE identifiant auprès d’un VÉRITABLE service étranger, ce qui est une affirmation plus forte que tout le reste de cet annuaire — voir l’en-tête. Jamais écrit dans le journal d’audit et jamais affiché sur une page."
   },
+  "fed.schema.attributes.fedTokenAuth.what": {
+    "en": "d86b5d2b605f0f05",
+    "text": "COMMENT CE SERVICE S'AUTHENTIFIE AUPRÈS DU POINT DE TERMINAISON DE JETON DU PARTENAIRE : client_secret_basic (la valeur par défaut, que la section 2.3.1 de la RFC 6749 impose à tout serveur de prendre en charge) ou client_secret_post, pour un partenaire qui ne lit le secret que dans le corps. Sans fedClientSecret, ce service est un client public et aucune des deux ne s'applique."
+  },
   "fed.schema.attributes.fedScope.what": {
     "en": "7f9479e6e589a23f",
     "text": "La portée demandée au partenaire. `openid profile email` est la valeur par défaut pour une relation OIDC et il n’y a pas de valeur par défaut pour une relation OAuth 2.0, car ce qu’un serveur d’autorisation OAuth 2.0 vous accordera lui est entièrement propre."
@@ -254,6 +266,10 @@
   "fed.schema.attributes.fedUsernameSource.what": {
     "en": "e0e96af3e55ca105",
     "text": "QUELLE VALEUR ENTRANTE EST RECHERCHÉE AU LINK-AT-FIRST-SIGN-IN, et mise en correspondance sous any-existing — un nom de revendication pour OIDC/OAuth 2.0, un Attribute Name SAML pour les autres. Vide signifie le sujet lui-même : le NameID, ou `sub`. Elle ne nomme pas une entrée que cette connexion CRÉE : ce nom est la relation et le sujet stable du partenaire (#358)."
+  },
+  "fed.schema.attributes.fedSubjectClaim.what": {
+    "en": "c52efd86a4983b41",
+    "text": "OAUTH 2.0 SIMPLE UNIQUEMENT : le membre de la réponse du point de terminaison de profil qui est l'identifiant stable de la personne chez le partenaire, sous forme de chemin pointé (id, data.id). Vide conserve ce que ce service a toujours fait — sub, puis id, puis user_id. C'est le SUJET, la moitié d'un lien de fédération qui ne doit jamais changer, et non le nom d'utilisateur (fedUsernameSource). Le sujet d'un partenaire OpenID Connect est le sub du jeton d'identité, que la section 5.7 d'OpenID Connect Core désigne comme le seul stable, et celui d'un fournisseur grand public est celui de son profil."
   },
   "fed.schema.attributes.fedAttributeMap.what": {
     "en": "4c966530efb4269f",

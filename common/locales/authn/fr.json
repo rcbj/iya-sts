@@ -38,6 +38,7 @@
   "options.federatedOwnMany": "Cette application connecte ses utilisateurs auprès de l’un de ces fournisseurs d’identité fédérés. Choisissez celui où vous avez un compte. Aucun mot de passe n’est saisi ici, et aucun n’y est vérifié non plus, pour autant que ce service puisse le savoir — ce qu’il vérifie, c’est la signature du partenaire.",
   "options.federatedOwnOne": "Cette application connecte ses utilisateurs auprès d’un fournisseur d’identité fédéré. Aucun mot de passe n’est saisi ici, et aucun n’y est vérifié non plus, pour autant que ce service puisse le savoir — ce qu’il vérifie, c’est la signature du partenaire.",
   "options.federatedAny": "Ou connectez-vous avec un fournisseur d’identité fédéré. Aucun mot de passe n’est saisi ici, et aucun n’y est vérifié non plus, pour autant que ce service puisse le savoir — ce qu’il vérifie, c’est la signature du partenaire.",
+  "options.continueWith": "Continuer avec {provider}",
   "options.kerberosWithheldKey": "La connexion Kerberos intégrée n’est pas proposée pour cette demande : elle exige une clé d’accès.",
   "options.kerberosWithheldMfa": "La connexion Kerberos intégrée n’est pas proposée pour cette demande : elle exige deux facteurs, et un ticket atteste ce que ses propres indicateurs attestent — généralement un seul.",
   "options.kerberos": "Ou connectez-vous avec un ticket Kerberos, si cette machine en détient un. Rien n’est saisi et ce service vérifie le ticket plutôt qu’un nom — la seule connexion ici qui repose sur un identifiant qu’il a réellement vérifié.",

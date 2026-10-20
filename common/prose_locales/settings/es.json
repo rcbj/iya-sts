@@ -4063,6 +4063,14 @@
     "en": "89dfe2967675cad2",
     "text": "Muestra un botón por cada relación utilizable del lado del proveedor de servicios en /authn/login, para que una identidad federada pueda satisfacer CUALQUIER flujo ya en curso — una solicitud de autorización de OAuth 2.0, un inicio de sesión de WS-Federation, un AuthnRequest de SAML, la consola de administración. Esa es toda la razón de que los botones estén ahí y no solo en /federation/login/{id}. Solo se ofrecen las relaciones que realmente funcionarían — un botón que lleva a un rechazo sería peor que no tener botón."
   },
+  "federation.consumerProviders|label": {
+    "en": "96a08e7b4a520c19",
+    "text": "Proveedores de identidad de consumo y sociales"
+  },
+  "federation.consumerProviders|description": {
+    "en": "635dc4f49d935e03",
+    "text": "Permite que este dominio se federe con proveedores de consumo y sociales —Google, Discord, GitHub y el resto del catálogo— como relaciones de una categoría propia (#565). DESACTIVADO por defecto: un dominio con él desactivado no puede recibir uno, no puede activar uno y rechaza en cada puerta un inicio de sesión a través de uno, incluida una relación escrita con ldapmodify. A los socios empresariales no les afecta en ninguna posición. Quien llega por primera vez a través de un proveedor de consumo obtiene una entrada propia, y una dirección nunca se usa para emparejar a una persona existente."
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "Hacer solicitudes por canal secundario a los socios"

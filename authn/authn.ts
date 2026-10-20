@@ -8745,6 +8745,10 @@ class Authn {
       return { id: String(one.id), label: String(one.label || ''),
                protocolLabel: String(one.protocolLabel || ''),
                peer: String(one.peer || ''),
+               // Consumer or enterprise, and which provider (#565), so the
+               // screen draws the consumer providers as a group of their own.
+               category: String(one.category || 'enterprise'),
+               provider: String(one.provider || ''),
                href: '/federation/login/' + encodeURIComponent(one.id) +
                      '?returnTo=' + back + forApplication + forRestart };
     });

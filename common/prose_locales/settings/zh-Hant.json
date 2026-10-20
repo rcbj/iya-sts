@@ -4063,6 +4063,14 @@
     "en": "89dfe2967675cad2",
     "text": "在 /authn/login 上為每個可用的服務提供者端關係顯示一個按鈕，讓聯合身分能滿足「任何」已在進行中的流程——OAuth 2.0 授權要求、WS-Federation 登入、SAML AuthnRequest、管理主控台。這正是按鈕放在這裡、而不只是放在 /federation/login/{id} 的全部理由。只會提供確實能運作的關係——導向拒絕的按鈕比沒有按鈕更糟。"
   },
+  "federation.consumerProviders|label": {
+    "en": "96a08e7b4a520c19",
+    "text": "消費者與社群身分提供者"
+  },
+  "federation.consumerProviders|description": {
+    "en": "635dc4f49d935e03",
+    "text": "允許此領域與消費者和社群提供者（Google、Discord、GitHub 以及目錄中的其他提供者）建立聯合，作為獨立類別的關係（#565）。預設關閉：關閉時，領域不能新增、不能啟用此類關係，並在每個入口拒絕透過它們的登入，包括由 ldapmodify 寫入的關係。無論開關處於何種狀態，企業合作夥伴都不受影響。透過消費者提供者首次到來的人會取得自己的項目，地址絕不會用於比對既有的人員。"
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "向夥伴發出後端通道要求"

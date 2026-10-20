@@ -55,6 +55,7 @@ class FederationPage {
     const t = ctx.t;
     const wantedText = json.filter.q || '';
     const wantedRole = json.filter.role || '';
+    const wantedCategory = json.filter.category || '';
     const paging = json.paging;
     const nav = kit.pageNavPair('/admin/federation',
       kit.pageParamsOf(ctx.query),
@@ -68,7 +69,10 @@ class FederationPage {
         (row.name !== row.id ? '<span class="sub">' + kit.esc(row.name) +
          '</span>' :
          '') + '</td><td>' + kit.esc(row.roleLabel) + '</td><td>' +
-        kit.esc(row.protocolLabel) + '</td><td ' +
+        kit.esc(row.protocolLabel) +
+        // A consumer provider (#565) says which one under its protocol.
+        (row.providerLabel ? '<span class="sub">' +
+          kit.esc(row.providerLabel) + '</span>' : '') + '</td><td ' +
         'class="who">' + kit.esc(row.peer || row.application || '') +
         (!row.peer && !row.application
           ? '<span class="sub">' +
@@ -94,6 +98,16 @@ class FederationPage {
           kit.esc(one.short) +
           ' (' + n + ')</option>';
       })).join('');
+
+    const categoryOptions = [['', 'consoleFederation.anyCategory'],
+      ['enterprise', 'consoleFederation.categoryEnterprise'],
+      ['consumer', 'consoleFederation.categoryConsumer']]
+      .map(function (one) {
+        const n = one[0] ? ((json.categoryCounts || {})[one[0]] || 0) : -1;
+        return '<option value="' + kit.esc(one[0]) + '"' +
+          (one[0] === wantedCategory ? ' selected' : '') + '>' +
+          t.html(one[1]) + (n >= 0 ? ' (' + n + ')' : '') + '</option>';
+      }).join('');
 
     const inner = '<div class="tiles">' +
       kit.tile(json.relationshipCount,
@@ -127,14 +141,18 @@ class FederationPage {
       kit.esc(t.text('consoleFederation.filterPlaceholder')) + '">' +
       '<label for="role">' + t.html('consoleFederation.labelRole') +
       '</label><select id="role" name="role">' +
-      roleOptions + '</select><label for="per">' +
+      roleOptions + '</select><label for="category">' +
+      t.html('consoleFederation.labelCategory') +
+      '</label><select id="category" name="category">' + categoryOptions +
+      '</select><label for="per">' +
       t.html('consoleFederation.labelShow') +
       '</label><select id="per" ' +
       'name="per">' + kit.perPageOptions(paging.perPage) +
       '</select><button ' +
       'type="submit">' + t.html('consoleFederation.buttonFilter') +
       '</button>' +
-      ((wantedText || wantedRole) ? ' <a href="/admin/federation">' +
+      ((wantedText || wantedRole || wantedCategory)
+        ? ' <a href="/admin/federation">' +
         t.html('consoleFederation.clear') + '</a>' :
         '') +
       '</div></form>' + nav.head +
@@ -148,10 +166,11 @@ class FederationPage {
       '</th><th>' + t.html('consoleFederation.thLastRefusal') +
       '</th></tr>' +
       (rows || '<tr><td colspan="8">' +
-        ((wantedText || wantedRole)
+        ((wantedText || wantedRole || wantedCategory)
           ? t.html('consoleFederation.noneMatches')
           : t.html('consoleFederation.noneConfigured')) + '</td></tr>') +
       '</table>' + nav.foot +
+      FederationPage.consumerSection(json.consumerProviders, t) +
       FederationPage.federationCreateForm(json.roles, json.protocols, t) +
       '<h2>' + t.html('consoleFederation.headingTwoDirections') + '</h2>' +
       '<table><tr><th>' + t.html('consoleFederation.thThisServiceIs') +
@@ -213,6 +232,65 @@ class FederationPage {
       '<span class="sub">' +
       t.html('consoleFederation.stillToSetRefuses',
              { missing: row.missing.join(', ') }) + '</span></td>';
+  }
+
+  // CONSUMER AND SOCIAL PROVIDERS (#565): a tab of their own, because the
+  // category is distinct even though each one is an ordinary relationship.
+  // The catalogue is a row per provider, each with the form that adds one
+  // from its profile — the provider's client id and secret are the only
+  // things it needs that a profile cannot know. With the realm's switch off
+  // there is nothing to add, and the tab says how to turn it on.
+  /**
+   * Draws the consumer and social providers tab: the realm's switch, the
+   * catalogue, and a form per provider.
+   *
+   * @param consumer - `consumerProviders` from the view: `on` and
+   *   `catalogue`
+   * @param t - the page's translator
+   * @returns the section as HTML
+   */
+  static consumerSection(consumer, t) {
+    const view = consumer || { on: false, catalogue: [] };
+    const rows = (view.catalogue || []).map(function (p) {
+      const form = !view.on ? '' :
+        '<form method="post" action="/admin/federation"><div ' +
+        'class="formrow"><input type="hidden" name="action" ' +
+        'value="create"><input type="hidden" name="provider" value="' +
+        kit.esc(p.id) + '"><input type="hidden" name="role" ' +
+        'value="service-provider"><input type="hidden" name="protocol" ' +
+        'value="' + kit.esc(p.protocol) + '">' +
+        '<label for="cp-id-' + kit.esc(p.id) + '">' +
+        t.html('consoleFederation.labelId') + '</label><input ' +
+        'type="text" id="cp-id-' + kit.esc(p.id) + '" name="id" size="12" ' +
+        'required value="' + kit.esc(p.id) + '"><label for="cp-cid-' +
+        kit.esc(p.id) + '">' + t.html('consoleFederation.labelClientId') +
+        '</label><input type="text" id="cp-cid-' + kit.esc(p.id) +
+        '" name="clientId" size="18"><label for="cp-sec-' + kit.esc(p.id) +
+        '">' + t.html('consoleFederation.labelClientSecret') +
+        '</label><input type="password" id="cp-sec-' + kit.esc(p.id) +
+        '" name="clientSecret" size="18" autocomplete="off">' +
+        '<input type="hidden" name="name" value="' + kit.esc(p.label) +
+        '"><button type="submit">' +
+        t.html('consoleFederation.buttonAddProvider') +
+        '</button></div></form>';
+      return '<tr><td>' + kit.esc(p.label) + (p.docs
+          ? '<span class="sub"><a href="' + kit.esc(p.docs) + '">' +
+            t.html('consoleFederation.providerDocs') + '</a></span>'
+          : '') + '</td><td>' + kit.esc(p.protocol) + '</td><td>' +
+        kit.esc(p.note) + '</td><td>' + form + '</td></tr>';
+    }).join('');
+    return '<h2 data-tab="consumer">' +
+      t.html('consoleFederation.headingConsumer') + '</h2>' +
+      kit.note(view.on ? t.html('consoleFederation.consumerOn')
+                       : t.html('consoleFederation.consumerOff')) +
+      kit.note(t.html('consoleFederation.consumerWhat')) +
+      '<p><a href="/admin/federation?category=consumer">' +
+      t.html('consoleFederation.consumerListLink') + '</a></p>' +
+      '<table><tr><th>' + t.html('consoleFederation.thProvider') +
+      '</th><th>' + t.html('consoleFederation.thProtocol') + '</th><th>' +
+      t.html('consoleFederation.thWhatItIs') + '</th><th>' +
+      t.html('consoleFederation.thAddOne') + '</th></tr>' + rows +
+      '</table>';
   }
 
   /**
@@ -539,6 +617,20 @@ class FederationPage {
         '<tr><td>' + t.html('consoleFederation.thProtocol') + '</td><td>' +
         kit.esc(row.protocolLabel) +
           '</td></tr>' +
+        // THE PROVIDER (#565), with its profile's note and, where the realm
+        // has consumer providers off, the reason nothing signs in.
+        (json.provider
+          ? '<tr><td>' + t.html('consoleFederation.thProvider') +
+            '</td><td>' + kit.esc(json.provider.label) +
+            '<span class="sub">' + kit.esc(json.provider.note) +
+            (json.provider.docs ? ' <a href="' +
+              kit.esc(json.provider.docs) + '">' +
+              t.html('consoleFederation.providerDocs') + '</a>' : '') +
+            '</span>' + (json.provider.realmOn ? '' :
+              '<p class="warn">' +
+              t.html('consoleFederation.providerRealmOff') + '</p>') +
+            '</td></tr>'
+          : '') +
         '<tr><td>' + t.html('consoleFederation.thPartner') +
         '</td><td class="who"><code>' +
         kit.esc(row.peer || t.text('consoleFederation.noneNamed')) +

@@ -9131,13 +9131,42 @@ class AdminActions {
         fedProtocol: String(body.protocol || ''),
         fedName: String(body.name || ''),
         fedPeer: String(body.peer || ''),
-        fedApplication: String(body.application || '')
+        fedApplication: String(body.application || ''),
+        // A consumer provider (#565): the profile the relationship is
+        // made from.
+        fedProvider: String(body.provider || '')
       });
       log.debug("Leaving AdminActions.federationAction(). create " +
                 (result.ok ? 'ok' : 'refused') + ".");
       if (!result.ok) {
         log.debug("Leaving AdminActions.federationAction().");
         return this.refusedBy('STS-ADMIN-0575', result);
+      }
+      // A PROVIDER'S CLIENT CREDENTIALS IN THE SAME ACT (#565): the two
+      // fields a provider issues and a profile cannot know, set through
+      // update() like any other field — so the secret is sealed exactly as a
+      // later `set` would seal it. A refusal of either leaves the
+      // relationship registered and says which.
+      const credentialNotes: string[] = [];
+      if (String(body.provider || '')) {
+        [['fedClientId', body.clientId], ['fedClientSecret', body.clientSecret]]
+          .forEach(function (pair) {
+            const value = String(pair[1] == null ? '' : pair[1]).trim();
+            if (!value) {
+              return;
+            }
+            const set = federation.update(id, { field: pair[0],
+                                                value: value });
+            if (!set.ok) {
+              credentialNotes.push(pair[0] + ' was not set: ' +
+                                   (set.errors || []).join(' '));
+            }
+          });
+        result.relationship = federation.get(id) || result.relationship;
+        result.readiness = federation.readinessOf(result.relationship);
+        // The secret was given in this request and is not answered back.
+        result.relationship = Object.assign({}, result.relationship);
+        delete result.relationship.fedClientSecret;
       }
       // THE ENCRYPTION KEY A PARTNER ENCRYPTS TO (#168), for the three
       // protocols that have one. A key that could not be issued leaves the
@@ -9157,7 +9186,9 @@ class AdminActions {
       }
       log.debug("Leaving AdminActions.federationAction().");
       return Object.assign({}, result, {
-        message: 'Registered, and DISABLED.' + keyNote + ' Set what it ' +
+        message: 'Registered, and DISABLED.' + keyNote +
+          (credentialNotes.length ? ' ' + credentialNotes.join(' ') : '') +
+          ' Set what it ' +
           'needs — ' +
           (result.readiness.missing.length
             ? result.readiness.missing.join(', ')

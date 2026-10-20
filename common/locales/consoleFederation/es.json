@@ -252,5 +252,21 @@
   "through": "mediante ",
   "brokerNotUsable": "esa relación no se puede usar, así que se muestra la pantalla de inicio de sesión en su lugar",
   "notAMechanism": "no es un mecanismo que tenga este servicio",
-  "authAtPartnerTitle": "La autenticación ocurre en el SOCIO en una relación del lado del proveedor de servicios, así que aquí no hay nada que configurar."
+  "authAtPartnerTitle": "La autenticación ocurre en el SOCIO en una relación del lado del proveedor de servicios, así que aquí no hay nada que configurar.",
+  "labelCategory": "Categoría",
+  "anyCategory": "cualquier categoría",
+  "categoryEnterprise": "empresarial",
+  "categoryConsumer": "de consumo y sociales",
+  "headingConsumer": "Proveedores de consumo y sociales",
+  "consumerOn": "Los proveedores de consumo y sociales están <strong>activados</strong> en este dominio (<code>federation.consumerProviders</code>).",
+  "consumerOff": "Los proveedores de consumo y sociales están <strong>desactivados</strong> en este dominio. Active <code>federation.consumerProviders</code> en Configuración para añadir uno; los socios empresariales no se ven afectados.",
+  "consumerWhat": "Cada proveedor es una relación de federación propia, que se añade desactivada. Sus extremos se escriben en la relación al añadirla y pueden cambiarse en su página. Quien llega por primera vez obtiene una entrada propia, y una dirección nunca se usa para emparejar a una persona existente. Registre en el proveedor, como URI de redirección, el servicio consumidor de aserciones que muestra su página y después actívela.",
+  "consumerListLink": "Mostrar solo los proveedores de consumo y sociales",
+  "thProvider": "Proveedor",
+  "thAddOne": "Añadir uno",
+  "labelClientId": "ID de cliente",
+  "labelClientSecret": "Secreto de cliente",
+  "buttonAddProvider": "Añadir",
+  "providerDocs": "la documentación del proveedor",
+  "providerRealmOff": "Este dominio tiene desactivados los proveedores de consumo y sociales, así que esta relación rechaza todo inicio de sesión hasta que <code>federation.consumerProviders</code> esté activado."
 }

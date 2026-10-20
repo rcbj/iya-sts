@@ -252,5 +252,21 @@
   "through": "通过 ",
   "brokerNotUsable": "该关系不可用，因此改为显示登录界面",
   "notAMechanism": "不是本服务具备的机制",
-  "authAtPartnerTitle": "在服务提供方一侧的关系上，认证发生在合作方处，因此这里没有需要配置的内容。"
+  "authAtPartnerTitle": "在服务提供方一侧的关系上，认证发生在合作方处，因此这里没有需要配置的内容。",
+  "labelCategory": "类别",
+  "anyCategory": "任意类别",
+  "categoryEnterprise": "企业",
+  "categoryConsumer": "消费者和社交",
+  "headingConsumer": "消费者和社交提供方",
+  "consumerOn": "此领域已<strong>启用</strong>消费者和社交提供方（<code>federation.consumerProviders</code>）。",
+  "consumerOff": "此领域已<strong>关闭</strong>消费者和社交提供方。请在“设置”中开启 <code>federation.consumerProviders</code> 后再添加；企业合作方不受影响。",
+  "consumerWhat": "每个提供方都是一个独立的联合关系，添加时处于禁用状态。添加时会把它的端点写入该关系，之后可在其页面上修改。首次到来的人会获得自己的条目，地址绝不会用于匹配已有的人员。请把其页面上显示的断言使用者服务注册为提供方的重定向 URI，然后启用它。",
+  "consumerListLink": "只列出消费者和社交提供方",
+  "thProvider": "提供方",
+  "thAddOne": "添加",
+  "labelClientId": "客户端 ID",
+  "labelClientSecret": "客户端密钥",
+  "buttonAddProvider": "添加",
+  "providerDocs": "提供方文档",
+  "providerRealmOff": "此领域已关闭消费者和社交提供方，因此在开启 <code>federation.consumerProviders</code> 之前，此关系会拒绝所有登录。"
 }

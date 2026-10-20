@@ -183,6 +183,10 @@
     "en": "06ec8c6d5bce784c",
     "text": "saml2、saml11、wsfed、oidc、oauth2 其中之一——五種登入協定——或 ssf，即只傳送 Shared Signals、不讓任何人登入的夥伴。"
   },
+  "fed.schema.attributes.fedProvider.what": {
+    "en": "b2f68432f2b706d4",
+    "text": "此關係所代表的消費者或社群提供者（google、discord、github、generic-oidc、generic-oauth2），企業合作夥伴則為空。在建立關係時設定，此後從不變更：提供者的設定檔當時已將其端點寫入此項目，並在每次登入時說明主體、地址及其驗證來自何處。指定了提供者的關係屬於消費者類別，領域透過 federation.consumerProviders 啟用該類別。"
+  },
   "fed.schema.attributes.fedPeer.what": {
     "en": "267dac8cafddfb60",
     "text": "「夥伴自己的識別碼」，以其協定所用的稱呼表示：SAML entityID、OpenID Connect 簽發者、WS-Federation wtrealm。在服務提供者端的關係上它會被「檢查」——Issuer 不是此字串的斷言會被拒絕——這就是它不只是說明文字的原因，而且自 2026-09-12 起它在那裡是「必要的」：沒有它的關係並未完整設定。"
@@ -215,6 +219,10 @@
     "en": "8abc51b744775c8b",
     "text": "夥伴的 JWKS。「會被擷取」——這與應用程式項目上的 oauthJwksUri 恰恰相反，而這個差異就是 federation_http.js 中論證的全部：那個是未經驗證的呼叫者「註冊」的 URL，這個是管理員「設定」的 URL。若不希望本服務發出這個呼叫，請將它留空，改為把金鑰貼到 fedJwks 中。"
   },
+  "fed.schema.attributes.fedEmailsUrl.what": {
+    "en": "8e6bd0b6ac698403",
+    "text": "第二個設定檔端點，用於將個人已驗證地址與其餘資訊分開發布的提供者（GitHub 的 /user/emails）。使用與 fedUserinfoUrl 相同的存取權杖和相同的原則呼叫，且僅用於其提供者設定檔會讀取它的關係。它失敗時損失的是地址，絕不是登入。"
+  },
   "fed.schema.attributes.fedJwks.what": {
     "en": "e5d612d3437f7654",
     "text": "夥伴的公開金鑰，以 JWKS 文件原樣保存。在 fedJwksUri「之前」讀取且從不重新整理，因此攜帶此屬性的關係完全不會為金鑰發出外送請求。"
@@ -235,6 +243,10 @@
     "en": "627419de92206a62",
     "text": "「本服務在夥伴處的秘密」，以明文存放在每次繫結都會成功的目錄中。它是「真正的」外部服務上「真正的」憑證，這比此目錄中其他任何東西都更具分量——請參閱標頭。絕不會寫入稽核記錄，也絕不會印在頁面上。"
   },
+  "fed.schema.attributes.fedTokenAuth.what": {
+    "en": "d86b5d2b605f0f05",
+    "text": "此服務在合作夥伴權杖端點的驗證方式：client_secret_basic（預設值，RFC 6749 第 2.3.1 節規定伺服器必須支援）或 client_secret_post，用於只從請求本文讀取密鑰的合作夥伴。沒有 fedClientSecret 時，此服務是公開用戶端，兩者皆不適用。"
+  },
   "fed.schema.attributes.fedScope.what": {
     "en": "7f9479e6e589a23f",
     "text": "向夥伴要求的範圍。`openid profile email` 是 OIDC 關係的預設值，OAuth 2.0 關係則沒有預設值，因為 OAuth 2.0 授權伺服器會給你什麼完全由它自己決定。"
@@ -254,6 +266,10 @@
   "fed.schema.attributes.fedUsernameSource.what": {
     "en": "e0e96af3e55ca105",
     "text": "「在 LINK-AT-FIRST-SIGN-IN 時查找哪個傳入值」，並在 any-existing 下進行比對——OIDC/OAuth 2.0 為宣告名稱，其他則為 SAML Attribute Name。空白表示使用主體本身：NameID 或 `sub`。它並不指名此次登入所「建立」的項目：該名稱由關係與夥伴的穩定主體組成（#358）。"
+  },
+  "fed.schema.attributes.fedSubjectClaim.what": {
+    "en": "c52efd86a4983b41",
+    "text": "僅限純 OAuth 2.0：設定檔端點回應中作為合作夥伴對此人穩定識別碼的成員，以點分路徑表示（id、data.id）。留空則維持此服務一貫的做法——先 sub，再 id，再 user_id。它是主體，即聯合連結中絕不能改變的那一半，而不是使用者名稱（fedUsernameSource）。OpenID Connect 合作夥伴的主體是 ID 權杖的 sub，OpenID Connect Core 第 5.7 節規定它是唯一穩定的識別；消費者提供者的主體由其設定檔決定。"
   },
   "fed.schema.attributes.fedAttributeMap.what": {
     "en": "4c966530efb4269f",

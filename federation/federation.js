@@ -2411,8 +2411,14 @@ function readinessOf(record) {
 function encrypts(record) {
   log.debug("Entering encrypts().");
   log.debug("Leaving encrypts().");
+  // A CONSUMER PROVIDER ENCRYPTS NOTHING TO ANYBODY (#565): none of the
+  // catalogue's providers takes a relying party's encryption key, and an
+  // ID Token on the authorization code flow is not encrypted here anyway
+  // (encryptionRequired()), so issuing it a key would be a certificate under
+  // the realm's Intermediate that nobody will ever use.
   return !!record && record.fedRole === 'service-provider' &&
-         ENCRYPTING_PROTOCOLS.indexOf(record.fedProtocol) >= 0;
+         ENCRYPTING_PROTOCOLS.indexOf(record.fedProtocol) >= 0 &&
+         consumerProviders.categoryOf(record) !== 'consumer';
 }
 
 // `xml` for SAML 2.0 and WS-Federation, `jose` for OpenID Connect.
@@ -3733,7 +3739,11 @@ function create(spec) {
   const id = String(info.fedId || info.id || '').trim();
   const problem = idProblem(id);
   if (problem) errors.push(problem);
-  const role = String(info.fedRole || info.role || '').trim();
+  // A consumer provider is always consumed from (#565), so naming one is
+  // enough to say the role.
+  const role = String(info.fedRole || info.role ||
+                      ((info.fedProvider || info.provider)
+                        ? 'service-provider' : '')).trim();
   if (ROLE_IDS.indexOf(role) === -1) {
     errors.push('Unknown role "' + role + '". The two are: ' +
                 ROLE_IDS.join(', ') + '.');
@@ -3872,7 +3882,7 @@ function create(spec) {
     // itself is issued by `federation_encryption.ts` right after this, which
     // the console and /admin-api both do; this function is synchronous and
     // issuing is not.
-    if (ENCRYPTING_PROTOCOLS.indexOf(protocol) >= 0) {
+    if (ENCRYPTING_PROTOCOLS.indexOf(protocol) >= 0 && !profile) {
       const family = protocol === 'oidc' ? 'jose' : 'xml';
       record.fedEncryptionKeyType = defaultKeyTypeFor(protocol);
       record.fedKeyManagementAlgorithm =

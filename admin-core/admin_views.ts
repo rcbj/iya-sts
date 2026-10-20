@@ -244,6 +244,8 @@ import requestSignature = require('../saml/request_signature');
 import spMetadata = require('../saml/sp_metadata');
 import authorizationServers = require('../oauth-oidc/authorization_servers');
 import federation = require('../federation/federation');
+// The consumer provider catalogue (#565), for the console's category.
+import consumerProviders = require('../federation/consumer_providers');
 // A federationLink's format (#109): a static utility class.
 import fedLinks = require('../federation/federation_links');
 // What a partner encrypts to (#168), for the relationship's page and API.
@@ -11658,8 +11660,10 @@ class AdminViews {
     const all = federation.list().map(this.federationRow.bind(this));
     const wantedText = String(req.query.q || '').trim().toLowerCase();
     const wantedRole = String(req.query.role || '').trim();
+    const wantedCategory = String(req.query.category || '').trim();
     const filtered = all.filter(function (row) {
       if (wantedRole && row.role !== wantedRole) return false;
+      if (wantedCategory && row.category !== wantedCategory) return false;
       if (!wantedText) return true;
       return (row.id + ' ' + row.name + ' ' + row.peer + ' ' + row.application)
         .toLowerCase().indexOf(wantedText) >= 0;
@@ -11672,6 +11676,10 @@ class AdminViews {
     const roleCounts: Record<string, number> = {};
     all.forEach(function (r) {
       roleCounts[r.role] = (roleCounts[r.role] || 0) + 1;
+    });
+    const categoryCounts: Record<string, number> = {};
+    all.forEach(function (r) {
+      categoryCounts[r.category] = (categoryCounts[r.category] || 0) + 1;
     });
     const notConfigured = all.filter(function (r) {
       return r.enabled && !r.ready;
@@ -11689,7 +11697,8 @@ class AdminViews {
           shown: paged.shown.length,
           ready: all.filter(function (r) { return r.usable; }).length,
           filter: { q: String(req.query.q || '') || null,
-                    role: wantedRole || null },
+                    role: wantedRole || null,
+                    category: wantedCategory || null },
           page: paging.page, pages: paging.pages, perPage: paging.perPage,
           firstRow: paging.firstRow, lastRow: paging.lastRow,
           container: federation.containerDn(),
@@ -11698,6 +11707,14 @@ class AdminViews {
           roles: federation.ROLES, protocols: federation.PROTOCOLS,
           paths: federation.PATHS,
           paging: pagingJson, roleCounts: roleCounts,
+          // CONSUMER AND SOCIAL PROVIDERS (#565): whether this realm has
+          // them on, how many of each category there are, and the
+          // catalogue a new one is made from.
+          categoryCounts: categoryCounts,
+          consumerProviders: {
+            on: federation.consumerProvidersOn(),
+            catalogue: consumerProviders.catalogue()
+          },
           enabledNotConfigured: notConfigured,
           authentications: authenticationTotal,
           relationships: paged.shown
@@ -11950,6 +11967,15 @@ class AdminViews {
           autocreateDefault: mode.defaultsFederatedAutocreate(),
           subjectPolicy: federation.subjectPolicyOf(record),
           encrypts: federation.encrypts(record),
+          // The provider this relationship was made from (#565), with the
+          // profile's note and documentation for the page.
+          provider: (function () {
+            const p = consumerProviders.profileFor(record.fedProvider);
+            return p ? { id: p.id, label: p.label, note: p.note,
+                         docs: p.docs,
+                         realmOn: federation.consumerProvidersOn() }
+                     : null;
+          }()),
           paths: federation.PATHS, base: base, loginHref: login,
           metadataUrl: metadata,
           signOut: row.role === 'service-provider' ? signOut : {}
@@ -12005,6 +12031,11 @@ class AdminViews {
                       {}).label || record.fedProtocol,
       peer: record.fedPeer || '',
       application: record.fedApplication || '',
+      // The category and the provider (#565): consumer when it names one.
+      category: consumerProviders.categoryOf(record),
+      provider: record.fedProvider || '',
+      providerLabel: (consumerProviders.profileFor(record.fedProvider) ||
+                      {}).label || '',
       enabled: federation.isEnabled(record),
       ready: readiness.ready,
       missing: readiness.missing,

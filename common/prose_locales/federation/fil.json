@@ -183,6 +183,10 @@
     "en": "06ec8c6d5bce784c",
     "text": "Isa sa saml2, saml11, wsfed, oidc, oauth2 — ang limang sign-in protocol — o ssf, isang partner na Shared Signals lang ang ipinapadala at walang sina-sign in."
   },
+  "fed.schema.attributes.fedProvider.what": {
+    "en": "b2f68432f2b706d4",
+    "text": "ANG CONSUMER O SOCIAL NA PROVIDER NA ITO ANG RELASYONG ITO (google, discord, github, generic-oidc, generic-oauth2), o walang laman para sa isang enterprise na partner. Itinatakda kapag nilikha ang relasyon at hindi na binabago: isinulat noon ng profile ng provider ang mga endpoint nito sa entry na ito, at sinasabi nito sa bawat pag-sign in kung saan nagmumula ang subject, ang address at ang pagpapatunay nito. Ang relasyong nagpapangalan ng provider ay nasa kategoryang consumer, na binubuksan ng isang realm gamit ang federation.consumerProviders."
+  },
   "fed.schema.attributes.fedPeer.what": {
     "en": "267dac8cafddfb60",
     "text": "ANG SARILING IDENTIFIER NG PARTNER, ayon sa itinatawag dito ng protocol nito: isang SAML entityID, isang OpenID Connect issuer, isang WS-Federation wtrealm. Sa relationship sa service-provider side, SINUSURI ito — tinatanggihan ang assertion na ang Issuer ay hindi ang string na ito — kaya hindi lang ito dokumentasyon, at mula 2026-09-12 KINAKAILANGAN ito roon: ang relationship na wala nito ay hindi buong naka-configure."
@@ -215,6 +219,10 @@
     "en": "8abc51b744775c8b",
     "text": "Ang JWKS ng partner. KINUKUHA — na eksaktong kabaligtaran ng ginagawa ng oauthJwksUri sa isang application entry, at ang pagkakaiba ang buong argumento sa federation_http.js: ang isa ay URL na IRINEHISTRO ng isang unauthenticated na caller, ito ay URL na IN-CONFIGURE ng isang administrator. Iwanan itong walang laman at i-paste ang mga key sa fedJwks sa halip kung hindi dapat tumawag ang serbisyong ito."
   },
+  "fed.schema.attributes.fedEmailsUrl.what": {
+    "en": "8e6bd0b6ac698403",
+    "text": "ISANG IKALAWANG PROFILE ENDPOINT, para sa provider na naglalathala ng napatunayang address ng isang tao nang hiwalay sa iba (ang /user/emails ng GitHub). Tinatawagan gamit ang parehong access token at sa ilalim ng parehong patakaran ng fedUserinfoUrl, at para lamang sa relasyong binabasa ito ng profile ng provider. Ang pagkabigo nito ay nagkakahalaga ng address, hindi kailanman ng pag-sign in."
+  },
   "fed.schema.attributes.fedJwks.what": {
     "en": "e5d612d3437f7654",
     "text": "Ang mga public key ng partner bilang isang JWKS document, verbatim. Binabasa BAGO ang fedJwksUri at hindi kailanman nire-refresh, kaya ang relationship na may dala nito ay walang ginagawang outbound request para sa mga key."
@@ -235,6 +243,10 @@
     "en": "627419de92206a62",
     "text": "ANG SECRET NG SERBISYONG ITO SA PARTNER, nasa clear, sa isang directory kung saan nagtatagumpay ang bawat bind. TOTOONG credential ito sa isang TOTOONG dayuhang serbisyo, na mas malakas na pahayag kaysa sa anupaman sa directory na ito — tingnan ang header. Hindi kailanman isinusulat sa audit log at hindi kailanman ipini-print sa isang pahina."
   },
+  "fed.schema.attributes.fedTokenAuth.what": {
+    "en": "d86b5d2b605f0f05",
+    "text": "KUNG PAANO NAGPAPATUNAY ANG SERBISYONG ITO SA TOKEN ENDPOINT NG PARTNER: client_secret_basic (ang default, na sinasabi ng RFC 6749 seksiyon 2.3.1 na DAPAT suportahan ng server) o client_secret_post, para sa partner na binabasa lamang ang secret mula sa body. Kung walang fedClientSecret, pampublikong client ang serbisyong ito at wala sa dalawa ang naaangkop."
+  },
   "fed.schema.attributes.fedScope.what": {
     "en": "7f9479e6e589a23f",
     "text": "Ang scope na hinihingi sa partner. `openid profile email` ang default para sa OIDC relationship at walang default para sa OAuth 2.0, dahil ang ibibigay sa iyo ng isang OAuth 2.0 authorization server ay ganap na lokal dito."
@@ -254,6 +266,10 @@
   "fed.schema.attributes.fedUsernameSource.what": {
     "en": "e0e96af3e55ca105",
     "text": "ALING PAPASOK NA VALUE ANG HINAHANAP SA LINK-AT-FIRST-SIGN-IN, at itinutugma sa ilalim ng any-existing — pangalan ng claim para sa OIDC/OAuth 2.0, SAML Attribute Name para sa iba. Ang walang laman ay ang subject mismo: ang NameID, o `sub`. Hindi nito pinapangalanan ang entry na GINAGAWA ng sign-in na ito: ang pangalang iyon ay ang relationship at ang stable na subject ng partner (#358)."
+  },
+  "fed.schema.attributes.fedSubjectClaim.what": {
+    "en": "c52efd86a4983b41",
+    "text": "PARA LAMANG SA PLAIN OAUTH 2.0: ang miyembro ng sagot ng profile endpoint na siyang matatag na identifier ng partner para sa tao, bilang dotted path (id, data.id). Kapag walang laman, pinananatili ang laging ginagawa ng serbisyong ito — sub, pagkatapos id, pagkatapos user_id. Ito ang SUBJECT, ang kalahati ng federation link na hindi dapat magbago kailanman, na hindi ang username (fedUsernameSource). Ang subject ng isang OpenID Connect na partner ay ang sub ng ID Token, na ginagawa ng OpenID Connect Core seksiyon 5.7 na tanging matatag, at ang sa isang consumer provider ay ang sa profile nito."
   },
   "fed.schema.attributes.fedAttributeMap.what": {
     "en": "4c966530efb4269f",

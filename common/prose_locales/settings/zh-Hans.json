@@ -4063,6 +4063,14 @@
     "en": "89dfe2967675cad2",
     "text": "在 /authn/login 上为每个可用的服务提供方侧关系显示一个按钮，使联合身份可以满足任何已在进行中的流程——OAuth 2.0 授权请求、WS-Federation 登录、SAML AuthnRequest、管理控制台。这正是这些按钮出现在这里、而不仅仅在 /federation/login/{id} 上的全部原因。只提供确实能工作的关系——导向拒绝的按钮比没有按钮更糟。"
   },
+  "federation.consumerProviders|label": {
+    "en": "96a08e7b4a520c19",
+    "text": "消费者和社交身份提供方"
+  },
+  "federation.consumerProviders|description": {
+    "en": "635dc4f49d935e03",
+    "text": "允许此领域与消费者和社交提供方（Google、Discord、GitHub 以及目录中的其他提供方）建立联合，作为独立类别的关系（#565）。默认关闭：关闭时，领域不能添加、不能启用此类关系，并在每个入口拒绝通过它们的登录，包括由 ldapmodify 写入的关系。无论开关处于何种状态，企业合作方都不受影响。通过消费者提供方首次到来的人会获得自己的条目，地址绝不会用于匹配已有的人员。"
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "向合作方发出反向通道请求"

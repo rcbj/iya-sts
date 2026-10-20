@@ -423,7 +423,11 @@ export = class ConsumerProviders {
       helpers.log.debug("Leaving ConsumerProviders.issuersFor(). No peer.");
       return undefined;
     }
-    if (!profile || !profile.issuerAliases.length) {
+    // An alias is a spelling of the PROVIDER's own issuer, so it is
+    // accepted only while `fedPeer` is still the profile's: a relationship
+    // pointed somewhere else has no business accepting Google's bare host.
+    if (!profile || !profile.issuerAliases.length ||
+        peer !== profile.defaults.fedPeer) {
       helpers.log.debug("Leaving ConsumerProviders.issuersFor().");
       return peer;
     }
