@@ -64,40 +64,58 @@ function fakeRes() {
   const res = { cookies: [], locals: {}, headersSent: false,
                 statusCode: 200, body: null, where: '' };
   res.set = function (name, value) {
+    log.debug("Entering set().");
+    log.debug("Leaving set().");
     if (String(name).toLowerCase() === 'set-cookie') {
       res.cookies = [String(value)];
     }
     return res;
   };
   res.append = function (name, value) {
+    log.debug("Entering append().");
+    log.debug("Leaving append().");
     if (String(name).toLowerCase() === 'set-cookie') {
       res.cookies.push(String(value));
     }
     return res;
   };
   res.status = function (code) {
+    log.debug("Entering status().");
+    log.debug("Leaving status().");
     res.statusCode = code;
     return res;
   };
   res.type = function () {
+    log.debug("Entering type().");
+    log.debug("Leaving type().");
     return res;
   };
   res.send = function (body) {
+    log.debug("Entering send().");
+    log.debug("Leaving send().");
     res.body = body;
     res.headersSent = true;
     return res;
   };
   res.location = function (url) {
+    log.debug("Entering location().");
+    log.debug("Leaving location().");
     res.where = String(url);
     return res;
   };
   res.get = function (name) {
+    log.debug("Entering get().");
+    log.debug("Leaving get().");
     return String(name).toLowerCase() === 'location' ? res.where : undefined;
   };
   res.removeHeader = function () {
+    log.debug("Entering removeHeader().");
+    log.debug("Leaving removeHeader().");
     res.where = '';
   };
   res.redirect = function (code, url) {
+    log.debug("Entering redirect().");
+    log.debug("Leaving redirect().");
     res.statusCode = code;
     res.where = String(url);
   };
@@ -112,6 +130,7 @@ function browser() {
     jar: jar,
     // A request from this browser, for `url`, with its own response.
     req: function (url) {
+      log.debug("Entering req().");
       const res = fakeRes();
       const header = Object.keys(jar).map(function (k) {
         return k + '=' + jar[k];
@@ -130,10 +149,12 @@ function browser() {
                     url: String(url || '/'), originalUrl: String(url || '/'),
                     method: 'GET', res: res };
       res.req = req;
+      log.debug("Leaving req().");
       return req;
     },
     // What a response told the browser to keep.
     take: function (res) {
+      log.debug("Entering take().");
       (res.cookies || []).forEach(function (line) {
         const pair = String(line).split(';')[0];
         const i = pair.indexOf('=');
@@ -148,6 +169,7 @@ function browser() {
           jar[name] = value;
         }
       });
+      log.debug("Leaving take().");
     }
   };
   log.debug("Leaving browser().");
