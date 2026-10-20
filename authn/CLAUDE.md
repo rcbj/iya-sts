@@ -732,7 +732,13 @@ In `startSessionHere()`, only for a browser's own authenticated sign-in
    binding's signed query is the one its sender signed — and spends it. It
    counts only for THIS browser's set, for THIS path (the realm prefix is
    already off `req.url`, as `returnTo` never had it) and a session still
-   live there; anything else is ignored (`STS-AUTHN-0338`). The chosen sid
+   live there; anything else is ignored (`STS-AUTHN-0338`) — **except a
+   ticket of this browser, for this path, whose session ENDED between the
+   choice and this request (#731)**: that one chooses NOBODY
+   (`hint-unmatched`, the account's name — kept on the ticket when it was
+   minted — as the hint), or the same account's session where it signed in
+   again meanwhile. Ignored, it let the request fall through to *the only
+   live session*, so a flow resumed as alice went on as bob. The chosen sid
    is left on `req.stsAccountSelection` for every later `sessionOf()` of the
    request, which is called several times per request — so the ticket is
    spent once, at the door, and the choice lasts exactly one request.
@@ -853,12 +859,41 @@ Bound as every act here (JSON, Origin, CSRF); a body refused is
   `account_selection_required`).
 * **`admin_stats`**: `recordAccountChoice()` — `selected`, `ambiguous`,
   `selectFailed`, `added`, `forgotten`, `expired`, `switched` — and
-  `accountChoiceCounts()` adding every process's rows.
+  `accountChoiceCounts()` adding every process's rows — answered by
+  `GET /admin-api/sessions` as `accountChoices` and drawn as a tab of
+  `/admin/sessions` since #731 (`mgmt-api/CLAUDE.md`).
 * **Codes**: `STS-AUTHN-0337` to `0344`, `STS-OAUTH-0959`.
 
+### At once, and under failure (#561's TR-2, #731)
+
+`tests/multi_account_concurrency.js` drives two tabs of one browser acting
+together — each request built from the cookie jar before either answer is
+taken — and what it measured is part of the design:
+
+* **TWO SELECTIONS AT ONCE** are two flows' choices: each resumes as the
+  account its own tab chose, whichever answer wrote the default last.
+* **TWO SIGN-INS AT ONCE CAN COST THE BROWSER ONE PLACE IN ITS SET, AND
+  THAT IS THE PRICE OF ROTATING THE HANDLE.** The first answer rotates the
+  set's handle; the second request left with the old one, so its set does
+  not open and the sign-in makes a set of its own around the browser's
+  default session. Whichever answer the browser takes last is its set; the
+  other sign-in's session is live and unreachable from this browser until
+  it is signed in again, which puts it in the set. **Nothing is answered
+  as the wrong account**: a request naming the account the race left out
+  acts as nobody, and the old cookie opens nothing. Accepting the previous
+  handle for a moment would close the gap and reopen session fixation —
+  the stale request is byte for byte what a planted cookie is — so it is
+  not done. The window is two sign-ins' final requests in flight together.
+* **A SESSION REVOKED UNDER A FLOW THAT CHOSE IT** — the ticket above.
+* **TWO NODES' COPIES OF ONE SET** are merged by the store's `mergeRow`
+  (`AccountSets.merge()`), in either flush order to one answer.
+* **ONE ROW THE CLEAN-UP JOB CANNOT PRUNE** costs that row
+  (`STS-AUTHN-0344`); a set gone from under a session does not stop the
+  session ending.
+
 **Tests**: `tests/multi_account_sessions.js` (the contract of steps 1 and 2,
-the setting-off parity among it); the picker's two drawings in
-`tests/tools/web_surfaces.js`.
+the setting-off parity among it); `tests/multi_account_concurrency.js` (the
+above); the picker's two drawings in `tests/tools/web_surfaces.js`.
 
 ## THE WALLET DOOR (2026-09-17, #38)
 
