@@ -675,6 +675,22 @@
     "en": "3d8175702c053473",
     "text": "Gaano katagal puwedeng HINDI GAMITIN ang isang session bago ito matapos, bukod pa sa absolute lifetime sa itaas. **Ang zero, ang default, ay nangangahulugang walang idle timeout**, na siyang palaging ginagawa ng serbisyong ito. Kapag itinakda, ang session na tinigilang gamitin ng isang tao ay natatapos ilang segundo matapos ang huling request nito, alinman sa dalawang limit ang mauna — at ang request sa admin console o sa user portal ay binibilang na paggamit ng sign-on session sa likod nito, kaya ang operator na nagtatrabaho sa console ay hindi masa-sign out dito ng idle clock sa session na hindi nila ipinapakita. Live ito: nalalapat ito sa mga session na umiiral na, dahil sinusuri ito kung saan binabasa ang session sa halip na itinatatak kung saan ito ginagawa."
   },
+  "authn.deviceBoundSessions|label": {
+    "en": "454fe488dcb65a89",
+    "text": "I-bind ang mga session sa key ng browser (DBSC)"
+  },
+  "authn.deviceBoundSessions|description": {
+    "en": "b88d9840f0b7c19c",
+    "text": "Kapag naka-on, hinihiling ng isang sign-in sa browser na i-bind ang sign-on session sa isang key na hawak nito (W3C Device Bound Session Credentials). Ang browser na gumagawa nito ay kailangang mag-renew pagkatapos ng isang panandaliang ikalawang cookie gamit ang proof ng key na iyon, kaya humihinto sa paggana ang kinopyang session cookie kapag nag-expire ang cookie na iyon; ang refresh na pinirmahan ng ibang key, o na umuulit ng challenge na nagastos na, ay nagtatapos sa session. Ang browser na hindi sumusuporta rito ay nananatili sa karaniwang session. Kapag naka-off, ang default, walang iniaalok, at ang session na naka-bind na ay itinuturing na karaniwang session."
+  },
+  "authn.deviceBoundCookieLifetimeS|label": {
+    "en": "0589864dcb16bffb",
+    "text": "Tagal ng bound cookie (segundo)"
+  },
+  "authn.deviceBoundCookieLifetimeS|description": {
+    "en": "eb2c0a8e31f615d9",
+    "text": "Gaano katagal nabubuhay ang cookie na kailangan ng isang device-bound session bago kailangang patunayan muli ng browser ang key nito, at kaya gaano katagal patuloy na gumagana ang isang kinopyang pares ng cookie. Hindi lalampas sa sariling katapusan ng session. Binabasa kapag nag-issue ng cookie."
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "Pinakamaraming sign-on session bawat realm"

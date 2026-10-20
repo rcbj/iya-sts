@@ -1399,6 +1399,14 @@
     "en": "305d816e110db5e1",
     "text": "恢复代码第二因素步骤"
   },
+  "endpoints.route./authn/dbsc/register.name": {
+    "en": "5577cc2228ead966",
+    "text": "设备绑定会话注册"
+  },
+  "endpoints.route./authn/dbsc/refresh.name": {
+    "en": "3defb4fd7920ec00",
+    "text": "设备绑定会话刷新"
+  },
   "endpoints.route./authn/email-code.name": {
     "en": "f889f4695b9ab9f3",
     "text": "电子邮件代码步骤"

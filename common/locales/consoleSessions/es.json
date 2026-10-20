@@ -8,6 +8,8 @@
   "thSince": "Desde",
   "thExpires": "Vence",
   "thCarries": "Lleva",
+  "deviceBound": "Vinculada a la clave {alg} de su navegador (DBSC)",
+  "deviceBoundTitle": "Device Bound Session Credentials: esta sesión necesita una cookie de corta duración que solo una prueba de la clave del navegador renueva. Renovada {n} vez/veces.",
   "thCredentials": "Credenciales",
   "leadBefore": "<strong>Todas las sesiones que este servicio mantiene ahora mismo</strong>, en los tres protocolos que tienen una. Una sesión es estado que mantiene ESTE SERVICIO y que hace que alguien esté autenticado ahora; un token, una aserción, un ticket y un SVID son cosas que ha ENTREGADO, sobreviven a cualquier sesión de aquí, y están en ",
   "leadTokens": "Tokens",

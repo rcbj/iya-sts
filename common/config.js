@@ -2005,6 +2005,32 @@ const SETTINGS = [
                  'already exist, because it is checked where a session is ' +
                  'read rather than stamped where one is made.' },
 
+  // DEVICE BOUND SESSION CREDENTIALS (#725): the sign-on session bound to a
+  // key the browser holds. Off by default, as every new enforcement here is;
+  // `authn/device_bound_sessions.ts` argues the rest.
+  { key: 'authn.deviceBoundSessions', group: 'Web security',
+    label: 'Bind sessions to the browser\'s key (DBSC)',
+    env: 'STS_AUTHN_DEVICE_BOUND_SESSIONS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On, a sign-in asks the browser to bind the sign-on ' +
+                 'session to a key it holds (W3C Device Bound Session ' +
+                 'Credentials). A browser that does so must then renew a ' +
+                 'short-lived second cookie with a proof of that key, so a ' +
+                 'copied session cookie stops working when that cookie ' +
+                 'expires; a refresh signed by another key, or replaying a ' +
+                 'spent challenge, ends the session. A browser that does ' +
+                 'not support it keeps an ordinary session. Off, the ' +
+                 'default, nothing is offered, and a session already bound ' +
+                 'is treated as an ordinary one.' },
+  { key: 'authn.deviceBoundCookieLifetimeS', group: 'Web security',
+    label: 'Bound cookie lifetime (seconds)',
+    env: 'STS_AUTHN_DEVICE_BOUND_COOKIE_LIFETIME_S', type: 'int',
+    dflt: 600, min: 60, max: 86400, runtime: true,
+    description: 'How long the cookie a device-bound session needs lives ' +
+                 'before the browser must prove its key again, and so how ' +
+                 'long a copied pair of cookies keeps working. Never past ' +
+                 'the session\'s own end. Read when a cookie is issued.' },
+
   // #345, #350: the sign-on session store's size cap, per realm. At the
   // cap a new row is refused. A subject's own cap is the next two rows.
   { key: 'authn.maxSessions', group: 'Web security',

@@ -8,6 +8,8 @@
   "thSince": "开始时间",
   "thExpires": "过期时间",
   "thCarries": "承载",
+  "deviceBound": "已绑定到其浏览器的 {alg} 密钥（DBSC）",
+  "deviceBoundTitle": "Device Bound Session Credentials：此会话需要一个短期 cookie，只有浏览器密钥的证明才能续订它。已续订 {n} 次。",
   "thCredentials": "凭据",
   "leadBefore": "<strong>此服务当前持有的每一个会话</strong>，涵盖拥有会话的三种协议。会话是此服务所持有、使某人当前处于已认证状态的状态；令牌、断言、票据和 SVID 则是它已经“签发出去”的东西，它们比这里的任何会话都存活得更久，属于",
   "leadTokens": "令牌",

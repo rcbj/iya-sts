@@ -675,6 +675,22 @@
     "en": "3d8175702c053473",
     "text": "工作階段在結束之前可以「未被使用」多久，這是在上述絕對有效期之外的限制。**零（預設）表示沒有閒置逾時**，這是本服務一直以來的行為。設定後，某人停止使用的工作階段會在其最後一個請求之後的這麼多秒結束，兩個限制以先到者為準——而對管理主控台或使用者入口網站的請求，都算是使用了其背後的登入工作階段，因此在主控台中工作的營運者不會因為一個他並未出示之工作階段的閒置計時而被登出。它是即時的：它也適用於已存在的工作階段，因為它是在讀取工作階段時檢查，而非在建立時蓋章。"
   },
+  "authn.deviceBoundSessions|label": {
+    "en": "454fe488dcb65a89",
+    "text": "將工作階段綁定到瀏覽器的金鑰（DBSC）"
+  },
+  "authn.deviceBoundSessions|description": {
+    "en": "b88d9840f0b7c19c",
+    "text": "開啟時，登入會要求瀏覽器將登入工作階段綁定到它持有的金鑰（W3C Device Bound Session Credentials）。這樣做的瀏覽器之後必須以該金鑰的證明來更新一個短期的第二個 cookie，因此複製的工作階段 cookie 會在該 cookie 過期時失效；由其他金鑰簽署的重新整理，或重送已消耗挑戰的重新整理，都會結束工作階段。不支援它的瀏覽器保留一般工作階段。關閉（預設）時不提供任何內容，已綁定的工作階段視為一般工作階段。"
+  },
+  "authn.deviceBoundCookieLifetimeS|label": {
+    "en": "0589864dcb16bffb",
+    "text": "綁定 cookie 有效期（秒）"
+  },
+  "authn.deviceBoundCookieLifetimeS|description": {
+    "en": "eb2c0a8e31f615d9",
+    "text": "裝置綁定工作階段所需的 cookie 在瀏覽器必須再次證明其金鑰之前的有效時間，也就是複製的一對 cookie 能繼續使用多久。絕不超過工作階段本身的結束時間。於簽發 cookie 時讀取。"
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "每個領域的登入工作階段上限"

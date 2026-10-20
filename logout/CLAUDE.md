@@ -451,6 +451,13 @@ LogoutRequest links and the two CSP relaxations they need — split out of
 `resultPage()` so the page a partner's sign-out answers with fans out exactly
 as this one does; `resultPage()` calls it too.
 
+**`endBoundSession(session, { by, initiatingEntity, channel })` is the same
+selection for a second trigger (#725)**: a device-bound session whose
+refresh was signed by another key or replayed a spent challenge, ended with
+initiating entity `policy`. Both doors are `endOneSession()`; why it ends
+that one session is `authn/CLAUDE.md`'s (*The session bound to a key the
+browser holds*).
+
 ## GNAP AND OAUTH GRANTS ARE FAMILIES, AND ONE OF THEM ENDS WITH ITS SESSION (#432, 2026-10-03)
 
 **This module never named GNAP**, so a global sign-out — and everything that

@@ -183,6 +183,8 @@ var config = {
     cookieDomain: "",               // Sign-on session cookie domain
     sessionLifetimeS: 3600,         // Session lifetime (seconds)
     sessionIdleTimeoutS: 0,         // Session idle timeout (seconds, 0 = none)
+    deviceBoundSessions: false,     // Bind sessions to the browser's key (DBSC)
+    deviceBoundCookieLifetimeS: 600, // Bound cookie lifetime (seconds)
     maxSessions: 100000,            // Most sign-on sessions per realm
     maxSessionsPerSubject: 32,      // Most countable sessions per subject
     sessionShedPerSweep: 100,       // Own surplus sessions ended per sweep

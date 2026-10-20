@@ -231,6 +231,8 @@ import webauthnPolicy = require('../authn/webauthn_policy');
 // route, so requiring it here cannot move one, and it is already loaded by
 // `common/credentials.ts` long before this line.
 import totp = require('../common/totp');
+// Device Bound Session Credentials (#725): the algorithms it offers.
+import deviceBound = require('../authn/device_bound_sessions');
 import backupCodes = require('../common/backup_codes');
 import dpop = require('../oauth-oidc/dpop');
 import clientAuth = require('../oauth-oidc/client_auth');
@@ -744,6 +746,10 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
   emailLinkToken: '256 bits from crypto.randomBytes(), base64url',
   emailAtRest: 'scrypt, via crypto.hashSecret(), on the sign-in ' +
                'step',
+  // deviceBoundSessions (#725)
+  dbscMac: 'HMAC-SHA-256 under the cluster secret dbsc, over the realm, ' +
+           'the session and an expiry',
+  dbscKey: 'the public JWK and its RFC 7638 thumbprint, on the session',
   // encryption()
   jweGcmNote: 'AEAD: one key, one tag.',
   jweCbcNote: 'The CEK is a MAC key followed by the AES key, and ' +
@@ -2786,6 +2792,32 @@ class CryptoMetadata {
             ['Code', [SENTENCES.emailCode]],
             ['Link token', [SENTENCES.emailLinkToken]],
             ['At rest', [SENTENCES.emailAtRest]]
+          ];
+        } },
+
+      // DEVICE BOUND SESSION CREDENTIALS (#725): a browser's proof
+      // verified, and two MACs that need no store.
+      { name: 'Device Bound Session Credentials',
+        signs: 'Nothing. A challenge and a bound cookie are MACs, not ' +
+               'signatures: only this service ever checks them.',
+        verifies: 'The browser\'s dbsc+jwt proof, through ' +
+                  'crypto.verifyCompactJws() with the algorithm pinned: at ' +
+                  'registration with the key in its own header, and at ' +
+                  'every refresh with the key the session was bound to.',
+        encrypts: '',
+        decrypts: '',
+        hashes: 'The bound key as its RFC 7638 thumbprint, and each ' +
+                'challenge as the digest cluster_claims spends it under.',
+        whatItDoesNot: 'It never accepts alg none, never a second key for ' +
+                       'one session, and never a challenge twice.',
+        envelopes: [],
+        algorithms: function () {
+          log.debug("Entering algorithms().");
+          log.debug("Leaving algorithms().");
+          return [
+            ['Proof', deviceBound.ALGORITHMS.slice()],
+            ['Challenge and bound cookie', [SENTENCES.dbscMac]],
+            ['Bound key', [SENTENCES.dbscKey]]
           ];
         } },
 

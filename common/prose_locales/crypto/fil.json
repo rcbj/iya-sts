@@ -107,6 +107,14 @@
     "en": "270607a9609c73d2",
     "text": "scrypt, sa pamamagitan ng crypto.hashSecret(), sa sign-in step"
   },
+  "crypto.sentences.dbscMac": {
+    "en": "6d623cb602324457",
+    "text": "HMAC-SHA-256 sa ilalim ng cluster secret na dbsc, sa ibabaw ng realm, ng session at ng isang expiry"
+  },
+  "crypto.sentences.dbscKey": {
+    "en": "00612e39f9ee2ec1",
+    "text": "ang pampublikong JWK at ang RFC 7638 thumbprint nito, sa session"
+  },
   "crypto.sentences.jweGcmNote": {
     "en": "738d45485f10fb8b",
     "text": "AEAD: isang key, isang tag."
@@ -1350,6 +1358,34 @@
   "crypto.families.email-codes-and-links.algorithms.2.what": {
     "en": "7b4099bae09b5ac9",
     "text": "Habang nakatago"
+  },
+  "crypto.families.device-bound-session-credentials.signs": {
+    "en": "51177dacf9719f29",
+    "text": "Wala. Ang challenge at ang bound cookie ay mga MAC, hindi mga signature: ang serbisyong ito lamang ang sumusuri sa mga ito."
+  },
+  "crypto.families.device-bound-session-credentials.verifies": {
+    "en": "d8ef54ef33b1612f",
+    "text": "Ang dbsc+jwt na proof ng browser, sa pamamagitan ng crypto.verifyCompactJws() na nakatakda ang algorithm: sa registration gamit ang key sa sarili nitong header, at sa bawat refresh gamit ang key kung saan na-bind ang session."
+  },
+  "crypto.families.device-bound-session-credentials.hashes": {
+    "en": "886bd748da150493",
+    "text": "Ang bound key bilang RFC 7638 thumbprint nito, at bawat challenge bilang ang digest kung saan ito ginagastos ng cluster_claims."
+  },
+  "crypto.families.device-bound-session-credentials.whatItDoesNot": {
+    "en": "f8a4e58cdc2ad4fa",
+    "text": "Hindi ito kailanman tumatanggap ng alg none, ng ikalawang key para sa iisang session, o ng isang challenge nang dalawang beses."
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.0.what": {
+    "en": "7fbb3ccf9640651f",
+    "text": "Proof"
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.1.what": {
+    "en": "d2e757eb4313c2c9",
+    "text": "Challenge at bound cookie"
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.2.what": {
+    "en": "e3a367643d49d35f",
+    "text": "Bound key"
   },
   "crypto.families.verifiable-credentials-oid4vci-oid4vp.signs": {
     "en": "30d11da1c63a38f1",

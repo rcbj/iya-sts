@@ -675,6 +675,22 @@
     "en": "3d8175702c053473",
     "text": "会话在结束前可以闲置不用的时长，叠加在上面的绝对有效期之上。**零（默认）表示没有空闲超时**，这是本服务一贯的行为。设置后，某人停止使用的会话会在其最后一次请求后这么多秒结束，以两个限制中先到者为准——对管理控制台或用户门户的请求算作对其背后单点登录会话的使用，因此在控制台中工作的运维人员不会因为一个他们并未出示的会话上的空闲计时而被注销。此项实时生效：它适用于已存在的会话，因为它是在读取会话时检查的，而不是在创建时写入的。"
   },
+  "authn.deviceBoundSessions|label": {
+    "en": "454fe488dcb65a89",
+    "text": "将会话绑定到浏览器的密钥（DBSC）"
+  },
+  "authn.deviceBoundSessions|description": {
+    "en": "b88d9840f0b7c19c",
+    "text": "开启时，登录会请求浏览器将单点登录会话绑定到它持有的密钥（W3C Device Bound Session Credentials）。这样做的浏览器随后必须用该密钥的证明来续订一个短期的第二个 cookie，因此复制的会话 cookie 会在该 cookie 过期时失效；由其他密钥签名的刷新，或重放已消耗质询的刷新，都会结束会话。不支持它的浏览器保留普通会话。关闭（默认）时不提供任何内容，已绑定的会话按普通会话处理。"
+  },
+  "authn.deviceBoundCookieLifetimeS|label": {
+    "en": "0589864dcb16bffb",
+    "text": "绑定 cookie 有效期（秒）"
+  },
+  "authn.deviceBoundCookieLifetimeS|description": {
+    "en": "eb2c0a8e31f615d9",
+    "text": "设备绑定会话所需的 cookie 在浏览器必须再次证明其密钥之前的有效时间，也就是复制的一对 cookie 能继续使用多久。绝不超过会话本身的结束时间。在签发 cookie 时读取。"
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "每领域最多单点登录会话数"

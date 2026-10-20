@@ -1766,6 +1766,15 @@ const SCHEMAS = {
                                  'matching member of `expiryRules`.' },
       amr: { type: 'array', items: { type: 'string' } },
       acr: { type: 'string' },
+      deviceBound: openObject(
+        'Whether a browser sign-on session is bound to a key its browser ' +
+        'holds (Device Bound Session Credentials, #725): `bound`, the ' +
+        'key\'s `alg`, `boundAt` (epoch ms), and how many times its bound ' +
+        'cookie was renewed on a proof of that key (`refreshes`, the last ' +
+        'at `refreshedAt`). `bound` is false on every other kind of row.',
+        { bound: { type: 'boolean' }, alg: { type: 'string' },
+          boundAt: { type: 'integer' }, refreshes: { type: 'integer' },
+          refreshedAt: { type: 'integer' } }),
       carries: { type: 'array', items: { type: 'string' },
                  description: 'What has signed in ON this session — OIDC ' +
                               'relying parties, WS-Federation realms, SAML ' +

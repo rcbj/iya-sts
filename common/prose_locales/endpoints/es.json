@@ -1399,6 +1399,14 @@
     "en": "305d816e110db5e1",
     "text": "Paso de segundo factor con código de recuperación"
   },
+  "endpoints.route./authn/dbsc/register.name": {
+    "en": "5577cc2228ead966",
+    "text": "Registro de una sesión vinculada al dispositivo"
+  },
+  "endpoints.route./authn/dbsc/refresh.name": {
+    "en": "3defb4fd7920ec00",
+    "text": "Renovación de una sesión vinculada al dispositivo"
+  },
   "endpoints.route./authn/email-code.name": {
     "en": "f889f4695b9ab9f3",
     "text": "Paso de código enviado por correo"

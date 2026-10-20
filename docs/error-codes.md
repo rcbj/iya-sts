@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4492** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4511** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 309
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 328
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 716
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1488,6 +1488,25 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0357` | A passkey policy save was refused: it requires a post-quantum passkey (postQuantumRequired not off) while the realm offers no ML-DSA algorithm at registration (webauthn.algorithms names none, and neither webauthn.pqcOnly nor webauthn.pqcAlongsideClassical is on), so no passkey anybody could register would satisfy it (#718). | HTTP 400 (management API) |
 | `STS-AUTHN-0370` | A credential was removed (a passkey, an authenticator app, recovery codes or the emailed second factor) and a session it had signed in was still live after the sign-out that should have ended it (logout.ts endFactorSessions(), #722). The removal stands; the session ends at its own expiry or by /admin/sessions. | logged and audited; the removal is answered as done |
 | `STS-AUTHN-0371` | Ending the sessions a removed credential had signed in threw (logout.ts endFactorSessions(), #722). The removal stands and no session it signed in was ended by it. | logged and audited; the removal is answered as done |
+| `STS-AUTHN-0390` | A Device Bound Session Credentials registration or refresh (POST /authn/dbsc/register, /authn/dbsc/refresh, #725) reached a realm whose authn.deviceBoundSessions is off. | HTTP 404, { error: invalid_request } |
+| `STS-AUTHN-0391` | A Device Bound Session Credentials registration or refresh came with no signed-in sign-on session behind its sts_session cookie (none, expired, or an arrival session). | HTTP 401, { error: invalid_request } — the browser ends its DBSC session |
+| `STS-AUTHN-0392` | A Device Bound Session Credentials registration named a sign-on session already bound to a key. A session is bound once, and a second key is never accepted for it. | HTTP 409, { error: invalid_request } |
+| `STS-AUTHN-0393` | A Device Bound Session Credentials request carried no Secure-Session-Response, or one that is neither a structured string nor a compact JWS. | HTTP 400, { error: invalid_request } |
+| `STS-AUTHN-0394` | A Device Bound Session Credentials proof could not be read: not a compact JWS of JSON objects, a typ other than dbsc+jwt, or no jti. | HTTP 400, { error: invalid_request } |
+| `STS-AUTHN-0395` | A Device Bound Session Credentials registration proof named an algorithm that was not offered (ES256, RS256), carried no jwk, a jwk with private members, or a jwk that does not match its alg. | HTTP 400, { error: invalid_request } |
+| `STS-AUTHN-0396` | A Device Bound Session Credentials registration proof did not verify with the key in its own header. | HTTP 400, { error: invalid_request } |
+| `STS-AUTHN-0397` | A Device Bound Session Credentials proof signed a challenge that is expired, or that this service did not mint for that session and purpose. A registration is refused; a refresh is answered a new challenge. | registration: HTTP 400; refresh: HTTP 403 with Secure-Session-Challenge |
+| `STS-AUTHN-0398` | A Device Bound Session Credentials registration proof carried a challenge already spent; nothing was bound. | HTTP 400, { error: invalid_request } |
+| `STS-AUTHN-0399` | The cluster store could not record a Device Bound Session Credentials challenge as spent, so the proof was not accepted (fail closed). | HTTP 503, { error: invalid_request } — the browser backs off and keeps its session |
+| `STS-AUTHN-0400` | A Device Bound Session Credentials refresh carried no Sec-Secure-Session-Id. | HTTP 400, { error: invalid_request } |
+| `STS-AUTHN-0401` | A Device Bound Session Credentials refresh named a DBSC session the sign-on session behind its cookie is not bound as (a registration left from a replaced session). Only the browser's registration is ended; the sign-on session is untouched. | HTTP 401, { error: invalid_request } — the browser ends its DBSC session |
+| `STS-AUTHN-0402` | A Device Bound Session Credentials refresh came without a proof; a challenge was sent for the browser to sign (the draft's section 8.8 exchange, not a refusal of the person). | HTTP 403 with Secure-Session-Challenge |
+| `STS-AUTHN-0403` | A Device Bound Session Credentials refresh was not signed by the key the session is bound to (another key, or another algorithm). The session was ended through the sign-out, with CAEP session-revoked. | HTTP 401, { error: invalid_request }; both cookies cleared |
+| `STS-AUTHN-0404` | A Device Bound Session Credentials refresh, signed by the bound key, replayed a challenge already spent. The session was ended through the sign-out, with CAEP session-revoked. | HTTP 401, { error: invalid_request }; both cookies cleared |
+| `STS-AUTHN-0405` | A Device Bound Session Credentials refresh proof carried a jwk, which the draft's section 9.10 forbids at refresh. | HTTP 400, { error: invalid_request } |
+| `STS-AUTHN-0406` | A sign-on session bound to a browser key was presented without a current bound cookie minted for its binding, and was not honoured for that request. The session is not ended. | none — the request is treated as signed out |
+| `STS-AUTHN-0407` | The sign-out could not end a device-bound session whose refresh failed its proof; it was ended directly, without the sign-out's fan-out. | — |
+| `STS-AUTHN-0408` | A sign-in could not be offered device binding: the response object takes no header. The session stands, unbound. | — |
 
 ## STS-OAUTH
 

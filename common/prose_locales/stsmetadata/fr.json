@@ -495,6 +495,10 @@
     "en": "84ea7cdfbe803962",
     "text": "partial, côté partie de confiance : l’enregistrement (section 7.1) et l’assertion (section 7.2) sont vérifiés — défi, origine, hachage du RP ID, indicateurs de présence et de vérification de l’utilisateur, BE/BS, l’alg de l’identifiant par rapport à pubKeyCredParams, le credential id de 1023 octets, le compteur de signatures, et la signature sur authenticatorData || SHA-256(clientDataJSON), pour les clés ES256/384/512, RS256/384/512, PS256/384/512, EdDSA et ML-DSA-44/65/87 (RFC 9964). Depuis #105, la DÉCLARATION D’ATTESTATION est vérifiée dans les huit formats de la section 8 (packed, tpm, android-key, android-safetynet, fido-u2f, none, apple, compound) selon webauthn.attestationPolicy — by-mode correspond à verify-if-present en mode produit et à off en développement — sa chaîne contre les ancres configurées et les racines du FIDO Metadata Service, sa révocation consultée, et un modèle que MDS signale comme compromis refusé. Depuis #643, une clé d’accès classique et une clé d’accès post-quantique (ML-DSA) peuvent être détenues côte à côte (webauthn.pqcAlongsideClassical) : chaque voie a son propre identifiant d’utilisateur (section 5.4.3), sa liste d’algorithmes et ses excludeCredentials, et la Signal API (section 5.1.10) est envoyée une fois par voie. Manquent : l’attestation d’entreprise (section 5.4.7) n’a pas de liste d’autorisation de RP ID, et les extensions d’authentification ne sont pas traitées. Écrit indépendamment du décodeur propre au débogueur afin que les deux puissent être vérifiés l’un par rapport à l’autre (tests/webauthn_cross_impl.js)."
   },
+  "stsmetadata.specs.dbsc.coverage": {
+    "en": "5eac46b3be2eaa5f",
+    "text": "partial, le côté serveur d’une session limitée à l’origine par authentification unique : Secure-Session-Registration proposant ES256 et RS256, la preuve dbsc+jwt à l’enregistrement (son jwk, son typ, son alg et son jti vérifiés et la signature contrôlée) et au renouvellement (vérifiée avec la clé liée), les instructions de session JSON avec un seul cookie lié, l’échange 403 et Secure-Session-Challenge, et Sec-Secure-Session-Id. Chaque défi n’est consommé qu’une fois pour le cluster. Manquent : les sessions fédérées (provider_key, le document well-known), les sessions limitées au site et les règles de portée, le paramètre authorization, et la lecture de Secure-Session-Skipped. Désactivé par défaut (authn.deviceBoundSessions)."
+  },
   "stsmetadata.specs.rfc4226.coverage": {
     "en": "ffd9d22cf4ecfd57",
     "text": "full pour ce dont RFC 6238 a besoin : la troncature dynamique de la section 5.3 sur HMAC-SHA-1, SHA-256 ou SHA-512, de six à huit chiffres, le compteur étant une valeur de huit octets gros-boutiste. Vérifié contre les vecteurs de test de l’annexe D de la spécification elle-même (tests/totp.js), ce qui est la raison de l’implémenter plutôt que de recourir à une bibliothèque : chacune des quatre étapes de cette troncature a été mal faite par quelqu’un, et un vecteur publié est le seul contrôle qui le détecte. NON couvert : HOTP basé sur un compteur comme mécanisme d’authentification — rien ici ne détient de compteur qui avance à l’usage, car le seul appelant est la construction basée sur le temps ci-dessous."
@@ -2467,6 +2471,22 @@
     "en": "17dd6720ad2140f5",
     "text": "établit la session de connexion une fois un code de récupération vérifié, et le CONSOMME"
   },
+  "stsmetadata.endpoints./authn/dbsc/register.what": {
+    "en": "53d3d9c56dd2c67d",
+    "text": "Lorsque authn.deviceBoundSessions est activé, la réponse qui pose le cookie de session propose ce chemin dans Secure-Session-Registration. Le navigateur envoie dans Secure-Session-Response une preuve dbsc+jwt d’une nouvelle clé portant sur ce défi ; la session enregistre la clé, et la réponse contient les instructions de session, le cookie sts_session_bound et un premier Secure-Session-Challenge. Une session n’est liée qu’une fois. 404 tant que le paramètre est désactivé."
+  },
+  "stsmetadata.endpoints./authn/dbsc/register.effect": {
+    "en": "13fa3023584c26d5",
+    "text": "lie la session d’authentification unique à la clé que le navigateur prouve, et pose son cookie lié"
+  },
+  "stsmetadata.endpoints./authn/dbsc/refresh.what": {
+    "en": "d0b2ae088239737b",
+    "text": "Le navigateur envoie ici une requête, avec Sec-Secure-Session-Id, quand le cookie lié expire. Sans preuve, la réponse est un 403 avec Secure-Session-Challenge. Avec une preuve de la clé liée portant sur un défi en cours, un nouveau cookie lié est posé. Une preuve signée par une autre clé, ou qui rejoue un défi déjà consommé, met fin à la session comme le fait une déconnexion. Un identifiant sous lequel la session n’est pas liée est refusé, et la session est laissée intacte."
+  },
+  "stsmetadata.endpoints./authn/dbsc/refresh.effect": {
+    "en": "b3b7096158b27b3f",
+    "text": "renouvelle le cookie lié, ou met fin à la session pour une preuve qui n’est pas celle de la clé liée"
+  },
   "stsmetadata.endpoints./authn/email-code.what": {
     "en": "8f3396e530fddf0f",
     "text": "NON-SPEC (#64). Un code à six chiffres envoyé à l’adresse VÉRIFIÉE de la personne, comme premier facteur (« M’envoyer un code de connexion par e-mail » sur l’écran de connexion) ou comme second (activé sur /portal/mfa), lorsque la politique d’authentification le permet — DÉSACTIVÉ par défaut, car la section 3.1.3.1 du NIST SP 800-63B-4 ne compte pas l’e-mail comme authentificateur. La page n’envoie rien lorsqu’elle est affichée ; /authn-api/mfa/{id}/email/send envoie un code et /authn-api/mfa/{id}/email/code en vérifie un (#573). Conservé uniquement sous forme d’empreinte scrypt sur l’étape, valide au plus dix minutes, une seule fois pour le cluster, un nombre limité de codes erronés par étape, avec une limitation de débit identique à celle de l’étape du code à usage unique. Comme premier facteur, la page est identique que le compte existe ou non et qu’il ait ou non une adresse vérifiée. amr [\"otp\"] et acr \"1\" seul ; l’amr du premier facteur plus \"otp\" et acr \"mfa\" comme second ; il ne satisfait jamais une authentification renforcée liée au risque. Une page de la surface de connexion depuis #573."
@@ -3430,6 +3450,10 @@
   "stsmetadata.protocols.WebAuthn / CTAP.what": {
     "en": "874b55535d57222c",
     "text": "Un second facteur sur l’écran de connexion vers lequel chaque protocole ici envoie une personne : des cérémonies d’enregistrement et d’assertion avec une véritable clé de sécurité, l’attestation et les données de l’authentificateur étant vérifiées et pas seulement analysées."
+  },
+  "stsmetadata.protocols.Device Bound Session Credentials.what": {
+    "en": "83d1f60fe8862d70",
+    "text": "La session d’authentification unique liée à une clé que détient le navigateur, adossée à un TPM quand il le peut. Un cookie de session copié cesse de fonctionner quand le cookie lié de courte durée qui l’accompagne expire, car seule une preuve de cette clé le renouvelle ; une preuve par toute autre clé met fin à la session. Désactivé par défaut et par domaine ; un navigateur qui ne le prend pas en charge garde une session ordinaire."
   },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "20b73dffc821e4a2",

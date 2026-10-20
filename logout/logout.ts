@@ -2351,6 +2351,9 @@ class Logout {
             : this.sessionExpiryRules.session,
         amr: (session.amr || []).slice(),
         acr: session.acr || '',
+        // Whether the session is bound to a key its browser holds (#725):
+        // `{ bound, alg, boundAt, refreshes, refreshedAt }`.
+        deviceBound: authn.deviceBindingOf(session),
         carries: rides,
         // An API session carries no relying parties — nothing signs into it, it
         // is a record that a credential keeps being accepted — so it reports
@@ -3571,10 +3574,58 @@ class Logout {
    * @returns the terminate() result
    */
   endPartnerSession(session?, opts?) {
-    const { log, stats } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering Logout.endPartnerSession(). " +
               ((session && session.id) || '(none)'));
     const options = opts || {};
+    const result = this.endOneSession(session, {
+      issuer: options.issuer, by: options.by,
+      // The person signed out at the partner (#242).
+      initiatingEntity: options.initiatingEntity || 'user',
+      channel: options.channel || 'http' });
+    log.debug("Leaving Logout.endPartnerSession(). " +
+              result.terminated.length + " ended.");
+    return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A DEVICE-BOUND SESSION WHOSE KEY WAS NOT PROVED (#725).
+  //
+  // A refresh signed by another key, or replaying a spent challenge, shows
+  // the session's cookie is somewhere it should not be
+  // (`authn/device_bound_sessions.ts`). It ends that one session and the
+  // relying parties riding on it, exactly as a partner's sign-out does —
+  // CAEP session-revoked, Back-Channel Logout Tokens, the refresh revocation
+  // and the audit row — and not the person's other sessions, which the
+  // evidence says nothing about. The initiating entity is `policy`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Ends one device-bound session whose refresh failed its proof, with the
+   * relying parties riding on it, through terminate().
+   *
+   * @param session - the session
+   * @param opts - `by`, `initiatingEntity` and `channel`
+   * @returns the terminate() result
+   */
+  endBoundSession(session?, opts?) {
+    const { log } = this.deps;
+    log.debug("Entering Logout.endBoundSession(). " +
+              ((session && session.id) || '(none)'));
+    const options = opts || {};
+    const result = this.endOneSession(session, {
+      by: options.by || 'a device-bound session refresh',
+      initiatingEntity: options.initiatingEntity || 'policy',
+      channel: options.channel || 'http' });
+    log.debug("Leaving Logout.endBoundSession(). " +
+              result.terminated.length + " ended.");
+    return result;
+  }
+
+  // The one session and its riding rows, through terminate(): the two doors
+  // above differ only in who they say ended it.
+  private endOneSession(session, options) {
+    const { log, stats } = this.deps;
+    log.debug("Entering Logout.endOneSession().");
     const username = (session && session.user && session.user.username) || '';
     const sub = (session && session.user && session.user.sub) || '';
     const key = stats.holderKeyOf(username, sub);
@@ -3586,11 +3637,9 @@ class Logout {
       }).map((r) => { return r.id; }));
     const result = this.terminate(key, selection, {
       issuer: options.issuer, by: options.by, actor: options.by,
-      // The person signed out at the partner (#242).
-      initiatingEntity: options.initiatingEntity || 'user',
-      channel: options.channel || 'http' });
-    log.debug("Leaving Logout.endPartnerSession(). " +
-              result.terminated.length + " ended.");
+      initiatingEntity: options.initiatingEntity,
+      channel: options.channel });
+    log.debug("Leaving Logout.endOneSession().");
     return result;
   }
 
@@ -4461,6 +4510,8 @@ export = {
   // A federation partner's sign-out (#167): the one session it named, ended
   // through terminate(), and what a browser then has to draw.
   endPartnerSession: slot.forward('endPartnerSession'),
+  // A device-bound session whose refresh failed its proof (#725).
+  endBoundSession: slot.forward('endBoundSession'),
   fanOutOf: slot.forward('fanOutOf'),
   // EVERY live session in the service, for /admin/sessions and
   // GET /admin-api/sessions. It is on this slot rather than on one of its own

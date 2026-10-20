@@ -1399,6 +1399,14 @@
     "en": "305d816e110db5e1",
     "text": "復原碼第二因素步驟"
   },
+  "endpoints.route./authn/dbsc/register.name": {
+    "en": "5577cc2228ead966",
+    "text": "裝置綁定工作階段註冊"
+  },
+  "endpoints.route./authn/dbsc/refresh.name": {
+    "en": "3defb4fd7920ec00",
+    "text": "裝置綁定工作階段重新整理"
+  },
   "endpoints.route./authn/email-code.name": {
     "en": "f889f4695b9ab9f3",
     "text": "電子郵件代碼步驟"

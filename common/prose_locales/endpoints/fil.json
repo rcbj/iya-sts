@@ -1399,6 +1399,14 @@
     "en": "305d816e110db5e1",
     "text": "Hakbang ng recovery code bilang second factor"
   },
+  "endpoints.route./authn/dbsc/register.name": {
+    "en": "5577cc2228ead966",
+    "text": "Registration ng device-bound session"
+  },
+  "endpoints.route./authn/dbsc/refresh.name": {
+    "en": "3defb4fd7920ec00",
+    "text": "Refresh ng device-bound session"
+  },
   "endpoints.route./authn/email-code.name": {
     "en": "f889f4695b9ab9f3",
     "text": "Hakbang ng code na ipinadala sa email"

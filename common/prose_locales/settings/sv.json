@@ -675,6 +675,22 @@
     "en": "3d8175702c053473",
     "text": "Hur länge en session får vara OANVÄND innan den avslutas, utöver den absoluta livslängden ovan. **Noll, standardvärdet, betyder ingen vilotidsgräns**, vilket är vad tjänsten alltid har gjort. När den är satt avslutas en session som någon slutar använda så många sekunder efter sin senaste begäran, beroende på vilken av de två gränserna som kommer först — och en begäran till administratörskonsolen eller användarportalen räknas som användning av inloggningssessionen bakom den, så att en operatör som arbetar i konsolen inte loggas ut ur den av en viloklocka på en session hen inte visar upp. Den gäller direkt: den tillämpas på sessioner som redan finns, eftersom den kontrolleras där en session läses i stället för att stämplas där en skapas."
   },
+  "authn.deviceBoundSessions|label": {
+    "en": "454fe488dcb65a89",
+    "text": "Bind sessioner till webbläsarens nyckel (DBSC)"
+  },
+  "authn.deviceBoundSessions|description": {
+    "en": "b88d9840f0b7c19c",
+    "text": "På ber en inloggning webbläsaren att binda inloggningssessionen till en nyckel som den innehar (W3C Device Bound Session Credentials). En webbläsare som gör det måste sedan förnya en kortlivad andra cookie med ett bevis för den nyckeln, så att en kopierad sessionscookie slutar fungera när den cookien går ut; en förnyelse signerad av en annan nyckel, eller som spelar upp en redan förbrukad utmaning, avslutar sessionen. En webbläsare som inte stöder det behåller en vanlig session. Av, standardvärdet, erbjuds ingenting, och en session som redan är bunden behandlas som en vanlig session."
+  },
+  "authn.deviceBoundCookieLifetimeS|label": {
+    "en": "0589864dcb16bffb",
+    "text": "Den bundna cookiens livslängd (sekunder)"
+  },
+  "authn.deviceBoundCookieLifetimeS|description": {
+    "en": "eb2c0a8e31f615d9",
+    "text": "Hur länge den cookie som en enhetsbunden session behöver lever innan webbläsaren måste bevisa sin nyckel igen, och därmed hur länge ett kopierat cookiepar fortsätter att fungera. Aldrig längre än sessionens eget slut. Läses när en cookie utfärdas."
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "Högsta antal inloggningssessioner per sfär"

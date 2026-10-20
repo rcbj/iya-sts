@@ -216,7 +216,12 @@ class AccountOverview {
                 authTime: Number(signOn.authTime || 0),
                 authentications: Number(signOn.authentications || 0),
                 amr: (signOn.amr || []).slice(0),
-                acr: String(signOn.acr || '') },
+                acr: String(signOn.acr || ''),
+                // Bound to a key this browser holds (#725).
+                deviceBound: {
+                  bound: !!(signOn.deviceBound && signOn.deviceBound.bound),
+                  alg: String((signOn.deviceBound &&
+                               signOn.deviceBound.alg) || '') } },
       sessionEnds: Number(caller.session.expires || 0),
       timesSignedIn: detail ? Number(detail.authentications || 0) : null,
       directory: entry ? inetOrgPerson.describe(entry.attributes) : null,

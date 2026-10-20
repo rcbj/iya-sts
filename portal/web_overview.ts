@@ -250,7 +250,13 @@ class OverviewPages {
       '<tr><th>' + t.html('portal.overview.how') + '</th><td>' +
       ((signOn.amr || []).length ? esc(signOn.amr.join(', '))
                                  : t.html('portal.overview.unstated')) +
-      ' (acr ' + esc(signOn.acr) + ')</td></tr><tr><th>' +
+      ' (acr ' + esc(signOn.acr) + ')</td></tr>' +
+      // Whether the sign-on session is bound to this browser's key (#725).
+      '<tr><th>' + t.html('portal.overview.deviceBound') + '</th><td>' +
+      (signOn.deviceBound && signOn.deviceBound.bound
+        ? t.html('portal.overview.deviceBoundYes',
+                 { alg: signOn.deviceBound.alg || '' })
+        : t.html('portal.overview.deviceBoundNo')) + '</td></tr><tr><th>' +
       t.html('portal.overview.sessionEnds') + '</th><td>' +
       esc(OverviewPages.iso(view.sessionEnds)) + '</td></tr>' +
       (view.timesSignedIn !== null && view.timesSignedIn !== undefined

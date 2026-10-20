@@ -1058,6 +1058,12 @@ const NO_PUBLIC_METADATA = {
     "not a protocol — a code or a link is mailed to one person's verified " +
     "address and is a credential, not a document; there is nothing a " +
     "stranger could discover and nothing any client would look for.",
+  // #725: the draft's one document, /.well-known/device-bound-sessions, is
+  // for federated sessions, which are not built.
+  "Device Bound Session Credentials":
+    "the registration is offered in a header on the answer that sets the " +
+    "session cookie; the draft's only document is the well-known one for " +
+    "federated sessions, which this service does not offer.",
   "Federation":
     "there is no service-wide document — /federation/metadata/:id is one per " +
     "CONFIGURED relationship, and section 5 asserts the surface is ungated " +

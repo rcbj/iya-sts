@@ -495,6 +495,10 @@
     "en": "84ea7cdfbe803962",
     "text": "partial, förlitande partens sida: registrering (avsnitt 7.1) och assertion (avsnitt 7.2) verifieras — utmaning, ursprung, RP ID-hash, flaggorna för användarnärvaro och verifiering, BE/BS, autentiseringsuppgiftens alg mot pubKeyCredParams, autentiseringsuppgiftens id på 1023 byte, signaturräknaren, och signaturen över authenticatorData || SHA-256(clientDataJSON), för nycklar av typen ES256/384/512, RS256/384/512, PS256/384/512, EdDSA och ML-DSA-44/65/87 (RFC 9964). Sedan #105 verifieras ATTESTERINGSINTYGET i alla åtta format i avsnitt 8 (packed, tpm, android-key, android-safetynet, fido-u2f, none, apple, compound) enligt webauthn.attestationPolicy — by-mode är verify-if-present i produktläge och off i utvecklingsläge — dess kedja mot konfigurerade ankare och FIDO Metadata Services rötter, dess återkallelse kontrollerad, och en modell som MDS rapporterar som komprometterad nekas. Sedan #643 kan en klassisk nyckel och en postkvantnyckel (ML-DSA) hållas sida vid sida (webauthn.pqcAlongsideClassical): varje spår har sitt eget användarhandtag (avsnitt 5.4.3), sin egen algoritmlista och sina egna excludeCredentials, och Signal API (avsnitt 5.1.10) skickas en gång per spår. Saknas: företagsattestering (avsnitt 5.4.7) har ingen tillåtelselista för RP ID, och autentiseringstilläggen bearbetas inte. Skriven oberoende av felsökarens egen avkodare så att de två kan kontrolleras mot varandra (tests/webauthn_cross_impl.js)."
   },
+  "stsmetadata.specs.dbsc.coverage": {
+    "en": "5eac46b3be2eaa5f",
+    "text": "partial, serversidan av en ursprungsavgränsad session per inloggning: Secure-Session-Registration som erbjuder ES256 och RS256, dbsc+jwt-beviset vid registrering (dess jwk, typ, alg och jti kontrollerade och signaturen verifierad) och vid förnyelse (verifierat med den bundna nyckeln), JSON-sessionsinstruktionerna med en enda bunden cookie, utbytet med 403 och Secure-Session-Challenge, samt Sec-Secure-Session-Id. Varje utmaning förbrukas en gång för hela klustret. Saknas: federerade sessioner (provider_key, well-known-dokumentet), platsavgränsade sessioner och omfångsregler, parametern authorization, samt läsning av Secure-Session-Skipped. Av som standard (authn.deviceBoundSessions)."
+  },
   "stsmetadata.specs.rfc4226.coverage": {
     "en": "ffd9d22cf4ecfd57",
     "text": "full för det som RFC 6238 behöver av den: avsnitt 5.3:s dynamiska trunkering över HMAC-SHA-1, SHA-256 eller SHA-512, sex till åtta siffror, med räknaren som ett åttabyte stort big-endian-värde. Kontrollerad mot specifikationens egna testvektorer i bilaga D (tests/totp.js), vilket är poängen med att implementera den i stället för att ta ett bibliotek: de fyra stegen i den trunkeringen har vart och ett gjorts fel av någon, och en publicerad vektor är den enda kontroll som fångar det. INTE täckt: räknarbaserad HOTP som autentiseringsmekanism — ingenting här håller en räknare som ökar vid användning, eftersom den enda anroparen är den tidsbaserade konstruktionen nedan."
@@ -2467,6 +2471,22 @@
     "en": "17dd6720ad2140f5",
     "text": "etablerar inloggningssessionen när en återställningskod har verifierats, och FÖRBRUKAR den"
   },
+  "stsmetadata.endpoints./authn/dbsc/register.what": {
+    "en": "53d3d9c56dd2c67d",
+    "text": "När authn.deviceBoundSessions är på erbjuder svaret som sätter sessionscookien den här sökvägen i Secure-Session-Registration. Webbläsaren skickar i Secure-Session-Response ett dbsc+jwt-bevis för en ny nyckel över den utmaningen; sessionen registrerar nyckeln, och svaret innehåller sessionsinstruktionerna, cookien sts_session_bound och en första Secure-Session-Challenge. En session binds en gång. 404 så länge inställningen är av."
+  },
+  "stsmetadata.endpoints./authn/dbsc/register.effect": {
+    "en": "13fa3023584c26d5",
+    "text": "binder inloggningssessionen till nyckeln som webbläsaren bevisar, och sätter dess bundna cookie"
+  },
+  "stsmetadata.endpoints./authn/dbsc/refresh.what": {
+    "en": "d0b2ae088239737b",
+    "text": "Webbläsaren skickar hit, med Sec-Secure-Session-Id, när den bundna cookien går ut. Utan bevis är svaret en 403 med Secure-Session-Challenge. Med ett bevis från den bundna nyckeln över en aktuell utmaning sätts en ny bunden cookie. Ett bevis signerat av en annan nyckel, eller som spelar upp en redan förbrukad utmaning, avslutar sessionen som en utloggning gör. Ett id som sessionen inte är bunden som avvisas, och sessionen lämnas orörd."
+  },
+  "stsmetadata.endpoints./authn/dbsc/refresh.effect": {
+    "en": "b3b7096158b27b3f",
+    "text": "förnyar den bundna cookien, eller avslutar sessionen för ett bevis som inte kommer från den bundna nyckeln"
+  },
   "stsmetadata.endpoints./authn/email-code.what": {
     "en": "8f3396e530fddf0f",
     "text": "NON-SPEC (#64). En sexsiffrig kod som skickas med e-post till personens VERIFIERADE adress, som första faktor (inloggningsskärmens \"Mejla mig en inloggningskod\") eller andra faktor (som man väljer på /portal/mfa), där autentiseringspolicyn tillåter det — AV som standard, eftersom NIST SP 800-63B-4 avsnitt 3.1.3.1 inte räknar e-post som en autentiserare. Sidan skickar ingenting när den ritas; /authn-api/mfa/{id}/email/send skickar en kod och /authn-api/mfa/{id}/email/code kontrollerar en (#573). Sparas endast som en scrypt-hash på steget, giltig i högst tio minuter, en gång för klustret, ett begränsat antal felaktiga koder per steg, hastighetsbegränsad som engångskodsteget är. Som första faktor är sidan densamma oavsett om kontot finns eller har en verifierad adress. amr [\"otp\"] och acr \"1\" ensam, den första faktorns amr plus \"otp\" och acr \"mfa\" som andra faktor; den möter aldrig en riskbaserad step-up. En sida på inloggningsytan sedan #573."
@@ -3430,6 +3450,10 @@
   "stsmetadata.protocols.WebAuthn / CTAP.what": {
     "en": "874b55535d57222c",
     "text": "En andra faktor på den inloggningsskärm som varje protokoll här skickar en person till: registrerings- och intygsceremonier mot en verklig säkerhetsnyckel, där intyget och autentiserardata kontrolleras snarare än bara tolkas."
+  },
+  "stsmetadata.protocols.Device Bound Session Credentials.what": {
+    "en": "83d1f60fe8862d70",
+    "text": "Inloggningssessionen bunden till en nyckel som webbläsaren innehar, TPM-skyddad där det går. En kopierad sessionscookie slutar fungera när den kortlivade bundna cookien bredvid den går ut, eftersom bara ett bevis för den nyckeln förnyar den; ett bevis från någon annan nyckel avslutar sessionen. Av som standard och per sfär; en webbläsare utan stöd behåller en vanlig session."
   },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "20b73dffc821e4a2",

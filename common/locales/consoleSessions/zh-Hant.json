@@ -8,6 +8,8 @@
   "thSince": "開始",
   "thExpires": "到期",
   "thCarries": "承載",
+  "deviceBound": "已綁定到其瀏覽器的 {alg} 金鑰（DBSC）",
+  "deviceBoundTitle": "Device Bound Session Credentials：此工作階段需要一個短期 cookie，只有瀏覽器金鑰的證明才能更新它。已更新 {n} 次。",
   "thCredentials": "認證",
   "leadBefore": "<strong>本服務目前保存的每一個工作階段</strong>，涵蓋具有工作階段的三種通訊協定。工作階段是「本服務」所保存、使某人目前處於已驗證狀態的狀態；權杖、斷言、票證與 SVID 則是它「已發出」的東西，它們的壽命比這裡的任何工作階段都長，並列在 ",
   "leadTokens": "權杖",
