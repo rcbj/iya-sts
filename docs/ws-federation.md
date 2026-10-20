@@ -295,10 +295,10 @@ and a registered reply address only, whatever the mode. See
 The assertion's issuer, signature algorithm, skew and attributes are the shared
 `saml.*` settings and the SAML attribute sets — see the
 [SAML 2.0 configuration](saml2-sso.md#configuration). This table is a copy; the
-live source is `/admin/wsfed` and `GET /admin-api/config`. See
+live source is `/admin/wsfed`, the **SAML assertions** tab of `/admin/saml2`
+(for `wsfed.assertionLifetimeMin`) and `GET /admin-api/config`. See
 [Configuration](configuration.md) for how a value is resolved; a setting is
-changed on `/admin/wsfed`, `/admin/saml-assertions` or with
-`POST /admin-api/config/set`.
+changed on those pages or with `POST /admin-api/config/set`.
 
 ## Design decisions
 
@@ -325,8 +325,9 @@ changed on `/admin/wsfed`, `/admin/saml-assertions` or with
 * **Sign-out offers a link back rather than redirecting**, so the cleanup
   images finish loading; a received cleanup does not fan out, so two identity
   providers cannot loop.
-* **The metadata's name and the assertion's issuer are separate settings, and
-  disagreement is reported rather than reconciled.**
+* **One name, and no setting for it (#523).** The metadata's `entityID` and
+  every assertion's Issuer are the realm's OAuth 2.0 issuer, so they cannot
+  disagree. `wsfed.entityId` and `saml.issuer` are retired.
 * **There is no built-in relying party (#592).** One shipped until then, as the
   default `wreply` and a page that verified the response check by check; it
   was demonstration code in the runtime, and the test peer plays the relying
