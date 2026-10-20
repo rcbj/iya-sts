@@ -986,6 +986,25 @@ function childMain() {
       .some(function (v) { return /^cp-discord /.test(v); }),
          'K8. Disconnect removes the connection', dropped.status + ' ' +
          JSON.stringify(attr(entryOf(RAE), 'federationLink')));
+    // An ENTERPRISE partner's link is an administrator's, never the
+    // person's to remove from the portal.
+    const enterprise = inSp(function () {
+      const made = federation.create({ fedId: 'ent-oidc',
+        fedRole: 'service-provider', fedProtocol: 'oidc' });
+      const linkedEnt = federation.writeFederationLink(RAE,
+        'ent-oidc https://idp.example 4401', true, {});
+      return { made: made, linked: linkedEnt };
+    });
+    const kept = await rae.api('POST', '/account-api/connected-accounts',
+                               { action: 'disconnect', id: 'ent-oidc' });
+    note(enterprise.made.ok && kept.status === 400 &&
+         attr(entryOf(RAE), 'federationLink').some(function (v) {
+           return /^ent-oidc /.test(v);
+         }),
+         'K9. Disconnect refuses an enterprise partner\'s link, which an ' +
+         'administrator made', kept.status + ' ' +
+         JSON.stringify(attr(entryOf(RAE), 'federationLink')) + ' ' +
+         JSON.stringify(enterprise));
 
     // ===== L. SIGN IN WITH APPLE ============================================
     const appleMade = inSp(function () {
