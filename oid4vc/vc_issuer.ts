@@ -3676,12 +3676,12 @@ class VcIssuer {
           log.info(errorCodes.tag(refusal.errorCode) + 'oid4vci: a deferred ' +
                    'credential bound to the person\'s DID was refused at ' +
                    'collection. ' + refusal.description);
-          // error-code: none — the code was decided in didBindingRefusal() and is on refusal.errorCode
-          errorCodes.mark(res, refusal.errorCode);
           log.debug("Leaving the OID4VCI deferred credential endpoint. " +
                     "The DID binding no longer holds.");
           // A deferred request carries no proof, so its answer is not
           // invalid_proof (section 9).
+          // error-code: none — the code was decided in didBindingRefusal() and is on refusal.errorCode
+          errorCodes.mark(res, refusal.errorCode);
           return vciError(res, 400, 'credential_request_denied',
                           refusal.description);
         }

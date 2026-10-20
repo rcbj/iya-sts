@@ -3545,7 +3545,14 @@ class VcVerifier {
       if (!row) {
         return refuse('STS-VC-0059', notIssued);
       }
-      if (String(verified.sub || '') !== row.subject ||
+      // A credential bound to the person's DID (#693) names that DID as its
+      // `sub`, which the register recorded beside the person's subject.
+      const sub = String(verified.sub || '');
+      const boundDid = !!sub && [].concat(row.credentials || [])
+        .some(function (c: any) {
+          return !!c && c.holderDid === sub;
+        });
+      if ((sub !== row.subject && !boundDid) ||
           !presentedJkt || presentedJkt !== row.jkt) {
         return refuse('STS-VC-0066', 'The credential does not match what ' +
                       'this realm recorded when it issued it (its subject or ' +
