@@ -513,9 +513,13 @@ ciphertext to.
 key it replaced still decrypts for `federation.encryptionKeyGraceS` and then
 nothing — the scheduler job `federation.encryption-key-retire` removes it.
 
-There is no post-quantum key encapsulation: XML Encryption has no registered
-ML-KEM method and JOSE's is a draft. The key table records a key type per key,
-so a hybrid key can be added beside the classical one when one is registered.
+**Post-quantum keys are offered for OpenID Connect only** (#82):
+`fedEncryptionKeyType` `x-wing` (key management `HPKE-10-KE`, the ML-KEM-768
+and X25519 hybrid) or `ml-kem-768` (`ML-KEM-768`). Both come from
+Internet-Drafts few partners implement yet. Such a key has no X.509
+certificate, so the partner reads it from `/federation/jwks/{id}`. XML
+Encryption defines no post-quantum key transport, so a SAML 2.0 or
+WS-Federation relationship is refused them.
 
 ### Not implemented
 
@@ -647,6 +651,8 @@ this*.
 | `federation.usernamePrefix` | `STS_FEDERATION_USERNAME_PREFIX` | *(empty)* | yes | Put in front of the confirm-lookup name and the `any-existing` name, after that value is reduced to the part before the last `@`. Empty, the default, means `alice@partner.example` confirms the local `alice`. An entry created under `link-at-first-sign-in` or `jit-namespaced` is `<relationship>~<subject>` either way. |
 | `federation.loginButtons` | `STS_FEDERATION_LOGIN_BUTTONS` | `true` | yes | Show a button per usable service-provider-side relationship on `/authn/login`. |
 | `federation.consumerProviders` | `STS_FEDERATION_CONSUMER_PROVIDERS` | `false` | yes | Allow consumer and social providers in this realm. See *Consumer and social providers*. |
+| `federation.connectRecentAuthMinutes` | `STS_FEDERATION_CONNECT_RECENT_AUTH_MINUTES` | `10` | yes | How recently a person must have authenticated to connect a consumer or social provider on the portal's Connected accounts page; older, and they sign in again first. |
+| `federation.consumerProvisionCap` | `STS_FEDERATION_CONSUMER_PROVISION_CAP` | `10000` | yes | How many people a consumer or social provider's relationship may create. Written onto the relationship when it is created, and used where its `fedProvisionCap` is empty. An enterprise partner is not affected. |
 | `federation.outbound` | `STS_FEDERATION_OUTBOUND` | `true` | yes | Whether this service may call a partner's token, UserInfo or JWKS endpoint at all. |
 | `federation.outboundTimeoutMs` | `STS_FEDERATION_OUTBOUND_TIMEOUT_MS` | `15000` | yes | How long to wait for a partner before the sign-in fails with an error naming the timeout. |
 | `federation.outboundAllowHttp` | `STS_FEDERATION_OUTBOUND_ALLOW_HTTP` | `false` | yes | Accept an `http://` partner endpoint, logged on every request. Development only: product refuses plain http. |
@@ -700,7 +706,7 @@ These are attributes of the relationship entry, set on `/admin/federation` or
 | `fedSubjectPolicy` | SP | what an unlinked subject may become: `link-at-first-sign-in` (default), `pre-linked`, `jit-namespaced`, `any-existing` (development only — see the warning above) |
 | `fedSubjectGroup`, `fedSubjectDomain`, `fedSubjectPattern` | SP | the rules on top of the policy |
 | `fedMayAssertAdministrators` | SP | let the partner sign in a console administrator; `FALSE` by default — see the warning above |
-| `fedEncryptionKeyType`, `fedKeyManagementAlgorithm`, `fedContentEncryptionAlgorithm` | SP (SAML 2.0, WS-Federation, OIDC) | what a partner encrypts to: `rsa-3072` or `ec-p256`; `rsa-oaep`/`ecdh-es` (XML) or `RSA-OAEP-256`, `RSA-OAEP` (**a warning: SHA-1**), `ECDH-ES`, `ECDH-ES+A128KW`, `ECDH-ES+A256KW` (JOSE); `aes256-gcm`/`aes128-gcm` or `A256GCM`/`A128GCM`. A new key type issues a key of that type at once |
+| `fedEncryptionKeyType`, `fedKeyManagementAlgorithm`, `fedContentEncryptionAlgorithm` | SP (SAML 2.0, WS-Federation, OIDC) | what a partner encrypts to: `rsa-3072` or `ec-p256`, and for OIDC only the post-quantum `x-wing` and `ml-kem-768`; `rsa-oaep`/`ecdh-es` (XML) or `RSA-OAEP-256`, `RSA-OAEP` (**a warning: SHA-1**), `ECDH-ES`, `ECDH-ES+A128KW`, `ECDH-ES+A256KW`, `HPKE-10-KE`, `ML-KEM-768` (JOSE); `aes256-gcm`/`aes128-gcm` or `A256GCM`/`A128GCM`. A new key type issues a key of that type at once |
 | `fedAllowUnencrypted` | SP (SAML 2.0, WS-Federation, OIDC) | accept a plaintext assertion in product; `FALSE` by default — **a warning**: the partner then sends the person's identifier and attributes in clear through the browser |
 | `fedEncryptionKey` | SP | the key table: never editable, never shown with its private key |
 | `fedSignalsEnabled`, `fedSignalsIssuer`, `fedSignalsDelivery`, `fedSignalsEvents` | SP | receive the partner's Shared Signals (on for an `ssf` relationship); its SSF issuer (empty is `fedPeer`); `poll` or `push`; the event types asked for (#373) |
@@ -712,11 +718,17 @@ These are attributes of the relationship entry, set on `/admin/federation` or
 
 What each protocol requires before a relationship is usable: for the five
 sign-in protocols, `fedSsoUrl` and `fedPeer` always; `fedSigningCertificate`
-for the three SAML-shaped protocols;
-`fedClientId` for OIDC; `fedTokenUrl` and `fedClientId` for OAuth 2.0; for
-`ssf`, `fedPeer` and a way to reach the partner's stream (a bearer, or a token
-endpoint and client). A missing one is named on the page and the
-relationship refuses until it is filled.
+for the three SAML-shaped protocols; `fedClientId` for OIDC, with
+`fedTokenUrl` for the code flow or `fedJwks` / `fedJwksUri` for
+`fedResponseType` `id_token`; `fedTokenUrl` and `fedClientId` for OAuth 2.0,
+with `fedUserinfoUrl` (or `fedJwks` / `fedJwksUri`, when the access token is a
+JWT); for `ssf`, `fedPeer` and a way to reach the partner's stream (a bearer,
+or a token endpoint and client). An OIDC relationship with `fedTrustAnchor`
+needs only `fedPeer`, and the code flow ([OpenID Federation](oidfed.md)).
+Where plaintext would be refused, the relationship also needs its encryption
+key. An identity-provider-side relationship needs `fedApplication`, and
+`fedAuthnRelationship` when `fedAuthnMechanism` is `federation`. A missing one
+is named on the page and the relationship refuses until it is filled.
 
 ## Design decisions
 
