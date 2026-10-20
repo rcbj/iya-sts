@@ -464,6 +464,10 @@ function samlSso(o) {
     'xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ' +
     'ID="_ma' + nodeCrypto.randomBytes(8).toString("hex") + '" ' +
     'Version="2.0" IssueInstant="' + new Date().toISOString() + '" ' +
+    // A SIGNED request carries its Destination, the URL it is sent to:
+    // saml-bindings-2.0-os 3.4.5.2 requires it, and the service refuses
+    // one without (STS-SAML-0085, #190).
+    'Destination="' + realmBase() + '/saml2/sso" ' +
     'AssertionConsumerServiceURL="' + ACS + '" ' +
     'ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"' +
     (o.passive ? ' IsPassive="true"' : "") + ">" +
