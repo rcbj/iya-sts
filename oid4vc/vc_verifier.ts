@@ -2639,7 +2639,10 @@ class VcVerifier {
       });
       let named: any = null;
       try {
-        named = read.subject ? vcDataIntegrity.jwkOfDidJwk(read.subject) : null;
+        // A did:jwk, or since #693 a did:key the person proved (a credential
+        // bound to their DID): both resolve from the identifier.
+        named = read.subject
+          ? vcDataIntegrity.resolveVerificationMethod(read.subject).jwk : null;
       } catch (e) {
         log.debug("Caught in VcVerifier.verifyLdpVc(): " +
                   ((e && e.message) || e));
@@ -2673,6 +2676,38 @@ class VcVerifier {
     log.debug("Leaving VcVerifier.verifyLdpVc(). " +
               (result.ok ? 'accepted' : 'REFUSED'));
     return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE KEY A CREDENTIAL'S `cnf` NAMES: its `jwk`, or — for a credential this
+  // realm bound to the person's DID (#693 phase 2b) — the key its `kid`
+  // names, RFC 7800 section 3.4's confirmation method, when that is a
+  // did:jwk or did:key URL, both of which resolve from the identifier
+  // alone. Anything else (a did:web, a bare key id) is no key: nothing here
+  // fetches a holder's DID document. null for none.
+  // ---------------------------------------------------------------------------
+  private cnfKeyOf(cnf: any): any {
+    const { log, vcDataIntegrity } = this.deps;
+    log.debug("Entering VcVerifier.cnfKeyOf().");
+    if (cnf && cnf.jwk) {
+      log.debug("Leaving VcVerifier.cnfKeyOf(). cnf.jwk.");
+      return cnf.jwk;
+    }
+    const kid = cnf && typeof cnf.kid === 'string' ? cnf.kid : '';
+    if (!/^did:(jwk|key):[^#]+#.+$/.test(kid)) {
+      log.debug("Leaving VcVerifier.cnfKeyOf(). No key.");
+      return null;
+    }
+    try {
+      const jwk = vcDataIntegrity.resolveVerificationMethod(kid).jwk;
+      log.debug("Leaving VcVerifier.cnfKeyOf(). cnf.kid.");
+      return jwk;
+    } catch (e) {
+      log.debug("Caught in VcVerifier.cnfKeyOf(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving VcVerifier.cnfKeyOf(). Unresolvable.");
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -2711,7 +2746,7 @@ class VcVerifier {
       const s = value(m[1]);
       const p = m[2];
       const o = value(m[3]);
-      if (p === CRED + 'credentialSubject' && /^did:jwk:/.test(o)) {
+      if (p === CRED + 'credentialSubject' && /^did:(jwk|key):/.test(o)) {
         out.subject = o;
       } else if (p === CRED + 'issuer') {
         out.issuer = o;
@@ -2909,14 +2944,15 @@ class VcVerifier {
       wantedTypes.join(', ') + '].');
 
     // --- holder binding: the VP JWT is signed by the key the credential names
-    const cnfJwk = (vcPayload.cnf || {}).jwk;
+    const cnfJwk = this.cnfKeyOf(vcPayload.cnf);
     // Kept for status, the register and a sign-in.
     result.credentialJwt = vcJwt;
     result.credentialClaims = vcPayload;
     result.holderJwk = cnfJwk || null;
     if (!cnfJwk) {
       this.vpCheck(checks, 'Holder binding', false,
-        'the credential carries no cnf.jwk, so nothing says which key may ' +
+        'the credential carries no cnf.jwk (nor a cnf.kid naming a did:jwk ' +
+        'or did:key), so nothing says which key may ' +
         'present it.');
     } else {
       let holderOk = false;
@@ -2942,12 +2978,12 @@ class VcVerifier {
       if (holderOk) {
         this.vpCheck(checks, 'Holder binding', true,
           'the presentation JWT is signed by the key the credential is bound ' +
-          'to (cnf.jwk, alg ' +
+          'to (cnf, alg ' +
           vpHeader.alg + ').');
       } else {
         this.vpCheck(checks, 'Holder binding', false,
           'the presentation JWT is NOT signed by the key the credential is ' +
-          'bound to (cnf.jwk).');
+          'bound to (cnf).');
       }
     }
 
@@ -3260,13 +3296,14 @@ class VcVerifier {
 
     // The signature must verify against the key the CREDENTIAL names, not one
     // the presenter chose: that is what key binding means.
-    const cnfJwk = (payload.cnf && payload.cnf.jwk) || null;
+    const cnfJwk = this.cnfKeyOf(payload.cnf);
     // Kept on the result for a sign-in, which compares it with the key the
     // credential was issued to (`signInOutcome()`).
     result.holderJwk = cnfJwk;
     if (!cnfJwk) {
       this.vpCheck(checks, 'KB-JWT signature', false,
-        'the credential carries no cnf.jwk, so there is no key this ' +
+        'the credential carries no cnf.jwk (nor a cnf.kid naming a did:jwk ' +
+        'or did:key), so there is no key this ' +
         'presentation could be bound to.');
     } else {
       try {
@@ -3508,7 +3545,14 @@ class VcVerifier {
       if (!row) {
         return refuse('STS-VC-0059', notIssued);
       }
-      if (String(verified.sub || '') !== row.subject ||
+      // A credential bound to the person's DID (#693) names that DID as its
+      // `sub`, which the register recorded beside the person's subject.
+      const sub = String(verified.sub || '');
+      const boundDid = !!sub && [].concat(row.credentials || [])
+        .some(function (c: any) {
+          return !!c && c.holderDid === sub;
+        });
+      if ((sub !== row.subject && !boundDid) ||
           !presentedJkt || presentedJkt !== row.jkt) {
         return refuse('STS-VC-0066', 'The credential does not match what ' +
                       'this realm recorded when it issued it (its subject or ' +

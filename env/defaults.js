@@ -835,7 +835,8 @@ var config = {
     statusListTtlS: 300,                              // Status list time to live (s)
     statusListLifetimeS: 86400,                       // Status list lifetime (s)
     keyAttestationRequired: false,                    // Require a key attestation
-    keyAttestationTrustedCertificates: ""             // Trusted key attesters (PEM)
+    keyAttestationTrustedCertificates: "",            // Trusted key attesters (PEM)
+    didHolderBinding: ""                              // Bind to the person's DID
   },
 
   // --- OID4VP ----------------------------------------------------------
