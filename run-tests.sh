@@ -276,7 +276,7 @@ CONFIG_FILE="${CONFIG_FILE:-}"
 #
 #   STS_MODE_TIMEOUT      the suite, once, for one mode — every mode but
 #                         `cluster`, which has a bound of its own
-#                         (STS_CLUSTER_MODE_TIMEOUT, 130m; tests/tools/modes.sh,
+#                         (STS_CLUSTER_MODE_TIMEOUT, 200m; tests/tools/modes.sh,
 #                         stsModeTimeout(), says why). The slowest mode ever
 #                         measured here was `dispatch` at 16m when this was
 #                         25m; the suite has grown to 225 jobs since, and on
