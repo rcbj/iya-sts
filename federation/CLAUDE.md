@@ -2175,9 +2175,18 @@ Three adapters, each in `federation_sp.ts` where its flow is:
   notification be accepted again once its row was purged.
   `consent-revoked` and `account-delete` REMOVE that subject's link through
   this relationship, and the write hook ends its sessions. The entry is
-  never removed. `email-*` is recorded. In a service deployed as cells, a
-  link held in another cell is not reached yet: the partner sign-out's
-  fan-out is the shape #727 takes.
+  never removed. `email-*` is recorded.
+  **In a service deployed as cells (#727)**, the cell the notification
+  arrives at verifies and spends it, removes the links it holds
+  (`unlinkHere()`), and asks every peer to do the same:
+  `federation-provider-notification`, carrying `{ realm, relationship,
+  type, sub }` as data, which is the partner sign-out's shape
+  (`endAtPeers()`). The once-ever claim is BOUND TO THE RESPONSE. A peer
+  that cannot be reached makes the answer 503 with `Retry-After`
+  (`STS-CELL-0211`), so the claim is released and the provider's retry is
+  accepted and fanned out again. Removing a link is idempotent, so the cells
+  that acted the first time change nothing the second. Whether Apple retries
+  on a 5xx is its own behaviour and has not been verified here.
 
 **`fedResponseMode` `form_post`** (OAuth 2.0 Form Post Response Mode) is what
 Apple requires with a name or address scope, and it is any `oidc`
