@@ -33,5 +33,10 @@
   "index.configure": "Konfigurera relationer i konsolen",
   "index.signInScreen": "Inloggningsskärmen",
   "index.buttonsOn": "Inloggningsskärmen erbjuder varje användbar partner som en knapp.",
-  "index.buttonsOff": "federation.loginButtons är avstängt, så inloggningsskärmen erbjuder ingen partner."
+  "index.buttonsOff": "federation.loginButtons är avstängt, så inloggningsskärmen erbjuder ingen partner.",
+  "profile.title": "Några uppgifter",
+  "profile.heading": "Några uppgifter innan ditt konto skapas",
+  "profile.lead": "{partner} loggade in dig, men skickade inte allt som den här tjänsten behöver för att skapa ditt konto. Fyll i uppgifterna nedan för att slutföra.",
+  "profile.submit": "Skapa mitt konto",
+  "profile.note": "Uppgifterna sparas på ditt konto här. En e-postadress som du skriver registreras som overifierad."
 }

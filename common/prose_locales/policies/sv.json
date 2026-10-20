@@ -1023,6 +1023,14 @@
     "en": "dcf08d219b55b2ed",
     "text": "AVSTÄNGD SOM STANDARD. Attesteringsreglerna (inställningarna webauthn.attestation*: policyn, AAGUID-listan, certifieringsnivån och FIPS) kontrolleras när en nyckel registreras. Påslagen kontrolleras de igen vid varje inloggning mot det som registrerades då och mot FIDO Metadata Service som den ser ut nu, så en nyckel som registrerades innan en regel skärptes, eller vars modell sedan dess rapporterats komprometterad, slutar logga in någon. En nyckel utan betrodd attestering misslyckas med varje regel som kräver en."
   },
+  "passkey.FIELDS.postQuantumRequired.label": {
+    "en": "011c5d09e4f351f3",
+    "text": "Kräv en postkvantnyckel"
+  },
+  "passkey.FIELDS.postQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off` (standardvärdet) godtar en nyckel oavsett signaturalgoritm. `sign-in` godtar bara en POSTKVANTNYCKEL, en vars algoritm är ML-DSA-44, ML-DSA-65 eller ML-DSA-87 (RFC 9964), när den loggar in någon, som första inloggningsuppgift eller som andra faktor; en klassisk nyckel kan fortfarande registreras. `registration-and-sign-in` nekar en klassisk nyckel även vid registrering, och registreringen erbjuder då bara ML-DSA. Det är algoritmen som avgör, inte det spår nyckeln skapades i. Nekas så länge sfären inte erbjuder någon ML-DSA (webauthn.algorithms namnger ingen, och varken webauthn.pqcOnly eller webauthn.pqcAlongsideClassical är på)."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Tips som ”Skapa en nyckel” skickar"
@@ -1087,6 +1095,14 @@
     "en": "128deae048d6edbf",
     "text": "PÅSLAGEN SOM STANDARD: ett enda steg ”Använd nyckel” vars begäran listar var och en av personens nycklar, och webbläsaren erbjuder den som finns till hands. Avstängd visas en person med fler än en ett val per nyckel, efter dess namn, och begäran anger bara den."
   },
+  "passkey.FIELDS.recoveryAssurance.label": {
+    "en": "f1e6580ee3b2ee9c",
+    "text": "Kontoåterställning för en person som har en nyckel"
+  },
+  "passkey.FIELDS.recoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "`any` SOM STANDARD I UTVECKLING, `not-weaker` I PRODUKT. Om en väg tillbaka in i kontot som inte kräver någon nyckel — en länk för att återställa lösenordet, en aktiveringslänk, en återställningskod, en kod eller länk som skickats via e-post — återger åtkomsten för en person som har en. `any`: genast. `not-weaker`: den första inloggningen därefter som inte är en nyckelinloggning når inget program; personen registrerar en nyckel som uppfyller den här policyn och loggar in med den. `operator-only`: som not-weaker, och självbetjäningsdörrarna (formuläret för glömt lösenord, en återställningskod eller en kod eller länk via e-post vid inloggning) nekas; bara en administratörs återställningslänk, genererade lösenord eller aktiveringslänk återstår. Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "Den här tjänstens klass för en nyckelpolicy: hur nycklar beter sig i den här sfären. Posten namnges efter PROFILEN (`cn=default`)."
@@ -1123,6 +1139,10 @@
     "en": "dcf08d219b55b2ed",
     "text": "AVSTÄNGD SOM STANDARD. Attesteringsreglerna (inställningarna webauthn.attestation*: policyn, AAGUID-listan, certifieringsnivån och FIPS) kontrolleras när en nyckel registreras. Påslagen kontrolleras de igen vid varje inloggning mot det som registrerades då och mot FIDO Metadata Service som den ser ut nu, så en nyckel som registrerades innan en regel skärptes, eller vars modell sedan dess rapporterats komprometterad, slutar logga in någon. En nyckel utan betrodd attestering misslyckas med varje regel som kräver en."
   },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off` (standardvärdet) godtar en nyckel oavsett signaturalgoritm. `sign-in` godtar bara en POSTKVANTNYCKEL, en vars algoritm är ML-DSA-44, ML-DSA-65 eller ML-DSA-87 (RFC 9964), när den loggar in någon, som första inloggningsuppgift eller som andra faktor; en klassisk nyckel kan fortfarande registreras. `registration-and-sign-in` nekar en klassisk nyckel även vid registrering, och registreringen erbjuder då bara ML-DSA. Det är algoritmen som avgör, inte det spår nyckeln skapades i. Nekas så länge sfären inte erbjuder någon ML-DSA (webauthn.algorithms namnger ingen, och varken webauthn.pqcOnly eller webauthn.pqcAlongsideClassical är på)."
+  },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
     "text": "De WebAuthn-tips (hints, Level 3 avsnitt 5.4.8) som portalens *Skapa en nyckel* skickar, i ordning, bland security-key, client-device och hybrid, eller none. De talar om för webbläsaren vilket sätt att skapa nyckeln den ska börja med. Ett tips får inte motsäga webauthn.authenticatorAttachment: client-device innebär platform, security-key och hybrid innebär cross-platform."
@@ -1155,6 +1175,10 @@
     "en": "128deae048d6edbf",
     "text": "PÅSLAGEN SOM STANDARD: ett enda steg ”Använd nyckel” vars begäran listar var och en av personens nycklar, och webbläsaren erbjuder den som finns till hands. Avstängd visas en person med fler än en ett val per nyckel, efter dess namn, och begäran anger bara den."
   },
+  "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "`any` SOM STANDARD I UTVECKLING, `not-weaker` I PRODUKT. Om en väg tillbaka in i kontot som inte kräver någon nyckel — en länk för att återställa lösenordet, en aktiveringslänk, en återställningskod, en kod eller länk som skickats via e-post — återger åtkomsten för en person som har en. `any`: genast. `not-weaker`: den första inloggningen därefter som inte är en nyckelinloggning når inget program; personen registrerar en nyckel som uppfyller den här policyn och loggar in med den. `operator-only`: som not-weaker, och självbetjäningsdörrarna (formuläret för glömt lösenord, en återställningskod eller en kod eller länk via e-post vid inloggning) nekas; bara en administratörs återställningslänk, genererade lösenord eller aktiveringslänk återstår. Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
     "text": "Applikationerna (identifierare eller client_id) som en namngiven nyckelpolicy gäller för, vid en inloggning till en av dem."
@@ -1170,6 +1194,14 @@
   "passkey.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "Vad profilen är till för, för nästa person."
+  },
+  "passkey.SCHEMA.personAttributes.stsRecoveryPending.what": {
+    "en": "bb82df307a8e5b9a",
+    "text": "En återställning återgav åtkomsten för den här personen, som har en nyckel, och ingen nyckel har loggat in hen sedan dess: dörren och när, som `<door> <ISO 8601 instant>`. Så länge nyckelpolicyns recoveryAssurance är not-weaker eller operator-only når en inloggning som inte är en nyckel inget program. Underhålls av den här tjänsten."
+  },
+  "passkey.SCHEMA.personAttributes.stsPasswordResetSource.what": {
+    "en": "110d1231fc9be5f4",
+    "text": "Vem som utfärdade länken för lösenordsåterställning på den här posten: `self` (formuläret för glömt lösenord) eller `operator` (en administratör). Skrivs och rensas tillsammans med länken. Underhålls av den här tjänsten."
   },
   "passkey.SELECTORS.selectApplications.what": {
     "en": "03ba679923c40b45",
@@ -1275,6 +1307,30 @@
     "en": "fa8fc40822659fe4",
     "text": "en persons nycklar erbjuds som ett enda inloggningsval"
   },
+  "passkey.sentences.postQuantumOff": {
+    "en": "a8e0e01781dab9b0",
+    "text": "en nyckel loggar in och registreras oavsett signaturalgoritm"
+  },
+  "passkey.sentences.postQuantumSignIn": {
+    "en": "2282f9fa1ff20b26",
+    "text": "bara en postkvantnyckel (ML-DSA) loggar in en person; en klassisk kan fortfarande registreras"
+  },
+  "passkey.sentences.postQuantumEverywhere": {
+    "en": "79742dacfba54ede",
+    "text": "bara en postkvantnyckel (ML-DSA) registreras eller loggar in en person"
+  },
+  "passkey.sentences.recoveryAny": {
+    "en": "7383156c8eb1e363",
+    "text": "en kontoåterställning återger åtkomsten genast, oavsett vilken nyckel personen har"
+  },
+  "passkey.sentences.recoveryNotWeaker": {
+    "en": "37557fd6d60301ce",
+    "text": "efter en kontoåterställning når en person som har en nyckel inget program förrän en nyckel som uppfyller den här policyn har loggat in hen"
+  },
+  "passkey.sentences.recoveryOperatorOnly": {
+    "en": "1a8f0b4a3319a435",
+    "text": "en person som har en nyckel återställer sitt konto bara genom en administratör, och når sedan inget program förrän en nyckel som uppfyller den här policyn har loggat in hen"
+  },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",
     "text": "Språkpolicy"
@@ -1366,6 +1422,118 @@
   "locale.sentences.param.noApplication": {
     "en": "cb8bd4fa96dda063",
     "text": "ingen applikation"
+  },
+  "kinds.attributes.label": {
+    "en": "6619889d4a9f485d",
+    "text": "Attributpolicy"
+  },
+  "kinds.attributes.governs": {
+    "en": "20a9273a811994df",
+    "text": "de attribut som varje person i den här sfären måste ha, och de anpassade attribut som en person här kan få"
+  },
+  "kinds.attributes.appliesTo": {
+    "en": "c68abf6d2b5ec2a2",
+    "text": "NÄSTA person som skapas och NÄSTA ändring i den här sfären; en person som redan saknar ett obligatoriskt attribut behåller alla andra vägar in"
+  },
+  "kinds.attributes.fallsBackTo": {
+    "en": "c352143b534bf909",
+    "text": "standardsfärens profil om den har en, och annars det inbyggda standardvärdet (givenName, sn och mail)"
+  },
+  "kinds.attributes.param.noun": {
+    "en": "58bb93afc775aa81",
+    "text": "attributpolicyprofil"
+  },
+  "attributes.FIELDS.requiredAttributes.label": {
+    "en": "59a6e795223fdea0",
+    "text": "Obligatoriska attribut"
+  },
+  "attributes.FIELDS.requiredAttributes.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "De attribut som varje person i den här sfären måste ha ett värde för, utöver uid, cn och sn, som alltid krävs. En lista, eller kommaseparerade. Vilket attribut som helst som en person kan få: inetOrgPerson-schemat, katalogen över inloggningsuppgifter, mail och den här sfärens anpassade attribut. Tillämpas i produktläge: att skapa en person utan något av dem nekas vid varje väg in, och en ändring får inte ta bort något. Standard är givenName, sn och mail."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
+    "en": "12630f210e385441",
+    "text": "Tjänstens klass för en attributpolicy: de attribut som varje person i en sfär måste ha. Namngiven efter PROFILEN (`cn=default`)."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
+    "en": "a1a975c54d05126f",
+    "text": "Tjänstens klass för ett anpassat attribut i en sfär, i ou=attributeDefinitions, namngiven efter attributet (`cn=<name>`)."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeRequired.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "De attribut som varje person i den här sfären måste ha ett värde för, utöver uid, cn och sn, som alltid krävs. En lista, eller kommaseparerade. Vilket attribut som helst som en person kan få: inetOrgPerson-schemat, katalogen över inloggningsuppgifter, mail och den här sfärens anpassade attribut. Tillämpas i produktläge: att skapa en person utan något av dem nekas vid varje väg in, och en ändring får inte ta bort något. Standard är givenName, sn och mail."
+  },
+  "attributes.SCHEMA.attributes.description.what": {
+    "en": "8e8f462fddce3d22",
+    "text": "Vad profilen eller det anpassade attributet är till för, för nästa person."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeLabel.what": {
+    "en": "8d93b7c14ddfd1af",
+    "text": "Ett anpassat attributs etikett, som visas bredvid namnet."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSyntax.what": {
+    "en": "b5ccce4927fccd38",
+    "text": "Ett anpassat attributs syntax: string, integer, boolean, date, email, uri eller dn. Dess värden kontrolleras mot den."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
+    "en": "b6a0dfd5be9d81fd",
+    "text": "TRUE om ett anpassat attribut har ett värde, FALSE om det har flera."
+  },
+  "attributes.SYNTAXES.string.what": {
+    "en": "6f2c36f9a836b2f4",
+    "text": "Text, högst 1024 tecken, utan kontrolltecken."
+  },
+  "attributes.SYNTAXES.integer.what": {
+    "en": "258ac79871ab42ad",
+    "text": "Ett heltal (RFC 4517 avsnitt 3.3.16)."
+  },
+  "attributes.SYNTAXES.boolean.what": {
+    "en": "5ab7cfb21a4d669d",
+    "text": "TRUE eller FALSE (RFC 4517 avsnitt 3.3.3)."
+  },
+  "attributes.SYNTAXES.date.what": {
+    "en": "70f2250e9d5c193d",
+    "text": "Ett datum, lagrat som ÅÅÅÅMMDD och godtaget även som ÅÅÅÅ-MM-DD."
+  },
+  "attributes.SYNTAXES.email.what": {
+    "en": "daebff95f510f8db",
+    "text": "En e-postadress (addr-spec enligt RFC 5322, lokal@domän)."
+  },
+  "attributes.SYNTAXES.uri.what": {
+    "en": "16bf68a2b162f491",
+    "text": "En http- eller https-URL."
+  },
+  "attributes.SYNTAXES.dn.what": {
+    "en": "3feab9c94c12f33d",
+    "text": "Ett distinguished name (RFC 4514)."
+  },
+  "attributes.sentences.required": {
+    "en": "a35b08811463b6be",
+    "text": "en person i den här sfären måste ha {{list}} för att skapas, och en ändring får inte ta bort värdet för något av dem"
+  },
+  "attributes.sentences.enforced": {
+    "en": "babafe534682a510",
+    "text": "tillämpas: den här sfären är i produktläge, så varje väg in som skapar eller ändrar en person nekar en person utan dem"
+  },
+  "attributes.sentences.notEnforced": {
+    "en": "9e7b85236de9223c",
+    "text": "tillämpas inte: den här sfären är i utvecklingsläge, där en person kan skapas med bara ett användarnamn"
+  },
+  "attributes.sentences.custom": {
+    "en": "2296301f35c39ed9",
+    "text": "den här sfären definierar {{n}} anpassade attribut: {{list}}"
+  },
+  "attributes.sentences.noCustom": {
+    "en": "f9d920b6ce8d9d03",
+    "text": "den här sfären definierar inget anpassat attribut"
+  },
+  "attributes.sentences.defined": {
+    "en": "3867ffa1e351efa2",
+    "text": "Det anpassade attributet {{name}} är definierat i den här sfären på {{dn}}. Det kan nu ges till en person och krävas av den här policyn."
+  },
+  "attributes.sentences.undefined": {
+    "en": "36e7b5eba26472f2",
+    "text": "Det anpassade attributet {{name}} är inte längre definierat i den här sfären."
   },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",

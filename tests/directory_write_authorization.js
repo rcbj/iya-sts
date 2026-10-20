@@ -325,8 +325,12 @@ function run(t) {
       t.check(adminModify.ok === true, 'an administrator may modify somebody ' +
                                        'else\'s mail',
               JSON.stringify(adminModify));
+      // The realm's attribute policy (#396) requires cn, sn, givenName and
+      // mail of every person added over LDAP in product mode.
       const adminAdd = add(adminDn, newDn,
-                           { objectClass: ['top', 'person'], sn: 'x' });
+                           { objectClass: ['top', 'person'], sn: 'x',
+                             cn: 'x', givenName: 'x',
+                             mail: 'authz-new-' + STAMP + '@example.test' });
       t.check(adminAdd.ok === true, 'an administrator may add an entry',
               JSON.stringify(adminAdd));
       const adminDelete = del(adminDn, newDn);
@@ -346,7 +350,10 @@ function run(t) {
       t.check(realmMade, 'precondition: a throwaway realm was created',
               JSON.stringify(created));
       const foreignDn = realms.run(realms.get(REALM), function () {
-        ldap.createUser(ADMIN, { invent: false });
+        // And givenName, sn and mail of a person created in product mode.
+        ldap.createUser(ADMIN, { invent: false,
+          attributes: { givenName: 'Authz', sn: ADMIN,
+                        mail: ADMIN + '@example.test' } });
         return ldap.objectFor(ADMIN).entry.dn;
       });
       t.check(foreignDn !== adminDn && /dc=authz-/.test(foreignDn),

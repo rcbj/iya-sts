@@ -1108,6 +1108,131 @@ class SpiffeApi {
     return crypto.digest('sha256', String(token || ''), 'base64url');
   }
 
+  // A join token, minted synchronously. `CreateJoinToken` and
+  // `POST /admin-api/spiffe/agents/join-token` are both callers: the
+  // management handler does not await, and a sidecar agent (#324) is
+  // provisioned before any admin SVID exists to call the gRPC method.
+  // The token is the return value and nothing else — not the store key,
+  // not the audit detail, not a debug line.
+  /**
+   * Mints one join token into this realm's store.
+   *
+   * A non-positive `ttl` uses `spiffe.joinTokenTtl`. An `agentId` is the
+   * alias SPIRE registers, parented on the agent the token will attest,
+   * and is checked before the token exists. The token itself is returned
+   * once and stored only as a digest.
+   * @param request - `ttl`, an optional `token` (a test's; otherwise a new
+   *   UUID), an optional alias `agentId`, and the audit's actor, protocol
+   *   and channel
+   * @returns `{ ok: true, token, expiresAt, agentSpiffeId }`, or
+   *   `{ ok: false, errorCode, status, message }`
+   */
+  issueJoinToken(request) {
+    const { log, crypto, config, nowSec, spiffeId, registry, audit,
+            status } = this.deps;
+    const self = this;
+    const asked = request || {};
+    log.debug("Entering SpiffeApi.issueJoinToken().");
+    const ttl = Number(asked.ttl) > 0
+      ? Number(asked.ttl)
+      : config.value('spiffe.joinTokenTtl');
+    const token = String(asked.token || '').trim() || crypto.randomUuid();
+    const expiresAt = nowSec() + ttl;
+    const agentId = String(asked.agentId || '');
+    // ---------------------------------------------------------------------
+    // **BOUNDED, AND THE BOUND NO LONGER EATS A LIVE TOKEN (2026-09-12).**
+    // It was `if (size > 256) delete the oldest` — so the 257th
+    // CreateJoinToken silently invalidated a token somebody had already
+    // handed to an agent that had not attested yet, and that agent then met
+    // "not issued by this server" about a token this server had issued.
+    // Now: expired tokens are swept first, because forgetting one costs
+    // nothing; a token being REPLACED by the same value does not count
+    // against the cap; and if the cap is still reached the NEW request is
+    // refused with RESOURCE_EXHAUSTED naming the setting — the caller
+    // asking now can see the refusal, where the agent holding an evicted
+    // token could not. `spiffe.maxJoinTokens` (256) is per realm, because
+    // the store is.
+    // ---------------------------------------------------------------------
+    const now = nowSec();
+    joinTokens.forEach(function (held, key) {
+      if (held && held.expiresAt && held.expiresAt <= now) {
+        joinTokens.delete(key);
+      }
+    });
+    const cap = config.value('spiffe.maxJoinTokens');
+    if (!joinTokens.has(self.joinTokenKey(token)) &&
+        joinTokens.size >= cap) {
+      log.debug("Leaving SpiffeApi.issueJoinToken(). At the cap.");
+      return { ok: false, errorCode: 'STS-SPIFFE-0059',
+               status: status.RESOURCE_EXHAUSTED,
+               message: 'This realm already holds ' + joinTokens.size +
+                 ' unexpired join token(s), which is ' +
+                 'spiffe.maxJoinTokens. Nothing was evicted — a token ' +
+                 'already handed to an agent stays good until it is spent ' +
+                 'or expires. Wait for one to expire, create tokens with a ' +
+                 'shorter ttl, or raise the setting.' };
+    }
+    // ---------------------------------------------------------------------
+    // A NAMED AGENT IS AN ALIAS ENTRY, AS IN SPIRE (#40, 2026-09-21).
+    //
+    // `agent_id` used to be stored beside the token and compared with the
+    // id the attestation produced — which is always
+    // `/spire/agent/join_token/<digest>`, so a token created for a named
+    // agent could never attest at all (STS-SPIFFE-0057, now retired).
+    // SPIRE does not constrain anything with it: it registers an entry
+    // naming `agent_id`, parented on the join token's agent and selecting
+    // `spiffe_id:<that agent>`, so the agent is ALSO issued the name the
+    // operator chose — a node alias. Checked before the token exists, so
+    // a refused name mints nothing.
+    // ---------------------------------------------------------------------
+    self.nodeAttestation();
+    const tokenAgent = self.joinTokenAttestorInstance
+      .agentIdFor(self.trustDomain(), token);
+    let alias = null;
+    if (agentId) {
+      alias = { spiffeId: agentId, parentId: tokenAgent,
+                selectors: [{ type: 'spiffe_id', value: tokenAgent }] };
+      const checked = registry.checkRecord(alias, self.trustDomain());
+      if (!checked.ok) {
+        log.debug("Leaving SpiffeApi.issueJoinToken(). Alias refused.");
+        return { ok: false, errorCode: 'STS-SPIFFE-0084',
+                 status: status.INVALID_ARGUMENT,
+                 message: 'agent_id cannot name this join token\'s agent: ' +
+                          checked.errors.join(' ') };
+      }
+    }
+    joinTokens.set(self.joinTokenKey(token), { expiresAt: expiresAt,
+                                               agentId: agentId || '' });
+    if (alias) {
+      const created = registry.createEntry(alias, 'join token alias',
+                                           self.trustDomain(), '');
+      if (!created.ok) {
+        joinTokens.delete(self.joinTokenKey(token));
+        log.debug("Leaving SpiffeApi.issueJoinToken(). Alias not written.");
+        return { ok: false, errorCode: 'STS-SPIFFE-0084',
+                 status: status.INVALID_ARGUMENT,
+                 message: 'agent_id could not be registered as this join ' +
+                   'token\'s alias, so no token was issued: ' +
+                   created.errors.join(' ') };
+      }
+    }
+    audit.audit({
+      action: 'spiffe.agent.create', actor: String(asked.actor || ''),
+      protocol: String(asked.protocol || 'SPIRE Server API'),
+      channel: String(asked.channel || 'grpc'),
+      target: agentId || '',
+      summary: 'A join token was created',
+      // THE TOKEN ITSELF IS NEVER RECORDED — it is a credential, and
+      // audit.js's rule holds here exactly as it does everywhere else.
+      detail: { ttl: ttl, agentId: agentId || '' }
+    });
+    // The refusal's code stays on the result for the caller to mark. This
+    // method has no response of its own, and a code is never sent.
+    log.debug("Leaving SpiffeApi.issueJoinToken().");
+    return { ok: true, token: token, expiresAt: expiresAt,
+             agentSpiffeId: tokenAgent };
+  }
+
   /**
    * Builds the Agent service's handlers: attesting, renewing, listing, banning
    * and join tokens.
@@ -1485,101 +1610,30 @@ class SpiffeApi {
       // A join token. Single-use (see `joinTokens`), and with a real TTL,
       // because both properties are what a join token IS — and because a client
       // author testing "my token expired" has nothing to test against
-      // otherwise.
+      // otherwise. The mint is `issueJoinToken()`, which the management API
+      // calls too (#324). A non-positive ttl means `spiffe.joinTokenTtl`.
       CreateJoinToken: rpc.unary('server', 'Agent.CreateJoinToken',
                                  async function (call) {
         const request = call.request || {};
-        // `spiffe.joinTokenTtl` when the request names none (600, the old
-        // literal, is its default). A request's own ttl still wins, as it does
-        // in SPIRE.
-        const ttl = Number(request.ttl) > 0
-          ? Number(request.ttl)
-          : config.value('spiffe.joinTokenTtl');
-        const token = String(request.token || '').trim() ||
-                      crypto.randomUuid();
-        const expiresAt = nowSec() + ttl;
-        const agentId = spiffeId.fromProto(request.agent_id);
-        // ---------------------------------------------------------------------
-        // **BOUNDED, AND THE BOUND NO LONGER EATS A LIVE TOKEN (2026-09-12).**
-        // It was `if (size > 256) delete the oldest` — so the 257th
-        // CreateJoinToken silently invalidated a token somebody had already
-        // handed to an agent that had not attested yet, and that agent then met
-        // "not issued by this server" about a token this server had issued.
-        // Now: expired tokens are swept first, because forgetting one costs
-        // nothing; a token being REPLACED by the same value does not count
-        // against the cap; and if the cap is still reached the NEW request is
-        // refused with RESOURCE_EXHAUSTED naming the setting — the caller
-        // asking now can see the refusal, where the agent holding an evicted
-        // token could not. `spiffe.maxJoinTokens` (256) is per realm, because
-        // the store is.
-        // ---------------------------------------------------------------------
-        const now = nowSec();
-        joinTokens.forEach(function (held, key) {
-          if (held && held.expiresAt && held.expiresAt <= now) {
-            joinTokens.delete(key);
-          }
+        const minted = self.issueJoinToken({
+          ttl: Number(request.ttl) > 0 ? Number(request.ttl) : 0,
+          token: String(request.token || '').trim(),
+          agentId: spiffeId.fromProto(request.agent_id) || ''
         });
-        const cap = config.value('spiffe.maxJoinTokens');
-        if (!joinTokens.has(self.joinTokenKey(token)) &&
-            joinTokens.size >= cap) {
-          errorCodes.mark(call, 'STS-SPIFFE-0059');
-          throw rpc.statusError(status.RESOURCE_EXHAUSTED,
-            'This realm already holds ' + joinTokens.size + ' unexpired join ' +
-            'token(s), which is spiffe.maxJoinTokens. Nothing was evicted — ' +
-            'a token already handed to an agent stays good until it is spent ' +
-            'or expires. Wait for one to expire, create tokens with a ' +
-            'shorter ttl, or raise the setting.');
-        }
-        // ---------------------------------------------------------------------
-        // A NAMED AGENT IS AN ALIAS ENTRY, AS IN SPIRE (#40, 2026-09-21).
-        //
-        // `agent_id` used to be stored beside the token and compared with the
-        // id the attestation produced — which is always
-        // `/spire/agent/join_token/<digest>`, so a token created for a named
-        // agent could never attest at all (STS-SPIFFE-0057, now retired).
-        // SPIRE does not constrain anything with it: it registers an entry
-        // naming `agent_id`, parented on the join token's agent and selecting
-        // `spiffe_id:<that agent>`, so the agent is ALSO issued the name the
-        // operator chose — a node alias. Checked before the token exists, so
-        // a refused name mints nothing.
-        // ---------------------------------------------------------------------
-        let alias = null;
-        if (agentId) {
-          self.nodeAttestation();
-          const tokenAgent = self.joinTokenAttestorInstance
-            .agentIdFor(self.trustDomain(), token);
-          alias = { spiffeId: agentId, parentId: tokenAgent,
-                    selectors: [{ type: 'spiffe_id', value: tokenAgent }] };
-          const checked = registry.checkRecord(alias, self.trustDomain());
-          if (!checked.ok) {
+        if (!minted.ok) {
+          // issueJoinToken() returns one of two codes, and the scanner
+          // reads a literal: STS-SPIFFE-0059 is the cap, STS-SPIFFE-0084
+          // is an alias the registry would not record. The code is
+          // recorded and not sent.
+          if (minted.errorCode === 'STS-SPIFFE-0059') {
+            errorCodes.mark(call, 'STS-SPIFFE-0059');
+          } else {
             errorCodes.mark(call, 'STS-SPIFFE-0084');
-            throw rpc.invalidArgument('agent_id cannot name this join ' +
-              'token\'s agent: ' + checked.errors.join(' '));
           }
+          throw rpc.statusError(minted.status, minted.message);
         }
-        joinTokens.set(self.joinTokenKey(token), { expiresAt: expiresAt,
-                                                   agentId: agentId || '' });
-        if (alias) {
-          const created = registry.createEntry(alias, 'join token alias',
-                                               self.trustDomain(), '');
-          if (!created.ok) {
-            joinTokens.delete(self.joinTokenKey(token));
-            errorCodes.mark(call, 'STS-SPIFFE-0084');
-            throw rpc.invalidArgument('agent_id could not be registered as ' +
-              'this join token\'s alias, so no token was issued: ' +
-              created.errors.join(' '));
-          }
-        }
-        audit.audit({
-          action: 'spiffe.agent.create', actor: '',
-          protocol: 'SPIRE Server API',
-          channel: 'grpc', target: agentId || '',
-          summary: 'A join token was created',
-          // THE TOKEN ITSELF IS NEVER RECORDED — it is a credential, and
-          // audit.js's rule holds here exactly as it does everywhere else.
-          detail: { ttl: ttl, agentId: agentId || '' }
-        });
-        return { value: token, expires_at: String(expiresAt) };
+        return { value: minted.token,
+                 expires_at: String(minted.expiresAt) };
       }),
 
       // An agent reporting its version and which bundle it holds. Recorded at
@@ -2876,6 +2930,7 @@ export = {
   // second store — the one-store rule, applied to something that never reaches
   // the directory because a credential does not belong in one.
   joinTokens: joinTokens,
+  issueJoinToken: slot.forward('issueJoinToken'),
   entryToProto: slot.forward('entryToProto'),
   entryFromProto: slot.forward('entryFromProto'),
   nodeAttestationState: slot.forward('nodeAttestationState')

@@ -41,6 +41,11 @@
 //      issuance that FAILED because the role register threw would be worse
 //      than a token missing a role. Reaching that means installing a slot that
 //      throws.
+//   6. **A PRINCIPAL THAT ARRIVED THROUGH A KERBEROS TRUST HOLDS ONLY ITS
+//      GRANTS** (#430, rcbj, 2026-10-19): no EVERYBODY, no
+//      ALL_AUTHENTICATED_USERS, no groups of a local namesake — only a role
+//      naming it whole or naming one of its filtered SIDs. The KDC asks it
+//      that way; nothing over HTTP presents a cross-realm ticket.
 //   5. **THE THREE CONTEXTS OF THE SIX BUILT-IN ROLES.** Four of the six are
 //      about a party that has not authenticated or is an application, and the
 //      combinations a live request can produce are a subset — nothing over
@@ -94,6 +99,7 @@ function run(t) {
 
   builtInRoles(t);
   theRegister(t);
+  acrossATrust(t);
   theClaim(t);
   claimsComingIn(t);
   theGate(t);
@@ -271,6 +277,57 @@ function theRegister(t) {
 }
 
 // ---------------------------------------------------------------------------
+// 6. ACROSS A KERBEROS TRUST: explicit grants only (#430, 2026-10-19).
+// ---------------------------------------------------------------------------
+function acrossATrust(t) {
+  log.debug("Entering acrossATrust().");
+  t.log.info('=== Across a Kerberos trust ===');
+  const partnerUsers = 'S-1-5-21-1-2-3-513';
+  roles.setDirectory(directoryOf({
+    staff: { roleName: ['staff'], roleMemberUser: ['alice'],
+             roleMemberGroup: ['developers'] },
+    partners: { roleName: ['partners'],
+                roleMemberUser: ['carol@PARTNER.TEST'] },
+    'partner-users': { roleName: ['partner-users'],
+                       roleMemberGroup: [partnerUsers] }
+  }, { alice: ['developers'], 'alice@PARTNER.TEST': ['developers'] }));
+  const all = function (who) {
+    log.debug("Entering all().");
+    log.debug("Leaving all().");
+    return roles.rolesOf(who).join(',');
+  };
+  const foreign = all({ kind: 'user', name: 'alice@PARTNER.TEST',
+                        authenticated: true, crossRealm: true,
+                        sids: ['S-1-5-21-1-2-3-1104'] });
+  t.equal(foreign, '',
+          'XR1. a principal of another realm holds NO built-in role — not ' +
+          'EVERYBODY, not ALL_AUTHENTICATED_USERS — and nothing of a local ' +
+          'namesake\'s or of a directory group lookup',
+          foreign);
+  t.equal(all({ kind: 'user', name: 'carol@PARTNER.TEST',
+                authenticated: true, crossRealm: true, sids: [] }),
+          'partners',
+          'XR2. a role granted to its whole name, name@REALM, is held — and ' +
+          'only that');
+  t.equal(all({ kind: 'user', name: 'dave@PARTNER.TEST',
+                authenticated: true, crossRealm: true,
+                sids: ['S-1-5-21-1-2-3-1105', partnerUsers.toLowerCase()] }),
+          'partner-users',
+          'XR3. a role granted to one of its FILTERED SIDs is held (matched ' +
+          'case-insensitively)');
+  t.equal(all({ kind: 'user', name: 'alice', authenticated: true }),
+          'EVERYBODY,ALL_AUTHENTICATED_USERS,staff',
+          'XR4. a local person is unchanged: the built-in roles and their ' +
+          'grants');
+  t.equal(all({ kind: 'user', name: 'alice@PARTNER.TEST',
+                authenticated: true }),
+          'EVERYBODY,ALL_AUTHENTICATED_USERS,staff',
+          'XR5. and the same name asked WITHOUT crossRealm is a local ' +
+          'context, as every caller but the KDC\'s cross-realm sites asks');
+  log.debug("Leaving acrossATrust().");
+}
+
+// ---------------------------------------------------------------------------
 // 3. THE CLAIM. What is in it, and — more importantly — what is not.
 // ---------------------------------------------------------------------------
 function theClaim(t) {
@@ -386,13 +443,15 @@ function theGate(t) {
   // THE TEN KINDS ARE A VOCABULARY POLICIES ARE WRITTEN AGAINST, so renaming
   // one silently stops every policy that named the old word from matching —
   // which is a policy that permits nothing rather than an error.
-  t.equal(gate.KINDS.length, 10, 'there are ten kinds of issuance (a ' +
-          'certificate enrolled over ACME, EST or SCEP since 2026-10-01)');
+  t.equal(gate.KINDS.length, 11, 'there are eleven kinds of issuance (a ' +
+          'certificate enrolled over ACME, EST or SCEP since 2026-10-01, ' +
+          'and the account a federated newcomer\'s sign-in creates since ' +
+          '#565)');
   t.equal(gate.KINDS.join(','),
           'start-session,issue-access-token,issue-id-token,' +
           'issue-refresh-token,issue-authorization-code,issue-saml-assertion,' +
           'issue-wsfed-token,issue-wstrust-token,issue-kerberos-ticket,' +
-          'issue-certificate',
+          'issue-certificate,create-account',
           'and these are their spellings, which are XACML action-ids and ' +
           'therefore part of the contract with every policy anybody writes');
   log.debug("Leaving theGate().");

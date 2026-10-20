@@ -44,6 +44,8 @@ dc=example,dc=com                       domain, dcObject
 ├── ou=policies                         xacmlPolicy
 ├── ou=peps                             xacmlPep
 ├── ou=passwordPolicies                 pwdPolicy + stsPasswordPolicy
+├── ou=attributePolicies                stsAttributePolicy          (#396)
+├── ou=attributeDefinitions             stsAttributeDefinition      (#396)
 ├── ou=spiffe
 │   ├── ou=entries                      applicationProcess + spiffeRegistrationEntry
 │   └── ou=agents                       applicationProcess + spiffeAgent
@@ -72,9 +74,12 @@ are seeded, in both modes.
 ## People: `ou=users`
 
 `objectClass: top, person, organizationalPerson, inetOrgPerson`. The RDN is
-`uid=<username>`. **One person is one entry**, however they arrive. An
-identity that names nobody by itself (a DID, a SPIFFE ID) gets an entry
-named by a digest of its identifier.
+`uid=<username>`. **One person is one entry**, however they arrive by a
+protocol that folds names together. An identity that names nobody by itself
+(a DID, a SPIFFE ID) gets an entry named by a digest of its identifier. A
+person a federated sign-in creates is a different entry from a local person
+who shares the part before `@`: the `uid` is `<relationship>~<subject>`
+([Federation](federation.md#provisioning-dynamic-or-pre-provisioned)).
 
 ### Standard attributes
 
@@ -150,7 +155,7 @@ uploaded instead.
 | `didSubject`, `didMethod` | the DID this entry is. The entry is found by `didSubject` |
 | `spiffeSubject`, `spiffePath`, `spiffeTrustDomain` | the SPIFFE ID that authenticated. **These are not the same as `spiffeId`** on a registration entry |
 | `spiffeCredentialStatus`, `spiffeCredentialStatusReason`, `spiffeRevokedAt` | whether this identity may still be **issued** an SVID. This is not a certificate status |
-| `federationRelationship`, `federationIssuer`, `federationLastSeen` | where a federated person came from |
+| `federationRelationship`, `federationIssuer`, `federationLastSeen` | where a federated person came from. `federationLastSeen` is what `fedProvisionIdleMinutes` reads |
 | `federationLink` | `<relationship> <issuer> <subject>`: **the one that decides anything**, linking a partner's subject to this person (#109) |
 | `federationAttribute` | which of the entry's other attributes came from a partner's assertion |
 | `oauthConsent` | `<time> <scope> <client_id>`, one value per (application, scope) |
@@ -188,6 +193,12 @@ The console groups are created on first grant, and the bootstrap `admin` holds b
 
 The names are the defaults of `admin.readGroup`, `admin.writeGroup`, `roles.remotePepGroup` and `roles.xacmlUserGroup`. The directory also treats `groupOfUniqueNames`, `posixGroup` and `groupOfURLs` entries as groups, and reads `uniqueMember` and `memberUid` as well as `member`.
 
+A group `fedProvisionGroups` creates also carries `federationRelationship`,
+the relationship id that created it. A later sign-in through that
+relationship may add people only to groups carrying that mark. A token that
+names `admin-write`, or any other group the relationship did not create,
+does not add the person to it.
+
 ## Applications: `ou=applications`
 
 `objectClass: top, applicationProcess, stsApplication`. One entry per client,
@@ -214,6 +225,7 @@ draws it with a description of every field.
 | SAML service provider | `samlEntityId`, `samlAssertionConsumerService`, `samlSingleLogoutService`, `samlNameIdFormat`, `samlResponseBinding`, `samlSigningCertificate`, `samlObservedSigningCertificate`, `samlEncryptionCertificate`, `samlAuthnRequestVerification`, `samlAuthnRequestSigned`, and from consumed metadata: `samlSpMetadataUrl`, `samlSpMetadata`, `samlAcsEndpoint`, `samlSloEndpoint`, `samlSpNameIdFormat`, `samlSpAuthnRequestsSigned`, `samlSpWantAssertionsSigned`, `samlSpWantAssertionsEncrypted`, `samlSpMetadataValidUntil`, `samlSpMetadataCacheDuration`, `samlSpMetadataConsumedAt`, `samlSpMetadataSignature`, `samlSpMetadataSigningCertificate` |
 | SAML per-profile | `saml2AssertionLifetimeMin`, `saml2SignAssertion`, `saml2SignResponse`, `saml2NameIdFormat`, `saml2ArtifactTtlS`, `saml2EncryptAssertion`, `saml2EncryptionAlgorithm`, `saml2KeyTransportAlgorithm`, `saml2EncryptLogoutNameId`, `saml11AssertionLifetimeMin`, `saml11SignAssertion`, `saml11SignResponse`, `saml11NameIdFormat`, `saml11ArtifactTtlS` |
 | WS-* | `wsfedRealm`, `wsfedReplyUrl`, `wsfedSignOutUri`, `wsfedAssertionLifetimeMin`, `wstrustAppliesTo`, `wstrustJwtScope` |
+| Who may start a sign-in (#426; [Identity-provider-initiated sign-in](idp-initiated-sso.md)) | `saml2IdpInitiatedSso`, `saml2SpInitiatedSso`, `saml11IdpInitiatedSso`, `saml11SpInitiatedSso`, `wsfedIdpInitiatedSso`, `wsfedSpInitiatedSso`, `oauthThirdPartyInitiatedLogin`, `oauthSpInitiatedSso` (each TRUE or FALSE, overriding the realm setting of the same name; identity-provider-initiated is off by default), `oauthInitiateLoginUri` (OpenID Connect Core section 4's `initiate_login_uri`; https, no fragment), `appLaunchProtocol` (`saml2`, `saml11`, `wsfed` or `oidc`: what `/launch/{app}` starts when the link names none) |
 | Kerberos service | `krb5ServicePrincipalName`, `krb5ServiceKeys` (**sealed**), `krb5ServiceKeyInfo` |
 | Delegation (#108, #186; [Delegation and impersonation](delegation.md)) | `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSemantics`, `appDefaultDelegationSemantics`, `appDelegationSubjectGroup`, `appNotDelegated`, `appMayAct`, and for a Kerberos service `krb5TrustedForDelegation` |
 | Roles and claims | `appRequiredRole`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `appAuthnMechanism`, `appMfaMechanism` |
@@ -235,7 +247,7 @@ draws it with a description of every field.
 | Keys | `fedSigningCertificate` (**decides whose assertions are believed**), `fedJwks`, `fedEncryptionKey` (**withheld**), `fedEncryptionKeyType`, `fedKeyManagementAlgorithm`, `fedContentEncryptionAlgorithm`, `fedSignRequest` |
 | OIDC as client | `fedClientId`, `fedClientSecret` (**withheld**), `fedScope`, `fedResponseType` |
 | Policy | `fedAllowUnsolicited`, `fedAllowUnencrypted`, `fedAcceptSignout`, `fedRequireSignedLogout`, `fedMayAssertAdministrators`, `fedAuthnMechanism`, `fedAuthnRelationship` |
-| Subjects and provisioning | `fedSubjectPolicy`, `fedSubjectPattern`, `fedSubjectDomain`, `fedSubjectGroup`, `fedHomeRealmDomain` (#148, the domains whose `domain_hint` goes to this partner), `fedUsernameSource`, `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedAttributeMap`, `fedRelease` |
+| Subjects and provisioning | `fedSubjectPolicy`, `fedSubjectPattern`, `fedSubjectDomain`, `fedSubjectGroup`, `fedHomeRealmDomain` (#148, the domains whose `domain_hint` goes to this partner), `fedUsernameSource`, `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedProvisionGroups`, `fedProvisionCap`, `fedProvisionIdleMinutes`, `fedAttributeMap`, `fedRelease` |
 | Observation | `fedFirstSeen`, `fedLastSeen`, `fedLastUser`, `fedUsers`, `fedAuthentications`, `fedLastError`, `fedLastErrorAt` |
 
 ## Attribute sources: `ou=attributesources`
@@ -297,6 +309,20 @@ ALL_APPLICATIONS, ALL_AUTHENTICATED_APPLICATIONS, ALL_UNAUTHENTICATED_APPLICATIO
 `stsPwdMinSymbols`, `stsPwdGeneratedLength` and others), which cover the
 composition rules and the generator. The default profile is **not seeded**:
 the defaults apply until an administrator saves one. See `common/password_policy.ts`.
+
+## Attribute policies and custom attributes: `ou=attributePolicies`, `ou=attributeDefinitions`
+
+`cn=default,ou=attributePolicies` is `objectClass: top, stsAttributePolicy` with
+`stsAttributeRequired` (one value per attribute every person must hold, besides
+`uid`, `cn` and `sn`) and an optional `description`. Absent, the default
+realm's applies, then the built-in default (`givenName`, `sn`, `mail`).
+
+`cn=<name>,ou=attributeDefinitions` is one of the realm's custom attributes:
+`objectClass: top, stsAttributeDefinition`, `stsAttributeLabel`,
+`stsAttributeSyntax` (`string`, `integer`, `boolean`, `date`, `email`, `uri`,
+`dn`), `stsAttributeSingleValued` (`TRUE` or `FALSE`) and an optional
+`description`. Its values are stored on a person under that name, like any
+other attribute. See `common/attribute_policy.ts`.
 
 ## SPIFFE: `ou=spiffe`
 

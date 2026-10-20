@@ -96,5 +96,9 @@
   "detail.ended": "结束时间",
   "detail.params": "参数",
   "detail.result": "结果",
-  "detail.abandonedOf": "放弃的尝试来自"
+  "detail.abandonedOf": "放弃的尝试来自",
+  "detail.ranIn": "运行于",
+  "detail.ranIn.worker": "请求工作线程",
+  "detail.ranIn.front": "前端进程",
+  "detail.deferred": "因工作线程繁忙而暂缓"
 }

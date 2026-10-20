@@ -377,8 +377,11 @@ function childMain() {
       }
       return helpers.subjectForName(PERSON);
     });
+    // The realm's attribute policy (#396) requires givenName, sn and mail of
+    // every person in product mode.
     inSp(function () {
-      ldap.createUser(PERSON, { invent: false });
+      ldap.createUser(PERSON, { invent: false, attributes: {
+        givenName: 'Fso', sn: PERSON, mail: PERSON + '@example.test' } });
     });
     const linked = inSp(function () {
       return actions.usersAction({ action: 'federation-link', user: PERSON,

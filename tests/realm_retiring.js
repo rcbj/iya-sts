@@ -47,7 +47,7 @@
 //      process refuses too.
 //
 // Each part in a CHILD PROCESS: A loads the whole protocol stack and listens
-// on a port; C puts a `pg` double in the require cache.
+// on a port; C puts a database double in the require cache.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -466,9 +466,9 @@ function storeChild() {
   };
   FakePool.prototype.query = FakeClient.prototype.query;
   FakePool.prototype.end = function () { return Promise.resolve(); };
-  const pgPath = require.resolve('pg', { paths: [ROOT] });
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: { Pool: FakePool, Client: FakeClient } };
+  // In the place of the one door to the store (#326), for the child's life.
+  require(ROOT + '/tests/tools/store_double')
+    .install({ Pool: FakePool, Client: FakeClient });
 
   (async function () {
     process.env.STS_PERSISTENCE_MODE = 'postgres';

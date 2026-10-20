@@ -47,6 +47,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const storeDouble = require('./tools/store_double');
 const http = require('http');
 const childProcess = require('child_process');
 
@@ -604,7 +605,8 @@ async function theDirectory(t, state) {
 }
 
 // ---------------------------------------------------------------------------
-// D. The liveness connection, against a `pg` whose pool is exhausted.
+// D. The liveness connection, against a store whose pool is exhausted (a
+// `pg`-shaped double in the layer's place, `tests/tools/store_double.js`).
 // ---------------------------------------------------------------------------
 function exhaustiblePg(db) {
   log.debug("Entering exhaustiblePg().");
@@ -683,10 +685,7 @@ async function theLivenessConnection(t) {
   t.log.info('=== D. the renewal does not queue behind the writes ===');
   const postgres = require('../persistence/persistence_postgres');
   const db = { statements: [], exhausted: false, clientRefuses: false };
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: exhaustiblePg(db) };
+  const restore = storeDouble.install(exhaustiblePg(db));
   let driver = null;
   try {
     driver = postgres.create({
@@ -694,11 +693,7 @@ async function theLivenessConnection(t) {
       log: { debug: function () {}, info: function () {},
              warn: function () {}, error: function () {} } });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
   const adopted = await driver.adoptOrigin({ name: 'node-b:protocol-0',
                                              ttlMs: 30000 });
@@ -734,19 +729,14 @@ async function theLivenessConnection(t) {
   db.exhausted = false;
   db.clientRefuses = true;
   const second = (function () {
-    require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                              exports: exhaustiblePg(db) };
+    const restoreAgain = storeDouble.install(exhaustiblePg(db));
     try {
       return postgres.create({
         url: 'postgres://sts_app@localhost:5432/sts',
         log: { debug: function () {}, info: function () {},
                warn: function () {}, error: function () {} } });
     } finally {
-      if (previous) {
-        require.cache[pgPath] = previous;
-      } else {
-        delete require.cache[pgPath];
-      }
+      restoreAgain();
     }
   })();
   db.statements.length = 0;

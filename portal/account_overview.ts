@@ -35,6 +35,8 @@ import PageLocale = require('../common/page_locale');
 import stats = require('../common/admin_stats');
 import applications = require('../common/applications');
 import gate = require('../common/issuance_gate');
+// The one identity-provider-initiated sign-in link per application (#426).
+import LaunchLinks = require('../common/launch_links');
 import signals = require('../ssf/ssf_receivers');
 import accountSignals = require('../ssf/account_signals');
 import risc = require('../ssf/risc');
@@ -124,8 +126,6 @@ interface AccountOverviewDeps {
   personEntry(username: string): Json;
   // The editor that writes `preferredLanguage`, reached when it is written.
   personEditor(): Json;
-  // The realm's OAuth issuer, for OpenID Connect Core section 4's `iss`.
-  issuerFor(base: string): string;
 }
 
 /**
@@ -167,11 +167,6 @@ class AccountOverview {
         helpers.log.debug("Entering personEditor().");
         helpers.log.debug("Leaving personEditor().");
         return require('../ldap/person_editor');
-      },
-      issuerFor: function issuerFor(base: string): string {
-        helpers.log.debug("Entering issuerFor().");
-        helpers.log.debug("Leaving issuerFor().");
-        return require('../oauth-oidc/jwt_access_token').issuerFor(base);
       }
     };
   }
@@ -221,7 +216,12 @@ class AccountOverview {
                 authTime: Number(signOn.authTime || 0),
                 authentications: Number(signOn.authentications || 0),
                 amr: (signOn.amr || []).slice(0),
-                acr: String(signOn.acr || '') },
+                acr: String(signOn.acr || ''),
+                // Bound to a key this browser holds (#725).
+                deviceBound: {
+                  bound: !!(signOn.deviceBound && signOn.deviceBound.bound),
+                  alg: String((signOn.deviceBound &&
+                               signOn.deviceBound.alg) || '') } },
       sessionEnds: Number(caller.session.expires || 0),
       timesSignedIn: detail ? Number(detail.authentications || 0) : null,
       directory: entry ? inetOrgPerson.describe(entry.attributes) : null,
@@ -427,8 +427,11 @@ class AccountOverview {
         // WHERE TO GO, or '' — `applications.homePageOf()` is the one reader
         // of `appHomePageUrl` and the one place the http/https rule applies.
         homePage: applications.homePageOf(one),
-        // OpenID Connect Core section 4's `initiate_login_uri`, or '' (#120).
-        initiateLogin: applications.initiateLoginUriOf(one),
+        // THE PROTOCOLS A SIGN-IN CAN BE STARTED IN FROM HERE (#426): one the
+        // policy permits, with identity-provider-initiated sign-in switched on
+        // for this application, and with somewhere registered to send it.
+        // Off by default, so most rows have none.
+        launchable: self.launchableOf(one, permitted),
         description: one.description || '',
         families: permitted.map(labelOf),
         ways: permitted.map(function (family) {
@@ -457,39 +460,34 @@ class AccountOverview {
              truncated: all.length > scanned.length, limit: limit };
   }
 
-  // THE ONE LAUNCH THERE IS: OPENID CONNECT CORE SECTION 4 (#120). A relying
-  // party that REGISTERED `initiate_login_uri` asked for a third party to
-  // start its sign-in: a GET there with `iss` (this realm's issuer) and
-  // `login_hint` (the person, who chose to click), and Enterprise Extensions
-  // section 4's `tenant`, `domain_hint` and `target_link_uri` (#148).
+  // THE LAUNCHES A ROW OFFERS (#426, #713): /launch/{app}?protocol=…, the
+  // one link per application the console shows too. OpenID Connect's is
+  // Core section 4 (#120), which the portal linked straight to the client
+  // until #426; it goes through the door now, which records the launch and
+  // obeys the client's switch like the other three.
   /**
-   * The section 4 launch address for a row, or ''.
+   * The protocols a permitted application can be launched in from the portal.
    *
-   * @param row - the row
-   * @param issuer - this realm's issuer, or ''
-   * @param username - the signed-in person
-   * @returns the URL, or ''
+   * @param one - the application's registry row
+   * @param permitted - the sign-in families the policy permitted
+   * @returns the protocol ids
    */
-  initiateLoginUrl(row: Json, issuer: string, username: string): string {
-    const { log, realms } = this.deps;
-    log.debug("Entering AccountOverview.initiateLoginUrl().");
-    if (!row.initiateLogin || !issuer) {
-      log.debug("Leaving AccountOverview.initiateLoginUrl(). None.");
-      return '';
-    }
-    const url = new URL(row.initiateLogin);
-    url.searchParams.set('iss', issuer);
-    url.searchParams.set('login_hint', username);
-    url.searchParams.set('tenant', String(realms.current().id));
-    const domain = String(realms.domainOf(realms.current()) || '');
-    if (domain) {
-      url.searchParams.set('domain_hint', domain);
-    }
-    if (/^https:\/\//i.test(String(row.homePage || ''))) {
-      url.searchParams.set('target_link_uri', String(row.homePage));
-    }
-    log.debug("Leaving AccountOverview.initiateLoginUrl().");
-    return url.toString();
+  launchableOf(one: Json, permitted: Json[]): string[] {
+    const { log } = this.deps;
+    log.debug("Entering AccountOverview.launchableOf().");
+    const allowed = permitted.map(function (family: Json) {
+      return family.protocol;
+    });
+    const out = LaunchLinks.protocolsOf(one).filter(function (row: Json) {
+      return row.families.some(function (family: string) {
+        return allowed.indexOf(family) >= 0;
+      }) && LaunchLinks.enabled(one.identifier, row.id) &&
+        !LaunchLinks.missingOf(one, row.id).length;
+    }).map(function (row: Json) {
+      return row.id;
+    });
+    log.debug("Leaving AccountOverview.launchableOf(). " + out.length);
+    return out;
   }
 
   /**
@@ -505,22 +503,16 @@ class AccountOverview {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AccountOverview.applicationsView().");
-    let issuer = '';
-    try {
-      issuer = base ? this.deps.issuerFor(base) : '';
-    } catch (e) {
-      log.debug("Caught in AccountOverview.applicationsView(): " +
-                ((e && e.message) || e));
-      // No issuer: no section 4 link is drawn.
-      issuer = '';
-    }
     const found = this.applicationsFor(caller.username);
     const pages = Math.max(1, Math.ceil(found.rows.length / PER_PAGE));
     const at = Math.min(Math.max(1, wanted || 1), pages);
     const shown = found.rows.slice((at - 1) * PER_PAGE, at * PER_PAGE)
       .map(function (row: Json): Json {
         return Object.assign({}, row, {
-          launch: self.initiateLoginUrl(row, issuer, caller.username) });
+          launches: (row.launchable || []).map(function (id: string): Json {
+            return { protocol: id, label: LaunchLinks.protocol(id).label,
+                     url: LaunchLinks.launchUrl(base, row.identifier, id) };
+          }) });
       });
     log.debug("Leaving AccountOverview.applicationsView(). Page " + at +
               ".");
@@ -724,9 +716,10 @@ class AccountOverview {
         description: 'Every registered application that is a sign-in ' +
           'destination (OpenID Connect, OAuth 2.0, SAML 2.0, SAML 1.1, ' +
           'WS-Federation) for which the issuance policy, asked as a dry ' +
-          'run, permits you at least one family — its home page, its ' +
-          'OpenID Connect section 4 launch address (`launch`), the ' +
-          'families permitted and withheld. Twenty to a page; the counts ' +
+          'run, permits you at least one family — its home page, the ' +
+          'identity-provider-initiated sign-in links it offers ' +
+          '(`launches`, each /launch/{app}?protocol=…), the families ' +
+          'permitted and withheld. Twenty to a page; the counts ' +
           'of those refused and not evaluated are carried too.',
         query: PAGED_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,

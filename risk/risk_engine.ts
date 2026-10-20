@@ -108,6 +108,24 @@ const SIGNALS: Record<string, Json> = {
     what: 'refused passwords for this person in the last hour' },
   'network-failures': { factor: 3,
     what: 'refused passwords from this network in the last hour' },
+  // #565: consumer providers make an account cheap — anybody with a
+  // provider account signs up by signing in — so a network creating many
+  // in an hour is evidence about every sign-in from it, as refused
+  // passwords are. An ADDRESS signal: capped in a known context, and not
+  // counted for a network the operator allow-listed.
+  'network-signups': { factor: 3,
+    what: 'accounts created by federated sign-ins from this network in the ' +
+          'last hour' },
+  // #565: a federation relationship this person has never signed in
+  // through. Waits for risk.minimumHistory, as new-device does.
+  'new-federated-provider': { factor: 2,
+    what: 'a federation partner or provider this person has not signed in ' +
+          'through before' },
+  // #565: the operator's own weight on ONE relationship, from a
+  // `federation:<id>=<factor>` entry in risk.signalFactors. Its factor is
+  // that entry's, so this row's is only the default nothing applies.
+  'federated-provider-weight': { factor: 1,
+    what: 'the operator\'s factor for this federation relationship' },
   // #62 P5: the FIDO Metadata Service says the security key's MODEL was
   // revoked, or its keys can be extracted or its user verification bypassed.
   // A key from such a model proves possession of something anybody may hold.
@@ -209,6 +227,10 @@ const SIGNALS: Record<string, Json> = {
 // and NOT as a refused password: the two password signals leave this door
 // out, so a replay is never read as a guessed password.
 const TOTP_REPLAY_DOOR = riskFailures.TOTP_REPLAY_DOOR;
+const FEDERATED_SIGNUP_DOOR = riskFailures.FEDERATED_SIGNUP_DOOR;
+// What the password signals leave out of their counts: neither door is a
+// refused password.
+const NOT_PASSWORD_DOORS = [TOTP_REPLAY_DOOR, FEDERATED_SIGNUP_DOOR];
 
 // THE SIGNALS THAT ONLY LOWER A SCORE and do not, alone, make an UNSCORED
 // sign-in scored (#164 phase 5). A first sign-in with nothing else to say is
@@ -216,7 +238,9 @@ const TOTP_REPLAY_DOOR = riskFailures.TOTP_REPLAY_DOOR;
 // person's compliant device" is evidence FOR it, and a level of LOW
 // manufactured from that alone would be the first standing the risk-response
 // policy announces for every new device owner.
-const LOWERING_ONLY = ['compliant-attested-device', 'compliant-device'];
+const LOWERING_ONLY = ['compliant-attested-device', 'compliant-device',
+  // An operator's weight on a relationship (#565) is not evidence either way.
+  'federated-provider-weight'];
 
 // EVERY SIGNAL THE REGISTERED DEVICE DECIDES (#259) — what
 // `deviceSignals()` can answer, and so what `amend()` takes off an
@@ -236,6 +260,11 @@ const accountFailureThreshold = function (): number {
 };
 const networkFailureThreshold = function (): number {
   return Number(config.value('risk.networkFailureThreshold'));
+};
+// Accounts federated sign-ins from one network may create in an hour before
+// `network-signups` (#565). Read on every assessment, so no log pair.
+const networkSignupThreshold = function (): number {
+  return Number(config.value('risk.networkSignupThreshold'));
 };
 // HOW MANY EARLIER SIGN-INS A PERSON NEEDS BEFORE THE MODEL SCORES THEM
 // (`risk.minimumHistory`, 5; 2026-09-23). The Freeman et al. model compares a
@@ -276,7 +305,7 @@ const minimumHistory = function (): number {
 //     to a loopback, private, link-local or reserved address — below.
 // ---------------------------------------------------------------------------
 const ADDRESS_SIGNALS = ['tor-exit', 'reputation', 'operator-deny',
-                         'network-failures'];
+                         'network-failures', 'network-signups'];
 
 // The lists whose match RAISES risk. The operator's allow list lowers it,
 // and is not set aside for a special-purpose address: an operator vouching
@@ -1566,9 +1595,37 @@ class RiskEngine {
         add('new-tls-stack', tlsStack);
       }
     }
+    // THE FEDERATION RELATIONSHIP (#565). Every federated sign-in names its
+    // relationship as the credential's fingerprint, and the history counts
+    // `federation:<id>` under the credential feature, so a provider this
+    // person never signed in through is visible — once there is history
+    // enough for an absence to mean anything. And the operator may weight
+    // one relationship (`federation:<id>=<factor>` in risk.signalFactors).
+    if (credential.kind === 'federation' && credential.fingerprint) {
+      // The history holds the credential as `<kind>:<fingerprint>`, the
+      // fingerprint being the relationship id's digest; the id itself is
+      // what the evidence and an operator's factor name.
+      const relationship = String(credential.relationship ||
+                                  credential.fingerprint);
+      if (enough) {
+        const seenProvider = await store.featureCounts(realm, subject,
+          [{ feature: CREDENTIAL_FEATURE,
+             value: 'federation:' + String(credential.fingerprint) }],
+          sealing);
+        if (!seenProvider.length) {
+          add('new-federated-provider', relationship);
+        }
+      }
+      const weight = this.factors().relationships[relationship];
+      if (weight !== undefined) {
+        signals.push({ signal: 'federated-provider-weight', factor: weight,
+                       what: SIGNALS['federated-provider-weight'].what,
+                       evidence: relationship });
+      }
+    }
     const since = at - HOUR_MS;
     const mine = await store.listFailures(realm, { since: since,
-      subject: subject, limit: 1, excludeDoor: TOTP_REPLAY_DOOR }, sealing);
+      subject: subject, limit: 1, excludeDoor: NOT_PASSWORD_DOORS }, sealing);
     if (mine.total >= accountFailureThreshold()) {
       add('account-failures', String(mine.total));
     }
@@ -1593,10 +1650,19 @@ class RiskEngine {
     });
     if (found.prefix && !allowListed) {
       const theirs = await store.listFailures(realm, { since: since,
-        prefix: found.prefix, limit: 1, excludeDoor: TOTP_REPLAY_DOOR },
+        prefix: found.prefix, limit: 1, excludeDoor: NOT_PASSWORD_DOORS },
                                               sealing);
       if (theirs.total >= networkFailureThreshold()) {
         add('network-failures', String(theirs.total));
+      }
+      // ACCOUNTS THIS NETWORK CREATED THROUGH FEDERATED SIGN-INS (#565),
+      // under the same allow-list exemption: the operator vouched for the
+      // network.
+      const signups = await store.listFailures(realm, { since: since,
+        prefix: found.prefix, limit: 1, door: FEDERATED_SIGNUP_DOOR },
+                                               sealing);
+      if (signups.total >= networkSignupThreshold()) {
+        add('network-signups', String(signups.total));
       }
     } else if (found.prefix) {
       log.debug("RiskEngine: network-failures not counted — the address is " +
@@ -2105,7 +2171,7 @@ class RiskEngine {
     const since = now() - HOUR_MS;
     const mine = await store.listFailures(realm, { since: since,
       subject: String(session.user.sub), limit: 1,
-      excludeDoor: TOTP_REPLAY_DOOR }, sealing);
+      excludeDoor: NOT_PASSWORD_DOORS }, sealing);
     if (mine.total >= accountFailureThreshold()) {
       signals.push('account-failures');
     }
@@ -2118,7 +2184,7 @@ class RiskEngine {
     }
     if (found.prefix) {
       const theirs = await store.listFailures(realm, { since: since,
-        prefix: found.prefix, limit: 1, excludeDoor: TOTP_REPLAY_DOOR },
+        prefix: found.prefix, limit: 1, excludeDoor: NOT_PASSWORD_DOORS },
                                               sealing);
       if (theirs.total >= networkFailureThreshold()) {
         signals.push('network-failures');
@@ -2492,6 +2558,8 @@ class RiskEngine {
       map[id] = SIGNALS[id].factor;
     });
     const set: Record<string, number> = {};
+    // ONE RELATIONSHIP'S WEIGHT (#565): `federation:<id>=<factor>`.
+    const relationships: Record<string, number> = {};
     const invalid: string[] = [];
     (Array.isArray(listed) ? listed : [listed]).forEach(function (one) {
       const text = String(one || '').trim();
@@ -2501,6 +2569,12 @@ class RiskEngine {
       const at = text.indexOf('=');
       const id = at > 0 ? text.slice(0, at).trim() : '';
       const value = at > 0 ? Number(text.slice(at + 1).trim()) : NaN;
+      if (/^federation:[A-Za-z0-9._-]+$/.test(id) && isFinite(value) &&
+          value > 0) {
+        relationships[id.slice('federation:'.length)] = value;
+        set[id] = value;
+        return;
+      }
       if (!SIGNALS[id] || !isFinite(value) || value <= 0) {
         invalid.push(text);
         return;
@@ -2513,7 +2587,8 @@ class RiskEngine {
                'entries ignored, each needing a known signal and a positive ' +
                'factor: ' + invalid.join(', ') + '.');
     }
-    const answer = { factors: map, set: set, invalid: invalid };
+    const answer = { factors: map, set: set, invalid: invalid,
+                     relationships: relationships };
     if (parsedFactors.size > 64) {
       // Bounded: one entry per distinct value a realm has been given.
       parsedFactors.clear();

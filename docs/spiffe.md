@@ -103,7 +103,7 @@ whatever it signed, and the page says so.
 
 Both authorities rotate automatically, in both modes. A scheduler job runs every
 hour. It rotates the X.509 authority once it is past half its lifetime, and the
-JWT authority once it is older than half `spiffe.caTtl`. **Rotate now** on
+JWT authority once it is older than half `spiffe.caTtl`. **Rotate** on
 `/admin/cert-issuance#cert-spiffe-overview` rotates either or both by hand. On a cluster, a realm's
 authorities are made once and adopted by every node.
 
@@ -133,7 +133,9 @@ The gRPC service `SpiffeWorkloadAPI`, on:
   change for a client that was pointed at a SPIRE agent;
 * **TCP** at `spiffe.workloadPort` (8092), for a caller in another container.
   **In product mode only where the network authenticates source addresses**:
-  see *A caller over TCP* below.
+  see *A caller over TCP* below. An AWS cluster does not publish this port.
+  A workload there runs the agent in
+  [A workload agent beside the workload](#a-workload-agent-beside-the-workload).
 
 Five of the specification's seven methods are implemented:
 
@@ -321,6 +323,32 @@ state under `workloadAttestation.tcp`: `served (development, not attested)`,
 `not served (product, source not declared authenticated)`, `not served
 (product, wildcard bind address)` or `served (product, source declared
 authenticated)`, with whether the port is listening.
+
+### A workload agent beside the workload
+
+Some networks cannot make the declaration above honestly. An AWS load
+balancer is one: a task has one address, every realm binds `0.0.0.0`, and
+the SPIFFE listeners do not read PROXY protocol, so the node would see the
+load balancer as every caller. Publishing 8092 there left its target group
+unhealthy. The cluster publishes the SPIRE Server API (8181) and does not
+publish 8092. GCP and Azure still publish 8092; only AWS has been applied.
+
+A workload on that cluster runs `spiffe/workload_agent.js` in its own task.
+The agent spends one join token at the Server API, which is mutual TLS and
+is served, and then serves the Workload API on a Unix socket beside the
+workload. Point `SPIFFE_ENDPOINT_SOCKET` at that socket. The kernel tells
+the agent the caller's uid and gid, which is the identity a registration
+entry selects (`unix:uid`, `unix:gid`, and `unix:user` / `unix:group` when
+the name files have them). The agent does not bind a TCP port.
+
+Mint the token on **Cert issuance → SPIFFE → Agents**, or with
+`POST /admin-api/spiffe/agents/join-token`. The body may carry `ttl` (seconds;
+omit it to use `spiffe.joinTokenTtl`) and `agentId` (an optional alias, the
+same alias `CreateJoinToken` registers). The token is in the answer once, in
+`token` and in `message`, and is not stored. `agentSpiffeId` is the identity
+the token will attest; parent that agent's workload entries on it. Give the
+token to the agent as `STS_SPIFFE_JOIN_TOKEN` or as the file named by
+`--join-token-file`. Do not put it on the command line.
 
 ### The SPIFFE Broker API
 
@@ -672,7 +700,7 @@ right in a log:
 
 | | Product | Development |
 |---|---|---|
-| Unmatched Workload API caller | Empty SVID list | An entry is created and an SVID issued while `spiffe.autoCreateEntries` is on |
+| Unmatched Workload API caller | Refused `PERMISSION_DENIED` (`STS-SPIFFE-0146`) | An entry is created and an SVID issued while `spiffe.autoCreateEntries` is on; refused `PERMISSION_DENIED` with it off |
 | Asserted selectors (`x-sts-workload-selector`) | Never believed, and `spiffe.acceptAssertedSelectors` cannot be turned on | Believed when `spiffe.acceptAssertedSelectors` is on |
 | `spiffe.attestWorkloads` off | Ignored (logged once, `STS-CORE-0106`): a caller gets only the entries its selectors match. Turning it off is refused (`STS-CORE-0103`) | Every caller is answered with every entry |
 | A caller on the SPIRE Server API's Unix socket | `local` only when the socket was made 0600 in a directory with no group or other bits (`STS-SPIFFE-0117`) and `SO_PEERCRED` says it runs as the service's own uid (`STS-SPIFFE-0118`; `STS-SPIFFE-0119` without the native module). Anybody else needs an administrator's X509-SVID on the TCP port | `local` on the socket's existence, while `spiffe.trustLocalSocket` is on |
@@ -965,8 +993,9 @@ SPIFFE is the SPIFFE tab of **Protocols → Cert issuance**
   delete are here. A change takes effect on the next SVID.
 * **Agents** (`#cert-spiffe-agents`): every agent that has
   attested, what it was given and when. **Ban**, **unban** and **delete** are
-  the only controls. Deleting an agent lets trust-on-first-use evidence attest
-  again.
+  the controls on an agent that exists. **Create join token** mints the
+  single-use token a workload agent spends, shown once and not recorded.
+  Deleting an agent lets trust-on-first-use evidence attest again.
 * **Directory → SPIFFE entries** (`/admin/ldap/spiffe`): both containers as the
   directory holds them, with their attribute schema.
 * `GET /spiffe` (add `?format=json`): all three surfaces, the state of every
@@ -976,7 +1005,8 @@ SPIFFE is the SPIFFE tab of **Protocols → Cert issuance**
 * The management API: `GET /admin-api/spiffe`,
   `POST /admin-api/spiffe/{action}` (`rotate`, `federation-set`,
   `federation-remove`), `/admin-api/spiffe/entries` and
-  `/admin-api/spiffe/agents` with their actions.
+  `/admin-api/spiffe/agents` with their actions, including
+  `join-token` (`createSpiffeJoinToken`).
 
 `GET /admin/sts-metadata` cannot list the gRPC sockets, because they register no
 HTTP route. `GET /spiffe` and `/admin/cert-issuance#cert-spiffe-overview` report them. Every SPIFFE failure

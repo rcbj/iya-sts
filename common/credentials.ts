@@ -483,11 +483,13 @@ class Credentials {
    * Says which COSE signature algorithm one stored key uses.
    *
    * @param key - the stored WebAuthn key
-   * @returns `{ name, coseAlg, text, postQuantum, insecure }`
+   * @returns `{ name, coseAlg, text, postQuantum, insecure, lane }`, where
+   *   `lane` (#643) is the lane the key was created in (`keyLane()`), carried
+   *   here so that every page and answer that shows the algorithm shows it
    */
   static keyAlgorithm(key: any): { name: string; coseAlg: number;
                                    text: string; postQuantum: boolean;
-                                   insecure: boolean } {
+                                   insecure: boolean; lane: string } {
     helpers.log.debug("Entering Credentials.keyAlgorithm().");
     const k = key || {};
     const coseAlg = Number(k.coseAlg) ||
@@ -498,7 +500,8 @@ class Credentials {
     return { name: name, coseAlg: coseAlg, text: name + ' (' + coseAlg + ')',
              postQuantum: /^ML-DSA-/.test(name),
              insecure: webauthnVerifier.INSECURE_COSE_ALGS
-               .indexOf(coseAlg) >= 0 };
+               .indexOf(coseAlg) >= 0,
+             lane: Credentials.keyLane(k) };
   }
 
   // WHAT KIND OF AUTHENTICATOR ONE STORED KEY IS, IN A PERSON'S WORDS
@@ -2779,6 +2782,160 @@ class Credentials {
   /** The attribute that holds a person's WebAuthn user handle. */
   static readonly WEBAUTHN_USER_HANDLE_ATTRIBUTE = 'stsWebauthnUserHandle';
 
+  // ---------------------------------------------------------------------------
+  // THE TWO LANES (#643, 2026-10-19): a classical passkey and a post-quantum
+  // one, held by one person at once, on one authenticator if it can make both.
+  // `authn/webauthn_policy.ts` argues why a lane needs its own handle, its own
+  // algorithms and its own exclude list; this file keeps the person's half:
+  //
+  //   * A SECOND HANDLE, `stsWebauthnPqcUserHandle`, minted the first time a
+  //     post-quantum ceremony needs one and kept for good, like the first —
+  //     and only ever BESIDE the first, which the directory's owner index
+  //     walks (`ldap_server.js`, `webauthnUserHandleHolder()`).
+  //   * THE LANE ON THE KEY ROW (`lane`), chosen when the enrolment began and
+  //     carried on the pending record like the role, never read back off the
+  //     browser's answer. A row with none — every key enrolled before #643 —
+  //     is CLASSICAL (`keyLane()`).
+  //   * THE NAME A CREDENTIAL MANAGER SHOWS for the post-quantum lane NAMES
+  //     ITS ALGORITHM (rcbj on #643): `<username>+ml-dsa` and a display name
+  //     ending ` (ML-DSA)` at creation (`laneUser()`), when the algorithm the
+  //     authenticator will pick is not yet known; and, once the rows record
+  //     it, `<username>+ml-dsa-65` in the Signal API's
+  //     `signalCurrentUserDetails` where every post-quantum key the person
+  //     holds uses that one algorithm (`laneSignalUser()`) — the generic
+  //     name again where they use more than one. **IT IS NEVER A SIGN-IN
+  //     NAME**: nothing here strips the suffix, and the sign-in screen
+  //     refuses a typed name ending in one (`isLaneName()`, STS-AUTHN-0354).
+  //     The handle, not the name, is what an assertion is matched by.
+  // ---------------------------------------------------------------------------
+  /** The attribute that holds a person's post-quantum lane handle (#643). */
+  static readonly WEBAUTHN_PQC_USER_HANDLE_ATTRIBUTE =
+    'stsWebauthnPqcUserHandle';
+
+  /** The two lanes (#643), in the order a page offers them. */
+  static readonly LANES: ReadonlyArray<string> = ['classical', 'pqc'];
+
+  /**
+   * What the post-quantum lane appends to `user.name` at creation (#643),
+   * before the algorithm is known.
+   */
+  static readonly PQC_NAME_SUFFIX = '+ml-dsa';
+
+  /** What it appends to `user.displayName` at creation (#643). */
+  static readonly PQC_DISPLAY_SUFFIX = ' (ML-DSA)';
+
+  // A NAME THAT ENDS IN A LANE'S SUFFIX (#643): `+ml-dsa`, `+ml-dsa-65` and
+  // the like, and `+pqc`, the name the plan first carried. What a
+  // credential manager shows for the post-quantum lane, so never a name
+  // anybody signs in with.
+  private static readonly LANE_NAME_SHAPE = /\+(ml-dsa(-[0-9]+)?|pqc)$/i;
+
+  /**
+   * Says whether a typed name has the shape of a post-quantum lane's
+   * credential-manager name (#643): it ends `+ml-dsa`, `+ml-dsa-<n>` or
+   * `+pqc`. The sign-in screen refuses such a name.
+   *
+   * @param name - the typed name
+   * @returns true where it does
+   */
+  static isLaneName(name: unknown): boolean {
+    helpers.log.debug("Entering Credentials.isLaneName().");
+    const out = Credentials.LANE_NAME_SHAPE.test(String(name || '').trim());
+    helpers.log.debug("Leaving Credentials.isLaneName(). " + out);
+    return out;
+  }
+
+  /**
+   * The lane a stored key was created in (#643): its row's `lane`, and
+   * `classical` for a row with none — every key enrolled before the lanes.
+   *
+   * @param key - the stored key row
+   * @returns `classical` or `pqc`
+   */
+  static keyLane(key: any): string {
+    helpers.log.debug("Entering Credentials.keyLane().");
+    const lane = key && key.lane === 'pqc' ? 'pqc' : 'classical';
+    helpers.log.debug("Leaving Credentials.keyLane(). " + lane);
+    return lane;
+  }
+
+  /**
+   * The `user.name` and `user.displayName` a registration in a lane sends
+   * (#643): as given for the classical lane; `<username>+ml-dsa` and the
+   * display name with ` (ML-DSA)` for the post-quantum one, within the 64
+   * characters the display name is held to.
+   *
+   * @param username - the person
+   * @param display - the display name the door would send
+   * @param lane - `classical` or `pqc`
+   * @returns `{ name, displayName }`
+   */
+  static laneUser(username: string, display: string,
+                  lane?: string): { name: string; displayName: string } {
+    helpers.log.debug("Entering Credentials.laneUser(). lane=" +
+                      String(lane || ''));
+    const name = String(username || '');
+    const shown = String(display || name);
+    if (String(lane || '') !== 'pqc') {
+      helpers.log.debug("Leaving Credentials.laneUser(). Classical.");
+      return { name: name, displayName: shown };
+    }
+    helpers.log.debug("Leaving Credentials.laneUser(). Post-quantum.");
+    return Credentials.suffixed(name, shown, Credentials.PQC_NAME_SUFFIX,
+                                Credentials.PQC_DISPLAY_SUFFIX);
+  }
+
+  /**
+   * The name and display name the Signal API sends for a lane (#643): the
+   * classical lane's as given; the post-quantum lane's naming its algorithm
+   * — `<username>+ml-dsa-65`, `<display> (ML-DSA-65)` — where every key of
+   * that lane the person holds uses one algorithm, and the creation name
+   * (`laneUser()`) where they use more than one, or none is recorded.
+   *
+   * @param username - the person
+   * @param display - the display name the door would send
+   * @param lane - `classical` or `pqc`
+   * @param keys - the person's stored keys (every lane; filtered here)
+   * @returns `{ name, displayName }`
+   */
+  static laneSignalUser(username: string, display: string, lane: string,
+                        keys: any[]): { name: string; displayName: string } {
+    helpers.log.debug("Entering Credentials.laneSignalUser(). lane=" + lane);
+    if (String(lane || '') !== 'pqc') {
+      helpers.log.debug("Leaving Credentials.laneSignalUser(). Classical.");
+      return Credentials.laneUser(username, display, lane);
+    }
+    const names = (keys || []).filter(function (one) {
+      return Credentials.keyLane(one) === 'pqc';
+    }).map(function (one) {
+      return Credentials.keyAlgorithm(one).name;
+    }).filter(function (name, i, all) {
+      return all.indexOf(name) === i;
+    });
+    if (names.length !== 1 || !/^ML-DSA-[0-9]+$/.test(names[0])) {
+      helpers.log.debug("Leaving Credentials.laneSignalUser(). " +
+                        names.length + " algorithm(s); the generic name.");
+      return Credentials.laneUser(username, display, lane);
+    }
+    helpers.log.debug("Leaving Credentials.laneSignalUser(). " + names[0]);
+    return Credentials.suffixed(String(username || ''),
+                                String(display || username || ''),
+                                '+' + names[0].toLowerCase(),
+                                ' (' + names[0] + ')');
+  }
+
+  // A name and a display name with a lane's suffixes, the display name kept
+  // within the 64 characters `passkeyPolicy.displayNameFor()` holds it to.
+  private static suffixed(name: string, shown: string, nameSuffix: string,
+                          displaySuffix: string) {
+    helpers.log.debug("Entering Credentials.suffixed().");
+    const room = 64 - displaySuffix.length;
+    helpers.log.debug("Leaving Credentials.suffixed().");
+    return { name: name + nameSuffix,
+             displayName: Array.from(shown).slice(0, room).join('').trim() +
+                          displaySuffix };
+  }
+
   // A handle this service minted: 64 bytes (section 5.4.3), base64url, so
   // exactly 86 characters. Anything else on an entry or a key row is not one.
   private static readonly USER_HANDLE_SHAPE = /^[A-Za-z0-9_-]{86}$/;
@@ -2857,22 +3014,36 @@ class Credentials {
    * `mint` is asked and their entry holds none.
    *
    * @param username - the person
-   * @param opts - `mint`: store a new handle on an entry that holds none
+   * @param opts - `mint`: store a new handle on an entry that holds none;
+   *   `lane` (#643): `pqc` for the post-quantum lane's handle, which is
+   *   minted only beside the classical one (minted first where `mint` is
+   *   asked)
    * @returns the handle, or '' where there is none (no entry, no store, or
    *   none held and none asked for)
    */
-  userHandleOf(username, opts?: { mint?: boolean }) {
+  userHandleOf(username, opts?: { mint?: boolean; lane?: string }) {
     const { log, errorCodes } = this.deps;
     const directory = this.directory;
     const name = String(username || '').trim();
-    log.debug("Entering Credentials.userHandleOf(). username=" + name);
+    const lane = opts && opts.lane === 'pqc' ? 'pqc' : 'classical';
+    log.debug("Entering Credentials.userHandleOf(). username=" + name +
+              ", lane=" + lane);
     if (!directory || typeof directory.readWebauthnUserHandle !== 'function') {
       log.debug("Leaving Credentials.userHandleOf(). No store.");
       return '';
     }
+    // THE POST-QUANTUM HANDLE STANDS BESIDE THE CLASSICAL ONE (#643): the
+    // directory refuses it otherwise, so a ceremony that mints the second
+    // mints the first before it.
+    const mint = !!(opts && opts.mint);
+    if (lane === 'pqc' && !this.userHandleOf(name, { mint: mint })) {
+      log.debug("Leaving Credentials.userHandleOf(). No classical handle " +
+                "for the post-quantum one to stand beside.");
+      return '';
+    }
     let held = '';
     try {
-      held = String(directory.readWebauthnUserHandle(name) || '');
+      held = String(directory.readWebauthnUserHandle(name, lane) || '');
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0065') + 'credentials: reading ' +
                 'the WebAuthn user handle of ' + name + ' threw: ' +
@@ -2884,15 +3055,14 @@ class Credentials {
       log.debug("Leaving Credentials.userHandleOf(). Held.");
       return held;
     }
-    if (!opts || !opts.mint ||
-        typeof directory.writeWebauthnUserHandle !== 'function') {
+    if (!mint || typeof directory.writeWebauthnUserHandle !== 'function') {
       log.debug("Leaving Credentials.userHandleOf(). None held.");
       return '';
     }
     const minted = this.newUserHandle();
     let written = false;
     try {
-      written = !!directory.writeWebauthnUserHandle(name, minted);
+      written = !!directory.writeWebauthnUserHandle(name, minted, lane);
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0068') + 'credentials: storing ' +
                 'a WebAuthn user handle for ' + name + ' threw: ' +
@@ -2904,7 +3074,43 @@ class Credentials {
   }
 
   /**
-   * Finds the person whose entry holds a WebAuthn user handle.
+   * Finds the person whose entry holds a WebAuthn user handle, and the lane
+   * it is the handle of (#643): either of a person's two handles names them.
+   *
+   * @param handle - the handle an assertion returned, base64url
+   * @returns `{ username, lane }`, or null when nobody holds it (or it is
+   *   not a handle this service mints)
+   */
+  userHandleHolder(handle): { username: string; lane: string } | null {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.userHandleHolder().");
+    if (!Credentials.isUserHandle(handle) || !directory ||
+        typeof directory.webauthnUserHandleHolder !== 'function') {
+      log.debug("Leaving Credentials.userHandleHolder(). Not a handle, or " +
+                "no store.");
+      return null;
+    }
+    let found: any = null;
+    try {
+      found = directory.webauthnUserHandleHolder(String(handle));
+    } catch (e) {
+      log.debug("Caught in Credentials.userHandleHolder(): " +
+                ((e && e.message) || e));
+      found = null;
+    }
+    const out = found && found.owner
+      ? { username: String(found.owner),
+          lane: found.lane === 'pqc' ? 'pqc' : 'classical' }
+      : null;
+    log.debug("Leaving Credentials.userHandleHolder(). " +
+              (out ? 'Found, ' + out.lane + '.' : 'Nobody.'));
+    return out;
+  }
+
+  /**
+   * Finds the person whose entry holds a WebAuthn user handle — in either
+   * lane since #643.
    *
    * @param handle - the handle an assertion returned, base64url
    * @returns their username, or '' when nobody holds it (or it is not a
@@ -3063,6 +3269,19 @@ class Credentials {
       return coded(errorCodes.codeOf(allowed) || 'STS-AUTHN-0044',
                    { ok: false, errors: [allowed.why] });
     }
+    // THE LANE (#643), asked here for the role's reason: the enforcement is
+    // at the one writer, so a switch turned off while somebody was touching
+    // their key refuses the post-quantum one here whatever door began it. A
+    // key written with no lane is classical, as every key before #643 is.
+    const lane = String((credential || {}).lane || 'classical');
+    const laneAllowed = webauthnPolicy.laneRefusal(lane);
+    if (!laneAllowed.ok) {
+      log.info('credentials: a passkey in the "' + lane + '" lane was NOT ' +
+               'enrolled for ' + name + '. ' + laneAllowed.why);
+      log.debug("Leaving Credentials.addKey(). The lane is not offered.");
+      return coded(errorCodes.codeOf(laneAllowed) || 'STS-AUTHN-0351',
+                   { ok: false, reason: 'lane', errors: [laneAllowed.why] });
+    }
     // A SYNCED PASSKEY WHERE THE REALM TAKES ONLY DEVICE-BOUND ONES (#528):
     // the passkey policy's `backupEligibility`, asked of the authenticator
     // data's BE flag, which both ceremony doors put on the record. Here for
@@ -3073,15 +3292,23 @@ class Credentials {
       this.deps.passkeyPolicy.select(name, '');
     }
     // ONE QUESTION TO THE ISSUANCE POLICY (#536): the key's BE flag, the
-    // minimum PIN length it reported (#529), and the device serial its
-    // trusted attestation named (#532) — the policy decides, in that order,
-    // under the selected passkey policy's rows. A flag the ceremony never
-    // read is not asked about.
+    // minimum PIN length it reported (#529), the device serial its
+    // trusted attestation named (#532), and its signature algorithm with
+    // the lane it is being made in (#718) — the policy decides, in that
+    // order, under the selected passkey policy's rows. A flag the ceremony
+    // never read is not asked about. The algorithm is always known: the
+    // ceremony's, else what `keyAlgorithm()` reads off the key itself, so
+    // a key written by value is held to a post-quantum requirement too;
+    // whether it IS post-quantum is the question's to say, not this door's.
     const given = credential || {};
     const facts: Record<string, any> = {
       username: name,
       minPinLength: given.minPinLength,
-      serial: (given.attestation || {}).deviceSerial
+      serial: (given.attestation || {}).deviceSerial,
+      algorithm: Credentials.keyAlgorithm({
+        algorithm: given.algorithm, coseAlg: given.coseAlg,
+        publicKeyJwk: given.publicKeyJwk }).name,
+      lane: lane
     };
     if (typeof given.backupEligible === 'boolean') {
       facts.backupEligible = given.backupEligible;
@@ -3090,8 +3317,9 @@ class Credentials {
     if (synced) {
       const reason = synced.reason === 'pin-length' ? 'pin-length'
         : (synced.reason === 'backup-eligible' ? 'backup-eligible'
-          : (/^serial-/.test(synced.reason) ? 'device-serial'
-                                            : 'passkey-policy'));
+          : (synced.reason === 'post-quantum' ? 'post-quantum'
+            : (/^serial-/.test(synced.reason) ? 'device-serial'
+                                              : 'passkey-policy')));
       log.info('credentials: a passkey was NOT enrolled for ' + name +
                ' (' + synced.code + ', ' + reason + '): ' + synced.why);
       log.debug("Leaving Credentials.addKey(). Refused by the passkey " +
@@ -3205,6 +3433,12 @@ class Credentials {
       // username's bytes, and the field is absent.
       userHandle: Credentials.isUserHandle(credential.userHandle)
         ? String(credential.userHandle) : undefined,
+      // THE LANE IT WAS CREATED IN (#643), as the enrolment was begun —
+      // never the browser's say: `pqc` for the post-quantum lane, and absent
+      // for the classical one, which is what every key before the lanes
+      // records and what `keyLane()` reads as classical. So with the switch
+      // off a row is written exactly as it was.
+      lane: lane === 'pqc' ? 'pqc' : undefined,
       // Who made or holds it, and which source said so (`keyProvider()`).
       provider: String(credential.provider || '').slice(0, 120),
       providerSource: ['mds', 'table'].indexOf(
@@ -3249,11 +3483,14 @@ class Credentials {
     }
     // THE HANDLE ADOPTED (#474): a ceremony for somebody whose entry did not
     // exist yet (the sign-in screen's first use, in development) created the
-    // key under a handle nobody stored. It becomes theirs if they hold none.
-    if (record.userHandle && !this.userHandleOf(name) &&
-        typeof directory.writeWebauthnUserHandle === 'function') {
+    // key under a handle nobody stored. It becomes theirs if they hold none —
+    // the LANE's handle (#643), the post-quantum one beside a classical one
+    // minted now where none is held, as the directory requires.
+    if (record.userHandle && !this.userHandleOf(name, { lane: lane }) &&
+        typeof directory.writeWebauthnUserHandle === 'function' &&
+        (lane !== 'pqc' || this.userHandleOf(name, { mint: true }))) {
       try {
-        directory.writeWebauthnUserHandle(name, record.userHandle);
+        directory.writeWebauthnUserHandle(name, record.userHandle, lane);
       } catch (e) {
         log.warn(errorCodes.tag('STS-AUTHN-0068') + 'credentials: storing ' +
                  'the WebAuthn user handle of the key just enrolled for ' +
@@ -3873,6 +4110,64 @@ class Credentials {
                 'refused attestation of a passkey of ' + username +
                 ' could not be recorded: ' + e.message);
       log.debug('Leaving Credentials.noteKeyAttestationRefused(). Threw.');
+      return false;
+    }
+  }
+
+  // A KEY THE ISSUANCE POLICY'S PASSKEY RULES NOW REFUSE AT SIGN-IN, BY
+  // REASON (#718): #530's mark generalised, so a refusal that changes a
+  // credential's standing — today the post-quantum requirement — sends its
+  // Shared Signals credential-change ONCE per key and reason rather than at
+  // every attempt. A map on the row (`policyRefused`, reason → `{ code,
+  // why, at }`) rather than #530's single field, which the attestation
+  // refusal keeps and the key lists draw as they did: two reasons for one
+  // key are two first times. The same sentence again is nothing new.
+  /**
+   * Marks a key as refused at sign-in by the passkey rules for a reason.
+   *
+   * @param username - the person
+   * @param credentialId - the key's credential id
+   * @param reason - the rule's reason (`post-quantum`)
+   * @param code - the refusal's error code
+   * @param why - the refusal's sentence
+   * @returns true when the mark is new, false when it was already there or
+   *   could not be written
+   */
+  noteKeyPolicyRefused(username, credentialId, reason, code, why) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.noteKeyPolicyRefused(). ' + reason);
+    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+      log.debug('Leaving Credentials.noteKeyPolicyRefused(). No store.');
+      return false;
+    }
+    const keys = this.keysOf(username);
+    const found = keys.filter(function (one) {
+      return one.credentialId === String(credentialId);
+    })[0];
+    const which = String(reason || '');
+    const held = found && found.policyRefused &&
+      typeof found.policyRefused === 'object' ? found.policyRefused : {};
+    if (!found || !which ||
+        (held[which] && held[which].why === String(why || '').slice(0, 500))) {
+      log.debug('Leaving Credentials.noteKeyPolicyRefused(). Nothing new.');
+      return false;
+    }
+    found.policyRefused = Object.assign({}, held, {
+      [which]: { code: String(code || ''),
+                 why: String(why || '').slice(0, 500), at: Date.now() } });
+    try {
+      const written = !!directory.replaceWebauthn(
+        String(username || '').trim(), keys.map(function (one) {
+          return JSON.stringify(one);
+        }));
+      log.debug('Leaving Credentials.noteKeyPolicyRefused(). ' + written);
+      return written;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0318') + 'credentials: the ' +
+                'refusal of a passkey of ' + username + ' (' + which + ') ' +
+                'could not be recorded: ' + e.message);
+      log.debug('Leaving Credentials.noteKeyPolicyRefused(). Threw.');
       return false;
     }
   }
@@ -7998,7 +8293,8 @@ class Credentials {
    * be, refusing anything knowable before the person touches their key.
    *
    * @param username - the person
-   * @param opts - `role` (`mfa` by default) and `kind`
+   * @param opts - `role` (`mfa` by default), `kind`, and `lane` (#643:
+   *   `classical` by default, or `pqc`)
    * @returns `{ ok: true, enrolmentId, challenge, … }`, or a refusal
    */
   beginKeyEnrolment(username, opts?) {
@@ -8024,6 +8320,26 @@ class Credentials {
                 'allowed here.');
       return coded(errorCodes.codeOf(allowed) || 'STS-AUTHN-0044',
                    { ok: false, errors: [allowed.why] });
+    }
+    // THE LANE (#643), chosen now and carried like the role: `classical`
+    // where none is named, which is every enrolment while the switch is off.
+    // Refused here as a courtesy and again at the write (`addKey()`). While
+    // the passkey policy requires a post-quantum passkey at registration
+    // and both lanes are on (#718), `enrolmentLane()` answers the
+    // post-quantum lane for a classical choice or none: it is the only one
+    // whose key the policy would take, and the page offered no other.
+    // THE PERSON'S PASSKEY POLICY (#535) where the door selected none, as
+    // `addKey()` selects it, so the lane is the one the write will hold.
+    if (!this.deps.passkeyPolicy.hasSelection()) {
+      this.deps.passkeyPolicy.select(name, '');
+    }
+    const lane = webauthnPolicy.enrolmentLane(String(options.lane || ''));
+    const laneAllowed = webauthnPolicy.laneRefusal(lane);
+    if (!laneAllowed.ok) {
+      log.debug('Leaving Credentials.beginKeyEnrolment(). The lane is not ' +
+                'offered here.');
+      return coded(errorCodes.codeOf(laneAllowed) || 'STS-AUTHN-0351',
+                   { ok: false, reason: 'lane', errors: [laneAllowed.why] });
     }
     if (!directory || typeof directory.writeWebauthn !== 'function') {
       log.debug("Leaving Credentials.beginKeyEnrolment().");
@@ -8070,6 +8386,7 @@ class Credentials {
       challenge: crypto.randomBytes(32).toString('base64url'),
       role: role,
       kind: kind,
+      lane: lane,
       // NO LABEL (#470): the key takes its provider's or its group's name, and
       // the page asks for a nickname once it is registered.
       label: '',
@@ -8077,24 +8394,33 @@ class Credentials {
       // none: the page creates the credential under it and the row records
       // it. Their entry exists (product refused above otherwise); where it
       // does not, in development, a fresh handle is used and adopted at the
-      // write.
-      userHandle: this.userHandleOf(name, { mint: true }) ||
+      // write. THE LANE'S HANDLE since #643: the post-quantum lane's own, so
+      // its credential does not replace the classical one on the device.
+      userHandle: this.userHandleOf(name, { mint: true, lane: lane }) ||
                   this.newUserHandle(),
-      // EVERY key they hold and not only the ones of this role: the point is
+      // EVERY key they hold IN THIS LANE (#643), of either role: the point is
       // *this authenticator is already registered here*, which is a fact about
-      // the device rather than about what the credential is for.
-      exclude: held.map((one) => { return one.credentialId; }),
+      // the device rather than about what the credential is for — and, since
+      // the lanes, about the handle it was registered under: a device holding
+      // this person's classical passkey is exactly where their post-quantum
+      // one may go. With the switch off every key is classical (a key with no
+      // lane is), so the list is every key, as it always was.
+      exclude: held.filter((one) => {
+        return Credentials.keyLane(one) === lane;
+      }).map((one) => { return one.credentialId; }),
       expires: Date.now() + this.keyEnrolmentTtlMs()
     };
     pendingKeys.set(name.toLowerCase(), record);
     log.info('credentials: ' + name + ' started enrolling a "' + role +
-             '" security key' + (kind ? ' (' + kind + ')' : '') + '. ' +
+             '" security key' + (kind ? ' (' + kind + ')' : '') +
+             (lane !== 'classical' ? ' in the ' + lane + ' lane' : '') + '. ' +
              record.exclude.length +
              ' authenticator(s) already enrolled are excluded.');
     log.debug('Leaving Credentials.beginKeyEnrolment(). Challenge minted ' +
               'and held.');
     return { ok: true, enrolmentId: record.id, challenge: record.challenge,
-             role: role, kind: kind, exclude: record.exclude.slice(),
+             role: role, kind: kind, lane: lane,
+             exclude: record.exclude.slice(),
              userHandle: record.userHandle,
              expiresAt: new Date(record.expires).toISOString() };
   }
@@ -8202,8 +8528,11 @@ class Credentials {
         expectedRpId: String(options.rpId || ''),
         requireUserVerification: webauthnPolicy.requireUserVerification(),
         // WebAuthn Level 3 section 7.1: the credential's alg must be one of
-        // the pubKeyCredParams this realm offered (#105).
-        expectedAlgorithms: webauthnPolicy.algorithmIds()
+        // the pubKeyCredParams this realm offered (#105) — IN THE LANE THE
+        // ENROLMENT WAS BEGUN IN (#643), so an ML-DSA key answering the
+        // classical lane, or a classical key the post-quantum one, is refused
+        // as an algorithm that was not offered (STS-AUTHN-0228).
+        expectedAlgorithms: webauthnPolicy.algorithmIds(held.lane)
       });
     } catch (e) {
       log.debug('Leaving Credentials.checkKeyEnrolment(). Verification threw.');
@@ -8275,8 +8604,10 @@ class Credentials {
         discoverable: Credentials.discoverableOf(credential),
         // CTAP 2.1's minPinLength, as the key reported it (#529).
         minPinLength: Credentials.reportedMinPinLength(verdict),
-        // The handle the page created it under (#474).
-        userHandle: held.userHandle
+        // The handle the page created it under (#474), and its lane (#643),
+        // both off the pending record.
+        userHandle: held.userHandle,
+        lane: held.lane || 'classical'
       }, held.role).then((stored) => {
         return this.keyEnrolmentWritten(name, held, stored);
       });
@@ -8801,9 +9132,12 @@ class Credentials {
    * returned in the clear once; its hash is stored.
    *
    * @param username - the person
+   * @param options - `{ source }`: who issued it, `self` (the
+   *   forgot-password form) or `operator` (the default), recorded beside it
+   *   for the recovery question at its spend (#724)
    * @returns `{ ok: true, username, token, expires, … }`, or a refusal
    */
-  issuePasswordReset(username) {
+  issuePasswordReset(username, options?) {
     const { log, crypto, errorCodes } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
@@ -8831,7 +9165,7 @@ class Credentials {
     let written = false;
     try {
       written = directory.writePasswordResetLink(name, crypto.hashSecret(token),
-                                                 expires);
+        expires, options && options.source === 'self' ? 'self' : 'operator');
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0164') + 'credentials: writing a ' +
                 'password reset link for ' + name + ' threw: ' + e.message);
@@ -8897,13 +9231,180 @@ class Credentials {
       return coded('STS-AUTHN-0167', { ok: false, reason: 'mismatch' });
     }
     log.debug("Leaving Credentials.checkPasswordReset(). Valid.");
-    return { ok: true, reason: 'valid', expires: held.expires };
+    // WHO ISSUED IT (#724): a link written before the source was recorded
+    // is an operator's, which is the only door that existed then that the
+    // recovery question would not refuse.
+    return { ok: true, reason: 'valid', expires: held.expires,
+             source: held.source === 'self' ? 'self' : 'operator' };
   }
 
   // Spend it — when the new password is STORED, not when the link is opened,
   // for the activation link's reason: a link burned by a mail scanner or a
   // prefetch would strand somebody whose password was removed when it was
   // issued.
+  // -------------------------------------------------------------------------
+  // A RECOVERY WAITING FOR A PASSKEY SIGN-IN (#724). Written on the person's
+  // entry (`stsRecoveryPending`, `<door> <instant>`) when a recovery door is
+  // spent for a person who holds a passkey, read by `authn.ts`'s
+  // `startSessionHere()` for the recovery question, and cleared by the first
+  // passkey sign-in after it. On the ENTRY, not in a map, so every node and
+  // a restart agree on it.
+  // -------------------------------------------------------------------------
+  /**
+   * Tells whether the person holds a passkey of either role (#724): what a
+   * recovery would be weaker than.
+   *
+   * @param username - the person
+   * @returns true when they hold at least one
+   */
+  holdsPasskey(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.holdsPasskey().");
+    const held = this.mechanismsFor(String(username || '').trim());
+    const out = !!held && (Number(held.primaryKeys || 0) +
+                           Number(held.mfaKeys || 0)) > 0;
+    log.debug("Leaving Credentials.holdsPasskey(). " + out);
+    return out;
+  }
+
+  /**
+   * The pending recovery on a person's entry (#724).
+   *
+   * @param username - the person
+   * @returns `{ door, at }`, or null where none is pending
+   */
+  recoveryPending(username) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.recoveryPending().");
+    if (!directory || typeof directory.readRecoveryPending !== 'function') {
+      log.debug("Leaving Credentials.recoveryPending(). No store.");
+      return null;
+    }
+    let raw = '';
+    try {
+      raw = String(directory.readRecoveryPending(
+        String(username || '').trim()) || '');
+    } catch (e) {
+      log.debug("Caught in Credentials.recoveryPending(): " +
+                ((e && e.message) || e));
+      raw = '';
+    }
+    if (!raw) {
+      log.debug("Leaving Credentials.recoveryPending(). None.");
+      return null;
+    }
+    const parts = raw.split(' ');
+    log.debug("Leaving Credentials.recoveryPending(). " + parts[0]);
+    return { door: parts[0] || '', at: parts[1] || '' };
+  }
+
+  /**
+   * Records, or clears, a pending recovery on a person's entry (#724).
+   *
+   * @param username - the person
+   * @param door - the recovery door, or '' to clear it
+   * @returns true when it was written
+   */
+  setRecoveryPending(username, door) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.setRecoveryPending(). door=" + door);
+    if (!directory || typeof directory.writeRecoveryPending !== 'function') {
+      log.debug("Leaving Credentials.setRecoveryPending(). No store.");
+      return false;
+    }
+    const name = String(username || '').trim();
+    const value = door ? String(door) + ' ' + new Date().toISOString() : '';
+    let written = false;
+    try {
+      written = !!directory.writeRecoveryPending(name, value);
+    } catch (e) {
+      log.debug("Caught in Credentials.setRecoveryPending(): " +
+                ((e && e.message) || e));
+      written = false;
+    }
+    if (!written) {
+      log.error(errorCodes.tag('STS-AUTHN-0382') + 'credentials: the ' +
+                'pending recovery of ' + name + ' could not be ' +
+                (door ? 'written' : 'cleared') + '.');
+    }
+    log.debug("Leaving Credentials.setRecoveryPending(). " + written);
+    return written;
+  }
+
+  /**
+   * Records that a recovery door restored access (#724), where it matters:
+   * the person holds a passkey and the passkey policy selected for them
+   * holds a recovery to it (`recoveryAssurance` not `any`). Under `any`
+   * nothing is written, so a later change of the row does not reach back to
+   * a recovery made while it allowed one.
+   *
+   * @param username - the person
+   * @param door - the recovery door (`passkey_policy.ts`'s RECOVERY_DOORS)
+   * @returns true when a pending recovery was written
+   */
+  noteRecovery(username, door) {
+    const { log, passkeyPolicy } = this.deps;
+    log.debug("Entering Credentials.noteRecovery(). door=" + door);
+    const name = String(username || '').trim();
+    if (!name || !this.holdsPasskey(name)) {
+      log.debug("Leaving Credentials.noteRecovery(). Holds no passkey.");
+      return false;
+    }
+    if (!passkeyPolicy.hasSelection()) {
+      passkeyPolicy.select(name, '');
+    }
+    if (passkeyPolicy.recoveryAssurance() === 'any') {
+      log.debug("Leaving Credentials.noteRecovery(). The policy allows any.");
+      return false;
+    }
+    const written = this.setRecoveryPending(name, String(door || ''));
+    log.debug("Leaving Credentials.noteRecovery(). " + written);
+    return written;
+  }
+
+  /**
+   * Records an activation link as a recovery (#724) where the person held a
+   * passkey BEFORE the link was issued — an administrator's link to somebody
+   * who had already set up an account. A passkey the activation itself
+   * enrolled is not one it could be weaker than. Called before the link is
+   * consumed, while its expiry (and so its issue, the TTL before it) can
+   * still be read.
+   *
+   * @param username - the person
+   * @returns true when a pending recovery was written
+   */
+  noteActivationRecovery(username) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.noteActivationRecovery().");
+    const name = String(username || '').trim();
+    let held = null;
+    try {
+      held = directory && typeof directory.readActivation === 'function'
+        ? directory.readActivation(name) : null;
+    } catch (e) {
+      log.debug("Caught in Credentials.noteActivationRecovery(): " +
+                ((e && e.message) || e));
+      held = null;
+    }
+    const issuedAt = held && held.expires
+      ? Number(held.expires) - this.activationTtlMs() : 0;
+    const before = issuedAt > 0 && this.keysOf(name).some(function (one) {
+      return Number(one.enrolledAt || 0) > 0 &&
+             Number(one.enrolledAt) < issuedAt;
+    });
+    if (!before) {
+      log.debug("Leaving Credentials.noteActivationRecovery(). No passkey " +
+                "held before the link.");
+      return false;
+    }
+    const out = this.noteRecovery(name, 'activation');
+    log.debug("Leaving Credentials.noteActivationRecovery(). " + out);
+    return out;
+  }
+
   /**
    * Spends the password reset token, when the new password is stored.
    *
@@ -9729,6 +10230,13 @@ export = {
   newUserHandle: slot.forward('newUserHandle'),
   userHandleOf: slot.forward('userHandleOf'),
   ownerOfUserHandle: slot.forward('ownerOfUserHandle'),
+  // The two lanes (#643).
+  userHandleHolder: slot.forward('userHandleHolder'),
+  keyLane: Credentials.keyLane,
+  laneUser: Credentials.laneUser,
+  laneSignalUser: Credentials.laneSignalUser,
+  isLaneName: Credentials.isLaneName,
+  LANES: Credentials.LANES,
   userHandleRefusal: slot.forward('userHandleRefusal'),
   addKey: slot.forward('addKey'),
   removeKey: slot.forward('removeKey'),
@@ -9753,6 +10261,7 @@ export = {
   ANDROID_MARKER_ATTRIBUTE: Credentials.ANDROID_MARKER_ATTRIBUTE,
   untrustKeyAttestation: slot.forward('untrustKeyAttestation'),
   noteKeyAttestationRefused: slot.forward('noteKeyAttestationRefused'),
+  noteKeyPolicyRefused: slot.forward('noteKeyPolicyRefused'),
   noteKeyCloned: slot.forward('noteKeyCloned'),
   noteBootstrapPassword: slot.forward('noteBootstrapPassword'),
   mechanismsFor: slot.forward('mechanismsFor'),
@@ -9790,6 +10299,11 @@ export = {
   issuePasswordReset: slot.forward('issuePasswordReset'),
   checkPasswordReset: slot.forward('checkPasswordReset'),
   consumePasswordReset: slot.forward('consumePasswordReset'),
+  holdsPasskey: slot.forward('holdsPasskey'),
+  recoveryPending: slot.forward('recoveryPending'),
+  setRecoveryPending: slot.forward('setRecoveryPending'),
+  noteRecovery: slot.forward('noteRecovery'),
+  noteActivationRecovery: slot.forward('noteActivationRecovery'),
   passwordResetPending: slot.forward('passwordResetPending'),
   mfaRequirementFor: slot.forward('mfaRequirementFor'),
   accountDisabled: slot.forward('accountDisabled'),

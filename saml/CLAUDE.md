@@ -104,7 +104,8 @@ change was mostly a prose sweep.
   server.
 * ~~**No identity-provider-initiated SSO**~~ **REVERSED 2026-09-24 (#189)**:
   `/saml2/unsolicited[/{sp}]` sends an unsolicited Response — see *What four
-  independent service providers found*, below. ~~**No Assertion Query and
+  independent service providers found*, below — **to a service provider that
+  opted in** since #711 (*WHO MAY START A SIGN-IN*, below). ~~**No Assertion Query and
   Request profile**~~ **its attribute query is answered since #189**, at
   `/saml2/aa`, under a release policy (same section).
 * **No ECP profile and its PAOS binding, no Name Identifier Management, and no
@@ -1471,8 +1472,10 @@ saml-profiles-2.0-os 4.1.5): `providerId` (or the path segment), `shire`,
 `target` and `binding`, the Shibboleth identity provider's parameter names.
 Held to what a solicited request is: a registered service provider in
 product, an ACS its consumed metadata or entry registered, the endpoint's own
-binding (never HTTP-Redirect), the issuance policy; `saml2.unsolicitedSso`
-turns it off for a realm. The Response and assertion carry no InResponseTo.
+binding (never HTTP-Redirect), the issuance policy. The Response and
+assertion carry no InResponseTo. ~~`saml2.unsolicitedSso` turns it off for a
+realm~~ — **off until a service provider opts in since #711**, the next
+section.
 
 **THE ATTRIBUTE AUTHORITY** (`/saml2/aa[/{sp}]`, an
 AttributeAuthorityDescriptor in the per-SP metadata): the Assertion Query and
@@ -1493,6 +1496,82 @@ service's listener certificate is not~~ — **decided and built on #248**: the
 metadata carries it now (the next section), so that pin would pass; with the
 artifact profile out of SimpleSAMLphp's reach there is still nothing of its
 to exercise it with.
+
+## WHO MAY START A SIGN-IN (#426, #711, 2026-10-19)
+
+**Two switches per profile, each a realm default an application's entry
+overrides, both read through the local `settingFor()`** (the section on the
+fourteen per-application settings is why that is the only way to read them):
+
+| Setting | On the entry | Default | Refused with |
+|---|---|---|---|
+| `saml2.idpInitiatedSso` | `saml2IdpInitiatedSso` | **off** | a 403 page, `STS-SAML-0091` |
+| `saml2.spInitiatedSso` | `saml2SpInitiatedSso` | on | `Responder` / `RequestDenied`, `STS-SAML-0111` |
+| `saml11.idpInitiatedSso` | `saml11IdpInitiatedSso` | **off** | a 403 page, `STS-SAML-0113` |
+| `saml11.spInitiatedSso` | `saml11SpInitiatedSso` | on | a 403 page, `STS-SAML-0114` |
+
+**IDENTITY-PROVIDER-INITIATED IS OFF UNTIL AN APPLICATION OPTS IN** — rcbj's
+decision 1 on #426, which reversed `saml2.unsolicitedSso`'s ON and renamed it
+with no alias. An unsolicited Response carries no InResponseTo, so the
+service provider cannot tell one it was sent from one pushed into a browser,
+and that is a choice made per relying party. The unsolicited path refuses
+on a PAGE, not a Response: the service provider never asked and has not
+said it accepts one, so it is exactly the one not to post to. The check sits
+after the registration check, so an unregistered service provider in product
+is still the 404 every per-SP path answers.
+
+**AN AuthnRequest FROM A SERVICE PROVIDER WHOSE OWN START IS OFF** is
+answered `RequestDenied`, the policy refusal's shape, after the request is
+understood and its sighting recorded and BEFORE the sign-in screen — a person
+is not made to sign in for a refusal.
+
+**SAML 1.1 HAS NO REQUEST MESSAGE, SO `shire` IS THE ONLY TELL.** A request
+carrying one is the Shibboleth 1.3 AuthnRequest profile, the relying party's
+start; a link with only a TARGET (and `providerId` or the path segment) was
+always the inter-site transfer service's own start. **That request is an
+unsigned URL**: anybody can write one with a `shire`, or leave it off, so the
+service-provider switch closes a door and proves nothing about origin. Both
+refusals come before the relying party's sighting is recorded and before the
+screen.
+
+**AN IDENTITY-PROVIDER-INITIATED ISSUANCE RUNS WHAT A SOLICITED ONE RUNS**
+(#426's decision 4), in the same order: `sessionOf()` or
+`beginAuthentication({ application, protocol })`, `gate.check()` with the
+session, `notePresented()`, and `issueSignInResponse()` /
+`issueSignIn()` — which write `session.saml2ServiceProviders` /
+`saml11RelyingParties`, what `/logout` and back-channel logout read.
+
+**A STEP-UP ON RISK IS A SIGN-IN, NOT A REFUSAL, ON BOTH IDP-INITIATED
+PATHS** — the authorization endpoint's branch (`oauth-oidc/oauth2.ts`),
+copied: a Deny whose risk obligation is `step-up`, not observe-only, on an
+authenticated session, marks `STS-RISK-0017` and sends the person to
+`beginAuthentication()` with `forceMfa` / `forceKey` for the factor named,
+back to the same link. **The solicited SAML 2.0 path does NOT step up** and
+was left alone: it refuses on risk with `STS-SAML-0010` as before, and #711
+was about the identity provider's start.
+
+**ONE TRIP PER LINK.** The mechanism re-prompt (#457) and the step-up share
+it. SAML 1.1 marks its held flow (`mechanismAt`, `steppedUpAt`) — the
+server's copy, as SAML 2.0's solicited path marks `forcedAt`. SAML 2.0's
+unsolicited link has no request to hold, so the trip is marked IN THE URL,
+`reprompted=1` appended to the return address: a forged mark only gets the
+person the refusal a trip sooner, and a stripped one only sends them round
+again as following the link would — the guard stops a loop, not an
+attacker, and the policy is asked afresh either way. Back from the trip and
+still denied: `RequestDenied` with `STS-SAML-0112` (risk) or `0100` / `0107`
+(mechanism); SAML 1.1's page with `STS-SAML-0115` or `0102` / `0109`.
+
+`tests/saml_initiation.js` holds all of it over HTTP, risk included (a
+session's risk put in place directly, with `risk.enforceInDevelopment`),
+and runs the risk step-up a second time in product mode (#715).
+**`tests/vendored/sts_idp_initiated_saml.js` is the product-mode
+coverage of the rest** (#715): the two switches of both profiles, the
+realm setting, InResponseTo absent, the relying party in the logout
+inventory and the mechanism re-prompt, over the wire in `single-node`
+and `cluster`, with real passwords and registered addresses.
+The local jobs that send an unsolicited Response — the three SAML peers and
+`sts_xml_schema_validation.js` — and `sts_global_logout.js`'s TARGET-only
+SAML 1.1 flow set the entry's switch on the application they create.
 
 ## EVERY DOCUMENT HERE IS VALIDATED AGAINST THE PUBLISHED SCHEMAS (#188, 2026-09-24)
 
@@ -1614,6 +1693,44 @@ in development too now (`return_address.ts`; SAML 1.1 on its own page,
 `STS-SAML-0028`). `STS-SAML-0021`, `0022`, `0042` and `0043` are retired.
 The service provider and relying party a test needs are the test peer's
 (`tests/peer/peer_saml.js`, #586). `common/CLAUDE.md` 3cm has the record.
+
+## SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561, 2026-10-19)
+
+`authn/CLAUDE.md`, *Several signed-in accounts in one browser*, is the
+design. With `authn.multipleAccounts` off nothing here changes; on:
+
+* **THE AUTHNREQUEST'S `<saml:Subject>` NAMEID IS THE HINT**
+  (`accountHintOf()`), handed to `authn.hintAccount()` before `sessionOf()`
+  at step 4 — the `login_hint` of this protocol, read as a login name
+  because `nameIdValueFor()` answers the username or the mail address. A
+  NameID naming nobody live here answers no session, never another
+  account, and the sign-in screen is drawn with it filled in. **A
+  `transient` NameID is no hint** (`subjectHintFormat`): it names a session
+  of some other sign-in, nobody's account.
+* **`ForceAuthn` is `accountChoice: 'never'`**: a fresh sign-in, never the
+  picker; signing in as an account already in the set re-authenticates that
+  session.
+* **`IsPassive` with a choice to make is `NoPassive`**: the picker is user
+  interface. **The status message is generic and says nothing about the
+  browser's accounts** — no count, not even that there are several (rcbj's
+  decision on #561, batch 10): the Response reaches the service provider and
+  whatever page sent the passive request, so a count would tell any site how
+  many people use the browser. One sentence for every account-choice case;
+  `authn.noteAccountAmbiguous()` writes the `account.ambiguous` row, which
+  is where the operator reads how many. With the setting off the
+  no-session sentence is unchanged. An `IsPassive` request with a `<Subject>` naming a live account is
+  answered as that account.
+* **Front-channel Single Logout ends the session of the set** its
+  SessionIndex names (checked against this service provider and the NameID
+  by `sessionNamedBy()`), else the one that was issued the NameID there
+  (`sloAccountOf()`); otherwise the browser's default, as always. The back
+  channel is unchanged.
+* **SAML 1.1 has neither a hint nor `IsPassive`** (decision 1 above), so a
+  browser with several accounts reaches the picker through
+  `beginAuthentication()` with no change here; the identity-provider-
+  initiated sign-ins and the mechanism re-prompts likewise.
+
+`tests/multi_account_protocols.js` 4–5 and `tests/multi_account_logout.js` 7.
 
 ## The description page is a static surface's shell (#584, 2026-10-12)
 

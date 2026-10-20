@@ -25,5 +25,9 @@
   "signedOut.frontNone": "没有需要结束的会话。Cookie 仍已被清除。",
   "signedOut.returnHeading": "返回依赖方",
   "signedOut.returnAuto": "本页会在 {seconds, plural, other {# 秒}}后自动返回该处，以便上方的通知有时间加载；此链接供不跟随自动刷新的浏览器使用。",
-  "signedOut.returnLink": "这是链接而不是重定向：上方的通知随本页一起加载，而 302 重定向会在它们发送之前就放弃它们。"
+  "signedOut.returnLink": "这是链接而不是重定向：上方的通知随本页一起加载，而 302 重定向会在它们发送之前就放弃它们。",
+  "logout.askWhichApp": "应用 <code>{app}</code> 请求让您退出登录，而此浏览器已登录 {count} 个账户。应退出哪一个？它在此处的会话将结束，并通知通过它登录的每个应用。",
+  "logout.askWhich": "有应用请求让您退出登录，而此浏览器已登录 {count} 个账户。应退出哪一个？它在此处的会话将结束，并通知通过它登录的每个应用。",
+  "logout.signOutAccount": "退出 <strong>{who}</strong>",
+  "logout.whyWhich": "之所以询问，是因为该请求没有指明此浏览器中已登录的任何账户（RP-Initiated Logout 1.0 第 2 节）。其他账户保持登录。"
 }

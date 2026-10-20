@@ -44,7 +44,9 @@ const applicationsLinks = function (t) {
 // can be handed one — pasted, uploaded, or fetched from a URL — and turn it
 // into the create form, filled in: the `resource` as the default name, the
 // permission base URI and the audience; `scopes_supported` as the permissions;
-// a client_id minted at random. `oauth-oidc/protected_resource_metadata.ts` is
+// a client_id minted at random. That client_id IS the identifier (#393), so
+// the pane does not draw a client_id box again.
+// `oauth-oidc/protected_resource_metadata.ts` is
 // the reading and argues every rule; what is decided HERE is the page.
 //
 // **TWO ROUND TRIPS AND NO SCRIPT.** A file can only reach a server without a
@@ -67,7 +69,12 @@ const applicationsLinks = function (t) {
 // `POST /admin/applications` and `POST /admin-api/applications/{action}`
 // dispatch on — so the page adds TRANSPORT and nothing it decides.
 // ---------------------------------------------------------------------------
-const RESOURCE_METADATA_OWNED = ['oauthClientId', 'oauthPermissionBaseUri',
+// Attributes the pane draws, so the declarations grid does not post the
+// same name twice. oauthClientId is not among them (#393): the minted
+// client_id is the identifier, and the grid's advanced view may still list
+// further client ids. The simplified view omits it because it is a primary
+// name, not because this pane draws it.
+const RESOURCE_METADATA_OWNED = ['oauthPermissionBaseUri',
                                  'oauthAudience', 'oauthPermission',
                                  'oauthAuthorizationDetailsType',
                                  'oauthResourceMetadata',
@@ -462,6 +469,7 @@ class ApplicationsPage {
         kit.tip(t.html('consoleApplications.a1.identifierTip')) +
         ' value="' + kit.esc(drafted('identifier')) + '"></div>' +
         kit.note(t.html('consoleApplications.a1.theKey')) +
+        kit.note(t.html('consoleApplications.a1.primaryName')) +
         '<div class="formrow"><label for="newname">' +
         t.html('consoleApplications.a1.name') + '</label><input ' +
         'type="text" id="newname" name="name" size="24" ' +
@@ -529,7 +537,8 @@ class ApplicationsPage {
               given.tab, t) +
             '<h2>' + t.html('consoleApplications.a1.calledHeading') +
             '</h2>' +
-            kit.note(t.html('consoleApplications.a1.onEditableTab'))
+            kit.note(t.html('consoleApplications.a1.onEditableTab')) +
+            kit.note(t.html('consoleApplications.a1.primaryName'))
           : calledSection) +
 
         '<h2>' + t.html('consoleApplications.a1.familiesHeading') + '</h2>' +
@@ -585,6 +594,8 @@ class ApplicationsPage {
                 : {},
           { redraw: '/admin/applications/new',
             generateSecret: '/admin/applications/new',
+            secretLifetime: ApplicationsPage.newSecretLifetime(
+              json.defaultSecretLifetimeDays, drafted('lifetimeDays'), t),
             protocols: json.protocols }) +
 
         '<div class="formrow"><button type="submit">' +
@@ -598,6 +609,29 @@ class ApplicationsPage {
     }
 
     return inner;
+  }
+
+  /**
+   * Draws the first client secret's lifetime beside Generate Secret on the
+   * create form (#394): the add-secret form's field and words, posted as
+   * `lifetimeDays` beside the grid's boxes, so it applies to a generated
+   * secret and a typed one alike.
+   *
+   * @param defaultDays - `oauth2.clientSecretLifetimeDays`, 0 for never
+   * @param value - what a redraw carries back, or empty
+   * @param t - the page's translator (#539)
+   * @returns the field as HTML
+   */
+  static newSecretLifetime(defaultDays, value, t) {
+    const days = Number(defaultDays) || 0;
+    return ' <label for="secret-lifetime">' +
+      t.html('consoleApplications.a2.lifetimeDays') + '</label>' +
+      '<input type="number" id="secret-lifetime" name="lifetimeDays" ' +
+      'min="0" max="730" step="1" placeholder="' + kit.esc(String(days)) +
+      '" value="' + kit.esc(value) + '">' +
+      '<span class="sub">' +
+      t.html('consoleApplications.a1.secretLifetime',
+             { days: days ? String(days) : 'never' }) + '</span>';
   }
 
   // One protocol family as a row of the checkbox table. `kind` is what the
@@ -935,9 +969,6 @@ class ApplicationsPage {
             t.html('consoleApplications.a1.fIdentifier')) +
       field('prm-name', 'name', t.html('consoleApplications.a1.name'),
             values.name, t.html('consoleApplications.a1.fName')) +
-      field('prm-client-id', 'field.oauthClientId',
-            '<code>oauthClientId</code>', values.clientId,
-            t.html('consoleApplications.a1.fClientId')) +
       field('prm-base', 'field.oauthPermissionBaseUri',
             '<code>oauthPermissionBaseUri</code>', values.baseUri,
             t.html('consoleApplications.a1.fBase')) +
@@ -1090,7 +1121,6 @@ class ApplicationsPage {
     return {
       identifier: pick('identifier', plan.identifier),
       name: pick('name', plan.name),
-      clientId: pick('field.oauthClientId', plan.clientId),
       baseUri: pick('field.oauthPermissionBaseUri', plan.baseUri),
       audience: pick('field.oauthAudience', plan.audience),
       permissions: pick('field.oauthPermission',
@@ -1286,7 +1316,10 @@ class ApplicationsPage {
         '</code></td></tr><tr><td>' +
         t.html('consoleApplications.a2.lastSeen') +
         '</td><td><code>' + kit.esc(row.lastSeen) +
-        '</code></td></tr><tr><td>' +
+        '</code></td></tr>' +
+        // WHAT HAS HAPPENED (#708): the four counters the sightings keep,
+        // read-only, after when it was seen.
+        ApplicationsPage.applicationActivityRows(row, t) + '<tr><td>' +
         t.html('consoleApplications.a2.description') + '</td><td>' +
         (row.description
           ? kit.esc(row.description)
@@ -1596,6 +1629,39 @@ class ApplicationsPage {
     return inner;
   }
 
+  // A primary name whose only value is the identifier is the identifier
+  // (#393). The simplified view hides that box; the advanced view still has
+  // it, so a save of the simplified view posts the value and does not clear
+  // it. An empty list, a different name, or more than one value stays in
+  // the simplified view. This page cannot require `applications.js` — it
+  // runs in a browser — so the predicate lives here, beside the drawing.
+  /**
+   * Folds a primary name into the advanced view when it is the identifier.
+   *
+   * @param rows - the fields a sub-tab draws
+   * @param values - the entry's values by attribute
+   * @param identifier - the application's registry identifier
+   * @returns the rows to draw, and whether any was folded
+   */
+  static withFoldedPrimaryNames(rows, values, identifier) {
+    const id = String(identifier || '');
+    let folded = false;
+    const out = (rows || []).map(function (row) {
+      if (!row || !row.primaryName) {
+        return row;
+      }
+      const held = [].concat((values && values[row.attribute]) || [])
+        .map(function (one) { return String(one).trim(); })
+        .filter(function (one) { return one !== ''; });
+      if (held.length === 1 && held[0] === id) {
+        folded = true;
+        return Object.assign({}, row, { simple: false });
+      }
+      return row;
+    });
+    return { rows: out, folded: folded };
+  }
+
   // ---------------------------------------------------------------------------
   // THE APPLICATION'S FIELD GRID (2026-09-30): the protocol families it is
   // declared for, as a row of checkboxes, and every field of
@@ -1624,6 +1690,85 @@ class ApplicationsPage {
    * @param state - optional; a redraw: `draft`, the posted form
    * @returns the section as HTML
    */
+  // ACROSS TRUSTS (#430 Phase 4), on the Kerberos sub-tab: drawn from the
+  // answer's `page.krb5Across`, computed on the server
+  // (`krb5Trusts.applicationAcross()`). Read-only: krb5S4uSelfRealm and
+  // krb5ForeignTgtDelegation are fields of the grid above it, and the
+  // delegation attributes it reads stay on Every protocol → Delegation and
+  // Impersonation.
+  /**
+   * Draws the read-only *Across trusts* panel of an application's Kerberos
+   * sub-tab.
+   *
+   * @param ctx - the render context
+   * @param row - the application's view, `page.krb5Across` in it
+   * @returns the section's HTML, or '' when the answer carries none
+   */
+  static applicationAcrossTrustsSection(ctx, row) {
+    const t = ctx.t;
+    const a = row && row.page ? row.page.krb5Across : null;
+    if (!a) {
+      return '';
+    }
+    const k = 'consoleKerberosTrusts.across.';
+    const problems = function (list) {
+      return (list || []).length
+        ? (list || []).map(function (one) {
+            return '<div class="state-invalid">' + kit.esc(t.text(
+              k + 'problem.' + one.kind, one.params || {})) + '</div>';
+          }).join('')
+        : '<span class="state-valid">' + t.html(k + 'ok') + '</span>';
+    };
+    const path = function (one) {
+      return (one.path || []).length
+        ? kit.codeList([a.realm].concat(one.path))
+        : '<span class="sub">' + t.html(k + 'noPath') + '</span>';
+    };
+    const table = function (heads, rows, empty) {
+      return rows.length
+        ? '<table><tr>' + heads.map(function (h) {
+            return '<th>' + t.html(k + h) + '</th>';
+          }).join('') + '</tr>' + rows.join('') + '</table>'
+        : kit.note(t.html(k + empty));
+    };
+    const fronts = table(['thActor', 'thPath', 'thState'],
+      (a.frontEnds || []).map(function (one) {
+        return '<tr><td><code>' + kit.esc(one.actor) + '</code></td><td>' +
+          path(one) + '</td><td>' + problems(one.problems) + '</td></tr>';
+      }), 'noFrontEnds');
+    const targets = table(['thTarget', 'thPath', 'thState'],
+      (a.targets || []).map(function (one) {
+        return '<tr><td><code>' + kit.esc(one.target) + '</code></td><td>' +
+          path(one) + '</td><td>' +
+          problems((one.classicProblems || []).concat(one.problems || [])) +
+          '</td></tr>';
+      }), 'noTargets');
+    const selfRealms = table(['thRealm', 'thPath', 'thState'],
+      (a.selfRealms || []).map(function (one) {
+        return '<tr><td><code>' + kit.esc(one.realm) + '</code></td><td>' +
+          path(one) + '</td><td>' + problems(one.problems) + '</td></tr>';
+      }), 'noSelfRealms');
+    const tgt = a.tgtDelegation || {};
+    const tgtRows = (tgt.trusts || []).map(function (one) {
+      return '<tr><td><code>' + kit.esc(one.partner) + '</code></td><td>' +
+        (one.allowed ? t.html(k + 'yes') : t.html(k + 'no')) + '</td><td>' +
+        (one.delivered ? '<span class="state-valid">' + t.html(k + 'yes') +
+         '</span>' : t.html(k + 'no')) + '</td></tr>';
+    });
+    return '<h4 id="cfg-krb5-across">' + t.html(k + 'heading') + '</h4>' +
+      kit.note(t.html(k + 'intro')) +
+      '<h5>' + t.html(k + 'hFrontEnds') + '</h5>' + fronts +
+      '<h5>' + t.html(k + 'hTargets') + '</h5>' + targets +
+      '<h5>' + t.html(k + 'hSelf') + '</h5>' + selfRealms +
+      '<h5>' + t.html(k + 'hTgt') + '</h5>' +
+      kit.note(kit.esc(t.text(tgt.unconstrained ? k + 'unconstrainedOn' :
+                              k + 'unconstrainedOff',
+                              { setting: String(tgt.foreignTgtDelegation ||
+                                                'inherit') }))) +
+      table(['thPartner', 'thTrustAllows', 'thDelivered'], tgtRows,
+            'noTrusts');
+  }
+
   static applicationFieldsSection(ctx, row, carryBack, state?) {
     const t = ctx.t;
     const draft = state && state.draft ? state.draft : null;
@@ -1721,8 +1866,14 @@ class ApplicationsPage {
       });
       // THE SUB-TAB'S TWO VIEWS (#500): the simplified one unless this is a
       // redraw of this sub-tab's own form posted from the advanced one.
-      const views = kit.hasViews(mine);
-      const advancedRows = mine.filter(function (one) {
+      // A primary name equal to the identifier is folded into the advanced
+      // view (#393). The copy is what is drawn; `mine` stays the entry's
+      // own rows, which the SAML panels fold for themselves.
+      const folded = ApplicationsPage.withFoldedPrimaryNames(
+        mine, values, row.identifier);
+      const drawn = folded.rows;
+      const views = kit.hasViews(drawn);
+      const advancedRows = drawn.filter(function (one) {
         return !one.simple;
       });
       const viewSwitch = !views ? ''
@@ -1770,16 +1921,23 @@ class ApplicationsPage {
         (group.id === 'krb5'
           ? ApplicationsPage.applicationClaimsSection(ctx, row, carryBack,
               ['kerberos-pac'], 'cfg-krb5-claims',
-              t.text('consoleApplications.a2.pacClaims'))
+              t.text('consoleApplications.a2.pacClaims')) +
+            // ACROSS TRUSTS (#430 Phase 4): what its delegation attributes
+            // mean across the realm's trusts, read-only.
+            ApplicationsPage.applicationAcrossTrustsSection(ctx, row)
           : '');
       // The sub-tab's own fields, in one form.
       const fieldForm =
         // A sub-tab drawn only for a section has no fields to save.
         (!mine.length || group.id === 'saml' ? '' :
-        formOpen(group.id, mine.map(function (one) {
+        formOpen(group.id, drawn.map(function (one) {
           return one.attribute;
         })) + viewSwitch +
-        kit.fieldGridOf(mine, config.groups, values,
+        (folded.folded
+          ? kit.note(t.html(
+              'consoleApplications.a2.primaryNameFolded'))
+          : '') +
+        kit.fieldGridOf(drawn, config.groups, values,
                            { redraw: '/admin/applications/edit',
                              showSet: true, protocols: config.protocols,
                              views: views,
@@ -1803,10 +1961,13 @@ class ApplicationsPage {
           const familyRows = mine.filter(function (one) {
             return one.everyFamily || one.families.indexOf(family) >= 0;
           });
-          const familyAdvanced = familyRows.filter(function (one) {
+          const familyFolded = ApplicationsPage.withFoldedPrimaryNames(
+            familyRows, values, row.identifier);
+          const familyDrawn = familyFolded.rows;
+          const familyAdvanced = familyDrawn.filter(function (one) {
             return !one.simple;
           });
-          const familyViews = kit.hasViews(familyRows);
+          const familyViews = kit.hasViews(familyDrawn);
           const familyViewSwitch = !familyViews ? ''
             : kit.viewSwitch(group.label,
                 !!draft && String(draft.group || '') === group.id &&
@@ -1817,11 +1978,15 @@ class ApplicationsPage {
                     return String(v).trim() !== '';
                   });
                 }).length);
-          const familyFields = !familyRows.length ? ''
-            : formOpen(group.id, familyRows.map(function (one) {
+          const familyFields = !familyDrawn.length ? ''
+            : formOpen(group.id, familyDrawn.map(function (one) {
                 return one.attribute;
               })) + familyViewSwitch +
-              kit.fieldGridOf(familyRows, config.groups, values, {
+              (familyFolded.folded
+                ? kit.note(t.html(
+                    'consoleApplications.a2.primaryNameFolded'))
+                : '') +
+              kit.fieldGridOf(familyDrawn, config.groups, values, {
                 redraw: '/admin/applications/edit', showSet: true,
                 protocols: config.protocols, views: familyViews,
                 searches: config.fieldSearches || {},
@@ -1857,9 +2022,14 @@ class ApplicationsPage {
             t.text('consoleApplications.a2.customSamlAttributes')) +
             ApplicationsPage.applicationClaimSelectionSection(ctx, row,
               carryBack, [family], 'cfg-' + family);
+          // What the service provider was seen asking for (#708), at the
+          // head of its family's panel.
+          const observedSaml = ApplicationsPage.applicationObservedSaml(row,
+            t, family);
           return { id: 'cfg-' + family,
             label: family === 'saml2' ? 'SAML 2.0' : 'SAML 1.1',
-            html: familyFields + metadataForm + claims };
+            html: ApplicationsPage.applicationLaunchCard(row, family, t) +
+              observedSaml + familyFields + metadataForm + claims };
         });
       const samlPanels = group.id === 'saml'
         ? kit.subTabbedPanels(group.label, samlFamilyPanels) : '';
@@ -1872,7 +2042,18 @@ class ApplicationsPage {
       // fields: which named passkey policies name this application.
       const passkeyCard = group.id === 'every'
         ? ApplicationsPage.applicationPasskeyPolicyCard(row, t) : '';
+      // #426: the launch URL heads the OAuth and WS-Federation sub-tabs; the
+      // SAML ones head each family's panel above.
+      const launchCard = group.id === 'oauth'
+        ? ApplicationsPage.applicationLaunchCard(row, 'oidc', t)
+        : (group.id === 'wsfed'
+          ? ApplicationsPage.applicationLaunchCard(row, 'wsfed', t) : '');
+      // WHAT THE CLIENT WAS SEEN DOING (#706), read-only, at the head of the
+      // OAuth sub-tab, above the two lists it may use.
+      const observedFlows = group.id === 'oauth'
+        ? ApplicationsPage.applicationObservedFlows(row, t) : '';
       return '<div class="subpanel" id="cfg-' + kit.esc(group.id) + '">' +
+        launchCard + observedFlows +
         (group.id === 'saml' ? samlPanels :
           (fieldsFirst ? fieldForm + sections : sections + fieldForm)) +
         passkeyCard + '</div>';
@@ -1893,6 +2074,238 @@ class ApplicationsPage {
       'href="#tab-roles">' + t.html('consoleApplications.a2.tabRoles') +
       '</a>' + t.html('consoleApplications.a2.cfgNoteC')) +
       '<div class="subtabs">' + bar + familiesPanel + groupPanels + '</div>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE IDENTITY-PROVIDER-INITIATED SIGN-IN URL (#426, #713), at the top of
+  // each protocol's sub-tab: `/launch/{app}?protocol=…`, the one link the
+  // user portal's Sign in uses too and that an operator pastes anywhere
+  // else. Drawn whether or not it is on, greyed when it is off, and naming
+  // what it lacks when it could not work — a dead link offered as a live one
+  // is the failure this exists to avoid. The protocol's own endpoint is
+  // underneath, for a partner who wants the native form.
+  // ---------------------------------------------------------------------------
+  /**
+   * The launch URL card for one protocol, or '' when the application cannot
+   * be launched in it.
+   *
+   * @param row - the application, with `page.launchUrls`
+   * @param protocol - `saml2`, `saml11`, `wsfed` or `oidc`
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static applicationLaunchCard(row, protocol, t) {
+    const links = row && row.page ? row.page.launchUrls : null;
+    const one = links ? links[protocol] : null;
+    if (!one || !one.url) {
+      return '';
+    }
+    const state = !one.enabled
+      ? kit.note(t.html('consoleApplications.launch.off',
+          { attribute: one.attribute, setting: one.setting }))
+      : ((one.missing || []).length
+        ? kit.note(t.html('consoleApplications.launch.missing',
+            { attributes: one.missing.join(', ') }))
+        : '');
+    return '<div class="launch-card' + (one.enabled ? '' : ' muted') +
+      '" id="cfg-launch-' + kit.esc(protocol) + '"><h3>' +
+      t.html('consoleApplications.launch.heading') + '</h3>' +
+      kit.note(t.html('consoleApplications.launch.lead',
+                      { protocol: one.label })) +
+      '<p><code>' + kit.esc(one.url) + '</code>' +
+      kit.copyButton(one.url, t) + '</p>' + state +
+      (one.endpoint
+        ? '<p class="note">' + t.html('consoleApplications.launch.endpoint') +
+          ' <code>' + kit.esc(one.endpoint) + '</code></p>'
+        : '') + '</div>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT THE APPLICATION WAS SEEN DOING (#706, #708, rcbj): every attribute
+  // this service writes from what it sees a protocol do, drawn at the head of
+  // the sub-tab whose settings it shadows. A LIST is one line: the
+  // attribute's name, then each value with a check mark, or with a warning
+  // mark where the application declares a list beside it and the value is not
+  // on it (`declared: false`, decided by the answer). At most OBSERVED_SHOWN
+  // values, then "+N more" to the Directory entry tab, which lists every one.
+  // READ-ONLY, and drawn so: no box, no form, no Save. The endpoints write
+  // these as requests arrive (#289), and what the application MAY do is the
+  // fields under them. Drawn from the answer's `page.config.observed`; an
+  // answer from before it draws nothing.
+  // ---------------------------------------------------------------------------
+  static readonly OBSERVED_SHOWN = 10;
+
+  /**
+   * Draws the Overview's activity rows (#708): authentications, sessions,
+   * people and the last person, as the sightings counted them.
+   *
+   * @param row - the application's view
+   * @param t - the page's translator (#539)
+   * @returns the four table rows as HTML
+   */
+  static applicationActivityRows(row, t) {
+    // `label` is the translated name, as HTML: the scan in
+    // tests/i18n_catalogs.js reads each key where it is named.
+    const cell = function (label, value) {
+      return '<tr><td>' + label + '</td><td>' + value + '</td></tr>';
+    };
+    const lastUser = ApplicationsPage.firstFieldValue(row, 'appLastUser');
+    return cell(t.html('consoleApplications.a2.authentications'),
+                '<code>' + kit.esc(String(row.authentications || 0)) +
+                '</code>') +
+      cell(t.html('consoleApplications.a2.sessions'), '<code>' + kit.esc(String(row.sessions || 0)) +
+           '</code>') +
+      cell(t.html('consoleApplications.a2.people'), '<code>' + kit.esc(String(row.users || 0)) +
+           '</code>') +
+      cell(t.html('consoleApplications.a2.lastPerson'), lastUser
+        ? '<code>' + kit.esc(lastUser) + '</code>'
+        : '<span class="state-none">' +
+          t.html('consoleApplications.a2.nothingRecorded') + '</span>');
+  }
+
+  /**
+   * Draws one observed list as a line: its name, then its values.
+   *
+   * @param name - the attribute
+   * @param values - `{ value, declared }` each
+   * @param t - the page's translator (#539)
+   * @returns the line as HTML
+   */
+  static observedLine(name, values, t) {
+    const all = [].concat(values || []);
+    const shown = all.slice(0, ApplicationsPage.OBSERVED_SHOWN);
+    const more = all.length - shown.length;
+    // The tooltip's meaning is the declared twin's: a sighting of a grant
+    // means what declaring it means.
+    const declaredTwin = name.replace(/Observed$/, '');
+    return '<div class="fg-observed-row"><code>' + kit.esc(name) +
+      '</code>' + (all.length
+        ? shown.map(function (one) {
+          return one.declared === false
+            ? '<span class="fg-seen fg-undeclared"' +
+              kit.tip([kit.choiceTipText(declaredTwin, one.value, t),
+                       t.text('consoleApplications.a2.observedUndeclared')]
+                .filter(Boolean).join(' — ')) +
+              '>' + kit.warnIcon() + kit.esc(kit.choiceLabel(one.value)) +
+              '</span>'
+            : '<span class="fg-seen"' +
+              kit.tip(kit.choiceTipText(declaredTwin, one.value, t)) + '>' +
+              kit.checkIcon() + kit.esc(kit.choiceLabel(one.value)) +
+              '</span>';
+        }).join('') + (more > 0
+          ? '<a class="fg-more" href="#tab-entry">' +
+            t.html('consoleApplications.a2.observedMore',
+                   { n: String(more) }) + '</a>'
+          : '')
+        : '<span class="state-none">' +
+          t.html('consoleApplications.a2.observedNone') + '</span>') +
+      '</div>';
+  }
+
+  /**
+   * Draws a block of observed lines, or '' where the answer carries none.
+   *
+   * @param row - the application's view, `page.config.observed` in it
+   * @param t - the page's translator (#539)
+   * @param id - the block's id
+   * @param tip - the block's explanation, as text
+   * @param names - the lists, in order
+   * @param extra - optional; further lines, as HTML
+   * @returns the block as HTML
+   */
+  static observedBlock(row, t, id, tip, names, extra?) {
+    const observed = row && row.page && row.page.config
+      ? row.page.config.observed : null;
+    if (!observed) {
+      return '';
+    }
+    return '<div class="fg-observed" id="' + kit.esc(id) + '" ' +
+      'role="group" aria-label="' +
+      kit.esc(t.text('consoleApplications.a2.observedLabel')) + '"' +
+      kit.tip(tip) + '>' +
+      names.map(function (name) {
+        // An answer from #706 carried plain strings.
+        const values = [].concat(observed[name] || []).map(function (one) {
+          return typeof one === 'string' ? { value: one, declared: true }
+                                         : one;
+        });
+        return ApplicationsPage.observedLine(name, values, t);
+      }).join('') + (extra || '') + '</div>';
+  }
+
+  /**
+   * Draws the OAuth sub-tab's observed lines: grant and response types,
+   * redirect URIs, scopes and authorization servers.
+   *
+   * @param row - the application's view, `page.config.observed` in it
+   * @param t - the page's translator (#539)
+   * @returns the block as HTML, or '' where the answer carries none
+   */
+  static applicationObservedFlows(row, t) {
+    return ApplicationsPage.observedBlock(row, t, 'cfg-oauth-observed',
+      t.text('consoleApplications.a2.observedTip'),
+      ['oauthGrantTypeObserved', 'oauthResponseTypeObserved',
+       'appRedirectUriObserved', 'oauthScope', 'appAuthorizationServer']);
+  }
+
+  /**
+   * Draws a SAML family panel's observed lines. SAML 2.0 adds the last
+   * AuthnRequest and the certificate it carried; SAML 1.1 says the two
+   * profiles share the lists.
+   *
+   * @param row - the application's view, `page.config.observed` in it
+   * @param t - the page's translator (#539)
+   * @param family - `saml2` or `saml11`
+   * @returns the block as HTML, or '' where the answer carries none
+   */
+  static applicationObservedSaml(row, t, family) {
+    const observed = row && row.page && row.page.config
+      ? row.page.config.observed : null;
+    if (!observed) {
+      return '';
+    }
+    let extra = '';
+    if (family === 'saml2') {
+      const last = observed.samlLastRequest;
+      if (last) {
+        // The outcome is the token the SSO service records, drawn as it is
+        // and coloured by what it means.
+        const outcome = String(last.outcome || '');
+        const badge = outcome === 'verified' ? 'state-valid'
+          : outcome === 'failed' ? 'state-revoked' : 'state-none';
+        extra += '<div class="fg-observed-row"><code>' +
+          kit.esc(t.text('consoleApplications.a2.lastRequest')) +
+          '</code><span>' + t.html(last.signed
+            ? 'consoleApplications.a2.lastSigned'
+            : 'consoleApplications.a2.lastUnsigned') + '</span>' +
+          (outcome ? '<span class="' + badge + '">' + kit.esc(outcome) +
+            '</span>' : '') +
+          (last.binding ? '<code>' + kit.esc(last.binding) + '</code>' : '') +
+          (last.signatureMethod
+            ? '<code>' + kit.esc(last.signatureMethod) + '</code>' : '') +
+          (last.weak ? '<span class="state-revoked">weak</span>' : '') +
+          '</div>';
+      }
+      const cert = observed.samlObservedSigningCertificate;
+      if (cert) {
+        extra += '<div class="fg-observed-row"><code>' +
+          'samlObservedSigningCertificate</code>' +
+          (cert.unreadable
+            ? '<span class="state-revoked">' +
+              t.html('consoleApplications.a2.observedUnreadable') + '</span>'
+            : '<span class="fg-seen fg-undeclared"' +
+              kit.tip(t.text('consoleApplications.a2.observedNotTrusted')) +
+              '>' + kit.warnIcon() + kit.esc(cert.subject) +
+              '</span><code>' + kit.esc(cert.sha256) + '</code>') +
+          '</div>';
+      }
+    } else {
+      extra += '<div class="fg-observed-row sub">' +
+        t.html('consoleApplications.a2.observedSamlShared') + '</div>';
+    }
+    return ApplicationsPage.observedBlock(row, t, 'cfg-' + family +
+      '-observed', t.text('consoleApplications.a2.observedSamlTip'),
+      ['samlNameIdFormat', 'samlResponseBinding'], extra);
   }
 
   // ---------------------------------------------------------------------------

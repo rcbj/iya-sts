@@ -108,8 +108,8 @@
     "text": "Conexión inactiva conservada durante (s)"
   },
   "http.keepAliveTimeoutS|description": {
-    "en": "15ba4c34c3d3349e",
-    "text": "Cuánto tiempo, en segundos, una escucha HTTP mantiene abierta una conexión HTTP/1.1 inactiva para la siguiente solicitud del cliente (el valor predeterminado propio de node es 5). Una conexión conservada es un handshake TLS — y una petición de certificado de cliente — que no se repite. Las solicitudes que un cliente encadena en una conexión se responden en orden. Detrás de un balanceador, mantenga su tiempo de inactividad por encima de este."
+    "en": "0fa763b61550474c",
+    "text": "Cuánto tiempo, en segundos, una escucha HTTP mantiene abierta una conexión inactiva para la siguiente solicitud del cliente (el valor predeterminado propio de node es 5): una conexión HTTP/1.1 entre solicitudes, o una conexión HTTP/2 por la que no ha pasado ninguna trama, que entonces se cierra de forma ordenada. Una conexión conservada es un handshake TLS — y una petición de certificado de cliente — que no se repite. Las solicitudes que un cliente encadena en una conexión se responden en orden. Detrás de un balanceador, mantenga su tiempo de inactividad por encima de este."
   },
   "http.headersTimeoutS|label": {
     "en": "af0b2f7be18e5943",
@@ -134,6 +134,22 @@
   "http.maxConnections|description": {
     "en": "1dda75e901fc49af",
     "text": "Cuántas conexiones mantiene abiertas a la vez una escucha HTTP; una más se cierra al llegar. 0, el valor predeterminado, es sin límite (el de node)."
+  },
+  "http.http2|label": {
+    "en": "775d810d4f1a3356",
+    "text": "Ofrecer HTTP/2"
+  },
+  "http.http2|description": {
+    "en": "76d7c1691efa23fa",
+    "text": "Indica si un escuchador HTTPS ofrece HTTP/2 cuando un cliente lo pide en el protocolo de enlace TLS (ALPN). Activado, el valor predeterminado, una sola conexión lleva todas las solicitudes que un navegador hace en paralelo; HTTP/1.1 se sigue atendiendo para un cliente que no pide otra cosa. Desactivado, toda conexión es HTTP/1.1 — para un cliente o un balanceador cuyo HTTP/2 falla. Una conexión nueva sigue un cambio de inmediato; una ya abierta conserva su protocolo. El escuchador de revocación en HTTP simple solo habla HTTP/1.1, porque no hay protocolo de enlace en el que ofrecerlo."
+  },
+  "http.http2MaxConcurrentStreams|label": {
+    "en": "27fcdca12afd105b",
+    "text": "Flujos por conexión HTTP/2"
+  },
+  "http.http2MaxConcurrentStreams|description": {
+    "en": "ec218fbbb4297601",
+    "text": "Cuántas solicitudes puede tener abiertas a la vez una conexión HTTP/2 (SETTINGS_MAX_CONCURRENT_STREAMS); un flujo por encima se rechaza hasta que termine otro. 100, el predeterminado, es el valor más pequeño que recomienda RFC 9113; el propio de node no tiene límite, lo que permitiría a una sola conexión llevar el trabajo de miles. Limita el trabajo de una conexión como http.maxConnections limita las conexiones. Una conexión nueva sigue un cambio de inmediato, y a una abierta se le envía el nuevo valor."
   },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
@@ -632,8 +648,8 @@
     "text": "Frecuencia de cierre de sesiones vencidas (segundos)"
   },
   "authn.sessionSweepS|description": {
-    "en": "852f6e4a8d15fa99",
-    "text": "El intervalo de la tarea del planificador `authn.session-expiry` (Supervisión → Planificador), que cierra cada sesión de inicio de sesión único cuya vigencia o tiempo de inactividad ha pasado — la fila de auditoría, el CAEP session-revoked y los Logout Tokens de back-channel salen UNA vez para todo el clúster — vuelva o no alguien a presentarla. 0 desactiva la tarea: una sesión vencida se sigue rechazando siempre que se presente, y se cierra en ese momento, pero no se avisa a nadie de una que nunca se vuelva a presentar. Fueron treinta segundos fijos en cada proceso hasta el 2026-09-22 (#49)."
+    "en": "7c9e47e90ca7211c",
+    "text": "El intervalo de la tarea del planificador `authn.session-expiry` (Supervisión → Planificador), que cierra cada sesión de inicio de sesión único cuya vigencia o tiempo de inactividad ha pasado — la fila de auditoría, el CAEP session-revoked y los Logout Tokens de back-channel salen UNA vez para todo el clúster — vuelva o no alguien a presentarla. La misma ejecución cierra además, en cada dominio, como mucho el valor de authn.sessionShedPerSweep de ese dominio en sesiones sobrantes propias de un mismo sujeto. 0 desactiva la tarea: una sesión vencida se sigue rechazando siempre que se presente, y se cierra en ese momento, pero no se avisa a nadie de una que nunca se vuelva a presentar. Fueron treinta segundos fijos en cada proceso hasta el 2026-09-22 (#49)."
   },
   "authn.cookieDomain|label": {
     "en": "d384717cc62561e8",
@@ -659,13 +675,73 @@
     "en": "3d8175702c053473",
     "text": "Cuánto tiempo puede pasar una sesión SIN USARSE antes de terminar, además de la vigencia absoluta de arriba. **Cero, el valor predeterminado, significa sin tiempo de inactividad**, que es lo que este servicio ha hecho siempre. Si se define, una sesión que alguien deja de usar termina esa cantidad de segundos después de su última solicitud, sea cual sea el primero de los dos límites en llegar — y una solicitud a la consola de administración o al portal de usuario cuenta como uso de la sesión de inicio de sesión único que hay detrás, de modo que a un operador que trabaja en la consola no le cierra la sesión un reloj de inactividad sobre una sesión que no está presentando. Es en vivo: se aplica a las sesiones que ya existen, porque se comprueba donde se lee una sesión y no se sella donde se crea."
   },
+  "authn.deviceBoundSessions|label": {
+    "en": "454fe488dcb65a89",
+    "text": "Vincular las sesiones a la clave del navegador (DBSC)"
+  },
+  "authn.deviceBoundSessions|description": {
+    "en": "b88d9840f0b7c19c",
+    "text": "Activado, un inicio de sesión pide al navegador que vincule la sesión de inicio de sesión único a una clave que posee (W3C Device Bound Session Credentials). Un navegador que lo hace debe renovar después una segunda cookie de corta duración con una prueba de esa clave, de modo que una cookie de sesión copiada deja de funcionar cuando esa cookie caduca; una renovación firmada por otra clave, o que repite un desafío ya consumido, termina la sesión. Un navegador que no lo admite conserva una sesión normal. Desactivado, el valor predeterminado, no se ofrece nada, y una sesión ya vinculada se trata como una sesión normal."
+  },
+  "authn.deviceBoundCookieLifetimeS|label": {
+    "en": "0589864dcb16bffb",
+    "text": "Duración de la cookie vinculada (segundos)"
+  },
+  "authn.deviceBoundCookieLifetimeS|description": {
+    "en": "eb2c0a8e31f615d9",
+    "text": "Cuánto vive la cookie que necesita una sesión vinculada al dispositivo antes de que el navegador deba volver a demostrar su clave, y por tanto cuánto sigue funcionando un par de cookies copiado. Nunca más allá del final de la propia sesión. Se lee cuando se emite una cookie."
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "Máximo de sesiones de inicio de sesión único por dominio"
   },
   "authn.maxSessions|description": {
-    "en": "02399d7a28c348d5",
-    "text": "El máximo de sesiones de inicio de sesión único que guarda un dominio de confianza — inicios de sesión de navegador, las sesiones de llegada que recibe un navegador en la puerta de entrada de un protocolo, las propias de la consola y del portal, y las sesiones de clientes de la API, de SCIM y de SPIRE. Se comprueba cuando se CREA una sesión: al llegar al límite, se cierra la sesión usada menos recientemente para hacer sitio, exactamente como la cierra un vencimiento — una fila de auditoría con STS-AUTHN-0292, CAEP session-revoked y Logout Tokens de back-channel — así que su titular tiene que volver a iniciar sesión. Sin esto, solo la tarea de vencimiento de sesiones acotaba el almacén, y una ráfaga de inicios de sesión hacía crecer cada proceso hasta que la tarea se ponía al día. Reducirlo surte efecto con la siguiente sesión creada, que entonces cierra de una vez todas las sesiones que superen el nuevo límite."
+    "en": "a5b6beb131a44df2",
+    "text": "El máximo de sesiones que mantiene un dominio de confianza: inicios de sesión de navegador, sesiones de llegada, las de la consola y el portal, y las sesiones de clientes de API, SCIM y SPIRE. Se comprueba cuando se CREA una sesión. En el límite, una fila nueva se RECHAZA (STS-AUTHN-0337): no se cierra nada para hacer sitio a otra persona. Un sujeto que ya está en authn.maxSessionsPerSubject pierde en su lugar su propia sesión contable más antigua (STS-AUTHN-0292), una fila, y la fila nueva ocupa su lugar. Bajarlo no cierra las sesiones ya existentes. Se rechaza una fila nueva mientras el dominio siga por encima del nuevo número; las sesiones salen por vencimiento, cierre de sesión, revocación o, cuando un sujeto supera su propio límite, por una inserción posterior de ese sujeto y por el barrido de sesiones (como mucho authn.sessionShedPerSweep en la ejecución de ese dominio)."
+  },
+  "authn.maxSessionsPerSubject|label": {
+    "en": "88aeb86239334502",
+    "text": "Máximo de sesiones contables por sujeto"
+  },
+  "authn.maxSessionsPerSubject|description": {
+    "en": "b825060c911d7200",
+    "text": "Cuántas sesiones contables puede tener un sujeto: un inicio de sesión elegido, una sesión de API con clave o una sesión de parte de confianza. Una sesión de llegada no cuenta, y las sesiones de llegada comparten un mismo nombre de usuario, así que este límite no se indexa por nombre de usuario. En el límite, la siguiente sesión que ese sujeto inicie cierra su propia fila contable más antigua y ocupa su lugar. Nunca la fila de otro sujeto, y nunca una sesión de llegada. Una sesión de parte de confianza no cierra el inicio de sesión del que acaba de derivarse. Una fila por inserción; el excedente restante lo recoge el barrido de sesiones, como mucho authn.sessionShedPerSweep en la ejecución de ese dominio. Un valor por encima del authn.maxSessions actual se lee como ese límite."
+  },
+  "authn.sessionShedPerSweep|label": {
+    "en": "83dd8742cd13895b",
+    "text": "Sesiones sobrantes propias cerradas por barrido"
+  },
+  "authn.sessionShedPerSweep|description": {
+    "en": "d3d71af793b0befc",
+    "text": "Cuántas de las sesiones sobrantes propias de un sujeto cierra la tarea authn.session-expiry en una ejecución de este dominio. Cada dominio gasta su propio valor. Las filas contables más antiguas, un sujeto cada vez, hasta haber cerrado esa cantidad o hasta que nadie supere authn.maxSessionsPerSubject. No cierra una sesión de llegada por capacidad, ni cierra a un sujeto que está en su límite o por debajo aunque el dominio supere authn.maxSessions. Bajar un límite no provoca cierres masivos."
+  },
+  "authn.sessionWindow|label": {
+    "en": "8f5e9b73e3237ec2",
+    "text": "Ventana de sesiones acotada"
+  },
+  "authn.sessionWindow|description": {
+    "en": "59fc245bcee32b34",
+    "text": "Si un proceso mantiene todas las sesiones de inicio de sesión o una ventana acotada de ellas. auto, el valor predeterminado, usa la ventana cuando la persistencia de lo emitido está habilitada, el servicio es una sola celda y la clave de lo emitido es un resumen. Si no, conserva el mapa completo y registra STS-AUTHN-0339 una vez al arrancar. on se rechaza al arrancar en ese mismo estado. off conserva el mapa completo. Es una propiedad de este proceso: un dominio no puede tener su propio valor, y cambiarlo requiere reiniciar."
+  },
+  "authn.sessionWindow|restartReason": {
+    "en": "ff36b8697d3f42a0",
+    "text": "un arranque que omite los cuerpos de las sesiones no puede devolverlos cuando se desactiva la ventana, así que las sesiones confirmadas se responderían como ausentes"
+  },
+  "authn.sessionCacheEntries|label": {
+    "en": "9745355bc4897a82",
+    "text": "Sesiones que mantiene un proceso"
+  },
+  "authn.sessionCacheEntries|description": {
+    "en": "e5815f7302e5577e",
+    "text": "Cuántas sesiones de inicio de sesión mantiene un proceso cuando authn.sessionWindow está activo. Una sola caché sirve a todos los dominios, así que un dominio no puede dimensionarla. Una sesión más allá del límite se olvida en memoria una vez confirmado su upsert. No se cierra. La fila permanece en el almacén y se vuelve a leer en el siguiente fallo de caché."
+  },
+  "authn.sessionReadTimeoutMs|label": {
+    "en": "c0f67cf6f4eb61c6",
+    "text": "Tiempo de espera de lectura de sesión (milisegundos)"
+  },
+  "authn.sessionReadTimeoutMs|description": {
+    "en": "04b8133757dcd380",
+    "text": "Cuánto puede esperar una lectura de sesión y durante cuánto tiempo no se reintenta una lectura fallida. 0 no espera ni aplaza el siguiente fallo de caché. La espera es de este proceso, no de un dominio. Una lectura fallida no se trata como una sesión ausente."
   },
   "authn.pendingTtlS|label": {
     "en": "d328ac4c11db98f0",
@@ -682,6 +758,30 @@
   "authn.mfaStepTtlS|description": {
     "en": "33bc4846535a784f",
     "text": "Cuánto tiempo tiene alguien que ha superado el paso de la contraseña para presentar su segundo factor — una llave de seguridad, un código de una aplicación de autenticación o un código de recuperación — antes de que el paso venza y haya que empezar de nuevo el inicio de sesión. Es la ventana en la que se puede probar siquiera un código adivinado, por eso es más corta que el reloj propio de la pantalla; el limitador de tasa acota los intentos dentro de ella."
+  },
+  "authn.multipleAccounts|label": {
+    "en": "96144493272617dc",
+    "text": "Varias cuentas con la sesión iniciada en un navegador"
+  },
+  "authn.multipleAccounts|description": {
+    "en": "d0b4899bdae1c43d",
+    "text": "Permite que un navegador mantenga sesiones de inicio de sesión único de varias personas a la vez y elegir entre ellas. Activado, el inicio de sesión de otra persona AÑADE una sesión al conjunto de cuentas del navegador (la cookie `sts_accounts`) en lugar de cerrar la que tenía; una solicitud que no dice para qué cuenta es — ninguna cuenta elegida en este flujo, ningún login_hint, id_token_hint ni Subject de SAML que nombre una — mientras hay más de una con la sesión iniciada se envía al selector de cuentas en /authn/accounts, y prompt=select_account lo muestra. Cada sesión conserva su propia duración, su tiempo de inactividad, su estado de autenticación reforzada y su cierre de sesión. Desactivado, el valor predeterminado, el navegador tiene una sola sesión y el inicio de sesión de otra persona la cierra. Surte efecto en la siguiente solicitud en ambos sentidos y no cierra nada: al activarlo, la sesión existente de un navegador pasa a ser la primera cuenta de su conjunto; al desactivarlo, la sesión predeterminada del navegador continúa sola y las demás caducan como de costumbre."
+  },
+  "authn.maxBrowserAccounts|label": {
+    "en": "19115cee7c688f64",
+    "text": "Máximo de cuentas que recuerda un navegador"
+  },
+  "authn.maxBrowserAccounts|description": {
+    "en": "fa642faef7e66a0f",
+    "text": "Con varias cuentas con la sesión iniciada activado, el máximo de cuentas que contiene el conjunto de cuentas de un navegador, con la sesión iniciada y cerrada juntas. Un inicio de sesión que lo superaría elimina primero la cuenta que cerró la sesión hace más tiempo; cuando cada plaza la ocupa una cuenta con la sesión iniciada, el inicio de sesión se rechaza (STS-AUTHN-0340) y el selector indica que primero debe cerrarse la sesión de una cuenta."
+  },
+  "authn.rememberedAccountDays|label": {
+    "en": "9e38d0738504c1e3",
+    "text": "Cuánto tiempo se recuerda una cuenta con la sesión cerrada (días)"
+  },
+  "authn.rememberedAccountDays|description": {
+    "en": "a1fe0b6f510982c4",
+    "text": "Con varias cuentas con la sesión iniciada activado, durante cuánto tiempo el selector de cuentas sigue ofreciendo una cuenta que cerró la sesión en este navegador — su nombre de usuario, su nombre para mostrar y su sujeto, nunca una credencial, guardados en el servidor — para volver a iniciar sesión con ella u olvidarla. La tarea programada `authn.account-set-expiry` la elimina después."
   },
   "oidcRp.maxFlows|label": {
     "en": "f517b7686e6225fc",
@@ -994,6 +1094,14 @@
   "webauthn.pqcOnly|description": {
     "en": "fb33eabeb83379da",
     "text": "Activado solicita ÚNICAMENTE los algoritmos poscuánticos de llave de acceso — `ML-DSA-44` (-48), `ML-DSA-65` (-49) y `ML-DSA-87` (-50) de RFC 9964 — los que de ellos nombre `webauthn.algorithms`, y los tres si no nombra ninguno. Una llave de acceso nueva debe ser entonces ML-DSA: una creada con otro algoritmo se rechaza al registrarse (WebAuthn sección 7.1). Restringe lo que se SOLICITA: una llave clásica ya registrada sigue iniciando sesión. La mayoría de los autenticadores aún no admiten ML-DSA y no pueden registrarse mientras esto está activado."
+  },
+  "webauthn.pqcAlongsideClassical|label": {
+    "en": "664b4753cc8439b0",
+    "text": "Llave de acceso poscuántica junto a una clásica"
+  },
+  "webauthn.pqcAlongsideClassical|description": {
+    "en": "e35e276b9d933828",
+    "text": "Activada, una persona puede tener a la vez una llave de acceso clásica y una poscuántica (ML-DSA), en el mismo autenticador si puede crear ambas. Cada llave de acceso se crea en una VÍA que la persona elige: la vía clásica solicita `webauthn.algorithms` sin ML-DSA (`ES256` y `RS256` si no queda ninguno), la vía poscuántica solicita solo ML-DSA. Cada vía tiene su propio identificador de usuario, de modo que la segunda llave de acceso no sustituye a la primera en el autenticador, y su propia lista de exclusión; un gestor de credenciales muestra la poscuántica con un nombre que indica su algoritmo —`<username>+ml-dsa` al crearla, `<username>+ml-dsa-65` (por ejemplo) cuando todas las llaves poscuánticas de la persona usan ese— que nunca es un nombre con el que se inicie sesión. `webauthn.maxKeysPerPerson` cuenta ambas vías. No puede activarse mientras `webauthn.pqcOnly` lo esté. Desactivada, cada ceremonia es como antes, y una llave de acceso poscuántica ya registrada sigue iniciando sesión; no se puede crear una nueva."
   },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
@@ -1512,12 +1620,20 @@
     "text": "Límite de arranque de un worker de solicitudes (ms)"
   },
   "workers.startTimeoutMs|description": {
-    "en": "d618aed19286a7b1",
-    "text": "Cuánto puede tardar un worker de solicitudes o de superficies en poner en marcha su estado (el almacén, las claves, las filas emitidas y la coordinación) antes de informar de que no pudo arrancar. Con tres fallos seguidos, el pool deja de crear workers y responde a todo en el proceso que tiene los sockets. Auméntelo donde el arranque de un worker sea lento — un conjunto grande de claves de dominio que cada arranque vuelve a certificar, una base de datos en frío (#311)."
+    "en": "81d7608fc4c1da1f",
+    "text": "Cuánto puede tardar un worker de solicitudes o de superficies en poner en marcha su estado (el almacén, las claves, las filas emitidas y la coordinación) antes de informar de que no pudo arrancar. Con tres fallos seguidos, el pool deja de crear workers hasta workers.giveUpRetryMs y luego prueba uno; hasta que esté listo, las solicitudes se quedan en el proceso frontal. Auméntelo donde el arranque de un worker sea lento — un conjunto grande de claves de dominio que cada arranque vuelve a certificar, una base de datos en frío (#311)."
   },
   "workers.startTimeoutMs|restartReason": {
     "en": "7ac1de67a7c566c0",
     "text": "un worker lo lee una sola vez, al arrancar"
+  },
+  "workers.giveUpRetryMs|label": {
+    "en": "4e9da2141c451b07",
+    "text": "Espera de reintento tras el abandono (ms)"
+  },
+  "workers.giveUpRetryMs|description": {
+    "en": "e4e6fa0869cb03c2",
+    "text": "Cuánto espera el pool, después de que tres workers seguidos no pudieron arrancar, antes de probar UN worker otra vez. La espera se duplica tras cada intento que también falla, y nunca pasa de una hora. Hasta que ese worker informa de que está listo, las solicitudes se quedan donde las dejó el abandono: el proceso frontal, o el pool de protocolo para las superficies alojadas. Un worker que arranca levanta el abandono y se crea el resto del pool. 0 es el comportamiento anterior: abandonado hasta que este proceso se reinicia. Se lee cuando se arma un enfriamiento (#333)."
   },
   "workers.requestCount|label": {
     "en": "d742f198c4f9ad17",
@@ -1699,6 +1815,14 @@
     "en": "0ecee8de8ef29c3f",
     "text": "Cuánto espera la eliminación de un dominio de confianza a que se entregue lo que debe antes de purgar sus almacenes: el CAEP session-revoked y los Logout Tokens de back-channel de cada sesión que cierra, RISC account-purged por cada persona que contiene y SSF stream-updated (disabled) a cada flujo. Lo que no se haya entregado cuando se agota se registra (STS-CORE-0120) y desaparece con el dominio. 0 sigue enviándolo todo y no espera. Un receptor por sondeo solo puede recoger mientras dura la espera."
   },
+  "realms.maxCount|label": {
+    "en": "017b530f97d0b9e0",
+    "text": "Número máximo de dominios"
+  },
+  "realms.maxCount|description": {
+    "en": "1a45b5c5965dd169",
+    "text": "Cuántos dominios de confianza puede albergar este clúster, incluido el dominio predeterminado integrado, de modo que 10 es el dominio predeterminado y otros nueve. Lo establece un administrador del servicio, y solo en el dominio predeterminado: desde dentro de otro dominio el control está deshabilitado y la escritura se rechaza. Reducirlo no elimina los dominios que ya existen; una creación se rechaza hasta que el recuento vuelve a estar por debajo. Cada dominio cuesta memoria en cada proceso de cada nodo, y por eso hay un límite."
+  },
   "oauth2.issuer|label": {
     "en": "373396d5608b3885",
     "text": "Identificador del emisor"
@@ -1830,6 +1954,30 @@
   "oauth2.revokeRefreshOnLogout|description": {
     "en": "d6543ad76912e1b1",
     "text": "En todos los modos (#123), al terminar una sesión de inicio de sesión único de navegador se revoca cada token de actualización emitido EN esa sesión sin offline_access — el SHOULD de la sección 2.7 de OpenID Connect Back-Channel Logout 1.0 y el MAY de la sección 2.2.2 de RFC 9700. Un token con offline_access se conserva: sobrevivir a la sesión es para lo que existe ese ámbito (OIDC Core sección 11). Es lo que hace que /oauth2/logout y el wsignout1.0 de WS-Federation signifiquen algo para el back channel: sin esto, cerrar sesión termina la cookie y deja una credencial de larga duración en manos del cliente. ACTIVADO de forma predeterminada; desactivado, o FALSE en la entrada de un cliente, reproduce al cliente que vuelve a entrar a base de actualizaciones. Un token se localiza por la sesión en la que se EMITIÓ."
+  },
+  "oauth2.thirdPartyInitiatedLogin|label": {
+    "en": "b7e8b085293fbd62",
+    "text": "Inicio de sesión iniciado por el proveedor de identidad (inicio de sesión de terceros)"
+  },
+  "oauth2.thirdPartyInitiatedLogin|description": {
+    "en": "d652b991521afa8d",
+    "text": "Indica si /launch/{app} envía a una persona al initiate_login_uri de un cliente OpenID Connect (OpenID Connect Core sección 4) con iss, login_hint y target_link_uri, y si el portal de usuario ofrece ese enlace. DESACTIVADO de forma predeterminada; oauthThirdPartyInitiatedLogin en la entrada de un cliente lo anula para ese cliente. El cliente inicia entonces una solicitud de autorización corriente, así que todo lo que sigue al enlace es el inicio de sesión propio del cliente."
+  },
+  "oauth2.spInitiatedSso|label": {
+    "en": "a4cd88a5fec219e4",
+    "text": "Inicio de sesión iniciado por el cliente"
+  },
+  "oauth2.spInitiatedSso|description": {
+    "en": "2ac22081ca9a60d6",
+    "text": "Indica si /oauth2/authorize responde a un cliente que no se acaba de lanzar. ACTIVADO de forma predeterminada; oauthSpInitiatedSso en la entrada de un cliente lo anula. Desactivado, una solicitud de autorización de ese cliente solo se responde cuando sigue a un /launch de él en la misma sesión dentro de oauth2.launchWindowS, una vez por lanzamiento; cualquier otra se rechaza con unauthorized_client. Las concesiones que no pasan por el endpoint de autorización no se ven afectadas."
+  },
+  "oauth2.launchWindowS|label": {
+    "en": "9c1c1df5174c8754",
+    "text": "Ventana de lanzamiento (segundos)"
+  },
+  "oauth2.launchWindowS|description": {
+    "en": "40b4f249f1f0c2d3",
+    "text": "Cuánto tiempo después de que /launch/{app} enviara a una persona al initiate_login_uri de un cliente sigue contando la solicitud de autorización de ese cliente como posterior al lanzamiento, para un cliente cuyo inicio propio está desactivado (oauth2.spInitiatedSso)."
   },
   "oauth2.eddsaCurve|label": {
     "en": "6637f461a494b5b2",
@@ -2140,8 +2288,8 @@
     "text": "Vigencia del secreto de cliente (días)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "91dc7031f88426d1",
-    "text": "La vigencia, en días, de cada secreto de cliente que este servicio genera o recibe, y por tanto el `client_secret_expires_at` que publica la sección 3.2.1 de RFC 7591 para un cliente registrado en POST /oauth2/register — el valor predeterminado para cada secreto generado o recibido (una regeneración, una rotación, un secreto añadido, un valor tecleado en la consola), salvo que el formulario de alta nombre otro. CERO, el valor predeterminado, es el propio \"nunca\" de esa sección. Se estampa en cada secreto al crearlo y un cambio posterior no lo mueve."
+    "en": "6ad202dff164f155",
+    "text": "La vigencia, en días, de cada secreto de cliente que este servicio genera o recibe, y por tanto el `client_secret_expires_at` que publica la sección 3.2.1 de RFC 7591 para un cliente registrado en POST /oauth2/register — el valor predeterminado para cada secreto generado o recibido (una regeneración, una rotación, un secreto añadido, un valor tecleado en la consola), salvo que el formulario de alta nombre otro, o el formulario de creación lo haga para el primer secreto de una aplicación. CERO, el valor predeterminado, es el propio \"nunca\" de esa sección. Se estampa en cada secreto al crearlo y un cambio posterior no lo mueve."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",
@@ -4020,8 +4168,8 @@
     "text": "Prefijo para nombres de usuario federados"
   },
   "federation.usernamePrefix|description": {
-    "en": "cd17a5b59a5cf957",
-    "text": "Se antepone a todo nombre de usuario que proporcione un proveedor de identidad externo, para que un `alice` federado y el `alice` local sean dos entradas. VACÍO de forma predeterminada, lo que significa que son UNA sola entrada — y eso es una decisión real y no un predeterminado en el que nadie pensó. Vacío es lo correcto para un servicio al que se apunta a un socio para ver qué devuelve, porque un nombre con prefijo hace que todo token y aserción posteriores parezcan desconocidos. Defínalo como algo del estilo de `fed-` en cuanto la pregunta sea si las identidades federadas comparten espacio de nombres con las locales, que es la pregunta para la que existe este ajuste. Se aplica DESPUÉS de elegir el nombre de usuario, así que cambiarlo no puede cambiar QUÉ valor entrante se usó."
+    "en": "81424ee1cba2373a",
+    "text": "Se antepone al nombre que busca una confirmación `link-at-first-sign-in`, y al nombre que hace coincidir `any-existing`, después de elegir ese valor y reducirlo a la parte anterior a la última `@`. VACÍO de forma predeterminada, de modo que un sujeto del socio `alice@partner.example` confirma a la `alice` local. Establézcalo (por ejemplo `fed-`) cuando esa búsqueda no deba encontrar a una persona local. Una entrada que crea un inicio de sesión con `link-at-first-sign-in` o `jit-namespaced` es `<relationship>~<subject>` en cualquier caso, y este prefijo no forma parte de ese nombre."
   },
   "federation.loginButtons|label": {
     "en": "712a94d0c664c839",
@@ -4030,6 +4178,30 @@
   "federation.loginButtons|description": {
     "en": "89dfe2967675cad2",
     "text": "Muestra un botón por cada relación utilizable del lado del proveedor de servicios en /authn/login, para que una identidad federada pueda satisfacer CUALQUIER flujo ya en curso — una solicitud de autorización de OAuth 2.0, un inicio de sesión de WS-Federation, un AuthnRequest de SAML, la consola de administración. Esa es toda la razón de que los botones estén ahí y no solo en /federation/login/{id}. Solo se ofrecen las relaciones que realmente funcionarían — un botón que lleva a un rechazo sería peor que no tener botón."
+  },
+  "federation.consumerProviders|label": {
+    "en": "96a08e7b4a520c19",
+    "text": "Proveedores de identidad de consumo y sociales"
+  },
+  "federation.consumerProviders|description": {
+    "en": "635dc4f49d935e03",
+    "text": "Permite que este dominio se federe con proveedores de consumo y sociales —Google, Discord, GitHub y el resto del catálogo— como relaciones de una categoría propia (#565). DESACTIVADO por defecto: un dominio con él desactivado no puede recibir uno, no puede activar uno y rechaza en cada puerta un inicio de sesión a través de uno, incluida una relación escrita con ldapmodify. A los socios empresariales no les afecta en ninguna posición. Quien llega por primera vez a través de un proveedor de consumo obtiene una entrada propia, y una dirección nunca se usa para emparejar a una persona existente."
+  },
+  "federation.connectRecentAuthMinutes|label": {
+    "en": "cbe8f387555868ea",
+    "text": "Conectar un proveedor: antigüedad máxima del inicio de sesión (min)"
+  },
+  "federation.connectRecentAuthMinutes|description": {
+    "en": "f0edd885053c8b09",
+    "text": "Hace cuánto tiempo como máximo debe haberse autenticado una persona para conectar un proveedor de consumo o social a su cuenta en la página Cuentas conectadas del portal (#565). Si hace más, se le pide que inicie sesión de nuevo primero: una conexión permite al proveedor iniciar su sesión a partir de entonces."
+  },
+  "federation.consumerProvisionCap|label": {
+    "en": "c93ac16ed967542f",
+    "text": "Proveedores de consumo: cuentas que cada uno puede crear"
+  },
+  "federation.consumerProvisionCap|description": {
+    "en": "3e7e50d4c4690e0e",
+    "text": "Cuántas personas puede crear la relación de un proveedor de consumo o social, salvo que el fedProvisionCap de la relación diga otra cosa. Se escribe en una relación de consumo al crearla, y se usa para una cuyo fedProvisionCap esté vacío. En el límite se rechaza a un recién llegado (STS-FED-0090) y una persona ya conectada sigue iniciando sesión. Un socio empresarial no se ve afectado: su fedProvisionCap vacío es ilimitado."
   },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
@@ -4287,13 +4459,21 @@
     "en": "d5e8553e9978dfda",
     "text": "Indica si se rechaza un <samlp:AuthnRequest> SIN FIRMAR — y un <samlp:LogoutRequest> sin firmar de un proveedor de servicios. **`auto` está ACTIVADO en modo producto y DESACTIVADO en desarrollo.** `on` y `off` deciden independientemente del modo; a un proveedor de servicios cuyos metadatos consumidos dicen AuthnRequestsSigned=\"true\" se le exige aunque esto esté desactivado. También es lo que dice el WantAuthnRequestsSigned de los metadatos de este proveedor de identidad.\n\nUna firma PRESENTE se verifica en todo modo — la firma en la cadena de consulta del binding HTTP Redirect (sección 3.4.4.1) o la envuelta del binding HTTP POST — contra los certificados de firma REGISTRADOS del proveedor de servicios (samlSigningCertificate, de sus metadatos o definido en la página SAML 2.0), nunca contra el certificado que lleva la solicitud, y una firma que no se verifica se rechaza. Sin certificado registrado, una firma se registra como no verificada, lo que cuenta como SIN FIRMAR cuando esto está activado."
   },
-  "saml2.unsolicitedSso|label": {
+  "saml2.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inicio de sesión iniciado por el proveedor de identidad"
   },
-  "saml2.unsolicitedSso|description": {
-    "en": "aff7c855f4363724",
-    "text": "Indica si /saml2/unsolicited[/{sp}] envía un Response NO SOLICITADO (saml-profiles-2.0-os sección 4.1.5) — un inicio de sesión que empieza en este proveedor de identidad, para un proveedor de servicios que no lo pidió: `providerId` (o el segmento de ruta) lo nombra, `shire` uno de sus servicios consumidores de aserciones registrados, `target` el RelayState. En modo producto el proveedor de servicios debe estar registrado, la dirección debe ser una que registraron sus metadatos o su entrada, y se consulta la política de emisión como en cualquier inicio de sesión. La aserción no lleva InResponseTo, así que cada proveedor de servicios decide por sí mismo si acepta una; desactívelo para un dominio cuyos proveedores solo deban recibir respuestas."
+  "saml2.idpInitiatedSso|description": {
+    "en": "9982a49370bf40a8",
+    "text": "Indica si /saml2/unsolicited[/{sp}] — y /launch/{app} para SAML 2.0 — envía una Response NO SOLICITADA (saml-profiles-2.0-os sección 4.1.5): un inicio de sesión que empieza en este proveedor de identidad para un proveedor de servicios que no lo pidió. DESACTIVADO de forma predeterminada; saml2IdpInitiatedSso en la entrada de una aplicación lo anula solo para ese proveedor de servicios. La aserción no lleva InResponseTo, así que el proveedor de servicios no puede distinguir una Response que se le envió de una introducida en su navegador por otra persona; actívelo solo para proveedores que esperen un inicio de sesión iniciado por el proveedor de identidad. En modo producto el proveedor de servicios debe estar registrado, la dirección debe ser una que registraron sus metadatos o su entrada, y se consulta la política de emisión como en cualquier inicio de sesión."
+  },
+  "saml2.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "Inicio de sesión iniciado por el proveedor de servicios"
+  },
+  "saml2.spInitiatedSso|description": {
+    "en": "92e8e438813d4044",
+    "text": "Indica si se responde a un <samlp:AuthnRequest> en /saml2/sso — el inicio de sesión que inicia un proveedor de servicios. ACTIVADO de forma predeterminada; saml2SpInitiatedSso en la entrada de una aplicación lo anula para ese proveedor de servicios. Desactivado, una solicitud se responde con una Response RequestDenied, y solo se puede iniciar sesión en el proveedor de servicios mediante el inicio de sesión iniciado por el proveedor de identidad."
   },
   "saml2.defaultSingleLogoutService|label": {
     "en": "a81a00ce8c57908e",
@@ -4439,6 +4619,22 @@
     "en": "2e68718a26d4706c",
     "text": "Crea una entrada de aplicación bajo ou=applications la primera vez que se nombra una parte que confía — al llegar un TARGET, al obtenerse un documento de metadatos o al resolverse un artefacto. Desactivado significa que los perfiles de navegador siguen funcionando y /admin/saml11 permanece vacío, que es lo que quiere quien ejecuta una prueba de carga y nadie más."
   },
+  "saml11.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Inicio de sesión iniciado por el proveedor de identidad"
+  },
+  "saml11.idpInitiatedSso|description": {
+    "en": "37300a932ffca76b",
+    "text": "Indica si se responde a un inicio de sesión SAML 1.1 INICIADO AQUÍ: /saml11/sso/{rp} con un TARGET y sin shire, y /launch/{app} para SAML 1.1. DESACTIVADO de forma predeterminada; saml11IdpInitiatedSso en la entrada de una aplicación lo anula para esa parte que confía. La parte que confía recibe una Response que no pidió, que no puede distinguir de una introducida en su navegador por otra persona."
+  },
+  "saml11.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "Inicio de sesión iniciado por el proveedor de servicios"
+  },
+  "saml11.spInitiatedSso|description": {
+    "en": "f4b88ca2b7aa9fbc",
+    "text": "Indica si se responde a un inicio de sesión SAML 1.1 que inició la parte que confía — el perfil AuthnRequest de Shibboleth 1.3, una solicitud que lleva `shire`. ACTIVADO de forma predeterminada; saml11SpInitiatedSso en la entrada de una aplicación lo anula. Una solicitud así es una URL simple sin firmar, así que desactivar esto cierra la puerta en lugar de demostrar quién la abrió."
+  },
   "saml11.requestTtlMin|label": {
     "en": "f2c40fce66df42af",
     "text": "Vigencia del flujo retenido (minutos)"
@@ -4502,6 +4698,22 @@
   "wstrust.jwtCertificateHeader|description": {
     "en": "d75340dbe09a7542",
     "text": "Indica si un JWT que devuelve este STS en un RequestSecurityTokenResponse nombra la cadena de certificados de la clave que lo firmó. Una aserción SAML lleva su certificado en su propia XML Signature y no se ve afectada. `x5u` — el predeterminado — es la dirección de la cadena en este servicio, `/pki/chain/{scope}/{sha256}.pem`, de unos cien bytes; `x5c` es la cadena en línea, primero la hoja y al final la raíz del servicio, en DER base64, de varios kilobytes; `both` es ambos y `none` ninguno. En cualquier caso, es lo que necesita una parte que confía que solo tiene el token para llegar a los puntos de distribución de CRL, al respondedor OCSP y a la dirección caIssuers de cada certificado. Una clave aún no certificada bajo la CA emisora JOSE de este dominio, y una firma HMAC, no reciben ninguno. RFC 7515 sección 4.1.5 exige que la obtención de `x5u` use TLS: con global.https desactivado la dirección es `http://` y un verificador estricto se negará a seguirla. Los encabezados JWE nunca reciben uno — ninguna clave certificada de este servicio cifra nada. Configurable por dominio."
+  },
+  "wsfed.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Inicio de sesión iniciado por el proveedor de identidad"
+  },
+  "wsfed.idpInitiatedSso|description": {
+    "en": "62f920d6663c4e4f",
+    "text": "Indica si /wsfed/initiate/{rp} — y /launch/{app} para WS-Federation — inicia la sesión de una persona en una parte que confía que no lo pidió, enviando por POST a su wsfedReplyUrl registrada. DESACTIVADO de forma predeterminada; wsfedIdpInitiatedSso en la entrada de una aplicación lo anula para esa parte que confía. La parte que confía recibe una respuesta que no pidió, que no puede distinguir de una introducida en su navegador por otra persona."
+  },
+  "wsfed.spInitiatedSso|label": {
+    "en": "705a2297f2762532",
+    "text": "Inicio de sesión iniciado por la parte que confía"
+  },
+  "wsfed.spInitiatedSso|description": {
+    "en": "d16076a2c90701e3",
+    "text": "Indica si se responde a un wsignin1.0 en /wsfed — el inicio de sesión que inicia una parte que confía. ACTIVADO de forma predeterminada; wsfedSpInitiatedSso en la entrada de una aplicación lo anula. Un wsignin1.0 es una URL sin firmar, así que desactivar esto cierra la puerta en lugar de demostrar quién la abrió."
   },
   "wsfed.assertionLifetimeMin|label": {
     "en": "92ee206f116fd412",
@@ -4964,8 +5176,32 @@
     "text": "Cabecera de certificado de la credencial"
   },
   "oid4vci.credentialCertificateHeader|description": {
-    "en": "91cae7f95584d095",
-    "text": "Si una CREDENCIAL dc+sd-jwt o jwt_vc_json emitida nombra la cadena de certificados de la clave que la firmó. SD-JWT VC nombra `x5c` como una de las formas en que un verificador puede encontrar la clave de un emisor, de modo que una billetera o un verificador que nunca obtiene los metadatos de este emisor aún puede comprobar la firma contra un ancla de confianza. ldp_vc no es un JWS y no se ve afectado. El x5c aquí (y en un Status List Token) deja fuera del final el ancla de confianza, la Root del servicio, como exige HAIP 1.0 sección 6.1.1; HAIP también exige x5c, así que un dominio HAIP define x5c. `x5u` — el predeterminado — es la dirección de la cadena en este servicio, `/pki/chain/{scope}/{sha256}.pem`, de unos cien bytes; `x5c` es la cadena en línea, primero la hoja y al final la Root del servicio, DER en base64, de varios kilobytes; `both` es ambos y `none` ninguno. En cualquier caso, es lo que una parte que confía que solo tiene el token necesita para llegar a los puntos de distribución de CRL, al respondedor OCSP y a la dirección caIssuers de cada certificado. Una clave aún no certificada bajo la CA emisora JOSE de este dominio, y una firma HMAC, no reciben ninguno. RFC 7515 sección 4.1.5 exige que la obtención de `x5u` use TLS: con global.https desactivado la dirección es `http://` y un verificador estricto se negará a seguirla. A las cabeceras JWE nunca se les da una — ninguna clave certificada de este servicio cifra nada. Configurable por dominio."
+    "en": "250bb6d53e3ec407",
+    "text": "Si una CREDENCIAL dc+sd-jwt o jwt_vc_json emitida, y el Token Status List Token que nombra su estado, llevan la cadena de certificados de la clave que los firmó. SD-JWT VC nombra `x5c` como la forma X.509 en que un verificador encuentra la clave de un emisor y no nombra `x5u`, y un Status List Token no lleva `iss` con el que buscar metadatos, así que `x5c` — el predeterminado — es lo que permite a una billetera o a un verificador que nunca obtiene los metadatos de este emisor comprobar ambas firmas contra su ancla de confianza. ldp_vc no es un JWS y no se ve afectado. El x5c omite al final el ancla de confianza, la raíz del servicio, como exige la sección 6.1.1 de HAIP 1.0; la raíz es el certificado en el que se indica confiar a una billetera o a un verificador (/pki). `x5u` es la dirección de la cadena en este servicio, `/pki/chain/{scope}/{sha256}.pem`, de unos cien bytes; `x5c` — el predeterminado — es la cadena en línea, primero la hoja y al final la raíz del servicio, en DER base64, de varios kilobytes; `both` es ambos y `none` ninguno. En cualquier caso es lo que una parte que confía y que solo tiene el token necesita para llegar a los puntos de distribución de CRL, al respondedor OCSP y a la dirección caIssuers de cada certificado. Una clave aún no certificada por la CA emisora JOSE de este dominio, y una firma HMAC, no reciben ninguno. La sección 4.1.5 de RFC 7515 exige que la obtención de `x5u` use TLS: con global.https desactivado la dirección es `http://` y un verificador estricto se negará a seguirla. Las cabeceras JWE nunca reciben uno: ninguna clave certificada de este servicio cifra nada. Configurable por dominio."
+  },
+  "oid4vci.trustedListCertificateHeader|label": {
+    "en": "5e5d2b459a95e63d",
+    "text": "Cabecera de certificado de la lista de confianza"
+  },
+  "oid4vci.trustedListCertificateHeader|description": {
+    "en": "f0c703d8855dec84",
+    "text": "Si la lista de confianza de /oid4vci/trusted-list lleva la cadena de la clave que la firmó. Una billetera acepta la lista solo cuando esa cadena está en x5c y termina bajo una CA de operador de listas que tiene, así que `x5c` — el predeterminado — o `both`: con `x5u` o `none` la lista no se sirve (503). La raíz del servicio se omite al final, como para una credencial. `x5u` es la dirección de la cadena en este servicio, `/pki/chain/{scope}/{sha256}.pem`, de unos cien bytes; `x5c` — el predeterminado — es la cadena en línea, primero la hoja y al final la raíz del servicio, en DER base64, de varios kilobytes; `both` es ambos y `none` ninguno. En cualquier caso es lo que una parte que confía y que solo tiene el token necesita para llegar a los puntos de distribución de CRL, al respondedor OCSP y a la dirección caIssuers de cada certificado. Una clave aún no certificada por la CA emisora JOSE de este dominio, y una firma HMAC, no reciben ninguno. La sección 4.1.5 de RFC 7515 exige que la obtención de `x5u` use TLS: con global.https desactivado la dirección es `http://` y un verificador estricto se negará a seguirla. Las cabeceras JWE nunca reciben uno: ninguna clave certificada de este servicio cifra nada. Configurable por dominio."
+  },
+  "oid4vci.trustedListTerritory|label": {
+    "en": "d7ee4e58b3ec36e2",
+    "text": "Territorio del esquema de la lista de confianza"
+  },
+  "oid4vci.trustedListTerritory|description": {
+    "en": "bd18dadc2bd7bd5e",
+    "text": "El SchemeTerritory de la lista de confianza de /oid4vci/trusted-list (ETSI TS 119 602, sección 6.3.10): un código de país ISO 3166-1 alfa-2, o EU. Vacío — el predeterminado — lo omite."
+  },
+  "oid4vci.trustedListLifetimeH|label": {
+    "en": "53f55ba9239f4712",
+    "text": "Vigencia de la lista de confianza (horas)"
+  },
+  "oid4vci.trustedListLifetimeH|description": {
+    "en": "795e14da580935eb",
+    "text": "Cuánto después de su ListIssueDateTime está el NextUpdate de la lista de confianza (ETSI TS 119 602, sección 6.3.15), y por tanto con qué frecuencia se vuelve a firmar con el siguiente número de secuencia: cuando está a menos de una hora (o una décima parte de esto) de NextUpdate, y siempre que cambia lo que dice."
   },
   "oid4vci.signedMetadataCertificateHeader|label": {
     "en": "74bcdd1bedcb52e5",
@@ -5580,8 +5816,8 @@
     "text": "Dominio"
   },
   "krb5.realm|description": {
-    "en": "b7b392027324a1ef",
-    "text": "El dominio Kerberos que atiende este KDC. Su forma en minúsculas es el dominio DNS, de donde provienen los dominios de servicio predeterminados y el nombre de dominio del PAC. En un dominio de confianza es el nombre por el que el puerto 88 enruta las solicitudes de ese dominio: debe definirse antes que krb5.enabled, ningún par de dominios puede compartirlo (ni krb5.trustedRealm), y al comprobarlo se compara sin distinguir mayúsculas de minúsculas."
+    "en": "6542fd41442d0e39",
+    "text": "El dominio Kerberos que atiende este KDC. Su forma en minúsculas es el dominio DNS, de donde provienen los dominios de servicio predeterminados y el nombre de dominio del PAC. En un dominio de confianza es el nombre por el que el puerto 88 enruta las solicitudes de ese dominio: debe definirse antes que krb5.enabled, ningún par de dominios puede compartirlo (ni el dominio asociado de desarrollo por el que responde el dominio predeterminado), y al comprobarlo se compara sin distinguir mayúsculas de minúsculas."
   },
   "krb5.realm|restartReason": {
     "en": "f45bb3f394b52261",
@@ -5823,53 +6059,37 @@
     "en": "0ed445787254dab6",
     "text": "la identidad PAC de cada principal se construye al arrancar. Un DOMINIO DE CONFIANZA puede tenerlo de todos modos: la base de principales de un dominio se construye cuando se activa su Kerberos y se reconstruye cuando esto cambia, así que nada del valor del dominio se consumió al arrancar"
   },
-  "krb5.trustedRealm|label": {
-    "en": "83fea03ad45f6f5a",
-    "text": "Dominio Kerberos de confianza"
+  "krb5.crossRealmClassicDelegation|label": {
+    "en": "d94511f367aa2305",
+    "text": "Delegación clásica a través de confianzas"
   },
-  "krb5.trustedRealm|description": {
-    "en": "18a007649941a47a",
-    "text": "El segundo dominio Kerberos, para las referencias entre dominios. Una confianza no es un indicador: es una clave compartida que tiene un principal en cada dominio."
+  "krb5.crossRealmClassicDelegation|description": {
+    "en": "f95686ad2d2053e6",
+    "text": "Si la delegación restringida CLÁSICA (appAllowedToDelegateTo en el front end) puede cruzar una confianza Kerberos. Desactivada por defecto: se define dentro de un dominio, y la delegación basada en recursos (appAllowedToActOnBehalfOf en el destino, nombrando SPN@REALM) es la que cruza. Activada, el dominio del front end comprueba su propia lista antes de referir la evidencia, y el dominio del destino la da por comprobada; ambos dominios deben activarla."
   },
-  "krb5.trustedRealm|restartReason": {
-    "en": "b7b28d1b7d6102d8",
-    "text": "el segundo dominio Kerberos y la confianza entre ambos se construyen al arrancar"
+  "krb5.requireSidFilteringInProduct|label": {
+    "en": "f4bc0b8bb8e18123",
+    "text": "Exigir filtrado de SID en las confianzas"
   },
-  "krb5.trustPassword|label": {
-    "en": "e2d7ee2fece4c004",
-    "text": "Contraseña de la confianza"
+  "krb5.requireSidFilteringInProduct|description": {
+    "en": "120e89b9d4c0b3e4",
+    "text": "En modo producto, una confianza Kerberos solo se usa mientras filtra los SID (su atributo quarantined, activado por defecto). Desactivar esto en un dominio es el operador aceptando los SID de un socio sin filtrar. El modo de desarrollo usa cada confianza diga lo que diga esto."
   },
-  "krb5.trustPassword|description": {
-    "en": "ef84f44ff5ee5b94",
-    "text": "El secreto compartido que tienen ambos dominios para la confianza entre dominios."
+  "krb5.maxReferralHops|label": {
+    "en": "ae50da753613f751",
+    "text": "Máximo de confianzas que cruza una ruta de referencia"
   },
-  "krb5.trustPassword|restartReason": {
-    "en": "de2c8d7ceb818a8d",
-    "text": "la clave entre dominios se deriva de ella al arrancar"
+  "krb5.maxReferralHops|description": {
+    "en": "e88d21d50bcd7495",
+    "text": "Cuántas confianzas puede cruzar una ruta entre dominios antes de que este KDC se niegue a referirla más allá (KDC_ERR_PATH_NOT_ACCEPTED). Una confianza directa es un cruce; cada dominio por el que se refiere una ruta suma uno. Las confianzas mismas son registros en el directorio del dominio (ou=kerberosTrusts), y una ruta solo se construye a través de registros marcados como transitivos."
   },
-  "krb5.trustedDomainSid|label": {
-    "en": "e860150a3e9f46b7",
-    "text": "SID del dominio de confianza"
+  "krb5.trustKeyGraceSeconds|label": {
+    "en": "e9a56607c04ebe5c",
+    "text": "Gracia para una clave de confianza rotada (s)"
   },
-  "krb5.trustedDomainSid|description": {
-    "en": "7c21d4f2a2b9776a",
-    "text": "El SID de dominio del otro dominio Kerberos. Difiere de este a propósito: el filtrado de SID a través de una confianza consiste en determinar a qué dominio pertenece un SID."
-  },
-  "krb5.trustedDomainSid|restartReason": {
-    "en": "fc2b22b6756dc2a3",
-    "text": "los principales del dominio de confianza se construyen al arrancar"
-  },
-  "krb5.trustedKrbtgtPassword|label": {
-    "en": "bb06a006346e82df",
-    "text": "Contraseña de krbtgt del dominio de confianza"
-  },
-  "krb5.trustedKrbtgtPassword|description": {
-    "en": "fc3a521802800c0d",
-    "text": "La contraseña de krbtgt del dominio de confianza."
-  },
-  "krb5.trustedKrbtgtPassword|restartReason": {
-    "en": "5288888535130e80",
-    "text": "las claves krbtgt de ese dominio se derivan de ella al arrancar"
+  "krb5.trustKeyGraceSeconds|description": {
+    "en": "0ee4268f63c3b908",
+    "text": "Cuánto tiempo la clave entre dominios entrante que reemplazó Rotar clave de una confianza sigue abriendo los tickets del socio, que sigue sellando con ella hasta que cambie su propio lado. CERO — el valor predeterminado — significa krb5.ticketLifetimeSeconds más krb5.clockSkew, leído cuando se comprueba la versión. Un número es esa cantidad de segundos en su lugar: lo bastante para que el administrador del socio cambie su lado. Se conserva una versión anterior por confianza; pasada su gracia, un ticket con ella se rechaza con KRB_AP_ERR_BADKEYVER."
   },
   "krb5.spnegoAuthentication|label": {
     "en": "0a014fa4b2685cd7",
@@ -6034,6 +6254,14 @@
   "ldap.workerDirectoryTimeoutMs|description": {
     "en": "bb7f7ca790c61dc0",
     "text": "Con ldap.workerDirectory=postgres-lru, cuánto espera un worker de solicitudes a la base de datos cuando necesita una entrada del directorio que no tiene. El worker no hace nada más mientras espera, así que esto es también el tiempo máximo durante el que una caída de la base de datos puede retener una de sus solicitudes; superado, la solicitud se rechaza (503, STS-LDAP-0130)."
+  },
+  "ldap.workerDirectoryBudgetMs|label": {
+    "en": "7af008dc55949ed0",
+    "text": "Presupuesto de directorio del worker por solicitud (ms)"
+  },
+  "ldap.workerDirectoryBudgetMs|description": {
+    "en": "9b2485155e270c50",
+    "text": "Con ldap.workerDirectory=postgres-lru, cuánto tiempo puede pasar en total una solicitud a /admin o /admin-api esperando lecturas síncronas del directorio. Una pregunta que superaría el presupuesto se rechaza (503, STS-LDAP-0175) y no se formula; una sola pregunta lenta sigue fallando como STS-LDAP-0130 cuando supera antes su propio tiempo de espera. Las demás solicitudes no tienen ese presupuesto."
   },
   "ldap.sizeLimit|label": {
     "en": "8486449552f77864",
@@ -6732,8 +6960,8 @@
     "text": "Ofrecer HTTP Basic"
   },
   "ssf.authBasic|description": {
-    "en": "5476ee40c62ce1bb",
-    "text": "Si los endpoints de SSF aceptan HTTP Basic además de tokens de acceso de OAuth 2.0, y lo publican en authorization_schemes. En desarrollo pasa cualquier nombre de usuario con cualquier contraseña salvo «invalid»; en modo producto la contraseña se verifica contra el userPassword con hash de la persona. En cualquier caso un principal Basic tiene ambos ámbitos, porque Basic no lleva ninguno — así que un despliegue que quiera ssf:read y ssf:write aplicados a todo llamante desactiva esto."
+    "en": "34a196af42de2673",
+    "text": "Si los endpoints de SSF aceptan HTTP Basic además de tokens de acceso de OAuth 2.0, y lo publican en authorization_schemes. En desarrollo pasa cualquier nombre de usuario con cualquier contraseña salvo «invalid»; en modo producto la contraseña se verifica contra el userPassword con hash de la persona. En cualquier caso un principal Basic tiene ambos ámbitos, porque Basic no lleva ninguno — así que un despliegue que quiera ssf.read y ssf.manage aplicados a todo llamante desactiva esto."
   },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
@@ -6832,16 +7060,16 @@
     "text": "Ámbito para leer un flujo"
   },
   "ssf.authScopeRead|description": {
-    "en": "b3c6248d5c2a3f09",
-    "text": "El ámbito OAuth que debe llevar un token de acceso para LEER la configuración de un flujo, su estado o la cola de sondeo. Se publica en scopes_supported en ambos documentos de descubrimiento, exactamente como los dos ámbitos de SCIM."
+    "en": "6a58acf43f1ab901",
+    "text": "El nombre de este servicio para el ámbito que lee la configuración de un flujo, su estado o la cola de sondeo. El valor predeterminado es el nombre del CAEP Interoperability Profile ssf.read, que se acepta siempre aunque este se renombre. Ambos se publican en scopes_supported. La escritura incluye la lectura: un token que lleva un ámbito de escritura también puede leer, y a un cliente que declara un ámbito de escritura se le puede emitir un ámbito de lectura."
   },
   "ssf.authScopeWrite|label": {
     "en": "3cf63aebc7df37eb",
     "text": "Ámbito para cambiar un flujo"
   },
   "ssf.authScopeWrite|description": {
-    "en": "ea33015fd3877e72",
-    "text": "El ámbito necesario para crear, actualizar o eliminar un flujo, para añadir o quitar un sujeto, para cambiar un estado o para pedir un evento de verificación. Un ámbito de lectura no basta para ninguna de esas acciones, lo que hace de este el primer lugar de este servicio, además de SCIM, en que dos ámbitos difieren en lo que permiten."
+    "en": "91d382139f5860a7",
+    "text": "El nombre de este servicio para el ámbito que crea, actualiza o elimina un flujo, añade o quita un sujeto, cambia un estado o pide un evento de verificación. El valor predeterminado es el nombre del CAEP Interoperability Profile ssf.manage, que se acepta siempre aunque este se renombre. La escritura incluye la lectura, así que un nombre puesto aquí también lee, y lo mismo un nombre puesto en ambos ajustes. Un ámbito de lectura no basta para ninguna de esas escrituras."
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",
@@ -7266,6 +7494,14 @@
   "risk.networkFailureThreshold|description": {
     "en": "b3df2afcc6f13f99",
     "text": "Cuántas contraseñas rechazadas desde una red (el prefijo de dirección por el que agrupa la puntuación de riesgo) en la última hora ponen la señal network-failures en todo inicio de sesión desde ella. Todas las personas detrás de un mismo NAT comparten este recuento."
+  },
+  "risk.networkSignupThreshold|label": {
+    "en": "c6993a7b6026347a",
+    "text": "Cuentas que una red puede crear en una hora antes de una señal"
+  },
+  "risk.networkSignupThreshold|description": {
+    "en": "05e7067b3abe2a57",
+    "text": "Cuántas cuentas pueden crear en la última hora los inicios de sesión federados desde una misma red (el prefijo de dirección por el que agrupa la evaluación de riesgo) antes de que la señal network-signups se ponga en cada inicio de sesión desde ella (#565). Un proveedor de consumo hace una cuenta tan barata como una cuenta en el proveedor, así que este es el límite a que una red se registre en masa. No se cuenta para una dirección de la lista de permitidos del operador del dominio."
   },
   "risk.signalFactors|label": {
     "en": "0a173b571b34160c",
@@ -9315,6 +9551,30 @@
     "en": "56fac41f63177db7",
     "text": "Cuántas ejecuciones programadas o manuales tiene en curso a la vez el líder, entre todos los trabajos y dominios de confianza. Un intervalo es un múltiplo de su periodo, así que todos los trabajos horarios de todos los dominios vencen en el mismo segundo; cada ejecución mantiene una conexión al almacén mientras reclama y trabaja, y el almacén postgres tiene cuatro. El resto espera, primero el Run now de una persona, y empieza a medida que terminan ejecuciones. Nunca es más que uno menos de lo que contiene el pool, se defina como se defina, para que el planificador no pueda quitarles todas las conexiones a las solicitudes."
   },
+  "scheduler.niceBusyThreshold|label": {
+    "en": "115ae6125244b30a",
+    "text": "Solicitudes en curso de un worker ocupado"
+  },
+  "scheduler.niceBusyThreshold|description": {
+    "en": "364260c11358e10c",
+    "text": "Cuántas solicitudes puede tener en curso un worker de solicitudes antes de que una ejecución programada paciente de un trabajo de clúster lo espere. El líder entrega cada ejecución al worker menos cargado y retiene la ejecución de un trabajo cuyo nice es mayor que 0 mientras incluso ese worker tenga tantas. 0 significa que el número nunca retiene una ejecución."
+  },
+  "scheduler.niceLagMs|label": {
+    "en": "c0b9af3bbe7cb091",
+    "text": "Retraso del bucle de eventos de un worker ocupado"
+  },
+  "scheduler.niceLagMs|description": {
+    "en": "0c0e3c66e7c2e010",
+    "text": "El retraso del bucle de eventos, en milisegundos (el percentil 99 del último informe de diez segundos de un worker), a partir del cual un worker de solicitudes cuenta como ocupado y una ejecución programada paciente de un trabajo de clúster lo espera. 0 significa que el retraso nunca retiene una ejecución."
+  },
+  "scheduler.niceMaxDeferS|label": {
+    "en": "07484a01ef8c2875",
+    "text": "Espera máxima de una ejecución por un worker ocupado"
+  },
+  "scheduler.niceMaxDeferS|description": {
+    "en": "22928f93b52af2b5",
+    "text": "El tiempo máximo, en segundos, que se retiene cualquier ejecución programada de un trabajo de clúster mientras todos los workers de solicitudes están ocupados. Un trabajo se retiene durante su parte de este tiempo, nice / 19, y nunca más de la mitad de su intervalo; pasado ese tiempo se ejecuta sea cual sea la carga. Una ejecución manual, un trabajo bajo demanda y un trabajo de nice 0 nunca se retienen. 0 significa que no se retiene ninguna ejecución."
+  },
   "attributeSources.hostPatterns|label": {
     "en": "04c2e7926c9351dd",
     "text": "Hosts que puede nombrar una fuente de atributos"
@@ -10416,24 +10676,24 @@
     "text": "Puerto principal: conexión inactiva conservada durante (s)"
   },
   "listenerMain.keepAliveTimeoutS|description": {
-    "en": "d48d22c3af904939",
-    "text": "Solo para la escucha del puerto principal: http.keepAliveTimeoutS. -1, el predeterminado, sigue a http.keepAliveTimeoutS; cualquier otro valor decide solo para esta escucha. Cuánto tiempo, en segundos, una escucha HTTP mantiene abierta una conexión HTTP/1.1 inactiva para la siguiente solicitud del cliente (el predeterminado propio de node es 5). Una conexión conservada es un handshake TLS —y una solicitud de certificado de cliente— que no se repite. Las solicitudes que un cliente encadena (pipelining) en una conexión se responden en orden. Detrás de un balanceador, mantenga su tiempo de inactividad por encima de este."
+    "en": "a895a3ca14fdb99f",
+    "text": "Solo para la escucha del puerto principal: http.keepAliveTimeoutS. -1, el predeterminado, sigue a http.keepAliveTimeoutS; cualquier otro valor decide solo para esta escucha. Cuánto tiempo, en segundos, una escucha HTTP mantiene abierta una conexión inactiva para la siguiente solicitud del cliente (el predeterminado propio de node es 5): una conexión HTTP/1.1 entre solicitudes, o una conexión HTTP/2 por la que no ha pasado ninguna trama, que entonces se cierra de forma ordenada. Una conexión conservada es un handshake TLS —y una solicitud de certificado de cliente— que no se repite. Las solicitudes que un cliente encadena (pipelining) en una conexión se responden en orden. Detrás de un balanceador, mantenga su tiempo de inactividad por encima de este."
   },
   "listenerDebugger.keepAliveTimeoutS|label": {
     "en": "76ffd87245c2ff28",
     "text": "Depurador de protocolos: conexión inactiva conservada durante (s)"
   },
   "listenerDebugger.keepAliveTimeoutS|description": {
-    "en": "c772bcacfb6260cb",
-    "text": "Solo para la escucha del depurador de protocolos: http.keepAliveTimeoutS. -1, el predeterminado, sigue a http.keepAliveTimeoutS; cualquier otro valor decide solo para esta escucha. Cuánto tiempo, en segundos, una escucha HTTP mantiene abierta una conexión HTTP/1.1 inactiva para la siguiente solicitud del cliente (el predeterminado propio de node es 5). Una conexión conservada es un handshake TLS —y una solicitud de certificado de cliente— que no se repite. Las solicitudes que un cliente encadena (pipelining) en una conexión se responden en orden. Detrás de un balanceador, mantenga su tiempo de inactividad por encima de este."
+    "en": "b63e0c1aae9ba585",
+    "text": "Solo para la escucha del depurador de protocolos: http.keepAliveTimeoutS. -1, el predeterminado, sigue a http.keepAliveTimeoutS; cualquier otro valor decide solo para esta escucha. Cuánto tiempo, en segundos, una escucha HTTP mantiene abierta una conexión inactiva para la siguiente solicitud del cliente (el predeterminado propio de node es 5): una conexión HTTP/1.1 entre solicitudes, o una conexión HTTP/2 por la que no ha pasado ninguna trama, que entonces se cierra de forma ordenada. Una conexión conservada es un handshake TLS —y una solicitud de certificado de cliente— que no se repite. Las solicitudes que un cliente encadena (pipelining) en una conexión se responden en orden. Detrás de un balanceador, mantenga su tiempo de inactividad por encima de este."
   },
   "listenerRevocation.keepAliveTimeoutS|label": {
     "en": "19f295348b85fba9",
     "text": "Revocación (HTTP sin cifrar): conexión inactiva conservada durante (s)"
   },
   "listenerRevocation.keepAliveTimeoutS|description": {
-    "en": "0f76cf6236976ee9",
-    "text": "Solo para la escucha de revocación (HTTP sin cifrar): http.keepAliveTimeoutS. -1, el predeterminado, sigue a http.keepAliveTimeoutS; cualquier otro valor decide solo para esta escucha. Cuánto tiempo, en segundos, una escucha HTTP mantiene abierta una conexión HTTP/1.1 inactiva para la siguiente solicitud del cliente (el predeterminado propio de node es 5). Una conexión conservada es un handshake TLS —y una solicitud de certificado de cliente— que no se repite. Las solicitudes que un cliente encadena (pipelining) en una conexión se responden en orden. Detrás de un balanceador, mantenga su tiempo de inactividad por encima de este."
+    "en": "dec63c7b7c394604",
+    "text": "Solo para la escucha de revocación (HTTP sin cifrar): http.keepAliveTimeoutS. -1, el predeterminado, sigue a http.keepAliveTimeoutS; cualquier otro valor decide solo para esta escucha. Cuánto tiempo, en segundos, una escucha HTTP mantiene abierta una conexión inactiva para la siguiente solicitud del cliente (el predeterminado propio de node es 5): una conexión HTTP/1.1 entre solicitudes, o una conexión HTTP/2 por la que no ha pasado ninguna trama, que entonces se cierra de forma ordenada. Una conexión conservada es un handshake TLS —y una solicitud de certificado de cliente— que no se repite. Las solicitudes que un cliente encadena (pipelining) en una conexión se responden en orden. Detrás de un balanceador, mantenga su tiempo de inactividad por encima de este."
   },
   "listenerMain.headersTimeoutS|label": {
     "en": "8d17a4d86aca9ed5",
@@ -10506,5 +10766,37 @@
   "listenerRevocation.maxConnections|description": {
     "en": "33c1557318481882",
     "text": "Solo para la escucha de revocación (HTTP sin cifrar): http.maxConnections. -1, el predeterminado, sigue a http.maxConnections; cualquier otro valor decide solo para esta escucha. Cuántas conexiones mantiene abiertas a la vez una escucha HTTP; una más se cierra en cuanto llega. 0, el predeterminado, es sin límite (el propio de node)."
+  },
+  "listenerMain.http2|label": {
+    "en": "d17df93a132abc21",
+    "text": "Puerto principal: ofrecer HTTP/2"
+  },
+  "listenerMain.http2|description": {
+    "en": "4362a834f16b5b21",
+    "text": "Solo para la escucha del puerto principal: http.http2. inherit, el predeterminado, sigue a http.http2; cualquier otro valor decide solo para esta escucha. Indica si un escuchador HTTPS ofrece HTTP/2 cuando un cliente lo pide en el protocolo de enlace TLS (ALPN). Activado, el valor predeterminado, una sola conexión lleva todas las solicitudes que un navegador hace en paralelo; HTTP/1.1 se sigue atendiendo para un cliente que no pide otra cosa. Desactivado, toda conexión es HTTP/1.1 — para un cliente o un balanceador cuyo HTTP/2 falla. Una conexión nueva sigue un cambio de inmediato; una ya abierta conserva su protocolo. El escuchador de revocación en HTTP simple solo habla HTTP/1.1, porque no hay protocolo de enlace en el que ofrecerlo."
+  },
+  "listenerDebugger.http2|label": {
+    "en": "65d81b530197d8d7",
+    "text": "Depurador de protocolos: ofrecer HTTP/2"
+  },
+  "listenerDebugger.http2|description": {
+    "en": "95b887a7622f4880",
+    "text": "Solo para la escucha del depurador de protocolos: http.http2. inherit, el predeterminado, sigue a http.http2; cualquier otro valor decide solo para esta escucha. Indica si un escuchador HTTPS ofrece HTTP/2 cuando un cliente lo pide en el protocolo de enlace TLS (ALPN). Activado, el valor predeterminado, una sola conexión lleva todas las solicitudes que un navegador hace en paralelo; HTTP/1.1 se sigue atendiendo para un cliente que no pide otra cosa. Desactivado, toda conexión es HTTP/1.1 — para un cliente o un balanceador cuyo HTTP/2 falla. Una conexión nueva sigue un cambio de inmediato; una ya abierta conserva su protocolo. El escuchador de revocación en HTTP simple solo habla HTTP/1.1, porque no hay protocolo de enlace en el que ofrecerlo."
+  },
+  "listenerMain.http2MaxConcurrentStreams|label": {
+    "en": "c152ce6a507a8348",
+    "text": "Puerto principal: flujos por conexión HTTP/2"
+  },
+  "listenerMain.http2MaxConcurrentStreams|description": {
+    "en": "ba8c8cd0302f4417",
+    "text": "Solo para la escucha del puerto principal: http.http2MaxConcurrentStreams. -1, el predeterminado, sigue a http.http2MaxConcurrentStreams; cualquier otro valor decide solo para esta escucha. Cuántas solicitudes puede tener abiertas a la vez una conexión HTTP/2 (SETTINGS_MAX_CONCURRENT_STREAMS); un flujo por encima se rechaza hasta que termine otro. 100, el predeterminado, es el valor más pequeño que recomienda RFC 9113; el propio de node no tiene límite, lo que permitiría a una sola conexión llevar el trabajo de miles. Limita el trabajo de una conexión como http.maxConnections limita las conexiones. Una conexión nueva sigue un cambio de inmediato, y a una abierta se le envía el nuevo valor."
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|label": {
+    "en": "a6a26cb5d1740fb5",
+    "text": "Depurador de protocolos: flujos por conexión HTTP/2"
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|description": {
+    "en": "94c52205da70930f",
+    "text": "Solo para la escucha del depurador de protocolos: http.http2MaxConcurrentStreams. -1, el predeterminado, sigue a http.http2MaxConcurrentStreams; cualquier otro valor decide solo para esta escucha. Cuántas solicitudes puede tener abiertas a la vez una conexión HTTP/2 (SETTINGS_MAX_CONCURRENT_STREAMS); un flujo por encima se rechaza hasta que termine otro. 100, el predeterminado, es el valor más pequeño que recomienda RFC 9113; el propio de node no tiene límite, lo que permitiría a una sola conexión llevar el trabajo de miles. Limita el trabajo de una conexión como http.maxConnections limita las conexiones. Una conexión nueva sigue un cambio de inmediato, y a una abierta se le envía el nuevo valor."
   }
 }

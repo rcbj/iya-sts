@@ -825,14 +825,41 @@ ldif or multi-cell service is unchanged.
       (`mechanismsFor()` per row, about nine `locateEntry()`s, most held
       after the first), and the tiles' `credentialTallies()` and
       `countPeopleNamed()` — counts, the holders, and one `withNames`.
-    - **Still whole walks on a request path**, recorded as `owed` in
-      `tests/no_full_directory_walk_in_requests.js` with what would remove
-      each: the role screen's candidates (`personDns()`), the cells page's
-      residents (`residentsPage()`), SCIM's user list for any filter but
-      `userName eq` (asked of the name index since #616), and
-      `/admin/ldap/devices`. Fixed by #616's audit besides: the RFC 7523/7522
-      issuer lookup (the key pair's holders), the portal's forgot-password
-      address (`peopleByMail()`), and SCIM's HOBA key (`personsHolding()`).
+    - **THE CONSOLE PAGES THAT LISTED EVERYBODY (#359).** The cells
+      residents (`residentsPageAsync()`), the device register
+      (`windowedDevicesView()`) and the role screen's candidates
+      (`candidatePageAsync()`, drawn by `adminViews.windowedRbacList()`)
+      each ask one indexed page asynchronously. Residents and candidates
+      are the direct children of `ou=users` in `rdn_value` order (`rdnPage`
+      on `sts_ldap_entries_rdn`): the `uid` is sealed, so the order is the
+      RDN's, which for `uid=<name>,ou=users` is that name. Devices are the
+      direct children of `ou=devices` in key order (`containerPage`). A `q`
+      on the device page still looks inside at most
+      `DIRECTORY_SEARCH_SCAN` entries. A console or `/admin-api` request's
+      synchronous waits also share `ldap.workerDirectoryBudgetMs`
+      (`STS-LDAP-0175`, `common/CLAUDE.md`).
+      **A candidate page that is not whole says so** (the review of #692):
+      `matched` counts rows, and a name a DN cannot hold, two entries
+      sharing one RDN value (the walk's `>` steps past both) and the
+      walk's 100,000-row cap each keep a counted row off the page;
+      `candidateSearch.complete` is then false and `incomplete` says
+      which, and the console draws a sentence for each. A rejection the
+      store gives these pages carries no code, so `storeAsked()` marks it
+      `STS-LDAP-0139` and `/admin-api` answers it 503; anything else is a
+      500 (`STS-LDAP-0176`, `mgmt-api/admin_api.ts`'s
+      `answerDirectoryFailure()`). **A known cost, not fixed:** a needle
+      search's `rdnCount` is `position($3 in rdn_value) > 0`, which no
+      index serves, so it reads every direct child of `ou=users` in the
+      realm (the page itself stops at the next match, inside the rdn
+      walk). It is asked asynchronously and once per page; a trigram
+      index or a prefix-only search would be what stops it.
+    - **Still a whole walk on a request path**, recorded as `owed` in
+      `tests/no_full_directory_walk_in_requests.js`: SCIM's user list for
+      any filter but `userName eq` (asked of the name index since #616).
+      Fixed earlier, and named there: the role screen, the cells residents
+      and `/admin/ldap/devices` (#359); the RFC 7523/7522 issuer lookup
+      (the key pair's holders), the portal's forgot-password address
+      (`peopleByMail()`), and SCIM's HOBA key (`personsHolding()`) (#616).
   - **Still whole walks, correct and paged, off the request path**:
     `populateVcAttributes()` (development only), the realm-retirement
     announcement and the seed; `buildUsernameIndex()` is not reached.
@@ -1075,13 +1102,15 @@ bridge's 2 s ran out. Now:
   `common/devices.ts`' are; what is gone is any cost that grows.
 
 **What still pages `ou=devices` on a request**, each costing the realm in a
-windowed process for the reason above: `/admin-api/ldap/devices`
-(`ldapDevicesView()`, owed in `tests/no_full_directory_walk_in_requests.js`),
-and `/admin-api/devices`' list with no owner and its counts
-(`devices.list()`, `devices.counts()`, `common/CLAUDE.md`). What would stop
-them is the shape of `windowedDirectoryView()` for one container —
-`parent_key` pages (one level: a device is `cn=<id>,ou=devices`) and the
-counter rows — or an index the suffix comparison can use.
+windowed process for the reason above: `/admin-api/devices`' list with no
+owner and its counts (`devices.list()`, `devices.counts()`,
+`common/CLAUDE.md`). `/admin-api/ldap/devices` (`ldapDevicesView()`) asks
+the store one page of the container's direct children
+(`windowedDevicesView()`, #359): one `count` and one `containerPage`. What
+would stop the list and the counts is the shape of `windowedDirectoryView()`
+for one container — `parent_key` pages (one level: a device is
+`cn=<id>,ou=devices`) and the counter rows — or an index the suffix
+comparison can use.
 
 **A PAGE UNDER A BASE NO LONGER COSTS THE REALM (#638, 2026-10-14).**
 `page()`, `keysUnder()` and `namesUnder()` read the realm's DISTINCT
@@ -1091,8 +1120,8 @@ range of that index, still in key order and still every depth below the
 base (`persistence/directory_queries.js`, *A subtree is read through its
 parents*). So a page under `ou=devices` beside fifty million people costs
 the realm's containers plus a page — about 200 buffers where the suffix
-read the realm's keys — and the three listings above now cost the
-devices, not the directory. A page under the realm's BASE reads up to a
+read the realm's keys — and the listings above now cost the devices,
+not the directory. A page under the realm's BASE reads up to a
 page from every container and sorts them: bounded by containers × page,
 not by rows. What still tests a row's suffix, each narrowed first by a
 GIN index so the suffix is a filter on the few rows it answers:
@@ -1208,10 +1237,19 @@ from any door, `ldapmodify` included, to `federation_links.ts`'s `linksRemoved()
 `noteAccountChange()`, which ends the sessions that partner made. `applyFederatedAttributes()`
 writes the link it is handed and derives none; `autoCreateUser()` creates a federated
 person only when the payload says `create: true`, which is the subject decision's call.
-The five functions the register reads (`federationPerson()`, `peopleByFederationLink()`,
-`federationLinksThrough()`, `plannedPersonDn()`, `writeFederationLink()`) ride on the
+The seven functions the register reads (`federationPerson()`, `peopleByFederationLink()`,
+`federationLinksThrough()`, `plannedPersonDn()`, `writeFederationLink()`,
+`applyFederatedGroups()`, `federationIdleCandidates()`) ride on the
 object `federation.setDirectory()` already takes — the same door, not a new slot. A
 lookup by link is a walk of the realm, as `entryBySpiffeSubject()` is.
+`applyFederatedGroups()` (#358) creates a group this relationship does not already
+own only when nothing occupies that name, stamps `federationrelationship` with the
+relationship id, and then adds the person; a name that is unusable as a DN, or that
+names a group this relationship did not create, is returned as ignored and the
+sign-in is not failed. It never writes `memberOf`. `federationIdleCandidates()`
+reads the holders of `federationLink` (`eachHolderOfAny()`, not `persons()`) and
+returns a person whose every link starts with that relationship and who has no
+`userPassword` and is not already disabled.
 
 ## `entryUUID`: THE ONE THING ABOUT AN ENTRY THAT NEVER CHANGES, AND A PERSON'S `sub` (2026-09-14)
 
@@ -1599,7 +1637,10 @@ one statement; the function's own comment names the statement.
 * **`residentsPage(after, limit)`**: the cells page's keyset, a binary search
   over the same rows sorted by lower-cased first `uid`, reading `limit`
   entries. It was `allPersons()`, a filter, a sort and a slice, so the cursor
-  bought nothing.
+  bought nothing. **In a window (#359)** `residentsPageAsync()` asks one
+  `rdnPage` of the direct children of `ou=users` and drops projections and
+  entries with no `uid`. The order is the RDN's, which for `uid=<name>` is
+  that name, and the cursor answered in `next` is that RDN.
 * **`memberOfClaims()`**: who claims each group through their own `memberOf`,
   one walk for every group, kept on `directoryVersion` (a `memberOf` can be on
   any entry, the base included, which no container clock covers).
@@ -2761,6 +2802,22 @@ than something this service wrote. They were added with `stsTotpCredential`
 rather than left, because a table that is right about the new attribute and
 wrong about its three siblings is worse than one that is wrong about all four.
 
+### The post-quantum lane's user handle (#643, 2026-10-19)
+
+`stsWebauthnPqcUserHandle` sits beside `stsWebauthnUserHandle` (#474) on a
+person's entry: single-valued, minted by `common/credentials.ts`, in
+`OWN_NAMES` and in the credential doors (`CREDENTIAL_ATTRIBUTE_DOORS`, so
+the socket refuses a write of it). `readWebauthnUserHandle()` and
+`writeWebauthnUserHandle()` take a lane; **the second handle is written only
+where the first is already held**, so `webauthnUserHandleHolder()` — the
+owner index, now answering the owner and the lane — still walks the holders
+of `stswebauthnuserhandle` alone and indexes both values from each. That is
+what kept `persistence/directory_queries.js`'s ASKED_ATTRIBUTES, and the
+GIN expression index built from it, unchanged: a new asked name is a new
+index expression and a schema version. Cells need nothing: the attribute's
+name matches `cell_sessions.ts`'s credential pattern (`webauthn`), so it
+never leaves home, as the first handle never does.
+
 ## THE USER PORTAL'S SLOT, AND THE ONE HOOK HERE THAT HANDS OVER A WHOLE ENTRY (2026-09-11)
 
 `portal.setDirectory({ personEntry })`, filled at this module's require time
@@ -2878,9 +2935,9 @@ random keys are the same pair under `ou=applications`, `krb5ServiceKeys` and
 
 **`seed()` builds two things and only the first is structural.** The base and the
 containers — `ou=users`, `ou=groups`, `ou=applications`, `ou=federations`,
-`ou=policies`, `ou=roles`, `ou=peps`, `ou=passwordPolicies`, the SPIFFE pair and,
-in the default realm only, `ou=trustAnchors` (`ou=crl` is made on demand when a
-CRL is published) — are what every door that
+`ou=policies`, `ou=roles`, `ou=peps`, `ou=passwordPolicies`, the SPIFFE pair,
+`ou=kerberosTrusts` (#430) and, in the default realm only, `ou=trustAnchors`
+(`ou=crl` is made on demand when a CRL is published) — are what every door that
 provisions somebody writes UNDER, and they are seeded in both modes. Everything below
 them is demonstration data and `mode.seedsDemoData()` decides it: `cn=admin`, alice, bob
 and carol (carol's `employeeType: admin` is read by the seeded XACML policy),
@@ -2964,6 +3021,27 @@ is still attached after a successful bind, so the first ldapjs `error` the LDAPS
 server emits later — a client's malformed BindRequest is enough — is logged as
 `STS-LDAP-0028` "could not bind" and sets `tlsListening` false on a listener that
 is still answering.
+
+## `ou=kerberosTrusts`, THE KERBEROS TRUST REGISTER (#430, 2026-10-19)
+
+**One entry per partner Kerberos realm**, of this service's class
+`stsKrb5Trust`, owned by `kerberos/krb5_trusts.ts` (`kerberos/CLAUDE.md`,
+*KERBEROS TRUSTS AS RECORDS*, has the design). This file keeps the container
+(seeded in both modes, structural) and three functions over it —
+`listKerberosTrustEntries`, `writeKerberosTrustEntry` (REPLACES, and puts the
+container back if a restored directory predates it),
+`deleteKerberosTrustEntry` — filled into the register's `setDirectory()` slot,
+whose rule 3e argument is beside the fill. `seed()` also writes what
+`krb5Trusts.seedEntries()` answers: in the DEFAULT realm while it seeds
+demonstration data, the trust with PARTNER.COM that four retired settings
+built; nothing anywhere else. **The keys, `stsKrb5TrustKeys`, are in
+SECRET_ATTRIBUTES and `CREDENTIAL_ATTRIBUTE_DOORS`**: withheld from every read
+in product and refused over the socket in both modes, the register being the
+door that seals them and keeps the record that describes them in step. The
+record (`stsKrb5TrustData`) and the six trustedDomain names written beside it
+(`trustPartner`, `flatName`, `securityIdentifier`, `trustDirection`,
+`trustAttributes`, `trustType`) are public, and merged into `OWN_NAMES` so they
+come back with their spelling.
 
 ## `ou=passwordPolicies`, `pwdHistory`, AND THE ONE DOOR THAT WROTE A PASSWORD IN THE CLEAR (2026-09-12)
 
@@ -3498,6 +3576,30 @@ the handler), a SCIM create of a User or a Group, and `POST
     statements counted (B1 two against B2's control of four, B5 none), the
     same names raced by two node processes on one store (C) and by two
     workers on one node (D), a refused create, a failed flush, a dead worker.
+  * **A worker's release of a SUCCESSFUL create never reached the arbiter
+    until #665 (2026-10-17).** It is `{ createClaim, op: 'release',
+    committed: true }`, and `request_pool.js`'s message handler in `fork()`
+    tested `message.committed` — the read-your-write commit announcement —
+    BEFORE `message.createClaim`, so it went to `receiveCommitted()` and the
+    claim stayed held for its whole two minutes. Every create a worker made
+    (`/admin-api/users/create`, SCIM, the console's forms; an LDAP add is
+    claimed and released in the front, so it was spared) left its name
+    claimed, and the next create of it waited `CLAIM_WAIT_MS` and was
+    refused 409 `STS-LDAP-0092` where the directory should have said
+    "exists" — `sts_admin_api_operations`, `sts_console_after_root` and
+    `sts_portal_sessions` in the single-node mode, and no other mode (memory
+    claims nothing, active-active asks the store). A refused create's release
+    (`committed: false`) got through, which is why D5 passed. **The rule:
+    the `{ createClaim }` test is the FIRST in that handler** — a message
+    that names its kind goes to its owner whatever other field it carries —
+    and the wire format stayed. D could not see it: its front wired its
+    worker threads to the arbiter with a handler of its own and only READ
+    `request_pool.js`'s (D7). `tests/directory_create_worker_release.js`
+    drives the REAL handler: a front child forks a worker on that file
+    through the real `fork()`, the worker claims through the real
+    `DirectoryCreateClaims` and settles as a door does, and the front then
+    holds nothing and the name is free at once — STS-LDAP-0092 after the
+    wait before the fix.
 * **Claimed since 2026-09-14 too**: a SCIM Bulk create (in the ingress, which
   scimmy awaits — `scim/CLAUDE.md`) and the console's own forms, `POST
   /admin/users` and `/admin/users/new` and `POST /admin/groups` with
@@ -3642,3 +3744,54 @@ membership, each on purpose:
 anyway, by the count rule. An owner grants nothing. `groupsFor()` answers
 `ownerCount` on each list row and `owners` with `maxOwners` on the group.
 
+
+## WHAT EVERY PERSON MUST HOLD: THE ATTRIBUTE POLICY AT THIS DIRECTORY'S DOORS (#396, 2026-10-19)
+
+`common/attribute_policy.ts` (rule 3co, `common/CLAUDE.md`) says what a person
+in the realm must hold — `uid`, `cn` and `sn` always, `givenName` and `mail`
+by default — and this module asks it at every door that creates or edits a
+person, in product mode only (`mode.createsIncompletePeople()`). What is
+this directory's:
+
+* **`createUser()` asks before `putEntry()`**, of the entry as it would be
+  written, and refuses with STS-LDAP-0162 and the `missing` names; a `cn`
+  nobody typed is made of `givenName sn` first. `requiredExempt` names the
+  two creates that are not a person being described: the bootstrap
+  administrator (both `createPerson` hooks), which a fresh product deployment
+  must make with nothing typed, and SCIM, which checks the resource it writes
+  over the entry a line later. A service account created with
+  `serviceAccount: true` is exempt through the users action. A HOBA
+  registration creates through here with nothing typed, so a product realm
+  with the default policy refuses it (`scim/CLAUDE.md`).
+* **`autoCreateUser()` asks of a federated newcomer**: the plan's attributes
+  and the partner's (the ones `SourcedAttributes` lets through), a `cn` made
+  of the names. One missing a required attribute is logged under
+  STS-FED-0158 and nobody is created, so `authn.startSession()` refuses the
+  sign-in as it refuses an unprovisioned person. No other automatic create
+  happens in product mode.
+* **The LDAP add (65, STS-LDAP-0162)** asks after the password policy, with
+  the RDN's value counted as the entry's own (RFC 4512 2.3.1); nothing is
+  derived — an LDAP client writes what it sends. **The LDAP modify (65,
+  STS-LDAP-0164)** refuses only a value TAKEN AWAY, compared on the working
+  copy before anything is committed. A service account is exempt from both
+  (`serviceAccounts.isServiceAccount()`), as at every door.
+  objectClassViolation is the result a directory that checks its schema gives
+  an entry missing a MUST attribute.
+* **`person_editor.ts` takes the realm's custom attributes into its
+  universe**, a third list beside the schema and the catalogue, drawn under a
+  group of its own (Custom) with their syntax as the format — three formats
+  added for them: integer, boolean (stored upper-case) and email (the shape
+  of an addr-spec). `editorFor()` marks each row `required`, and `update()`
+  refuses taking a required value away (STS-LDAP-0164) after the schema's
+  MUST check (0109).
+* **The two registers' stores** are `ou=attributePolicies` and
+  `ou=attributeDefinitions`, seeded beside the other policy containers and
+  re-created by the first write where a realm predates them;
+  `policyEntriesIn()`, `writePolicyEntryIn()` and `deletePolicyEntryIn()` are
+  `ou=localePolicies`' three functions written once for both. The slot is
+  validated WHOLE (nine hooks): the six stores, `knownName()` (the name
+  table's spelling, which a custom attribute may not take), `holders()` and
+  `missing()`.
+* **`peopleMissing()` IS A WALK**, said at the function: no index records
+  what an entry LACKS. It answers null in a windowed process, where the
+  directory is in the store, and the page gives the RFC 4515 filter instead.

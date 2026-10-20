@@ -236,11 +236,11 @@ async function test() {
     // declares them (#110).
     fields: { oauthClientId: [RECEIVER], oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post",
-              oauthAllowedScope: ["ssf:read", "ssf:write", "scim:read",
+              oauthAllowedScope: ["ssf.read", "ssf.manage", "scim:read",
                                   "scim:write"],
               oauthGrantType: ["client_credentials"] } },
     "created the receiver's application");
-  const token = await tokenFor("ssf:read ssf:write");
+  const token = await tokenFor("ssf.read ssf.manage");
   const types = ["account-credential-change-required", "recovery-activated",
     "credential-compromise", "account-disabled", "account-enabled",
     "identifier-recycled", "opt-out-initiated", "opt-out-cancelled",

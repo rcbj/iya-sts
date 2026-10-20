@@ -752,6 +752,17 @@ class UsersPage {
         (development
           ? kit.note(t.html('consoleUsers.newUserBody.uidNote'))
           : '') +
+        // WHAT A CREATE MUST CARRY (#396): the realm's attribute policy,
+        // each field it names marked "required" in the grid below. The list
+        // is the view's; the link is markup a message cannot carry.
+        (json.requiredAttributes && json.requiredAttributes.length
+          ? kit.note(t.html(json.requiredEnforced
+              ? 'consoleUsers.newUserBody.requiredEnforced'
+              : 'consoleUsers.newUserBody.requiredNotEnforced',
+              { list: json.requiredAttributes.join(', ') }) +
+              '<a href="/admin/policies#attributes">' +
+              t.html('consoleUsers.newUserBody.requiredPolicy') + '</a>.')
+          : '') +
         '<input type="hidden" name="view" value="' + kit.esc(view) + '">' +
         '<div class="formrow fg-view"><span class="sub">' +
         (view === 'advanced'
@@ -1825,7 +1836,12 @@ class UsersPage {
         '<td class="num">' + kit.esc(String(one.signCount || 0)) + '</td>' +
         // THE SIGNATURE ALGORITHM (2026-10-01): the one this key signs with,
         // and so the one every sign-in with it is verified with.
-        '<td>' + UsersPage.algorithmCell(t, one.algorithm) + '</td>' +
+        '<td>' + UsersPage.algorithmCell(t, one.algorithm) +
+        // A CLASSICAL KEY THE PERSON'S PROFILE NO LONGER LETS SIGN THEM IN
+        // (#718): the refusal's own sentence, which stays English (#539).
+        (one.postQuantumRefused
+          ? '<div class="note state-invalid passkey-post-quantum-refused">' +
+            kit.esc(one.postQuantumRefused) + '</div>' : '') + '</td>' +
         '<td>' + UsersPage.attestationCell(t, one.attestation, one.aaguid) +
         '</td>' +
         '<td>' + kit.esc(backup) +
@@ -2517,7 +2533,13 @@ class UsersPage {
           t.html('consoleUsers.algorithmCell.postQuantum') + '</span>' : '') +
       (algorithm.insecure
         ? ' <span class="state-revoked">' +
-          t.html('consoleUsers.algorithmCell.insecure') + '</span>' : '');
+          t.html('consoleUsers.algorithmCell.insecure') + '</span>' : '') +
+      // THE POST-QUANTUM LANE (#643): a key created beside a classical one,
+      // under the person's second user handle. A classical key, and every
+      // key from before the lanes, says nothing more.
+      (algorithm.lane === 'pqc'
+        ? ' <span class="state-none">' +
+          t.html('consoleUsers.algorithmCell.lanePqc') + '</span>' : '');
   }
 
   // A key's attestation, for its row (#105): what the statement proved, or
@@ -3251,16 +3273,21 @@ class UsersPage {
                 : '') +
               (row.must ? t.text('consoleUsers.personFieldsSection.must')
                         : '') +
+              // The realm's attribute policy (#396), where the schema did
+              // not already say so.
+              (row.required && !row.must
+                ? t.text('consoleUsers.personFieldsSection.policyRequired')
+                : '') +
               (row.multi ? ''
                          : t.text('consoleUsers.personFieldsSection.single')),
         example: row.example,
         forText: row.label +
-          (row.must ? t.text('consoleUsers.personFieldsSection.required')
-                    : ''),
+          (row.must || row.required
+            ? t.text('consoleUsers.personFieldsSection.required') : ''),
         families: [], everyFamily: true,
         // Shown by the sub-tab's simple view (#500); a field every person
-        // must hold is always shown.
-        simple: !!row.simple || !!row.must
+        // must hold, by the schema or the realm's policy, is always shown.
+        simple: !!row.simple || !!row.must || !!row.required
       };
     };
     const mailForm = gate.write

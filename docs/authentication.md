@@ -209,6 +209,27 @@ trusted statement. What each key's statement proved is shown beside it on
 whose statement nothing verified is shown as *claimed*: a client that believed
 this service's word on an unverified statement would have learned something
 false about a real device.
+**A classical passkey and a post-quantum one, side by side**
+(`webauthn.pqcAlongsideClassical`, off by default, per realm). An
+authenticator replaces a passkey it already holds for this service when it
+is asked for another under the same account, and is asked for ML-DSA first
+whenever it supports it, so by default one person holds one kind or the
+other on a device. With the setting on, every place a passkey is created —
+`/portal/keys`, the activation link, the sign-in screen's first passkey and
+its set-up step — asks which: **classical** (the configured algorithms less
+ML-DSA) or **post-quantum** (ML-DSA only). Each kind is its own account to
+the authenticator and the password manager, with its own user handle, so
+both fit on one device. The post-quantum one is listed as
+`<username>+ml-dsa` when it is created, and as `<username>+ml-dsa-65` (for
+example) once every post-quantum passkey the person holds uses that one
+algorithm; that name is never typed to sign in, and the sign-in screen
+refuses it (`STS-AUTHN-0354`). Either passkey signs the person in, with or
+without the username. `webauthn.maxKeysPerPerson` counts both kinds. The
+setting cannot be on together with `webauthn.pqcOnly` (`STS-AUTHN-0353`).
+Turned off, a post-quantum passkey already held goes on signing in and no
+new one can be created (`STS-AUTHN-0351`). Few authenticators make ML-DSA
+passkeys yet.
+
 **`webauthn.userVerification` is the one ceremony option
 that is enforced**, because the UV flag sits inside the bytes the authenticator
 signed. The others are requests to the browser, and what came back is recorded
@@ -322,6 +343,8 @@ row says `disallow`. See [XACML](xacml.md).
 | `credentialLabel` | empty | The name a new passkey is given; `{provider}` and `{kind}` are filled in. |
 | `aggregateDevices` | on | A person's passkeys are one sign-in choice; off, one per passkey (below). |
 | `enterpriseSerialAttribute` | empty | The attribute of a person's entry holding the serials of the security keys issued to them; set, a key registers only if its enterprise attestation names one of them (below). |
+| `postQuantumRequired` | `off` | `sign-in` accepts only a **post-quantum** (ML-DSA) passkey at sign-in; `registration-and-sign-in` refuses a classical one at registration too (below). |
+| `recoveryAssurance` | `any` in development, `not-weaker` in product | Whether recovering an account without its passkey restores access at once (`any`), only once a new passkey has signed the person in (`not-weaker`), or only through an administrator and then only that way (`operator-only`) (below). |
 
 **Both portal buttons ask for a discoverable credential by default.** *Create
 a passkey* always asks `residentKey: required`. *Use a security key* asks
@@ -331,6 +354,34 @@ through either button; while it is on, it asks `securityKeyResidentKey`. A
 realm can lower that to `preferred` or `discouraged` to spare a security key's
 few resident slots, and a key enrolled that way may need the username to sign
 in.
+
+**Account recovery** (`recoveryAssurance`). A password reset link, the
+forgot-password form, an activation link, a recovery code and an emailed code
+or link all get a person back into their account without their passkey. For
+a person who holds a passkey, that would make the passkey policy's other rows
+easy to step round: a mailed link and a password reach the same applications
+a device-bound, attested security key does.
+
+* `any` (the default in development) restores access at once.
+* `not-weaker` (the default in product) lets the recovery happen, but the
+  first sign-in after it that is not a passkey sign-in reaches no
+  application. The sign-in screen asks the person to register a new passkey,
+  held to this policy's registration rules, and then sends them back to sign
+  in with it. That passkey sign-in completes the recovery. It applies to the
+  sign-in after a reset or activation link, after a password an
+  administrator generated, and to a recovery code or an emailed code or link
+  used at sign-in.
+* `operator-only` does the same, and also refuses the self-service doors to
+  a person who holds a passkey: the forgot-password form sends no mail (and
+  answers its usual sentence), a reset link they asked for is refused when it
+  is used, and the sign-in step offers no recovery code or emailed factor.
+  Only an administrator's reset link, generated password or activation link
+  remains.
+
+A person holding no passkey is not affected by any value. Whether a recovery
+may restore access is decided by the issuance policy (`recover-account`), so
+a realm's own policy can refine it. The codes are `STS-AUTHN-0380` (refused)
+and `STS-AUTHN-0381` (limited to registering a passkey).
 
 **Synced passkeys** (`backupEligibility`). A *synced* passkey is one its
 provider copies to the person's other devices, or keeps a backup of: a
@@ -386,6 +437,43 @@ can be registered at all. With it on, every other key is accepted, and the
 rule then binds only the keys that report: **it is weaker, and is meant for a
 realm moving its keys over one at a time.** The browser must also pass the
 extension on; one that does not is a key that reports nothing.
+
+**A post-quantum passkey required** (`postQuantumRequired`). A passkey is
+*post-quantum* when its signature algorithm is ML-DSA-44, ML-DSA-65 or
+ML-DSA-87 (RFC 9964), which a quantum computer is not expected to break; a
+*classical* one signs with ES256, RS256 or another algorithm that one could.
+The **algorithm** decides, as the key recorded it when it was registered —
+not the kind of passkey the person chose. With
+`webauthn.pqcAlongsideClassical` off, an authenticator that can make ML-DSA
+does so, and that key counts as post-quantum.
+
+- `off`, the default, accepts any passkey.
+- `sign-in`: a classical passkey **does not sign anybody in**, as the first
+  factor, as the step after a password, or with no username
+  (`STS-AUTHN-0356`, a `session.refuse` audit row). A classical one may still
+  be registered.
+- `registration-and-sign-in`: a classical passkey is **not registered**
+  either (`STS-AUTHN-0355`), and every registration then offers only ML-DSA
+  (with `webauthn.pqcAlongsideClassical` on, only the post-quantum kind).
+
+While it is required at sign-in, the passkey step asks the authenticator only
+for the person's post-quantum passkeys, and a person holding none is told so
+before any prompt appears. A sign-in with no username cannot be narrowed that
+way, so it is refused after the prompt. `/portal/keys` and the console mark a
+classical passkey that no longer signs its owner in, and the first time each
+one is refused a CAEP `credential-change` is sent. Like every row, it can be
+set on a named policy, so a single application or group can require
+post-quantum passkeys while the rest of the realm does not.
+
+A save that requires it is **refused while the realm offers no ML-DSA**
+(`STS-AUTHN-0357`): with `webauthn.algorithms` naming none, and neither
+`webauthn.pqcOnly` nor `webauthn.pqcAlongsideClassical` on, nobody could
+register a passkey that satisfies it. If `webauthn.algorithms` changes
+afterwards, registration offers all three ML-DSA algorithms anyway.
+
+A realm that keeps an issuance policy of its own, built from the
+`role-issuance` template before this row existed, decides passkeys with that
+document: rebuild it from the template for the realm to be held to the row.
 
 **The attestation rules at sign-in** (`enforceAttestationAtSignIn`). The
 `webauthn.attestation*` settings — the attestation policy, the list of
@@ -678,11 +766,16 @@ for.
 | holds a `primary` key, passwordless box ticked | the passwordless ceremony |
 
 A relying party can **demand** more. `acr_values` that only two factors can
-meet (`mfa`, `hwk`, `phr`, `phrh`) ticks the second-factor box and refuses the
-passwordless path server-side. A demand for a hardware key (RFC 8176 `hwk`, or
-a WS-Federation `wauth` for a hardware token) allows only a security key, alone
+meet (`mfa`, `hwk`) ticks the second-factor box and refuses the passwordless
+path server-side. A demand for a hardware key (RFC 8176 `hwk`, or a
+WS-Federation `wauth` for a hardware token) allows only a security key, alone
 or after a password, and refuses the code and recovery-code steps
-(`STS-AUTHN-0204`). A WS-Federation `wauth` for **multi-factor** is met only by
+(`STS-AUTHN-0204`). A demand for a **phishing-resistant** sign-in (OpenID
+Connect EAP's `phr`, or `phrh` for a hardware-protected key) asks for a
+security key the same way. A passkey alone meets it. A synced or unattested
+passkey meets `phr` and never `phrh`. A key enrolled during that sign-in meets
+neither: it was added on the strength of a password. See [OAuth security
+profiles](oauth-security.md#phishing-resistant-sign-in-phr-phrh). A WS-Federation `wauth` for **multi-factor** is met only by
 a session that really had two factors, so a passwordless key does not meet it.
 A session that does not meet a demand is sent through the sign-in screen again
 with what was asked for required, rather than answered. See
@@ -860,7 +953,9 @@ See [What is not checked](what-is-not-checked.md).
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `authn.sessionLifetimeS` | `STS_AUTHN_SESSION_LIFETIME_S` | `3600` | yes | How long a sign-on session lasts from its creation; absolute for a browser. |
-| `authn.maxSessions` | `STS_AUTHN_MAX_SESSIONS` | `100000` | yes | The most sign-on sessions a realm holds; at the cap the least recently used one is ended to make room. |
+| `authn.maxSessions` | `STS_AUTHN_MAX_SESSIONS` | `100000` | yes | The most sessions a realm holds. At the cap a new row is refused; nothing is ended to make room for somebody else. |
+| `authn.maxSessionsPerSubject` | `STS_AUTHN_MAX_SESSIONS_PER_SUBJECT` | `32` | yes | How many countable sessions one subject may hold. At the cap their own oldest countable session is ended. An arrival does not count. |
+| `authn.sessionShedPerSweep` | `STS_AUTHN_SESSION_SHED_PER_SWEEP` | `100` | yes | How many of a subject's own surplus sessions one session-expiry run ends in that realm. |
 | `authn.sessionIdleTimeoutS` | `STS_AUTHN_SESSION_IDLE_TIMEOUT_S` | `0` | yes | How long a session may go unused before it ends; `0` means no idle timeout. |
 | `authn.sessionSweepS` | `STS_AUTHN_SESSION_SWEEP_S` | `30` | yes | Interval of the scheduler job that ends expired sessions and reports them; `0` switches it off. |
 | `authn.pendingTtlS` | `STS_AUTHN_PENDING_TTL_S` | `600` | yes | How long an interrupted request waits at the sign-in screen. |
@@ -885,6 +980,7 @@ See [What is not checked](what-is-not-checked.md).
 | `webauthn.rpId` | `STS_WEBAUTHN_RP_ID` | *(empty: the host)* | yes | Widen the RP ID to a registrable domain suffix of the host. |
 | `webauthn.allowedOrigins` | `STS_WEBAUTHN_ALLOWED_ORIGINS` | *(empty: derived)* | yes | The origins a ceremony is accepted from; empty derives one from the address. |
 | `webauthn.algorithms` | `STS_WEBAUTHN_ALGORITHMS` | every algorithm the verifier checks, ML-DSA-44/65/87 (-48/-49/-50) first | yes | `pubKeyCredParams`, in preference order. On **Protocols → WebAuthn** each algorithm has a checkbox (requested or not) and a number (1 is the most preferred). See [Configuration](configuration.md) for the list. |
+| `webauthn.pqcAlongsideClassical` | `STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL` | `false` | yes | Let a person hold a classical and a post-quantum (ML-DSA) passkey at once, choosing the kind when creating one (see above). Refused beside `webauthn.pqcOnly`. |
 | `webauthn.userVerification` | `STS_WEBAUTHN_USER_VERIFICATION` | `required` | yes | Whether the authenticator must verify the person; `required` is enforced. |
 | `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` | yes | The attestation conveyance asked for at registration. Whether a statement is verified is `webauthn.attestationPolicy`'s decision, not this setting's ([WebAuthn](#webauthn), above). |
 | `webauthn.timeoutMs` | `STS_WEBAUTHN_TIMEOUT_MS` | `60000` | yes | The `timeout` hint handed to the browser. |

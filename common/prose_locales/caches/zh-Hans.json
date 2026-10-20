@@ -79,6 +79,14 @@
     "en": "758990e906bc4fb2",
     "text": "查找后 {{seconds}} 秒；对数据源的更改会丢弃其行。"
   },
+  "caches.store.authn.session-window.title": {
+    "en": "c7d3b3347696bed7",
+    "text": "单点登录会话窗口"
+  },
+  "caches.store.authn.session-window.description": {
+    "en": "7a7d9e762890fe35",
+    "text": "authn.sessionWindow 开启时一个进程持有的单点登录会话（#350）。未命中时从密封的行读取。逐出只在其 upsert 已提交后忘记内存中的副本，不会结束会话。"
+  },
   "caches.store.certificates.parsed-facts.title": {
     "en": "5746d523daca087a",
     "text": "已解析的证书信息"
@@ -418,6 +426,22 @@
   "caches.store.krb5.long-term-keys.lifetime": {
     "en": "ce837804788fa2c5",
     "text": "不过期：随主体一起丢弃，在其记录被替换（密码更改或恢复）时丢弃，或在超过上限时作为最近最少使用者被丢弃；从不持久化。"
+  },
+  "caches.store.krb5.trust-keys.title": {
+    "en": "9e19b75405074ba3",
+    "text": "Kerberos 跨领域信任密钥"
+  },
+  "caches.store.krb5.trust-keys.description": {
+    "en": "44c86730ace05ee9",
+    "text": "根据此领域的信任记录（ou=kerberosTrusts）构建的跨领域 krbtgt 主体，每个都带有从其共享密码派生或从其封存中打开的密钥，在第一次引荐之后的每次引荐中保留使用。"
+  },
+  "caches.store.krb5.trust-keys.bound": {
+    "en": "c9282e1e84dbe9e3",
+    "text": "强制执行：每个领域最多 512 个（最多 256 条记录，每条两个密钥）；最旧的会被丢弃，并在下次使用时重新构建。"
+  },
+  "caches.store.krb5.trust-keys.lifetime": {
+    "en": "37ee5778f968cdd3",
+    "text": "不会过期：其记录一旦变化即被替换（每次使用时都会比较记录的字节），并随记录一起删除；从不持久化。"
   },
   "caches.store.ldap.credential-tallies.title": {
     "en": "41d340493639d53a",

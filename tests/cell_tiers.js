@@ -19,7 +19,9 @@
 //   3. The tiered driver sends each write to the right database, joins a
 //      group's halves on the way back, splits minted rows by handle, and
 //      keeps the routing index: one claim per person, a release on delete,
-//      and a conflict counted rather than swallowed.
+//      and a conflict counted rather than swallowed. The expiry purge
+//      reaches both databases, and a stale batch's handles go to the tier
+//      that holds them (#360).
 //   4. Sealing: a cell-tier row sealed under the cell key does not open
 //      without it, and a global row opens in every cell.
 // ---------------------------------------------------------------------------
@@ -188,6 +190,13 @@ function stubDriver(name) {
       return Promise.resolve([]);
     },
     purgeMinted: function () { return Promise.resolve(1); },
+    purgeExpiredMinted: function (kind, options) {
+      log.debug("Entering purgeExpiredMinted().");
+      calls.push({ op: 'purgeExpiredMinted', kind: kind,
+                   options: options });
+      log.debug("Leaving purgeExpiredMinted().");
+      return Promise.resolve(1);
+    },
     claimOnce: function (scope) {
       calls.push({ op: 'claimOnce', scope: scope });
       return Promise.resolve({ ok: true });
@@ -420,6 +429,85 @@ async function tieredDriver(t) {
           cm.length === 1 && cm[0].upserts[0].handle === 'authn.sessions',
           'a global store\'s row goes to the global tier and a session to ' +
           'the cell');
+
+  // The expiry purge reaches the global tier (#360). Bound to the cell
+  // driver, it deleted only this cell's rows.
+  const given = ['dpop.seenJtis', 'authn.sessions', 'nobody.decided'];
+  const expired = await d.purgeExpiredMinted('expired', { nowMs: 5,
+                                                          limit: 10 });
+  // The realms are the GLOBAL registry's (#360): a cell's own sts_realms is
+  // not one, and judged against it every cell row of a later realm was an
+  // orphan.
+  const realmsBefore = g.loadRealms;
+  g.loadRealms = function () {
+    log.debug("Entering loadRealms(), the registry of acme.");
+    log.debug("Leaving loadRealms().");
+    return Promise.resolve([{ id: 'acme' }]);
+  };
+  const orphan = await d.purgeExpiredMinted('orphan', {
+    defaultRealm: 'default', orphanBeforeMs: 4, limit: 10 });
+  const stale = await d.purgeExpiredMinted('stale', {
+    handles: given, staleBeforeMs: 3, limit: 10 });
+  t.equal(expired, 2, 'an expiry purge counts both tiers');
+  t.equal(orphan, 2, 'an orphan purge counts both tiers');
+  t.equal(stale, 2, 'a stale purge counts both tiers');
+  const ofKind = function (driver, kind) {
+    log.debug("Entering ofKind().");
+    const out = driver.calls.filter(function (x) {
+      return x.op === 'purgeExpiredMinted' && x.kind === kind;
+    });
+    log.debug("Leaving ofKind().");
+    return out;
+  };
+  const gExpired = ofKind(g, 'expired');
+  const cExpired = ofKind(c, 'expired');
+  t.check(gExpired.length === 1 && cExpired.length === 1 &&
+          gExpired[0].options.nowMs === 5 &&
+          cExpired[0].options.nowMs === 5 &&
+          gExpired[0].options.limit === 10,
+          'expired rows are purged in the global tier and in the cell');
+  const gOrphan = ofKind(g, 'orphan');
+  const cOrphan = ofKind(c, 'orphan');
+  t.check(gOrphan.length === 1 && cOrphan.length === 1 &&
+          gOrphan[0].options.defaultRealm === 'default' &&
+          cOrphan[0].options.orphanBeforeMs === 4 &&
+          cOrphan[0].options.orphanBeforeMs ===
+          gOrphan[0].options.orphanBeforeMs,
+          'orphan rows are purged in both tiers, with the same rule');
+  t.check(JSON.stringify(gOrphan[0].options.realms) === '["acme"]' &&
+          JSON.stringify(cOrphan[0].options.realms) === '["acme"]',
+          'and both are judged against the global registry\'s realms, ' +
+          'never the cell database\'s own sts_realms',
+          JSON.stringify(cOrphan[0].options.realms));
+  g.loadRealms = function () {
+    log.debug("Entering loadRealms(), which fails.");
+    log.debug("Leaving loadRealms().");
+    return Promise.reject(new Error('the global database is down'));
+  };
+  let unreadRefused = null;
+  await d.purgeExpiredMinted('orphan', { defaultRealm: 'default',
+                                         orphanBeforeMs: 4, limit: 10 })
+    .catch(function (e) {
+      log.debug("Caught in the orphan purge: " + ((e && e.message) || e));
+      unreadRefused = e;
+    });
+  t.check(!!unreadRefused && ofKind(c, 'orphan').length === 1 &&
+          ofKind(g, 'orphan').length === 1,
+          'when the registry cannot be read, no tier purges an orphan');
+  g.loadRealms = realmsBefore;
+  const gStale = ofKind(g, 'stale');
+  const cStale = ofKind(c, 'stale');
+  t.check(gStale.length === 1 && gStale[0].options.staleBeforeMs === 3 &&
+          gStale[0].options.limit === 10 &&
+          JSON.stringify(gStale[0].options.handles) ===
+          JSON.stringify(['dpop.seenJtis']),
+          'a stale purge hands the global tier only its own stores');
+  t.check(cStale.length === 1 && cStale[0].options.staleBeforeMs === 3 &&
+          JSON.stringify(cStale[0].options.handles) ===
+          JSON.stringify(['authn.sessions', 'nobody.decided']),
+          'and the cell its own, an unclassified handle included');
+  t.check(given.join(',') === 'dpop.seenJtis,authn.sessions,nobody.decided',
+          'the caller\'s handle list is left as it was given');
   t.equal(d.changeRowsWritten(), 4, 'the change rows written are both ' +
           'databases\' together');
   ['STS-CELL-0001', 'STS-CELL-0002', 'STS-CELL-0003', 'STS-CELL-0004',
@@ -473,6 +561,7 @@ module.exports = {
   describe: 'A cell\'s store (#98): every persisted store is classified ' +
             'global or cell, the directory is split by where an entry sits ' +
             'and a group into two halves, and the tiered driver sends each ' +
-            'write to its database and keeps the routing index',
+            'write to its database, purges expired minted rows from both, ' +
+            'and keeps the routing index',
   run: run
 };

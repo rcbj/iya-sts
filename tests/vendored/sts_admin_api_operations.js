@@ -2690,8 +2690,13 @@ async function mintPermissionToken(client, wanted) {
   log.debug("Entering mintPermissionToken(). client=" + client);
   const username = names.usernameFor("stsapi-permperson");
   if (!mintedParties["realm:user:" + username]) {
+    // The realm's attribute policy (#396) requires givenName, sn and mail of
+    // every person in product mode.
     await ok("/users/create", {
       username: username, invent: false,
+      attributes: { cn: "Operations " + username, givenName: "Operations",
+                    sn: username,
+                    mail: username + "@admin-api-operations.test" },
       credential: "password", password: MINT_PASSWORD
     }, "created " + username + " before a permission token is minted");
     mintedParties["realm:user:" + username] = true;
@@ -3866,7 +3871,12 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
     "sign-in, and that provenance is the whole difference. It says " +
     JSON.stringify((listedUsers.body.users[0] || {}).knownBy));
 
-  await refused("/users/create", { username: username },
+  // With the attributes the realm's policy (#396) requires in product mode,
+  // so that what refuses it is the duplicate and not a missing name.
+  await refused("/users/create", { username: username, invent: false,
+    attributes: { cn: "Operations " + username, givenName: "Operations",
+                  sn: username,
+                  mail: username + "@admin-api-operations.test" } },
     /already/i,
     "a second entry for one person — one object per person is the rule this " +
     "directory keeps at every door, whatever protocol authenticated them");

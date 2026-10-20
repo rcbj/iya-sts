@@ -1103,6 +1103,47 @@ now shows it with the API stubbed.
   and in the postgres query alike), because the code was RIGHT. Monitoring
   → Risk's failures list shows the rows under that door name.
 
+## CONSUMER AND SOCIAL PROVIDERS (#565, 2026-10-19)
+
+rcbj's risk decisions on #565. The federation side is
+`../federation/CLAUDE.md`, *CONSUMER AND SOCIAL PROVIDERS*.
+
+* **`new-federated-provider` (×2)** fires on a person's first sign-in
+  through a federation relationship they never used, once there is history
+  enough (`risk.minimumHistory`), as `new-device` does. Every federated
+  sign-in's credential is `{ kind: 'federation', id: <relationship id> }`, so
+  the credential feature already counts it; nothing new is stored.
+* **`network-signups` (×3)** counts accounts federated sign-ins from one
+  prefix created in the hour, against `risk.networkSignupThreshold` (10). The
+  rows are in the FAILURES register under their own door
+  (`FEDERATED_SIGNUP_DOOR`, code `STS-RISK-0050`), sealed and purged as every
+  row there. The password signals leave that door out (`NOT_PASSWORD_DOORS`:
+  `excludeDoor` takes a list now, in both stores). It is an ADDRESS signal:
+  capped in a known context, and not counted for an allow-listed network
+  (#311's rule).
+* **`federated-provider-weight`** is the operator's factor on one
+  relationship, `federation:<id>=<factor>` in `risk.signalFactors`
+  (`factors().relationships`). It is in `LOWERING_ONLY`, because an
+  operator's weight is not evidence and never makes an unscored sign-in
+  scored by itself.
+* **A NEWCOMER IS ASSESSED under a provisional subject.** A sign-in that will
+  CREATE the person has no entry and so no `sub`. Until #565,
+  `authn.assessSignIn()` answered null for it, which made a consumer
+  provider's bulk sign-up invisible to every evidence signal. The federation
+  door names `urn:sts:federation-newcomer:<digest>`, one per partner
+  subject, and the sign-in is a first sign-in under it: unscored on the
+  model, decided on the evidence.
+* **The issuance policy is asked `create-account`** (`issuance_gate`'s
+  `ISSUANCE.ACCOUNT`) before a newcomer's session, with the risk facts and
+  the partner's `authn-category`, `authn-provider` and `email-verified`
+  (`xacml/CLAUDE.md`). The built-in risk rules apply to it as to a session,
+  and an operator's rule can refuse creation alone.
+* **A step-up after a partner is answered with a factor held here**
+  (`authn.beginSecondFactorAfterFederation()`, the wallet's path with the
+  partner as the first factor). The door's row in *The doors* above changes:
+  federation's ACS CAN ask now, for an existing person, never with a
+  password, and never by enrolling.
+
 ## THE REQUIRE ORDER, AND THE TRAP IT HIT
 
 The five libraries (the store, the terms, the datasets, the failures and,

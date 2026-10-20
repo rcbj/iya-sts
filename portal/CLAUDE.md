@@ -206,14 +206,24 @@ rather than a list of ones to avoid — this registry accepts an entry from a
 dynamic client registration, so a scheme of somebody's choosing must not be
 able to reach an attribute a signed-in person's page renders as an `href`.
 
-### It is still not a launch button, and that is a refusal rather than a gap
+### The name is not a launch button; the Sign in links beside it are (#426)
 
-The link goes to the application's own front door and hands it nothing, which
+The name goes to the application's own front door and hands it nothing, which
 is where a sign-in starts and is exactly what a person would type themselves.
-It does not START one. This service implements identity-provider-initiated
-sign-on in none of the four browser profiles — `/saml2`'s own page lists it
-among what is not implemented — so a link that began one would have to invent a
-request the application never asked for and is not expecting. The page says so.
+**This heading said "still not a launch button, and that is a refusal rather
+than a gap" until #426**, on the ground that this service implemented
+identity-provider-initiated sign-on in none of the browser profiles. That was
+already out of date — `/saml2/unsolicited` arrived with #189 and the OpenID
+Connect Core section 4 link with #120 — and #426 made it a feature: a row
+carries one **Sign in** link per protocol it can be started in
+(`launches`, from `account_overview.ts`'s `launchableOf()`), each
+`/launch/{app}?protocol=…`, the same URL the console shows on the
+application's protocol sub-tab. A protocol is offered only where the issuance
+policy's dry run permits its family, the application's identity-provider-
+initiated switch is on (off by default), and there is somewhere registered to
+send it. The OpenID Connect link went straight to the client's
+`initiate_login_uri` before #426; it goes through the door now, which records
+the launch and obeys the client's switch. `launch/CLAUDE.md` argues the door.
 
 ### It is paginated, and the cap is a setting since 2026-09-12
 
@@ -523,6 +533,31 @@ What that changed, and why each piece is the way it is:
   ceremony is armed, so the page loads one script tag. Every response of
   both handlers and of `remove-key` and `rename-key` goes through
   `sendKeysPage()`, so the script is allowed wherever the element is drawn.
+* **Two lanes (#643, `webauthn.pqcAlongsideClassical`)**: while the realm
+  offers both, the enrolment form carries a classical / post-quantum radio
+  (`KeysPages.laneChoice()`, shared with the activation's setup form) and
+  `POST /account-api/keys` `begin` takes `lane`, carried on the pending
+  enrolment; the armed ceremony is that lane's handle, name
+  (`<username>+ml-dsa` for the post-quantum lane), algorithms and exclude
+  list. Each row's Details say its lane. **The Signal API is sent once per
+  lane** — the view's `signals`, drawn as `#wa-signal` and `#wa-signal-pqc`,
+  each with that lane's handle, name and ids only: one signal under the
+  classical handle naming every key would tell the credential manager the
+  post-quantum passkeys are unknown in that account. The post-quantum name
+  says its algorithm (`<username>+ml-dsa-65`) once every post-quantum key
+  uses one. `authn/CLAUDE.md` (*Two lanes*) argues the rest.
+* **A post-quantum passkey required (#718)**: each row carries
+  `postQuantumRefused`, from `passkeyPolicy.postQuantumRefusal()` asked of
+  the key's algorithm under the person's selected profile — the same
+  question the sign-in asks, so the page and the refusal cannot disagree —
+  and the page draws `#passkey-post-quantum-refused` with
+  `portal.keys.postQuantumRefused` (seven languages; a warning, not a
+  refusal, so it is translated as `syncedRefused` is). Under
+  `registration-and-sign-in` the armed ceremony offers only ML-DSA and,
+  with both lanes on, `lanes` is `["pqc"]`, so the page asks nothing and
+  `begin`'s `classical` default becomes the post-quantum lane
+  (`webauthnPolicy.enrolmentLane()`). `authn/CLAUDE.md` (*A post-quantum
+  passkey required*) argues the rest.
 
 `tests/passkey_management.js` holds the credential layer, and
 `tests/vendored/sts_portal_backup_keys.js` holds the page over HTTP: the two
@@ -762,6 +797,57 @@ back in with nothing typed.
 act: every session and credential this identity holds in every protocol. Both
 are drawn, each says which it is. That form is not the portal's, so the
 runtime leaves it to the browser.
+
+## Several accounts in one browser: one per tab, and the account menu (#561, 2026-10-19)
+
+**The console's arrangement, and its reasoning is in `admin-ui/CLAUDE.md`
+8c-iv**; what is the portal's own is here. With `authn.multipleAccounts` off
+none of it is stored, sent or drawn: the header, the sign-in's record, the
+authorization request and the sign-out's address are the bytes they were.
+
+* **THE TAB'S ACCOUNT** is `{ sub, username }` in sessionStorage
+  (`sts-portal-account`), written when `/account-api/me` is read and removed
+  when the list says off, and sent as `login_hint` on every sign-in the
+  runtime starts — a step-up's among them, so a step-up is of this tab's
+  account. `authorizeUrl()` copies a sign-in's extra parameters into the
+  request as before, except the runtime's own (`expect`, `another`,
+  `login_hint`: `OWN_EXTRAS`), which never leave the tab.
+* **THE ACCOUNT MENU** (`PortalShell.accountMenu()`) is a `<details>` AFTER
+  Sign out — `tests/portal_refresh.js` 6 holds Refresh and Sign out side by
+  side — with a button per other signed-in account and *Sign in with
+  another account*. Sign out goes to `/logout?login_hint=<username>`.
+* **A SWITCH** asks over a form typed in, aborts what is in flight —
+  `sendOnce()`, `ownerJson()` (the owner token's requests, #607) and the
+  token requests — and discards `me`, the page for nobody's locale
+  (`nobody`), the form table, the view, the flash, the owner token and
+  its scopes, and the client's tokens and key; an answer for another
+  subject than the one switched to is refused. **A switch whose sign-in
+  cannot be started** (a pushed request the network refused) draws
+  *Switching accounts failed* and keeps the tab's account, as the
+  console's does (#731, `admin-ui/CLAUDE.md` 8c-iv,
+  `tests/multi_account_concurrency_tabs.js` 2).
+* **`/portal?accounts=another` IS HOW EVERY OTHER PAGE SIGNS IN AS ANOTHER
+  ACCOUNT** (delivery step 6, `common/CLAUDE.md` 3cl). `/authn/login` is
+  not a destination — it needs a pending sign-in — so the public pages'
+  control links here, and `route()` turns the marker into the portal's own
+  authorization request with `prompt=login` and no hint, after reading the
+  list: with the setting off the marker is dropped from the address and
+  the page is today's. The address is the portal's ADVERTISED one, which
+  `GET /authn-api/accounts` answers as `anotherAccount`, because a page on
+  another listener (#472) cannot work it out.
+* **THE DEVICE PAGE SAYS WHICH ACCOUNT APPROVES** (`/portal/device`,
+  `web_device.ts`'s `approvingAs()`). An approval is this tab's account's —
+  the access token's subject, on the sign-on session it was issued on — and
+  nothing else in the request is per account, so nothing acted as the wrong
+  account; but RFC 8628 section 5.4's defence is showing the person what
+  they authorize, and with two accounts signed in "you" is no longer
+  obvious. So, with more than one live account in the browser's list, the
+  request names the account it will be approved as (`device-as`,
+  `portalDevice.request.as`); otherwise the page is the one it was. A
+  `verification_uri_complete` opened in a new tab has no account of its own
+  and signs in as any tab does: the picker where nothing chooses.
+* **THE LIST IS FETCHED ONLY WHERE THE SHELL SAYS SO** (`data-sts-accounts`,
+  `common/CLAUDE.md` 3cl `web_accounts.ts`).
 
 ## A Refresh button beside Sign out (2026-10-09, #538)
 
@@ -1493,6 +1579,79 @@ pre-authorized offer).
 * `tests/portal_wallet.js` holds the operations, the refusals and the page's
   round trip through the bundle; three protocol jobs make their offers here
   (`oid4vc/CLAUDE.md`).
+* **THE CREDENTIALS ISSUED TO THE PERSON, AND REMOVE** (#661, rcbj 2026-10-16).
+  The view's `issued` was `vc_issued.ts`'s `historyForSubject(caller.sub)`
+  (one entry per issuance since #670, below): every credential still on one
+  of the person's rows, newest first, with
+  its state and the last event their wallet sent to the Notification
+  Endpoint. The issuer mints the Credential Response's `notification_id`
+  BEFORE it records the credential so the two are linked; the wallet's
+  report is shown and disowns nothing. A row goes when its last credential
+  expires, so this is what the register holds, not everything ever issued.
+  **Remove** is `POST /account-api/credentials/remove` (`id`), mirrored by
+  `POST /portal/remove-wallet-credential` because `POST /portal/wallet` is
+  the offer. rcbj chose REVOKE AND KEEP IN THE HISTORY over hiding a row
+  (2026-10-16): `removeForSubject()` sets that one credential's status-list
+  entry INVALID, revokes its issued-register row and stamps it removed,
+  which `disownedReason()` refuses at sign-in — the one credential, not an
+  `ldp_vc` row's siblings, which `disown()` would take. **No protocol lets
+  an issuer delete a wallet's copy** (OpenID4VP is a verifier asking;
+  OpenID4VCI's notification runs wallet to issuer), so the page says the
+  person must delete it in the wallet (`wallet-remove-note`). The id is a
+  digest of the row and the credential, looked up among the CALLER's rows
+  only: another person's is refused as unknown (`STS-PORTAL-0591`).
+  The history is PAGED twenty at a time, as `/portal/sign-ins` and
+  `/portal/claim-sources` are (`page`, `paging`, `kit.pageNav()`), and both
+  forms carry the page they were on so the view an act answers is that
+  page. `tests/portal_wallet_history.js` holds it.
+* **ONE ROW PER ISSUANCE, ITS BATCH COPIES UNDER IT** (#670, rcbj
+  2026-10-17). The issuer advertises `batch_credential_issuance.batch_size`
+  (`oid4vci.batchSize`, 4), so a wallet sends four proofs and takes four
+  credentials from one Credential Response, each bound to a different key
+  of its own with its own status-list entry — and the list showed four rows
+  for one "Add to your wallet". **They were never one register row** (the
+  brief for #670 expected they would be; the code says otherwise): a JOSE
+  row is keyed by its credential
+  and an `ldp_vc` row by its holder key. What the copies share is the
+  response's `notification_id`, so `vc_issued.ts`'s `issuancesForSubject()`
+  groups by it (`oid4vc/CLAUDE.md`). The view's `issued` is one entry per
+  issuance — configuration, format, issued, its state (the copies' where
+  they agree, else `mixed` with `counts`, drawn "3 of 4: Valid"), Remove —
+  and its `copies` are drawn in a `<details>` fold under the row: "Copy 2
+  of 4", the wallet key (the first twelve characters of the RFC 7638
+  thumbprint, with the whole thumbprint and, for `ldp_vc`, the holder's
+  `did:jwk` as the tooltip — twelve characters of a `did:jwk` are
+  `did:jwk:eyJ` for every key, which is why the visible part is always the
+  thumbprint, as on the console's sign-out page), the status-list index,
+  and a Remove of its own where the issuance has more than one. While
+  `batchSize` is over one the pane says batching is on, how many copies,
+  and that it is so verifiers cannot link presentations by the key
+  (`wallet-batch-note`); at one it says nothing about batching. **A page
+  counts issuances.** **REMOVE IS STILL ONE OPERATION**:
+  `POST /account-api/credentials/remove`'s `id` is an issuance's (every copy
+  still good) or a copy's (that copy alone). The two are digests of
+  different strings and cannot collide; both are the same act on the same
+  resource, with the same refusal (`STS-PORTAL-0591`, on an id not on one of
+  the CALLER's rows), the same audit action (`portal.vc.remove`, its detail
+  saying `scope`, `removed` and `copies`) and the one portal path, so a
+  `scope` member could only restate the id and would add a mismatch to
+  refuse. The answer says `scope` and `removed`; one CAEP signal per act.
+  **The console has no list of a person's issued credentials to keep in
+  step**: its sign-out page (`logout/logout.ts`'s `wallet-credential`) lists
+  register ROWS, one per wallet key, because a global sign-out disowns a
+  row, and already shows each one's key the same twelve characters long.
+  `tests/portal_wallet_batch.js` holds it.
+* **THE SIGNING ALGORITHM, CHOSEN PER OFFER** (rcbj, 2026-10-16). One
+  `<select name="signingAlg">` under the configuration and mode radios: every
+  configuration's `signingAlgs` (the configured default first, post-quantum
+  drafts named as drafts in `ALG_NOTES`), each option's `data-for` naming
+  its configurations and `data-default-for` those it is the default of. The
+  runtime's `wireDependentSelects()` (`data-depends-on="configuration"`)
+  shows only the checked configuration's and selects its default; the first
+  configuration's are drawn so already, for a browser without the script. A
+  value not in the configuration's list is refused (`STS-PORTAL-0592`); the
+  default is not recorded as a choice, so a change of the setting before
+  the wallet redeems still applies. `oid4vc/CLAUDE.md` has where it goes.
 
 ## `/portal/devices`: A PERSON'S OWN DEVICES (2026-09-23, #130; #164 phase 2, 2026-09-26)
 
@@ -1724,6 +1883,15 @@ three differences:
   `ssf/account_signals.ts`. It signs nobody in: the page links to `/portal`,
   where the ordinary sign-in happens with the new password, for
   `/portal/activate`'s magic-link argument.
+* **A RECOVERY FOR A PASSKEY HOLDER (#724, `common/CLAUDE.md` 3cq).** The
+  POST asks the recovery question before it claims the link
+  (`recoveryCheck()`): under `recoveryAssurance: operator-only` a link the
+  person asked for themselves (`stsPasswordResetSource: self`) is refused
+  403, `STS-AUTHN-0380`, with its own sentence, and stays unspent; an
+  administrator's is not. A spent link then leaves a pending recovery
+  (`credentials.noteRecovery()`), and `/portal/activate`'s finish does the
+  same for somebody who held a passkey before the link was issued. The
+  sign-in after either is held by `authn.ts` (`authn/CLAUDE.md`).
 
 ## SEVERAL NODES: A LINK IS CLAIMED BEFORE ANYTHING IS SET (2026-09-14, #46)
 
@@ -1820,4 +1988,29 @@ not repeated in `/account-api` (`mgmt-api/CLAUDE.md` *OWNERS*,
   scopes only to a person who owns something, so `scope` on that answer is
   what `canWrite` reads. The shell names `/admin-api`'s listener where it is
   elsewhere (`data-sts-api`, and `connect-src`).
+
+## CONNECTED ACCOUNTS (#565, 2026-10-19)
+
+`/portal/connected-accounts` (`portal_connected_accounts.ts`,
+`web_connected_accounts.ts`) is where a person connects a consumer or social
+provider to their own account. It is two `/account-api` operations, on the
+claim sources' pattern: Connect answers `location`, the provider's address.
+**There is no callback of this page's own**: the provider answers at the
+federation module's assertion consumer service, where every check of a
+federated sign-in is made, and `federation_sp.ts`'s `finishConnect()` writes
+the link and sends the browser back with `done` or `problem`. The browser
+binding is the federation module's `sts_fed_link`, set on Connect's answer.
+
+The account-takeover checks are this page's, before anything starts:
+* a sign-on session (`STS-PORTAL-0610`) whose risk is LOW or unscored
+  (`STS-PORTAL-0611`, a refusal, never a step-up);
+* an authentication within `federation.connectRecentAuthMinutes`, or the
+  answer is `stepUp` (`prompt=login`, `max_age`).
+
+**Any authentication counts as recent, not only a password**, a departure
+from the plan's "authenticated locally" (2026-10-19). A person whose account
+a provider made has no password here, and proving that provider again proves
+the account. The federation module and the directory are reached at request
+time (8a-acct is before 10c and 21). `federation/CLAUDE.md` has the
+federation half.
 

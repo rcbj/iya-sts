@@ -280,13 +280,19 @@ async function test() {
   await ok(realmApi + "/pki/build", { organisation: "Usercreds",
                                       country: "US" },
            "built a certificate authority");
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
   await ok(realmApi + "/users/create",
            { username: PERSON, invent: false, credential: "none",
-             attributes: { cn: "Usercreds Alice", sn: PERSON } },
+             attributes: { cn: "Usercreds Alice", givenName: "Usercreds",
+                           sn: PERSON,
+                           mail: PERSON + "@" + REALM + ".example.net" } },
            "created the person");
   await ok(realmApi + "/users/create",
            { username: OTHER, invent: false, credential: "none",
-             attributes: { cn: "Usercreds Bob", sn: OTHER } },
+             attributes: { cn: "Usercreds Bob", givenName: "Usercreds",
+                           sn: OTHER,
+                           mail: OTHER + "@" + REALM + ".example.net" } },
            "created a second person");
   await ok(realmApi + "/applications/create",
            { identifier: APP, protocols: ["oauth2"],

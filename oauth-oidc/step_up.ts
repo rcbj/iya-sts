@@ -76,14 +76,31 @@
 // THE VOCABULARY, AND THE THREE WORDS THAT ARE NOT ACR VALUES.
 //
 // `0`, `1` and `mfa` are what `authn.js` records on a session — no factor, one
-// factor, two — and what `acr_values_supported` publishes. `hwk`, `phr` and
-// `phrh` are RFC 8176 AUTHENTICATION METHOD names, not context classes, and
-// were accepted in `acr_values` long before this file as a demand for a second
-// factor; that is kept rather than broken. Each is met by a TWO-factor session
-// whose `amr` names a hardware key — a password and a security key — and a
-// session that used a one-time code as its second factor does not meet it,
-// because it did not use a key. They are not published: a client should not be
-// taught to put method names where class names go.
+// factor, two — and what `acr_values_supported` publishes. `hwk` is an RFC
+// 8176 AUTHENTICATION METHOD name, not a context class, and was accepted in
+// `acr_values` long before this file as a demand for a second factor; that is
+// kept rather than broken. It is met by a TWO-factor session whose `amr` names
+// a hardware key — a password and a security key — and a session that used a
+// one-time code as its second factor does not meet it, because it did not use
+// a key. It is not published: a client should not be taught to put method
+// names where class names go.
+//
+// **`phr` AND `phrh` ARE CONTEXT CLASSES, AND HAVE BEEN SINCE 2025** — OpenID
+// Connect EAP ACR Values 1.0, section 2 (#723, 2026-10-19). They were read
+// as `hwk` was until then, met by a password with a key and by `amr` `hwk`,
+// which claimed more than the evidence and less than the definition: a
+// passkey alone is phishing-resistant and was not `phr`, and a synced
+// passkey after a password was `phrh`. Now `common/phishing_resistance.ts`
+// says what earned which, from the session's latest event — a WebAuthn
+// assertion or a client certificate for `phr`; an assertion by a key with a
+// TRUSTED attestation and the BE flag clear for `phrh` — and a TOKEN meets
+// one only by carrying it as its `acr` (`phrh` meets `phr`). They are not
+// rungs: `mfa` does not meet them and they do not meet `mfa`, though a token
+// carrying one meets `0` and `1`, since there was an authentication. Both are
+// published. The sign-in screen demands a security key for them, alone or
+// after a password; a return that did not earn the class is
+// `unmet_authentication_requirements` (`STS-OAUTH-0970`, `-0971` for `phrh`
+// on a key that earned only `phr`).
 //
 // Anything else — a URN a federation partner speaks — is met only by a session
 // whose `acr` is EXACTLY that value, which is how a federated sign-in carrying
@@ -121,6 +138,8 @@ import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import monitor = require('./oauth2_monitor');
+// What earned `phr` and `phrh` (#723): a leaf, so no cycle.
+import PhishingResistance = require('../common/phishing_resistance');
 
 // A JSON-shaped value: a query, a session, claims, a refusal.
 type Json = any;
@@ -179,11 +198,16 @@ const LEVELS = ['0', '1', 'mfa'];
 // ---------------------------------------------------------------------------
 const COMPLIANT_DEVICE = 'urn:sts:acr:compliant-device';
 
-// What `acr_values_supported` publishes: the ladder, then the device class.
-const SUPPORTED = LEVELS.concat([COMPLIANT_DEVICE]);
+// OpenID Connect EAP ACR Values 1.0's two classes (#723), weaker first.
+const EAP_CLASSES = PhishingResistance.CLASSES.slice();
+
+// What `acr_values_supported` publishes: the ladder, the two EAP classes,
+// then the device class.
+const SUPPORTED = LEVELS.concat(EAP_CLASSES, [COMPLIANT_DEVICE]);
 
 // RFC 8176 method names accepted as a demand for two factors including a key.
-const KEY_ALIASES = ['hwk', 'phr', 'phrh'];
+// `phr` and `phrh` left it with #723: they are EAP classes, above.
+const KEY_ALIASES = ['hwk'];
 
 // The round-trip marker's name. `oauth2.ts` declares it in the authorization
 // request's schema, puts it on the return address and strips it from a push.
@@ -216,7 +240,12 @@ class StepUp {
    */
   static readonly COMPLIANT_DEVICE = COMPLIANT_DEVICE;
   /**
-   * What `acr_values_supported` publishes: the levels, then the device class.
+   * OpenID Connect EAP ACR Values 1.0's `phr` and `phrh`, weaker first.
+   */
+  static readonly EAP_CLASSES = EAP_CLASSES;
+  /**
+   * What `acr_values_supported` publishes: the levels, the two EAP classes,
+   * then the device class.
    */
   static readonly SUPPORTED = SUPPORTED;
   /**
@@ -477,6 +506,20 @@ class StepUp {
                                  acr));
   }
 
+  // The level an authentication HAD, for a request on the ladder: its own,
+  // and `1` for an `acr` of `phr` or `phrh` (#723), which a sign-in here is
+  // never recorded as but a token met through one carries — there was an
+  // authentication behind it, and a resource server asking for `1` of such
+  // a token is answered by it. Not `mfa`: a passkey alone is one factor.
+  private hadLevelOf(acr: unknown): number {
+    const { log } = this.deps;
+    log.debug("Entering StepUp.hadLevelOf().");
+    const level = PhishingResistance.isClass(acr) ? this.levelOf('1')
+                                                  : this.levelOf(acr);
+    log.debug("Leaving StepUp.hadLevelOf(). " + level);
+    return level;
+  }
+
   private amrOf(facts: Json): string[] {
     const { log } = this.deps;
     log.debug("Entering StepUp.amrOf().");
@@ -502,7 +545,18 @@ class StepUp {
       log.debug("Leaving StepUp.meets(). The same value.");
       return true;
     }
-    const hadLevel = this.levelOf(had);
+    const hadLevel = this.hadLevelOf(had);
+    if (PhishingResistance.isClass(requested)) {
+      // A SESSION by its latest event's evidence; anything else — a token's
+      // claims — by its own `acr` alone, where `phrh` states `phr` too. `amr`
+      // `hwk` is not evidence of either (`phishing_resistance.ts`).
+      const earned = facts && Array.isArray(facts.events)
+        ? PhishingResistance.ofSession(facts)
+        : PhishingResistance.ofAcr(had);
+      const met = earned.indexOf(requested) >= 0;
+      log.debug("Leaving StepUp.meets(). An EAP class; met=" + met);
+      return met;
+    }
     if (requested === COMPLIANT_DEVICE) {
       const met = hadLevel >= this.levelOf('1') &&
                   this.compliantDeviceOf(facts);
@@ -612,7 +666,7 @@ class StepUp {
     const self = this;
     log.debug("Entering StepUp.demandsSecondFactor().");
     const producible = (acrValues || []).filter(function (one) {
-      return self.levelOf(one) >= 0 || KEY_ALIASES.indexOf(one) >= 0;
+      return self.producible(one);
     });
     const demands = producible.length > 0 &&
       producible.every(function (one) {
@@ -621,6 +675,17 @@ class StepUp {
       });
     log.debug("Leaving StepUp.demandsSecondFactor(). " + demands);
     return demands;
+  }
+
+  // Whether the sign-in screen can produce a value at all: a rung, a key
+  // alias, or an EAP class (#723), which a key ceremony at the screen can
+  // earn.
+  private producible(value: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering StepUp.producible().");
+    log.debug("Leaving StepUp.producible().");
+    return this.levelOf(value) >= 0 || KEY_ALIASES.indexOf(value) >= 0 ||
+      PhishingResistance.isClass(value);
   }
 
   // -------------------------------------------------------------------------
@@ -633,15 +698,20 @@ class StepUp {
   //              does not answer it.
   //
   // Both together are a password AND a key, which is what the RFC 8176 key
-  // aliases ask for here; `forceKey` alone is WS-Federation's `HardwareToken`
-  // demand, which a passwordless key meets (`wsfed.ts`). One mechanism —
+  // alias asks for here; `forceKey` alone is WS-Federation's `HardwareToken`
+  // demand, which a passwordless key meets (`wsfed.ts`), and EAP's `phr` and
+  // `phrh` (#723), which a key ceremony earns as a first factor or as the
+  // step after a password. One mechanism —
   // these two flags on the pending sign-in and `HONOURED` on the return —
   // behind every protocol that steps up, rather than a second one per door.
   //
   // `screenDemand(kind)` names the kind: '' (nothing), 'mfa', 'key', or
-  // 'mfa+key'. `screenDemandFor(acrValues)` reads it off a request: every
-  // producible value needing two factors is 'mfa', and when every one of
-  // them is a key alias it is 'mfa+key'.
+  // 'mfa+key'. `screenDemandFor(acrValues)` reads it off a request: a flag
+  // is forced only when EVERY producible value needs it, since any one of
+  // them is an acceptable answer — every value needing two factors is
+  // 'mfa', every one a key alias 'mfa+key', every one an EAP class 'key'.
+  // `phr mfa` therefore forces neither: a password with a one-time code
+  // answers `mfa`, a passkey alone answers `phr`.
   // -------------------------------------------------------------------------
   /**
    * Returns the two flags `authn.beginAuthentication()` takes for a kind of
@@ -670,13 +740,20 @@ class StepUp {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering StepUp.screenDemandFor().");
+    const producibleValues = (acrValues || []).filter(function (one) {
+      return self.producible(one);
+    });
+    if (producibleValues.length && producibleValues.every(function (one) {
+      return PhishingResistance.isClass(one);
+    })) {
+      log.debug("Leaving StepUp.screenDemandFor(). An EAP class: a key.");
+      return this.screenDemand('key');
+    }
     if (!this.demandsSecondFactor(acrValues)) {
       log.debug("Leaving StepUp.screenDemandFor(). Nothing forced.");
       return this.screenDemand('');
     }
-    const producible = (acrValues || []).filter(function (one) {
-      return self.levelOf(one) >= 0 || KEY_ALIASES.indexOf(one) >= 0;
-    });
+    const producible = producibleValues;
     const keysOnly = producible.every(function (one) {
       return KEY_ALIASES.indexOf(one) >= 0;
     });
@@ -785,17 +862,36 @@ class StepUp {
           return self.meets(one, Object.assign({}, facts, { acr: value }));
         });
       })[0];
-      acr = facing || (facts.acr || null);
+      // AND WHERE THE SESSION'S OWN `acr` DOES NOT STATE THEM AS A TOKEN'S
+      // WOULD (#723) — a passkey session is `acr` `1`, and a token carrying
+      // `1` would be refused `phr` at the token endpoint's detail check —
+      // the first REQUIRED value that, carried, states every one of them.
+      const states = function states(value: string): boolean {
+        log.debug("Entering states().");
+        log.debug("Leaving states().");
+        return required.every(function (one) {
+          return self.meets(one, { acr: value });
+        });
+      };
+      const own = facts.acr || null;
+      acr = facing || (own && states(own) ? own
+        : (required.filter(states)[0] || own));
     }
     if (ageMet && acrMet) {
       log.debug("Leaving StepUp.assessSession(). Met, acr=" + acr);
       return { met: true, acr: acr, elapsed: elapsed };
     }
     const reason = ageMet ? 'acr' : 'max_age';
+    // WHAT THE SESSION DID EARN of the EAP classes (#723), for the refusal
+    // to say why a `phrh` request on a `phr` sign-in was not met.
+    const earned = PhishingResistance.ofSession(facts);
     log.debug("Leaving StepUp.assessSession(). Not met (" + reason +
               "), honoured=" + !!opts.honoured);
     return { met: false, reason: reason, retry: !opts.honoured, acr: acr,
-             elapsed: elapsed };
+             elapsed: elapsed,
+             earned: earned.length ? earned[earned.length - 1] : '',
+             hardwareShortfall: earned.length
+               ? PhishingResistance.hardwareShortfallOf(facts) : '' };
   }
 
   // The refusal an authorization request that cannot be met is answered
@@ -845,6 +941,36 @@ class StepUp {
           'authenticated ' + said.elapsed + ' seconds ago — a sign-in that ' +
           'did not start a new authentication.'
       }, 'STS-OAUTH-0501');
+    } else if (need.acrValues.indexOf(PhishingResistance.PHRH) >= 0 &&
+               need.acrValues.every(function (one) {
+                 return one === PhishingResistance.PHRH ||
+                   one === PhishingResistance.PHR;
+               }) && said.earned === PhishingResistance.PHR) {
+      out = errorCodes.mark({
+        error: 'unmet_authentication_requirements',
+        description: 'OpenID Connect EAP ACR Values 1.0: phrh was ' +
+          'requested, and the authentication was phishing-resistant (phr) ' +
+          'without evidence that its key is hardware-protected: ' +
+          (said.hardwareShortfall || 'no trusted attestation') + '. phrh ' +
+          'is met by a passkey whose attestation this realm trusts and ' +
+          'whose backup-eligible flag is clear.'
+      }, 'STS-OAUTH-0971');
+    } else if (need.acrValues.length && need.acrValues.every(function (one) {
+      return PhishingResistance.isClass(one);
+    })) {
+      out = errorCodes.mark({
+        error: 'unmet_authentication_requirements',
+        description: 'OpenID Connect EAP ACR Values 1.0: ' +
+          need.acrValues.join(' ') + ' was requested, and the ' +
+          'authentication performed was not phishing-resistant. phr is ' +
+          'met by signing in with a passkey or security key already ' +
+          'registered (alone or after a password) or with a TLS client ' +
+          'certificate — not by a password, a one-time code, an emailed ' +
+          'code or link, or a recovery code, nor by a key enrolled in the ' +
+          'same sign-in on the strength of a password; phrh by such a ' +
+          'passkey whose attestation this realm trusts and whose ' +
+          'backup-eligible flag is clear.'
+      }, 'STS-OAUTH-0970');
     } else {
       out = errorCodes.mark({
         error: 'unmet_authentication_requirements',
@@ -854,9 +980,11 @@ class StepUp {
           'service produces ' + LEVELS.join(', ') + ' (ordered, so a ' +
           'stronger one meets a weaker request); ' + COMPLIANT_DEVICE +
           ' is met by a sign-in from the person\'s own compliant ' +
-          'registered device; hwk, phr and phrh are met by a password with ' +
-          'a security key; any other value only by a sign-in that reports ' +
-          'exactly that acr.'
+          'registered device; phr by a passkey, a security key or a TLS ' +
+          'client certificate, and phrh by a passkey with a trusted ' +
+          'attestation that is not backup-eligible (OpenID Connect EAP ACR ' +
+          'Values 1.0); hwk by a password with a security key; any other ' +
+          'value only by a sign-in that reports exactly that acr.'
       }, 'STS-OAUTH-0500');
     }
     log.debug("Leaving StepUp.unmetRefusal(). " + out.error);
@@ -1036,6 +1164,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   LEVELS: StepUp.LEVELS,
   COMPLIANT_DEVICE: StepUp.COMPLIANT_DEVICE,
+  EAP_CLASSES: StepUp.EAP_CLASSES,
   SUPPORTED: StepUp.SUPPORTED,
   KEY_ALIASES: StepUp.KEY_ALIASES,
   HONOURED: StepUp.HONOURED,

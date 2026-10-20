@@ -264,6 +264,15 @@ class SpiffePage {
       kit.perPageOptions(json.paging.perPage) +
       '</select><button class="secondary">' +
       t.html('consoleSpiffe.filter') + '</button></div></form>' +
+      '<form method="post" action="/admin/spiffe/agents"><input ' +
+      'type="hidden" name="action" value="join-token"><div ' +
+      'class="formrow"><label for="jt-ttl">' +
+      t.html('consoleSpiffe.joinTokenTtlLabel') + '</label><input ' +
+      'id="jt-ttl" name="ttl" size="6" placeholder="600"><label ' +
+      'for="jt-alias">' + t.html('consoleSpiffe.joinTokenAliasLabel') +
+      '</label><input id="jt-alias" name="agentId" size="34"><button>' +
+      t.html('consoleSpiffe.createJoinTokenButton') + '</button></div>' +
+      kit.note(t.html('consoleSpiffe.joinTokenNote')) + '</form>' +
       '<table><tr><th>' + t.html('consoleSpiffe.agent') + '</th><th>' +
       t.html('consoleSpiffe.attestor') + '</th><th>' +
       t.html('consoleSpiffe.state') + '</th>' +

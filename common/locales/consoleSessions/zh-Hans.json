@@ -8,6 +8,8 @@
   "thSince": "开始时间",
   "thExpires": "过期时间",
   "thCarries": "承载",
+  "deviceBound": "已绑定到其浏览器的 {alg} 密钥（DBSC）",
+  "deviceBoundTitle": "Device Bound Session Credentials：此会话需要一个短期 cookie，只有浏览器密钥的证明才能续订它。已续订 {n} 次。",
   "thCredentials": "凭据",
   "leadBefore": "<strong>此服务当前持有的每一个会话</strong>，涵盖拥有会话的三种协议。会话是此服务所持有、使某人当前处于已认证状态的状态；令牌、断言、票据和 SVID 则是它已经“签发出去”的东西，它们比这里的任何会话都存活得更久，属于",
   "leadTokens": "令牌",
@@ -73,5 +75,18 @@
   "noExpiry": "<strong>无过期时间</strong>",
   "noExpiryNote": "直到有东西结束它",
   "expired": "已过期",
-  "inDuration": "{duration} 后"
+  "inDuration": "{duration} 后",
+  "accountSet": "浏览器",
+  "accountSetTitle": "账户集 {id}：此会话与其中的每个其他会话共用一个浏览器。点击链接列出它们。",
+  "hAccounts": "一个浏览器中的多个账户",
+  "accountsLead": "本领域中各浏览器的账户集所做的事，自本服务启动以来计数，所有进程相加。请把<strong>询问账户</strong>与<strong>选择账户</strong>对照来看：无法判断属于哪个账户的请求会显示账户选择器，如果这种情况比人们作出选择更频繁，说明有依赖方没有发送提示。",
+  "accountsOff": "<strong>本领域已关闭一个浏览器中多个已登录账户</strong>（<code>authn.multipleAccounts</code>）。这些数字是在开启期间统计的。",
+  "accountsNote": "<strong>切换</strong>的账户在被选择时也成为浏览器的默认账户；<strong>过期</strong>统计在 <code>authn.rememberedAccountDays</code> 之后被移除的已退出账户。任何数字都不指明某个人或某个浏览器。",
+  "accounts.selected": "选择账户",
+  "accounts.ambiguous": "询问账户",
+  "accounts.selectFailed": "选择被拒绝",
+  "accounts.added": "添加的账户",
+  "accounts.switched": "切换默认",
+  "accounts.forgotten": "忘记的账户",
+  "accounts.expired": "过期的已记住账户"
 }

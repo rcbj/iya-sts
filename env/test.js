@@ -249,14 +249,6 @@ var config = {
       "krbtgt-mock-password",                        // restart to apply
     domainSid:
       "S-1-5-21-1004336348-1177238915-682003330",         // restart to apply
-    trustedRealm:
-      "PARTNER.COM",                                   // restart to apply
-    trustPassword:
-      "inter-realm-trust-password",                   // restart to apply
-    trustedDomainSid:
-      "S-1-5-21-2035427030-2118130302-1178042555", // restart to apply
-    trustedKrbtgtPassword:
-      "partner-krbtgt-password",              // restart to apply
     s2kparams: "omit"
   },
 
@@ -431,6 +423,18 @@ var config = {
   // throttle set their own limits inside the realms they create.
   acme: {
     attemptsPerAddress: 5000
+  },
+
+  // --- How many trust realms the suite may leave standing (#368) -----------
+  // realms.maxCount ships at 10, counting the default realm. This suite
+  // LEAVES the realms it creates, and a kept stack has held well over ten,
+  // so the next create would be refused for the cap. 100000 is the setting's
+  // own maximum. It is a LAYER for the test stacks, not the setting:
+  // env/defaults.js still ships 10, and env/local.js — the image default —
+  // does not raise it. A deployment stays at 10 until a service administrator
+  // sets it in the default realm.
+  realms: {
+    maxCount: 100000
   },
 
   // --- SPIFFE / SPIRE ------------------------------------------------------

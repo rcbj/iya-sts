@@ -575,8 +575,6 @@ function childMain() {
       replication.reset();
 
       // THE STATEMENT holds both halves of the bound.
-      const pgPath = require.resolve(ROOT + '/node_modules/pg');
-      const previous = require.cache[pgPath];
       const statements = [];
       const FakeClient = function () {};
       FakeClient.prototype.query = function (sql, params) {
@@ -594,18 +592,16 @@ function childMain() {
         return Promise.resolve(new FakeClient());
       };
       FakePool.prototype.end = function () { return Promise.resolve(); };
-      require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                                exports: { Pool: FakePool,
-                                           Client: FakeClient } };
+      // In the place of the one door to the store (#326).
+      const restore = require(ROOT + '/tests/tools/store_double')
+        .install({ Pool: FakePool, Client: FakeClient });
       delete require.cache[require.resolve(ROOT +
         '/persistence/persistence_postgres')];
       const pgDriver = require(ROOT + '/persistence/persistence_postgres')
         .create({ url: 'postgres://sts_app@localhost:5432/sts',
                   log: { debug: function () {}, info: function () {},
                          warn: function () {}, error: function () {} } });
-      if (previous) {
-        require.cache[pgPath] = previous;
-      }
+      restore();
       await pgDriver.purgeChangeLog({ retentionMs: 3600000,
                                      readerTtlMs: 3600000 });
       await pgDriver.purgeChangeLog({ retentionMs: 3600000,
@@ -663,7 +659,11 @@ function bindChild() {
       const d = require(ROOT + '/ldap/ldap_server.js');
       const credentials = require(ROOT + '/common/credentials');
       const persistence = require(ROOT + '/persistence/persistence');
-      const made = d.createUser('bind-limited', { origin: 'test' });
+      // The realm's attribute policy (#396) requires givenName, sn and mail
+      // of every person in product mode, and invents none of them.
+      const made = d.createUser('bind-limited', { origin: 'test',
+        attributes: { givenName: 'Bind', sn: 'Limited',
+                      mail: 'bind-limited@example.com' } });
       const pw = credentials.setPassword('bind-limited',
                                          'Correct-Horse-9-Battery');
       note(made && made.ok && pw && pw.ok, 'F0. a product-mode person to ' +

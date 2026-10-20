@@ -2025,6 +2025,13 @@ class SpMetadata {
                 'MDQ responder; a document past its validUntil is refused.',
       owner: 'saml/sp_metadata.ts',
       everySetting: 'saml2.spMetadataRefreshIntervalS', everySettingUnit: 's',
+      // ON THE FRONT (#408), and only because of WHERE it is registered:
+      // `server.js`'s `listen()` calls this, and a request worker never does,
+      // so a worker has no such job to run. Said here rather than learnt at
+      // the first run as STS-SCHED-0020. Registering it in every process
+      // would let it move.
+      onFront: 'it is registered only by the front process, from ' +
+               'server.js\'s listen(), so no request worker has it',
       run: function () {
         return self.sweepOnce();
       }

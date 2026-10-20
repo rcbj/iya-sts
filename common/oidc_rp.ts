@@ -2941,6 +2941,13 @@ class OidcRelyingParty {
           renewableUntil: renewableUntil
         });
       });
+      if (!session) {
+        log.debug('Leaving OidcRelyingParty.handleCallback(). The realm ' +
+                  'is at authn.maxSessions.');
+        return self.coded('STS-AUTHN-0337', { ok: false,
+                 why: 'the realm is at its session cap, so this sign-in ' +
+                      'was not admitted' }, res);
+      }
       log.info('oidc_rp: ' + username + ' completed the authorization code ' +
                'flow for ' +
                'the ' + surface.label + ' and holds session ' + session.id +

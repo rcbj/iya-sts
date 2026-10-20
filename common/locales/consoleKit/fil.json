@@ -32,6 +32,17 @@
   "grid.notSet": "hindi naka-set",
   "grid.example": "hal. ",
   "grid.outside": "(hindi isa sa mga pinapayagang value)",
+  "grant.authorizationCode": "Ang authorization code grant (RFC 6749 section 4.1): isang code mula sa authorization endpoint, ipinapalit sa token endpoint.",
+  "grant.implicit": "Ang implicit grant (RFC 6749 section 4.2): mga token nang direkta mula sa authorization endpoint. Tinatanggihan ito ng RFC 9700 mode.",
+  "grant.refreshToken": "Ang refresh token grant (RFC 6749 section 6). Walang refresh token na ibinibigay sa client na nagpapahayag ng mga grant nang wala ito.",
+  "grant.clientCredentials": "Ang client credentials grant (RFC 6749 section 4.4): isang token para sa client mismo, walang tao.",
+  "grant.password": "Ang resource owner password credentials grant (RFC 6749 section 4.3). Tinatanggihan ito ng OAuth 2.1 mode.",
+  "grant.tokenExchange": "OAuth 2.0 Token Exchange (RFC 8693): isang token na ipinapalit sa iba, para sa delegation o impersonation.",
+  "grant.preAuthorizedCode": "Ang pre-authorized code grant ng OpenID4VCI: ipinapalit ng wallet ang code na dala ng isang Credential Offer.",
+  "grant.jwtBearer": "Isang JWT bilang authorization grant (RFC 7523 section 2.1). Naka-off kung saan naka-off ang oauth2.jwtBearerGrant.",
+  "grant.saml2Bearer": "Isang SAML 2.0 assertion bilang authorization grant (RFC 7522 section 2.1). Naka-off kung saan naka-off ang oauth2.saml2BearerGrant.",
+  "grant.ciba": "OpenID Connect Client-Initiated Backchannel Authentication (CIBA): inaaprubahan ng tao sa ibang device. Naka-off maliban kung naka-on ang oauth2.ciba.",
+  "grant.deviceCode": "Ang device authorization grant (RFC 8628): nagpapakita ang device na walang browser ng code na inilalagay ng tao sa ibang lugar. Naka-off maliban kung naka-on ang oauth2.deviceAuthorization.",
   "grid.valueN": "Value {n} ng {attribute}",
   "grid.delete": "Burahin ang value na ito",
   "grid.deleteN": "Burahin ang value {n} ng {attribute}",
@@ -77,5 +88,6 @@
   "mail.none": "Walang mail transport ang realm na ito (",
   "mail.link": "Mail",
   "mail.noneAfter": "), kaya ipinapakita sa iyo ang {what} para maipasa mo.",
-  "mail.box": "i-mail ang {what} sa address na nasa kanilang entry, at huwag itong ipakita sa akin"
+  "mail.box": "i-mail ang {what} sa address na nasa kanilang entry, at huwag itong ipakita sa akin",
+  "grid.required": " &middot; kailangan"
 }

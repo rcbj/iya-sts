@@ -83,7 +83,13 @@ const APPLICATIONS = [
           'SPNEGO and certificate sign-ins, and the sign-out.',
     // `/authn-api` is the sign-in screen's API (#571): one application with
     // the shells it draws, so the screen never has to be told where it is.
-    prefixes: ['/authn', '/authn-api', '/logout', '/.well-known/hoba'],
+    // `/launch` is the identity-provider-initiated door (#426, launch/): it
+    // signs the person in here, reads and writes the sign-on session, and
+    // sends the browser on to the protocol's own endpoint, so it is the
+    // sign-in service's. The links to it are built for this application
+    // (`LaunchLinks.launchUrl()`), wherever the page drawing them is.
+    prefixes: ['/authn', '/authn-api', '/logout', '/launch',
+               '/.well-known/hoba'],
     exact: ['/tls/sign-in'] },
   // `/account-api` IS THE PORTAL'S (#568): the portal is a static
   // application that draws every page from it, so the two are one

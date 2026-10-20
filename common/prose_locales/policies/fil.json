@@ -1023,6 +1023,14 @@
     "en": "dcf08d219b55b2ed",
     "text": "NAKA-OFF BILANG DEFAULT. Sinusuri ang mga patakaran sa attestation (ang mga setting na webauthn.attestation*: ang policy, ang listahan ng AAGUID, ang certification level at FIPS) kapag nirerehistro ang passkey. Kapag naka-on, sinusuri ulit ang mga ito sa bawat pag-sign in laban sa itinala noon at sa FIDO Metadata Service sa kasalukuyan, kaya ang key na nirehistro bago hinigpitan ang isang patakaran, o na ang model ay iniulat nang compromised mula noon, ay humihinto sa pag-sign in ng sinuman. Ang key na walang pinagkakatiwalaang attestation ay bumabagsak sa bawat patakarang humihingi nito."
   },
+  "passkey.FIELDS.postQuantumRequired.label": {
+    "en": "011c5d09e4f351f3",
+    "text": "Mag-require ng post-quantum na passkey"
+  },
+  "passkey.FIELDS.postQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "Tinatanggap ng `off` (ang default) ang passkey anuman ang algorithm nito sa pag-sign. Ang `sign-in` ay tumatanggap lang ng POST-QUANTUM na passkey, isang may algorithm na ML-DSA-44, ML-DSA-65 o ML-DSA-87 (RFC 9964), kapag nagsa-sign in ito ng tao, bilang unang credential o bilang second factor; puwede pa ring i-register ang classical. Tinatanggihan din ng `registration-and-sign-in` ang classical sa pag-register, at ML-DSA lang ang inaalok noon ng enrolment. Ang algorithm ang nagpapasya, hindi ang lane kung saan ginawa ang key. Tinatanggihan habang walang inaalok na ML-DSA ang realm (walang pinapangalanan ang webauthn.algorithms, at hindi naka-on ang webauthn.pqcOnly o ang webauthn.pqcAlongsideClassical)."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Mga hint na ipinapadala ng \"Create a passkey\""
@@ -1087,6 +1095,14 @@
     "en": "128deae048d6edbf",
     "text": "NAKA-ON BILANG DEFAULT: iisang hakbang na \"Use passkey\" na ang request ay naglilista ng bawat passkey ng tao, at iniaalok ng browser kung alin ang naroroon. Kapag naka-off, ang taong may higit sa isa ay pinapakitaan ng pagpipilian sa bawat passkey, ayon sa pangalan nito, at iyon lang ang pinangangalanan ng request."
   },
+  "passkey.FIELDS.recoveryAssurance.label": {
+    "en": "f1e6580ee3b2ee9c",
+    "text": "Pag-recover ng account para sa taong may hawak na passkey"
+  },
+  "passkey.FIELDS.recoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "`any` BILANG DEFAULT SA DEVELOPMENT, `not-weaker` SA PRODUCT. Kung ang isang paraan pabalik sa account na hindi humihingi ng passkey — isang link sa pag-reset ng password, isang activation link, isang recovery code, isang code o link na ipinadala sa email — ay nagbabalik ng access para sa taong may hawak nito. `any`: agad-agad. `not-weaker`: ang unang sign-in pagkatapos nito na hindi passkey sign-in ay hindi makakarating sa anumang application; magre-register ang tao ng passkey na tumutugon sa patakarang ito at magsa-sign in gamit ito. `operator-only`: gaya ng not-weaker, at tinatanggihan ang mga self-service na pinto (ang form na nakalimutan ang password, isang recovery code o isang code o link na ipinadala sa email sa sign-in); ang reset link, nabuong password o activation link lang ng isang administrator ang natitira. Kapag hindi isinama sa pag-save, pinananatili ang built-in na default."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "Ang class ng serbisyong ito para sa passkey policy: kung paano kumikilos ang mga passkey sa realm na ito. Ang entry ay pinangangalanan ayon sa PROFILE (`cn=default`)."
@@ -1123,6 +1139,10 @@
     "en": "dcf08d219b55b2ed",
     "text": "NAKA-OFF BILANG DEFAULT. Sinusuri ang mga patakaran sa attestation (ang mga setting na webauthn.attestation*: ang policy, ang listahan ng AAGUID, ang certification level at FIPS) kapag nirerehistro ang passkey. Kapag naka-on, sinusuri ulit ang mga ito sa bawat pag-sign in laban sa itinala noon at sa FIDO Metadata Service sa kasalukuyan, kaya ang key na nirehistro bago hinigpitan ang isang patakaran, o na ang model ay iniulat nang compromised mula noon, ay humihinto sa pag-sign in ng sinuman. Ang key na walang pinagkakatiwalaang attestation ay bumabagsak sa bawat patakarang humihingi nito."
   },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "Tinatanggap ng `off` (ang default) ang passkey anuman ang algorithm nito sa pag-sign. Ang `sign-in` ay tumatanggap lang ng POST-QUANTUM na passkey, isang may algorithm na ML-DSA-44, ML-DSA-65 o ML-DSA-87 (RFC 9964), kapag nagsa-sign in ito ng tao, bilang unang credential o bilang second factor; puwede pa ring i-register ang classical. Tinatanggihan din ng `registration-and-sign-in` ang classical sa pag-register, at ML-DSA lang ang inaalok noon ng enrolment. Ang algorithm ang nagpapasya, hindi ang lane kung saan ginawa ang key. Tinatanggihan habang walang inaalok na ML-DSA ang realm (walang pinapangalanan ang webauthn.algorithms, at hindi naka-on ang webauthn.pqcOnly o ang webauthn.pqcAlongsideClassical)."
+  },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
     "text": "Ang mga WebAuthn hint (Level 3 section 5.4.8) na ipinapadala ng *Create a passkey* ng portal, ayon sa pagkakasunod, mula sa security-key, client-device at hybrid, o wala. Sinasabi nito sa browser kung aling paraan ng paggawa ng passkey ang uunahin. Hindi puwedeng sumalungat ang hint sa webauthn.authenticatorAttachment: ang client-device ay nangangahulugang platform, ang security-key at hybrid ay cross-platform."
@@ -1155,6 +1175,10 @@
     "en": "128deae048d6edbf",
     "text": "NAKA-ON BILANG DEFAULT: iisang hakbang na \"Use passkey\" na ang request ay naglilista ng bawat passkey ng tao, at iniaalok ng browser kung alin ang naroroon. Kapag naka-off, ang taong may higit sa isa ay pinapakitaan ng pagpipilian sa bawat passkey, ayon sa pangalan nito, at iyon lang ang pinangangalanan ng request."
   },
+  "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "`any` BILANG DEFAULT SA DEVELOPMENT, `not-weaker` SA PRODUCT. Kung ang isang paraan pabalik sa account na hindi humihingi ng passkey — isang link sa pag-reset ng password, isang activation link, isang recovery code, isang code o link na ipinadala sa email — ay nagbabalik ng access para sa taong may hawak nito. `any`: agad-agad. `not-weaker`: ang unang sign-in pagkatapos nito na hindi passkey sign-in ay hindi makakarating sa anumang application; magre-register ang tao ng passkey na tumutugon sa patakarang ito at magsa-sign in gamit ito. `operator-only`: gaya ng not-weaker, at tinatanggihan ang mga self-service na pinto (ang form na nakalimutan ang password, isang recovery code o isang code o link na ipinadala sa email sa sign-in); ang reset link, nabuong password o activation link lang ng isang administrator ang natitira. Kapag hindi isinama sa pag-save, pinananatili ang built-in na default."
+  },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
     "text": "Ang mga application (identifier o client_id) na sakop ng isang named passkey policy, sa pag-sign in para sa isa sa mga ito."
@@ -1170,6 +1194,14 @@
   "passkey.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "Para saan ang profile, para sa susunod na tao."
+  },
+  "passkey.SCHEMA.personAttributes.stsRecoveryPending.what": {
+    "en": "bb82df307a8e5b9a",
+    "text": "Ibinalik ng isang pag-recover ang access ng taong ito, na may hawak na passkey, at wala pang passkey na nag-sign in sa kanya mula noon: ang pinto at kailan, bilang `<door> <ISO 8601 instant>`. Habang not-weaker o operator-only ang recoveryAssurance ng patakaran sa passkey, ang sign-in na hindi passkey ay hindi makakarating sa anumang application. Pinananatili ng serbisyong ito."
+  },
+  "passkey.SCHEMA.personAttributes.stsPasswordResetSource.what": {
+    "en": "110d1231fc9be5f4",
+    "text": "Kung sino ang nag-issue ng link sa pag-reset ng password sa entry na ito: `self` (ang form na nakalimutan ang password) o `operator` (isang administrator). Isinusulat at binubura kasama ng link. Pinananatili ng serbisyong ito."
   },
   "passkey.SELECTORS.selectApplications.what": {
     "en": "03ba679923c40b45",
@@ -1275,6 +1307,30 @@
     "en": "fa8fc40822659fe4",
     "text": "iniaalok ang mga passkey ng tao bilang iisang pagpipilian sa pag-sign in"
   },
+  "passkey.sentences.postQuantumOff": {
+    "en": "a8e0e01781dab9b0",
+    "text": "nagsa-sign in at nare-register ang passkey anuman ang algorithm nito sa pag-sign"
+  },
+  "passkey.sentences.postQuantumSignIn": {
+    "en": "2282f9fa1ff20b26",
+    "text": "post-quantum (ML-DSA) na passkey lang ang nagsa-sign in ng tao; puwede pa ring i-register ang classical"
+  },
+  "passkey.sentences.postQuantumEverywhere": {
+    "en": "79742dacfba54ede",
+    "text": "post-quantum (ML-DSA) na passkey lang ang nare-register o nagsa-sign in ng tao"
+  },
+  "passkey.sentences.recoveryAny": {
+    "en": "7383156c8eb1e363",
+    "text": "agad na ibinabalik ng pag-recover ng account ang access, anuman ang passkey na hawak ng tao"
+  },
+  "passkey.sentences.recoveryNotWeaker": {
+    "en": "37557fd6d60301ce",
+    "text": "pagkatapos ng pag-recover ng account, ang taong may hawak na passkey ay hindi makakarating sa anumang application hangga't hindi siya nai-sign in ng passkey na tumutugon sa patakarang ito"
+  },
+  "passkey.sentences.recoveryOperatorOnly": {
+    "en": "1a8f0b4a3319a435",
+    "text": "ang taong may hawak na passkey ay makakapag-recover lang ng account sa pamamagitan ng isang administrator, at pagkatapos ay hindi makakarating sa anumang application hangga't hindi siya nai-sign in ng passkey na tumutugon sa patakarang ito"
+  },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",
     "text": "Locale policy"
@@ -1366,6 +1422,118 @@
   "locale.sentences.param.noApplication": {
     "en": "cb8bd4fa96dda063",
     "text": "walang application"
+  },
+  "kinds.attributes.label": {
+    "en": "6619889d4a9f485d",
+    "text": "Attribute policy"
+  },
+  "kinds.attributes.governs": {
+    "en": "20a9273a811994df",
+    "text": "ang mga attribute na dapat hawak ng bawat tao sa realm na ito, at ang mga custom attribute na puwedeng ibigay sa isang tao rito"
+  },
+  "kinds.attributes.appliesTo": {
+    "en": "c68abf6d2b5ec2a2",
+    "text": "sa SUSUNOD na taong gagawin at sa SUSUNOD na edit sa realm na ito; ang taong kulang na ng kailangang attribute ay may access pa rin sa lahat ng ibang pinto"
+  },
+  "kinds.attributes.fallsBackTo": {
+    "en": "c352143b534bf909",
+    "text": "ang profile ng default na realm kung mayroon ito, at ang built-in na default (givenName, sn at mail) kung wala"
+  },
+  "kinds.attributes.param.noun": {
+    "en": "58bb93afc775aa81",
+    "text": "profile ng attribute policy"
+  },
+  "attributes.FIELDS.requiredAttributes.label": {
+    "en": "59a6e795223fdea0",
+    "text": "Mga kailangang attribute"
+  },
+  "attributes.FIELDS.requiredAttributes.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "Ang mga attribute na dapat may value ang bawat tao sa realm na ito, bukod sa uid, cn at sn, na laging kailangan. Isang listahan, o pinaghihiwalay ng kuwit. Anumang attribute na puwedeng ibigay sa isang tao: ang inetOrgPerson schema, ang credential catalogue, mail, at ang mga custom attribute ng realm na ito. Ipinatutupad sa product mode: tinatanggihan sa bawat pinto ang paggawa nang wala ang isa, at hindi puwedeng alisin ng isang edit ang isa. Default ang givenName, sn at mail."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
+    "en": "12630f210e385441",
+    "text": "Ang class ng serbisyong ito para sa attribute policy: ang mga attribute na dapat hawak ng bawat tao sa isang realm. Pinangangalanan ng PROFILE (`cn=default`)."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
+    "en": "a1a975c54d05126f",
+    "text": "Ang class ng serbisyong ito para sa custom attribute ng isang realm, sa ou=attributeDefinitions, pinangangalanan ng attribute (`cn=<name>`)."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeRequired.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "Ang mga attribute na dapat may value ang bawat tao sa realm na ito, bukod sa uid, cn at sn, na laging kailangan. Isang listahan, o pinaghihiwalay ng kuwit. Anumang attribute na puwedeng ibigay sa isang tao: ang inetOrgPerson schema, ang credential catalogue, mail, at ang mga custom attribute ng realm na ito. Ipinatutupad sa product mode: tinatanggihan sa bawat pinto ang paggawa nang wala ang isa, at hindi puwedeng alisin ng isang edit ang isa. Default ang givenName, sn at mail."
+  },
+  "attributes.SCHEMA.attributes.description.what": {
+    "en": "8e8f462fddce3d22",
+    "text": "Para saan ang profile o ang custom attribute, para sa susunod na tao."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeLabel.what": {
+    "en": "8d93b7c14ddfd1af",
+    "text": "Ang label ng isang custom attribute, ipinapakita sa tabi ng pangalan nito."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSyntax.what": {
+    "en": "b5ccce4927fccd38",
+    "text": "Ang syntax ng isang custom attribute: string, integer, boolean, date, email, uri o dn. Sinusuri ang mga value nito ayon dito."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
+    "en": "b6a0dfd5be9d81fd",
+    "text": "TRUE kung iisa ang value ng custom attribute, FALSE kung marami."
+  },
+  "attributes.SYNTAXES.string.what": {
+    "en": "6f2c36f9a836b2f4",
+    "text": "Teksto, hanggang 1024 na character, walang control character."
+  },
+  "attributes.SYNTAXES.integer.what": {
+    "en": "258ac79871ab42ad",
+    "text": "Isang buong numero (RFC 4517 section 3.3.16)."
+  },
+  "attributes.SYNTAXES.boolean.what": {
+    "en": "5ab7cfb21a4d669d",
+    "text": "TRUE o FALSE (RFC 4517 section 3.3.3)."
+  },
+  "attributes.SYNTAXES.date.what": {
+    "en": "70f2250e9d5c193d",
+    "text": "Isang petsa, itinatago bilang YYYYMMDD at tinatanggap din bilang YYYY-MM-DD."
+  },
+  "attributes.SYNTAXES.email.what": {
+    "en": "daebff95f510f8db",
+    "text": "Isang email address (RFC 5322 addr-spec, local@domain)."
+  },
+  "attributes.SYNTAXES.uri.what": {
+    "en": "16bf68a2b162f491",
+    "text": "Isang http o https na URL."
+  },
+  "attributes.SYNTAXES.dn.what": {
+    "en": "3feab9c94c12f33d",
+    "text": "Isang distinguished name (RFC 4514)."
+  },
+  "attributes.sentences.required": {
+    "en": "a35b08811463b6be",
+    "text": "dapat may {{list}} ang isang tao sa realm na ito para magawa, at hindi puwedeng alisin ng isang edit ang value ng alinman sa mga ito"
+  },
+  "attributes.sentences.enforced": {
+    "en": "babafe534682a510",
+    "text": "ipinatutupad: nasa product mode ang realm na ito, kaya tinatanggihan ng bawat pintong gumagawa o nag-e-edit ng tao ang taong wala ng mga ito"
+  },
+  "attributes.sentences.notEnforced": {
+    "en": "9e7b85236de9223c",
+    "text": "hindi ipinatutupad: nasa development mode ang realm na ito, kung saan puwedeng gumawa ng tao na username lang ang mayroon"
+  },
+  "attributes.sentences.custom": {
+    "en": "2296301f35c39ed9",
+    "text": "tumutukoy ang realm na ito ng {{n}} custom attribute: {{list}}"
+  },
+  "attributes.sentences.noCustom": {
+    "en": "f9d920b6ce8d9d03",
+    "text": "walang custom attribute na tinutukoy ang realm na ito"
+  },
+  "attributes.sentences.defined": {
+    "en": "3867ffa1e351efa2",
+    "text": "Tinukoy ang custom attribute na {{name}} sa realm na ito sa {{dn}}. Puwede na itong ibigay sa isang tao at gawing kailangan ng policy na ito."
+  },
+  "attributes.sentences.undefined": {
+    "en": "36e7b5eba26472f2",
+    "text": "Hindi na tinutukoy ang custom attribute na {{name}} sa realm na ito."
   },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",

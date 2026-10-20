@@ -110,5 +110,9 @@
   "federation.partners.partner": "合作夥伴",
   "federation.partners.signOutThere": "同時在那裡登出",
   "federation.partners.signOutAt": "在 {partner} 登出",
-  "federation.partners.note": "您是透過這些身分提供者登入此處的，您在那裡的工作階段仍然有效。每一項都是連結或表單，而不是自動重新導向：本頁不執行任何指令碼，前往合作夥伴需要您刻意點按。"
+  "federation.partners.note": "您是透過這些身分提供者登入此處的，您在那裡的工作階段仍然有效。每一項都是連結或表單，而不是自動重新導向：本頁不執行任何指令碼，前往合作夥伴需要您刻意點按。",
+  "wsfed.chooseAccount.title": "哪個帳戶？— WS-Federation",
+  "wsfed.chooseAccount.heading": "應登出哪個帳戶？",
+  "wsfed.chooseAccount.intro": "此瀏覽器中有 {count} 個帳戶已登入 <code>{realm}</code>。請選擇要登出的帳戶；其他帳戶保持登入。",
+  "wsfed.chooseAccount.signOut": "登出 <strong>{who}</strong>"
 }

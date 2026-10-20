@@ -30,6 +30,14 @@
 //   4. The realm link rewrite reaches `formaction`, which it did not: the
 //      button — and the two other `formaction` buttons in the console —
 //      posted to the default realm from inside any other.
+//   5. THE FIRST SECRET'S LIFETIME (#394). A create's `lifetimeDays` is
+//      stamped on the secret's record as its expiry, for a generated secret
+//      and a typed one. Empty takes `oauth2.clientSecretLifetimeDays`, and 0
+//      never expires. A lifetime outside 0..730 is refused `STS-REG-0359`.
+//      One with no secret, or with a whole record that keeps its own
+//      expiry, is refused `STS-REG-0360`. Neither refusal creates anything.
+//      The form draws the field beside Generate Secret, with the add form's
+//      name, range and the setting as its placeholder.
 //
 // The HTML is not rendered here, for `application_cors_field.js`'s reason:
 // requiring the console runs its load-time wiring in `run.js`'s one process.
@@ -42,6 +50,7 @@ require('../ldap/ldap_server');
 const adminActions = require('../admin-core/admin_actions');
 const app = require('../common/app');
 const config = require('../common/config');
+const errorCodes = require('../common/error_codes');
 
 const log = require('bunyan').createLogger({
   name: 'application_generate_secret',
@@ -110,13 +119,128 @@ function run(t) {
           '4b. and a protocol-relative link is still left alone', rewritten);
 
   adminActions.applicationsAction({ action: 'forget', application: ID });
+
+  // --- 5. The first secret's lifetime (#394) -----------------------------
+  // A default of 7 days, so that empty, 0 and a given lifetime each give a
+  // different expiry.
+  config.setOverride('oauth2.clientSecretLifetimeDays', 7);
+  try {
+    lifetimeChecks(t);
+  } finally {
+    config.clearOverride('oauth2.clientSecretLifetimeDays');
+  }
   log.debug("Leaving run().");
+}
+
+// Section 5: a create's `lifetimeDays`, through the door the console and
+// `POST /admin-api/applications/create` post to.
+function lifetimeChecks(t) {
+  log.debug("Entering lifetimeChecks().");
+  const DAY = 86400;
+  const create = function (suffix, secret, lifetimeDays) {
+    const body = { action: 'create', identifier: ID + '-' + suffix,
+                   'field.oauthClientId': ID + '-' + suffix };
+    if (secret !== undefined) {
+      body['field.oauthClientSecret'] = secret;
+    }
+    if (lifetimeDays !== undefined) {
+      body.lifetimeDays = lifetimeDays;
+    }
+    return adminActions.applicationsAction(body, ['oauth2']);
+  };
+  const recordOf = function (suffix) {
+    const entry = applications.get(ID + '-' + suffix);
+    return entry ? applications.primaryClientSecretOf(entry.fields) : null;
+  };
+  const forget = function (suffix) {
+    adminActions.applicationsAction({ action: 'forget',
+                                      application: ID + '-' + suffix });
+  };
+
+  // 5a. A generated secret, 30 days.
+  const minted = adminActions.applicationsAction({
+    action: 'generate-secret' }, []).clientSecret;
+  const a = create('gen30', minted, '30');
+  const ra = recordOf('gen30');
+  t.check(a && a.ok === true && ra && ra.secret === minted &&
+          ra.expiresAt === ra.createdAt + 30 * DAY,
+          '5a. a generated secret created with lifetimeDays 30 expires 30 ' +
+          'days after it was made',
+          JSON.stringify(a && (a.errors || ra)));
+  forget('gen30');
+
+  // 5b. A typed secret, 0: never, whatever the setting says.
+  const b = create('typed0', 'a-typed-secret-' + process.pid, 0);
+  const rb = recordOf('typed0');
+  t.check(b && b.ok === true && rb && rb.expiresAt === 0,
+          '5b. a typed secret created with lifetimeDays 0 never expires, ' +
+          'over a setting of 7',
+          JSON.stringify(b && (b.errors || rb)));
+  forget('typed0');
+
+  // 5c. Empty: the setting.
+  const c = create('empty', 'another-typed-secret-' + process.pid, '');
+  const rc = recordOf('empty');
+  t.check(c && c.ok === true && rc &&
+          rc.expiresAt === rc.createdAt + 7 * DAY,
+          '5c. an empty lifetime takes oauth2.clientSecretLifetimeDays',
+          JSON.stringify(c && (c.errors || rc)));
+  forget('empty');
+
+  // 5d. Out of range, or not a whole number of days.
+  ['731', '-1', '1.5', 'soon'].forEach(function (bad) {
+    const refused = create('bad', 'secret-' + process.pid, bad);
+    t.check(refused && refused.ok === false &&
+            errorCodes.codeOf(refused) === 'STS-REG-0359' &&
+            !applications.get(ID + '-bad'),
+            '5d. lifetimeDays ' + JSON.stringify(bad) + ' is refused ' +
+            'STS-REG-0359 and nothing is created',
+            JSON.stringify(refused) + ' ' + errorCodes.codeOf(refused));
+    forget('bad');
+  });
+
+  // 5e. A lifetime with no secret to stamp.
+  const e = create('nosecret', undefined, '30');
+  t.check(e && e.ok === false &&
+          errorCodes.codeOf(e) === 'STS-REG-0360' &&
+          !applications.get(ID + '-nosecret'),
+          '5e. a lifetime with no client secret is refused STS-REG-0360',
+          JSON.stringify(e) + ' ' + errorCodes.codeOf(e));
+  forget('nosecret');
+
+  // 5f. A whole record keeps its own expiry, so a lifetime beside it is
+  // refused rather than silently dropped.
+  const whole = JSON.stringify({ id: 'cs-000000000001',
+    secret: 'whole-record-' + process.pid, created: 1700000000,
+    expires: 0, description: '' });
+  const f = create('whole', whole, '30');
+  t.check(f && f.ok === false &&
+          errorCodes.codeOf(f) === 'STS-REG-0360' &&
+          !applications.get(ID + '-whole'),
+          '5f. a lifetime beside a whole secret record is refused ' +
+          'STS-REG-0360',
+          JSON.stringify(f) + ' ' + errorCodes.codeOf(f));
+  forget('whole');
+
+  // 5g. The form's field: the add form's name and range, the setting as
+  // its placeholder, and a redraw's value kept.
+  const WebKit = require('../admin-ui/web_kit');
+  const page = require('../admin-ui/web_applications');
+  const drawn = page.newSecretLifetime(7, '45', WebKit.context().t);
+  t.check(/name="lifetimeDays"/.test(drawn) && /min="0"/.test(drawn) &&
+          /max="730"/.test(drawn) && /placeholder="7"/.test(drawn) &&
+          /value="45"/.test(drawn) &&
+          drawn.indexOf('oauth2.clientSecretLifetimeDays') >= 0,
+          '5g. the create form draws lifetimeDays, 0 to 730, placeholder ' +
+          'the setting, keeping a redraw\'s value', drawn);
+  log.debug("Leaving lifetimeChecks().");
 }
 
 module.exports = {
   name: 'application generate secret',
   describe: 'Generate Secret on /admin/applications/new: one definition of ' +
             'a client secret, an action that writes nothing, ' +
-            'client_secret_basic on the create, and formaction under a realm',
+            'client_secret_basic on the create, formaction under a realm, ' +
+            'and the first secret\'s lifetime (#394)',
   run: run
 };

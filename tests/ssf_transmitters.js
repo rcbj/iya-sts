@@ -229,9 +229,24 @@ function childMain() {
     session('s2', 'partner', 'sid-2');
     session('s3', '', '');
     session('s4', 'other', 'sid-x');
-    const authn = { sessions: sessions, sessionEnded: function (one) {
-      return ended.indexOf(one.id) >= 0;
-    } };
+    const authn = {
+      sessions: sessions,
+      sessionEnded: function (one) {
+        return ended.indexOf(one.id) >= 0;
+      },
+      // The window-off walk: the real method pages partner_relationship
+      // and then the sealed body. This stub is the map half of that.
+      sessionsForRelationship: function (relationship) {
+        const out = [];
+        sessions.forEach(function (one) {
+          const held = one && one.fedPartnerSession;
+          if (held && held.relationship === relationship) {
+            out.push(one);
+          }
+        });
+        return out;
+      }
+    };
     const logout = {
       endPartnerSession: function (one) {
         ended.push(one.id);

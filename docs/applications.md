@@ -288,6 +288,16 @@ withheld from every reader of the socket — and the console shows it to an
 administrator only, marked as a credential. It is never written to the audit
 log.
 
+**A new application's first secret can be given its expiry when you create
+it.** On **New application**, **Lifetime (days)** sits beside **Generate
+Secret**. It takes whole days from 0 to 730, and 0 means the secret never
+expires. Leave it empty to use `oauth2.clientSecretLifetimeDays`. The lifetime
+applies to the secret in the box, whether you generated it or typed it. A
+lifetime with no secret is refused. With the API, send `lifetimeDays` to
+`POST /admin-api/applications/create` beside `fields.oauthClientSecret`. Later
+secrets are added on the application's **Credentials** tab, whose form takes
+the same field.
+
 **`appSessions` and `appUsers` are counts, not lists.** The ids themselves are
 deliberately not on the entry — an application used by two thousand people
 would otherwise carry two thousand values — so the count increments when the id
@@ -460,6 +470,22 @@ browser: `oauthRedirectUri`, `samlAssertionConsumerService` and
 separated, not comma separated, since a redirect URI may legally contain a
 comma and may not contain a newline.
 
+**The identifier is what each ticked family calls it, unless you say
+otherwise (#393).** The simplified form asks for the identifier once and does
+not draw `oauthClientId`, `samlEntityId`, `wsfedRealm`, `wstrustAppliesTo`,
+`krb5ServicePrincipalName`, `oid4vpClientId`, `federationPartnerId`,
+`scimClientId`, `ssfReceiverId` or `gnapInstanceId` again: a create that leaves
+one empty writes the identifier into it, which is what the entry would have
+held had the application arrived on its own. *Show every field* still draws
+each one as a list, for an application that answers to a different name or to
+several — a list typed there is the whole list, and the identifier is not
+added beside it. A later save that ticks a new family fills that family's
+attribute the same way, once; clearing it afterwards keeps it cleared. Three
+identifier attributes are a different kind of name and are never filled:
+`oauthTlsClientAuthSubjectDn` (a certificate subject), `ldapBindDn` and
+`spiffeWorkloadId`. The display **name** is optional too: with none given the
+identifier is the name.
+
 **The entry lands in the trust realm the console is showing**, at that
 realm's `ou=applications`. An `ldapsearch` under that realm's base DN sees it;
 another realm's registry has never heard of it.
@@ -481,7 +507,8 @@ read from it, editable — and fills in the create form:
 * one **permission** per `scopes_supported` value, with the resource prefix
   taken off (`https://api.example.com/read` under `https://api.example.com` is
   `read`);
-* a **client_id** generated at random;
+* a **client_id** generated at random, as the **identifier** — it is the
+  entry's `oauthClientId` too, so the form does not ask for it twice;
 * OAuth 2.0 ticked.
 
 Nothing is created until **Create** is pressed. The document is kept on the
@@ -985,6 +1012,42 @@ Browser authentication only, as for sign-in mechanisms. Set it from the
 application's page, `POST /admin-api/applications/update-fields`, or `add` /
 `remove` with `attribute: appMfaMechanism`. A value that is not a second
 factor is refused (`STS-REG-0203`).
+
+### What it has been seen doing
+
+Some attributes are written by this service as requests arrive, never by an
+administrator. The application's page shows each one read-only, beside the
+setting it shadows:
+
+- **Configuration → OAuth 2.0 / OpenID Connect**, at the top:
+  `oauthGrantTypeObserved`, `oauthResponseTypeObserved`,
+  `appRedirectUriObserved`, `oauthScope` (the scopes it asked for) and
+  `appAuthorizationServer`.
+- **Configuration → SAML**, at the top of each family's panel:
+  `samlNameIdFormat` and `samlResponseBinding`. SAML 2.0 also shows the last
+  AuthnRequest (whether it was signed, and what checking the signature
+  found), and the certificate it carried when that is not a registered one,
+  by subject and SHA-256 thumbprint. SAML 1.1 and SAML 2.0 record the two
+  lists in the same attributes, so both panels show what either profile asked
+  for.
+- **Overview**: Authentications, Sessions, People and Last person, after
+  Last seen.
+
+Each list is one line: the attribute's name, then each value with a check
+mark. A value that is not on the list declared beside it carries a warning
+mark instead: a grant or response type outside a non-empty `oauthGrantType` or
+`oauthResponseType`, a redirect URI that is not in `oauthRedirectUri`, or a
+scope outside a non-empty `oauthAllowedScope`. A line shows ten values and
+then **+N more**, which links to the **Directory entry** tab, where every
+value is listed.
+
+A value cannot be added to `oauthScope` through the console or `/admin-api`
+(`STS-REG-0361`); what a client may be issued is `oauthAllowedScope`. A value
+can still be removed.
+
+In the `oauthGrantType` checkboxes, a grant named by a URN is labelled by its
+last two sections (`grant-type:token-exchange`). Its tooltip gives the full
+name and what the grant is.
 
 ### The passkey policy that applies to it
 

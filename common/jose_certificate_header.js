@@ -166,7 +166,8 @@ const log = bunyan.createLogger({
 const MODES = ['none', 'x5c', 'x5u', 'both'];
 
 /**
- * The mode used when a use case's setting is unset or unreadable: `x5u`.
+ * The mode used when a use case's setting is unset or unreadable: `x5u`, or
+ * the use case's own `defaultMode`.
  */
 const DEFAULT_MODE = 'x5u';
 
@@ -210,6 +211,19 @@ const USE_CASES = [
     label: 'OpenID4VCI credentials',
     where: 'oid4vc/vc_issuer.ts, the SD-JWT VC issuer JWT and the JWT VC; ' +
            'oid4vc/vc_status.ts, the Token Status List',
+    // `x5c` (2026-10-16): SD-JWT VC finds an issuer's key by `x5c` and never
+    // by `x5u`, and a Status List Token has no `iss` for metadata — config.js
+    // argues it beside the setting, whose `dflt` this must equal.
+    defaultMode: 'x5c',
+    withoutAnchor: true },
+  { id: 'vci-trusted-list', setting: 'oid4vci.trustedListCertificateHeader',
+    label: 'OpenID4VCI trusted list (ETSI TS 119 602)',
+    where: 'oid4vc/vc_trusted_list.ts, the List of Trusted Entities at ' +
+           '/oid4vci/trusted-list',
+    // A reader takes the list only when its signer's chain is in x5c and
+    // ends under a list-operator CA it holds — the Root, left off for
+    // HAIP's reason.
+    defaultMode: 'x5c',
     withoutAnchor: true },
   { id: 'vci-signed-metadata',
     setting: 'oid4vci.signedMetadataCertificateHeader',
@@ -276,7 +290,7 @@ function modeFor(id) {
   }
   const raw = String(config.value(uc.setting) || '');
   log.debug("Leaving modeFor().");
-  return MODES.indexOf(raw) >= 0 ? raw : DEFAULT_MODE;
+  return MODES.indexOf(raw) >= 0 ? raw : (uc.defaultMode || DEFAULT_MODE);
 }
 
 // ---------------------------------------------------------------------------

@@ -504,6 +504,15 @@ class SchedulerPage {
           '<code>' + kit.esc(r.endedAt || '—') + '</code>') +
       row(t.html('consoleScheduler.th.duration'),
           r.durationMs === null ? '—' : r.durationMs + ' ms') +
+      // Where its body ran and how long it waited for a busy worker (#408).
+      (r.ranIn ? row(t.html('consoleScheduler.detail.ranIn'),
+                     r.ranIn === 'worker'
+                       ? t.html('consoleScheduler.detail.ranIn.worker')
+                       : t.html('consoleScheduler.detail.ranIn.front'))
+        : '') +
+      (r.deferredMs ? row(t.html('consoleScheduler.detail.deferred'),
+                          kit.esc(kit.span(r.deferredMs)) + ' (' +
+                          r.deferredMs + ' ms)') : '') +
       row(t.html('consoleScheduler.detail.params'), r.params ? '<code>' +
           kit.esc(JSON.stringify(r.params)) + '</code>' : '—') +
       row(t.html('consoleScheduler.detail.result'), r.result ? '<code>' +

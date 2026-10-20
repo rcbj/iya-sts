@@ -162,8 +162,12 @@ function childMain() {
         const errorCodes = require(ROOT + '/common/error_codes');
         const audit = require(ROOT + '/common/audit');
 
+        // The realm's attribute policy (#396) requires givenName, sn and
+        // mail of every person in product mode, and invents none of them.
         const person = function (name) {
-          ldap.createUser(name, { invent: false });
+          ldap.createUser(name, { invent: false,
+            attributes: { givenName: 'Signals', sn: name,
+                          mail: name + '@cs.example' } });
           credentials.setPassword(name, 'Credential-Signals-1!');
         };
 
@@ -606,7 +610,9 @@ function childMain() {
         config.setOverride('security.rateLimitPerIdentity', '200');
         config.setOverride('security.rateLimitPerAddress', '1000');
         const BREACHED = 'Breached-At-Sign-In-Passw0rd!-5';
-        ldap.createUser('cs-brie', { invent: false });
+        ldap.createUser('cs-brie', { invent: false,
+          attributes: { givenName: 'Brie', sn: 'cs-brie',
+                        mail: 'cs-brie@cs.example' } });
         const setFirst = credentials.setPassword('cs-brie', BREACHED);
         applications.createApplication({ identifier: 'cs-client',
           protocols: ['oauth2'],

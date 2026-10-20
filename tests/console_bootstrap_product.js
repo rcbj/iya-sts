@@ -147,9 +147,15 @@ function childMain() {
     const P = 'cbp' + tag;
     realms.create({ id: P, name: 'Product window' });
     rbac.seedBootstrapAdministrator(P);
+    // The realm's attribute policy (#396) requires givenName, sn and mail of
+    // every person in product mode, and invents none of them.
+    const person = function (name) {
+      return { attributes: { givenName: 'Console', sn: name,
+                             mail: name + '@example.test' } };
+    };
     inRealm(P, function () {
-      ldapServer.createUser('visitor', {});
-      return ldapServer.createUser('bystander', {});
+      ldapServer.createUser('visitor', person('visitor'));
+      return ldapServer.createUser('bystander', person('bystander'));
     });
     note(!!config.value('admin.openWhenEmpty'),
          '3a. precondition: admin.openWhenEmpty is ON');

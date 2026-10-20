@@ -375,6 +375,9 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 // console walks this table, DEDUPES BY ATTRIBUTE and draws one field per
 // attribute, listing the families it serves — so the form has eleven identifier
 // fields for sixteen families (fourteen when this was written) and says why.
+// The simplified create form does not draw a primary name (#393): that value
+// is the registry identifier, and fillPrimaryNames() writes it when the
+// create leaves the attribute empty. The advanced view still draws it.
 //
 // **EVERY ONE OF THEM IS MULTI-VALUED BAR ONE.** An application legitimately
 // answers to two client_ids, two entityIDs or two SPNs here — one per
@@ -391,8 +394,11 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 // The five families this service records no identifier for — LDAP, SCIM,
 // SPIFFE, OpenID4VCI, mutual TLS — get a field anyway, because "what is this
 // application called when it talks LDAP to us" is a fact an operator has and
-// this registry had nowhere to put. Nothing will ever write those attributes on
-// its own, so they read as declaration and only ever as declaration.
+// this registry had nowhere to put. A create writes the registry identifier
+// into a family's identifier attribute when that attribute was left empty
+// (`fillPrimaryNames()`, #393), except a certificate subject, a bind DN and
+// a SPIFFE ID, which are not that name. A protocol module still does not
+// invent those three.
 // ---------------------------------------------------------------------------
 /**
  * The declared protocol vocabulary: each family an application may be declared
@@ -921,6 +927,18 @@ const SCHEMA = {
             'it are callbacks and not front doors, so nothing computes this ' +
             'from them. http or https only, because it becomes an href.' },
     // ---------------------------------------------------------------------
+    // WHICH PROTOCOL /launch/{app} STARTS WHEN IT IS NOT TOLD (#426, #713).
+    // An application declared for several browser protocols with
+    // identity-provider-initiated sign-in on for more than one has more than
+    // one way in, and the link has to pick; `?protocol=` still picks for
+    // itself.
+    // ---------------------------------------------------------------------
+    { name: 'appLaunchProtocol', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'WHICH PROTOCOL /launch/{app} uses for this application when ' +
+            'the link names none and identity-provider-initiated sign-in is ' +
+            'on for more than one: saml2, saml11, wsfed or oidc.' },
+    // ---------------------------------------------------------------------
     // THE ORIGINS A BROWSER PAGE MAY CALL THIS SERVICE FROM ON THIS
     // APPLICATION'S BEHALF (2026-09-13).
     //
@@ -1095,10 +1113,12 @@ const SCHEMA = {
             'authenticates as one, so all three declare their name here ' +
             'rather than in three attributes that would be three spellings ' +
             'of one fact. Usually equal to appIdentifier, which is what a ' +
-            'protocol sighting writes; a SECOND value is a client_id this ' +
+            'protocol sighting writes and what a create writes when this is ' +
+            'left empty (#393); a SECOND value is a client_id this ' +
             'application also answers to — a per-environment id — and is why ' +
-            'this accumulates rather than being assigned. Absent on an entry ' +
-            'no OAuth family has been declared for.' },
+            'this accumulates rather than being assigned. A list typed on ' +
+            'the create is the whole list. Absent on an entry no OAuth ' +
+            'family has been declared for.' },
     { name: 'oauthAudience', kind: 'multi',
       from: 'the console, the management API, or by hand',
       what: 'THE AUDIENCE THIS APPLICATION ANSWERS TO — the `aud` an access ' +
@@ -1294,12 +1314,16 @@ const SCHEMA = {
             'read it differently.\n\n**This service\'s own protected ' +
             'scopes** — admin:read and admin:write (/admin-api), the SCIM ' +
             'scopes (scim.scopeRead, scim.scopeWrite), the Shared Signals ' +
-            'scopes (ssf.authScopeRead, ssf.authScopeWrite) and the debugger ' +
+            'scopes (ssf.authScopeRead, ssf.authScopeWrite, and always ' +
+            'ssf.read and ssf.manage) and the debugger ' +
             'permission — are issued ONLY to a client that lists them, IN ' +
-            'BOTH MODES, and the resource server behind each asks again on ' +
-            'every call, so removing a value here cuts off tokens already ' +
-            'issued. An RFC 7591 registration may not declare them; an ' +
-            'administrator does, here.\n\n**Every other scope**, in ' +
+            'BOTH MODES. For Shared Signals, write includes read: listing ' +
+            'a write scope authorizes the read scope too, and listing only ' +
+            'a read scope does not authorize a write scope. The ' +
+            'resource server behind each asks again on every call, so ' +
+            'removing a value here cuts off tokens already issued. An RFC ' +
+            '7591 registration may not declare them; an administrator ' +
+            'does, here.\n\n**Every other scope**, in ' +
             'product mode, is issued only when listed here — or, when ' +
             'nothing is listed, when it is in the default set: openid, ' +
             'profile, email, address, phone, offline_access and this ' +
@@ -2876,6 +2900,46 @@ const SCHEMA = {
             '— a client that can refresh its way back after a sign-out is a ' +
             'real defect in real deployments, and this makes it reproducible ' +
             'for ONE client while the rest behave.' },
+    // WHO MAY START A SIGN-IN, PER CLIENT (#426, #710). OpenID Connect's
+    // identity-provider-initiated sign-in is Core section 4 (rcbj on #426):
+    // /launch/{app} sends the person to `oauthInitiateLoginUri` and the client
+    // starts an ordinary authorization request from there.
+    { name: 'oauthThirdPartyInitiatedLogin', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'oauth2.thirdPartyInitiatedLogin',
+      families: ['oauth2', 'oidc'],
+      what: 'TRUE or FALSE: may /launch/{app} — and the user portal\'s ' +
+            'Sign in link — send a person to this client\'s ' +
+            'oauthInitiateLoginUri (OpenID Connect Core section 4), ' +
+            'overriding oauth2.thirdPartyInitiatedLogin.' },
+    { name: 'oauthSpInitiatedSso', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'oauth2.spInitiatedSso',
+      families: ['oauth2', 'oidc'],
+      what: 'TRUE or FALSE: does /oauth2/authorize answer this client when ' +
+            'it was not just launched, overriding oauth2.spInitiatedSso. ' +
+            'FALSE answers only an authorization request that follows a ' +
+            '/launch of this client on the same session within ' +
+            'oauth2.launchWindowS, once per launch, and refuses any other ' +
+            'with unauthorized_client.' },
+    // ---------------------------------------------------------------------
+    // OPENID CONNECT CORE SECTION 4's `initiate_login_uri`, AS AN ATTRIBUTE OF
+    // ITS OWN (#426, #710). It lived only inside appRegistrationJson until
+    // then — written by RFC 7591 registration and RFC 7592 update and by
+    // nothing else — so a client an administrator created could not have one
+    // and nothing could launch it. Registration writes this now, and the
+    // console and the management API edit it. https only, no fragment
+    // (STS-REG-0188), and initiateLoginUriOf() checks again on the read,
+    // because `ldapmodify` reaches it unchecked.
+    // ---------------------------------------------------------------------
+    { name: 'oauthInitiateLoginUri', kind: 'single',
+      from: 'RFC 7591 initiate_login_uri, the console, the management API, ' +
+            'or by hand',
+      families: ['oauth2', 'oidc'],
+      what: 'WHERE A SIGN-IN TO THIS CLIENT IS STARTED BY A THIRD PARTY: ' +
+            'OpenID Connect Core section 4\'s initiate_login_uri, which ' +
+            '/launch/{app} and the user portal send a person to with iss, ' +
+            'login_hint and target_link_uri. https only, with no fragment.' },
 
     // ---------------------------------------------------------------------
     // THE SIXTH OAUTH OVERRIDE, ADDED 2026-09-01, AND THE FIRST ATTRIBUTE IN
@@ -3255,6 +3319,41 @@ const SCHEMA = {
             'be resolved for, in seconds, overriding saml11.artifactTtlS. ' +
             'The Browser/Artifact profile\'s SOAP responder is what redeems ' +
             'it, once.' },
+    // WHO MAY START A SIGN-IN, PER SERVICE PROVIDER (#426, #710). Each is a
+    // realm default's override, read through settingFor() like the ten
+    // above; IDENTITY-PROVIDER-INITIATED IS OFF until an application opts in
+    // (rcbj on #426), so `saml2IdpInitiatedSso` is the one an operator sets.
+    { name: 'saml2IdpInitiatedSso', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'saml2.idpInitiatedSso',
+      what: 'TRUE or FALSE: may this identity provider START a sign-in to ' +
+            'this service provider — an unsolicited Response ' +
+            '(saml-profiles-2.0-os section 4.1.5) from /saml2/unsolicited ' +
+            'or /launch/{app} — overriding saml2.idpInitiatedSso. TRUE only ' +
+            'for a service provider that expects one: the Response carries ' +
+            'no InResponseTo, so it cannot tell one it was sent from one ' +
+            'pushed into its browser.' },
+    { name: 'saml2SpInitiatedSso', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'saml2.spInitiatedSso',
+      what: 'TRUE or FALSE: is this service provider\'s own ' +
+            '<samlp:AuthnRequest> answered, overriding saml2.spInitiatedSso. ' +
+            'FALSE answers it RequestDenied, leaving identity-provider-' +
+            'initiated sign-in as the only way in.' },
+    { name: 'saml11IdpInitiatedSso', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'saml11.idpInitiatedSso',
+      what: 'TRUE or FALSE: may a SAML 1.1 sign-in to this relying party ' +
+            'START here — /saml11/sso/{rp} with a TARGET and no shire, or ' +
+            '/launch/{app} — overriding saml11.idpInitiatedSso.' },
+    { name: 'saml11SpInitiatedSso', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'saml11.spInitiatedSso',
+      what: 'TRUE or FALSE: is a SAML 1.1 sign-in this relying party ' +
+            'started — the Shibboleth 1.3 AuthnRequest profile, a request ' +
+            'carrying shire — answered, overriding saml11.spInitiatedSso. ' +
+            'The request is an unsigned URL, so FALSE closes the door rather ' +
+            'than proving who opened it.' },
     { name: 'samlAuthnRequestSigned', kind: 'single', from: 'SAML 2.0',
       what: 'TRUE when the last AuthnRequest from this service provider ' +
             'carried a signature — an enveloped ds:Signature on the POST ' +
@@ -3286,6 +3385,21 @@ const SCHEMA = {
             'appReturnAddressObserved and product refuses it until it is ' +
             'confirmed; values recorded before that mark existed carry none ' +
             'and still need reviewing before a realm is switched to product.' },
+    // WHO MAY START A SIGN-IN, PER RELYING PARTY (#426, #710).
+    { name: 'wsfedIdpInitiatedSso', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'wsfed.idpInitiatedSso',
+      what: 'TRUE or FALSE: may this identity provider START a sign-in to ' +
+            'this relying party — /wsfed/initiate/{rp} or /launch/{app}, ' +
+            'posting to its registered wsfedReplyUrl — overriding ' +
+            'wsfed.idpInitiatedSso.' },
+    { name: 'wsfedSpInitiatedSso', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'wsfed.spInitiatedSso',
+      what: 'TRUE or FALSE: is this relying party\'s own wsignin1.0 ' +
+            'answered, overriding wsfed.spInitiatedSso. A wsignin1.0 is an ' +
+            'unsigned URL, so FALSE closes the door rather than proving who ' +
+            'opened it.' },
     { name: 'wsfedSignOutUri', kind: 'multi', from: 'by hand',
       what: 'WHERE A wsignoutcleanup1.0 PING IS SENT for this application — ' +
             'WS-Federation\'s logout URI, and the one this table did not ' +
@@ -3382,6 +3496,26 @@ const SCHEMA = {
             'is never forwarded however this is set. Constrained delegation ' +
             '(appAllowedToDelegateTo, appAllowedToActOnBehalfOf) is the ' +
             'safer alternative.' },
+    // #430 Phase 3: DELEGATION ACROSS A KERBEROS TRUST, the service's two
+    // words on it. Read by the issuance policy as facts; the trusts
+    // themselves are records under ou=kerberosTrusts.
+    { name: 'krb5S4uSelfRealm', kind: 'multi', from: 'by hand',
+      families: ['krb5'],
+      familyWhy: 'S4U2Self is a Kerberos request ([MS-SFU]).',
+      what: 'THE KERBEROS REALMS WHOSE USERS THIS SERVICE MAY OBTAIN ' +
+            'S4U2SELF TICKETS FOR, beside its own. EMPTY MEANS ITS OWN ' +
+            'REALM ONLY. A value must be a realm this realm\'s trusts accept ' +
+            'tickets from — a trust holding an incoming key, or a realm a ' +
+            'transitive one routes — and is checked at the write.' },
+    { name: 'krb5ForeignTgtDelegation', kind: 'single', from: 'by hand',
+      families: ['krb5'],
+      familyWhy: 'ok-as-delegate and forwarded TGTs are Kerberos\'s.',
+      what: '`inherit` (the default) or `deny`: what this service says of ' +
+            'a TGT delegated to it ACROSS A TRUST — ok-as-delegate on its ' +
+            'tickets for a user of another realm. `inherit` follows the ' +
+            'trust\'s attributes ([MS-KILE] 3.3.5.7.5); `deny` refuses it ' +
+            'whatever they say. It only narrows: nothing here enables what ' +
+            'the trust does not.' },
     // THE STORED SERVICE KEY (2026-09-12). Two rows, and the split between
     // them is the design: one is SECRET and one is not, so that every page
     // listing service principals can say what is held without opening a key.
@@ -4597,6 +4731,17 @@ const EDITABLE = {
   saml11SignResponse: 'set',
   saml11NameIdFormat: 'set',
   saml11ArtifactTtlS: 'set',
+  // Who may start a sign-in (#426, #710).
+  saml2IdpInitiatedSso: 'set',
+  saml2SpInitiatedSso: 'set',
+  saml11IdpInitiatedSso: 'set',
+  saml11SpInitiatedSso: 'set',
+  wsfedIdpInitiatedSso: 'set',
+  wsfedSpInitiatedSso: 'set',
+  oauthThirdPartyInitiatedLogin: 'set',
+  oauthSpInitiatedSso: 'set',
+  oauthInitiateLoginUri: 'set',
+  appLaunchProtocol: 'set',
   // The OAuth 2.0 / OIDC per-client five, the group claim's four and
   // WS-Federation's one. Same rule as the SAML ten above: `set`, because a
   // setting has one answer.
@@ -4628,6 +4773,9 @@ const EDITABLE = {
   wstrustJwtScope: 'multi',
   krb5ServicePrincipalName: 'multi',
   krb5TrustedForDelegation: 'set',
+  // #430: across a Kerberos trust.
+  krb5S4uSelfRealm: 'multi',
+  krb5ForeignTgtDelegation: 'set',
   // #493: one JSON array, like the five claim sets below.
   krb5ClaimsPac: 'set',
   oid4vpClientId: 'multi',
@@ -5548,6 +5696,89 @@ const IDENTIFIER_ATTRIBUTES = declarationAttributes().filter(function (row) {
 });
 
 // ---------------------------------------------------------------------------
+// A PRIMARY NAME IS THE REGISTRY IDENTIFIER (#393).
+//
+// The create form used to ask for three strings that were usually one: the
+// registry identifier, a display name, and the ticked family's identifier
+// attribute. The display name was already optional (`blankRecord()` names the
+// entry after its identifier, and a create overwrites that only when a name
+// is given). The family's identifier attribute is the same kind of default.
+//
+// **THREE ATTRIBUTES ARE A DIFFERENT KIND OF NAME AND ARE NEVER FILLED.**
+// `oauthTlsClientAuthSubjectDn` is the certificate subject RFC 8705 matches,
+// one DN, and writing a client_id into it would make mutual TLS match a
+// subject nobody has. `ldapBindDn` is the DN a client binds as, not the key
+// this entry is filed under. `spiffeWorkloadId` is a `spiffe://` URI, and a
+// SPIFFE identity lives under `ou=spiffe` rather than here. Each stays a
+// field of its own on both views of the form.
+//
+// Everything else a family names as its identifier — a client_id, an
+// entityID, a wtrealm, an AppliesTo, an SPN, a GNAP instance id — is the
+// string a sighting already files the entry under. A hand-made entry that
+// left the attribute empty was the odd one out.
+// ---------------------------------------------------------------------------
+const NOT_THE_REGISTRY_IDENTIFIER = [
+  'oauthTlsClientAuthSubjectDn',
+  'ldapBindDn',
+  'spiffeWorkloadId'
+];
+
+/**
+ * Returns the identifier attributes whose primary value is the registry
+ * identifier.
+ *
+ * @returns the attribute names, in protocol-table order
+ */
+function primaryNameAttributeNames() {
+  log.debug("Entering primaryNameAttributeNames().");
+  const names = [];
+  PROTOCOLS.forEach(function (family) {
+    const attribute = family.identifierAttribute;
+    if (!attribute ||
+        NOT_THE_REGISTRY_IDENTIFIER.indexOf(attribute) >= 0 ||
+        names.indexOf(attribute) >= 0) {
+      return;
+    }
+    names.push(attribute);
+  });
+  log.debug("Leaving primaryNameAttributeNames(). " + names.length +
+            " attribute(s).");
+  return names;
+}
+
+const PRIMARY_NAME_ATTRIBUTES = primaryNameAttributeNames();
+
+/**
+ * Returns the primary-name attributes of the families named.
+ *
+ * One attribute shared by several families is returned once. An attribute
+ * that is not the registry identifier is not returned.
+ *
+ * @param protocols - the family ids
+ * @returns the attribute names, in protocol-table order
+ */
+function primaryNameAttributes(protocols) {
+  log.debug("Entering primaryNameAttributes().");
+  const declared = protocols || [];
+  const wanted = [];
+  PROTOCOLS.forEach(function (family) {
+    if (declared.indexOf(family.id) < 0) {
+      return;
+    }
+    const attribute = family.identifierAttribute;
+    if (!attribute ||
+        NOT_THE_REGISTRY_IDENTIFIER.indexOf(attribute) >= 0 ||
+        wanted.indexOf(attribute) >= 0) {
+      return;
+    }
+    wanted.push(attribute);
+  });
+  log.debug("Leaving primaryNameAttributes(). " +
+            (wanted.length ? wanted.join(', ') : 'none') + ".");
+  return wanted;
+}
+
+// ---------------------------------------------------------------------------
 // EVERY PER-APPLICATION FIELD, TYPED, FOR THE CONSOLE'S FIELD GRID
 // (2026-09-30).
 //
@@ -5592,7 +5823,11 @@ const BOOLEAN_ATTRIBUTES = [
   'saml11SignResponse', 'gnapBearerTokens', 'gnapSkipInteraction',
   'gnapScopedSignals', 'appFederationAutoRedirect',
   'ssfCaepIncludeReasons', 'ssfCaepOmitEventTimestamp',
-  'ssfRiscIncludeReasons', 'ssfRiscOmitEventTimestamp'
+  'ssfRiscIncludeReasons', 'ssfRiscOmitEventTimestamp',
+  // Who may start a sign-in (#426, #710).
+  'saml2IdpInitiatedSso', 'saml2SpInitiatedSso', 'saml11IdpInitiatedSso',
+  'saml11SpInitiatedSso', 'wsfedIdpInitiatedSso', 'wsfedSpInitiatedSso',
+  'oauthThirdPartyInitiatedLogin', 'oauthSpInitiatedSso'
 ];
 
 /**
@@ -5610,12 +5845,14 @@ const BOOLEAN_ATTRIBUTES = [
 // ML-KEM and HPKE algorithms follow keys.*) and two live in modules that
 // require this one (read when asked, never at load).
 //
-// `oauthGrantType` and `oauthResponseType` are not here, although they are
-// declared and enforced since #289: an extension grant is a URI nobody lists
-// in advance (RFC 6749 section 4.5), so the field stays open text, and the
-// token endpoint refuses what the client did not declare. The setting
-// overrides take their lists from their setting (`config.js`'s
-// enumValues), in the console.
+// `oauthGrantType` and `oauthResponseType` are here since #706 (rcbj: a
+// checkbox per value, no free text). They were open text until then, on the
+// argument that an extension grant is a URI nobody lists in advance (RFC 6749
+// section 4.5) — but the token endpoint answers `unsupported_grant_type` to
+// any grant it does not implement, so declaring one is declaring nothing a
+// client could use. The two lists are FLOW_GRANT_TYPES and
+// FLOW_RESPONSE_TYPES below. The setting overrides take their lists from their
+// setting (`config.js`'s enumValues), in the console.
 // ---------------------------------------------------------------------------
 // THE TWO DELEGATION SEMANTICS (#108, #186), one list for the two places that
 // need it: the field grid's choices below — so the Configuration tab offers a
@@ -5624,12 +5861,67 @@ const BOOLEAN_ATTRIBUTES = [
 // at the write, delegationAttributeProblem().
 const DELEGATION_SEMANTICS = ['delegation', 'impersonation'];
 
+// THE PROTOCOLS /launch/{app} CAN START (#426, #713), for the field grid's
+// choices and the check at the write of `appLaunchProtocol`.
+const LAUNCH_PROTOCOLS = ['saml2', 'saml11', 'wsfed', 'oidc'];
+
+// WHAT A CLIENT MAY DECLARE IN `oauthResponseType` AND `oauthGrantType`
+// (#706): every response type the authorization endpoint issues and every
+// grant the token endpoint implements — the metadata's
+// `response_types_supported` and `grant_types_supported` with every switch
+// on, which `tests/flow_type_choices.js` holds them to. EVERY grant, not the
+// realm's advertised ones: a declaration names what the client may use, and a
+// client declaring the device grant while `oauth2.deviceAuthorization` is off
+// is refused by the endpoint's own switch, which is the right refusal. A
+// response type is written with its words in this order, which is the
+// metadata's (canonicalResponseType()).
+const FLOW_RESPONSE_TYPES = ['code', 'token', 'id_token', 'code token',
+  'code id_token', 'id_token token', 'code id_token token', 'none'];
+const FLOW_GRANT_TYPES = ['authorization_code', 'implicit', 'refresh_token',
+  'client_credentials', 'password',
+  'urn:ietf:params:oauth:grant-type:token-exchange',
+  'urn:ietf:params:oauth:grant-type:pre-authorized_code',
+  'urn:ietf:params:oauth:grant-type:jwt-bearer',
+  'urn:ietf:params:oauth:grant-type:saml2-bearer',
+  'urn:openid:params:grant-type:ciba',
+  'urn:ietf:params:oauth:grant-type:device_code'];
+
+/**
+ * A response_type value with its words sorted, the order every member of
+ * FLOW_RESPONSE_TYPES is written in — so `id_token code` is stored as the
+ * `code id_token` the console ticks, and the two cannot be two values.
+ *
+ * @param value - the value as given
+ * @returns the value, its words single-spaced and sorted
+ */
+function canonicalResponseType(value) {
+  log.debug("Entering canonicalResponseType().");
+  const out = String(value === undefined || value === null ? '' : value)
+    .split(/\s+/).filter(Boolean).sort().join(' ');
+  log.debug("Leaving canonicalResponseType().");
+  return out;
+}
+
 const ATTRIBUTE_CHOICES = {
+  oauthGrantType: function () {
+    return FLOW_GRANT_TYPES.slice(0);
+  },
+  oauthResponseType: function () {
+    return FLOW_RESPONSE_TYPES.slice(0);
+  },
+  // #426: the protocols /launch/{app} can start.
+  appLaunchProtocol: function () {
+    return LAUNCH_PROTOCOLS.slice(0);
+  },
   appDelegationSemantics: function () {
     return DELEGATION_SEMANTICS.slice(0);
   },
   appDefaultDelegationSemantics: function () {
     return DELEGATION_SEMANTICS.slice(0);
+  },
+  // #430: what a service says of a TGT delegated to it across a trust.
+  krb5ForeignTgtDelegation: function () {
+    return ['inherit', 'deny'];
   },
   oauthTokenEndpointAuthMethod: function () {
     return require('../oauth-oidc/client_auth').METHODS.slice(0);
@@ -5813,7 +6105,14 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   // claim would be one no token ever carries.
   'oauthClaimsCombineAccessToken', 'oauthClaimsCombineIdToken',
   'oauthClaimsCombineUserinfo', 'saml2ClaimsCombine', 'saml11ClaimsCombine',
-  'oauthAccessTokenClaim', 'oauthAccessTokenClaimsCombine'];
+  'oauthAccessTokenClaim', 'oauthAccessTokenClaimsCombine',
+  // #426: a misspelt protocol would launch nothing.
+  'appLaunchProtocol',
+  // #706: a grant or response type this service does not implement is one
+  // no request could ever be allowed by.
+  'oauthGrantType', 'oauthResponseType',
+  // #430: a misspelt word would be `inherit`, which widens.
+  'krb5ForeignTgtDelegation'];
 
 /**
  * The values a setting's own closed set allows (enumValues or csvValues),
@@ -6105,6 +6404,7 @@ const FIELD_EXAMPLES = {
   appDelegationSemantics: 'delegation',
   appDefaultDelegationSemantics: 'delegation',
   appMayAct: 'uid=alice,ou=users,dc=example,dc=com',
+  krb5S4uSelfRealm: 'PARTNER.EXAMPLE',
   oauthClientId: 'my-web-app',
   oauthAudience: 'https://api.example.com',
   oauthClientSecret: 'press Generate Secret, or 32+ random characters',
@@ -6241,6 +6541,8 @@ const FIELD_EXAMPLES = {
   oauthPostLogoutRedirectUri: 'https://app.example.com/signed-out',
   oauthFrontchannelLogoutUri: 'https://app.example.com/frontchannel-logout',
   oauthBackchannelLogoutUri: 'https://app.example.com/backchannel-logout',
+  // #426: OpenID Connect Core section 4's initiate_login_uri, https only.
+  oauthInitiateLoginUri: 'https://app.example.com/login/initiate',
   oauthGrantType: 'authorization_code',
   oauthResponseType: 'code',
   oauthAllowedScope: 'profile',
@@ -6359,7 +6661,16 @@ const FIELD_SECTIONS = [
                  'oauthClaimsCombineUserinfo', 'oauthAccessTokenClaim',
                  'oauthAccessTokenClaimsCombine'] },
   { id: 'assertion-claims', label: 'Attributes in assertions',
-    attributes: ['saml2ClaimsCombine', 'saml11ClaimsCombine'] }
+    attributes: ['saml2ClaimsCombine', 'saml11ClaimsCombine'] },
+  // #426: who may start a sign-in, on each browser protocol's sub-tab — the
+  // identity provider, the relying party, or both — and where a third party
+  // starts an OpenID Connect one.
+  { id: 'sign-on-initiation', label: 'Who may start a sign-in',
+    attributes: ['saml2IdpInitiatedSso', 'saml2SpInitiatedSso',
+                 'saml11IdpInitiatedSso', 'saml11SpInitiatedSso',
+                 'wsfedIdpInitiatedSso', 'wsfedSpInitiatedSso',
+                 'oauthThirdPartyInitiatedLogin', 'oauthSpInitiatedSso',
+                 'oauthInitiateLoginUri'] }
 ];
 
 // ---------------------------------------------------------------------------
@@ -6399,6 +6710,11 @@ const SIMPLE_FIELD_ATTRIBUTES = [
   'samlEntityId', 'samlAssertionConsumerService', 'samlSingleLogoutService',
   'samlSpMetadataUrl', 'samlSigningCertificate', 'samlEncryptionCertificate',
   'saml2NameIdFormat', 'saml2SignAssertion', 'saml2EncryptAssertion',
+  // #426: whether this identity provider may start a sign-in. Not the
+  // OAuth pair (`oauthThirdPartyInitiatedLogin`, `oauthInitiateLoginUri`):
+  // that sub-tab's simple set is rcbj's two working applications' fields,
+  // no more (tests/subtab_views.js), so they are under Advanced there.
+  'saml2IdpInitiatedSso', 'saml11IdpInitiatedSso', 'wsfedIdpInitiatedSso',
   // WS-Federation, WS-Trust, Kerberos: their identifiers and addresses.
   'wsfedRealm', 'wsfedReplyUrl', 'wsfedSignOutUri', 'wstrustAppliesTo',
   'krb5ServicePrincipalName',
@@ -6529,6 +6845,9 @@ function applicationFields() {
       families: scope.families,
       everyFamily: scope.everyFamily,
       declaration: declared.indexOf(row.name) >= 0,
+      // The registry identifier, so the simplified create form does not
+      // draw a second box for it (#393). The advanced view still does.
+      primaryName: PRIMARY_NAME_ATTRIBUTES.indexOf(row.name) >= 0,
       // Shown by its sub-tab's simple view (#500).
       simple: SIMPLE_FIELD_ATTRIBUTES.indexOf(row.name) >= 0,
       group: group.id,
@@ -6879,10 +7198,13 @@ function homePageOf(source) {
 
 // ---------------------------------------------------------------------------
 // OPENID CONNECT CORE SECTION 4, `initiate_login_uri` (#120): where a third
-// party — the user portal — may start a sign-in AT the relying party. It is a
-// registration member (OpenID Connect Registration section 2) and lives in
-// `appRegistrationJson` only; `oidcRegistrationProblem()` held it to https
-// when it was written, and it is held to that again here because
+// party — /launch/{app} and the user portal — may start a sign-in AT the
+// relying party. It is a registration member (OpenID Connect Registration
+// section 2) and, since #426, the attribute `oauthInitiateLoginUri`, which
+// registration writes and the console and the management API edit; it lived
+// only inside `appRegistrationJson` before, so a client an administrator made
+// could not have one. Held to https with no fragment when it is written
+// (initiateLoginUriProblem(), STS-REG-0188) and again here, because
 // `ldapmodify` reaches the attribute unchecked. '' where there is none.
 // ---------------------------------------------------------------------------
 /**
@@ -6895,27 +7217,41 @@ function initiateLoginUriOf(source) {
   log.debug("Entering initiateLoginUriOf().");
   const holder = source || {};
   const fields = holder.fields || holder;
-  let document = null;
-  try {
-    document = fields.appRegistrationJson
-      ? JSON.parse(String(fields.appRegistrationJson)) : null;
-  } catch (e) {
-    log.debug("Caught in initiateLoginUriOf(): " + ((e && e.message) || e));
-    // registrationOf() reports an unparseable document; here it names none.
-    document = null;
-  }
-  const text = String((document && document.initiate_login_uri) || '').trim();
-  let usable = '';
-  try {
-    const parsed = new URL(text);
-    usable = parsed.protocol === 'https:' && !parsed.hash ? text : '';
-  } catch (e) {
-    log.debug("Caught in initiateLoginUriOf(): " + ((e && e.message) || e));
-    // Not a URL: no sign-in link.
-    usable = '';
-  }
+  const text = String(valuesOf(fields.oauthInitiateLoginUri)[0] || '').trim();
+  const usable = initiateLoginUriProblem(text) ? '' : text;
   log.debug("Leaving initiateLoginUriOf().");
   return usable;
+}
+
+/**
+ * Says what is wrong with a value for `oauthInitiateLoginUri`: OpenID Connect
+ * Registration section 2 requires https, and a fragment cannot be carried
+ * through the query Core section 4 appends.
+ *
+ * @param value - the value
+ * @returns the problem, or '' when it is usable
+ */
+function initiateLoginUriProblem(value) {
+  log.debug("Entering initiateLoginUriProblem().");
+  const text = String(value == null ? '' : value).trim();
+  let problem = '';
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol !== 'https:') {
+      problem = 'oauthInitiateLoginUri must be an https URL (OpenID Connect ' +
+                'Registration section 2).';
+    } else if (parsed.hash) {
+      problem = 'oauthInitiateLoginUri may not carry a fragment: OpenID ' +
+                'Connect Core section 4 appends a query to it.';
+    }
+  } catch (e) {
+    log.debug("Caught in initiateLoginUriProblem(): " +
+              ((e && e.message) || e));
+    // Not a URL at all.
+    problem = 'oauthInitiateLoginUri must be an absolute https URL.';
+  }
+  log.debug("Leaving initiateLoginUriProblem().");
+  return problem;
 }
 
 // ---------------------------------------------------------------------------
@@ -9552,6 +9888,45 @@ function pushedAuthorizationAttributeProblem(attribute, value) {
  * @param value - the value written
  * @returns the refusal sentence, or ''
  */
+// ---------------------------------------------------------------------------
+// A REALM A SERVICE MAY OBTAIN S4U2SELF TICKETS FOR MUST BE ONE THIS REALM'S
+// TRUSTS ACCEPT (#430 Phase 3), checked at the write: a trust holding an
+// incoming key from it, or a transitive one whose namespace routes it
+// (`kerberos/krb5_trusts.ts`'s acceptsRealm()). The register is required
+// LAZILY — it is reached through the KDC, and a process with no Kerberos has
+// no trusts, which refuses every value. STS-REG-0362. A clear is never
+// refused.
+// ---------------------------------------------------------------------------
+/**
+ * Checks a value of krb5S4uSelfRealm against the realm's trusts.
+ *
+ * @param attribute - the attribute's name
+ * @param value - the value written
+ * @returns the refusal sentence, or ''
+ */
+function kerberosTrustAttributeProblem(attribute, value) {
+  log.debug("Entering kerberosTrustAttributeProblem(). " + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (attribute !== 'krb5S4uSelfRealm' || !text) {
+    log.debug("Leaving kerberosTrustAttributeProblem(). Not checked here.");
+    return '';
+  }
+  let accepted = false;
+  try {
+    accepted = !!require('../kerberos/krb5_trusts').acceptsRealm(text);
+  } catch (e) {
+    log.debug("Caught in kerberosTrustAttributeProblem(): " +
+              ((e && e.message) || e));
+    accepted = false;
+  }
+  log.debug("Leaving kerberosTrustAttributeProblem(). " + accepted);
+  return accepted ? '' : attribute + ': "' + text + '" is not a Kerberos ' +
+    'realm this realm\'s trusts accept tickets from. Add a trust holding an ' +
+    'incoming key from it (ou=kerberosTrusts), or one a transitive trust ' +
+    'routes, first.';
+}
+
 function delegationAttributeProblem(attribute, value) {
   log.debug("Entering delegationAttributeProblem(). attribute=" + attribute);
   const text = String(value === undefined || value === null ? '' : value)
@@ -10843,6 +11218,14 @@ function normaliseFields(value) {
         return;
       }
     }
+    if (name === 'oauthInitiateLoginUri' && values[0]) {
+      const problem = initiateLoginUriProblem(values[0]);
+      if (problem) {
+        errors.push(problem);
+        code = code || 'STS-REG-0188';
+        return;
+      }
+    }
     if (name === 'gnapOwnerLookupUri') {
       const problem = ownerLookupUriProblem(values[0]);
       if (problem) {
@@ -10909,6 +11292,16 @@ function normaliseFields(value) {
       });
       return;
     }
+    // #706: a response type STORED in the console's word order, as the CORS
+    // origins above are stored normalised. The closed set is checked by
+    // createApplication() after this walk.
+    if (name === 'oauthResponseType') {
+      fields[name] = values.map(canonicalResponseType)
+                           .filter(function (one, index, all) {
+        return one !== '' && all.indexOf(one) === index;
+      });
+      return;
+    }
     // #110: a declared scope is a scope token, the rule oauthGlobalConsent
     // has, for its reason — a value that is not one can never be asked for.
     if (name === 'oauthAllowedScope') {
@@ -10964,6 +11357,18 @@ function normaliseFields(value) {
     if (delegationProblems.length) {
       delegationProblems.forEach(function (one) { errors.push(one); });
       code = code || 'STS-REG-0194';
+      return;
+    }
+    // The realms a service may obtain S4U2Self tickets for (#430), every
+    // value, against this realm's trusts.
+    const trustProblems = values.map(function (one) {
+      return kerberosTrustAttributeProblem(name, one);
+    }).filter(function (one) {
+      return !!one;
+    });
+    if (trustProblems.length) {
+      trustProblems.forEach(function (one) { errors.push(one); });
+      code = code || 'STS-REG-0362';
       return;
     }
     // RFC 9126's one.
@@ -11969,6 +12374,56 @@ function setField(record, name, value) {
 }
 
 // ---------------------------------------------------------------------------
+// A PRIMARY NAME IS THE REGISTRY IDENTIFIER (#393).
+//
+// A hand-made entry that left a family's identifier attribute empty was the
+// odd one out: `seen()` and `recordAuthentication()` already file the
+// presented string as both the registry identifier and that attribute.
+// `fillPrimaryNames()` writes the identifier when the create left the
+// attribute empty. An explicit value has already been written by the caller
+// and wins, including a list — that list is the whole list, and the
+// identifier is not forced in beside it. The attribute stays multi (or
+// `set`, for the one primary name that holds a single value). Nothing here
+// rewrites an entry that already exists; a later save fills only a family
+// that save newly declared, and only when the body did not name the
+// attribute (`updateApplicationFields()`).
+//
+// Three attributes are a different kind of fact and are not in
+// `primaryNameAttributes()`: a certificate subject, a bind DN and a SPIFFE
+// ID. Defaulting any of them to a short name would record a subject a
+// security check could trust, or a name that is not the entry's key.
+// ---------------------------------------------------------------------------
+/**
+ * Writes the registry identifier into each declared family's primary name
+ * when that attribute is empty.
+ *
+ * @param record - the application record being created
+ * @param protocols - the families the create declared
+ * @returns the attributes that were filled
+ */
+function fillPrimaryNames(record, protocols) {
+  log.debug("Entering fillPrimaryNames().");
+  const filled = [];
+  primaryNameAttributes(protocols).forEach(function (attribute) {
+    if (valuesOf(record.fields[attribute]).length) {
+      log.debug("fillPrimaryNames(): " + attribute + " was given.");
+      return;
+    }
+    setField(record, attribute, record.identifier);
+    filled.push(attribute);
+  });
+  if (filled.indexOf('samlEntityId') >= 0) {
+    log.debug('applications: "' + record.identifier + '" is declared for ' +
+              'SAML and carried no entityID, so its identifier is being ' +
+              'used as one. Its per-service-provider metadata is live from ' +
+              'now. Set samlEntityId explicitly to use a different name.');
+  }
+  log.debug("Leaving fillPrimaryNames(). " +
+            (filled.length ? filled.join(', ') : 'Nothing to fill.'));
+  return filled;
+}
+
+// ---------------------------------------------------------------------------
 // WHO PUT A RETURN ADDRESS ON THE ENTRY, AND THE ONE FUNCTION THAT DECIDES
 // WHETHER IT COUNTS AS REGISTERED (2026-09-12).
 //
@@ -12620,6 +13075,13 @@ function applyRegistrationFields(record, registration, statement) {
   // what a registration SAID, and homePageOf() refuses to draw a link to
   // anything that is not http or https when it reads.
   setField(record, 'appHomePageUrl', meta.client_uri);
+  // OpenID Connect Core section 4's `initiate_login_uri` (#426): an attribute
+  // of its own, so /launch/{app} and the console read and edit it where they
+  // read every other fact about the client. Held to https by
+  // oidcRegistrationProblem() before this runs, and REPLACED rather than
+  // kept, for #289's reason below: an RFC 7592 update that drops it means it.
+  delete record.fields.oauthInitiateLoginUri;
+  setField(record, 'oauthInitiateLoginUri', meta.initiate_login_uri);
   // REPLACED, NOT ADDED TO (#289): the endpoints hold the client to these two
   // lists, and RFC 7592 section 2.2 replaces the whole registration, so an
   // update that narrows grant_types must narrow what the client may use. A
@@ -13510,8 +13972,9 @@ function identifierProblem(identifier) {
  * Counts no authentication. Refused for an unusable identifier, one already
  * registered, no directory, or fields the schema refuses.
  *
- * @param detail - `identifier`, `name`, `kind`, `protocols`, `fields` and
- *   `actor`
+ * @param detail - `identifier`, `name`, `kind`, `protocols`, `fields`,
+ *   `lifetimeDays` (the first client secret's lifetime in days, 0 for never;
+ *   `oauth2.clientSecretLifetimeDays` when empty, #394) and `actor`
  * @returns `ok` and the application as the directory now holds it, or `ok:
  *   false` with `errors`
  */
@@ -13691,6 +14154,44 @@ function createApplication(detail) {
     return errorCodes.mark({ ok: false, errors: modeProblems },
                            'STS-REG-0193');
   }
+  // THE FIRST CLIENT SECRET'S LIFETIME (#394). Until then a create took
+  // only `oauth2.clientSecretLifetimeDays`, so the expiry of a new
+  // application's first secret could be chosen only afterwards, on its page.
+  // `lifetimeDays` is the add form's field, read by the add form's function,
+  // and it applies to whatever secret the create carries — one Generate
+  // Secret minted or one somebody typed, which this function cannot tell
+  // apart and should not. Validated here, before the entry exists, for the
+  // reason everything above is.
+  const lifetime = clientSecretLifetimeOf(info.lifetimeDays);
+  if (!lifetime.ok) {
+    log.debug("Leaving createApplication(). Not a client secret lifetime.");
+    return errorCodes.mark({ ok: false, errors: ['The client secret\'s ' +
+      'lifetime is a whole number of days from 0 (never expires) to 730, ' +
+      'or empty for oauth2.clientSecretLifetimeDays (' +
+      (Number(config.value('oauth2.clientSecretLifetimeDays')) > 0
+        ? Number(config.value('oauth2.clientSecretLifetimeDays')) + ' days'
+        : 'never expires') +
+      '). "' + String(info.lifetimeDays).trim() + '" is not one.'] },
+      'STS-REG-0359');
+  }
+  // A LIFETIME WITH NOTHING TO STAMP IT ON is refused rather than dropped:
+  // the entry would then read as holding a secret that expires when it was
+  // asked to, and it holds none — or holds a record handed in whole, which
+  // keeps the expiry it carries (putClientSecret()).
+  if (lifetime.days !== null) {
+    const secretText = givenSecretText(given.fields.oauthClientSecret);
+    if (!secretText ||
+        isWholeSecretRecord(secretText, parseClientSecretValue(secretText))) {
+      log.debug("Leaving createApplication(). A lifetime and no secret.");
+      return errorCodes.mark({ ok: false, errors: ['A client secret ' +
+        'lifetime of ' + lifetime.days + ' day(s) was given and there is ' +
+        'no new client secret for it to apply to: ' +
+        (secretText ? 'the oauthClientSecret given is a whole record, ' +
+          'which keeps the expiry it carries.'
+          : 'oauthClientSecret is empty. Generate or type a secret, or ' +
+            'leave the lifetime empty.')] }, 'STS-REG-0360');
+    }
+  }
   const record = loaded.record;
   const now = Date.now();
   record.firstAt = now;
@@ -13717,49 +14218,23 @@ function createApplication(detail) {
   // be a second place that decision is made, and the first time the two
   // disagreed would be the first time somebody created an application over one
   // that had just been deleted.
+  //
+  // The client secret goes the way setField() would send it, to
+  // putClientSecret(), with the lifetime this create was given (#394).
   Object.keys(given.fields).forEach(function (name) {
-    setField(record, name, given.fields[name]);
+    if (name === 'oauthClientSecret' && lifetime.days !== null) {
+      putClientSecret(record, given.fields[name],
+                      { expiresAt: expiryOfLifetime(lifetime.days,
+                                                    nowSec()) });
+    } else {
+      setField(record, name, given.fields[name]);
+    }
   });
-  // ---------------------------------------------------------------------
-  // AN APPLICATION DECLARED FOR SAML GETS AN ENTITYID, added 2026-08-27.
-  //
-  // Ticking SAML 2.0 or SAML 1.1 on /admin/applications/new and typing no
-  // entityID used to produce an entry that could not be used as a service
-  // provider at all: `samlEntityId` is what /saml2 and /saml11 file an
-  // application under and what their per-service-provider metadata is
-  // published for, so without it the declaration was a note and nothing more.
-  //
-  // THE DEFAULT IS THE IDENTIFIER, and that is not an arbitrary pick — it is
-  // what the same application would have got by arriving on its own. A service
-  // provider that turns up with an AuthnRequest is filed under its entityID,
-  // so identifier and entityID are ALREADY one string on every SAML entry this
-  // registry has ever created for itself. Doing anything else here would make
-  // a hand-made entry the odd one out.
-  //
-  // IT IS A DEFAULT AND NOT A RULE. An explicit `samlEntityId` in the create
-  // wins — the loop above has already run — and this only fills a gap. Nothing
-  // is refused: this service accepts any entityID on sight and creates the
-  // entry, so refusing to CREATE one here would be the only place in the SAML
-  // path that turned somebody away, which is the opposite of what the rest of
-  // this file does.
-  //
-  // The metadata is then live immediately, at /saml2/metadata/{slug} and
-  // /saml11/metadata/{rp}, because those endpoints mint a document for
-  // anything asked of them — see saml/CLAUDE.md's decision 1.
-  const declaredSaml = asked.protocols.filter(function (id) {
-    return id === 'saml2' || id === 'saml11';
-  });
-  if (declaredSaml.length && !valuesOf(record.fields.samlEntityId).length) {
-    setField(record, 'samlEntityId', identifier);
-    log.debug('applications: "' + identifier + '" is declared for ' +
-              declaredSaml.join(' and ') + ' and carried no entityID, so its ' +
-              'identifier is being used as one. Its per-service-provider ' +
-              'metadata is live from now — /admin/applications names the ' +
-              'URL, which carries a slug this module deliberately does not ' +
-              'compute (slugOf() belongs to saml/saml2_sso.ts, and requiring ' +
-              'it here would point this module at a protocol). Set ' +
-              'samlEntityId explicitly to use a different name.');
-  }
+  // A declared family's primary name is the identifier when the create left
+  // the attribute empty (#393). An explicit value, including a list, is
+  // already on the record and is the whole list. SAML metadata is live from
+  // the moment samlEntityId is filled, for the reason fillPrimaryNames() logs.
+  fillPrimaryNames(record, asked.protocols);
   // ---------------------------------------------------------------------
   // AN APPLICATION DECLARED FOR OAUTH 2.0 OR OIDC GETS A CLIENT
   // AUTHENTICATION METHOD, added 2026-09-18.
@@ -13779,8 +14254,8 @@ function createApplication(detail) {
   // client_secret_basic (RFC 7591's own default for a client that has one),
   // a JWK Set or its URI is private_key_jwt, and NOTHING is `none` — a public
   // client, held to PKCE and RFC 9700 in product mode rather than refused.
-  // An explicit `oauthTokenEndpointAuthMethod` wins, as samlEntityId's does
-  // above; this only fills a gap, so every entry this create writes for
+  // An explicit `oauthTokenEndpointAuthMethod` wins, as a primary name's
+  // does above; this only fills a gap, so every entry this create writes for
   // those families says what it will be held to.
   const declaredOauth = asked.protocols.filter(function (id) {
     return id === 'oauth2' || id === 'oidc';
@@ -14016,6 +14491,32 @@ function updateApplication(identifier, change) {
                              errors: ['A value is required to ' + mode + '.'] },
                            'STS-REG-0009');
   }
+  // #708: `oauthScope` IS A SIGHTING (what the client asked for), so an
+  // update may not add one — the attribute an administrator means is
+  // `oauthAllowedScope`. (A set of a list is refused above, STS-REG-0008.) A
+  // REMOVE stays open, the tidy-up door every derived list keeps. A CREATE
+  // still accepts it as a seed, because several of the parent project's
+  // vendored jobs create their clients with one; nothing reads it as a
+  // permission either way. The OID4VC wallet, which RECONCILES one shared
+  // entry, declares its scopes on `oauthAllowedScope` instead.
+  if (attribute === 'oauthScope' && mode === 'add') {
+    log.debug("Leaving updateApplication(). oauthScope is a sighting.");
+    return errorCodes.mark({ ok: false, errors: ['"oauthScope" records the ' +
+                                 'scopes this client has ASKED FOR, written ' +
+                                 'as its requests arrive, so it cannot be ' +
+                                 'added by hand. What it may be ' +
+                                 'issued is oauthAllowedScope.'] },
+                           'STS-REG-0361');
+  }
+  // #706: an added response type is stored in the console's word order, and
+  // read in it by the closed-set check below. A REMOVE takes the value as
+  // typed or, when that is not on the entry, its canonical spelling — the
+  // CORS origins' rule, so a value an `ldapmodify` wrote can still go.
+  if (attribute === 'oauthResponseType' && (mode === 'add' ||
+      (mode === 'remove' &&
+       valuesOf(loaded.record.fields[attribute]).indexOf(value) < 0))) {
+    value = canonicalResponseType(value);
+  }
   // THE ONE EDITABLE ATTRIBUTE WITH A CLOSED VOCABULARY, checked here so that
   // this edit and the create form cannot disagree about what a protocol family
   // is — a `create` that refuses "saml-2" beside an `add` that records it would
@@ -14196,6 +14697,14 @@ function updateApplication(identifier, change) {
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0194');
     }
   }
+  // A realm S4U2Self may name must be one this realm's trusts accept (#430).
+  if ((mode === 'set' || mode === 'add') && value) {
+    const problem = kerberosTrustAttributeProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a realm a trust accepts.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0362');
+    }
+  }
   // Nor may the two delegation lists name the application itself (#459).
   if ((mode === 'set' || mode === 'add') && value) {
     const problem = selfReferenceProblem(attribute, value, identifier,
@@ -14353,6 +14862,14 @@ function updateApplication(identifier, change) {
       log.debug("Leaving updateApplication(). The home page is not a usable " +
                 "URL.");
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0011');
+    }
+  }
+  if (attribute === 'oauthInitiateLoginUri' && mode === 'set' && value) {
+    const problem = initiateLoginUriProblem(value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable " +
+                "initiate_login_uri.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0188');
     }
   }
   if (attribute === 'gnapOwnerLookupUri' && mode === 'set' && value) {
@@ -14955,7 +15472,8 @@ function mintClientSecret() {
 //     client is never silently left holding none.
 //   * `oauth2.clientSecretsMax` caps how many an application holds, and a new
 //     secret takes `oauth2.clientSecretLifetimeDays` unless the add form
-//     names another lifetime.
+//     names another lifetime — or, for an application's first secret, the
+//     create form (#394).
 //
 // A VALUE THAT IS NOT A RECORD IS A SECRET. A bare string arrives from three
 // places — a caller of `create` or `set` handing the secret itself (the
@@ -15263,6 +15781,24 @@ function writeClientSecretRecords(record, records) {
   log.debug("Leaving writeClientSecretRecords().");
 }
 
+// Whether a value handed to putClientSecret() is a record handed in whole,
+// which keeps its own expiry, rather than a secret to be wrapped in a new one.
+function isWholeSecretRecord(given, parsed) {
+  log.debug("Entering isWholeSecretRecord().");
+  log.debug("Leaving isWholeSecretRecord().");
+  return String(given).charAt(0) === '{' && !!parsed && parsed.createdAt > 0;
+}
+
+// The first value of a client secret given to a write, trimmed: the one
+// putClientSecret() takes.
+function givenSecretText(value) {
+  log.debug("Entering givenSecretText().");
+  log.debug("Leaving givenSecretText().");
+  return (Array.isArray(value) ? value : [value]).map(function (one) {
+    return String(one == null ? '' : one).trim();
+  }).filter(Boolean)[0] || '';
+}
+
 /**
  * Makes `secret` the application's client secret — the meaning of a `set`
  * or a `create` naming one. A secret already on the entry changes nothing
@@ -15277,9 +15813,7 @@ function writeClientSecretRecords(record, records) {
  */
 function putClientSecret(record, value, options) {
   log.debug("Entering putClientSecret().");
-  const given = (Array.isArray(value) ? value : [value]).map(function (one) {
-    return String(one == null ? '' : one).trim();
-  }).filter(Boolean)[0] || '';
+  const given = givenSecretText(value);
   const parsed = parseClientSecretValue(given);
   if (!parsed) {
     log.debug("Leaving putClientSecret(). Nothing to write.");
@@ -15292,7 +15826,7 @@ function putClientSecret(record, value, options) {
   }
   // A RECORD handed in whole (a value copied off another entry, an
   // ldapmodify-shaped add) keeps what it says; a bare secret is wrapped.
-  const wrapped = given.charAt(0) === '{' && parsed.createdAt > 0
+  const wrapped = isWholeSecretRecord(given, parsed)
     ? parsed
     : newClientSecretRecord(parsed.secret, options);
   writeClientSecretRecords(record, [wrapped]);
@@ -15558,6 +16092,46 @@ function clientSecretsMax() {
   return Math.max(1, Number(config.value('oauth2.clientSecretsMax')) || 1);
 }
 
+// A CLIENT SECRET'S LIFETIME AS A FORM GIVES IT (#394): the add form's
+// `lifetimeDays`, and since #394 the create's, read by one function so the
+// two cannot accept different things. Whole days from 0 (never expires) to
+// 730 — `oauth2.clientSecretLifetimeDays`' own `max` — and empty (or absent)
+// for that setting. A lifetime in days has no "date in the past" to refuse,
+// which is why the create takes days and not a date: the add form's field,
+// so one lifetime is asked the same way on both screens.
+/**
+ * Reads a client secret's lifetime as a form or a caller gives it.
+ *
+ * @param raw - days, a string of days, empty, or absent
+ * @returns `{ ok: true, days }`, `days` null for the default; or
+ *   `{ ok: false }`
+ */
+function clientSecretLifetimeOf(raw) {
+  log.debug("Entering clientSecretLifetimeOf().");
+  const text = raw === undefined || raw === null ? '' : String(raw).trim();
+  if (text === '') {
+    log.debug("Leaving clientSecretLifetimeOf(). The default.");
+    return { ok: true, days: null };
+  }
+  const days = Number(text);
+  if (!isFinite(days) || days < 0 || days > 730 ||
+      Math.floor(days) !== days) {
+    log.debug("Leaving clientSecretLifetimeOf(). Not one.");
+    return { ok: false, days: null };
+  }
+  log.debug("Leaving clientSecretLifetimeOf().");
+  return { ok: true, days: days };
+}
+
+// The `expiresAt` a lifetime gives a secret made at `at` (seconds): 0 for
+// never, and undefined for the default, which newClientSecretRecord()
+// reads as `oauth2.clientSecretLifetimeDays`.
+function expiryOfLifetime(days, at) {
+  log.debug("Entering expiryOfLifetime().");
+  log.debug("Leaving expiryOfLifetime().");
+  return days === null ? undefined : (days > 0 ? at + days * 86400 : 0);
+}
+
 /**
  * Adds a client secret beside the ones an application holds. The new secret
  * is the newest, so it becomes the primary.
@@ -15577,13 +16151,9 @@ function addClientSecret(identifier, options) {
     return unknownApplication(identifier);
   }
   const description = String(opts.description || '').trim();
-  const rawLifetime = opts.lifetimeDays === undefined ||
-    opts.lifetimeDays === null ? '' : String(opts.lifetimeDays).trim();
-  const lifetime = rawLifetime === '' ? null : Number(rawLifetime);
+  const lifetime = clientSecretLifetimeOf(opts.lifetimeDays);
   if (description.length > 200 || /[\r\n\0]/.test(description) ||
-      (lifetime !== null && (!isFinite(lifetime) || lifetime < 0 ||
-                             lifetime > 730 ||
-                             Math.floor(lifetime) !== lifetime))) {
+      !lifetime.ok) {
     log.debug("Leaving addClientSecret(). Bad lifetime or description.");
     return errorCodes.mark({ ok: false, errors: ['A client secret\'s ' +
       'lifetime is a whole number of days from 0 (never expires) to ' +
@@ -15604,9 +16174,7 @@ function addClientSecret(identifier, options) {
   const at = nowSec();
   const secret = mintClientSecret();
   const added = newClientSecretRecord(secret, {
-    expiresAt: lifetime === null ? undefined
-                                 : (lifetime > 0 ? at + lifetime * 86400
-                                                 : 0),
+    expiresAt: expiryOfLifetime(lifetime.days, at),
     description: description });
   try {
     writeClientSecretRecords(record, [added].concat(held));
@@ -19342,6 +19910,10 @@ module.exports = {
   // document, so neither can offer a field the other has never heard of.
   declarationAttributes: declarationAttributes,
   DECLARATION_ATTRIBUTE_NAMES: DECLARATION_ATTRIBUTE_NAMES,
+  // The identifier attributes a declared family presents as the registry
+  // identifier (#393). A create fills an empty one; a certificate subject,
+  // a bind DN and a SPIFFE ID are not in the list.
+  primaryNameAttributes: primaryNameAttributes,
   // What an application answers to in each family, with the protocol's own
   // word for it. Exported for the delegation pictures — see its header for why
   // the list is built here and not in the renderer.
@@ -19352,6 +19924,8 @@ module.exports = {
   // this module exists to prevent.
   homePageOf: homePageOf,
   initiateLoginUriOf: initiateLoginUriOf,
+  initiateLoginUriProblem: initiateLoginUriProblem,
+  LAUNCH_PROTOCOLS: LAUNCH_PROTOCOLS,
   homePageProblem: homePageProblem,
   ownerLookupUriProblem: ownerLookupUriProblem,
   // THE CORS ORIGINS (2026-09-13): the one entry's list, the entry a request
@@ -19363,6 +19937,10 @@ module.exports = {
   ssfOverrideRows: ssfOverrideRows,
   strictOverrideProblem: strictOverrideProblem,
   attributeChoices: attributeChoices,
+  // #706: what the console offers for the two declared flow lists.
+  FLOW_GRANT_TYPES: FLOW_GRANT_TYPES,
+  FLOW_RESPONSE_TYPES: FLOW_RESPONSE_TYPES,
+  canonicalResponseType: canonicalResponseType,
   authMethodsProblem: authMethodsProblem,
   choiceProblem: choiceProblem,
   corsOriginsOfRealm: corsOriginsOfRealm,

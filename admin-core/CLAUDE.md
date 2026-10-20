@@ -390,6 +390,12 @@ anywhere (`groupRuleFor()`), and the walk is the list.
 `/admin/sessions` asks `stats.issuedArtifactsOfKind('Kerberos TGT')` for the
 tickets rather than building `issuedList()`.
 
+**A sign-on session's row names its browser's account set (#561)** —
+`accountSet`, from `session.accountSetId` — only where it is in one, which
+is where several signed-in accounts in one browser are on
+(`authn/CLAUDE.md`); with the setting off the row is unchanged. Drawing the
+column is the console's step of #561.
+
 **What was measured, and what holds it.** `tests/users_page_before_decoration.js`
 seeds three thousand people and asserts that page one, a far page, `?q=` and
 each `?factor=` call `mechanismsFor()` at most once per row shown, that a

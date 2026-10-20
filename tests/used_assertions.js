@@ -34,6 +34,7 @@
 
 delete process.env.CONFIG_FILE;
 
+const storeDouble = require('./tools/store_double');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -342,8 +343,6 @@ async function postgresClaimIsOneStatement(t) {
           'and (realm, key) is its primary key — the lock the claim rests on');
 
   const statements = [];
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
   function FakePool() {}
   FakePool.prototype.on = function () {};
   FakePool.prototype.query = function (sql, params) {
@@ -353,19 +352,15 @@ async function postgresClaimIsOneStatement(t) {
   FakePool.prototype.end = function () {
     return Promise.resolve();
   };
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-    exports: { Pool: FakePool, Client: function () {} } };
+  const restore = storeDouble.install({ Pool: FakePool,
+                                        Client: function () {} });
   let driver;
   try {
     driver = postgres.create({ url: 'postgres://sts_app@localhost:5432/sts',
       log: { debug: function () {}, info: function () {},
              warn: function () {}, error: function () {} } });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
   const row = { realm: 'r', key: 'k', format: 'jwt', use: 'authorization-grant',
                 issuer: 'i', identifier: 'j', clientId: '', subject: '',

@@ -369,8 +369,12 @@ const SPECS: Spec[] = [
       'partial: the AS and TGS exchanges over TCP, UDP and MS-KKDCP, with ' +
               'pre-authentication (PA-ENC-TIMESTAMP), PA-ETYPE-INFO2 ' +
               'carrying the salt, ticket flags, clock-skew enforcement and ' +
-              'the error catalogue. Two realms with a trust between them, so ' +
-              'cross-realm referrals work. FAST and OTP pre-authentication are ' +
+              'the error catalogue. Trusts with other realms are records, ' +
+              'one per partner (Protocols → Kerberos → Trusts, ' +
+              '/admin-api/kerberos/trusts): referrals through transitive ' +
+              'trusts with transited checked, inter-realm keys from a ' +
+              'shared password or generated, rotated with a grace for the ' +
+              'one replaced. FAST and OTP pre-authentication are ' +
               'their own rows (RFC 6113, RFC 6560), and so is PKINIT (RFC ' +
               '4556); no request signatures, no kpasswd (S4U is [MS-SFU], ' +
               'its own row). The AP ' +
@@ -549,7 +553,13 @@ const SPECS: Spec[] = [
               'needs forwardable evidence and resource-based needs ' +
               'PA-PAC-OPTIONS with the resource-based bit, refused with ' +
               'KDC_ERR_BADOPTION without it. S4U_DELEGATION_INFO is written ' +
-              'into the PAC. NOT implemented: the U2U variants, and no ' +
+              'into the PAC. ACROSS TRUSTS: S4U2Self for a user of another ' +
+              'realm through as many transitive trusts as the path needs ' +
+              '(PA-S4U-X509-USER too), and resource-based S4U2Proxy to a ' +
+              'target in another realm, its evidence PAC-verified with the ' +
+              'inter-realm key; classic delegation crosses only where both ' +
+              'realms set krb5.crossRealmClassicDelegation. NOT ' +
+              'implemented: the U2U variants, and no ' +
               'attempt is made to model a real domain\'s ACL on either ' +
               'attribute — the two lists are configuration in ' +
               'krb5_principals.js and are published at /admin/delegation.' },
@@ -565,9 +575,11 @@ const SPECS: Spec[] = [
               'produced while krb5.pacClaims is on (#493), never ' +
               'compressed; claims buffers arriving in another realm\'s PAC ' +
               'are decoded (XPRESS Huffman included) and carried. Device ' +
-              'info and DEVICE claims are not produced, and SID ' +
-              'FILTERING across a trust is NOT implemented — a re-signed PAC ' +
-              'keeps every SID it arrived with.' },
+              'info and DEVICE claims are not produced. A PAC arriving ' +
+              'across a trust is SID-FILTERED as section 4.1.2.2 says for ' +
+              'the trust\'s boundary before it is re-signed — device info ' +
+              'dropped, a claims set dropped unless the trust allows it — ' +
+              'and a referral\'s PAC is signed with the inter-realm key.' },
   { id: 'rfc4178', name: 'SPNEGO (RFC 4178)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc4178',
@@ -668,9 +680,10 @@ const SPECS: Spec[] = [
               'critical_subject_members, and section 3.5\'s jwt_id, ' +
               'saml_assertion_id and ip-addresses formats are implemented. ' +
               'Section 8 authorization is three schemes — an OAuth 2.0 ' +
-              'access token with ssf:read or ssf:write (issued only to a ' +
-              'client that declares them, and honoured only while it still ' +
-              'does), HTTP Basic and GNAP — ' +
+              'access token with the read scope (ssf.read) or the write ' +
+              'scope (ssf.manage), which includes read, issued to a ' +
+              'client that declares that permission and ' +
+              'honoured only while it still does, HTTP Basic and GNAP — ' +
               'published in authorization_schemes. Failed pushes are retried ' +
               'ssf.pushRetries times (0 by default, deliberately) and then ' +
               'dead-lettered, and streams are persisted in product mode. ' +
@@ -1548,7 +1561,11 @@ const SPECS: Spec[] = [
               'profile (a passive request carries no recipient certificate), ' +
               'and any authorization or policy enforcement. wreply is used ' +
               'as sent in development mode and must be a registered ' +
-              'wsfedReplyUrl in PRODUCT mode (2026-09-12).' },
+              'wsfedReplyUrl in PRODUCT mode (2026-09-12). Beyond the ' +
+              'specification, which has no such request: an ' +
+              'identity-provider-initiated sign-in at ' +
+              '/wsfed/initiate/{rp} (#712), off until a relying party opts ' +
+              'in, posting only to its registered wsfedReplyUrl.' },
   { id: 'xmldsig', name: 'XML Signature and XML Encryption',
     where: 'W3C',
     url: 'https://www.w3.org/TR/xmldsig-core1/',
@@ -1778,9 +1795,30 @@ const SPECS: Spec[] = [
               'application\'s oauthStepUpAcrValues / oauthStepUpMaxAge are ' +
               'recorded for the resource server that is the application to ' +
               'enforce. Limitation: this service\'s sign-in produces three ' +
-              'context classes; any other acr value is met only by a ' +
-              'federated sign-in ' +
-              'reporting exactly that acr. Counted on /admin/oauth2/monitor.' },
+              'ordered context classes and the two of OpenID Connect EAP ACR ' +
+              'Values 1.0, which are not on the ladder; any other acr value ' +
+              'is met only by a federated sign-in reporting exactly that ' +
+              'acr. Counted on /admin/oauth2/monitor.' },
+  { id: 'oidc-eap-acr', name: 'OpenID Connect EAP ACR Values 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-eap-acr-values-1_0.html',
+    coverage: 'partial: phr and phrh (section 2) are published in ' +
+              'acr_values_supported, honoured through acr_values, an ' +
+              'essential acr claims request and a client\'s ' +
+              'default_acr_values — the sign-in screen then asks for a ' +
+              'security key — and carried as the ID Token\'s and access ' +
+              'token\'s acr when the sign-in earned them, else refused ' +
+              'unmet_authentication_requirements. phr is earned by a ' +
+              'WebAuthn assertion (alone or after a password) or a TLS ' +
+              'client certificate; phrh by an assertion whose key has a ' +
+              'trusted attestation and a clear backup-eligible flag; a key ' +
+              'enrolled in the same sign-in earns neither (section 4). A ' +
+              'request for neither leaves acr as it was. The issuance ' +
+              'policy sees urn:sts:xacml:phishing-resistance, and two ' +
+              'role-issuance options require either for an application. ' +
+              'The pop amr value (section 3) is written by the wallet ' +
+              'sign-in only. Missing: SAML AuthnContextClassRef and ' +
+              'WS-Federation wauth do not map the two values.' },
   { id: 'rfc9101', name: 'RFC 9101 — JWT-Secured Authorization Request ' +
       '(JAR)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9101',
@@ -2550,11 +2588,32 @@ const SPECS: Spec[] = [
               'verify-if-present in product and off in development — its ' +
               'chain against configured anchors and the FIDO Metadata ' +
               'Service\'s roots, its revocation consulted, and a model MDS ' +
-              'reports compromised refused. Missing: enterprise attestation ' +
+              'reports compromised refused. Since #643 a classical and a ' +
+              'post-quantum (ML-DSA) passkey may be held side by side ' +
+              '(webauthn.pqcAlongsideClassical): each lane has its own user ' +
+              'handle (section 5.4.3), algorithm list and ' +
+              'excludeCredentials, and the Signal API (section 5.1.10) is ' +
+              'sent once per lane. Missing: enterprise attestation ' +
               '(section 5.4.7) has no RP ID allow-list, and the ' +
               'authentication extensions are not processed. Written ' +
               'independently of the debugger\'s own decoder so the two can ' +
               'be checked against each other (tests/webauthn_cross_impl.js).' },
+  // #725: the sign-on session bound to a key the browser holds.
+  { id: 'dbsc', name: 'Device Bound Session Credentials',
+    where: 'W3C WebAppSec (Editor\'s Draft)',
+    url: 'https://w3c.github.io/webappsec-dbsc/',
+    coverage: 'partial, the server side of one origin-scoped session per ' +
+              'sign-on: Secure-Session-Registration offering ES256 and ' +
+              'RS256, the dbsc+jwt proof at registration (its jwk, typ, ' +
+              'alg and jti checked and the signature verified) and at ' +
+              'refresh (verified with the bound key), the JSON session ' +
+              'instructions with one bound cookie, the 403 and ' +
+              'Secure-Session-Challenge exchange, and Sec-Secure-Session-Id. ' +
+              'Every challenge is spent once for the cluster. Missing: ' +
+              'federated sessions (provider_key, the well-known document), ' +
+              'site-scoped sessions and scope rules, the authorization ' +
+              'parameter, and reading Secure-Session-Skipped. Off by ' +
+              'default (authn.deviceBoundSessions).' },
   { id: 'rfc4226', name: 'RFC 4226 — HOTP: An HMAC-Based One-Time Password ' +
                          'Algorithm',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc4226',
@@ -3129,6 +3188,21 @@ const SPECS: Spec[] = [
               '(section 9.1) in the authorization server metadata. No ' +
               'historical resolution (501), no redirects followed, no mdoc ' +
               '(none is issued).' },
+  { id: 'etsi-ts-119-602',
+    name: 'ETSI TS 119 602 V1.1.1, Lists of trusted entities (LoTE)',
+    where: 'ETSI',
+    url: 'https://www.etsi.org/deliver/etsi_ts/119600_119699/119602/',
+    coverage: 'partial: one scheme-explicit list per realm at ' +
+              '/oid4vci/trusted-list, in the JSON binding, signed as a ' +
+              'compact JWS with the signer\'s chain in x5c (ES256 where ' +
+              'that key is certified, else RS256): this credential issuer ' +
+              'as its one trusted entity, an issuance and a revocation ' +
+              'service each naming the service Root, a self pointer, ' +
+              'DistributionPoints, a sequence number that grows with each ' +
+              'issue and NextUpdate. The scheme\'s URIs are under the ' +
+              'list\'s own URL, since none of Annexes D to H is a ' +
+              'credential issuer list. No postal address, no history, no ' +
+              'lists of other parties.' },
   { id: 'bitstring-status-list', name: 'W3C Bitstring Status List v1.0',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-bitstring-status-list/',
     coverage: 'partial: revocation and suspension lists per realm, served ' +
@@ -4032,8 +4106,10 @@ const ENDPOINTS: EndpointEntry[] = [
           'one (?stream_id=) or lists them all. PUT REPLACES and PATCH ' +
           'MERGES, and the difference is real: a PUT that behaved like a ' +
           'PATCH would let a receiver believe it had cleared ' +
-          'events_requested when it had not. DELETE removes it. Needs ' +
-          'ssf:write for everything but the GET.' },
+          'events_requested when it had not. DELETE removes it. Needs a ' +
+          'write scope ssf.manage for everything but the GET, which a ' +
+          'read scope satisfies as well, because ssf.manage includes ' +
+          'read.' },
   { path: '/ssf/status', group: 'Shared Signals', name: 'A stream\'s status',
     specs: ['ssf'],
     what: 'Read (GET) or set (POST) a stream\'s status: enabled, paused or ' +
@@ -5101,12 +5177,12 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/worker-pools', group: 'Management API',
     name: 'Worker pools', specs: [],
     what: 'NON-SPEC (#327). Everything /admin/worker-pools draws, as JSON: ' +
-          'the request, hosted-surface and post-quantum pools of this node, ' +
-          'each with its state, current, busy, free, maximum and initial ' +
-          'workers, its crashes, failed starts and stops, and its response ' +
-          'time; the post-quantum pool per process; in a cluster every ' +
-          'node by name and the totals, ?node= for one (#332). Mirrors ' +
-          'GET /admin/worker-pools.' },
+          'the request and hosted-surface pools of this node, each a set ' +
+          'of worker threads, with its state, current, busy, free, ' +
+          'maximum and initial workers, its crashes, failed starts and ' +
+          'stops, and its response time. There is no post-quantum pool ' +
+          'since #363. In a cluster, every node by name and the totals, ' +
+          '?node= for one (#332). Mirrors GET /admin/worker-pools.' },
   { path: '/admin-api/node-health', group: 'Management API',
     name: 'Node health', specs: [],
     what: 'NON-SPEC (#329). Everything /admin/node-health draws, as JSON: ' +
@@ -6541,6 +6617,28 @@ const ENDPOINTS: EndpointEntry[] = [
           'clear-person-keys and drop-previous-person-keys take `username`. ' +
           'The two drops end the window in which a ticket under a previous ' +
           'key version is still accepted. Needs admin:write.' },
+  { path: '/admin-api/kerberos/trusts', group: 'Management API',
+    name: 'Kerberos trusts',
+    specs: ['rfc4120', 'ms-pac', 'openapi'],
+    what: 'NON-SPEC. GET /admin/kerberos\'s Trusts tab over JSON: the ' +
+          'realm\'s trust records, paged (?trustsPage=, ?per=), one whole ' +
+          'with ?trust=, each key described by kvno, source and when set ' +
+          '— never the key or the password — with the health findings, ' +
+          'what the forms are drawn from and the trust settings. Needs ' +
+          'admin:read.' },
+  { path: '/admin-api/kerberos/trusts/:action', group: 'Management API',
+    name: 'Add, change, enable, disable, rotate, remove or pair a ' +
+          'Kerberos trust',
+    specs: ['rfc4120', 'rfc3961', 'openapi'],
+    what: 'NON-SPEC. add | update | enable | disable | rotate-key | remove ' +
+          '| pair — the controls on the Trusts tab, through the same action ' +
+          'function. A generated key is returned ONCE in `shown`; a trust ' +
+          'password is never returned. rotate-key keeps the incoming ' +
+          'version it replaces for krb5.trustKeyGraceSeconds; remove needs ' +
+          '`confirm` repeating the partner realm; pair, and rotate-key with ' +
+          'mirror, write the partner trust realm\'s record too and are a ' +
+          'service administrator\'s. Every act is audited by the trust\'s ' +
+          'name. Needs admin:write.' },
   { path: '/admin-api/token-lifetimes', group: 'Management API',
     name: 'Token lifetimes',
     specs: ['rfc6749', 'rfc7519', 'oidc'],
@@ -6877,6 +6975,31 @@ const ENDPOINTS: EndpointEntry[] = [
           'the application\'s identifier (its wtrealm) or its slug. A ' +
           'segment naming no REGISTERED application is a 404 in both modes ' +
           '(STS-WSFED-0019). no-store.' },
+  { path: '/wsfed/initiate/:rp', group: 'WS-Federation',
+    name: 'Identity-provider-initiated sign-in',
+    specs: ['ws-federation', 'saml11', 'saml2', 'xmldsig', 'ws-trust'],
+    effect: 'signs the person in if need be, then POSTs a section 13.2.2 ' +
+            'sign-in response to the relying party\'s registered reply ' +
+            'address',
+    what: 'NON-SPEC (#712): WS-Federation 1.2 defines no request for this ' +
+          'identity provider to start a sign-in, so the link is this ' +
+          'service\'s. The segment is a REGISTERED relying party\'s ' +
+          'identifier (its wtrealm) or slug (else 404, STS-WSFED-0024). OFF ' +
+          'until wsfed.idpInitiatedSso or the entry\'s wsfedIdpInitiatedSso ' +
+          'turns it on (403, STS-WSFED-0025). A wreply is refused ' +
+          '(STS-WSFED-0026): the response goes only to the first ' +
+          'wsfedReplyUrl registered for it, never an observed one ' +
+          '(STS-WSFED-0027 when there is none). wctx is echoed byte for ' +
+          'byte; tokenType and trust mean what they mean at /wsfed. The ' +
+          'issuance is a wsignin1.0\'s — the session, the issuance policy, ' +
+          'session-presented, the realm recorded for /logout — and a ' +
+          'denial on risk steps the person up once.' },
+  { path: '/wsfed/initiate', group: 'WS-Federation',
+    name: 'Identity-provider-initiated sign-in, by wtrealm',
+    specs: ['ws-federation', 'saml11', 'saml2', 'xmldsig', 'ws-trust'],
+    what: 'NON-SPEC (#712): /wsfed/initiate/{rp} with the relying party as ' +
+          '?wtrealm= rather than a path segment, for an identifier whose ' +
+          'slashes a path carries badly. The same rules.' },
 
   // --- SAML 2.0 ---
   // The profile whose absence this file documented at length until 2026-08-24.
@@ -6963,8 +7086,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'binding otherwise; never HTTP-Redirect). Signs the person in ' +
           'through /authn/login when there is no session; the Response ' +
           'and its assertion carry no InResponseTo. The service provider ' +
-          'must be registered in product, and saml2.unsolicitedSso turns ' +
-          'it off for a realm.' },
+          'must be registered in product, and it is answered only where ' +
+          'saml2.idpInitiatedSso is on for it — OFF by default, ' +
+          'saml2IdpInitiatedSso on its entry turning it on (#711). A ' +
+          'step-up the issuance policy asks for on the session\'s risk ' +
+          'sends the person to re-authenticate and back, once.' },
   { path: '/saml2/unsolicited/:sp', group: 'SAML 2.0',
     name: 'Identity-provider-initiated sign-in for ONE service provider',
     specs: ['saml2', 'saml2-profiles'],
@@ -7105,7 +7231,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'arrives as a top-level GET, which a SameSite=Lax cookie is ' +
           'carried on. ForceAuthn, IsPassive and RequestedAuthnContext have ' +
           'no spelling in this protocol, so they are absent rather than ' +
-          'unimplemented.' },
+          'unimplemented. A request carrying shire (the Shibboleth ' +
+          'AuthnRequest profile) is the relying party\'s start and is ' +
+          'answered where saml11.spInitiatedSso is on for it; one with ' +
+          'only a TARGET is a sign-in started here and is answered only ' +
+          'where saml11.idpInitiatedSso is — OFF by default (#711).' },
   { path: '/saml11/sso/:rp', group: 'SAML 1.1',
     name: 'Inter-site transfer service for ONE relying party',
     specs: ['saml11', 'saml11-profiles'],
@@ -7244,6 +7374,56 @@ const ENDPOINTS: EndpointEntry[] = [
           'person, just now (STS-FED-0101), and asks the subject policy, the ' +
           'rules and the administrator refusal again before writing ' +
           'anything.' },
+  { path: '/federation/stepup/:handle', group: 'Federation',
+    name: 'Finish a federated sign-in after a step-up on risk',
+    specs: ['oidc', 'saml2', 'saml2-profiles', 'ws-federation', 'rfc6749'],
+    effect: 'STARTS the federated session the partner\'s verified answer ' +
+            'was held for — only after a second factor held HERE, as that ' +
+            'person',
+    what: 'Where a second factor returns when the issuance policy answered ' +
+          'a federated sign-in with a step-up (#565). The partner\'s answer ' +
+          'is the first factor, held server-side under a single-use handle ' +
+          'bound by a cookie to the browser it arrived in (STS-FED-0111); ' +
+          'the person proves an authenticator app or a security key they ' +
+          'hold here — never a password, and never one enrolled now — and ' +
+          'this path refuses a spent or unknown handle (STS-FED-0100) and ' +
+          'any browser whose latest authentication is not that second ' +
+          'factor, as that person, just now (STS-FED-0178). The session\'s ' +
+          'amr is federated and the factor proved; its acr is mfa.' },
+  { path: '/federation/profile/:handle', group: 'Federation',
+    name: 'Give the details a consumer provider did not send (#729)',
+    specs: ['oidc', 'rfc6749'],
+    effect: 'CREATES the account a consumer provider\'s newcomer signs in ' +
+            'to, once they have given what the realm requires',
+    what: 'Where a consumer or social provider\'s newcomer is sent when ' +
+          'this realm\'s attribute policy requires a value the provider ' +
+          'did not send (STS-FED-0188), in product mode: GET draws a form ' +
+          'asking for exactly the missing values, POST takes them. The ' +
+          'provider\'s verified answer is held server-side under a ' +
+          'single-use handle bound by a cookie to the browser it arrived ' +
+          'in (STS-FED-0111), and the form carries a token held with it ' +
+          '(STS-FED-0189). A value its attribute does not accept draws the ' +
+          'form again (STS-FED-0190), five times at most (STS-FED-0191). ' +
+          'Then the sign-in finishes as it began: the subject decision, the ' +
+          'creation question and the issuance policy are asked again. A ' +
+          'typed address is unverified. Nothing in the policy is relaxed.' },
+  { path: '/federation/notifications/:id', group: 'Federation',
+    name: 'A provider\'s server-to-server notification (#565)',
+    specs: ['rfc7519'],
+    effect: 'removes the person\'s link through the relationship on a ' +
+            'consent revoked or an account deleted at the provider, which ' +
+            'ends the sessions it started; records an address that stopped ' +
+            'or started forwarding',
+    what: 'Sign in with Apple\'s server-to-server notifications, for a ' +
+          'relationship whose provider profile takes them. Apple POSTs ' +
+          '{ payload }, a JWT verified against the relationship\'s keys and ' +
+          'nothing else — issuer Apple, audience the client id — and ' +
+          'accepted once ever by its jti (STS-FED-0186 otherwise). Its ' +
+          'events name a type and the person\'s subject: consent-revoked ' +
+          'and account-delete remove that subject\'s link through this ' +
+          'relationship, never the entry, and email-disabled and ' +
+          'email-enabled are recorded. 404 (STS-FED-0187) for a ' +
+          'relationship that takes none.' },
   { path: '/federation/slo/:id', group: 'Federation',
     name: 'A partner\'s sign-out, in a browser (#167)',
     specs: ['saml2-profiles', 'saml2-bindings', 'saml2', 'ws-federation',
@@ -7359,7 +7539,8 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'OpenID Provider Configuration',
     specs: ['oidc-discovery', 'oidc', 'oidc-logout', 'oidc-bclogout',
             'oidc-ida', 'oidc-native-sso', 'oidc-ciba', 'rfc8414',
-                                                   'rfc9207', 'rfc9449'],
+                                                   'rfc9207', 'rfc9449',
+            'oidc-eap-acr'],
     what: 'What an OIDC client looks for first. The RFC 8414 document ' +
           'extended with what OpenID Connect Discovery adds — ' +
           'subject_types_supported, id_token_signing_alg_values_supported, ' +
@@ -7392,7 +7573,7 @@ const ENDPOINTS: EndpointEntry[] = [
       'endpoint',
     specs: ['rfc6749', 'oidc', 'rfc7636', 'rfc9396', 'rfc9207',
             'oidc-enterprise', 'oidc-key-binding',
-            'rfc9700', 'rfc9101', 'rfc9126', 'rfc9470',
+            'rfc9700', 'rfc9101', 'rfc9126', 'rfc9470', 'oidc-eap-acr',
             'oauth-multiple-response-types', 'jarm', 'fapi1-advanced'],
     effect: 'needs ' +
         'client_id and redirect_uri — answers 400 when followed bare, then ' +
@@ -7452,6 +7633,24 @@ const ENDPOINTS: EndpointEntry[] = [
   // a group of its own, because it is the other end of what that group does —
   // and deliberately not under any protocol, which is the whole point of it.
   // ---------------------------------------------------------------------
+  { path: '/launch/:app', group: 'Authentication',
+    name: 'Identity-provider-initiated sign-in',
+    specs: ['saml2-profiles', 'saml11', 'ws-federation', 'oidc'],
+    effect: 'sends the browser to a protocol endpoint; issues nothing itself',
+    what: 'ONE LINK PER APPLICATION THAT STARTS A SIGN-IN TO IT HERE (#426): ' +
+          'the user portal\'s Sign in link and the URL at the top of each ' +
+          'protocol sub-tab in the console. ?protocol= is saml2, saml11, ' +
+          'wsfed or oidc, else the one switched on, else the entry\'s ' +
+          'appLaunchProtocol; ?target= is where to land afterwards. It ' +
+          'checks that identity-provider-initiated sign-in is on for the ' +
+          'application in that protocol (off by default) and sends the ' +
+          'browser to /saml2/unsolicited/{sp}, /saml11/sso/{rp} or ' +
+          '/wsfed/initiate/{rp}, which sign the person in as for any ' +
+          'sign-in and check the switch again; for OpenID Connect it signs ' +
+          'the person in here, records the launch on the session and sends ' +
+          'them to the client\'s initiate_login_uri (OpenID Connect Core ' +
+          'section 4), which starts an ordinary authorization request. An ' +
+          'unknown application is a 404.' },
   { path: '/logout', group: 'Authentication', name: 'Sign out of everything',
     specs: ['oidc-fclogout', 'oidc-bclogout', 'rfc7009', 'ws-federation',
             'saml2', 'rfc4120', 'rfc4511'],
@@ -7553,6 +7752,24 @@ const ENDPOINTS: EndpointEntry[] = [
           'two partners are left the sign-in screen is drawn instead. A ' +
           'static page since #571, drawn from ' +
           '/authn-api/pending/{id}/partners.' },
+  { path: '/authn/accounts', group: 'Authentication',
+    name: 'Account picker',
+    specs: ['oidc'],
+    effect: 'asks which of the browser\'s signed-in accounts a sign-in ' +
+            'continues as; needs an ?authn= id, so following it bare ' +
+            'answers 400',
+    what: 'SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561), where ' +
+          'authn.multipleAccounts is on (it is off by default). A request ' +
+          'from a browser holding more than one signed-in account that ' +
+          'names none of them — no account chosen in its flow, no ' +
+          'login_hint or id_token_hint naming one — is sent here, and so is ' +
+          'OpenID Connect\'s prompt=select_account (Core section 3.1.2.1). ' +
+          'Each signed-in account continues the flow as itself, its ' +
+          'session checked again and a demand for two factors it does not ' +
+          'meet answered by signing in again as it; each signed-out account ' +
+          'the browser remembers can be signed in to again or forgotten; ' +
+          'Use another account is the ordinary sign-in. A static page, ' +
+          'drawn from /authn-api/pending/{id}/accounts.' },
   { path: '/authn/spnego', group: 'Authentication',
     name: 'Sign in with a Kerberos ticket',
     specs: ['rfc4559', 'rfc4178', 'rfc4120', 'rfc3961', 'rfc8129',
@@ -7715,6 +7932,32 @@ const ENDPOINTS: EndpointEntry[] = [
           'enrolling a second factor, once, in common/credentials.ts. A ' +
           'page of the sign-in surface since #572.' },
   // #64: the emailed code and the emailed sign-in link.
+  // #725: Device Bound Session Credentials.
+  { path: '/authn/dbsc/register', group: 'Authentication',
+    name: 'Device-bound session registration',
+    specs: ['dbsc'],
+    effect: 'binds the sign-on session to the key the browser proves, and ' +
+            'sets its bound cookie',
+    what: 'Where authn.deviceBoundSessions is on, the answer that sets ' +
+          'the session cookie offers this path in ' +
+          'Secure-Session-Registration. The browser posts a dbsc+jwt proof ' +
+          'of a new key over that challenge in Secure-Session-Response; ' +
+          'the session records the key, and the answer is the session ' +
+          'instructions, the sts_session_bound cookie and a first ' +
+          'Secure-Session-Challenge. A session is bound once. 404 while ' +
+          'the setting is off.' },
+  { path: '/authn/dbsc/refresh', group: 'Authentication',
+    name: 'Device-bound session refresh',
+    specs: ['dbsc'],
+    effect: 'renews the bound cookie, or ends the session for a proof that ' +
+            'is not the bound key\'s',
+    what: 'The browser posts here, with Sec-Secure-Session-Id, when the ' +
+          'bound cookie runs out. Without a proof the answer is a 403 with ' +
+          'Secure-Session-Challenge. With a proof of the bound key over a ' +
+          'current challenge, a new bound cookie is set. A proof signed by ' +
+          'another key, or replaying a challenge already spent, ends the ' +
+          'session as a sign-out does. An id the session is not bound as ' +
+          'is refused, and the session is left alone.' },
   { path: '/authn/email-code', group: 'Authentication',
     name: 'Emailed code step',
     specs: ['rfc8176', 'nist-800-63b'],
@@ -7864,6 +8107,29 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'The federation partners to choose between', specs: [],
     what: 'NON-SPEC (#571). The chooser\'s view, resolved again from the ' +
           'application\'s entry.' },
+  { path: '/authn-api/pending/:id/accounts', group: 'Authentication',
+    name: 'The accounts a sign-in may continue as', specs: [],
+    what: 'NON-SPEC (#561). The account picker\'s view: the browser\'s ' +
+          'signed-in and remembered accounts, each by its key and never a ' +
+          'sid, and the CSRF token its acts carry.' },
+  { path: '/authn-api/pending/:id/accounts/select', group: 'Authentication',
+    name: 'Continue as one of the browser\'s accounts', specs: [],
+    what: 'NON-SPEC (#561). The account\'s session is checked again; the ' +
+          'answer resumes the flow with a single-use selection ticket.' },
+  { path: '/authn-api/pending/:id/accounts/another',
+    group: 'Authentication',
+    name: 'Sign in as another account', specs: [],
+    what: 'NON-SPEC (#561). Use another account: the ordinary sign-in, ' +
+          'refused while every place the browser has is signed in.' },
+  { path: '/authn-api/pending/:id/accounts/forget', group: 'Authentication',
+    name: 'Forget a signed-out account', specs: [],
+    what: 'NON-SPEC (#561). Only an account that signed out in this ' +
+          'browser; no session is touched.' },
+  { path: '/authn-api/accounts', group: 'Authentication',
+    name: 'The accounts this browser holds', specs: [],
+    what: 'NON-SPEC (#561). The browser\'s signed-in and remembered ' +
+          'accounts and their states, for an account menu — never a sid ' +
+          'or a token; empty where authn.multipleAccounts is off.' },
   { path: '/authn-api/pending/:id/password', group: 'Authentication',
     name: 'Sign in with a password', specs: [],
     what: 'NON-SPEC (#571). The Sign In button: JSON, an Origin of this ' +
@@ -7926,6 +8192,13 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#577). GET answers what the person the browser\'s ' +
           'session names still holds, and the CSRF token; POST, with that ' +
           'token, signs out of everything or of what was ticked.' },
+  { path: '/authn-api/logout/accounts', group: 'Authentication',
+    name: 'Which account a sign-out is for', specs: [],
+    effect: 'POST with all signs every account in the browser out',
+    what: 'NON-SPEC (#561). GET answers the sign-out\'s account step — ' +
+          'the browser\'s signed-in accounts by key, never a sid; POST ' +
+          'with the CSRF token chooses one (its sign-out page follows) or ' +
+          'signs every one out. 400 where authn.multipleAccounts is off.' },
   { path: '/authn-api/consent/:id', group: 'OAuth 2.0 / OIDC',
     name: 'What the consent screen asks, and the answer', specs: ['rfc9396'],
     effect: 'POST records Allow or Deny and names the authorization request ' +
@@ -8542,6 +8815,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'when Accept asks for JSON-LD or JSON and not the JWT first, the ' +
           'same credential with an eddsa-rdfc-2022 proof by the realm\'s ' +
           'Ed25519 key, issued as its did:key (#197).' },
+  { path: '/oid4vci/trusted-list', group: 'VC Issuance (OID4VCI)',
+    name: 'Trusted list (List of Trusted Entities)',
+    specs: ['etsi-ts-119-602', 'rfc7515'],
+    what: 'This realm\'s credential issuer and the service Root its ' +
+          'credentials and Token Status List Tokens chain to, as a signed ' +
+          'ETSI TS 119 602 list a wallet anchors both by: application/jwt, ' +
+          'the signer\'s chain in x5c. Kept and signed again when what it ' +
+          'says changes or NextUpdate (oid4vci.trustedListLifetimeH) draws ' +
+          'near; 503 with no Root or no certified key.' },
   { path: '/oid4vci/deferred_credential', group: 'VC Issuance (OID4VCI)',
     name: 'Deferred credential endpoint', specs: ['oid4vci', 'rfc6750'],
     what: 'Collects a credential the issuer answered 202 for, against its ' +
@@ -9500,6 +9782,16 @@ const PROTOCOLS: Protocol[] = [
           '(section 3.2.2). amr "otp" (RFC 8176 has no value for email); it ' +
           'never meets a risk step-up, and the issuance policy may refuse a ' +
           'session standing on one (refuseEmailFactor).' },
+  // #725: the session bound to a key the browser holds, after the
+  // credential mechanisms it protects the session of.
+  { name: 'Device Bound Session Credentials', groups: ['Authentication'],
+    specs: ['dbsc'],
+    what: 'The sign-on session bound to a key the browser holds, TPM-backed ' +
+          'where it can. A copied session cookie stops working when the ' +
+          'short-lived bound cookie beside it runs out, because only a ' +
+          'proof of that key renews it; a proof by any other key ends the ' +
+          'session. Off by default and per realm; a browser without it ' +
+          'keeps an ordinary session.' },
   { name: 'Verifiable Credentials (OID4VCI / OID4VP)',
     groups: ['VC Issuance (OID4VCI)', 'VC Presentation (OID4VP)',
              'Decentralized Identifiers', 'W3C VC API'],

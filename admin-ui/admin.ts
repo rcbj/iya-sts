@@ -505,6 +505,7 @@ import stats = require('../common/admin_stats');
 // `common/oidc_rp.ts` still registers the console's callback on its client.
 import oidcRp = require('../common/oidc_rp');
 import authn = require('../authn/authn');
+import sessionWindow = require('../authn/session_window');
 const { sessions } = authn;
 // WHO MAY USE THIS CONSOLE. A library (rule 3): it registers no route, so
 // requiring it here moves nothing in the router, and it requires only
@@ -2218,19 +2219,19 @@ const SECTIONS = [
                'bound it, not by a button. The figures are the answering ' +
                'process\'s own.' },
       // THE WORKER POOLS (#327, 2026-09-28), after the caches and before the
-      // scheduler: one more page whose subject is the process itself — what
-      // it has forked to do its work, and how that is going. Drawn by
-      // `admin-ui/worker_pools_admin.ts` out of the two pool modules.
+      // scheduler: one more page whose subject is the process itself — the
+      // worker threads it has started, and how that is going. Drawn by
+      // `admin-ui/worker_pools_admin.ts` from `request_pool.js`.
       { path: '/admin/worker-pools', label: 'Worker pools',
-        blurb: 'The three pools of child processes this node runs &mdash; ' +
-               'the request workers, the console and portal\'s own ' +
-               'workers, and the post-quantum workers every process forks ' +
-               'on its first post-quantum job &mdash; each with its workers ' +
-               'now, busy and free, its maximum and initial size, how many ' +
-               'crashed or never started against how many were stopped, ' +
-               'and its average response time. A pool that is off says ' +
-               'so. <strong>The figures are this node\'s</strong>, drawn ' +
-               'by its front process; no control.' },
+        blurb: 'The two pools of worker threads this node runs &mdash; ' +
+               'the request pool, and the console and portal\'s own ' +
+               'pool &mdash; each with its threads now, busy and free, ' +
+               'its maximum and initial size, how many crashed or never ' +
+               'started against how many were stopped, and its average ' +
+               'response time. A pool that is off says so. Post-quantum ' +
+               'signing and scrypt are not a pool: they run on libuv\'s ' +
+               'thread pool. <strong>The figures are this node\'s' +
+               '</strong>, drawn by its front process; no control.' },
       // NODE HEALTH (#329, 2026-09-28), beside the worker pools: the
       // container they all run in — its CPU and memory from the cgroup — and
       // the memory of every one of those processes. Drawn by
@@ -3776,6 +3777,15 @@ class AdminConsole {
       // in the head row and wrong in a stacked panel — so it is a block here,
       // separated from the link by the same hairline the nav uses, and its
       // button fills the width so the whole row is the target.
+      // THE BROWSER'S OTHER ACCOUNTS (#561), drawn only with several
+      // accounts on: buttons that read as the menu's links, under the same
+      // hairline as the sign-out.
+      '.usermenuaccounts{margin:6px 0 0;border-top:1px solid #eee;' +
+      'padding-top:6px}.usermenuaccounts button.linklike{display:block;' +
+      'width:100%;text-align:left;background:none;border:0;padding:6px ' +
+      '8px;border-radius:5px;color:#12107c;font-size:.85em;cursor:pointer}' +
+      '.usermenuaccounts button.linklike:hover{background:#eef2fb}' +
+      '.usermenuaccounts button span{color:#777;font-size:.9em}' +
       '.usermenupanel form.signout{display:block;margin:6px 0 ' +
       '0;border-top:1px solid #eee;padding-top:6px}.usermenupanel ' +
       'form.signout button{width:100%}h2{font-size:1.05em;margin:1.8em 0 ' +
@@ -4295,6 +4305,9 @@ class AdminConsole {
       // The copy buttons (2026-10-01): small, beside the value they copy.
       'button.copybtn{padding:1px 7px;margin-left:6px;font-size:.8em;' +
       'vertical-align:baseline}' +
+      // An application's identity-provider-initiated sign-in URL (#426):
+      // greyed while its switch is off, still selectable to copy.
+      '.launch-card.muted>p>code{color:#888}' +
       'a.btn{display:inline-block;padding:5px 10px;border-radius:5px;' +
       'border:1px solid #12107c;background:#12107c;color:#fff;font-size:.8em;' +
       'text-decoration:none}' +
@@ -4431,6 +4444,17 @@ class AdminConsole {
       'button.fg-grow{font-weight:700;margin-top:.2em}' +
       '.fg-bool,.fg-checks{display:flex;flex-wrap:wrap;gap:.2em .9em}' +
       '.fg-radio{font-weight:400;white-space:nowrap}' +
+      // WHAT A CLIENT WAS SEEN DOING (#706): one line per attribute, at the
+      // head of the OAuth sub-tab, as small as it can be.
+      '.fg-observed{margin:.2em 0 .5em;font-size:.88em}' +
+      '.fg-observed-row{display:flex;flex-wrap:wrap;gap:.1em .8em;' +
+      'align-items:center}' +
+      '.fg-seen{display:inline-flex;align-items:center;gap:.2em;' +
+      'white-space:nowrap}' +
+      '.fg-seen svg{color:#1a7f37}' +
+      // A value seen but not declared (#708): the warning mark, amber.
+      '.fg-undeclared svg{color:#b35c00}' +
+      '.fg-more{white-space:nowrap}' +
       '.fg-protos{display:flex;flex-wrap:wrap;gap:.3em 1em;margin:.4em 0 1em}' +
       '.fg-proto{font-weight:400;white-space:nowrap}' +
       '.fg-view{align-items:center;gap:.8em}' +
@@ -4556,6 +4580,7 @@ class AdminConsole {
        'ssf-tab-ssf', 'ssf-tab-caep', 'ssf-tab-risc',
        'kerberos-tab-metadata', 'kerberos-tab-settings',
        'kerberos-tab-claims', 'kerberos-tab-principals',
+       'kerberos-tab-trusts',
        'scim-tab-metadata', 'server', 'clients', 'policies-tab-metadata',
        'tab-password', 'tab-authn', 'tab-serviceAccount', 'tab-passkey',
        'tab-locale', 'tab-profiles', 'listeners-tab-metadata',
@@ -5398,13 +5423,19 @@ class AdminConsole {
     const { log, stats, config, sessions } = this.deps;
     log.debug("Entering AdminConsole.consoleJson().");
     const snap = stats.snapshot();
+    // sessions.size is who this process has cached. While the window is
+    // on, the index count is who holds a session. A failed count stays
+    // null: the cache size would report a partial map as the whole store.
+    const signOnSessions = sessionWindow.active()
+      ? sessionWindow.count(realms.currentId())
+      : sessions.size;
     const json = {
       issuer: IssuerNames.issuer(),
       startedAt: new Date(snap.startedAt).toISOString(),
       uptimeMs: snap.uptimeMs,
       calls: snap.calls.total, tokensHeld: snap.tokens.held,
       tokensRevoked: snap.tokens.revoked,
-      artifactsHeld: snap.artifacts.held, signOnSessions: sessions.size,
+      artifactsHeld: snap.artifacts.held, signOnSessions: signOnSessions,
       usersKnown: snap.users.known,
       usersAuthenticatedHere: snap.users.authenticatedHere,
       pages: NAV.filter(function (n) { return !n.hidden; })
@@ -6078,6 +6109,10 @@ class AdminConsole {
                      // that page saying no reader is installed on a service
                      // that plainly has one.
                      typeof reader.liveSessions === 'function' &&
+                     // endFactorSessions() joined them on 2026-10-19 (#722),
+                     // for the four credential removals on /admin/users,
+                     // and is validated with them for the same reason.
+                     typeof reader.endFactorSessions === 'function' &&
                      Array.isArray(reader.FAMILIES);
     if (!complete) {
       // A warning and not a throw, for the reason admin_rbac.js's install has:
@@ -6085,7 +6120,8 @@ class AdminConsole {
       // that says why it cannot answer.
       log.warn(errorCodes.tag('STS-ADMIN-0014') + 'admin: a logout reader ' +
                'was offered that does not carry inventoryFor(), terminate(), ' +
-               'liveSessions() and FAMILIES. It is refused whole — a partial ' +
+               'liveSessions(), endFactorSessions() and FAMILIES. It is ' +
+               'refused whole — a partial ' +
                'one would leave /admin/logout and /admin/sessions listing ' +
                'what is live and unable to end any of it, which is the worst ' +
                'of the two halves.');
@@ -8501,6 +8537,9 @@ class AdminConsole {
       // should draw the console rather than ask again.
       const signedIn = !!authn.sessionOf(req);
       const choice = signedIn ? null : loginRealmChooser.decide(req, 'admin');
+      // The remembered realm, written here so the portal's gate cannot
+      // forget the same line (`RealmChooser.writeCookie()`).
+      loginRealmChooser.writeCookie(res, choice);
       if (choice && choice.kind === 'redirect') {
         res.set('Cache-Control', 'no-store').redirect(303, choice.location);
         log.debug("Leaving the static console shell. To the chosen realm.");
@@ -8734,7 +8773,10 @@ const SETTING_HOMES = [
   { group: 'OAuth 2.0 / OIDC per-client', pages: ['/admin/token-lifetimes'] },
   { group: 'WS-Trust', pages: ['/admin/wstrust'] },
   // `WS-Federation` had one row, the mock relying party's wctx lifetime, and
-  // went with it (#592); its assertions' row is homed above.
+  // went with it (#592); its assertions' row is homed above. It came back with
+  // #426: who may start a sign-in, the relying party or this identity
+  // provider, which is a question about the protocol page's own endpoints.
+  { group: 'WS-Federation', pages: ['/admin/wsfed'] },
   // THE LISTENERS PAGE (#423, rcbj: "Put all the listener configuration,
   // including TLS on its own page under Server Settings->Listeners"): the
   // TLS group moved here from /admin/tls, which keeps the truststore and the

@@ -1,0 +1,5 @@
+{
+  "across.hSelf": "它可模擬其用戶的領域（krb5S4uSelfRealm）",
+  "across.noSelfRealms": "未指定其他領域：S4U2Self 僅適用於本領域的用戶。",
+  "across.unconstrainedOn": "本服務受信任可進行委派；krb5ForeignTgtDelegation 為 {setting}。其他領域用戶的 TGT 只有在信任允許 TGT 委派且該設定不是 deny 時才能到達本服務。"
+}

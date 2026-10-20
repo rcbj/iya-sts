@@ -48,8 +48,8 @@
     "text": "一個通訊端後方「每個領域一個目錄」——自 2026-08-25 起是獨立的儲存區，而非共用儲存區的子樹。DN 配置是客戶端所看到的：「每個領域都是自己的一棵樹」，以領域「網域」的 RFC 2247 對應為根（自 2026-09-18 起）——預設領域以 global.domain 的對應為根（dc=example,dc=com），網域為 iyasec.io 的領域以 dc=iyasec,dc=io 為根，而未指定網域建立的領域則以 <id>.<global.domain> 為根，也就是預設領域基底之下的 dc=<id>，這是以前每個領域都使用的位置。允許一個網域位於另一個領域的網域之內，它是獨立的命名內容。因此 ou=users、ou=groups、ou=applications、ou=federations 以及兩個 SPIFFE 容器在每個領域中各存在一次，彼此不共用任何東西——在 2026-08-25 之前，這一列寫的是 `none`，並說每個領域都看到相同的人。領域之所以在 DN 中而不是在分割的儲存區中，「是因為」通訊端沒有可放入區段的路徑：ldapsearch 抵達時只帶有基底 DN 而別無其他，因此 `-b dc=acme,dc=example,dc=com` 是客戶端唯一能指名領域的方式，而且它有效。自 2026-08-25 起，應 rcbj 的要求，「每項操作都由 DN 所指名的儲存區回答」——這一行原本說從命名內容進行的子樹搜尋會傳回每個領域的項目，理由是命名內容「就是」整棵樹。那使連接埠 389 成為一個領域可以看見另一個領域的人員、群組與應用程式的唯一門戶，而主控台、/scim/v2 與群組宣告都只向每個領域顯示其自己的內容。因此 `-b dc=example,dc=com` 是預設領域的目錄，`-b dc=acme,dc=example,dc=com` 是 acme 的，而根 DSE 為每個領域發布一個 namingContexts 值，讓客戶端能夠探索它們。新增、修改、刪除、比對或基底範圍的搜尋會在其 DN 所指名的領域中回答，因為在沒有其他地方可放的通訊端上，寫出 DN 就是客戶端指名領域的方式；會跨越領域的 modifyDN 會以 LDAP_AFFECTS_MULTIPLE_DSAS（71）拒絕，因為此處的兩個領域就是兩個目錄。"
   },
   "realms.support.kerberos-v5.note": {
-    "en": "42fe03497278a0e3",
-    "text": "每個信任領域在「共用」的連接埠 88 上有一個 KDC，依每個請求中的 Kerberos 領域名稱區分——這是協定本身已攜帶的鑑別欄位。領域建立時 krb5.enabled 為「關閉」；為其設定自己的 krb5.realm（任何兩個領域都不得回應同一個名稱）並開啟它，該領域便會依其自己的設定建立自己的主體數據庫、長期金鑰與 krbtgt。其人員就是其自身目錄子樹中的人員。原始 UDP/TCP 88 與純 /KdcProxy 依名稱路由；領域自己的 /realm/<id>/KdcProxy 固定於該領域，並以 KDC_ERR_WRONG_REALM 拒絕其他領域的名稱。仍屬於「程序」的是：兩個通訊端，以及開發模式下透過 krb5.trustedRealm 的信任——信任領域彼此不信任對方的 Kerberos。在 2026-09-15 之前，整個程序只有一個 KDC、一個主體數據庫與一個領域名稱。SPNEGO 透過 HTTP 攜帶相同的票證，因此其路由與其他路由一樣在每個領域的前置路徑下回應。"
+    "en": "3a0d2e06a69e5eda",
+    "text": "每個信任領域在「共用」的連接埠 88 上有一個 KDC，依每個請求中的 Kerberos 領域名稱區分——這是協定本身已攜帶的鑑別欄位。領域建立時 krb5.enabled 為「關閉」；為其設定自己的 krb5.realm（任何兩個領域都不得回應同一個名稱）並開啟它，該領域便會依其自己的設定建立自己的主體數據庫、長期金鑰與 krbtgt。其人員就是其自身目錄子樹中的人員。原始 UDP/TCP 88 與純 /KdcProxy 依名稱路由；領域自己的 /realm/<id>/KdcProxy 固定於該領域，並以 KDC_ERR_WRONG_REALM 拒絕其他領域的名稱。仍屬於「程序」的是：兩個通訊端。Kerberos 信任是領域自身目錄中的一筆記錄（ou=kerberosTrusts），因此兩個信任領域可透過各自一側的記錄信任彼此的 Kerberos。在 2026-09-15 之前，整個程序只有一個 KDC、一個主體數據庫與一個領域名稱。SPNEGO 透過 HTTP 攜帶相同的票證，因此其路由與其他路由一樣在每個領域的前置路徑下回應。"
   },
   "realms.support.certificate-authority-crl-ocsp.family": {
     "en": "1a5d99f237a9a182",

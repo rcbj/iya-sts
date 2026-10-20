@@ -56,9 +56,15 @@ it would also hide the one thing on this listener worth checking. The
 certificate is re-keyed on 636 whenever the listener certificate is
 re-issued, for example after a new Root is built on `/admin/pki`.
 
-**No client certificate is asked for on 636.** This listener proves the
-*server* to the client and nothing more; a certificate offered to it is not
-requested and would not be a login if it were. Signing in with a client
+**No client certificate is asked for on 636, by default.** This listener
+proves the *server* to the client and nothing more. Two settings in the
+**Listener: LDAPS** group on `/admin/listeners` change what it asks for:
+`ldap.ldapsDisableOptionalClientCertificate` (on by default) off asks every
+connection for a certificate and requires none, and
+`ldap.ldapsRequireClientCertificate` (off by default) on refuses at the
+handshake a connection without one that chains to the client truststore.
+Either way a certificate is not a login: there is no SASL EXTERNAL, and the
+bind still decides who the connection is. Signing in with a client
 certificate is the main HTTPS port's business (`GET /tls/sign-in`, see
 [TLS](tls.md)). `/admin/ldap/service` says this, so nobody has to work out why
 the certificate they configured was never sent.
@@ -117,6 +123,8 @@ Every realm's tree has the same containers under its base:
 | `ou=policies` | the XACML policy repository |
 | `ou=peps` | remote XACML Policy Enforcement Points |
 | `ou=passwordPolicies` | password policy profiles |
+| `ou=attributePolicies` | attribute policy profiles: what every person must hold (#396) |
+| `ou=attributeDefinitions` | the realm's custom attributes (#396) |
 | `ou=spiffe` | SPIFFE registration entries (`ou=entries`) and attested agents (`ou=agents`) |
 | `ou=trustAnchors` | the client-certificate truststore, in the default realm only |
 
@@ -130,13 +138,19 @@ this service believes.
 ### An entry for everybody who authenticates
 
 With `ldap.autocreateUsers` on (the default), an entry appears at
-`uid=<name>,ou=users,<base>` the first time somebody authenticates through any
-protocol here. **One person is one entry**, however they arrive. `alice`,
-`alice@REALM` and her `sub` all name one entry, and a client certificate whose
-subject CN is `alice` folds onto that entry too. A DID or a SPIFFE ID, which
-names nobody by itself, is filed under a name made from a digest of it, with the
-identifier on the entry as `didSubject` or `spiffeSubject`. An LDAP bind never
-creates an entry, because the DN it presents already names one.
+`uid=<name>,ou=users,<base>` the first time somebody authenticates through a
+protocol that has no switch of its own. **One person is one entry**, however
+they arrive by those protocols. `alice`, `alice@REALM` and her `sub` all name
+one entry, and a client certificate whose subject CN is `alice` folds onto
+that entry too. A DID or a SPIFFE ID, which names nobody by itself, is filed
+under a name made from a digest of it, with the identifier on the entry as
+`didSubject` or `spiffeSubject`. An LDAP bind never creates an entry, because
+the DN it presents already names one. A federated sign-in does not follow
+this setting: the relationship's `fedAutocreateUsers` decides. An entry it
+creates under `link-at-first-sign-in` or `jit-namespaced` is
+`<relationship>~<subject>`, so a partner's `alice@partner.example` is not
+this `alice`. `any-existing` creates under the confirm-lookup name
+([Federation](federation.md#provisioning-dynamic-or-pre-provisioned)).
 
 An add under `ou=users` for a username that another entry already answers to is
 refused `entryAlreadyExists` (68), whichever door it comes through: an LDAP add,
@@ -283,7 +297,7 @@ closed.
 | Credentials on the wire | A search never returns a secret attribute (`userPassword`, client secrets, reset tokens, private keys). A filter cannot match on one, and a compare against one is refused. Administrators are included | Returned like any attribute |
 | Write | Anonymous writes nothing. Admin Write in the default realm writes anything, and a realm's own administrator writes that realm. Anybody else may modify only the attributes in `ldap.selfWritableAttributes`, on their own entry. Refusals are 50 | Any connection may add, modify, rename or delete any entry in any realm |
 | `userPassword` | Held to the password policy (19). A pre-hashed `$scrypt$` value is refused, and so is a change to `pwdHistory` or `pwdChangedTime` | Hashed. A pre-hashed value is kept as given, which is how a directory moves between two instances |
-| Seed data | The containers only. The `roles.remotePepGroup` and `roles.xacmlUserGroup` groups are created **empty** | `cn=admin`, alice, bob and carol, `cn=developers`, `cn=directory-admins`, and the two privileged identities `cn=remote-pep-1` and `cn=xacml-user-1` |
+| Seed data | The containers only. The `roles.remotePepGroup` and `roles.xacmlUserGroup` groups are created **empty** | `cn=admin`, alice, bob and carol, `uid=sensitive` (never delegated, `stsNotDelegated`), `cn=developers`, `cn=directory-admins`, and the two privileged identities `cn=remote-pep-1` and `cn=xacml-user-1` |
 | Invented attributes | None | A persona for each auto-created person |
 
 The failed-bind limit is the sign-in screen's: `security.rateLimitPerIdentity`
@@ -326,7 +340,7 @@ provisioning client must.
 | `ldap.port` | `LDAP_PORT` | `389` | restart | The plain LDAP listener. A host run that is not root fails to bind 389; the failure is recorded, not thrown. |
 | `ldap.tlsPort` | `LDAPS_PORT` | `636` | restart | The LDAPS listener, presenting the service's TLS certificate; it binds independently of 389. |
 | `ldap.plainListener` | `LDAP_PLAIN_LISTENER` | `true` | restart | Whether the plain listener starts at all; off leaves LDAPS as the only way in, which product mode wants. |
-| `ldap.autocreateUsers` | `LDAP_AUTOCREATE_USERS` | `true` | yes | Creates `uid=<name>,ou=users,<base>` the first time somebody authenticates through any protocol. |
+| `ldap.autocreateUsers` | `LDAP_AUTOCREATE_USERS` | `true` | yes | Creates `uid=<name>,ou=users,<base>` the first time somebody authenticates through a protocol with no switch of its own. A federation relationship follows `fedAutocreateUsers` instead. |
 | `ldap.maxEntries` | `LDAP_MAX_ENTRIES` | `2000` | yes | How large the directory may grow, across every realm in the process. |
 | `ldap.sizeLimit` | `LDAP_SIZE_LIMIT` | `500` | yes | The server-side search size limit, past which a search ends with `sizeLimitExceeded`. |
 | `ldap.timeLimit` | `LDAP_TIME_LIMIT` | `30` | yes | The server-side search time limit in seconds (a client's shorter `timeLimit` wins), past which a search ends with `timeLimitExceeded` and the entries already sent. |
@@ -421,12 +435,18 @@ changes one, and a runtime setting can be set per trust realm. See
 ## How an identity becomes an entry
 
 With `ldap.autocreateUsers` on, an entry is grown at `uid=<name>,ou=users,<base>`
-the first time anybody authenticates through **any** family here — the sign-in
-screen, WS-Trust, WS-Federation, a Kerberos AS-REQ, a passwordless WebAuthn
-assertion. Every one of those reaches the directory through the single point at
-which a credential is ACCEPTED, so it is one rule and not one per protocol. A
-failure to write the entry is caught and logged: **a directory must never be
-able to fail an authentication.**
+the first time anybody authenticates through a family that has no switch of
+its own — the sign-in screen, WS-Trust, WS-Federation, a Kerberos AS-REQ, a
+passwordless WebAuthn assertion. Every one of those reaches the directory
+through the single point at which a credential is ACCEPTED, so it is one rule
+and not one per protocol. A failure to write the entry is caught and logged:
+**a directory must never be able to fail an authentication.**
+
+Federation is not one of those families. A service-provider relationship
+creates a person only when `fedAutocreateUsers` is on, even if this setting is
+off, and creates nobody when that switch is off, even if this setting is on.
+The `uid` is `<relationship>~<subject>` except under `any-existing`.
+[Federation](federation.md#provisioning-dynamic-or-pre-provisioned).
 
 Two identities are skipped on purpose:
 

@@ -131,9 +131,15 @@ const cacheRegistry = require('../common/cache_registry');
 // is for before it looks anything up, which is what makes every reader below
 // right without being told which realm it is in.
 //
-// **WHAT A REALM DOES NOT GET, by rcbj's decision:** a trust with another trust
-// realm. The development-mode second realm and its trust (`krb5.trustedRealm`)
-// stay the DEFAULT realm's, and a realm's KDC holds no `krbtgt/<other realm>`.
+// **TRUSTS ARE RECORDS SINCE #430 (2026-10-19)**, and a trust realm may hold
+// them for another trust realm's Kerberos realm — this paragraph read *what a
+// realm does not get, by rcbj's decision: a trust with another trust realm*.
+// No `krbtgt/<other realm>` is in this database any more: `find()` builds
+// the inter-realm principal from the ambient realm's record in
+// `kerberos/krb5_trusts.ts` (see THE TRUSTS, below). What stays the DEFAULT
+// realm's is the development fixture of a partner's own database
+// (PARTNER.COM), which this KDC answers as in development so a referral can
+// be walked.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -434,42 +440,71 @@ function serviceDomainsFor() {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// The second realm, and the trust between them.
+// The second realm: a development fixture of a PARTNER'S OWN DATABASE.
 //
-// A cross-realm trust is not a configuration flag: it is a SHARED KEY, held as
-// an ordinary principal named krbtgt/<the other realm> in each realm's
-// database. That is the whole mechanism, and it is why a referral works at all
-// — the issuing KDC seals a ticket-granting ticket with a key the OTHER realm's
-// KDC can open, and nothing else passes between them.
+// A cross-realm trust is not a configuration flag: it is a SHARED KEY,
+// `krbtgt/<the other realm>@<this realm>`, held by both KDCs. That is the
+// whole mechanism, and it is why a referral works at all — the issuing KDC
+// seals a ticket-granting ticket with a key the OTHER realm's KDC can open,
+// and nothing else passes between them. **THE KEY IS A TRUST RECORD SINCE
+// #430** (`kerberos/krb5_trusts.ts`), one per partner in the realm's own
+// directory subtree, and the four process-wide settings that built it until
+// then (`krb5.trustedRealm`, `krb5.trustPassword`, `krb5.trustedDomainSid`,
+// `krb5.trustedKrbtgtPassword`) are retired with no shim.
 //
-// This mock serves both realms from one process, which a real deployment never
-// does. The simplification is worth naming because it hides one class of
-// problem (finding the other realm's KDC, which is DNS and SRV records) and
-// none of the protocol.
-//
-// Its own domain SID differs, which is the point of having it: SID filtering
-// across a trust is about whose domain a SID belongs to.
-//
-// **THE DEFAULT TRUST REALM'S ALONE** (2026-09-15). These four are the
-// PROCESS's values, read here at require time outside any realm, and only the
-// default realm's database holds the trust or answers for the second realm.
-// Another trust realm's KDC stands alone: rcbj's decision was that trust realms
-// do not trust each other's Kerberos.
+// What stays HERE is the partner's own side, in development only: the
+// default realm's KDC also answers as PARTNER.COM — its krbtgt, a user and a
+// service — so the whole referral chase is reachable without a second KDC.
+// One process serving two realms from one database is a simplification a
+// real deployment never makes; it hides finding the other realm's KDC (DNS
+// and SRV records) and none of the protocol. Its domain SID differs from this
+// realm's, which is the point of having it: SID filtering across a trust is
+// about whose domain a SID belongs to. A trust between two TRUST REALMS of
+// this process needs none of this — each answers for its own realm.
 // ---------------------------------------------------------------------------
 /**
- * The trusted Kerberos realm the default trust realm's KDC answers for in
- * development, `krb5.trustedRealm`.
+ * The development partner realm the default trust realm's KDC also answers
+ * as, and the partner of the trust record seeded beside it (#430).
  */
-const TRUSTED_REALM = config.value('krb5.trustedRealm');
+const DEV_PARTNER_REALM = 'PARTNER.COM';
 /**
- * The trusted realm's DNS domain.
+ * The development partner realm's DNS domain.
  */
-const TRUSTED_DOMAIN = TRUSTED_REALM.toLowerCase();
-const TRUST_PASSWORD = config.value('krb5.trustPassword');
+const DEV_PARTNER_DOMAIN = DEV_PARTNER_REALM.toLowerCase();
 /**
- * The trusted domain's SID, `krb5.trustedDomainSid`.
+ * The development partner realm's domain SID.
  */
-const TRUSTED_DOMAIN_SID = config.value('krb5.trustedDomainSid');
+const DEV_PARTNER_DOMAIN_SID = 'S-1-5-21-2035427030-2118130302-1178042555';
+
+// ---------------------------------------------------------------------------
+// THE TRUSTS (#430), reached LAZILY and inside a `try`. `krb5_trusts.ts` is
+// required by nothing at load here, so the parent project's in-process
+// Kerberos jobs, which copy this file's closure, load it only on the first
+// cross-realm name — and a copy without it has no trusts and says so, rather
+// than failing at load. Its own requires are `common/` leaves already in that
+// closure; it reaches this file back lazily, which is why this is not a
+// cycle at load.
+// ---------------------------------------------------------------------------
+let trustsMissingLogged = false;
+
+function trustRegister() {
+  log.debug("Entering trustRegister().");
+  try {
+    const found = require('./krb5_trusts');
+    log.debug("Leaving trustRegister().");
+    return found;
+  } catch (e) {
+    log.debug('Caught in trustRegister(): ' + ((e && e.message) || e));
+    if (!trustsMissingLogged) {
+      trustsMissingLogged = true;
+      log.warn(errorCodes.tag('STS-KRB-0225') + 'krb5: the Kerberos trust ' +
+               'register (kerberos/krb5_trusts) could not be loaded, so ' +
+               'this KDC holds no trust: ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving trustRegister(). Not loadable.");
+    return null;
+  }
+}
 
 // [MS-SAMR] section 2.2.1.13's USER_ACCOUNT codes — NOT the LDAP
 // userAccountControl bits, which share most of these names and none of their
@@ -541,8 +576,8 @@ function hostSalt(realm, shortName, dnsDomain) {
 // `definitionsFor(ctx)` returns `{ krbtgt, fixtures, trusted }`, so a realm
 // named ACME.EXAMPLE.COM has `alice@ACME.EXAMPLE.COM` salted
 // `ACME.EXAMPLE.COMalice` and `HTTP/web.acme.example.com`, and only the DEFAULT
-// realm's list carries the trust with krb5.trustedRealm and that realm's own
-// accounts.
+// realm's list carries the development partner realm's own accounts. No list
+// carries a trust key since #430: that is a trust record's.
 function definitionsFor(ctx) {
   log.debug("Entering definitionsFor(). realm=" + ctx.REALM);
   const REALM = ctx.REALM;
@@ -819,73 +854,38 @@ function definitionsFor(ctx) {
                    'act on its behalf',
       pac: { rid: 1122, groups: [RID.DOMAIN_USERS],
              userAccountControl: UAC.NORMAL_ACCOUNT }
-    },
-    {
-      // -----------------------------------------------------------------------
-      // THE TRUST. This one principal IS the cross-realm relationship.
-      //
-      // krbtgt/PARTNER.COM@EXAMPLE.COM: the inter-realm ticket-granting
-      // account. When a client of EXAMPLE.COM asks for a service in
-      // PARTNER.COM, this realm's KDC has no such service and does NOT refuse —
-      // it issues a ticket-granting ticket for krbtgt/PARTNER.COM sealed with
-      // THIS key, and the client presents that to the other realm's KDC. Both
-      // realms hold the same key, which is what makes it openable there and
-      // nowhere else.
-      //
-      // Its salt is name-shaped like any other account, and its etypes are
-      // deliberately AES-only: a trust that still had an RC4 key is the
-      // configuration that breaks on a 2025 domain controller, and the KDC's
-      // etype negotiation for a referral has to be driven by THIS account
-      // rather than by the service the client actually asked for.
-      // -----------------------------------------------------------------------
-      name: ['krbtgt', TRUSTED_REALM],
-      type: 2,
-      password: TRUST_PASSWORD,
-      salt: userSalt(REALM, 'krbtgt'),
-      etypes: [18, 17],
-      description: 'the inter-realm trust with ' + TRUSTED_REALM + ' — a ' +
-          'shared key, held as a principal',
-      pac: {
-        rid: 1112,
-        groups: [RID.DOMAIN_USERS],
-        // ok-as-delegate on the ticket and TRUSTED_FOR_DELEGATION in the PAC
-        // are the same setting seen from the two ends: [MS-SAMR] says this bit
-        // is what makes the KDC set that flag. Keeping them consistent here
-        // means the workflow can show the cause beside the effect.
-        userAccountControl: UAC.NORMAL_ACCOUNT | UAC.TRUSTED_FOR_DELEGATION |
-          UAC.DONT_EXPIRE_PASSWORD
-      }
     }
   ];
 
-  // The trusted realm's own database. It holds the same trust key (the other
-  // half of the relationship), its own ticket-granting service, and a service
-  // to reach — which is the destination a referral is FOR. There is
-  // deliberately NO second copy of the trust key here.
+  // The development partner realm's own database: its own ticket-granting
+  // service, a user and a service to reach — which is the destination a
+  // referral is FOR. There is deliberately NO copy of the trust key here.
   //
-  // The inter-realm account is krbtgt/PARTNER.COM@EXAMPLE.COM — one principal,
-  // whose realm is the ISSUING realm — and both KDCs consult that same entry:
-  // the issuer to seal the referral, and the target because the arriving
-  // ticket's own `realm` field says EXAMPLE.COM, which is what handleTgsReq
-  // looks it up by. Holding a second copy under PARTNER.COM would be two
-  // secrets that have to stay equal, and the failure when they drift is "the
-  // ticket does not decrypt" at the second KDC — a message about a ticket for a
-  // problem about a trust. One entry cannot drift from itself.
+  // The inter-realm key is krbtgt/PARTNER.COM@EXAMPLE.COM — one key, whose
+  // realm is the ISSUING realm — and both sides consult the same TRUST RECORD
+  // for it (#430): the issuer to seal the referral, and the target because
+  // the arriving ticket's own `realm` field says EXAMPLE.COM, which is what
+  // handleTgsReq looks it up by. A second copy would be two secrets that have
+  // to stay equal, and the failure when they drift is "the ticket does not
+  // decrypt" at the second KDC — a message about a ticket for a problem about
+  // a trust. One record cannot drift from itself.
   //
   // What PARTNER.COM does need is its OWN ticket-granting service, whose key is
   // a different secret from the trust: it signs the PAC and seals tickets for
   // its own services. Giving it the trust password would have made the two
   // indistinguishable, and every assertion about which key signed what would
   // have passed for the wrong reason.
+  // Its krbtgt password is a literal of this fixture: the setting that held
+  // it (`krb5.trustedKrbtgtPassword`) was retired by #430 with the other three.
   const TRUSTED_DEFINITIONS = [
     {
-      name: ['krbtgt', TRUSTED_REALM],
+      name: ['krbtgt', DEV_PARTNER_REALM],
       type: 2,
-      password: config.value('krb5.trustedKrbtgtPassword'),
-      salt: userSalt(TRUSTED_REALM, 'krbtgt'),
-      realm: TRUSTED_REALM,
-      description: TRUSTED_REALM + "'s own ticket-granting service — NOT the " +
-                                   "trust key"
+      password: 'partner-krbtgt-password',
+      salt: userSalt(DEV_PARTNER_REALM, 'krbtgt'),
+      realm: DEV_PARTNER_REALM,
+      description: DEV_PARTNER_REALM + "'s own ticket-granting service — NOT " +
+                                       "the trust key"
     },
     {
       // A user native to the trusted realm. Without one, the second realm is
@@ -898,9 +898,9 @@ function definitionsFor(ctx) {
       // realm and the default happen to agree.
       name: ['carol'],
       type: 1,
-      salt: userSalt(TRUSTED_REALM, 'carol'),
-      realm: TRUSTED_REALM,
-      description: 'a user in ' + TRUSTED_REALM + ', so that realm is a ' +
+      salt: userSalt(DEV_PARTNER_REALM, 'carol'),
+      realm: DEV_PARTNER_REALM,
+      description: 'a user in ' + DEV_PARTNER_REALM + ', so that realm is a ' +
                    'realm and not just a target',
       pac: {
         rid: 2104,
@@ -911,13 +911,13 @@ function definitionsFor(ctx) {
       }
     },
     {
-      name: ['HTTP', 'app.' + TRUSTED_DOMAIN],
+      name: ['HTTP', 'app.' + DEV_PARTNER_DOMAIN],
       type: 3,
       password: 'partner-service-password',
-      salt: userSalt(TRUSTED_REALM, 'HTTPapp'),
-      realm: TRUSTED_REALM,
-      description: 'a service in ' + TRUSTED_REALM + ', reachable only by ' +
-                                                     'following a referral',
+      salt: userSalt(DEV_PARTNER_REALM, 'HTTPapp'),
+      realm: DEV_PARTNER_REALM,
+      description: 'a service in ' + DEV_PARTNER_REALM + ', reachable only ' +
+                   'by following a referral',
       pac: {
         rid: 2101,
         groups: [RID.DOMAIN_USERS],
@@ -926,13 +926,11 @@ function definitionsFor(ctx) {
     }
   ];
 
-  // The trust — `krbtgt/<trusted realm>@<this realm>`, the last fixture above —
-  // and the trusted realm's own database are the DEFAULT realm's alone. Another
-  // trust realm's KDC holds no inter-realm key, so a service in another realm's
-  // domain is simply unknown there rather than a referral.
+  // The development partner's own database is the DEFAULT realm's alone.
+  // Another trust realm's KDC reaches a partner only through a trust record
+  // (#430), never through a fixture.
   const fixtures = DEFINITIONS.filter(function (def) {
-    return def !== KRBTGT_DEFINITION &&
-           (ctx.isDefault || String(def.name[0]) !== 'krbtgt');
+    return def !== KRBTGT_DEFINITION;
   });
   log.debug("Leaving definitionsFor().");
   return { krbtgt: KRBTGT_DEFINITION, fixtures: fixtures,
@@ -940,13 +938,14 @@ function definitionsFor(ctx) {
 }
 
 // Which realms this KDC answers for, AS THE AMBIENT TRUST REALM. A real KDC
-// answers for exactly one; the default realm's answers for two so the whole
-// referral chase is reachable without a second container.
+// answers for exactly one; the default realm's answers for two in development
+// so the whole referral chase is reachable without a second KDC.
 //
-// **ONE IN PRODUCT MODE.** The second realm, its krbtgt, its user and the trust
-// are all fixtures (`ctx.SEEDS_DEMO`), so a KDC that went on answering for
-// PARTNER.COM would be answering for a realm it holds nothing in.
-// KDC_ERR_WRONG_REALM is the true answer to a request naming it.
+// **ONE IN PRODUCT MODE.** The second realm, its krbtgt, its user and its
+// service are all fixtures (`ctx.SEEDS_DEMO`), so a KDC that went on answering
+// for PARTNER.COM would be answering for a realm it holds nothing in.
+// KDC_ERR_WRONG_REALM is the true answer to a request naming it. (Its trust
+// RECORD is seeded in development only as well, by `krb5_trusts.ts`.)
 //
 // **ONE, OR NONE, IN ANOTHER TRUST REALM** (2026-09-15): its own name while its
 // Kerberos is on, and nothing while it is off.
@@ -973,7 +972,7 @@ function servedBy(ctx) {
     return [];
   }
   log.debug("Leaving servedBy().");
-  return ctx.isDefault && ctx.SEEDS_DEMO ? [ctx.REALM, TRUSTED_REALM] :
+  return ctx.isDefault && ctx.SEEDS_DEMO ? [ctx.REALM, DEV_PARTNER_REALM] :
                                            [ctx.REALM];
 }
 
@@ -987,8 +986,8 @@ function domainSidFor(realm) {
   log.debug("Entering domainSidFor().");
   const ctx = current();
   log.debug("Leaving domainSidFor().");
-  return ctx.isDefault && realm === TRUSTED_REALM ? TRUSTED_DOMAIN_SID :
-                                                    ctx.DOMAIN_SID;
+  return ctx.isDefault && ctx.SEEDS_DEMO && realm === DEV_PARTNER_REALM ?
+    DEV_PARTNER_DOMAIN_SID : ctx.DOMAIN_SID;
 }
 
 // Which realm a service principal belongs to, decided from its HOST NAME.
@@ -1022,13 +1021,17 @@ function realmForService(nameComponents) {
     return null;
   }
   const host = String(nameComponents[nameComponents.length - 1]).toLowerCase();
-  // No trust exists in product mode (see realmsServed()), nor in any trust
-  // realm but the default, so no host belongs to the trusted realm there and
-  // the name is simply unknown.
-  if (ctx.isDefault && ctx.SEEDS_DEMO &&
-      (host === TRUSTED_DOMAIN || host.endsWith('.' + TRUSTED_DOMAIN))) {
-    log.debug("Leaving realmForService().");
-    return TRUSTED_REALM;
+  // THE TRUST RECORDS' ROUTED SUFFIXES (#430), the most specific match, with
+  // this realm's own domain winning over a suffix no longer than it. What
+  // comes back is the NEXT HOP — the partner whose record routes the host —
+  // which for a transitive trust may not be the service's own realm: that
+  // partner's KDC routes it on.
+  const register = trustRegister();
+  const routed = register ? register.routeHost(host, ctx.DOMAIN) : null;
+  if (routed) {
+    log.debug("Leaving realmForService(). Routed to " + routed.partner +
+              " by the trust record's suffix " + routed.suffix + ".");
+    return routed.partner;
   }
   if (host === ctx.DOMAIN || host.endsWith('.' + ctx.DOMAIN)) {
     log.debug("Leaving realmForService().");
@@ -1787,8 +1790,8 @@ function buildDatabase(ctx) {
     log.info('krb5: product mode, so the fixture accounts (alice, bob, ' +
              'locked, expired, the computer account, the delegation services ' +
              'and their rules' +
-             (ctx.isDefault ? ', and the ' + TRUSTED_REALM + ' realm and ' +
-                              'trust' : '') + ') were NOT ' +
+             (ctx.isDefault ? ', and the ' + DEV_PARTNER_REALM + ' realm ' +
+                              'and its trust record' : '') + ') were NOT ' +
              'created. This KDC holds krbtgt/' + ctx.REALM + ' (a random ' +
              'key kept sealed on the directory) and ' +
              (ctx.serviceAccount.spn || 'no service account') + ' where ' +
@@ -3263,6 +3266,49 @@ function storedService(nameComponents, realm) {
   return principal;
 }
 
+// ---------------------------------------------------------------------------
+// THE INTER-REALM PRINCIPALS (#430). `undefined` when the name is not an
+// inter-realm krbtgt at all (find() then reads the database as before),
+// `null` when it is one this realm holds no usable record for, and the
+// principal otherwise. A HOT PATH — every krbtgt lookup comes through, this
+// realm's own TGT's included — so no Entering/Leaving pair here, which would
+// drown the log; the register logs the one call that builds a principal.
+// ---------------------------------------------------------------------------
+function trustPrincipalFor(nameComponents, realm, ctx) {
+  if (!Array.isArray(nameComponents) || nameComponents.length !== 2 ||
+      String(nameComponents[0]) !== 'krbtgt') {
+    return undefined;
+  }
+  const lookupRealm = String(realm || ctx.REALM);
+  const other = String(nameComponents[1]);
+  if (other === lookupRealm ||
+      (lookupRealm !== ctx.REALM && other !== ctx.REALM)) {
+    return undefined;
+  }
+  const register = trustRegister();
+  return register ? register.trustPrincipal(nameComponents, lookupRealm,
+                                            ctx.REALM) : null;
+}
+
+/**
+ * Says why an inter-realm `krbtgt/X@R` name has no principal here although a
+ * trust record names it (disabled, or the key is not held); '' otherwise.
+ *
+ * @param nameComponents - `['krbtgt', X]`
+ * @param realm - R
+ * @returns the sentence, or ''
+ */
+function trustUnavailableReason(nameComponents, realm) {
+  log.debug("Entering trustUnavailableReason().");
+  const ctx = current();
+  const register = trustRegister();
+  const why = register && ctx.active ?
+    register.unavailableReason(nameComponents, String(realm || ctx.REALM),
+                               ctx.REALM) : '';
+  log.debug("Leaving trustUnavailableReason().");
+  return why;
+}
+
 // `realm` defaults to the ambient KDC's own, so every single-realm caller
 // works unchanged. A caller that means "in the realm this ticket came from"
 // has to say so — and in handleTgsReq that is the difference between opening a
@@ -3282,6 +3328,16 @@ function find(nameComponents, realm) {
   if (!nameComponents || !nameComponents.length || !ctx.active) {
     log.debug("Leaving find().");
     return null;
+  }
+  // AN INTER-REALM KEY IS A TRUST RECORD'S (#430): `krbtgt/X@R` with X not
+  // R is the outgoing key of this realm's record for X when R is ours, and
+  // the incoming key of its record for R when X is ours. Never the
+  // database's: no inter-realm principal is registered here any more. See
+  // trustPrincipalFor().
+  const interRealm = trustPrincipalFor(nameComponents, realm, ctx);
+  if (interRealm !== undefined) {
+    log.debug("Leaving find(). An inter-realm key.");
+    return interRealm ? withKeyCache(interRealm) : null;
   }
   // A STORED SERVICE KEY WINS over the database, and is asked first. See
   // storedService().
@@ -3584,6 +3640,20 @@ async function longTermKey(principal, etype) {
     return principal.keys.get(etype);
   }
   derivedKeyCount.miss();
+  // A GENERATED TRUST KEY (#430) is put back from the record's material
+  // after the bound cleared this principal's cache; it has no password.
+  if (principal.trustKeyMaterial instanceof Map && !principal.password) {
+    const material = principal.trustKeyMaterial.get(etype);
+    if (material) {
+      principal.keys.set(etype, material);
+      noteKeyed(principal);
+      log.debug("Leaving longTermKey(). A generated trust key.");
+      return material;
+    }
+    throw new Error('krb5: the trust key ' + keyOf(principal) + ' was ' +
+                    'generated without a ' + kcrypto.etypeName(etype) +
+                    ' key');
+  }
   if (principal.directoryKeys) {
     const again = principal.storedServiceKey
       ? storedService(principal.name, principal.realm)
@@ -4334,9 +4404,14 @@ module.exports = {
   s2kparamsMode: s2kparamsMode,
   userSalt: userSalt,
   hostSalt: hostSalt,
-  TRUSTED_REALM: TRUSTED_REALM,
-  TRUSTED_DOMAIN: TRUSTED_DOMAIN,
-  TRUSTED_DOMAIN_SID: TRUSTED_DOMAIN_SID,
+  // The development partner realm's fixture (#430): what the retired
+  // TRUSTED_REALM, TRUSTED_DOMAIN and TRUSTED_DOMAIN_SID named.
+  DEV_PARTNER_REALM: DEV_PARTNER_REALM,
+  DEV_PARTNER_DOMAIN: DEV_PARTNER_DOMAIN,
+  DEV_PARTNER_DOMAIN_SID: DEV_PARTNER_DOMAIN_SID,
+  // The inter-realm principals' source, and why one named is unavailable.
+  trustRegister: trustRegister,
+  trustUnavailableReason: trustUnavailableReason,
   realmsServed: realmsServed,
   domainSidFor: domainSidFor,
   realmForService: realmForService,

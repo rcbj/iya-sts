@@ -194,6 +194,11 @@ const WORKLOAD_ATTESTATION: { table: any } = { table: null };
 // `handlersInRealm()` like the other two surfaces.
 const BROKER_HANDLERS: { table: Record<string, any> | null } = { table: null };
 
+// Marks a gRPC call whose later listener registrations already re-enter the
+// socket's realm. `bindCallListeners()` sets it so a second wrap does not
+// stack.
+const REALM_BOUND_LISTENERS = Symbol('realmBoundListeners');
+
 // ---------------------------------------------------------------------------
 // WHAT A CALLER HAS TO PRESENT ON EACH LISTENER, IN WORDS (#543 phase 2b):
 // every sentence a binding's `authentication` can carry, and the note a
@@ -1260,16 +1265,24 @@ class SpiffeServer {
   // the realm a call is in is decided by the socket it arrived on and nowhere
   // else.
   //
-  // That also makes the streaming handlers right for free: `FetchX509SVID`
-  // keeps the stream open and re-sends at half the SVID lifetime, and the timer
-  // it arms is armed INSIDE the realm context, so the re-send is in the same
-  // realm as the call that asked for it. An explicit realm argument threaded
-  // through the handlers would have had to be remembered at each of those
-  // points.
+  // A timer armed inside that run stays in the realm: `FetchX509SVID` re-sends
+  // at half the SVID lifetime, and AsyncLocalStorage follows the timer. A
+  // listener registered with `call.on` does not. grpc-js emits `data`, `end`,
+  // `cancelled` and `error` from the HTTP/2 session, which was created when
+  // the connection was accepted — outside the run — and the run has already
+  // returned by the time the first message arrives. `AttestAgent` looks the
+  // join token up in that `data` listener (#324). Without rebinding it, a
+  // token minted in the socket's realm is read from the default realm's store
+  // and refused as never issued (`STS-SPIFFE-0055`). `bindCallListeners()`
+  // wraps each later listener with `realms.bind()` before the handler runs,
+  // so the emit enters the socket's realm again. Unary methods do not need
+  // it: they capture the realm while the run is still on the stack and
+  // re-enter it in the worker (`methodRequest()`).
   // ---------------------------------------------------------------------------
   /**
    * Wraps a handler table so that every call runs inside the realm whose socket
-   * it arrived on.
+   * it arrived on. Stream listeners registered on the call are rebound into
+   * that realm too; see the note above.
    *
    * @param realmId - the realm's id
    * @param table - the handlers
@@ -1279,18 +1292,60 @@ class SpiffeServer {
     const { log, realms } = this.deps;
     log.debug("Entering SpiffeServer.handlersInRealm().");
     const realm = realms.get(String(realmId || ''));
+    const captured = realm || realms.DEFAULT_REALM;
+    const self = this;
     const out = {};
     Object.keys(table).forEach(function (name) {
       const fn = table[name];
       out[name] = function () {
         const args = arguments;
-        return realms.run(realm || realms.DEFAULT_REALM, function () {
+        // Every grpc-js handler shape this service registers takes the call
+        // first (unary, server stream, bidi).
+        self.bindCallListeners(args[0], captured);
+        return realms.run(captured, function () {
           return fn.apply(null, args);
         });
       };
     });
     log.debug("Leaving SpiffeServer.handlersInRealm().");
     return out;
+  }
+
+  /**
+   * Rebinds listeners a handler later registers on a gRPC call, so each one
+   * runs in the socket's realm. grpc-js emits them outside the
+   * `handlersInRealm()` run.
+   *
+   * @param call - the grpc-js call
+   * @param realm - the realm record
+   */
+  bindCallListeners(call, realm) {
+    const { log, realms } = this.deps;
+    log.debug("Entering SpiffeServer.bindCallListeners().");
+    if (!call || typeof call.on !== 'function' ||
+        call[REALM_BOUND_LISTENERS]) {
+      log.debug("Leaving SpiffeServer.bindCallListeners(). Nothing to bind.");
+      return;
+    }
+    // Only `call.on` is used (`spiffe_grpc.ts`). The other EventEmitter
+    // registrations are wrapped too, so a later one does not silently leave
+    // the realm. The original method is kept: a readable stream's `on`
+    // resumes the flow, and calling it is what does that.
+    const methods = ['on', 'once', 'addListener', 'prependListener',
+                     'prependOnceListener'];
+    methods.forEach(function (method) {
+      const original = call[method];
+      if (typeof original !== 'function') {
+        return;
+      }
+      call[method] = function (event, listener) {
+        const bound = typeof listener === 'function'
+          ? realms.bind(realm, listener) : listener;
+        return original.call(this, event, bound);
+      };
+    });
+    call[REALM_BOUND_LISTENERS] = true;
+    log.debug("Leaving SpiffeServer.bindCallListeners().");
   }
 
   /**

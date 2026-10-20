@@ -14,9 +14,11 @@
 // the last one went every request was served on the front process's one
 // thread. rcbj met it more than once. reap() now forks a replacement into the
 // dead worker's pool and slot — not while the pool is stopping, not once it
-// has given up, never past the configured size — and a worker that reports it
-// could not start is ended so that it goes through the same path, bounded by
-// QUICK_EXIT_LIMIT failed starts in a row.
+// has given up, except during that give-up's cool-down try, and never past
+// the configured size — and a worker that reports it could not start is ended
+// so that it goes through the same path, bounded by QUICK_EXIT_LIMIT failed
+// starts in a row. The give-up then waits workers.giveUpRetryMs and tries one
+// worker; one that comes up refills the pool, and 0 stays given up (#333).
 //
 // The decision is asserted directly (section 1). The rest drives the REAL
 // fork() and reap() with real worker THREADS (#364: a worker is a
@@ -210,6 +212,12 @@ function checkTheDecision(t) {
           JSON.stringify(plan));
 
   plan = pool.replacementFor(dead, [a, dead, b],
+    { stopped: false, givenUp: true, probing: true, wanted: 3 });
+  t.check(plan.replace && plan.pool === PROTO && plan.slot === 1,
+          'a cool-down try may replace a worker while the pool is still ' +
+          'given up', JSON.stringify(plan));
+
+  plan = pool.replacementFor(dead, [a, dead, b],
     { stopped: false, givenUp: false, wanted: 2 });
   t.check(!plan.replace,
           'nor past the configured size, counting only the living',
@@ -227,6 +235,27 @@ function checkTheDecision(t) {
           'the surface pool is sized on its own, and a slot another living ' +
           'worker holds is not handed out twice', JSON.stringify(plan));
   log.debug("Leaving checkTheDecision().");
+}
+
+// The cool-down's wait, as a decision: the setting, doubled, capped at an
+// hour, and 0 meaning it does not try again.
+function checkGiveUpRetryDelay(t) {
+  log.debug("Entering checkGiveUpRetryDelay().");
+  t.log.info('=== the give-up cool-down doubles, and 0 does not retry ===');
+  t.equal(pool.giveUpRetryDelay(0, 300000), 300000,
+          'the first wait is workers.giveUpRetryMs itself');
+  t.equal(pool.giveUpRetryDelay(1, 300000), 600000,
+          'the next wait is twice that');
+  t.equal(pool.giveUpRetryDelay(2, 300000), 1200000, 'and twice again');
+  t.equal(pool.giveUpRetryDelay(3, 300000), 2400000, 'and once more');
+  t.equal(pool.giveUpRetryDelay(4, 300000), 3600000,
+          'then an hour, which 16 times five minutes would pass');
+  t.equal(pool.giveUpRetryDelay(6, 300000), 3600000,
+          'and the hour is the ceiling after that too');
+  t.equal(pool.giveUpRetryDelay(0, 0), 0,
+          '0 does not retry, on the first wait');
+  t.equal(pool.giveUpRetryDelay(3, 0), 0, 'nor on a later one');
+  log.debug("Leaving checkGiveUpRetryDelay().");
 }
 
 // ---------------------------------------------------------------------------
@@ -326,12 +355,68 @@ async function checkAFailedStartIsBounded(t, stubPath) {
             'starts in a row');
     t.equal(pool.workerTable().length, 0,
             'and nothing is left running or being forked');
+    t.equal(statsOf(PROTO).giveUpRetryMs, 0,
+            'workers.giveUpRetryMs 0 arms no cool-down');
+    t.equal(statsOf(PROTO).giveUpAttempt, 0,
+            'and no attempt is counted');
     t.check(pids[0] && pool.workerTable().every(function (one) {
       return one.pid !== pids[0];
     }), 'the worker that said it could not start was ended rather than ' +
         'left holding its place', '');
-  });
+  }, { STS_WORKERS_GIVE_UP_RETRY_MS: '0' });
   log.debug("Leaving checkAFailedStartIsBounded().");
+}
+
+// ---------------------------------------------------------------------------
+// A GIVE-UP IS NOT FOR THE LIFE OF THE PROCESS (#333). One worker is tried
+// after the cool-down, and routing stays given up until it is ready. A try
+// that also fails waits twice as long.
+// ---------------------------------------------------------------------------
+async function checkAPoolRetriesAfterGivingUp(t, stubPath) {
+  log.debug("Entering checkAPoolRetriesAfterGivingUp().");
+  t.log.info('=== a pool that gave up tries one worker after the ' +
+             'cool-down and refills ===');
+  await withStubPool(stubPath, 2, 'fail', async function () {
+    pool.fork(PROTO, 0);
+    t.check(await waitFor(function () {
+      return statsOf(PROTO).gaveUp;
+    }, 15000), 'the pool gives up', '');
+    // THE NEXT FORK COPIES THE ENVIRONMENT. The workers that failed already
+    // hold `fail`; the one the cool-down forks reads this.
+    process.env.STUB_MODE = 'ok';
+    const waiting = statsOf(PROTO);
+    t.equal(pool.workerTable().length, 0, 'nothing is left running');
+    t.check(waiting.giveUpRetryMs > 0 && waiting.giveUpRetryMs <= 500,
+            'the cool-down is the setting, and short enough to wait for',
+            String(waiting.giveUpRetryMs));
+    t.equal(waiting.giveUpProbing, false,
+            'routing stays given up while the cool-down runs');
+    t.check(await waitFor(function () {
+      return ready(PROTO).length === 2 && !statsOf(PROTO).gaveUp;
+    }, 10000), 'one worker coming up clears the give-up and the pool ' +
+               'refills',
+               JSON.stringify({ ready: ready(PROTO).length,
+                                gaveUp: statsOf(PROTO).gaveUp }));
+    t.equal(statsOf(PROTO).giveUpAttempt, 0,
+            'a worker that comes up clears the backoff');
+  }, { STS_WORKERS_GIVE_UP_RETRY_MS: '400' });
+
+  t.log.info('=== a cool-down whose try also fails waits longer ===');
+  await withStubPool(stubPath, 1, 'fail', async function () {
+    pool.fork(PROTO, 0);
+    t.check(await waitFor(function () {
+      return statsOf(PROTO).giveUpAttempt === 1;
+    }, 10000), 'a try that fails arms the doubled wait',
+               JSON.stringify(statsOf(PROTO)));
+    const again = statsOf(PROTO);
+    t.check(again.gaveUp && again.giveUpRetryMs > 450 &&
+            again.giveUpRetryMs <= 650,
+            'the second wait is about twice the 300ms setting',
+            String(again.giveUpRetryMs));
+    t.equal(pool.workerTable().length, 0,
+            'and the pool is not forking while it waits');
+  }, { STS_WORKERS_GIVE_UP_RETRY_MS: '300' });
+  log.debug("Leaving checkAPoolRetriesAfterGivingUp().");
 }
 
 // ---------------------------------------------------------------------------
@@ -509,6 +594,7 @@ async function checkWorkersStartAsMemoryAllows(t, stubPath) {
 async function run(t) {
   log.debug("Entering run().");
   checkTheDecision(t);
+  checkGiveUpRetryDelay(t);
   const stubPath = path.join(os.tmpdir(), 'sts-stub-worker-' + process.pid +
                              '.js');
   fs.writeFileSync(stubPath, STUB);
@@ -516,6 +602,7 @@ async function run(t) {
     await checkADeadWorkerIsReplaced(t, stubPath);
     await checkStoppingReplacesNothing(t, stubPath);
     await checkAFailedStartIsBounded(t, stubPath);
+    await checkAPoolRetriesAfterGivingUp(t, stubPath);
     await checkWorkersStartOneAtATime(t, stubPath);
     await checkWorkersStartAsMemoryAllows(t, stubPath);
   } finally {
@@ -534,7 +621,7 @@ module.exports = {
   describe: 'that a request worker thread which dies is replaced in its ' +
             'pool and slot, not while stopping, not past the configured ' +
             'size, and a worker that cannot start is ended and retried a ' +
-            'bounded number of times, and that workers are started one at ' +
-            'a time (#342)',
+            'bounded number of times before a cool-down tries one again ' +
+            '(#333), and that workers are started one at a time (#342)',
   run: run
 };

@@ -42,6 +42,13 @@
 //   * THE REALM SWITCHER moves to another realm's pages in place, keeping
 //     the token: a default-realm token's audience is accepted in every
 //     realm (`AdminApi.wantedAudiences()`).
+//   * ONE ACCOUNT PER TAB (#561, with `authn.multipleAccounts` on): the
+//     tab's account in sessionStorage sent as `login_hint` on every sign-in,
+//     the account menu's Switch, Sign in with another account and Sign
+//     out…, and a switch that asks first over unsaved changes, aborts what
+//     is in flight, discards every view this tab holds and refuses an answer
+//     for another subject (`switchAccount()`, below). With the setting off
+//     none of it is drawn or sent.
 //
 // Everything it touches in the browser — `fetch`, `crypto`, `location`,
 // `history`, `document`, `sessionStorage` — arrives through the
@@ -60,6 +67,7 @@ import WebShell = require('./web_shell');
 import WebForms = require('./web_forms');
 import WebAnswers = require('./web_answers');
 import WebMessages = require('../common/web_messages');
+import WebAccounts = require('../common/web_accounts');
 
 type Json = any;
 
@@ -86,6 +94,11 @@ const RESTORE_KEY = 'sts-console-restore';
 const RESTORE_MAX_AGE_MS = 30 * 60 * 1000;
 // What `sendOnce()` answers when the request needs a sign-in first.
 const NEEDS_SIGN_IN = { needsSignIn: true };
+// What it answers for a request the tab's account changed under (#561):
+// aborted, or answered after the switch — either way not believed.
+const ABORTED = { aborted: true };
+// Where the tab's account is kept (#561), beside the sign-in's record.
+const ACCOUNT_KEY = 'sts-console-account';
 // The calls that negotiate the console's language (#543), which are sent
 // the browser's own Accept-Language rather than the console's answer.
 const LANGUAGE_CALLS = /\/admin-api\/console(\/language)?([?#]|$)/;
@@ -112,6 +125,10 @@ class ConsoleRuntime extends SpaClient {
   // The form being sent, so a sign-in that has to leave the page knows
   // which one was pressed (#508).
   private submitting: Json;
+  // WHETHER A FORM ON THE PAGE DRAWN HAS BEEN TYPED IN (#561): a switch asks
+  // first while one has. Set by an `input` or `change` inside a form, and
+  // cleared by every drawing.
+  private dirty: boolean;
 
   /**
    * Makes the runtime.
@@ -128,7 +145,8 @@ class ConsoleRuntime extends SpaClient {
     super(env, ConsoleRuntime.prefixOf(env.location.pathname), {
       clientId: CLIENT_ID, scope: SCOPE,
       elsewhere: { '/oauth2': 'data-sts-oauth', '/admin-api': 'data-sts-api',
-                   '/logout': 'data-sts-authn' } });
+                   '/logout': 'data-sts-authn' },
+      accountKey: ACCOUNT_KEY });
     this.shell = null;
     this.t = kit.context().t;
     this.shellPrefix = '';
@@ -139,6 +157,7 @@ class ConsoleRuntime extends SpaClient {
     this.spec = null;
     this.reauth = null;
     this.submitting = null;
+    this.dirty = false;
   }
 
   // --- paths ---------------------------------------------------------------
@@ -201,15 +220,28 @@ class ConsoleRuntime extends SpaClient {
    * Sends the browser to sign in, remembering where to come back to.
    *
    * @param returnTo - the path and query to land on after
+   * @param extra - for a switch (#561): `login_hint` (the account; '' for
+   *   none), `prompt`, `expect` (the subject the answer must be for) and
+   *   `another` (a sign-in as another account); nothing otherwise
    * @returns nothing
    */
-  async beginSignIn(returnTo: string): Promise<void> {
+  async beginSignIn(returnTo: string, extra?: Json): Promise<void> {
     const verifier = this.random(32);
     const state = this.random(16);
-    this.env.sessionStorage.setItem(SIGNIN_KEY, JSON.stringify({
-      verifier: verifier, state: state, returnTo: returnTo,
-      prefix: this.prefix }));
-    this.env.location.assign(await this.authorizeUrl(state, verifier));
+    const asked = extra || {};
+    // `expect` and `another` are written only where a switch set them, so
+    // the record of an ordinary sign-in is the one it always was.
+    const record: Json = { verifier: verifier, state: state,
+                           returnTo: returnTo, prefix: this.prefix };
+    if (asked.expect) {
+      record.expect = String(asked.expect);
+    }
+    if (asked.another) {
+      record.another = true;
+    }
+    this.env.sessionStorage.setItem(SIGNIN_KEY, JSON.stringify(record));
+    this.env.location.assign(await this.authorizeUrl(state, verifier,
+                                                     asked));
   }
 
   /**
@@ -244,9 +276,23 @@ class ConsoleRuntime extends SpaClient {
     }
     if (!saved || saved.unreadable || !query.code ||
         query.state !== saved.state) {
-      this.drawProblem('This sign-in cannot be finished',
-        'The answer from the authorization server does not belong to a ' +
-        'sign-in this page started. Open the console again to sign in.');
+      // THE RETURN TAB of a same-device wallet holds no PKCE record. The
+      // tab that opened the console still does, and it redeems the code.
+      if (query.code && query.state &&
+          await this.handCallbackToStarter(query)) {
+        this.env.history.replaceState(null, '',
+          this.prefix + '/admin/callback');
+        this.drawProblem('Continue in your other tab',
+          'This sign-in is finishing in the tab where you opened the ' +
+          'console. You can close this one.');
+        return;
+      }
+      // THE SESSION IS ALREADY THERE, as on the portal: the wallet and the
+      // passkey finished in this tab. No waiting tab took the callback.
+      // Open the console under the old refusal started a fresh request,
+      // which that session accepts.
+      this.env.history.replaceState(null, '', this.prefix + '/admin');
+      await this.beginSignIn('/admin');
       return;
     }
     const answer = await this.tokenRequest({
@@ -266,12 +312,31 @@ class ConsoleRuntime extends SpaClient {
         'console again to sign in.');
       return;
     }
+    // A SWITCH IS FOR ONE ACCOUNT (#561): an answer for another subject is
+    // refused and its tokens are not kept, so the tab stays the account it
+    // was — a reload resumes that one, by its hint.
+    if (saved.expect &&
+        !ConsoleRuntime.answerIsFor(String(saved.expect),
+                                    answer.json.id_token)) {
+      this.drawProblem('Switching accounts was refused',
+        'The sign-in came back as another account than the one chosen, so ' +
+        'this tab did not take it. Open the console again to carry on as ' +
+        'the account it was.');
+      return;
+    }
+    const before = this.storedAccount();
     this.keepTokens(answer.json);
     const to = String(saved.returnTo || '/admin');
     this.env.history.replaceState(null, '', this.prefix + to);
     await this.route();
     // What the page held when the sign-in had to leave it (#508).
     this.restorePageState();
+    // AN ACCOUNT THIS TAB ADDED TO THE BROWSER is announced, so the other
+    // tabs' menus are read again (#561); a reload as the same account is
+    // not a change.
+    if (saved.another || (before && before.sub !== this.subject)) {
+      this.announceAccounts('added');
+    }
   }
 
   /**
@@ -415,19 +480,34 @@ class ConsoleRuntime extends SpaClient {
    *
    * @param state - the state
    * @param verifier - the PKCE verifier
+   * @param extra - `login_hint` and `prompt` for a switch (#561), or
+   *   nothing
    * @returns the URL
    */
-  async authorizeUrl(state: string, verifier: string): Promise<string> {
-    // Pushed first where the realm requires it (RFC 9126, #568's
-    // `SpaClient.authorizationRequestUrl()`).
-    return this.authorizationRequestUrl({
+  async authorizeUrl(state: string, verifier: string,
+                     extra?: Json): Promise<string> {
+    const params: Json = {
       response_type: 'code', client_id: CLIENT_ID,
       redirect_uri: this.url('/admin/callback'), scope: SCOPE,
       state: state, code_challenge: await this.sha256(verifier),
       code_challenge_method: 'S256', resource: this.resource(),
       // OpenID Connect's nonce, which FAPI 1.0 requires (`SpaClient`).
       nonce: await this.nonceFor(verifier)
-    });
+    };
+    // THE TAB'S ACCOUNT (#561), on every sign-in — the popup's and a
+    // reload's among them — so the authorization server answers for this
+    // tab's session and no other; none where the tab keeps none, which is
+    // every tab with the setting off.
+    const hint = this.hintFor(extra);
+    if (hint) {
+      params.login_hint = hint;
+    }
+    if (extra && extra.prompt) {
+      params.prompt = String(extra.prompt);
+    }
+    // Pushed first where the realm requires it (RFC 9126, #568's
+    // `SpaClient.authorizationRequestUrl()`).
+    return this.authorizationRequestUrl(params);
   }
 
   /**
@@ -568,8 +648,23 @@ class ConsoleRuntime extends SpaClient {
     }
     const before = this.subject;
     const after = ConsoleRuntime.subjectOf(answer.json.id_token);
+    const same = ConsoleRuntime.answerIsFor(before, answer.json.id_token);
+    // WITH SEVERAL ACCOUNTS IN THE BROWSER (#561) the popup asked for this
+    // tab's account by its hint, and an answer for another is refused as a
+    // switch's is: this tab stays its account, and the menu switches.
+    if (!same && this.accounts.enabled && this.storedAccount()) {
+      await this.prepareReauth();
+      const t = this.t;
+      const kept = this.storedAccount() || {};
+      this.drawReauthBar(t.has('consoleRuntime.accounts.otherAccount')
+        ? t.text('consoleRuntime.accounts.otherAccount',
+                 { user: String(kept.username || '') })
+        : 'That sign-in was another account, so this tab did not take it. ' +
+          'Sign in again as ' + String(kept.username || '') + ', or switch ' +
+          'account from the account menu.');
+      return;
+    }
     this.keepTokens(answer.json);
-    const same = !!before && before === after;
     this.reauth = null;
     if (r.channel) {
       r.channel.close();
@@ -898,6 +993,9 @@ class ConsoleRuntime extends SpaClient {
     // and the act the reader pressed completes when they are back. A false
     // answer is a sign-in that left the page, or a different person.
     const first = await this.sendOnce(method, target, body);
+    if (first === ABORTED) {
+      return null;
+    }
     if (first !== NEEDS_SIGN_IN) {
       return first;
     }
@@ -905,6 +1003,9 @@ class ConsoleRuntime extends SpaClient {
       return null;
     }
     const second = await this.sendOnce(method, target, body);
+    if (second === ABORTED) {
+      return null;
+    }
     if (second !== NEEDS_SIGN_IN) {
       return second;
     }
@@ -923,9 +1024,15 @@ class ConsoleRuntime extends SpaClient {
    * @returns the response, or NEEDS_SIGN_IN when no token will do
    */
   async sendOnce(method: string, target: string, body?: Json): Promise<Json> {
+    // THE IDENTITY IT IS SENT FOR (#561): a switch aborts it, and whatever
+    // comes back after one is ABORTED, never drawn.
+    const identity = this.identity;
     const now = this.env.now ? this.env.now() : Date.now();
     if (this.accessToken && now > this.expiresAt - REFRESH_EARLY * 1000) {
       await this.refresh();
+    }
+    if (identity !== this.identity) {
+      return ABORTED;
     }
     if (!this.accessToken) {
       return NEEDS_SIGN_IN;
@@ -961,9 +1068,21 @@ class ConsoleRuntime extends SpaClient {
           payload = JSON.stringify(body);
         }
       }
-      const res = await this.env.fetch(target, { method: method,
-                                                 headers: headers,
-                                                 body: payload });
+      let res: Json = null;
+      try {
+        res = await this.env.fetch(target, { method: method,
+                                             headers: headers,
+                                             body: payload,
+                                             signal: this.identitySignal() });
+      } catch (e) {
+        if (identity !== this.identity) {
+          return ABORTED;
+        }
+        throw e;
+      }
+      if (identity !== this.identity) {
+        return ABORTED;
+      }
       this.keepNonce(res);
       if (res.status !== 401) {
         return res;
@@ -1080,6 +1199,14 @@ class ConsoleRuntime extends SpaClient {
       this.shellPrefix = this.prefix;
       const me = await this.apiJson('GET', '/admin-api/me');
       this.me = me && me.status === 200 ? me.json : {};
+      // THE BROWSER'S ACCOUNTS (#561), for the account menu, and the tab's
+      // own kept from them; off, nothing is kept and the menu is today's.
+      const gate = (this.shell && this.shell.gate) || {};
+      await this.readAccounts(String(gate.username || ''));
+      const self = this;
+      this.listenForAccounts(function () {
+        self.redrawAccountMenu();
+      });
     }
     if (!this.formTable) {
       // THE OPERATIONS OF BOTH KINDS (#454): the index, `GET /admin-api`,
@@ -1124,7 +1251,10 @@ class ConsoleRuntime extends SpaClient {
     this.env.document.body.innerHTML = ConsoleRuntime.realmLinks(
       WebShell.frame(shell, {
         title: title, active: active, up: up, inner: messages + inner,
-        path: this.here(), t: this.t }), this.prefix);
+        path: this.here(), t: this.t,
+        accounts: this.accounts, subject: this.subject }), this.prefix);
+    // A page just drawn holds nothing typed (#561's unsaved-changes test).
+    this.dirty = false;
     // EVERY DRAWING replaces the panels a tab's `:target` named — a page
     // routed to, a round trip, an act's answer — so the fragment is made
     // the target again (targetFragment()), and what was drawn is recorded
@@ -1238,7 +1368,10 @@ class ConsoleRuntime extends SpaClient {
       await this.beginSignIn(this.hereWithFragment());
       return;
     }
-    if (!await this.ensureShell()) {
+    // THE IDENTITY THIS PAGE IS DRAWN FOR (#561): a switch while it is being
+    // fetched leaves it undrawn.
+    const identity = this.identity;
+    if (!await this.ensureShell() || identity !== this.identity) {
       return;
     }
     const query = ConsoleRuntime.queryOf(this.env.location.search);
@@ -1279,6 +1412,9 @@ class ConsoleRuntime extends SpaClient {
           answer: await self.apiJson('GET', one.operation +
             (search ? '?' + search : '')) };
       }));
+      if (identity !== this.identity) {
+        return;
+      }
       const failed = answers.filter(function (one) {
         return !one.answer || one.answer.status !== 200 || !one.answer.json;
       })[0];
@@ -2256,6 +2392,19 @@ class ConsoleRuntime extends SpaClient {
       }
       return;
     }
+    // THE ACCOUNT MENU'S CONTROLS (#561), drawn only with several accounts
+    // on.
+    const asked = this.accounts.enabled
+      ? WebAccounts.actionOf(event.target) : null;
+    if (asked && (asked.action === 'switch' || asked.action === 'another')) {
+      event.preventDefault();
+      if (asked.action === 'switch') {
+        this.switchAccount(asked.key);
+      } else {
+        this.signInAnother();
+      }
+      return;
+    }
     let el = event.target;
     while (el && el.tagName !== 'A') {
       el = el.parentElement;
@@ -2407,9 +2556,158 @@ class ConsoleRuntime extends SpaClient {
    * @returns nothing
    */
   signOut(): void {
+    // WHICH ACCOUNT (#561): with several in the browser, the sign-out is
+    // told the tab's, which it preselects; with the setting off the address
+    // is the one it always was.
+    const kept = this.accounts.enabled ? this.storedAccount() : null;
     this.accessToken = '';
     this.refreshToken = '';
-    this.env.location.assign(this.url('/logout'));
+    this.env.location.assign(this.url('/logout') +
+      (kept && kept.username
+        ? '?login_hint=' + encodeURIComponent(kept.username) : ''));
+  }
+
+  // ---------------------------------------------------------------------------
+  // SWITCHING ACCOUNTS IN THIS TAB (#561, the plan's section 6).
+  //
+  // The account menu (`WebShell.accountItems()`) offers each other signed-in
+  // account of the browser, Sign in with another account and Sign out…, and
+  // only with `authn.multipleAccounts` on. A switch is a security-relevant
+  // change of context (IR-6), so before the window leaves to sign in:
+  //
+  //   1. A FORM TYPED IN asks first (`confirmLeave()`), and declining leaves
+  //      the page as it is.
+  //   2. EVERY REQUEST IN FLIGHT IS ABORTED (`endIdentity()`): the identity
+  //      they were sent for has ended, and an answer that arrives anyway is
+  //      ABORTED in `sendOnce()` and in `tokenRequest()`, never drawn.
+  //   3. EVERY VIEW THIS TAB HOLDS IS DISCARDED (`discardViews()`): the shell,
+  //      who it was, the form table, the request schemas, the page, a sign-in
+  //      again in progress, the page kept for after a redirect, and the
+  //      client's tokens, key and metadata.
+  //   4. THE SIGN-IN NAMES THE ACCOUNT (`login_hint`) and the subject the
+  //      answer must be for (`expect`), which `finishSignIn()` holds it to.
+  //
+  // The server decides; none of this is a boundary. `/admin-api` answers from
+  // the token's own subject and session, so a tab that kept a view would
+  // still be refused anything the new account may not do.
+  // ---------------------------------------------------------------------------
+  /**
+   * Asks before leaving a page whose forms were typed in.
+   *
+   * @returns whether to go on
+   */
+  confirmLeave(): boolean {
+    const win = this.env.window;
+    if (!this.dirty || !win || typeof win.confirm !== 'function') {
+      return true;
+    }
+    const t = this.t;
+    return !!win.confirm(t.has('consoleRuntime.accounts.unsaved')
+      ? t.text('consoleRuntime.accounts.unsaved')
+      : 'This page has changes that have not been saved. Switch account ' +
+        'anyway? They will be lost.');
+  }
+
+  /**
+   * Discards every view this tab holds for the account it was.
+   *
+   * @returns nothing
+   */
+  discardViews(): void {
+    const r = this.reauth;
+    this.reauth = null;
+    if (r) {
+      if (r.channel) {
+        r.channel.close();
+      }
+      r.waiting.forEach(function (resolve: Json) {
+        resolve(false);
+      });
+      this.removeReauthBar();
+    }
+    this.shell = null;
+    this.shellPrefix = '';
+    this.me = null;
+    this.formTable = null;
+    this.spec = null;
+    this.view = null;
+    this.submitting = null;
+    try {
+      this.env.sessionStorage.removeItem(RESTORE_KEY);
+    } catch (e) {
+      // Storage refused: nothing was kept that could be put back.
+      this.dirty = false;
+    }
+    this.discardClient();
+  }
+
+  /**
+   * Switches this tab to another signed-in account of the browser.
+   *
+   * @param key - the account's key, from the menu
+   * @returns nothing
+   */
+  async switchAccount(key: string): Promise<void> {
+    const account = WebAccounts.byKey(this.accounts, key);
+    if (!account) {
+      this.redrawAccountMenu();
+      return;
+    }
+    if (!this.confirmLeave()) {
+      return;
+    }
+    const back = this.hereWithFragment();
+    this.endIdentity();
+    this.discardViews();
+    try {
+      await this.beginSignIn(back, {
+        login_hint: String(account.username || account.sub || ''),
+        expect: String(account.sub || '') });
+    } catch (e) {
+      // THE SIGN-IN COULD NOT BE STARTED (#731): a pushed authorization
+      // request the network refused. The views are already gone, so the
+      // tab says so rather than staying blank with the rejection unhandled;
+      // the account it keeps is still the one it was, so a reload resumes
+      // that one, by its hint.
+      this.drawProblem('Switching accounts failed',
+        'The sign-in as the other account could not be started: ' +
+        String((e && e.message) || e) + '. Reload the page to carry on as ' +
+        'the account this tab was.');
+    }
+  }
+
+  /**
+   * Signs this tab in as another account: a fresh sign-in (`prompt=login`)
+   * with no hint, whose account the tab then is.
+   *
+   * @returns nothing
+   */
+  async signInAnother(): Promise<void> {
+    if (!this.confirmLeave()) {
+      return;
+    }
+    const back = this.hereWithFragment();
+    this.endIdentity();
+    this.discardViews();
+    await this.beginSignIn(back, { login_hint: '', prompt: 'login',
+                                   another: true });
+  }
+
+  /**
+   * Draws the account menu's items again from the list in hand, leaving the
+   * page as it is.
+   *
+   * @returns nothing
+   */
+  redrawAccountMenu(): void {
+    const doc = this.env.document;
+    const el = doc && doc.getElementById
+      ? doc.getElementById(WebShell.ACCOUNTS_ID) : null;
+    if (el) {
+      el.innerHTML = ConsoleRuntime.realmLinks(
+        WebShell.accountItems(this.accounts, this.subject, this.t),
+        this.prefix);
+    }
   }
 
   // THE COPY BUTTONS, which `/admin/copy.js` revealed and served: drawn
@@ -2493,12 +2791,22 @@ class ConsoleRuntime extends SpaClient {
     this.env.document.addEventListener('focusin', function (event) {
       self.closeOtherSearches(event && event.target);
     });
+    // A FORM TYPED IN (#561): a switch asks before it is lost.
+    this.env.document.addEventListener('input', function (event) {
+      if (event && event.target && event.target.form) {
+        self.dirty = true;
+      }
+    });
     // THE LANGUAGE CHOOSER (#539 phase 5): a `<select>` with no form, so a
     // change is the event.
     this.env.document.addEventListener('change', function (event) {
       const target = event && event.target;
       if (target && target.id === 'console-language') {
         self.setLanguage(String(target.value || ''));
+        return;
+      }
+      if (target && target.form) {
+        self.dirty = true;
       }
     });
     if (this.env.window) {

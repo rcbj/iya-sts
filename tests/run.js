@@ -70,6 +70,15 @@ process.env.STS_RISK_BREACH_CHECK = process.env.STS_RISK_BREACH_CHECK || 'off';
 // process of its own and never meets it. The environment layer, so a test
 // that sets the setting itself still wins.
 process.env.LDAP_MAX_ENTRIES = process.env.LDAP_MAX_ENTRIES || '100000';
+// AND THE REALM CAP IS RAISED FOR IT (#368). realms.maxCount ships at 10,
+// counting the default realm, and this process runs every file against one
+// registry whose realms stay until the file removes them. A file that creates
+// past ten would be refused for the cap rather than for what it is testing.
+// The environment layer, so a test that sets the setting itself still wins.
+// env/test.js and env/docker-tests.js raise the same cap for the protocol
+// suite; env/local.js, the image default, does not.
+process.env.STS_REALMS_MAX_COUNT = process.env.STS_REALMS_MAX_COUNT ||
+  '100000';
 
 const fs = require('fs');
 const path = require('path');

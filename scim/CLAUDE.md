@@ -784,6 +784,26 @@ be removed (above, *`active` IS THE ACCOUNT'S DISABLED STATE*); there is no
 ETag, now refused rather than ignored; and the members the directory cannot
 hold are unpublished rather than stored.
 
+## A startIndex past totalResults is an empty page (#354, 2026-10-18)
+
+RFC 7644 section 3.4.2.4: `startIndex` is the 1-based index of the first
+result, and a client pages by advancing it until it has seen `totalResults`.
+scimmy's `ListResponse` offsets the array only when `Resources.length >=
+startIndex`, so a startIndex past the end failed that test and the page was
+the first rows again — or the first `count` of them, when `count` was smaller
+— while `startIndex` and `totalResults` said the page was past the end. A
+client that pages until an empty page loops, and one that counts what it
+received sees the same people twice. Found on testidp: four `bulk-` names,
+`startIndex` 5 and 100, and run 8 of #311's reset sat on them.
+
+`forTheWire()` empties that page on the way out and sets `itemsPerPage` to 0,
+the number returned. The requested `startIndex` stays, and `totalResults`
+stays the size of the match. An empty match is the same rule (nothing is at
+index 1). A startIndex on the last result is that one row. Users, Groups,
+`.search` and the root search all leave through that function.
+`tests/scim_conformance_fixes.js` section B holds it. The reset script's
+count stop stays: it is what ended the loop while the page repeated.
+
 ## THE OUTBOUND SCIM CLIENT (#552, 2026-10-10; the audit, 2026-10-13)
 
 Everything above is a SERVICE PROVIDER. `scim_client.ts` is a CLIENT of
@@ -1173,3 +1193,38 @@ and `tests/no_full_directory_walk_in_requests.js` records it as owed, with
 what would remove it. `entryForHobaKid()` reads only the people holding
 `hobaPublicKey` (`ldap.personsHolding()`), where it read everybody on each
 HOBA-authenticated request.
+
+## THE ATTRIBUTE POLICY OVER SCIM (#396, 2026-10-19)
+
+In product mode a provisioned person is held to the realm's attribute policy
+(`common/CLAUDE.md` 3co): `uid`, `cn`, `sn`, and by default `givenName` and
+`mail`. Three things are this module's.
+
+* **A CREATE IS CHECKED HERE, NOT IN `createUser()`.** `createUser()` writes
+  the entry with nothing of the resource on it, and the resource is merged
+  over it a few lines later, so asking there would refuse every SCIM create.
+  The ingress previews `scimMap.fromScimUser(data, {})`, makes a `cn` of the
+  names where there is no `displayName`, and refuses with `400 invalidValue`
+  under STS-LDAP-0162 before anything is written; `createUser()` is passed
+  `requiredExempt: 'scim'`. The code is the directory's, as STS-LDAP-0005 is
+  for a taken name: one condition, one code, at every door.
+* **AN UPDATE MAY NOT TAKE A REQUIRED VALUE AWAY** (`400 invalidValue`,
+  STS-LDAP-0164), compared on the merged attribute set; a PATCH reaches the
+  ingress as the whole resource, so PUT and PATCH are one check. A person who
+  never held one may still be updated.
+* **A HOBA REGISTRATION CREATES WITH NOTHING BUT A NAME**, through
+  `createUser()`, so a product realm keeping the default policy refuses it
+  (400, STS-LDAP-0162). That is the policy working, not a defect: the realm
+  either lowers its policy or provisions the person first.
+
+**NOT YET:** `/Schemas` does not publish `required` from the realm's policy,
+and a realm's custom attributes are not a SCIM extension — SCIMMY's schema
+definitions are the process's, not a realm's. A follow-up ticket of #396
+records both. `sts_scim_conformance.js`'s realm saves a policy requiring only
+`uid`, `cn` and `sn` (RFC 7643 requires only `userName`). Both harnesses
+create people with nothing but a `userName`, which product mode refuses for
+`sn`, so in product mode the job gives each such User a name — in
+scim2-tester's driver, and through a loopback proxy for the compiled
+scim2/test-suite (`tests/CLAUDE.md`, *The SCIM conformance harnesses*); the
+one case left, scim2-tester's PATCH removing `name` whole, is refused
+(STS-LDAP-0164) and is an exception in the job's table.

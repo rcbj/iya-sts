@@ -164,7 +164,11 @@ read differently from the repository while meaning the same.
 
 The Workload API's Unix socket is inside the container. To reach it from the host
 or another container, mount its directory as a volume — publishing 8092 is the
-alternative and needs the client pointed at `tcp://host:8092` explicitly.
+alternative on a network that authenticates source addresses, and needs the
+client pointed at `tcp://host:8092` explicitly. An AWS product cluster does not
+publish 8092. A workload there runs `spiffe/workload_agent.js` beside it and
+points `SPIFFE_ENDPOINT_SOCKET` at that agent's Unix socket
+([SPIFFE](spiffe.md#a-workload-agent-beside-the-workload)).
 
 ## With PostgreSQL and OpenBao, from published images
 

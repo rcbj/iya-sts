@@ -180,6 +180,54 @@
 // (STS-AUTHN-0316). Decided on the ticket: a key with no trusted statement
 // fails any rule that demands trust, an AAGUID list included.
 //
+// #718 (2026-10-19) added `postQuantumRequired`, `off`: `sign-in` refuses
+// a passkey whose signature algorithm is not post-quantum (RFC 9964's
+// ML-DSA-44, -65 or -87) when it signs somebody in (STS-AUTHN-0356), and
+// `registration-and-sign-in` refuses one at registration too
+// (STS-AUTHN-0355). rcbj's decisions on the ticket: three values, both
+// roles (the primary credential and the second factor), and the passkey
+// step's `allowCredentials` narrowed to the person's post-quantum keys
+// while it is required. THE FACT IS THE ALGORITHM, NOT #643'S LANE: with
+// the lanes off an authenticator that can make ML-DSA does so in the one
+// lane, and its row records no lane, so a rule on the lane would refuse a
+// post-quantum key. `question()` computes `postQuantum` from the algorithm,
+// once, and carries the algorithm and the lane beside it for a realm's own
+// rules. A save that requires it while the realm offers no ML-DSA at all
+// is refused (STS-AUTHN-0357): nobody could enrol a passkey that satisfies
+// it. Selected per application or group like every row, which is how
+// "application X requires a post-quantum passkey" is said (#535).
+//
+// #724 (2026-10-19) added `recoveryAssurance`: whether a way back into the
+// account that asks for no passkey — a password reset link, an activation
+// link, a recovery code, an emailed code or link — may restore access for a
+// person who holds a passkey.
+//
+//   recoveryAssurance        `any` IN DEVELOPMENT, `not-weaker` IN PRODUCT
+//                            (rcbj's decision on #724, 2026-10-19: "not-weaker
+//                            in product is fine for now"; the built-in
+//                            default asks `mode.recoversWeakerThanPasskeys()`).
+//                            `any` is what this service did before. Under
+//                            `not-weaker` the first session after a recovery
+//                            that is not a passkey sign-in reaches no
+//                            application (STS-AUTHN-0381): the sign-in
+//                            screen asks for a passkey to be registered,
+//                            held to this profile's registration rules, and
+//                            then for a sign-in with it. Under
+//                            `operator-only` the self-service doors are
+//                            refused for such a person as well
+//                            (STS-AUTHN-0380) and only an operator's reset
+//                            or activation link remains, the session it leads
+//                            to limited as under `not-weaker`. THE ONLY
+//                            OPTIONAL ROW ON A SAVE: absent, the built-in
+//                            default is kept, so a caller that sent the whole
+//                            profile before the row existed is not refused.
+//                            The refusals are rules of the issuance policy
+//                            (`recover-account`), as #536's are. The pending
+//                            recovery is `stsRecoveryPending` on the person's
+//                            entry, and the reset link records who issued it
+//                            (`stsPasswordResetSource`): SCHEMA's
+//                            `personAttributes`.
+//
 // One profile per realm, inherited from the default realm (answer 3); named
 // policies chosen by application or group are #535.
 //
@@ -220,6 +268,9 @@ import config = require('./config');
 // THE ISSUANCE GATE (#536): whether a passkey may be registered or may sign
 // somebody in is a question to the issuance policy, asked through it.
 import issuanceGate = require('./issuance_gate');
+// THE BUILT-IN DEFAULT OF `recoveryAssurance` (#724), which differs by mode.
+// A leaf over `config` and `error_codes`, both already below this module.
+import mode = require('./mode');
 // THE AMBIENT SELECTION (#535), for the rest of a request.
 import { AsyncLocalStorage } from 'async_hooks';
 
@@ -236,6 +287,8 @@ interface PolicyField {
   min?: number;
   max?: number;
   unit?: string;
+  // #724: a row a save may leave out, keeping the built-in default.
+  optional?: boolean;
   label: string;
   what: string;
 }
@@ -290,6 +343,11 @@ interface PasskeyPolicyDeps {
       why?: string;
     };
   };
+  // Whether the realm in hand offers any ML-DSA algorithm at registration
+  // (#718), asked at a save that requires a post-quantum passkey.
+  // `authn/webauthn_policy.ts` answers, and it requires this module, so the
+  // default reaches it lazily.
+  offersPostQuantum(): boolean;
 }
 
 /**
@@ -351,7 +409,21 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
   promptNameExtras: 'a passkey prompt shows the person\'s name as the ' +
     'sign-in knows it, and the service\'s name with its {{extras}}',
   chooseOne: 'a person with several passkeys chooses one at sign-in',
-  aggregate: 'a person\'s passkeys are offered as one sign-in choice'
+  aggregate: 'a person\'s passkeys are offered as one sign-in choice',
+  postQuantumOff: 'a passkey signs in and registers whatever its signature ' +
+    'algorithm',
+  postQuantumSignIn: 'only a post-quantum (ML-DSA) passkey signs a person ' +
+    'in; a classical one may still be registered',
+  postQuantumEverywhere: 'only a post-quantum (ML-DSA) passkey is ' +
+    'registered or signs a person in',
+  recoveryAny: 'an account recovery restores access at once, whatever ' +
+    'passkey the person holds',
+  recoveryNotWeaker: 'after an account recovery, a person who holds a ' +
+    'passkey reaches no application until a passkey satisfying this ' +
+    'policy has signed them in',
+  recoveryOperatorOnly: 'a person who holds a passkey recovers their ' +
+    'account only through an administrator, and then reaches no ' +
+    'application until a passkey satisfying this policy has signed them in'
 });
 
 const SELECTORS = [
@@ -441,6 +513,48 @@ const NO_HINTS = 'none';
  */
 const RP_NAME_EXTRAS = ['none', 'realm', 'organisation',
                         'realm-and-organisation'];
+/**
+ * What `postQuantumRequired` may be (#718), in the order of strictness.
+ */
+const POST_QUANTUM_REQUIRED_VALUES = ['off', 'sign-in',
+                                      'registration-and-sign-in'];
+/**
+ * The post-quantum WebAuthn signature algorithms (#718): RFC 9964's ML-DSA,
+ * as JOSE names. THE ONE COPY: `authn/webauthn_policy.ts`'s `PQC_ALGS` is
+ * this list, because that module requires this one and this one, a leaf,
+ * cannot require it back.
+ */
+const POST_QUANTUM_ALGORITHMS: ReadonlyArray<string> =
+  Object.freeze(['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87']);
+/**
+ * What `recoveryAssurance` may be (#724).
+ */
+const RECOVERY_ASSURANCE = ['any', 'not-weaker', 'operator-only'];
+/**
+ * The recovery doors (#724), and which are the person's own. An operator's
+ * door — a reset link or a generated password an administrator gave out, an
+ * activation link — is not self-service.
+ */
+const RECOVERY_DOORS: Readonly<Record<string, { selfService: boolean }>> =
+  Object.freeze({
+    'forgot-password': { selfService: true },
+    'password-reset': { selfService: true },
+    'admin-reset': { selfService: false },
+    'admin-password': { selfService: false },
+    'activation': { selfService: false },
+    'recovery-code': { selfService: true },
+    'email-code': { selfService: true },
+    'email-link': { selfService: true }
+  });
+/**
+ * The credential kinds a sign-in names that are themselves a recovery door
+ * (#724): a recovery code, an emailed code or link.
+ */
+const RECOVERY_CREDENTIALS: Readonly<Record<string, string>> = Object.freeze({
+  'backup-code': 'recovery-code',
+  'email-code': 'email-code',
+  'email-link': 'email-link'
+});
 
 /**
  * The policy's fields: one table read as the schema, the console form, the API
@@ -530,6 +644,20 @@ const FIELDS: PolicyField[] = [
           'before a rule was tightened, or whose model was since reported ' +
           'compromised, stops signing anybody in. A key with no trusted ' +
           'attestation fails every rule that demands one.' },
+  { key: 'postQuantumRequired', attribute: 'stsPasskeyPostQuantumRequired',
+    type: 'enum', values: POST_QUANTUM_REQUIRED_VALUES.slice(), dflt: 'off',
+    label: 'Require a post-quantum passkey',
+    what: '`off` (the default) accepts a passkey whatever its signature ' +
+          'algorithm. `sign-in` accepts only a POST-QUANTUM passkey, one ' +
+          'whose algorithm is ML-DSA-44, ML-DSA-65 or ML-DSA-87 (RFC 9964), ' +
+          'when it signs somebody in, as the first credential or as the ' +
+          'second factor; a classical one may still be registered. ' +
+          '`registration-and-sign-in` refuses a classical one at ' +
+          'registration too, and enrolment then offers only ML-DSA. The ' +
+          'algorithm decides, not the lane a key was created in. Refused ' +
+          'while the realm offers no ML-DSA (webauthn.algorithms names ' +
+          'none, and neither webauthn.pqcOnly nor ' +
+          'webauthn.pqcAlongsideClassical is on).' },
   { key: 'passkeyHints', attribute: 'stsPasskeyHintsPasskey', type: 'list',
     values: HINTS.slice(), dflt: 'client-device,hybrid',
     label: 'Hints "Create a passkey" sends',
@@ -595,7 +723,23 @@ const FIELDS: PolicyField[] = [
     what: 'ON BY DEFAULT: one "Use passkey" step whose request lists every ' +
           'one of the person\'s passkeys, and the browser offers whichever ' +
           'is present. Off, a person with more than one is shown a choice ' +
-          'per passkey, by its name, and the request names only that one.' }
+          'per passkey, by its name, and the request names only that one.' },
+  { key: 'recoveryAssurance', attribute: 'stsPasskeyRecoveryAssurance',
+    type: 'enum', values: RECOVERY_ASSURANCE.slice(), dflt: 'any',
+    optional: true,
+    label: 'Account recovery for a person who holds a passkey',
+    what: '`any` BY DEFAULT IN DEVELOPMENT, `not-weaker` IN PRODUCT. ' +
+          'Whether a way back into the account that asks for no passkey ' +
+          '— a password reset link, an activation link, a recovery code, ' +
+          'an emailed code or link — restores access for a person who ' +
+          'holds one. `any`: at once. `not-weaker`: the first sign-in ' +
+          'after it that is not a passkey sign-in reaches no application; ' +
+          'the person registers a passkey that satisfies this policy and ' +
+          'signs in with it. `operator-only`: as not-weaker, and the ' +
+          'self-service doors (the forgot-password form, a recovery code ' +
+          'or an emailed code or link at sign-in) are refused; only an ' +
+          'administrator\'s reset link, generated password or activation ' +
+          'link remains. Left out of a save, the built-in default is kept.' }
 ];
 
 /**
@@ -609,9 +753,26 @@ FIELDS.forEach(function (field) {
 /**
  * The built-in value of every field, in force where no entry says otherwise.
  */
+// `recoveryAssurance` (#724) is the one row whose built-in default differs
+// by mode, so it is a GETTER asking `mode.js` each time it is read — the
+// mode is a setting, and a copy taken at load would keep development's
+// answer in a process switched to product. `Object.assign()` copies its
+// value at the time of the copy, which is what `read()` and the console's
+// defaults want.
 const DEFAULTS: Readonly<Record<string, boolean | string | number>> =
   Object.freeze(FIELDS.reduce(function (out, field) {
-    out[field.key] = field.dflt;
+    if (field.key === 'recoveryAssurance') {
+      Object.defineProperty(out, field.key, {
+        enumerable: true,
+        get: function recoveryAssuranceDefault(): string {
+          log.debug("Entering recoveryAssuranceDefault().");
+          log.debug("Leaving recoveryAssuranceDefault().");
+          return mode.recoversWeakerThanPasskeys() ? 'any' : 'not-weaker';
+        }
+      });
+    } else {
+      out[field.key] = field.dflt;
+    }
     return out;
   }, {} as Record<string, boolean | string | number>));
 
@@ -634,7 +795,21 @@ const SCHEMA = {
   })).concat([
     { name: 'description',
       what: 'What the profile is for, for the next person.' }
-  ])
+  ]),
+  // #724: what a recovery leaves on a PERSON's entry.
+  personAttributes: [
+    { name: 'stsRecoveryPending',
+      what: 'A recovery restored access to this person, who holds a ' +
+            'passkey, and no passkey has signed them in since: the door ' +
+            'and when, as `<door> <ISO 8601 instant>`. While the passkey ' +
+            'policy\'s recoveryAssurance is not-weaker or operator-only, ' +
+            'a sign-in that is not a passkey reaches no application. ' +
+            'Maintained by this service.' },
+    { name: 'stsPasswordResetSource',
+      what: 'Who issued the password reset link on this entry: `self` (the ' +
+            'forgot-password form) or `operator` (an administrator). ' +
+            'Written and cleared with the link. Maintained by this service.' }
+  ]
 };
 
 /**
@@ -670,6 +845,14 @@ class PasskeyPolicy {
    * The sentences `describe()` makes, as templates (#543).
    */
   static readonly SENTENCES = SENTENCES;
+  /**
+   * The recovery doors, and which are the person's own (#724).
+   */
+  static readonly RECOVERY_DOORS = RECOVERY_DOORS;
+  /**
+   * The credential kinds that are themselves a recovery door (#724).
+   */
+  static readonly RECOVERY_CREDENTIALS = RECOVERY_CREDENTIALS;
 
   private directory: DirectoryHooks | null = null;
   private warnedAboutNoDirectory = false;
@@ -693,7 +876,16 @@ class PasskeyPolicy {
     log.debug("Entering PasskeyPolicy.defaultDeps().");
     log.debug("Leaving PasskeyPolicy.defaultDeps().");
     return { log: log, realms: realms, errorCodes: errorCodes,
-             gate: issuanceGate };
+             gate: issuanceGate,
+             offersPostQuantum: function (): boolean {
+               log.debug("Entering offersPostQuantum().");
+               // LAZILY (#718): `webauthn_policy.ts` requires this module,
+               // and is loaded long before any save asks this.
+               const out = require('../authn/webauthn_policy')
+                 .offersPostQuantum() === true;
+               log.debug("Leaving offersPostQuantum(). " + out);
+               return out;
+             } };
   }
 
   /**
@@ -1367,6 +1559,74 @@ class PasskeyPolicy {
     return out;
   }
 
+  /**
+   * Says whether a signature algorithm is post-quantum (#718): one of RFC
+   * 9964's ML-DSA-44, ML-DSA-65 and ML-DSA-87, by its JOSE name.
+   *
+   * @param algorithm - the algorithm's JOSE name
+   * @returns true where it is
+   */
+  static isPostQuantum(algorithm: unknown): boolean {
+    log.debug("Entering PasskeyPolicy.isPostQuantum().");
+    const out = POST_QUANTUM_ALGORITHMS.indexOf(String(algorithm || '')) >= 0;
+    log.debug("Leaving PasskeyPolicy.isPostQuantum(). " + out);
+    return out;
+  }
+
+  /**
+   * Says whether the selected profile requires a post-quantum passkey at a
+   * stage (#718): `sign-in` under `sign-in` and
+   * `registration-and-sign-in`, `registration` under the second only.
+   *
+   * @param at - `registration` or `sign-in`
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns true where it does
+   */
+  requiresPostQuantum(at: string, profile?: PasskeyProfile | null): boolean {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.requiresPostQuantum(). " + at);
+    const rules = profile || this.read();
+    const row = String(rules.postQuantumRequired || 'off');
+    const out = at === 'registration'
+      ? row === 'registration-and-sign-in'
+      : (row === 'sign-in' || row === 'registration-and-sign-in');
+    log.debug("Leaving PasskeyPolicy.requiresPostQuantum(). " + out);
+    return out;
+  }
+
+  /**
+   * The refusal of a passkey's signature algorithm, or null (#718): the
+   * question asked about the one fact group `algorithm`, so the portal's
+   * and the console's key rows say what the decision would. One sentence,
+   * as `backupEligibleRefusal()` is.
+   *
+   * @param key - `{ algorithm, lane }`: `credentials.keyAlgorithm()`'s
+   *   answer, or a stored key row's; an algorithm never recorded is not
+   *   asked about
+   * @param at - `registration` or `sign-in`
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `{ code, why, reason }` or null
+   */
+  postQuantumRefusal(key: { algorithm?: unknown; name?: unknown;
+                            lane?: unknown } | null | undefined,
+                     at: string, profile?: PasskeyProfile | null):
+      { code: string; why: string; reason: string } | null {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.postQuantumRefusal().");
+    const k = key || {};
+    const algorithm = String(k.name || k.algorithm || '');
+    // An algorithm never read is not a fact: nothing is asked about it.
+    if (!algorithm) {
+      log.debug("Leaving PasskeyPolicy.postQuantumRefusal(). No algorithm.");
+      return null;
+    }
+    const out = this.refusalFor(at, { algorithm: algorithm,
+                                      lane: String(k.lane || '') }, profile);
+    log.debug("Leaving PasskeyPolicy.postQuantumRefusal(). " +
+              (out ? out.code : 'allowed'));
+    return out;
+  }
+
   // The attachment each enrolment sends, as `webauthn_policy.ts`'s
   // `creationOptions()` decides it: the setting, or — for *Use a security
   // key* while the setting is `any` — `cross-platform`.
@@ -1591,6 +1851,60 @@ class PasskeyPolicy {
   }
 
   /**
+   * What an account recovery may restore for a person who holds a passkey
+   * (#724): `any`, `not-weaker` or `operator-only`.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the row's value, the built-in default where it is unreadable
+   */
+  recoveryAssurance(profile?: PasskeyProfile | null): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.recoveryAssurance().");
+    const rules = profile || this.read();
+    const value = String(rules.recoveryAssurance || '');
+    log.debug("Leaving PasskeyPolicy.recoveryAssurance(). " + value);
+    return RECOVERY_ASSURANCE.indexOf(value) >= 0 ? value
+      : String(DEFAULTS.recoveryAssurance);
+  }
+
+  // =========================================================================
+  // THE RECOVERY QUESTION (#724). A door that restores access without a
+  // passkey asks it BEFORE it writes anything (`at: 'door'`), and every
+  // session asks it at its start (`at: 'session'`, `authn.ts`'s
+  // `startSessionHere()`). The facts are the caller's, because this leaf
+  // reads no credential: the DOOR (one of RECOVERY_DOORS, or '' at a
+  // session no door led to), whether the person holds a passkey
+  // (`covered`), whether a recovery is pending on their entry, and at a
+  // session the kind of credential that answered. The issuance policy
+  // decides (`recover-account`); the reason picks the sentence.
+  // =========================================================================
+  /**
+   * Asks the issuance policy whether a recovery may restore access, or a
+   * session after one may reach an application (#724).
+   *
+   * @param facts - `{ username, door, at, credential, covered, pending }`
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `{ code, why, reason }`, or null where the policy allows it
+   */
+  recoveryRefusal(facts: Record<string, any>,
+                  profile?: PasskeyProfile | null):
+      { code: string; why: string; reason: string } | null {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.recoveryRefusal().");
+    const given = facts || {};
+    const out = this.refusalFor('recovery', {
+      username: String(given.username || ''),
+      recovery: { door: String(given.door || ''),
+                  at: String(given.at || 'door'),
+                  credential: String(given.credential || ''),
+                  covered: given.covered === true,
+                  pending: given.pending === true } }, profile);
+    log.debug("Leaving PasskeyPolicy.recoveryRefusal(). " +
+              (out ? out.code : 'allowed'));
+    return out;
+  }
+
+  /**
    * The attribute holding a person's security-key serials, or empty (#532).
    *
    * @param profile - a profile already read; read afresh when omitted
@@ -1702,6 +2016,7 @@ class PasskeyPolicy {
   //   backupEligible  -> backup-eligible     minPinLength -> pin-length
   //   serial          -> serial (with whether the person holds it)
   //   attestation     -> attestation (with `attestationSettings`)
+  //   algorithm       -> algorithm (with `postQuantum` and `lane`, #718)
   // =========================================================================
   /**
    * Builds the passkey question (#536) for the issuance policy: the facts a
@@ -1709,7 +2024,8 @@ class PasskeyPolicy {
    *
    * @param at - `registration` or `sign-in`
    * @param facts - `{ username, backupEligible, minPinLength, serial,
-   *   attestation, attestationSettings, enforceAttestation }`, each optional
+   *   attestation, attestationSettings, enforceAttestation, algorithm,
+   *   lane }`, each optional
    * @param profile - a profile already read; read afresh when omitted
    * @returns the question `issuance_gate.checkPasskey()` takes
    */
@@ -1726,7 +2042,8 @@ class PasskeyPolicy {
     };
     const groups: string[] = [];
     const out: Record<string, any> = {
-      action: at === 'registration' ? 'register-passkey' : 'use-passkey',
+      action: at === 'registration' ? 'register-passkey'
+        : (at === 'recovery' ? 'recover-account' : 'use-passkey'),
       subject: String(given.username || ''),
       realm: String(typeof realms.currentId === 'function'
         ? realms.currentId() || '' : ''),
@@ -1757,6 +2074,32 @@ class PasskeyPolicy {
       out.attestation = given.attestation;
       out.settings = given.attestationSettings || {};
     }
+    // THE KEY'S SIGNATURE ALGORITHM (#718), and whether it is post-quantum,
+    // decided HERE and nowhere else — a door hands over the algorithm it
+    // holds (the ceremony's, or the row's through `keyAlgorithm()`) and
+    // never its own reading of it. The lane goes beside it, unread by the
+    // built-in rule: an ML-DSA key made with #643's switch off has none.
+    if (has('algorithm')) {
+      groups.push('algorithm');
+      const algorithm = String(given.algorithm === undefined ||
+                               given.algorithm === null ? ''
+                                                        : given.algorithm)
+        .trim();
+      out.algorithm = algorithm;
+      out.postQuantum = PasskeyPolicy.isPostQuantum(algorithm);
+      out.lane = given.lane === 'pqc' ? 'pqc' : 'classical';
+    }
+    if (has('recovery') && given.recovery) {
+      groups.push('recovery');
+      const r = given.recovery;
+      const door = String(r.door || '');
+      out.recovery = {
+        door: door, at: String(r.at || ''),
+        credential: String(r.credential || ''),
+        selfService: !!(RECOVERY_DOORS[door] &&
+                        RECOVERY_DOORS[door].selfService),
+        covered: r.covered === true, pending: r.pending === true };
+    }
     out.groups = groups;
     const pin = this.pinLengthRule(rules);
     out.policy = {
@@ -1767,7 +2110,11 @@ class PasskeyPolicy {
       enforceAttestationAtSignIn: typeof given.enforceAttestation ===
         'boolean' ? given.enforceAttestation
                   : this.enforcesAttestationAtSignIn(rules),
-      enterpriseSerialAttribute: attribute
+      enterpriseSerialAttribute: attribute,
+      postQuantumRequired: POST_QUANTUM_REQUIRED_VALUES.indexOf(
+        String(rules.postQuantumRequired)) >= 0
+        ? String(rules.postQuantumRequired) : 'off',
+      recoveryAssurance: this.recoveryAssurance(rules)
     };
     log.debug("Leaving PasskeyPolicy.question(). " + out.action + ' [' +
               groups.join(', ') + ']');
@@ -1864,12 +2211,32 @@ class PasskeyPolicy {
             '(the passkey policy\'s enterpriseSerialAttribute). ' +
             'Use a key from your organisation, registered where ' +
             'enterprise attestation is enabled.';
+    } else if (reason === 'post-quantum') {
+      why = 'That passkey signs with ' +
+            (String(asked.algorithm || '') || 'a classical algorithm') +
+            ', and this realm requires a post-quantum passkey, one that ' +
+            'signs with ML-DSA (the passkey policy\'s postQuantumRequired ' +
+            'is ' + String(policy.postQuantumRequired || '') + '). ' +
+            (registering
+              ? 'Use an authenticator that can make an ML-DSA passkey.'
+              : 'Sign in another way, and register a post-quantum passkey.');
     } else if (reason === 'serial-not-held') {
       why = 'That security key (serial ' +
             String(asked.serial || '').slice(0, 64) + ') is not ' +
             'one issued to you: its serial is not on your directory entry ' +
             '(' + policy.enterpriseSerialAttribute + '). Use the key your ' +
             'organisation issued you.';
+    } else if (reason === 'recovery-self-service') {
+      why = 'This account is protected by a passkey, and this realm lets ' +
+            'it be recovered only by whoever manages it (the passkey ' +
+            'policy\'s recoveryAssurance is operator-only). Sign in with ' +
+            'your passkey, or ask an administrator for a reset or ' +
+            'activation link.';
+    } else if (reason === 'recovery-enrol-first') {
+      why = 'This account was recovered without its passkey, and this ' +
+            'realm lets it reach no application until a passkey has signed ' +
+            'you in (the passkey policy\'s recoveryAssurance). Register a ' +
+            'new passkey, then sign in with it.';
     } else {
       const sentences = (facts.attestationSentences || {}) as
         Record<string, string>;
@@ -1930,7 +2297,16 @@ class PasskeyPolicy {
       prompt,
       rules.aggregateDevices === false
         ? SENTENCES.chooseOne
-        : SENTENCES.aggregate
+        : SENTENCES.aggregate,
+      rules.postQuantumRequired === 'registration-and-sign-in'
+        ? SENTENCES.postQuantumEverywhere
+        : (rules.postQuantumRequired === 'sign-in'
+          ? SENTENCES.postQuantumSignIn
+          : SENTENCES.postQuantumOff),
+      rules.recoveryAssurance === 'operator-only'
+        ? SENTENCES.recoveryOperatorOnly
+        : (rules.recoveryAssurance === 'not-weaker'
+          ? SENTENCES.recoveryNotWeaker : SENTENCES.recoveryAny)
     ];
     log.debug("Leaving PasskeyPolicy.describe().");
     return out;
@@ -2045,6 +2421,10 @@ class PasskeyPolicy {
           body.form === 'console') {
         raw = 'false';
       }
+      if (raw === undefined && field.optional) {
+        // LEFT OUT, the built-in default stays (#724): see the header.
+        return;
+      }
       if (raw === undefined) {
         problems.push('`' + field.key + '` (' + field.label + ') is ' +
                       'required. A save replaces the whole profile, so ' +
@@ -2112,6 +2492,27 @@ class PasskeyPolicy {
       return errorCodes.mark({ ok: false, errors: checked.problems },
                              'STS-AUTHN-0309');
     }
+    // A POST-QUANTUM PASSKEY REQUIRED WHERE NONE CAN BE MADE (#718): with no
+    // ML-DSA offered at registration, nobody could enrol a passkey the
+    // profile accepts, and under `sign-in` every passkey sign-in would stop
+    // at once. Asked of the realm's WebAuthn settings as they are now; a
+    // later change to them is answered by enrolment offering all three
+    // ML-DSA algorithms anyway (`webauthn_policy.ts`), as `pqcOnly` does.
+    if (checked.values.postQuantumRequired !== 'off' &&
+        !this.deps.offersPostQuantum()) {
+      log.debug('Leaving PasskeyPolicy.save(). Post-quantum required and ' +
+                'none offered.');
+      return errorCodes.mark({ ok: false,
+               errors: ['`postQuantumRequired` (' +
+                        FIELD_BY_KEY.postQuantumRequired.label + ') is ' +
+                        checked.values.postQuantumRequired + ', and this ' +
+                        'realm offers no ML-DSA algorithm at registration ' +
+                        '(webauthn.algorithms names none, and neither ' +
+                        'webauthn.pqcOnly nor ' +
+                        'webauthn.pqcAlongsideClassical is on), so no ' +
+                        'passkey anybody could register would satisfy it. ' +
+                        'Offer ML-DSA first.'] }, 'STS-AUTHN-0357');
+    }
     if (!this.haveDirectory()) {
       log.debug('Leaving PasskeyPolicy.save(). No directory.');
       return errorCodes.mark({ ok: false,
@@ -2126,6 +2527,9 @@ class PasskeyPolicy {
     };
     FIELDS.forEach(function (field) {
       const value = checked.values[field.key];
+      if (value === undefined && field.optional) {
+        return;
+      }
       attributes[field.attribute] = field.type === 'bool'
         ? (value ? 'TRUE' : 'FALSE') : String(value);
     });
@@ -2223,6 +2627,11 @@ export = {
   FIELD_BY_KEY: PasskeyPolicy.FIELD_BY_KEY,
   SCHEMA: PasskeyPolicy.SCHEMA,
   SENTENCES: PasskeyPolicy.SENTENCES,
+  POST_QUANTUM_ALGORITHMS: POST_QUANTUM_ALGORITHMS,
+  POST_QUANTUM_REQUIRED_VALUES: POST_QUANTUM_REQUIRED_VALUES,
+  isPostQuantum: PasskeyPolicy.isPostQuantum,
+  requiresPostQuantum: slot.forward('requiresPostQuantum'),
+  postQuantumRefusal: slot.forward('postQuantumRefusal'),
   setDirectory: slot.forward('setDirectory'),
   directoryInstalled: slot.forward('directoryInstalled'),
   read: slot.forward('read'),
@@ -2257,6 +2666,10 @@ export = {
   pinLengthRefusal: slot.forward('pinLengthRefusal'),
   question: slot.forward('question'),
   refusalFor: slot.forward('refusalFor'),
+  recoveryAssurance: slot.forward('recoveryAssurance'),
+  recoveryRefusal: slot.forward('recoveryRefusal'),
+  RECOVERY_DOORS: PasskeyPolicy.RECOVERY_DOORS,
+  RECOVERY_CREDENTIALS: PasskeyPolicy.RECOVERY_CREDENTIALS,
   describe: slot.forward('describe'),
   enforced: slot.forward('enforced')
 };

@@ -1358,9 +1358,16 @@ class SsfTransmitters {
     // (#432), worked out BEFORE any reaction runs: ending the partner's
     // sessions is another reaction, and what was issued on them is still
     // recorded against their ids after they are gone.
-    const partnerSessions = family === 'caep' && short === 'session-revoked'
+    // Null from partnerSessionIds is an unread index, and only on a
+    // session-revoked event. The same null when this is not that event
+    // means "do not narrow", which revokes every grant. The flag keeps
+    // those two apart: an unread walk must not revoke nothing, and must
+    // not revoke everything.
+    const sessionRevoked = family === 'caep' && short === 'session-revoked';
+    const partnerSessions = sessionRevoked
       ? this.partnerSessionIds(record, mapped.username,
                                this.sessionIdOf(subject)) : null;
+    const sessionsUnread = sessionRevoked && partnerSessions == null;
     for (const reaction of permitted) {
       if (PERSON.indexOf(reaction) < 0) {
         continue;
@@ -1382,7 +1389,8 @@ class SsfTransmitters {
       out.push(await this.react(record, reaction, short, mapped.username,
                                 RESPONSE, { jti: jti,
                                   sid: this.sessionIdOf(subject),
-                                  partnerSessions: partnerSessions }));
+                                  partnerSessions: partnerSessions,
+                                  sessionsUnread: sessionsUnread }));
     }
     if (!out.length) {
       out.push({ event: short, reaction: '', done: false,
@@ -1395,7 +1403,7 @@ class SsfTransmitters {
   // The ids of the sessions this relationship started for the person — the
   // one `sid` names where the event gave one — live or not yet swept (#432).
   private partnerSessionIds(record: Json, username: string,
-                            sid: string): string[] {
+                            sid: string): string[] | null {
     const { log } = this.deps;
     log.debug("Entering SsfTransmitters.partnerSessionIds(). " +
               record.fedId);
@@ -1413,21 +1421,31 @@ class SsfTransmitters {
                 ((e && e.message) || e));
       authn = null;
     }
-    if (authn && authn.sessions) {
-      authn.sessions.forEach(function (session: Json): void {
-        const held = session && session.fedPartnerSession;
-        if (!held || held.relationship !== record.fedId) {
-          return;
-        }
-        if (String((session.user && session.user.username) || '')
-              .toLowerCase() !== wanted) {
-          return;
-        }
-        if (sid && String(held.sid || held.sessionIndex || '') !== sid) {
-          return;
-        }
-        out.push(String(session.id));
-      });
+    if (authn) {
+      // The column narrows by relationship. The username and the partner
+      // sid are still compared on the sealed body, live or not yet swept.
+      // Null is unread. [] is a relationship that started no session.
+      // A missing authn module above stays [], which is not this case.
+      const held = authn.sessionsForRelationship(record.fedId);
+      if (held == null) {
+        log.debug("Leaving SsfTransmitters.partnerSessionIds(). Unread.");
+        return null;
+      }
+      held.forEach(
+        function (session: Json): void {
+          const held = session && session.fedPartnerSession;
+          if (!held || held.relationship !== record.fedId) {
+            return;
+          }
+          if (String((session.user && session.user.username) || '')
+                .toLowerCase() !== wanted) {
+            return;
+          }
+          if (sid && String(held.sid || held.sessionIndex || '') !== sid) {
+            return;
+          }
+          out.push(String(session.id));
+        });
     }
     log.debug("Leaving SsfTransmitters.partnerSessionIds(). " + out.length);
     return out;
@@ -1437,7 +1455,7 @@ class SsfTransmitters {
   // names where the event gave one — ended through the one model, as the
   // partner's own sign-out ends them (#167).
   private endPartnerSessions(record: Json, username: string, sid: string,
-                             by: string): number {
+                             by: string): number | null {
     const { log } = this.deps;
     log.debug("Entering SsfTransmitters.endPartnerSessions(). " +
               record.fedId);
@@ -1445,23 +1463,32 @@ class SsfTransmitters {
     const logout = this.deps.logout();
     const wanted = String(username).toLowerCase();
     const matching: Json[] = [];
-    authn.sessions.forEach(function (session: Json): void {
-      const held = session && session.fedPartnerSession;
-      if (!held || held.relationship !== record.fedId) {
-        return;
-      }
-      if (String((session.user && session.user.username) || '')
-            .toLowerCase() !== wanted) {
-        return;
-      }
-      if (authn.sessionEnded(session)) {
-        return;
-      }
-      if (sid && String(held.sid || held.sessionIndex || '') !== sid) {
-        return;
-      }
-      matching.push(session);
-    });
+    // Same column, then the sealed body: lowercased username, and sid or
+    // sessionIndex. An ended row is not ended again. Null is unread:
+    // ending nobody and reporting 0 would say the walk finished.
+    const held = authn.sessionsForRelationship(record.fedId);
+    if (held == null) {
+      log.debug("Leaving SsfTransmitters.endPartnerSessions(). Unread.");
+      return null;
+    }
+    held.forEach(
+      function (session: Json): void {
+        const held = session && session.fedPartnerSession;
+        if (!held || held.relationship !== record.fedId) {
+          return;
+        }
+        if (String((session.user && session.user.username) || '')
+              .toLowerCase() !== wanted) {
+          return;
+        }
+        if (authn.sessionEnded(session)) {
+          return;
+        }
+        if (sid && String(held.sid || held.sessionIndex || '') !== sid) {
+          return;
+        }
+        matching.push(session);
+      });
     let ended = 0;
     matching.forEach(function (session: Json): void {
       if (logout) {
@@ -1489,7 +1516,8 @@ class SsfTransmitters {
   // ---------------------------------------------------------------------------
   private revokeGrants(record: Json, username: string, event: string,
                        by: string, actor: string,
-                       partnerSessions: string[] | null): Json {
+                       partnerSessions: string[] | null,
+                       sessionsUnread?: boolean): Json {
     const { log } = this.deps;
     log.debug("Entering SsfTransmitters.revokeGrants(). " + event);
     const logout = this.deps.logout();
@@ -1497,6 +1525,13 @@ class SsfTransmitters {
       log.debug("Leaving SsfTransmitters.revokeGrants(). No sign-out here.");
       return { event: event, reaction: 'signal-revoke-grants', done: false,
                why: 'no sign-out module is loaded in this process' };
+    }
+    // Unread is not the empty list below, and not a missing list. The
+    // empty list revokes nothing. A missing list revokes every grant.
+    if (sessionsUnread) {
+      log.debug("Leaving SsfTransmitters.revokeGrants(). Unread.");
+      return { event: event, reaction: 'signal-revoke-grants', done: false,
+               why: 'the sessions could not be read' };
     }
     if (partnerSessions && !partnerSessions.length) {
       log.debug("Leaving SsfTransmitters.revokeGrants(). No session named.");
@@ -1530,12 +1565,19 @@ class SsfTransmitters {
     try {
       if (reaction === RESPONSE.REVOKE_GRANTS) {
         const done = this.revokeGrants(record, username, event, by, actor,
-                                       ctx.partnerSessions);
+                                       ctx.partnerSessions,
+                                       !!ctx.sessionsUnread);
         log.debug("Leaving SsfTransmitters.react(). Grants.");
         return done;
       }
       if (reaction === RESPONSE.END_PARTNER_SESSIONS) {
         const ended = this.endPartnerSessions(record, username, ctx.sid, by);
+        if (ended == null) {
+          log.debug("Leaving SsfTransmitters.react(). Partner sessions " +
+                    "unread.");
+          return { event: event, reaction: reaction, done: false,
+                   why: 'the sessions could not be read' };
+        }
         log.debug("Leaving SsfTransmitters.react(). Partner sessions.");
         return { event: event, reaction: reaction, done: true,
                  ended: ended };
@@ -1546,16 +1588,25 @@ class SsfTransmitters {
         // The partner stopped vouching for them, so what it vouched for
         // ends too (#373).
         const ended = this.endPartnerSessions(record, username, '', by);
+        // The block stands. An unread walk is not "0 sessions ended".
+        const unread = ended == null;
+        const summary = unread
+          ? username + '\'s sign-ins through ' + record.fedId +
+            ' are blocked by ' + by +
+            '; the sessions it started could not be read'
+          : username + '\'s sign-ins through ' + record.fedId +
+            ' are blocked by ' + by + '; ' + ended +
+            ' session(s) it started were ended';
         this.deps.audit.audit({ action: 'federation.signal-block',
           actor: actor, protocol: 'Shared Signals', channel: 'internal',
-          target: username, summary: username + '\'s sign-ins through ' +
-            record.fedId + ' are blocked by ' + by + '; ' + ended +
-            ' session(s) it started were ended',
+          target: username, summary: summary,
           detail: { relationship: record.fedId, username: username,
-                    event: event, ended: String(ended) } });
+                    event: event, ended: unread ? '' : String(ended) } });
         log.debug("Leaving SsfTransmitters.react(). Blocked.");
         return { event: event, reaction: reaction, done: true,
-                 ended: ended, why: fresh ? '' : 'already blocked' };
+                 ended: unread ? 0 : ended,
+                 why: unread ? 'the sessions could not be read'
+                             : (fresh ? '' : 'already blocked') };
       }
       if (reaction === RESPONSE.UNBLOCK_RELATIONSHIP) {
         const lifted = blocks.unblock(record.fedId, username);

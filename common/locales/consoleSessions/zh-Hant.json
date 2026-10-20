@@ -8,6 +8,8 @@
   "thSince": "開始",
   "thExpires": "到期",
   "thCarries": "承載",
+  "deviceBound": "已綁定到其瀏覽器的 {alg} 金鑰（DBSC）",
+  "deviceBoundTitle": "Device Bound Session Credentials：此工作階段需要一個短期 cookie，只有瀏覽器金鑰的證明才能更新它。已更新 {n} 次。",
   "thCredentials": "認證",
   "leadBefore": "<strong>本服務目前保存的每一個工作階段</strong>，涵蓋具有工作階段的三種通訊協定。工作階段是「本服務」所保存、使某人目前處於已驗證狀態的狀態；權杖、斷言、票證與 SVID 則是它「已發出」的東西，它們的壽命比這裡的任何工作階段都長，並列在 ",
   "leadTokens": "權杖",
@@ -73,5 +75,18 @@
   "noExpiry": "<strong>沒有到期時間</strong>",
   "noExpiryNote": "直到有東西結束它",
   "expired": "已過期",
-  "inDuration": "{duration} 後"
+  "inDuration": "{duration} 後",
+  "accountSet": "瀏覽器",
+  "accountSetTitle": "帳戶集 {id}：此工作階段與其中的每個其他工作階段共用一個瀏覽器。點擊連結列出它們。",
+  "hAccounts": "一個瀏覽器中的多個帳戶",
+  "accountsLead": "本領域中各瀏覽器的帳戶集所做的事，自本服務啟動以來計數，所有程序相加。請把<strong>詢問帳戶</strong>與<strong>選擇帳戶</strong>對照來看：無法判斷屬於哪個帳戶的請求會顯示帳戶選擇器，如果這種情況比人們作出選擇更頻繁，表示有依賴方沒有傳送提示。",
+  "accountsOff": "<strong>本領域已關閉一個瀏覽器中多個已登入帳戶</strong>（<code>authn.multipleAccounts</code>）。這些數字是在開啟期間統計的。",
+  "accountsNote": "<strong>切換</strong>的帳戶在被選擇時也成為瀏覽器的預設帳戶；<strong>過期</strong>統計在 <code>authn.rememberedAccountDays</code> 之後被移除的已登出帳戶。任何數字都不指明某個人或某個瀏覽器。",
+  "accounts.selected": "選擇帳戶",
+  "accounts.ambiguous": "詢問帳戶",
+  "accounts.selectFailed": "選擇被拒絕",
+  "accounts.added": "新增的帳戶",
+  "accounts.switched": "切換預設",
+  "accounts.forgotten": "忘記的帳戶",
+  "accounts.expired": "過期的已記住帳戶"
 }

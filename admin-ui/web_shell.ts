@@ -28,6 +28,7 @@
 
 import kit = require('./web_kit');
 import DashboardPage = require('./web_dashboard');
+import WebAccounts = require('../common/web_accounts');
 
 type Json = any;
 
@@ -43,6 +44,9 @@ class WebShell {
   static readonly MAX_CRUMB = 44;
   static readonly REALM_SWITCH_PATH = '/admin/realm-switch';
   static readonly SIGNOUT_PATH = '/admin/signout';
+  // The account menu's list of the browser's other accounts (#561), drawn
+  // again in place when another tab changes them.
+  static readonly ACCOUNTS_ID = 'sts-account-switch';
 
   /**
    * Draws a page's body inside the console's frame: the sidebar, the head
@@ -70,7 +74,7 @@ class WebShell {
     // rather than sitting beside it.
     '<div class="pagehead"><h1>' + kit.esc(page.title) + '</h1>' +
       '<div class="pagetools">' + WebShell.refreshLink(shell, page, t) +
-      WebShell.userMenu(shell, t) +
+      WebShell.userMenu(shell, t, page) +
       // THE LANGUAGE CHOOSER (#539 phase 5), last of the page's tools.
       (page.t ? kit.languageChooser(page.t, shell.locale) : '') +
       '</div></div>' +
@@ -885,12 +889,21 @@ class WebShell {
    * @param gate - the gate state
    * @returns the menu as HTML; empty when there is no session
    */
-  static userMenu(shell, t?) {
+  static userMenu(shell, t?, page?) {
     const gate = shell.gate;
     if (!gate || !gate.session) {
       return '';
     }
     t = t || kit.context().t;
+    // SEVERAL ACCOUNTS IN THE BROWSER (#561): the other signed-in accounts,
+    // Sign in with another account, then Sign out as before (which the
+    // runtime sends to `/logout` with this tab's account as the hint). Only
+    // where the browser's account list said the setting is on; otherwise
+    // the menu is the one it always was, to the byte.
+    const accounts = page && page.accounts && page.accounts.enabled
+      ? '<div id="' + WebShell.ACCOUNTS_ID + '" class="usermenuaccounts">' +
+        WebShell.accountItems(page.accounts, page.subject, t) + '</div>'
+      : '';
     const html = '<details class="usermenu">' +
       '<summary title="' +
       kit.esc(t.text('console.shell.menu.title', { user: gate.username })) +
@@ -900,10 +913,48 @@ class WebShell {
       t.html('console.shell.menu.who', { user: gate.username }) + '</p>' +
       '<a href="' + kit.esc(shell.portalHref) + '" title="' +
       kit.esc(t.text('console.shell.menu.account.title')) + '">' +
-      t.html('console.shell.menu.account') + '</a>' +
+      t.html('console.shell.menu.account') + '</a>' + accounts +
       WebShell.signOutControl(gate, t) +
       '</div></details>';
     return html;
+  }
+
+  // THE ACCOUNT MENU'S SWITCH (#561): one button per OTHER signed-in account
+  // of the browser, and Sign in with another account. BUTTONS AND NOT LINKS:
+  // a switch is an act — it asks first over unsaved changes, aborts what is
+  // in flight and discards the tab's views — which the runtime does on the
+  // press (`ConsoleRuntime.switchAccount()`), and an account's key is
+  // carried, never a sid.
+  /**
+   * Draws the account menu's list of the browser's other accounts.
+   *
+   * @param list - `GET /authn-api/accounts`'s answer
+   * @param subject - this tab's subject
+   * @param t - optional; the translator, the default when left out
+   * @returns the items as HTML
+   */
+  static accountItems(list, subject, t?) {
+    t = t || kit.context().t;
+    const others = WebAccounts.live(list).filter(function (one) {
+      return String(one.sub || '') !== String(subject || '');
+    });
+    return (others.length
+      ? '<p class="usermenuwho">' + t.html('console.shell.menu.switch') +
+        '</p>' + others.map(function (one) {
+          return '<button type="button" class="linklike" ' +
+            'data-account-action="switch" data-account-key="' +
+            kit.esc(one.key) + '" title="' +
+            kit.esc(t.text('console.shell.menu.switch.title',
+                           { user: WebAccounts.nameOf(one) })) + '">' +
+            kit.esc(WebAccounts.nameOf(one)) +
+            (one.username && one.username !== WebAccounts.nameOf(one)
+              ? ' <span>' + kit.esc(one.username) + '</span>' : '') +
+            '</button>';
+        }).join('')
+      : '') +
+      '<button type="button" class="linklike" data-account-action="another" ' +
+      'title="' + kit.esc(t.text('console.shell.menu.another.title')) + '">' +
+      t.html('console.shell.menu.another') + '</button>';
   }
 
   // ---------------------------------------------------------------------------

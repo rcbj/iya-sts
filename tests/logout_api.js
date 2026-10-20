@@ -148,8 +148,10 @@ function childMain() {
          '1e. the bundle is served, built', r.status + ' ' + r.text.length);
     const css = await get({}, '/logout/signout.css');
     note(css.status === 200 && /text\/css/.test(css.headers['content-type']) &&
-         css.text.indexOf('button.global{') >= 0,
-         '1f. the stylesheet is served', css.status);
+         css.text.indexOf('button.global{') >= 0 &&
+         css.text.indexOf('details.sts-accounts{') >= 0,
+         '1f. the stylesheet is served, with the account control\'s rules ' +
+         '(#561)', css.status);
 
     // --- 2. the index and the document -------------------------------------
     r = await get({}, '/authn-api');

@@ -55,6 +55,7 @@ class FederationPage {
     const t = ctx.t;
     const wantedText = json.filter.q || '';
     const wantedRole = json.filter.role || '';
+    const wantedCategory = json.filter.category || '';
     const paging = json.paging;
     const nav = kit.pageNavPair('/admin/federation',
       kit.pageParamsOf(ctx.query),
@@ -68,7 +69,10 @@ class FederationPage {
         (row.name !== row.id ? '<span class="sub">' + kit.esc(row.name) +
          '</span>' :
          '') + '</td><td>' + kit.esc(row.roleLabel) + '</td><td>' +
-        kit.esc(row.protocolLabel) + '</td><td ' +
+        kit.esc(row.protocolLabel) +
+        // A consumer provider (#565) says which one under its protocol.
+        (row.providerLabel ? '<span class="sub">' +
+          kit.esc(row.providerLabel) + '</span>' : '') + '</td><td ' +
         'class="who">' + kit.esc(row.peer || row.application || '') +
         (!row.peer && !row.application
           ? '<span class="sub">' +
@@ -94,6 +98,16 @@ class FederationPage {
           kit.esc(one.short) +
           ' (' + n + ')</option>';
       })).join('');
+
+    const categoryOptions = [['', 'consoleFederation.anyCategory'],
+      ['enterprise', 'consoleFederation.categoryEnterprise'],
+      ['consumer', 'consoleFederation.categoryConsumer']]
+      .map(function (one) {
+        const n = one[0] ? ((json.categoryCounts || {})[one[0]] || 0) : -1;
+        return '<option value="' + kit.esc(one[0]) + '"' +
+          (one[0] === wantedCategory ? ' selected' : '') + '>' +
+          t.html(one[1]) + (n >= 0 ? ' (' + n + ')' : '') + '</option>';
+      }).join('');
 
     const inner = '<div class="tiles">' +
       kit.tile(json.relationshipCount,
@@ -127,14 +141,18 @@ class FederationPage {
       kit.esc(t.text('consoleFederation.filterPlaceholder')) + '">' +
       '<label for="role">' + t.html('consoleFederation.labelRole') +
       '</label><select id="role" name="role">' +
-      roleOptions + '</select><label for="per">' +
+      roleOptions + '</select><label for="category">' +
+      t.html('consoleFederation.labelCategory') +
+      '</label><select id="category" name="category">' + categoryOptions +
+      '</select><label for="per">' +
       t.html('consoleFederation.labelShow') +
       '</label><select id="per" ' +
       'name="per">' + kit.perPageOptions(paging.perPage) +
       '</select><button ' +
       'type="submit">' + t.html('consoleFederation.buttonFilter') +
       '</button>' +
-      ((wantedText || wantedRole) ? ' <a href="/admin/federation">' +
+      ((wantedText || wantedRole || wantedCategory)
+        ? ' <a href="/admin/federation">' +
         t.html('consoleFederation.clear') + '</a>' :
         '') +
       '</div></form>' + nav.head +
@@ -148,10 +166,11 @@ class FederationPage {
       '</th><th>' + t.html('consoleFederation.thLastRefusal') +
       '</th></tr>' +
       (rows || '<tr><td colspan="8">' +
-        ((wantedText || wantedRole)
+        ((wantedText || wantedRole || wantedCategory)
           ? t.html('consoleFederation.noneMatches')
           : t.html('consoleFederation.noneConfigured')) + '</td></tr>') +
       '</table>' + nav.foot +
+      FederationPage.consumerSection(json.consumerProviders, t) +
       FederationPage.federationCreateForm(json.roles, json.protocols, t) +
       '<h2>' + t.html('consoleFederation.headingTwoDirections') + '</h2>' +
       '<table><tr><th>' + t.html('consoleFederation.thThisServiceIs') +
@@ -213,6 +232,73 @@ class FederationPage {
       '<span class="sub">' +
       t.html('consoleFederation.stillToSetRefuses',
              { missing: row.missing.join(', ') }) + '</span></td>';
+  }
+
+  // CONSUMER AND SOCIAL PROVIDERS (#565): a tab of their own, because the
+  // category is distinct even though each one is an ordinary relationship.
+  // The catalogue is a row per provider, each with the form that adds one
+  // from its profile — the provider's client id and secret are the only
+  // things it needs that a profile cannot know. With the realm's switch off
+  // there is nothing to add, and the tab says how to turn it on.
+  /**
+   * Draws the consumer and social providers tab: the realm's switch, the
+   * catalogue, and a form per provider.
+   *
+   * @param consumer - `consumerProviders` from the view: `on` and
+   *   `catalogue`
+   * @param t - the page's translator
+   * @returns the section as HTML
+   */
+  static consumerSection(consumer, t) {
+    const view = consumer || { on: false, catalogue: [] };
+    const rows = (view.catalogue || []).map(function (p) {
+      const form = !view.on ? '' :
+        '<form method="post" action="/admin/federation"><div ' +
+        'class="formrow"><input type="hidden" name="action" ' +
+        'value="create"><input type="hidden" name="provider" value="' +
+        kit.esc(p.id) + '"><input type="hidden" name="role" ' +
+        'value="service-provider"><input type="hidden" name="protocol" ' +
+        'value="' + kit.esc(p.protocol) + '">' +
+        '<label for="cp-id-' + kit.esc(p.id) + '">' +
+        t.html('consoleFederation.labelId') + '</label><input ' +
+        'type="text" id="cp-id-' + kit.esc(p.id) + '" name="id" size="12" ' +
+        'required value="' + kit.esc(p.id) + '"><label for="cp-cid-' +
+        kit.esc(p.id) + '">' + t.html('consoleFederation.labelClientId') +
+        '</label><input type="text" id="cp-cid-' + kit.esc(p.id) +
+        '" name="clientId" size="18"><label for="cp-sec-' + kit.esc(p.id) +
+        '">' + t.html('consoleFederation.labelClientSecret') +
+        '</label><input type="password" id="cp-sec-' + kit.esc(p.id) +
+        '" name="clientSecret" size="18" autocomplete="off">' +
+        '<input type="hidden" name="name" value="' + kit.esc(p.label) +
+        '"><button type="submit">' +
+        t.html('consoleFederation.buttonAddProvider') +
+        '</button></div></form>';
+      // The documentation is a column of its own: inside the Provider cell
+      // the link ran on from the name with nothing between them. The link
+      // shows the documentation's host, which says where it goes and needs
+      // no translation; a profile's `docs` is always an https URL.
+      const docsHost = /^https?:\/\/([^/]+)/.exec(p.docs || '');
+      const docs = p.docs
+        ? '<a href="' + kit.esc(p.docs) + '">' +
+          kit.esc(docsHost ? docsHost[1] : p.docs) + '</a>'
+        : '';
+      return '<tr><td>' + kit.esc(p.label) + '</td><td>' +
+        kit.esc(p.protocol) + '</td><td>' + kit.esc(p.note) + '</td><td>' +
+        docs + '</td><td>' + form + '</td></tr>';
+    }).join('');
+    return '<h2 data-tab="consumer">' +
+      t.html('consoleFederation.headingConsumer') + '</h2>' +
+      kit.note(view.on ? t.html('consoleFederation.consumerOn')
+                       : t.html('consoleFederation.consumerOff')) +
+      kit.note(t.html('consoleFederation.consumerWhat')) +
+      '<p><a href="/admin/federation?category=consumer">' +
+      t.html('consoleFederation.consumerListLink') + '</a></p>' +
+      '<table><tr><th>' + t.html('consoleFederation.thProvider') +
+      '</th><th>' + t.html('consoleFederation.thProtocol') + '</th><th>' +
+      t.html('consoleFederation.thWhatItIs') + '</th><th>' +
+      t.html('consoleFederation.thDocumentation') + '</th><th>' +
+      t.html('consoleFederation.thAddOne') + '</th></tr>' + rows +
+      '</table>';
   }
 
   /**
@@ -415,6 +501,7 @@ class FederationPage {
       const switches = ['fedEnabled'].concat(
         row.role === 'service-provider' && row.signsIn
           ? ['fedAutocreateUsers', 'fedUpdateUserAttributes',
+             'fedProvisionGroups',
              'fedMayAssertAdministrators', 'fedAllowUnsolicited',
              'fedSignRequest', 'fedAcceptSignout', 'fedRequireSignedLogout']
               .concat(json.encrypts ? ['fedAllowUnencrypted'] : [])
@@ -422,12 +509,17 @@ class FederationPage {
         const field = json.schema.filter(
             function (f) { return f.name === name; })[0];
         if (!field) return '';
-        // The two provisioning switches and the two sign-out switches (#167)
-        // default ON; the rest default off.
-        const dflt = name === 'fedAutocreateUsers' ||
-                     name === 'fedUpdateUserAttributes' ||
-                     name === 'fedAcceptSignout' ||
-                     name === 'fedRequireSignedLogout';
+        // fedUpdateUserAttributes and the two sign-out switches default ON.
+        // fedAutocreateUsers is written TRUE or FALSE when the relationship
+        // is created; a row that stores neither shows the mode's default,
+        // which the server passes (missing means the old ON, so a stub
+        // that omits the field stays as it was). fedProvisionGroups
+        // defaults off.
+        const dflt = name === 'fedAutocreateUsers'
+          ? json.autocreateDefault !== false
+          : (name === 'fedUpdateUserAttributes' ||
+             name === 'fedAcceptSignout' ||
+             name === 'fedRequireSignedLogout');
         const on = FederationPage.boolOf(record[name], dflt);
         // TRUE and FALSE are the attribute's own values, not words.
         return '<tr><td><code>' + kit.esc(name) + '</code></td>' +
@@ -533,6 +625,20 @@ class FederationPage {
         '<tr><td>' + t.html('consoleFederation.thProtocol') + '</td><td>' +
         kit.esc(row.protocolLabel) +
           '</td></tr>' +
+        // THE PROVIDER (#565), with its profile's note and, where the realm
+        // has consumer providers off, the reason nothing signs in.
+        (json.provider
+          ? '<tr><td>' + t.html('consoleFederation.thProvider') +
+            '</td><td>' + kit.esc(json.provider.label) +
+            '<span class="sub">' + kit.esc(json.provider.note) +
+            (json.provider.docs ? ' <a href="' +
+              kit.esc(json.provider.docs) + '">' +
+              t.html('consoleFederation.providerDocs') + '</a>' : '') +
+            '</span>' + (json.provider.realmOn ? '' :
+              '<p class="warn">' +
+              t.html('consoleFederation.providerRealmOff') + '</p>') +
+            '</td></tr>'
+          : '') +
         '<tr><td>' + t.html('consoleFederation.thPartner') +
         '</td><td class="who"><code>' +
         kit.esc(row.peer || t.text('consoleFederation.noneNamed')) +

@@ -133,8 +133,10 @@ async function test() {
            { id: REALM, domain: DOMAIN, name: "person attributes (#228)" },
            "created the realm");
   await ok(realmApi() + "/users/create",
+           // givenName, sn and mail: the attribute policy (#396).
            { username: WHO, invent: false,
-             attributes: { cn: "Pat Person", sn: "Person" } },
+             attributes: { cn: "Pat Person", givenName: "Pat",
+                           sn: "Person", mail: WHO + "@" + DOMAIN } },
            "created the person");
 
   // 1. THE PUBLISHED EDITOR

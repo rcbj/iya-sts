@@ -42,6 +42,19 @@
 // SCRIPT IS REQUIRED (rcbj's decision on #569): the shell's `<noscript>`
 // says so, and there is no server-drawn fallback to keep in step.
 //
+// SIGN IN WITH ANOTHER ACCOUNT ON EVERY PAGE (#561, delivery step 6), with
+// `authn.multipleAccounts` on: beside the chooser, the browser's signed-in
+// accounts and a link that starts the user portal's sign-in with
+// `prompt=login` (`web_accounts.ts`'s control). Read once as the surface
+// starts (`loadAccounts()`), from this page's own origin, and only where the
+// shell carries `data-sts-accounts="on"` (`WebAccounts.announced()`); OFF —
+// the setting off, or nothing answering there — asks nothing, draws exactly
+// the page it drew before, and fetches none of the control's words.
+// Never on a page that is a specification's exchange
+// (`NO_ACCOUNT_CONTROL`), and never on the picker, which is that list.
+// After an act the list is read again, and a change the act made is
+// announced to the browser's other tabs.
+//
 // THE CONTRACT A SURFACE KEEPS — the recipe its ticket follows is in
 // `common/CLAUDE.md`, *Static public surfaces*:
 //
@@ -61,6 +74,7 @@
 import WebPage = require('./web_page');
 import WebI18n = require('./web_i18n');
 import webMessages = require('./web_messages');
+import WebAccounts = require('./web_accounts');
 
 type Json = any;
 
@@ -107,6 +121,11 @@ interface SurfaceOptions {
  * A static public surface's runtime: routing, translation and forms.
  */
 class WebSurface extends WebPage {
+  // THE PATHS THE ACCOUNT CONTROL IS NEVER DRAWN ON (#561): RFC 4559's
+  // exchange answers its person-facing bodies on this surface (#575), and
+  // a specification's response gets no control; the account picker IS the
+  // list. Each is a prefix of the surface's path, on a segment boundary.
+  static readonly NO_ACCOUNT_CONTROL = ['/authn/spnego', '/authn/accounts'];
   protected options: SurfaceOptions;
   protected i18n: WebI18n;
   protected t: Json;
@@ -120,6 +139,12 @@ class WebSurface extends WebPage {
   // The whole answer the page in hand was drawn from — its view and what
   // the API answered beside it (#571: the sign-in screen's `csrf`).
   protected lastAnswer: Json;
+  // THE BROWSER'S ACCOUNTS (#561): the list as last read, how many pages
+  // have been drawn (the first one's list is the one `start()` read), and
+  // the channel changes are heard and announced on.
+  protected accounts: Json;
+  protected drawn: number;
+  protected accountChannel: Json;
 
   /**
    * Makes the runtime.
@@ -143,6 +168,82 @@ class WebSurface extends WebPage {
     this.flash = null;
     this.drawnAt = '';
     this.lastAnswer = null;
+    this.accounts = WebAccounts.off();
+    this.drawn = 0;
+    this.accountChannel = null;
+  }
+
+  // --- the browser's accounts (#561) ---------------------------------------
+
+  /**
+   * Reads the browser's account list as the surface starts; with it on, the
+   * control's words are loaded with the page's and other tabs' changes are
+   * listened for.
+   *
+   * @returns nothing
+   */
+  async loadAccounts(): Promise<void> {
+    this.accounts = await WebAccounts.fetchList(this.env, this.prefix);
+    if (!this.accounts.enabled) {
+      return;
+    }
+    this.i18n.include('accounts');
+    const self = this;
+    this.accountChannel = WebAccounts.openChannel(this.env, function () {
+      self.refreshAccounts(false);
+    });
+  }
+
+  /**
+   * Reads the list again and draws the control again in place; a change
+   * this page's own act made is announced to the other tabs.
+   *
+   * @param announce - whether a change is this page's to announce (never
+   *   when a message asked)
+   * @returns nothing
+   */
+  async refreshAccounts(announce: boolean): Promise<void> {
+    if (!this.accounts.enabled) {
+      return;
+    }
+    const before = this.accounts;
+    const after = await WebAccounts.fetchList(this.env, this.prefix);
+    if (!after.enabled) {
+      return;
+    }
+    this.accounts = after;
+    if (announce && WebAccounts.changed(before, after) &&
+        this.accountChannel) {
+      this.accountChannel.post('changed');
+    }
+    const doc = this.env.document;
+    const slot = doc && doc.getElementById
+      ? doc.getElementById('sts-accounts-slot') : null;
+    if (slot) {
+      slot.innerHTML = WebSurface.realmLinks(
+        WebAccounts.controlHtml(after, this.t), this.prefix);
+    }
+  }
+
+  /**
+   * The account control for the page being drawn: '' with the list off and
+   * on a path that never carries it.
+   *
+   * @returns the control in its slot, or ''
+   */
+  accountControl(): string {
+    if (!this.accounts.enabled) {
+      return '';
+    }
+    const path = this.surfacePath(this.env.location.pathname) || '';
+    const excluded = WebSurface.NO_ACCOUNT_CONTROL.some(function (one) {
+      return path === one || path.indexOf(one + '/') === 0;
+    });
+    if (excluded) {
+      return '';
+    }
+    return '<div id="sts-accounts-slot">' +
+      WebAccounts.controlHtml(this.accounts, this.t) + '</div>';
   }
 
   // --- paths ---------------------------------------------------------------
@@ -215,7 +316,8 @@ class WebSurface extends WebPage {
    */
   put(title: string, body: string, ctx: Json): void {
     const doc = this.env.document;
-    const chooser = this.i18n.chooser(this.t, ctx.here);
+    const chooser = this.i18n.chooser(this.t, ctx.here) +
+      this.accountControl();
     const framed = this.options.frame ? this.options.frame(chooser + body, ctx)
                                       : chooser + body;
     doc.title = title + (this.options.brand === undefined ? ' — IYA STS'
@@ -223,6 +325,13 @@ class WebSurface extends WebPage {
     doc.body.innerHTML = WebSurface.realmLinks(framed, this.prefix);
     this.drawnAt = this.env.location.pathname + this.env.location.search;
     this.targetFragment();
+    // A PAGE AFTER THE FIRST follows an act or a navigation, which may have
+    // changed the browser's accounts (a sign-out, a forget): the list is
+    // read again, and a change announced (#561). Only with the list on.
+    this.drawn++;
+    if (this.drawn > 1 && this.accounts.enabled) {
+      this.refreshAccounts(true);
+    }
   }
 
   /**
@@ -546,6 +655,9 @@ class WebSurface extends WebPage {
         self.route();
       });
     }
+    // THE BROWSER'S ACCOUNTS (#561), before the first page: their words are
+    // loaded with the page's where the list is on.
+    await this.loadAccounts();
     await this.route();
   }
 

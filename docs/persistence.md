@@ -442,10 +442,13 @@ behaves the same way to every protocol; what changes is where the answer comes
 from:
 
 * **A miss costs one database round trip**, during which that worker does
-  nothing else. `ldap.workerDirectoryTimeoutMs` (2,000) bounds it; past it, or
-  when the database refuses, the request is answered **503 with
+  nothing else. `ldap.workerDirectoryTimeoutMs` (2,000) bounds one question;
+  past it, or when the database refuses, the request is answered **503 with
   `Retry-After`** (`STS-LDAP-0130`, `STS-LDAP-0131`) rather than from a
-  directory that cannot say what it is missing.
+  directory that cannot say what it is missing. One `/admin` or `/admin-api`
+  request also has a budget on the sum of those waits
+  (`ldap.workerDirectoryBudgetMs`, 5,000, `STS-LDAP-0175`): a question that
+  would pass it is refused and not asked.
 * **A walk of the people** — an LDAP subtree search, a console list — reads
   them from the database a page at a time.
 * **A worker's writes are its own**, as before: an entry it changed is kept

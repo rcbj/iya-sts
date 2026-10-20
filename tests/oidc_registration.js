@@ -134,18 +134,30 @@ function library(t) {
           '1a. response_types defaults to code only beside a redirect grant',
           JSON.stringify(lists));
 
-  const withLogin = { fields: { appRegistrationJson: JSON.stringify({
-    initiate_login_uri: 'https://rp.example/login?x=1' }) } };
-  const httpLogin = { fields: { appRegistrationJson: JSON.stringify({
-    initiate_login_uri: 'http://rp.example/login' }) } };
+  // #426: the attribute, not the registration document, is what is read.
+  const withLogin = { fields: {
+    oauthInitiateLoginUri: 'https://rp.example/login?x=1' } };
+  const httpLogin = { fields: {
+    oauthInitiateLoginUri: 'http://rp.example/login' } };
   t.check(applications.initiateLoginUriOf(withLogin) ===
             'https://rp.example/login?x=1' &&
           applications.initiateLoginUriOf(httpLogin) === '' &&
           applications.initiateLoginUriOf({ fields: {} }) === '' &&
           applications.initiateLoginUriOf({ fields: {
-            appRegistrationJson: '{not json' } }) === '',
-          '1b. initiateLoginUriOf() answers an https value and nothing else, ' +
-          'whatever an ldapmodify left');
+            oauthInitiateLoginUri: 'https://rp.example/login#x' } }) === '' &&
+          applications.initiateLoginUriOf({ fields: {
+            appRegistrationJson: JSON.stringify({
+              initiate_login_uri: 'https://rp.example/login' }) } }) === '',
+          '1b. initiateLoginUriOf() answers an https value without a ' +
+          'fragment from oauthInitiateLoginUri and nothing else, whatever an ' +
+          'ldapmodify left');
+  t.check(applications.initiateLoginUriProblem('https://rp.example/l') ===
+            '' &&
+          !!applications.initiateLoginUriProblem('http://rp.example/l') &&
+          !!applications.initiateLoginUriProblem('https://rp.example/l#f') &&
+          !!applications.initiateLoginUriProblem('not a url'),
+          '1b-ii. initiateLoginUriProblem() refuses http, a fragment and ' +
+          'what is not a URL');
 
   const registered = { default_acr_values: ['mfa'], default_max_age: 60 };
   const bare = stepUp.requirementOf({}, registered);

@@ -7,13 +7,21 @@
     "en": "e753a576c8530ce3",
     "text": "Läser nästa sida av sfärens personer från varje attributkälla vars schemalagda intervall har förfallit, in på deras poster (#94). attributeSources.refreshBatch personer per källa och körning."
   },
+  "sched.jobs.authn.account-set-expiry.title": {
+    "en": "849356c9b70cc0f3",
+    "text": "Utgång för kontouppsättningar"
+  },
+  "sched.jobs.authn.account-set-expiry.describe": {
+    "en": "d643d71a0089a802",
+    "text": "Uppdaterar varje webbläsares kontouppsättning (#561): ett konto vars session har upphört sparas som utloggat, ett som har sparats längre än authn.rememberedAccountDays tas bort, och en tom uppsättning raderas."
+  },
   "sched.jobs.authn.session-expiry.title": {
     "en": "0d2b2447af869e65",
     "text": "Sessionsutgång"
   },
   "sched.jobs.authn.session-expiry.describe": {
-    "en": "ca99d997bdb0c403",
-    "text": "Avslutar varje inloggningssession vars livslängd eller inaktivitetstidsgräns har passerats, i varje sfär: en granskningsrad, CAEP session-revoked och back-channel-Logout Tokens, en gång för hela klustret."
+    "en": "5631096a0aa7c62f",
+    "text": "Avslutar varje inloggningssession vars livslängd eller inaktivitetstidsgräns har passerats och, i varje sfär, högst den sfärens authn.sessionShedPerSweep av ett subjekts egna överskottssessioner."
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
@@ -78,6 +86,14 @@
   "sched.jobs.federation.encryption-key-retire.describe": {
     "en": "c8990a4ca5b5163e",
     "text": "Tar bort från varje federationsrelation den krypteringsnyckel som en rotation ersatte, när federation.encryptionKeyGraceS har passerats. Nyckeln slutade dekryptera redan i det ögonblicket; detta tar bort den från posten."
+  },
+  "sched.jobs.federation.provision-idle.title": {
+    "en": "20200542bb3c76b9",
+    "text": "Inaktivitetssvep för federerad etablering"
+  },
+  "sched.jobs.federation.provision-idle.describe": {
+    "en": "94bd34c4b59a85a1",
+    "text": "Inaktiverar en person vars enda inloggningsväg är en federationsrelation, så snart federationLastSeen är äldre än relationens fedProvisionIdleMinutes. Tomt eller 0 lämnar alla i fred. Posten och länken behålls. Ett lokalt lösenord, eller en länk via en annan relation, lämnas i fred."
   },
   "sched.jobs.gnap.grant-expiry.title": {
     "en": "ed1bb7e24484e928",
@@ -438,6 +454,14 @@
   "sched.jobs.spiffe.sigstore-tuf-refresh.describe": {
     "en": "23ca3d0e22f4d09a",
     "text": "Hämtar sigstores förtroenderot (Fulcio-CA:er, Rekor- och CT-loggnycklar) genom TUF för docker-arbetsbelastningsattestorns kontroller av avbildssignaturer; en uppdatering som misslyckas behåller den senast verifierade uppsättningen."
+  },
+  "sched.jobs.spiffe.target-reconcile.title": {
+    "en": "da689365a5c7e0b8",
+    "text": "Avstämning av SPIFFE-målgrupper"
+  },
+  "sched.jobs.spiffe.target-reconcile.describe": {
+    "en": "42a6fe3359b6cc70",
+    "text": "Registrerar varje körande uppgifts privata adress i klustrets SPIFFE-målgrupper och avregistrerar en adress som ingen körande uppgift längre har (#323)."
   },
   "sched.jobs.ssf.dead-letter-sweep.title": {
     "en": "825439e56379bcb0",

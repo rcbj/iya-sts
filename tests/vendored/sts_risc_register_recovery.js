@@ -500,11 +500,11 @@ async function test() {
     kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "ssf"],
     fields: { oauthClientId: [RECEIVER], oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post",
-              oauthAllowedScope: ["ssf:read", "ssf:write", "scim:read",
+              oauthAllowedScope: ["ssf.read", "ssf.manage", "scim:read",
                                   "scim:write"],
               oauthGrantType: ["client_credentials"] } },
     "created the receiver's application");
-  const token = await tokenFor("ssf:read ssf:write");
+  const token = await tokenFor("ssf.read ssf.manage");
   const types = ["account-credential-change-required", "recovery-activated",
     "recovery-information-changed", "identifier-changed",
     "identifier-recycled", "opt-out-initiated", "opt-out-cancelled",
@@ -518,6 +518,13 @@ async function test() {
     assert.strictEqual(created.status, 201, created.raw.slice(0, 400));
   });
   const streamId = created.body.stream_id;
+  // THIS REALM'S OWN ATTRIBUTE POLICY (#396) asks no address: TIM is
+  // created without one ON PURPOSE, so that section 3 sees a FIRST address
+  // raise recovery-information-changed, and product mode's default
+  // (givenName, sn, mail) would refuse the create.
+  await ok(realmApi + "/policies/save-attributes-policy",
+    { profile: "default", requiredAttributes: ["givenName"] },
+    "this realm's attribute policy requires no address");
   for (const who of [EVE, SID, TIM, VIC, WYN]) {
     const attributes = { cn: "RISC " + who, givenName: "RISC", sn: who };
     if (who !== TIM) {

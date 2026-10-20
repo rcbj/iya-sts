@@ -129,8 +129,8 @@ function application(identifier, fields) {
            // The Shared Signals scopes are issued only to a client that
            // declares them (#110).
            fields: Object.assign({ oauthClientId: [identifier],
-                                   oauthAllowedScope: ["ssf:read",
-                                                       "ssf:write"],
+                                   oauthAllowedScope: ["ssf.read",
+                                                       "ssf.manage"],
                                    oauthClientSecret: SECRET,
                                    oauthTokenEndpointAuthMethod:
                                      "client_secret_post" }, fields || {}) };
@@ -143,7 +143,7 @@ async function tokenFor(identifier) {
     body: "grant_type=client_credentials&client_id=" +
           encodeURIComponent(identifier) +
           "&client_secret=" + encodeURIComponent(SECRET) + "&scope=" +
-          encodeURIComponent("ssf:read ssf:write") });
+          encodeURIComponent("ssf.read ssf.manage") });
   const json = await r.json();
   assert.ok(json.access_token,
             "a token for " + identifier + ": " + JSON.stringify(json));
@@ -480,7 +480,7 @@ async function test() {
   r = await alice.send("GET", "/ssf/stream?stream_id=ssf-internal-" + REALM +
                               "-admin-console");
   check("THIS SERVICE'S OWN RECEIVER STREAM CANNOT BE READ over " +
-        "/ssf/stream — its authorization_header was readable by any ssf:read " +
+        "/ssf/stream — its authorization_header was readable by any ssf.read " +
         "token", function () {
           assert.strictEqual(r.status, 404, r.text.slice(0, 200));
         });

@@ -253,9 +253,10 @@ if (logLevelProblem) {
 // every node took longer than that — each re-certifies the realm's signing
 // keys and writes the certificate authority at start, and the key set had
 // grown with every suite run's rotations — and after three in a row the pool
-// gave up for good, leaving each node on its front process alone. The root
-// cause (a start should not re-certify unchanged keys) is its own issue; this
-// is the room to start in, which a deployment can widen.
+// gave up, leaving each node on its front process alone until it restarted
+// (a cool-down retries one worker now, `workers.giveUpRetryMs`, #333). The
+// root cause (a start should not re-certify unchanged keys) is its own
+// issue; this is the room to start in, which a deployment can widen.
 const START_TIMEOUT_MS = Math.max(5000,
   Number(config.value('workers.startTimeoutMs')));
 
@@ -457,7 +458,8 @@ class RequestWorker {
   // goes on to Express's own handler, unchanged.
   /**
    * Refuses a request whose directory read the store did not answer
-   * (STS-LDAP-0130, STS-LDAP-0131) with a 503; passes anything else on.
+   * (STS-LDAP-0130, STS-LDAP-0131, STS-LDAP-0175) with a 503; passes
+   * anything else on.
    *
    * @param err - the error a handler threw
    * @param req - the request
@@ -468,7 +470,8 @@ class RequestWorker {
                               res: any, next: (e?: any) => void): void {
     log.debug("Entering RequestWorker.directoryUnavailable().");
     const code = errorCodes.codeOf(err);
-    if (code !== 'STS-LDAP-0130' && code !== 'STS-LDAP-0131') {
+    if (code !== 'STS-LDAP-0130' && code !== 'STS-LDAP-0131' &&
+        code !== 'STS-LDAP-0175') {
       log.debug("Leaving RequestWorker.directoryUnavailable(). Not ours.");
       next(err);
       return;
@@ -545,13 +548,18 @@ class RequestWorker {
     ldapServer.setRemoteDropper(function (key: unknown) {
       const res = currentResponse.getStore();
       if (!res) {
-        // A sign-out that did not arrive over HTTP — nothing does this today,
-        // and the honest answer is that there is no answer for it to ride out
-        // on. Thrown rather than logged, because dropConnectionsFor() catches
-        // it and says the connections may still be open, which is the truth.
-        throw new Error('there is no response in flight in this worker to ' +
-                        'carry the request on, so the front process cannot ' +
-                        'be asked');
+        // A SIGN-OUT THAT DID NOT ARRIVE OVER HTTP, which since #408 is a
+        // cluster job's body run here for the leader — the session sweep, a
+        // rotation that ends sessions. There is no response to ride out on
+        // and none is needed: the ordering the header buys (the front closes
+        // before the client reads the answer) has no client here. So the
+        // instruction goes on the channel, which the front reads in order.
+        WorkerChannel.send({
+          ldapDrop: encodeURIComponent(String(key || ''))
+        });
+        log.debug('installDirectoryMirror(): asked the front process, over ' +
+                  'the channel, to sign ' + key + ' out of the directory.');
+        return;
       }
       if (res.headersSent) {
         throw new Error('this request\'s headers have already gone to the ' +
@@ -652,8 +660,9 @@ class RequestWorker {
     // A DIRECTORY THIS WORKER COULD NOT READ (#349). With
     // `ldap.workerDirectory=postgres-lru` a directory read this worker's
     // window does not hold asks the store synchronously, and a store that
-    // does not answer throws STS-LDAP-0130 or -0131 out of whatever handler
-    // asked. Express hands a thrown error to the error middleware, and this
+    // does not answer throws STS-LDAP-0130, -0131 or -0175 out of whatever
+    // handler asked. Express hands a thrown error to the error middleware,
+    // and this
     // is the last one: the request is refused as unavailable, with a
     // Retry-After, rather than answered out of a window that cannot say what
     // it is missing. Registered after every route, which is what an error
@@ -1348,6 +1357,14 @@ class RequestWorker {
       }
       if (message && message.collectGarbage) {
         this.collectGarbage(message);
+        return;
+      }
+      if (message && message.schedulerRun) {
+        this.runSchedulerJob(message);
+        return;
+      }
+      if (message && message.schedulerFence) {
+        this.fenceSchedulerJob(message);
       }
     });
 
@@ -1392,6 +1409,103 @@ class RequestWorker {
                   error: error || null, memory: memory, cpu: cpu,
                   uptimeS: Math.round(process.uptime()) });
     log.debug("Leaving RequestWorker.reportPoolStatus().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // A CLUSTER JOB'S BODY, RUN HERE FOR THE SCHEDULER'S LEADER (#408).
+  //
+  // The leader — a front process — keeps the lease, the claim, the fence and
+  // the time limit, and hands this worker `{ schedulerRun, runId, jobId,
+  // realm, trigger, params, clockOffsetMs }`; `cluster/scheduler.ts`'s
+  // `runDelegated()` runs the job and this answers `{ schedulerRunDone,
+  // runId, ok, result | error, code }` (or `unknownJob`, which sends the job
+  // back to the front's thread).
+  //
+  // **THE COMMIT IS ANNOUNCED BEFORE THE ANSWER.** What the job wrote is
+  // journalled like a request's write, but no request finished here to make
+  // `CommitAnnouncer` say so, and until it is said the pool's read-your-write
+  // generation does not move: another worker would be told it is current
+  // without the job's writes. So the job's writes are flushed first and the
+  // commit announced on the same channel, ahead of the answer — the leader
+  // writes the outcome only after the pool has learnt there is something to
+  // sync.
+  // ---------------------------------------------------------------------------
+  /**
+   * Runs a cluster job's body for the scheduler's leader and answers it.
+   *
+   * @param message - the leader's request
+   */
+  runSchedulerJob(message: any): void {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering RequestWorker.runSchedulerJob(). " + message.runId);
+    const scheduler = require('../cluster/scheduler');
+    const persistence = require('../persistence/persistence');
+    const runId = String(message.runId || '');
+    const report = (answer: any): void => {
+      this.report(Object.assign({ schedulerRunDone: true, runId: runId },
+                                answer || {}));
+    };
+    // OUTSIDE ANY REQUEST'S DIRECTORY BUDGET (#692): a body is no request's,
+    // and the channel's message is not delivered inside one today; said
+    // here so that a later change to how messages arrive cannot hand a job
+    // a console request's spent budget (`common/sync_query.ts`).
+    const started: Promise<any> = require('./sync_query').outsideBudget(
+      () => scheduler.runDelegated(message));
+    started.then((answer: any) => {
+      if (answer && (answer.unknownJob || answer.unknownRealm)) {
+        report(answer);
+        return;
+      }
+      return Promise.all([
+        Promise.resolve().then(() => persistence.flush()),
+        Promise.resolve().then(() => persistence.flushMinted())
+      ]).then(() => {
+        this.announceCommitted();
+      }, (e: any) => {
+        // THE OUTCOME STILL GOES BACK: the run happened, and the next
+        // request's announcement covers its writes. Said, because a reader
+        // may be told it is current before them.
+        log.warn(errorCodes.tag('STS-WORKER-0032') + 'request_worker: the ' +
+                 'writes of scheduler run ' + runId + ' could not be ' +
+                 'flushed before it answered: ' + ((e && e.message) || e) +
+                 '.');
+      }).then(() => {
+        report(answer);
+      });
+    }).catch((e: any) => {
+      // runDelegated() never rejects; a throw from report() is the channel
+      // gone, which the leader learns from this worker's exit.
+      log.debug("Caught in RequestWorker.runSchedulerJob(): " +
+                ((e && e.message) || e));
+    });
+    log.debug("Leaving RequestWorker.runSchedulerJob().");
+  }
+
+  // The commit announcement a finished request would have made: at once where
+  // the store holds answers for their commit (postgres), otherwise after the
+  // flush the announcer runs itself.
+  private announceCommitted(): void {
+    const { log } = this.deps;
+    log.debug("Entering RequestWorker.announceCommitted().");
+    const announcer = this.announcer;
+    if (announcer && !announcer.announceAnswered(0)) {
+      announcer.announceWhenCommitted();
+    }
+    log.debug("Leaving RequestWorker.announceCommitted().");
+  }
+
+  /**
+   * Tells the job running `message.runId` here that it no longer owns its
+   * run: the leader timed it out, lost its lease or saw its realm removed.
+   *
+   * @param message - `{ schedulerFence, runId }`
+   */
+  fenceSchedulerJob(message: any): void {
+    const { log } = this.deps;
+    log.debug("Entering RequestWorker.fenceSchedulerJob().");
+    require('../cluster/scheduler').fenceDelegated(String(message.runId ||
+                                                          ''));
+    log.debug("Leaving RequestWorker.fenceSchedulerJob().");
   }
 
   // A FULL GARBAGE COLLECTION OF THIS THREAD'S ISOLATE (#611), for

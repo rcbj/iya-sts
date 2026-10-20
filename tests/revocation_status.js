@@ -3395,6 +3395,15 @@ async function theRegisteredDoors(t) {
     t.check(bareFed === 'signed in' && proceeded === 2,
             'while a partner key with no certificate has nothing to check ' +
             'and the sign-in goes on', JSON.stringify(bareFed));
+    // A HELD ANSWER THAT RESTED ON NO SIGNATURE (the opaque token's
+    // profile answer, back from the profile form): nothing to look up, so
+    // even with the relationship's certificate revoked it goes on — and one
+    // that held the certificate as its signer is refused like the first.
+    const unsignedFed = await federationSp.signerStillAccepted({}, fakeRes(),
+      record, proceed, undefined, true);
+    t.check(unsignedFed === 'signed in' && proceeded === 3,
+            'a held answer no signature was verified on goes on without a ' +
+            'lookup', JSON.stringify(unsignedFed));
 
     // --- OID4VP -----------------------------------------------------------
     const vcPair = (await pki.issueSigningKeyPair(REALM, { identifier: 'rev-vc',
@@ -3427,24 +3436,43 @@ async function theRegisteredDoors(t) {
                                               'federation_sp.ts'), 'utf8')
     .split('\n');
   const sites = [];
+  // SEVEN SITES SINCE #729: the five a partner's answer arrives at, and the
+  // two steps that HOLD a verified answer and finish it when the person
+  // returns — the step-up on risk and the newcomer's profile form — each of
+  // which asks signerStillAccepted() AGAIN with the signer the answer
+  // carries (`heldSigner()`), since a key may be revoked while the person is
+  // away. The opaque token's refusal sentence grew a provider clause, so its
+  // marker is looked for over the statement before the site, not 3 lines.
   fedSource.forEach(function (line, at) {
     if (/^\s*return (?:this\.)?completeSignIn\(/.test(line)) {
       const before = fedSource.slice(Math.max(0, at - 3), at).join('\n');
+      const statement = fedSource.slice(Math.max(0, at - 16), at)
+        .join('\n');
       sites.push({ line: at + 1, wrapped: /signerStillAccepted\(/.test(before),
-                   opaque: /The profile endpoint answered/.test(before) });
+                   opaque: /The profile endpoint answered/.test(statement) });
     }
   });
-  t.check(sites.length === 5 &&
-          sites.filter(function (one) { return one.wrapped; }).length === 4 &&
+  t.check(sites.length === 7 &&
+          sites.filter(function (one) { return one.wrapped; }).length === 6 &&
           sites.filter(function (one) { return !one.wrapped; })
                .every(function (one) {
             return one.opaque;
           }),
           'EVERY FEDERATED SIGN-IN THAT RESTS ON A SIGNATURE REACHES ' +
           'completeSignIn() THROUGH signerStillAccepted() — SAML 2.0 and ' +
-          '1.1, WS-Federation, OIDC and a JWT access token — and the one ' +
-          'that does not is the opaque OAuth 2.0 token, where no signature ' +
-          'was verified at all', JSON.stringify(sites));
+          '1.1, WS-Federation, OIDC, a JWT access token, and the step-up ' +
+          'and profile form that hold one of them — and the one that does ' +
+          'not is the opaque OAuth 2.0 token, where no signature was ' +
+          'verified at all', JSON.stringify(sites));
+  const joined = fedSource.join('\n');
+  t.check((joined.match(/this\.heldSigner\(res, record, context\.result\)/g) ||
+           []).length === 3 &&
+          /return this\.signerStillAccepted\(req, res, record, \(\) => \{\n\s*return this\.finishSignIn\(req, res, record, context\.result/
+            .test(joined),
+          'and the three steps that hold a verified answer — linking, the ' +
+          'step-up, the profile form — ask the signer again when they ' +
+          'return, with the signer the answer carried',
+          'heldSigner() call sites');
   t.check(/verified: .*jwk: candidates\[i\]|jwk: candidates\[i\]/.test(
       fedSource.join('\n')) &&
           /\}, verified\.jwk\);/.test(fedSource.join('\n')),

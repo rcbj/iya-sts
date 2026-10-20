@@ -113,16 +113,26 @@ class SamlCells {
   }
 
   // The live sessions HERE that gave `party` the NameID `nameId`.
-  private static holds(question: HolderQuestion): boolean {
+  private static holds(question: HolderQuestion): boolean | null {
     log.debug("Entering SamlCells.holds().");
+    if (!question.nameId) {
+      log.debug("Leaving SamlCells.holds(). Nobody.");
+      return false;
+    }
     const authn = require('../authn/authn');
     const field = question.profile === 'saml11' ? 'saml11RelyingParties'
                                                 : 'saml2ServiceProviders';
-    const found = question.nameId ? authn.sessionsMatching(function (s: any) {
+    const found = authn.sessionsMatching(function (s: any) {
       const there = (s && s[field] || {})[question.party];
       return !!there && there.nameId === question.nameId &&
              !authn.sessionEnded(s);
-    }) : [];
+    });
+    // Null is unread. False would tell the asker this cell does not
+    // hold the NameID, and the query would be refused here.
+    if (found == null) {
+      log.debug("Leaving SamlCells.holds(). Unread.");
+      return null;
+    }
     log.debug("Leaving SamlCells.holds(). " + found.length);
     return found.length > 0;
   }
@@ -147,10 +157,16 @@ class SamlCells {
       realm: realmId, profile: String(body.profile || ''),
       party: String(body.party || ''), nameId: String(body.nameId || '')
     };
-    let holds = false;
+    let holds: boolean | null = false;
     realms.run(realm, function () {
       holds = SamlCells.holds(question);
     });
+    // A throw is a peer the asker could not reach. { holds: false } would
+    // say this cell looked and does not hold the NameID.
+    if (holds == null) {
+      log.debug("Leaving SamlCells.answer(). Unread.");
+      throw new Error('the sessions could not be read');
+    }
     log.debug("Leaving SamlCells.answer(). " + holds);
     return { holds: holds };
   }
@@ -172,8 +188,21 @@ class SamlCells {
       realm: realms.currentId(), profile: profile, party: String(party || ''),
       nameId: String(nameId || '')
     };
+    // Single-cell, a relay, or a query that names nobody is answered
+    // here without a read. Null from holds() is falsy, so it has to be
+    // told apart before the boolean: otherwise an unread page searches
+    // peers and then says this cell does not hold the NameID.
     if (!cells.isMulti() || (req && req.stsCellRelay) || !question.nameId ||
-        !question.party || SamlCells.holds(question)) {
+        !question.party) {
+      log.debug("Leaving SamlCells.sessionHolder(). Here.");
+      return Promise.resolve('');
+    }
+    const here = SamlCells.holds(question);
+    if (here == null) {
+      log.debug("Leaving SamlCells.sessionHolder(). Unread.");
+      return Promise.reject(new Error('the sessions could not be read'));
+    }
+    if (here) {
       log.debug("Leaving SamlCells.sessionHolder(). Here.");
       return Promise.resolve('');
     }

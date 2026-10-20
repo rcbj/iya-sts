@@ -372,6 +372,9 @@ import scopeVerdicts = require('../xacml/xacml_scope_verdicts');
 // requiring only libraries this module already requires. See
 // `common/scope_policy.ts` and scopeRefusal() below.
 import scopePolicy = require('../common/scope_policy');
+// The Shared Signals scope names discovery advertises (#334): the two
+// settings and the fixed aliases. A library; called from asMetadata().
+import ssfScopes = require('../common/ssf_scopes');
 // WHO MAY ACT FOR WHOM AT THE TOKEN EXCHANGE (#108, 2026-09-23), and the
 // `may_act` claim an access token about a person carries. A library (rule 3)
 // requiring only libraries this module already requires. See
@@ -417,6 +420,8 @@ import PageLocale = require('../common/page_locale');
 // the registry, the access-token profile and the management API lazily, at
 // request time, so this require closes no cycle.
 import RegisteredTargets = require('../common/registered_targets');
+// Identity-provider-initiated sign-in's launch record (#426, #713).
+import LaunchLinks = require('../common/launch_links');
 
 // A loose JSON-shaped object: the tokens, records, requests and results this
 // file builds and passes on. Their shapes are the libraries' own, and those
@@ -2027,15 +2032,14 @@ class OAuth2Server {
           ? [String(config.value('scim.scopeRead') || 'scim:read'),
              String(config.value('scim.scopeWrite') || 'scim:write')]
           : []).concat(
-        // The two SSF scopes, on the same terms and for the same reason: a
-        // receiver needs a token before it can create a stream, and a scope
-        // this document does not advertise is one a client has to be told
-        // about out of band. They go only where the family is on, so the
-        // promise and what is behind it stay together.
-        config.value('ssf.enabled') !== false
-          ? [String(config.value('ssf.authScopeRead') || 'ssf:read'),
-             String(config.value('ssf.authScopeWrite') || 'ssf:write')]
-          : []),
+        // The Shared Signals scopes, on the same terms and for the same
+        // reason: a receiver needs a token before it can create a stream,
+        // and a scope this document does not advertise is one a client has
+        // to be told about out of band (#334): the settings' names and the
+        // CAEP profile names (`ssf.read`, `ssf.manage`). They go only where
+        // the family is on, so the promise and what is behind it stay
+        // together.
+        config.value('ssf.enabled') !== false ? ssfScopes.published() : []),
       // All three, and form_post is the one that was advertised here and NOT
       // implemented for a long time — every request got a 302 whatever it asked
       // for, so a client that requested form_post sat waiting for a POST that
@@ -9461,8 +9465,16 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.sessionStateOf(). None owed.");
       return null;
     }
-    sessionManagement.writeCookie(res,
-                                  sessionManagement.browserStateOf(session));
+    // SEVERAL ACCOUNTS IN ONE BROWSER (#561, the plan's section 7): the
+    // browser state of every live session in its account set, this one's
+    // first, so that the OP iframe answers `unchanged` to every relying
+    // party of every account still signed in here. With
+    // `authn.multipleAccounts` off the one state, as always.
+    sessionManagement.writeCookie(res, authn.multipleAccounts()
+      ? sessionManagement.browserStatesValue([session]
+        .concat(authn.accountSessionsOf(req))
+        .map(sessionManagement.browserStateOf))
+      : sessionManagement.browserStateOf(session));
     log.debug("Leaving OAuth2Server.sessionStateOf().");
     return { value: value };
   }
@@ -11071,7 +11083,48 @@ class OAuth2Server {
     // Already signed in? Then this is the second pass — back from the
     // authentication service, or a later request on the same session — and the
     // response goes out now.
+    //
+    // WHICH ACCOUNT, WHERE THE BROWSER HOLDS SEVERAL (#561): `login_hint`, and
+    // the `sub` and `sid` of a VERIFIED `id_token_hint` (OIDC Core section
+    // 3.1.2.1), are handed to the sign-in service before the session is
+    // asked for, so the session answered is the one they name. They change
+    // nothing with `authn.multipleAccounts` off.
+    authn.hintAccount(req, {
+      loginHint: String(q.login_hint || ''),
+      sub: idTokenHint && idTokenHint.ok
+        ? String(pairwiseSubjects.localFor(idTokenHint.sub) ||
+                 idTokenHint.sub || '') : '',
+      sid: idTokenHint && idTokenHint.ok && idTokenHint.claims
+        ? String(idTokenHint.claims.sid || '') : ''
+    });
     const session = sessionOf(req);
+    // -----------------------------------------------------------------------
+    // WHO STARTED THIS SIGN-IN (#426, #713). OpenID Connect's identity-
+    // provider-initiated sign-in is Core section 4: /launch/{app} sends the
+    // person to the client's initiate_login_uri and the client starts THIS
+    // request. So a client whose own start is turned off
+    // (`oauthSpInitiatedSso` FALSE, else `oauth2.spInitiatedSso`) is answered
+    // only when a launch of it is on this session and no older than
+    // `oauth2.launchWindowS`; any other request is refused
+    // `unauthorized_client`, RFC 6749 section 4.1.2.1's word for a client not
+    // allowed this method. Checked before the session is required, so a
+    // request that was going to be refused never sends anybody to sign in.
+    // The launch is TAKEN when the response goes out, below — a request that
+    // sends the person to sign in first comes round again and must still
+    // count.
+    // -----------------------------------------------------------------------
+    const clientStarts = applications.settingFor(q.client_id,
+      'oauth2.spInitiatedSso', self.deps.config) !== false;
+    if (!clientStarts &&
+        !LaunchLinks.launchIsFresh(session, q.client_id, self.deps.nowSec(),
+          Number(self.deps.config.value('oauth2.launchWindowS')))) {
+      log.debug("Leaving the authorization endpoint. The client's own start " +
+                "is off and nothing launched it.");
+      errorCodes.mark(res, 'STS-OAUTH-0959');
+      return fail('unauthorized_client', 'Client "' + q.client_id + '" is ' +
+        'signed in to only from this identity provider (OpenID Connect Core ' +
+        'section 4), and this request did not follow a launch of it.');
+    }
     const promptList = String(q.prompt || '').split(/\s+/);
     // `select_account` (#118): "The Authorization Server SHOULD prompt the
     // End-User to select a user account" — which, with one session per
@@ -11370,6 +11423,10 @@ class OAuth2Server {
         }).map(function (one: Json) {
           return one.scope;
         }));
+      // The launch this request followed, if any, is spent (#426, #713).
+      if (LaunchLinks.takeLaunch(session, q.client_id)) {
+        authn.noteSessionChanged(session);
+      }
       return self.issueAuthorizationResponse(req, res, q, session.user,
                                              session.authTime, session,
                                              stepUpAssessed ? stepUpAssessed.acr
@@ -11382,6 +11439,27 @@ class OAuth2Server {
           errorCodes.mark(res, 'STS-OAUTH-0169');
           return fail('server_error', e.message);
         });
+    }
+    // SEVERAL ACCOUNTS AND NOTHING TO CHOOSE BY (#561): OIDC Core section
+    // 3.1.2.6 names this case — "the End-User is REQUIRED to select a
+    // session" — and prompt=none forbids drawing the picker that would ask.
+    // `accountChoiceNeeded()` is null with `authn.multipleAccounts` off, so
+    // the branch below is then exactly what it was.
+    const accountChoice = promptNone ? authn.accountChoiceNeeded(req) : null;
+    if (accountChoice && accountChoice.reason === 'ambiguous') {
+      authn.noteAccountAmbiguous(req, 'OAuth 2.0 / OIDC',
+                                 'account_selection_required was answered');
+      // No count (#561, the reason of rcbj's decision on SAML's
+      // NoPassive): the description rides the redirect to the client, and
+      // how many people use a browser is nobody's there. The error code
+      // itself is what OIDC Core says to send.
+      errorCodes.mark(res, 'STS-OAUTH-0960');
+      log.debug("Leaving OAuth2Server.authorizeEndpoint(). Several " +
+                "accounts, and prompt=none.");
+      return fail('account_selection_required', 'The request names none ' +
+        'of the accounts signed in here, and prompt=none forbids showing ' +
+        'the account picker (OIDC Core section 3.1.2.6). Send login_hint ' +
+        'or id_token_hint, or retry without prompt=none.');
     }
     if (String(q.prompt || '').split(/\s+/).indexOf('none') >= 0) {
       // OIDC: prompt=none must not show any UI.
@@ -11456,6 +11534,14 @@ class OAuth2Server {
               ? (nameForSubject(pairwiseSubjects.localFor(idTokenHint.sub) ||
                                 idTokenHint.sub) || '') : ''),
       forceMfa: forceMfa, forceKey: !!screen.forceKey,
+      // WHETHER THE ACCOUNT PICKER COMES FIRST (#561), where the browser
+      // holds several accounts: `prompt=login` asks for a fresh sign-in, so
+      // never; `prompt=select_account` (OIDC Core section 3.1.2.1) always.
+      // Read only with `authn.multipleAccounts` on; off, select_account is
+      // the sign-in screen, as it was (the plan's D10).
+      accountChoice: promptList.indexOf('login') >= 0 ? 'never'
+        : (promptList.indexOf('select_account') >= 0 ? 'always' : ''),
+      request: req,
       protocol: 'OAuth 2.0 / OIDC',
       // WHICH APPLICATION this is, so that an entry naming a federation
       // relationship sends the person to that partner instead of to the sign-in
@@ -11756,7 +11842,24 @@ class OAuth2Server {
       }
     }
     // --- 4. confirmation ---------------------------------------------------
+    // WHICH ACCOUNT, IN A BROWSER HOLDING SEVERAL (#561, the plan's section
+    // 5). The VERIFIED hint's `sid` names the session to end where it is
+    // live in THIS browser's account set — the set's cookie proves the
+    // browser holds it, so a bare sid stays as untrusted as it always was —
+    // and is otherwise no hint (soft). The account a person chose on the
+    // page below comes back as `sts_signout_account`, a key that names only
+    // this browser's own accounts. Neither is read with
+    // `authn.multipleAccounts` off.
+    const several = authn.multipleAccounts();
+    if (several && hinted && hinted.sid) {
+      authn.hintAccount(req, { sid: String(hinted.sid), soft: true });
+    }
+    if (several && q.sts_signout_account) {
+      authn.hintAccountKey(req, String(q.sts_signout_account));
+    }
     const session = sessionOf(req);
+    // Several accounts and nothing that chose one: the page asks which.
+    const choices = several && !session ? authn.signedInAccounts(req) : [];
     // The sign-on cookie, by name — `sts_session`, which `SameSite=Lax` keeps
     // off a cross-site POST.
     const cookiePresented = /(?:^|;\s*)sts_session=/.test(
@@ -11790,6 +11893,11 @@ class OAuth2Server {
       (session && !(hintIsThisSession &&
                     self.logoutHintMatches(session, q.logout_hint))) ||
       (!session && req.method === 'POST' && !cookiePresented));
+    if (choices.length > 1) {
+      log.debug("Leaving OAuth2Server.logoutRequest(). Asking which " +
+                "account.");
+      return self.logoutConfirmPage(req, res, q, null, client, t, choices);
+    }
     if (mustAsk) {
       log.debug("Leaving OAuth2Server.logoutRequest(). Asking.");
       return self.logoutConfirmPage(req, res, q, session, client, t);
@@ -11799,7 +11907,9 @@ class OAuth2Server {
     // function — one browser session shared by both protocols means signing
     // out of either signs out of both.
     const backchannelMark = backchannel.mark();
-    const ended = endSession(req, res);
+    // The session the request resolved to, where the browser holds several
+    // (#561); `endSession()` ignores it with the setting off.
+    const ended = endSession(req, res, several && session ? session.id : '');
     return self.logoutFinish(req, res, ended, backchannelMark, returnTo,
                              refusedNote, t, frontDoor);
   }
@@ -11809,7 +11919,8 @@ class OAuth2Server {
   // carry; no script (the root CLAUDE.md: a form needs none).
   private logoutConfirmPage(req: Req, res: Res, q: Json, session: Json,
                             client: Json,
-                            t: ReturnType<typeof PageLocale.forPage>): Json {
+                            t: ReturnType<typeof PageLocale.forPage>,
+                            accounts?: Json[]): Json {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering OAuth2Server.logoutConfirmPage().");
     const names = ['post_logout_redirect_uri', 'client_id',
@@ -11839,6 +11950,38 @@ class OAuth2Server {
     // Four sentences rather than one assembled from pieces: word order
     // differs between the languages.
     const params = { app: String(app), who: who };
+    // SEVERAL ACCOUNTS AND NO HINT THAT CHOSE ONE (#561): the page asks
+    // which, a form per account — each its own confirmation value, so the
+    // form for one account can end only that account's session, and the
+    // account's key (`sts_signout_account`), which chooses only among this
+    // browser's own. Still a real form and no script.
+    if (accounts && accounts.length > 1) {
+      const self = this;
+      const forms = accounts.map(function (one: Json): string {
+        const held = authn.sessionById(String(one.sid));
+        return '<form method="post" action="logout">' + carried +
+          '<input type="hidden" name="sts_signout_account" value="' +
+          xmlEscape(String(one.key)) + '">' +
+          '<input type="hidden" name="confirm_for" value="' +
+          xmlEscape(self.logoutConfirmFor(held)) + '">' +
+          '<button type="submit" name="confirm" value="yes">' +
+          t.html('oauthPages.logout.signOutAccount',
+                 { who: String(one.username) }) + '</button></form>';
+      }).join('');
+      log.debug("Leaving OAuth2Server.logoutConfirmPage(). Which account.");
+      return this.logoutAnswer(res, 200,
+        t.text('oauthPages.logout.confirmTitle'),
+        '<p>' + (app
+          ? t.html('oauthPages.logout.askWhichApp',
+                   { app: String(app), count: accounts.length })
+          : t.html('oauthPages.logout.askWhich',
+                   { count: accounts.length })) + '</p>' + forms +
+        '<form method="post" action="logout">' + carried +
+        '<button type="submit" name="confirm" value="no">' +
+        t.html('oauthPages.logout.stay') + '</button></form>' +
+        '<p class="sub">' + t.html('oauthPages.logout.whyWhich') + '</p>',
+        t, chooser);
+    }
     const ask = app
       ? (who ? t.html('oauthPages.logout.askAppWho', params)
              : t.html('oauthPages.logout.askApp', params))
@@ -15115,6 +15258,12 @@ class OAuth2Server {
       if (record.deferred) {
         deferredAccessTokens.add(issued.access_token);
         log.debug("This access token belongs to a DEFERRED issuance.");
+      }
+      // And the algorithm the offer chose for its credential (2026-10-16,
+      // `/portal/wallet`), which the credential endpoint signs with.
+      if (record.signingAlg) {
+        vcOffers.noteTokenSigningAlg(issued.access_token,
+                                     String(record.signingAlg));
       }
       log.debug("Leaving OAuth2Server.tokenGrant().");
       return respond(issued);
@@ -20823,7 +20972,8 @@ class OAuth2Server {
                                           'img-src': null }));
       res.status(200).type('application/javascript')
          .set('Cache-Control', 'no-store')
-         .send(sessionManagement.IFRAME_SCRIPT);
+         // The list's script with `authn.multipleAccounts` on (#561).
+         .send(sessionManagement.scriptFor(authn.multipleAccounts()));
       log.debug("Leaving the OP iframe's script.");
       return undefined;
     });

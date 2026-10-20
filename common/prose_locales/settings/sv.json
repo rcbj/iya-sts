@@ -108,8 +108,8 @@
     "text": "Tid en vilande anslutning behålls (s)"
   },
   "http.keepAliveTimeoutS|description": {
-    "en": "15ba4c34c3d3349e",
-    "text": "Hur länge, i sekunder, en HTTP-lyssnare håller en vilande HTTP/1.1-anslutning öppen för klientens nästa begäran (nodes eget standardvärde är 5). En behållen anslutning är en TLS-handskakning — och en fråga om klientcertifikat — som inte upprepas. Begäranden som en klient skickar i följd (pipelining) på en anslutning besvaras i ordning. Bakom en balanserare, håll dess vilotidsgräns över detta värde."
+    "en": "0fa763b61550474c",
+    "text": "Hur länge, i sekunder, en HTTP-lyssnare håller en vilande anslutning öppen för klientens nästa begäran (nodes eget standardvärde är 5): en HTTP/1.1-anslutning mellan begäranden, eller en HTTP/2-anslutning där ingen ram har passerat, som då stängs på ett ordnat sätt. En behållen anslutning är en TLS-handskakning — och en fråga om klientcertifikat — som inte upprepas. Begäranden som en klient skickar i följd (pipelining) på en anslutning besvaras i ordning. Bakom en balanserare, håll dess vilotidsgräns över detta värde."
   },
   "http.headersTimeoutS|label": {
     "en": "af0b2f7be18e5943",
@@ -134,6 +134,22 @@
   "http.maxConnections|description": {
     "en": "1dda75e901fc49af",
     "text": "Hur många anslutningar en HTTP-lyssnare håller öppna samtidigt; en till stängs när den kommer. 0, standardvärdet, är ingen gräns (nodes eget)."
+  },
+  "http.http2|label": {
+    "en": "775d810d4f1a3356",
+    "text": "Erbjud HTTP/2"
+  },
+  "http.http2|description": {
+    "en": "76d7c1691efa23fa",
+    "text": "Om en HTTPS-lyssnare erbjuder HTTP/2 när en klient ber om det i TLS-handskakningen (ALPN). På, standardvärdet, bär en anslutning varje begäran som en webbläsare gör parallellt; HTTP/1.1 besvaras fortfarande för en klient som inte ber om något annat. Av, är varje anslutning HTTP/1.1 — för en klient eller lastbalanserare vars HTTP/2 inte fungerar. En ny anslutning följer en ändring direkt; en redan öppen behåller sitt protokoll. Revokeringslyssnaren över ren HTTP talar bara HTTP/1.1, eftersom det inte finns någon handskakning att erbjuda det i."
+  },
+  "http.http2MaxConcurrentStreams|label": {
+    "en": "27fcdca12afd105b",
+    "text": "Strömmar per HTTP/2-anslutning"
+  },
+  "http.http2MaxConcurrentStreams|description": {
+    "en": "ec218fbbb4297601",
+    "text": "Hur många begäranden en HTTP/2-anslutning får ha öppna samtidigt (SETTINGS_MAX_CONCURRENT_STREAMS); en ström utöver det avvisas tills en annan är klar. 100, standardvärdet, är det minsta värde RFC 9113 rekommenderar; nodes eget är obegränsat, vilket skulle låta en enda anslutning bära arbetet för tusentals. Det begränsar arbetet på en anslutning som http.maxConnections begränsar anslutningarna. En ny anslutning följer en ändring direkt, och en öppen skickas det nya värdet."
   },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
@@ -632,8 +648,8 @@
     "text": "Hur ofta utgångna sessioner avslutas (sekunder)"
   },
   "authn.sessionSweepS|description": {
-    "en": "852f6e4a8d15fa99",
-    "text": "Intervallet för schemaläggarjobbet `authn.session-expiry` (Övervakning → Schemaläggare), som avslutar varje inloggningssession vars livslängd eller vilotidsgräns har passerats — granskningsraden, CAEP session-revoked och back-channel-utloggningstokenerna skickas EN gång för hela klustret — oavsett om någon kommer tillbaka och visar upp den. 0 stänger av jobbet: en utgången session vägras då fortfarande när den visas upp, och avslutas i det ögonblicket, men ingen underrättas om en som aldrig visas upp igen. Det var fast trettio sekunder i varje process fram till 2026-09-22 (#49)."
+    "en": "7c9e47e90ca7211c",
+    "text": "Intervallet för schemaläggarjobbet `authn.session-expiry` (Övervakning → Schemaläggare), som avslutar varje inloggningssession vars livslängd eller vilotidsgräns har passerats — granskningsraden, CAEP session-revoked och back-channel-utloggningstokenerna skickas EN gång för hela klustret — oavsett om någon kommer tillbaka och visar upp den. Samma körning avslutar också, i varje sfär, högst den sfärens authn.sessionShedPerSweep av ett subjekts egna överskottssessioner. 0 stänger av jobbet: en utgången session vägras då fortfarande när den visas upp, och avslutas i det ögonblicket, men ingen underrättas om en som aldrig visas upp igen. Det var fast trettio sekunder i varje process fram till 2026-09-22 (#49)."
   },
   "authn.cookieDomain|label": {
     "en": "d384717cc62561e8",
@@ -659,13 +675,73 @@
     "en": "3d8175702c053473",
     "text": "Hur länge en session får vara OANVÄND innan den avslutas, utöver den absoluta livslängden ovan. **Noll, standardvärdet, betyder ingen vilotidsgräns**, vilket är vad tjänsten alltid har gjort. När den är satt avslutas en session som någon slutar använda så många sekunder efter sin senaste begäran, beroende på vilken av de två gränserna som kommer först — och en begäran till administratörskonsolen eller användarportalen räknas som användning av inloggningssessionen bakom den, så att en operatör som arbetar i konsolen inte loggas ut ur den av en viloklocka på en session hen inte visar upp. Den gäller direkt: den tillämpas på sessioner som redan finns, eftersom den kontrolleras där en session läses i stället för att stämplas där en skapas."
   },
+  "authn.deviceBoundSessions|label": {
+    "en": "454fe488dcb65a89",
+    "text": "Bind sessioner till webbläsarens nyckel (DBSC)"
+  },
+  "authn.deviceBoundSessions|description": {
+    "en": "b88d9840f0b7c19c",
+    "text": "På ber en inloggning webbläsaren att binda inloggningssessionen till en nyckel som den innehar (W3C Device Bound Session Credentials). En webbläsare som gör det måste sedan förnya en kortlivad andra cookie med ett bevis för den nyckeln, så att en kopierad sessionscookie slutar fungera när den cookien går ut; en förnyelse signerad av en annan nyckel, eller som spelar upp en redan förbrukad utmaning, avslutar sessionen. En webbläsare som inte stöder det behåller en vanlig session. Av, standardvärdet, erbjuds ingenting, och en session som redan är bunden behandlas som en vanlig session."
+  },
+  "authn.deviceBoundCookieLifetimeS|label": {
+    "en": "0589864dcb16bffb",
+    "text": "Den bundna cookiens livslängd (sekunder)"
+  },
+  "authn.deviceBoundCookieLifetimeS|description": {
+    "en": "eb2c0a8e31f615d9",
+    "text": "Hur länge den cookie som en enhetsbunden session behöver lever innan webbläsaren måste bevisa sin nyckel igen, och därmed hur länge ett kopierat cookiepar fortsätter att fungera. Aldrig längre än sessionens eget slut. Läses när en cookie utfärdas."
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "Högsta antal inloggningssessioner per sfär"
   },
   "authn.maxSessions|description": {
-    "en": "02399d7a28c348d5",
-    "text": "Det högsta antal inloggningssessioner en förtroendesfär håller — webbläsarinloggningar, de ankomstsessioner som en webbläsare får vid ett protokolls ytterdörr, konsolens och portalens egna, och sessionerna för API-, SCIM- och SPIRE-klienter. Kontrolleras när en session SKAPAS: vid taket avslutas den minst nyligen använda sessionen för att ge plats, precis som när en session går ut — en granskningsrad med STS-AUTHN-0292, CAEP session-revoked och back-channel-utloggningstokener — så dess innehavare måste logga in igen. Utan den begränsade bara jobbet för sessionsutgång lagret, och en våg av inloggningar fick varje process att växa tills jobbet hann ikapp. En sänkning träder i kraft vid nästa session som skapas, vilket då genast avslutar varje session över det nya taket."
+    "en": "a5b6beb131a44df2",
+    "text": "Det högsta antalet sessioner en förtroendesfär håller — webbläsarinloggningar, ankomstsessioner, konsolens och portalens egna, och sessionerna för API-, SCIM- och SPIRE-klienter. Kontrolleras när en session SKAPAS. Vid gränsen VÄGRAS en ny rad (STS-AUTHN-0337): inget avslutas för att ge plats åt någon annan. Ett subjekt som redan är vid authn.maxSessionsPerSubject förlorar i stället sin egen äldsta räknade session (STS-AUTHN-0292), en rad, och den nya raden tar dess plats. Att sänka värdet avslutar inte sessioner som redan finns. En ny rad vägras så länge sfären fortfarande är över det nya talet; sessioner försvinner genom livslängd, utloggning, återkallelse eller, där ett subjekt är över sin egen gräns, genom det subjektets senare insättning och genom sessionssvepet (högst authn.sessionShedPerSweep i den sfärens körning)."
+  },
+  "authn.maxSessionsPerSubject|label": {
+    "en": "88aeb86239334502",
+    "text": "Högsta antal räknade sessioner per subjekt"
+  },
+  "authn.maxSessionsPerSubject|description": {
+    "en": "b825060c911d7200",
+    "text": "Hur många räknade sessioner ett subjekt får hålla: en vald inloggning, en API-session med nyckel eller en förlitande parts session. En ankomstsession räknas inte, och ankomstsessioner delar ett och samma användarnamn, så gränsen är inte knuten till användarnamnet. Vid gränsen avslutar nästa session som subjektet startar subjektets egen äldsta räknade rad och tar dess plats. Aldrig ett annat subjekts rad, och aldrig en ankomstsession. En förlitande parts session avslutar inte inloggningen den just härleddes från. En rad per insättning; resterande överskott tas om hand av sessionssvepet, högst authn.sessionShedPerSweep i den sfärens körning. Ett värde över nuvarande authn.maxSessions läses som den gränsen."
+  },
+  "authn.sessionShedPerSweep|label": {
+    "en": "83dd8742cd13895b",
+    "text": "Egna överskottssessioner som avslutas per svep"
+  },
+  "authn.sessionShedPerSweep|description": {
+    "en": "d3d71af793b0befc",
+    "text": "Hur många av ett subjekts egna överskottssessioner jobbet authn.session-expiry avslutar i en körning av den här sfären. Varje sfär förbrukar sitt eget värde. De äldsta räknade raderna, ett subjekt i taget, tills så många har avslutats eller ingen längre är över authn.maxSessionsPerSubject. Den avslutar inte en ankomstsession av kapacitetsskäl, och den avslutar inte ett subjekt som är vid eller under sin gräns, inte ens när sfären är över authn.maxSessions. Att sänka en gräns ger ingen massavslutning."
+  },
+  "authn.sessionWindow|label": {
+    "en": "8f5e9b73e3237ec2",
+    "text": "Begränsat sessionsfönster"
+  },
+  "authn.sessionWindow|description": {
+    "en": "59fc245bcee32b34",
+    "text": "Om en process håller varje inloggningssession eller ett begränsat fönster av dem. auto, standardvärdet, använder fönstret när persistens av utfärdat är aktiverad, tjänsten är en enda cell och nyckeln för utfärdat är ett sammandrag. Annars behålls hela tabellen och STS-AUTHN-0339 loggas en gång vid start. on vägras vid start i samma läge. off behåller hela tabellen. Det är en egenskap hos den här processen: en sfär kan inte ha ett eget värde, och en ändring kräver omstart."
+  },
+  "authn.sessionWindow|restartReason": {
+    "en": "ff36b8697d3f42a0",
+    "text": "en start som hoppar över sessionskropparna kan inte lägga tillbaka dem när fönstret stängs av, så bekräftade sessioner skulle besvaras som saknade"
+  },
+  "authn.sessionCacheEntries|label": {
+    "en": "9745355bc4897a82",
+    "text": "Sessioner som en process håller"
+  },
+  "authn.sessionCacheEntries|description": {
+    "en": "e5815f7302e5577e",
+    "text": "Hur många inloggningssessioner en process håller när authn.sessionWindow är på. En enda cache betjänar alla sfärer, så en sfär kan inte dimensionera den. En session bortom gränsen glöms i minnet när dess upsert har bekräftats. Den avslutas inte. Raden finns kvar i lagret och läses in igen vid nästa miss."
+  },
+  "authn.sessionReadTimeoutMs|label": {
+    "en": "c0f67cf6f4eb61c6",
+    "text": "Tidsgräns för sessionsläsning (millisekunder)"
+  },
+  "authn.sessionReadTimeoutMs|description": {
+    "en": "04b8133757dcd380",
+    "text": "Hur länge en sessionsläsning får vänta, och hur länge en misslyckad läsning inte försöks igen. 0 väntar inte och skjuter inte upp nästa miss. Väntan är den här processens, inte en sfärs. En misslyckad läsning behandlas inte som en saknad session."
   },
   "authn.pendingTtlS|label": {
     "en": "d328ac4c11db98f0",
@@ -682,6 +758,30 @@
   "authn.mfaStepTtlS|description": {
     "en": "33bc4846535a784f",
     "text": "Hur lång tid den som har klarat lösenordssteget har på sig att visa upp sin andra faktor — en säkerhetsnyckel, en kod från en autentiseringsapp eller en återställningskod — innan steget går ut och inloggningen måste startas om. Det är fönstret inom vilket en gissad kod över huvud taget kan prövas, vilket är varför det är kortare än skärmens egen klocka; hastighetsbegränsaren begränsar försöken inom det."
+  },
+  "authn.multipleAccounts|label": {
+    "en": "96144493272617dc",
+    "text": "Flera inloggade konton i en webbläsare"
+  },
+  "authn.multipleAccounts|description": {
+    "en": "d0b4899bdae1c43d",
+    "text": "Låt en webbläsare hålla inloggningssessioner för flera personer samtidigt och välja mellan dem. På: när en annan person loggar in LÄGGS en session TILL i webbläsarens kontouppsättning (cookien `sts_accounts`) i stället för att den gamla avslutas; en begäran som inte säger vilket konto den gäller — inget konto valt i detta flöde, ingen login_hint, id_token_hint eller SAML Subject som namnger ett — medan fler än ett är inloggat skickas till kontoväljaren på /authn/accounts, och prompt=select_account visar den. Varje session behåller sin egen livslängd, inaktivitetsgräns, step-up-status och utloggning. Av, standardvärdet: webbläsaren har en session och en annan persons inloggning avslutar den. Träder i kraft vid nästa begäran åt båda hållen och avslutar ingenting: påslagen blir webbläsarens befintliga session det första kontot i dess uppsättning; avslagen fortsätter webbläsarens standardsession ensam och de andra löper ut som vanligt."
+  },
+  "authn.maxBrowserAccounts|label": {
+    "en": "19115cee7c688f64",
+    "text": "Flest konton som en webbläsare kommer ihåg"
+  },
+  "authn.maxBrowserAccounts|description": {
+    "en": "fa642faef7e66a0f",
+    "text": "Med flera inloggade konton påslaget, det högsta antalet konton som en webbläsares kontouppsättning håller, inloggade och utloggade tillsammans. En inloggning som skulle gå förbi det tar först bort det utloggade konto som loggade ut för längst sedan; när varje plats hålls av ett inloggat konto nekas inloggningen (STS-AUTHN-0340) och väljaren säger att ett konto först måste loggas ut."
+  },
+  "authn.rememberedAccountDays|label": {
+    "en": "9e38d0738504c1e3",
+    "text": "Hur länge ett utloggat konto sparas (dagar)"
+  },
+  "authn.rememberedAccountDays|description": {
+    "en": "a1fe0b6f510982c4",
+    "text": "Med flera inloggade konton påslaget, hur länge kontoväljaren fortsätter att erbjuda ett konto som loggade ut i den här webbläsaren — dess användarnamn, visningsnamn och subjekt, aldrig en inloggningsuppgift, sparade på servern — så att det kan loggas in igen eller glömmas. Det schemalagda jobbet `authn.account-set-expiry` tar bort det därefter."
   },
   "oidcRp.maxFlows|label": {
     "en": "f517b7686e6225fc",
@@ -994,6 +1094,14 @@
   "webauthn.pqcOnly|description": {
     "en": "fb33eabeb83379da",
     "text": "På begär ENDAST de postkvantsäkra passkey-algoritmerna — RFC 9964:s `ML-DSA-44` (-48), `ML-DSA-65` (-49) och `ML-DSA-87` (-50) — de av dem som `webauthn.algorithms` namnger, och alla tre där den inte namnger någon. En ny passkey måste då vara ML-DSA: en som skapats med en annan algoritm vägras vid registreringen (WebAuthn avsnitt 7.1). Det begränsar vad som BEGÄRS: en klassisk nyckel som redan registrerats fortsätter att logga in. De flesta autentiserare stöder ännu inte ML-DSA och kan inte registrera medan detta är på."
+  },
+  "webauthn.pqcAlongsideClassical|label": {
+    "en": "664b4753cc8439b0",
+    "text": "Postkvantnyckel bredvid en klassisk"
+  },
+  "webauthn.pqcAlongsideClassical|description": {
+    "en": "e35e276b9d933828",
+    "text": "På kan en person ha en klassisk nyckel och en postkvantnyckel (ML-DSA) samtidigt, på samma autentiserare om den kan skapa båda. Varje nyckel skapas i ett SPÅR som personen väljer: det klassiska spåret begär `webauthn.algorithms` utan ML-DSA (`ES256` och `RS256` om inget återstår), postkvantspåret begär bara ML-DSA. Varje spår har sitt eget användarhandtag, så att den andra nyckeln inte ersätter den första på autentiseraren, och sin egen exkluderingslista; en lösenordshanterare visar postkvantnyckeln under ett namn som anger dess algoritm — `<username>+ml-dsa` när den skapas, `<username>+ml-dsa-65` (till exempel) när alla personens postkvantnycklar använder just den — som aldrig är ett namn någon loggar in med. `webauthn.maxKeysPerPerson` räknar båda spåren. Kan inte vara på medan `webauthn.pqcOnly` är det. Av är varje ceremoni som förut, och en redan registrerad postkvantnyckel fortsätter att logga in; en ny kan inte skapas."
   },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
@@ -1512,12 +1620,20 @@
     "text": "Startgräns för begärandearbetare (ms)"
   },
   "workers.startTimeoutMs|description": {
-    "en": "d618aed19286a7b1",
-    "text": "Hur lång tid en begärande- eller ytarbetare får ta på sig att få upp sitt tillstånd (lagret, nycklarna, de skapade raderna och koordineringen) innan den rapporterar att den inte kunde starta. Tre misslyckanden i rad och poolen slutar starta arbetare och besvarar allt i processen som håller socketarna. Höj värdet där en arbetares start är långsam — en stor uppsättning sfärnycklar som varje start certifierar om, en kall databas (#311)."
+    "en": "81d7608fc4c1da1f",
+    "text": "Hur lång tid en begärande- eller ytarbetare får ta på sig att få upp sitt tillstånd (lagret, nycklarna, de skapade raderna och koordineringen) innan den rapporterar att den inte kunde starta. Tre misslyckanden i rad och poolen slutar starta arbetare tills workers.giveUpRetryMs och prövar sedan en; tills den är uppe stannar begärandena i frontprocessen. Höj värdet där en arbetares start är långsam — en stor uppsättning sfärnycklar som varje start certifierar om, en kall databas (#311)."
   },
   "workers.startTimeoutMs|restartReason": {
     "en": "7ac1de67a7c566c0",
     "text": "en arbetare läser den en gång, när den startar"
+  },
+  "workers.giveUpRetryMs|label": {
+    "en": "4e9da2141c451b07",
+    "text": "Väntan innan nytt försök efter uppgivande (ms)"
+  },
+  "workers.giveUpRetryMs|description": {
+    "en": "e4e6fa0869cb03c2",
+    "text": "Hur länge poolen väntar, efter att tre arbetare i rad inte kunde starta, innan den prövar EN arbetare igen. Väntan fördubblas efter varje försök som också misslyckas, och blir aldrig längre än en timme. Tills den arbetaren rapporterar att den är redo stannar begärandena där uppgivandet lade dem: frontprocessen, eller protokollpoolen för de värdade ytorna. En arbetare som kommer upp häver uppgivandet och resten av poolen startas. 0 är det gamla beteendet: uppgiven tills den här processen startar om. Läses när en avsvalning ställs in (#333)."
   },
   "workers.requestCount|label": {
     "en": "d742f198c4f9ad17",
@@ -1699,6 +1815,14 @@
     "en": "0ecee8de8ef29c3f",
     "text": "Hur länge borttagningen av en förtroendesfär väntar på att det som sfären är skyldig ska levereras innan dess lager rensas: CAEP session-revoked och back-channel-utloggningstokener för varje session som avslutas, RISC account-purged för varje person i den, och SSF stream-updated (disabled) till varje ström. Det som inte har levererats när tiden tar slut loggas (STS-CORE-0120) och försvinner med sfären. 0 skickar fortfarande allt men väntar inte. En mottagare som avfrågar kan bara hämta medan väntan pågår."
   },
+  "realms.maxCount|label": {
+    "en": "017b530f97d0b9e0",
+    "text": "Högsta antal sfärer"
+  },
+  "realms.maxCount|description": {
+    "en": "1a45b5c5965dd169",
+    "text": "Hur många förtroendesfärer detta kluster får rymma, den inbyggda standardsfären inräknad, så 10 är standardsfären och nio andra. En tjänsteadministratör ställer in det, och bara i standardsfären: inifrån en annan sfär är kontrollen avstängd och skrivningen avvisas. Att sänka det tar inte bort sfärer som redan finns; en skapelse avvisas tills antalet åter är under gränsen. Varje sfär kostar minne i varje process på varje nod, och därför finns en gräns."
+  },
   "oauth2.issuer|label": {
     "en": "373396d5608b3885",
     "text": "Utfärdaridentifierare"
@@ -1830,6 +1954,30 @@
   "oauth2.revokeRefreshOnLogout|description": {
     "en": "d6543ad76912e1b1",
     "text": "I alla lägen (#123): avsluta en webbläsares inloggningssession, så återkallas varje uppdateringstoken som utfärdats PÅ den sessionen utan offline_access — OpenID Connect Back-Channel Logout 1.0 avsnitt 2.7:s SHOULD, och RFC 9700 avsnitt 2.2.2:s MAY. En token som beviljats offline_access behålls: att överleva sessionen är vad det omfånget är till för (OIDC Core avsnitt 11). Det är det som gör att /oauth2/logout och WS-Federations wsignout1.0 betyder något för bakkanalen: utan det avslutar utloggningen cookien och lämnar en långlivad autentiseringsuppgift i klientens händer. PÅ som standard; av, eller FALSE på en klients post, återskapar klienten som uppdaterar sig tillbaka in. En token hittas via den session den UTFÄRDADES på."
+  },
+  "oauth2.thirdPartyInitiatedLogin|label": {
+    "en": "b7e8b085293fbd62",
+    "text": "Inloggning initierad av identitetsleverantören (inloggning initierad av tredje part)"
+  },
+  "oauth2.thirdPartyInitiatedLogin|description": {
+    "en": "d652b991521afa8d",
+    "text": "Om /launch/{app} skickar en person till en OpenID Connect-klients initiate_login_uri (OpenID Connect Core avsnitt 4) med iss, login_hint och target_link_uri, och om användarportalen erbjuder den länken. AV som standard; oauthThirdPartyInitiatedLogin i en klients post åsidosätter det för den klienten. Klienten startar sedan en vanlig auktoriseringsbegäran, så allt efter länken är klientens egen inloggning."
+  },
+  "oauth2.spInitiatedSso|label": {
+    "en": "a4cd88a5fec219e4",
+    "text": "Inloggning initierad av klienten"
+  },
+  "oauth2.spInitiatedSso|description": {
+    "en": "2ac22081ca9a60d6",
+    "text": "Om /oauth2/authorize besvarar en klient som inte just har startats. PÅ som standard; oauthSpInitiatedSso i en klients post åsidosätter det. Avstängt besvaras en auktoriseringsbegäran från den klienten bara när den följer på en /launch av den i samma session inom oauth2.launchWindowS, en gång per start; alla andra avvisas med unauthorized_client. Beviljanden som inte passerar auktoriseringsslutpunkten påverkas inte."
+  },
+  "oauth2.launchWindowS|label": {
+    "en": "9c1c1df5174c8754",
+    "text": "Startfönster (sekunder)"
+  },
+  "oauth2.launchWindowS|description": {
+    "en": "40b4f249f1f0c2d3",
+    "text": "Hur länge efter att /launch/{app} skickat en person till en klients initiate_login_uri som den klientens auktoriseringsbegäran fortfarande räknas som att den följer på starten, för en klient vars egen start är avstängd (oauth2.spInitiatedSso)."
   },
   "oauth2.eddsaCurve|label": {
     "en": "6637f461a494b5b2",
@@ -2140,8 +2288,8 @@
     "text": "Klienthemlighetens livslängd (dagar)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "91dc7031f88426d1",
-    "text": "Livslängden, i dagar, för varje klienthemlighet som tjänsten skapar eller får, och därmed det `client_secret_expires_at` som RFC 7591 avsnitt 3.2.1 publicerar för en klient registrerad på POST /oauth2/register — standardvärdet för varje hemlighet som skapas eller ges (en omgenerering, en rotation, en tillagd hemlighet, ett värde inskrivet i konsolen), om inte tilläggsformuläret anger något annat. NOLL, standardvärdet, är det avsnittets eget ”aldrig”. Det stämplas på varje hemlighet när den skapas och flyttas inte av en senare ändring."
+    "en": "6ad202dff164f155",
+    "text": "Livslängden, i dagar, för varje klienthemlighet som tjänsten skapar eller får, och därmed det `client_secret_expires_at` som RFC 7591 avsnitt 3.2.1 publicerar för en klient registrerad på POST /oauth2/register — standardvärdet för varje hemlighet som skapas eller ges (en omgenerering, en rotation, en tillagd hemlighet, ett värde inskrivet i konsolen), om inte tilläggsformuläret anger något annat, eller skapandeformuläret gör det för ett programs första hemlighet. NOLL, standardvärdet, är det avsnittets eget ”aldrig”. Det stämplas på varje hemlighet när den skapas och flyttas inte av en senare ändring."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",
@@ -4020,8 +4168,8 @@
     "text": "Prefix för federerade användarnamn"
   },
   "federation.usernamePrefix|description": {
-    "en": "cd17a5b59a5cf957",
-    "text": "Sätts framför varje användarnamn som en främmande identitetsleverantör levererar, så att en federerad `alice` och den lokala `alice` är två poster. TOMT som standard, vilket betyder att de är EN post — och det är ett verkligt beslut snarare än ett standardvärde som ingen tänkt på. Tomt är rätt för en tjänst som riktas mot en partner för att se vad som kommer tillbaka, eftersom ett namn med prefix gör varje efterföljande token och intyg obekant. Ange något som `fed-` i samma stund som frågan är om federerade identiteter delar namnrymd med lokala, vilket är den fråga den här inställningen finns för. Det tillämpas EFTER att användarnamnet valts, så en ändring kan inte ändra VILKET inkommande värde som användes."
+    "en": "81424ee1cba2373a",
+    "text": "Sätts framför namnet som en `link-at-first-sign-in`-bekräftelse slår upp, och namnet som `any-existing` matchar, efter att värdet har valts och kortats till delen före det sista `@`. TOMT som standard, så att ett partnersubjekt `alice@partner.example` bekräftar den lokala `alice`. Ange det (till exempel `fed-`) när uppslagningen inte får träffa en lokal person. En post som en inloggning skapar under `link-at-first-sign-in` eller `jit-namespaced` är `<relationship>~<subject>` i båda fallen, och prefixet är inte en del av det namnet."
   },
   "federation.loginButtons|label": {
     "en": "712a94d0c664c839",
@@ -4030,6 +4178,30 @@
   "federation.loginButtons|description": {
     "en": "89dfe2967675cad2",
     "text": "Visa en knapp per användbar relation på tjänsteleverantörssidan på /authn/login, så att en federerad identitet kan uppfylla VILKET flöde som helst som redan pågår — en OAuth 2.0-auktoriseringsbegäran, en WS-Federation-inloggning, en SAML AuthnRequest, administratörskonsolen. Det är hela skälet till att knapparna finns där och inte bara på /federation/login/{id}. Endast relationer som faktiskt skulle fungera erbjuds — en knapp som leder till en avvisning vore sämre än ingen knapp."
+  },
+  "federation.consumerProviders|label": {
+    "en": "96a08e7b4a520c19",
+    "text": "Konsument- och sociala identitetsleverantörer"
+  },
+  "federation.consumerProviders|description": {
+    "en": "635dc4f49d935e03",
+    "text": "Låter denna sfär federera med konsument- och sociala leverantörer — Google, Discord, GitHub och resten av katalogen — som relationer i en egen kategori (#565). AV som standard: en sfär med den avslagen kan inte få en, kan inte aktivera en och vägrar vid varje dörr en inloggning genom en, även en relation skriven med ldapmodify. Företagspartner påverkas inte i något läge. Den som kommer för första gången genom en konsumentleverantör får en egen post, och en adress används aldrig för att matcha en befintlig person."
+  },
+  "federation.connectRecentAuthMinutes|label": {
+    "en": "cbe8f387555868ea",
+    "text": "Ansluta en leverantör: hur ny inloggningen måste vara (min)"
+  },
+  "federation.connectRecentAuthMinutes|description": {
+    "en": "f0edd885053c8b09",
+    "text": "Hur nyligen en person måste ha autentiserat sig för att ansluta en konsument- eller social leverantör till sitt konto på portalens sida Anslutna konton (#565). Äldre än så, och de ombeds logga in igen först: en anslutning låter leverantören logga in dem från och med då."
+  },
+  "federation.consumerProvisionCap|label": {
+    "en": "c93ac16ed967542f",
+    "text": "Konsumentleverantörer: konton som var och en får skapa"
+  },
+  "federation.consumerProvisionCap|description": {
+    "en": "3e7e50d4c4690e0e",
+    "text": "Hur många personer en konsument- eller social leverantörs relation får skapa, om inte relationens eget fedProvisionCap säger annat. Skrivs på en konsumentrelation när den skapas, och används för en vars fedProvisionCap är tomt. Vid taket nekas en nykomling (STS-FED-0090) och en person som redan är ansluten loggar fortfarande in. En företagspartner påverkas inte: dess tomma fedProvisionCap är obegränsat."
   },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
@@ -4287,13 +4459,21 @@
     "en": "d5e8553e9978dfda",
     "text": "Om en OSIGNERAD <samlp:AuthnRequest> — och en osignerad <samlp:LogoutRequest> från en tjänsteleverantör — avvisas. **`auto` är PÅ i produktläge och AV i utvecklingsläge.** `on` och `off` avgör oavsett läge; en tjänsteleverantör vars inlästa metadata säger AuthnRequestsSigned=\"true\" hålls till det även när detta är avstängt. Det är också vad WantAuthnRequestsSigned i den här identitetsleverantörens metadata säger.\n\nEn signatur som FINNS verifieras i alla lägen — HTTP Redirect-bindningens frågesträngssignatur (avsnitt 3.4.4.1) eller HTTP POST-bindningens inneslutna — mot tjänsteleverantörens REGISTRERADE signeringscertifikat (samlSigningCertificate, från dess metadata eller angivet på SAML 2.0-sidan), aldrig mot certifikatet som begäran bär, och en signatur som inte verifieras avvisas. Utan registrerat certifikat registreras en signatur som inte verifierad, vilket räknas som OSIGNERAD när detta är påslaget."
   },
-  "saml2.unsolicitedSso|label": {
+  "saml2.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
-    "text": "Identitetsleverantörsinitierad inloggning"
+    "text": "Inloggning initierad av identitetsleverantören"
   },
-  "saml2.unsolicitedSso|description": {
-    "en": "aff7c855f4363724",
-    "text": "Om /saml2/unsolicited[/{sp}] skickar ett OOMBETT Response (saml-profiles-2.0-os avsnitt 4.1.5) — en inloggning som startats hos den här identitetsleverantören, för en tjänsteleverantör som inte bad om det: `providerId` (eller sökvägssegmentet) anger den, `shire` en av dess registrerade assertion consumer services, `target` RelayState. Tjänsteleverantören måste vara registrerad i produktläge, adressen måste vara en som dess metadata eller dess post registrerat, och utfärdandepolicyn tillfrågas som för vilken inloggning som helst. Intyget bär inget InResponseTo, så en tjänsteleverantör avgör själv om den godtar ett; stäng av detta för en sfär vars leverantörer bara ska besvaras."
+  "saml2.idpInitiatedSso|description": {
+    "en": "9982a49370bf40a8",
+    "text": "Om /saml2/unsolicited[/{sp}] — och /launch/{app} för SAML 2.0 — skickar ett OBEGÄRT Response (saml-profiles-2.0-os avsnitt 4.1.5): en inloggning som startas vid den här identitetsleverantören för en tjänsteleverantör som inte bad om den. AV som standard; saml2IdpInitiatedSso i en applikations post åsidosätter det för enbart den tjänsteleverantören. Intyget bär ingen InResponseTo, så tjänsteleverantören kan inte skilja ett Response som skickades till den från ett som någon annan tryckt in i dess webbläsare; slå bara på detta för leverantörer som förväntar sig inloggning initierad av identitetsleverantören. Tjänsteleverantören måste vara registrerad i produktläge, adressen måste vara en som dess metadata eller dess post registrerat, och utfärdandepolicyn tillfrågas som för vilken inloggning som helst."
+  },
+  "saml2.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "Inloggning initierad av tjänsteleverantören"
+  },
+  "saml2.spInitiatedSso|description": {
+    "en": "92e8e438813d4044",
+    "text": "Om en <samlp:AuthnRequest> besvaras vid /saml2/sso — den inloggning som en tjänsteleverantör startar. PÅ som standard; saml2SpInitiatedSso i en applikations post åsidosätter det för den tjänsteleverantören. Avstängt besvaras en begäran med ett RequestDenied-Response, och tjänsteleverantören kan bara loggas in till via inloggning initierad av identitetsleverantören."
   },
   "saml2.defaultSingleLogoutService|label": {
     "en": "a81a00ce8c57908e",
@@ -4439,6 +4619,22 @@
     "en": "2e68718a26d4706c",
     "text": "Skapa en applikationspost under ou=applications första gången en förlitande part anges — genom att ett TARGET kommer in, genom att ett metadatadokument hämtas eller genom att en artefakt löses upp. Avstängt betyder att webbläsarprofilerna fortfarande fungerar och att /admin/saml11 förblir tom, vilket är vad någon som kör ett lasttest vill och ingen annan."
   },
+  "saml11.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Inloggning initierad av identitetsleverantören"
+  },
+  "saml11.idpInitiatedSso|description": {
+    "en": "37300a932ffca76b",
+    "text": "Om en SAML 1.1-inloggning som STARTAS HÄR besvaras: /saml11/sso/{rp} med ett TARGET och ingen shire, och /launch/{app} för SAML 1.1. AV som standard; saml11IdpInitiatedSso i en applikations post åsidosätter det för den förlitande parten. Den förlitande parten tar emot ett Response som den inte bad om, och kan inte skilja det från ett som någon annan tryckt in i dess webbläsare."
+  },
+  "saml11.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "Inloggning initierad av tjänsteleverantören"
+  },
+  "saml11.spInitiatedSso|description": {
+    "en": "f4b88ca2b7aa9fbc",
+    "text": "Om en SAML 1.1-inloggning som den förlitande parten startat — Shibboleth 1.3:s AuthnRequest-profil, en begäran som bär `shire` — besvaras. PÅ som standard; saml11SpInitiatedSso i en applikations post åsidosätter det. En sådan begäran är en vanlig osignerad URL, så att stänga av detta stänger dörren snarare än bevisar vem som öppnade den."
+  },
   "saml11.requestTtlMin|label": {
     "en": "f2c40fce66df42af",
     "text": "Livslängd för kvarhållet flöde (minuter)"
@@ -4502,6 +4698,22 @@
   "wstrust.jwtCertificateHeader|description": {
     "en": "d75340dbe09a7542",
     "text": "Om en JWT som den här STS:en returnerar i ett RequestSecurityTokenResponse anger certifikatkedjan för nyckeln som signerade den. Ett SAML-intyg bär sitt certifikat i sin egen XML-signatur och påverkas inte. `x5u` — standardvärdet — är kedjans adress på den här tjänsten, `/pki/chain/{scope}/{sha256}.pem`, ungefär hundra byte; `x5c` är kedjan inbäddad, lövet först och tjänstens rot sist, base64 DER, flera kilobyte; `both` är båda och `none` ingen av dem. I båda fallen är det vad en förlitande part som bara har token behöver för att nå varje certifikats CRL-distributionspunkter, OCSP-svarare och caIssuers-adress. En nyckel som ännu inte är certifierad under den här sfärens JOSE Issuing CA, och en HMAC-signatur, får ingen av dem. RFC 7515 avsnitt 4.1.5 kräver att hämtningen av `x5u` sker över TLS: med global.https avstängt är adressen `http://` och en strikt verifierare vägrar följa den. JWE-huvuden får aldrig något — ingen certifierad nyckel i den här tjänsten krypterar något. Kan anges per sfär."
+  },
+  "wsfed.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Inloggning initierad av identitetsleverantören"
+  },
+  "wsfed.idpInitiatedSso|description": {
+    "en": "62f920d6663c4e4f",
+    "text": "Om /wsfed/initiate/{rp} — och /launch/{app} för WS-Federation — loggar in en person till en förlitande part som inte bad om det, med POST till dess registrerade wsfedReplyUrl. AV som standard; wsfedIdpInitiatedSso i en applikations post åsidosätter det för den förlitande parten. Den förlitande parten tar emot ett svar som den inte bad om, och kan inte skilja det från ett som någon annan tryckt in i dess webbläsare."
+  },
+  "wsfed.spInitiatedSso|label": {
+    "en": "705a2297f2762532",
+    "text": "Inloggning initierad av den förlitande parten"
+  },
+  "wsfed.spInitiatedSso|description": {
+    "en": "d16076a2c90701e3",
+    "text": "Om en wsignin1.0 vid /wsfed — den inloggning som en förlitande part startar — besvaras. PÅ som standard; wsfedSpInitiatedSso i en applikations post åsidosätter det. En wsignin1.0 är en osignerad URL, så att stänga av detta stänger dörren snarare än bevisar vem som öppnade den."
   },
   "wsfed.assertionLifetimeMin|label": {
     "en": "92ee206f116fd412",
@@ -4964,8 +5176,32 @@
     "text": "Certifikathuvud för intyg"
   },
   "oid4vci.credentialCertificateHeader|description": {
-    "en": "91cae7f95584d095",
-    "text": "Om ett utfärdat dc+sd-jwt- eller jwt_vc_json-INTYG anger certifikatkedjan för nyckeln som signerade det. SD-JWT VC anger `x5c` som ett av sätten en verifierare kan hitta en utfärdares nyckel på, så att en plånbok eller verifierare som aldrig hämtar den här utfärdarens metadata ändå kan kontrollera signaturen mot ett förtroendeankare. ldp_vc är inte en JWS och påverkas inte. x5c här (och på en Status List Token) utelämnar förtroendeankaret, tjänstens Root, i slutet, som HAIP 1.0 avsnitt 6.1.1 kräver; HAIP kräver också x5c, så en HAIP-sfär ställer in x5c. `x5u` — standardvärdet — är kedjans adress på den här tjänsten, `/pki/chain/{scope}/{sha256}.pem`, omkring hundra byte; `x5c` är kedjan inbäddad, lövcertifikatet först och tjänstens Root sist, base64 DER, flera kilobyte; `both` är båda och `none` ingetdera. I båda fallen är det vad en förlitande part som bara har token behöver för att nå varje certifikats CRL-distributionspunkter, OCSP-svarare och caIssuers-adress. En nyckel som ännu inte är certifierad under den här sfärens JOSE Issuing CA, och en HMAC-signatur, får ingetdera. RFC 7515 avsnitt 4.1.5 kräver att hämtningen av `x5u` sker över TLS: med global.https avstängd är adressen `http://` och en strikt verifierare vägrar följa den. JWE-huvuden får aldrig något — ingen certifierad nyckel i den här tjänsten krypterar något. Kan ställas in per sfär."
+    "en": "250bb6d53e3ec407",
+    "text": "Om ett utfärdat dc+sd-jwt- eller jwt_vc_json-INTYG, och den Token Status List Token som dess status pekar ut, bär certifikatkedjan för nyckeln som signerade dem. SD-JWT VC anger `x5c` som det X.509-sätt på vilket en verifierare hittar en utfärdares nyckel och anger inte `x5u`, och en Status List Token bär inget `iss` att slå upp metadata med, så `x5c` — standard — är det som låter en plånbok eller verifierare som aldrig hämtar den här utfärdarens metadata kontrollera båda signaturerna mot sitt förtroendeankare. ldp_vc är inte en JWS och påverkas inte. x5c utelämnar här förtroendeankaret, tjänstens rot, i slutet, som HAIP 1.0 avsnitt 6.1.1 kräver; roten är certifikatet som en plånbok eller verifierare får att lita på (/pki). `x5u` är kedjans adress på den här tjänsten, `/pki/chain/{scope}/{sha256}.pem`, omkring hundra byte; `x5c` — standard — är kedjan inline, lövet först och tjänstens rot sist, base64 DER, flera kilobyte; `both` är båda och `none` ingen. I båda fallen är det vad en förlitande part som bara har token behöver för att nå varje certifikats CRL-distributionspunkter, OCSP-svarare och caIssuers-adress. En nyckel som ännu inte certifierats under den här sfärens JOSE-utfärdande CA, och en HMAC-signatur, får ingen. RFC 7515 avsnitt 4.1.5 kräver att hämtningen av `x5u` använder TLS: med global.https avstängt är adressen `http://` och en strikt verifierare vägrar att följa den. JWE-huvuden får aldrig någon — ingen certifierad nyckel i den här tjänsten krypterar något. Kan ställas in per sfär."
+  },
+  "oid4vci.trustedListCertificateHeader|label": {
+    "en": "5e5d2b459a95e63d",
+    "text": "Certifikathuvud för förtroendelistan"
+  },
+  "oid4vci.trustedListCertificateHeader|description": {
+    "en": "f0c703d8855dec84",
+    "text": "Om förtroendelistan på /oid4vci/trusted-list bär kedjan för nyckeln som signerade den. En plånbok godtar listan bara när kedjan finns i x5c och slutar under en CA för listoperatörer som den har, så `x5c` — standard — eller `both`: med `x5u` eller `none` serveras listan inte (503). Tjänstens rot utelämnas i slutet, som för ett intyg. `x5u` är kedjans adress på den här tjänsten, `/pki/chain/{scope}/{sha256}.pem`, omkring hundra byte; `x5c` — standard — är kedjan inline, lövet först och tjänstens rot sist, base64 DER, flera kilobyte; `both` är båda och `none` ingen. I båda fallen är det vad en förlitande part som bara har token behöver för att nå varje certifikats CRL-distributionspunkter, OCSP-svarare och caIssuers-adress. En nyckel som ännu inte certifierats under den här sfärens JOSE-utfärdande CA, och en HMAC-signatur, får ingen. RFC 7515 avsnitt 4.1.5 kräver att hämtningen av `x5u` använder TLS: med global.https avstängt är adressen `http://` och en strikt verifierare vägrar att följa den. JWE-huvuden får aldrig någon — ingen certifierad nyckel i den här tjänsten krypterar något. Kan ställas in per sfär."
+  },
+  "oid4vci.trustedListTerritory|label": {
+    "en": "d7ee4e58b3ec36e2",
+    "text": "Förtroendelistans schematerritorium"
+  },
+  "oid4vci.trustedListTerritory|description": {
+    "en": "bd18dadc2bd7bd5e",
+    "text": "SchemeTerritory för förtroendelistan på /oid4vci/trusted-list (ETSI TS 119 602 avsnitt 6.3.10): en landskod enligt ISO 3166-1 alpha-2, eller EU. Tomt — standard — utelämnar det."
+  },
+  "oid4vci.trustedListLifetimeH|label": {
+    "en": "53f55ba9239f4712",
+    "text": "Förtroendelistans livslängd (timmar)"
+  },
+  "oid4vci.trustedListLifetimeH|description": {
+    "en": "795e14da580935eb",
+    "text": "Hur långt efter sin ListIssueDateTime förtroendelistans NextUpdate ligger (ETSI TS 119 602 avsnitt 6.3.15), och därmed hur ofta den signeras på nytt med nästa sekvensnummer: när den är inom en timme (eller en tiondel av detta) från NextUpdate, och närhelst det den säger ändras."
   },
   "oid4vci.signedMetadataCertificateHeader|label": {
     "en": "74bcdd1bedcb52e5",
@@ -5580,8 +5816,8 @@
     "text": "Kerberos-realm"
   },
   "krb5.realm|description": {
-    "en": "b7b392027324a1ef",
-    "text": "Den Kerberos-realm som den här KDC:n betjänar. Dess form med gemener är domänen, vilket är där standardtjänstdomänerna och PAC:ens domännamn kommer ifrån. I en förtroendesfär är det namnet som port 88 dirigerar sfärens begäranden efter: det måste ställas in före krb5.enabled, inga två sfärer får dela det (inte heller krb5.trustedRealm), och det jämförs utan hänsyn till skiftläge när det kontrolleras."
+    "en": "6542fd41442d0e39",
+    "text": "Den Kerberos-realm som den här KDC:n betjänar. Dess form med gemener är domänen, vilket är där standardtjänstdomänerna och PAC:ens domännamn kommer ifrån. I en förtroendesfär är det namnet som port 88 dirigerar sfärens begäranden efter: det måste ställas in före krb5.enabled, inga två sfärer får dela det (inte heller den partnersfär för utveckling som standardsfären svarar som), och det jämförs utan hänsyn till skiftläge när det kontrolleras."
   },
   "krb5.realm|restartReason": {
     "en": "f45bb3f394b52261",
@@ -5823,53 +6059,37 @@
     "en": "0ed445787254dab6",
     "text": "varje principals PAC-identitet byggs vid start. En FÖRTROENDESFÄR kan ändå bära det: en sfärs principaldatabas byggs när dess Kerberos slås på och byggs om när detta ändras, så inget av sfärens värde förbrukades vid start"
   },
-  "krb5.trustedRealm|label": {
-    "en": "83fea03ad45f6f5a",
-    "text": "Betrodd Kerberos-realm"
+  "krb5.crossRealmClassicDelegation|label": {
+    "en": "d94511f367aa2305",
+    "text": "Klassisk delegering över förtroenden"
   },
-  "krb5.trustedRealm|description": {
-    "en": "18a007649941a47a",
-    "text": "Den andra Kerberos-realmen, för hänvisningar mellan realmer. Ett förtroende är ingen flagga: det är en delad nyckel som innehas av en principal i varje realm."
+  "krb5.crossRealmClassicDelegation|description": {
+    "en": "f95686ad2d2053e6",
+    "text": "Om KLASSISK begränsad delegering (appAllowedToDelegateTo på frontänden) får korsa ett Kerberos-förtroende. Av som standard: den är definierad inom en sfär, och resursbaserad delegering (appAllowedToActOnBehalfOf på målet, som namnger SPN@REALM) är den som korsar. På kontrollerar frontändens sfär sin egen lista innan den hänvisar beviset, och målets sfär tar det som kontrollerat; båda sfärerna måste slå på den."
   },
-  "krb5.trustedRealm|restartReason": {
-    "en": "b7b28d1b7d6102d8",
-    "text": "den andra realmen och förtroendet mellan dem byggs vid start"
+  "krb5.requireSidFilteringInProduct|label": {
+    "en": "f4bc0b8bb8e18123",
+    "text": "Kräv SID-filtrering på förtroenden"
   },
-  "krb5.trustPassword|label": {
-    "en": "e2d7ee2fece4c004",
-    "text": "Förtroendelösenord"
+  "krb5.requireSidFilteringInProduct|description": {
+    "en": "120e89b9d4c0b3e4",
+    "text": "I produktläge används ett Kerberos-förtroende bara medan det filtrerar SID:er (dess quarantined-attribut, på som standard). Att slå av detta på en sfär är operatören som accepterar en partners SID:er ofiltrerade. Utvecklingsläget använder varje förtroende vad detta än säger."
   },
-  "krb5.trustPassword|description": {
-    "en": "ef84f44ff5ee5b94",
-    "text": "Den delade hemlighet som båda realmerna har för förtroendet mellan realmerna."
+  "krb5.maxReferralHops|label": {
+    "en": "ae50da753613f751",
+    "text": "Högsta antal förtroenden en hänvisningsväg korsar"
   },
-  "krb5.trustPassword|restartReason": {
-    "en": "de2c8d7ceb818a8d",
-    "text": "nyckeln mellan realmerna härleds från det vid start"
+  "krb5.maxReferralHops|description": {
+    "en": "e88d21d50bcd7495",
+    "text": "Hur många förtroenden en väg mellan sfärer får korsa innan den här KDC:n vägrar att hänvisa den vidare (KDC_ERR_PATH_NOT_ACCEPTED). Ett direkt förtroende är en korsning; varje sfär som en väg hänvisas genom lägger till en. Förtroendena själva är poster i sfärens katalog (ou=kerberosTrusts), och en väg byggs bara genom poster som är markerade som transitiva."
   },
-  "krb5.trustedDomainSid|label": {
-    "en": "e860150a3e9f46b7",
-    "text": "Betrott domän-SID"
+  "krb5.trustKeyGraceSeconds|label": {
+    "en": "e9a56607c04ebe5c",
+    "text": "Respittid för en roterad förtroendenyckel (s)"
   },
-  "krb5.trustedDomainSid|description": {
-    "en": "7c21d4f2a2b9776a",
-    "text": "Den andra realmens domän-SID. Det skiljer sig från detta med avsikt: SID-filtrering över ett förtroende handlar om vems domän ett SID tillhör."
-  },
-  "krb5.trustedDomainSid|restartReason": {
-    "en": "fc2b22b6756dc2a3",
-    "text": "den betrodda realmens principaler byggs vid start"
-  },
-  "krb5.trustedKrbtgtPassword|label": {
-    "en": "bb06a006346e82df",
-    "text": "krbtgt-lösenord för den betrodda realmen"
-  },
-  "krb5.trustedKrbtgtPassword|description": {
-    "en": "fc3a521802800c0d",
-    "text": "krbtgt-lösenordet för den betrodda realmen."
-  },
-  "krb5.trustedKrbtgtPassword|restartReason": {
-    "en": "5288888535130e80",
-    "text": "den realmens krbtgt-nycklar härleds från det vid start"
+  "krb5.trustKeyGraceSeconds|description": {
+    "en": "0ee4268f63c3b908",
+    "text": "Hur länge den inkommande nyckeln mellan sfärer som ett förtroendes Rotera nyckel ersatte fortfarande öppnar partnerns biljetter, som den fortsätter att försegla med tills dess egen sida ändras. NOLL — standard — betyder krb5.ticketLifetimeSeconds plus krb5.clockSkew, läst när versionen kontrolleras. Ett tal är så många sekunder i stället: länge nog för partnerns administratör att ändra sin sida. En tidigare version behålls per förtroende; efter dess respittid nekas en biljett under den med KRB_AP_ERR_BADKEYVER."
   },
   "krb5.spnegoAuthentication|label": {
     "en": "0a014fa4b2685cd7",
@@ -6034,6 +6254,14 @@
   "ldap.workerDirectoryTimeoutMs|description": {
     "en": "bb7f7ca790c61dc0",
     "text": "Med ldap.workerDirectory=postgres-lru, hur länge en begäranarbetare väntar på databasen när den behöver en katalogpost som den inte har. Arbetaren gör inget annat medan den väntar, så detta är också den längsta tid som ett databasavbrott kan hålla kvar en av dess begäranden; därefter avvisas begäran (503, STS-LDAP-0130)."
+  },
+  "ldap.workerDirectoryBudgetMs|label": {
+    "en": "7af008dc55949ed0",
+    "text": "Workerns katalogbudget per begäran (ms)"
+  },
+  "ldap.workerDirectoryBudgetMs|description": {
+    "en": "9b2485155e270c50",
+    "text": "Med ldap.workerDirectory=postgres-lru: hur länge en begäran till /admin eller /admin-api sammanlagt får vänta på synkrona katalogläsningar. En fråga som skulle överskrida budgeten avvisas (503, STS-LDAP-0175) och ställs inte; en enskild långsam fråga misslyckas fortfarande som STS-LDAP-0130 när den först överskrider sin egen tidsgräns. Andra begäranden har ingen sådan budget."
   },
   "ldap.sizeLimit|label": {
     "en": "8486449552f77864",
@@ -6732,8 +6960,8 @@
     "text": "Erbjud HTTP Basic"
   },
   "ssf.authBasic|description": {
-    "en": "5476ee40c62ce1bb",
-    "text": "Om SSF-slutpunkterna accepterar HTTP Basic bredvid OAuth 2.0-åtkomsttokener, och publicerar det i authorization_schemes. I utvecklingsläge godtas vilket användarnamn som helst med vilket lösenord som helst utom \"invalid\"; i produktläge verifieras lösenordet mot personens hashade userPassword. I båda fallen har en Basic-principal båda omfången, eftersom Basic inte bär något — så en driftsättning som vill att ssf:read och ssf:write upprätthålls för varje anropare stänger av detta."
+    "en": "34a196af42de2673",
+    "text": "Om SSF-slutpunkterna accepterar HTTP Basic bredvid OAuth 2.0-åtkomsttokener, och publicerar det i authorization_schemes. I utvecklingsläge godtas vilket användarnamn som helst med vilket lösenord som helst utom \"invalid\"; i produktläge verifieras lösenordet mot personens hashade userPassword. I båda fallen har en Basic-principal båda omfången, eftersom Basic inte bär något — så en driftsättning som vill att ssf.read och ssf.manage upprätthålls för varje anropare stänger av detta."
   },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
@@ -6832,16 +7060,16 @@
     "text": "Omfång för att läsa en ström"
   },
   "ssf.authScopeRead|description": {
-    "en": "b3c6248d5c2a3f09",
-    "text": "Det OAuth-omfång som en åtkomsttoken måste bära för att LÄSA en strömkonfiguration, dess status eller avfrågningskön. Publiceras i scopes_supported i båda upptäcktsdokumenten, precis som de två SCIM-omfången."
+    "en": "6a58acf43f1ab901",
+    "text": "Den här tjänstens namn på det omfång som läser en strömkonfiguration, dess status eller avfrågningskön. Standardvärdet är CAEP Interoperability Profile-namnet ssf.read, som alltid accepteras även när detta byter namn. Båda publiceras i scopes_supported. Skrivning inkluderar läsning: en token som bär ett skrivomfång får också läsa, och en klient som deklarerar ett skrivomfång kan få ett läsomfång utfärdat."
   },
   "ssf.authScopeWrite|label": {
     "en": "3cf63aebc7df37eb",
     "text": "Omfång för att ändra en ström"
   },
   "ssf.authScopeWrite|description": {
-    "en": "ea33015fd3877e72",
-    "text": "Omfånget som krävs för att skapa, uppdatera eller ta bort en ström, för att lägga till eller ta bort ett subjekt, för att ändra en status eller för att be om en verifieringshändelse. Ett läsomfång räcker inte för något av dessa, vilket är den första platsen i den här tjänsten förutom SCIM där två omfång skiljer sig åt i vad de tillåter."
+    "en": "91d382139f5860a7",
+    "text": "Den här tjänstens namn på det omfång som skapar, uppdaterar eller tar bort en ström, lägger till eller tar bort ett subjekt, ändrar en status eller ber om en verifieringshändelse. Standardvärdet är CAEP Interoperability Profile-namnet ssf.manage, som alltid accepteras även när detta byter namn. Skrivning inkluderar läsning, så ett namn som sätts här läser också, och det gör även ett namn som sätts i båda inställningarna. Ett läsomfång räcker inte för någon av de skrivningarna."
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",
@@ -7266,6 +7494,14 @@
   "risk.networkFailureThreshold|description": {
     "en": "b3df2afcc6f13f99",
     "text": "Hur många avvisade lösenord från ett nätverk (det adressprefix som riskpoängsättningen grupperar efter) under den senaste timmen som sätter signalen network-failures på varje inloggning därifrån. Varje person bakom en NAT delar detta antal."
+  },
+  "risk.networkSignupThreshold|label": {
+    "en": "c6993a7b6026347a",
+    "text": "Konton ett nätverk får skapa på en timme innan en signal"
+  },
+  "risk.networkSignupThreshold|description": {
+    "en": "05e7067b3abe2a57",
+    "text": "Hur många konton federerade inloggningar från ett och samma nätverk (adressprefixet riskbedömningen grupperar efter) får skapa under den senaste timmen innan signalen network-signups läggs på varje inloggning därifrån (#565). En konsumentleverantör gör ett konto lika billigt som ett konto hos leverantören, så detta är gränsen för att ett nätverk registrerar sig i mängd. Räknas inte för en adress på sfärens tillåtelselista från operatören."
   },
   "risk.signalFactors|label": {
     "en": "0a173b571b34160c",
@@ -9315,6 +9551,30 @@
     "en": "56fac41f63177db7",
     "text": "Hur många schemalagda eller manuella körningar ledaren har igång samtidigt, över alla jobb och förtroendesfärer. En plats är en multipel av sitt intervall, så varje timjobb i varje sfär förfaller samma sekund; varje körning håller en anslutning till lagret medan den gör anspråk och arbetar, och postgres-lagret har fyra. Resten väntar, en persons Run now först, och startar när körningar avslutas. Det är aldrig mer än en färre än vad poolen rymmer, vad det än sätts till, så att schemaläggaren inte kan ta varje anslutning från förfrågningarna."
   },
+  "scheduler.niceBusyThreshold|label": {
+    "en": "115ae6125244b30a",
+    "text": "En upptagen workers pågående förfrågningar"
+  },
+  "scheduler.niceBusyThreshold|description": {
+    "en": "364260c11358e10c",
+    "text": "Hur många förfrågningar en förfrågnings-worker får ha pågående innan en tålmodig schemalagd klusterkörning väntar på den. Ledaren lämnar varje körning till den minst belastade workern och håller kvar en körning av ett jobb vars nice är över 0 medan även den workern har så många. 0 betyder att antalet aldrig håller kvar en körning."
+  },
+  "scheduler.niceLagMs|label": {
+    "en": "c0b9af3bbe7cb091",
+    "text": "En upptagen workers fördröjning i händelseloopen"
+  },
+  "scheduler.niceLagMs|description": {
+    "en": "0c0e3c66e7c2e010",
+    "text": "Fördröjningen i händelseloopen, i millisekunder (99:e percentilen i en workers senaste tiosekundersrapport), vid vilken en förfrågnings-worker räknas som upptagen och en tålmodig schemalagd klusterkörning väntar på den. 0 betyder att fördröjningen aldrig håller kvar en körning."
+  },
+  "scheduler.niceMaxDeferS|label": {
+    "en": "07484a01ef8c2875",
+    "text": "Längsta väntan för en körning på en upptagen worker"
+  },
+  "scheduler.niceMaxDeferS|description": {
+    "en": "22928f93b52af2b5",
+    "text": "Den längsta tid, i sekunder, som en schemalagd klusterkörning hålls kvar medan alla förfrågnings-workers är upptagna. Ett jobb hålls kvar under sin andel av denna tid, nice / 19, och aldrig längre än halva sitt intervall; därefter körs det oavsett belastning. En manuell körning, ett jobb på begäran och ett jobb med nice 0 hålls aldrig kvar. 0 betyder att ingen körning hålls kvar."
+  },
   "attributeSources.hostPatterns|label": {
     "en": "04c2e7926c9351dd",
     "text": "Värdar som en attributkälla får ange"
@@ -10416,24 +10676,24 @@
     "text": "Huvudport: inaktiv anslutning behålls i (s)"
   },
   "listenerMain.keepAliveTimeoutS|description": {
-    "en": "d48d22c3af904939",
-    "text": "Gäller bara huvudportens lyssnare: http.keepAliveTimeoutS. -1, standardvärdet, följer http.keepAliveTimeoutS; allt annat avgör bara för den här lyssnaren. Hur länge, i sekunder, en HTTP-lyssnare håller en inaktiv HTTP/1.1-anslutning öppen för klientens nästa begäran (nodes egen standard är 5). En behållen anslutning är en TLS-handskakning — och en fråga om klientcertifikat — som inte upprepas. Förfrågningar som en klient pipelinar på en anslutning besvaras i ordning. Bakom en lastbalanserare, håll dess tidsgräns för inaktivitet över detta."
+    "en": "a895a3ca14fdb99f",
+    "text": "Gäller bara huvudportens lyssnare: http.keepAliveTimeoutS. -1, standardvärdet, följer http.keepAliveTimeoutS; allt annat avgör bara för den här lyssnaren. Hur länge, i sekunder, en HTTP-lyssnare håller en inaktiv anslutning öppen för klientens nästa begäran (nodes egen standard är 5): en HTTP/1.1-anslutning mellan begäranden, eller en HTTP/2-anslutning där ingen ram har passerat, som då stängs på ett ordnat sätt. En behållen anslutning är en TLS-handskakning — och en fråga om klientcertifikat — som inte upprepas. Förfrågningar som en klient pipelinar på en anslutning besvaras i ordning. Bakom en lastbalanserare, håll dess tidsgräns för inaktivitet över detta."
   },
   "listenerDebugger.keepAliveTimeoutS|label": {
     "en": "76ffd87245c2ff28",
     "text": "Protokollfelsökare: inaktiv anslutning behålls i (s)"
   },
   "listenerDebugger.keepAliveTimeoutS|description": {
-    "en": "c772bcacfb6260cb",
-    "text": "Gäller bara protokollfelsökarens lyssnare: http.keepAliveTimeoutS. -1, standardvärdet, följer http.keepAliveTimeoutS; allt annat avgör bara för den här lyssnaren. Hur länge, i sekunder, en HTTP-lyssnare håller en inaktiv HTTP/1.1-anslutning öppen för klientens nästa begäran (nodes egen standard är 5). En behållen anslutning är en TLS-handskakning — och en fråga om klientcertifikat — som inte upprepas. Förfrågningar som en klient pipelinar på en anslutning besvaras i ordning. Bakom en lastbalanserare, håll dess tidsgräns för inaktivitet över detta."
+    "en": "b63e0c1aae9ba585",
+    "text": "Gäller bara protokollfelsökarens lyssnare: http.keepAliveTimeoutS. -1, standardvärdet, följer http.keepAliveTimeoutS; allt annat avgör bara för den här lyssnaren. Hur länge, i sekunder, en HTTP-lyssnare håller en inaktiv anslutning öppen för klientens nästa begäran (nodes egen standard är 5): en HTTP/1.1-anslutning mellan begäranden, eller en HTTP/2-anslutning där ingen ram har passerat, som då stängs på ett ordnat sätt. En behållen anslutning är en TLS-handskakning — och en fråga om klientcertifikat — som inte upprepas. Förfrågningar som en klient pipelinar på en anslutning besvaras i ordning. Bakom en lastbalanserare, håll dess tidsgräns för inaktivitet över detta."
   },
   "listenerRevocation.keepAliveTimeoutS|label": {
     "en": "19f295348b85fba9",
     "text": "Återkallelse (okrypterad HTTP): inaktiv anslutning behålls i (s)"
   },
   "listenerRevocation.keepAliveTimeoutS|description": {
-    "en": "0f76cf6236976ee9",
-    "text": "Gäller bara lyssnaren för återkallelse (okrypterad HTTP): http.keepAliveTimeoutS. -1, standardvärdet, följer http.keepAliveTimeoutS; allt annat avgör bara för den här lyssnaren. Hur länge, i sekunder, en HTTP-lyssnare håller en inaktiv HTTP/1.1-anslutning öppen för klientens nästa begäran (nodes egen standard är 5). En behållen anslutning är en TLS-handskakning — och en fråga om klientcertifikat — som inte upprepas. Förfrågningar som en klient pipelinar på en anslutning besvaras i ordning. Bakom en lastbalanserare, håll dess tidsgräns för inaktivitet över detta."
+    "en": "dec63c7b7c394604",
+    "text": "Gäller bara lyssnaren för återkallelse (okrypterad HTTP): http.keepAliveTimeoutS. -1, standardvärdet, följer http.keepAliveTimeoutS; allt annat avgör bara för den här lyssnaren. Hur länge, i sekunder, en HTTP-lyssnare håller en inaktiv anslutning öppen för klientens nästa begäran (nodes egen standard är 5): en HTTP/1.1-anslutning mellan begäranden, eller en HTTP/2-anslutning där ingen ram har passerat, som då stängs på ett ordnat sätt. En behållen anslutning är en TLS-handskakning — och en fråga om klientcertifikat — som inte upprepas. Förfrågningar som en klient pipelinar på en anslutning besvaras i ordning. Bakom en lastbalanserare, håll dess tidsgräns för inaktivitet över detta."
   },
   "listenerMain.headersTimeoutS|label": {
     "en": "8d17a4d86aca9ed5",
@@ -10506,5 +10766,37 @@
   "listenerRevocation.maxConnections|description": {
     "en": "33c1557318481882",
     "text": "Gäller bara lyssnaren för återkallelse (okrypterad HTTP): http.maxConnections. -1, standardvärdet, följer http.maxConnections; allt annat avgör bara för den här lyssnaren. Hur många anslutningar en HTTP-lyssnare håller öppna samtidigt; en till stängs när den kommer. 0, standardvärdet, är ingen gräns (nodes egen)."
+  },
+  "listenerMain.http2|label": {
+    "en": "d17df93a132abc21",
+    "text": "Huvudport: erbjud HTTP/2"
+  },
+  "listenerMain.http2|description": {
+    "en": "4362a834f16b5b21",
+    "text": "Gäller bara huvudportens lyssnare: http.http2. inherit, standardvärdet, följer http.http2; allt annat avgör bara för den här lyssnaren. Om en HTTPS-lyssnare erbjuder HTTP/2 när en klient ber om det i TLS-handskakningen (ALPN). På, standardvärdet, bär en anslutning varje begäran som en webbläsare gör parallellt; HTTP/1.1 besvaras fortfarande för en klient som inte ber om något annat. Av, är varje anslutning HTTP/1.1 — för en klient eller lastbalanserare vars HTTP/2 inte fungerar. En ny anslutning följer en ändring direkt; en redan öppen behåller sitt protokoll. Revokeringslyssnaren över ren HTTP talar bara HTTP/1.1, eftersom det inte finns någon handskakning att erbjuda det i."
+  },
+  "listenerDebugger.http2|label": {
+    "en": "65d81b530197d8d7",
+    "text": "Protokollfelsökare: erbjud HTTP/2"
+  },
+  "listenerDebugger.http2|description": {
+    "en": "95b887a7622f4880",
+    "text": "Gäller bara protokollfelsökarens lyssnare: http.http2. inherit, standardvärdet, följer http.http2; allt annat avgör bara för den här lyssnaren. Om en HTTPS-lyssnare erbjuder HTTP/2 när en klient ber om det i TLS-handskakningen (ALPN). På, standardvärdet, bär en anslutning varje begäran som en webbläsare gör parallellt; HTTP/1.1 besvaras fortfarande för en klient som inte ber om något annat. Av, är varje anslutning HTTP/1.1 — för en klient eller lastbalanserare vars HTTP/2 inte fungerar. En ny anslutning följer en ändring direkt; en redan öppen behåller sitt protokoll. Revokeringslyssnaren över ren HTTP talar bara HTTP/1.1, eftersom det inte finns någon handskakning att erbjuda det i."
+  },
+  "listenerMain.http2MaxConcurrentStreams|label": {
+    "en": "c152ce6a507a8348",
+    "text": "Huvudport: strömmar per HTTP/2-anslutning"
+  },
+  "listenerMain.http2MaxConcurrentStreams|description": {
+    "en": "ba8c8cd0302f4417",
+    "text": "Gäller bara huvudportens lyssnare: http.http2MaxConcurrentStreams. -1, standardvärdet, följer http.http2MaxConcurrentStreams; allt annat avgör bara för den här lyssnaren. Hur många begäranden en HTTP/2-anslutning får ha öppna samtidigt (SETTINGS_MAX_CONCURRENT_STREAMS); en ström utöver det avvisas tills en annan är klar. 100, standardvärdet, är det minsta värde RFC 9113 rekommenderar; nodes eget är obegränsat, vilket skulle låta en enda anslutning bära arbetet för tusentals. Det begränsar arbetet på en anslutning som http.maxConnections begränsar anslutningarna. En ny anslutning följer en ändring direkt, och en öppen skickas det nya värdet."
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|label": {
+    "en": "a6a26cb5d1740fb5",
+    "text": "Protokollfelsökare: strömmar per HTTP/2-anslutning"
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|description": {
+    "en": "94c52205da70930f",
+    "text": "Gäller bara protokollfelsökarens lyssnare: http.http2MaxConcurrentStreams. -1, standardvärdet, följer http.http2MaxConcurrentStreams; allt annat avgör bara för den här lyssnaren. Hur många begäranden en HTTP/2-anslutning får ha öppna samtidigt (SETTINGS_MAX_CONCURRENT_STREAMS); en ström utöver det avvisas tills en annan är klar. 100, standardvärdet, är det minsta värde RFC 9113 rekommenderar; nodes eget är obegränsat, vilket skulle låta en enda anslutning bära arbetet för tusentals. Det begränsar arbetet på en anslutning som http.maxConnections begränsar anslutningarna. En ny anslutning följer en ändring direkt, och en öppen skickas det nya värdet."
   }
 }

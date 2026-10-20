@@ -167,13 +167,25 @@ async function metadataAdvertisesTheDid() {
         delete copy.credential_metadata.display;
       }
       delete copy.issuer_identifier;
+      // A DID-named credential is signed only with a key its DID document
+      // publishes (iya-sts #664), so its signing algorithms are its own and
+      // are held below as a subset of the sibling's instead.
+      delete copy.credential_signing_alg_values_supported;
       log.debug("Leaving strip().");
       return copy;
     };
+    const didAlgs = didEntry.credential_signing_alg_values_supported || [];
+    const plainAlgs = plainEntry.credential_signing_alg_values_supported || [];
+    assert.ok(didAlgs.length > 0 && didAlgs.every(function (alg) {
+                return plainAlgs.indexOf(alg) >= 0;
+              }),
+      pair.did + " should sign with some of the algorithms " + pair.plain +
+          " offers and no other — it offers " + JSON.stringify(didAlgs) +
+          " against " + JSON.stringify(plainAlgs) + ".");
     assert.deepStrictEqual(strip(didEntry), strip(plainEntry),
       pair.did + " should differ from " + pair.plain +
-          " in NOTHING but its scope, its display name " +
-      "and the issuer identifier it advertises. Anything else and the two " +
+          " in NOTHING but its scope, its display name, its signing " +
+      "algorithms and the issuer identifier it advertises. Anything else and the two " +
           "are not comparable.");
     assert.notStrictEqual(didEntry.scope, plainEntry.scope,
       "the two configurations need distinct scopes, or a wallet asking by " +

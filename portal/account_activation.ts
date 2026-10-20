@@ -98,6 +98,11 @@ const ACTIVATE_FORM = vz.object({
   // THE PASSKEY'S STEP (2026-10-01), `/portal/keys`' three fields.
   kind: vt.opt(vt.oneOf(['passkey', 'security-key']))
     .describe('`setup`: where the passkey lives.'),
+  // THE LANE (#643), as `/portal/keys` asks it: carried on the pending
+  // registration, never read back off the browser's answer.
+  lane: vt.opt(vt.oneOf(['classical', 'pqc']))
+    .describe('`setup`: `classical` (the default) or `pqc`, where the realm ' +
+              'offers a post-quantum passkey beside a classical one.'),
   enrolment_id: vt.opt(vt.base64url)
     .describe('`key`: the pending registration.'),
   credential: vz.string().max(validation.CAP.TEXT).optional()
@@ -196,6 +201,8 @@ class AccountActivation {
                       rules: (rules.rules || []).slice(0) },
              webauthnEnabled: !!webauthnPolicy.settings().enabled,
              kinds: webauthnPolicy.authenticatorKinds(),
+             // The lanes a passkey may be created in (#643).
+             lanes: webauthnPolicy.lanes(),
              totpOffered: !!totp.offered() };
   }
 
@@ -230,22 +237,27 @@ class AccountActivation {
    */
   keyView(base: string, username: string, token: string, pending: Json,
           wantsTotp: boolean): Json {
-    const { log, authn, passkeyPolicy, webauthnPolicy } = this.deps;
+    const { log, authn, passkeyPolicy, webauthnPolicy, credentials } =
+      this.deps;
     log.debug("Entering AccountActivation.keyView().");
     const rpId = authn.rpIdOf(base);
+    const lane = String(pending.lane || 'classical');
+    // The name the prompt shows (#533), the post-quantum lane's naming
+    // ML-DSA (#643).
+    const user = credentials.laneUser(username,
+      passkeyPolicy.displayNameFor(username, username), lane);
     log.debug("Leaving AccountActivation.keyView().");
     return { step: 'key', user: username, token: token,
              keyRole: pending.role, wantsTotp: !!wantsTotp,
              pending: { id: pending.id, kind: pending.kind || '',
-                        role: pending.role, challenge: pending.challenge,
-                        rpId: rpId, user: username,
+                        role: pending.role, lane: lane,
+                        challenge: pending.challenge,
+                        rpId: rpId, user: user.name,
                         userHandle: pending.userHandle || '',
-                        // The name the prompt shows (#533).
-                        display: passkeyPolicy.displayNameFor(username,
-                                                              username),
+                        display: user.displayName,
                         exclude: (pending.exclude || []).slice(0),
                         options: webauthnPolicy.creationOptions(rpId,
-                                                                pending.kind) }
+                          pending.kind, lane) }
            };
   }
 
@@ -341,6 +353,9 @@ class AccountActivation {
     log.debug("Entering AccountActivation.finish(). " + username);
     const password = !!credentials.mechanismsFor(username).password;
     res[LINK_SPENT] = true;
+    // AN OPERATOR'S RECOVERY (#724), for a person who held a passkey before
+    // this link was issued: read before the link is consumed.
+    credentials.noteActivationRecovery(username);
     credentials.consumeActivation(username);
     audit.record({
       category: 'authentication', action: 'portal.activate',
@@ -585,7 +600,8 @@ class AccountActivation {
       // person is one step from done and the link is still unspent.
       credentials.abandonKeyEnrolment(username);
       const again: Json = credentials.beginKeyEnrolment(username, {
-        role: waitingKey.role, kind: keyKind, label: waitingKey.label });
+        role: waitingKey.role, kind: keyKind, label: waitingKey.label,
+        lane: waitingKey.lane || 'classical' });
       const fresh = again.ok ? credentials.pendingKeyEnrolmentFor(username)
                              : null;
       log.debug("Leaving AccountActivation.keyStep(). Not registered.");
@@ -777,7 +793,9 @@ class AccountActivation {
     // did not happen.
     if (keyRole !== 'none') {
       const begunKey: Json = credentials.beginKeyEnrolment(username, {
-        role: keyRole, kind: String(body.kind || '') });
+        role: keyRole, kind: String(body.kind || ''),
+        // The lane (#643), refused there where the realm does not offer it.
+        lane: String(body.lane || 'classical') });
       const pendingKey = begunKey.ok
         ? credentials.pendingKeyEnrolmentFor(username) : null;
       if (pendingKey) {
@@ -787,6 +805,7 @@ class AccountActivation {
           summary: username + ' started registering a security key while ' +
                    'activating',
           detail: { role: pendingKey.role, kind: pendingKey.kind || 'any',
+                    lane: pendingKey.lane || 'classical',
                     address: websecurity.addressOf(req) }
         });
         log.debug("Leaving AccountActivation.spend(). The key's ceremony.");

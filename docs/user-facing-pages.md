@@ -83,7 +83,7 @@ how the answer reaches the application are unchanged.
 | Page | Path | What a person does there | Language |
 |---|---|---|---|
 | Front door | `/` | Finds the console, the portal and the documentation | Yes |
-| Choose your realm | at `/admin` and `/portal` | Says which realm to sign in through, where trust realms exist | Yes |
+| Choose your realm | at `/admin` and `/portal` | Chooses which realm to sign in through, from a list of every realm; the browser remembers the choice | Yes |
 
 **Since #579 the front door is a static page**, the first of the public
 pages to become one: the browser draws it, in its own language, from
@@ -128,7 +128,7 @@ portal through single sign-on, with no screen.
 | Sign-in requests (CIBA) | `/portal/ciba` |
 | Your devices | `/portal/devices` |
 | Your self-issued IDs | `/portal/self-issued` |
-| Add a credential to your wallet | `/portal/wallet` |
+| Add a credential to your wallet, and the ones issued to you | `/portal/wallet` |
 | App passwords | `/portal/app-passwords` |
 | Kerberos | `/portal/kerberos` |
 | Recent sign-ins | `/portal/sign-ins` |

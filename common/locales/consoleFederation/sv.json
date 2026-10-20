@@ -252,5 +252,22 @@
   "through": "via ",
   "brokerNotUsable": "den relationen går inte att använda, så inloggningsskärmen visas i stället",
   "notAMechanism": "inte en mekanism som den här tjänsten har",
-  "authAtPartnerTitle": "Autentiseringen sker hos PARTNERN i en relation på tjänsteleverantörssidan, så det finns inget att konfigurera här."
+  "authAtPartnerTitle": "Autentiseringen sker hos PARTNERN i en relation på tjänsteleverantörssidan, så det finns inget att konfigurera här.",
+  "labelCategory": "Kategori",
+  "anyCategory": "valfri kategori",
+  "categoryEnterprise": "företag",
+  "categoryConsumer": "konsument och social",
+  "headingConsumer": "Konsument- och sociala leverantörer",
+  "consumerOn": "Konsument- och sociala leverantörer är <strong>på</strong> i denna sfär (<code>federation.consumerProviders</code>).",
+  "consumerOff": "Konsument- och sociala leverantörer är <strong>av</strong> i denna sfär. Slå på <code>federation.consumerProviders</code> under Inställningar för att lägga till en; företagspartner påverkas inte.",
+  "consumerWhat": "Varje leverantör är en egen federationsrelation och läggs till inaktiverad. Dess slutpunkter skrivs på relationen när den läggs till och kan ändras på dess sida. Den som kommer för första gången får en egen post, och en adress används aldrig för att matcha en befintlig person. Registrera tjänsten för mottagning av intyg som visas på dess sida som omdirigerings-URI hos leverantören och aktivera den sedan.",
+  "consumerListLink": "Visa bara konsument- och sociala leverantörer",
+  "thProvider": "Leverantör",
+  "thAddOne": "Lägg till en",
+  "thDocumentation": "Dokumentation",
+  "labelClientId": "Klient-ID",
+  "labelClientSecret": "Klienthemlighet",
+  "buttonAddProvider": "Lägg till",
+  "providerDocs": "leverantörens dokumentation",
+  "providerRealmOff": "Denna sfär har konsument- och sociala leverantörer avslagna, så denna relation vägrar varje inloggning tills <code>federation.consumerProviders</code> är på."
 }

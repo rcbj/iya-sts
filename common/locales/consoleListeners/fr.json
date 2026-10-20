@@ -70,6 +70,7 @@
   "rowRequestsPer": "Requêtes par connexion",
   "noLimit": "pas de limite",
   "rowMaxConnections": "Connexions ouvertes au maximum",
+  "rowHttp2": "HTTP/2 proposé",
   "headInForce": "En vigueur sur cet écouteur",
   "inForceNote": "Chaque valeur est celle de cet écouteur là où sa ligne ci-dessous en fixe une, et sinon la valeur par défaut du service (<em>inherit</em>, une case vide, ou -1 pour un nombre).",
   "tabListeners": "Écouteurs",

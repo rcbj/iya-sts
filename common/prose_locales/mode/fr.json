@@ -155,6 +155,18 @@
     "en": "21b1d1c16447c0c6",
     "text": "any-existing est refusé, au niveau de la relation (STS-FED-0095) et à la connexion (STS-FED-0094). Un partenaire connecte l’entrée à laquelle son couple (émetteur, sujet) est lié ; un sujet non lié nommant une personne existante doit d’abord se connecter ici en tant que cette personne (link-at-first-sign-in, par défaut), ou est refusé (pre-linked). Les modes développement et produit conservent tous deux les règles et le refus des administrateurs de la console."
   },
+  "mode.requirements.federated-autocreate.what": {
+    "en": "d38d38e45a73467e",
+    "text": "Une nouvelle relation de fédération crée une entrée d’annuaire pour un sujet de partenaire que personne n’a lié"
+  },
+  "mode.requirements.federated-autocreate.development": {
+    "en": "04193f48cc244e1b",
+    "text": "fedAutocreateUsers est écrit TRUE lorsque la relation est créée, et une relation qui ne stocke pas l’attribut crée. Un FALSE stocké ne crée toujours personne."
+  },
+  "mode.requirements.federated-autocreate.product": {
+    "en": "b8758f8842b1fc0a",
+    "text": "fedAutocreateUsers est écrit FALSE lorsque la relation est créée, et un attribut absent ne crée personne (STS-FED-0090). Une relation qui stocke déjà TRUE continue de créer jusqu’à ce qu’elle soit modifiée. link-at-first-sign-in lie toujours une personne existante mise en correspondance, dans les deux modes."
+  },
   "mode.requirements.federated-logout-signature.what": {
     "en": "ab3acff66ae80262",
     "text": "La déconnexion SAML d’un partenaire de fédération est signée par ce partenaire"
@@ -215,6 +227,18 @@
     "en": "2a529b7dda255daa",
     "text": "À ces cinq portes, le propre mot de passe de la personne est refusé — avec exactement la même réponse qu’un mauvais mot de passe, et compté comme tel dans la limitation de débit (STS-AUTHN-0213 uniquement sur la ligne d’audit et dans le journal) — dès qu’elle détient une application d’authentification ou une clé de sécurité dans le rôle mfa, ou qu’un second facteur lui est exigé (stsMfaRequired, la politique d’authentification). Un MOT DE PASSE D’APPLICATION qu’elle a créé sur /portal/app-passwords, limité à la porte, est accepté à la place. authn.passwordAloneDoors nomme des portes qui acceptent malgré tout le mot de passe, ce qui ramène chacune de ces personnes à un seul facteur à cet endroit."
   },
+  "mode.requirements.kerberos-sid-filtering.what": {
+    "en": "e3950aa2a75faaec",
+    "text": "Une confiance Kerberos n’est honorée que tant qu’elle filtre les SID"
+  },
+  "mode.requirements.kerberos-sid-filtering.development": {
+    "en": "75b6728bdcc111d0",
+    "text": "Un enregistrement de confiance sans quarantined est utilisé comme n’importe quel autre : les tickets sont référés à travers lui et acceptés depuis lui, et un PAC qui le traverse est filtré selon sa frontière de confiance, sans la règle de la quarantaine selon laquelle seuls les SID du domaine approuvé passent."
+  },
+  "mode.requirements.kerberos-sid-filtering.product": {
+    "en": "e9c9138415ca5310",
+    "text": "Un enregistrement de confiance sans quarantined ne réfère personne et n’accepte rien (STS-KRB-0229 dit pourquoi) tant que krb5.requireSidFilteringInProduct est activé, ce qui est la valeur par défaut. Désactiver ce paramètre sur le domaine, c’est l’opérateur qui accepte les SID du partenaire."
+  },
   "mode.requirements.kerberos-second-factor.what": {
     "en": "6bb019d0381a77a4",
     "text": "Une personne qui détient ou doit détenir un second facteur n’obtient aucun ticket Kerberos sur son seul mot de passe"
@@ -226,6 +250,18 @@
   "mode.requirements.kerberos-second-factor.product": {
     "en": "cddc7c3db475d360",
     "text": "Cet AS-REQ est refusé avec KDC_ERR_POLICY (12), STS-KRB-0135, après vérification du mot de passe (un mauvais mot de passe donne toujours KDC_ERR_PREAUTH_FAILED), dès que la personne détient une application d’authentification ou une clé de sécurité dans le rôle mfa, ou qu’un second facteur lui est exigé. Une personne disposant d’une application d’authentification obtient un ticket via l’armure FAST de RFC 6113 avec la pré-authentification OTP de RFC 6560 — mot de passe et code en un seul échange — et il porte l’indicateur RFC 8129 `otp`. Un mot de passe d’application n’est jamais une clé Kerberos."
+  },
+  "mode.requirements.recovery-assurance.what": {
+    "en": "3c8ef817d4ad4971",
+    "text": "Une récupération de compte n’est pas plus faible que la clé d’accès qu’elle remplace, par défaut"
+  },
+  "mode.requirements.recovery-assurance.development": {
+    "en": "523ca60d0edeedd0",
+    "text": "Le recoveryAssurance de la politique des clés d’accès vaut any par défaut : un lien de réinitialisation du mot de passe, un lien d’activation, un code de récupération ou un code ou lien envoyé par courriel rétablit l’accès immédiatement, quelle que soit la clé d’accès que détient la personne."
+  },
+  "mode.requirements.recovery-assurance.product": {
+    "en": "7491bb7b906772bb",
+    "text": "Il vaut not-weaker par défaut : pour une personne qui détient une clé d’accès, la première connexion après une récupération qui n’est pas une connexion par clé d’accès n’atteint aucune application (STS-AUTHN-0381). L’écran de connexion lui demande d’enregistrer une clé d’accès conforme à la politique des clés d’accès, puis de se connecter avec elle. La valeur propre d’un domaine prévaut dans les deux modes."
   },
   "mode.requirements.resource-metadata-import.what": {
     "en": "fb298f641de33009",
@@ -370,18 +406,6 @@
   "mode.requirements.credential-status-reference.product": {
     "en": "091040d9ab1a08e5",
     "text": "off est IGNORÉ là où il est lu (journalisé une fois, STS-CORE-0106) et refusé à l’écriture (STS-CORE-0103) : une attestation de ce domaine sans référence de statut, ou un ldp_vc qui n’a pas divulgué son credentialStatus, est toujours refusé. own-only et l’exemption par émetteur sont autorisés."
-  },
-  "mode.requirements.realm-chooser.what": {
-    "en": "c37334adfeccc2cb",
-    "text": "Le sélecteur de domaine affiché avant la connexion liste tous les domaines"
-  },
-  "mode.requirements.realm-chooser.development": {
-    "en": "7ace23d168380455",
-    "text": "Un navigateur sans session sur /admin ou /portal, sur un service où des domaines de confiance sont définis, voit une liste de tous les domaines par lesquels se connecter."
-  },
-  "mode.requirements.realm-chooser.product": {
-    "en": "b3e379e5d61df6c0",
-    "text": "La même page demande l’identifiant du domaine dans une zone de texte, afin que les domaines du déploiement ne soient pas publiés à quiconque peut l’atteindre."
   },
   "mode.requirements.weaker-responses.what": {
     "en": "57d0e17e4a068c39",
@@ -610,6 +634,18 @@
   "mode.requirements.claim-values.product": {
     "en": "3a1905ca05d2e355",
     "text": "Une valeur provient de l’entrée d’annuaire de la personne ou est omise ; les `verified_claims` ne sont publiés qu’à partir d’une vérification enregistrée sur l’entrée, et email_verified n’est à true que pour une adresse vérifiée : une adresse que la personne a prouvée par un lien envoyé par courriel (#63), ou une adresse écrite par une source de confiance — un administrateur (la console, /admin-api, ou une écriture LDAP détenant Admin Write), SCIM, ou un partenaire de fédération qui n’a pas indiqué email_verified à false (#64)."
+  },
+  "mode.requirements.required-attributes.what": {
+    "en": "766f977cdfc5a340",
+    "text": "Une personne porte les attributs qu’exige la politique d’attributs du domaine"
+  },
+  "mode.requirements.required-attributes.development": {
+    "en": "9f3eb5f6be8b0a4f",
+    "text": "La politique est stockée et affichée dans Annuaire > Politiques, et n’est pas appliquée : une personne peut être créée avec un simple nom d’utilisateur, et une modification peut vider tout attribut sauf cn et sn."
+  },
+  "mode.requirements.required-attributes.product": {
+    "en": "1217261af0bae35e",
+    "text": "Une création qui laisse un attribut obligatoire sans valeur est refusée (STS-LDAP-0162) à toutes les portes — la console, /admin-api, SCIM, un ajout LDAP (objectClassViolation, 65), un enregistrement HOBA et l’import en masse (STS-LDAP-0163) — et une première connexion fédérée dont le partenaire n’en a pas fourni ne crée personne (STS-FED-0158). Une modification qui retirerait une valeur obligatoire est refusée (STS-LDAP-0164). uid, cn et sn sont toujours obligatoires ; givenName et mail par défaut. Une personne à qui il en manquait déjà un ne se voit refuser ni une connexion ni la modification d’autre chose."
   },
   "mode.requirements.saml-request-signatures.what": {
     "en": "85e7bc435ce1b0c0",

@@ -32,8 +32,8 @@
     "text": "partial : six services et 42 méthodes sont servis à partir des protos intégrés, dont 36 sont implémentées. Les six qui ne le sont pas répondent chacune avec une raison — AppendBundle et PublishJWTAuthority (elles publieraient une autorité pour laquelle ce serveur ne détient aucune clé), RefreshBundle (elle récupérerait une URL que quelqu’un a enregistrée) et les trois méthodes WIT. L’APPELANT EST AUTHENTIFIÉ ET AUTORISÉ : le port TCP est en TLS mutuel, l’identifiant SPIFFE de l’appelant est tiré du SAN URI de son X509-SVID et vérifié contre le bundle de confiance, et chaque méthode est contrôlée selon le policy_data.json propre à SPIRE — local, agent, admin, downstream — le socket Unix étant considéré comme `local`, à la manière dont un vrai spire-server fait confiance à son socket privé. RenewAgent a cessé d’être non implémentée grâce à cela : elle renouvelle l’agent de la connexion. Aucun paramètre ne rétablit l’ancienne posture, où le port était en clair et où quiconque l’atteignait pouvait créer une entrée d’enregistrement accordant n’importe quelle identité : spiffe.authRequired a été supprimé le 2026-09-06."
   },
   "stsmetadata.specs.rfc4120.coverage": {
-    "en": "f830c0cae35e4109",
-    "text": "partial : les échanges AS et TGS sur TCP, UDP et MS-KKDCP, avec la pré-authentification (PA-ENC-TIMESTAMP), PA-ETYPE-INFO2 portant le sel, les indicateurs de ticket, l’application de la tolérance d’horloge et le catalogue d’erreurs. Deux royaumes avec une relation d’approbation entre eux, de sorte que les renvois inter-royaumes fonctionnent. La pré-authentification FAST et OTP a ses propres lignes (RFC 6113, RFC 6560), tout comme PKINIT (RFC 4556) ; pas de signatures de requête, pas de kpasswd (S4U relève de [MS-SFU], sa propre ligne). L’échange AP appartient à l’accepteur (SPNEGO), pas à celui-ci. N’IMPORTE QUEL nom d’utilisateur s’authentifie et tous les comptes utilisateur partagent UN SEUL mot de passe, que publie le paramètre krb5.userPassword : la pré-authentification est vérifiée pour de vrai (le mot de passe est la clé, il le faut donc), mais c’est le même mot de passe pour tout le monde et un nom d’utilisateur inconnu est créé sur-le-champ plutôt que refusé. C’EST LE MODE DÉVELOPPEMENT. En mode produit, les comptes de démonstration, le second royaume et toutes les règles de délégation sont absents, rien n’est créé à la demande, aucun mot de passe n’est publié, le compte de service configuré n’existe que là où krb5.servicePassword vaut autre chose que sa valeur par défaut publiée, et la clé krbtgt de chaque domaine est ALÉATOIRE, scellée dans l’annuaire et renouvelée par la tâche krb5.krbtgt-rotate (krb5.krbtgtRotationIntervalDays), la version qu’elle remplace étant conservée aussi longtemps que peut vivre au maximum un TGT émis sous elle ; « renouveler et invalider » ne conserve rien. Aucun enctype Kerberos post-quantique n’est normalisé ; le renouvellement utilise donc les enctypes AES. Un KDC en mode produit authentifie les PERSONNES de l’annuaire avec des clés dérivées de leurs propres mots de passe (après une première connexion), et les principaux de service avec des clés aléatoires créées par un opérateur ; et une personne qui détient ou doit détenir un second facteur n’obtient AUCUN ticket avec le seul mot de passe (KDC_ERR_POLICY, après vérification du mot de passe) — uniquement via FAST avec la pré-authentification OTP, ou avec un certificat via PKINIT."
+    "en": "27228a77db708fb3",
+    "text": "partial : les échanges AS et TGS sur TCP, UDP et MS-KKDCP, avec la pré-authentification (PA-ENC-TIMESTAMP), PA-ETYPE-INFO2 portant le sel, les indicateurs de ticket, l’application de la tolérance d’horloge et le catalogue d’erreurs. Les approbations avec d’autres royaumes sont des enregistrements, un par partenaire (Protocoles → Kerberos → Approbations, /admin-api/kerberos/trusts) : renvois à travers les approbations transitives avec transited vérifié, clés inter-royaumes issues d’un mot de passe partagé ou générées, renouvelées avec un délai de grâce pour celle remplacée. La pré-authentification FAST et OTP a ses propres lignes (RFC 6113, RFC 6560), tout comme PKINIT (RFC 4556) ; pas de signatures de requête, pas de kpasswd (S4U relève de [MS-SFU], sa propre ligne). L’échange AP appartient à l’accepteur (SPNEGO), pas à celui-ci. N’IMPORTE QUEL nom d’utilisateur s’authentifie et tous les comptes utilisateur partagent UN SEUL mot de passe, que publie le paramètre krb5.userPassword : la pré-authentification est vérifiée pour de vrai (le mot de passe est la clé, il le faut donc), mais c’est le même mot de passe pour tout le monde et un nom d’utilisateur inconnu est créé sur-le-champ plutôt que refusé. C’EST LE MODE DÉVELOPPEMENT. En mode produit, les comptes de démonstration, le second royaume et toutes les règles de délégation sont absents, rien n’est créé à la demande, aucun mot de passe n’est publié, le compte de service configuré n’existe que là où krb5.servicePassword vaut autre chose que sa valeur par défaut publiée, et la clé krbtgt de chaque domaine est ALÉATOIRE, scellée dans l’annuaire et renouvelée par la tâche krb5.krbtgt-rotate (krb5.krbtgtRotationIntervalDays), la version qu’elle remplace étant conservée aussi longtemps que peut vivre au maximum un TGT émis sous elle ; « renouveler et invalider » ne conserve rien. Aucun enctype Kerberos post-quantique n’est normalisé ; le renouvellement utilise donc les enctypes AES. Un KDC en mode produit authentifie les PERSONNES de l’annuaire avec des clés dérivées de leurs propres mots de passe (après une première connexion), et les principaux de service avec des clés aléatoires créées par un opérateur ; et une personne qui détient ou doit détenir un second facteur n’obtient AUCUN ticket avec le seul mot de passe (KDC_ERR_POLICY, après vérification du mot de passe) — uniquement via FAST avec la pré-authentification OTP, ou avec un certificat via PKINIT."
   },
   "stsmetadata.specs.rfc6113.coverage": {
     "en": "a3a867d4d0ef4d0b",
@@ -72,12 +72,12 @@
     "text": "full pour les etypes proposés : aes128/256-cts-hmac-sha1-96 (17, 18), aes128/256-cts-hmac-sha256/384 (19, 20) et arcfour-hmac-md5 (23). DES est uniquement décodé et n’est pas proposé. Lesquels des cinq sont proposés est fixé par krb5.enctypes, les cinq par défaut en développement ; en mode produit, 23 n’est jamais proposé, dérivé ni accepté (RFC 8429, #182), ce qui laisse les quatre types AES. Un numéro que le codec n’implémente pas arrête le service au démarrage. Le même codec s’exécute dans le navigateur."
   },
   "stsmetadata.specs.ms-sfu.coverage": {
-    "en": "39fb27234501bf05",
-    "text": "partial : S4U2Self (PA-FOR-USER avec la somme de contrôle S4UByteArray de la section 2.2.1, HMAC-MD5 avec l’usage de clé 17) et S4U2Proxy (cname-in-addl-tkt avec le ticket de preuve), autorisés DANS LES DEUX SENS — msDS-AllowedToDelegateTo sur le frontal et msDS-AllowedToActOnBehalfOfOtherIdentity sur le serveur dorsal, les asymétries entre eux étant appliquées : la délégation classique exige une preuve transmissible et la délégation basée sur les ressources exige PA-PAC-OPTIONS avec le bit resource-based, refusée avec KDC_ERR_BADOPTION sans lui. S4U_DELEGATION_INFO est écrit dans le PAC. NON implémentés : les variantes U2U, et aucune tentative n’est faite pour modéliser l’ACL d’un vrai domaine sur l’un ou l’autre attribut — les deux listes sont de la configuration dans krb5_principals.js et sont publiées sur /admin/delegation."
+    "en": "350b1523e8a3e0e8",
+    "text": "partial : S4U2Self (PA-FOR-USER avec la somme de contrôle S4UByteArray de la section 2.2.1, HMAC-MD5 avec l’usage de clé 17) et S4U2Proxy (cname-in-addl-tkt avec le ticket de preuve), autorisés DANS LES DEUX SENS — msDS-AllowedToDelegateTo sur le frontal et msDS-AllowedToActOnBehalfOfOtherIdentity sur le serveur dorsal, les asymétries entre eux étant appliquées : la délégation classique exige une preuve transmissible et la délégation basée sur les ressources exige PA-PAC-OPTIONS avec le bit resource-based, refusée avec KDC_ERR_BADOPTION sans lui. S4U_DELEGATION_INFO est écrit dans le PAC. À TRAVERS LES APPROBATIONS : S4U2Self pour un utilisateur d’un autre royaume à travers autant d’approbations transitives que le chemin l’exige (PA-S4U-X509-USER aussi), et S4U2Proxy basé sur les ressources vers une cible d’un autre royaume, sa preuve vérifiée par PAC avec la clé inter-royaumes ; la délégation classique ne traverse que si les deux royaumes définissent krb5.crossRealmClassicDelegation. NON implémentés : les variantes U2U, et aucune tentative n’est faite pour modéliser l’ACL d’un vrai domaine sur l’un ou l’autre attribut — les deux listes sont de la configuration dans krb5_principals.js et sont publiées sur /admin/delegation."
   },
   "stsmetadata.specs.ms-pac.coverage": {
-    "en": "ce39d54091e6c64a",
-    "text": "partial : chaque ticket porte un PAC signé — informations d’ouverture de session (KERB_VALIDATION_INFO, NDR), informations client, informations UPN/DNS, attributs et SID du demandeur. Un TGT reçoit deux signatures et un ticket de service quatre, selon les sections 2.8.2/2.8.3. Les REVENDICATIONS CLIENT (PAC_CLIENT_CLAIMS_INFO, 2.11) sont produites tant que krb5.pacClaims est activé (#493), jamais compressées ; les tampons de revendications arrivant dans le PAC d’un autre royaume sont décodés (XPRESS Huffman compris) et transportés. Les informations d’appareil et les revendications d’APPAREIL ne sont pas produites, et le FILTRAGE DES SID à travers une relation d’approbation n’est PAS implémenté — un PAC re-signé conserve chaque SID avec lequel il est arrivé."
+    "en": "22bf6b719bdeefc5",
+    "text": "partial : chaque ticket porte un PAC signé — informations d’ouverture de session (KERB_VALIDATION_INFO, NDR), informations client, informations UPN/DNS, attributs et SID du demandeur. Un TGT reçoit deux signatures et un ticket de service quatre, selon les sections 2.8.2/2.8.3. Les REVENDICATIONS CLIENT (PAC_CLIENT_CLAIMS_INFO, 2.11) sont produites tant que krb5.pacClaims est activé (#493), jamais compressées ; les tampons de revendications arrivant dans le PAC d’un autre royaume sont décodés (XPRESS Huffman compris) et transportés. Les informations d’appareil et les revendications d’APPAREIL ne sont pas produites. Un PAC arrivant à travers une approbation est FILTRÉ PAR SID comme le dit la section 4.1.2.2 pour la frontière de l’approbation avant d’être re-signé — informations d’appareil supprimées, ensemble de revendications supprimé sauf si l’approbation l’autorise — et le PAC d’un renvoi est signé avec la clé inter-royaumes."
   },
   "stsmetadata.specs.rfc4178.coverage": {
     "en": "4c1e4c4761e68531",
@@ -100,8 +100,8 @@
     "text": "full pour la requête et la réponse : les noms abrégés des catégories, les noms courts des types de données, l’inférence du type de données à partir du type JSON (y compris la distinction entier/double, lue dans le texte source parce que JSON.parse l’a déjà perdue), les tableaux comme sacs (bags), les obligations, les conseils et la PolicyIdentifierList. Le profil ne définit aucune syntaxe de politique ; les politiques restent donc en XML."
   },
   "stsmetadata.specs.ssf.coverage": {
-    "en": "6c01d01ad36a35b6",
-    "text": "partial : la moitié émettrice (transmitter) en entier — les métadonnées de configuration sur /.well-known/ssf-configuration et sous la forme à chemin inséré de la section 7.2 pour un émetteur de domaine, l’API de gestion des flux (créer, lire, remplacer, fusionner, supprimer), le point de terminaison d’état avec les trois états, l’ajout et le retrait de sujets, le point de terminaison de vérification (répondant 204 et remettant de manière asynchrone, section 8.1.4.2), les deux méthodes de remise, et les deux types d’événements propres à SSF — verification, également envoyé à l’initiative de l’émetteur lui-même (ssf.verificationEveryS, ou Verify sur /admin/ssf), et stream updated, envoyé avant qu’un flux s’arrête et après qu’il reprend, à chaque changement d’état. Chaque flux appartient au récepteur qui l’a créé (section 8) : le flux d’un autre récepteur répond 404, une liste ne contient que les flux de l’appelant, aud est Transmitter-Supplied à partir de l’identité du récepteur, et ssf.maxStreams s’applique par récepteur. Un flux push en pause conserve ses SET et les pousse dans l’ordre lorsqu’il est réactivé ; un flux mort est mis en pause et annoncé. inactivity_timeout (désactivé par défaut), txn sur chaque SET, les sujets complexes avec \"format\": \"complex\" et les sept membres de la section 3.3 plus d’autres, critical_subject_members, et les formats jwt_id, saml_assertion_id et ip-addresses de la section 3.5 sont implémentés. L’autorisation de la section 8 repose sur trois schémas — un jeton d’accès OAuth 2.0 avec ssf:read ou ssf:write (émis uniquement à un client qui les déclare, et honoré seulement tant qu’il les déclare encore), HTTP Basic et GNAP — publiés dans authorization_schemes. Les push en échec sont retentés ssf.pushRetries fois (0 par défaut, délibérément) puis mis en lettres mortes, et les flux sont persistés en mode produit. ET LA MOITIÉ RÉCEPTRICE (#153) : un domaine enregistre un émetteur étranger par son identifiant d’émetteur (le document de la section 7, qui doit le nommer, et son jwks_uri), y crée, lit, met à jour et supprime son flux, en fixe l’état, ajoute et retire des sujets et demande une vérification, reçoit par interrogation (RFC 8936, une tâche planifiée accusant réception de ce qu’elle a reçu) ou par push (RFC 8935, l’en-tête d’autorisation qu’il a fourni), vérifie chaque SET (signature contre les clés de l’émetteur, typ, iss, aud, un jti une seule fois), et y donne suite par la politique de réponse aux signaux pour une personne que lie une relation de fédération. NON couvert : rien n’est vérifié au sujet d’un sujet que nomment les flux propres de cet émetteur ; un flux peut donc nommer quelqu’un qui n’est jamais venu ici."
+    "en": "43e50e62e3dae13e",
+    "text": "partial : la moitié émettrice (transmitter) en entier — les métadonnées de configuration sur /.well-known/ssf-configuration et sous la forme à chemin inséré de la section 7.2 pour un émetteur de domaine, l’API de gestion des flux (créer, lire, remplacer, fusionner, supprimer), le point de terminaison d’état avec les trois états, l’ajout et le retrait de sujets, le point de terminaison de vérification (répondant 204 et remettant de manière asynchrone, section 8.1.4.2), les deux méthodes de remise, et les deux types d’événements propres à SSF — verification, également envoyé à l’initiative de l’émetteur lui-même (ssf.verificationEveryS, ou Verify sur /admin/ssf), et stream updated, envoyé avant qu’un flux s’arrête et après qu’il reprend, à chaque changement d’état. Chaque flux appartient au récepteur qui l’a créé (section 8) : le flux d’un autre récepteur répond 404, une liste ne contient que les flux de l’appelant, aud est Transmitter-Supplied à partir de l’identité du récepteur, et ssf.maxStreams s’applique par récepteur. Un flux push en pause conserve ses SET et les pousse dans l’ordre lorsqu’il est réactivé ; un flux mort est mis en pause et annoncé. inactivity_timeout (désactivé par défaut), txn sur chaque SET, les sujets complexes avec \"format\": \"complex\" et les sept membres de la section 3.3 plus d’autres, critical_subject_members, et les formats jwt_id, saml_assertion_id et ip-addresses de la section 3.5 sont implémentés. L’autorisation de la section 8 repose sur trois schémas — un jeton d’accès OAuth 2.0 avec la portée de lecture (ssf.read) ou la portée d’écriture (ssf.manage), qui inclut la lecture, émis à un client qui déclare cette permission et honoré seulement tant qu’il la déclare encore, HTTP Basic et GNAP — publiés dans authorization_schemes. Les push en échec sont retentés ssf.pushRetries fois (0 par défaut, délibérément) puis mis en lettres mortes, et les flux sont persistés en mode produit. ET LA MOITIÉ RÉCEPTRICE (#153) : un domaine enregistre un émetteur étranger par son identifiant d’émetteur (le document de la section 7, qui doit le nommer, et son jwks_uri), y crée, lit, met à jour et supprime son flux, en fixe l’état, ajoute et retire des sujets et demande une vérification, reçoit par interrogation (RFC 8936, une tâche planifiée accusant réception de ce qu’elle a reçu) ou par push (RFC 8935, l’en-tête d’autorisation qu’il a fourni), vérifie chaque SET (signature contre les clés de l’émetteur, typ, iss, aud, un jti une seule fois), et y donne suite par la politique de réponse aux signaux pour une personne que lie une relation de fédération. NON couvert : rien n’est vérifié au sujet d’un sujet que nomment les flux propres de cet émetteur ; un flux peut donc nommer quelqu’un qui n’est jamais venu ici."
   },
   "stsmetadata.specs.rfc8417.coverage": {
     "en": "8641e83cb922bdcc",
@@ -268,8 +268,8 @@
     "text": "partial : LES DEUX profils navigateur — Browser/Artifact (section 4.1) et Browser/POST (4.2) — chacun avec la méthode de confirmation qu’exige sa section, qui sont des valeurs différentes et non interchangeables. IL N’Y A PAS DE MESSAGE DE REQUÊTE DANS SAML 1.1 ; les deux sont donc initiés par le fournisseur d’identité : un flux démarre lorsqu’un navigateur arrive porteur d’un TARGET, la partie de confiance ne s’identifie jamais dans le protocole, et un échec est une PAGE plutôt qu’une Response, puisqu’il n’y a rien à quoi répondre. Le profil AuthnRequest non standard de Shibboleth (urn:mace:shibboleth:1.0:profiles:AuthnRequest) est accepté et annoncé, car c’est ce qu’envoie tout vrai fournisseur de services SAML 1.1. `shire` est utilisé tel qu’envoyé en mode développement et doit être enregistré sur l’entrée de la partie de confiance en mode PRODUIT (2026-09-12). La Response Browser/POST est signée comme l’exige la section 4.1.2.4, avec son assertion ; désactiver l’une ou l’autre signature est un cas de test de développement que le mode produit ignore (#181)."
   },
   "stsmetadata.specs.ws-federation.coverage": {
-    "en": "2abb20f4fd0f6ab0",
-    "text": "partial : le Web (Passive) Requestor Profile de la section 13 — wsignin1.0 avec wtrealm, wreply, wctx, wct, wfresh, wauth, whr et wreq, la réponse de connexion sous forme de POST de formulaire, et wsignout1.0/wsignoutcleanup1.0 avec des requêtes de nettoyage par le canal frontal ; en tant que partie de confiance de fédération (#167), le nettoyage d’un partenaire, non signé selon la spécification, ne met fin à la session qu’après que la personne l’a confirmé sur une page dotée d’un vrai bouton, et une déconnexion ici envoie wsignout1.0 au partenaire. Métadonnées de fédération signées (section 3.1) au chemin AD FS. NON implémentés, chacun étant nommé plutôt que passé sous silence : le profil de demandeur actif (SOAP) au-delà de ce à quoi /sts répond déjà, wresultptr, le service d’attributs (wattr1.0) et le service de pseudonymes (wpseudo1.0), qui répondent tous deux 501, wreqptr (refusé — déréférencer une URL issue d’un paramètre de requête est une falsification de requête côté serveur), le chiffrement des jetons dans ce profil (une requête passive ne porte aucun certificat de destinataire), et toute application d’autorisation ou de politique. wreply est utilisé tel qu’envoyé en mode développement et doit être une wsfedReplyUrl enregistrée en mode PRODUIT (2026-09-12)."
+    "en": "df4a48ab6e7784a2",
+    "text": "partial : le Web (Passive) Requestor Profile de la section 13 — wsignin1.0 avec wtrealm, wreply, wctx, wct, wfresh, wauth, whr et wreq, la réponse de connexion sous forme de POST de formulaire, et wsignout1.0/wsignoutcleanup1.0 avec des requêtes de nettoyage par le canal frontal ; en tant que partie de confiance de fédération (#167), le nettoyage d’un partenaire, non signé selon la spécification, ne met fin à la session qu’après que la personne l’a confirmé sur une page dotée d’un vrai bouton, et une déconnexion ici envoie wsignout1.0 au partenaire. Métadonnées de fédération signées (section 3.1) au chemin AD FS. NON implémentés, chacun étant nommé plutôt que passé sous silence : le profil de demandeur actif (SOAP) au-delà de ce à quoi /sts répond déjà, wresultptr, le service d’attributs (wattr1.0) et le service de pseudonymes (wpseudo1.0), qui répondent tous deux 501, wreqptr (refusé — déréférencer une URL issue d’un paramètre de requête est une falsification de requête côté serveur), le chiffrement des jetons dans ce profil (une requête passive ne porte aucun certificat de destinataire), et toute application d’autorisation ou de politique. wreply est utilisé tel qu’envoyé en mode développement et doit être une wsfedReplyUrl enregistrée en mode PRODUIT (2026-09-12). Au-delà de la spécification, qui ne prévoit pas une telle requête : une connexion initiée par le fournisseur d’identité sur /wsfed/initiate/{rp} (#712), désactivée tant qu’une partie de confiance ne l’a pas choisie, et envoyée par POST uniquement vers sa wsfedReplyUrl enregistrée."
   },
   "stsmetadata.specs.xmldsig.coverage": {
     "en": "668af5821905c8e5",
@@ -344,8 +344,12 @@
     "text": "full : POST /oauth2/par sur chaque serveur d’autorisation, authentifiant le client exactement comme le fait le point de terminaison de jeton (donc appliqué en mode RFC 9700, OAuth 2.1 et produit, et observé en développement), acceptant l’émetteur, le point de terminaison de jeton et le point de terminaison PAR comme audience d’une assertion client ; request_uri refusé dans un push ; la requête poussée validée par les contrôles propres au point de terminaison d’autorisation ; un objet `request` vérifié comme l’exige RFC 9101, lié au client authentifié, et un push simple refusé là où un objet signé est exigé ; 201 avec une référence urn:ietf:params:oauth:request_uri: de 256 bits liée au client et au serveur d’autorisation, expires_in tiré de oauth2.parRequestUriLifetimeS ; 405, 413 et 429 ; le redirect_uri non enregistré de la section 2.4 pour un client AUTHENTIFIÉ, derrière un paramètre (désactivé) ; un request_uri utilisable pendant les passages de connexion et de consentement et consommé lorsqu’une réponse d’autorisation est émise, ceux expirés ou rejoués étant refusés avec invalid_request_uri ; la politique d’exigence globalement, par client (require_pushed_authorization_requests à l’enregistrement, dans la console et sur /admin-api) et par serveur d’autorisation ; les deux membres de métadonnées ; la politique client interrogée à nouveau lorsque le request_uri est utilisé ; et une preuve DPoP lors du push liant le code (RFC 9449 section 10.1). Comptabilisé et listé sur /admin/oauth2/monitor."
   },
   "stsmetadata.specs.rfc9470.coverage": {
-    "en": "77eec06ed075ef4d",
-    "text": "full : le point de terminaison d’autorisation honore acr_values et max_age dans tous les modes, avec ou sans openid — une session qui ne les satisfait pas renvoie la personne se connecter à nouveau une fois (une exigence de deux facteurs imposant l’étape du second facteur), prompt=none répond login_required, et une exigence toujours non satisfaite après cette connexion est refusée avec unmet_authentication_requirements (section 5) ; les valeurs acr sont ordonnées 0 < 1 < mfa et le code, l’ID Token et le jeton d’accès portent la valeur DEMANDÉE préférée qui est satisfaite ; acr_values_supported dans les deux documents de découverte ; acr et auth_time dans le jeton d’accès JWT (section 6.1) et dans l’introspection (section 6.2) ; et le défi 401 insufficient_user_authentication de la section 3 avec acr_values et max_age, envoyé par le serveur de ressources propre à ce service (UserInfo, les points de terminaison OpenID4VCI, SCIM, SSF) selon oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS ; les oauthStepUpAcrValues / oauthStepUpMaxAge d’une application de ressource sont enregistrés pour que le serveur de ressources qu’est l’application les applique. Limite : la connexion de ce service produit trois classes de contexte ; toute autre valeur acr n’est satisfaite que par une connexion fédérée signalant exactement cet acr. Comptabilisé sur /admin/oauth2/monitor."
+    "en": "910cd847e99f6395",
+    "text": "full : le point de terminaison d’autorisation honore acr_values et max_age dans tous les modes, avec ou sans openid — une session qui ne les satisfait pas renvoie la personne se connecter à nouveau une fois (une exigence de deux facteurs imposant l’étape du second facteur), prompt=none répond login_required, et une exigence toujours non satisfaite après cette connexion est refusée avec unmet_authentication_requirements (section 5) ; les valeurs acr sont ordonnées 0 < 1 < mfa et le code, l’ID Token et le jeton d’accès portent la valeur DEMANDÉE préférée qui est satisfaite ; acr_values_supported dans les deux documents de découverte ; acr et auth_time dans le jeton d’accès JWT (section 6.1) et dans l’introspection (section 6.2) ; et le défi 401 insufficient_user_authentication de la section 3 avec acr_values et max_age, envoyé par le serveur de ressources propre à ce service (UserInfo, les points de terminaison OpenID4VCI, SCIM, SSF) selon oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS ; les oauthStepUpAcrValues / oauthStepUpMaxAge d’une application de ressource sont enregistrés pour que le serveur de ressources qu’est l’application les applique. Limite : la connexion de ce service produit trois classes de contexte ordonnées et les deux d’OpenID Connect EAP ACR Values 1.0, qui ne sont pas sur l’échelle ; toute autre valeur acr n’est satisfaite que par une connexion fédérée signalant exactement cet acr. Comptabilisé sur /admin/oauth2/monitor."
+  },
+  "stsmetadata.specs.oidc-eap-acr.coverage": {
+    "en": "d427a89d52168651",
+    "text": "partial : phr et phrh (section 2) sont publiés dans acr_values_supported, honorés via acr_values, une demande de claims acr essentielle et les default_acr_values d’un client — l’écran de connexion demande alors une clé de sécurité — et portés comme acr de l’ID Token et du jeton d’accès lorsque la connexion les a mérités, sinon refusés avec unmet_authentication_requirements. phr est mérité par une assertion WebAuthn (seule ou après un mot de passe) ou un certificat client TLS ; phrh par une assertion dont la clé a une attestation de confiance et un indicateur backup-eligible à zéro ; une clé enregistrée dans la même connexion ne mérite ni l’un ni l’autre (section 4). Une demande qui ne nomme ni l’un ni l’autre laisse l’acr tel qu’il était. La politique d’émission voit urn:sts:xacml:phishing-resistance, et deux options de role-issuance exigent l’un ou l’autre pour une application. La valeur amr pop (section 3) n’est écrite que par la connexion par portefeuille. Manquant : SAML AuthnContextClassRef et WS-Federation wauth ne mappent pas les deux valeurs."
   },
   "stsmetadata.specs.rfc9101.coverage": {
     "en": "a6099e44ece03aa7",
@@ -488,8 +492,12 @@
     "text": "full, dans tous les modes (#143, construit dans #139) : response_mode query.jwt, fragment.jwt, form_post.jwt et jwt (query pour code, fragment sinon) ; les paramètres de réponse avec iss, aud et exp (oauth2.jarmResponseLifetimeS) signés avec l’authorization_signed_response_alg du client (RS256, ou PS256 sous FAPI 1.0 Advanced) et chiffrés lorsqu’il a enregistré authorization_encrypted_response_alg ; les erreurs renvoyées de la même manière ; query.jwt refusé avec un jeton en clair (2.3.1) ; les membres de métadonnées et d’enregistrement des sections 3 et 4."
   },
   "stsmetadata.specs.webauthn.coverage": {
-    "en": "ad2559da570e5a62",
-    "text": "partial, côté partie de confiance : l’enregistrement (section 7.1) et l’assertion (section 7.2) sont vérifiés — défi, origine, hachage du RP ID, indicateurs de présence et de vérification de l’utilisateur, BE/BS, l’alg de l’identifiant par rapport à pubKeyCredParams, le credential id de 1023 octets, le compteur de signatures, et la signature sur authenticatorData || SHA-256(clientDataJSON), pour les clés ES256/384/512, RS256/384/512, PS256/384/512, EdDSA et ML-DSA-44/65/87 (RFC 9964). Depuis #105, la DÉCLARATION D’ATTESTATION est vérifiée dans les huit formats de la section 8 (packed, tpm, android-key, android-safetynet, fido-u2f, none, apple, compound) selon webauthn.attestationPolicy — by-mode correspond à verify-if-present en mode produit et à off en développement — sa chaîne contre les ancres configurées et les racines du FIDO Metadata Service, sa révocation consultée, et un modèle que MDS signale comme compromis refusé. Manquent : l’attestation d’entreprise (section 5.4.7) n’a pas de liste d’autorisation de RP ID, et les extensions d’authentification ne sont pas traitées. Écrit indépendamment du décodeur propre au débogueur afin que les deux puissent être vérifiés l’un par rapport à l’autre (tests/webauthn_cross_impl.js)."
+    "en": "84ea7cdfbe803962",
+    "text": "partial, côté partie de confiance : l’enregistrement (section 7.1) et l’assertion (section 7.2) sont vérifiés — défi, origine, hachage du RP ID, indicateurs de présence et de vérification de l’utilisateur, BE/BS, l’alg de l’identifiant par rapport à pubKeyCredParams, le credential id de 1023 octets, le compteur de signatures, et la signature sur authenticatorData || SHA-256(clientDataJSON), pour les clés ES256/384/512, RS256/384/512, PS256/384/512, EdDSA et ML-DSA-44/65/87 (RFC 9964). Depuis #105, la DÉCLARATION D’ATTESTATION est vérifiée dans les huit formats de la section 8 (packed, tpm, android-key, android-safetynet, fido-u2f, none, apple, compound) selon webauthn.attestationPolicy — by-mode correspond à verify-if-present en mode produit et à off en développement — sa chaîne contre les ancres configurées et les racines du FIDO Metadata Service, sa révocation consultée, et un modèle que MDS signale comme compromis refusé. Depuis #643, une clé d’accès classique et une clé d’accès post-quantique (ML-DSA) peuvent être détenues côte à côte (webauthn.pqcAlongsideClassical) : chaque voie a son propre identifiant d’utilisateur (section 5.4.3), sa liste d’algorithmes et ses excludeCredentials, et la Signal API (section 5.1.10) est envoyée une fois par voie. Manquent : l’attestation d’entreprise (section 5.4.7) n’a pas de liste d’autorisation de RP ID, et les extensions d’authentification ne sont pas traitées. Écrit indépendamment du décodeur propre au débogueur afin que les deux puissent être vérifiés l’un par rapport à l’autre (tests/webauthn_cross_impl.js)."
+  },
+  "stsmetadata.specs.dbsc.coverage": {
+    "en": "5eac46b3be2eaa5f",
+    "text": "partial, le côté serveur d’une session limitée à l’origine par authentification unique : Secure-Session-Registration proposant ES256 et RS256, la preuve dbsc+jwt à l’enregistrement (son jwk, son typ, son alg et son jti vérifiés et la signature contrôlée) et au renouvellement (vérifiée avec la clé liée), les instructions de session JSON avec un seul cookie lié, l’échange 403 et Secure-Session-Challenge, et Sec-Secure-Session-Id. Chaque défi n’est consommé qu’une fois pour le cluster. Manquent : les sessions fédérées (provider_key, le document well-known), les sessions limitées au site et les règles de portée, le paramètre authorization, et la lecture de Secure-Session-Skipped. Désactivé par défaut (authn.deviceBoundSessions)."
   },
   "stsmetadata.specs.rfc4226.coverage": {
     "en": "ffd9d22cf4ecfd57",
@@ -606,6 +614,10 @@
   "stsmetadata.specs.token-status-list.coverage": {
     "en": "0e654cb76a7429ce",
     "text": "partial : une liste par domaine, deux bits par justificatif (VALID, INVALID, SUSPENDED), servie comme Status List Token sous forme JWT et CWT selon Accept, avec ttl et exp, un point de terminaison d’agrégation, et la revendication status dans chaque justificatif SD-JWT VC et jwt_vc_json ; le Verifier résout la liste d’un émetteur étranger de confiance et refuse lorsqu’aucune affirmation ne peut être faite. Et une seconde liste par domaine pour les JETONS D’ACCÈS (#432) : un bit par jeton, chaque jeton d’accès OAuth RFC 9068 et chaque jeton GNAP jwt-signed et jwt-encrypted portant sa revendication status, annoncée comme status_list_aggregation_endpoint (section 9.1) dans les métadonnées du serveur d’autorisation. Pas de résolution historique (501), aucune redirection suivie, pas de mdoc (aucun n’est émis)."
+  },
+  "stsmetadata.specs.etsi-ts-119-602.coverage": {
+    "en": "d648e3ad690b8900",
+    "text": "partial : une liste explicite de schéma par domaine à /oid4vci/trusted-list, dans la liaison JSON, signée comme un JWS compact avec la chaîne du signataire dans x5c (ES256 là où cette clé est certifiée, sinon RS256) : cet émetteur d'attestations comme son unique entité de confiance, un service d'émission et un de révocation nommant chacun la racine du service, un pointeur vers elle-même, DistributionPoints, un numéro de séquence qui croît à chaque émission et NextUpdate. Les URI du schéma sont sous l'URL propre de la liste, puisqu'aucune des annexes D à H n'est une liste d'émetteurs d'attestations. Pas d'adresse postale, pas d'historique, pas de listes d'autres parties."
   },
   "stsmetadata.specs.bitstring-status-list.coverage": {
     "en": "735bcafaa36c4d9e",
@@ -924,8 +936,8 @@
     "text": "NON-SPEC (#584). L’environnement d’exécution et les moteurs de rendu des pages de description des six familles de protocoles, en un seul fichier construit par build-typescript.sh (common/description-pages-spa.js) et servi précompressé sur le chemin propre à chaque famille : ici il dessine GET /ssf à partir de la vue que porte son shell."
   },
   "stsmetadata.endpoints./ssf/stream.what": {
-    "en": "2d90440012723310",
-    "text": "Un chemin et cinq méthodes, ce qui est la forme même de la spécification : le point de terminaison de configuration EST la ressource. POST crée un flux — ce service produit le stream_id et définit iss, et répond avec events_delivered, l’INTERSECTION de ce que le récepteur a demandé et de ce que ce transmetteur prend en charge, le membre le plus souvent confondu avec events_requested. GET en lit un (?stream_id=) ou les liste tous. PUT REMPLACE et PATCH FUSIONNE, et la différence est réelle : un PUT qui se comporterait comme un PATCH laisserait un récepteur croire qu’il a vidé events_requested alors que ce n’est pas le cas. DELETE le supprime. Nécessite ssf:write pour tout sauf le GET."
+    "en": "3298bd80c2734a34",
+    "text": "Un chemin et cinq méthodes, ce qui est la forme même de la spécification : le point de terminaison de configuration EST la ressource. POST crée un flux — ce service produit le stream_id et définit iss, et répond avec events_delivered, l’INTERSECTION de ce que le récepteur a demandé et de ce que ce transmetteur prend en charge, le membre le plus souvent confondu avec events_requested. GET en lit un (?stream_id=) ou les liste tous. PUT REMPLACE et PATCH FUSIONNE, et la différence est réelle : un PUT qui se comporterait comme un PATCH laisserait un récepteur croire qu’il a vidé events_requested alors que ce n’est pas le cas. DELETE le supprime. Nécessite la portée d’écriture ssf.manage pour tout sauf le GET, qu’une portée de lecture satisfait aussi, parce que ssf.manage inclut la lecture."
   },
   "stsmetadata.endpoints./ssf/status.what": {
     "en": "5bd5bdca5496410b",
@@ -1400,8 +1412,8 @@
     "text": "NON-SPEC (#74). Tout ce qu’affiche /admin/caches, en JSON : chaque cache enregistré avec sa taille, ses entrées valides et expirées, sa borne, sa durée de vie, ses paramètres, ses succès, ses échecs et son taux de succès ; avec ?cache=, le résumé de ce cache et une page de ses entrées (page, per), chacune avec son domaine, sa clé et le temps restant. Un nom inconnu reçoit une réponse 200 avec found: false. Aucune valeur mise en cache ne figure dans la réponse. Reflète GET /admin/caches."
   },
   "stsmetadata.endpoints./admin-api/worker-pools.what": {
-    "en": "aa9d2b625e5ba68b",
-    "text": "NON-SPEC (#327). Tout ce qu’affiche /admin/worker-pools, en JSON : les pools de requêtes, de surfaces hébergées et post-quantiques de ce nœud, chacun avec son état, ses workers actuels, occupés, libres, maximaux et initiaux, ses plantages, démarrages et arrêts échoués, et son temps de réponse ; le pool post-quantique par processus ; en grappe, chaque nœud par son nom et les totaux, ?node= pour un seul (#332). Reflète GET /admin/worker-pools."
+    "en": "39bf096a70b38c7b",
+    "text": "NON-SPEC (#327). Tout ce qu’affiche /admin/worker-pools, en JSON : les pools de requêtes et de surfaces hébergées de ce nœud, chacun un ensemble de threads de worker, avec son état, ses workers actuels, occupés, libres, maximaux et initiaux, ses plantages, démarrages échoués et arrêts, et son temps de réponse. Il n’y a pas de pool post-quantique depuis #363. En grappe, chaque nœud par son nom et les totaux, ?node= pour un seul (#332). Reflète GET /admin/worker-pools."
   },
   "stsmetadata.endpoints./admin-api/node-health.what": {
     "en": "8ad5e9e21c752f8d",
@@ -1935,6 +1947,14 @@
     "en": "7d01c720ab758b8c",
     "text": "create-service | rotate-service | delete-service | clear-person-keys | drop-previous-service-keys | drop-previous-person-keys | reset-person-keytab | rotate-krbtgt | rotate-krbtgt-invalidate — les commandes de /admin/kerberos/principals, par la même fonction d’action. Les deux actions krbtgt (#169) METTENT EN FILE une exécution de la tâche planifiée krb5.krbtgt-rotate-now et ne renvoient aucune clé ; la forme invalidate ne conserve aucune version précédente et requiert confirm: \"invalidate\". create-service et rotate-service prennent `spn` et renvoient un keytab MIT (format 0x502), en base64, UNE SEULE FOIS — les seules réponses de cette API portant du matériel de clé, et le keytab ne peut pas être récupéré à nouveau ; le keytab d’une rotation porte aussi le kvno précédent qu’elle conserve. delete-service et drop-previous-service-keys prennent `spn` ; clear-person-keys et drop-previous-person-keys prennent `username`. Les deux suppressions closent la fenêtre pendant laquelle un ticket émis sous une version de clé précédente est encore accepté. Requiert admin:write."
   },
+  "stsmetadata.endpoints./admin-api/kerberos/trusts.what": {
+    "en": "5f192604023d5525",
+    "text": "NON-SPEC. L’onglet Approbations de GET /admin/kerberos en JSON : les enregistrements d’approbation du royaume, paginés (?trustsPage=, ?per=), un en entier avec ?trust=, chaque clé décrite par kvno, source et date — jamais la clé ni le mot de passe — avec les constats de santé, ce à partir de quoi les formulaires sont dessinés et les paramètres des approbations. Nécessite admin:read."
+  },
+  "stsmetadata.endpoints./admin-api/kerberos/trusts/:action.what": {
+    "en": "e13c8c35827785b2",
+    "text": "NON-SPEC. add | update | enable | disable | rotate-key | remove | pair — les contrôles de l’onglet Approbations, par la même fonction d’action. Une clé générée est renvoyée UNE SEULE FOIS dans `shown` ; un mot de passe d’approbation n’est jamais renvoyé. rotate-key conserve la version entrante qu’elle remplace pendant krb5.trustKeyGraceSeconds ; remove exige `confirm` répétant le royaume partenaire ; pair, et rotate-key avec mirror, écrivent aussi l’enregistrement du royaume de confiance partenaire et relèvent d’un administrateur du service. Chaque acte est audité par le nom de l’approbation. Nécessite admin:write."
+  },
   "stsmetadata.endpoints./admin-api/token-lifetimes.what": {
     "en": "969aa654a3743c72",
     "text": "NON-SPEC. Les trois durées de vie et la tolérance d’horloge, sous forme de lignes de configuration complètes (bornes, source, valeur par défaut) et de quatre nombres simples, avec le décompte de ce qui a déjà été émis sous ces valeurs et de la part qui a expiré. Équivalent de GET /admin/token-lifetimes."
@@ -2103,6 +2123,18 @@
     "en": "604e81aecab74125",
     "text": "LE MÊME DOCUMENT, PAR APPLICATION (#494) : son entityID est l’émetteur unique du domaine, son émetteur OAuth, comme partout (#523). Le segment est l’identifiant de l’application (son wtrealm) ou son slug. Un segment ne nommant aucune application ENREGISTRÉE donne une 404 dans les deux modes (STS-WSFED-0019). no-store."
   },
+  "stsmetadata.endpoints./wsfed/initiate/:rp.what": {
+    "en": "b12c32c1473198ea",
+    "text": "NON-SPEC (#712) : WS-Federation 1.2 ne définit aucune requête permettant à ce fournisseur d’identité de démarrer une connexion ; le lien est donc propre à ce service. Le segment est l’identifiant (son wtrealm) ou le slug d’une partie de confiance ENREGISTRÉE (sinon 404, STS-WSFED-0024). DÉSACTIVÉ tant que wsfed.idpInitiatedSso ou le wsfedIdpInitiatedSso de l’entrée ne l’active pas (403, STS-WSFED-0025). Un wreply est refusé (STS-WSFED-0026) : la réponse ne va qu’à la première wsfedReplyUrl enregistrée pour elle, jamais à une adresse observée (STS-WSFED-0027 lorsqu’il n’y en a aucune). wctx est renvoyé octet pour octet ; tokenType et trust ont le même sens que sur /wsfed. L’émission est celle d’un wsignin1.0 — la session, la politique d’émission, session-presented, le domaine enregistré pour /logout — et un refus fondé sur le risque soumet la personne à une authentification renforcée une fois."
+  },
+  "stsmetadata.endpoints./wsfed/initiate/:rp.effect": {
+    "en": "8beda07914540942",
+    "text": "connecte la personne si nécessaire, puis envoie par POST une réponse de connexion de la section 13.2.2 à l’adresse de réponse enregistrée de la partie de confiance"
+  },
+  "stsmetadata.endpoints./wsfed/initiate.what": {
+    "en": "9eaa4f8f36279f9e",
+    "text": "NON-SPEC (#712) : /wsfed/initiate/{rp} avec la partie de confiance en ?wtrealm= plutôt qu’en segment de chemin, pour un identifiant dont les barres obliques passent mal dans un chemin. Les mêmes règles."
+  },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
     "text": "Une page de description : les points de terminaison, les quatre liaisons, et le fonctionnement des métadonnées par fournisseur de services. GET /sts et GET /wsfed répondent de la même manière pour la même raison — un point de terminaison qui renvoie une 400 à quelqu’un qui voulait savoir ce qu’il était fait mauvaise impression. Dessinée dans le navigateur depuis #584 ; ?format=json, ou un Accept qui préfère JSON, renvoie sa vue sous forme de données."
@@ -2136,8 +2168,8 @@
     "text": "la même chose, et c’est le même point de terminaison"
   },
   "stsmetadata.endpoints./saml2/unsolicited.what": {
-    "en": "c4aa05f623f432ed",
-    "text": "Une Response NON SOLLICITÉE (saml-profiles-2.0-os section 4.1.5, #189) : providerId nomme le fournisseur de services (le segment de chemin peut le faire à la place), shire l’un de ses services consommateurs d’assertions enregistrés (sinon celui par défaut), target le RelayState, et binding post, simplesign ou artifact (sinon la liaison propre du point de terminaison ; jamais HTTP-Redirect). Connecte la personne via /authn/login en l’absence de session ; la Response et son assertion ne portent pas d’InResponseTo. Le fournisseur de services doit être enregistré en mode produit, et saml2.unsolicitedSso désactive cette fonction pour un domaine."
+    "en": "46085ccec8b2cb1c",
+    "text": "Une Response NON SOLLICITÉE (saml-profiles-2.0-os section 4.1.5, #189) : providerId nomme le fournisseur de services (le segment de chemin peut le faire à la place), shire l’un de ses services consommateurs d’assertions enregistrés (sinon celui par défaut), target le RelayState, et binding post, simplesign ou artifact (sinon la liaison propre du point de terminaison ; jamais HTTP-Redirect). Connecte la personne via /authn/login en l’absence de session ; la Response et son assertion ne portent pas d’InResponseTo. Le fournisseur de services doit être enregistré en mode produit, et il ne reçoit de réponse que là où saml2.idpInitiatedSso est activé pour lui — DÉSACTIVÉ par défaut, le saml2IdpInitiatedSso de son entrée l’activant (#711). Une authentification renforcée que la politique d’émission demande en raison du risque de la session envoie la personne se réauthentifier puis revenir, une fois."
   },
   "stsmetadata.endpoints./saml2/unsolicited.effect": {
     "en": "d57fa6373c895dd8",
@@ -2204,8 +2236,8 @@
     "text": "LE MÊME DOCUMENT, PAR APPLICATION, et la même règle que suit celui de SAML 2.0 : en développement, il ne renvoie jamais de 404, car un identifiant que personne n’a enregistré est enregistré PAR LA DEMANDE ; en mode produit (#112), lui, /saml11/sso/{rp} et /saml11/responder/{rp} donnent une 404 pour tout ce qui n’est pas une partie de confiance SAML 1.1 enregistrée (STS-SAML-0083). Le segment est l’identifiant encodé en pourcentage ou un slug, et ce slug est LE MÊME que celui qu’utilise /saml2 — une application a un seul identifiant court pour les deux profils, sans quoi la console afficherait une entrée comme deux. Le providerID est l’émetteur unique du domaine (#523)."
   },
   "stsmetadata.endpoints./saml11/sso.what": {
-    "en": "64a3ea22439a5c86",
-    "text": "Le nom que donne SAML 1.1 à ce que SAML 2.0 appelle le service Single Sign-On, et la différence n’est pas que de vocabulaire : IL N’Y A PAS DE MESSAGE DE REQUÊTE. Un flux commence par un TARGET et rien d’autre, si bien que la partie de confiance est nommée par le paramètre providerId de Shibboleth, par le segment de chemin, ou — à défaut des deux — DEVINÉE D’APRÈS L’ORIGINE du TARGET, ce qui est journalisé comme supposition. Il n’a pas d’écran de connexion propre et n’a pas besoin du détour POST-vers-GET : le flux arrive sous forme de GET de premier niveau, sur lequel un cookie SameSite=Lax est transmis. ForceAuthn, IsPassive et RequestedAuthnContext n’ont aucune écriture dans ce protocole ; ils sont donc absents plutôt que non implémentés."
+    "en": "112515a67fb513e6",
+    "text": "Le nom que donne SAML 1.1 à ce que SAML 2.0 appelle le service Single Sign-On, et la différence n’est pas que de vocabulaire : IL N’Y A PAS DE MESSAGE DE REQUÊTE. Un flux commence par un TARGET et rien d’autre, si bien que la partie de confiance est nommée par le paramètre providerId de Shibboleth, par le segment de chemin, ou — à défaut des deux — DEVINÉE D’APRÈS L’ORIGINE du TARGET, ce qui est journalisé comme supposition. Il n’a pas d’écran de connexion propre et n’a pas besoin du détour POST-vers-GET : le flux arrive sous forme de GET de premier niveau, sur lequel un cookie SameSite=Lax est transmis. ForceAuthn, IsPassive et RequestedAuthnContext n’ont aucune écriture dans ce protocole ; ils sont donc absents plutôt que non implémentés. Une requête portant shire (le profil AuthnRequest de Shibboleth) est le démarrage de la partie de confiance et reçoit une réponse là où saml11.spInitiatedSso est activé pour elle ; une requête ne portant qu’un TARGET est une connexion démarrée ici et ne reçoit de réponse que là où saml11.idpInitiatedSso l’est — DÉSACTIVÉ par défaut (#711)."
   },
   "stsmetadata.endpoints./saml11/sso.effect": {
     "en": "c9f861ab9965a369",
@@ -2262,6 +2294,30 @@
   "stsmetadata.endpoints./federation/link/:handle.effect": {
     "en": "24adc2ec3eaf8138",
     "text": "enregistre un federationLink sur l’entrée de la personne, écrit les attributs du partenaire et DÉMARRE la session fédérée — uniquement après une connexion locale en tant que cette personne"
+  },
+  "stsmetadata.endpoints./federation/stepup/:handle.what": {
+    "en": "a3ffecd3df95fec0",
+    "text": "Là où revient un second facteur lorsque la politique d’émission a répondu à une connexion fédérée par une authentification renforcée (#565). La réponse du partenaire est le premier facteur, conservée côté serveur sous un identifiant à usage unique lié par un cookie au navigateur où elle est arrivée (STS-FED-0111) ; la personne prouve une application d’authentification ou une clé de sécurité qu’elle détient ici — jamais un mot de passe, et jamais une clé enrôlée sur le moment — et ce chemin refuse un identifiant déjà utilisé ou inconnu (STS-FED-0100) et tout navigateur dont la dernière authentification n’est pas ce second facteur, en tant que cette personne, à l’instant (STS-FED-0178). L’amr de la session est federated et le facteur prouvé ; son acr est mfa."
+  },
+  "stsmetadata.endpoints./federation/stepup/:handle.effect": {
+    "en": "ea2b1532d05c3e5f",
+    "text": "DÉMARRE la session fédérée pour laquelle la réponse vérifiée du partenaire était conservée — seulement après un second facteur détenu ICI, en tant que cette personne"
+  },
+  "stsmetadata.endpoints./federation/profile/:handle.what": {
+    "en": "6e737993e1d08300",
+    "text": "Là où le nouveau venu d’un fournisseur grand public ou social est envoyé lorsque la politique d’attributs de ce domaine exige une valeur que le fournisseur n’a pas envoyée (STS-FED-0188), en mode produit : GET affiche un formulaire demandant exactement les valeurs manquantes, POST les reçoit. La réponse vérifiée du fournisseur est conservée côté serveur sous un identifiant à usage unique, lié par un cookie au navigateur dans lequel elle est arrivée (STS-FED-0111), et le formulaire porte un jeton conservé avec lui (STS-FED-0189). Une valeur que son attribut n’accepte pas affiche à nouveau le formulaire (STS-FED-0190), cinq fois au plus (STS-FED-0191). La connexion se termine alors comme elle a commencé : la décision sur le sujet, la question de création et la politique d’émission sont posées à nouveau. Une adresse saisie n’est pas vérifiée. Rien dans la politique n’est assoupli."
+  },
+  "stsmetadata.endpoints./federation/profile/:handle.effect": {
+    "en": "1924cb8d61d0bb51",
+    "text": "CRÉE le compte auquel se connecte le nouveau venu d’un fournisseur grand public, une fois qu’il a fourni ce que le domaine exige"
+  },
+  "stsmetadata.endpoints./federation/notifications/:id.what": {
+    "en": "898b7c35c721538f",
+    "text": "Les notifications de serveur à serveur de Sign in with Apple, pour une relation dont le profil de fournisseur les accepte. Apple envoie en POST { payload }, un JWT vérifié avec les clés de la relation et rien d’autre — émetteur Apple, audience l’identifiant client — et accepté une seule fois par son jti (sinon STS-FED-0186). Ses événements nomment un type et le sujet de la personne : consent-revoked et account-delete suppriment le lien de ce sujet via cette relation, jamais l’entrée, et email-disabled et email-enabled sont consignés. 404 (STS-FED-0187) pour une relation qui n’en accepte aucune."
+  },
+  "stsmetadata.endpoints./federation/notifications/:id.effect": {
+    "en": "93fc79fda0ba3e2a",
+    "text": "supprime le lien de la personne via la relation lorsqu’un consentement est révoqué ou un compte supprimé chez le fournisseur, ce qui met fin aux sessions qu’il a ouvertes ; consigne une adresse qui a cessé ou recommencé de transférer"
   },
   "stsmetadata.endpoints./federation/slo/:id.what": {
     "en": "84d79b5134fbe867",
@@ -2331,6 +2387,14 @@
     "en": "3535569413867e97",
     "text": "requiert client_id et redirect_uri — répond 400 lorsqu’il est suivi sans paramètres, puis redirige vers l’écran de connexion une fois ceux-ci fournis"
   },
+  "stsmetadata.endpoints./launch/:app.what": {
+    "en": "46e9ad826baa3150",
+    "text": "UN LIEN PAR APPLICATION QUI DÉMARRE ICI UNE CONNEXION À CELLE-CI (#426) : le lien Se connecter du portail utilisateur et l’URL en haut de chaque sous-onglet de protocole de la console. ?protocol= vaut saml2, saml11, wsfed ou oidc, sinon celui qui est activé, sinon l’appLaunchProtocol de l’entrée ; ?target= indique où arriver ensuite. Il vérifie que la connexion initiée par le fournisseur d’identité est activée pour l’application dans ce protocole (désactivée par défaut) et envoie le navigateur vers /saml2/unsolicited/{sp}, /saml11/sso/{rp} ou /wsfed/initiate/{rp}, qui connectent la personne comme pour toute connexion et vérifient à nouveau l’interrupteur ; pour OpenID Connect, il connecte la personne ici, enregistre le lancement sur la session et l’envoie vers l’initiate_login_uri du client (OpenID Connect Core section 4), qui démarre une requête d’autorisation ordinaire. Une application inconnue donne une 404."
+  },
+  "stsmetadata.endpoints./launch/:app.effect": {
+    "en": "9fd32046b05133a5",
+    "text": "envoie le navigateur vers un point de terminaison de protocole ; n’émet rien lui-même"
+  },
   "stsmetadata.endpoints./logout.what": {
     "en": "926917f15c6fd9a9",
     "text": "LA DÉCONNEXION INDÉPENDANTE DU PROTOCOLE, et le seul point de terminaison ici qui concerne les seize familles à la fois. GET liste tout ce que ce service détient encore pour une identité — chaque session de connexion du navigateur, chaque partie de confiance OIDC, chaque domaine WS-Federation et chaque fournisseur de services SAML 2.0 auxquels l’utilisateur s’est connecté par l’une d’elles, chaque jeton qu’il peut encore révoquer, chaque autorisation et chaque code pré-autorisé en attente, chaque connexion d’annuaire liée sous cette identité, et l’état des tickets Kerberos — avec une case à cocher en regard de chacun. POST met fin à ce qui a été coché, et un POST qui ne coche RIEN est une déconnexion GLOBALE, ce qui est le comportement par défaut et l’objectif. Il envoie aussi ce que seul un navigateur peut envoyer : les iframes de Front-Channel Logout, les images wsignoutcleanup1.0, et les LogoutRequest SAML sous forme de liens. CE QU’IL NE PEUT PAS COMMUNIQUER EST LISTÉ AVEC LA RAISON — une assertion, un ticket de service ou un SVID déjà émis est DÉSAVOUÉ ici depuis le 2026-09-05 et hors d’atteinte ailleurs, car rien ne consulte ce service lorsqu’il est présenté, et les masquer donnerait l’impression qu’une déconnexion globale est complète alors qu’elle ne l’est pas. Aucun rôle de console n’est nécessaire ; sans session, il envoie le navigateur vers /authn/login puis le fait revenir. logout.anyUser décide si ?username= peut nommer quelqu’un d’autre en mode DÉVELOPPEMENT, où cela n’accorde rien que se connecter sous cette identité n’accorderait pas ; en mode PRODUIT, une déconnexion ne nomme que l’appelant connecté, quoi que dise ce paramètre. Ajoutez ?format=json."
@@ -2366,6 +2430,14 @@
   "stsmetadata.endpoints./authn/select-idp.effect": {
     "en": "6cf5af064bdc580d",
     "text": "demande auprès duquel des fournisseurs d’identité fédérés d’une application se connecter ; requiert un identifiant ?authn=, si bien qu’il répond 400 lorsqu’il est suivi sans paramètres"
+  },
+  "stsmetadata.endpoints./authn/accounts.what": {
+    "en": "133e09e2d14aa686",
+    "text": "PLUSIEURS COMPTES CONNECTÉS DANS UN MÊME NAVIGATEUR (#561), lorsque authn.multipleAccounts est activé (il est désactivé par défaut). Une requête d’un navigateur détenant plus d’un compte connecté qui n’en nomme aucun — aucun compte choisi dans son flux, aucun login_hint ni id_token_hint en nommant un — est envoyée ici, de même que le prompt=select_account d’OpenID Connect (section 3.1.2.1 de Core). Chaque compte connecté poursuit le flux en son nom, sa session vérifiée de nouveau, et une exigence de deux facteurs qu’il ne satisfait pas reçoit pour réponse une nouvelle connexion en son nom ; chaque compte déconnecté que le navigateur mémorise peut être reconnecté ou oublié ; Utiliser un autre compte est la connexion ordinaire. Une page statique, dessinée à partir de /authn-api/pending/{id}/accounts."
+  },
+  "stsmetadata.endpoints./authn/accounts.effect": {
+    "en": "ac430d30ba3b9a6a",
+    "text": "demande avec lequel des comptes connectés du navigateur une connexion se poursuit ; exige un identifiant ?authn=, si bien que la suivre telle quelle répond 400"
   },
   "stsmetadata.endpoints./authn/spnego.what": {
     "en": "23818b4a272ea292",
@@ -2414,6 +2486,22 @@
   "stsmetadata.endpoints./authn/backup-code.effect": {
     "en": "17dd6720ad2140f5",
     "text": "établit la session de connexion une fois un code de récupération vérifié, et le CONSOMME"
+  },
+  "stsmetadata.endpoints./authn/dbsc/register.what": {
+    "en": "53d3d9c56dd2c67d",
+    "text": "Lorsque authn.deviceBoundSessions est activé, la réponse qui pose le cookie de session propose ce chemin dans Secure-Session-Registration. Le navigateur envoie dans Secure-Session-Response une preuve dbsc+jwt d’une nouvelle clé portant sur ce défi ; la session enregistre la clé, et la réponse contient les instructions de session, le cookie sts_session_bound et un premier Secure-Session-Challenge. Une session n’est liée qu’une fois. 404 tant que le paramètre est désactivé."
+  },
+  "stsmetadata.endpoints./authn/dbsc/register.effect": {
+    "en": "13fa3023584c26d5",
+    "text": "lie la session d’authentification unique à la clé que le navigateur prouve, et pose son cookie lié"
+  },
+  "stsmetadata.endpoints./authn/dbsc/refresh.what": {
+    "en": "d0b2ae088239737b",
+    "text": "Le navigateur envoie ici une requête, avec Sec-Secure-Session-Id, quand le cookie lié expire. Sans preuve, la réponse est un 403 avec Secure-Session-Challenge. Avec une preuve de la clé liée portant sur un défi en cours, un nouveau cookie lié est posé. Une preuve signée par une autre clé, ou qui rejoue un défi déjà consommé, met fin à la session comme le fait une déconnexion. Un identifiant sous lequel la session n’est pas liée est refusé, et la session est laissée intacte."
+  },
+  "stsmetadata.endpoints./authn/dbsc/refresh.effect": {
+    "en": "b3b7096158b27b3f",
+    "text": "renouvelle le cookie lié, ou met fin à la session pour une preuve qui n’est pas celle de la clé liée"
   },
   "stsmetadata.endpoints./authn/email-code.what": {
     "en": "8f3396e530fddf0f",
@@ -2487,6 +2575,26 @@
     "en": "278e1af859a5f658",
     "text": "NON-SPEC (#571). La vue du sélecteur, résolue de nouveau à partir de l’entrée de l’application."
   },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts.what": {
+    "en": "6b11ee5ab38d4107",
+    "text": "NON-SPEC (#561). La vue du sélecteur de comptes : les comptes connectés et mémorisés du navigateur, chacun par sa clé et jamais par un sid, et le jeton CSRF que portent ses actions."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/select.what": {
+    "en": "32d3c868fcbeef9a",
+    "text": "NON-SPEC (#561). La session du compte est vérifiée de nouveau ; la réponse reprend le flux avec un ticket de sélection à usage unique."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/another.what": {
+    "en": "e292828cb4e3c235",
+    "text": "NON-SPEC (#561). Utiliser un autre compte : la connexion ordinaire, refusée tant que chaque place du navigateur est connectée."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/forget.what": {
+    "en": "ca27920f84beeb19",
+    "text": "NON-SPEC (#561). Uniquement un compte qui s’est déconnecté dans ce navigateur ; aucune session n’est touchée."
+  },
+  "stsmetadata.endpoints./authn-api/accounts.what": {
+    "en": "f96dbce662dca61d",
+    "text": "NON-SPEC (#561). Les comptes connectés et mémorisés du navigateur et leurs états, pour un menu de comptes — jamais un sid ni un jeton ; vide lorsque authn.multipleAccounts est désactivé."
+  },
   "stsmetadata.endpoints./authn-api/pending/:id/password.what": {
     "en": "f09b8dc5712df29f",
     "text": "NON-SPEC (#571). Le bouton Se connecter : JSON, un Origin de ce service et le X-CSRF-Token de la session du navigateur. Limité en débit, évalué pour le risque et décidé par la politique d’émission comme l’était le formulaire ; la réponse nomme l’étape suivante."
@@ -2542,6 +2650,14 @@
   "stsmetadata.endpoints./authn-api/logout.effect": {
     "en": "c2016f561ef917cf",
     "text": "POST met fin aux sessions et révoque ce que la personne détient"
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.what": {
+    "en": "ff574754aa7ad4ab",
+    "text": "HORS SPÉCIFICATION (#561). GET répond l’étape des comptes de la déconnexion — les comptes connectés du navigateur par leur clé, jamais un sid ; POST avec le jeton CSRF en choisit un (sa page de déconnexion suit) ou les déconnecte tous. 400 là où authn.multipleAccounts est désactivé."
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.effect": {
+    "en": "69d6a2e59b3f0a48",
+    "text": "POST avec all déconnecte tous les comptes du navigateur"
   },
   "stsmetadata.endpoints./authn-api/consent/:id.what": {
     "en": "b0e6e117fd23a284",
@@ -2842,6 +2958,10 @@
   "stsmetadata.endpoints./oid4vci/status-lists/bitstring/:purpose.what": {
     "en": "4f3a588acce9f5fc",
     "text": "La BitstringStatusListCredential de ce domaine pour la révocation ou la suspension, en application/vc+jwt : une chaîne de bits GZIP de 131 072 entrées, l’index 0 en premier, signée avec la clé des attestations — ou, lorsque Accept demande du JSON-LD ou du JSON et non d’abord le JWT, la même attestation avec une preuve eddsa-rdfc-2022 par la clé Ed25519 du domaine, émise sous son did:key (#197)."
+  },
+  "stsmetadata.endpoints./oid4vci/trusted-list.what": {
+    "en": "2fe258726f6ba8d2",
+    "text": "L'émetteur d'attestations de ce domaine et la racine du service à laquelle s'enchaînent ses attestations et ses Token Status List Tokens, sous forme d'une liste ETSI TS 119 602 signée par laquelle un portefeuille ancre les deux : application/jwt, la chaîne du signataire dans x5c. Conservée, et signée à nouveau quand ce qu'elle dit change ou que NextUpdate (oid4vci.trustedListLifetimeH) approche ; 503 sans racine ou sans clé certifiée."
   },
   "stsmetadata.endpoints./oid4vci/deferred_credential.what": {
     "en": "e734624535a9880a",
@@ -3386,6 +3506,10 @@
   "stsmetadata.protocols.Email codes and links.what": {
     "en": "735e17b751640f86",
     "text": "CE N’EST PAS UN PROTOCOLE. Un code à six chiffres ou un lien à usage unique envoyé à l’adresse VÉRIFIÉE d’une personne, comme premier ou second facteur lorsque la politique d’authentification de /admin/policies le permet — DÉSACTIVÉ par défaut, car la section 3.1.3.1 du NIST SP 800-63B-4 dispose que l’e-mail NE DOIT PAS être utilisé pour l’authentification hors bande. Chaque secret est une empreinte scrypt sur l’étape de connexion, valide au plus dix minutes, consommée une seule fois pour le cluster ; un lien n’aboutit que dans le navigateur qui a démarré la connexion ; une personne active le second facteur sur /portal/mfa et le perd après 100 échecs consécutifs (section 3.2.2). amr \"otp\" (la RFC 8176 n’a pas de valeur pour l’e-mail) ; il ne satisfait jamais une authentification renforcée liée au risque, et la politique d’émission peut refuser une session qui repose sur lui (refuseEmailFactor)."
+  },
+  "stsmetadata.protocols.Device Bound Session Credentials.what": {
+    "en": "83d1f60fe8862d70",
+    "text": "La session d’authentification unique liée à une clé que détient le navigateur, adossée à un TPM quand il le peut. Un cookie de session copié cesse de fonctionner quand le cookie lié de courte durée qui l’accompagne expire, car seule une preuve de cette clé le renouvelle ; une preuve par toute autre clé met fin à la session. Désactivé par défaut et par domaine ; un navigateur qui ne le prend pas en charge garde une session ordinaire."
   },
   "stsmetadata.protocols.Verifiable Credentials (OID4VCI / OID4VP).what": {
     "en": "6ea91ae6b9e69fde",

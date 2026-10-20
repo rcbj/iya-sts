@@ -367,6 +367,11 @@ const METADATA_PATH = BASE_PATH + '/metadata';
 // saml-profiles-2.0-os section 4.1.5.
 const UNSOLICITED_PATH = BASE_PATH + '/unsolicited';
 
+// The parameter an unsolicited link carries back from its ONE trip to the
+// sign-in screen (#711) — a re-prompt for an allowed mechanism or a step-up
+// on risk. See unsolicitedSignOn() for why it may live in the URL.
+const REPROMPTED_PARAM = 'reprompted';
+
 // The attribute authority (#189): the Assertion Query and Request profile's
 // AttributeQuery, over SOAP (saml-profiles-2.0-os section 6).
 const AA_PATH = BASE_PATH + '/aa';
@@ -1702,6 +1707,7 @@ class Saml2Sso {
                    String(policy.getAttribute('AllowCreate') || '') === 'true' :
                    false,
       subjectHint: '',
+      subjectHintFormat: '',
       requestedAuthnContexts: [],
       signed: !!firstByLocal(root, 'Signature'),
       signingCertificate: ''
@@ -1715,6 +1721,11 @@ class Saml2Sso {
     if (subject) {
       const nameId = firstByLocal(subject, 'NameID');
       out.subjectHint = nameId ? (nameId.textContent || '').trim() : '';
+      // Its Format too (#561), because a `transient` value names a session
+      // of another sign-in and nobody's account: it is never offered as a
+      // hint about which account in the browser the request is for.
+      out.subjectHintFormat = nameId ? (nameId.getAttribute('Format') || '')
+                                     : '';
     }
     if (requested) {
       const refs = requested.getElementsByTagNameNS('*',
@@ -1961,6 +1972,23 @@ class Saml2Sso {
   // naming a format gets that format back, whatever it is — and where it does
   // not, the service provider's own `saml2NameIdFormat` decides before the
   // setting does.
+  // The account hint an AuthnRequest carries (#561): its <saml:Subject>
+  // NameID, which this identity provider issues as the username or the mail
+  // address (`nameIdValueFor()`), so it is read as a login name. A
+  // `transient` NameID is per session and names nobody, so it is no hint.
+  private accountHintOf(request) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.accountHintOf().");
+    const value = String((request && request.subjectHint) || '');
+    if (!value || String(request.subjectHintFormat || '') ===
+        'urn:oasis:names:tc:SAML:2.0:nameid-format:transient') {
+      log.debug("Leaving Saml2Sso.accountHintOf(). None.");
+      return {};
+    }
+    log.debug("Leaving Saml2Sso.accountHintOf().");
+    return { loginHint: value };
+  }
+
   private nameIdFormatFor(request, spEntityId?) {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.nameIdFormatFor().");
@@ -3102,6 +3130,45 @@ class Saml2Sso {
            }
     });
 
+    // MAY THIS SERVICE PROVIDER START A SIGN-IN AT ALL (#426, #711):
+    // `saml2.spInitiatedSso` for it, the realm default (on) unless
+    // `saml2SpInitiatedSso` on its entry says otherwise. Off, it is reached
+    // only through identity-provider-initiated sign-in, and its request is
+    // answered RequestDenied — the policy refusal's shape below, and for the
+    // same reason: the request was well formed and this end declined it,
+    // and section 3.2.2 has a status for that which the service provider
+    // can act on. Here, after the request is understood and its sighting
+    // recorded, and before the sign-in screen: a person is not made to sign
+    // in for a Response that was always going to be a refusal.
+    if (!this.settingFor(spEntityId, 'saml2.spInitiatedSso')) {
+      log.info('saml2: refused an AuthnRequest from "' + spEntityId + '": ' +
+               'saml2.spInitiatedSso is off for it.');
+      pendingRequests.delete(String(params.rid || ''));
+      errorCodes.mark(res, 'STS-SAML-0111');
+      const closed = this.buildResponse({
+        issuer: idpEntityId, sp: spEntityId,
+        destination: acsUrl, inResponseTo: request.id,
+        status: STATUS_RESPONDER,
+        subStatus: 'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+        statusMessage: 'This identity provider does not answer a sign-in ' +
+                       'this service provider starts (saml2.spInitiatedSso ' +
+                       'is off for it).'
+      });
+      this.deliver(res, {
+             binding: wanted.binding, destination: acsUrl,
+             field: 'SAMLResponse', xml: closed.xml,
+             relayState: relayState, issuer: idpEntityId,
+             spEntityId: spEntityId, inResponseTo: request.id,
+             note: { title: 'Refused — SAML 2.0',
+                     sub: 'A <samlp:Response> carrying RequestDenied. ' +
+                          'Service-provider-initiated sign-in is turned off ' +
+                          'for this service provider.' }
+      });
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). Service-provider-" +
+                "initiated sign-in is off.");
+      return;
+    }
+
     // THE NAMEIDPOLICY, against a service provider that DECLARED its formats
     // (#37). A Response carrying InvalidNameIDPolicy, which is what section
     // 3.4.1.1 says and what a service provider's error handling should meet.
@@ -3173,6 +3240,15 @@ class Saml2Sso {
 
     // --- step 4: a session
     // ----------------------------------------------------
+    // WHICH ACCOUNT, WHERE THE BROWSER HOLDS SEVERAL (#561): the
+    // AuthnRequest's <saml:Subject> NameID is handed to the sign-in service
+    // as a hint before the session is asked for, so the session answered is
+    // the one it names — as OpenID Connect's `login_hint` is at the
+    // authorization endpoint. A NameID naming no live account here answers
+    // no session (never another account), and the sign-in screen is drawn
+    // with that name filled in. Nothing changes with `authn.multipleAccounts`
+    // off.
+    this.deps.authn.hintAccount(req, this.accountHintOf(request));
     const session = sessionOf(req);
     const wantsMfa = request.requestedAuthnContexts.some(function (ref) {
       return AC_MFA_DEMANDS.indexOf(ref) >= 0;
@@ -3215,6 +3291,30 @@ class Saml2Sso {
         // ignored.
         log.debug("IsPassive is set and there is no usable session, so " +
                   "NoPassive goes back.");
+        // SEVERAL ACCOUNTS AND NOTHING TO CHOOSE BY (#561) is a case of the
+        // same rule: the account picker is user interface, so it is
+        // NoPassive too, recorded as the `account.ambiguous` row.
+        // `accountChoiceNeeded()` is null with `authn.multipleAccounts`
+        // off, and the message is then today's.
+        //
+        // **THE STATUS MESSAGE SAYS NOTHING ABOUT THE BROWSER'S ACCOUNTS**
+        // (rcbj's decision on #561). The Response goes to the service
+        // provider, and through the browser to whatever page posted the
+        // AuthnRequest — so "signed in to 3 accounts" would tell any site
+        // able to send a passive request how many people use this browser,
+        // and "no session" where there are several would be a different
+        // sentence for the same fact. One generic sentence for every
+        // account-choice case (ambiguous, a hint naming nobody here, a
+        // member that could not be read); how many and why is the audit
+        // row's, for the operator.
+        const accountChoice = session ? null
+          : this.deps.authn.accountChoiceNeeded(req);
+        const ambiguous = !!(accountChoice &&
+                             accountChoice.reason === 'ambiguous');
+        if (ambiguous) {
+          this.deps.authn.noteAccountAmbiguous(req, 'SAML 2.0',
+            'NoPassive was answered (IsPassive)');
+        }
         errorCodes.mark(res, 'STS-SAML-0008');
         const refusal = this.buildResponse({
           issuer: idpEntityId, sp: spEntityId,
@@ -3223,8 +3323,11 @@ class Saml2Sso {
           statusMessage: session
             ? 'The session here has one factor and this request asked for ' +
               'more, and IsPassive forbids asking for it.'
-            : 'There is no browser session here, and IsPassive forbids ' +
-              'asking for one.'
+            : (accountChoice
+              ? 'This request cannot be answered without asking the person ' +
+                'at the browser, and IsPassive forbids asking.'
+              : 'There is no browser session here, and IsPassive forbids ' +
+                'asking for one.')
         });
         this.deliver(res, {
                binding: wanted.binding, destination: acsUrl,
@@ -3272,6 +3375,12 @@ class Saml2Sso {
         // opt-out away rather than being refused — what WS-Federation's wauth
         // does with the same demand too. See the note on AC_MFA_DEMANDS.
         forceMfa: wantsMfa,
+        // WHETHER THE ACCOUNT PICKER COMES FIRST (#561), where the browser
+        // holds several accounts: ForceAuthn asks for a fresh
+        // authentication, so never — the prompt=login of this protocol.
+        // Read only with `authn.multipleAccounts` on.
+        accountChoice: request.forceAuthn ? 'never' : '',
+        request: req,
         protocol: 'SAML 2.0',
         details: [
           { label: 'Service provider', value: spEntityId,
@@ -3532,12 +3641,43 @@ class Saml2Sso {
   // with no metadata, an address on its entry, which product requires; the
   // Response goes on that endpoint's binding (never HTTP-Redirect, which
   // section 4.1.2 forbids for a Response); and the issuance policy is asked
-  // as for any sign-in. `saml2.unsolicitedSso` turns the whole of it off for
-  // a realm (STS-SAML-0091). The Response and its assertion carry no
+  // as for any sign-in. The Response and its assertion carry no
   // InResponseTo, and the target travels as RelayState, byte for byte.
+  //
+  // **OFF UNTIL THE SERVICE PROVIDER OPTS IN (#426, #711).** Whether it is
+  // answered at all is `saml2.idpInitiatedSso` FOR THAT SERVICE PROVIDER —
+  // the realm default, false, unless `saml2IdpInitiatedSso` on its entry
+  // says otherwise — read through settingFor() once the service provider is
+  // known, and refused with a 403 page (STS-SAML-0091), not a Response: a
+  // service provider that never asked for one and does not accept one is
+  // exactly the one not to send it to. It was `saml2.unsolicitedSso`, a
+  // realm switch that was ON, until #426.
+  //
+  // **AN IDP-INITIATED ISSUANCE RUNS WHAT A SOLICITED ONE RUNS** (#426's
+  // decision 4): the session, through sessionOf() or beginAuthentication(),
+  // naming the application and protocol; the issuance gate, with the
+  // session whose risk it reads; `session-presented` (notePresented()); and
+  // issueSignInResponse(), which records the service provider on the
+  // session where /logout and back-channel logout read it.
+  //
+  // **AND A DENIAL THE PERSON CAN ANSWER IS A SIGN-IN, NOT A REFUSAL**: a
+  // sign-in mechanism the service provider does not allow (#457) and a
+  // step-up the issuance policy asks for on the session's risk (#62 P3,
+  // #711) each send the person to the sign-in screen and back to this same
+  // link — the authorization endpoint's road (oauth-oidc/oauth2.ts). ONCE:
+  // the link comes back carrying `reprompted=1`, and a request carrying it
+  // that is still denied is answered RequestDenied (STS-SAML-0100/0107 for
+  // the mechanism, 0112 for risk). The marker is the browser's to send, and
+  // that is enough: a forged one only makes the person get the refusal one
+  // trip sooner, and stripping it only sends the person round again, which
+  // following the link again would do too — neither can make the policy say
+  // yes, and the guard exists to stop a LOOP, not an attacker. The
+  // solicited path keeps its marker
+  // on the held request (`forcedAt`) because it holds one anyway; there is
+  // no request here to hold.
   // ---------------------------------------------------------------------------
   private unsolicitedSignOn(req, res) {
-    const { applications, config, errorCodes, gate, mode,
+    const { applications, errorCodes, gate, mode,
             returnAddress } = this.deps;
     const { beginAuthentication, notePresented, sessionOf } = this.deps.authn;
     const { baseUrlOf, log } = this.deps.helpers;
@@ -3548,15 +3688,6 @@ class Saml2Sso {
     if (this.refusedUnregistered(res, scoped, UNSOLICITED_PATH + '/{sp}')) {
       log.debug("Leaving Saml2Sso.unsolicitedSignOn(). Not registered.");
       return;
-    }
-    if (!config.value('saml2.unsolicitedSso')) {
-      errorCodes.mark(res, 'STS-SAML-0091');
-      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). Turned off.");
-      return this.samlError(res, 403, 'Identity-provider-initiated sign-in ' +
-                                      'is turned off here',
-        'saml2.unsolicitedSso is off in this realm, so this identity ' +
-        'provider sends a Response only in answer to an AuthnRequest. Start ' +
-        'the sign-in from the service provider.');
     }
     const spEntityId = String(params.providerId || '') || scoped.entityId;
     if (!spEntityId) {
@@ -3573,6 +3704,22 @@ class Saml2Sso {
                                UNSOLICITED_PATH);
       log.debug("Leaving Saml2Sso.unsolicitedSignOn(). Unregistered.");
       return;
+    }
+    // THE SWITCH, for THIS service provider (#711): after the registration
+    // check, so an unregistered one in product is the 404 every per-SP path
+    // answers rather than a sentence about a setting it cannot have.
+    if (!this.settingFor(spEntityId, 'saml2.idpInitiatedSso')) {
+      errorCodes.mark(res, 'STS-SAML-0091');
+      log.info('saml2: refused an identity-provider-initiated sign-in to "' +
+               spEntityId + '": saml2.idpInitiatedSso is off for it.');
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). Turned off.");
+      return this.samlError(res, 403, 'Identity-provider-initiated sign-in ' +
+                                      'is turned off for this service provider',
+        'saml2.idpInitiatedSso is off for "' + spEntityId + '" (the realm ' +
+        'setting, or saml2IdpInitiatedSso on its entry), so this identity ' +
+        'provider sends it a Response only in answer to an AuthnRequest. ' +
+        'Start the sign-in from the service provider, or turn ' +
+        'identity-provider-initiated sign-in on for it.');
     }
     const askedFor = String(params.binding || '').toLowerCase();
     const asked = askedFor === 'artifact' || askedFor === BINDING_ARTIFACT
@@ -3666,13 +3813,16 @@ class Saml2Sso {
       claims: null,
       session: session
     });
+    // Whether this link is back from its one trip to the screen (#711); see
+    // the header for why the marker may be the browser's.
+    const reprompted = String(params[REPROMPTED_PARAM] || '') === '1';
     // A SESSION ON A SIGN-IN MECHANISM THE SERVICE PROVIDER DOES NOT ALLOW
     // (#457): sent to sign in again, back to this same link, which is asked
     // again with the new session. The screen offers only the allowed
-    // mechanisms and refuses a sign-in with any other, so it cannot loop.
-    if (!roleAnswer.allowed && roleAnswer.mechanism &&
+    // mechanisms and refuses a sign-in with any other, so it should not
+    // loop — and since #711 it cannot: the trip is made once.
+    if (!roleAnswer.allowed && roleAnswer.mechanism && !reprompted &&
         session.authenticated !== false) {
-      const again = this.rawQueryOf(req);
       // A second factor the service provider does not allow (#475) is
       // its own.
       errorCodes.mark(res, roleAnswer.mechanism.secondFactor
@@ -3681,7 +3831,7 @@ class Saml2Sso {
                roleAnswer.mechanism.allowed.join(', ') + ', and the session ' +
                'used none of them; sent to sign in again.');
       const whereAgain = beginAuthentication({
-        returnTo: req.path + (again ? '?' + again : ''),
+        returnTo: this.repromptReturnTo(req),
         hint: String((session.user || {}).username || ''),
         application: spEntityId,
         protocol: 'SAML 2.0',
@@ -3695,10 +3845,52 @@ class Saml2Sso {
                 "allowed sign-in mechanism.");
       return res.set('Cache-Control', 'no-store').redirect(303, whereAgain);
     }
+    // A STEP-UP ON RISK IS A SIGN-IN, NOT AN ERROR (#62 P3, #711) — exactly
+    // the authorization endpoint's branch (oauth-oidc/oauth2.ts): the policy
+    // denied on the risk of the session this assertion would rest on and
+    // named a factor, and the person is here, in a browser, so they are sent
+    // to re-authenticate with that factor demanded and back to this link. A
+    // person holding no such factor is refused at the screen
+    // (STS-RISK-0018); a session the re-authentication met is permitted when
+    // the link comes round. Observe-only risk (`observed`) never denies, and
+    // a session with nobody behind it has nobody to step up.
+    if (!roleAnswer.allowed && roleAnswer.risk &&
+        roleAnswer.risk.action === 'step-up' && !roleAnswer.risk.observed &&
+        !reprompted && session.authenticated !== false) {
+      errorCodes.mark(res, 'STS-RISK-0017');
+      log.info('saml2: the issuance policy asks for a ' +
+               roleAnswer.risk.factor + ' on the risk of the session of "' +
+               String((session.user || {}).username || '') + '" before an ' +
+               'unsolicited Response to "' + spEntityId + '"; sent to ' +
+               're-authenticate.');
+      const stepUp = beginAuthentication({
+        returnTo: this.repromptReturnTo(req),
+        hint: String((session.user || {}).username || ''),
+        forceMfa: roleAnswer.risk.factor === 'second-factor',
+        forceKey: roleAnswer.risk.factor === 'security-key',
+        application: spEntityId,
+        protocol: 'SAML 2.0'
+      });
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). A step-up on risk.");
+      return res.set('Cache-Control', 'no-store').redirect(303, stepUp);
+    }
     if (!roleAnswer.allowed) {
-      // A realm being removed (#262) is its own code.
+      // A realm being removed (#262) is its own code; a mechanism (#457,
+      // #475) or a risk step-up (#711) still unmet after the one trip is
+      // its own.
+      const steppedUp = !!(roleAnswer.risk &&
+                           roleAnswer.risk.action === 'step-up' &&
+                           !roleAnswer.risk.observed && reprompted);
+      log.info('saml2: the issuance policy refused an unsolicited Response ' +
+               'for "' + String((session.user || {}).username || '') +
+               '" to "' + spEntityId + '"' +
+               (reprompted ? ', back from its one sign-in trip' : '') +
+               '. ' + roleAnswer.why);
       errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
-                                               : 'STS-SAML-0010');
+        : (roleAnswer.mechanism && reprompted
+          ? (roleAnswer.mechanism.secondFactor ? 'STS-SAML-0107'
+                                               : 'STS-SAML-0100')
+          : (steppedUp ? 'STS-SAML-0112' : 'STS-SAML-0010')));
       const denied = this.buildResponse({
         issuer: idpEntityId, sp: spEntityId, destination: acsUrl,
         inResponseTo: '', status: STATUS_RESPONDER,
@@ -3725,6 +3917,20 @@ class Saml2Sso {
               "Response went to " + spEntityId + ".");
   }
 
+  // This same unsolicited link, as it arrived, marked as back from its one
+  // trip to the sign-in screen (#711). The query is kept byte for byte —
+  // `target` is the service provider's RelayState and is echoed untouched —
+  // and the marker is appended, never substituted: a request already
+  // carrying it is never sent round again, so it cannot be added twice.
+  private repromptReturnTo(req): string {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.repromptReturnTo().");
+    const query = this.rawQueryOf(req);
+    const marker = REPROMPTED_PARAM + '=1';
+    log.debug("Leaving Saml2Sso.repromptReturnTo().");
+    return req.path + '?' + (query ? query + '&' : '') + marker;
+  }
+
   // ---------------------------------------------------------------------------
   // THE ATTRIBUTE AUTHORITY (#189): the Assertion Query and Request profile's
   // <samlp:AttributeQuery> over the SOAP binding (saml-profiles-2.0-os section
@@ -3747,7 +3953,8 @@ class Saml2Sso {
   //     session here gave it (`saml2ServiceProviders[sp].nameId`) — which is
   //     what makes a transient NameID answerable at all, and what keeps a
   //     service provider from asking about anybody it names. Otherwise
-  //     Requester / UnknownPrincipal (STS-SAML-0094);
+  //     Requester / UnknownPrincipal (STS-SAML-0094). A failed read of
+  //     the sessions is Responder and STS-AUTHN-0338, not that miss;
   //   * the issuance policy is asked with that session, as a sign-in is;
   //   * what is released is what that sign-in released (`attributesFor()`),
   //     narrowed to the <saml:Attribute>s the query names when it names any.
@@ -3855,6 +4062,16 @@ class Saml2Sso {
         }
         return self.answerAttributeQuery(req, res, query, spEntityId,
                                          answer);
+      }).catch(function (e) {
+        log.error(errorCodes.tag('STS-AUTHN-0338') +
+                  'saml2: an AttributeQuery could not be placed because ' +
+                  'the sessions could not be read: ' +
+                  ((e && e.message) || e));
+        if (res.headersSent) {
+          return undefined;
+        }
+        return answer('STS-AUTHN-0338', STATUS_RESPONDER, '',
+                      'the sessions could not be read', '');
       });
   }
 
@@ -3883,6 +4100,13 @@ class Saml2Sso {
       return !!there && there.nameId === nameId &&
              !authnApi.sessionEnded(session);
     }) : [];
+    // Null is an unread page. UnknownPrincipal is a page that was read
+    // and held no live session for this NameID.
+    if (live == null) {
+      log.debug("Leaving Saml2Sso.answerAttributeQuery(). Unread.");
+      return answer('STS-AUTHN-0338', STATUS_RESPONDER, '',
+                    'the sessions could not be read', '');
+    }
     const session = live[0];
     if (!session) {
       log.info('saml2: an AttributeQuery from "' + spEntityId + '" named "' +
@@ -4964,7 +5188,17 @@ class Saml2Sso {
     // The session ends here. `endSession()` returns what it dropped, which is
     // how the page below can name the other service providers that were signed
     // in — and which is why the list has to be read BEFORE the answer is built.
-    let session = endSession(req, res);
+    //
+    // WHICH SESSION, IN A BROWSER HOLDING SEVERAL ACCOUNTS (#561, the plan's
+    // section 5): the one in this browser's account set that the
+    // SessionIndex — checked against this service provider and the NameID
+    // by `sessionNamedBy()` — or else the NameID names; otherwise the
+    // browser's default, as always. `endSession()` ends a named session only
+    // where it is in this browser's set, and ignores it with
+    // `authn.multipleAccounts` off.
+    let session = endSession(req, res, this.sloAccountOf(req, spEntityId,
+                                                          sessionIndex,
+                                                          nameId));
     // THE BACK CHANNEL (#192). A LogoutRequest a service provider sends
     // SERVER TO SERVER — Keycloak's broker does, and saml-profiles-2.0-os
     // section 4.4 allows every binding for it — arrives with no browser and
@@ -5087,6 +5321,37 @@ class Saml2Sso {
   // was given this NameID there. `{ session }`, `{ mismatch: true }` when the
   // session exists and the rest does not hold, or `{}` when there is no such
   // session — already ended, which a logout may answer Success to.
+  // The session of this browser's account set a front-channel LogoutRequest
+  // names (#561): its SessionIndex where `sessionNamedBy()` finds that session
+  // signed in to this service provider with this NameID, else the session in
+  // the set that was issued this NameID there; '' for none, or with
+  // `authn.multipleAccounts` off.
+  private sloAccountOf(req, spEntityId, sessionIndex, nameId): string {
+    const { authn } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.sloAccountOf().");
+    if (!authn.multipleAccounts()) {
+      log.debug("Leaving Saml2Sso.sloAccountOf(). Off.");
+      return '';
+    }
+    const named = sessionIndex
+      ? this.sessionNamedBy(spEntityId, sessionIndex, nameId) : {};
+    if (named.session) {
+      log.debug("Leaving Saml2Sso.sloAccountOf(). By SessionIndex.");
+      return String(named.session.id);
+    }
+    const byName = nameId ? authn.accountSessionsOf(req)
+      .filter(function (one) {
+        const there = (one.saml2ServiceProviders || {})[spEntityId];
+        const given = there && there.nameId !== undefined ? there.nameId
+          : ((one.user && one.user.username) || '');
+        return !!there && given === nameId;
+      })[0] : null;
+    log.debug("Leaving Saml2Sso.sloAccountOf(). " +
+              (byName ? 'By NameID.' : 'None.'));
+    return byName ? String(byName.id) : '';
+  }
+
   private sessionNamedBy(spEntityId, sessionIndex, nameId): any {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.sessionNamedBy().");
@@ -5634,9 +5899,17 @@ class Saml2Sso {
       '— identity-provider-initiated sign-in: an unsolicited Response ' +
       '(saml-profiles-2.0-os section 4.1.5) to the service provider it ' +
       'names. ' +
-      (config.value('saml2.unsolicitedSso')
-        ? 'Answered in this realm.'
-        : 'Turned OFF in this realm (saml2.unsolicitedSso).') +
+      // For THIS service provider when the page is scoped to one (#711),
+      // and otherwise the realm default an entry may override.
+      (this.settingFor(scoped.entityId || '', 'saml2.idpInitiatedSso')
+        ? (scoped.entityId ? 'Answered for this service provider.'
+                           : 'Answered in this realm unless a service ' +
+                             'provider\'s entry turns it off.')
+        : (scoped.entityId
+          ? 'Turned OFF for this service provider (saml2.idpInitiatedSso).'
+          : 'OFF in this realm (saml2.idpInitiatedSso) except for a ' +
+            'service provider whose entry turns it on ' +
+            '(saml2IdpInitiatedSso).')) +
       '</li><li><code>' + xmlEscape(where.aa) + '</code> — the attribute ' +
       'authority: a SOAP <code>&lt;samlp:AttributeQuery&gt;</code> (the ' +
       'Assertion Query and Request profile, section 6), answered for a ' +

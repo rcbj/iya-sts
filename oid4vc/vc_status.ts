@@ -456,16 +456,22 @@ class VcStatus {
   // ---------------------------------------------------------------------------
   /**
    * Returns the key and algorithm the lists are signed with: the same a
-   * credential is signed with (`oid4vci.credentialSigningAlgorithm`).
+   * credential is signed with (`oid4vci.credentialSigningAlgorithm`). A
+   * credential whose offer chose another algorithm (2026-10-16,
+   * `/portal/wallet`) asks for that one's key; the lists never do.
    *
+   * @param chosen - the algorithm a credential's offer chose, or '' for the
+   *   configured one
    * @returns `{ alg, key, kid, headerKid }`
    */
-  async signerAsync(): Promise<{ alg: string; key: any; kid: string;
-                                 headerKid: string }> {
+  async signerAsync(chosen?: string): Promise<{ alg: string; key: any;
+                                                kid: string;
+                                                headerKid: string }> {
     const { log, config, STS, signingKeyForAsync, publishedKidFor } =
       this.deps;
     log.debug("Entering VcStatus.signerAsync().");
-    const alg = String(config.value('oid4vci.credentialSigningAlgorithm') ||
+    const alg = String(chosen ||
+                       config.value('oid4vci.credentialSigningAlgorithm') ||
                        'RS256');
     // THE CREDENTIALS GROUP'S KEY in a hybrid-groups realm (#68) — the list
     // and the credentials it describes are both `vci-credential`, so they

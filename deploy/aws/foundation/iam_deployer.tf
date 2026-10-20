@@ -100,8 +100,9 @@ resource "aws_iam_role" "deployer" {
 # THE BOUNDARY EVERY ROLE THE DEPLOYER CREATES MUST CARRY.
 #
 # The union of what the ECS task role (iya-sts reading its secrets and,
-# since #391, wrapping its data encryption keys with the KEK in KMS, and
-# cert-init exporting the public certificate), the ECS execution role (pulling
+# since #391, wrapping its data encryption keys with the KEK in KMS,
+# cert-init exporting the public certificate, and since #323 registering
+# the nodes in the SPIFFE target groups), the ECS execution role (pulling
 # the images, writing logs, injecting the environment's secrets) and the suite
 # runner's role (uploading its report) can do. A role's effective permissions
 # are the intersection of its own policy and this, so a policy that grants
@@ -212,6 +213,48 @@ data "aws_iam_policy_document" "workload_boundary" {
       variable = "ses:FromAddress"
       values   = local.ses_from_patterns
     }
+  }
+  # THE SPIFFE TARGET GROUPS (#323). A node's task reconciles the groups
+  # Terraform registered by address, which ECS cannot keep current (five
+  # target groups per service, all five already used). The ceiling is every
+  # environment's `<name>-*-sp-*` groups and a cell's `<name>-*-s` plus a
+  # port (two to five characters: an ELB name is 32, and `*-s*` would also
+  # match `-sts` inside `iya-sts-…-https`). The environment's task role
+  # names its own prefix (environment/iam.tf); the effective permission is
+  # the intersection. DescribeTargetGroups has no resource-level permission.
+  # The deployer is not given a wider grant: it already registers targets
+  # for Terraform, and it must not be able to raise this ceiling.
+  statement {
+    sid = "ReconcileSpiffeTargetGroups"
+    actions = [
+      "elasticloadbalancing:RegisterTargets",
+      "elasticloadbalancing:DeregisterTargets",
+      "elasticloadbalancing:DescribeTargetHealth",
+    ]
+    resources = flatten([
+      for p in local.rarn.elasticloadbalancing : [
+        "${p}:targetgroup/${var.name}-*-sp-*/*",
+        "${p}:targetgroup/${var.name}-*-s??/*",
+        "${p}:targetgroup/${var.name}-*-s???/*",
+        "${p}:targetgroup/${var.name}-*-s????/*",
+        "${p}:targetgroup/${var.name}-*-s?????/*",
+      ]
+    ])
+  }
+  statement {
+    sid       = "ListSpiffeTargetGroups"
+    actions   = ["elasticloadbalancing:DescribeTargetGroups"]
+    resources = ["*"]
+  }
+  statement {
+    sid     = "ReadRunningNodeTasks"
+    actions = ["ecs:ListTasks", "ecs:DescribeTasks"]
+    resources = flatten([
+      for p in local.rarn.ecs : [
+        "${p}:cluster/${var.name}-*",
+        "${p}:task/${var.name}-*/*",
+      ]
+    ])
   }
 }
 

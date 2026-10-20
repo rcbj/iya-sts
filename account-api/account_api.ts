@@ -150,6 +150,11 @@ const PROVIDERS: Array<() => Json> = [
   function () {
     return require('../portal/portal_claim_sources');
   },
+  // #565: /portal/connected-accounts, a consumer provider connected to the
+  // person's own account.
+  function () {
+    return require('../portal/portal_connected_accounts');
+  },
   function () {
     return require('../portal/account_activation');
   },
@@ -182,6 +187,8 @@ interface AccountApiDeps {
     scopePolicy(): Json;
     applications(): Json;
     authn(): Json;
+    // The sign-out model (#722), built second to last (23a).
+    logout(): Json;
   };
 }
 
@@ -244,6 +251,9 @@ class AccountApi {
         },
         authn: function () {
           return require('../authn/authn');
+        },
+        logout: function () {
+          return require('../logout/logout');
         }
       }
     };
@@ -277,6 +287,10 @@ class AccountApi {
                         errors: string | string[], extra?: Json): unknown {
         // error-code: none — the code is the caller's, passed in `code`.
         return self.refuse(res, status, code, errors, extra);
+      },
+      endFactorSessions: function (username: string, factor: Json,
+                                   what: string): Json {
+        return self.endFactorSessions(username, factor, what);
       }
     };
     log.debug("Leaving AccountApi.context().");
@@ -299,6 +313,51 @@ class AccountApi {
                                    username: String(username || '') });
     log.debug("Leaving AccountApi.translatorFor(). " + t.locale);
     return t;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SESSIONS A CREDENTIAL THE PERSON REMOVED SIGNED IN (#722): ended
+  // through the sign-out model's `endFactorSessions()`, for the portal's
+  // three removals — a passkey (`account_keys.ts`), the authenticator app
+  // and the emailed second factor (`account_mfa.ts`). HERE, on the context,
+  // so the three doors share one call, one initiating entity (`user`: the
+  // person removed it) and one sentence. The answer's `sentence` is in the
+  // person's language and empty when nothing ended. A sign-out model that
+  // cannot be loaded ends nothing (STS-PORTAL-0600) and never undoes the
+  // removal, which the caller has already written and signalled.
+  // ---------------------------------------------------------------------------
+  /**
+   * Ends the sessions a credential the person just removed signed in.
+   *
+   * @param username - the person
+   * @param factor - what was removed, as `authn.sessionNamesFactor()` names
+   *   it
+   * @param what - the credential, in a few words, for the audit row
+   * @returns `{ ok, sessionsEnded, failed, sentence }`
+   */
+  endFactorSessions(username: string, factor: Json, what: string): Json {
+    const { log, errorCodes, lazy } = this.deps;
+    log.debug("Entering AccountApi.endFactorSessions(). " + username);
+    let ended: Json = null;
+    try {
+      ended = lazy.logout().endFactorSessions(username, factor, {
+        actor: username, channel: 'http', initiatingEntity: 'user',
+        by: username + ' removing ' + what + ' at /portal' });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-PORTAL-0600') + 'portal: ' + what +
+                ' of "' + username + '" was removed and the sessions it ' +
+                'signed in could not be ended: ' + ((e && e.stack) || e));
+      ended = null;
+    }
+    const n = Number((ended && ended.sessionsEnded) || 0);
+    const t = this.translatorFor(username);
+    const sentence = !n ? ''
+      : (n === 1 ? t.text('portal.done.sessionsEndedOne')
+                 : t.text('portal.done.sessionsEndedMany', { n: n }));
+    log.debug("Leaving AccountApi.endFactorSessions(). " + n + " ended.");
+    return { ok: !!ended && ended.ok !== false, sessionsEnded: n,
+             failed: ended ? Number(ended.failed || 0) : 0,
+             sentence: sentence };
   }
 
   /**

@@ -24,7 +24,7 @@
 //         first (password, and a second factor where held or required), and
 //         only then is the link recorded and the partner's attributes written;
 //       pre-linked — refused;
-//       jit-namespaced — a NEW entry `<relationship>~<name>`, never an
+//       jit-namespaced — a NEW entry `<relationship>~sub-<uuid>`, never an
 //         existing person;
 //       any-existing — the old name match, development only;
 //   * group, domain and DN-pattern rules on top of every policy, and a console
@@ -86,6 +86,15 @@ function childMain() {
     const views = require(ROOT + '/admin-core/admin_views');
     const federation = require(ROOT + '/federation/federation');
     const fedSp = require(ROOT + '/federation/federation_sp');
+    const errorCodes = require(ROOT + '/common/error_codes');
+    // Every code put on a response, so a refusal page's own code can be
+    // asserted (#358 with #396: the attribute policy's STS-FED-0158).
+    const marks = [];
+    const markOriginal = errorCodes.mark;
+    errorCodes.mark = function (res, code) {
+      marks.push(code);
+      return markOriginal.apply(this, arguments);
+    };
 
     // HTTPS UNDER A CA OF THIS CHILD'S OWN (#171). The relationship is to
     // this service's own OpenID Provider, and product mode refuses a plain
@@ -331,9 +340,13 @@ function childMain() {
       });
     }
     // A person in the SP realm, with a password that verifies in product.
+    // The realm's attribute policy (#396) requires givenName, sn and mail of
+    // every person in product mode.
     function makePerson(name, mail) {
       return inSp(function () {
-        const made = ldap.createUser(name, { invent: false });
+        const made = ldap.createUser(name, { invent: false, attributes: {
+          givenName: 'Subject', sn: name,
+          mail: mail || name + '@sp.example' } });
         const stored = ldap.existingUserEntry(name);
         if (stored && mail) {
           ldap.writePerson(stored.dn, Object.assign({}, stored.attributes,
@@ -414,6 +427,31 @@ function childMain() {
          (MODE !== 'product'),
          '0c. mode.matchesFederatedNames() is ' + (MODE !== 'product') +
          ' in ' + MODE + ' mode');
+    note(inSp(function () {
+      return mode.defaultsFederatedAutocreate();
+    }) ===
+         (MODE !== 'product') &&
+         created.record.fedAutocreateUsers ===
+           (MODE === 'product' ? 'FALSE' : 'TRUE'),
+         '0c-ii. a new relationship stores fedAutocreateUsers ' +
+         (MODE === 'product' ? 'off' : 'on') +
+         ' (mode.defaultsFederatedAutocreate)',
+         created.record.fedAutocreateUsers);
+    // The cases below that CREATE still do, in both modes. The stored
+    // default is what 0c-ii holds; product would otherwise refuse them.
+    setRel('fedAutocreateUsers', 'TRUE');
+    // AND IN PRODUCT THE REALM'S ATTRIBUTE POLICY (#396) requires givenName,
+    // sn and mail of every person a sign-in creates, so the relationship
+    // maps them from the partner's claims explicitly rather than relying on
+    // the default map. 1m-0 below is the case that leaves them out.
+    if (MODE === 'product') {
+      ['given_name=givenName', 'family_name=sn', 'email=mail']
+        .forEach(function (mapping) {
+          const added = addRel('fedAttributeMap', mapping);
+          note(added.ok, '0d. the product relationship maps ' + mapping,
+               JSON.stringify(added.errors || []));
+        });
+    }
 
     // The pattern validator (unit): bounded and anchored.
     note(federation.subjectPatternProblem('uid=[^,]+,ou=users,.*') === '' &&
@@ -596,17 +634,77 @@ function childMain() {
          '1l. somebody a second factor is REQUIRED of meets the enrolment ' +
          'step, and nothing is linked', 'setup=' + got.trail.setup);
 
-    // NOBODY OF THAT NAME: a namespaced entry, or nothing in product.
+    // PRODUCT, AND A PARTNER THAT SENDS NO NAMES OR ADDRESS: the realm's
+    // attribute policy (#396) refuses to create the newcomer, and the
+    // refusal page carries ITS code, STS-FED-0158 — not #358's, and not the
+    // generic "the directory declined" (STS-FED-0090). The scope is cut to
+    // `openid`, so the partner releases none of the three.
+    if (MODE === 'product') {
+      const BARE = 'fsp-bare-' + MODE;
+      const bareSub = partnerSubjectOf(BARE);
+      const bareName = REL + '~sub-' +
+        bareSub.replace(/^urn:uuid:/i, '').toLowerCase();
+      const scoped = setRel('fedScope', 'openid');
+      const markAt = marks.length;
+      const auditAt = auditCount();
+      got = await signIn(BARE, {});
+      const bareMarks = marks.slice(markAt);
+      setRel('fedScope', 'openid profile email');
+      note(scoped.ok && got.r.status === 403 && !entryOf(bareName) &&
+           bareMarks.indexOf('STS-FED-0158') >= 0 &&
+           bareMarks.indexOf('STS-FED-0090') < 0 &&
+           codesSince(auditAt).indexOf('STS-AUTHN-0180') >= 0,
+           '1m-0. product: a partner that sends no givenName, sn or mail ' +
+           'creates nobody, refused STS-FED-0158 by the attribute policy',
+           got.r.status + ' marks=' + JSON.stringify(bareMarks) + ' ' +
+           String(got.r.text || '').replace(/\s+/g, ' ').slice(0, 200));
+    }
+
+    // NOBODY OF THAT NAME: a namespaced entry under the partner's subject.
     const NEWBIE = 'fsp-new-' + MODE;
+    const newbieSub = partnerSubjectOf(NEWBIE);
+    const newbieName = REL + '~sub-' +
+      newbieSub.replace(/^urn:uuid:/i, '').toLowerCase();
     got = await signIn(NEWBIE, {});
-    const namespaced = entryOf(REL + '~' + NEWBIE);
-    // IN BOTH MODES since #325 (2026-09-29): product honours the
-    // relationship's fedAutocreateUsers (on here) as development does.
+    const namespaced = entryOf(newbieName);
+    // IN BOTH MODES since #325, once the switch is on (0c-ii). The name is
+    // the subject since #358, not the mapped username.
     note(got.r.status === 200 && namespaced && !entryOf(NEWBIE) &&
+         !entryOf(REL + '~' + NEWBIE) &&
          attr(namespaced, 'federationLink').length === 1,
          '1m. a subject naming nobody gets a NAMESPACED entry, ' +
-         REL + '~' + NEWBIE + ', linked at creation',
+         newbieName + ', linked at creation',
          got.r.status + ' ' + !!namespaced);
+
+    // #325's refusal was this shape, which 1m never makes. The username
+    // source is the subject (the default, and what an OpenID Federation
+    // relationship leaves empty), the partner's sub is urn:uuid:, and the
+    // entry is <relationship>~sub-<uuid>. Product mode, and a realm whose
+    // ldap.autocreateUsers is off, still create it when the relationship
+    // switch is on. Restored afterwards: later sections match on
+    // preferred_username.
+    const cleared = setRel('fedUsernameSource', '');
+    inSp(function () {
+      config.setOverride('ldap.autocreateUsers', 'false');
+    });
+    const UMA = 'fsp-sub-' + MODE;
+    const sub = partnerSubjectOf(UMA);
+    got = await signIn(UMA, {});
+    const uuid = String(sub || '').replace(/^urn:uuid:/i, '').toLowerCase();
+    const expected = REL + '~sub-' + uuid;
+    const made = entryOf(expected);
+    note(cleared.ok && /^urn:uuid:/i.test(String(sub || '')) &&
+         got.r.status === 200 && made && !entryOf(UMA) &&
+         !entryOf(REL + '~' + UMA) &&
+         attr(made, 'federationLink').length === 1 &&
+         attr(made, 'uid')[0] === expected,
+         '1n. a partner urn:uuid subject is filed as ' + expected +
+         ' and signed in, with ldap.autocreateUsers off',
+         got.r.status + ' ' + String(sub) + ' ' + !!made);
+    setRel('fedUsernameSource', 'preferred_username');
+    inSp(function () {
+      config.clearOverride('ldap.autocreateUsers');
+    });
 
     // =======================================================================
     // 2. ADMINISTRATORS
@@ -673,15 +771,18 @@ function childMain() {
     setRel('fedSubjectPolicy', 'jit-namespaced');
     const GINA = 'fsp-gina-' + MODE;
     makePerson(GINA, 'local-gina@sp.example');
+    const ginaSub = partnerSubjectOf(GINA);
+    const ginaName = REL + '~sub-' +
+      ginaSub.replace(/^urn:uuid:/i, '').toLowerCase();
     got = await signIn(GINA, {});
-    const ginaSpace = entryOf(REL + '~' + GINA);
-    // IN BOTH MODES since #325, as 1m.
-    note(got.r.status === 200 && ginaSpace &&
+    const ginaSpace = entryOf(ginaName);
+    // IN BOTH MODES since #325, as 1m. The name is the subject (#358).
+    note(got.r.status === 200 && ginaSpace && !entryOf(REL + '~' + GINA) &&
          JSON.stringify(attr(entryOf(GINA), 'mail')) ===
            '["local-gina@sp.example"]' &&
          attr(entryOf(GINA), 'federationLink').length === 0,
          '4a. jit-namespaced gives the subject a NEW entry and never the ' +
-         'existing person of that name', got.r.status);
+         'existing person of that name', got.r.status + ' ' + ginaName);
 
     // =======================================================================
     // 5. ANY-EXISTING (development only)
@@ -768,9 +869,14 @@ function childMain() {
     const IVY = 'fsp-ivy-' + MODE;
     const ivySub = partnerSubjectOf(IVY);
     const EXT = 'urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User';
-    const scimBody = { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User',
-                                 EXT],
-                       userName: IVY };
+    // name and emails: the attribute policy (#396), in product mode — on
+    // the create and on every PUT, which replaces the whole resource.
+    const ivyNames = { name: { givenName: 'Ivy', familyName: IVY },
+                       emails: [{ value: IVY + '@sp.example',
+                                  type: 'work' }] };
+    const scimBody = Object.assign({
+      schemas: ['urn:ietf:params:scim:schemas:core:2.0:User', EXT],
+      userName: IVY }, ivyNames);
     scimBody[EXT] = { federationLinks: [{ relationship: REL,
                                           subject: ivySub }] };
     jar = {};
@@ -789,7 +895,10 @@ function childMain() {
     got = await signIn(IVY, {});
     note(got.r.status === 200, '8b. and a pre-linked relationship signs ' +
          'them in', got.r.status + ' ' + got.r.text.slice(0, 200));
-    const bad = { schemas: scimBody.schemas, userName: 'fsp-bad-' + MODE };
+    const bad = { schemas: scimBody.schemas, userName: 'fsp-bad-' + MODE,
+                  name: { givenName: 'Bad', familyName: 'fsp-bad-' + MODE },
+                  emails: [{ value: 'fsp-bad-' + MODE + '@sp.example',
+                             type: 'work' }] };
     bad[EXT] = { federationLinks: [{ relationship: 'no-such-rel',
                                      subject: 'x' }] };
     jar = {};
@@ -799,7 +908,8 @@ function childMain() {
          '8c. a link through no relationship is refused 400 and creates ' +
          'nobody', scim.status + ' ' + scim.text.slice(0, 200));
     const ivyId = attr(entryOf(IVY), 'entryUUID')[0];
-    const put = { schemas: scimBody.schemas, userName: IVY };
+    const put = Object.assign({ schemas: scimBody.schemas, userName: IVY },
+                              ivyNames);
     put[EXT] = { federationLinks: [] };
     const sessionsBefore = fedSessionsOf(IVY).length;
     jar = {};

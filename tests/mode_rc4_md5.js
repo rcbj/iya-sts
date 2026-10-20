@@ -122,7 +122,11 @@ async function productChild() {
 
   // --- a person, their keys and their keytab ---
   const PW = 'Rc4-Product-Passw0rd#182';
-  out.created = directory.createUser('rc4alice', { invent: false }).ok;
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
+  out.created = directory.createUser('rc4alice', { invent: false,
+    attributes: { givenName: 'Alice', sn: 'rc4alice',
+                  mail: 'rc4alice@example.test' } }).ok;
   out.set = credentials.setPassword('rc4alice', PW).ok;
   await personKeys.idle();
   const alice = personKeys.listPeople().filter(function (p) {

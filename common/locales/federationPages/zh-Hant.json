@@ -33,5 +33,10 @@
   "index.configure": "在主控台中設定關係",
   "index.signInScreen": "登入畫面",
   "index.buttonsOn": "登入畫面會把每個可用的合作夥伴顯示為一個按鈕。",
-  "index.buttonsOff": "federation.loginButtons 已關閉，因此登入畫面不顯示任何合作夥伴。"
+  "index.buttonsOff": "federation.loginButtons 已關閉，因此登入畫面不顯示任何合作夥伴。",
+  "profile.title": "一些資訊",
+  "profile.heading": "建立帳戶前還需要一些資訊",
+  "profile.lead": "{partner} 已為您登入，但沒有傳送本服務建立您的帳戶所需的全部資訊。請填寫以下資訊以完成。",
+  "profile.submit": "建立我的帳戶",
+  "profile.note": "這些資訊會保存在您在此處的帳戶中。您輸入的電子郵件地址會被記錄為未驗證。"
 }

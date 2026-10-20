@@ -75,6 +75,17 @@ const NO_ADDRESS = '0.0.0.0/0';
  * counts as its own signal.
  */
 const TOTP_REPLAY_DOOR = 'a replayed one-time code';
+// THE DOOR AN ACCOUNT A FEDERATED SIGN-IN CREATED IS RECORDED UNDER (#565).
+// Consumer providers make an account cheap to create — anybody with a
+// provider account signs up by signing in — so `network-signups` counts how
+// many a network made in the hour, in this register's shape: who, from which
+// network, when, sealed and purged like every other row. Nothing was
+// refused, so `account-failures` and `network-failures` leave the door out.
+/**
+ * The door an account a federated sign-in created is recorded under, which
+ * risk scoring counts as the `network-signups` signal.
+ */
+const FEDERATED_SIGNUP_DOOR = 'an account a federated sign-in created';
 
 interface RiskFailuresDeps {
   log: { debug(m: string): void; info(m: string): void; warn(m: string): void };
@@ -370,6 +381,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   recordFailure: slot.forward('recordFailure'),
   TOTP_REPLAY_DOOR: TOTP_REPLAY_DOOR,
+  FEDERATED_SIGNUP_DOOR: FEDERATED_SIGNUP_DOOR,
   list: slot.forward('list'),
   purge: slot.forward('purge'),
   describe: slot.forward('describe'),

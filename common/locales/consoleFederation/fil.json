@@ -252,5 +252,22 @@
   "through": "sa pamamagitan ng ",
   "brokerNotUsable": "hindi magagamit ang relasyong iyon, kaya ang sign-in screen ang ipinapakita sa halip",
   "notAMechanism": "hindi isang mekanismong mayroon ang serbisyong ito",
-  "authAtPartnerTitle": "Sa PARTNER nangyayari ang authentication sa relasyong nasa panig ng service provider, kaya walang ico-configure dito."
+  "authAtPartnerTitle": "Sa PARTNER nangyayari ang authentication sa relasyong nasa panig ng service provider, kaya walang ico-configure dito.",
+  "labelCategory": "Kategorya",
+  "anyCategory": "anumang kategorya",
+  "categoryEnterprise": "enterprise",
+  "categoryConsumer": "consumer at social",
+  "headingConsumer": "Mga consumer at social na provider",
+  "consumerOn": "<strong>Naka-on</strong> ang mga consumer at social na provider sa realm na ito (<code>federation.consumerProviders</code>).",
+  "consumerOff": "<strong>Naka-off</strong> ang mga consumer at social na provider sa realm na ito. I-on ang <code>federation.consumerProviders</code> sa Settings para makapagdagdag; hindi apektado ang mga enterprise na partner.",
+  "consumerWhat": "Ang bawat provider ay sariling federation na relasyon, idinaragdag nang naka-disable. Isinusulat ang mga endpoint nito sa relasyon kapag idinagdag at maaaring baguhin sa pahina nito. Ang bagong dating ay nakakakuha ng sariling entry, at hindi kailanman ginagamit ang address para itugma sa umiiral na tao. Irehistro sa provider bilang redirect URI ang assertion consumer service na nasa pahina nito, saka ito i-enable.",
+  "consumerListLink": "Ipakita lamang ang mga consumer at social na provider",
+  "thProvider": "Provider",
+  "thAddOne": "Magdagdag",
+  "thDocumentation": "Dokumentasyon",
+  "labelClientId": "Client ID",
+  "labelClientSecret": "Client secret",
+  "buttonAddProvider": "Idagdag",
+  "providerDocs": "ang dokumentasyon ng provider",
+  "providerRealmOff": "Naka-off sa realm na ito ang mga consumer at social na provider, kaya tinatanggihan ng relasyong ito ang bawat pag-sign in hanggang naka-on ang <code>federation.consumerProviders</code>."
 }

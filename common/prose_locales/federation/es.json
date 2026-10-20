@@ -183,6 +183,10 @@
     "en": "06ec8c6d5bce784c",
     "text": "Uno de saml2, saml11, wsfed, oidc, oauth2 — los cinco protocolos de inicio de sesión — o ssf, un socio que solo envía Shared Signals y no inicia la sesión de nadie."
   },
+  "fed.schema.attributes.fedProvider.what": {
+    "en": "b2f68432f2b706d4",
+    "text": "EL PROVEEDOR DE CONSUMO O SOCIAL QUE ES ESTA RELACIÓN (google, discord, github, generic-oidc, generic-oauth2), o vacío para un socio empresarial. Se fija al crear la relación y nunca cambia: el perfil del proveedor escribió entonces sus extremos en esta entrada, e indica en cada inicio de sesión de dónde provienen el sujeto, la dirección y su verificación. Una relación que nombra un proveedor está en la categoría de consumo, que un dominio activa con federation.consumerProviders."
+  },
   "fed.schema.attributes.fedPeer.what": {
     "en": "267dac8cafddfb60",
     "text": "EL IDENTIFICADOR PROPIO DEL SOCIO, como lo llame su protocolo: un entityID de SAML, un emisor de OpenID Connect, un wtrealm de WS-Federation. En una relación del lado del proveedor de servicios se COMPRUEBA — una aserción cuyo Issuer no sea esta cadena se rechaza —, por eso no es mera documentación, y desde el 2026-09-12 es OBLIGATORIO allí: una relación sin él no está totalmente configurada."
@@ -215,6 +219,10 @@
     "en": "8abc51b744775c8b",
     "text": "El JWKS del socio. SE OBTIENE — que es exactamente lo contrario de lo que hace oauthJwksUri en una entrada de aplicación, y la diferencia es todo el argumento de federation_http.js: aquella es una URL que REGISTRÓ un llamante no autenticado, esta es una URL que CONFIGURÓ un administrador. Déjela vacía y pegue las claves en fedJwks si este servicio no debe hacer la llamada."
   },
+  "fed.schema.attributes.fedEmailsUrl.what": {
+    "en": "8e6bd0b6ac698403",
+    "text": "UN SEGUNDO EXTREMO DE PERFIL, para un proveedor que publica la dirección verificada de una persona aparte del resto (/user/emails de GitHub). Se llama con el mismo token de acceso y bajo la misma política que fedUserinfoUrl, y solo para una relación cuyo perfil de proveedor lo lee. Su fallo cuesta la dirección, nunca el inicio de sesión."
+  },
   "fed.schema.attributes.fedJwks.what": {
     "en": "e5d612d3437f7654",
     "text": "Las claves públicas del socio como documento JWKS, textualmente. Se lee ANTES que fedJwksUri y nunca se actualiza, así que una relación que lleva esto no hace ninguna solicitud saliente de claves."
@@ -235,6 +243,34 @@
     "en": "627419de92206a62",
     "text": "EL SECRETO DE ESTE SERVICIO ANTE EL SOCIO, en claro, en un directorio donde todo bind tiene éxito. Es una credencial REAL en un servicio externo REAL, lo cual es una afirmación más fuerte que cualquier otra cosa de este directorio — vea el encabezado. Nunca se escribe en el registro de auditoría ni se imprime en una página."
   },
+  "fed.schema.attributes.fedResponseMode.what": {
+    "en": "07cfe6e4177873df",
+    "text": "CÓMO VUELVE EL CÓDIGO DE AUTORIZACIÓN: query (el predeterminado, el código en la redirección) o form_post (OAuth 2.0 Form Post Response Mode), que Sign in with Apple exige siempre que se pide un nombre o una dirección. form_post llega como un POST entre sitios, así que un navegador no le envía ninguna cookie SameSite=Lax."
+  },
+  "fed.schema.attributes.fedAllowedTenants.what": {
+    "en": "1436122fe8c92048",
+    "text": "SOLO MICROSOFT, CUALQUIER INQUILINO: los identificadores de los inquilinos cuyas personas pueden iniciar sesión, uno por valor. fedPeer contiene entonces {tenantid}, que se rellena con el tid de cada token, y se rechaza un token de un inquilino no incluido. Vacío rechaza todos los inquilinos."
+  },
+  "fed.schema.attributes.fedTeamId.what": {
+    "en": "959f29403a917b46",
+    "text": "SOLO APPLE: el identificador del equipo de Apple Developer, el iss del secreto de cliente que este servicio firma en cada solicitud de token."
+  },
+  "fed.schema.attributes.fedKeyId.what": {
+    "en": "557cedae99afdf0f",
+    "text": "SOLO APPLE: el identificador de la clave de Sign in with Apple, el kid del secreto de cliente que este servicio firma."
+  },
+  "fed.schema.attributes.fedClientSigningKey.what": {
+    "en": "411c7d1d5df63859",
+    "text": "SOLO APPLE: LA CLAVE PRIVADA con la que este servicio firma su secreto de cliente (el archivo .p8 que emitió Apple, una clave P-256 en PEM PKCS #8). Es una credencial en Apple. Se sella bajo la clave de cifrado de claves dondequiera que las claves persisten, nunca se muestra y nunca se escribe en el registro de auditoría. Un secreto de cliente firmado con ella dura cinco minutos y se emite en cada solicitud de token."
+  },
+  "fed.schema.attributes.fedAuthorizeParams.what": {
+    "en": "4cf26c17034bb859",
+    "text": "PARÁMETROS ADICIONALES DE LA SOLICITUD DE AUTORIZACIÓN, uno por valor, escritos `<name>=<value>`, para un proveedor que los necesite (el `claims` de Twitch, para que se le envíe una dirección). Solo OpenID Connect y OAuth 2.0. Los parámetros que este servicio fija por sí mismo —response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request y request_uri— se rechazan aquí, porque cambiar uno de ellos aquí desharía una comprobación que hace este servicio."
+  },
+  "fed.schema.attributes.fedTokenAuth.what": {
+    "en": "d86b5d2b605f0f05",
+    "text": "CÓMO SE AUTENTICA ESTE SERVICIO EN EL EXTREMO DE TOKENS DEL SOCIO: client_secret_basic (el predeterminado, que la sección 2.3.1 de RFC 6749 dice que un servidor DEBE admitir) o client_secret_post, para un socio que lee el secreto solo del cuerpo. Sin fedClientSecret este servicio es un cliente público y ninguno se aplica."
+  },
   "fed.schema.attributes.fedScope.what": {
     "en": "7f9479e6e589a23f",
     "text": "El ámbito que se pide al socio. `openid profile email` es el valor predeterminado para una relación OIDC y no hay valor predeterminado para una OAuth 2.0, porque lo que le dará un servidor de autorización OAuth 2.0 es completamente local a él."
@@ -252,24 +288,40 @@
     "text": "Firmar el AuthnRequest saliente con la clave de ESTE servicio. DESACTIVADO de forma predeterminada: la mayoría de los proveedores de identidad no lo exigen, y un socio que sí lo haga rechazará la solicitud de una forma que nombra el problema. Cuando está activado, el certificado que debe configurarse en el socio es el de los propios metadatos SAML de este servicio."
   },
   "fed.schema.attributes.fedUsernameSource.what": {
-    "en": "61e8ef6f6cf4a99d",
-    "text": "QUÉ VALOR ENTRANTE SE CONVIERTE EN EL NOMBRE DE USUARIO LOCAL — un nombre de claim para OIDC/OAuth 2.0, un Attribute Name de SAML para los demás. Vacío significa el propio sujeto: el NameID, o `sub`. Esta es la única decisión de correspondencia en la que no se puede equivocar sin que se note, porque decide en qué entrada del directorio termina una persona."
+    "en": "e0e96af3e55ca105",
+    "text": "QUÉ VALOR ENTRANTE SE BUSCA EN LINK-AT-FIRST-SIGN-IN, y se hace coincidir con any-existing — un nombre de claim para OIDC/OAuth 2.0, un Attribute Name de SAML para los demás. Vacío significa el propio sujeto: el NameID, o `sub`. No nombra una entrada que este inicio de sesión CREA: ese nombre es la relación y el sujeto estable del socio (#358)."
+  },
+  "fed.schema.attributes.fedSubjectClaim.what": {
+    "en": "c52efd86a4983b41",
+    "text": "SOLO OAUTH 2.0 SIMPLE: el miembro de la respuesta del extremo de perfil que es el identificador estable de la persona en el socio, como ruta con puntos (id, data.id). Vacío conserva lo que este servicio siempre ha hecho: sub, luego id, luego user_id. Es el SUJETO, la mitad de un vínculo de federación que nunca debe cambiar, que no es el nombre de usuario (fedUsernameSource). El sujeto de un socio OpenID Connect es el sub del ID Token, que la sección 5.7 de OpenID Connect Core convierte en el único estable, y el de un proveedor de consumo es el de su perfil."
   },
   "fed.schema.attributes.fedAttributeMap.what": {
     "en": "4c966530efb4269f",
     "text": "UN VALOR POR CORRESPONDENCIA, escrito `<incoming name>=<LDAP attribute>`. Lo que NO figura aquí llega igualmente — federation_map.js tiene una tabla predeterminada que cubre los claims OIDC habituales, los nombres urn:oid: de SAML y los URI de claims de WS-Federation —, así que esto es para las invenciones propias del socio y no para los nombres que usa todo el mundo."
   },
   "fed.schema.attributes.fedAutocreateUsers.what": {
-    "en": "c047dc4310a6d6a9",
-    "text": "APROVISIONAMIENTO DINÁMICO: crear una entrada de directorio la primera vez que este socio inicia la sesión de alguien. ACTIVADO de forma predeterminada. DESACTIVADO significa que la persona YA debe tener una entrada aquí — aprovisionada de antemano, por SCIM o a mano — y un inicio de sesión de alguien que no la tiene se rechaza, porque una sesión necesita una entrada de la que ser sujeto. (Hasta el 2026-09-14, DESACTIVADO daba una sesión sin entrada; un sujeto estable hizo imposible ese estado.)"
+    "en": "bfd1076470982a0d",
+    "text": "APROVISIONAMIENTO DINÁMICO: crear una entrada de directorio la primera vez que este socio inicia la sesión de alguien. Se escribe TRUE cuando se crea una relación en desarrollo y FALSE en producto (mode.defaultsFederatedAutocreate()); una relación que no almacena ninguno de los dos se lee igual. DESACTIVADO significa que la persona YA debe tener una entrada aquí — aprovisionada de antemano, por SCIM o a mano — y un inicio de sesión de alguien que no la tiene se rechaza, porque una sesión necesita una entrada de la que ser sujeto. (Hasta el 2026-09-14, DESACTIVADO daba una sesión sin entrada; un sujeto estable hizo imposible ese estado.)"
   },
   "fed.schema.attributes.fedUpdateUserAttributes.what": {
     "en": "4d516236bce43ce4",
     "text": "Actualizar los atributos de directorio de la persona en CADA inicio de sesión a partir de la aserción o el token más reciente. ACTIVADO de forma predeterminada, que es lo que este servicio hizo siempre. DESACTIVADO escribe los atributos del socio solo cuando este inicio de sesión CREÓ la entrada, así que una persona aprovisionada previamente — o una que alguien editó después — conserva lo que dice el directorio. En cualquier caso se registra por qué relación y emisor llegó una persona."
   },
+  "fed.schema.attributes.fedProvisionGroups.what": {
+    "en": "7a8153e8814f97c9",
+    "text": "CREAR PERTENENCIAS A GRUPOS A PARTIR DEL TOKEN DEL SOCIO (#358). DESACTIVADO de forma predeterminada, y un valor ausente equivale a desactivado. Activado, cada nombre de grupo que lleva la aserción se convierte en una pertenencia de la persona que este inicio de sesión aprovisionó, en cada inicio de sesión correcto. Un grupo creado así queda marcado con esta relación. Un nombre que ya existe y no está marcado como de esta relación se ignora, se audita (STS-FED-0161) y el inicio de sesión continúa. Un grupo que concede algo por el mero hecho de pertenecer a él — un grupo de la consola, el grupo miembro de un rol, un grupo propietario, un grupo que nombra una política — nunca se crea ni se une (STS-FED-0164). No satisface fedSubjectGroup: esa regla se aplica antes de que se añada a nadie."
+  },
+  "fed.schema.attributes.fedProvisionCap.what": {
+    "en": "6807b5eb2cff8e4f",
+    "text": "CUÁNTAS PERSONAS PUEDE CREAR ESTA RELACIÓN. 0 es ilimitado. Vacío es ilimitado para un socio empresarial; la relación de un proveedor de CONSUMO o social nunca es ilimitada por defecto: se crea con federation.consumerProvisionCap (10000 salvo que el dominio diga otra cosa) escrito aquí, y un valor vacío significa ese ajuste. En el límite se rechaza un sujeto nuevo STS-FED-0090; una persona ya vinculada sigue iniciando sesión. ldap.maxEntries sigue siendo el techo del dominio. No es un recuento de inicios de sesión: eso es fedUsers."
+  },
+  "fed.schema.attributes.fedProvisionIdleMinutes.what": {
+    "en": "29c243b9d96fac47",
+    "text": "DESACTIVAR A UNA PERSONA PARA LA QUE ESTA RELACIÓN ES LA ÚNICA VÍA DE INICIO DE SESIÓN, en cuanto federationLastSeen tiene más de estos minutos. Vacío o 0 es desactivado: no se desactiva a nadie por inactividad. La entrada y el vínculo se conservan. A una persona con un userPassword local, o con un vínculo a través de otra relación, no se la toca. La señal account-disabled de un socio es aparte (STS-FED-0156) y solo bloquea los inicios de sesión de ese socio."
+  },
   "fed.schema.attributes.fedSubjectPolicy.what": {
-    "en": "2b9955272be86815",
-    "text": "CÓMO SE CONVIERTE EL SUJETO DEL SOCIO EN UNA PERSONA LOCAL. El sujeto es el identificador estable propio del socio — iss + sub, un NameID persistente y el entity ID del socio — y una persona lo lleva como federationLink. link-at-first-sign-in (el predeterminado; vacío equivale a este): un sujeto vinculado inicia sesión; uno no vinculado que nombra a una persona existente debe primero iniciar sesión AQUÍ como esa persona — contraseña, y un segundo factor cuando tiene uno o se le exige — y solo entonces se registra el vínculo y se escriben los atributos del socio; uno que no nombra a nadie obtiene una entrada nueva con el espacio de nombres de esta relación cuando el aprovisionamiento está activado. pre-linked: solo un vínculo permite iniciar sesión a alguien. jit-namespaced: un sujeto no vinculado siempre obtiene una entrada NUEVA, <relationship>~<name>, nunca una persona existente. any-existing: el nombre que envió el socio se hace coincidir directamente con una persona local, como hacía este servicio antes de #109 — SOLO DESARROLLO, se rechaza en producto, y permite a este socio iniciar sesión en cualquier cuenta que pueda nombrar."
+    "en": "afab8ba90a854d71",
+    "text": "CÓMO SE CONVIERTE EL SUJETO DEL SOCIO EN UNA PERSONA LOCAL. El sujeto es el identificador estable propio del socio — iss + sub, un NameID persistente y el entity ID del socio — y una persona lo lleva como federationLink. link-at-first-sign-in (el predeterminado; vacío equivale a este): un sujeto vinculado inicia sesión; uno no vinculado que nombra a una persona existente debe primero iniciar sesión AQUÍ como esa persona — contraseña, y un segundo factor cuando tiene uno o se le exige — y solo entonces se registra el vínculo y se escriben los atributos del socio; uno que no nombra a nadie obtiene una entrada nueva con el espacio de nombres de esta relación cuando el aprovisionamiento está activado. pre-linked: solo un vínculo permite iniciar sesión a alguien. jit-namespaced: un sujeto no vinculado siempre obtiene una entrada NUEVA, <relationship>~<subject>, nunca una persona existente. El sujeto es el identificador estable del socio, con un urn:uuid: reducido a sub-<uuid>; no es el nombre de usuario coincidente. any-existing: el nombre que envió el socio se hace coincidir directamente con una persona local, como hacía este servicio antes de #109 — SOLO DESARROLLO, se rechaza en producto, y permite a este socio iniciar sesión en cualquier cuenta que pueda nombrar."
   },
   "fed.schema.attributes.fedSubjectGroup.what": {
     "en": "a93a51b8d9b56949",
@@ -324,8 +376,8 @@
     "text": "EL SECRETO PARA fedSignalsClientId, SELLADO con la clave de cifrado de claves dondequiera que las claves persistan y nunca mostrado. Vacío usa fedClientSecret, sellado de la misma forma."
   },
   "fed.schema.attributes.fedSignalsScope.what": {
-    "en": "a496c6a310b8c156",
-    "text": "El ámbito que se pide con credenciales de cliente. Vacío pide `ssf:read ssf:write`."
+    "en": "ed55c437fcd421f1",
+    "text": "El ámbito que se pide con credenciales de cliente. Vacío pide `ssf.manage`, que incluye la lectura."
   },
   "fed.schema.attributes.fedSignalsBearer.what": {
     "en": "75ae4009add7e2d2",

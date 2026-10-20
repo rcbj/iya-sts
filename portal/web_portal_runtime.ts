@@ -44,6 +44,16 @@
 // was on. The console's popup and form restore (#508) are not carried over;
 // the portal's forms are short.
 //
+// ONE ACCOUNT PER TAB (#561, with `authn.multipleAccounts` on), on the
+// console's pattern: the tab's account in sessionStorage sent as
+// `login_hint` on every sign-in; the account menu's Switch, Sign in with
+// another account and Sign out…; a switch that asks first over unsaved
+// changes, aborts what is in flight, discards every view and token this tab
+// holds and refuses an answer for another subject; and `?accounts=another`,
+// which a public page's *Sign in with another account* links here with, as
+// this portal's own authorization request with `prompt=login`. With the
+// setting off none of it is drawn or sent.
+//
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // Everything it touches in the browser arrives through the constructor.
 // ---------------------------------------------------------------------------
@@ -54,6 +64,7 @@ import kit = require('./web_portal_kit');
 import PortalShell = require('./web_portal_shell');
 import PortalPages = require('./web_portal_pages');
 import PortalWebAuthn = require('./web_portal_webauthn');
+import WebAccounts = require('../common/web_accounts');
 
 type Json = any;
 
@@ -75,6 +86,14 @@ const API = '/account-api';
 const ADMIN_API = '/admin-api';
 // What `sendOnce()` answers when the request needs a sign-in first.
 const NEEDS_SIGN_IN = { needsSignIn: true };
+// What it answers for a request the tab's account changed under (#561):
+// aborted, or answered after the switch — either way not believed.
+const ABORTED = { aborted: true };
+// Where the tab's account is kept (#561), beside the sign-in's record.
+const ACCOUNT_KEY = 'sts-portal-account';
+// What a sign-in's extra parameters carry that is this runtime's and not
+// the authorization request's.
+const OWN_EXTRAS = ['expect', 'another', 'login_hint'];
 
 /**
  * The user portal's runtime: sign-in, routing and forms.
@@ -98,6 +117,9 @@ class PortalRuntime extends SpaClient {
   private ownerToken: string;
   private ownerExpiresAt: number;
   private ownerScopes: string[];
+  // WHETHER A FORM ON THE PAGE DRAWN HAS BEEN TYPED IN (#561): a switch asks
+  // first while one has.
+  private dirty: boolean;
 
   /**
    * Makes the runtime.
@@ -109,8 +131,10 @@ class PortalRuntime extends SpaClient {
     super(env, PortalRuntime.prefixOf(env.location.pathname), {
       clientId: CLIENT_ID, scope: SCOPE,
       elsewhere: { '/oauth2': 'data-sts-oauth', '/admin-api': 'data-sts-api',
-                   '/logout': 'data-sts-authn' }
+                   '/logout': 'data-sts-authn' },
+      accountKey: ACCOUNT_KEY
     });
+    this.dirty = false;
     this.ownerToken = '';
     this.ownerExpiresAt = 0;
     this.ownerScopes = [];
@@ -205,10 +229,18 @@ class PortalRuntime extends SpaClient {
       nonce: await this.nonceFor(verifier)
     };
     Object.keys(extra || {}).forEach(function (name) {
-      if (extra[name]) {
+      if (extra[name] && OWN_EXTRAS.indexOf(name) < 0) {
         params[name] = String(extra[name]);
       }
     });
+    // THE TAB'S ACCOUNT (#561), on every sign-in — a step-up's and a
+    // reload's among them — so the authorization server answers for this
+    // tab's session and no other; none where the tab keeps none, which is
+    // every tab with the setting off.
+    const hint = this.hintFor(extra);
+    if (hint) {
+      params.login_hint = hint;
+    }
     // Pushed first where the realm requires it (RFC 9126, `SpaClient`).
     return this.authorizationRequestUrl(params);
   }
@@ -217,15 +249,26 @@ class PortalRuntime extends SpaClient {
    * Sends the browser to sign in, remembering where to come back to.
    *
    * @param returnTo - the path and query to land on after
-   * @param extra - `prompt` and `acr_values` for a step-up, or nothing
+   * @param extra - `prompt` and `acr_values` for a step-up; for a switch
+   *   (#561) `login_hint` ('' for none), `expect` (the subject the answer
+   *   must be for) and `another`; or nothing
    * @returns nothing
    */
   async beginSignIn(returnTo: string, extra?: Json): Promise<void> {
     const verifier = this.random(32);
     const state = this.random(16);
-    this.env.sessionStorage.setItem(SIGNIN_KEY, JSON.stringify({
-      verifier: verifier, state: state, returnTo: returnTo,
-      prefix: this.prefix }));
+    const asked = extra || {};
+    // `expect` and `another` are written only where a switch set them, so
+    // the record of an ordinary sign-in is the one it always was.
+    const record: Json = { verifier: verifier, state: state,
+                           returnTo: returnTo, prefix: this.prefix };
+    if (asked.expect) {
+      record.expect = String(asked.expect);
+    }
+    if (asked.another) {
+      record.another = true;
+    }
+    this.env.sessionStorage.setItem(SIGNIN_KEY, JSON.stringify(record));
     this.env.location.assign(await this.authorizeUrl(state, verifier, extra));
   }
 
@@ -253,9 +296,25 @@ class PortalRuntime extends SpaClient {
       return;
     }
     if (!saved || !query.code || query.state !== saved.state) {
-      this.drawProblem('This sign-in cannot be finished',
-        'The answer from the authorization server does not belong to a ' +
-        'sign-in this page started. Open the portal again to sign in.');
+      // THE RETURN TAB of a same-device wallet holds no PKCE record. The
+      // tab that opened the portal still does, and it redeems the code.
+      if (query.code && query.state &&
+          await this.handCallbackToStarter(query)) {
+        this.env.history.replaceState(null, '',
+          this.prefix + kit.BASE + '/callback');
+        this.drawProblem('Continue in your other tab',
+          'This sign-in is finishing in the tab where you opened the ' +
+          'portal. You can close this one.');
+        return;
+      }
+      // THE SESSION IS ALREADY THERE. The wallet and the passkey finished
+      // in this tab, so the authorization server holds a session. This tab
+      // has no matching PKCE record, and no waiting tab took the callback.
+      // The Sign in link under the old refusal started a fresh request,
+      // which that session accepts. Start it, rather than call a finished
+      // sign-in an error.
+      this.env.history.replaceState(null, '', this.prefix + kit.BASE);
+      await this.beginSignIn(kit.BASE);
       return;
     }
     const answer = await this.tokenRequest({
@@ -275,11 +334,30 @@ class PortalRuntime extends SpaClient {
         'portal again to sign in.');
       return;
     }
+    // A SWITCH IS FOR ONE ACCOUNT (#561), the console's check: an answer for
+    // another subject is refused and its tokens are not kept, so the tab
+    // stays the account it was — a reload resumes that one, by its hint.
+    if (saved.expect &&
+        !PortalRuntime.answerIsFor(String(saved.expect),
+                                   answer.json.id_token)) {
+      this.drawProblem('Switching accounts was refused',
+        'The sign-in came back as another account than the one chosen, so ' +
+        'this tab did not take it. Open the portal again to carry on as the ' +
+        'account it was.');
+      return;
+    }
+    const before = this.storedAccount();
     this.keepTokens(answer.json);
     this.me = null;
     this.env.history.replaceState(null, '',
       this.prefix + String(saved.returnTo || kit.BASE));
     await this.route();
+    // AN ACCOUNT THIS TAB ADDED TO THE BROWSER is announced, so the other
+    // tabs' menus are read again (#561); a reload as the same account is
+    // not a change.
+    if (saved.another || (before && before.sub !== this.subject)) {
+      this.announceAccounts('added');
+    }
   }
 
   /**
@@ -357,8 +435,14 @@ class PortalRuntime extends SpaClient {
    */
   async ownerJson(method: string, path: string, body?: Json): Promise<Json> {
     const target = this.url(path);
+    // THE IDENTITY IT IS SENT FOR (#561): a switch aborts it, and whatever
+    // comes back after one is null, as a sign-in that began is.
+    const identity = this.identity;
     for (let attempt = 0; attempt < 3; attempt++) {
       const access = await this.ownerAccess();
+      if (identity !== this.identity) {
+        return null;
+      }
       if (!access.token) {
         if (access.signIn) {
           await this.beginSignIn(this.here());
@@ -376,10 +460,22 @@ class PortalRuntime extends SpaClient {
       if (body !== undefined && body !== null) {
         headers['Content-Type'] = 'application/json';
       }
-      const res = await this.env.fetch(target, { method: method,
-        headers: headers,
-        body: body !== undefined && body !== null ? JSON.stringify(body)
-                                                  : undefined });
+      let res: Json = null;
+      try {
+        res = await this.env.fetch(target, { method: method,
+          headers: headers,
+          body: body !== undefined && body !== null ? JSON.stringify(body)
+                                                    : undefined,
+          signal: this.identitySignal() });
+      } catch (e) {
+        if (identity !== this.identity) {
+          return null;
+        }
+        throw e;
+      }
+      if (identity !== this.identity) {
+        return null;
+      }
       this.keepNonce(res);
       if (res.status === 401) {
         const challenge = String((res.headers && res.headers.get &&
@@ -396,6 +492,9 @@ class PortalRuntime extends SpaClient {
       const json = await res.json().catch(function () {
         return null;
       });
+      if (identity !== this.identity) {
+        return null;
+      }
       return { status: res.status, json: json };
     }
     return { status: 401, json: { ok: false, errors: [
@@ -424,9 +523,15 @@ class PortalRuntime extends SpaClient {
    * @returns the response, or NEEDS_SIGN_IN
    */
   async sendOnce(method: string, target: string, body?: Json): Promise<Json> {
+    // THE IDENTITY IT IS SENT FOR (#561): a switch aborts it, and whatever
+    // comes back after one is ABORTED, never drawn.
+    const identity = this.identity;
     const now = this.env.now ? this.env.now() : Date.now();
     if (this.accessToken && now > this.expiresAt - REFRESH_EARLY * 1000) {
       await this.refresh();
+    }
+    if (identity !== this.identity) {
+      return ABORTED;
     }
     if (!this.accessToken) {
       return NEEDS_SIGN_IN;
@@ -440,10 +545,22 @@ class PortalRuntime extends SpaClient {
       if (body !== undefined && body !== null) {
         headers['Content-Type'] = 'application/json';
       }
-      const res = await this.env.fetch(target, { method: method,
-        headers: headers,
-        body: body !== undefined && body !== null ? JSON.stringify(body)
-                                                  : undefined });
+      let res: Json = null;
+      try {
+        res = await this.env.fetch(target, { method: method,
+          headers: headers,
+          body: body !== undefined && body !== null ? JSON.stringify(body)
+                                                    : undefined,
+          signal: this.identitySignal() });
+      } catch (e) {
+        if (identity !== this.identity) {
+          return ABORTED;
+        }
+        throw e;
+      }
+      if (identity !== this.identity) {
+        return ABORTED;
+      }
       this.keepNonce(res);
       if (res.status !== 401) {
         return res;
@@ -473,7 +590,11 @@ class PortalRuntime extends SpaClient {
    * @returns `{ status, json, res }`, or null when a sign-in began
    */
   async apiJson(method: string, path: string, body?: Json): Promise<Json> {
+    const identity = this.identity;
     const res = await this.sendOnce(method, this.url(path), body);
+    if (res === ABORTED) {
+      return null;
+    }
     if (res === NEEDS_SIGN_IN) {
       await this.beginSignIn(this.here() + String(this.env.location.hash ||
                                                   ''));
@@ -482,6 +603,9 @@ class PortalRuntime extends SpaClient {
     const json = await res.json().catch(function () {
       return null;
     });
+    if (identity !== this.identity) {
+      return null;
+    }
     return { status: res.status, json: json, res: res };
   }
 
@@ -542,6 +666,8 @@ class PortalRuntime extends SpaClient {
     const doc = this.env.document;
     doc.title = title + ' — IYA STS';
     doc.body.innerHTML = PortalRuntime.realmLinks(html, this.prefix);
+    // A page just drawn holds nothing typed (#561's unsaved-changes test).
+    this.dirty = false;
     this.drawnAt = this.env.location.pathname + this.env.location.search;
     this.wire();
     this.targetFragment();
@@ -578,7 +704,11 @@ class PortalRuntime extends SpaClient {
                   origin: this.env.location.origin, me: this.me,
                   locale: this.me ? this.me.locale : nobody.locale,
                   version: this.me ? this.me.version : nobody.version,
-                  here: this.prefix + this.here() };
+                  here: this.prefix + this.here(),
+                  // The browser's accounts (#561), for a page that acts for
+                  // this tab's account and must say which; OFF with the
+                  // setting off, when no page draws anything from it.
+                  accounts: this.accounts };
     const flash = this.flash || {};
     this.flash = null;
     const body = v.page.render(v.json, ctx);
@@ -595,7 +725,8 @@ class PortalRuntime extends SpaClient {
     this.put(PortalShell.headingFor(v.page.path, this.t),
       PortalShell.frame(this.me, { active: v.page.path, query: v.query,
         message: flash.message || '', error: flash.error || '',
-        cards: body, prefix: this.prefix, t: this.t }));
+        cards: body, prefix: this.prefix, t: this.t,
+        accounts: this.accounts, subject: this.subject }));
   }
 
   /**
@@ -612,6 +743,27 @@ class PortalRuntime extends SpaClient {
     const query = SpaClient.queryOf(this.env.location.search);
     const page = PortalPages.find(path);
     const forNobody = page && (page.access || 'person') !== 'person';
+    // SIGN IN WITH ANOTHER ACCOUNT, ASKED FROM ANOTHER PAGE (#561): a public
+    // page's control links here with `accounts=another`, and the portal's
+    // own authorization request asks with `prompt=login`. The marker leaves
+    // the address either way; with the setting off it is dropped and the
+    // page is today's.
+    if (!forNobody && query[WebAccounts.ANOTHER_PARAM] ===
+        WebAccounts.ANOTHER_VALUE) {
+      delete query[WebAccounts.ANOTHER_PARAM];
+      const back = path + kit.queryOf(query) +
+        String(this.env.location.hash || '');
+      this.env.history.replaceState(null, '', this.prefix + back);
+      const list = await WebAccounts.fetchList(this.env, this.prefix);
+      if (list.enabled) {
+        this.accounts = list;
+        await this.signInAnother(back);
+        return;
+      }
+    }
+    // THE IDENTITY THIS PAGE IS DRAWN FOR (#561): a switch while it is
+    // being fetched leaves it undrawn.
+    const identity = this.identity;
     if (!forNobody && !this.accessToken) {
       await this.beginSignIn(this.here() + String(this.env.location.hash ||
                                                   ''));
@@ -637,6 +789,16 @@ class PortalRuntime extends SpaClient {
       }
       this.me = me.json;
       this.applyLocale(this.me.locale);
+      // THE BROWSER'S ACCOUNTS (#561), for the account menu, and the tab's
+      // own kept from them; off, nothing is kept and the frame is today's.
+      await this.readAccounts(String((this.me.user || {}).username || ''));
+      const self = this;
+      this.listenForAccounts(function () {
+        self.redrawAccountMenu();
+      });
+      if (identity !== this.identity) {
+        return;
+      }
     }
     if (!page) {
       this.view = null;
@@ -887,6 +1049,19 @@ class PortalRuntime extends SpaClient {
         event.ctrlKey || event.shiftKey || event.altKey) {
       return;
     }
+    // THE ACCOUNT MENU'S CONTROLS (#561), drawn only with several accounts
+    // on.
+    const asked = this.accounts.enabled
+      ? WebAccounts.actionOf(event.target) : null;
+    if (asked && (asked.action === 'switch' || asked.action === 'another')) {
+      event.preventDefault();
+      if (asked.action === 'switch') {
+        this.switchAccount(asked.key);
+      } else {
+        this.signInAnother();
+      }
+      return;
+    }
     let el = event.target;
     while (el && el.tagName !== 'A') {
       el = el.parentElement;
@@ -950,10 +1125,129 @@ class PortalRuntime extends SpaClient {
    * @returns nothing
    */
   signOut(): void {
+    // WHICH ACCOUNT (#561): with several in the browser, the sign-out is
+    // told the tab's, which it preselects; with the setting off the address
+    // is the one it always was.
+    const kept = this.accounts.enabled ? this.storedAccount() : null;
     this.accessToken = '';
     this.refreshToken = '';
     this.ownerToken = '';
-    this.env.location.assign(this.url('/logout'));
+    this.env.location.assign(this.url('/logout') +
+      (kept && kept.username
+        ? '?login_hint=' + encodeURIComponent(kept.username) : ''));
+  }
+
+  // ---------------------------------------------------------------------------
+  // SWITCHING ACCOUNTS IN THIS TAB (#561), the console's arrangement
+  // (`admin-ui/web_runtime.ts`, *Switching accounts in this tab*): ask first
+  // over a form typed in, abort what is in flight (`endIdentity()`), discard
+  // every view and token (`discardViews()`), and sign in naming the account
+  // and the subject the answer must be for. `/account-api` and the owner's
+  // `/admin-api` still decide from the token's own subject; nothing here is
+  // a boundary.
+  // ---------------------------------------------------------------------------
+  /**
+   * Asks before leaving a page whose forms were typed in.
+   *
+   * @returns whether to go on
+   */
+  confirmLeave(): boolean {
+    const win = this.env.window;
+    if (!this.dirty || !win || typeof win.confirm !== 'function') {
+      return true;
+    }
+    return !!win.confirm(this.t.has('portal.accounts.unsaved')
+      ? this.t.text('portal.accounts.unsaved')
+      : 'This page has changes that have not been saved. Switch account ' +
+        'anyway? They will be lost.');
+  }
+
+  /**
+   * Discards every view and token this tab holds for the account it was.
+   *
+   * @returns nothing
+   */
+  discardViews(): void {
+    this.me = null;
+    this.nobody = null;
+    this.formTable = null;
+    this.view = null;
+    this.flash = null;
+    this.ownerToken = '';
+    this.ownerExpiresAt = 0;
+    this.ownerScopes = [];
+    this.discardClient();
+  }
+
+  /**
+   * Switches this tab to another signed-in account of the browser.
+   *
+   * @param key - the account's key, from the menu
+   * @returns nothing
+   */
+  async switchAccount(key: string): Promise<void> {
+    const account = WebAccounts.byKey(this.accounts, key);
+    if (!account) {
+      this.redrawAccountMenu();
+      return;
+    }
+    if (!this.confirmLeave()) {
+      return;
+    }
+    const back = this.here() + String(this.env.location.hash || '');
+    this.endIdentity();
+    this.discardViews();
+    try {
+      await this.beginSignIn(back, {
+        login_hint: String(account.username || account.sub || ''),
+        expect: String(account.sub || '') });
+    } catch (e) {
+      // THE SIGN-IN COULD NOT BE STARTED (#731): a pushed authorization
+      // request the network refused. The views are already gone, so the
+      // tab says so rather than staying blank with the rejection unhandled;
+      // the account it keeps is still the one it was, so a reload resumes
+      // that one, by its hint.
+      this.drawProblem('Switching accounts failed',
+        'The sign-in as the other account could not be started: ' +
+        String((e && e.message) || e) + '. Reload the page to carry on as ' +
+        'the account this tab was.');
+    }
+  }
+
+  /**
+   * Signs this tab in as another account: a fresh sign-in (`prompt=login`)
+   * with no hint, whose account the tab then is.
+   *
+   * @param returnTo - where to land after; this page where left out
+   * @returns nothing
+   */
+  async signInAnother(returnTo?: string): Promise<void> {
+    if (!this.confirmLeave()) {
+      return;
+    }
+    const back = returnTo || this.here() + String(this.env.location.hash ||
+                                                  '');
+    this.endIdentity();
+    this.discardViews();
+    await this.beginSignIn(back, { login_hint: '', prompt: 'login',
+                                   another: true });
+  }
+
+  /**
+   * Draws the account menu's items again from the list in hand, leaving the
+   * page as it is.
+   *
+   * @returns nothing
+   */
+  redrawAccountMenu(): void {
+    const doc = this.env.document;
+    const el = doc && doc.getElementById
+      ? doc.getElementById(PortalShell.ACCOUNTS_ID) : null;
+    if (el) {
+      el.innerHTML = PortalRuntime.realmLinks(
+        PortalShell.accountItems(this.accounts, this.subject, this.t),
+        this.prefix);
+    }
   }
 
   // THE COPY BUTTONS (`/portal/copy.js` until #568): drawn hidden, so the
@@ -993,6 +1287,52 @@ class PortalRuntime extends SpaClient {
     PortalWebAuthn.wire(doc, this.env.window || {}, function (form: Json) {
       self.submit(form, null);
     });
+    PortalRuntime.wireDependentSelects(doc);
+  }
+
+  // A LIST WHOSE OPTIONS FOLLOW A CHOICE (2026-10-16, `/portal/wallet`'s
+  // signing algorithm): a `<select data-depends-on="NAME">` shows only the
+  // options whose `data-for` names the checked value of the radios called
+  // NAME, and selects the one whose `data-default-for` names it. A hidden
+  // option is disabled too, so it is never sent; the page draws the first
+  // choice's already, so a browser without this script sends a right value.
+  /**
+   * Wires every `select[data-depends-on]` in the document to its radios.
+   *
+   * @param doc - the document
+   * @returns nothing
+   */
+  static wireDependentSelects(doc: Json): void {
+    const selects = doc && doc.querySelectorAll
+      ? doc.querySelectorAll('select[data-depends-on]') : [];
+    for (let i = 0; i < selects.length; i++) {
+      const select = selects[i];
+      const name = String(select.getAttribute('data-depends-on') || '');
+      const radios = doc.querySelectorAll('input[type="radio"][name="' +
+                                          name.replace(/"/g, '') + '"]');
+      const follow = function (value: string): void {
+        const options = select.options || [];
+        for (let j = 0; j < options.length; j++) {
+          const option = options[j];
+          const listed = String(option.getAttribute('data-for') || '')
+            .split(' ').indexOf(value) >= 0;
+          option.hidden = !listed;
+          option.disabled = !listed;
+          if (listed && String(option.getAttribute('data-default-for') || '')
+            .split(' ').indexOf(value) >= 0) {
+            select.value = option.value;
+          }
+        }
+      };
+      for (let k = 0; k < radios.length; k++) {
+        const radio = radios[k];
+        radio.addEventListener('change', function () {
+          if (radio.checked) {
+            follow(String(radio.value));
+          }
+        });
+      }
+    }
   }
 
   /**
@@ -1008,6 +1348,14 @@ class PortalRuntime extends SpaClient {
     this.env.document.addEventListener('submit', function (event: Json) {
       self.onSubmit(event);
     });
+    // A FORM TYPED IN (#561): a switch asks before it is lost.
+    const typed = function (event: Json) {
+      if (event && event.target && event.target.form) {
+        self.dirty = true;
+      }
+    };
+    this.env.document.addEventListener('input', typed);
+    this.env.document.addEventListener('change', typed);
     if (this.env.window) {
       this.env.window.addEventListener('popstate', function () {
         // A FRAGMENT'S OWN NAVIGATION changes neither path nor query, and

@@ -1023,6 +1023,14 @@
     "en": "dcf08d219b55b2ed",
     "text": "預設關閉。證明規則（webauthn.attestation* 設定：原則、AAGUID 清單、認證等級與 FIPS）會在註冊密碼金鑰時檢查。開啟時，每次登入都會依當時記錄的內容與 FIDO Metadata Service 的現況再次檢查，因此在規則收緊之前註冊的金鑰，或其型號後來被回報遭入侵的金鑰，將不再能讓任何人登入。沒有受信任證明的金鑰，無法通過任何要求證明的規則。"
   },
+  "passkey.FIELDS.postQuantumRequired.label": {
+    "en": "011c5d09e4f351f3",
+    "text": "要求後量子密碼金鑰"
+  },
+  "passkey.FIELDS.postQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off`（預設值）接受任何簽章演算法的密碼金鑰。`sign-in` 在密碼金鑰讓某人登入時（作為第一憑證或第二因素）只接受後量子密碼金鑰，即演算法為 ML-DSA-44、ML-DSA-65 或 ML-DSA-87（RFC 9964）的密碼金鑰；傳統密碼金鑰仍可註冊。`registration-and-sign-in` 在註冊時也拒絕傳統密碼金鑰，此時註冊只提供 ML-DSA。決定因素是演算法，而不是金鑰建立時所在的通道。當領域不提供任何 ML-DSA 時（webauthn.algorithms 未列出任何 ML-DSA，且 webauthn.pqcOnly 與 webauthn.pqcAlongsideClassical 皆未開啟）將被拒絕。"
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "「Create a passkey」送出的提示"
@@ -1087,6 +1095,14 @@
     "en": "128deae048d6edbf",
     "text": "預設開啟：一個「Use passkey」步驟，其請求列出該人的每一個密碼金鑰，瀏覽器提供目前可用的那一個。關閉時，擁有多個密碼金鑰的人會看到每個密碼金鑰一個選項（依其名稱），且請求只指名那一個。"
   },
+  "passkey.FIELDS.recoveryAssurance.label": {
+    "en": "f1e6580ee3b2ee9c",
+    "text": "持有密碼金鑰者的帳戶復原"
+  },
+  "passkey.FIELDS.recoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "開發模式下預設為 `any`，產品模式下預設為 `not-weaker`。不要求密碼金鑰的帳戶復原方式——密碼重設連結、啟用連結、復原碼、透過電子郵件寄送的代碼或連結——是否為持有密碼金鑰的人恢復存取權限。`any`：立即恢復。`not-weaker`：此後第一次不是透過密碼金鑰的登入不能存取任何應用程式；此人須註冊一個符合此原則的密碼金鑰並用它登入。`operator-only`：同 not-weaker，並且拒絕自助方式（忘記密碼表單、登入時的復原碼或透過電子郵件寄送的代碼或連結）；只剩下管理員的重設連結、產生的密碼或啟用連結。儲存時省略此項，則保留內建預設值。"
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "本服務用於密碼金鑰原則的類別：密碼金鑰在此領域中的行為方式。項目以「設定檔」命名（`cn=default`）。"
@@ -1123,6 +1139,10 @@
     "en": "dcf08d219b55b2ed",
     "text": "預設關閉。證明規則（webauthn.attestation* 設定：原則、AAGUID 清單、認證等級與 FIPS）會在註冊密碼金鑰時檢查。開啟時，每次登入都會依當時記錄的內容與 FIDO Metadata Service 的現況再次檢查，因此在規則收緊之前註冊的金鑰，或其型號後來被回報遭入侵的金鑰，將不再能讓任何人登入。沒有受信任證明的金鑰，無法通過任何要求證明的規則。"
   },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off`（預設值）接受任何簽章演算法的密碼金鑰。`sign-in` 在密碼金鑰讓某人登入時（作為第一憑證或第二因素）只接受後量子密碼金鑰，即演算法為 ML-DSA-44、ML-DSA-65 或 ML-DSA-87（RFC 9964）的密碼金鑰；傳統密碼金鑰仍可註冊。`registration-and-sign-in` 在註冊時也拒絕傳統密碼金鑰，此時註冊只提供 ML-DSA。決定因素是演算法，而不是金鑰建立時所在的通道。當領域不提供任何 ML-DSA 時（webauthn.algorithms 未列出任何 ML-DSA，且 webauthn.pqcOnly 與 webauthn.pqcAlongsideClassical 皆未開啟）將被拒絕。"
+  },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
     "text": "入口網站的 *Create a passkey* 依序送出的 WebAuthn 提示（Level 3 第 5.4.8 節），取自 security-key、client-device 與 hybrid，或 none。它們告訴瀏覽器優先以哪種方式建立密碼金鑰。提示不得與 webauthn.authenticatorAttachment 矛盾：client-device 意味著 platform，security-key 與 hybrid 意味著 cross-platform。"
@@ -1155,6 +1175,10 @@
     "en": "128deae048d6edbf",
     "text": "預設開啟：一個「Use passkey」步驟，其請求列出該人的每一個密碼金鑰，瀏覽器提供目前可用的那一個。關閉時，擁有多個密碼金鑰的人會看到每個密碼金鑰一個選項（依其名稱），且請求只指名那一個。"
   },
+  "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "開發模式下預設為 `any`，產品模式下預設為 `not-weaker`。不要求密碼金鑰的帳戶復原方式——密碼重設連結、啟用連結、復原碼、透過電子郵件寄送的代碼或連結——是否為持有密碼金鑰的人恢復存取權限。`any`：立即恢復。`not-weaker`：此後第一次不是透過密碼金鑰的登入不能存取任何應用程式；此人須註冊一個符合此原則的密碼金鑰並用它登入。`operator-only`：同 not-weaker，並且拒絕自助方式（忘記密碼表單、登入時的復原碼或透過電子郵件寄送的代碼或連結）；只剩下管理員的重設連結、產生的密碼或啟用連結。儲存時省略此項，則保留內建預設值。"
+  },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
     "text": "具名密碼金鑰原則所適用的應用程式（識別碼或 client_id），在為其中之一登入時適用。"
@@ -1170,6 +1194,14 @@
   "passkey.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "此設定檔的用途，供下一位接手的人參考。"
+  },
+  "passkey.SCHEMA.personAttributes.stsRecoveryPending.what": {
+    "en": "bb82df307a8e5b9a",
+    "text": "一次復原為這位持有密碼金鑰的人恢復了存取權限，此後還沒有密碼金鑰讓其登入：方式和時間，格式為 `<door> <ISO 8601 instant>`。只要密碼金鑰原則的 recoveryAssurance 為 not-weaker 或 operator-only，不是透過密碼金鑰的登入就不能存取任何應用程式。由本服務維護。"
+  },
+  "passkey.SCHEMA.personAttributes.stsPasswordResetSource.what": {
+    "en": "110d1231fc9be5f4",
+    "text": "此項目上的密碼重設連結由誰簽發：`self`（忘記密碼表單）或 `operator`（管理員）。與連結一起寫入和清除。由本服務維護。"
   },
   "passkey.SELECTORS.selectApplications.what": {
     "en": "03ba679923c40b45",
@@ -1275,6 +1307,30 @@
     "en": "fa8fc40822659fe4",
     "text": "某人的密碼金鑰作為單一登入選項提供"
   },
+  "passkey.sentences.postQuantumOff": {
+    "en": "a8e0e01781dab9b0",
+    "text": "無論簽章演算法為何，密碼金鑰都可以登入與註冊"
+  },
+  "passkey.sentences.postQuantumSignIn": {
+    "en": "2282f9fa1ff20b26",
+    "text": "只有後量子（ML-DSA）密碼金鑰能讓人登入；傳統密碼金鑰仍可註冊"
+  },
+  "passkey.sentences.postQuantumEverywhere": {
+    "en": "79742dacfba54ede",
+    "text": "只有後量子（ML-DSA）密碼金鑰能被註冊或讓人登入"
+  },
+  "passkey.sentences.recoveryAny": {
+    "en": "7383156c8eb1e363",
+    "text": "無論此人持有何種密碼金鑰，帳戶復原都會立即恢復存取權限"
+  },
+  "passkey.sentences.recoveryNotWeaker": {
+    "en": "37557fd6d60301ce",
+    "text": "帳戶復原之後，持有密碼金鑰的人在符合此原則的密碼金鑰讓其登入之前不能存取任何應用程式"
+  },
+  "passkey.sentences.recoveryOperatorOnly": {
+    "en": "1a8f0b4a3319a435",
+    "text": "持有密碼金鑰的人只能透過管理員復原帳戶，之後在符合此原則的密碼金鑰讓其登入之前不能存取任何應用程式"
+  },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",
     "text": "語言原則"
@@ -1366,6 +1422,118 @@
   "locale.sentences.param.noApplication": {
     "en": "cb8bd4fa96dda063",
     "text": "沒有應用程式"
+  },
+  "kinds.attributes.label": {
+    "en": "6619889d4a9f485d",
+    "text": "屬性原則"
+  },
+  "kinds.attributes.governs": {
+    "en": "20a9273a811994df",
+    "text": "此領域中每個人都必須持有的屬性，以及此處人員可以擁有的自訂屬性"
+  },
+  "kinds.attributes.appliesTo": {
+    "en": "c68abf6d2b5ec2a2",
+    "text": "此領域中下一個建立的人員和下一次編輯；已經缺少必填屬性的人員仍可使用所有其他入口"
+  },
+  "kinds.attributes.fallsBackTo": {
+    "en": "c352143b534bf909",
+    "text": "預設領域的設定檔（如有），否則為內建預設值（givenName、sn 和 mail）"
+  },
+  "kinds.attributes.param.noun": {
+    "en": "58bb93afc775aa81",
+    "text": "屬性原則設定檔"
+  },
+  "attributes.FIELDS.requiredAttributes.label": {
+    "en": "59a6e795223fdea0",
+    "text": "必填屬性"
+  },
+  "attributes.FIELDS.requiredAttributes.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "除一律必填的 uid、cn 和 sn 之外，此領域中每個人都必須有值的屬性。清單，或以逗號分隔。可以是人員可擁有的任何屬性：inetOrgPerson 結構描述、認證目錄、mail，以及此領域的自訂屬性。在 product 模式下強制執行：缺少其中任何一項的建立在每個入口都會被拒絕，編輯也不能移除其中任何一項。預設為 givenName、sn 和 mail。"
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
+    "en": "12630f210e385441",
+    "text": "本服務用於屬性原則的類別：一個領域中每個人都必須持有的屬性。以設定檔命名（`cn=default`）。"
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
+    "en": "a1a975c54d05126f",
+    "text": "本服務用於領域自訂屬性的類別，位於 ou=attributeDefinitions，以屬性命名（`cn=<name>`）。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributeRequired.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "除一律必填的 uid、cn 和 sn 之外，此領域中每個人都必須有值的屬性。清單，或以逗號分隔。可以是人員可擁有的任何屬性：inetOrgPerson 結構描述、認證目錄、mail，以及此領域的自訂屬性。在 product 模式下強制執行：缺少其中任何一項的建立在每個入口都會被拒絕，編輯也不能移除其中任何一項。預設為 givenName、sn 和 mail。"
+  },
+  "attributes.SCHEMA.attributes.description.what": {
+    "en": "8e8f462fddce3d22",
+    "text": "設定檔或自訂屬性的用途，供下一個人參考。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributeLabel.what": {
+    "en": "8d93b7c14ddfd1af",
+    "text": "自訂屬性的標籤，顯示在其名稱旁邊。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSyntax.what": {
+    "en": "b5ccce4927fccd38",
+    "text": "自訂屬性的語法：string、integer、boolean、date、email、uri 或 dn。其值依該語法檢查。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
+    "en": "b6a0dfd5be9d81fd",
+    "text": "自訂屬性只有一個值時為 TRUE，有多個值時為 FALSE。"
+  },
+  "attributes.SYNTAXES.string.what": {
+    "en": "6f2c36f9a836b2f4",
+    "text": "文字，最多 1024 個字元，不含控制字元。"
+  },
+  "attributes.SYNTAXES.integer.what": {
+    "en": "258ac79871ab42ad",
+    "text": "整數（RFC 4517 第 3.3.16 節）。"
+  },
+  "attributes.SYNTAXES.boolean.what": {
+    "en": "5ab7cfb21a4d669d",
+    "text": "TRUE 或 FALSE（RFC 4517 第 3.3.3 節）。"
+  },
+  "attributes.SYNTAXES.date.what": {
+    "en": "70f2250e9d5c193d",
+    "text": "日期，儲存為 YYYYMMDD，也接受 YYYY-MM-DD。"
+  },
+  "attributes.SYNTAXES.email.what": {
+    "en": "daebff95f510f8db",
+    "text": "電子郵件地址（RFC 5322 addr-spec，local@domain）。"
+  },
+  "attributes.SYNTAXES.uri.what": {
+    "en": "16bf68a2b162f491",
+    "text": "http 或 https URL。"
+  },
+  "attributes.SYNTAXES.dn.what": {
+    "en": "3feab9c94c12f33d",
+    "text": "辨別名稱（RFC 4514）。"
+  },
+  "attributes.sentences.required": {
+    "en": "a35b08811463b6be",
+    "text": "此領域中的人員必須持有 {{list}} 才能被建立，編輯也不能移除其中任何一項的值"
+  },
+  "attributes.sentences.enforced": {
+    "en": "babafe534682a510",
+    "text": "已強制執行：此領域處於 product 模式，因此每個建立或編輯人員的入口都會拒絕缺少它們的人員"
+  },
+  "attributes.sentences.notEnforced": {
+    "en": "9e7b85236de9223c",
+    "text": "未強制執行：此領域處於開發模式，只需使用者名稱即可建立人員"
+  },
+  "attributes.sentences.custom": {
+    "en": "2296301f35c39ed9",
+    "text": "此領域定義了 {{n}} 個自訂屬性：{{list}}"
+  },
+  "attributes.sentences.noCustom": {
+    "en": "f9d920b6ce8d9d03",
+    "text": "此領域未定義任何自訂屬性"
+  },
+  "attributes.sentences.defined": {
+    "en": "3867ffa1e351efa2",
+    "text": "自訂屬性 {{name}} 已在此領域的 {{dn}} 定義。現在可以將其賦予人員，並由此原則設為必填。"
+  },
+  "attributes.sentences.undefined": {
+    "en": "36e7b5eba26472f2",
+    "text": "自訂屬性 {{name}} 已不再在此領域中定義。"
   },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",

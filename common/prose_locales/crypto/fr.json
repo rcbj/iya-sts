@@ -107,6 +107,14 @@
     "en": "270607a9609c73d2",
     "text": "scrypt, via crypto.hashSecret(), sur l’étape de connexion"
   },
+  "crypto.sentences.dbscMac": {
+    "en": "6d623cb602324457",
+    "text": "HMAC-SHA-256 sous le secret de cluster dbsc, sur le domaine, la session et une échéance"
+  },
+  "crypto.sentences.dbscKey": {
+    "en": "00612e39f9ee2ec1",
+    "text": "la JWK publique et son empreinte RFC 7638, sur la session"
+  },
   "crypto.sentences.jweGcmNote": {
     "en": "738d45485f10fb8b",
     "text": "AEAD : une clé, une étiquette."
@@ -1350,6 +1358,34 @@
   "crypto.families.email-codes-and-links.algorithms.2.what": {
     "en": "7b4099bae09b5ac9",
     "text": "Au repos"
+  },
+  "crypto.families.device-bound-session-credentials.signs": {
+    "en": "51177dacf9719f29",
+    "text": "Rien. Un défi et un cookie lié sont des MAC, pas des signatures : seul ce service les vérifie."
+  },
+  "crypto.families.device-bound-session-credentials.verifies": {
+    "en": "d8ef54ef33b1612f",
+    "text": "La preuve dbsc+jwt du navigateur, au moyen de crypto.verifyCompactJws() avec l’algorithme imposé : à l’enregistrement avec la clé de son propre en-tête, et à chaque renouvellement avec la clé à laquelle la session a été liée."
+  },
+  "crypto.families.device-bound-session-credentials.hashes": {
+    "en": "886bd748da150493",
+    "text": "La clé liée sous forme de son empreinte RFC 7638, et chaque défi sous forme du condensé sous lequel cluster_claims le consomme."
+  },
+  "crypto.families.device-bound-session-credentials.whatItDoesNot": {
+    "en": "f8a4e58cdc2ad4fa",
+    "text": "Il n’accepte jamais alg none, jamais une seconde clé pour une même session, et jamais deux fois le même défi."
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.0.what": {
+    "en": "7fbb3ccf9640651f",
+    "text": "Preuve"
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.1.what": {
+    "en": "d2e757eb4313c2c9",
+    "text": "Défi et cookie lié"
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.2.what": {
+    "en": "e3a367643d49d35f",
+    "text": "Clé liée"
   },
   "crypto.families.verifiable-credentials-oid4vci-oid4vp.signs": {
     "en": "30d11da1c63a38f1",

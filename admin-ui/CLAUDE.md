@@ -105,7 +105,9 @@ grew a gate.
    closes a cycle AND drags every `/ldap` route into the router ahead of the
    console's own.
 
-   It carries ONE object — `FAMILIES`, `inventoryFor`, `terminate` — and
+   It carries ONE object — `FAMILIES`, `inventoryFor`, `terminate`,
+   `liveSessions` and, since #722, `endFactorSessions` (the four credential
+   removals on `/admin/users`, `logout/CLAUDE.md`) — and
    `setLogoutReader()` validates it whole and refuses it whole, for the reason
    the directory WRITER's slot gives: a module that filled a combined slot with
    only the readers would leave `/admin/logout` listing what is live and unable
@@ -3704,6 +3706,96 @@ tells the truth is `checkVisibility({contentVisibilityAuto:true,
 visibilityProperty:true})`, which answers false. A check written the obvious way
 fails against a menu that is behaving perfectly.
 
+### 8c-iv. SEVERAL ACCOUNTS IN ONE BROWSER: ONE PER TAB, AND THE MENU'S SWITCH (#561, 2026-10-19)
+
+With `authn.multipleAccounts` on, one browser may hold several signed-in
+accounts (`authn/CLAUDE.md`, *Several signed-in accounts in one browser*),
+and **each console tab is exactly one of them** (the plan's section 6,
+delivery step 5). Off — and that is the test the whole section answers
+to — nothing below is stored, sent or drawn: the menu, the sign-in's
+record, the authorization request and the sign-out's address are the bytes
+they were (`tests/multi_account_tabs.js` 6).
+
+* **THE TAB'S ACCOUNT IS `{ sub, username }` IN SESSIONSTORAGE**
+  (`sts-console-account`, beside the PKCE record) — no token, sid or key.
+  `SpaClient.readAccounts()` writes it whenever the shell is fetched, from
+  `GET /authn-api/accounts` and the signed-in subject, and REMOVES it when
+  the list says off, so a tab that saw the setting on stops hinting once it
+  is turned off. **Every sign-in the runtime starts sends it as
+  `login_hint`** (`authorizeUrl()`): a reload, the popup's sign-in again
+  (#508), a switch. A new tab has nothing kept and names nobody — the
+  server signs it in silently with one live account and shows its picker
+  with more (decision 3); a duplicated or restored tab has its own copy and
+  resumes that account, which the server checks at the authorization
+  request (decision 4).
+* **THE LIST IS READ FROM THE CONSOLE'S OWN ORIGIN**, with the cookie
+  (`common/web_accounts.ts`). `common/cors.js` never sends
+  `Access-Control-Allow-Credentials`, so where `/authn-api` is on another
+  listener than the console (#472) the list cannot be read, reads as off,
+  and the menu is today's — the plan assumed the list was always reachable,
+  and the code says it is not. Anything but a 200 with `enabled: true` is
+  off.
+* **THE MENU** (`WebShell.accountItems()`, inside 8c-iii's `<details>`, in
+  `#sts-account-switch`): a button per OTHER signed-in account, *Sign in
+  with another account*, then the Sign out form as before. Buttons, not
+  links: a switch is an act the runtime does on the press, and it carries
+  the account's KEY (its subject), never a sid. Sign out goes to
+  `/logout?login_hint=<the tab's username>`, which preselects that account
+  there; off, to `/logout` as it always did.
+* **A SWITCH (`switchAccount()`), and Sign in with another account
+  (`signInAnother()`, `prompt=login` and no hint)**, in this order:
+  1. a form typed in since the page was drawn (`dirty`, set by an `input`
+     or `change` in a form and cleared by every drawing) asks
+     `window.confirm()` first, and declining changes nothing;
+  2. `endIdentity()` ABORTS every request in flight — one AbortController
+     per identity, threaded through `sendOnce()` and
+     `SpaClient.tokenRequest()` — and moves the identity on, so an answer
+     that arrives anyway (a browser that cannot abort, a stand-in) is
+     ABORTED, never drawn; `route()` checks it too before drawing;
+  3. `discardViews()` drops the shell, `me`, the form table, the request
+     schemas, the view, a sign-in again in progress (its waiting requests
+     answered false), the restore record (#508), and the client's tokens,
+     subject, DPoP key, nonce and metadata — a key is made again for the
+     next sign-in, as a page load makes one;
+  4. the sign-in's record carries `expect`, the subject switched to, and
+     `finishSignIn()` REFUSES an answer for any other (*Switching accounts
+     was refused*, English as every refusal here): its tokens are not
+     kept, so the tab stays the account it was and a reload resumes that
+     one by its hint.
+* **THE POPUP'S CHECK, GENERALISED** (`SpaClient.answerIsFor()`): until
+  #561 a different `sub` coming back from the popup was taken and the page
+  drawn again for them. With the setting on and an account kept, the popup
+  asked for the tab's account by its hint, so an answer for another is
+  refused the way a switch's is, and the bar says so
+  (`consoleRuntime.accounts.otherAccount`). Off, it is #508's behaviour to
+  the byte.
+* **OTHER TABS** hear only that the browser's list CHANGED, on
+  `BroadcastChannel('sts-accounts')` (`listenForAccounts()`): they read the
+  list again and draw the menu's items again in place
+  (`redrawAccountMenu()`), and nothing else — a message never changes a
+  tab's account, never carries one, and is never echoed. A callback that
+  added an account to the browser (Sign in with another account, or a
+  subject other than the one kept) announces `added`. Out of order or
+  missed, a message costs a stale menu until the next read
+  (`tests/multi_account_tabs.js` 5). **A read that answers off keeps the
+  list in hand (#731)**: `fetchList()` answers off for a dropped request as
+  well as for the setting turned off, and taking it emptied the menu and
+  stopped the sign-out naming the tab's account on one network blip; the
+  setting turned off reaches the tab at its next page load, whose shell
+  says so (`tests/multi_account_concurrency_tabs.js` 5).
+* **A SWITCH WHOSE SIGN-IN CANNOT BE STARTED (#731)** — a pushed
+  authorization request the network refused — draws *Switching accounts
+  failed* rather than leaving the tab blank with the rejection unhandled:
+  the views are already gone, and the account kept is still the tab's, so
+  a reload resumes it. A renewal the network failed keeps the refresh
+  token, the subject and the account (it throws to its caller and signs
+  nobody in), and one answered after a switch is not kept
+  (`tests/multi_account_concurrency_tabs.js` 2, 3). The portal's runtime
+  is the same (`portal/CLAUDE.md`).
+* **NONE OF IT IS A BOUNDARY.** `/admin-api` decides from the token's own
+  subject and session; a tab that kept a stale view would still be refused
+  what its account may not do.
+
 ### 8c-ii. THE SHELL WITH NOBODY IN IT (2026-09-10)
 
 **THE SIGN-OUT PAGE IS DRAWN BY THE SAME `page()` AS EVERY OTHER, AND FOR AN
@@ -3883,7 +3975,7 @@ than by refusing the roster. rcbj's four decisions are the design:
 |---|---|
 | Who is on a realm's roster | the realm's own `cn=admin-read` and `cn=admin-write`, and a seeded `admin` with a forced password change |
 | What a realm administrator reaches | their realm; service pages, actions and settings are hidden and refused |
-| How the plain `/admin` and `/portal` pick a realm | a chooser — a list in development, a text box in product |
+| How the plain `/admin` and `/portal` pick a realm | a chooser — a list of every realm, remembered on the `sts_realm` cookie |
 | The machine door | a realm-scoped `sts-management-api` token per realm |
 
 **THE DEFAULT REALM'S ROSTER IS STILL THE SERVICE ROSTER** and administers every
@@ -3934,9 +4026,10 @@ tables, each refused only to a realm authority (`refusalFor()`):
   PREFIX BECAME SIX KEYS on 2026-09-15**, for the reason Kerberos left
   `SERVICE_PAGES`: the ten rows a realm's principal database is built from are
   the realm administrator's, and what stays the service's is the KDC's socket
-  (`krb5.kdcPort`; `krb5.servicePort` was the other, until #595) and the
-  development-mode trust
-  (`krb5.trustedRealm` and its three).
+  (`krb5.kdcPort`; `krb5.servicePort` was the other, until #595). The
+  development-mode trust (`krb5.trustedRealm` and its three) was the
+  service's too until #430 retired the four: a trust is a record in the
+  realm's own directory now (`kerberos/krb5_trusts.ts`).
   **The `admin.*` and `adminApi.*` gate settings were made `perProcess` for the
   same reason** — a realm override of the console's own groups would otherwise
   be a way round the roster.
@@ -3964,18 +4057,25 @@ reason. The account is protected from deletion in its realm
 
 A GET of exactly `/admin` or `/portal`, in the default realm, with no session,
 while realms are defined, draws a chooser (`STS-ADMIN-0790` / `STS-PORTAL-0074`
-for an unknown id). `?realm=<id>` 303s to that realm's surface, BUILT from the
-registry and never echoed; `?realm=default` signs in where it is. A deep link is
-never asked. **`mode.listsRealmsBeforeSignIn()`** decides list versus text box,
-because listing every tenant's name to anonymous readers is a development
-convenience. **It is a page of its own since 2026-10-08 (rcbj)**,
+for an unknown id). The control is a list of every realm, in both modes
+(2026-10-18; until then product asked for the id in a text box, so a page
+anybody could open would not publish every tenant). A choice is remembered
+on the `sts_realm` cookie — a year, `HttpOnly`, `SameSite=Lax`, and `Secure`
+where the service is https — and the next bare visit is that choice.
+`?realm=<id>` still wins: it 303s to that realm's surface, BUILT from the
+registry and never echoed, and replaces what was remembered. `?realm=default`
+signs in where it is and remembers the default realm. A cookie that names no
+realm, or that cannot be read, is dropped and the page is drawn. A deep link
+is never asked. **It is a page of its own since 2026-10-08 (rcbj)**,
 `RealmChooser.page()`, for both surfaces: a blank, centred document with a
-note, the large control (with the focus) and its button, and nothing of the
+note, the large list (with the focus) and its button, and nothing of the
 console's or the portal's frame — every control a frame draws leads to a
 sign-in this page has not let the reader start, so drawing them was an
-unusable console with one working form in it. #32's list-or-text-box rule is
-unchanged. **Every owned job signs in through `?realm=default`** since the
-suite nearly always has realms — the doors are named constants in each job.
+unusable console with one working form in it. **Every owned job signs in
+through `?realm=default`** since the suite nearly always has realms — the
+doors are named constants in each job. That query writes the cookie too, and
+a later bare request in the same jar is the default realm, which is the same
+sign-in.
 
 ### What it does not do yet
 
@@ -5817,7 +5917,10 @@ passwordless sign-in still records `amr ["hwk"]` and `acr "1"` even under
 `required`. RFC 8176 has no value for *the authenticator verified the user* that
 this service could honestly assert, and claiming `mfa` because the ceremony was
 phishing-resistant would be the exact fake this profile refuses everywhere else.
-The page says so rather than leaving it to be discovered.
+The page says so rather than leaving it to be discovered. **Phishing
+resistance has a context class of its own since #723**, OpenID Connect EAP's
+`phr`. A token carries it only when a client asked for it and the ceremony
+earned it, never in place of `mfa` (`oauth-oidc/CLAUDE.md` 3cp).
 
 ### The mechanism report is the reason either page is worth having
 
@@ -6118,6 +6221,38 @@ now says which rules apply and whether this realm enforces them.
 
 Rule 7 is `GET /admin-api/policies` and `POST /admin-api/policies/{action}`, in
 the same change, over the same two functions.
+
+### The Attribute policy tab (#396, 2026-10-19)
+
+The sixth kind (`common/CLAUDE.md` 3co) gets a section of its own in
+`web_policies.ts` (`attributePolicySection()`), because rcbj asked for "a list
+of all attributes, custom attributes, ability to add a new attribute, and
+require each individual attribute as needed" — a table of checkboxes, not the
+generic field rows.
+
+* **ONE ROW PER ATTRIBUTE A PERSON MAY BE GIVEN** (`attributes.catalogue`),
+  each with a Required box; `uid`, `cn` and `sn` are drawn ticked and
+  DISABLED, because nothing can switch them off. **The save form carries a
+  hidden, empty `requiredAttributes` ahead of the boxes**, so a form with
+  every box unticked still sends the member: the static console's runtime
+  sends `false` for an unticked box only where the member is a boolean, and
+  this one is a list, so without the hidden field the save would be refused as
+  one that forgot its field.
+* **THE CUSTOM ATTRIBUTES ARE ON THE SAME TAB**: a table with a Remove form
+  per row, and a form that defines one (name, label, syntax, one value or
+  several, description). Both post `/admin/policies` with the kind's own act
+  (`define-person-attribute`, `remove-person-attribute`), which the runtime
+  maps to `POST /admin-api/policies/{action}` as it does a save — rule 7 by
+  construction, through `policyKinds.forAction()`'s third verb, `act`.
+* **THE COUNT OF PEOPLE WHO LACK ONE IS A LINK**, `?missing=count#attributes`,
+  because it is a walk of the realm's people; the LDAP filter that finds them
+  is drawn always. Where the directory is in the store the count says it was
+  not made.
+* **`/admin/users/new` and a person's Attributes tab mark what the policy
+  requires** — the field grid's " · required" (`consoleKit.grid.required`),
+  always shown in the simplified view, and a note on the form naming the list
+  and whether it is enforced here — so a box a create would be refused for
+  leaving empty is never hidden behind the advanced view.
 
 
 ## `/admin/error-codes`: THE ERROR CODE TABLE, UNDER MONITORING (2026-09-12)
@@ -7600,6 +7735,7 @@ module always was, and imports the kit by its relative path.
 | `web_rbac.ts` | `/admin/rbac`: who may use this console, its grants, the person chooser and the grant and revoke forms, and `rbacCaveat()` (a wire-time constant until #446). **The chooser is drawn from a slice**: the answer carries `candidatePane` — the matches for `personq`, `CHOOSER_HITS` from the clamped `personfrom`, by `kit.chooserPane()`'s own rule — because the candidates are every person in the realm, and `chooserPane()` takes a `slice` in place of the whole catalogue. Also `paging`, `known` (the page's people who have signed in here) and `roleChoices`. |
 | `web_realms.ts` | `/admin/realms` and its drill-down (`?realm=<id>`), with the retiring notice, the support table and `realmsCaveat()`. **The caveat was wire-time and read `persistence.status()`** once; the answer of `GET /admin-api/realms` carries `persistence` (`persistsRealms`, `mode`) and the caveat is drawn from it — as it carries `settings` (the console used to add them after the view), `defaultDomain`, `count` and the list's `paging`. **The drill-down has no GET operation of its own**: every row of the list's answer is that realm's `realmJson()`, so `detail()` picks its row by `?realm=` out of a list — the API's whole one in the browser, a list of the one realm in this process, which does not build every row because reading one mints that realm's key (the API makes them off the event loop first). The list carries `current` and `currentName` for it. |
 | `web_roles.ts` | The body of `/admin/roles`. The page and `GET /admin-api/roles` answer one view since #446 (`admin_views.rolesView(query)`: the register first, then `paging`, `shownRoles`, `applicationChoices`, the two menus and the settings), where the API answered the register alone. **The preview is composed in**: it is `GET /admin-api/roles/preview`, an operation of its own by design, and the page table's `compose` names it — the first page whose view is two answers. |
+| `../kerberos/web_kerberos_trusts.ts` | The Trusts tab on `/admin/kerberos` (#430 Phase 4): the realm's trust records, paged, with the health column, the `?trust=` drill-down with its edit, rotate-key and remove forms, and the add form; words from `consoleKerberosTrusts`, a finding drawn by its `kind`. The application's *Across trusts* panel is `web_applications.ts`'s `applicationAcrossTrustsSection()`, in the same namespace. `kerberos/CLAUDE.md` argues both. |
 | `../kerberos/web_kerberos_principals.ts` | The Principals-tab body on `/admin/kerberos`, formerly `/admin/kerberos/principals`, drawn inside its route until #446; its write controls follow the render context's `write`, where it read the gate's state. It is outside the parent project's COPY closure (`kerberos/CLAUDE.md`). |
 | `../tls/web_tls_connection.ts` | **Monitoring → TLS connection** (#597, 2026-10-12), born static: no page module draws it. From `GET /admin-api/tls-connection` (`tls/tls_server.js`'s `connectionView()`): two tabs, Connection (TLS version, cipher, the client certificate the console's own request presented — verified or not, the identity gate, revocation) and Forwarded headers (`global.trustProxy`, `global.trustedProxies`, what was believed, every forwarding and client-certificate header). It replaced the development pages `/tls` and `/tls/forwarded`; Admin Read in both modes. **Filed under Monitoring because it REPORTS what arrived** (the console's filing rule), beside the node's own pages, and at a path outside `/admin/tls` so `admin_scope.ts`'s service-page prefix does not refuse it to a realm's administrator. **It describes its own API call, not the page load** — the lead says so; `tls/CLAUDE.md` argues why that is acceptable. Pinned to the front process (`NEVER_DISPATCHED`). The words are `consoleTlsConnection`'s, seven languages; the server's sentences are data, English. |
 | `../tls/web_tls_trust.ts` | The body of `/admin/tls/trust`, its "not installed" answer included — the first route with an early `respond()`, which the route tool turns into an early return. |
@@ -7986,3 +8122,48 @@ tab, and a service account's section of the person page —
   `tests/passkey_policy_on_application.js` holds the data, the card, the
   sub-tabs and the search; `tests/vendored/sts_passkey_policy_application.js`
   the API half.
+
+## AN APPLICATION'S DECLARED AND OBSERVED ATTRIBUTES (#706, #708; rcbj, 2026-10-19)
+
+* **`oauthGrantType` and `oauthResponseType` are a checkbox per value**, the
+  grid's ordinary closed-set list (`applications.ATTRIBUTE_CHOICES`: every
+  grant and response type this service implements, `common/CLAUDE.md`).
+  A value outside the set is drawn as a marked box, so a Save does not drop
+  it. **A URN choice is labelled by its last two sections**
+  (`WebKit.choiceLabel()`: `grant-type:token-exchange`), so an extension grant
+  fits its cell. The checkbox still posts the full value, and the tooltip
+  carries it with its meaning from `WebKit.CHOICE_NOTES`. Those notes are
+  `consoleKit.grant.*` catalog keys, translated in the browser like the
+  rest of the console.
+* **Every attribute a sighting writes is drawn READ-ONLY beside what it
+  shadows** (rcbj's placement). On the OAuth sub-tab's head go the grant and
+  response types, `appRedirectUriObserved`, `oauthScope` and
+  `appAuthorizationServer`. Each SAML family panel's head gets
+  `samlNameIdFormat` and `samlResponseBinding`; SAML 2.0 also gets the last
+  AuthnRequest (`samlAuthnRequestSigned` + `samlAuthnRequestVerification`, a
+  badge by outcome) and `samlObservedSigningCertificate` by subject and
+  thumbprint, never the base64. SAML 1.1 says the profiles share the two
+  lists. Overview gets the four counters after Last seen. **Every protocol
+  gets nothing**: `appKind` and `appProtocol` are on Overview already, and
+  `appReturnAddressObserved` keeps its Return addresses tab, whose values
+  have Confirm and Discard.
+* **The answer decides the warning mark, not the page.**
+  `admin_views.applicationObservedState()` returns `page.config.observed`,
+  each value carrying `declared`. It is FALSE where the declared twin is a
+  list and the value is not on it, with the endpoints' rules: a grant or
+  response type against a NON-EMPTY list (#289), a redirect URI against
+  `oauthRedirectUri` even when empty, and a scope against a non-empty
+  `oauthAllowedScope`. `ApplicationsPage.observedLine()` draws a check or
+  `WebKit.warnIcon()`, cuts at `OBSERVED_SHOWN` (10) and links "+N more" to
+  `#tab-entry`.
+* **None of these is a field of the grid, and none may become one**: they
+  are not in `EDITABLE`, the endpoints write them, and an editable copy would
+  read as a permission. **`oauthScope` is the exception that proves it.** It
+  is still in `EDITABLE` (excluded from the grid only), so since #708
+  `updateApplication()` refuses an add to it (`STS-REG-0361`; a set of a
+  list was already refused, `STS-REG-0008`). A remove stays open, the tidy-up door every derived list keeps. A
+  create still accepts it as a seed, because the parent project's vendored
+  `jwt_vc_json_common.js` provisions its wallets with one and cannot be
+  edited here.
+* `tests/flow_type_choices.js` holds the sets, the writes, every panel, the
+  marks, the cut, the labels and the counters.

@@ -1,0 +1,7 @@
+{
+  "summary": "Cuentas",
+  "title": "Las cuentas con sesión iniciada en este navegador",
+  "listLabel": "Con sesión iniciada en este navegador",
+  "another": "Iniciar sesión con otra cuenta",
+  "anotherTitle": "Abre el portal de usuario y le pide que inicie sesión, lo que añade una cuenta a este navegador. Las cuentas que ya tienen la sesión iniciada la conservan."
+}

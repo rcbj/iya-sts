@@ -192,5 +192,9 @@
   "nav.keys": "Nyckelpar",
   "nav.crypto-metadata": "Kryptografi",
   "shell.language": "Språk",
-  "shell.browserLanguage": "Använd webbläsarens språk"
+  "shell.browserLanguage": "Använd webbläsarens språk",
+  "shell.menu.switch": "Byt till ett annat konto",
+  "shell.menu.switch.title": "Använd den här fliken som {user}. Andra flikar behåller sina konton.",
+  "shell.menu.another": "Logga in med ett annat konto",
+  "shell.menu.another.title": "Logga in som en annan person i den här fliken. Konton som redan är inloggade i den här webbläsaren förblir inloggade, och andra flikar behåller sina."
 }

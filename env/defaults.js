@@ -73,10 +73,12 @@ var config = {
 
   // --- HTTP connections ------------------------------------------------
   http: {
-    keepAliveTimeoutS: 60,   // Idle connection kept for (s)
-    headersTimeoutS: 0,      // Request header timeout (s)
-    maxRequestsPerSocket: 0, // Requests per connection
-    maxConnections: 0        // Open connections at most
+    keepAliveTimeoutS: 60,          // Idle connection kept for (s)
+    headersTimeoutS: 0,             // Request header timeout (s)
+    maxRequestsPerSocket: 0,        // Requests per connection
+    maxConnections: 0,              // Open connections at most
+    http2: true,                    // Offer HTTP/2
+    http2MaxConcurrentStreams: 100  // Streams per HTTP/2 connection
   },
 
   // --- Admin console ---------------------------------------------------
@@ -181,9 +183,19 @@ var config = {
     cookieDomain: "",               // Sign-on session cookie domain
     sessionLifetimeS: 3600,         // Session lifetime (seconds)
     sessionIdleTimeoutS: 0,         // Session idle timeout (seconds, 0 = none)
+    deviceBoundSessions: false,     // Bind sessions to the browser's key (DBSC)
+    deviceBoundCookieLifetimeS: 600, // Bound cookie lifetime (seconds)
     maxSessions: 100000,            // Most sign-on sessions per realm
+    maxSessionsPerSubject: 32,      // Most countable sessions per subject
+    sessionShedPerSweep: 100,       // Own surplus sessions ended per sweep
+    sessionWindow: "auto",          // Bounded session window; restart to apply
+    sessionCacheEntries: 10000,     // Sessions one process holds
+    sessionReadTimeoutMs: 2000,     // Session read timeout (milliseconds)
     pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
     mfaStepTtlS: 300,               // How long a second-factor step waits (seconds)
+    multipleAccounts: false,        // Several signed-in accounts in one browser
+    maxBrowserAccounts: 10,         // Most accounts one browser remembers
+    rememberedAccountDays: 30,      // How long a signed-out account is remembered (days)
     passwordAloneDoors: "",         // Password-only doors that accept a password alone
     unauthenticatedSessions: false  // Offer "Continue without signing in"
   },
@@ -235,6 +247,7 @@ var config = {
     algorithms: "ML-DSA-44,ML-DSA-65,ML-DSA-87,ESP256,ES256,Ed25519,EdDSA,ESP384,ES384,ESP512,ES512,Ed448,ES256K,PS256,PS384,PS512,RS256,RS384,RS512", // Algorithms offered
     insecureAlgorithms: false,                                                                                                                         // Use insecure algorithms (development only)
     pqcOnly: false,                                                                                                                                    // Request post-quantum algorithms only
+    pqcAlongsideClassical: false,                                                                                                                      // Post-quantum passkey alongside a classical one
     userVerification: "required",                                                                                                                      // User verification
     attestation: "direct",                                                                                                                             // Attestation conveyance
     attestationPolicy: "by-mode",                                                                                                                      // Attestation policy
@@ -294,9 +307,10 @@ var config = {
   // --- Global ----------------------------------------------------------
   workers: {
     startTimeoutMs: 60000,                                         // Request worker start limit (ms); restart to apply
+    giveUpRetryMs: 300000,                                         // Give-up retry wait (ms)
     requestCount: 1,                                               // Request worker threads; restart to apply
     heapLimitMb: 0,                                                // Heap limit per process (MiB); restart to apply
-    startConcurrency: 0,                                           // Request workers starting at once (0: as memory allows); restart to apply
+    startConcurrency: 0,                                           // Request workers starting at once; restart to apply
     dispatch: "*",                                                 // Handled in a request worker; restart to apply
     fanout: "/scim,/xacml,/admin-api,/account-api",                // Dispatched paths with no session affinity; restart to apply
     surfaceCount: 0,                                               // Hosted-surface worker processes; restart to apply
@@ -315,7 +329,8 @@ var config = {
   realms: {
     enabled: true,               // Trust realms enabled
     pathSegment: "realm",        // Realm path segment
-    removalDeliveryTimeoutS: 10  // Realm removal: delivery wait (seconds)
+    removalDeliveryTimeoutS: 10, // Realm removal: delivery wait (seconds)
+    maxCount: 10                 // Maximum number of realms
   },
 
   // --- OAuth 2.0 / OIDC ------------------------------------------------
@@ -335,6 +350,9 @@ var config = {
     breakIdTokenNonce: false,                      // Break the ID Token nonce (development only)
     refreshIdleSeconds: 86400,                     // Refresh token idle timeout (s)
     revokeRefreshOnLogout: true,                   // Revoke refresh tokens on sign-out
+    thirdPartyInitiatedLogin: false,               // Identity-provider-initiated sign-in (third-party login)
+    spInitiatedSso: true,                          // Client-initiated sign-in
+    launchWindowS: 300,                            // Launch window (seconds)
     eddsaCurve: "Ed25519",                         // EdDSA curve
     jwtBearerGrant: true,                          // JWT bearer authorization grant (RFC 7523 section 2.1)
     jwtBearerRequireRegisteredIssuer: true,        // Require a registered assertion issuer
@@ -643,6 +661,9 @@ var config = {
     max: 50,                                                                 // Relationships remembered
     usernamePrefix: "",                                                      // Prefix for federated usernames
     loginButtons: true,                                                      // Offer partners at the sign-in screen
+    consumerProviders: false,                                                // Consumer and social identity providers
+    connectRecentAuthMinutes: 10,                                            // Connecting a provider: how recent the sign-in must be (min)
+    consumerProvisionCap: 10000,                                             // Consumer providers: accounts each may create
     outbound: true,                                                          // Make back-channel requests to partners
     outboundTimeoutMs: 15000,                                                // Back-channel timeout (ms)
     outboundAllowHttp: false,                                                // Allow http:// to a partner (development only)
@@ -683,7 +704,8 @@ var config = {
     encryptLogoutNameId: false,                                            // Encrypt the NameID in a LogoutRequest
     autocreateApplications: true,                                          // Register a service provider on sight
     requireSignedAuthnRequests: "auto",                                    // Require signed requests from service providers
-    unsolicitedSso: true,                                                  // Identity-provider-initiated sign-in
+    idpInitiatedSso: false,                                                // Identity-provider-initiated sign-in
+    spInitiatedSso: true,                                                  // Service-provider-initiated sign-in
     defaultSingleLogoutService: "",                                        // Fallback logout return address
     requestTtlMin: 10,                                                     // Held AuthnRequest lifetime (minutes)
     maxArtifacts: 10000,                                                   // Unresolved artifacts kept
@@ -706,6 +728,8 @@ var config = {
     doNotCacheCondition: false,                                            // Mark a Browser/POST assertion DoNotCache
     artifactTtlS: 300,                                                     // Artifact lifetime (seconds)
     autocreateApplications: true,                                          // Register relying parties on sight
+    idpInitiatedSso: false,                                                // Identity-provider-initiated sign-in
+    spInitiatedSso: true,                                                  // Service-provider-initiated sign-in
     requestTtlMin: 10,                                                     // Held flow lifetime (minutes)
     assertionCacheMax: 500,                                                // Assertions kept for AssertionIDReference
     assertionCacheTtlS: 3600,                                              // Kept assertion lifetime without NotOnOrAfter (seconds)
@@ -722,6 +746,8 @@ var config = {
 
   // --- WS-Federation assertions ----------------------------------------
   wsfed: {
+    idpInitiatedSso: false,   // Identity-provider-initiated sign-in
+    spInitiatedSso: true,     // Relying-party-initiated sign-in
     assertionLifetimeMin: 60  // Assertion lifetime (minutes)
   },
 
@@ -764,6 +790,7 @@ var config = {
     workerDirectory: "auto",                                                                                                                    // Directory held in memory, or as a window; restart to apply
     workerCacheEntries: 10000,                                                                                                                  // Directory window size (entries)
     workerDirectoryTimeoutMs: 2000,                                                                                                             // Worker directory read timeout (ms)
+    workerDirectoryBudgetMs: 5000,                                                                                                              // Worker directory budget per request (ms)
     sizeLimit: 500,                                                                                                                             // Search size limit
     timeLimit: 30,                                                                                                                              // Search time limit (s)
     plainListener: true,                                                                                                                        // Plain LDAP listener; restart to apply
@@ -792,7 +819,10 @@ var config = {
     responseEncryptionRequired: false,                // Require encrypted credential responses
     credentialLifetimeS: 2592000,                     // Issued credential lifetime (s)
     credentialSigningAlgorithm: "RS256",              // Algorithm credentials are signed with
-    credentialCertificateHeader: "x5u",               // Credential certificate header
+    credentialCertificateHeader: "x5c",               // Credential certificate header
+    trustedListCertificateHeader: "x5c",              // Trusted list certificate header
+    trustedListTerritory: "",                         // Trusted list scheme territory
+    trustedListLifetimeH: 24,                         // Trusted list lifetime (hours)
     signedMetadataCertificateHeader: "x5u",           // Issuer signed_metadata certificate header
     proofIatWindowS: 600,                             // Proof of possession iat window (s)
     cNonceTtlS: 300,                                  // c_nonce lifetime (s)
@@ -882,47 +912,47 @@ var config = {
 
   // --- Kerberos --------------------------------------------------------
   krb5: {
-    enabled: true,                                                 // Enable Kerberos
-    realm: "EXAMPLE.COM",                                          // Realm; restart to apply
-    kdcPort: 88,                                                   // KDC port; restart to apply
-    servicePrincipal: "HTTP/web.example.com",                      // Service principal; restart to apply
-    servicePassword: "service-account-password",                   // Service principal password; restart to apply
-    serviceSalt: "",                                               // Service principal salt; restart to apply
-    enctypes: "18,17,20,19,23",                                    // Encryption types; restart to apply
-    kvno: 3,                                                       // Key version number; restart to apply
-    ticketLifetimeSeconds: 36000,                                  // Ticket lifetime (s)
-    renewLifetimeSeconds: 604800,                                  // Renewable lifetime (s)
-    logonServer: "DC01",                                           // PAC logon server
-    pacClaims: false,                                              // PAC client claims (PAC_CLIENT_CLAIMS_INFO)
-    maxRequestBytes: 131072,                                       // Largest KDC request over TCP (bytes)
-    udpMaxReplyBytes: 1465,                                        // Largest KDC reply over UDP (bytes)
-    serviceMaxTokenBytes: 65536,                                   // Largest AP-REQ the acceptor reads (bytes)
-    replayCacheMaxEntries: 10000,                                  // Replay cache size
-    spnegoPendingTtlSeconds: 120,                                  // Unfinished SPNEGO negotiation lifetime (s)
-    spnegoMaxPending: 64,                                          // Unfinished SPNEGO negotiations held
-    clockSkew: 300,                                                // Clock skew (s)
-    clockOffset: 0,                                                // Clock offset (s)
-    userPassword: "password!",                                     // User password; restart to apply
-    unknownUsers: "nosuchuser,nobody",                             // Names that stay unknown
-    autoServicePassword: "auto-service-password",                  // Auto-created service password; restart to apply
-    krbtgtPassword: "krbtgt-mock-password",                        // krbtgt password; restart to apply
-    domainSid: "S-1-5-21-1004336348-1177238915-682003330",         // Domain SID; restart to apply
-    trustedRealm: "PARTNER.COM",                                   // Trusted realm; restart to apply
-    trustPassword: "inter-realm-trust-password",                   // Trust password; restart to apply
-    trustedDomainSid: "S-1-5-21-2035427030-2118130302-1178042555", // Trusted domain SID; restart to apply
-    trustedKrbtgtPassword: "partner-krbtgt-password",              // Trusted realm krbtgt password; restart to apply
-    spnegoAuthentication: true,                                    // Sign in with a Kerberos ticket
-    personKeys: true,                                              // Kerberos keys for directory people
-    retainedKeyVersions: 1,                                        // Previous key versions kept
-    retainedKeyTtlS: 0,                                            // Previous key version lifetime (s)
-    krbtgtRotationIntervalDays: 180,                               // Rotate the krbtgt key every (days)
-    pkinit: true,                                                  // PKINIT (certificate pre-authentication)
-    pkinitRequireFreshness: true,                                  // PKINIT requires a freshness token
-    pkinitLegacyKdf: false,                                        // PKINIT accepts RFC 4556's own key derivation
-    pkinitKdcKeyAlgorithm: "ec-p256",                              // PKINIT KDC key algorithm
-    anonymousPkinit: true,                                         // Anonymous PKINIT (FAST armor)
-    spnegoLoginButton: true,                                       // Offer Kerberos at the sign-in screen
-    s2kparams: "omit"                                              // Send s2kparams
+    enabled: true,                                         // Enable Kerberos
+    realm: "EXAMPLE.COM",                                  // Realm; restart to apply
+    kdcPort: 88,                                           // KDC port; restart to apply
+    servicePrincipal: "HTTP/web.example.com",              // Service principal; restart to apply
+    servicePassword: "service-account-password",           // Service principal password; restart to apply
+    serviceSalt: "",                                       // Service principal salt; restart to apply
+    enctypes: "18,17,20,19,23",                            // Encryption types; restart to apply
+    kvno: 3,                                               // Key version number; restart to apply
+    ticketLifetimeSeconds: 36000,                          // Ticket lifetime (s)
+    renewLifetimeSeconds: 604800,                          // Renewable lifetime (s)
+    logonServer: "DC01",                                   // PAC logon server
+    pacClaims: false,                                      // PAC client claims (PAC_CLIENT_CLAIMS_INFO)
+    maxRequestBytes: 131072,                               // Largest KDC request over TCP (bytes)
+    udpMaxReplyBytes: 1465,                                // Largest KDC reply over UDP (bytes)
+    serviceMaxTokenBytes: 65536,                           // Largest AP-REQ the acceptor reads (bytes)
+    replayCacheMaxEntries: 10000,                          // Replay cache size
+    spnegoPendingTtlSeconds: 120,                          // Unfinished SPNEGO negotiation lifetime (s)
+    spnegoMaxPending: 64,                                  // Unfinished SPNEGO negotiations held
+    clockSkew: 300,                                        // Clock skew (s)
+    clockOffset: 0,                                        // Clock offset (s)
+    userPassword: "password!",                             // User password; restart to apply
+    unknownUsers: "nosuchuser,nobody",                     // Names that stay unknown
+    autoServicePassword: "auto-service-password",          // Auto-created service password; restart to apply
+    krbtgtPassword: "krbtgt-mock-password",                // krbtgt password; restart to apply
+    domainSid: "S-1-5-21-1004336348-1177238915-682003330", // Domain SID; restart to apply
+    crossRealmClassicDelegation: false,                    // Classic delegation across trusts
+    requireSidFilteringInProduct: true,                    // Require SID filtering on trusts
+    maxReferralHops: 5,                                    // Most trusts a referral path crosses
+    trustKeyGraceSeconds: 0,                               // Grace for a rotated trust key (s)
+    spnegoAuthentication: true,                            // Sign in with a Kerberos ticket
+    personKeys: true,                                      // Kerberos keys for directory people
+    retainedKeyVersions: 1,                                // Previous key versions kept
+    retainedKeyTtlS: 0,                                    // Previous key version lifetime (s)
+    krbtgtRotationIntervalDays: 180,                       // Rotate the krbtgt key every (days)
+    pkinit: true,                                          // PKINIT (certificate pre-authentication)
+    pkinitRequireFreshness: true,                          // PKINIT requires a freshness token
+    pkinitLegacyKdf: false,                                // PKINIT accepts RFC 4556's own key derivation
+    pkinitKdcKeyAlgorithm: "ec-p256",                      // PKINIT KDC key algorithm
+    anonymousPkinit: true,                                 // Anonymous PKINIT (FAST armor)
+    spnegoLoginButton: true,                               // Offer Kerberos at the sign-in screen
+    s2kparams: "omit"                                      // Send s2kparams
   },
 
   // --- SCIM ------------------------------------------------------------
@@ -1012,8 +1042,8 @@ var config = {
     pollMaxEvents: 20,                                                                                                                                    // Events per poll
     maxReceivedEvents: 200,                                                                                                                               // Received events kept
     maxStreamLogEntries: 200,                                                                                                                             // Log lines per stream
-    authScopeRead: "ssf:read",                                                                                                                            // Scope to read a stream
-    authScopeWrite: "ssf:write",                                                                                                                          // Scope to change a stream
+    authScopeRead: "ssf.read",                                                                                                                            // Scope to read a stream
+    authScopeWrite: "ssf.manage",                                                                                                                         // Scope to change a stream
     receiveRequireSignature: false,                                                                                                                       // Refuse a SET whose signature does not verify
     foreignPollS: 30,                                                                                                                                     // Partner signals poll interval (s)
     foreignPollMaxEvents: 50,                                                                                                                             // Events asked per partner poll
@@ -1082,6 +1112,7 @@ var config = {
     listsMatchSpecialPurpose: true,                        // Lists match private and reserved addresses
     accountFailureThreshold: 5,                            // Refused passwords for one person that are a signal
     networkFailureThreshold: 20,                           // Refused passwords from one network that are a signal
+    networkSignupThreshold: 10,                            // Accounts one network may create in an hour before a signal
     signalFactors: "",                                     // Signal factors
     calibrationMediumPercent: 5,                           // Calibration: MEDIUM or worse (percent of sign-ins)
     calibrationHighPercent: 1,                             // Calibration: HIGH (percent of sign-ins)
@@ -1351,7 +1382,10 @@ var config = {
     runHistoryHours: 24,  // Runs kept for (hours)
     disabledJobs: "",     // Jobs switched off
     runTimeoutS: 600,     // The longest a run may take (seconds)
-    maxConcurrentRuns: 2  // Most runs going at once
+    maxConcurrentRuns: 2, // Most runs going at once
+    niceBusyThreshold: 8, // A busy worker's requests in flight
+    niceLagMs: 200,       // A busy worker's event-loop delay
+    niceMaxDeferS: 300    // Longest a run waits for a busy worker
   },
 
   // --- Attribute sources -----------------------------------------------
@@ -1431,7 +1465,9 @@ var config = {
     keepAliveTimeoutS: -1,                    // Main port: idle connection kept for (s)
     headersTimeoutS: -1,                      // Main port: request header timeout (s)
     maxRequestsPerSocket: -1,                 // Main port: requests per connection
-    maxConnections: -1                        // Main port: open connections at most
+    maxConnections: -1,                       // Main port: open connections at most
+    http2: "inherit",                         // Main port: offer HTTP/2
+    http2MaxConcurrentStreams: -1             // Main port: streams per HTTP/2 connection
   },
 
   // --- Listener: LDAPS -------------------------------------------------
@@ -1465,7 +1501,9 @@ var config = {
     keepAliveTimeoutS: -1,                    // Protocol debugger: idle connection kept for (s)
     headersTimeoutS: -1,                      // Protocol debugger: request header timeout (s)
     maxRequestsPerSocket: -1,                 // Protocol debugger: requests per connection
-    maxConnections: -1                        // Protocol debugger: open connections at most
+    maxConnections: -1,                       // Protocol debugger: open connections at most
+    http2: "inherit",                         // Protocol debugger: offer HTTP/2
+    http2MaxConcurrentStreams: -1             // Protocol debugger: streams per HTTP/2 connection
   },
 
   // --- Listener: SPIRE Server API --------------------------------------

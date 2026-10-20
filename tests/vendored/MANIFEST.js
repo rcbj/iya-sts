@@ -242,9 +242,12 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 //                      job depends on — `revoke-all` (which revokes each
 //                      job's own /admin-api token) and `build-root` (which
 //                      replaces the listener certificate a job's truststore
-//                      was pinned to when it started).
+//                      was pinned to when it started) — and
+//                      `sts_realm_count_limit.js` (#368), which holds
+//                      realms.maxCount at the live count, so any other job's
+//                      realm create would be refused while it runs.
 //
-// A new job that does either of those owes `exclusive: true`; a new job that
+// A new job that does any of those of those owes `exclusive: true`; a new job that
 // is long, self-contained and in no way order-dependent may be given a lane.
 // `run-report.js --serial` runs everything one at a time, as before.
 // ---------------------------------------------------------------------------
@@ -297,6 +300,14 @@ const JOBS = [
   // realm's roster only when that realm's bootstrap window is closed, and
   // then revokes what it granted.
   { file: 'sts_realm_administrators.js', browser: false, local: true },
+  // HOW MANY REALMS ONE CLUSTER MAY HOLD (#368): the create past
+  // realms.maxCount is refused (through /admin-api and the console),
+  // lowering the cap removes nothing, and a write of the cap from inside
+  // another realm is refused. EXCLUSIVE: it holds the cap at the live count,
+  // so a parallel lane's realm create would be refused STS-CORE-0161. It
+  // always puts the cap back, and leaves its one realm standing.
+  { file: 'sts_realm_count_limit.js', browser: false, local: true,
+    exclusive: true },
   // THE CONSOLE BEFORE ITS BOOTSTRAP ADMINISTRATOR ARRIVES (#103,
   // 2026-09-22): development's open window, product's closed one, a
   // client-certificate sign-in holding no role — and, in product, one naming
@@ -533,6 +544,10 @@ const JOBS = [
   // it, #593). `local: true`: this repository's own transmitter, in a
   // throwaway realm it leaves behind.
   { file: 'sts_ssf_conformance.js',      browser: false, local: true },
+  // CAEP INTEROPERABILITY PROFILE SCOPE NAMES (#334): ssf.read and
+  // ssf.manage, write includes read, and neither colon name is published,
+  // in a throwaway realm. `local: true`.
+  { file: 'sts_ssf_caep_scopes.js',      browser: false, local: true },
   // OPENID CONNECT CORE OVER THE WIRE (#118, 2026-09-22): the ID Token's
   // hashes by its alg, errors in the fragment, POST at the authorization
   // endpoint, openid/prompt/nonce rules, id_token_hint, section 5.4's claims,
@@ -677,10 +692,10 @@ const JOBS = [
   // /admin and /admin-api.
   { file: 'sts_scheduler.js',            browser: false, local: true },
   // MONITORING → WORKER POOLS (#327, 2026-09-28): GET /admin-api/worker-pools
-  // answers the request, surface and post-quantum pools with the seven
-  // figures, adding up, drawn by the front process; the page and its
-  // ?format=json agree; a realm's token is refused. `local: true`: this
-  // repository's own /admin and /admin-api.
+  // answers the request and surface pools with the seven figures, adding
+  // up, drawn by the front process; no post-quantum pool since #363; the
+  // page and its ?format=json agree; a realm's token is refused.
+  // `local: true`: this repository's own /admin and /admin-api.
   { file: 'sts_worker_pools.js',         browser: false, local: true },
   // MONITORING → NODE HEALTH (#329, 2026-09-28): GET /admin-api/node-health
   // answers the container's CPU and memory (read, or unavailable in a
@@ -848,6 +863,16 @@ const JOBS = [
   // `local: true`: this repository's own identity provider and /admin-api,
   // in two throwaway realms.
   { file: 'sts_saml_unregistered.js',    browser: false, local: true },
+  // WHO MAY START A SAML SIGN-IN, OVER THE WIRE (#715): #711's contract —
+  // SAML 2.0's unsolicited Response and SAML 1.1's TARGET-only link off
+  // until an application or the realm opts in, the service provider's own
+  // start refused per application, the relying party in the logout
+  // inventory, the mechanism re-prompt's one trip — in a realm of its own
+  // in the process's mode, so `single-node` and `cluster` run it in product
+  // with real passwords and registered addresses. `tests/saml_initiation.js`
+  // holds the same in process, and the risk step-up HTTP cannot set up.
+  // `local: true`: this repository's own identity providers and /admin-api.
+  { file: 'sts_idp_initiated_saml.js',   browser: false, local: true },
   // THE CRL AND OCSP ENDPOINTS, AND THE REVOCATION PANE (2026-09-11).
   // `local: true` on the FIRST of `tests/CLAUDE.md`'s two questions: most of
   // what it drives is `/admin-api/pki` and a pane on `/admin/pki`, and the
@@ -965,6 +990,23 @@ const JOBS = [
   // another lane loads.
   // `local: true`: this repository's own sign-in screen and API.
   { file: 'sts_passkey_usernameless.js', browser: false, local: true },
+  // A CLASSICAL PASSKEY AND A POST-QUANTUM ONE SIDE BY SIDE (#643): both
+  // enrolled at `/account-api/keys` in a throwaway realm with
+  // `webauthn.pqcAlongsideClassical` on, each lane's handle, algorithms and
+  // name, the Signal API's data per lane, and a usernameless sign-in with
+  // either. A realm of its own, because the switch changes every passkey
+  // enrolment in its realm.
+  // `local: true`: this repository's own portal, sign-in screen and API.
+  { file: 'sts_passkey_dual_lane.js', browser: false, local: true },
+  // A POST-QUANTUM PASSKEY REQUIRED (#718): the passkey policy's
+  // postQuantumRequired set through `/admin-api`, then an ES256 key and an
+  // ML-DSA-65 key (no lane on its row) each signing in, the save refused
+  // where no ML-DSA is offered, the portal's and the console's warnings and
+  // enrolment narrowed to ML-DSA. A realm of its own, because the row holds
+  // every passkey in its realm. `local: true`: this repository's own API,
+  // portal and sign-in screen.
+  { file: 'sts_passkey_post_quantum_required.js', browser: false,
+    local: true },
   // AN APPLICATION'S PASSKEY POLICY (#609): the named passkey policies
   // naming an application, read back through `GET /admin-api/applications`'s
   // `page.passkeyPolicies` in precedence order with the one that applies
@@ -1057,6 +1099,23 @@ const JOBS = [
   // expected Requester for a replay. Fixed here first; it goes back to the
   // parent with rcbj/id-proto-debugger#353, and this flag comes off then.
   { file: 'sts_saml11.js',               browser: false, local: true },
+  // IDENTITY-PROVIDER-INITIATED SIGN-IN OVER THE WIRE (#715): `/launch/{app}`
+  // for SAML 2.0, SAML 1.1, WS-Federation and OpenID Connect, the switches
+  // set through /admin-api, the launch record /oauth2/authorize honours
+  // (across nodes in `cluster`), the launch window waited out, and the links
+  // /admin-api and /account-api carry. `tests/launch.js` is the in-process,
+  // development-only half; this is the product-mode coverage. `local: true`:
+  // the door and every API it is read through are ours. Its realm is left
+  // standing; the one setting it changes it resets.
+  { file: 'sts_idp_initiated_launch.js', browser: false, local: true },
+  // Identity-provider-initiated WS-Federation sign-in over the wire (#715):
+  // `/wsfed/initiate/{rp}` off by default, registered relying parties only,
+  // no wreply, the registered reply address with wctx intact, the sign-out
+  // inventory, the realm setting through /admin-api and the entry
+  // overrides, in a throwaway realm in the run's mode — product in
+  // single-node and cluster. `tests/wsfed_initiation.js` is the in-process
+  // half, and holds the risk step-up HTTP cannot set up.
+  { file: 'sts_idp_initiated_wsfed.js',  browser: false, local: true },
   // OWNED HERE SINCE 2026-09-21, when it was a byte-identical copy of the
   // parent's: its no-certificate case had to stop registering a signing
   // certificate in development (the service encrypts to one, so the in-clear
@@ -1150,6 +1209,13 @@ const JOBS = [
   // documented exception. `local: true`: this repository's KDC.
   { file: 'sts_kerberos_samba.js',       browser: false, local: true,
     timeoutMs: 900000 },
+  // KERBEROS TRUSTS OVER /admin-api (#430 Phase 4): two throwaway trust
+  // realms and the seven acts of /admin-api/kerberos/trusts between them —
+  // add, pair, rotate-key with mirror (kvno and grace), disable, enable and
+  // remove — each read back, every read searched for key material, and an
+  // application's Across trusts panel in its applications answer.
+  // `local: true`: this repository's trust records and API.
+  { file: 'sts_kerberos_trusts_api.js',  browser: false, local: true },
   // HEIMDAL'S CLIENT TOOLS BESIDE MIT'S (#205, 2026-09-26): kinit, klist,
   // kgetcred, kvno, ktutil, gss-token and a Heimdal-GSSAPI curl, built into
   // the tests image from a pinned commit — AS and TGS per realm (FAST-armored
@@ -1398,6 +1464,7 @@ const JOBS = [
   // policies, the linking sign-in, the administrator refusal, the links set
   // and removed through /admin-api and SCIM — over HTTP, in either mode.
   { file: 'sts_federation_subject_policy.js', browser: false, local: true },
+  { file: 'sts_federation_consumer.js', browser: false, local: true },
   // A PARTNER'S SIGN-OUT (#167, 2026-09-23): SAML 2.0 Single Logout between
   // two realms in both directions, a partner written here for every
   // LogoutRequest refusal and SessionNotOnOrAfter, OpenID Connect
@@ -1459,6 +1526,20 @@ const JOBS = [
   // peer's private address (STS-OAUTH-0534). Needs the peer (`testPeer`).
   { file: 'sts_backchannel_logout.js',   browser: false, local: true,
     testPeer: true },
+  // SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561), over HTTP in a
+  // throwaway realm that inherits the stack's mode, one cookie jar and two
+  // people: both kept live and the picker, login_hint, prompt=select_account
+  // and prompt=none (account_selection_required), SAML 2.0 IsPassive and a
+  // <Subject> hint, WS-Federation, the sign-out's account step, RP-Initiated
+  // Logout by id_token_hint's sid, one account signed out while the other
+  // stays, and forget. `local: true`: the sign-in surface, the picker and
+  // the sign-out are this repository's.
+  { file: 'sts_multi_account.js',        browser: false, local: true },
+  // ONE ACCOUNT PER TAB IN THE PORTAL, IN A REAL BROWSER (#561): two Chrome
+  // tabs sharing one cookie jar, a different account in each, a reload
+  // keeping each, and one signed out from its tab leaving the other tab's
+  // working. One browser, serially.
+  { file: 'sts_multi_account_tabs.js',   browser: true,  local: true },
   // The mail channel (#63): delivery to the Mailpit the stack runs, a
   // product realm of its own, verification, a self-service reset, a dead
   // letter. Skips its delivery sections where there is no catcher.
@@ -1481,11 +1562,12 @@ const JOBS = [
   // A person's attributes set, added to and removed from through
   // /admin-api (#228), in a realm of its own.
   { file: 'sts_person_attributes.js',    browser: false, local: true },
-  // Attribute sources against the stack's real PostgreSQL (#94): a
-  // database, a read-only role and a table of the job's own, TLS verified
-  // against the source's own chain, the password read from a shared file,
-  // a sign-in carrying the attribute claim, and refuse on failure. Skips
-  // without STS_TEST_ATTRIBUTE_DB_URL or a shared directory.
+  // Attribute sources against the stack's real PostgreSQL and MariaDB
+  // (#94, #356): a database, a read-only account and a table of the job's
+  // own, TLS verified against the source's own chain, the password read
+  // from a shared file, a sign-in carrying the attribute claim, and refuse
+  // on failure. A dialect whose URL is unset is skipped; both unset, or no
+  // shared directory, skips the job.
   { file: 'sts_attribute_sources.js',    browser: false, local: true },
   // Secret push destinations (#221 P3): the register over /admin-api in a
   // realm of its own — the write credential in no answer and refused by

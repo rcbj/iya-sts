@@ -231,11 +231,15 @@ async function test() {
   await ok(base + "/admin-api/realms/create",
            { id: REALM, domain: REALM + ".example.net",
              name: "Token exchange responses" }, "created the realm");
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
   await ok(realmApi + "/users/create",
            { username: ALICE, invent: false, credential: "password",
              password: PASSWORD,
              attributes: { cn: "Exchange " + ALICE, givenName: "Exchange",
-                           sn: "Alice" } }, "created " + ALICE);
+                           sn: "Alice",
+                           mail: ALICE + "@" + REALM + ".example.net" } },
+           "created " + ALICE);
   await ok(realmApi + "/applications/create", { identifier: API,
     protocols: ["oauth2"],
     fields: { oauthClientId: [API], oauthClientSecret: SECRET,

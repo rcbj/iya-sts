@@ -138,6 +138,11 @@ class KeysPages {
           kit.esc(one.attestationRefused) + ' ' +
           t.html('portal.keys.removeAndRegister') + '</div>'
         : '') +
+      // A CLASSICAL KEY WHERE A POST-QUANTUM ONE IS REQUIRED (#718).
+      (one.postQuantumRefused
+        ? '<div class="meta" id="passkey-post-quantum-refused">' +
+          t.html('portal.keys.postQuantumRefused') + '</div>'
+        : '') +
       // ONE WHOSE MINIMUM PIN THE REALM NO LONGER ACCEPTS (#529).
       (one.pinRefused
         ? '<div class="meta" id="passkey-pin-refused">' +
@@ -169,6 +174,12 @@ class KeysPages {
       (algorithm.postQuantum ? ' ' + t.html('portal.keys.postQuantum') : '') +
       (algorithm.insecure
         ? ' <strong>' + t.html('portal.keys.insecure') + '</strong>' : '') +
+      '</td></tr>' +
+      // WHICH LANE IT WAS CREATED IN (#643): classical, or the post-quantum
+      // passkey a credential manager lists as a second account.
+      '<tr><th>' + t.html('portal.keys.lane') + '</th><td>' +
+      (one.lane === 'pqc' ? t.html('portal.keys.lanePqc')
+                          : t.html('portal.keys.laneClassical')) +
       '</td></tr>' +
       '<tr><th>' + t.html('portal.keys.authenticator') + '</th><td>' +
       KeysPages.attestationText(one.attestation, t) + '</td></tr>' +
@@ -237,6 +248,35 @@ class KeysPages {
         return '<label class="chk"><input type="radio" name="kind" ' +
           'value="' + kit.esc(kind) + '"' + (i === 0 ? ' checked' : '') +
           '> ' + rows[kind][0] + ' <span class="sub">' + rows[kind][1] +
+          '</span></label>';
+      }).join('');
+  }
+
+  // WHICH LANE (#643): a classical passkey or a post-quantum one, asked only
+  // where the realm offers both, as radios in the form whose buttons begin
+  // the enrolment — so the call to action pressed sends the choice. Shared
+  // with the activation's setup form.
+  /**
+   * The lane, as radios, or '' with one lane.
+   *
+   * @param lanes - the lanes the realm offers
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static laneChoice(lanes: Json, t: Json): string {
+    if (!Array.isArray(lanes) || lanes.length < 2) {
+      return '';
+    }
+    const rows: Json = {
+      classical: [t.html('portal.lane.classical'),
+                  t.html('portal.lane.classicalWhat')],
+      pqc: [t.html('portal.lane.pqc'), t.html('portal.lane.pqcWhat')]
+    };
+    return '<p class="sub"><strong>' + t.html('portal.lane.which') +
+      '</strong></p>' + lanes.map(function (lane: string, i: number): string {
+        return '<label class="chk"><input type="radio" name="lane" ' +
+          'value="' + kit.esc(lane) + '"' + (i === 0 ? ' checked' : '') +
+          '> ' + rows[lane][0] + ' <span class="sub">' + rows[lane][1] +
           '</span></label>';
       }).join('');
   }
@@ -349,6 +389,7 @@ class KeysPages {
           }).join('')
         : '<input type="hidden" name="role" value="' + kit.esc(roles[0][0]) +
           '"><p class="note">' + roles[0][1] + '. ' + roles[0][2] + '</p>') +
+      KeysPages.laneChoice(enrol.lanes, t) +
       '<div class="ctas">' + (enrol.kinds || []).map(function (kind: string,
                                                                i: number) {
         return '<button name="kind" value="' + kit.esc(kind) + '"' +
@@ -360,22 +401,27 @@ class KeysPages {
 
   // THE SIGNAL API'S DATA (#470), read by the runtime: never while a
   // ceremony is armed, and only under a user handle this service minted.
+  // ONE ELEMENT PER LANE (#643): `#wa-signal` for the classical lane and
+  // `#wa-signal-pqc` for the post-quantum one, each with its own handle,
+  // name and credential ids.
   /**
-   * The `#wa-signal` element, or ''.
+   * The `#wa-signal` elements, one per lane, or ''.
    *
-   * @param signal - the view's `signal`
+   * @param signals - the view's `signals`
    * @returns the HTML
    */
-  static signalBlock(signal: Json): string {
-    if (!signal) {
-      return '';
-    }
-    return '<div id="wa-signal" hidden' +
-      ' data-rpid="' + kit.esc(signal.rpId) + '"' +
-      ' data-userid="' + kit.esc(signal.userId) + '"' +
-      ' data-accepted="' + kit.esc((signal.accepted || []).join(',')) + '"' +
-      ' data-name="' + kit.esc(signal.name) + '"' +
-      ' data-display="' + kit.esc(signal.display) + '"></div>';
+  static signalBlock(signals: Json): string {
+    return (Array.isArray(signals) ? signals : []).map(function (
+      signal: Json): string {
+      return '<div id="' + (signal.lane === 'pqc' ? 'wa-signal-pqc'
+                                                  : 'wa-signal') + '" hidden' +
+        ' data-rpid="' + kit.esc(signal.rpId) + '"' +
+        ' data-userid="' + kit.esc(signal.userId) + '"' +
+        ' data-accepted="' + kit.esc((signal.accepted || []).join(',')) +
+        '"' +
+        ' data-name="' + kit.esc(signal.name) + '"' +
+        ' data-display="' + kit.esc(signal.display) + '"></div>';
+    }).join('');
   }
 
   /**
@@ -427,7 +473,7 @@ class KeysPages {
             : t.html('portal.keys.noneSecond')) + ' ' +
           t.html('portal.keys.lastWayIn') + '</p>'
         : '<p class="note">' + t.html('portal.keys.noneYet') + '</p>') +
-      KeysPages.enrolBlock(view, t) + KeysPages.signalBlock(view.signal) +
+      KeysPages.enrolBlock(view, t) + KeysPages.signalBlock(view.signals) +
       '</div>';
   }
 

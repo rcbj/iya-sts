@@ -107,7 +107,8 @@ const SERVICE_PAGES = [
   '/admin/secrets',
   // Every realm's partition of every cache, and the process-wide ones (#74).
   '/admin/caches',
-  // The request, hosted-surface and post-quantum pools of the node (#327).
+  // The request and hosted-surface pools of the node (#327). Worker
+  // threads since #364; no post-quantum pool since #363.
   '/admin/worker-pools',
   // The container's CPU and memory and every process of the node (#329).
   '/admin/node-health',
@@ -171,13 +172,12 @@ const SERVICE_SETTING_KEYS = [
   'spiffe.workloadPort', 'spiffe.serverPort',
   // KERBEROS, PER KEY SINCE 2026-09-15 (it was the `krb5.` prefix). A realm
   // carries its own Kerberos realm, principal database and keys, so the rows
-  // those are built from are the realm administrator's. These five are not:
+  // those are built from are the realm administrator's. This one is not:
   // the KDC's SOCKET is bound once for the process (the protected service's,
-  // `krb5.servicePort`, left with #595), and the development-mode trust is
-  // the DEFAULT realm's second Kerberos realm — no other realm has one, so
-  // setting them on a realm would say something untrue.
-  'krb5.kdcPort', 'krb5.trustedRealm',
-  'krb5.trustPassword', 'krb5.trustedDomainSid', 'krb5.trustedKrbtgtPassword'
+  // `krb5.servicePort`, left with #595). The development-mode trust's four
+  // were here until #430 retired them: a trust is a record in the realm's
+  // own directory now, the realm administrator's like its people.
+  'krb5.kdcPort'
 ];
 
 /**
@@ -316,6 +316,27 @@ class AdminScope {
                  realmId + '" may change that realm\'s lists only.';
         }
         log.debug("Leaving the risk action rule. Allowed.");
+        return '';
+      },
+      // KERBEROS TRUSTS (#430 Phase 4): a realm administrator manages their
+      // realm's trust records — add, change, enable, disable, rotate,
+      // remove — and nothing that writes ANOTHER realm's directory: `pair`
+      // writes the partner trust realm's record, and so does a rotation
+      // with `mirror`. Those are a service administrator's acts.
+      '/admin/kerberos/trusts': function (body, realmId) {
+        log.debug("Entering the Kerberos trusts action rule.");
+        const action = String((body && body.action) || '').trim();
+        const mirrored = !!body && (body.mirror === true ||
+                                    String(body.mirror) === 'true');
+        if (action === 'pair' || (action === 'rotate-key' && mirrored)) {
+          log.debug("Leaving the Kerberos trusts action rule. Another " +
+                    "realm.");
+          return (action === 'pair' ? 'Pairing a trust' : 'Rotating both ' +
+                  'sides of a trust') + ' writes the partner trust realm\'s ' +
+                 'record as well, and a realm administrator of "' + realmId +
+                 '" may change that realm only.';
+        }
+        log.debug("Leaving the Kerberos trusts action rule. Allowed.");
         return '';
       },
       '/admin/keys/export': function (body) {

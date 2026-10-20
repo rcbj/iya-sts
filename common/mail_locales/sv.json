@@ -45,6 +45,11 @@
       "text": "E-postadressen för kontot {{username}} ändrades {{when}} till {{address}}. Det här meddelandet skickades till den adress kontot hade tidigare.\n\nOm du inte väntade dig detta, kontakta genast den som administrerar ditt konto.\n",
       "html": "<p>E-postadressen för kontot <strong>{{username}}</strong> ändrades {{when}} till {{address}}. Det här meddelandet skickades till den adress kontot hade tidigare.</p><p>Om du inte väntade dig detta, kontakta genast den som administrerar ditt konto.</p>"
     },
+    "account-connected": {
+      "subject": "Ett konto anslöts till ditt {{service}}-konto",
+      "text": "Ett konto hos {{provider}} anslöts till kontot {{username}} {{when}} och kan nu användas för att logga in på det.\n\nOm det inte var du, koppla från det under Anslutna konton och kontakta den som hanterar ditt konto nu.\n",
+      "html": "<p>Ett konto hos {{provider}} anslöts till kontot <strong>{{username}}</strong> {{when}} och kan nu användas för att logga in på det.</p><p>Om det inte var du, koppla från det under Anslutna konton och kontakta den som hanterar ditt konto nu.</p>"
+    },
     "access-request": {
       "subject": "{{service}}: ett program ber om åtkomst",
       "text": "Programmet {{client}} ber om åtkomst för kontot {{username}}: {{rights}}.\n\nIngenting tillåts förrän du godkänner det. Logga in och öppna den här sidan inom {{expiresMinutes}} minuter för att godkänna eller neka:\n\n{{link}}\n\nOm du inte känner igen begäran kan du neka den där eller strunta i det här meddelandet: den upphör av sig själv.\n",

@@ -65,6 +65,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | `common/vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** (except `pqc.js`, `pqc_x509.js`, `xmldsig.js`). `common/vendored/CLAUDE.md`. |
 | `home/` | The front door, `GET /`, and `/home-api`. `home/CLAUDE.md`. |
 | `logout/` | The protocol-independent sign-out at `/logout`, and the one model of a live session. `logout/CLAUDE.md`. |
+| `launch/` | `/launch/{app}`, the one identity-provider-initiated sign-in link per application (#426). `launch/CLAUDE.md`. |
 | `portal/` | The user portal, a static application over `/account-api`. `portal/CLAUDE.md`. |
 | `account-api/` | `/account-api`, the portal's only door. `account-api/CLAUDE.md`. |
 | `oauth-oidc/` | The authorization server and OpenID provider. `oauth-oidc/CLAUDE.md`. |
@@ -414,9 +415,12 @@ and a new express app is covered by the guard already —
 
 **rcbj's architectural directive, 2026-09-21: anything that has to be done
 periodically in the background is a job on the central scheduler** (#49,
-`cluster/scheduler.ts`), which runs each job on exactly one node, on the
-serving front process and never in a request worker, and hands it to another
-node when that one goes. **No new module may start a timer of its own** — no
+`cluster/scheduler.ts`), which runs each job on exactly one node and hands
+it to another node when that one goes. The serving front process leads and
+keeps the lease, the claims, the fences and the run rows; since #408 a
+cluster job's BODY runs on the node's least-loaded ready request worker,
+unless the job names an `onFront` reason (`cluster/CLAUDE.md`, *Where a
+cluster run's body runs*). **No new module may start a timer of its own** — no
 `setInterval`, no `setTimeout` chain, no sweep armed at require or wire time —
 for work that repeats.
 
@@ -485,6 +489,7 @@ preference; this table says what the constraint is and the named file says why.
 | 8-api | `authn/authn_api` | Just after `authn` (#571), whose views and acts it reaches through that module's exports; `/authn-api/*` collides with nothing. | `authn/CLAUDE.md` |
 | 7 | `ws-trust/wstrust` | After `authn` since 2026-09-05 (it calls `startSession()`); the number predates the move. | `ws-trust/CLAUDE.md` |
 | 8-email | `authn/email_factor` (and `common/mail_factor`) | Just after `authn`, whose pending steps it reads through that module's exports (#64). | `authn/CLAUDE.md` |
+| 8-dbsc | `authn/device_bound_sessions` | Just after `authn` (#725), which requires it as a library; it reaches `authn` and `logout` lazily, and `/authn/dbsc/*` collides with nothing. | `authn/CLAUDE.md` |
 | 8a | `portal/portal` | After `authn`, whose session every portal route reads. | `portal/CLAUDE.md` |
 | 8a-mail | `common/mail`, `common/mail_uses`, `portal/portal_mail` | Built before the portal, whose `registerRoutes()` registers `portal_mail`'s pages. Libraries; the directory fills the channel's slot at 21. | `common/CLAUDE.md` |
 | 8a-acct | `portal/account_*` (seven), then `account-api/account_api` | Just after the portal (#568): the account API's `register()` gathers every portal page module's operations, so all must be built first. | `account-api/CLAUDE.md` |
@@ -547,6 +552,7 @@ preference; this table says what the constraint is and the named file says why.
 | 23e–g | `acme/acme`, `est/est`, `scep/scep` | After `admin-ui/admin` (18), whose shell each `_admin.ts` draws with, and after `ldap/ldap_server` (21), whose slot `common/cert_enrollment.ts` reads entries through. Each one require, then two `register()` calls (the family, then its `_admin`). No constraint between the three. | `acme/CLAUDE.md`, `est/CLAUDE.md`, `scep/CLAUDE.md` |
 | 23g-ii | `oidfed/oidfed_admin` | After the console (18), whose shell it draws `/admin/oidfed` with; the family itself is 14b. | `oidfed/CLAUDE.md` |
 | 23h | `debugger/debugger_server` | A socket owner: builds its OWN express app and registers nothing on this one. After `authn`, `oauth2`, `tls/tls_server` and the console, all of which it reads. | `debugger/CLAUDE.md` |
+| 23a-launch | `launch/launch` | After every family it hands the browser to (9, 10, 10a, 10b) and `authn` (8); its one path collides with nothing. Its link builder `common/launch_links.ts` is a library the account API (8a-acct) and the management API (19) require earlier, which moves no route. | `launch/CLAUDE.md` |
 | 23a | `logout/logout` | Second to last: it reads nine modules' stores. | `logout/CLAUDE.md` |
 | 24 | `sts_metadata` | **Last, for everybody.** It reads the router to list what everything else registered; its `wire` step hands `PROTOCOLS` to the crypto page (20a). | *Adding an endpoint*, below |
 
@@ -659,6 +665,10 @@ in every file, including the ones in the source comments. This is the index.
 | 3cl | `common/web_*.ts` and friends (#570): the static surfaces' foundation | `common/CLAUDE.md` |
 | 3cm | The mock relying parties (#581) — deleted by #592; number kept | `common/CLAUDE.md` |
 | 3cn | `ownership.ts` (#607): owners, and OWNER_READ / OWNER_WRITE | `common/CLAUDE.md`, `xacml/CLAUDE.md`, `mgmt-api/CLAUDE.md` |
+| 3cr | `device_bound_sessions.ts` (#725): the sign-on session bound to the browser's key (DBSC) | `authn/CLAUDE.md` |
+| 3co | `attribute_policy.ts` (#396): what every person must hold, and a realm's custom attributes | `common/CLAUDE.md`, `ldap/CLAUDE.md` |
+| 3cp | `phishing_resistance.ts` (#723): OpenID Connect EAP's `phr` and `phrh`, earned, requested and required | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `xacml/CLAUDE.md` |
+| 3cq | `recoveryAssurance` (#724): account recovery no weaker than the passkey it replaces | `common/CLAUDE.md`, `authn/CLAUDE.md`, `xacml/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |
@@ -1130,6 +1140,8 @@ the file the row names.
 | ~~Perform back-channel logout~~ — reversed 2026-09-17 (#36) | `oauth-oidc/CLAUDE.md` (3aq), `logout/CLAUDE.md`, `authn/CLAUDE.md`, `federation/CLAUDE.md` |
 | ~~Fake WS-Federation's `wauth`~~ — reversed 2026-09-17 (#36), as a step-up | `ws-federation/CLAUDE.md`, `authn/CLAUDE.md` |
 | Dereference WS-Federation's `wreqptr` | `ws-federation/CLAUDE.md` |
+| Post an unsolicited ID Token to an OpenID Connect client's `redirect_uri` — its identity-provider-initiated sign-in is Core section 4 (#426) | `launch/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
+| Start a sign-in at this identity provider for an application that did not opt in — off by default in every protocol (#426) | `launch/CLAUDE.md` |
 | ~~Verify a SAML AuthnRequest's signature, or consume SP metadata~~ — reversed 2026-09-17 (#37) | `saml/CLAUDE.md`, `saml/request_signature.ts`, `saml/sp_metadata.ts` |
 | Encrypt an assertion it holds no certificate for — **product refuses**, development sends it in CLEAR | `saml/CLAUDE.md` |
 | Dial a service provider's metadata URL WHILE ISSUING | `saml/CLAUDE.md` |

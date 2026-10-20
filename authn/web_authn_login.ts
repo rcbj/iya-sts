@@ -226,16 +226,35 @@ class WebAuthnLogin {
   }
 
   /**
-   * A list of partner buttons under a sentence.
+   * A list of partner buttons under a sentence. The consumer and social
+   * providers (#565) come first, as a group of their own and each as
+   * "Continue with …", text only: a provider's mark is under its own brand
+   * rules, which is a decision this screen has not taken.
    *
-   * @param links - `[{ label, protocolLabel, peer, href }]`
+   * @param links - `[{ label, protocolLabel, peer, href, category }]`
    * @param blurb - the sentence, HTML
+   * @param t - the translator, for the consumer providers' buttons
    * @returns the markup
    */
-  static partnerButtons(links: Json[], blurb: string): string {
+  static partnerButtons(links: Json[], blurb: string, t?: Json): string {
     const esc = WebAuthnLogin.esc;
-    return '<div class="fed">' + kit.note(blurb) +
-      (links || []).map(function (one: Json): string {
+    const all = links || [];
+    const consumer = all.filter(function (one: Json): boolean {
+      return one.category === 'consumer';
+    });
+    const enterprise = all.filter(function (one: Json): boolean {
+      return one.category !== 'consumer';
+    });
+    const social = consumer.length
+      ? '<div class="social">' + consumer.map(function (one: Json): string {
+          return '<a class="fedbtn" href="' + esc(one.href) + '">' +
+            (t ? t.html('authn.options.continueWith',
+                        { provider: String(one.label) })
+               : esc(one.label)) + '</a>';
+        }).join('') + '</div>'
+      : '';
+    return '<div class="fed">' + kit.note(blurb) + social +
+      enterprise.map(function (one: Json): string {
         return '<a class="fedbtn" href="' + esc(one.href) + '">' +
           esc(one.label) + '<span>' + esc(one.protocolLabel) +
           (one.peer ? ' · ' + esc(one.peer) : '') + '</span></a>';
@@ -257,7 +276,7 @@ class WebAuthnLogin {
       out += WebAuthnLogin.partnerButtons(p.options,
         p.kind === 'own-many' ? t.html('authn.options.federatedOwnMany')
           : (p.kind === 'own-one' ? t.html('authn.options.federatedOwnOne')
-                                  : t.html('authn.options.federatedAny')));
+                                  : t.html('authn.options.federatedAny')), t);
     }
     const k = v.kerberos;
     if (k && k.state === 'withheld-key') {

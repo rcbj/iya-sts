@@ -289,10 +289,10 @@ async function test() {
     // them (#110).
     fields: { oauthClientId: [RECEIVER], oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post",
-              oauthAllowedScope: ["ssf:read", "ssf:write"],
+              oauthAllowedScope: ["ssf.read", "ssf.manage"],
               oauthGrantType: ["client_credentials"] } },
     "created the receiver's application");
-  const token = await tokenFor("ssf:read ssf:write");
+  const token = await tokenFor("ssf.read ssf.manage");
   const created = await send(realmBase + "/ssf/stream", { method: "POST",
     headers: { "Content-Type": "application/json",
                Authorization: "Bearer " + token },
@@ -310,10 +310,14 @@ async function test() {
   });
   const streamId = created.body.stream_id;
   const dns = {};
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode — of the LDAP add below too, so that what
+  // refuses it is the credential attribute and not a missing name.
   for (const who of [ALICE, ADMIN]) {
     const made = await ok(realmApi + "/users/create", { username: who,
       invent: false, credential: "password", password: PASSWORD,
-      attributes: { cn: "CS " + who, sn: who, mail: who + "@cs231.test" } },
+      attributes: { cn: "CS " + who, givenName: "CS", sn: who,
+                    mail: who + "@cs231.test" } },
       "created " + who);
     dns[who] = String(made.dn);
   }
@@ -435,6 +439,8 @@ async function test() {
   const added = await settle(function (done) {
     client.add(addDn, { objectClass: ["inetOrgPerson"],
       uid: ["c231-new-" + STAMP.toLowerCase()], cn: ["x"], sn: ["x"],
+      givenName: ["x"],
+      mail: ["c231-new-" + STAMP.toLowerCase() + "@cs231.test"],
       stsWebauthnCredential: ["{}"] }, done);
   });
   check("an add carrying stsWebauthnCredential is refused the same way, " +

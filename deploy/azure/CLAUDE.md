@@ -80,11 +80,11 @@ for GCP's reason.
 
 | AWS | GCP | Azure | Why this and not the obvious alternative |
 |---|---|---|---|
-| ECS on Fargate, a service per AZ | a zonal MIG per zone, COS | **A Flexible scale set per zone with one instance, Ubuntu 24.04 LTS, Docker from Ubuntu's archive**. `node-a`'s is made first. | Container Apps proxies what it publishes. Container Instances has no zonal load-balanced service that follows its instances. Neither gives 389/636/88/gRPC plus a client certificate at the node. AKS is a cluster to keep. Ubuntu's unattended-upgrades is the nearest thing to COS. A scale set rather than a bare VM because it **repairs**: the Application Health extension asks `/healthcheck`, and a failing node is replaced after `PT30M`. |
+| ECS on Fargate, a service per AZ | a zonal MIG per zone, COS | **A Flexible scale set per zone with one instance, Ubuntu 24.04 LTS, Docker from Ubuntu's archive**. `node-a`'s is made first. | Container Apps proxies what it publishes. Container Instances has no zonal load-balanced service that follows its instances. Neither gives 389/636/88/gRPC plus a client certificate at the node. AKS is a cluster to keep. Ubuntu's unattended-upgrades is the nearest thing to COS. A scale set rather than a bare VM because it **repairs**: the Application Health extension asks `/healthcheck`, and three consecutive failures replace the node once the `PT30M` repair grace has passed. |
 | task definition | systemd units | **The same units**, in order: `sts-disk` → `sts-registry` → `sts-secrets` → `sts-cert` → `sts-schema` (→ `sts-global-schema` in the primary cell) → `sts-node`. `sts-node` is enabled, so a reboot starts it again. | `Requires=`/`After=` is `dependsOn: SUCCESS` |
 | ECS `secrets` | `sts-secrets` from Secret Manager | `sts-secrets` from **Key Vault** over REST with the VM's managed identity, into env files on `/run` | Nothing secret is in the VM's model. The database passwords are read by the SERVICE through `common/secrets.js`'s `azure` provider (`AZURE_CLIENT_ID` names the identity), and the KEK is a Key Vault KEY it wraps with (`azure-keys`, *The key-encryption key*, below) |
 | ECR pull | `docker-credential-gcr` | `/etc/sts/registry-login.sh`: an Entra ID token from the metadata endpoint, exchanged at the registry. It runs before every start of the node. | The registry's token lasts about three hours, and systemd restarts the node long after boot |
-| NLB, PROXY v2 | passthrough NLB, no PROXY | **Standard Load Balancer**: one zone-redundant public address, one rule per port translating 443 → 8081 and 80 → 8082, one HTTPS probe of `/healthcheck` | A pass-through: the client's certificate and address reach the node, so `STS_PROXY_PROTOCOL=off`. **No register-by-address workaround for SPIFFE**: the pool follows the scale sets |
+| NLB, PROXY v2 | passthrough NLB, no PROXY | **Standard Load Balancer**: one zone-redundant public address, one rule per port translating 443 → 8081 and 80 → 8082, one HTTPS probe of `/healthcheck` | A pass-through: the client's certificate and address reach the node, so `STS_PROXY_PROTOCOL=off`. **No register-by-address workaround for SPIFFE**: the pool follows the scale sets. **8092 is still published.** #324 was applied on AWS only. Pass-through is a different fact from the declaration #166 requires |
 | NAT-free public subnets | an ephemeral external IP per VM | **The load balancer's outbound rule**, on a second address; the nodes have NO public address, and the subnet's default outbound access is off | New VNets have no default outbound access (since 2025-09-30), and a NAT gateway is zonal. The fixed outbound address is also what the service calling its own public name arrives from |
 | security groups | firewall rules by service account | **Two security groups** (nodes, private). Every rule is a resource of its own, and everything is denied at 4096 in both directions | A group's inline rules are its WHOLE list, so the global stack's rule would be deleted by the next cell apply. The deny rules sit ahead of Azure's defaults, which admit every peered VNet |
 | #311's private zone for self-calls | nothing | **An inbound rule for the outbound address** (`self`, and `cells-self` from the global stack for every cell's) | The node's packet leaves by the outbound rule and comes back through the public frontend |
@@ -96,6 +96,19 @@ for GCP's reason.
 | a project key / cell keys per region | a key ring per region | **A key vault per region** with `iya-sts` (single-cell and the global tier) and `iya-sts-cell` (a cell's own data), both purge-protected | A key is regional and never replicated, which is the residency line. The global tier needs no multi-region key here: a cross-region replica uses its own region's key |
 | ECR, replicated | Artifact Registry | **ACR Premium, geo-replicated** into every region an environment uses | Premium is the tier that replicates. Nodes pull from their own region |
 | the deployer role and its boundaries | an impersonated SA | **A custom role granted only on the foundation's resource groups** | *The deployer*, below |
+
+**THREE CONSECUTIVE FAILURES REPLACE THE NODE (#330).** The load balancer's
+`probe_threshold` is 3. Azure applies that count to failures and to
+successes, so a node returns to rotation only after three good answers;
+`number_of_probes` is the older name of the same count and is kept equal.
+The probe stops traffic. The scale set replaces the VM from the Application
+Health extension's own three probes (`numberOfProbes`) once the repair
+grace (`PT30M`) has passed. That grace is the first boot: Docker, the image
+pulls and the init units. The extension's `gracePeriod` of 600 seconds is
+the ten minutes a restarted service gets before those probes count. Both
+checks are an HTTPS GET of `/healthcheck`, so a node whose LDAPS never
+binds is not replaced for that. The inter-cell probe uses the same count
+and only removes the node from that pool.
 
 ## The vault, and why it belongs to the foundation
 
@@ -401,6 +414,12 @@ AWS's latency records do.
   identity.
 * **`spiffe-realm/` for additional realms.** A realm's ports would be more
   rules on the same load balancer.
+* **Unpublishing the Workload API (#324).** `spiffe_default_ports` still
+  names `workload` (8092) beside `server` (8181). AWS stopped publishing
+  8092 (`deploy/aws/CLAUDE.md`); this stack was not rewritten, because only
+  AWS has been applied. The load balancer is a pass-through, so the client's
+  certificate and address reach the node. That is a different fact from
+  the declaration #166 requires.
 * **A GitHub workflow.** It should be a service principal with a federated
   credential (OIDC), in the deployer group.
 * **Azure cells in a MULTI-CLOUD environment.** The cells here are all

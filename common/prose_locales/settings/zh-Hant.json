@@ -108,8 +108,8 @@
     "text": "閒置連線保留時間（秒）"
   },
   "http.keepAliveTimeoutS|description": {
-    "en": "15ba4c34c3d3349e",
-    "text": "HTTP 接聽程式為用戶端的下一個請求保留閒置 HTTP/1.1 連線的時間，以秒為單位（node 自己的預設值為 5）。保留連線就省下一次 TLS 交握——以及一次用戶端憑證提示。用戶端在同一連線上管線化送出的請求會依序回應。位於負載平衡器後方時，請讓其閒置逾時大於此值。"
+    "en": "0fa763b61550474c",
+    "text": "HTTP 接聽程式為用戶端的下一個請求保留閒置連線的時間，以秒為單位（node 自己的預設值為 5）：即請求之間的 HTTP/1.1 連線，或沒有任何訊框經過的 HTTP/2 連線，後者隨後會被妥善關閉。保留連線就省下一次 TLS 交握——以及一次用戶端憑證提示。用戶端在同一連線上管線化送出的請求會依序回應。位於負載平衡器後方時，請讓其閒置逾時大於此值。"
   },
   "http.headersTimeoutS|label": {
     "en": "af0b2f7be18e5943",
@@ -134,6 +134,22 @@
   "http.maxConnections|description": {
     "en": "1dda75e901fc49af",
     "text": "HTTP 接聽程式同時保持開啟的連線數；超出的一個在抵達時即被關閉。0（預設）表示無限制（node 自己的行為）。"
+  },
+  "http.http2|label": {
+    "en": "775d810d4f1a3356",
+    "text": "提供 HTTP/2"
+  },
+  "http.http2|description": {
+    "en": "76d7c1691efa23fa",
+    "text": "當用戶端在 TLS 交握中（ALPN）請求 HTTP/2 時，HTTPS 監聽器是否提供它。開啟（預設值）時，一個連線承載瀏覽器並行發出的所有請求；對於只請求 HTTP/1.1 的用戶端，仍以 HTTP/1.1 回應。關閉時，每個連線都是 HTTP/1.1——適用於 HTTP/2 行為異常的用戶端或負載平衡器。新連線立即遵循變更；已開啟的連線保持其協定。純 HTTP 的撤銷監聽器只支援 HTTP/1.1，因為沒有可以提供它的交握。"
+  },
+  "http.http2MaxConcurrentStreams|label": {
+    "en": "27fcdca12afd105b",
+    "text": "每條 HTTP/2 連線的串流數"
+  },
+  "http.http2MaxConcurrentStreams|description": {
+    "en": "ec218fbbb4297601",
+    "text": "一條 HTTP/2 連線可同時開啟的請求數（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的串流會被拒絕，直到有串流結束。預設值 100 是 RFC 9113 建議的最小值；node 自己的值沒有上限，這會讓一條連線承載成千上萬條連線的工作量。它限制一條連線上的工作量，正如 http.maxConnections 限制連線數。新連線會立即依循變更，已開啟的連線會收到新值。"
   },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
@@ -632,8 +648,8 @@
     "text": "結束過期工作階段的頻率（秒）"
   },
   "authn.sessionSweepS|description": {
-    "en": "852f6e4a8d15fa99",
-    "text": "排程器工作 `authn.session-expiry`（監控 → 排程器）的間隔，此工作會結束每個超過有效期或閒置逾時的登入工作階段——稽核列、CAEP session-revoked 與後端通道 Logout Token 會為整個叢集只送出「一次」——無論是否有人回來出示它。0 會關閉此工作：過期的工作階段在每次被出示時仍會被拒絕並在那一刻結束，但對於再也不會被出示的工作階段，不會通知任何人。直到 2026-09-22（#49）為止，它在每個程序中都是固定的三十秒。"
+    "en": "7c9e47e90ca7211c",
+    "text": "排程器工作 `authn.session-expiry`（監控 → 排程器）的間隔，此工作會結束每個超過有效期或閒置逾時的登入工作階段——稽核列、CAEP session-revoked 與後端通道 Logout Token 會為整個叢集只送出「一次」——無論是否有人回來出示它。同一次執行也會在每個領域中最多結束該領域 authn.sessionShedPerSweep 個同一主體自身的超額工作階段。0 會關閉此工作：過期的工作階段在每次被出示時仍會被拒絕並在那一刻結束，但對於再也不會被出示的工作階段，不會通知任何人。直到 2026-09-22（#49）為止，它在每個程序中都是固定的三十秒。"
   },
   "authn.cookieDomain|label": {
     "en": "d384717cc62561e8",
@@ -659,13 +675,73 @@
     "en": "3d8175702c053473",
     "text": "工作階段在結束之前可以「未被使用」多久，這是在上述絕對有效期之外的限制。**零（預設）表示沒有閒置逾時**，這是本服務一直以來的行為。設定後，某人停止使用的工作階段會在其最後一個請求之後的這麼多秒結束，兩個限制以先到者為準——而對管理主控台或使用者入口網站的請求，都算是使用了其背後的登入工作階段，因此在主控台中工作的營運者不會因為一個他並未出示之工作階段的閒置計時而被登出。它是即時的：它也適用於已存在的工作階段，因為它是在讀取工作階段時檢查，而非在建立時蓋章。"
   },
+  "authn.deviceBoundSessions|label": {
+    "en": "454fe488dcb65a89",
+    "text": "將工作階段綁定到瀏覽器的金鑰（DBSC）"
+  },
+  "authn.deviceBoundSessions|description": {
+    "en": "b88d9840f0b7c19c",
+    "text": "開啟時，登入會要求瀏覽器將登入工作階段綁定到它持有的金鑰（W3C Device Bound Session Credentials）。這樣做的瀏覽器之後必須以該金鑰的證明來更新一個短期的第二個 cookie，因此複製的工作階段 cookie 會在該 cookie 過期時失效；由其他金鑰簽署的重新整理，或重送已消耗挑戰的重新整理，都會結束工作階段。不支援它的瀏覽器保留一般工作階段。關閉（預設）時不提供任何內容，已綁定的工作階段視為一般工作階段。"
+  },
+  "authn.deviceBoundCookieLifetimeS|label": {
+    "en": "0589864dcb16bffb",
+    "text": "綁定 cookie 有效期（秒）"
+  },
+  "authn.deviceBoundCookieLifetimeS|description": {
+    "en": "eb2c0a8e31f615d9",
+    "text": "裝置綁定工作階段所需的 cookie 在瀏覽器必須再次證明其金鑰之前的有效時間，也就是複製的一對 cookie 能繼續使用多久。絕不超過工作階段本身的結束時間。於簽發 cookie 時讀取。"
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "每個領域的登入工作階段上限"
   },
   "authn.maxSessions|description": {
-    "en": "02399d7a28c348d5",
-    "text": "信任領域持有的登入工作階段上限——瀏覽器登入、瀏覽器在協定入口取得的到達工作階段、主控台與入口網站自己的工作階段，以及 API、SCIM 與 SPIRE 用戶端的工作階段。在工作階段「建立」時檢查：達到上限時，最久未使用的工作階段會被結束以騰出空間，與到期結束的方式完全相同——一筆帶有 STS-AUTHN-0292 的稽核列、CAEP session-revoked 與後端通道 Logout Token——因此其持有者必須重新登入。沒有它時，只有工作階段到期工作會限制儲存區，一陣登入高峰會讓每個程序持續膨脹，直到該工作趕上為止。調低它會在下一個工作階段建立時生效，屆時會立即結束所有超出新上限的工作階段。"
+    "en": "a5b6beb131a44df2",
+    "text": "信任領域持有的工作階段上限——瀏覽器登入、到達工作階段、主控台與入口網站自己的工作階段，以及 API、SCIM 與 SPIRE 用戶端的工作階段。在工作階段「建立」時檢查。達到上限時，新列會被「拒絕」（STS-AUTHN-0337）：不會為了給別人騰出空間而結束任何工作階段。已達到 authn.maxSessionsPerSubject 的主體會改為失去其自身最舊的可計數工作階段（STS-AUTHN-0292），一列，由新列取而代之。調低此值不會結束已持有的工作階段。只要領域仍超過新數值，新列就會被拒絕；工作階段會因有效期、登出、撤銷而離開，或者在某個主體超過其自身上限時，因該主體之後的插入以及工作階段清掃（在該領域的執行中最多 authn.sessionShedPerSweep 個）而離開。"
+  },
+  "authn.maxSessionsPerSubject|label": {
+    "en": "88aeb86239334502",
+    "text": "每個主體最多可計數的工作階段"
+  },
+  "authn.maxSessionsPerSubject|description": {
+    "en": "b825060c911d7200",
+    "text": "一個主體可持有的可計數工作階段數量：一次已選擇的登入、一個帶金鑰的 API 工作階段或一個信賴方工作階段。到達工作階段不計數，而且到達工作階段共用同一個使用者名稱，因此此上限不以使用者名稱為鍵。達到上限時，該主體啟動的下一個工作階段會結束其自身最舊的可計數列並取而代之。絕不會是其他主體的列，也絕不會是到達工作階段。信賴方工作階段不會結束它剛剛衍生自的登入。每次插入一列；其餘超額由工作階段清掃收回，在該領域的執行中最多 authn.sessionShedPerSweep 個。高於目前 authn.maxSessions 的值會依該上限讀取。"
+  },
+  "authn.sessionShedPerSweep|label": {
+    "en": "83dd8742cd13895b",
+    "text": "每次清掃結束的自身超額工作階段"
+  },
+  "authn.sessionShedPerSweep|description": {
+    "en": "d3d71af793b0befc",
+    "text": "authn.session-expiry 工作在本領域的一次執行中結束多少個主體自身的超額工作階段。每個領域使用自己的值。從最舊的可計數列開始，一次一個主體，直到結束了這麼多個，或者不再有人超過 authn.maxSessionsPerSubject。它不會因容量而結束到達工作階段，也不會結束處於或低於自身上限的主體，即使領域超過了 authn.maxSessions。調低上限不會造成大量結束。"
+  },
+  "authn.sessionWindow|label": {
+    "en": "8f5e9b73e3237ec2",
+    "text": "有界工作階段視窗"
+  },
+  "authn.sessionWindow|description": {
+    "en": "59fc245bcee32b34",
+    "text": "一個程序是持有所有登入工作階段，還是只持有其中的一個有界視窗。預設值 auto 在已啟用簽發資料持久化、服務只有一個儲存格且簽發資料的鍵是摘要時使用視窗。否則保留完整對應表，並在啟動時記錄一次 STS-AUTHN-0339。在同樣的狀態下，on 會在啟動時被拒絕。off 保留完整對應表。這是本程序的屬性：領域不能有自己的值，變更它需要重新啟動。"
+  },
+  "authn.sessionWindow|restartReason": {
+    "en": "ff36b8697d3f42a0",
+    "text": "略過工作階段內容的啟動無法在關閉視窗時將其放回，因此已提交的工作階段會被回應為不存在"
+  },
+  "authn.sessionCacheEntries|label": {
+    "en": "9745355bc4897a82",
+    "text": "一個程序持有的工作階段"
+  },
+  "authn.sessionCacheEntries|description": {
+    "en": "e5815f7302e5577e",
+    "text": "authn.sessionWindow 開啟時一個程序持有多少個登入工作階段。一個快取服務所有領域，因此領域無法設定其大小。超出上限的工作階段在其 upsert 提交後從記憶體中忘記。它不會被結束。該列仍保留在儲存區中，並在下次未命中時重新讀取。"
+  },
+  "authn.sessionReadTimeoutMs|label": {
+    "en": "c0f67cf6f4eb61c6",
+    "text": "工作階段讀取逾時（毫秒）"
+  },
+  "authn.sessionReadTimeoutMs|description": {
+    "en": "04b8133757dcd380",
+    "text": "一次工作階段讀取可以等待多久，以及失敗的讀取在多長時間內不重試。0 表示不等待，也不延後下一次未命中。等待屬於本程序，而不是某個領域。失敗的讀取不會被視為工作階段不存在。"
   },
   "authn.pendingTtlS|label": {
     "en": "d328ac4c11db98f0",
@@ -682,6 +758,30 @@
   "authn.mfaStepTtlS|description": {
     "en": "33bc4846535a784f",
     "text": "通過密碼步驟的人必須在多久之內出示第二因素——安全金鑰、驗證器應用程式的代碼或復原碼——否則該步驟過期，登入必須重新開始。這是被猜測的代碼能被嘗試的唯一時間窗，因此它比畫面本身的計時更短；速率限制器則限制其中的嘗試次數。"
+  },
+  "authn.multipleAccounts|label": {
+    "en": "96144493272617dc",
+    "text": "一個瀏覽器中登入多個帳號"
+  },
+  "authn.multipleAccounts|description": {
+    "en": "d0b4899bdae1c43d",
+    "text": "允許一個瀏覽器同時持有多人的單一登入工作階段，並在其間選擇。開啟時，另一個人登入會在瀏覽器的帳號集（`sts_accounts` Cookie）中加入一個工作階段，而不是結束原有的工作階段；當有多個帳號已登入、而請求未說明針對哪個帳號時——此流程中未選擇帳號，也沒有指明帳號的 login_hint、id_token_hint 或 SAML Subject——請求會被送到 /authn/accounts 的帳號選擇器，prompt=select_account 也會顯示它。每個工作階段保留各自的有效期限、閒置逾時、升級驗證狀態與登出。關閉（預設）時，瀏覽器只有一個工作階段，另一個人登入會結束它。無論開啟或關閉，都在下一個請求時生效，且不會結束任何工作階段：開啟後，瀏覽器既有的工作階段成為其帳號集的第一個帳號；關閉後，瀏覽器的預設工作階段單獨繼續，其他工作階段照常到期。"
+  },
+  "authn.maxBrowserAccounts|label": {
+    "en": "19115cee7c688f64",
+    "text": "一個瀏覽器最多記住的帳號數"
+  },
+  "authn.maxBrowserAccounts|description": {
+    "en": "fa642faef7e66a0f",
+    "text": "開啟多帳號登入時，一個瀏覽器的帳號集最多容納的帳號數，已登入與已登出合計。超出上限的登入會先移除登出時間最早的已登出帳號；當每個位置都被已登入帳號佔用時，登入會被拒絕（STS-AUTHN-0340），選擇器會提示必須先登出一個帳號。"
+  },
+  "authn.rememberedAccountDays|label": {
+    "en": "9e38d0738504c1e3",
+    "text": "已登出帳號的保留時間（天）"
+  },
+  "authn.rememberedAccountDays|description": {
+    "en": "a1fe0b6f510982c4",
+    "text": "開啟多帳號登入時，帳號選擇器在多長時間內繼續提供在此瀏覽器中登出的帳號——其使用者名稱、顯示名稱與主體，從不包括憑證，保存在伺服器上——以便重新登入或忘記它。之後由排程工作 `authn.account-set-expiry` 將其移除。"
   },
   "oidcRp.maxFlows|label": {
     "en": "f517b7686e6225fc",
@@ -994,6 +1094,14 @@
   "webauthn.pqcOnly|description": {
     "en": "fb33eabeb83379da",
     "text": "開啟時「只」要求後量子密碼金鑰演算法——RFC 9964 的 `ML-DSA-44`（-48）、`ML-DSA-65`（-49）與 `ML-DSA-87`（-50）——取 `webauthn.algorithms` 所指名者，若都未指名則三者皆要求。此時新的密碼金鑰必須是 ML-DSA：以其他演算法建立的會在註冊時被拒絕（WebAuthn 第 7.1 節）。它縮小的是「要求」的範圍：已註冊的傳統金鑰仍可繼續登入。大多數驗證器目前尚不支援 ML-DSA，在此設定開啟時無法註冊。"
+  },
+  "webauthn.pqcAlongsideClassical|label": {
+    "en": "664b4753cc8439b0",
+    "text": "傳統密碼金鑰旁的後量子密碼金鑰"
+  },
+  "webauthn.pqcAlongsideClassical|description": {
+    "en": "e35e276b9d933828",
+    "text": "開啟後，一個人可以同時持有傳統密碼金鑰與後量子（ML-DSA）密碼金鑰，在能同時建立兩者的驗證器上可放在同一裝置。每個密碼金鑰都在此人選擇的「通道」中建立：傳統通道要求去掉 ML-DSA 的 `webauthn.algorithms`（若一個不剩則為 `ES256` 與 `RS256`），後量子通道只要求 ML-DSA。每個通道都有自己的使用者識別碼，因此第二個密碼金鑰不會在驗證器上取代第一個，並有自己的排除清單；憑證管理工具以表明其演算法的名稱顯示後量子密碼金鑰——建立時為 `<username>+ml-dsa`，當此人的所有後量子密碼金鑰都使用同一演算法時為 `<username>+ml-dsa-65`（例如）——這個名稱從不用於登入。`webauthn.maxKeysPerPerson` 計入兩個通道。`webauthn.pqcOnly` 開啟時不能開啟。關閉時，每個儀式都與以前相同，已註冊的後量子密碼金鑰仍可登入；不能再建立新的。"
   },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
@@ -1512,12 +1620,20 @@
     "text": "請求背景工作啟動時限（毫秒）"
   },
   "workers.startTimeoutMs|description": {
-    "en": "d618aed19286a7b1",
-    "text": "請求或介面背景工作在回報無法啟動之前，可花多久時間建立其狀態（儲存區、金鑰、已鑄造的資料列與協調）。連續三次失敗後，集區便停止派生，並由持有通訊端的程序回應一切。在背景工作啟動較慢之處請調高此值——例如每次啟動都要重新認證的大型領域金鑰集、冷啟動的資料庫（#311）。"
+    "en": "81d7608fc4c1da1f",
+    "text": "請求或介面背景工作在回報無法啟動之前，可花多久時間建立其狀態（儲存區、金鑰、已鑄造的資料列與協調）。連續三次失敗後，集區便停止派生，直到 workers.giveUpRetryMs，然後再試一個；在它就緒之前，請求留在前端程序。在背景工作啟動較慢之處請調高此值——例如每次啟動都要重新認證的大型領域金鑰集、冷啟動的資料庫（#311）。"
   },
   "workers.startTimeoutMs|restartReason": {
     "en": "7ac1de67a7c566c0",
     "text": "背景工作在啟動時讀取它一次"
+  },
+  "workers.giveUpRetryMs|label": {
+    "en": "4e9da2141c451b07",
+    "text": "放棄後的重試等待（毫秒）"
+  },
+  "workers.giveUpRetryMs|description": {
+    "en": "e4e6fa0869cb03c2",
+    "text": "在連續三個背景工作啟動失敗之後，集區在再次嘗試一個背景工作之前等待多久。每次嘗試仍然失敗後，等待時間加倍，並且從不超過一小時。在該背景工作回報就緒之前，請求留在放棄時所在的位置：前端程序，或託管介面所用的協定集區。一個背景工作啟動成功便清除放棄，並派生集區中其餘的背景工作。0 是原先的行為：一直放棄，直到此程序重新啟動。在排入冷卻時讀取（#333）。"
   },
   "workers.requestCount|label": {
     "en": "d742f198c4f9ad17",
@@ -1699,6 +1815,14 @@
     "en": "0ecee8de8ef29c3f",
     "text": "移除信任領域時，在清除其儲存區之前等待其應傳遞的內容送達多久：它所結束之每個工作階段的 CAEP session-revoked 與後端通道 Logout Token、其中每個人的 RISC account-purged，以及送往每個串流的 SSF stream-updated（已停用）。時間到時尚未傳遞的內容會被記錄（STS-CORE-0120），並隨領域一起消失。0 仍會送出所有內容，只是不等待。輪詢式接收端只能在等待期間收取。"
   },
+  "realms.maxCount|label": {
+    "en": "017b530f97d0b9e0",
+    "text": "領域數量上限"
+  },
+  "realms.maxCount|description": {
+    "en": "1a45b5c5965dd169",
+    "text": "此叢集最多可容納多少個信任領域，包括內建的預設領域，因此 10 表示預設領域加上另外九個。由服務管理員設定，且只能在預設領域中設定：在其他領域內部，該控制項處於停用狀態，寫入會被拒絕。調低此值不會移除已存在的領域；在數量回落到上限以下之前，建立會被拒絕。每個領域都會佔用每個節點上每個處理程序的記憶體，這就是設定上限的原因。"
+  },
   "oauth2.issuer|label": {
     "en": "373396d5608b3885",
     "text": "簽發者識別碼"
@@ -1830,6 +1954,30 @@
   "oauth2.revokeRefreshOnLogout|description": {
     "en": "d6543ad76912e1b1",
     "text": "在每種模式下（#123），結束瀏覽器登入工作階段時，在該工作階段上簽發、且不含 offline_access 的每個重新整理權杖都會被撤銷——這是 OpenID Connect Back-Channel Logout 1.0 第 2.7 節的「應該」，以及 RFC 9700 第 2.2.2 節的「可以」。已授予 offline_access 的權杖會被保留：比工作階段活得更久正是該範圍的用途（OIDC Core 第 11 節）。這讓 /oauth2/logout 與 WS-Federation 的 wsignout1.0 對後端通道具有意義：沒有它，登出只會結束 Cookie，而在用戶端手中留下一個長期有效的認證。預設為「開啟」；關閉，或在某個用戶端的項目上設為 FALSE，可重現靠重新整理回到原狀的用戶端。權杖是依據其「簽發」時所在的工作階段找到的。"
+  },
+  "oauth2.thirdPartyInitiatedLogin|label": {
+    "en": "b7e8b085293fbd62",
+    "text": "由身分識別提供者發起的登入（第三方登入）"
+  },
+  "oauth2.thirdPartyInitiatedLogin|description": {
+    "en": "d652b991521afa8d",
+    "text": "/launch/{app} 是否帶著 iss、login_hint 與 target_link_uri 將某人送往 OpenID Connect 用戶端的 initiate_login_uri（OpenID Connect Core section 4），以及使用者入口網站是否提供該連結。預設為「關閉」；用戶端項目上的 oauthThirdPartyInitiatedLogin 會針對該用戶端覆寫它。用戶端接著會開始一般的授權請求，因此連結之後的一切都是用戶端自己的登入。"
+  },
+  "oauth2.spInitiatedSso|label": {
+    "en": "a4cd88a5fec219e4",
+    "text": "由用戶端發起的登入"
+  },
+  "oauth2.spInitiatedSso|description": {
+    "en": "2ac22081ca9a60d6",
+    "text": "/oauth2/authorize 是否回應並非剛被啟動的用戶端。預設為「開啟」；用戶端項目上的 oauthSpInitiatedSso 會覆寫它。關閉時，來自該用戶端的授權請求只有在同一工作階段上、於 oauth2.launchWindowS 之內緊接在其 /launch 之後時才會被回應，每次啟動一次；其他任何請求都以 unauthorized_client 拒絕。不經過授權端點的授權類型不受影響。"
+  },
+  "oauth2.launchWindowS|label": {
+    "en": "9c1c1df5174c8754",
+    "text": "啟動時間窗（秒）"
+  },
+  "oauth2.launchWindowS|description": {
+    "en": "40b4f249f1f0c2d3",
+    "text": "對於自身發起已關閉（oauth2.spInitiatedSso）的用戶端，在 /launch/{app} 將某人送往該用戶端的 initiate_login_uri 之後，該用戶端的授權請求在多久之內仍算是緊接在啟動之後。"
   },
   "oauth2.eddsaCurve|label": {
     "en": "6637f461a494b5b2",
@@ -2140,8 +2288,8 @@
     "text": "用戶端秘密有效期（天）"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "91dc7031f88426d1",
-    "text": "本服務鑄造或被給予之每個用戶端秘密的有效期（以天計），因此也是 RFC 7591 第 3.2.1 節為在 POST /oauth2/register 註冊之用戶端所公告的 `client_secret_expires_at`——這是每個鑄造或被給予之秘密的預設值（重新產生、輪替、新增的秘密、在主控台上輸入的值），除非新增表單指名了其他值。「零」（預設）即該節自己的「永不」。它在每個秘密建立時蓋印其上，之後的變更不會移動它。"
+    "en": "6ad202dff164f155",
+    "text": "本服務鑄造或被給予之每個用戶端秘密的有效期（以天計），因此也是 RFC 7591 第 3.2.1 節為在 POST /oauth2/register 註冊之用戶端所公告的 `client_secret_expires_at`——這是每個鑄造或被給予之秘密的預設值（重新產生、輪替、新增的秘密、在主控台上輸入的值），除非新增表單指名了其他值，或建立表單為應用程式的第一個秘密指名了其他值。「零」（預設）即該節自己的「永不」。它在每個秘密建立時蓋印其上，之後的變更不會移動它。"
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",
@@ -4020,8 +4168,8 @@
     "text": "聯合使用者名稱的前置詞"
   },
   "federation.usernamePrefix|description": {
-    "en": "cd17a5b59a5cf957",
-    "text": "加在外部身分識別提供者所提供之每個使用者名稱前面，讓聯合的 `alice` 與本機的 `alice` 成為兩個項目。預設為空白，表示它們是「同一個」項目——而這是一項真正的決定，而不是沒人想過的預設值。若是把本服務指向夥伴以觀察傳回的內容，空白是正確的，因為加了前置詞的名稱會讓下游的每個權杖與斷言看起來都很陌生。一旦問題變成聯合身分是否與本機身分共用命名空間——這正是此設定存在的目的——就將其設為類似 `fed-` 的值。它在選定使用者名稱「之後」才套用，因此變更它不會改變使用的是「哪個」傳入值。"
+    "en": "81424ee1cba2373a",
+    "text": "放在 `link-at-first-sign-in` 確認所查找的名稱，以及 `any-existing` 所比對的名稱之前，於該值被選定並截取為最後一個 `@` 之前的部分之後。預設為「空白」，因此夥伴主體 `alice@partner.example` 會確認本機的 `alice`。當該查找不得遇到本機人員時設定它（例如 `fed-`）。在 `link-at-first-sign-in` 或 `jit-namespaced` 下由登入建立的項目一律是 `<relationship>~<subject>`，此前綴不是該名稱的一部分。"
   },
   "federation.loginButtons|label": {
     "en": "712a94d0c664c839",
@@ -4030,6 +4178,30 @@
   "federation.loginButtons|description": {
     "en": "89dfe2967675cad2",
     "text": "在 /authn/login 上為每個可用的服務提供者端關係顯示一個按鈕，讓聯合身分能滿足「任何」已在進行中的流程——OAuth 2.0 授權要求、WS-Federation 登入、SAML AuthnRequest、管理主控台。這正是按鈕放在這裡、而不只是放在 /federation/login/{id} 的全部理由。只會提供確實能運作的關係——導向拒絕的按鈕比沒有按鈕更糟。"
+  },
+  "federation.consumerProviders|label": {
+    "en": "96a08e7b4a520c19",
+    "text": "消費者與社群身分提供者"
+  },
+  "federation.consumerProviders|description": {
+    "en": "635dc4f49d935e03",
+    "text": "允許此領域與消費者和社群提供者（Google、Discord、GitHub 以及目錄中的其他提供者）建立聯合，作為獨立類別的關係（#565）。預設關閉：關閉時，領域不能新增、不能啟用此類關係，並在每個入口拒絕透過它們的登入，包括由 ldapmodify 寫入的關係。無論開關處於何種狀態，企業合作夥伴都不受影響。透過消費者提供者首次到來的人會取得自己的項目，地址絕不會用於比對既有的人員。"
+  },
+  "federation.connectRecentAuthMinutes|label": {
+    "en": "cbe8f387555868ea",
+    "text": "連結提供者：登入須在多久之內（分鐘）"
+  },
+  "federation.connectRecentAuthMinutes|description": {
+    "en": "f0edd885053c8b09",
+    "text": "在入口網站的「已連結的帳戶」頁面上將消費者或社群提供者連結到自己的帳戶時，此人最近一次驗證須在多少分鐘之內（#565）。超過這個時間，會先要求其重新登入：連結之後，該提供者即可讓此人登入。"
+  },
+  "federation.consumerProvisionCap|label": {
+    "en": "c93ac16ed967542f",
+    "text": "消費者提供者：每個可建立的帳戶數"
+  },
+  "federation.consumerProvisionCap|description": {
+    "en": "3e7e50d4c4690e0e",
+    "text": "消費者或社群提供者的關係可以建立多少人，除非該關係自己的 fedProvisionCap 另有設定。建立消費者關係時寫入其中，並用於 fedProvisionCap 為空的關係。達到上限時，新來者會被拒絕（STS-FED-0090），已連結的人仍可登入。企業合作夥伴不受影響：其為空的 fedProvisionCap 表示不限。"
   },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
@@ -4287,13 +4459,21 @@
     "en": "d5e8553e9978dfda",
     "text": "是否拒絕「未簽署」的 <samlp:AuthnRequest>——以及來自服務提供者的未簽署 <samlp:LogoutRequest>。**`auto` 在產品模式下為開啟，在開發模式下為關閉。**`on` 與 `off` 則不論模式直接決定；已採用之中繼資料指出 AuthnRequestsSigned=\"true\" 的服務提供者，即使此設定關閉也會受其約束。它也是此身分識別提供者中繼資料中 WantAuthnRequestsSigned 所表示的內容。\n\n「存在」的簽章在每種模式下都會被驗證——HTTP Redirect 繫結的查詢字串簽章（section 3.4.4.1）或 HTTP POST 繫結的封入式簽章——對照的是服務提供者「已註冊」的簽署憑證（samlSigningCertificate，來自其中繼資料或在 SAML 2.0 頁面上設定），絕不是要求所攜帶的憑證，而無法通過驗證的簽章會被拒絕。沒有已註冊的憑證時，簽章會記錄為未驗證，在此設定開啟時視為「未簽署」。"
   },
-  "saml2.unsolicitedSso|label": {
+  "saml2.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
-    "text": "身分識別提供者起始的登入"
+    "text": "由身分識別提供者發起的登入"
   },
-  "saml2.unsolicitedSso|description": {
-    "en": "aff7c855f4363724",
-    "text": "/saml2/unsolicited[/{sp}] 是否傳送「未經請求」的 Response（saml-profiles-2.0-os section 4.1.5）——在此身分識別提供者起始、針對未提出要求之服務提供者的登入：`providerId`（或路徑區段）指出它，`shire` 指出其已註冊的斷言取用服務之一，`target` 為 RelayState。在產品模式下服務提供者必須已註冊，位址必須是其中繼資料或其項目所註冊的位址，且會如任何登入一樣詢問簽發原則。斷言不攜帶 InResponseTo，因此服務提供者自行決定是否接受；對於其提供者只應被回應的領域，請關閉此設定。"
+  "saml2.idpInitiatedSso|description": {
+    "en": "9982a49370bf40a8",
+    "text": "/saml2/unsolicited[/{sp}]——以及用於 SAML 2.0 的 /launch/{app}——是否送出「未經請求」的 Response（saml-profiles-2.0-os section 4.1.5）：在此身分識別提供者開始、針對並未提出要求之服務提供者的登入。預設為「關閉」；應用程式項目上的 saml2IdpInitiatedSso 只會針對該服務提供者覆寫它。斷言不攜帶 InResponseTo，因此服務提供者無法分辨某個 Response 是發給自己的，還是被別人推入其瀏覽器的；請只對預期由身分識別提供者發起登入的提供者開啟此項。在產品模式下，服務提供者必須已註冊，位址必須是其中繼資料或其項目所註冊者，且會如同任何登入一樣詢問簽發原則。"
+  },
+  "saml2.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "由服務提供者發起的登入"
+  },
+  "saml2.spInitiatedSso|description": {
+    "en": "92e8e438813d4044",
+    "text": "是否回應 /saml2/sso 上的 <samlp:AuthnRequest>——即服務提供者所開始的登入。預設為「開啟」；應用程式項目上的 saml2SpInitiatedSso 會針對該服務提供者覆寫它。關閉時，請求會以 RequestDenied Response 回應，而該服務提供者只能透過由身分識別提供者發起的登入來登入。"
   },
   "saml2.defaultSingleLogoutService|label": {
     "en": "a81a00ce8c57908e",
@@ -4439,6 +4619,22 @@
     "en": "2e68718a26d4706c",
     "text": "在首次指名某個依賴方時——TARGET 抵達、擷取中繼資料文件，或解析成品——於 ou=applications 下建立應用程式項目。關閉時，瀏覽器設定檔仍可運作，而 /admin/saml11 保持空白，這是執行負載測試的人想要的，其他人都不想要。"
   },
+  "saml11.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "由身分識別提供者發起的登入"
+  },
+  "saml11.idpInitiatedSso|description": {
+    "en": "37300a932ffca76b",
+    "text": "是否回應「在此處開始」的 SAML 1.1 登入：帶有 TARGET 而沒有 shire 的 /saml11/sso/{rp}，以及用於 SAML 1.1 的 /launch/{app}。預設為「關閉」；應用程式項目上的 saml11IdpInitiatedSso 會針對該依賴方覆寫它。依賴方會收到一個它並未要求的 Response，而它無法將其與被別人推入其瀏覽器的 Response 區分開來。"
+  },
+  "saml11.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "由服務提供者發起的登入"
+  },
+  "saml11.spInitiatedSso|description": {
+    "en": "f4b88ca2b7aa9fbc",
+    "text": "是否回應依賴方所開始的 SAML 1.1 登入——Shibboleth 1.3 AuthnRequest 設定檔，即攜帶 `shire` 的請求。預設為「開啟」；應用程式項目上的 saml11SpInitiatedSso 會覆寫它。這種請求是一般未簽署的 URL，因此關閉此項是把門關上，而不是證明是誰開的門。"
+  },
   "saml11.requestTtlMin|label": {
     "en": "f2c40fce66df42af",
     "text": "保存之流程的有效期（分鐘）"
@@ -4502,6 +4698,22 @@
   "wstrust.jwtCertificateHeader|description": {
     "en": "d75340dbe09a7542",
     "text": "此 STS 在 RequestSecurityTokenResponse 中傳回的 JWT 是否指出簽署它之金鑰的憑證鏈。SAML 斷言在其自己的 XML Signature 中攜帶憑證，不受影響。`x5u`——預設值——是此服務上該鏈的位址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c` 是內嵌的鏈，葉憑證在前、服務根憑證在最後，base64 DER，數 KB；`both` 表示兩者皆有，`none` 表示兩者皆無。無論哪種，都是僅持有權杖的依賴方取得每張憑證的 CRL 發佈點、OCSP 回應程式與 caIssuers 位址所需的資訊。尚未在此領域的 JOSE Issuing CA 下取得憑證的金鑰，以及 HMAC 簽章，兩者皆不會加上。RFC 7515 section 4.1.5 要求 `x5u` 的擷取使用 TLS：global.https 關閉時位址為 `http://`，嚴格的驗證器會拒絕追蹤它。JWE 標頭永遠不會加上——此服務沒有任何經認證的金鑰會加密任何內容。可依領域設定。"
+  },
+  "wsfed.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "由身分識別提供者發起的登入"
+  },
+  "wsfed.idpInitiatedSso|description": {
+    "en": "62f920d6663c4e4f",
+    "text": "/wsfed/initiate/{rp}——以及用於 WS-Federation 的 /launch/{app}——是否讓某人登入並未提出要求的依賴方，POST 至其已註冊的 wsfedReplyUrl。預設為「關閉」；應用程式項目上的 wsfedIdpInitiatedSso 會針對該依賴方覆寫它。依賴方會收到一個它並未要求的回應，而它無法將其與被別人推入其瀏覽器的回應區分開來。"
+  },
+  "wsfed.spInitiatedSso|label": {
+    "en": "705a2297f2762532",
+    "text": "由依賴方發起的登入"
+  },
+  "wsfed.spInitiatedSso|description": {
+    "en": "d16076a2c90701e3",
+    "text": "是否回應 /wsfed 上的 wsignin1.0——即依賴方所開始的登入。預設為「開啟」；應用程式項目上的 wsfedSpInitiatedSso 會覆寫它。wsignin1.0 是未簽署的 URL，因此關閉此項是把門關上，而不是證明是誰開的門。"
   },
   "wsfed.assertionLifetimeMin|label": {
     "en": "92ee206f116fd412",
@@ -4964,8 +5176,32 @@
     "text": "可驗證憑證的憑證標頭"
   },
   "oid4vci.credentialCertificateHeader|description": {
-    "en": "91cae7f95584d095",
-    "text": "簽發的 dc+sd-jwt 或 jwt_vc_json 「憑證（credential）」是否指出簽署它之金鑰的憑證鏈。SD-JWT VC 將 `x5c` 列為驗證器可找到簽發者金鑰的方式之一，因此從不擷取此簽發者中繼資料的錢包或驗證器，仍能依信任錨點檢查簽章。ldp_vc 不是 JWS，不受影響。此處（以及 Status List Token 上）的 x5c 會省略末端的信任錨點，也就是服務 Root，這是 HAIP 1.0 section 6.1.1 的要求；HAIP 也要求 x5c，因此 HAIP 領域會設定 x5c。`x5u`（預設值）是此服務上該憑證鏈的位址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c` 是內嵌的憑證鏈，葉憑證在前、服務 Root 在後，以 base64 DER 編碼，有數 KB；`both` 表示兩者皆有，`none` 表示兩者皆無。無論哪種方式，這都是僅持有該權杖的信賴方取得每張憑證的 CRL 發布點、OCSP 回應程式與 caIssuers 位址所需的資訊。尚未在此領域的 JOSE Issuing CA 下取得憑證的金鑰，以及 HMAC 簽章，兩者都不會加上。RFC 7515 section 4.1.5 要求 `x5u` 的擷取使用 TLS：若 global.https 關閉，位址會是 `http://`，嚴格的驗證器將拒絕跟隨。JWE 標頭永遠不會加上——此服務沒有任何已取得憑證的金鑰會加密任何內容。可依領域設定。"
+    "en": "250bb6d53e3ec407",
+    "text": "簽發的 dc+sd-jwt 或 jwt_vc_json 憑證及其狀態所指向的 Token Status List Token 是否攜帶簽署它們的金鑰的憑證鏈。SD-JWT VC 將 `x5c` 列為驗證方以 X.509 方式找到簽發方金鑰的途徑，並未列出 `x5u`；而 Status List Token 不帶可用於查找中繼資料的 `iss`，因此 `x5c`（預設）使從不取得本簽發方中繼資料的錢包或驗證方也能依據其信任錨核驗兩種簽章。ldp_vc 不是 JWS，不受影響。此處的 x5c 依 HAIP 1.0 第 6.1.1 節的要求在末尾省略信任錨，即服務根憑證；根憑證是提供給錢包或驗證方作為信任依據的憑證（/pki）。 `x5u` 是憑證鏈在本服務上的位址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c`（預設）是內嵌的憑證鏈，葉憑證在前、服務根憑證在後，base64 DER 編碼，數千位元組；`both` 表示兩者皆有，`none` 表示皆無。無論哪種，它都是只持有權杖的依賴方存取每張憑證的 CRL 發布點、OCSP 回應者與 caIssuers 位址所需的資訊。尚未由本領域 JOSE 簽發 CA 認證的金鑰以及 HMAC 簽章都不會獲得任何一項。RFC 7515 第 4.1.5 節要求取得 `x5u` 時使用 TLS：關閉 global.https 時位址為 `http://`，嚴格的驗證方會拒絕跟隨。JWE 標頭從不帶有此項——本服務沒有任何經認證的金鑰用於加密。可依領域設定。"
+  },
+  "oid4vci.trustedListCertificateHeader|label": {
+    "en": "5e5d2b459a95e63d",
+    "text": "信任清單憑證標頭"
+  },
+  "oid4vci.trustedListCertificateHeader|description": {
+    "en": "f0c703d8855dec84",
+    "text": "/oid4vci/trusted-list 的信任清單是否攜帶簽署它的金鑰的憑證鏈。只有當該鏈在 x5c 中且終止於錢包持有的清單營運方 CA 之下時，錢包才接受該清單，因此應為 `x5c`（預設）或 `both`：設為 `x5u` 或 `none` 時不提供該清單（503）。與憑證相同，末尾省略服務根憑證。 `x5u` 是憑證鏈在本服務上的位址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c`（預設）是內嵌的憑證鏈，葉憑證在前、服務根憑證在後，base64 DER 編碼，數千位元組；`both` 表示兩者皆有，`none` 表示皆無。無論哪種，它都是只持有權杖的依賴方存取每張憑證的 CRL 發布點、OCSP 回應者與 caIssuers 位址所需的資訊。尚未由本領域 JOSE 簽發 CA 認證的金鑰以及 HMAC 簽章都不會獲得任何一項。RFC 7515 第 4.1.5 節要求取得 `x5u` 時使用 TLS：關閉 global.https 時位址為 `http://`，嚴格的驗證方會拒絕跟隨。JWE 標頭從不帶有此項——本服務沒有任何經認證的金鑰用於加密。可依領域設定。"
+  },
+  "oid4vci.trustedListTerritory|label": {
+    "en": "d7ee4e58b3ec36e2",
+    "text": "信任清單方案地域"
+  },
+  "oid4vci.trustedListTerritory|description": {
+    "en": "bd18dadc2bd7bd5e",
+    "text": "/oid4vci/trusted-list 信任清單的 SchemeTerritory（ETSI TS 119 602 第 6.3.10 節）：ISO 3166-1 alpha-2 國家代碼或 EU。留空（預設）則省略。"
+  },
+  "oid4vci.trustedListLifetimeH|label": {
+    "en": "53f55ba9239f4712",
+    "text": "信任清單有效期（小時）"
+  },
+  "oid4vci.trustedListLifetimeH|description": {
+    "en": "795e14da580935eb",
+    "text": "信任清單的 NextUpdate 距其 ListIssueDateTime 的時長（ETSI TS 119 602 第 6.3.15 節），也就是以下一個序號重新簽署的頻率：距 NextUpdate 不足一小時（或此時長的十分之一）時，以及其內容變更時。"
   },
   "oid4vci.signedMetadataCertificateHeader|label": {
     "en": "74bcdd1bedcb52e5",
@@ -5580,8 +5816,8 @@
     "text": "領域"
   },
   "krb5.realm|description": {
-    "en": "b7b392027324a1ef",
-    "text": "此 KDC 服務的 Kerberos 領域。其小寫形式即為網域，預設服務網域與 PAC 的網域名稱都由此而來。在信任領域上，它是連接埠 88 用來路由該領域要求的名稱：必須在 krb5.enabled 之前設定，任兩個領域不得共用它（也不得與 krb5.trustedRealm 相同），檢查時不區分大小寫。"
+    "en": "6542fd41442d0e39",
+    "text": "此 KDC 服務的 Kerberos 領域。其小寫形式即為網域，預設服務網域與 PAC 的網域名稱都由此而來。在信任領域上，它是連接埠 88 用來路由該領域要求的名稱：必須在 krb5.enabled 之前設定，任兩個領域不得共用它（也不得與預設領域在開發模式下所回應的夥伴領域相同），檢查時不區分大小寫。"
   },
   "krb5.realm|restartReason": {
     "en": "f45bb3f394b52261",
@@ -5823,53 +6059,37 @@
     "en": "0ed445787254dab6",
     "text": "每個主體的 PAC 身分在啟動時建構。即便如此，「信任領域」仍可設定它：領域的主體資料庫在其 Kerberos 開啟時建構，並在此值變更時重建，因此領域的值在啟動時並未被使用"
   },
-  "krb5.trustedRealm|label": {
-    "en": "83fea03ad45f6f5a",
-    "text": "受信任的領域"
+  "krb5.crossRealmClassicDelegation|label": {
+    "en": "d94511f367aa2305",
+    "text": "跨信任的傳統委派"
   },
-  "krb5.trustedRealm|description": {
-    "en": "18a007649941a47a",
-    "text": "用於跨領域轉介的第二個領域。信任關係不是一個旗標：它是由兩個領域中各一個主體所持有的共用金鑰。"
+  "krb5.crossRealmClassicDelegation|description": {
+    "en": "f95686ad2d2053e6",
+    "text": "傳統限制委派（前端上的 appAllowedToDelegateTo）是否可以跨越 Kerberos 信任。預設關閉：它在單一領域內定義，而以資源為基礎的委派（目標上的 appAllowedToActOnBehalfOf，命名 SPN@REALM）才是跨越的那種。開啟時，前端所在領域在轉介證據前檢查自己的清單，目標所在領域將其視為已檢查；兩個領域都必須開啟。"
   },
-  "krb5.trustedRealm|restartReason": {
-    "en": "b7b28d1b7d6102d8",
-    "text": "第二個領域及兩者之間的信任關係在啟動時建構"
+  "krb5.requireSidFilteringInProduct|label": {
+    "en": "f4bc0b8bb8e18123",
+    "text": "要求信任過濾 SID"
   },
-  "krb5.trustPassword|label": {
-    "en": "e2d7ee2fece4c004",
-    "text": "信任密碼"
+  "krb5.requireSidFilteringInProduct|description": {
+    "en": "120e89b9d4c0b3e4",
+    "text": "在產品模式下，Kerberos 信任僅在過濾 SID 時使用（其 quarantined 屬性，預設開啟）。在領域上關閉此項，即營運者接受夥伴未經過濾的 SID。開發模式無論此項如何都使用每個信任。"
   },
-  "krb5.trustPassword|description": {
-    "en": "ef84f44ff5ee5b94",
-    "text": "兩個領域為跨領域信任所持有的共用秘密。"
+  "krb5.maxReferralHops|label": {
+    "en": "ae50da753613f751",
+    "text": "轉介路徑最多跨越的信任數"
   },
-  "krb5.trustPassword|restartReason": {
-    "en": "de2c8d7ceb818a8d",
-    "text": "領域間金鑰在啟動時由它衍生"
+  "krb5.maxReferralHops|description": {
+    "en": "e88d21d50bcd7495",
+    "text": "一條跨領域路徑在此 KDC 拒絕繼續轉介之前最多可跨越多少個信任（KDC_ERR_PATH_NOT_ACCEPTED）。直接信任算一次跨越；路徑每經過一個被轉介的領域再加一次。信任本身是領域目錄中的記錄（ou=kerberosTrusts），路徑只會透過標記為可轉移的記錄建立。"
   },
-  "krb5.trustedDomainSid|label": {
-    "en": "e860150a3e9f46b7",
-    "text": "受信任網域 SID"
+  "krb5.trustKeyGraceSeconds|label": {
+    "en": "e9a56607c04ebe5c",
+    "text": "輪替後信任金鑰的寬限期（秒）"
   },
-  "krb5.trustedDomainSid|description": {
-    "en": "7c21d4f2a2b9776a",
-    "text": "另一個領域的網域 SID。它刻意與此領域的不同：跨信任關係的 SID 篩選，關乎 SID 屬於誰的網域。"
-  },
-  "krb5.trustedDomainSid|restartReason": {
-    "en": "fc2b22b6756dc2a3",
-    "text": "受信任領域的主體在啟動時建構"
-  },
-  "krb5.trustedKrbtgtPassword|label": {
-    "en": "bb06a006346e82df",
-    "text": "受信任領域的 krbtgt 密碼"
-  },
-  "krb5.trustedKrbtgtPassword|description": {
-    "en": "fc3a521802800c0d",
-    "text": "受信任領域的 krbtgt 密碼。"
-  },
-  "krb5.trustedKrbtgtPassword|restartReason": {
-    "en": "5288888535130e80",
-    "text": "該領域的 krbtgt 金鑰在啟動時由它衍生"
+  "krb5.trustKeyGraceSeconds|description": {
+    "en": "0ee4268f63c3b908",
+    "text": "信任的「輪替金鑰」所取代的傳入領域間金鑰在多長時間內仍可開啟夥伴的票證——夥伴會繼續用它加密，直到其自身一側變更。零（預設值）表示 krb5.ticketLifetimeSeconds 加上 krb5.clockSkew，於檢查該版本時讀取。數字則表示相應的秒數：足以讓夥伴的管理員變更其一側。每個信任保留一個先前版本；超過寬限期後，使用該版本的票證會以 KRB_AP_ERR_BADKEYVER 被拒絕。"
   },
   "krb5.spnegoAuthentication|label": {
     "en": "0a014fa4b2685cd7",
@@ -6034,6 +6254,14 @@
   "ldap.workerDirectoryTimeoutMs|description": {
     "en": "bb7f7ca790c61dc0",
     "text": "在 ldap.workerDirectory=postgres-lru 時，要求工作執行緒需要一個未持有的目錄項目時，等待資料庫多久。工作執行緒在等待期間不做其他事，因此這也是資料庫中斷能卡住其一個要求的最長時間；超過時該要求會被拒絕（503，STS-LDAP-0130）。"
+  },
+  "ldap.workerDirectoryBudgetMs|label": {
+    "en": "7af008dc55949ed0",
+    "text": "工作執行緒每個請求的目錄預算（毫秒）"
+  },
+  "ldap.workerDirectoryBudgetMs|description": {
+    "en": "9b2485155e270c50",
+    "text": "在 ldap.workerDirectory=postgres-lru 時，一個 /admin 或 /admin-api 請求總共可以花多長時間等待同步目錄讀取。會超出預算的查詢將被拒絕（503，STS-LDAP-0175）且不會發出；單個緩慢的查詢若先超過其自身的逾時，仍以 STS-LDAP-0130 失敗。其他請求沒有這樣的預算。"
   },
   "ldap.sizeLimit|label": {
     "en": "8486449552f77864",
@@ -6732,8 +6960,8 @@
     "text": "提供 HTTP Basic"
   },
   "ssf.authBasic|description": {
-    "en": "5476ee40c62ce1bb",
-    "text": "SSF 端點是否在 OAuth 2.0 存取權杖之外也接受 HTTP Basic，並在 authorization_schemes 中發布。在開發模式下，任何使用者名稱搭配 \"invalid\" 以外的任何密碼都能通過；在產品模式下，密碼會依該人員雜湊後的 userPassword 驗證。無論哪種情況，Basic 主體都擁有兩個範圍，因為 Basic 不攜帶任何範圍——因此要對每個呼叫者強制執行 ssf:read 與 ssf:write 的部署應關閉此項。"
+    "en": "34a196af42de2673",
+    "text": "SSF 端點是否在 OAuth 2.0 存取權杖之外也接受 HTTP Basic，並在 authorization_schemes 中發布。在開發模式下，任何使用者名稱搭配 \"invalid\" 以外的任何密碼都能通過；在產品模式下，密碼會依該人員雜湊後的 userPassword 驗證。無論哪種情況，Basic 主體都擁有兩個範圍，因為 Basic 不攜帶任何範圍——因此要對每個呼叫者強制執行 ssf.read 與 ssf.manage 的部署應關閉此項。"
   },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
@@ -6832,16 +7060,16 @@
     "text": "讀取串流的範圍"
   },
   "ssf.authScopeRead|description": {
-    "en": "b3c6248d5c2a3f09",
-    "text": "存取權杖必須攜帶才能「讀取」串流組態、其狀態或輪詢佇列的 OAuth 範圍。在兩份探索文件的 scopes_supported 中發布，與兩個 SCIM 範圍完全相同。"
+    "en": "6a58acf43f1ab901",
+    "text": "此服務為讀取串流組態、其狀態或輪詢佇列的範圍所取的名稱。預設值是 CAEP Interoperability Profile 名稱 ssf.read，即使重新命名此項也一律接受。兩者都會在 scopes_supported 中發布。寫入包含讀取：攜帶寫入範圍的權杖也可以讀取，宣告寫入範圍的用戶端也可以獲簽讀取範圍。"
   },
   "ssf.authScopeWrite|label": {
     "en": "3cf63aebc7df37eb",
     "text": "變更串流的範圍"
   },
   "ssf.authScopeWrite|description": {
-    "en": "ea33015fd3877e72",
-    "text": "建立、更新或刪除串流、新增或移除主體、變更狀態或要求驗證事件所需的範圍。讀取範圍不足以執行其中任何一項，這是此服務中除 SCIM 之外第一個兩個範圍所允許內容不同的地方。"
+    "en": "91d382139f5860a7",
+    "text": "此服務為建立、更新或刪除串流、新增或移除主體、變更狀態或要求驗證事件的範圍所取的名稱。預設值是 CAEP Interoperability Profile 名稱 ssf.manage，即使重新命名此項也一律接受。寫入包含讀取，因此在此設定的名稱也可以讀取，同時設定在兩個設定項上的名稱也是如此。讀取範圍不足以執行其中任何寫入。"
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",
@@ -7266,6 +7494,14 @@
   "risk.networkFailureThreshold|description": {
     "en": "b3df2afcc6f13f99",
     "text": "過去一小時內來自單一網路（風險評分分組所用的位址前置詞）有多少次密碼被拒絕，會在來自該網路的每次登入加上 network-failures 訊號。位於同一 NAT 後方的每個人都共用此計數。"
+  },
+  "risk.networkSignupThreshold|label": {
+    "en": "c6993a7b6026347a",
+    "text": "一個網路在一小時內可建立多少帳戶後產生訊號"
+  },
+  "risk.networkSignupThreshold|description": {
+    "en": "05e7067b3abe2a57",
+    "text": "來自同一網路（風險評分用於分組的位址前綴）的聯合登入在最近一小時內最多可建立多少個帳戶，超過後會在來自該網路的每次登入上加上 network-signups 訊號（#565）。消費者提供者讓一個帳戶的成本與在提供者處開一個帳戶相同，因此這是對一個網路大量註冊的限制。對於領域營運者允許清單上的位址不計數。"
   },
   "risk.signalFactors|label": {
     "en": "0a173b571b34160c",
@@ -9315,6 +9551,30 @@
     "en": "56fac41f63177db7",
     "text": "領導者在所有工作與信任領域之間同時進行的排程或手動執行數量。時段是其間隔的倍數，因此每個領域中每個每小時執行的工作都會在同一秒到期；每次執行在領取與工作期間都會佔用一條通往儲存區的連線，而 postgres 儲存區有四條。其餘的會等待，人員的 Run now 優先，並在執行結束時開始。無論設定為何，它絕不會超過集區容量減一，因此排程器無法從請求那裡拿走所有連線。"
   },
+  "scheduler.niceBusyThreshold|label": {
+    "en": "115ae6125244b30a",
+    "text": "繁忙工作執行緒的進行中請求數"
+  },
+  "scheduler.niceBusyThreshold|description": {
+    "en": "364260c11358e10c",
+    "text": "請求工作執行緒最多可有多少個進行中的請求，超過後耐心的排程叢集執行會等待它。領導者把每次執行交給負載最低的工作執行緒；只要連該工作執行緒也有這麼多請求，nice 大於 0 的作業的執行就會被暫緩。0 表示請求數從不暫緩執行。"
+  },
+  "scheduler.niceLagMs|label": {
+    "en": "c0b9af3bbe7cb091",
+    "text": "繁忙工作執行緒的事件迴圈延遲"
+  },
+  "scheduler.niceLagMs|description": {
+    "en": "0c0e3c66e7c2e010",
+    "text": "事件迴圈延遲（毫秒，取工作執行緒最近一次十秒報告的第 99 百分位），達到該值時請求工作執行緒被視為繁忙，耐心的排程叢集執行會等待它。0 表示延遲從不暫緩執行。"
+  },
+  "scheduler.niceMaxDeferS|label": {
+    "en": "07484a01ef8c2875",
+    "text": "執行等待繁忙工作執行緒的最長時間"
+  },
+  "scheduler.niceMaxDeferS|description": {
+    "en": "22928f93b52af2b5",
+    "text": "在所有請求工作執行緒都繁忙時，任何排程叢集執行最多被暫緩的秒數。作業按其份額（nice / 19）被暫緩，且從不超過其間隔的一半；超過後無論負載如何都會執行。手動執行、隨選作業和 nice 為 0 的作業從不暫緩。0 表示不暫緩任何執行。"
+  },
   "attributeSources.hostPatterns|label": {
     "en": "04c2e7926c9351dd",
     "text": "屬性來源可指名的主機"
@@ -10416,24 +10676,24 @@
     "text": "主連接埠：閒置連線保留時間（秒）"
   },
   "listenerMain.keepAliveTimeoutS|description": {
-    "en": "d48d22c3af904939",
-    "text": "僅適用於主連接埠監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為用戶端的下一個請求保持閒置 HTTP/1.1 連線開啟的時間（秒）（node 自己的預設值為 5）。保留下來的連線，就是不必重複的 TLS 交握——以及用戶端憑證提示。用戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
+    "en": "a895a3ca14fdb99f",
+    "text": "僅適用於主連接埠監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為用戶端的下一個請求保持閒置連線開啟的時間（秒）（node 自己的預設值為 5）：即請求之間的 HTTP/1.1 連線，或沒有任何訊框經過的 HTTP/2 連線，後者隨後會被妥善關閉。保留下來的連線，就是不必重複的 TLS 交握——以及用戶端憑證提示。用戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
   },
   "listenerDebugger.keepAliveTimeoutS|label": {
     "en": "76ffd87245c2ff28",
     "text": "協定偵錯工具：閒置連線保留時間（秒）"
   },
   "listenerDebugger.keepAliveTimeoutS|description": {
-    "en": "c772bcacfb6260cb",
-    "text": "僅適用於協定偵錯工具監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為用戶端的下一個請求保持閒置 HTTP/1.1 連線開啟的時間（秒）（node 自己的預設值為 5）。保留下來的連線，就是不必重複的 TLS 交握——以及用戶端憑證提示。用戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
+    "en": "b63e0c1aae9ba585",
+    "text": "僅適用於協定偵錯工具監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為用戶端的下一個請求保持閒置連線開啟的時間（秒）（node 自己的預設值為 5）：即請求之間的 HTTP/1.1 連線，或沒有任何訊框經過的 HTTP/2 連線，後者隨後會被妥善關閉。保留下來的連線，就是不必重複的 TLS 交握——以及用戶端憑證提示。用戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
   },
   "listenerRevocation.keepAliveTimeoutS|label": {
     "en": "19f295348b85fba9",
     "text": "撤銷（純 HTTP）：閒置連線保留時間（秒）"
   },
   "listenerRevocation.keepAliveTimeoutS|description": {
-    "en": "0f76cf6236976ee9",
-    "text": "僅適用於撤銷（純 HTTP）監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為用戶端的下一個請求保持閒置 HTTP/1.1 連線開啟的時間（秒）（node 自己的預設值為 5）。保留下來的連線，就是不必重複的 TLS 交握——以及用戶端憑證提示。用戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
+    "en": "dec63c7b7c394604",
+    "text": "僅適用於撤銷（純 HTTP）監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為用戶端的下一個請求保持閒置連線開啟的時間（秒）（node 自己的預設值為 5）：即請求之間的 HTTP/1.1 連線，或沒有任何訊框經過的 HTTP/2 連線，後者隨後會被妥善關閉。保留下來的連線，就是不必重複的 TLS 交握——以及用戶端憑證提示。用戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
   },
   "listenerMain.headersTimeoutS|label": {
     "en": "8d17a4d86aca9ed5",
@@ -10506,5 +10766,37 @@
   "listenerRevocation.maxConnections|description": {
     "en": "33c1557318481882",
     "text": "僅適用於撤銷（純 HTTP）監聽器：http.maxConnections。預設值 -1 依循 http.maxConnections；其他任何值只對此監聽器生效。HTTP 監聽器同時保持開啟的連線數；再多一條會在到達時被關閉。預設值 0 表示無限制（node 自己的預設）。"
+  },
+  "listenerMain.http2|label": {
+    "en": "d17df93a132abc21",
+    "text": "主連接埠：提供 HTTP/2"
+  },
+  "listenerMain.http2|description": {
+    "en": "4362a834f16b5b21",
+    "text": "僅適用於主連接埠監聽器：http.http2。預設值 inherit 依循 http.http2；其他任何值只對此監聽器生效。當用戶端在 TLS 交握中（ALPN）請求 HTTP/2 時，HTTPS 監聽器是否提供它。開啟（預設值）時，一個連線承載瀏覽器並行發出的所有請求；對於只請求 HTTP/1.1 的用戶端，仍以 HTTP/1.1 回應。關閉時，每個連線都是 HTTP/1.1——適用於 HTTP/2 行為異常的用戶端或負載平衡器。新連線立即遵循變更；已開啟的連線保持其協定。純 HTTP 的撤銷監聽器只支援 HTTP/1.1，因為沒有可以提供它的交握。"
+  },
+  "listenerDebugger.http2|label": {
+    "en": "65d81b530197d8d7",
+    "text": "協定偵錯工具：提供 HTTP/2"
+  },
+  "listenerDebugger.http2|description": {
+    "en": "95b887a7622f4880",
+    "text": "僅適用於協定偵錯工具監聽器：http.http2。預設值 inherit 依循 http.http2；其他任何值只對此監聽器生效。當用戶端在 TLS 交握中（ALPN）請求 HTTP/2 時，HTTPS 監聽器是否提供它。開啟（預設值）時，一個連線承載瀏覽器並行發出的所有請求；對於只請求 HTTP/1.1 的用戶端，仍以 HTTP/1.1 回應。關閉時，每個連線都是 HTTP/1.1——適用於 HTTP/2 行為異常的用戶端或負載平衡器。新連線立即遵循變更；已開啟的連線保持其協定。純 HTTP 的撤銷監聽器只支援 HTTP/1.1，因為沒有可以提供它的交握。"
+  },
+  "listenerMain.http2MaxConcurrentStreams|label": {
+    "en": "c152ce6a507a8348",
+    "text": "主連接埠：每條 HTTP/2 連線的串流數"
+  },
+  "listenerMain.http2MaxConcurrentStreams|description": {
+    "en": "ba8c8cd0302f4417",
+    "text": "僅適用於主連接埠監聽器：http.http2MaxConcurrentStreams。預設值 -1 依循 http.http2MaxConcurrentStreams；其他任何值只對此監聽器生效。一條 HTTP/2 連線可同時開啟的請求數（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的串流會被拒絕，直到有串流結束。預設值 100 是 RFC 9113 建議的最小值；node 自己的值沒有上限，這會讓一條連線承載成千上萬條連線的工作量。它限制一條連線上的工作量，正如 http.maxConnections 限制連線數。新連線會立即依循變更，已開啟的連線會收到新值。"
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|label": {
+    "en": "a6a26cb5d1740fb5",
+    "text": "協定偵錯工具：每條 HTTP/2 連線的串流數"
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|description": {
+    "en": "94c52205da70930f",
+    "text": "僅適用於協定偵錯工具監聽器：http.http2MaxConcurrentStreams。預設值 -1 依循 http.http2MaxConcurrentStreams；其他任何值只對此監聽器生效。一條 HTTP/2 連線可同時開啟的請求數（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的串流會被拒絕，直到有串流結束。預設值 100 是 RFC 9113 建議的最小值；node 自己的值沒有上限，這會讓一條連線承載成千上萬條連線的工作量。它限制一條連線上的工作量，正如 http.maxConnections 限制連線數。新連線會立即依循變更，已開啟的連線會收到新值。"
   }
 }

@@ -47,29 +47,54 @@ api() {   # api <path under /admin-api> '<json body>'
 
 | What | Console | API |
 |---|---|---|
-| Register an application | **Applications → New application ›** (`/admin/applications/new`), then **Create the application** | `POST /admin-api/applications/create` with `{identifier, name, kind?, protocols, fields}` |
-| Change one attribute of it | the application's page (`/admin/applications?application=<id>`), section **Change what it is allowed to do**: the **Set** form, then **Set** | `POST /admin-api/applications/set` with `{application, attribute, value}` (an empty value clears it) |
-| Add or remove one value of a list attribute | same section: the **Add to** / **Remove from** forms, then **Add** / **Remove** | `POST /admin-api/applications/add` and `/remove`, with the same three members |
-| Change a setting | the protocol's settings page, then the group's **Save <group>** button; **Reset** on a row puts that row back | `POST /admin-api/config/set` with `{key, value}`, `/config/set-many` with `{"<key>": value, …}`, `/config/reset` with `{key}` |
+| Register an application | **Directory → Applications → New application ›** (`/admin/applications/new`), then **Create the application** | `POST /admin-api/applications/create` with `{identifier, name?, protocols, fields, lifetimeDays?}` |
+| Change one of its fields | the application's page (`/admin/applications?application=<id>`), **Configuration** tab, the protocol's sub-tab (for example **OAuth 2.0 / OpenID Connect**), then **Save <sub-tab>** | `POST /admin-api/applications/set` with `{application, attribute, value}`, for a single-valued attribute (an empty value clears it) |
+| Add or remove one value of a list | the same sub-tab: **+** adds a box, the bin deletes one, then **Save <sub-tab>**; or the **Directory entry** tab → **Change one attribute by name** → **Add to** / **Remove from** | `POST /admin-api/applications/add` and `/remove`, with the same three members |
+| Change a setting | **Protocols → OAuth 2.0 / OIDC** (`/admin/oauth2`), **Global settings** tab, then the group's **Save <group>** button; **Reset** on a row puts that row back | `POST /admin-api/config/set` with `{key, value}`, `/config/set-many` with `{"<key>": value, …}`, `/config/reset` with `{key}` |
+
+`applications/set` on a list attribute is refused (`STS-REG-0008`): use
+`add` and `remove` for those.
 
 Settings are per [trust realm](trust-realms.md). A console page saves to the
 realm it is shown in, and `/realm/<id>/admin-api/config/...` saves to that
 realm. To give a new realm its settings from the start, use
 `POST /admin-api/realms/create` with an `overrides` object. The OAuth 2.1 job
-does this:
+(`sts_oauth21.js`) does this:
 
 ```bash
 api realms/create '{"id":"r1","domain":"r1.example.net","name":"r1",
   "overrides":{"oauth2.oauth21":true,"oauth2.consentRequired":false}}'
 ```
 
-**The new-application form lacks four attributes.** It does not offer
-`oauthTokenEndpointAuthMethod`, `oauthGrantType`, `oauthScope` or
-`oauthAllowedScope`. In the console, create the application first and then set
-those in **Change what it is allowed to do**. Through the API they can all go
-in `fields` on the create. If you give a client secret when you create the
-application, the auth method becomes `client_secret_basic` unless you name
-another.
+**The new-application form.** Under **What it is called** you type the
+**Identifier** and, if you like, a **Name**. Under **Protocol families it is
+declared for** you tick the families. Under **Its fields** the form shows a
+grid of attributes, by their attribute names, for the families ticked. The
+*simplified view* shows the fields most clients need, among them
+`oauthRedirectUri`, `oauthConfidential`, `oauthTokenEndpointAuthMethod`,
+`oauthGrantType`, `oauthResponseType`, `oauthAllowedScope`, `oauthAudience`
+and `oauthClientSecret`. **Show every field (advanced view)** shows the rest.
+A list holds one box per value, with **+** to add one. A list with a fixed set
+of values, such as `oauthGrantType`, is a row of checkboxes; a long URN is
+shown by its last two parts (`grant-type:device_code`), with the whole value
+in its tooltip. A `TRUE`/`FALSE` attribute is a choice of **true**, **false**
+or the default.
+
+Three things are filled in for you:
+* **The identifier is the client_id** unless you give `oauthClientId`
+  yourself (#393). The simplified view does not ask for it again. The same
+  goes for a SAML `samlEntityId` and the other families' identifiers.
+* **The auth method follows the credential.** If the create names no
+  `oauthTokenEndpointAuthMethod`, a client secret makes it
+  `client_secret_basic`, an `oauthJwks` or `oauthJwksUri` makes it
+  `private_key_jwt`, and no credential makes it `none`, a public client.
+* **The first secret's lifetime** is the **Lifetime (days)** box beside
+  **Generate Secret**, or `lifetimeDays` on the API create. See
+  [Client secrets](#client-secrets).
+
+`oauthScope` is not a permission. It records the scopes a client has asked
+for, so an `add` to it is refused (`STS-REG-0361`). The scopes a client may be
+issued are `oauthAllowedScope`.
 
 ### What development and product mode change
 
@@ -85,18 +110,26 @@ The same registration behaves differently in the two modes (`global.mode`):
   `S256` from a public client, refuses the implicit and password grants, and
   rotates refresh tokens. A client that declared a confidential method must
   authenticate with it.
+* **Product mode holds a client to its protocol families.** An application
+  declared for OAuth 2.0 alone is refused an ID Token (`STS-XACML-0084`).
+  Declare **OpenID Connect** as well for any client that asks for `openid`.
 * **Scopes in product mode come from `oauthAllowedScope`.** A scope that is
   not listed there is refused with `invalid_scope`. If the list is empty,
   product mode issues only the standard set: `openid profile email address
-  phone offline_access`, plus the realm's OpenID4VCI scopes. This service's
-  own protected scopes (`admin:*`, `scim:*`, the Shared Signals and debugger
-  scopes) must be listed in **both** modes.
+  phone offline_access` and `bound_key` (while `oauth2.keyBinding` is on),
+  plus the realm's OpenID4VCI scopes. This service's own protected scopes must
+  be listed in **both** modes; see
+  [This service's own scopes](#this-services-own-scopes).
 * **`oauthGrantType` restricts the client, in both modes.** The token
   endpoint refuses any grant the list does not name with `unauthorized_client`,
   whether the list came from a dynamic registration (RFC 7591 `grant_types`) or
   an administrator. A client whose list omits `refresh_token` is issued no
-  refresh token. An empty list restricts nothing. What a client has actually
-  used is recorded separately, in `oauthGrantTypeObserved`.
+  refresh token. An empty list restricts nothing. The console offers one
+  checkbox per grant this service implements, and a console or API write of
+  any other value is refused. What a client has actually used is recorded
+  separately, in `oauthGrantTypeObserved`, shown read-only beside
+  `oauthGrantType` on the application's **OAuth 2.0 / OpenID Connect**
+  sub-tab.
 * **Consent is on by default** (`oauth2.consentRequired`). A person approves
   each client on `/oauth2/consent` the first time. Test realms often turn it
   off with `"oauth2.consentRequired": false`. In production, leave it on.
@@ -125,24 +158,27 @@ refused with `unsupported_grant_type`.
 
 A person signs in through a browser and the client exchanges the code it
 receives for tokens. The code is valid for `oauth2.authorizationCodeTtlS`
-(300 s by default) and can be used only once. `oauth2.codeReplayIdempotent`
-relaxes that rule, and is off by default.
+(300 s by default, and never longer). It is presented once: its first token
+request spends it, whatever that request's outcome, and a second presentation
+is refused and revokes what the first one bought. `oauth2.codeReplayIdempotent`
+relaxes that rule. It is off by default; leave it off.
 
 ### A public client (a browser or native app)
 
-Taken from `oauth_fixtures.js` and `oauth2_sts_endpoints.js`.
+Taken from `oauth2_sts_endpoints.js`.
 
 **Console:**
-1. **Applications → New application ›**.
-2. Under **What it is called**, set **Identifier** to `sts-endpoint-test-client-native` (the name is optional).
+1. **Directory → Applications → New application ›**.
+2. Under **What it is called**, set **Identifier** to `sts-endpoint-test-client-native` (the name is optional). It is also the client_id.
 3. Under **Protocol families it is declared for**, tick **OAuth 2.0** and **OpenID Connect**.
-4. In **Where responses go back to**, enter `com.example.oauth2stsendpoints:/callback`, one URI per line.
+4. Under **Its fields**, in the **OAuth 2.0 / OpenID Connect** group:
+   - `oauthRedirectUri`: `com.example.oauth2stsendpoints:/callback`.
+   - `oauthConfidential`: **false**.
+   - `oauthTokenEndpointAuthMethod`: tick `none`, and nothing else.
+   - `oauthGrantType`: tick `authorization_code` and `refresh_token`.
+   - `oauthResponseType`: tick `code`.
+   - `oauthAllowedScope`: `openid`, `profile` and `email`, one box each (**+** adds a box).
 5. Click **Create the application**.
-6. On the application's page, in **Change what it is allowed to do**:
-   - **Tick** `none` under `oauthTokenEndpointAuthMethod`, and nothing else.
-   - **Set** `oauthConfidential` to `FALSE`.
-   - **Add to** `oauthGrantType` the values `authorization_code` and `refresh_token`.
-   - **Add to** `oauthAllowedScope` the values `openid`, `profile` and `email`.
 
 **API:**
 ```bash
@@ -151,11 +187,9 @@ api applications/create '{
   "name": "sts-endpoint-test-client-native",
   "protocols": ["oauth2", "oidc"],
   "fields": {
-    "oauthClientId": "sts-endpoint-test-client-native",
     "oauthRedirectUri": ["com.example.oauth2stsendpoints:/callback"],
     "oauthResponseType": ["code"],
     "oauthGrantType": ["authorization_code", "refresh_token"],
-    "oauthScope": ["openid", "profile", "email"],
     "oauthAllowedScope": ["openid", "profile", "email"],
     "oauthTokenEndpointAuthMethod": "none",
     "oauthConfidential": "FALSE"
@@ -167,22 +201,22 @@ api applications/create '{
 Taken from `sts_token_revocation.js`.
 
 **Console:** create the application as for the public client above, with
-**Identifier** `rv-a` and redirect URI `https://rp.revoke.example.test/cb`. In
-**The client secret**, click **Generate Secret**, and copy the value before
-you create the application. Then, on the application's page:
-- **Tick** `client_secret_basic` under `oauthTokenEndpointAuthMethod`, and nothing else.
-- **Add to** `oauthAllowedScope` the value `openid`.
+**Identifier** `rv-a` and `oauthRedirectUri` `https://rp.revoke.example.test/cb`.
+Beside `oauthClientSecret`, click **Generate Secret**, and copy the value
+before you create the application. Leave **Lifetime (days)** empty for the
+realm's default. Then:
+- `oauthTokenEndpointAuthMethod`: tick `client_secret_basic`, and nothing else.
+- `oauthAllowedScope`: `openid`.
 
-An application that already exists gets a secret from the **Credentials →
-Client secret** button: **Generate a client secret**, or **Regenerate the
-client secret**.
+An application that already exists gets a secret on its **Credentials** tab,
+under **Client secrets**. See [Client secrets](#client-secrets).
 
 **API:**
 ```bash
 SECRET=$(openssl rand -base64 32)
 api applications/create '{
   "identifier": "rv-a", "name": "rv-a", "kind": "oauth2-client",
-  "protocols": ["oauth2"],
+  "protocols": ["oauth2", "oidc"],
   "fields": {
     "oauthClientId": ["rv-a"],
     "oauthRedirectUri": ["https://rp.revoke.example.test/cb"],
@@ -195,6 +229,7 @@ api applications/create '{
 
 `POST /admin-api/applications/generate-secret` with `{}` returns a random
 secret and stores nothing, if you would rather have the service choose one.
+Pass it in `fields.oauthClientSecret`.
 
 ### The requests
 
@@ -214,14 +249,14 @@ authorization request. [OAuth 2.1 mode](oauth-security.md) (`oauth2.oauth21`)
 lets a public client that used PKCE leave it out. RFC 9700 mode alone does
 not.
 
-**Settings** (console: **OAuth 2.0 / OIDC settings**, `/admin/oauth2`):
+**Settings** (console: **Protocols → OAuth 2.0 / OIDC**, **Global settings** tab):
 
 | Setting | Default | Why you would change it |
 |---|---|---|
 | `oauth2.rfc9700` | `false` | Turns on RFC 9700 mode in development. Product mode implies it. |
 | `oauth2.oauth21` | `false` | Turns on OAuth 2.1 mode, which implies RFC 9700 mode. |
 | `oauth2.consentRequired` | `true` | Asks the person to approve each client. |
-| `oauth2.authorizationCodeTtlS` | `300` | Sets how long a code is valid. |
+| `oauth2.authorizationCodeTtlS` | `300` | Sets how long a code is valid: 30 to 300 seconds. |
 
 ## Client credentials
 
@@ -229,34 +264,36 @@ A service gets a token for itself. No person is involved, and no refresh
 token or ID Token is issued. The token's `sub` is the client_id; in RFC 9700
 mode, and so in product, it is `urn:sts:client:<client_id>`.
 
-Taken from `sts_scope_policy.js` and `oauth2_sts_endpoints.js`.
+Taken from `sts_scope_policy.js`, which suffixes each identifier with its
+realm's name.
 
 **Console:**
-1. Create the application: **Identifier** `svc`, tick **OAuth 2.0**, and
-   generate a secret in **The client secret**. No redirect URI is needed.
-2. On its page:
-   - **Tick** `client_secret_post` under `oauthTokenEndpointAuthMethod`, and nothing else.
-   - **Add to** `oauthGrantType` the value `client_credentials`.
-   - **Add to** `oauthAllowedScope` each scope it may be issued, for example `api`.
+1. Create the application: **Identifier** `sp-listed`, tick **OAuth 2.0**,
+   and click **Generate Secret** beside `oauthClientSecret`. No redirect URI is
+   needed.
+2. In the same grid:
+   - `oauthTokenEndpointAuthMethod`: tick `client_secret_post`, and nothing else.
+   - `oauthGrantType`: tick `client_credentials`.
+   - `oauthAllowedScope`: each scope it may be issued, here `sp:custom`.
 
 **API:**
 ```bash
 api applications/create '{
-  "identifier": "svc", "name": "svc", "kind": "oauth2-client",
+  "identifier": "sp-listed", "name": "sp-listed", "kind": "oauth2-client",
   "protocols": ["oauth2"],
   "fields": {
-    "oauthClientId": ["svc"],
+    "oauthClientId": ["sp-listed"],
     "oauthClientSecret": "'"$SECRET"'",
     "oauthGrantType": ["client_credentials"],
-    "oauthTokenEndpointAuthMethod": "client_secret_post"
+    "oauthTokenEndpointAuthMethod": "client_secret_post",
+    "oauthAllowedScope": ["sp:custom"]
   }}'
-api applications/add '{"application":"svc","attribute":"oauthAllowedScope","value":"api"}'
 ```
 
 **Request:**
 ```
 POST /oauth2/token
-  grant_type=client_credentials&client_id=svc&client_secret=<secret>&scope=api
+  grant_type=client_credentials&client_id=sp-listed&client_secret=<secret>&scope=sp:custom
   [&resource=https://api.example.com]
 ```
 
@@ -283,6 +320,71 @@ refused with `invalid_scope`. See
 [Permissions on another application](oauth-oidc.md#permissions-on-another-application-delegated-or-the-applications-own). The seeded `sts-management-api` client is a
 working example of this grant.
 
+### This service's own scopes
+
+Some scopes are for this service's own APIs. They are issued only to a client
+whose `oauthAllowedScope` lists them, **in both modes**, and each API asks
+again on every call, so removing a value cuts off a token already issued.
+They are:
+
+* the Management API's `admin:read`, `admin:write` and `admin:console`, and
+  the owner scopes `owner:read` and `owner:write`;
+* SCIM's two, `scim.scopeRead` and `scim.scopeWrite` (`scim:read` and
+  `scim:write` by default);
+* Shared Signals' `ssf.read` and `ssf.manage`, and the names in
+  `ssf.authScopeRead` and `ssf.authScopeWrite` (by default the same two);
+* `account:manage`, `device:compliance`, `grant_management_query`,
+  `grant_management_revoke`, `vc-api:issue`, `vc-api:verify` and the embedded
+  debugger's `urn:sts:debugger-api:debugger`.
+
+**For Shared Signals, write includes read** (#334). A client that declares
+`ssf.manage` may also be issued `ssf.read`, and a token carrying
+`ssf.manage` may read. `ssf:write` is not a Shared Signals scope any more.
+The job `sts_scope_policy.js` does this with a client declared for
+**Shared Signals**:
+
+```bash
+api applications/create '{"identifier":"sp-ssf","name":"sp-ssf","kind":"oauth2-client",
+  "protocols":["oauth2","ssf"],
+  "fields":{"oauthClientId":["sp-ssf"],"oauthClientSecret":"'"$SECRET"'",
+            "oauthGrantType":["client_credentials"],
+            "oauthTokenEndpointAuthMethod":"client_secret_post"}}'
+api applications/add '{"application":"sp-ssf","attribute":"oauthAllowedScope","value":"ssf.read"}'
+api applications/add '{"application":"sp-ssf","attribute":"oauthAllowedScope","value":"ssf.manage"}'
+```
+
+```
+POST /oauth2/token
+  grant_type=client_credentials&client_id=sp-ssf&client_secret=<secret>
+  &scope=ssf.read ssf.manage
+```
+
+The job then removes `ssf.read`: the same token still reads, because
+`ssf.manage` includes it. Removing `ssf.manage` too makes the Shared Signals
+endpoints answer 403 to that token.
+[Shared Signals](shared-signals.md) says which operation needs which scope.
+
+## Resource indicators (RFC 8707)
+
+A request may name the API its token is for with `resource`, on every grant.
+[OAuth 2.0 and OpenID Connect](oauth-oidc.md) explains how the audience is
+chosen. Three rules matter when you configure a client:
+
+* **In product mode a resource must be a registered target**: one of this
+  service's own resource servers, or an application registered in the realm,
+  named by its `oauthAudience`, permission base URI, `client_id` or
+  identifier. Anything else is `invalid_target`. Development mode accepts any
+  absolute URI.
+* **An authorization code may name several resources** (#607). The code
+  request is refused only when no one of them could be issued a token alone.
+  Each token request then names the one resource its access token is for, and
+  a token request naming none or several of them is refused. Implicit and
+  hybrid responses carry a token from the authorization endpoint, so they keep
+  the stricter rule.
+* **A client_credentials request may name two resources and no scope.** Its
+  token is then addressed to both. Two resources with a scope tied to neither
+  is `invalid_target`. `tests/rfc9068_access_tokens.js` checks both.
+
 ## Refresh token
 
 A refresh token is issued with the authorization code grant (and with the
@@ -300,9 +402,10 @@ POST /oauth2/token
 A `scope` on the request narrows the new access token. The refresh token that
 comes back still carries the whole grant.
 
-**Settings.** The lifetimes are on **Token lifetimes** (`/admin/token-lifetimes`,
-button **Save lifetimes**; API: `POST /admin-api/token-lifetimes/set`). The
-other settings are on `/admin/oauth2`.
+**Settings.** The lifetimes are on **Protocols → OAuth 2.0 / OIDC**, the
+**Token lifetimes** tab (button **Save lifetimes**; API:
+`POST /admin-api/token-lifetimes/set`). The other settings are on the
+**Global settings** tab.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -313,9 +416,11 @@ other settings are on `/admin/oauth2`.
 | `oauth2.refreshTokenRequireDpop` / `…RequireMtls` | `false` | Requires the refresh token to be sender-constrained. |
 | `oauth2.refreshRequiresConsent` | `true` | Requires a consent record for the refresh. |
 
-**Per-client overrides.** Each application can override the lifetimes. Use
-**Set** on its page, the **What OAuth 2.0 / OIDC issues for this client**
-section of the new-application form, or the API:
+**Per-client overrides.** Each application can override the lifetimes. In
+the console they are fields of their own names: on the new-application form,
+and on the application's **Configuration** tab, **OAuth 2.0 / OpenID Connect**
+sub-tab, under **Show every field (advanced view)**. Empty a field to take the
+realm's value again. Through the API:
 
 ```bash
 api applications/set '{"application":"rv-a","attribute":"oauthRefreshTokenTtlS","value":"3600"}'
@@ -336,8 +441,12 @@ Taken from `oauth2_sts_endpoints.js`. First add `password` to the client's
 
 ```bash
 api users/create '{"username":"alice","invent":false,"credential":"password",
-  "password":"<password>","attributes":{"cn":"Alice","sn":"A","mail":"alice@example.com"}}'
+  "password":"<password>","attributes":{"cn":"alice","givenName":"alice",
+  "sn":"alice","mail":"alice@suite.example.test"}}'
 ```
+
+A realm's attribute policy may require more of a person; product mode
+requires `givenName`, `sn` and `mail` by default.
 
 **Request:**
 ```
@@ -354,7 +463,7 @@ In development mode any password is accepted except the reserved value
 A device with no browser shows the person a code, and the person approves it
 on another device.
 
-**Settings** (on `/admin/oauth2`; the values are from `sts_device_key_binding.js`):
+**Settings** (**Protocols → OAuth 2.0 / OIDC**, **Global settings** tab; the values are from `sts_device_key_binding.js`):
 
 ```bash
 api config/set '{"key":"oauth2.deviceAuthorization","value":true}'
@@ -414,28 +523,32 @@ token. **Step-by-step instructions are in
 [JWT assertions → the shortest path](jwt-assertions.md).** The values below
 are from `sts_jwt_bearer_grant.js`.
 
-1. The realm needs a certificate authority. In the console that is **PKI**
-   (`/admin/pki`). Through the API:
+1. The realm needs a certificate authority. In the console that is
+   **Protocols → PKI** (`/admin/pki`). Through the API:
    ```bash
    api pki/build '{"organisation":"Assertion Test","country":"US"}'
    ```
 2. Create the application that holds the issuer's key:
    ```bash
    api applications/create '{"identifier":"assert-issuer-1","name":"assert-issuer-1",
-     "protocols":["oauth2"],
+     "protocols":["oauth2","oidc"],
      "fields":{"oauthClientId":"assert-issuer-1","oauthClientSecret":"'"$SECRET"'",
                "oauthTokenEndpointAuthMethod":"client_secret_post"}}'
    ```
-3. Give it a key. In the console, on the application's page, open
-   **Credentials → RFC 7523 — a JWT assertion** and click **Issue a key pair
-   from this realm's CA** (fields **Key algorithm** and **Days**), or use
-   **Upload the certificate** for a key you already hold. Through the API:
+3. Give it a key. In the console, on the application's **Credentials** tab,
+   under **Assertion key pairs → RFC 7523 — a JWT assertion**, click **Issue a
+   key pair from this realm's CA** (fields **Key algorithm** and **Days**), or
+   use **Upload the certificate** for a key you already hold. Through the API:
    ```bash
    api pki/issue '{"identifier":"assert-issuer-1"}'
    ```
-   The reply contains the `kid` (`app-…`), and the private key is at
-   `GET /admin-api/applications?application=assert-issuer-1`, in
-   `oauthAssertionPrivateKey`.
+   The reply contains the `kid` (`app-…`) and the JWS algorithm (`RS256`).
+   The private key is never in a `GET`. Collect it once with
+   `reveal-secret`, which writes an audit row:
+   ```bash
+   api applications/reveal-secret '{"application":"assert-issuer-1",
+     "secret":"oauthAssertionPrivateKey"}'
+   ```
 4. **Declare the issuer.** This is the trust decision. An assertion from an
    undeclared issuer is refused with `invalid_grant` in every mode:
    ```bash
@@ -453,7 +566,7 @@ JWS claims  {"iss":"https://issuer.example.test/jwtbearer","sub":"alice",
              "aud":"<BASE>/oauth2/token","iat":…,"exp":iat+120,"jti":"<random>"}
 ```
 
-**Settings** (on `/admin/oauth2`):
+**Settings** (**Protocols → OAuth 2.0 / OIDC**, **Global settings** tab):
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -475,8 +588,10 @@ are from `sts_saml2_bearer_grant.js`.
 
 1. Create the application exactly as in [JWT bearer](#jwt-bearer-rfc-7523),
    step 2 (identifier `saml-assert-issuer-1`).
-2. Give it a SAML signing key. In the console that is **Credentials → RFC
-   7522 — a SAML 2.0 assertion → Issue a key pair from this realm's CA**.
+2. Give it a SAML signing key. In the console that is the **Credentials** tab,
+   **Assertion key pairs → RFC 7522 — a SAML 2.0 assertion → Issue a key pair
+   from this realm's CA**. Its private key is collected with `reveal-secret`
+   naming `oauthSamlAssertionPrivateKey`.
    Through the API:
    ```bash
    api pki/issue '{"identifier":"saml-assert-issuer-1","purpose":"saml"}'
@@ -518,40 +633,50 @@ decided by the same controls as WS-Trust and Kerberos: see
 
 Taken from `sts_delegation_policy.js`.
 
-**The target and the intermediary** (console: create both with
-**New application ›**, then use the attribute editor):
+**The applications.** The job makes every application a confidential client
+declared for OAuth 2.0, OpenID Connect and WS-Trust, with its own URL as its
+audience. `dp-back` is the target, `dp-mid` an intermediary that may delegate
+to it, and `dp-mid2` one that may also impersonate:
 
 ```bash
-api applications/create '{"identifier":"dp-back","name":"dp-back",
-  "protocols":["oauth2","wstrust"],
-  "fields":{"oauthClientId":"dp-back","oauthAudience":["https://dp-back.example"],
-            "wstrustAppliesTo":["https://dp-back.example"]}}'
-
-api applications/create '{"identifier":"dp-mid","name":"dp-mid","protocols":["oauth2"],
-  "fields":{"oauthClientId":["dp-mid"],"oauthClientSecret":"'"$SECRET"'",
+for app in dp-back dp-mid dp-mid2; do
+api applications/create '{"identifier":"'$app'","name":"'$app'",
+  "protocols":["oauth2","oidc","wstrust"],
+  "fields":{"oauthClientId":["'$app'"],"oauthClientSecret":"'"$SECRET"'",
             "oauthTokenEndpointAuthMethod":"client_secret_post",
             "oauthGrantType":["client_credentials",
                               "urn:ietf:params:oauth:grant-type:token-exchange"],
-            "oauthAllowedScope":["api","openid"]}}'
+            "oauthAllowedScope":["api","openid"],
+            "oauthAudience":["https://'$app'.example"],
+            "wstrustAppliesTo":["https://'$app'.example"]}}'
+done
 ```
 
 **The policy:**
 ```bash
 # a token issued for dp-mid may be handed on to dp-back …
 api applications/add '{"application":"dp-mid","attribute":"appAllowedToDelegateTo","value":"dp-back"}'
-# … and dp-mid may also impersonate, when the request asks for it
-api applications/add '{"application":"dp-mid","attribute":"appDelegationSemantics","value":"delegation"}'
-api applications/add '{"application":"dp-mid","attribute":"appDelegationSemantics","value":"impersonation"}'
+# … and dp-mid2 may delegate or impersonate, as the request asks
+api applications/add '{"application":"dp-mid2","attribute":"appDelegationSemantics","value":"delegation"}'
+api applications/add '{"application":"dp-mid2","attribute":"appDelegationSemantics","value":"impersonation"}'
 ```
 
-More controls can take part:
-* `appAllowedToActOnBehalfOf`, on the **target**, lists the applications (and people) that may act toward it.
-* `appDelegationSubjectGroup`, on the actor, holds group DNs that limit whose tokens it may exchange.
-* `appDefaultDelegationSemantics` and `appNotDelegated` on an application.
-* The person's own settings: `POST /admin-api/users/set-not-delegated {"user","value":true}`, `POST /admin-api/users/set-may-act {"user","delegate":"<application DN>"}` and `POST /admin-api/users/set-delegation-semantics {"user","semantics":["delegation"],"default":"delegation"}`.
+In the console these are on the application's **Configuration** tab, the
+**Every protocol** sub-tab, under **Delegation / Impersonation**. A list there
+opens a search of other applications (or of the realm's groups) when you work
+in it, five results a page, each with an **Add**. Then click
+**Save Every protocol**.
 
-To read the whole policy back, use `GET /admin-api/delegation/policy`; in the
-console it is `/admin/delegation`.
+More controls can take part:
+* `appAllowedToActOnBehalfOf`, on the **target**, lists the applications (and people) that may act toward it. The job sets it on `dp-back` for `dp-mid2` and a person.
+* `appDelegationSubjectGroup`, on the actor, holds group DNs that limit whose tokens it may exchange.
+* `appDefaultDelegationSemantics`, `appNotDelegated` and `appMayAct` on an application.
+* The person's own settings: `POST /admin-api/users/set-not-delegated {"user","value":true}`, `POST /admin-api/users/set-may-act {"user","delegate":"<DN of a person or application>"}` and `POST /admin-api/users/set-delegation-semantics {"user","semantics":["delegation"],"default":"delegation"}`.
+
+To read the whole policy back, use `GET /admin-api/delegation/policy`. In the
+console, the delegated permissions are on **Protocols → Delegation**
+(`/admin/delegation-settings`), and each act, with what development would
+have refused, is on **Monitoring → Delegation** (`/admin/delegation`).
 
 **Request:**
 ```
@@ -578,10 +703,42 @@ actor.
 **Modes.** Product mode enforces the policy, refusing with `invalid_request`
 or `invalid_target`. It also verifies both tokens and refuses a scope wider
 than the subject token's. Development mode issues the token anyway and records
-on `/admin/delegation` that it would have been refused. `may_act` is enforced
-in both modes. Whether an exchange also returns a refresh token is set by
+on **Monitoring → Delegation** that it would have been refused. `may_act` is
+enforced in both modes. Whether an exchange also returns a refresh token is set by
 `oauth2.tokenExchangeRefreshToken` (`never`, `when-requested` (the default) or
 `always`). The per-client override is `oauthTokenExchangeRefreshToken`.
+
+### An assertion as the subject or actor token
+
+A signed assertion from a declared issuer may be the `subject_token` or the
+`actor_token` (#114). Taken from `sts_token_exchange_assertions.js`:
+
+| Assertion | `subject_token_type` | The issuer's application needs |
+|---|---|---|
+| RFC 7523 JWT | `urn:ietf:params:oauth:token-type:jwt` | `oauthAssertionIssuer`, and a key: `pki/issue`, or the issuer's own keys in `oauthAssertionJwks` |
+| RFC 7522 SAML 2.0 | `urn:ietf:params:oauth:token-type:saml2` | `oauthSamlAssertionIssuer`, and `pki/issue` with `"purpose":"saml"` |
+| SAML 1.1 | `urn:ietf:params:oauth:token-type:saml1` | the same as SAML 2.0 |
+
+```bash
+api applications/add '{"application":"txa-jwt-idp","attribute":"oauthAssertionIssuer",
+  "value":"https://txa-jwt-idp.example"}'
+api applications/set '{"application":"txa-jwt-idp","attribute":"oauthAssertionJwks",
+  "value":"{\"keys\":[<the issuer'"'"'s public JWK>]}"}'
+```
+
+```
+POST /oauth2/token
+  grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+  &client_id=txa-client&client_secret=<secret>
+  &subject_token=<the JWS>&subject_token_type=urn:ietf:params:oauth:token-type:jwt
+```
+
+The assertion is checked as the assertion grant checks it, and spent in the
+same one-use history: one used at the grant cannot then be exchanged, nor the
+reverse. By default its audience must name this token endpoint or issuer.
+`oauth2.tokenExchangeAudience` set to `any-declared-relying-party` also
+accepts an audience naming an application registered in the realm. That is
+token forwarding; read the setting's warning before turning it on.
 
 [Native SSO](configure-oidc-flows.md#native-sso) is a form of token exchange
 with an ID Token and a device secret.
@@ -593,7 +750,7 @@ person to be authenticated. The person approves on `/portal/ciba`, and the
 client collects the tokens by polling or is notified. Taken from
 `sts_ciba.js`.
 
-**Setting** (on `/admin/oauth2`):
+**Setting** (**Protocols → OAuth 2.0 / OIDC**, **Global settings** tab):
 ```bash
 api config/set '{"key":"oauth2.ciba","value":true}'
 ```
@@ -609,7 +766,7 @@ api applications/create '{"identifier":"ciba-poll","name":"ciba-poll",
   "fields":{"oauthClientId":"ciba-poll","oauthClientSecret":"'"$SECRET"'",
             "oauthTokenEndpointAuthMethod":"client_secret_post",
             "oauthGrantType":["urn:openid:params:grant-type:ciba"],
-            "oauthScope":["openid"],
+            "oauthAllowedScope":["openid"],
             "oauthBackchannelTokenDeliveryMode":"poll"}}'
 ```
 
@@ -652,7 +809,7 @@ settings are `oid4vci.txCodeLength` (default 5) and `oid4vci.txCodeMaxAttempts`
 ## Client authentication methods
 
 `oauthTokenEndpointAuthMethod` names the methods: a checkbox per method on the
-application's page, and a list in the API (`applications/add` and
+application's **OAuth 2.0 / OpenID Connect** sub-tab, and a list in the API (`applications/add` and
 `applications/remove`, or an array in `create`). **A client may hold several**
 — a secret and a key pair, say — and the token endpoint accepts whichever one
 a request presents: a `client_assertion` is `private_key_jwt` or
@@ -674,7 +831,7 @@ more on the application:
 | `client_secret_jwt` | `oauthClientSecret`; optionally `oauthTokenEndpointAuthSigningAlg` (`HS256`/`HS384`/`HS512`) | a client assertion with an HMAC signature, addressed to the issuer or the token endpoint. An `HS512` key must be at least 512 bits (RFC 7518 section 3.2). | `sts_client_authentication.js` |
 | `private_key_jwt` | a key: `pki/issue` as in [JWT bearer](#jwt-bearer-rfc-7523), or `oauthJwks` or `oauthJwksUri` | `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer`, with `iss` = `sub` = the client_id and `aud` = the token endpoint | `sts_jwt_bearer_grant.js` |
 | `saml2_bearer` | `pki/issue` with `"purpose":"saml"` | `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:saml2-bearer`, with `Issuer` = `Subject` = the client_id | `sts_saml2_bearer_grant.js` |
-| `tls_client_auth` | a certificate issued on its page (**Credentials → Mutual TLS (RFC 8705) → Issue a TLS client certificate from this realm's CA**; API: `applications/issue-tls-client-certificate`), or exactly one of `oauthTlsClientAuthSubjectDn`, `…SanDns`, `…SanUri`, `…SanIp`, `…SanEmail` | the certificate in the TLS handshake; the token is bound to it (`cnf.x5t#S256`) | `sts_client_authentication.js` (a certificate from this realm's CA), `tests/rfc8705_mtls.js` (the subject parameters) |
+| `tls_client_auth` | a certificate issued on its **Credentials** tab (**Mutual TLS (RFC 8705) → Issue a TLS client certificate from this realm's CA**; API: `applications/issue-tls-client-certificate`), or exactly one of `oauthTlsClientAuthSubjectDn`, `…SanDns`, `…SanUri`, `…SanIp`, `…SanEmail` | the certificate in the TLS handshake; the token is bound to it (`cnf.x5t#S256`) | `sts_client_authentication.js` (a certificate from this realm's CA), `tests/rfc8705_mtls.js` (the subject parameters) |
 | `self_signed_tls_client_auth` | `oauthJwks` with `x5c`, or `oauthTlsClientCertificateThumbprint` | the certificate in the TLS handshake | `sts_client_authentication.js` (`x5c`), `tests/rfc8705_mtls.js` (thumbprint) |
 | `attest_jwt_client_auth` | the realm setting `oauth2.clientAttestationTrustAnchors` or `…TrustedKeys` | the `OAuth-Client-Attestation` and `…-PoP` headers | `sts_client_attestation.js` |
 
@@ -685,15 +842,57 @@ mode refuses both. A registered `oauthTokenEndpointAuthSigningAlg` and both
 RFC 8705 methods are checked in every mode. `sts_client_authentication.js`
 asserts each of these in a development and a product realm.
 
-Two more ways to manage secrets:
-* **Rotate the client secret** (API: `applications/rotate-secret`) keeps the
-  old secret working for `oauth2.clientSecretOverlapS`, which is seven days
-  by default.
-* **Regenerate** (`applications/regenerate-secret`) ends the old secret at
-  once.
-
 [OAuth 2.0 and OpenID Connect → Client authentication](oauth-oidc.md)
 describes every method in full.
+
+## Client secrets
+
+An application may hold several client secrets at once, each with its own
+expiry, up to `oauth2.clientSecretsMax` (5). The token endpoint accepts any
+one of them; product mode refuses one that has expired. The newest is the primary: it is the one this
+service signs HS256 ID Tokens and JARM responses with.
+
+**The first secret's lifetime is set on the create** (#394). On the
+new-application form, type it in **Lifetime (days)** beside **Generate
+Secret**. Through the API, give `lifetimeDays` beside `fields`:
+
+```bash
+api applications/create '{"identifier":"generate-secret-app","protocols":["oauth2"],
+  "fields":{"oauthClientSecret":"'"$SECRET"'"},"lifetimeDays":30}'
+```
+
+The value is whole days, 0 to 730, and 0 never expires. Left out or empty, it
+is `oauth2.clientSecretLifetimeDays`, which is 0 by default. A lifetime given
+with no secret is refused. `tests/application_generate_secret.js` creates
+with 30 and with 0.
+
+**An application that exists** has its secrets on its **Credentials** tab,
+under **Client secrets**: a table of the secrets held, each with its expiry
+and a **Remove** button, and these forms:
+
+| Console | API (`POST /admin-api/applications/…`) | What it does |
+|---|---|---|
+| **Lifetime (days)**, **Description**, **Add a client secret** | `add-secret` `{application, lifetimeDays?, description?}` | Mints a secret and adds it. The others keep working until their own expiry. |
+| **Rotate the client secret** | `rotate-secret` `{application}` | Adds a new secret and moves every live one to expire after `oauth2.clientSecretOverlapS` (604800, seven days). |
+| **Regenerate: replace every secret** (**Generate a client secret** when it holds none) | `regenerate-secret` `{application}` | Makes a new secret the only one. Every other secret stops working at once. |
+| **Remove** on a row | `remove-secret` `{application, secret}` | Removes one secret by its id, at once. |
+
+```bash
+api applications/add-secret '{"application":"rv-a","lifetimeDays":30}'
+```
+
+The answer to each of the first three carries the new secret in
+`clientSecret`. It is the one time the value is handed out. Afterwards a
+`GET` shows each secret's id and expiry, never its value; `reveal-secret`
+with the secret's id hands it back and writes an audit row.
+`tests/client_secret_rotation.js` covers rotation, the cap and the lifetimes.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `oauth2.clientSecretLifetimeDays` | `0` | The lifetime of a secret when none is given. 0 never expires. |
+| `oauth2.clientSecretOverlapS` | `604800` | How long a rotation leaves the old secrets working. 0 makes a rotation a regeneration. |
+| `oauth2.clientSecretsMax` | `5` | How many secrets one application may hold (`STS-REG-0208` past it). |
+| `oauth2.clientSecretExpiryWarningDays` | `14` | How far ahead the daily job `oauth2.client-secret-expiry` warns about a secret that is about to expire. |
 
 ## Related
 

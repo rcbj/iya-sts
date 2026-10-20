@@ -33,6 +33,7 @@
 // indexes are used, and every query's result against real rows.
 // ===========================================================================
 
+const storeDouble = require('./tools/store_double');
 const postgres = require('../persistence/persistence_postgres');
 const queries = require('../persistence/directory_queries');
 
@@ -69,20 +70,13 @@ function fakePg(statements, answer) {
 
 function driverWith(statements, answer, url) {
   log.debug("Entering driverWith().");
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: fakePg(statements, answer) };
+  const restore = storeDouble.install(fakePg(statements, answer));
   try {
     log.debug("Leaving driverWith().");
     return postgres.create({
       url: url || 'postgres://sts_app@localhost:5432/sts', log: QUIET });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
 }
 
@@ -202,6 +196,36 @@ function builders(t) {
           'A16. a count answers a number');
   t.equal(queries.answerOf('hasChild', []), false,
           'A17. hasChild answers a boolean');
+  const rdn = queries.rdnPage('default', users, 'alice', 20);
+  t.check(/\(e\.realm, e\.parent_key, e\.rdn_value\) > \(\$1, \$2, \$3\)/
+      .test(rdn.text) &&
+          /ORDER BY e\.realm, e\.parent_key, e\.rdn_value/.test(rdn.text) &&
+          /ORDER BY rdn_value OFFSET/.test(rdn.text) &&
+          !/position\(/.test(rdn.text) &&
+          rdn.values[3] === 20 && rdn.values[4] === 0,
+          'A18. rdnPage walks the rdn index after the cursor, and an empty ' +
+          'needle adds no predicate', rdn.text);
+  const searched = queries.rdnPage('default', users, '', 10,
+                                   { needle: 'Al', offset: 5 });
+  t.check(/position\(\$4 in e\.rdn_value\) > 0/.test(searched.text) &&
+          searched.values[3] === 'al' && searched.values[4] === 15 &&
+          searched.values[5] === 5,
+          'A19. a needle is position() inside the walk, lower-cased, and ' +
+          'the offset is applied after it', JSON.stringify(searched.values));
+  const box = queries.containerPage('default',
+                                    'ou=devices,dc=example,dc=com', 50, 10);
+  t.check(box.text.indexOf("($1, $2, '')") >= 0 &&
+          /OFFSET \$4/.test(box.text) &&
+          box.values[2] === 60 && box.values[3] === 50,
+          'A20. containerPage walks from the empty key and drops the offset',
+          box.text);
+  const withRdn = queries.answerOf('rdnPage',
+    [Object.assign({ rdn_value: 'a' }, row)])[0];
+  t.check(withRdn.key === 'uid=a,ou=users' && withRdn.rdn === 'a',
+          'A21. rdnPage answers the row plus its rdn',
+          JSON.stringify(withRdn));
+  t.equal(queries.answerOf('rdnCount', [{ n: '7' }]), 7,
+          'A22. rdnCount answers a number');
   log.debug("Leaving builders().");
 }
 
@@ -246,10 +270,10 @@ async function driverDoor(t) {
 
 async function schema(t) {
   log.debug("Entering schema().");
-  t.log.info('=== C. schema version 20 ===');
-  t.equal(postgres.SCHEMA_VERSION, 20,
-          'C1. the driver writes schema version 20 (#222, #391 phase 6, ' +
-          '#432 phase 5, #618, #623, #630, #639)');
+  t.log.info('=== C. schema version 21 ===');
+  t.equal(postgres.SCHEMA_VERSION, 21,
+          'C1. the driver writes schema version 21 (#222, #391 phase 6, ' +
+          '#432 phase 5, #618, #623, #630, #639, #350)');
   const table = postgres.SCHEMA_OBJECTS.filter(function (o) {
     return o.name === 'sts_ldap_entries';
   })[0];
@@ -340,8 +364,8 @@ async function schema(t) {
             return sql.slice(0, 60);
           }).join(' | '));
   t.check(statements.some(function (s) {
-    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 20;
-  }), 'C6. and records version 20');
+    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 21;
+  }), 'C6. and records version 21');
   // THE TWO INDEXES VERSION 18 REPLACED (#618) are dropped where the
   // catalogue still lists them, after the indexes that replace them.
   const retired = [];

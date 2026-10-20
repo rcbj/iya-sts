@@ -133,11 +133,17 @@ async function run(t) {
   fs.writeFileSync(kekFile, nodeCrypto.randomBytes(32).toString('base64'),
                    { encoding: 'utf8', mode: 0o600 });
   const saved = {};
-  ['STS_KEYS_SOURCE', 'STS_KEYS_KEK_PROVIDER', 'STS_KEYS_KEK_FILE']
+  ['STS_KEYS_SOURCE', 'STS_KEYS_KEK_PROVIDER', 'STS_KEYS_KEK_FILE',
+   'STS_AUTHN_SESSION_WINDOW']
     .forEach(function (name) {
       saved[name] = process.env[name];
     });
   process.env.STS_KEYS_SOURCE = 'persisted';
+  // THE SESSION WINDOW OFF (#350): this is about the run history's
+  // exclusion, and with minted persistence on and a digest key the default
+  // `auto` would leave `authn.sessions` out of the restore as well
+  // (`tests/session_window.js` holds that half).
+  process.env.STS_AUTHN_SESSION_WINDOW = 'off';
   process.env.STS_KEYS_KEK_PROVIDER = 'file';
   process.env.STS_KEYS_KEK_FILE = kekFile;
   const config = require('../common/config');

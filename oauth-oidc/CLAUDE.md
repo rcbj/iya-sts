@@ -1993,14 +1993,16 @@ so must `admin-ui/admin.ts`.
    is held to `authn.pendingTtlS` rather than waived — and the token's `auth_time`
    is true either way, which is what the resource server checks.
 
-   **WHAT MEETS WHAT.** Ordered levels; `hwk`/`phr`/`phrh` (RFC 8176 METHOD
-   names, accepted in `acr_values` before this and not published) met by two
-   factors whose `amr` names `hwk` — not by a one-time code; anything else only by
+   **WHAT MEETS WHAT.** Ordered levels; `hwk` (an RFC 8176 METHOD name,
+   accepted in `acr_values` before this and not published) met by two
+   factors whose `amr` names `hwk` — not by a one-time code; `phr` and `phrh`,
+   which were read the same way until #723, by 3cp; anything else only by
    that exact `acr`, which is why an unknown value still gets one sign-in (a
    federation partner may report it). A token with no `auth_time` does not meet a
    `max_age`, and no clock skew is allowed on the age.
 
-   **THE REST**: `acr_values_supported` (0, 1, mfa) in `asMetadata()` and so both
+   **THE REST**: `acr_values_supported` (0, 1, mfa, and since #723 phr and
+   phrh) in `asMetadata()` and so both
    discovery documents; `acr` and `auth_time` in `introspectionOf()`; the
    challenge (`challengeHeader()`) under the scheme the token was presented with,
    carrying both auth-params when both are required; codes 0500..0509 and
@@ -2268,7 +2270,35 @@ the same day and read it at introspection instead.
    iframe. `tests/session_management.js` and
    `tests/vendored/sts_session_management.js` hold it.
 
+   **SEVERAL ACCOUNTS IN ONE BROWSER (#561, the plan's section 7).** With
+   `authn.multipleAccounts` on, the cookie carries the browser state of EVERY
+   live session of the browser's account set (`authn.accountSessionsOf()`),
+   the answering session's first, joined by `.` (base64url has none;
+   `browserStatesValue()`), and the script served is
+   `IFRAME_SCRIPT_ACCOUNTS` (`scriptFor()`), which hashes each in turn and
+   answers `unchanged` when any matches. So making another account the
+   default tells no relying party `changed` — `authn.ts` KEEPS the browser
+   state when it mints a default a new handle — and a sign-out changes only
+   the relying parties of the account that left, because
+   `authn.afterAccountSignOut()` writes the list again without it. **Off, the
+   script is byte for byte the one before #561**: the two scripts share a
+   head (`SCRIPT_HEAD`) and differ in their tails, and
+   `tests/multi_account_protocols.js` 3 holds the old one's SHA-256.
+
 ## RP-INITIATED LOGOUT 1.0, WHOLE (#124, WHICH FOLDED #115 IN, 2026-09-23)
+
+**SEVERAL ACCOUNTS IN ONE BROWSER (#561, the plan's section 5)**, only with
+`authn.multipleAccounts` on: the verified hint's `sid` is handed to
+`authn.hintAccount()` as a SOFT hint, so it chooses that session where it is
+live in THIS browser's account set — the set's cookie proves the browser
+holds it; presented by another browser it names nothing, so a bare sid stays
+as untrusted as below — and `endSession(req, res, sid)` ends that one, the
+cookie cleared only where it was the browser's default. With no hint that
+chooses and more than one account, the confirmation page ASKS WHICH: a form
+per account, each with that account's own `confirm_for` and its key as
+`sts_signout_account` (a key names only this browser's accounts), and a
+Stay signed in form; the words are `oauthPages.logout.askWhich*`,
+`signOutAccount` and `whyWhich`. `tests/multi_account_logout.js` 6.
 
 `end_session_endpoint` was graded `mock`: GET only, the session ended BEFORE
 the request was read, `id_token_hint` accepted and never read, `state` never
@@ -2322,7 +2352,7 @@ metadata and honoured little of it. rcbj's answers:
 |---|---|
 | A `jwks_uri` | FETCHED, under the outbound policy — the eighth outbound fetch in the root index |
 | `grant_types` / `response_types` | Enforced in every mode, for a registered client — and since #289 for every client that declares them |
-| `initiate_login_uri` | Validated, and launched from the user portal |
+| `initiate_login_uri` | Validated, written to `oauthInitiateLoginUri`, and launched through `/launch/{app}` (#426) |
 
 **`applications.oidcRegistrationProblem()` is the grammar**, asked at RFC
 7591 registration and RFC 7592 update beside the other metadata checks, in
@@ -2391,14 +2421,26 @@ verification that needed it refuses with its own code. Two kinds of reader:
   prefetches for its own key checks (`prefetchRegisteredKeys()`), and the
   back-channel delivery before it encrypts.
 
-**THE PORTAL'S SIGN-IN LINK** is OpenID Connect Core section 4: a GET to the
-registered `initiate_login_uri` with `iss` and `login_hint`, drawn only
-beside an application that registered one (`portal/portal.ts`,
-`initiateLoginLink()`). `applications.initiateLoginUriOf()` re-checks https,
-because `ldapmodify` reaches the document.
+**THE SIGN-IN LINK** is OpenID Connect Core section 4, OpenID Connect's
+identity-provider-initiated sign-in (#426): `/launch/{app}?protocol=oidc`
+signs the person in here, records the launch on the session, and sends them
+to the client's `initiate_login_uri` with `iss`, `login_hint`,
+`target_link_uri` and #148's `tenant` and `domain_hint`
+(`common/launch_links.ts`, `thirdPartyLoginUrl()`). The portal and the
+console both draw that one link. **Since #426 the URI is the attribute
+`oauthInitiateLoginUri`**, which registration writes and the console and the
+management API edit; `applications.initiateLoginUriOf()` reads it and
+re-checks https, because `ldapmodify` reaches it. **It is off by default**
+(`oauthThirdPartyInitiatedLogin`, `oauth2.thirdPartyInitiatedLogin`), and a
+client whose own start is off (`oauthSpInitiatedSso`) is answered at the
+authorization endpoint only within `oauth2.launchWindowS` of a launch, and
+refused `unauthorized_client` otherwise (STS-OAUTH-0959); the launch is
+spent when the response goes out. `launch/CLAUDE.md` argues it. The
+unsolicited ID Token some providers post straight to a `redirect_uri` is
+not offered: no `state`, no `nonce`.
 
-**NOT DONE**: `target_link_uri` is not sent; `policy_uri` and `tos_uri` are
-not drawn on the consent screen. `tests/oidc_registration.js` holds it.
+**NOT DONE**: `policy_uri` and `tos_uri` are not drawn on the consent
+screen. `tests/oidc_registration.js` holds the rest.
 
 ## DISCOVERY ON THE REALM MODEL, AND WEBFINGER (#119, 2026-09-22)
 
@@ -4032,6 +4074,17 @@ attributes the single secret needed (`oauthClientSecretExpiresAt`,
   all), on the Credentials tab and `/admin-api/applications/{action}`.
   Refusals: the cap `STS-REG-0208`, an unknown id `0209`, the pinned
   `adminApi.clientSecret` `0210`, a bad lifetime or description `0211`.
+* **The create sets the first secret's lifetime too (#394)**: `create`
+  takes `lifetimeDays` beside `fields.oauthClientSecret`, and the console
+  draws it beside Generate Secret. It is read by `clientSecretLifetimeOf()`,
+  the add form's own parser, so the two screens cannot accept different
+  things. It is days rather than a date because the add form's field is days.
+  It applies to a typed secret as well as a generated one, since the create
+  cannot tell them apart. Two refusals: a bad lifetime is `STS-REG-0359`, and
+  a lifetime with nothing to stamp is `0360` (an empty secret, or a whole
+  record handed in, which keeps its own `expires`). The empty default and the
+  form's placeholder come from the view's `defaultSecretLifetimeDays`.
+  `tests/application_generate_secret.js` 5.
 * **Administrators are told**: the daily `oauth2.client-secret-expiry` job
   writes `application.secret-expiring` for an application holding a secret
   that expires within `oauth2.clientSecretExpiryWarningDays`,
@@ -4471,9 +4524,12 @@ home-realm discovery. All in every mode.
   application's own auto-redirect partner wins, being the more specific
   configuration. `fedSubjectDomain` stays an ADMISSION rule; this is a
   routing hint.
-* **The portal launch** (`Portal.initiateLoginLink()`) adds `tenant`,
-  `domain_hint` (the realm's DNS domain) and `target_link_uri` (the
-  application's registered https home page).
+* **The section 4 launch** (`common/launch_links.ts`,
+  `thirdPartyLoginUrl()`, since #426; it was `Portal.initiateLoginLink()`)
+  adds `tenant`, `domain_hint` (the realm's DNS domain) and
+  `target_link_uri` (the link's `target`, which must be one of the client's
+  registered https addresses or the launch is refused — `launch/CLAUDE.md`
+  — else the application's registered https home page).
 
 Tests: `tests/vendored/sts_enterprise_extensions.js`.
 
@@ -4831,6 +4887,8 @@ failure in its driver):
 * `WarnOnUnusableJwksKeys`, and FAILURE conditions that check an algorithm
   list against the suite's JWS table (`ValidateRequestAuthenticationSigning
   AlgValuesSupported`, `VCIValidateProofSigningAlgValuesSupported`,
+  `VCIValidateCredentialSigningAlgValuesSupported` (each configuration's
+  own list since #664),
   `VP1FinalValidateVpFormatsSupportedInClientMetadata`, `ValidateServerJWKs`,
   and `VerifyNewJwksHasNewSigningKey`, which hands every key of the rotated
   JWKS to nimbus's parser and so fails `oidcc-server-rotate-keys` on an AKP
@@ -4839,7 +4897,8 @@ failure in its driver):
   not know. rcbj on #176: PQC support over a clean run.
 * `VerifyStatusListTokenSignatureUsingEmbeddedJwk`: outside HAIP the suite
   resolves a status list token's key only from a header `jwk`; this realm's
-  names it by `kid` and `x5u`, which draft-ietf-oauth-status-list allows.
+  names it by `kid` and carries its chain in `x5c`, which
+  draft-ietf-oauth-status-list allows.
 * The OpenID Federation Leaf's `ValidateAbsenceOfAuthorityHints`: the suite
   decides "is this the Trust Anchor" by string prefix, and a realm's URL
   begins with its Trust Anchor's.
@@ -5040,6 +5099,56 @@ comes from; this section covers what this directory does with it.
   the token request proved a device. Otherwise the gate reads the session's
   device. `xacml/CLAUDE.md` covers the two device rules.
 
+## 3cp. `phr` AND `phrh`: OPENID CONNECT EAP ACR VALUES 1.0, REQUESTED AND ASSERTED (2026-10-19, #723)
+
+A relying party could not ask for a phishing-resistant sign-in or tell from a
+token that it got one. EAP ACR Values 1.0 section 2 has two context classes
+for it. `common/phishing_resistance.ts` says what earns which
+(`common/CLAUDE.md` 3cp). This section covers what `step_up.ts` does with
+them.
+
+* **Requested through 3an's machinery, unchanged**: `acr_values`, an
+  essential `acr` claims request, a client's `default_acr_values`
+  (`oauthDefaultAcrValues`, which is the per-application requirement), and a
+  detail type's required acr.
+* **A SESSION meets them by its evidence; a TOKEN only by carrying one as
+  its `acr`**, and `phrh` states `phr`. This is the behaviour change for a
+  resource server: `mfa` with `amr` `hwk` used to meet `phr`. That was the
+  dishonest half, because a wallet sets `hwk` too and a synced passkey after a
+  password was `phrh`.
+* **NOT RUNGS.** `mfa` does not meet them (two phishable factors are still
+  phishable), and they do not meet `mfa` (a passkey alone is `acr "1"`). A
+  token carrying one meets `0` and `1` (`hadLevelOf()`).
+* **THE SCREEN**: a request whose every producible value is an EAP class
+  demands `screenDemand('key')`: a security key, alone or as the step after a
+  password. `phr mfa` demands nothing in common, by the intersection rule.
+  `hwk` keeps password-plus-key.
+* **THE REFUSALS**, on the return leg or under the round-trip marker, are
+  `unmet_authentication_requirements`:
+  * `STS-OAUTH-0970` when nothing phishing-resistant happened;
+  * `STS-OAUTH-0971` for `phrh` on a sign-in that earned only `phr`. Its
+    description says why (backup-eligible, attestation not trusted, a
+    certificate), from `hardwareShortfallOf()`.
+  
+  A person with no key under `phr` is offered the enrolment as before. The key
+  enrolled earns nothing in that act, so that sign-in is refused once and the
+  next one, an assertion, is `phr`. EAP section 4 is the reason, and it is a
+  decision put to rcbj on #723.
+* **WHAT THE TOKEN SAYS** is the value requested and met (3an's decision 3).
+  A detail type's required `phr` on a passkey session is now carried as the
+  token's `acr` when the session's own `1` would not state it, so the token
+  endpoint's detail check meets it (`assessSession()`).
+* **Published**: `acr_values_supported` is `0, 1, mfa, phr, phrh,
+  urn:sts:acr:compliant-device`.
+* **Nothing asked, nothing changes**: `acr` stays `"1"` or `"mfa"`.
+* **The operator's floor** is the issuance policy's, not this module's
+  (`xacml/CLAUDE.md`).
+* **Not done**: SAML `AuthnContextClassRef` and WS-Federation `wauth` keep
+  their own tables. GNAP interaction is not covered. `allowCredentials` is not
+  narrowed to keys that could earn `phrh`.
+
+`tests/eap_acr_values.js` holds it.
+
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
 
 The review on #45 found Core bugs that no test had asked about. What changed, and
@@ -5089,8 +5198,17 @@ the decisions rcbj made on #118:
 
   An expired hint is still a hint. An encrypted one is refused by name.
 * **`select_account`** is the sign-in screen, where whoever signs in is the
-  account selected. **An essential `acr` in a claims request** is a step-up
-  requirement: `step_up.ts`'s `essentialAcrValuesOf()`.
+  account selected — with `authn.multipleAccounts` off. **On (#561) it is
+  the account picker** (`beginAuthentication({ accountChoice: 'always' })`),
+  `prompt=login` is `accountChoice: 'never'`, `login_hint` and a verified
+  `id_token_hint`'s `sub` and `sid` go to `authn.hintAccount()` before
+  `sessionOf()`, and `prompt=none` from a browser whose accounts nothing in
+  the request chooses between is answered `account_selection_required`
+  (section 3.1.2.6, `STS-OAUTH-0960`). The consent screen resumes the
+  authorization request with `authn.accountTicketFor()`, so it acts as the
+  account that consented. `authn/CLAUDE.md`, *Several signed-in accounts in
+  one browser*, argues all of it. **An essential `acr` in a claims request**
+  is a step-up requirement: `step_up.ts`'s `essentialAcrValuesOf()`.
 * **`offline_access`** (section 11): `offlineAccessScope()` strips it without a
   code, and without `prompt=consent` or a recorded consent to it. **A refresh
   token without it is online**: it carries `sid` inside its JWE, and the refresh

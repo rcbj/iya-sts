@@ -97,7 +97,18 @@ const requestPool = require('./request_pool');
 // request. Installed directly below the pool's middleware — see there.
 const clusterBarrier = require('../cluster/cluster_barrier');
 // --- express app -----------------------------------------------------------
-const app = express();
+// ADAPTED FOR HTTP/2 (#407), so that the same application answers a request
+// that arrived over HTTP/2 on the main port: plain express throws on the
+// first HTTP/2 body it reads. `common/http2_express.ts` gives THIS app its
+// own router `init`, which picks the request's and response's prototypes by
+// protocol (an HTTP/1.1 request gets exactly express's own), builds `host`
+// from `:authority`, and refuses a request whose two disagree. Nothing on the
+// express module is changed, so no other app in the process is touched.
+const app = require('./http2_express').adapt(express());
+// AND NO `X-Powered-By` (#407). Nothing here or in the suite reads it, the
+// debugger's own app has never sent one, and it tells every caller which
+// framework parses its requests.
+app.disable('x-powered-by');
 
 // ---------------------------------------------------------------------------
 // THE TRUST REALM. FIRST OF ALL, AND NOTHING MAY BE REGISTERED ABOVE IT.
@@ -428,12 +439,60 @@ app.use(enterListener);
 // refused sign-in, a consent, a sign-out — carries the client's address,
 // though almost none of the code that writes one was handed the request.
 // `common/audit.js` resolves the address from it only when a row is written.
+//
+// AND A CONSOLE REQUEST'S DIRECTORY BUDGET (#359). The synchronous bridge
+// holds this process's event loop for every question, and a page of many
+// questions held a surface worker for their sum. The budget is the most
+// one `/admin` or `/admin-api` request may wait in all. It is entered
+// here, below the realm middleware, and only for those paths: SCIM and an
+// LDAP operation keep the per-question bound and no page budget. The
+// settings and the bridge are required inside the helpers, so this
+// middleware does not move a load.
+/**
+ * Whether `req` is a console or management-API request, after the realm
+ * prefix has been stripped.
+ *
+ * @param req - the request
+ * @returns true for `/admin` and `/admin-api`
+ */
+function consoleRequest(req) {
+  log.debug("Entering consoleRequest().");
+  const path = String((req && req.url) || '').split('?')[0];
+  const onConsole = path === '/admin' || path.indexOf('/admin/') === 0 ||
+    path === '/admin-api' || path.indexOf('/admin-api/') === 0;
+  log.debug("Leaving consoleRequest().");
+  return onConsole;
+}
+
+/**
+ * The per-request directory budget, clamped to its setting's range.
+ *
+ * @returns the budget, in milliseconds
+ */
+function directoryBudgetMs() {
+  log.debug("Entering directoryBudgetMs().");
+  const config = require('./config');
+  const n = Number(config.value('ldap.workerDirectoryBudgetMs'));
+  const ms = isFinite(n) && n >= 10 ? Math.min(n, 20000) : 5000;
+  log.debug("Leaving directoryBudgetMs().");
+  return ms;
+}
+
 app.use(function (req, res, next) {
   log.debug("Entering the ambient-request middleware.");
   log.debug("Leaving the ambient-request middleware.");
-  return certificateHeader.enterRequest(req, function () {
-    return audit.withSource({ req: req }, next);
-  });
+  const proceed = function () {
+    return certificateHeader.enterRequest(req, function () {
+      return audit.withSource({ req: req }, next);
+    });
+  };
+  if (!consoleRequest(req)) {
+    return proceed();
+  }
+  // The response ends the budget: a timer or job this request starts and
+  // that outlives it asks with none (`common/sync_query.ts`).
+  return require('./sync_query').runWithBudget(directoryBudgetMs(),
+                                                proceed, res);
 });
 
 // The rewrite itself. A function rather than an inline regex so that the ONE

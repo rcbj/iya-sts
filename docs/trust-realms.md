@@ -232,10 +232,11 @@ the default realm are different people. A realm administrator who opens another
 realm's console is told they administer another realm, with a link back.
 
 **Choosing a realm.** When realms are defined, the plain `/admin` and `/portal`
-ask which realm you belong to before signing you in — a list of realms in
-development mode, a box for the realm's id in product mode. Add `?realm=<id>` to
-skip the question, or `?realm=default` to sign in to the default realm. A link
-to any page below `/admin` or `/portal` never asks.
+ask which realm you belong to before signing you in, as a list of every realm.
+The choice is remembered in the browser, and the next visit to those addresses
+opens that realm. Add `?realm=<id>` to choose a different one, or
+`?realm=default` to sign in to the default realm. A link to any page below
+`/admin` or `/portal` never asks.
 
 **The management API.** `/admin-api` accepts a token from the default realm's
 `sts-management-api` client everywhere. Under `/realm/<id>/admin-api` it also
@@ -260,7 +261,9 @@ default realm's, already bound on `0.0.0.0`, so turning SPIFFE on used to mean
 two refused binds; and nothing here can know which addresses a host has. To
 serve a realm over TCP, set `spiffe.grpcHost` on the realm to an address of its
 own and the two ports back to `8092` / `8181` — a client configured for those
-ports then reaches every realm where it expects to.
+ports then reaches every realm where it expects to. An AWS environment
+publishes the Server API only. A workload there uses a node-local agent
+rather than TCP 8092 ([SPIFFE](spiffe.md#a-workload-agent-beside-the-workload)).
 
 **The address is the only thing a SPIFFE client can name a tenant with.** gRPC
 has a path and it is the method name — `/SpiffeWorkloadAPI/FetchX509SVID` is
@@ -320,7 +323,8 @@ Three refusals keep the routing honest, and each is a code in
 
 * **Turning Kerberos on without a `krb5.realm` of its own** — `STS-KRB-0123`.
 * **A name another realm already answers to** — `STS-KRB-0124`: another realm's,
-  the default realm's, or `krb5.trustedRealm`. Compared without regard to case,
+  the default realm's, or the development partner realm (`PARTNER.COM`) the
+  default realm answers as. Compared without regard to case,
   because two realms that differ only in case are two realms nobody can tell
   apart in a `krb5.conf`.
 * **Renaming or clearing it while Kerberos is on** — `STS-KRB-0125`. Every key
@@ -344,16 +348,18 @@ rules: a ticket is accepted in the realm that issued
 it, and a ticket from another realm presented under a realm's prefix is refused
 (`STS-KRB-0126`).
 
-**Trust realms do not trust each other's Kerberos.** A realm's KDC holds no
-inter-realm key for another realm, so a ticket from one is not a referral to
-another — it is unknown there. The cross-realm referral this service does serve
-is the development-mode second realm (`krb5.trustedRealm`, `PARTNER.COM`), which
-belongs to the default realm alone.
+**Trust realms may trust each other's Kerberos (#430)** — through a Kerberos
+trust record on each side, in each realm's own directory (`ou=kerberosTrusts`);
+nothing is implied by two realms living in one service. A referral from one
+realm's KDC to the other's is followed on the same port 88, each answering for
+its own Kerberos realm. See [Kerberos trusts](kerberos.md#kerberos-trusts).
+Development mode seeds the default realm's trust with `PARTNER.COM`, the second
+realm its KDC answers as.
 
 **What is still the process's:** the KDC's socket (`krb5.kdcPort`), so a realm
-cannot move or take a port of its own, and that development trust. A realm administrator manages their realm's Kerberos —
-principals, keytabs and the settings the database is built from — and those five
-settings stay service-wide.
+cannot move or take a port of its own. A realm administrator manages their
+realm's Kerberos — principals, keytabs, trusts and the settings the database is
+built from — and that one setting stays service-wide.
 
 ### Optionally separated — listeners of its own (#99, #472)
 
@@ -455,17 +461,26 @@ is process-wide: there is one list of realms in a process, and `remove` refuses
 to remove the realm the call arrived in — the caller would be left talking to a
 prefix that had stopped existing.
 
-## Three settings
+## Four settings
 
 | Setting | Environment variable | Default | What it does |
 |---|---|---|---|
 | `realms.enabled` | `STS_REALMS_ENABLED` | `true` | Whether defined realms answer on their prefixes. Turning it **off** leaves every definition in place and stops the paths working — which is what to reach for when a realm is answering something it should not, since nothing has to be deleted to find out whether a realm is the reason for something. |
 | `realms.pathSegment` | `STS_REALMS_PATH_SEGMENT` | `realm` | The segment in front of a realm id. Set it to the empty string for the bare `/acme/oauth2/token` shape, which is what a client ported from a product that spells it that way expects. |
 | `realms.removalDeliveryTimeoutS` | `STS_REALMS_REMOVAL_DELIVERY_TIMEOUT_S` | `10` | How long removing a realm waits for what it owes its receivers and relying parties to be delivered — see *Removing one*. `0` still sends everything and does not wait. Read in the realm the removal is made from. |
+| `realms.maxCount` | `STS_REALMS_MAX_COUNT` | `10` | How many trust realms this cluster may hold, the default realm included. A service administrator sets it, and only in the default realm. Lowering it does not remove realms; a create past the cap is refused. |
 
-The first two cannot be set *on* a realm: a realm that could switch realms off would be
+No `realms.*` key can be set *on* a realm: a realm that could switch realms off would be
 doing it from inside the request that found it, and a realm that could move its
-own prefix would be changing the prefix already used to find it.
+own prefix would be changing the prefix already used to find it. `realms.maxCount`
+can additionally be changed only while the default realm is ambient.
+
+**Upgrading a cluster across the release that added `realms.maxCount` restarts
+every node together.** The setting is one of those every node of a cluster must
+agree on, and adding it changed what the nodes compare, so a node on the older
+release and one on the newer refuse each other (`STS-CLUSTER-0002`) whatever
+their settings are. Stop every node, then start every node on the new image;
+there is no mixed-version window.
 
 ## Removing one
 

@@ -390,6 +390,7 @@ const POSITIONS = oracleKit.POSITIONS;
 const combination = oracleKit.combination;
 const oracle = oracleKit.oracle;
 const product = oracleKit.product;
+const settingsFor = oracleKit.settingsFor;
 
 function matrix(t, verdicts) {
   log.debug("Entering matrix().");
@@ -427,7 +428,27 @@ function matrix(t, verdicts) {
               requested: ['delegation', 'impersonation'],
               actorAllowed: [['delegation', 'impersonation']],
               reach: [true], position: POSITIONS,
-              targets: [0, 1] } }
+              targets: [0, 1] } },
+    // ACROSS A KERBEROS TRUST (#430 Phase 3): every mechanism against the
+    // trust's state and bits, the service's two attributes, the classic
+    // setting, and which party is of the other realm.
+    { name: 'across a Kerberos trust',
+      dims: { across: ['S4U2Self', 'S4U2Proxy-classic', 'S4U2Proxy-rbcd',
+                       'forwarded'],
+              trustEnabled: [true, false],
+              direction: ['bidirectional', 'outbound'],
+              tgtBits: ['', 'enable', 'enable-no', 'enable-quarantined',
+                        'within-forest'],
+              selfListed: [false, true], classicSetting: [false, true],
+              foreignTgt: ['', 'deny'],
+              foreignSubject: [false, true], foreignActor: [false, true],
+              foreignTarget: [false, true],
+              actor: ['application', 'unknown'],
+              position: ['target', 'accepted'],
+              targets: [1, 'unregistered'],
+              protect: ['', 'flag'],
+              requested: ['delegation', 'impersonation'],
+              actorAllowed: [['delegation', 'impersonation']] } }
   ];
   let total = 0;
   GROUPS.forEach(function (group) {
@@ -441,8 +462,7 @@ function matrix(t, verdicts) {
       const expected = oracle(c, facts);
       const got = verdicts.decide({ facts: facts, mode: c.mode,
         protocol: 'OAuth 2.0',
-        settings: { defaultSemantics: c.settingDefault,
-                    actorRole: 'DELEGATION_ACTOR' } }, null, {});
+        settings: settingsFor(c) }, null, {});
       count += 1;
       const key = expected.verdict === 'allow'
         ? 'allow:' + expected.semantics : 'refuse:' + expected.refusal;

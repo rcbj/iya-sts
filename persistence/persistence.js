@@ -627,6 +627,23 @@ function settleDirWaiters(error) {
 }
 
 /**
+ * Runs `fn` outside any console request's directory budget (#359): the
+ * timers this module arms run background work, which must never inherit
+ * the AsyncLocalStorage slot of the request whose change armed them.
+ * `common/sync_query` is required here, lazily, as `persistence.start()`
+ * already does — never at load, which would move it ahead of this module.
+ *
+ * @param fn - arms the timer
+ * @returns what `fn` returns
+ */
+function outsideBudget(fn) {
+  log.debug("Entering outsideBudget().");
+  const handle = require('../common/sync_query').outsideBudget(fn);
+  log.debug("Leaving outsideBudget().");
+  return handle;
+}
+
+/**
  * Arms the one retry of a failed write, if none is armed; see RETRY_FIRST_MS.
  * @param why - what failed, for the debug line
  */
@@ -640,18 +657,22 @@ function retryAfterFailure(why) {
                          RETRY_FIRST_MS * Math.pow(2, Math.min(retryFailures,
                                                                5)));
   retryFailures += 1;
-  retryTimer = setTimeout(function () {
-    retryTimer = null;
-    // A keystore row whose write failed has no generation and no journal: it
-    // is queued again here, whole, with what it held when it failed.
-    if (typeof keystore.retryFailed === 'function') {
-      keystore.retryFailed();
-    }
-    flush().catch(function (err) {
-      log.error(errorCodes.tag('STS-STORE-0001') +
-                'persistence: a retried flush failed: ' + err.message);
-    });
-  }, delay);
+  // Outside any request's directory budget, as `schedule()`'s timer.
+  retryTimer = outsideBudget(function () {
+    return setTimeout(function () {
+      retryTimer = null;
+      // A keystore row whose write failed has no generation and no
+      // journal: it is queued again here, whole, with what it held when it
+      // failed.
+      if (typeof keystore.retryFailed === 'function') {
+        keystore.retryFailed();
+      }
+      flush().catch(function (err) {
+        log.error(errorCodes.tag('STS-STORE-0001') +
+                  'persistence: a retried flush failed: ' + err.message);
+      });
+    }, delay);
+  });
   if (retryTimer.unref) {
     retryTimer.unref();
   }
@@ -970,17 +991,22 @@ function schedule() {
   }
   // 0 for a database, `writeDelay` for a file. The header argues both.
   const delay = activeMode === 'postgres' ? 0 : writeDelay();
-  timer = setTimeout(function () {
-    timer = null;
-    flush().catch(function (err) {
-      // flush() records its own failure; this catch exists so that an
-      // unhandled rejection from a timer cannot take the process down. A mock
-      // that exits because a database blinked would be worse than one that
-      // stopped persisting.
-      log.error(errorCodes.tag('STS-STORE-0001') +
-                'persistence: a scheduled flush failed: ' + err.message);
-    });
-  }, delay);
+  // ARMED OUTSIDE ANY REQUEST'S DIRECTORY BUDGET (#359): the change that
+  // schedules a flush is often a console request's, and the flush is
+  // background work that must not inherit that request's slot.
+  timer = outsideBudget(function () {
+    return setTimeout(function () {
+      timer = null;
+      flush().catch(function (err) {
+        // flush() records its own failure; this catch exists so that an
+        // unhandled rejection from a timer cannot take the process down. A
+        // mock that exits because a database blinked would be worse than
+        // one that stopped persisting.
+        log.error(errorCodes.tag('STS-STORE-0001') +
+                  'persistence: a scheduled flush failed: ' + err.message);
+      });
+    }, delay);
+  });
   // The timer must not hold the process open on its own — a service with
   // nothing else to do should still be able to exit.
   if (timer.unref) {
@@ -2121,6 +2147,23 @@ function workerCount() {
  * @throws a rejected promise when no directory is installed or the store
  * cannot be opened or read
  */
+// Explicit authn.sessionWindow=on cannot start unless a miss can be read
+// back. auto is logged and does not refuse. The window module is required
+// here, not at load: this file is step 4a and authn is step 8.
+function refuseSessionWindow() {
+  log.debug("Entering refuseSessionWindow().");
+  try {
+    require('../authn/session_window').assertConfigured();
+  } catch (e) {
+    log.debug("Caught in refuseSessionWindow(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving refuseSessionWindow().");
+    return Promise.reject(e);
+  }
+  log.debug("Leaving refuseSessionWindow().");
+  return null;
+}
+
 function start() {
   log.debug('Entering start().');
   // In every mode, a store or none: a blocked loop is worth measuring in a
@@ -2136,6 +2179,11 @@ function start() {
               'persistence: "' + chosen + '" is not a mode this module knows ' +
               '(' + MODES.join(', ') + '). Nothing will be persisted.');
     activeMode = 'memory';
+    const refused = refuseSessionWindow();
+    if (refused) {
+      log.debug('Leaving start(). The session window was refused.');
+      return refused;
+    }
     log.debug('Leaving start(). The mode was not recognised.');
     return Promise.resolve({ mode: 'memory' });
   }
@@ -2162,6 +2210,11 @@ function start() {
     log.info('persistence: off (persistence.mode=memory). Everything this ' +
              'service holds is in memory and goes when the process does, ' +
              'which is what it did before persistence existed.');
+    const refused = refuseSessionWindow();
+    if (refused) {
+      log.debug('Leaving start(). The session window was refused.');
+      return refused;
+    }
     log.debug('Leaving start(). Memory mode.');
     return Promise.resolve({ mode: 'memory' });
   }
@@ -2514,6 +2567,20 @@ function reportLag() {
     return { measuring: false };
   }
   lagReport = sample;
+  // A REQUEST WORKER TELLS THE FRONT PROCESS (#408): the scheduler's leader
+  // holds a patient cluster run while even the least-loaded worker's loop is
+  // running late, and a worker's loop is measurable only in the worker. One
+  // message per window, on the channel the worker already has. Required
+  // lazily and only in a worker, so a process that is not one loads nothing.
+  if (process.env.STS_REQUEST_WORKER) {
+    try {
+      require('../common/worker_channel').send({ loopLag: sample });
+    } catch (e) {
+      // The channel is gone: this worker is being ended, and the front
+      // forgets its figures with it.
+      log.debug("Caught in reportLag(): " + ((e && e.message) || e));
+    }
+  }
   if (sample.maxMs > LAG_WARN_MS) {
     log.warn(errorCodes.tag('STS-STORE-0068') + 'persistence: this ' +
              'process\'s event loop was blocked for up to ' + sample.maxMs +
@@ -2743,10 +2810,11 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // one where there is one, whose settings go to the global tier.
     require('./sealed_settings').wrap(driver);
   } catch (err) {
-    // The postgres driver's `require('pg')` is the realistic way to get here —
-    // an image built without the dependency. Named, because "cannot find
-    // module pg" arriving from inside a mock identity service is a sentence
-    // nobody expects.
+    // The postgres driver's door loading Knex and Knex loading `pg`
+    // (`knex_store.js`, #326) is the realistic way to get here — an image
+    // built without the dependency. Named, because "cannot find module pg"
+    // arriving from inside a mock identity service is a sentence nobody
+    // expects.
     driver = null;
     activeMode = 'memory';
     lastError = err.message;
@@ -2976,6 +3044,13 @@ function openStore(chosen, resolvedUrl, globalUrls) {
                'does not hold from the store, through the directory bridge ' +
                '(ldap.workerDirectory=postgres-lru).');
     }
+    // The session window's bridge is a second thread, offered whenever a
+    // driver is open. It starts on the first miss, not here, so a service
+    // whose window is off never dials it.
+    require('../authn/session_window').offerConnection(function () {
+      return typeof driver.bridgeConnection === 'function'
+        ? driver.bridgeConnection() : null;
+    });
     // -------------------------------------------------------------------
     // AND THE USED-ASSERTION HISTORY ITS STORE, BEFORE ANYTHING IS SERVED.
     // A file store is READ here: a token request answered from an empty copy
@@ -3007,6 +3082,10 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // with this one's promise.
     // ---------------------------------------------------------------------
     return keystore.start();
+  }).then(function () {
+    // Bodies can be opened now. A throw is fatal, and a page that already
+    // committed is not a finished index (#350).
+    return minted.backfillSessionIndex();
   }).then(function () {
     return persistsAppconfig() ? driver.loadOverrides() : null;
   }).then(function (saved) {
@@ -3092,6 +3171,11 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     realmsDirty = persistsRealms();
     configDirty = false;
     schedule();
+    const refused = refuseSessionWindow();
+    if (refused) {
+      log.debug('Leaving openStore(). The session window was refused.');
+      return refused;
+    }
     log.debug('Leaving openStore(). Restored.');
     return { mode: activeMode, restored: restoredCounts };
   }).catch(function (err) {
@@ -3104,6 +3188,10 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // operator to look at the database. Passed through with its own code.
     if (/STS-CLUSTER-\d{4}/.test(String(err && err.message))) {
       log.debug('Leaving openStore(). The cluster gate refused.');
+      throw err;
+    }
+    if (/STS-AUTHN-0339/.test(String(err && err.message))) {
+      log.debug('Leaving openStore(). The session window was refused.');
       throw err;
     }
     // ---------------------------------------------------------------------
@@ -3135,10 +3223,16 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // thing the operator will see, and "connect ECONNREFUSED" on its own does
     // not say which of the six settings to look at.
     // ---------------------------------------------------------------------
+    // A session-index page that committed is not "nothing changed": the
+    // next start must resume the walk, not treat the part as finished.
+    const partly = !!(err && err.sessionIndexCommitted);
     const explanation = errorCodes.tag('STS-STORE-0006') +
               'persistence.mode is "' + chosen + '" and the store ' +
-              'could not be read: ' + err.message + '. Nothing in the store ' +
-              'was changed.' +
+              'could not be read: ' + err.message +
+              (partly
+                ? '. The session index was partly written. The next start ' +
+                  'resumes it; it does not treat that part as finished.'
+                : '. Nothing in the store was changed.') +
               // -------------------------------------------------------------
               // AND IF THE CONNECTION STRING IS THE BUILT-IN ONE, SAY SO.
               //
@@ -4177,7 +4271,11 @@ function coordinate() {
   // would put a cross-region round trip on every request, which is the cost
   // #98 D3 declined. /admin/cells shows the lag.
   // -------------------------------------------------------------------------
-  const started = replication.start(driver, appliers);
+  // When a session-index walk ran, this is the seq from before its first
+  // page (#350). Commits during the walk stay above it, so
+  // repairSessionIndex still sees them. Null starts at the head.
+  const started = replication.start(driver, appliers,
+                                   minted.sessionIndexChangeFloor());
   if (!driver || !driver.tiered) {
     return started;
   }
@@ -5068,10 +5166,10 @@ module.exports = {
       // `current_schema()`, and that is what every schema probe below it
       // actually scoped to.
       // **REQUIRED LAZILY, LIKE THE DRIVER ITSELF.** That module pulls in
-      // `pg` at create() time, and this file is required by every process
-      // that loads the protocol stack — including the ones running in
-      // `memory` mode, which must not be stopped by a missing optional
-      // dependency. By the time this line runs the driver is open, so it is
+      // Knex, and with it `pg`, at create() time (#326), and this file is
+      // required by every process that loads the protocol stack — including
+      // the ones running in `memory` mode, which must not be stopped by a
+      // missing optional dependency. By the time this line runs the driver is open, so it is
       // a cache hit.
       //
       // What crosses is the DECLARED schema: the version the driver expects

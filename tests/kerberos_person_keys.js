@@ -480,7 +480,13 @@ async function productChild() {
 
   // --- a person, a password, keys ---
   const PW = 'Correct-Horse-Battery-9!';
-  const made = directory.createUser('kpalice', { invent: false });
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
+  const person = function (name) {
+    return { invent: false, attributes: { givenName: 'Kp', sn: name,
+                                          mail: name + '@example.test' } };
+  };
+  const made = directory.createUser('kpalice', person('kpalice'));
   out.steps.created = made.ok;
   const set = credentials.setPassword('kpalice', PW);
   out.steps.set = set.ok;
@@ -516,7 +522,7 @@ async function productChild() {
   out.boundName = opened.name;
 
   // --- a person with a password and NO keys, then the upgrade on a verify ---
-  directory.createUser('kpbob', { invent: false });
+  directory.createUser('kpbob', person('kpbob'));
   config.setOverride('krb5.personKeys', 'false');
   credentials.setPassword('kpbob', PW);
   await personKeys.idle();

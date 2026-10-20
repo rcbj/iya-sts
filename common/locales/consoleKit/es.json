@@ -32,6 +32,17 @@
   "grid.notSet": "sin definir",
   "grid.example": "p. ej., ",
   "grid.outside": "(no es uno de los valores permitidos)",
+  "grant.authorizationCode": "La concesión por código de autorización (RFC 6749, sección 4.1): un código del punto de autorización, canjeado en el punto de token.",
+  "grant.implicit": "La concesión implícita (RFC 6749, sección 4.2): tokens directamente desde el punto de autorización. El modo RFC 9700 la rechaza.",
+  "grant.refreshToken": "La concesión por token de actualización (RFC 6749, sección 6). Un cliente que declara concesiones sin ella no recibe token de actualización.",
+  "grant.clientCredentials": "La concesión por credenciales de cliente (RFC 6749, sección 4.4): un token para el propio cliente, sin persona.",
+  "grant.password": "La concesión por credenciales de contraseña del propietario del recurso (RFC 6749, sección 4.3). El modo OAuth 2.1 la rechaza.",
+  "grant.tokenExchange": "OAuth 2.0 Token Exchange (RFC 8693): un token canjeado por otro, para delegación o suplantación.",
+  "grant.preAuthorizedCode": "La concesión por código preautorizado de OpenID4VCI: una billetera canjea el código que llevaba una oferta de credencial.",
+  "grant.jwtBearer": "Un JWT como concesión de autorización (RFC 7523, sección 2.1). Desactivado donde oauth2.jwtBearerGrant está desactivado.",
+  "grant.saml2Bearer": "Una aserción SAML 2.0 como concesión de autorización (RFC 7522, sección 2.1). Desactivado donde oauth2.saml2BearerGrant está desactivado.",
+  "grant.ciba": "OpenID Connect Client-Initiated Backchannel Authentication (CIBA): la persona aprueba en otro dispositivo. Desactivado salvo que oauth2.ciba esté activado.",
+  "grant.deviceCode": "La concesión por autorización de dispositivo (RFC 8628): un dispositivo sin navegador muestra un código que la persona introduce en otro lugar. Desactivado salvo que oauth2.deviceAuthorization esté activado.",
   "grid.valueN": "{attribute}, valor {n}",
   "grid.delete": "Eliminar este valor",
   "grid.deleteN": "Eliminar el valor {n} de {attribute}",
@@ -77,5 +88,6 @@
   "mail.none": "Este dominio no tiene transporte de correo (",
   "mail.link": "Correo",
   "mail.noneAfter": "), así que {what} se le muestra para que lo transmita.",
-  "mail.box": "enviar {what} por correo a la dirección de su entrada, y no mostrármelo"
+  "mail.box": "enviar {what} por correo a la dirección de su entrada, y no mostrármelo",
+  "grid.required": " &middot; obligatorio"
 }

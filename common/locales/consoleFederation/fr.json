@@ -252,5 +252,22 @@
   "through": "par ",
   "brokerNotUsable": "cette relation n’est pas utilisable ; l’écran de connexion est donc affiché à la place",
   "notAMechanism": "pas un mécanisme dont dispose ce service",
-  "authAtPartnerTitle": "L’authentification a lieu chez le PARTENAIRE sur une relation côté fournisseur de services ; il n’y a donc rien à configurer ici."
+  "authAtPartnerTitle": "L’authentification a lieu chez le PARTENAIRE sur une relation côté fournisseur de services ; il n’y a donc rien à configurer ici.",
+  "labelCategory": "Catégorie",
+  "anyCategory": "toute catégorie",
+  "categoryEnterprise": "entreprise",
+  "categoryConsumer": "grand public et social",
+  "headingConsumer": "Fournisseurs grand public et sociaux",
+  "consumerOn": "Les fournisseurs grand public et sociaux sont <strong>activés</strong> dans ce domaine (<code>federation.consumerProviders</code>).",
+  "consumerOff": "Les fournisseurs grand public et sociaux sont <strong>désactivés</strong> dans ce domaine. Activez <code>federation.consumerProviders</code> dans les paramètres pour en ajouter un ; les partenaires d’entreprise ne sont pas concernés.",
+  "consumerWhat": "Chaque fournisseur est une relation de fédération à part entière, ajoutée désactivée. Ses points de terminaison sont écrits sur la relation à son ajout et peuvent être modifiés sur sa page. Un nouveau venu obtient sa propre entrée, et une adresse n’est jamais utilisée pour retrouver une personne existante. Enregistrez auprès du fournisseur, comme URI de redirection, le service consommateur d’assertions affiché sur sa page, puis activez-la.",
+  "consumerListLink": "N’afficher que les fournisseurs grand public et sociaux",
+  "thProvider": "Fournisseur",
+  "thAddOne": "En ajouter un",
+  "thDocumentation": "Documentation",
+  "labelClientId": "ID client",
+  "labelClientSecret": "Secret client",
+  "buttonAddProvider": "Ajouter",
+  "providerDocs": "la documentation du fournisseur",
+  "providerRealmOff": "Ce domaine a désactivé les fournisseurs grand public et sociaux : cette relation refuse donc toute connexion tant que <code>federation.consumerProviders</code> n’est pas activé."
 }

@@ -847,9 +847,13 @@ async function makeWorld(mode) {
   // for others.
   await createPerson(realm, w.requester);
   const signing = [SIGNER.certPem];
+  // saml2IdpInitiatedSso: the unsolicited Response below is sent to this
+  // service provider, and identity-provider-initiated sign-in is off until
+  // a service provider opts in (#426, #711).
   await createApplication(realm, w.sp, ["saml2"], {
     samlEntityId: [w.sp], samlAssertionConsumerService: [w.acs],
-    samlSingleLogoutService: [w.slo], samlSigningCertificate: signing });
+    samlSingleLogoutService: [w.slo], samlSigningCertificate: signing,
+    saml2IdpInitiatedSso: "TRUE" });
   await createApplication(realm, w.spEnc, ["saml2"], {
     samlEntityId: [w.spEnc], samlAssertionConsumerService: [w.acsEnc],
     samlSigningCertificate: signing,
