@@ -35,10 +35,21 @@ const POSITIONS = ['subject', 'source', 'target', 'accepted', 'unrelated'];
 // groups ('', 'member', 'outsider'), mayAct ('', 'names', 'other'),
 // sourceAuthority, targetAuthority, targets (0, 1, 'unregistered', 2).
 //
+// ACROSS A KERBEROS TRUST (#430 Phase 3), when `c.across` names a mechanism
+// ('S4U2Self', 'S4U2Proxy-classic', 'S4U2Proxy-rbcd', 'forwarded'): the
+// trust's `trustEnabled`, `direction` and `tgtBits` ('', 'enable',
+// 'enable-no', 'enable-quarantined', 'within-forest'), whether the actor
+// lists the user's realm (`selfListed`), the realm's classic setting
+// (`classicSetting`), the target's `foreignTgt` ('', 'inherit', 'deny'), and
+// which parties are of the other realm (`foreignSubject`, `foreignActor`,
+// `foreignTarget`). With no `across` none of these facts is sent, which is
+// every combination the rules of #186 were tested on.
+//
 // A HOT PATH: no Entering/Leaving pair here, in oracle() or in walk() below —
 // each runs once for every one of up to 2,488,320 combinations, and the pair
 // would drown the log.
 function combination(c) {
+  // `out` rather than a bare return, so the trust facts can be added.
   const actorId = c.position === 'subject' ? 'sub'
     : c.position === 'source' ? 'S'
       : c.position === 'target' ? 'R' : 'X';
@@ -46,7 +57,7 @@ function combination(c) {
   const count = c.targets === 2 ? 2 : (c.targets === 0 ? 0 : 1);
   const targetId = count === 0 ? '' : (c.targets === 'unregistered'
     ? 'https://unregistered.example' : 'R');
-  return {
+  const out = {
     subject: { id: 'sub', kind: c.subjectKind,
                roles: ['EVERYBODY'].concat(c.sourceAuthority ? ['src'] : [])
                  .concat(c.targetAuthority ? ['tgt'] : []),
@@ -74,6 +85,38 @@ function combination(c) {
     mayActNamesActor: c.mayAct === 'names',
     protectedGroups: ['protected']
   };
+  if (!c.across) {
+    return out;
+  }
+  const bits = { '': [], 'enable': ['enable-tgt-delegation'],
+                 'enable-no': ['enable-tgt-delegation', 'no-tgt-delegation'],
+                 'enable-quarantined': ['enable-tgt-delegation',
+                                        'quarantined'],
+                 'within-forest': ['within-forest'] }[c.tgtBits || ''];
+  out.trust = { partner: 'P.TEST', type: 'trust-realm',
+                direction: c.direction || 'bidirectional',
+                attributes: bits, path: ['P.TEST'], hops: 1,
+                enabled: c.trustEnabled !== false };
+  out.localRealm = 'L.TEST';
+  out.mechanism = c.across;
+  out.subject.realm = c.foreignSubject ? 'P.TEST' : 'L.TEST';
+  out.actor.realm = c.foreignActor ? 'P.TEST' : 'L.TEST';
+  out.actor.selfRealms = c.selfListed ? ['P.TEST'] : [];
+  out.target.realm = c.foreignTarget ? 'P.TEST' : 'L.TEST';
+  out.target.foreignTgtDelegation = c.foreignTgt || '';
+  return out;
+}
+
+// The settings a combination is asked with: the classic setting only for a
+// question across a trust, as `delegation_policy.ts` sends it. A HOT PATH,
+// asked once per combination: no Entering/Leaving pair (see combination()).
+function settingsFor(c) {
+  const out = { defaultSemantics: c.settingDefault,
+                actorRole: 'DELEGATION_ACTOR' };
+  if (c.across) {
+    out.crossRealmClassicDelegation = !!c.classicSetting;
+  }
+  return out;
 }
 
 // THE ORACLE: the rules of #186, in the policy's order, from the facts. A HOT
@@ -104,13 +147,31 @@ function oracle(c, f) {
     return { verdict: 'refuse', refusal: kind,
              enforced: always || c.mode === 'product', chosen: chosen };
   };
+  // #430: across a Kerberos trust.
+  const across = !!f.trust;
+  const foreign = function (realm) {
+    return !!realm && !!f.localRealm && realm !== f.localRealm;
+  };
+  const mech = across ? f.mechanism : '';
+  const forwardedAcross = across && mech === 'forwarded';
+  const classicVouched = across && mech === 'S4U2Proxy-classic' &&
+    foreign(f.actor.realm) && !!c.classicSetting;
+  const rbcdDeferred = across && mech === 'S4U2Proxy-rbcd' &&
+    foreign(f.target.realm);
+  const foreignActorAccepted = across && foreign(f.actor.realm) &&
+    has(f.target.accepts, f.actor.id);
+  const trustBits = across ? f.trust.attributes : [];
+  const tgtEnabled = (has(trustBits, 'within-forest') ||
+                      has(trustBits, 'enable-tgt-delegation')) &&
+    !(has(trustBits, 'no-tgt-delegation') || has(trustBits, 'quarantined'));
   if (f.mayActPresent && !f.mayActNamesActor) {
     return refuse('may-act', true);
   }
   if (f.target.count > 1) {
     return refuse('targets');
   }
-  if (f.target.count === 1 && !f.target.registered) {
+  if (f.target.count === 1 && !f.target.registered &&
+      !foreign(f.target.realm) && !forwardedAcross) {
     return refuse('unregistered-target');
   }
   if (f.target.count === 0 && !self) {
@@ -122,17 +183,40 @@ function oracle(c, f) {
                 }))) {
     return refuse('subject');
   }
-  if (!self && !f.actor.registered) {
+  if (across) {
+    if (!f.trust.enabled) {
+      return refuse('trust-disabled');
+    }
+    if (mech === 'S4U2Self' && foreign(f.subject.realm) &&
+        ['inbound', 'bidirectional'].indexOf(f.trust.direction) < 0) {
+      return refuse('trust-direction');
+    }
+    if (mech === 'S4U2Self' && foreign(f.subject.realm) &&
+        !has(f.actor.selfRealms, f.subject.realm)) {
+      return refuse('self-realm');
+    }
+    if (mech === 'S4U2Proxy-classic' && !c.classicSetting) {
+      return refuse('classic-across-realms');
+    }
+    if (mech === 'forwarded' &&
+        (!tgtEnabled || f.target.foreignTgtDelegation === 'deny')) {
+      return refuse('tgt-delegation');
+    }
+  }
+  if (!self && !f.actor.registered && !foreignActorAccepted &&
+      !classicVouched && !forwardedAcross) {
     return refuse('intermediary');
   }
-  if (!self && f.actor.kind === 'user' &&
+  if (!self && !forwardedAcross && f.actor.kind === 'user' &&
       !has(f.actor.roles, 'DELEGATION_ACTOR')) {
     return refuse('intermediary');
   }
-  if (!self && !(actorAllows(chosen) && subjectAllows(chosen))) {
+  if (!self && !forwardedAcross &&
+      !(actorAllows(chosen) && subjectAllows(chosen))) {
     return refuse('semantics');
   }
-  if (!self && f.actor.subjectGroups.length && !f.mayActNamesActor &&
+  if (!self && !forwardedAcross && f.actor.subjectGroups.length &&
+      !f.mayActNamesActor &&
       !f.subject.groups.some(function (g) {
         return has(f.actor.subjectGroups, g);
       })) {
@@ -146,12 +230,13 @@ function oracle(c, f) {
   }
   const delegates = has(f.source.delegatesTo, f.target.id) ||
     has(f.target.accepts, f.source.id);
-  if (!self && chosen === 'delegation' &&
+  if (!self && chosen === 'delegation' && !forwardedAcross &&
+      !rbcdDeferred && !classicVouched &&
       !((f.actor.id === f.source.id || f.actor.id === f.target.id ||
          has(f.target.accepts, f.actor.id)) && delegates)) {
     return refuse('target');
   }
-  if (!self && chosen === 'impersonation' &&
+  if (!self && !forwardedAcross && chosen === 'impersonation' &&
       !(f.actor.id === f.target.id || has(f.actor.delegatesTo, f.target.id) ||
         has(f.target.accepts, f.actor.id))) {
     return refuse('target');
@@ -184,6 +269,7 @@ function product(dimensions, fixed, visit) {
 module.exports = {
   POSITIONS: POSITIONS,
   combination: combination,
+  settingsFor: settingsFor,
   oracle: oracle,
   product: product
 };

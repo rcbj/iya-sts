@@ -578,6 +578,26 @@ const EXCHANGE_ATTRIBUTE = {
   MAY_ACT_PRESENT: xacmlRequest.VOCABULARY.EXCHANGE_MAY_ACT_PRESENT,
   MAY_ACT_NAMES_ACTOR: xacmlRequest.VOCABULARY.EXCHANGE_MAY_ACT_NAMES_ACTOR,
   PROTECTED_GROUP: xacmlRequest.VOCABULARY.EXCHANGE_PROTECTED_GROUP,
+  // ACROSS A KERBEROS TRUST (#430 Phase 3): the facts the cross-realm rules
+  // read, each sent only for a question that crossed a trust.
+  SUBJECT_REALM: xacmlRequest.VOCABULARY.EXCHANGE_SUBJECT_REALM,
+  ACTOR_REALM: xacmlRequest.VOCABULARY.EXCHANGE_ACTOR_REALM,
+  TARGET_REALM: xacmlRequest.VOCABULARY.EXCHANGE_TARGET_REALM,
+  LOCAL_REALM: xacmlRequest.VOCABULARY.EXCHANGE_LOCAL_REALM,
+  MECHANISM: xacmlRequest.VOCABULARY.EXCHANGE_MECHANISM,
+  TRUST_PARTNER: xacmlRequest.VOCABULARY.EXCHANGE_TRUST_PARTNER,
+  TRUST_DIRECTION: xacmlRequest.VOCABULARY.EXCHANGE_TRUST_DIRECTION,
+  TRUST_ATTRIBUTE: xacmlRequest.VOCABULARY.EXCHANGE_TRUST_ATTRIBUTE,
+  TRUST_ENABLED: xacmlRequest.VOCABULARY.EXCHANGE_TRUST_ENABLED,
+  ACTOR_SELF_REALM: xacmlRequest.VOCABULARY.EXCHANGE_ACTOR_SELF_REALM,
+  TARGET_FOREIGN_TGT_DELEGATION:
+    xacmlRequest.VOCABULARY.EXCHANGE_TARGET_FOREIGN_TGT_DELEGATION,
+  CLASSIC_ACROSS_SETTING: xacmlRequest.VOCABULARY.SETTING_PREFIX +
+                          'krb5.crossRealmClassicDelegation',
+  // The refusal kinds the cross-realm rules give, which the KDC turns into
+  // its own codes (`kerberos/krb5_kdc.js`).
+  TRUST_REFUSALS: ['trust-disabled', 'trust-direction', 'self-realm',
+                   'classic-across-realms', 'tgt-delegation'],
   // The realm's settings, as setting facts.
   DEFAULT_SETTING: xacmlRequest.VOCABULARY.SETTING_PREFIX +
                    'delegation.defaultSemantics',
@@ -2676,6 +2696,60 @@ const TEMPLATES: TemplateRow[] = [
                                  assignments: [assignment(EX.CHOSEN, from)] }],
                  advice: [] };
       };
+      // ACROSS A KERBEROS TRUST (#430 Phase 3). Every one of these is false
+      // on a question that crossed no trust — the trust facts are sent only
+      // with one — so the rules below are the rules they were for every
+      // other question.
+      const acrossTrust = present(bagOf(env, EX.TRUST_PARTNER));
+      const mechanismIs = function (value: string): any {
+        log.debug("Entering mechanismIs().");
+        log.debug("Leaving mechanismIs().");
+        return B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, value),
+                                             bagOf(A, EX.MECHANISM)]);
+      };
+      const localRealm = bagOf(env, EX.LOCAL_REALM);
+      const foreign = function (category: string, id: string): any {
+        log.debug("Entering foreign().");
+        log.debug("Leaving foreign().");
+        return and([present(bagOf(category, id)), present(localRealm),
+                    not(shares(bagOf(category, id), localRealm))]);
+      };
+      const trustHas = function (name: string): any {
+        log.debug("Entering trustHas().");
+        log.debug("Leaving trustHas().");
+        return B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, name),
+                                             bagOf(env, EX.TRUST_ATTRIBUTE)]);
+      };
+      const forwardedAcross = and([acrossTrust, mechanismIs('forwarded')]);
+      const notForwarded = not(forwardedAcross);
+      // CLASSIC DELEGATION ACROSS REALMS, VOUCHED FOR (decision 5): with the
+      // realm's krb5.crossRealmClassicDelegation on, a classic S4U2Proxy
+      // whose evidence arrived as the front end's realm's cross-realm TGT —
+      // which that realm issues only after its own check of the front end's
+      // appAllowedToDelegateTo — is taken as that realm checked it.
+      const classicVouched = and([acrossTrust,
+        mechanismIs('S4U2Proxy-classic'), foreign(I, EX.ACTOR_REALM),
+        settingOn('krb5.crossRealmClassicDelegation')]);
+      // RESOURCE-BASED DELEGATION TO A FOREIGN TARGET is the target realm's
+      // to decide ([MS-SFU] 3.2.5.2.3): the front end's realm refers it.
+      const rbcdDeferred = and([acrossTrust, mechanismIs('S4U2Proxy-rbcd'),
+                                foreign(R, EX.TARGET_REALM)]);
+      // A FOREIGN ACTOR the target accepts by name has no entry here, and
+      // needs none: R's appAllowedToActOnBehalfOf names it `SPN@REALM`.
+      const foreignActorAccepted = and([acrossTrust,
+        foreign(I, EX.ACTOR_REALM),
+        shares(actorId, bagOf(R, EX.TARGET_ACCEPTS))]);
+      // [MS-KILE] 3.3.5.7.5's two conditions on the trust's attributes.
+      const tgtDelegationEnabled = and([
+        or([trustHas('within-forest'), trustHas('enable-tgt-delegation')]),
+        not(or([trustHas('no-tgt-delegation'), trustHas('quarantined')]))]);
+      const trustDeny = function (name: string, kind: string,
+                                  description: string, condition: any): any {
+        log.debug("Entering trustDeny().");
+        log.debug("Leaving trustDeny().");
+        return exchangeDeny(name, kind, description,
+                            and([acrossTrust, condition]));
+      };
       const requested = bagOf(A, EX.REQUESTED_SEMANTICS);
       const actorDefault = bagOf(I, EX.DEFAULT_SEMANTICS);
       const subjectDefault = bagOf(S, EX.DEFAULT_SEMANTICS);
@@ -2705,9 +2779,11 @@ const TEMPLATES: TemplateRow[] = [
           countIs('integer-less-than', '1')),
         exchangeDeny('unregistered-target', 'unregistered-target', 'Refuse a ' +
           'target no application registers: there is no entry to read ' +
-          'roles or relationships from.',
+          'roles or relationships from — unless it is in another Kerberos ' +
+          'realm across a trust (#430), whose own KDC holds its entry.',
           and([countIs('integer-equal', '1'),
-               not(fact(R, EX.TARGET_REGISTERED, true))])),
+               not(fact(R, EX.TARGET_REGISTERED, true)),
+               not(foreign(R, EX.TARGET_REALM)), notForwarded])),
         exchangeDeny('no-target', 'no-target', 'Refuse a delegation or ' +
           'impersonation that names no target; only a self exchange ' +
           'defaults to the subject token\'s own audience.',
@@ -2719,13 +2795,54 @@ const TEMPLATES: TemplateRow[] = [
           and([notSelf, or([fact(S, EX.SUBJECT_NOT_DELEGATED, true),
                             shares(bagOf(S, EX.SUBJECT_GROUP),
                                    bagOf(env, EX.PROTECTED_GROUP))])])),
+        // ACROSS A KERBEROS TRUST (#430 Phase 3), before the rest.
+        trustDeny('trust-disabled', 'trust-disabled', 'Refuse anything ' +
+          'across a trust that is disabled.',
+          not(fact(env, EX.TRUST_ENABLED, true))),
+        trustDeny('trust-direction', 'trust-direction', 'Refuse S4U2Self ' +
+          'for a user of another realm unless this realm\'s trust ACCEPTS ' +
+          'that realm\'s tickets (an incoming key: inbound or ' +
+          'bidirectional).',
+          and([mechanismIs('S4U2Self'), foreign(S, EX.SUBJECT_REALM),
+               not(or([B.apply(F1 + 'string-is-in', [
+                         B.value(TYPE.STRING, 'inbound'),
+                         bagOf(env, EX.TRUST_DIRECTION)]),
+                       B.apply(F1 + 'string-is-in', [
+                         B.value(TYPE.STRING, 'bidirectional'),
+                         bagOf(env, EX.TRUST_DIRECTION)])]))])),
+        trustDeny('self-realm', 'self-realm', 'Refuse S4U2Self for a user ' +
+          'of another realm unless the service lists that realm ' +
+          '(krb5S4uSelfRealm): empty means its own realm only.',
+          and([mechanismIs('S4U2Self'), foreign(S, EX.SUBJECT_REALM),
+               not(shares(bagOf(S, EX.SUBJECT_REALM),
+                          bagOf(I, EX.ACTOR_SELF_REALM)))])),
+        trustDeny('classic-across-realms', 'classic-across-realms',
+          'Refuse CLASSIC constrained delegation across a trust unless the ' +
+          'realm allows it (krb5.crossRealmClassicDelegation): ' +
+          'msDS-AllowedToDelegateTo is defined within one realm, and ' +
+          'resource-based delegation is the one that crosses.',
+          and([mechanismIs('S4U2Proxy-classic'),
+               not(settingOn('krb5.crossRealmClassicDelegation'))])),
+        trustDeny('tgt-delegation', 'tgt-delegation', 'Refuse a TGT ' +
+          'delegated across a trust (ok-as-delegate, a forwarded TGT) ' +
+          'unless [MS-KILE] 3.3.5.7.5\'s conditions hold — the trust is ' +
+          'within the forest or enables TGT delegation, and neither forbids ' +
+          'it nor is quarantined — and the service does not refuse it ' +
+          '(krb5ForeignTgtDelegation deny narrows; it never widens).',
+          and([mechanismIs('forwarded'), or([not(tgtDelegationEnabled),
+            B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, 'deny'),
+              bagOf(R, EX.TARGET_FOREIGN_TGT_DELEGATION)])])])),
         exchangeDeny('unknown-actor', 'intermediary', 'Refuse an actor with ' +
           'no entry in this realm: its entry is where the permission to act ' +
-          'lives.',
-          and([notSelf, not(fact(I, EX.ACTOR_REGISTERED, true))])),
+          'lives — unless it is in another Kerberos realm and the target ' +
+          'accepts it by name, or its realm vouched for a classic ' +
+          'delegation the realm allows across trusts (#430).',
+          and([notSelf, not(fact(I, EX.ACTOR_REGISTERED, true)),
+               not(foreignActorAccepted), not(classicVouched),
+               notForwarded])),
         exchangeDeny('user-actor-role', 'intermediary', 'Refuse a PERSON as ' +
           'the actor unless they hold the role delegation.actorRole names.',
-          and([notSelf, B.apply(F1 + 'string-is-in', [
+          and([notSelf, notForwarded, B.apply(F1 + 'string-is-in', [
             B.value(TYPE.STRING, 'user'), bagOf(I, EX.ACTOR_KIND)]),
                not(shares(bagOf(I, ISSUANCE_ATTRIBUTE.ROLE),
                           bagOf(env, EX.ACTOR_ROLE_SETTING)))])),
@@ -2733,7 +2850,7 @@ const TEMPLATES: TemplateRow[] = [
           'or the subject does not allow: an actor allows delegation only ' +
           'unless its entry says otherwise; a subject allows both unless ' +
           'its entry says otherwise.',
-          and([notSelf, or([
+          and([notSelf, notForwarded, or([
             not(or([semanticsIs('delegation'), semanticsIs('impersonation')])),
             and([semanticsIs('delegation'),
                  not(and([actorAllows('delegation'),
@@ -2744,7 +2861,8 @@ const TEMPLATES: TemplateRow[] = [
         exchangeDeny('subject-group', 'subject', 'Refuse a subject outside ' +
           'the groups the actor may act for (appDelegationSubjectGroup), ' +
           'unless the subject named this actor in may_act.',
-          and([notSelf, present(bagOf(I, EX.ACTOR_SUBJECT_GROUP)),
+          and([notSelf, notForwarded,
+               present(bagOf(I, EX.ACTOR_SUBJECT_GROUP)),
                not(fact(env, EX.MAY_ACT_NAMES_ACTOR, true)),
                not(shares(bagOf(S, EX.SUBJECT_GROUP),
                           bagOf(I, EX.ACTOR_SUBJECT_GROUP)))])),
@@ -2761,8 +2879,13 @@ const TEMPLATES: TemplateRow[] = [
           'delegates to R (appAllowedToDelegateTo on S, or ' +
           'appAllowedToActOnBehalfOf on R) and the actor is S, is R, or is ' +
           'one R accepts by name (appAllowedToActOnBehalfOf) — the last is ' +
-          'how a person or a third application acts.',
-          and([notSelf, semanticsIs('delegation'),
+          'how a person or a third application acts. Across a Kerberos ' +
+          'trust (#430), resource-based delegation to a foreign target is ' +
+          'the target realm\'s to decide, a classic one its realm vouched ' +
+          'for is allowed where the realm allows it, and a forwarded TGT ' +
+          'has no S to delegate from.',
+          and([notSelf, semanticsIs('delegation'), notForwarded,
+               not(rbcdDeferred), not(classicVouched),
                not(and([or([shares(actorId, sourceId),
                             shares(actorId, targetId),
                             shares(actorId, bagOf(R, EX.TARGET_ACCEPTS))]),
@@ -2771,7 +2894,7 @@ const TEMPLATES: TemplateRow[] = [
           'unless the actor may reach R: R is the actor itself, or on the ' +
           'actor\'s appAllowedToDelegateTo, or R accepts the actor ' +
           '(appAllowedToActOnBehalfOf).',
-          and([notSelf, semanticsIs('impersonation'),
+          and([notSelf, notForwarded, semanticsIs('impersonation'),
                not(or([shares(actorId, targetId),
                        shares(targetId, bagOf(I, EX.ACTOR_DELEGATES_TO)),
                        shares(actorId, bagOf(R, EX.TARGET_ACCEPTS))]))])),

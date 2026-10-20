@@ -203,6 +203,22 @@ const VOCABULARY = Object.freeze({
   EXCHANGE_TRUST_ATTRIBUTE: 'urn:sts:xacml:exchange:trust-attribute',
   EXCHANGE_TRUST_PATH: 'urn:sts:xacml:exchange:trust-path',
   EXCHANGE_TRUST_HOPS: 'urn:sts:xacml:exchange:trust-hops',
+  // AND WHAT PHASE 3 OF #430 READS BESIDE THEM, each sent only with a trust:
+  // environment, a boolean — the trust is enabled (a disabled one refers and
+  // accepts nothing, so this is the rule's belt to the KDC's braces); this
+  // KDC's own Kerberos realm, so a rule can tell a foreign party from a
+  // local one; action — the Kerberos mechanism (`S4U2Self`,
+  // `S4U2Proxy-classic`, `S4U2Proxy-rbcd`, `forwarded`); intermediary-
+  // subject — the realms whose users the actor may obtain S4U2Self tickets
+  // for (`krb5S4uSelfRealm`); resource — what the target says of a TGT
+  // forwarded to it across a trust (`krb5ForeignTgtDelegation`: `inherit`,
+  // `deny`).
+  EXCHANGE_TRUST_ENABLED: 'urn:sts:xacml:exchange:trust-enabled',
+  EXCHANGE_LOCAL_REALM: 'urn:sts:xacml:exchange:local-realm',
+  EXCHANGE_MECHANISM: 'urn:sts:xacml:exchange:mechanism',
+  EXCHANGE_ACTOR_SELF_REALM: 'urn:sts:xacml:exchange:actor-self-realm',
+  EXCHANGE_TARGET_FOREIGN_TGT_DELEGATION:
+    'urn:sts:xacml:exchange:target-foreign-tgt-delegation',
   // THE FACTS OF A GNAP ACCESS RIGHT (#432 phase 3): one question per right,
   // action-id `issue-gnap-right`, the right's type (or its reference string)
   // as the resource-id. Gathered by `gnap/gnap_rights.ts`; nothing here
@@ -574,8 +590,10 @@ class AuthorizationRequest {
   //   requestedSemantics, semantics, mayActPresent, mayActNamesActor,
   //   protectedGroups
   //   (#430) subject.realm, actor.realm, target.realm — Kerberos realms —
-  //   and trust { partner, type, direction, attributes, path, hops } for a
-  //   question asked across a Kerberos trust; absent, none of them is sent
+  //   and trust { partner, type, direction, attributes, path, hops,
+  //   enabled } for a question asked across a Kerberos trust, with
+  //   localRealm, mechanism, actor.selfRealms and
+  //   target.foreignTgtDelegation beside it; absent, none of them is sent
   // An unknown identifier is left out rather than sent as '', so no absent
   // party can ever compare equal to another. Booleans are always sent.
   exchange(facts) {
@@ -653,6 +671,13 @@ class AuthorizationRequest {
       this.environment(V.EXCHANGE_TRUST_PATH, list(trust.path));
       this.environment(V.EXCHANGE_TRUST_HOPS, [Number(trust.hops) || 0],
                        model.TYPE.INTEGER);
+      this.environment(V.EXCHANGE_TRUST_ENABLED, [trust.enabled !== false],
+                       model.TYPE.BOOLEAN);
+      this.environment(V.EXCHANGE_LOCAL_REALM, one(given.localRealm));
+      this.action(V.EXCHANGE_MECHANISM, one(given.mechanism));
+      this.attribute(I, V.EXCHANGE_ACTOR_SELF_REALM, list(actor.selfRealms));
+      this.resource(V.EXCHANGE_TARGET_FOREIGN_TGT_DELEGATION,
+                    one(target.foreignTgtDelegation));
     }
     return this;
   }

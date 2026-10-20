@@ -114,9 +114,20 @@ interface DecideQuestion {
   mayActNamesActor?: boolean;
   // Kerberos only (#490): which [MS-SFU] mechanism asked — 'S4U2Self', or
   // 'S4U2Proxy' with `rbcd` saying whether resource-based delegation
-  // permitted it — so the row is written in Kerberos's words.
-  mechanism?: '' | 'S4U2Self' | 'S4U2Proxy';
+  // permitted it — so the row is written in Kerberos's words. 'forwarded'
+  // (#430) is a TGT delegated across a trust.
+  mechanism?: '' | 'S4U2Self' | 'S4U2Proxy' | 'forwarded';
   rbcd?: boolean;
+  // Kerberos ACROSS A TRUST only (#430): the trust the question arrived
+  // across, as its record says, this KDC's Kerberos realm, each party's
+  // Kerberos realm, and whether the source (the front end) is a party of
+  // another realm, named whole with no entry here.
+  trust?: Json;
+  localRealm?: string;
+  subjectRealm?: string;
+  actorRealm?: string;
+  targetRealm?: string;
+  foreignSource?: boolean;
 }
 
 // What `decide()` answers. `refusal` says which rule refused, so each door can
@@ -502,7 +513,14 @@ class DelegationPolicy {
           .map(function (one) { return DelegationPolicy.normalizeDn(one); }),
         accepts: this.resolvedList(DelegationPolicy.valuesOf(application,
           A.ACT_ON_BEHALF_OF)),
-        mayAct: ''
+        mayAct: '',
+        // #430: the realms whose users this service may obtain S4U2Self
+        // tickets for, and what it says of a TGT delegated to it across a
+        // trust.
+        selfRealms: DelegationPolicy.valuesOf(application,
+                                              'krb5S4uSelfRealm'),
+        foreignTgtDelegation: (DelegationPolicy.valuesOf(application,
+          'krb5ForeignTgtDelegation')[0] || '').toLowerCase()
       };
     }
     const facts = wanted ? (credentials.delegationFactsFor(wanted) || {}) : {};
@@ -559,6 +577,11 @@ class DelegationPolicy {
           .identifier || '';
       return !!sourceId;
     });
+    // A FRONT END OF ANOTHER KERBEROS REALM (#430) has no entry here; it is
+    // S by its name, `SPN@REALM`, which is how a target accepts it.
+    if (!sourceId && question.foreignSource && (question.source || []).length) {
+      sourceId = String(question.source[0] || '');
+    }
     const source = sourceId ? this.partyFacts(sourceId) : null;
     const asked = (question.targets || []).map(function (one) {
       return String(one || '').trim();
@@ -590,11 +613,31 @@ class DelegationPolicy {
       mayActPresent: !!question.mayActPresent,
       mayActNamesActor: !!question.mayActNamesActor,
       protectedGroups: this.protectedGroupKeys()
-    };
+    } as Json;
+    // ACROSS A KERBEROS TRUST (#430 Phase 3): the facts the cross-realm
+    // rules read, added only for such a question.
+    const settingsAsked: Json = {
+      defaultSemantics: setting('delegation.defaultSemantics'),
+      actorRole: setting('delegation.actorRole') };
+    if (question.trust) {
+      facts.trust = question.trust;
+      facts.localRealm = String(question.localRealm || '');
+      facts.mechanism = question.mechanism === 'S4U2Proxy'
+        ? (question.rbcd ? 'S4U2Proxy-rbcd' : 'S4U2Proxy-classic')
+        : String(question.mechanism || '');
+      facts.subject = Object.assign({}, subject,
+                                    { realm: question.subjectRealm || '' });
+      facts.actor = Object.assign({}, actor,
+                                  { realm: question.actorRealm || '' });
+      facts.target = Object.assign({}, facts.target, {
+        realm: question.targetRealm || '',
+        foreignTgtDelegation: target ? target.foreignTgtDelegation : '' });
+      settingsAsked.crossRealmClassicDelegation =
+        setting('krb5.crossRealmClassicDelegation') === 'true';
+    }
     const answer = gate.checkExchange({
       facts: facts, mode: mode.current(), protocol: question.protocol,
-      settings: { defaultSemantics: setting('delegation.defaultSemantics'),
-                  actorRole: setting('delegation.actorRole') }
+      settings: settingsAsked
     }) || {};
     const allowed = answer.verdict === 'allow';
     const semantics = (allowed ? answer.semantics : answer.chosen) || '';
@@ -633,6 +676,9 @@ class DelegationPolicy {
   // The attribute each refusal is about, for the act's row.
   static readonly REFUSAL_ATTRIBUTE: Record<string, string> = {
     'subject': 'stsNotDelegated',
+    // #430's, across a Kerberos trust.
+    'self-realm': 'krb5S4uSelfRealm',
+    'tgt-delegation': 'krb5ForeignTgtDelegation',
     'semantics': 'appDelegationSemantics',
     'target': 'appAllowedToDelegateTo',
     'no-target': 'appAllowedToDelegateTo',
@@ -710,6 +756,26 @@ class DelegationPolicy {
             'the target, and that application must delegate to the ' +
             'target (appAllowedToDelegateTo on it, or ' +
             'appAllowedToActOnBehalfOf on the target).'),
+      // #430: across a Kerberos trust.
+      'trust-disabled': 'The trust with ' + String((facts.trust || {})
+        .partner || 'the other realm') + ' is disabled.',
+      'trust-direction': 'This realm holds no trust ACCEPTING tickets from ' +
+        String((facts.trust || {}).partner || 'the other realm') + ' (an ' +
+        'incoming key), so it does not act for that realm\'s users.',
+      'self-realm': actor + ' does not list ' + String(facts.subject.realm ||
+        'the user\'s realm') + ' in krb5S4uSelfRealm, the realms whose ' +
+        'users it may obtain S4U2Self tickets for (empty: its own realm ' +
+        'only).',
+      'classic-across-realms': 'Classic constrained delegation does not ' +
+        'cross a trust here unless the realm allows it ' +
+        '(krb5.crossRealmClassicDelegation); resource-based delegation ' +
+        '(appAllowedToActOnBehalfOf on the target, naming SPN@REALM) does.',
+      'tgt-delegation': 'A TGT is not delegated across the trust with ' +
+        String((facts.trust || {}).partner || 'the other realm') + ': ' +
+        '[MS-KILE] 3.3.5.7.5 needs the trust to be within the forest or to ' +
+        'enable TGT delegation, and neither to forbid it nor be ' +
+        'quarantined, and ' + target + ' must not refuse it ' +
+        '(krb5ForeignTgtDelegation).',
       'policy': 'The issuance policy refused this ' + what + '.'
     };
     const out = sentences[decision.refusal] || sentences.policy;
