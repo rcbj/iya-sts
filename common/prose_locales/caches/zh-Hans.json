@@ -767,6 +767,22 @@
     "en": "55156810371e3ec1",
     "text": "一个已兑换的授权码被再次出示"
   },
+  "caches.store.oauth2.refresh-token-bookkeeping.title": {
+    "en": "c9c28d7d082aab14",
+    "text": "刷新令牌轮换记录"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.description": {
+    "en": "38d9cf25fa52b3ad",
+    "text": "每个刷新令牌和每个令牌族各一条记录，使重放的刷新令牌会吊销其整个令牌族（RFC 9700）；以及每次授权所签发的内容，使吊销刷新令牌时会一并吊销与之同时签发的访问令牌（RFC 7009）。"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.bound": {
+    "en": "945ea34a46306638",
+    "text": "强制：每个领域最多 oauth2.maxRefreshTokenFamilies 条刷新令牌记录，授权签发记录为其两倍；超出后先删除已轮换的，再删除最旧的，并发出警告。"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.lifetime": {
+    "en": "584ca21b64df4c69",
+    "text": "直到令牌签发后的令牌族时间窗口过去；之后由 caches.eject-expired 任务删除该记录。"
+  },
   "caches.store.oauth2.request-uri.title": {
     "en": "3ae35b709a8c09f7",
     "text": "已获取的请求对象"

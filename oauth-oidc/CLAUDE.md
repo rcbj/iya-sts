@@ -2080,6 +2080,19 @@ so must `admin-ui/admin.ts`.
    2.3 rules and stay on `enabled()`. An operator who asked for rotation did not
    ask to acquire three refusals a grant never had.
 
+   **AN ISSUANCE NO LONGER SWEEPS THE BOOKKEEPING (#761, 2026-10-20).**
+   `noteRefreshIssued()` and `noteGrantTokens()` walked every record and
+   every family of the realm on every issuance to drop the expired ones —
+   1.2% of a request worker at 20,000 families on 8081, with a cap of a
+   million. The expiry is the per-process `caches.eject-expired` job's now,
+   through `oauth2.refresh-token-bookkeeping` on `/admin/caches` (rule 3ap):
+   the same test (`forget` has passed), so a reader can find what it could
+   before, for less time — the sweep ran at the realm's next issuance only,
+   and on an idle realm never. **The cap is still kept at the insert**: past
+   `oauth2.maxRefreshTokenFamilies` (twice it for the grant records) the
+   old sweep runs there, expired first, then retired, then the oldest,
+   loudly. `tests/refresh_bookkeeping_ejection.js`.
+
    **THE FOUR REFUSALS REFUSE, AND REFUSING IS THE DESIGN.** Everywhere else
    this service prefers to answer with something weaker rather than not answer
    at all (`mode.sendsWeakerThanAsked()` is a predicate about exactly that).
