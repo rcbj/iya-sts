@@ -612,16 +612,16 @@
     "text": "以上都没有。目录、主体数据库和注册表只保存已配置或已预配的内容，别无其他——两个 XACML 角色组存在但为空，KDC 拒绝使用本仓库中公开的密码构建 krbtgt 或其服务账户。"
   },
   "mode.requirements.test-double.what": {
-    "en": "f06cf29c4a61e31d",
-    "text": "服务元数据文档表明本服务是测试替身"
+    "en": "f037d7b70aacf864",
+    "text": "服务将自己描述为测试替身"
   },
   "mode.requirements.test-double.development": {
-    "en": "241755f4aaf4cb6b",
-    "text": "GET /admin-api/sts-metadata 中的 `testDouble` 为 true：本服务不检查任何密码，也不验证任何访问令牌，端点列表不得被解读为声称它会这样做。"
+    "en": "ffe468af90a49423",
+    "text": "在 GET /admin-api/sts-metadata 中 `testDouble` 为 true：本服务不检查任何密码，也不验证任何访问令牌，端点列表不得被理解为它会这样做。控制台首页会显示“它刻意不做的事”。"
   },
   "mode.requirements.test-double.product": {
-    "en": "252476cbd5f62e18",
-    "text": "`testDouble` 为 false：密码会被验证，访问令牌会被校验，文档也如此说明。"
+    "en": "2fef3ea99ceb768a",
+    "text": "`testDouble` 为 false：密码会被验证，访问令牌会被校验，文档也如此说明。控制台首页不显示该列表。"
   },
   "mode.requirements.claim-values.what": {
     "en": "3e4acbf9a020d8f8",

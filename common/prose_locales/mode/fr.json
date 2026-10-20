@@ -612,16 +612,16 @@
     "text": "Rien de tout cela. L’annuaire, la base de principaux et le registre contiennent ce qui a été configuré ou provisionné, et rien d’autre — les deux groupes de rôles XACML existent et sont vides, et le KDC refuse de construire krbtgt ou son compte de service sur les mots de passe publiés dans ce dépôt."
   },
   "mode.requirements.test-double.what": {
-    "en": "f06cf29c4a61e31d",
-    "text": "Le document de métadonnées du service indique que ce service est une doublure de test"
+    "en": "f037d7b70aacf864",
+    "text": "Le service se présente comme une doublure de test"
   },
   "mode.requirements.test-double.development": {
-    "en": "241755f4aaf4cb6b",
-    "text": "`testDouble` vaut true dans GET /admin-api/sts-metadata : ce service ne vérifie aucun mot de passe et ne valide aucun jeton d’accès, et une liste de points de terminaison ne doit pas se lire comme l’affirmation du contraire."
+    "en": "ffe468af90a49423",
+    "text": "`testDouble` vaut true dans GET /admin-api/sts-metadata : ce service ne vérifie aucun mot de passe et ne valide aucun jeton d’accès, et une liste de points de terminaison ne doit pas se lire comme l’affirmation qu’il le fait. L’index de la console affiche Ce qu’il ne fait délibérément pas."
   },
   "mode.requirements.test-double.product": {
-    "en": "252476cbd5f62e18",
-    "text": "`testDouble` vaut false : les mots de passe sont vérifiés et les jetons d’accès validés, et le document le dit."
+    "en": "2fef3ea99ceb768a",
+    "text": "`testDouble` vaut false : les mots de passe sont vérifiés et les jetons d’accès validés, et le document le dit. L’index de la console n’affiche pas cette liste."
   },
   "mode.requirements.claim-values.what": {
     "en": "3e4acbf9a020d8f8",
