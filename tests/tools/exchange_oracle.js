@@ -100,6 +100,13 @@ function combination(c) {
   out.localRealm = 'L.TEST';
   out.mechanism = c.across;
   out.subject.realm = c.foreignSubject ? 'P.TEST' : 'L.TEST';
+  // A subject of another realm holds no built-in role (rcbj, 2026-10-19):
+  // only what was granted to it, which `src` and `tgt` stand for here.
+  if (c.foreignSubject) {
+    out.subject.roles = out.subject.roles.filter(function (one) {
+      return one !== 'EVERYBODY';
+    });
+  }
   out.actor.realm = c.foreignActor ? 'P.TEST' : 'L.TEST';
   out.actor.selfRealms = c.selfListed ? ['P.TEST'] : [];
   out.target.realm = c.foreignTarget ? 'P.TEST' : 'L.TEST';

@@ -282,7 +282,21 @@ is in this realm's own forest is refused across a forest or external
 boundary (both `STS-KRB-0239`). The rules, row by row, are in
 `kerberos/CLAUDE.md`. In product mode a trust with `quarantined` off is not
 used at all while `krb5.requireSidFilteringInProduct` is on (the default,
-`STS-KRB-0229`).
+`STS-KRB-0229`). Every ticket the filter changed is one row in the audit log,
+`krb5.trust.sid-filtered`, naming the trust, the principal and the SIDs
+removed or added.
+
+**Roles across a trust: explicit grants only.** A user or service that
+arrived through a trust holds none of the built-in roles — `EVERYBODY` and
+`ALL_AUTHENTICATED_USERS` mean authenticated in *this* realm — only a role
+whose people name it whole (`alice@PARTNER.TEST`) or whose groups name one of
+the SIDs its PAC carries after SID filtering. So a service that requires only
+`EVERYBODY`, the default, refuses everyone from another realm
+(`KDC_ERR_POLICY`, `STS-KRB-0039`) until you grant a role — for instance to
+the partner's Domain Users, `<partner domain SID>-513` — and make the service
+require it beside `EVERYBODY`. The same holds for the delegation policy's
+subject. A ticket-granting ticket for the next hop of a path is not asked
+about.
 
 **Delegation across a trust.** All three Kerberos delegation paths cross a
 trust, each decided by the realm's exchange policy like any other
@@ -297,7 +311,10 @@ delegation:
   the target's `appAllowedToActOnBehalfOf` names the front end as
   `SPN@REALM`, and the trusts on both sides must be enabled. Classic
   constrained delegation (`appAllowedToDelegateTo`) stays within a realm
-  unless `krb5.crossRealmClassicDelegation` is on in BOTH realms. The
+  unless `krb5.crossRealmClassicDelegation` is on in BOTH realms: the front
+  end's realm refuses to refer the evidence while its own is off
+  (`STS-KRB-0232`), and the target's realm refuses the referral while ITS
+  own is off (`STS-KRB-0242`). The
   forwardable and protected-user rules are the same as within a realm, and
   so is the CVE-2020-17049 check: a referral's PAC is signed with the
   inter-realm key, and the target's realm verifies its server, KDC and

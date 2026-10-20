@@ -18,8 +18,15 @@
 //      not forwardable, a protected user, the service not listing the
 //      realm (krb5S4uSelfRealm), PA-S4U-X509-USER for a foreign user, and
 //      multi-hop through a transitive trust.
-//   P. CLASSIC S4U2PROXY across realms: refused by default, issued with
-//      krb5.crossRealmClassicDelegation on.
+//   P. CLASSIC S4U2PROXY across realms: issued only with
+//      krb5.crossRealmClassicDelegation on in BOTH realms, each of the four
+//      combinations refused at the side whose setting is off (STS-KRB-0232
+//      at the front end's realm, STS-KRB-0242 at the target's).
+//   XR. A PRINCIPAL OF ANOTHER REALM HOLDS ONLY ITS GRANTS (rcbj,
+//      2026-10-19): no EVERYBODY, no ALL_AUTHENTICATED_USERS, so a service
+//      requiring only EVERYBODY refuses it; a role granted to its name
+//      admits it; a person of the realm itself is unchanged. setUp() admits
+//      the partners to the services the other sections reach.
 //   R. RESOURCE-BASED S4U2PROXY across realms ([MS-SFU] 3.2.5.2.3): a
 //      foreign front end to a local back end and the reverse; non-
 //      forwardable evidence, a protected user and an unlisted actor
@@ -37,6 +44,8 @@
 //      protected user.
 //   T. THE TRUST'S STATE: disabled, a missing incoming key, and the
 //      semantics the policy chooses across it.
+//   SF-A. a filtered ticket writes ONE audit row, krb5.trust.sid-filtered,
+//      naming the trust, the principal and the SIDs, and no info line.
 //   SF-R<n>. SID FILTERING, one test per row of kerberos/CLAUDE.md's
 //      *SID FILTERING: THE RULES* that can apply here (rows 20, 21 and 23
 //      cannot, and say why there), end to end and on PACs as ALPHA would
@@ -60,6 +69,7 @@ const kcrypto = require('../kerberos/krb5_crypto.js');
 const kpac = require('../kerberos/krb5_pac.js');
 const trusts = require('../kerberos/krb5_trusts');
 const wire = require('./vendored/krb5_wire.js');
+const grants = require('./tools/cross_realm_grants');
 
 const log = require('bunyan').createLogger({
   name: 'kerberos_cross_realm_delegation',
@@ -85,6 +95,8 @@ const SID = { 'ALPHA.TEST': 'S-1-5-21-1001-1002-1003',
               'GAMMA.TEST': 'S-1-5-21-3001-3002-3003' };
 const OTHER_SID = 'S-1-5-21-9001-9002-9003';
 const SHARED = 'a shared inter-realm trust password';
+// The services each realm admits the others' principals to (setUp()).
+const ADMITTED = ['frontend', 'backend', 'rbcd', 'notrusted', 'web'];
 const PASSWORDS = { frontend: 'frontend-service-password',
                     notrusted: 'notrusted-service-password',
                     rbcd: 'rbcd-service-password',
@@ -295,6 +307,24 @@ function setUp(t) {
   t.check(ab.ok && bc.ok, 'precondition: ALPHA <-> BETA and BETA <-> ' +
           'GAMMA paired, external and transitive',
           JSON.stringify((ab.errors || []).concat(bc.errors || [])));
+  // A principal of another realm holds only what it was granted (#430,
+  // rcbj 2026-10-19): each realm admits the other two to the services
+  // these sections reach. Section XR asks the refusal without it.
+  const admitted = [ALPHA, BETA, GAMMA].map(function (name) {
+    return grants.admitPartners(realms.get(IDS[name]),
+      [ALPHA, BETA, GAMMA].filter(function (other) {
+        return other !== name;
+      }).map(function (other) {
+        return SID[other];
+      }), ADMITTED.map(function (svc) {
+        return 'HTTP/' + svc + '.' + name.toLowerCase();
+      }), name);
+  }).reduce(function (all, some) {
+    return all.concat(some);
+  }, []);
+  t.check(!admitted.length, 'precondition: each realm grants ' +
+          grants.ROLE + ' to the others\' Domain Users and Computers, and ' +
+          'its services require it (or EVERYBODY)', JSON.stringify(admitted));
   log.debug("Leaving setUp().");
 }
 
@@ -383,6 +413,66 @@ async function selfSection(t) {
 }
 
 // ---------------------------------------------------------------------------
+// XR. EXPLICIT GRANTS ONLY ACROSS A TRUST (rcbj, 2026-10-19).
+// ---------------------------------------------------------------------------
+async function grantsSection(t) {
+  log.debug("Entering grantsSection().");
+  t.log.info('=== XR. a principal of another realm holds only its grants ===');
+  const roles = require('../common/roles');
+  const closed = spn('closed', BETA);
+  const aliceTgt = await userTgt(t, ALPHA, 'alice');
+  const referral = await wire.tgsExchange(T, aliceTgt, closed, ALPHA);
+  let r = referral.ok ? await wire.tgsExchange(T, referral, closed, BETA)
+                      : referral;
+  t.check(!!errorOf(r) && errorOf(r).code === 12 &&
+          /requires EVERYBODY and "alice@ALPHA\.TEST" holds/.test(
+            errorOf(r).eText),
+          'XR1. alice@' + ALPHA + ' is REFUSED a ticket to ' + BETA + '\'s ' +
+          'HTTP/closed, which requires only EVERYBODY: across a trust she ' +
+          'holds neither EVERYBODY nor ALL_AUTHENTICATED_USERS (STS-KRB-0039)',
+          show(r));
+  const bobTgt = await userTgt(t, BETA, 'bob');
+  const local = await wire.tgsExchange(T, bobTgt, closed, BETA);
+  t.check(local.ok && local.client.name.join('/') === 'bob',
+          'XR2. bob@' + BETA + ', a person of the realm itself, is issued ' +
+          'it as before', show(local));
+  // AN EXPLICIT GRANT, to her whole name.
+  const granted = inRealm(BETA, function () {
+    const wrote = roles.write('closed-guests', {
+      description: 'Created by ' + __filename,
+      users: ['alice@' + ALPHA] });
+    const app = 'HTTP/closed.' + BETA.toLowerCase();
+    const made = applications.get(app) ? { ok: true }
+      : applications.createApplication({
+        identifier: app, kind: 'kerberos-service', protocols: ['krb5'],
+        fields: { appRequiredRole: ['EVERYBODY', 'closed-guests'] },
+        actor: __filename });
+    return { ok: !!(wrote && wrote.ok && made && made.ok),
+             errors: ((wrote && wrote.errors) || [])
+               .concat((made && made.errors) || []) };
+  });
+  t.check(granted.ok, 'precondition: ' + BETA + ' grants closed-guests to ' +
+          'alice@' + ALPHA + ' by name, and HTTP/closed requires it (or ' +
+          'EVERYBODY)', JSON.stringify(granted.errors));
+  r = referral.ok ? await wire.tgsExchange(T, referral, closed, BETA)
+                  : referral;
+  t.check(r.ok && r.client.name.join('/') === 'alice' && r.realm === ALPHA,
+          'XR3. with the role granted to alice@' + ALPHA + ' by name, ' +
+          BETA + ' issues the ticket', show(r));
+  const again = await wire.tgsExchange(T, bobTgt, closed, BETA);
+  t.check(again.ok, 'XR4. and bob@' + BETA + ' still holds EVERYBODY, so ' +
+          'the narrowed service still admits him', show(again));
+  const otherTgt = await userTgt(t, ALPHA, 'bob');
+  const otherRef = await wire.tgsExchange(T, otherTgt, closed, ALPHA);
+  r = otherRef.ok ? await wire.tgsExchange(T, otherRef, closed, BETA)
+                  : otherRef;
+  t.check(!!errorOf(r) && errorOf(r).code === 12,
+          'XR5. while bob@' + ALPHA + ', granted nothing, is still refused ' +
+          '— a local bob\'s EVERYBODY is not his', show(r));
+  log.debug("Leaving grantsSection().");
+}
+
+// ---------------------------------------------------------------------------
 // P. CLASSIC S4U2PROXY ACROSS REALMS.
 // ---------------------------------------------------------------------------
 async function classicSection(t) {
@@ -395,25 +485,60 @@ async function classicSection(t) {
           show(self.r));
   setApp(ALPHA, 'frontend', 'appAllowedToDelegateTo', 'add',
          appId('backend', BETA));
-  let p = await proxyAcross(front, self.r.ticket, spn('backend', BETA),
-                            ALPHA, BETA, false);
-  t.check(!!errorOf(p.r) && errorOf(p.r).code === 12 &&
-          /crossRealmClassicDelegation/.test(errorOf(p.r).eText),
-          'P1. CLASSIC delegation to a service of ' + BETA + ' is refused ' +
-          'by default (STS-KRB-0232)', show(p.r));
-  realms.setOverride(IDS[ALPHA], 'krb5.crossRealmClassicDelegation', 'true');
-  realms.setOverride(IDS[BETA], 'krb5.crossRealmClassicDelegation', 'true');
-  p = await proxyAcross(front, self.r.ticket, spn('backend', BETA),
-                        ALPHA, BETA, false);
-  t.check(p.first.ok && p.first.client.name.join('/') === 'alice' &&
-          p.r.ok && p.r.client.name.join('/') === 'alice' &&
-          p.r.realm === ALPHA && p.r.srealm === BETA,
-          'P2. with krb5.crossRealmClassicDelegation on in both realms: ' +
-          ALPHA + ' refers the evidence as a TGT for alice, and ' + BETA +
-          ' issues the ticket to HTTP/backend for alice@' + ALPHA,
-          show(p.first) + ' / ' + show(p.r));
-  realms.clearOverride(IDS[ALPHA], 'krb5.crossRealmClassicDelegation');
-  realms.clearOverride(IDS[BETA], 'krb5.crossRealmClassicDelegation');
+  // BOTH REALMS MUST TURN IT ON (rcbj, 2026-10-19), and each refuses on its
+  // own setting: the front end's realm before it refers the evidence
+  // (STS-KRB-0232), the target's realm when the referral arrives
+  // (STS-KRB-0242) — every combination, the refusal at the right side.
+  const setting = function (krbRealm, on) {
+    log.debug("Entering setting(). " + krbRealm + " " + on);
+    if (on) {
+      realms.setOverride(IDS[krbRealm], 'krb5.crossRealmClassicDelegation',
+                         'true');
+    } else {
+      realms.clearOverride(IDS[krbRealm],
+                           'krb5.crossRealmClassicDelegation');
+    }
+    log.debug("Leaving setting().");
+  };
+  const combos = [
+    { label: 'P1', alpha: false, beta: false },
+    { label: 'P1b', alpha: false, beta: true },
+    { label: 'P1c', alpha: true, beta: false },
+    { label: 'P2', alpha: true, beta: true }];
+  for (const c of combos) {
+    setting(ALPHA, c.alpha);
+    setting(BETA, c.beta);
+    const p = await proxyAcross(front, self.r.ticket, spn('backend', BETA),
+                                ALPHA, BETA, false);
+    const named = c.label + '. krb5.crossRealmClassicDelegation ' +
+      (c.alpha ? 'on' : 'off') + ' in ' + ALPHA + ' (the front end\'s), ' +
+      (c.beta ? 'on' : 'off') + ' in ' + BETA + ' (the target\'s): ';
+    if (!c.alpha) {
+      t.check(!p.first.ok && errorOf(p.first).code === 12 &&
+              p.first.error.realm === ALPHA &&
+              /refused by ALPHA\.TEST, the front end's realm/.test(
+                errorOf(p.first).eText),
+              named + 'refused by ' + ALPHA + ' before it refers the ' +
+              'evidence (STS-KRB-0232)', show(p.first));
+    } else if (!c.beta) {
+      t.check(p.first.ok && p.first.sname.name[0] === 'krbtgt' &&
+              !!errorOf(p.r) && errorOf(p.r).code === 12 &&
+              /refused by BETA\.TEST, the target's realm/.test(
+                errorOf(p.r).eText),
+              named + ALPHA + ' refers the evidence and ' + BETA +
+              ' refuses it on its own setting (STS-KRB-0242)',
+              show(p.first) + ' / ' + show(p.r));
+    } else {
+      t.check(p.first.ok && p.first.client.name.join('/') === 'alice' &&
+              p.r.ok && p.r.client.name.join('/') === 'alice' &&
+              p.r.realm === ALPHA && p.r.srealm === BETA,
+              named + ALPHA + ' refers the evidence as a TGT for alice, ' +
+              'and ' + BETA + ' issues the ticket to HTTP/backend for ' +
+              'alice@' + ALPHA, show(p.first) + ' / ' + show(p.r));
+    }
+  }
+  setting(ALPHA, false);
+  setting(BETA, false);
   setApp(ALPHA, 'frontend', 'appAllowedToDelegateTo', 'remove',
          appId('backend', BETA));
   log.debug("Leaving classicSection().");
@@ -783,20 +908,32 @@ async function stateSection(t) {
   inRealm(ALPHA, function () {
     return trusts.update(BETA, { incoming: { password: SHARED } });
   });
+  // The subject's filtered SIDs are what the KDC hands in: her Domain
+  // Users, which setUp() granted trust-partners to.
   const delegation = require('../kerberos/krb5_delegation');
   const selfSem = inRealm(ALPHA, function () {
     return delegation.decide({ mechanism: 'self',
       requester: ['HTTP', 'frontend.alpha.test'], subject: ['alice'],
       subjectRealm: BETA, target: ['HTTP', 'frontend.alpha.test'],
-      realm: ALPHA, trustPartner: BETA });
+      realm: ALPHA, trustPartner: BETA, subjectSids: [SID[BETA] + '-513'] });
   });
   const proxySem = inRealm(BETA, function () {
     return delegation.decide({ mechanism: 'proxy',
       requester: ['HTTP', 'frontend.alpha.test'], requesterRealm: ALPHA,
       subject: ['alice'], subjectRealm: ALPHA,
       target: ['HTTP', 'rbcd.beta.test'], realm: BETA, rbcd: true,
-      trustPartner: ALPHA });
+      trustPartner: ALPHA, subjectSids: [SID[ALPHA] + '-513'] });
   });
+  const ungranted = inRealm(ALPHA, function () {
+    return delegation.decide({ mechanism: 'self',
+      requester: ['HTTP', 'frontend.alpha.test'], subject: ['alice'],
+      subjectRealm: BETA, target: ['HTTP', 'frontend.alpha.test'],
+      realm: ALPHA, trustPartner: BETA, subjectSids: [] });
+  });
+  t.check(!ungranted.allowed && ungranted.refusal === 'authority',
+          'T3b. and with no SID that holds a grant, alice@' + BETA + ' has ' +
+          'no authority for HTTP/frontend — EVERYBODY is not hers across a ' +
+          'trust', JSON.stringify([ungranted.refusal, ungranted.why]));
   t.check(selfSem.allowed && selfSem.semantics === 'impersonation' &&
           proxySem.allowed && proxySem.semantics === 'delegation',
           'T3. the SEMANTICS the policy chooses across the trust: ' +
@@ -1023,10 +1160,51 @@ async function sidFilteringSection(t) {
   });
 
   // END TO END: alice's PAC from ALPHA, at a service of BETA.
+  const audit = require('../common/audit');
+  const helpers = require('../common/helpers');
+  const filteredRows = function () {
+    log.debug("Entering filteredRows().");
+    log.debug("Leaving filteredRows().");
+    return inRealm(BETA, function () {
+      return audit.list().filter(function (row) {
+        return row.action === 'krb5.trust.sid-filtered';
+      });
+    });
+  };
+  const rowsBefore = filteredRows().length;
   const tgt = await userTgt(t, ALPHA, 'alice');
   const referral = await wire.tgsExchange(T, tgt, spn('web', BETA), ALPHA);
-  const svc = referral.ok ?
-    await wire.tgsExchange(T, referral, spn('web', BETA), BETA) : referral;
+  // THE SERVICE LOG IS WATCHED for the info line sidFilter() used to write.
+  const infoLines = [];
+  const realInfo = helpers.log.info;
+  helpers.log.info = function () {
+    const text = Array.prototype.slice.call(arguments).map(String).join(' ');
+    if (/SID filtering/i.test(text)) {
+      infoLines.push(text);
+    }
+    return realInfo.apply(helpers.log, arguments);
+  };
+  let svc;
+  try {
+    svc = referral.ok ?
+      await wire.tgsExchange(T, referral, spn('web', BETA), BETA) : referral;
+  } finally {
+    helpers.log.info = realInfo;
+  }
+  const newRows = filteredRows().slice(0, filteredRows().length - rowsBefore);
+  const row = newRows[0] || {};
+  t.check(newRows.length === 1 && row.target === ALPHA &&
+          row.actor === 'alice@' + ALPHA && row.protocol === 'Kerberos' &&
+          /S-1-5-11/.test(String((row.detail || {}).removed)) &&
+          /S-1-5-11/.test(String(row.summary)) &&
+          !/key/i.test(JSON.stringify(row.detail || {})),
+          'SF-A. the filtered ticket writes ONE audit row, ' +
+          'krb5.trust.sid-filtered, naming the trust (' + ALPHA + '), the ' +
+          'principal and the SIDs removed, and no key material',
+          JSON.stringify(newRows));
+  t.check(svc.ok && infoLines.length === 0,
+          'SF-A2. and no info line in the service log', JSON.stringify(
+            infoLines));
   if (svc.ok) {
     const part = await openTicket(BETA, svc.ticket, spn('web', BETA));
     const sids = sidsOf(logonOf(pacOf(part)));
@@ -1061,6 +1239,7 @@ async function run(t) {
   try {
     await selfSection(t);
     await classicSection(t);
+    await grantsSection(t);
     await rbcdSection(t);
     await forwardedSection(t);
     await stateSection(t);

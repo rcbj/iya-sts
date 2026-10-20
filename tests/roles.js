@@ -41,6 +41,11 @@
 //      issuance that FAILED because the role register threw would be worse
 //      than a token missing a role. Reaching that means installing a slot that
 //      throws.
+//   6. **A PRINCIPAL THAT ARRIVED THROUGH A KERBEROS TRUST HOLDS ONLY ITS
+//      GRANTS** (#430, rcbj, 2026-10-19): no EVERYBODY, no
+//      ALL_AUTHENTICATED_USERS, no groups of a local namesake — only a role
+//      naming it whole or naming one of its filtered SIDs. The KDC asks it
+//      that way; nothing over HTTP presents a cross-realm ticket.
 //   5. **THE THREE CONTEXTS OF THE SIX BUILT-IN ROLES.** Four of the six are
 //      about a party that has not authenticated or is an application, and the
 //      combinations a live request can produce are a subset — nothing over
@@ -94,6 +99,7 @@ function run(t) {
 
   builtInRoles(t);
   theRegister(t);
+  acrossATrust(t);
   theClaim(t);
   claimsComingIn(t);
   theGate(t);
@@ -268,6 +274,57 @@ function theRegister(t) {
           'register that quietly lived in a Map would decide things nobody ' +
           'could find');
   log.debug("Leaving theRegister().");
+}
+
+// ---------------------------------------------------------------------------
+// 6. ACROSS A KERBEROS TRUST: explicit grants only (#430, 2026-10-19).
+// ---------------------------------------------------------------------------
+function acrossATrust(t) {
+  log.debug("Entering acrossATrust().");
+  t.log.info('=== Across a Kerberos trust ===');
+  const partnerUsers = 'S-1-5-21-1-2-3-513';
+  roles.setDirectory(directoryOf({
+    staff: { roleName: ['staff'], roleMemberUser: ['alice'],
+             roleMemberGroup: ['developers'] },
+    partners: { roleName: ['partners'],
+                roleMemberUser: ['carol@PARTNER.TEST'] },
+    'partner-users': { roleName: ['partner-users'],
+                       roleMemberGroup: [partnerUsers] }
+  }, { alice: ['developers'], 'alice@PARTNER.TEST': ['developers'] }));
+  const all = function (who) {
+    log.debug("Entering all().");
+    log.debug("Leaving all().");
+    return roles.rolesOf(who).join(',');
+  };
+  const foreign = all({ kind: 'user', name: 'alice@PARTNER.TEST',
+                        authenticated: true, crossRealm: true,
+                        sids: ['S-1-5-21-1-2-3-1104'] });
+  t.equal(foreign, '',
+          'XR1. a principal of another realm holds NO built-in role — not ' +
+          'EVERYBODY, not ALL_AUTHENTICATED_USERS — and nothing of a local ' +
+          'namesake\'s or of a directory group lookup',
+          foreign);
+  t.equal(all({ kind: 'user', name: 'carol@PARTNER.TEST',
+                authenticated: true, crossRealm: true, sids: [] }),
+          'partners',
+          'XR2. a role granted to its whole name, name@REALM, is held — and ' +
+          'only that');
+  t.equal(all({ kind: 'user', name: 'dave@PARTNER.TEST',
+                authenticated: true, crossRealm: true,
+                sids: ['S-1-5-21-1-2-3-1105', partnerUsers.toLowerCase()] }),
+          'partner-users',
+          'XR3. a role granted to one of its FILTERED SIDs is held (matched ' +
+          'case-insensitively)');
+  t.equal(all({ kind: 'user', name: 'alice', authenticated: true }),
+          'EVERYBODY,ALL_AUTHENTICATED_USERS,staff',
+          'XR4. a local person is unchanged: the built-in roles and their ' +
+          'grants');
+  t.equal(all({ kind: 'user', name: 'alice@PARTNER.TEST',
+                authenticated: true }),
+          'EVERYBODY,ALL_AUTHENTICATED_USERS,staff',
+          'XR5. and the same name asked WITHOUT crossRealm is a local ' +
+          'context, as every caller but the KDC\'s cross-realm sites asks');
+  log.debug("Leaving acrossATrust().");
 }
 
 // ---------------------------------------------------------------------------

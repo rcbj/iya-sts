@@ -888,11 +888,13 @@ async function issueReferral(ctx) {
   if (typeof ctx.authorizationDataFor === 'function') {
     authorizationData = await ctx.authorizationDataFor(referralKey, kdcKey);
   } else if (ownRealm && presentedAcross && kdcKey) {
-    const carried = kpac.findPacs(base.authorizationData || []);
+    const carried = carriedPacs(base);
     if (carried.length) {
       const filtered = filterArriving(carried[0].bytes,
                                       String(ctx.apReq.ticket.realm || ''),
-                                      ctx.answeringRealm);
+                                      ctx.answeringRealm,
+                                      (base.cname.name || []).join('/') + '@' +
+                                      base.crealm, base);
       if (filtered.refused) {
         log.debug("Leaving issueReferral(). SID filtering refused the PAC.");
         return errorReply(12, {
@@ -1110,16 +1112,103 @@ function crossRealmPath(ticketPart, apReq, answeringRealm, onward) {
 // from ANOTHER realm, to THIS realm's own KDC — the development partner
 // (PARTNER.COM) holds no record to filter by.
 // ---------------------------------------------------------------------------
-function filterArriving(pacBytes, issuer, answeringRealm) {
+//
+// ONCE PER TICKET: a PAC it changes writes an audit row (rcbj, 2026-10-19,
+// `krb5.trust.sid-filtered`), and one TGS-REQ may need the filtered SIDs
+// before it re-signs the PAC — the role gate asks what a principal of
+// another realm holds (`common/roles.js`) — so the answer is kept for the
+// ticket it was asked of (`memoKey`, the opened ticket part) and the second
+// asker reads the first answer rather than filtering, and recording, again.
+// ---------------------------------------------------------------------------
+const filteredArrivals = new WeakMap();
+
+function filterArriving(pacBytes, issuer, answeringRealm, principal,
+                        memoKey) {
   log.debug("Entering filterArriving(). from " + issuer);
   const register = principals.trustRegister();
   if (!register || !issuer || issuer === answeringRealm ||
       answeringRealm !== principals.REALM) {
     log.debug("Leaving filterArriving(). Nothing crossed.");
-    return { bytes: pacBytes, removed: [], refused: '' };
+    return { bytes: pacBytes, removed: [], refused: '', sids: [] };
   }
-  const out = register.sidFilter(pacBytes, issuer, principals.DOMAIN_SID);
+  const memo = memoKey && typeof memoKey === 'object'
+    ? filteredArrivals.get(memoKey) : null;
+  if (memo && memo.issuer === issuer && memo.pacBytes === pacBytes) {
+    log.debug("Leaving filterArriving(). Already filtered for this ticket.");
+    return memo.out;
+  }
+  const out = register.sidFilter(pacBytes, issuer, principals.DOMAIN_SID,
+                                 principal || '');
+  if (memoKey && typeof memoKey === 'object') {
+    filteredArrivals.set(memoKey, { issuer: issuer, pacBytes: pacBytes,
+                                    out: out });
+  }
   log.debug("Leaving filterArriving(). " + out.removed.length + " removed.");
+  return out;
+}
+
+// THE PAC OF A TICKET, by identity (#430): findPacs() decodes afresh on every
+// call, and the memo above compares the bytes it was given, so each asker
+// takes the same bytes from here.
+const pacsOfTicket = new WeakMap();
+
+function carriedPacs(ticketPart) {
+  log.debug("Entering carriedPacs().");
+  if (!ticketPart || typeof ticketPart !== 'object') {
+    log.debug("Leaving carriedPacs(). No ticket.");
+    return [];
+  }
+  if (!pacsOfTicket.has(ticketPart)) {
+    pacsOfTicket.set(ticketPart,
+                     kpac.findPacs(ticketPart.authorizationData || []));
+  }
+  log.debug("Leaving carriedPacs().");
+  return pacsOfTicket.get(ticketPart);
+}
+
+// THE SIDS A PAC CARRIES (#430): the user's and its groups' (LogonDomainId-
+// RID), the extra SIDs and the resource groups — read as they stand, for a
+// PAC already SID-filtered on its way here (S4U2Self evidence this realm
+// issued for a user of another realm), which is what a role may be granted
+// to across a trust (`common/roles.js`).
+function pacSids(pacBytes) {
+  log.debug("Entering pacSids().");
+  const out = [];
+  try {
+    const buffer = kpac.bufferOfType(kpac.parsePac(pacBytes),
+                                     kpac.TYPE.LOGON_INFO);
+    const info = buffer ? buffer.parsed : null;
+    const text = function (sid) {
+      return sid ? String(sid.text || sid) : '';
+    };
+    const add = function (one) {
+      if (one && out.indexOf(one) === -1) {
+        out.push(one);
+      }
+    };
+    if (info) {
+      const domain = text(info.logonDomainId);
+      if (domain) {
+        add(domain + '-' + info.userId);
+        add(domain + '-' + info.primaryGroupId);
+        (info.groups || []).forEach(function (g) {
+          add(domain + '-' + g.relativeId);
+        });
+      }
+      (info.extraSids || []).forEach(function (one) {
+        add(text(one.sid));
+      });
+      const resourceDomain = text(info.resourceGroupDomainSid);
+      if (resourceDomain) {
+        (info.resourceGroups || []).forEach(function (g) {
+          add(resourceDomain + '-' + g.relativeId);
+        });
+      }
+    }
+  } catch (e) {
+    log.debug('Caught in pacSids(): ' + ((e && e.message) || e));
+  }
+  log.debug("Leaving pacSids(). " + out.length);
   return out;
 }
 
@@ -1400,10 +1489,20 @@ async function crossRealmSelf(ctx, forUser, intent, x509) {
   }
 
   // 4. HOME: the ticket, decided by the issuance policy across the trust.
+  // The user is of another realm, so what they hold is what was granted to
+  // their name or to the SIDs their PAC carries once filtered (#430,
+  // `common/roles.js`) — filtered here once, for the ticket it is re-signed
+  // into below.
+  const homePacs = carriesUser ? carriedPacs(ticketPart) : [];
+  const homeArrival = homePacs.length
+    ? filterArriving(homePacs[0].bytes, issuer, ours,
+                     userName + '@' + userRealm, ticketPart) : null;
   const decision = krb5Delegation().decide({
     mechanism: 'self', requester: ticketPart.cname.name,
     subject: forUser.userName.name, subjectRealm: userRealm,
-    target: ticketPart.cname.name, realm: ours, trustPartner: issuer
+    target: ticketPart.cname.name, realm: ours, trustPartner: issuer,
+    subjectSids: homeArrival && !homeArrival.refused
+      ? (homeArrival.sids || []) : []
   });
   if (!decision.allowed && TRUST_REFUSAL_CODES[decision.refusal]) {
     log.info('krb5: REFUSING S4U2Self across realms — ' + decision.why);
@@ -1974,7 +2073,9 @@ async function resolveS4u(ctx) {
   }
   const evidencePac = evidenceAcross && acrossPacs.length
     ? filterArriving(acrossPacs[0].bytes, String(evidence.realm),
-                     ctx.answeringRealm) : null;
+                     ctx.answeringRealm,
+                     (evidencePart.cname.name || []).join('/') + '@' +
+                     evidencePart.crealm, evidencePart) : null;
   if (evidencePac && evidencePac.refused) {
     log.debug("Leaving resolveS4u(). SID filtering refused the evidence.");
     return refuseS4u(intent, 12, {
@@ -2163,19 +2264,47 @@ async function resolveS4u(ctx) {
     rbcd: !classicAllowed && !classicVouched && (rbcdAllowed || rbcdDeferred)
   }, acrossPartner ? {
     trustPartner: acrossPartner, requesterRealm: ticketPart.crealm,
-    targetRealm: targetAcross ? targetRoute : ctx.answeringRealm
+    targetRealm: targetAcross ? targetRoute : ctx.answeringRealm,
+    // A user of another realm holds what was granted to their name or to
+    // the SIDs the evidence's PAC carries once filtered (#430).
+    subjectSids: evidencePac ? (evidencePac.sids || [])
+      : (evidencePart.crealm !== ctx.answeringRealm
+        ? pacSids((carriedPacs(evidencePart)[0] || {}).bytes) : [])
   } : {}));
   if (!proxyDecision.allowed) {
     log.info('krb5: REFUSING S4U2Proxy — the issuance policy refused it: ' +
              proxyDecision.why);
     log.debug("Leaving resolveS4u().");
-    // error-code: none — the policy refusal's own code, STS-KRB-0177 or 0230..0233
+    // CLASSIC ACROSS A TRUST IS REFUSED ON EITHER SIDE (rcbj, 2026-10-19):
+    // the front end's realm, before it refers the evidence, under its own
+    // krb5.crossRealmClassicDelegation (`STS-KRB-0232`); and the target's
+    // realm, which knows the request for a classic one across a trust from
+    // what [MS-SFU] already carries — evidence that arrived as a cross-realm
+    // TGT (`evidenceAcross`), from a front end of another realm, with no
+    // resource-based bit in PA-PAC-OPTIONS (3.2.5.2.2) — under ITS OWN
+    // setting (`STS-KRB-0242`). The policy's one rule asks each realm's
+    // setting where that realm decides; the code says which side refused.
+    const classicTargetSide = proxyDecision.refusal ===
+      'classic-across-realms' && classicVouched;
+    // error-code: none — the policy refusal's own code, STS-KRB-0177 or 0230..0233, or 0242
     return refuseS4u(intent, proxyDecision.refusal === 'target' ? 13 : 12, {
-      errorCode: TRUST_REFUSAL_CODES[proxyDecision.refusal] || 'STS-KRB-0177',
+      errorCode: classicTargetSide ? 'STS-KRB-0242'
+        : (TRUST_REFUSAL_CODES[proxyDecision.refusal] || 'STS-KRB-0177'),
       crealm: ticketPart.crealm, cname: ticketPart.cname,
       realm: ctx.answeringRealm, sname: body.sname,
-      eText: 'the delegation policy refused this delegation: ' +
-             proxyDecision.why
+      eText: classicTargetSide
+        ? 'classic constrained delegation from ' + ticketPart.crealm +
+          ' across the trust is refused by ' + ctx.answeringRealm + ', the ' +
+          'target\'s realm: its own krb5.crossRealmClassicDelegation is ' +
+          'off (both realms must turn it on)'
+        : (proxyDecision.refusal === 'classic-across-realms'
+          ? 'classic constrained delegation across the trust is refused ' +
+            'by ' + ctx.answeringRealm + (targetAcross ? ', the front ' +
+            'end\'s realm' : '') + ': its own ' +
+            'krb5.crossRealmClassicDelegation is off (both realms must turn ' +
+            'it on). '
+          : '') + 'the delegation policy refused this delegation: ' +
+          proxyDecision.why
     });
   }
 
@@ -4447,15 +4576,47 @@ async function answerTgsReq(request, state) {
   // answer is a policy decision. `e-text` carries the PEP's sentence, which
   // `kinit`, `kvno` and MIT's libraries all print.
   // ---------------------------------------------------------------------------
+  //
+  // A PRINCIPAL THAT ARRIVED THROUGH A TRUST (#430; rcbj, 2026-10-19) — a
+  // ticket of another realm, presented to this realm's own KDC — is asked
+  // about by its whole name, `name@REALM`, and as `crossRealm`: it holds no
+  // built-in role (EVERYBODY and ALL_AUTHENTICATED_USERS mean "authenticated
+  // in THIS realm"), only a role granted to that name or to one of the SIDs
+  // its PAC carries once SID-filtered (`common/roles.js`). Until then it was
+  // asked about by its bare name, so a local account of the same name lent
+  // it its roles. The development partner this KDC also answers as
+  // (PARTNER.COM) is not a trust of this realm's and is asked as before.
+  // ---------------------------------------------------------------------------
   const serviceName = (service.name || []).join('/');
-  const kerberosRoleAnswer = gate.check({
-    application: serviceName,
-    kind: gate.ISSUANCE.KERBEROS_TICKET,
-    subject: { kind: 'user',
-               name: ((ticketPart.cname || {}).name || []).join('/'),
-               authenticated: true },
-    claims: null
-  });
+  const presenterName = ((ticketPart.cname || {}).name || []).join('/');
+  // A TGT asked for — the next hop of a transitive path, a forwarded TGT —
+  // is this KDC's own ticket-granting service and no application anybody
+  // puts a requirement on (the AS exchange's reason, above): a principal
+  // passing THROUGH this realm is asked nothing about roles here.
+  const presenterAcross = answeringRealm === principals.REALM &&
+    String(ticketPart.crealm || '') !== answeringRealm &&
+    !!principals.trustRegister();
+  const roleQuestionWaived = presenterAcross && isTgtRequest(body.sname);
+  let presenterSids = [];
+  if (presenterAcross && !roleQuestionWaived) {
+    const presented = carriedPacs(ticketPart);
+    const arrived = presented.length
+      ? filterArriving(presented[0].bytes, String(apReq.ticket.realm || ''),
+                       answeringRealm, presenterName + '@' + ticketPart.crealm,
+                       ticketPart)
+      : null;
+    presenterSids = arrived && !arrived.refused ? (arrived.sids || []) : [];
+  }
+  const kerberosRoleAnswer = roleQuestionWaived ? { allowed: true, why: '' }
+    : gate.check({
+      application: serviceName,
+      kind: gate.ISSUANCE.KERBEROS_TICKET,
+      subject: presenterAcross
+        ? { kind: 'user', name: presenterName + '@' + ticketPart.crealm,
+            authenticated: true, crossRealm: true, sids: presenterSids }
+        : { kind: 'user', name: presenterName, authenticated: true },
+      claims: null
+    });
   if (!kerberosRoleAnswer.allowed) {
     log.info('krb5: the issuance policy refused a service ticket for ' +
              ((ticketPart.cname || {}).name || []).join('/') + ' to ' +
@@ -5128,13 +5289,16 @@ async function answerTgsReq(request, state) {
     // RE-SIGNED with this realm's keys rather than rebuilt. The signatures it
     // came with were made with the other realm's krbtgt key and the trust key,
     // neither of which the service being issued to holds.
-    const carried = kpac.findPacs(ticketPart.authorizationData || []);
+    const carried = carriedPacs(ticketPart);
     const placeholder = encodeTicketPart(kpac.wrapPacAsAuthorizationData(
         new Uint8Array([0])));
-    // SID FILTERING ON ARRIVAL (#430 Phase 2): see filterArriving().
+    // SID FILTERING ON ARRIVAL (#430 Phase 2): see filterArriving(). The
+    // role gate above may already have filtered this ticket's PAC.
     const filtered = filterArriving(carried[0].bytes,
                                     String(apReq.ticket.realm || ''),
-                                    answeringRealm);
+                                    answeringRealm,
+                                    clientName.name.join('/') + '@' +
+                                    clientRealm, ticketPart);
     if (filtered.refused) {
       log.info('krb5: REFUSING a ticket across the trust with ' +
                apReq.ticket.realm + ' — ' + filtered.refused);
@@ -5158,12 +5322,15 @@ async function answerTgsReq(request, state) {
         // row of the service's can never read a local entry of the same name.
       }, resignedClaims(carried[0].bytes, clientName.name.join('/') +
                                         '@' + clientRealm)));
+    // WHAT SID FILTERING REMOVED is the audit log's (`krb5.trust.sid-filtered`,
+    // rcbj 2026-10-19), one row per ticket; here, a debug line at most.
+    log.debug('krb5: SID filtering removed ' + filtered.removed.length +
+              ' SID(s) from the PAC for ' + clientName.name.join('/') + '@' +
+              clientRealm);
     log.info('krb5: ' + answeringRealm + ' re-signed the PAC that ' +
       ticketPart.crealm +
-      ' issued for ' + clientName.name.join('/') + ' — ' +
-      (filtered.removed.length ? 'SID filtering removed ' +
-        filtered.removed.join(', ') : 'nothing was SID-filtered out') +
-      ', and all of its signatures are new');
+      ' issued for ' + clientName.name.join('/') + ', and all of its ' +
+      'signatures are new');
     encTicketPart = encodeTicketPart(kpac.wrapPacAsAuthorizationData(resigned));
   } else if (!ticketClient) {
     // The TGT names a principal this KDC no longer has. The ticket is still

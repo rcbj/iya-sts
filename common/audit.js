@@ -840,6 +840,12 @@ const ACTIONS = [
   // about a key version needs and all that anybody else should be given.
   { action: 'krb5.keys.derived', category: 'authentication',
     label: 'A person\'s Kerberos keys were derived from their password' },
+  // A TICKET THAT CROSSED A KERBEROS TRUST WAS SID-FILTERED (#430, rcbj's
+  // decision of 2026-10-19): one row per ticket whose PAC the filter changed,
+  // naming the trust, the principal and the SIDs removed or added — written
+  // by `kerberos/krb5_trusts.ts`'s sidFilter() in place of an info line.
+  { action: 'krb5.trust.sid-filtered', category: 'authentication',
+    label: 'A ticket that crossed a Kerberos trust was SID-filtered' },
   { action: 'admin.krb5.keys.cleared', category: 'admin',
     label: 'An operator cleared somebody\'s Kerberos keys' },
   { action: 'admin.krb5.service.created', category: 'admin',

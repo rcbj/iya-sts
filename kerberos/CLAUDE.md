@@ -1305,11 +1305,23 @@ sends it facts and turns its refusal kinds into codes.
   A plain cross-realm TGT (no S4U) is not PAC-verified on arrival: its PAC
   is SID-filtered and re-signed, and it is never evidence of anything a
   service could have rewritten, being sealed in a key no service holds. CLASSIC across realms is refused unless
-  `krb5.crossRealmClassicDelegation` (off, runtime, per realm): the front
-  end's realm checks its own `appAllowedToDelegateTo` before it refers, and
-  the target's realm takes that referral as VOUCHED (`classicVouched`) — both
-  realms must turn it on. Forwardable evidence and the protected-user rules
-  are unchanged; `transitedServices` names the front end with its realm.
+  `krb5.crossRealmClassicDelegation` (off, runtime, per realm) is on in
+  BOTH realms, and **each realm refuses on its own setting** (rcbj,
+  2026-10-19; until then the docs said both and the target's refusal shared
+  the front end's code): the front end's realm checks its own
+  `appAllowedToDelegateTo` and refuses before it refers the evidence when
+  its setting is off (`STS-KRB-0232`); the target's realm takes the referral
+  as VOUCHED (`classicVouched`) only when ITS setting is on, and refuses
+  otherwise (`STS-KRB-0242`, the e-text naming the target's realm). The
+  target knows the request for a classic one across a trust from what
+  [MS-SFU] already carries — the evidence arrived as a cross-realm TGT
+  (`evidenceAcross`), the front end is of another realm, and PA-PAC-OPTIONS
+  has no resource-based bit (3.2.5.2.2) — so no field is added to the
+  referral. The policy's one `classic-across-realms` rule asks the setting
+  of whichever realm is deciding; the KDC picks the code by side.
+  `kerberos_cross_realm_delegation.js`'s P runs all four combinations.
+  Forwardable evidence and the protected-user rules are unchanged;
+  `transitedServices` names the front end with its realm.
 * **TGT DELEGATION** ([MS-KILE] 3.3.5.7.5): a referral carries ok-as-delegate
   only where the trust record enables it (`tgtDelegationAllowed()`) and, past
   the first hop, the source ticket carried it; a service ticket for a user of
@@ -1325,9 +1337,28 @@ sends it facts and turns its refusal kinds into codes.
   `STS-KRB-0230`–`0233`) — and the generic rules learn that a foreign actor
   the target names needs no entry here, that resource-based delegation to a
   foreign target is the target realm's, that a vouched classic delegation is
-  allowed where the setting is on, and that a forwarded TGT has no source. A
-  foreign user holds the roles every authenticated person holds. The oracle
-  (`tests/tools/exchange_oracle.js`) carries the same rules.
+  allowed where the setting is on, and that a forwarded TGT has no source.
+  The oracle (`tests/tools/exchange_oracle.js`) carries the same rules.
+* **A PRINCIPAL THAT ARRIVED THROUGH A TRUST HOLDS ONLY ITS GRANTS** (rcbj,
+  2026-10-19, reversing the first build, where a foreign user held the
+  roles every authenticated person holds): EVERYBODY and
+  ALL_AUTHENTICATED_USERS mean "authenticated in THIS realm", so a user or
+  service of another realm holds no built-in role, only a configured role
+  whose `roleMemberUser` names it whole (`alice@PARTNER.TEST`) or whose
+  `roleMemberGroup` names one of the SIDs its PAC carries once SID-filtered
+  (`common/roles.js`, `crossRealm` and `sids`). It is asked that way at both
+  places roles are resolved for one: the delegation policy's subject
+  (`delegation_policy.ts`, the SIDs from the S4U2Self referral's or the
+  evidence's filtered PAC) and the TGS role gate (`answerTgsReq()`, which
+  until then asked by the bare name, so a LOCAL account of the same name
+  lent its roles). **The consequence is selective authentication by
+  default**: a service requiring only EVERYBODY admits nobody from another
+  realm until it is narrowed to a role somebody granted — grant one to the
+  partner's Domain Users (`<partner SID>-513`) and require it beside
+  EVERYBODY. Two things are not asked: a TGT for the next hop (krbtgt is no
+  application, the AS exchange's reason), and the development partner
+  PARTNER.COM, which is not a trust of this realm's. The cross-realm tests
+  admit the partners through `tests/tools/cross_realm_grants.js`.
 * **THE SERVICE'S TWO WORDS**: `krb5S4uSelfRealm` (multi; values checked at
   the write against `acceptsRealm()`, `STS-REG-0362`) and
   `krb5ForeignTgtDelegation` (`inherit` | `deny`, a closed set).
@@ -1352,7 +1383,12 @@ Samba's cross-realm s4u and xrealm tests).
 `trustAttributes` 6.1.6.7.9, `msDS-TrustForestTrustInfo` 6.1.6.9.3,
 `trustType`), the filtering it selects in [MS-PAC] 4.1.2.2, the claims
 traversal of [MS-ADTS] 3.1.1.11.2.11 ([MS-CTA]), and [MS-KILE] 3.3.5.7.5 for
-TACO. `krb5_trusts.ts`'s `sidFilter()` marks each row `R<n>` where it is
+TACO. **A ticket whose PAC the filter changed writes ONE audit row**,
+`krb5.trust.sid-filtered` (rcbj, 2026-10-19; it was an info line per
+ticket): the trust, the principal and the SIDs removed or added (and PAC
+buffers dropped), never a key; the KDC filters a ticket once however many
+of its steps need the result (`filterArriving()`'s memo), so the row is
+one per ticket. `krb5_trusts.ts`'s `sidFilter()` marks each row `R<n>` where it is
 enforced, and `tests/kerberos_cross_realm_delegation.js` tests each row as
 `SF-R<n>`. The TRUST BOUNDARY comes from the record's bits (`boundaryOf()`):
 within-forest → WithinForest, or QuarantinedWithinForest with quarantined;

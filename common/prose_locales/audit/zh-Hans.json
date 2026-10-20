@@ -691,6 +691,10 @@
     "en": "048452fd758565c6",
     "text": "某人的 Kerberos 密钥从其密码派生"
   },
+  "audit.actions.krb5.trust.sid-filtered.label": {
+    "en": "0cb1d7c8c214f1f1",
+    "text": "跨越 Kerberos 信任的票据已进行 SID 过滤"
+  },
   "audit.actions.admin.krb5.keys.cleared.label": {
     "en": "a9405f7ee523fd30",
     "text": "操作员清除了某人的 Kerberos 密钥"
