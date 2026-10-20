@@ -254,7 +254,11 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // 21 SINCE 2026-10-18 (#350): `sts_sessions`, the index of a live session,
 // written in the same transaction as the sealed body. Not a column of
 // `sts_minted` — `expires_at` there stays NULL for a session.
-const SCHEMA_VERSION = 21;
+// 22 SINCE 2026-10-20 (#754): `sts_sessions_surface`, the partial index
+// `session.surface` reads. It was a scan of the realm's sessions, asked
+// twice per password change (each hosted surface answering the CAEP
+// `credential-change` it receives).
+const SCHEMA_VERSION = 22;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -893,6 +897,13 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_sessions_partner', statement:
   'CREATE INDEX IF NOT EXISTS sts_sessions_partner ON sts_sessions ' +
   '(realm, partner_relationship) WHERE partner_relationship <> \'\'' },
+  // A hosted surface's relying-party sessions (#754, schema version 22):
+  // `session.surface`, which `Authn.endRelyingPartySessions()` asks for
+  // every signal a surface receives. Partial for the others' reason: a
+  // sign-on session has no surface, and those are nearly every row.
+  { name: 'sts_sessions_surface', statement:
+  'CREATE INDEX IF NOT EXISTS sts_sessions_surface ON sts_sessions ' +
+  '(realm, rp_surface) WHERE rp_surface <> \'\'' },
   // -------------------------------------------------------------------------
   // THE CHANGE LOG (2026-09-06), which is what makes several processes against
   // one store agree rather than merely coexist.

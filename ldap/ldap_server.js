@@ -5505,7 +5505,10 @@ function addValues(stored, name, values) {
     return false;
   }
   stored.attributes[key] = have.concat(added);
-  touchDirectory();
+  // The one entry it changed (#754): no operational attribute is written
+  // here (above), so no UUID moved, and a DN-less touch would make the next
+  // flush walk everything the directory window holds.
+  touchDirectory(stored.dn);
   log.debug('Leaving addValues().');
   return true;
 }
@@ -9835,7 +9838,9 @@ function addConsentValues(key, values, attribute) {
   const changed = addValues(stored, CONSENT_ATTRIBUTES[lower], values);
   if (changed) {
     stored.attributes.modifytimestamp = [generalizedTime()];
-    touchDirectory();
+    // Every authorization records the consent it applied, so this is on
+    // the sign-in path; the DN keeps its flush to this entry (#754).
+    touchDirectory(stored.dn);
   }
   log.debug('Leaving addConsentValues(). ' +
             (changed ? 'Written.' : 'Already ' +
@@ -17709,7 +17714,13 @@ function ldapModifyNow(req, res, next) {
   }
   working.modifytimestamp = [generalizedTime()];
   stored.attributes = working;
-  touchDirectory();
+  // THE DN IS NAMED (#754). A modify changes the one entry it names, and a
+  // touch with no DN made the next flush in a windowed process
+  // `collect(null)`: every entry the window held serialised and compared,
+  // per write. Under a password load that was a tenth of a request worker,
+  // growing as the window filled. The UUID index needs no dirty mark: the
+  // block above keeps `entryUUID` and its alias across the modify.
+  touchDirectory(stored.dn);
   stored.modifiedAt = working.modifytimestamp[0];
   const passwordBefore = firstValueOf(beforeModify, 'userpassword');
   const passwordAfter = firstValueOf(stored.attributes, 'userpassword');

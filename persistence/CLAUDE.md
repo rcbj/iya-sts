@@ -2694,6 +2694,17 @@ open the bodies. Memory and LDIF are unchanged. Where the window is on,
 one process holds a bounded set and the walks read this index; the
 argument is in `authn/CLAUDE.md`.
 
+**`sts_sessions_surface` is the seventh index (#754, schema version 22).**
+`session.surface` — a hosted surface's relying-party sessions, which
+`Authn.endRelyingPartySessions()` asks for every signal the surface
+receives — had none, so it scanned the realm's sessions. A password change
+sends CAEP `credential-change` and both hosted surfaces receive it, so a
+password load asked it twice per write: 0.6 ms at 4,500 sessions, about
+130 ms at a million. Partial (`rp_surface <> ''`), because a sign-on
+session has no surface. The upgrade is `schema.sql` run again as the owner
+before the version-22 image starts (`postgres/CLAUDE.md`); `sts_app`
+cannot build it and the driver refuses.
+
 ### The schema version moved to 2
 
 `sts_keys` is the fourth table and the first with a `PRIMARY KEY` that is a realm
