@@ -5139,7 +5139,13 @@ class Authn {
         return 'error';
       }
       const cap = Math.floor(Number(config.value('authn.maxSessions')));
-      let size = sessionWindow.count(realmId);
+      if (cap < 1) {
+        // No cap: nothing to count (#754).
+        log.debug("Leaving Authn.makeRoomForSession(). " + ended +
+                  " ended, no cap.");
+        return true;
+      }
+      let size = sessionWindow.countForAdmission(realmId, cap);
       if (size === null) {
         log.debug("Leaving Authn.makeRoomForSession(). Unread.");
         return 'error';
@@ -5155,11 +5161,12 @@ class Authn {
           size -= 1;
         }
       }
-      if (cap >= 1 && size >= cap && ended === 0) {
+      if (size >= cap && ended === 0) {
         this.noteRealmRefusal();
         log.debug("Leaving Authn.makeRoomForSession(). Refused.");
         return false;
       }
+      sessionWindow.noteAdmitted(realmId);
       log.debug("Leaving Authn.makeRoomForSession(). " + ended + " ended.");
       return true;
     }

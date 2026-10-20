@@ -2042,6 +2042,18 @@ ends somebody else's session.
   replicated store. A worker restoring sessions, or applying another's
   writes from the change log, never evicts. Two concurrent inserters may
   overshoot by one each. The client address is not an admission key.
+* **Far from the cap the window does not count the realm on every insert
+  (#754, 2026-10-20).** `session.count` is a scan of the realm's index
+  rows, so asking it per sign-in made a sign-in O(sessions): 0.6 ms at
+  4,500, about 130 ms at a million, on the bridge. `countForAdmission()`
+  answers the store's count at most 10 s old plus this process's admissions
+  since, while that is more than a margin — the larger of 1,000 and 1% of
+  the cap — below it; within the margin every insert asks, as before. Ends
+  are not subtracted, so the cached answer only overstates. What it can
+  miss is other processes' admissions in one 10 s window past the margin,
+  the same overshoot the unlocked check already allows. With no cap
+  (`authn.maxSessions` below 1) nothing is counted.
+  `tests/sustained_load_costs.js` section B.
 * **Lowering a cap does not mass-end.** The next insert ends at most one
   own row, and only when that subject is over their own cap. The
   `authn.session-expiry` job then ends at most that realm's

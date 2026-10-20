@@ -627,7 +627,13 @@ ldif or multi-cell service is unchanged.
   with uptime — 7.4 s of a 15.6 s profile, the add rate halved in 33K adds.
   A ghost whose `WeakRef` is empty is dropped wherever it is met. Only
   `collect(null)` (a write naming nothing, a realm change, a failed
-  whole-walk flush) still walks both, by definition; the other per-write
+  whole-walk flush) still walks both, by definition — **so a hot writer
+  must name its DN (#754, 2026-10-20)**: the LDAP modify handler and
+  `addValues()` (the consent every authorization records) did not, and
+  under a password load and a sign-in load each flush serialised every
+  entry the window held, about a tenth of a request worker and growing as
+  the window filled. `tests/sustained_load_costs.js` section A counts what a
+  flush serialises after each; the other per-write
   walks are of `dirty`, bounded by one flush's changes. The answer is the
   walk's except in ORDER, which nothing reads (the postgres driver sorts by
   key). Section L of the test counts the walks and compares with the old.

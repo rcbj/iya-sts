@@ -633,6 +633,8 @@ CREATE INDEX IF NOT EXISTS sts_sessions_expires ON sts_sessions (realm, expires_
 CREATE INDEX IF NOT EXISTS sts_sessions_parent ON sts_sessions (realm, parent_key) WHERE parent_key <> '';
 CREATE INDEX IF NOT EXISTS sts_sessions_credential ON sts_sessions (realm, credential_key) WHERE credential_key <> '';
 CREATE INDEX IF NOT EXISTS sts_sessions_partner ON sts_sessions (realm, partner_relationship) WHERE partner_relationship <> '';
+-- Schema version 22 (#754): a hosted surface's relying-party sessions.
+CREATE INDEX IF NOT EXISTS sts_sessions_surface ON sts_sessions (realm, rp_surface) WHERE rp_surface <> '';
 
 -- ---------------------------------------------------------------------------
 -- THE CHANGE LOG (2026-09-06), which is what makes several processes against
@@ -1099,7 +1101,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (21) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (22) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

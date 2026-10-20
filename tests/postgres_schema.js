@@ -437,21 +437,24 @@ function checkTheVersionAgrees(t, sql) {
 }
 
 // Schema 21 (#350): `sts_sessions` beside `sts_minted`, six partial indexes,
-// a nullable `expires_at`, and the primary key `(realm, key)`.
+// a nullable `expires_at`, and the primary key `(realm, key)`. Schema 22
+// (#754) adds the seventh, `sts_sessions_surface`.
 function checkTheSessionIndex(t, sql) {
   log.debug("Entering checkTheSessionIndex().");
-  t.equal(driver.SCHEMA_VERSION, 21,
-          'the driver\'s schema version is 21 (#350)');
+  t.equal(driver.SCHEMA_VERSION, 22,
+          'the driver\'s schema version is 22 (#350, #754)');
   const names = ['sts_sessions_subject', 'sts_sessions_username',
                  'sts_sessions_expires', 'sts_sessions_parent',
-                 'sts_sessions_credential', 'sts_sessions_partner'];
+                 'sts_sessions_credential', 'sts_sessions_partner',
+                 'sts_sessions_surface'];
   const predicates = [
     'WHERE chosen AND subject_key <> \'\'',
     'WHERE username_key <> \'\'',
     'WHERE expires_at IS NOT NULL',
     'WHERE parent_key <> \'\'',
     'WHERE credential_key <> \'\'',
-    'WHERE partner_relationship <> \'\''
+    'WHERE partner_relationship <> \'\'',
+    'WHERE rp_surface <> \'\''
   ];
   const script = statementsIn(sql);
   names.forEach(function (name, i) {

@@ -33,6 +33,11 @@ const NEGATIVE_CAP = 1024;
 const NEGATIVE_MS = 60000;
 const PAGE = 200;
 const SUBJECT_PAGE = 500;
+// How long a realm's count may answer an admission that is far from the cap
+// (#754), and how far "far" is: the larger of these two.
+const COUNT_FRESH_MS = 10000;
+const COUNT_MARGIN_MIN = 1000;
+const COUNT_MARGIN_SHARE = 0.01;
 
 const NOT_ENABLED = 'authn.sessionWindow cannot be on: minted persistence ' +
   'is not enabled.';
@@ -40,6 +45,12 @@ const SEVERAL_CELLS = 'authn.sessionWindow cannot be on: this process is ' +
   'one of several cells.';
 const NOT_A_DIGEST = 'authn.sessionWindow cannot be on: the minted key is ' +
   'not a digest.';
+
+interface RecentCount {
+  n: number;
+  at: number;
+  admitted: number;
+}
 
 interface Slot {
   session: any;
@@ -75,6 +86,7 @@ class SessionWindow {
   private readonly negative = new Map<string, number>();
   private readonly byDigest = new Map<string, string>();
   private readonly digestBySid = new Map<string, string>();
+  private readonly recentCounts = new Map<string, RecentCount>();
   private cooldownUntil = 0;
   private queryFn: QueryFn | null = null;
   private connectionOf: (() => any) | null = null;
@@ -211,6 +223,7 @@ class SessionWindow {
     this.negative.clear();
     this.byDigest.clear();
     this.digestBySid.clear();
+    this.recentCounts.clear();
     this.lru.clear();
     this.queryFn = null;
     const bridge = this.bridge;
@@ -481,6 +494,62 @@ class SessionWindow {
     const n = Number((answer as { n?: unknown }).n);
     log.debug("Leaving SessionWindow.count().");
     return Number.isFinite(n) ? n : 0;
+  }
+
+  /**
+   * The realm's count as an admission against `cap` needs it (#754): exact
+   * near the cap, and far from it the store's count at most COUNT_FRESH_MS
+   * old plus what this process admitted since. `session.count` is a scan of
+   * the realm's index rows, so asking it on every sign-in made a sign-in
+   * cost O(sessions) — 0.6 ms at 4,500 sessions, about 130 ms at a million.
+   *
+   * What a cached answer can miss is what OTHER processes admitted within
+   * the window, and it is used only while the count plus this process's
+   * admissions is more than a margin (the larger of COUNT_MARGIN_MIN and
+   * COUNT_MARGIN_SHARE of the cap) below it; within the margin every
+   * admission asks again, as it always did. A session ended since is not
+   * subtracted, so the cached answer only ever overstates. The overshoot
+   * this allows is the other processes' admissions in one window past the
+   * margin — the cap was never locked (`makeRoomForSession()`).
+   *
+   * @param realmId - the realm
+   * @param cap - authn.maxSessions, at least 1
+   * @returns the count to compare with the cap, or null when unread
+   */
+  countForAdmission(realmId: string, cap: number): number | null {
+    log.debug("Entering SessionWindow.countForAdmission().");
+    const realm = String(realmId || '');
+    const now = Date.now();
+    const margin = Math.max(COUNT_MARGIN_MIN,
+                            Math.ceil(cap * COUNT_MARGIN_SHARE));
+    const recent = this.recentCounts.get(realm);
+    if (recent && now - recent.at < COUNT_FRESH_MS &&
+        recent.n + recent.admitted + margin < cap) {
+      log.debug("Leaving SessionWindow.countForAdmission(). Recent.");
+      return recent.n + recent.admitted;
+    }
+    const n = this.count(realm);
+    if (n === null) {
+      log.debug("Leaving SessionWindow.countForAdmission(). Unread.");
+      return null;
+    }
+    this.recentCounts.set(realm, { n: n, at: now, admitted: 0 });
+    log.debug("Leaving SessionWindow.countForAdmission(). Asked.");
+    return n;
+  }
+
+  /**
+   * One session admitted in this realm, for `countForAdmission()`.
+   *
+   * @param realmId - the realm
+   */
+  noteAdmitted(realmId: string): void {
+    log.debug("Entering SessionWindow.noteAdmitted().");
+    const recent = this.recentCounts.get(String(realmId || ''));
+    if (recent) {
+      recent.admitted += 1;
+    }
+    log.debug("Leaving SessionWindow.noteAdmitted().");
   }
 
   /**

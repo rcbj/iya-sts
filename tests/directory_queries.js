@@ -270,10 +270,10 @@ async function driverDoor(t) {
 
 async function schema(t) {
   log.debug("Entering schema().");
-  t.log.info('=== C. schema version 21 ===');
-  t.equal(postgres.SCHEMA_VERSION, 21,
-          'C1. the driver writes schema version 21 (#222, #391 phase 6, ' +
-          '#432 phase 5, #618, #623, #630, #639, #350)');
+  t.log.info('=== C. schema version 22 ===');
+  t.equal(postgres.SCHEMA_VERSION, 22,
+          'C1. the driver writes schema version 22 (#222, #391 phase 6, ' +
+          '#432 phase 5, #618, #623, #630, #639, #350, #754)');
   const table = postgres.SCHEMA_OBJECTS.filter(function (o) {
     return o.name === 'sts_ldap_entries';
   })[0];
