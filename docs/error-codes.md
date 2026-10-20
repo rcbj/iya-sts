@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4420** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4421** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -55,7 +55,7 @@ is an ordinary outcome.
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 50
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 83
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
-* [Cells and residency (`STS-CELL`)](#sts-cell) — 87
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 143
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 206
@@ -532,6 +532,7 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0208` | The conversion could not dial or read the cell or the global database the way the service does (a connection, a password provider or a statement failed). Nothing is changed. | none — an operator tool |
 | `STS-CELL-0209` | A conversion finished with something worth a look: the sts_risk_* counts moved while it ran (something else was writing the cell database), or an already-converted cell database holds a global-tier directory row or a person indexed in another cell. Nothing is changed for it. | none — a warning in the log |
 | `STS-CELL-0210` | A cell conversion found a sealed directory entry it could not open, so it could not decide the entry's tier; nothing was converted (#391). | cell_convert — refused |
+| `STS-CELL-0211` | A provider's server-to-server notification could not reach every cell (#727): it is answered 503 and its once-ever claim is released, so the provider's retry is accepted and fanned out again. | HTTP 503 with Retry-After |
 
 ## STS-SCHED
 

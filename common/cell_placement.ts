@@ -309,12 +309,13 @@ const ROWS: Row[] = [
   { prefix: '/federation/stepup', strategy: 'artifact', browser: true,
     segment: 3, why: 'a step-up handle is found where it was minted (#565)' },
   // A PROVIDER'S NOTIFICATION (#565) has no browser and names a subject, not
-  // a cell: answered where it arrives. In a service deployed as cells a link
-  // held in another cell is not reached yet — the partner sign-out's fan-out
-  // (`endAtPeers()`) is the shape it would take.
+  // a cell: verified and spent where it arrives, and fanned out to every
+  // peer (#727, `federation-provider-notification`), as a partner's sign-out
+  // is.
   { prefix: '/federation/notifications', strategy: 'local',
-    why: 'a provider\'s server-to-server notification, answered where it ' +
-         'arrives; a link in another cell is not reached yet (#727)' },
+    why: 'a provider\'s server-to-server notification: verified where it ' +
+         'arrives and fanned out to every peer ' +
+         '(federation-provider-notification, #727)' },
   { prefix: '/federation/backchannel-logout', strategy: 'handler',
     handler: 'federation/federation_slo.ts',
     why: 'a partner\'s sign-out may end sessions in every cell: served ' +
