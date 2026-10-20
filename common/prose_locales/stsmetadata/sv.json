@@ -2039,6 +2039,10 @@
     "en": "9d8cd20df8e552da",
     "text": "skriver till LDAP-katalogen — applikationsposten, via samma funktion som en ldapadd når"
   },
+  "stsmetadata.endpoints./admin-api/saml-idp-initiated.what": {
+    "en": "21744c52a0800ce5",
+    "text": "ICKE-SPEC (#749). De SAML 2.0-tjänsteleverantörer och SAML 1.1-förlitande parter för vilka en inloggning initierad av identitetsleverantören är tillåten — sfärens inställning eller postens åsidosättning, frågade genom den funktion som /launch/{app} frågar — en rad per program och familj, var och en med sin /launch-länk och protokollets egen oombedda slutpunkt, sidindelade. Speglar fliken IdP-Initiated SSO på /admin/saml2."
+  },
   "stsmetadata.endpoints./admin-api/saml-attributes.what": {
     "en": "e35e055c9faedc42",
     "text": "NON-SPEC. De två SAML-attributuppsättningarna i samma lager, katalogen över LDAP-attributtyper de väljer bland, och den enda regel som är deras: det AttributeNamespace som ett SAML 1.1-attribut får när anropet inte namnger något. Det finns ingen lista över reserverade namn här och frånvaron är svaret — den listan är en JWT-regel. Speglar GET /admin/saml-attributes."

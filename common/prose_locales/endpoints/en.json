@@ -275,6 +275,7 @@
   "endpoints.route./admin-api/saml2/:action.name": "SAML 2.0 service provider actions",
   "endpoints.route./admin-api/saml11.name": "SAML 1.1 identity provider",
   "endpoints.route./admin-api/saml11/:action.name": "SAML 1.1 relying party actions",
+  "endpoints.route./admin-api/saml-idp-initiated.name": "SAML applications a sign-in may start here for",
   "endpoints.route./admin-api/saml-attributes.name": "Custom SAML attributes",
   "endpoints.route./admin-api/saml-attributes/:action.name": "Custom SAML attribute actions",
   "endpoints.route./admin-api/credential-claims.name": "Credential claims",

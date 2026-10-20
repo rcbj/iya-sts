@@ -2039,6 +2039,10 @@
     "en": "9d8cd20df8e552da",
     "text": "写入 LDAP 目录——即应用条目，经由 ldapadd 所到达的同一个函数"
   },
+  "stsmetadata.endpoints./admin-api/saml-idp-initiated.what": {
+    "en": "21744c52a0800ce5",
+    "text": "非规范（#749）。允许身份提供者发起登录的 SAML 2.0 服务提供者和 SAML 1.1 依赖方——领域设置或条目的覆盖，通过 /launch/{app} 所询问的同一函数询问——每个应用和协议族一行，每行带有其 /launch 链接和该协议自身的非请求端点，分页显示。对应 /admin/saml2 的 IdP-Initiated SSO 标签页。"
+  },
   "stsmetadata.endpoints./admin-api/saml-attributes.what": {
     "en": "e35e055c9faedc42",
     "text": "NON-SPEC。同一存储的两个 SAML 属性集、它们从中选择的 LDAP 属性类型目录，以及专属于它们的一条规则：调用未指定时 SAML 1.1 属性所获得的 AttributeNamespace。这里没有保留名称列表，而没有本身就是答案——那个列表是 JWT 的规则。对应 GET /admin/saml-attributes。"
