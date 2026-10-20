@@ -35,6 +35,14 @@ class SelfIssuedPages {
    */
   static render(view: Json, ctx: Json): string {
     const t = ctx.t;
+    // A REFUSAL (STS-PORTAL-0616, no entry for the person): the runtime says
+    // why above the page, and the page draws no list — an empty one would
+    // read as "none enrolled", which is what the refusal exists to avoid.
+    if (view.ok === false) {
+      return '<div class="card"><h2>' + t.html('portalSelfIssued.heading') +
+        '</h2><p class="sub">' + t.html('portalSelfIssued.sub') +
+        '</p></div>';
+    }
     const held: Json[] = view.subjects || [];
     const rows = held.map(function (one: Json) {
       // The enrolment instant in the reader's own way of writing a date

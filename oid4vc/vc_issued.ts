@@ -126,6 +126,7 @@ import stsCrypto = require('../common/crypto');
 import stats = require('../common/admin_stats');
 import cacheRegistry = require('../common/cache_registry');
 import config = require('../common/config');
+import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 // THE STATUS LISTS, whose entry for a credential is one of the three ways it
 // is disowned. A library that requires nothing in this directory but its
@@ -140,6 +141,7 @@ import accountSignals = require('../ssf/account_signals');
 // The parts of a `realms.map()` store this module uses.
 interface Store {
   get(key: string): any;
+  has(key: string): boolean;
   set(key: string, value: any): unknown;
   delete(key: string): boolean;
   forEach(fn: (value: any, key: string) => void): void;
@@ -263,10 +265,18 @@ const issued = realms.map({ persist: 'vc_issued.credentials',
 //     are rows of their own (#670); an entry from before names one `key`
 //
 // Written in `record()` and dropped where this module deletes a row
-// (`sweep()`, an expired `lookup()`, `forget()`). A row the size bound
-// evicts (`cacheRegistry.makeRoom()`) leaves a key behind, which the reader
-// prunes when it finds no row under it. `expiresAt` is the rows', for the
-// database's own expiry. Rows recorded before the indexes existed are
+// (`sweep()`, an expired `lookup()`, `forget()`, and the rows the size bound
+// evicts in `record()`, read before `cacheRegistry.makeRoom()` takes them).
+// **A READER NEVER PRUNES A KEY FOR A ROW IT CANNOT SEE** (2026-10-20): this
+// process's copy of a persisted store answers "not here" alike for a row
+// that is gone and for one that has not arrived yet (another process's
+// write still on its way through the change log, a row the restore could
+// not open), and an index entry pruned on such a read was lost for good —
+// the person's history read as empty from then on. A key is dropped only
+// where this module deleted the row itself, or where the row it names is
+// HERE and names another subject or no longer carries the notification.
+// `expiresAt` is the rows', for the database's own expiry, which is what
+// ends a key left behind. Rows recorded before the indexes existed are
 // indexed once per realm (`ensureIndexed()`, marked by `INDEXED_MARK`).
 const bySubject = realms.map({ persist: 'vc_issued.bySubject',
                                expiresAt: realms.expiryField('expiresAt', 1) });
@@ -274,8 +284,13 @@ const byNotification = realms.map({ persist: 'vc_issued.byNotification',
                                     expiresAt: realms.expiryField('expiresAt',
                                                                   1) });
 // The key in `bySubject` that says the realm's rows have been indexed. Not a
-// digest, so no subject can collide with it.
-const INDEXED_MARK = '#indexed-v1';
+// digest, so no subject can collide with it. `-v2` since 2026-10-20: the
+// reader pruned a key whose row it could not see until then, so each realm
+// is indexed once more, which files every row it holds under its subject
+// again (`indexRow()` adds a key only once) and gives back what a pruned
+// entry lost. The `-v1` mark is dropped as the scan is marked.
+const INDEXED_MARK = '#indexed-v2';
+const INDEXED_MARK_BEFORE = '#indexed-v1';
 
 // Described to `/admin/caches` (rule 3ap, #38 follow-ups). It is not a cache:
 // it cannot be rebuilt, and a lookup that misses refuses a sign-in — which is
@@ -560,8 +575,7 @@ class VcIssued {
     // nobody in — exactly what disowning one does — so no bound here can
     // let a credential in that should not be.
     if (!before && !store.get(key)) {
-      cacheRegistry.makeRoom(store, this.deps.maxRows(),
-                             { counter: issuedCount });
+      this.makeRoomIndexed();
     }
     // THROUGH THE STORE, whole, so the journal carries the row.
     store.set(key, {
@@ -1078,12 +1092,19 @@ class VcIssued {
     const entry = notificationIndex.get(id);
     const keys = this.keysOf(entry);
     const live: string[] = [];
-    keys.forEach(function (key) {
-      const row = store.get(key);
-      if (!row) {
+    let failures = 0;
+    let error: unknown = '';
+    keys.forEach((key) => {
+      const read = this.readRow(key);
+      // A ROW NOT HERE, OR NOT READABLE, KEEPS ITS KEY: the index's header
+      // comment says why.
+      if (read.failed || !read.row) {
+        failures += read.failed ? 1 : 0;
+        error = read.failed ? read.error : error;
+        live.push(key);
         return;
       }
-      live.push(key);
+      const row = read.row;
       let here = 0;
       [].concat(row.credentials || []).forEach(function (c: Issued) {
         if (c.notificationId === id) {
@@ -1092,12 +1113,16 @@ class VcIssued {
           here += 1;
         }
       });
+      // A row that is here and no longer carries the notification (its
+      // oldest credentials went at MAX_PER_ROW) is pruned: a fact about the
+      // row.
       if (here) {
+        live.push(key);
         store.set(key, row);
         count += here;
       }
     });
-    // Keys whose row is gone (the size bound evicted it) are pruned here.
+    this.reportUnreadable('a wallet\'s notification names', failures, error);
     if (entry && live.length !== keys.length) {
       if (live.length) {
         notificationIndex.set(id, { keys: live,
@@ -1213,28 +1238,116 @@ class VcIssued {
     });
   }
 
-  // One person's rows through the index, pruning keys whose row is gone (a
-  // row the size bound evicted) and rows that name another subject.
+  // THE SIZE BOUND, WITH THE INDEXES KEPT. `makeRoom()` deletes the oldest
+  // rows without saying which, so the rows it can take — the first
+  // `size - limit + 1` in the store's order, which is the order it deletes
+  // in — are read first, and each one no longer in this process's store
+  // once it returns leaves both indexes: the one place a row's absence is a
+  // FACT, because this process has just deleted it.
+  private makeRoomIndexed(): void {
+    const { log, store } = this.deps;
+    log.debug("Entering VcIssued.makeRoomIndexed().");
+    const limit = Number(this.deps.maxRows());
+    const over = isFinite(limit) && limit > 0 ? store.size - limit + 1 : 0;
+    const candidates: any[] = [];
+    if (over > 0) {
+      const keys = store.keys();
+      for (let i = 0; i < over; i += 1) {
+        const next = keys.next();
+        if (next.done) {
+          break;
+        }
+        candidates.push({ key: next.value, row: store.get(next.value) });
+      }
+    }
+    cacheRegistry.makeRoom(store, limit, { counter: issuedCount });
+    let unindexed = 0;
+    candidates.forEach((one) => {
+      if (one.row && !store.has(one.key)) {
+        this.unindexRow(one.row);
+        unindexed += 1;
+      }
+    });
+    log.debug("Leaving VcIssued.makeRoomIndexed(). " + unindexed +
+              " evicted.");
+  }
+
+  // One row of the register, or what kept it from being read: `failed`
+  // where the store threw, which a reader must not take for a row that is
+  // gone (STS-VC-0151 at the reader, once per read).
+  private readRow(key: string): { row: any; failed: boolean;
+                                  error: unknown } {
+    const { log, store } = this.deps;
+    log.debug("Entering VcIssued.readRow().");
+    try {
+      const row = store.get(key);
+      log.debug("Leaving VcIssued.readRow().");
+      return { row: row, failed: false, error: '' };
+    } catch (e) {
+      log.debug("Caught in VcIssued.readRow(): " + ((e && e.message) || e));
+      log.debug("Leaving VcIssued.readRow(). The store threw.");
+      return { row: null, failed: true, error: (e && e.message) || e };
+    }
+  }
+
+  // Says, once per read, that some of an index entry's rows could not be
+  // read and the entry was left as it was.
+  private reportUnreadable(which: string, failures: number,
+                           error: unknown): void {
+    const { log } = this.deps;
+    log.debug("Entering VcIssued.reportUnreadable().");
+    if (failures) {
+      log.error(errorCodes.tag('STS-VC-0151') + 'vc_issued: ' + failures +
+                ' row(s) ' + which + ' could not be read from the issued ' +
+                'register, and the index entry naming them was left as it ' +
+                'was: ' + String(error));
+    }
+    log.debug("Leaving VcIssued.reportUnreadable().");
+  }
+
+  // One person's rows through the index. A key whose row this process does
+  // not hold, or could not read, is SKIPPED AND KEPT (the index's header
+  // comment says why); only a row that is here and names another subject is
+  // pruned, which is a fact about the row rather than about this process's
+  // view of the store.
   private rowsOfSubject(subject: string): any[] {
-    const { store, subjectIndex } = this.deps;
+    const { log, subjectIndex } = this.deps;
+    log.debug("Entering VcIssued.rowsOfSubject().");
     if (!subject) {
+      log.debug("Leaving VcIssued.rowsOfSubject(). No subject.");
       return [];
     }
     this.ensureIndexed();
     const k = this.subjectKey(subject);
     const entry = subjectIndex.get(k);
     if (!entry) {
+      log.debug("Leaving VcIssued.rowsOfSubject(). Not indexed.");
       return [];
     }
     const rows: any[] = [];
     const kept: string[] = [];
-    [].concat(entry.keys || []).forEach(function (key: string) {
-      const row = store.get(key);
-      if (row && row.subject === subject) {
-        rows.push(row);
+    let missing = 0;
+    let failures = 0;
+    let error: unknown = '';
+    [].concat(entry.keys || []).forEach((key: string) => {
+      const read = this.readRow(key);
+      if (read.failed) {
+        failures += 1;
+        error = read.error;
+        kept.push(key);
+        return;
+      }
+      if (!read.row) {
+        missing += 1;
+        kept.push(key);
+        return;
+      }
+      if (read.row.subject === subject) {
+        rows.push(read.row);
         kept.push(key);
       }
     });
+    this.reportUnreadable('of one person\'s history', failures, error);
     if (kept.length !== (entry.keys || []).length) {
       if (kept.length) {
         subjectIndex.set(k, { keys: kept, expiresAt: entry.expiresAt });
@@ -1242,6 +1355,9 @@ class VcIssued {
         subjectIndex.delete(k);
       }
     }
+    log.debug("Leaving VcIssued.rowsOfSubject(). " + rows.length +
+              " row(s), " + missing + " not here, " + failures +
+              " unreadable.");
     return rows;
   }
 
@@ -1259,6 +1375,9 @@ class VcIssued {
       count += 1;
     });
     subjectIndex.set(INDEXED_MARK, { at: Date.now(), expiresAt: 0 });
+    if (subjectIndex.get(INDEXED_MARK_BEFORE)) {
+      subjectIndex.delete(INDEXED_MARK_BEFORE);
+    }
     log.debug("Leaving VcIssued.ensureIndexed(). " + count + " row(s).");
   }
 

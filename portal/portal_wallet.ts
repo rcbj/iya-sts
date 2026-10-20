@@ -82,6 +82,20 @@
 // the access token and the credential endpoint signs with it; the realm's
 // Status List Token keeps the configured algorithm.
 //
+// **THE TOKEN'S SUBJECT AND ITS PERSON MUST NAME EACH OTHER** (2026-10-20).
+// The history is read by `caller.sub` (the issued register's subject index)
+// and the page is about `caller.username`; where the two disagree the
+// history was somebody else's or, with no index entry, an empty list that
+// read as "nothing issued". Each of the three operations refuses that
+// (STS-PORTAL-0617, 403) unless either direction ties them — the subject is
+// the person's entry's (`subjectForName()`, which folds a name the way the
+// directory files it), or the subject's entry is filed under that name
+// (`nameForSubject()`, which also reads the legacy `urn:sts:user:` form) —
+// so a token the authorization server issued for a person always passes:
+// its `sub` is the session user's and its `username` that user's name. In
+// a process with no directory nothing can be compared and nothing is
+// refused. With them agreeing and nothing indexed, the empty list stays.
+//
 // The same in both modes: this is the person's own credential, made for the
 // person who asked. The demo issuer that minted for `oid4vci.offerUsername`
 // for anybody left for the development companion on #594, which sends a
@@ -103,6 +117,10 @@ const vt = validation.types;
 interface PortalWalletDeps {
   log: { debug(message: string): void };
   userFor(username: string): any;
+  // The directory's two lookups, for the subject check (the header).
+  hasSubjectResolver(): boolean;
+  nameForSubject(sub: string): string;
+  subjectForName(name: string): string;
   // Required when first asked, never at load: `portal/` is built at 8a,
   // before the OpenID4VCI family (11–14), and `vc_offers.ts` is the module
   // that breaks `oauth2.ts`'s require cycle (root `CLAUDE.md` rule 2), so a
@@ -333,6 +351,9 @@ class PortalWallet {
     return {
       log: helpers.log,
       userFor: helpers.userFor,
+      hasSubjectResolver: helpers.hasSubjectResolver,
+      nameForSubject: helpers.nameForSubject,
+      subjectForName: helpers.subjectForName,
       loadOffers: function (): Json {
         helpers.log.debug("Entering loadOffers().");
         helpers.log.debug("Leaving loadOffers().");
@@ -354,6 +375,75 @@ class PortalWallet {
         return require('../oid4vc/vc_issued');
       }
     };
+  }
+
+  /**
+   * Says why the token's subject and its person do not name each other, or
+   * '' where they do (the header; STS-PORTAL-0617).
+   *
+   * @param caller - the signed-in person
+   * @returns the reason, or ''
+   */
+  subjectDisagreement(caller: AccountCaller): string {
+    const { log, hasSubjectResolver, nameForSubject,
+            subjectForName } = this.deps;
+    log.debug("Entering PortalWallet.subjectDisagreement().");
+    if (!hasSubjectResolver()) {
+      log.debug("Leaving PortalWallet.subjectDisagreement(). No directory.");
+      return '';
+    }
+    const sub = String((caller && caller.sub) || '');
+    const who = String((caller && caller.username) || '');
+    if (!sub) {
+      log.debug("Leaving PortalWallet.subjectDisagreement(). No subject.");
+      return 'Your sign-in names no subject, and the credentials this ' +
+        'realm issued are filed by subject. Sign out and sign in again.';
+    }
+    const named = String(nameForSubject(sub) || '');
+    const own = String(subjectForName(who) || '');
+    if ((named && named === who) ||
+        (own && own.toLowerCase() === sub.toLowerCase())) {
+      log.debug("Leaving PortalWallet.subjectDisagreement(). Agree.");
+      return '';
+    }
+    log.debug("Leaving PortalWallet.subjectDisagreement(). Disagree.");
+    return 'Your sign-in names ' + JSON.stringify(who) + ' and the subject ' +
+      JSON.stringify(sub) + ', which ' + (named
+        ? 'is ' + JSON.stringify(named) + '\'s'
+        : 'is no entry\'s in this realm\'s directory') +
+      ', so the credentials it would show are not yours. Sign out and ' +
+      'sign in again.';
+  }
+
+  /**
+   * Refuses an operation whose token's subject and person disagree, with an
+   * audit row, or answers null where they agree.
+   *
+   * @param ctx - the account API's helpers
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param action - the audit action of the operation refused
+   * @returns the refusal sent, or null
+   */
+  refuseDisagreement(ctx: AccountContext, res: Json, caller: AccountCaller,
+                     action: string): unknown {
+    const { log } = this.deps;
+    log.debug("Entering PortalWallet.refuseDisagreement(). " + action);
+    const why = this.subjectDisagreement(caller);
+    if (!why) {
+      log.debug("Leaving PortalWallet.refuseDisagreement(). Agree.");
+      return null;
+    }
+    const who = caller.username;
+    ctx.audit.record({
+      category: 'protocol', action: action, errorCode: 'STS-PORTAL-0617',
+      actor: who, target: who, outcome: 'failure',
+      summary: 'was refused on /portal/wallet: the token\'s subject and ' +
+               'person do not name each other',
+      detail: { sub: caller.sub || undefined, errors: [why] }
+    });
+    log.debug("Leaving PortalWallet.refuseDisagreement(). Refused.");
+    return ctx.refuse(res, 403, 'STS-PORTAL-0617', why);
   }
 
   /**
@@ -473,6 +563,12 @@ class PortalWallet {
          body: Json): unknown {
     const { log, loadIssued } = this.deps;
     log.debug("Entering PortalWallet.remove().");
+    const refused = this.refuseDisagreement(ctx, res, caller,
+                                            'portal.vc.remove');
+    if (refused) {
+      log.debug("Leaving PortalWallet.remove(). Subject disagrees.");
+      return refused;
+    }
     const who = caller.username;
     const id = String(body.id);
     const result = caller.sub
@@ -529,6 +625,12 @@ class PortalWallet {
         body: Json): unknown {
     const { log, userFor, loadOffers, loadConfigs } = this.deps;
     log.debug("Entering PortalWallet.offer().");
+    const refused = this.refuseDisagreement(ctx, res, caller,
+                                            'portal.vc.offer');
+    if (refused) {
+      log.debug("Leaving PortalWallet.offer(). Subject disagrees.");
+      return refused;
+    }
     const who = caller.username;
     const configurationId = String(body.configuration);
     const record = function (outcome: string, code?: string,
@@ -660,11 +762,22 @@ class PortalWallet {
           'wallet key it is bound to (`keyThumbprint`), the holder\'s DID ' +
           'where it is DID-bound, and its `statusIndex`. `issued` is one ' +
           'page of issuances (`paging`, moved by `page`, 20 to a page); ' +
-          '`paging.total` counts them all.',
+          '`paging.total` counts them all. A token whose `sub` and person ' +
+          'do not name each other is refused (STS-PORTAL-0617) rather than ' +
+          'shown somebody else\'s history, or nobody\'s as an empty one.',
         answer: OFFERABLE_ANSWER,
         query: PAGE_QUERY,
+        statuses: {
+          403: 'The token\'s `sub` and its person do not name each other ' +
+               '(STS-PORTAL-0617).'
+        },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
+          const refused = self.refuseDisagreement(ctx, res, caller,
+                                                  'portal.vc.view');
+          if (refused) {
+            return refused;
+          }
           return ctx.json(res, 200, self.view(req, caller,
                                               input.query.page || 1));
         } },
@@ -697,7 +810,9 @@ class PortalWallet {
                '(STS-PORTAL-0589), or its credentials are not signed with ' +
                'the `signingAlg` asked for (STS-PORTAL-0592).',
           403: 'The sign-on session the token was issued on is no longer ' +
-               'known, or continued without signing in (STS-PORTAL-0590).'
+               'known, or continued without signing in (STS-PORTAL-0590), ' +
+               'or the token\'s `sub` and its person do not name each ' +
+               'other (STS-PORTAL-0617).'
         },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
@@ -737,7 +852,9 @@ class PortalWallet {
         answer: REMOVE_ANSWER,
         statuses: {
           400: 'No credential or issuance of yours has that id ' +
-               '(STS-PORTAL-0591).'
+               '(STS-PORTAL-0591).',
+          403: 'The token\'s `sub` and its person do not name each other ' +
+               '(STS-PORTAL-0617).'
         },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
