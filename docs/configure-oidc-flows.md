@@ -445,9 +445,10 @@ sign-in**:
 - set `oauthThirdPartyInitiatedLogin` to `TRUE`;
 - set `oauthInitiateLoginUri` to the client's `initiate_login_uri`, for
   example `https://rp.launch.example/login`;
-- optionally set `appHomePageUrl` (on **Every protocol**), which is where
-  the person lands when the link names no `target`;
 - click **Save OAuth 2.0 / OpenID Connect**.
+
+`appHomePageUrl`, on the **Every protocol** sub-tab (saved with **Save Every
+protocol**), is where the person lands when the link names no `target`.
 
 The sub-tab shows the link at its top, with a copy button, and says what is
 missing while the client cannot be launched.
