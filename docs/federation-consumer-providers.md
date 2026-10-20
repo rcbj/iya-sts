@@ -73,6 +73,14 @@ provider.
 | `google` | OpenID Connect | the ID Token's `sub` | `email`, verified where `email_verified` is true |
 | `discord` | OAuth 2.0 | `/users/@me`'s `id` | `email`, verified where `verified` is true |
 | `github` | OAuth 2.0 | `/user`'s numeric `id` (never `login`, which can be renamed) | the primary address on `/user/emails`, verified where GitHub says so. `/user`'s own `email` is the public one and is not used. |
+| `microsoft` | OpenID Connect, `consumers` authority | the ID Token's `sub` | `email`, never verified (Microsoft makes no statement) |
+| `linkedin`, `yahoo`, `slack`, `salesforce` | OpenID Connect | the ID Token's `sub` | `email`, verified where `email_verified` is true |
+| `twitch` | OpenID Connect | the ID Token's `sub` | `email`, asked for by the `claims` parameter (`fedAuthorizeParams`), verified where `email_verified` is true |
+| `facebook` | OAuth 2.0, Graph API `/me` | the app-scoped `id` | `email`, never verified |
+| `amazon` | OAuth 2.0, `/user/profile` | `user_id` | `email`, never verified |
+| `spotify` | OAuth 2.0, `/v1/me` | `id` | `email`, never verified |
+| `x` | OAuth 2.0, `/2/users/me` | `data.id` | none |
+| `tiktok` | OAuth 2.0 (Login Kit), `client_key` | the token response's `open_id` | none |
 | `generic-oidc` | OpenID Connect | the ID Token's `sub` | `email`, verified where `email_verified` is true |
 | `generic-oauth2` | OAuth 2.0 | `sub`, `id` or `user_id` | `email`, verified where `email_verified` is true |
 
@@ -92,18 +100,18 @@ endpoints and review requirements. **Built** means a profile exists today.
 | Google | OpenID Connect | `sub` (stable per Google account) | `email` with `email_verified` | `hd` names a Workspace domain. The ID Token's issuer has two spellings, both accepted. | **Built** |
 | Discord | OAuth 2.0, no ID Token | `id` (a snowflake) | `email` with `verified`, scope `email` | `mfa_enabled` describes the account, not this sign-in. | **Built** |
 | GitHub | OAuth 2.0, no ID Token | numeric `id` | the primary address on `/user/emails` (scope `user:email`) | The token endpoint answers JSON only when asked to. The secret is sent in the request body. | **Built** |
-| LinkedIn | OpenID Connect ("Sign In with LinkedIn using OpenID Connect") | `sub` | `email` with `email_verified` | The product must be added to the app in LinkedIn's developer portal. The token endpoint takes the secret in the body. | Next: a profile only |
-| Microsoft (personal accounts) | OpenID Connect, `consumers` authority | `sub` (per application) | `email`, which Microsoft does not guarantee is verified | The issuer names the personal-account tenant. Organizational tenants are enterprise relationships, or the planned `microsoft-any` profile with an allow-list of tenants. | Planned: issuer adapter |
-| Yahoo | OpenID Connect | `sub` | `email` with `email_verified` | | Next: a profile only |
-| Slack | OpenID Connect ("Sign in with Slack") | `sub` / `https://slack.com/user_id` | `email` with `email_verified` | A Slack identity belongs to a workspace (`https://slack.com/team_id`). | Next: a profile only |
-| Twitch | OpenID Connect | `sub` | `email` with `email_verified`, only when requested with the `claims` parameter | Needs extra authorization parameters. | Next: a profile and extra parameters |
-| Salesforce | OpenID Connect | `sub` (a URL naming the org and user) | `email` with `email_verified` | Login and test domains. A My Domain is an enterprise relationship. | Next: a profile only |
+| LinkedIn | OpenID Connect ("Sign In with LinkedIn using OpenID Connect") | `sub` | `email` with `email_verified` | The product must be added to the app in LinkedIn's developer portal. The token endpoint takes the secret in the body. | **Built** (profile; not yet run against the live provider) |
+| Microsoft (personal accounts) | OpenID Connect, `consumers` authority | `sub` (per application) | `email`, which Microsoft does not guarantee is verified | The issuer names the personal-account tenant. Organizational tenants are enterprise relationships, or the planned `microsoft-any` profile with an allow-list of tenants. | **Built** for personal accounts (`microsoft`); `microsoft-any` with an allow-list of tenants planned |
+| Yahoo | OpenID Connect | `sub` | `email` with `email_verified` | | **Built** (profile; not yet run against the live provider) |
+| Slack | OpenID Connect ("Sign in with Slack") | `sub` / `https://slack.com/user_id` | `email` with `email_verified` | A Slack identity belongs to a workspace (`https://slack.com/team_id`). | **Built** (profile; not yet run against the live provider) |
+| Twitch | OpenID Connect | `sub` | `email` with `email_verified`, only when requested with the `claims` parameter | Needs extra authorization parameters. | **Built** (profile, with its `claims` request in `fedAuthorizeParams`; not yet run against the live provider) |
+| Salesforce | OpenID Connect | `sub` (a URL naming the org and user) | `email` with `email_verified` | Login and test domains. A My Domain is an enterprise relationship. | **Built** (profile; not yet run against the live provider) |
 | Apple | OpenID Connect with Apple-specific parts | `sub` (per team) | `email`, possibly a private relay address | The client secret is a short-lived ES256 JWT signed with the developer's key. `form_post` is required when name or email is asked for, and the name arrives once, unsigned. Apple sends server-to-server notifications. Needs an Apple Developer Program membership. | Planned: adapters |
-| Facebook | OAuth 2.0 on the web, Graph API `/me` | app-scoped `id` | `email` with no verification statement, so treated as unverified | The OpenID Connect form (Limited Login) is for mobile apps. Some permissions need app review. | Next: a profile only |
-| Amazon (Login with Amazon) | OAuth 2.0, `/user/profile` | `user_id` | `email` with no verification statement | | Next: a profile only |
-| X / Twitter | OAuth 2.0 with PKCE, `/2/users/me` | `data.id` | Only with an elevated access tier and its email scope | The profile is nested under `data`. Access tiers and pricing apply. | Next: a profile only |
-| TikTok (Login Kit) | OAuth 2.0 | `open_id` (per app), from the token response | none | Uses `client_key` instead of `client_id`. App review required. | Planned: adapter |
-| Spotify | OAuth 2.0, `/v1/me` | `id` | `email`, editable by the user, with no verification statement | The documentation frames it as authorization for its Web API rather than as sign-in. | Possible: unverified address |
+| Facebook | OAuth 2.0 on the web, Graph API `/me` | app-scoped `id` | `email` with no verification statement, so treated as unverified | The OpenID Connect form (Limited Login) is for mobile apps. Some permissions need app review. | **Built** (profile; not yet run against the live provider) |
+| Amazon (Login with Amazon) | OAuth 2.0, `/user/profile` | `user_id` | `email` with no verification statement | | **Built** (profile; not yet run against the live provider) |
+| X / Twitter | OAuth 2.0 with PKCE, `/2/users/me` | `data.id` | Only with an elevated access tier and its email scope | The profile is nested under `data`. Access tiers and pricing apply. | **Built** (profile; not yet run against the live provider) |
+| TikTok (Login Kit) | OAuth 2.0 | `open_id` (per app), from the token response | none | Uses `client_key` instead of `client_id`. App review required. | **Built** (profile and the `tiktok-client-key` adapter; not yet run against the live provider) |
+| Spotify | OAuth 2.0, `/v1/me` | `id` | `email`, editable by the user, with no verification statement | The documentation frames it as authorization for its Web API rather than as sign-in. | **Built** (profile; the address is unverified; not yet run against the live provider) |
 | Sentry | OAuth 2.0 for integrations | to be established | to be established | Its OAuth exists to authorize an integration's API calls. Whether it supports signing a person in is not established. | Not yet feasible |
 | Netflix | none published | — | — | Netflix publishes no interface for signing a person in to a third party. | **Not feasible** |
 

@@ -164,7 +164,7 @@ interface Profile {
 }
 
 /** The named adapters, a closed set (rcbj, #565). */
-const ADAPTERS = ['github-verified-email'];
+const ADAPTERS = ['github-verified-email', 'tiktok-client-key'];
 
 // ---------------------------------------------------------------------------
 // THE CATALOGUE. The first three are rcbj's (Discord among them, 2026-10-19)
@@ -266,6 +266,269 @@ const PROFILES: Profile[] = [
     note: 'OAuth 2.0 with no ID Token. The person is /user; the address is ' +
           'the primary one on /user/emails, verified only where GitHub says ' +
           'so — /user\'s own email is the public one and is not used.' },
+  // -------------------------------------------------------------------------
+  // THE PROFILE-ONLY PROVIDERS (#565, after the first three): each is one of
+  // the three shapes above with nothing a source and a path cannot say. The
+  // feasibility record has the restrictions each one carries.
+  // -------------------------------------------------------------------------
+  { id: 'microsoft', label: 'Microsoft (personal accounts)', protocol: 'oidc',
+    generic: false,
+    docs: 'https://learn.microsoft.com/en-us/entra/identity-platform/' +
+          'v2-protocols-oidc',
+    defaults: {
+      fedSsoUrl: 'https://login.microsoftonline.com/consumers/oauth2/v2.0/' +
+                 'authorize',
+      fedTokenUrl: 'https://login.microsoftonline.com/consumers/oauth2/v2.0/' +
+                   'token',
+      fedJwksUri: 'https://login.microsoftonline.com/consumers/discovery/' +
+                  'v2.0/keys',
+      // The personal-account tenant's issuer: the `consumers` authority
+      // signs every token as it.
+      fedPeer: 'https://login.microsoftonline.com/' +
+               '9188040d-6c67-4c5b-b112-36a304b66dad/v2.0',
+      fedScope: 'openid profile email',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedClientSecret'],
+    primary: 'id_token',
+    subject: 'id_token:sub',
+    claims: {
+      email: 'id_token:email',
+      name: 'id_token:name',
+      preferred_username: 'id_token:preferred_username'
+    },
+    // Microsoft documents `email` as not verified and mutable, and sends no
+    // statement about it: so it is unverified here.
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect against the consumers authority: personal ' +
+          'Microsoft accounts only. An organisational tenant is an ' +
+          'enterprise relationship. The address is never verified.' },
+  { id: 'linkedin', label: 'LinkedIn', protocol: 'oidc', generic: false,
+    docs: 'https://learn.microsoft.com/en-us/linkedin/consumer/' +
+          'integrations/self-serve/sign-in-with-linkedin-v2',
+    defaults: {
+      fedSsoUrl: 'https://www.linkedin.com/oauth/v2/authorization',
+      fedTokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
+      fedJwksUri: 'https://www.linkedin.com/oauth/openid/jwks',
+      fedUserinfoUrl: 'https://api.linkedin.com/v2/userinfo',
+      fedPeer: 'https://www.linkedin.com/oauth',
+      fedScope: 'openid profile email',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedClientSecret'],
+    primary: 'id_token', subject: 'id_token:sub',
+    claims: {
+      email: 'id_token:email', name: 'id_token:name',
+      given_name: 'id_token:given_name', family_name: 'id_token:family_name',
+      picture: 'id_token:picture', locale: 'id_token:locale'
+    },
+    emailVerified: 'id_token:email_verified',
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect ("Sign In with LinkedIn using OpenID Connect", a ' +
+          'product added to the app). The secret is sent in the body.' },
+  { id: 'yahoo', label: 'Yahoo', protocol: 'oidc', generic: false,
+    docs: 'https://developer.yahoo.com/oauth2/guide/openid_connect/',
+    defaults: {
+      fedSsoUrl: 'https://api.login.yahoo.com/oauth2/request_auth',
+      fedTokenUrl: 'https://api.login.yahoo.com/oauth2/get_token',
+      fedJwksUri: 'https://api.login.yahoo.com/openid/v1/certs',
+      fedUserinfoUrl: 'https://api.login.yahoo.com/openid/v1/userinfo',
+      fedPeer: 'https://api.login.yahoo.com',
+      fedScope: 'openid email profile',
+      fedTokenAuth: 'client_secret_basic'
+    },
+    needs: ['fedClientSecret'],
+    primary: 'id_token', subject: 'id_token:sub',
+    claims: {
+      email: 'id_token:email', name: 'id_token:name',
+      given_name: 'id_token:given_name', family_name: 'id_token:family_name',
+      picture: 'id_token:picture'
+    },
+    emailVerified: 'id_token:email_verified',
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect.' },
+  { id: 'slack', label: 'Slack', protocol: 'oidc', generic: false,
+    docs: 'https://api.slack.com/authentication/sign-in-with-slack',
+    defaults: {
+      fedSsoUrl: 'https://slack.com/openid/connect/authorize',
+      fedTokenUrl: 'https://slack.com/api/openid.connect.token',
+      fedJwksUri: 'https://slack.com/openid/connect/keys',
+      fedUserinfoUrl: 'https://slack.com/api/openid.connect.userInfo',
+      fedPeer: 'https://slack.com',
+      fedScope: 'openid email profile',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedClientSecret'],
+    primary: 'id_token', subject: 'id_token:sub',
+    claims: {
+      email: 'id_token:email', name: 'id_token:name',
+      given_name: 'id_token:given_name', family_name: 'id_token:family_name',
+      picture: 'id_token:picture', locale: 'id_token:locale'
+    },
+    emailVerified: 'id_token:email_verified',
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect ("Sign in with Slack"). A Slack identity is a ' +
+          'person in one workspace, which https://slack.com/team_id names.' },
+  { id: 'twitch', label: 'Twitch', protocol: 'oidc', generic: false,
+    docs: 'https://dev.twitch.tv/docs/authentication/' +
+          'getting-tokens-oidc/',
+    defaults: {
+      fedSsoUrl: 'https://id.twitch.tv/oauth2/authorize',
+      fedTokenUrl: 'https://id.twitch.tv/oauth2/token',
+      fedJwksUri: 'https://id.twitch.tv/oauth2/keys',
+      fedUserinfoUrl: 'https://id.twitch.tv/oauth2/userinfo',
+      fedPeer: 'https://id.twitch.tv/oauth2',
+      fedScope: 'openid user:read:email',
+      fedTokenAuth: 'client_secret_post',
+      // Twitch sends the address and the name only when they are asked for
+      // by name in OpenID Connect Core 5.5's claims request.
+      fedAuthorizeParams: 'claims={"id_token":{"email":null,' +
+                          '"email_verified":null,"preferred_username":null,' +
+                          '"picture":null}}'
+    },
+    needs: ['fedClientSecret'],
+    primary: 'id_token', subject: 'id_token:sub',
+    claims: {
+      email: 'id_token:email',
+      preferred_username: 'id_token:preferred_username',
+      picture: 'id_token:picture'
+    },
+    emailVerified: 'id_token:email_verified',
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect. The address and the name are sent only when ' +
+          'asked for with the claims parameter, which fedAuthorizeParams ' +
+          'carries.' },
+  { id: 'salesforce', label: 'Salesforce', protocol: 'oidc', generic: false,
+    docs: 'https://help.salesforce.com/s/articleView?id=' +
+          'xcloud.remoteaccess_oidc_discovery_endpoint.htm&type=5',
+    defaults: {
+      fedSsoUrl: 'https://login.salesforce.com/services/oauth2/authorize',
+      fedTokenUrl: 'https://login.salesforce.com/services/oauth2/token',
+      fedJwksUri: 'https://login.salesforce.com/id/keys',
+      fedUserinfoUrl: 'https://login.salesforce.com/services/oauth2/' +
+                      'userinfo',
+      fedPeer: 'https://login.salesforce.com',
+      fedScope: 'openid email profile',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedClientSecret'],
+    primary: 'id_token', subject: 'id_token:sub',
+    claims: {
+      email: 'id_token:email', name: 'id_token:name',
+      given_name: 'id_token:given_name', family_name: 'id_token:family_name',
+      preferred_username: 'id_token:preferred_username',
+      picture: 'id_token:picture'
+    },
+    emailVerified: 'id_token:email_verified',
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect against login.salesforce.com. The subject is a ' +
+          'URL naming the org and the user. A My Domain is an enterprise ' +
+          'relationship.' },
+  { id: 'facebook', label: 'Facebook', protocol: 'oauth2', generic: false,
+    docs: 'https://developers.facebook.com/docs/facebook-login/guides/' +
+          'advanced/manual-flow',
+    defaults: {
+      fedSsoUrl: 'https://www.facebook.com/dialog/oauth',
+      fedTokenUrl: 'https://graph.facebook.com/oauth/access_token',
+      fedUserinfoUrl: 'https://graph.facebook.com/me?fields=' +
+                      'id,name,first_name,last_name,email',
+      fedPeer: 'https://www.facebook.com',
+      fedScope: 'public_profile email',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'userinfo', subject: 'userinfo:id',
+    claims: {
+      email: 'userinfo:email', name: 'userinfo:name',
+      given_name: 'userinfo:first_name', family_name: 'userinfo:last_name'
+    },
+    // The Graph API says nothing about whether the address was confirmed.
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OAuth 2.0 with the Graph API\'s /me. The id is app-scoped, and ' +
+          'the address carries no verification statement, so it is ' +
+          'unverified here.' },
+  { id: 'amazon', label: 'Amazon', protocol: 'oauth2', generic: false,
+    docs: 'https://developer.amazon.com/docs/login-with-amazon/' +
+          'obtain-customer-profile.html',
+    defaults: {
+      fedSsoUrl: 'https://www.amazon.com/ap/oa',
+      fedTokenUrl: 'https://api.amazon.com/auth/o2/token',
+      fedUserinfoUrl: 'https://api.amazon.com/user/profile',
+      fedPeer: 'https://www.amazon.com',
+      fedScope: 'profile',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'userinfo', subject: 'userinfo:user_id',
+    claims: { email: 'userinfo:email', name: 'userinfo:name' },
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OAuth 2.0 (Login with Amazon) with /user/profile. The address ' +
+          'carries no verification statement.' },
+  { id: 'spotify', label: 'Spotify', protocol: 'oauth2', generic: false,
+    docs: 'https://developer.spotify.com/documentation/web-api/concepts/' +
+          'authorization',
+    defaults: {
+      fedSsoUrl: 'https://accounts.spotify.com/authorize',
+      fedTokenUrl: 'https://accounts.spotify.com/api/token',
+      fedUserinfoUrl: 'https://api.spotify.com/v1/me',
+      fedPeer: 'https://accounts.spotify.com',
+      fedScope: 'user-read-email user-read-private',
+      fedTokenAuth: 'client_secret_basic'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'userinfo', subject: 'userinfo:id',
+    claims: { email: 'userinfo:email', name: 'userinfo:display_name' },
+    // The person can change it and Spotify does not say it was confirmed.
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OAuth 2.0 with /v1/me. Spotify frames this as authorization for ' +
+          'its Web API; the address is editable by the person and ' +
+          'unverified here.' },
+  { id: 'x', label: 'X', protocol: 'oauth2', generic: false,
+    docs: 'https://docs.x.com/resources/fundamentals/authentication/' +
+          'oauth-2-0/authorization-code',
+    defaults: {
+      fedSsoUrl: 'https://x.com/i/oauth2/authorize',
+      fedTokenUrl: 'https://api.x.com/2/oauth2/token',
+      fedUserinfoUrl: 'https://api.x.com/2/users/me',
+      fedPeer: 'https://x.com',
+      fedScope: 'users.read tweet.read',
+      fedTokenAuth: 'client_secret_basic'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'userinfo', subject: 'userinfo:data.id',
+    claims: { preferred_username: 'userinfo:data.username',
+              name: 'userinfo:data.name' },
+    // No address without an elevated access tier.
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OAuth 2.0 with PKCE and /2/users/me, whose answer is nested under ' +
+          'data. No address without an elevated access tier.' },
+  { id: 'tiktok', label: 'TikTok', protocol: 'oauth2', generic: false,
+    docs: 'https://developers.tiktok.com/doc/login-kit-web/',
+    defaults: {
+      fedSsoUrl: 'https://www.tiktok.com/v2/auth/authorize/',
+      fedTokenUrl: 'https://open.tiktokapis.com/v2/oauth/token/',
+      fedUserinfoUrl: 'https://open.tiktokapis.com/v2/user/info/?fields=' +
+                      'open_id,union_id,avatar_url,display_name',
+      fedPeer: 'https://www.tiktok.com',
+      fedScope: 'user.info.basic',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'userinfo',
+    // The token response names the person, per app.
+    subject: 'token:open_id',
+    claims: { name: 'userinfo:data.user.display_name',
+              picture: 'userinfo:data.user.avatar_url' },
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: ['tiktok-client-key'],
+    note: 'OAuth 2.0 (Login Kit). It calls the client id client_key; the ' +
+          'person is the token response\'s open_id, per app, and no ' +
+          'address is offered.' },
   { id: 'generic-oidc', label: 'Another OpenID Connect provider',
     protocol: 'oidc', generic: true, docs: '',
     defaults: { fedScope: 'openid profile email' },
@@ -406,6 +669,20 @@ export = class ConsumerProviders {
     return rules.some(function (r) {
       return ConsumerProviders.ruleOf(r).source === source;
     });
+  }
+
+  /**
+   * Whether a relationship's provider profile names an adapter.
+   *
+   * @param record - the relationship
+   * @param adapter - the adapter's name
+   * @returns whether it does
+   */
+  static adapts(record: Json, adapter: string): boolean {
+    helpers.log.debug("Entering ConsumerProviders.adapts(). " + adapter);
+    const profile = ConsumerProviders.profileFor(record && record.fedProvider);
+    helpers.log.debug("Leaving ConsumerProviders.adapts().");
+    return !!profile && profile.adapters.indexOf(adapter) >= 0;
   }
 
   /**
