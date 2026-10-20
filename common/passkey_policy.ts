@@ -180,6 +180,23 @@
 // (STS-AUTHN-0316). Decided on the ticket: a key with no trusted statement
 // fails any rule that demands trust, an AAGUID list included.
 //
+// #718 (2026-10-19) added `postQuantumRequired`, `off`: `sign-in` refuses
+// a passkey whose signature algorithm is not post-quantum (RFC 9964's
+// ML-DSA-44, -65 or -87) when it signs somebody in (STS-AUTHN-0356), and
+// `registration-and-sign-in` refuses one at registration too
+// (STS-AUTHN-0355). rcbj's decisions on the ticket: three values, both
+// roles (the primary credential and the second factor), and the passkey
+// step's `allowCredentials` narrowed to the person's post-quantum keys
+// while it is required. THE FACT IS THE ALGORITHM, NOT #643'S LANE: with
+// the lanes off an authenticator that can make ML-DSA does so in the one
+// lane, and its row records no lane, so a rule on the lane would refuse a
+// post-quantum key. `question()` computes `postQuantum` from the algorithm,
+// once, and carries the algorithm and the lane beside it for a realm's own
+// rules. A save that requires it while the realm offers no ML-DSA at all
+// is refused (STS-AUTHN-0357): nobody could enrol a passkey that satisfies
+// it. Selected per application or group like every row, which is how
+// "application X requires a post-quantum passkey" is said (#535).
+//
 // One profile per realm, inherited from the default realm (answer 3); named
 // policies chosen by application or group are #535.
 //
@@ -290,6 +307,11 @@ interface PasskeyPolicyDeps {
       why?: string;
     };
   };
+  // Whether the realm in hand offers any ML-DSA algorithm at registration
+  // (#718), asked at a save that requires a post-quantum passkey.
+  // `authn/webauthn_policy.ts` answers, and it requires this module, so the
+  // default reaches it lazily.
+  offersPostQuantum(): boolean;
 }
 
 /**
@@ -351,7 +373,13 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
   promptNameExtras: 'a passkey prompt shows the person\'s name as the ' +
     'sign-in knows it, and the service\'s name with its {{extras}}',
   chooseOne: 'a person with several passkeys chooses one at sign-in',
-  aggregate: 'a person\'s passkeys are offered as one sign-in choice'
+  aggregate: 'a person\'s passkeys are offered as one sign-in choice',
+  postQuantumOff: 'a passkey signs in and registers whatever its signature ' +
+    'algorithm',
+  postQuantumSignIn: 'only a post-quantum (ML-DSA) passkey signs a person ' +
+    'in; a classical one may still be registered',
+  postQuantumEverywhere: 'only a post-quantum (ML-DSA) passkey is ' +
+    'registered or signs a person in'
 });
 
 const SELECTORS = [
@@ -441,6 +469,19 @@ const NO_HINTS = 'none';
  */
 const RP_NAME_EXTRAS = ['none', 'realm', 'organisation',
                         'realm-and-organisation'];
+/**
+ * What `postQuantumRequired` may be (#718), in the order of strictness.
+ */
+const POST_QUANTUM_REQUIRED_VALUES = ['off', 'sign-in',
+                                      'registration-and-sign-in'];
+/**
+ * The post-quantum WebAuthn signature algorithms (#718): RFC 9964's ML-DSA,
+ * as JOSE names. THE ONE COPY: `authn/webauthn_policy.ts`'s `PQC_ALGS` is
+ * this list, because that module requires this one and this one, a leaf,
+ * cannot require it back.
+ */
+const POST_QUANTUM_ALGORITHMS: ReadonlyArray<string> =
+  Object.freeze(['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87']);
 
 /**
  * The policy's fields: one table read as the schema, the console form, the API
@@ -530,6 +571,20 @@ const FIELDS: PolicyField[] = [
           'before a rule was tightened, or whose model was since reported ' +
           'compromised, stops signing anybody in. A key with no trusted ' +
           'attestation fails every rule that demands one.' },
+  { key: 'postQuantumRequired', attribute: 'stsPasskeyPostQuantumRequired',
+    type: 'enum', values: POST_QUANTUM_REQUIRED_VALUES.slice(), dflt: 'off',
+    label: 'Require a post-quantum passkey',
+    what: '`off` (the default) accepts a passkey whatever its signature ' +
+          'algorithm. `sign-in` accepts only a POST-QUANTUM passkey, one ' +
+          'whose algorithm is ML-DSA-44, ML-DSA-65 or ML-DSA-87 (RFC 9964), ' +
+          'when it signs somebody in, as the first credential or as the ' +
+          'second factor; a classical one may still be registered. ' +
+          '`registration-and-sign-in` refuses a classical one at ' +
+          'registration too, and enrolment then offers only ML-DSA. The ' +
+          'algorithm decides, not the lane a key was created in. Refused ' +
+          'while the realm offers no ML-DSA (webauthn.algorithms names ' +
+          'none, and neither webauthn.pqcOnly nor ' +
+          'webauthn.pqcAlongsideClassical is on).' },
   { key: 'passkeyHints', attribute: 'stsPasskeyHintsPasskey', type: 'list',
     values: HINTS.slice(), dflt: 'client-device,hybrid',
     label: 'Hints "Create a passkey" sends',
@@ -693,7 +748,16 @@ class PasskeyPolicy {
     log.debug("Entering PasskeyPolicy.defaultDeps().");
     log.debug("Leaving PasskeyPolicy.defaultDeps().");
     return { log: log, realms: realms, errorCodes: errorCodes,
-             gate: issuanceGate };
+             gate: issuanceGate,
+             offersPostQuantum: function (): boolean {
+               log.debug("Entering offersPostQuantum().");
+               // LAZILY (#718): `webauthn_policy.ts` requires this module,
+               // and is loaded long before any save asks this.
+               const out = require('../authn/webauthn_policy')
+                 .offersPostQuantum() === true;
+               log.debug("Leaving offersPostQuantum(). " + out);
+               return out;
+             } };
   }
 
   /**
@@ -1367,6 +1431,74 @@ class PasskeyPolicy {
     return out;
   }
 
+  /**
+   * Says whether a signature algorithm is post-quantum (#718): one of RFC
+   * 9964's ML-DSA-44, ML-DSA-65 and ML-DSA-87, by its JOSE name.
+   *
+   * @param algorithm - the algorithm's JOSE name
+   * @returns true where it is
+   */
+  static isPostQuantum(algorithm: unknown): boolean {
+    log.debug("Entering PasskeyPolicy.isPostQuantum().");
+    const out = POST_QUANTUM_ALGORITHMS.indexOf(String(algorithm || '')) >= 0;
+    log.debug("Leaving PasskeyPolicy.isPostQuantum(). " + out);
+    return out;
+  }
+
+  /**
+   * Says whether the selected profile requires a post-quantum passkey at a
+   * stage (#718): `sign-in` under `sign-in` and
+   * `registration-and-sign-in`, `registration` under the second only.
+   *
+   * @param at - `registration` or `sign-in`
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns true where it does
+   */
+  requiresPostQuantum(at: string, profile?: PasskeyProfile | null): boolean {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.requiresPostQuantum(). " + at);
+    const rules = profile || this.read();
+    const row = String(rules.postQuantumRequired || 'off');
+    const out = at === 'registration'
+      ? row === 'registration-and-sign-in'
+      : (row === 'sign-in' || row === 'registration-and-sign-in');
+    log.debug("Leaving PasskeyPolicy.requiresPostQuantum(). " + out);
+    return out;
+  }
+
+  /**
+   * The refusal of a passkey's signature algorithm, or null (#718): the
+   * question asked about the one fact group `algorithm`, so the portal's
+   * and the console's key rows say what the decision would. One sentence,
+   * as `backupEligibleRefusal()` is.
+   *
+   * @param key - `{ algorithm, lane }`: `credentials.keyAlgorithm()`'s
+   *   answer, or a stored key row's; an algorithm never recorded is not
+   *   asked about
+   * @param at - `registration` or `sign-in`
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `{ code, why, reason }` or null
+   */
+  postQuantumRefusal(key: { algorithm?: unknown; name?: unknown;
+                            lane?: unknown } | null | undefined,
+                     at: string, profile?: PasskeyProfile | null):
+      { code: string; why: string; reason: string } | null {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.postQuantumRefusal().");
+    const k = key || {};
+    const algorithm = String(k.name || k.algorithm || '');
+    // An algorithm never read is not a fact: nothing is asked about it.
+    if (!algorithm) {
+      log.debug("Leaving PasskeyPolicy.postQuantumRefusal(). No algorithm.");
+      return null;
+    }
+    const out = this.refusalFor(at, { algorithm: algorithm,
+                                      lane: String(k.lane || '') }, profile);
+    log.debug("Leaving PasskeyPolicy.postQuantumRefusal(). " +
+              (out ? out.code : 'allowed'));
+    return out;
+  }
+
   // The attachment each enrolment sends, as `webauthn_policy.ts`'s
   // `creationOptions()` decides it: the setting, or — for *Use a security
   // key* while the setting is `any` — `cross-platform`.
@@ -1702,6 +1834,7 @@ class PasskeyPolicy {
   //   backupEligible  -> backup-eligible     minPinLength -> pin-length
   //   serial          -> serial (with whether the person holds it)
   //   attestation     -> attestation (with `attestationSettings`)
+  //   algorithm       -> algorithm (with `postQuantum` and `lane`, #718)
   // =========================================================================
   /**
    * Builds the passkey question (#536) for the issuance policy: the facts a
@@ -1709,7 +1842,8 @@ class PasskeyPolicy {
    *
    * @param at - `registration` or `sign-in`
    * @param facts - `{ username, backupEligible, minPinLength, serial,
-   *   attestation, attestationSettings, enforceAttestation }`, each optional
+   *   attestation, attestationSettings, enforceAttestation, algorithm,
+   *   lane }`, each optional
    * @param profile - a profile already read; read afresh when omitted
    * @returns the question `issuance_gate.checkPasskey()` takes
    */
@@ -1757,6 +1891,21 @@ class PasskeyPolicy {
       out.attestation = given.attestation;
       out.settings = given.attestationSettings || {};
     }
+    // THE KEY'S SIGNATURE ALGORITHM (#718), and whether it is post-quantum,
+    // decided HERE and nowhere else — a door hands over the algorithm it
+    // holds (the ceremony's, or the row's through `keyAlgorithm()`) and
+    // never its own reading of it. The lane goes beside it, unread by the
+    // built-in rule: an ML-DSA key made with #643's switch off has none.
+    if (has('algorithm')) {
+      groups.push('algorithm');
+      const algorithm = String(given.algorithm === undefined ||
+                               given.algorithm === null ? ''
+                                                        : given.algorithm)
+        .trim();
+      out.algorithm = algorithm;
+      out.postQuantum = PasskeyPolicy.isPostQuantum(algorithm);
+      out.lane = given.lane === 'pqc' ? 'pqc' : 'classical';
+    }
     out.groups = groups;
     const pin = this.pinLengthRule(rules);
     out.policy = {
@@ -1767,7 +1916,10 @@ class PasskeyPolicy {
       enforceAttestationAtSignIn: typeof given.enforceAttestation ===
         'boolean' ? given.enforceAttestation
                   : this.enforcesAttestationAtSignIn(rules),
-      enterpriseSerialAttribute: attribute
+      enterpriseSerialAttribute: attribute,
+      postQuantumRequired: POST_QUANTUM_REQUIRED_VALUES.indexOf(
+        String(rules.postQuantumRequired)) >= 0
+        ? String(rules.postQuantumRequired) : 'off'
     };
     log.debug("Leaving PasskeyPolicy.question(). " + out.action + ' [' +
               groups.join(', ') + ']');
@@ -1864,6 +2016,15 @@ class PasskeyPolicy {
             '(the passkey policy\'s enterpriseSerialAttribute). ' +
             'Use a key from your organisation, registered where ' +
             'enterprise attestation is enabled.';
+    } else if (reason === 'post-quantum') {
+      why = 'That passkey signs with ' +
+            (String(asked.algorithm || '') || 'a classical algorithm') +
+            ', and this realm requires a post-quantum passkey, one that ' +
+            'signs with ML-DSA (the passkey policy\'s postQuantumRequired ' +
+            'is ' + String(policy.postQuantumRequired || '') + '). ' +
+            (registering
+              ? 'Use an authenticator that can make an ML-DSA passkey.'
+              : 'Sign in another way, and register a post-quantum passkey.');
     } else if (reason === 'serial-not-held') {
       why = 'That security key (serial ' +
             String(asked.serial || '').slice(0, 64) + ') is not ' +
@@ -1930,7 +2091,12 @@ class PasskeyPolicy {
       prompt,
       rules.aggregateDevices === false
         ? SENTENCES.chooseOne
-        : SENTENCES.aggregate
+        : SENTENCES.aggregate,
+      rules.postQuantumRequired === 'registration-and-sign-in'
+        ? SENTENCES.postQuantumEverywhere
+        : (rules.postQuantumRequired === 'sign-in'
+          ? SENTENCES.postQuantumSignIn
+          : SENTENCES.postQuantumOff)
     ];
     log.debug("Leaving PasskeyPolicy.describe().");
     return out;
@@ -2112,6 +2278,27 @@ class PasskeyPolicy {
       return errorCodes.mark({ ok: false, errors: checked.problems },
                              'STS-AUTHN-0309');
     }
+    // A POST-QUANTUM PASSKEY REQUIRED WHERE NONE CAN BE MADE (#718): with no
+    // ML-DSA offered at registration, nobody could enrol a passkey the
+    // profile accepts, and under `sign-in` every passkey sign-in would stop
+    // at once. Asked of the realm's WebAuthn settings as they are now; a
+    // later change to them is answered by enrolment offering all three
+    // ML-DSA algorithms anyway (`webauthn_policy.ts`), as `pqcOnly` does.
+    if (checked.values.postQuantumRequired !== 'off' &&
+        !this.deps.offersPostQuantum()) {
+      log.debug('Leaving PasskeyPolicy.save(). Post-quantum required and ' +
+                'none offered.');
+      return errorCodes.mark({ ok: false,
+               errors: ['`postQuantumRequired` (' +
+                        FIELD_BY_KEY.postQuantumRequired.label + ') is ' +
+                        checked.values.postQuantumRequired + ', and this ' +
+                        'realm offers no ML-DSA algorithm at registration ' +
+                        '(webauthn.algorithms names none, and neither ' +
+                        'webauthn.pqcOnly nor ' +
+                        'webauthn.pqcAlongsideClassical is on), so no ' +
+                        'passkey anybody could register would satisfy it. ' +
+                        'Offer ML-DSA first.'] }, 'STS-AUTHN-0357');
+    }
     if (!this.haveDirectory()) {
       log.debug('Leaving PasskeyPolicy.save(). No directory.');
       return errorCodes.mark({ ok: false,
@@ -2223,6 +2410,11 @@ export = {
   FIELD_BY_KEY: PasskeyPolicy.FIELD_BY_KEY,
   SCHEMA: PasskeyPolicy.SCHEMA,
   SENTENCES: PasskeyPolicy.SENTENCES,
+  POST_QUANTUM_ALGORITHMS: POST_QUANTUM_ALGORITHMS,
+  POST_QUANTUM_REQUIRED_VALUES: POST_QUANTUM_REQUIRED_VALUES,
+  isPostQuantum: PasskeyPolicy.isPostQuantum,
+  requiresPostQuantum: slot.forward('requiresPostQuantum'),
+  postQuantumRefusal: slot.forward('postQuantumRefusal'),
   setDirectory: slot.forward('setDirectory'),
   directoryInstalled: slot.forward('directoryInstalled'),
   read: slot.forward('read'),

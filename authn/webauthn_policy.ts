@@ -131,7 +131,9 @@ const FALLBACK_ALGS = ['ES256', 'RS256'];
  * The post-quantum WebAuthn algorithms, RFC 9964's ML-DSA, in the order
  * `webauthn.pqcOnly` requests them when the list names none.
  */
-const PQC_ALGS = ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87'];
+// ONE COPY since #718: the passkey policy's, which decides whether a key's
+// algorithm is post-quantum and cannot require this module back.
+const PQC_ALGS = passkeyPolicy.POST_QUANTUM_ALGORITHMS.slice();
 
 // ---------------------------------------------------------------------------
 // THE TWO LANES (#643, 2026-10-19): a classical passkey and a post-quantum
@@ -485,12 +487,92 @@ class WebauthnPolicy {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.algorithmsOffered(). lane=' +
               String(lane || ''));
+    const offered = this.lanedAlgorithms(lane);
+    // A POST-QUANTUM PASSKEY REQUIRED AT REGISTRATION (#718): only ML-DSA
+    // is offered, whatever the lane, so nobody makes a key the policy will
+    // refuse at the write — and all three the verifier knows where the
+    // list names none, for `pqcOnly`'s reason: an empty request is refused
+    // by the browser, and a classical one is what the row says not to make.
+    // A save asking for it where no ML-DSA is offered is refused
+    // (STS-AUTHN-0357); this is the answer to a setting changed since.
+    if (!passkeyPolicy.requiresPostQuantum('registration')) {
+      log.debug('Leaving WebauthnPolicy.algorithmsOffered(). ' +
+                offered.length + ' offered.');
+      return offered;
+    }
+    const pq = offered.filter(function (name) {
+      return PQC_ALGS.indexOf(name) >= 0;
+    });
+    const out = pq.length ? pq : PQC_ALGS.filter(function (name) {
+      return ALG_IDS[name] !== undefined;
+    });
+    log.debug('Leaving WebauthnPolicy.algorithmsOffered(). ' + out.length +
+              ' post-quantum, as the passkey policy requires.');
+    return out;
+  }
+
+  /**
+   * Says whether the realm in hand offers any ML-DSA algorithm at
+   * registration (#718), in either lane: the configured list names one,
+   * `webauthn.pqcOnly` is on (which asks for all three where it names
+   * none), or the post-quantum lane is offered beside the classical one.
+   * Asked by the passkey policy at a save that requires a post-quantum
+   * passkey; read BEFORE that requirement's own narrowing, which would
+   * otherwise answer yes for every realm.
+   *
+   * @returns true where one is offered
+   */
+  offersPostQuantum(): boolean {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.offersPostQuantum().');
+    const lanes = this.alongsideClassical() ? LANES : [''];
+    const out = lanes.some((lane) => {
+      return this.lanedAlgorithms(lane).some(function (name) {
+        return PQC_ALGS.indexOf(name) >= 0;
+      });
+    });
+    log.debug('Leaving WebauthnPolicy.offersPostQuantum(). ' + out);
+    return out;
+  }
+
+  /**
+   * The lane a new passkey is made in (#718 on #643's lanes): the one asked
+   * for, and `classical` where none is; but the post-quantum lane for a
+   * classical choice or none while the passkey policy requires a
+   * post-quantum passkey at registration and both lanes are offered —
+   * `lanes()` then offers it alone, and a classical-lane credential would
+   * be one the policy refuses, made under the classical handle, replacing
+   * the person's classical passkey on the device. An unknown lane is
+   * returned as it is, for `laneRefusal()` to refuse.
+   *
+   * @param asked - the lane asked for, or ''
+   * @returns the lane
+   */
+  enrolmentLane(asked: string): string {
+    const { log } = this.deps;
+    const wanted = String(asked || '');
+    log.debug('Entering WebauthnPolicy.enrolmentLane(). ' + wanted);
+    const out = (wanted === '' || wanted === 'classical') &&
+                this.alongsideClassical() &&
+                passkeyPolicy.requiresPostQuantum('registration')
+      ? 'pqc' : (wanted || 'classical');
+    log.debug('Leaving WebauthnPolicy.enrolmentLane(). ' + out);
+    return out;
+  }
+
+  // THE LANE'S LIST (#643), before #718's narrowing: what
+  // `algorithmsOffered()` answered until a post-quantum passkey could be
+  // required.
+  private lanedAlgorithms(lane?: string): string[] {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.lanedAlgorithms(). lane=' +
+              String(lane || ''));
     const all = this.configuredAlgorithms();
     const wanted = String(lane || '');
     // OFF, OR NO LANE NAMED: the list as it always was, ML-DSA and all, so a
     // realm that never turned the switch on sends exactly what it sent.
     if (!wanted || !this.alongsideClassical()) {
-      log.debug('Leaving WebauthnPolicy.algorithmsOffered(). ' + all.length +
+      log.debug('Leaving WebauthnPolicy.lanedAlgorithms(). ' + all.length +
                 ' offered, no lane.');
       return all;
     }
@@ -504,7 +586,7 @@ class WebauthnPolicy {
       const out = named.length ? named : PQC_ALGS.filter(function (name) {
         return ALG_IDS[name] !== undefined;
       });
-      log.debug('Leaving WebauthnPolicy.algorithmsOffered(). ' + out.length +
+      log.debug('Leaving WebauthnPolicy.lanedAlgorithms(). ' + out.length +
                 ' post-quantum.');
       return out;
     }
@@ -514,7 +596,7 @@ class WebauthnPolicy {
     const classical = all.filter(function (name) {
       return PQC_ALGS.indexOf(name) < 0;
     });
-    log.debug('Leaving WebauthnPolicy.algorithmsOffered(). ' +
+    log.debug('Leaving WebauthnPolicy.lanedAlgorithms(). ' +
               classical.length + ' classical.');
     return classical.length ? classical : FALLBACK_ALGS.slice();
   }
@@ -669,7 +751,12 @@ class WebauthnPolicy {
   lanes(): string[] {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.lanes().');
-    const out = this.alongsideClassical() ? LANES.slice() : ['classical'];
+    // THE POST-QUANTUM LANE ALONE while a post-quantum passkey is required
+    // at registration (#718): a page then asks no question, and
+    // `enrolmentLane()` makes its default this lane.
+    const out = !this.alongsideClassical() ? ['classical']
+      : (passkeyPolicy.requiresPostQuantum('registration') ? ['pqc']
+                                                           : LANES.slice());
     log.debug('Leaving WebauthnPolicy.lanes(). ' + out.join(','));
     return out;
   }
@@ -1275,6 +1362,9 @@ export = {
   alongsideClassical: slot.forward('alongsideClassical'),
   lanes: slot.forward('lanes'),
   laneRefusal: slot.forward('laneRefusal'),
+  // The post-quantum requirement's (#718).
+  offersPostQuantum: slot.forward('offersPostQuantum'),
+  enrolmentLane: slot.forward('enrolmentLane'),
   laneWriteRule: WebauthnPolicy.laneWriteRule,
   LANES: LANES,
   PQC_ALGS: PQC_ALGS,

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4403** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4406** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 301
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 304
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 713
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1454,7 +1454,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0315` | A sign-in with a passkey was refused: the realm's passkey policy enforces a minimum security-key PIN length (#529) and the minimum the key reported at registration — recorded on its row — is shorter, or none was recorded while pinLengthOnlyIfSupported is off. | the sign-in screen, drawn again with the reason |
 | `STS-AUTHN-0316` | A passkey sign-in was refused by the attestation rules in force (#530, the passkey policy's enforceAttestationAtSignIn): the key's recorded attestation is not trusted where a rule demands it, its AAGUID is not on webauthn.attestationAllowedAaguids, its model is below the certification level or FIPS asked for, or the FIDO Metadata Service now reports the model compromised. The first refusal of a key for a reason marks its row and sends a CAEP credential-change. | the passkey page or the sign-in screen, with the reason |
 | `STS-AUTHN-0317` | A passkey's attestation could not be held to the rules at sign-in: the FIDO metadata lookup or the check threw (#530). The sign-in is refused, since the rule is on and an unchecked key is not a checked one. | the passkey page or the sign-in screen, with the reason |
-| `STS-AUTHN-0318` | The mark of a passkey the attestation rules refused at sign-in could not be written to its row (#530); the refusal stands and no credential-change is sent for it. | none — logged |
+| `STS-AUTHN-0318` | The mark of a passkey the attestation rules refused at sign-in (#530), or the passkey rules refused for a reason such as the post-quantum requirement (#718), could not be written to its row; the refusal stands and no credential-change is sent for it. | none — logged |
 | `STS-AUTHN-0319` | A passkey-policy hint list contradicts webauthn.authenticatorAttachment, which changed after the policy was saved (#531): client-device implies platform, security-key and hybrid cross-platform. The contradicting hints are not sent; save the policy again to fix it. | none — logged; the ceremony is sent without them |
 | `STS-AUTHN-0320` | A security key was not registered: the realm binds keys to the serials issued to each person (the passkey policy's enterpriseSerialAttribute, #532), and the serial its trusted enterprise attestation names is not among the person's values. | the ceremony's page, drawn again with the reason |
 | `STS-AUTHN-0321` | A security key was not registered: the realm binds keys to serials (#532), and the key's attestation names no device serial this service can read — no subject serialNumber and no Yubico serial extension, or no trusted enterprise attestation at all. | the ceremony's page, drawn again with the reason |
@@ -1478,6 +1478,9 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0352` | A post-quantum passkey enrolment was refused: the verifier knows no ML-DSA algorithm, so the post-quantum lane would offer nothing (#643). | RFC 9964 |
 | `STS-AUTHN-0353` | A settings write was refused: webauthn.pqcAlongsideClassical and webauthn.pqcOnly cannot both be on (#643). | — |
 | `STS-AUTHN-0354` | A sign-in was refused at the screen: the typed name ends in a post-quantum passkey's suffix (+ml-dsa, +ml-dsa-<n>, +pqc), which is the name a credential manager shows and never a username (#643). | — |
+| `STS-AUTHN-0355` | A passkey was not registered: its signature algorithm is not post-quantum (RFC 9964's ML-DSA-44, -65 or -87) and the selected passkey policy profile requires a post-quantum passkey at registration (postQuantumRequired registration-and-sign-in, #718). Decided on the algorithm, not the lane. Asked where every key is written, so the sign-in screen, /portal/keys and an activation link all refuse it. | the ceremony's page, drawn again with the reason |
+| `STS-AUTHN-0356` | A passkey did not sign anybody in: its signature algorithm is not post-quantum (RFC 9964's ML-DSA) and the selected passkey policy profile requires a post-quantum passkey at sign-in (postQuantumRequired sign-in or registration-and-sign-in, #718), as the first credential or as the second factor. Recorded on a session.refuse row; also when the passkey step finds the person holds no post-quantum key and refuses before the ceremony, and when a device link would use such a key. | the sign-in screen or the step's page, drawn again with the reason |
+| `STS-AUTHN-0357` | A passkey policy save was refused: it requires a post-quantum passkey (postQuantumRequired not off) while the realm offers no ML-DSA algorithm at registration (webauthn.algorithms names none, and neither webauthn.pqcOnly nor webauthn.pqcAlongsideClassical is on), so no passkey anybody could register would satisfy it (#718). | HTTP 400 (management API) |
 
 ## STS-OAUTH
 

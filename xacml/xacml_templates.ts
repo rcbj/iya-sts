@@ -462,7 +462,9 @@ const TRANSFER_ATTRIBUTE = {
 //
 // The answer's passkey obligation carries VERDICT (`allow` / `refuse`), CODE
 // (the error code the door records — STS-AUTHN-0312 to 0317, 0320, 0321, the
-// codes those refusals had as code) and REASON (which rule, so the door
+// codes those refusals had as code, and 0355 and 0356 for #718's
+// post-quantum requirement, which was a rule from its first day) and REASON
+// (which rule, so the door
 // says the sentence it always said). A question carries only the facts one
 // door has, named in `urn:sts:xacml:passkey:facts`, and each rule fires only
 // on a question carrying its group. A document that answers without the
@@ -491,6 +493,11 @@ const PASSKEY_ATTRIBUTE = {
   METADATA_UNCHECKED: xacmlRequest.VOCABULARY.PASSKEY_METADATA_UNCHECKED,
   REQUIRED_RANK: xacmlRequest.VOCABULARY.PASSKEY_REQUIRED_RANK,
   POLICY_PREFIX: xacmlRequest.VOCABULARY.PASSKEY_POLICY_PREFIX,
+  // The key's signature algorithm, whether it is post-quantum, and its lane
+  // (#718). The built-in rule reads POST_QUANTUM alone.
+  ALGORITHM: xacmlRequest.VOCABULARY.PASSKEY_ALGORITHM,
+  POST_QUANTUM: xacmlRequest.VOCABULARY.PASSKEY_POST_QUANTUM,
+  LANE: xacmlRequest.VOCABULARY.PASSKEY_LANE,
   ATTESTATION_POLICY: xacmlRequest.VOCABULARY.SETTING_PREFIX +
                       'webauthn.attestationPolicy',
   ALLOWED_AAGUIDS: xacmlRequest.VOCABULARY.SETTING_PREFIX +
@@ -503,7 +510,8 @@ const PASSKEY_ATTRIBUTE = {
   REASON: 'urn:sts:xacml:passkey-reason',
   VERDICTS: ['allow', 'refuse'],
   // The fact groups a question may carry.
-  GROUPS: ['backup-eligible', 'pin-length', 'serial', 'attestation'],
+  GROUPS: ['backup-eligible', 'pin-length', 'serial', 'attestation',
+           'algorithm'],
   // The reasons the built-in rules give, and the code each records, per
   // action. A door words its refusal by the reason.
   REASONS: {
@@ -517,7 +525,8 @@ const PASSKEY_ATTRIBUTE = {
     'attestation-aaguid': { register: '', use: 'STS-AUTHN-0316' },
     'attestation-unlisted': { register: '', use: 'STS-AUTHN-0316' },
     'attestation-level': { register: '', use: 'STS-AUTHN-0316' },
-    'attestation-fips': { register: '', use: 'STS-AUTHN-0316' }
+    'attestation-fips': { register: '', use: 'STS-AUTHN-0316' },
+    'post-quantum': { register: 'STS-AUTHN-0355', use: 'STS-AUTHN-0356' }
   } as Record<string, { register: string; use: string }>,
   // The certification levels in rank order, `none` first.
   LEVELS: ['none', 'L1', 'L1plus', 'L2', 'L2plus', 'L3', 'L3plus']
@@ -1144,7 +1153,10 @@ const TEMPLATES: TemplateRow[] = [
               'Metadata Service reports compromised, an untrusted ' +
               'statement where trust is demanded, an AAGUID off the list, ' +
               'a certification level or FIPS certification not met, or ' +
-              'metadata that could not be read). No leaves the rules out — ' +
+              'metadata that could not be read); and, at both, a passkey ' +
+              'whose signature algorithm is not post-quantum (ML-DSA) where ' +
+              'the policy\'s postQuantumRequired requires one at that stage ' +
+              '(#718). No leaves the rules out — ' +
               'and the passkey doors then ask the BUILT-IN policy instead, ' +
               'so the rules are never switched off by rebuilding this ' +
               'document.' },
@@ -2324,8 +2336,10 @@ const TEMPLATES: TemplateRow[] = [
       // passkey policy's refusals were asked as code — backup eligibility,
       // the PIN length, the serial; and at sign-in the attestation rules in
       // signInVerdict()'s order — so the first Deny is the refusal a person
-      // was always shown. Every Deny carries the code and the reason; one
-      // Permit per action carries `allow`.
+      // was always shown. THE POST-QUANTUM RULE (#718) comes after all of
+      // them at each action, so a key refused today for its BE flag or its
+      // PIN is refused for that still. Every Deny carries the code and the
+      // reason; one Permit per action carries `allow`.
       // -------------------------------------------------------------------
       const PK = PASSKEY_ATTRIBUTE;
       const pkVerdict = function (on: string, value: string, code: string,
@@ -2457,6 +2471,33 @@ const TEMPLATES: TemplateRow[] = [
                  below(reportedPin,
                        intBag(env, pkSetting('minPinLength')))])]));
       };
+      // A PASSKEY WHOSE ALGORITHM IS NOT POST-QUANTUM (#718), where the
+      // selected profile's postQuantumRequired names this stage: `sign-in`
+      // and `registration-and-sign-in` at use-passkey, the second alone at
+      // register-passkey. On the ALGORITHM's fact, never the lane's: an
+      // ML-DSA key made with #643's switch off carries no lane and is
+      // post-quantum. The fact is always sent with its group, so its
+      // absence is not read as "classical"; a question without the group
+      // never trips the rule.
+      const postQuantumRule = function (action: string): any {
+        log.debug("Entering postQuantumRule().");
+        const stages = action === PK.REGISTER_ACTION
+          ? [stringIs(env, pkSetting('postQuantumRequired'),
+                      'registration-and-sign-in')]
+          : [stringIs(env, pkSetting('postQuantumRequired'), 'sign-in'),
+             stringIs(env, pkSetting('postQuantumRequired'),
+                      'registration-and-sign-in')];
+        log.debug("Leaving postQuantumRule().");
+        return pkRule(action, 'post-quantum',
+          'Refuse a passkey whose signature algorithm is not post-quantum ' +
+          '(RFC 9964\'s ML-DSA) where the passkey policy requires one ' +
+          (action === PK.REGISTER_ACTION ? 'at registration'
+                                         : 'at sign-in') +
+          ' (postQuantumRequired, #718).',
+          and([carries('algorithm'),
+               not(fact(R2, PK.POST_QUANTUM, true)),
+               stages.length > 1 ? anyOf(stages) : stages[0]]));
+      };
       const passkeyRules: any[] = decidePasskeys ? [
         backupRule(PK.REGISTER_ACTION),
         pinRule(PK.REGISTER_ACTION),
@@ -2473,6 +2514,7 @@ const TEMPLATES: TemplateRow[] = [
                sizeIs('string-bag-size', strBag(R2, PK.SERIAL),
                       'integer-greater-than'),
                not(fact(R2, PK.SERIAL_HELD, true))])),
+        postQuantumRule(PK.REGISTER_ACTION),
         { id: options.idBase + ':rule:passkey-register-allowed',
           effect: model.EFFECT.PERMIT,
           description: 'Register every other passkey.',
@@ -2519,6 +2561,7 @@ const TEMPLATES: TemplateRow[] = [
           and([attestationHeld, fact(env, PK.REQUIRE_FIPS, true),
                fact(R2, PK.MODEL_LISTED, true),
                not(fact(R2, PK.FIPS, true))])),
+        postQuantumRule(PK.USE_ACTION),
         { id: options.idBase + ':rule:passkey-use-allowed',
           effect: model.EFFECT.PERMIT,
           description: 'Let every other passkey sign somebody in.',

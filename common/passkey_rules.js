@@ -31,7 +31,8 @@ const { log } = require('./helpers');
 const REGISTER = 'register-passkey';
 
 // The code each reason records, per stage — the codes the passkey policy's
-// refusals had while they were code (#528-#532). A copy of
+// refusals had while they were code (#528-#532), and #718's post-quantum
+// requirement's, which was a rule from its first day. A copy of
 // PASSKEY_ATTRIBUTE.REASONS, for this module's reason; the test compares
 // the two.
 const REASONS = {
@@ -45,7 +46,8 @@ const REASONS = {
   'attestation-aaguid': { register: '', use: 'STS-AUTHN-0316' },
   'attestation-unlisted': { register: '', use: 'STS-AUTHN-0316' },
   'attestation-level': { register: '', use: 'STS-AUTHN-0316' },
-  'attestation-fips': { register: '', use: 'STS-AUTHN-0316' }
+  'attestation-fips': { register: '', use: 'STS-AUTHN-0316' },
+  'post-quantum': { register: 'STS-AUTHN-0355', use: 'STS-AUTHN-0356' }
 };
 
 /**
@@ -135,6 +137,17 @@ function strictReading(question) {
                att.fips !== true) {
       reason = 'attestation-fips';
     }
+  }
+  // A PASSKEY THAT IS NOT POST-QUANTUM (#718), AFTER EVERY OTHER RULE, as
+  // the document orders it: on the ALGORITHM's fact, which the question
+  // computed, never on the lane; and only on a question carrying the
+  // `algorithm` group. `sign-in` holds use-passkey, and
+  // `registration-and-sign-in` holds both.
+  const required = String(policy.postQuantumRequired || 'off');
+  const pqStage = register ? required === 'registration-and-sign-in'
+    : (required === 'sign-in' || required === 'registration-and-sign-in');
+  if (!reason && carries('algorithm') && q.postQuantum !== true && pqStage) {
+    reason = 'post-quantum';
   }
   const out = reason
     ? { verdict: 'refuse', code: codeFor(reason, q.action), reason: reason }

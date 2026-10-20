@@ -6192,8 +6192,9 @@ const CODES = [
     spec: 'the passkey page or the sign-in screen, with the reason' },
   { code: 'STS-AUTHN-0318',
     summary: 'The mark of a passkey the attestation rules refused at ' +
-      'sign-in could not be written to its row (#530); the refusal stands ' +
-      'and no credential-change is sent for it.',
+      'sign-in (#530), or the passkey rules refused for a reason such as ' +
+      'the post-quantum requirement (#718), could not be written to its ' +
+      'row; the refusal stands and no credential-change is sent for it.',
     spec: 'none — logged' },
   { code: 'STS-AUTHN-0319',
     summary: 'A passkey-policy hint list contradicts ' +
@@ -6320,6 +6321,36 @@ const CODES = [
       'a post-quantum passkey\'s suffix (+ml-dsa, +ml-dsa-<n>, +pqc), which ' +
       'is the name a credential manager shows and never a username (#643).',
     spec: '' },
+  // A POST-QUANTUM PASSKEY REQUIRED (#718): the passkey policy's
+  // postQuantumRequired, decided by the issuance policy's passkey rules.
+  { code: 'STS-AUTHN-0355',
+    summary: 'A passkey was not registered: its signature algorithm is not ' +
+      'post-quantum (RFC 9964\'s ML-DSA-44, -65 or -87) and the selected ' +
+      'passkey policy profile requires a post-quantum passkey at ' +
+      'registration (postQuantumRequired registration-and-sign-in, #718). ' +
+      'Decided on the algorithm, not the lane. Asked where every key is ' +
+      'written, so the sign-in screen, /portal/keys and an activation link ' +
+      'all refuse it.',
+    spec: 'the ceremony\'s page, drawn again with the reason' },
+  { code: 'STS-AUTHN-0356',
+    summary: 'A passkey did not sign anybody in: its signature algorithm is ' +
+      'not post-quantum (RFC 9964\'s ML-DSA) and the selected passkey ' +
+      'policy profile requires a post-quantum passkey at sign-in ' +
+      '(postQuantumRequired sign-in or registration-and-sign-in, #718), as ' +
+      'the first credential or as the second factor. Recorded on a ' +
+      'session.refuse row; also when the passkey step finds the person ' +
+      'holds no post-quantum key and refuses before the ceremony, and when ' +
+      'a device link would use such a key.',
+    spec: 'the sign-in screen or the step\'s page, drawn again with the ' +
+      'reason' },
+  { code: 'STS-AUTHN-0357',
+    summary: 'A passkey policy save was refused: it requires a ' +
+      'post-quantum passkey (postQuantumRequired not off) while the realm ' +
+      'offers no ML-DSA algorithm at registration (webauthn.algorithms ' +
+      'names none, and neither webauthn.pqcOnly nor ' +
+      'webauthn.pqcAlongsideClassical is on), so no passkey anybody could ' +
+      'register would satisfy it (#718).',
+    spec: 'HTTP 400 (management API)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

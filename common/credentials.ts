@@ -3292,15 +3292,23 @@ class Credentials {
       this.deps.passkeyPolicy.select(name, '');
     }
     // ONE QUESTION TO THE ISSUANCE POLICY (#536): the key's BE flag, the
-    // minimum PIN length it reported (#529), and the device serial its
-    // trusted attestation named (#532) — the policy decides, in that order,
-    // under the selected passkey policy's rows. A flag the ceremony never
-    // read is not asked about.
+    // minimum PIN length it reported (#529), the device serial its
+    // trusted attestation named (#532), and its signature algorithm with
+    // the lane it is being made in (#718) — the policy decides, in that
+    // order, under the selected passkey policy's rows. A flag the ceremony
+    // never read is not asked about. The algorithm is always known: the
+    // ceremony's, else what `keyAlgorithm()` reads off the key itself, so
+    // a key written by value is held to a post-quantum requirement too;
+    // whether it IS post-quantum is the question's to say, not this door's.
     const given = credential || {};
     const facts: Record<string, any> = {
       username: name,
       minPinLength: given.minPinLength,
-      serial: (given.attestation || {}).deviceSerial
+      serial: (given.attestation || {}).deviceSerial,
+      algorithm: Credentials.keyAlgorithm({
+        algorithm: given.algorithm, coseAlg: given.coseAlg,
+        publicKeyJwk: given.publicKeyJwk }).name,
+      lane: lane
     };
     if (typeof given.backupEligible === 'boolean') {
       facts.backupEligible = given.backupEligible;
@@ -3309,8 +3317,9 @@ class Credentials {
     if (synced) {
       const reason = synced.reason === 'pin-length' ? 'pin-length'
         : (synced.reason === 'backup-eligible' ? 'backup-eligible'
-          : (/^serial-/.test(synced.reason) ? 'device-serial'
-                                            : 'passkey-policy'));
+          : (synced.reason === 'post-quantum' ? 'post-quantum'
+            : (/^serial-/.test(synced.reason) ? 'device-serial'
+                                              : 'passkey-policy')));
       log.info('credentials: a passkey was NOT enrolled for ' + name +
                ' (' + synced.code + ', ' + reason + '): ' + synced.why);
       log.debug("Leaving Credentials.addKey(). Refused by the passkey " +
@@ -4101,6 +4110,64 @@ class Credentials {
                 'refused attestation of a passkey of ' + username +
                 ' could not be recorded: ' + e.message);
       log.debug('Leaving Credentials.noteKeyAttestationRefused(). Threw.');
+      return false;
+    }
+  }
+
+  // A KEY THE ISSUANCE POLICY'S PASSKEY RULES NOW REFUSE AT SIGN-IN, BY
+  // REASON (#718): #530's mark generalised, so a refusal that changes a
+  // credential's standing — today the post-quantum requirement — sends its
+  // Shared Signals credential-change ONCE per key and reason rather than at
+  // every attempt. A map on the row (`policyRefused`, reason → `{ code,
+  // why, at }`) rather than #530's single field, which the attestation
+  // refusal keeps and the key lists draw as they did: two reasons for one
+  // key are two first times. The same sentence again is nothing new.
+  /**
+   * Marks a key as refused at sign-in by the passkey rules for a reason.
+   *
+   * @param username - the person
+   * @param credentialId - the key's credential id
+   * @param reason - the rule's reason (`post-quantum`)
+   * @param code - the refusal's error code
+   * @param why - the refusal's sentence
+   * @returns true when the mark is new, false when it was already there or
+   *   could not be written
+   */
+  noteKeyPolicyRefused(username, credentialId, reason, code, why) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.noteKeyPolicyRefused(). ' + reason);
+    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+      log.debug('Leaving Credentials.noteKeyPolicyRefused(). No store.');
+      return false;
+    }
+    const keys = this.keysOf(username);
+    const found = keys.filter(function (one) {
+      return one.credentialId === String(credentialId);
+    })[0];
+    const which = String(reason || '');
+    const held = found && found.policyRefused &&
+      typeof found.policyRefused === 'object' ? found.policyRefused : {};
+    if (!found || !which ||
+        (held[which] && held[which].why === String(why || '').slice(0, 500))) {
+      log.debug('Leaving Credentials.noteKeyPolicyRefused(). Nothing new.');
+      return false;
+    }
+    found.policyRefused = Object.assign({}, held, {
+      [which]: { code: String(code || ''),
+                 why: String(why || '').slice(0, 500), at: Date.now() } });
+    try {
+      const written = !!directory.replaceWebauthn(
+        String(username || '').trim(), keys.map(function (one) {
+          return JSON.stringify(one);
+        }));
+      log.debug('Leaving Credentials.noteKeyPolicyRefused(). ' + written);
+      return written;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0318') + 'credentials: the ' +
+                'refusal of a passkey of ' + username + ' (' + which + ') ' +
+                'could not be recorded: ' + e.message);
+      log.debug('Leaving Credentials.noteKeyPolicyRefused(). Threw.');
       return false;
     }
   }
@@ -8256,8 +8323,17 @@ class Credentials {
     }
     // THE LANE (#643), chosen now and carried like the role: `classical`
     // where none is named, which is every enrolment while the switch is off.
-    // Refused here as a courtesy and again at the write (`addKey()`).
-    const lane = String(options.lane || 'classical');
+    // Refused here as a courtesy and again at the write (`addKey()`). While
+    // the passkey policy requires a post-quantum passkey at registration
+    // and both lanes are on (#718), `enrolmentLane()` answers the
+    // post-quantum lane for a classical choice or none: it is the only one
+    // whose key the policy would take, and the page offered no other.
+    // THE PERSON'S PASSKEY POLICY (#535) where the door selected none, as
+    // `addKey()` selects it, so the lane is the one the write will hold.
+    if (!this.deps.passkeyPolicy.hasSelection()) {
+      this.deps.passkeyPolicy.select(name, '');
+    }
+    const lane = webauthnPolicy.enrolmentLane(String(options.lane || ''));
     const laneAllowed = webauthnPolicy.laneRefusal(lane);
     if (!laneAllowed.ok) {
       log.debug('Leaving Credentials.beginKeyEnrolment(). The lane is not ' +
@@ -10015,6 +10091,7 @@ export = {
   ANDROID_MARKER_ATTRIBUTE: Credentials.ANDROID_MARKER_ATTRIBUTE,
   untrustKeyAttestation: slot.forward('untrustKeyAttestation'),
   noteKeyAttestationRefused: slot.forward('noteKeyAttestationRefused'),
+  noteKeyPolicyRefused: slot.forward('noteKeyPolicyRefused'),
   noteKeyCloned: slot.forward('noteKeyCloned'),
   noteBootstrapPassword: slot.forward('noteBootstrapPassword'),
   mechanismsFor: slot.forward('mechanismsFor'),

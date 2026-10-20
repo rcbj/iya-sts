@@ -268,7 +268,8 @@ const VOCABULARY = Object.freeze({
   // policy's passkey rules read these.
   //
   // environment: which groups of facts this question carries —
-  // `backup-eligible`, `pin-length`, `serial`, `attestation`. Each built-in
+  // `backup-eligible`, `pin-length`, `serial`, `attestation`, `algorithm`
+  // (#718). Each built-in
   // rule fires only on a question that carries its group, so a question
   // asked at one door never trips a rule another door asks.
   PASSKEY_FACTS: 'urn:sts:xacml:passkey:facts',
@@ -298,6 +299,19 @@ const VOCABULARY = Object.freeze({
   PASSKEY_CERTIFICATION_RANK: 'urn:sts:xacml:passkey:certification-rank',
   PASSKEY_FIPS: 'urn:sts:xacml:passkey:fips',
   PASSKEY_METADATA_UNCHECKED: 'urn:sts:xacml:passkey:metadata-unchecked',
+  // resource: the key's SIGNATURE ALGORITHM (#718), with the fact group
+  // `algorithm` — its JOSE name as the ceremony recorded it (`ML-DSA-65`,
+  // `ES256`; `credentials.keyAlgorithm()` derives it for a row that
+  // recorded none); a boolean saying whether that algorithm is
+  // post-quantum (RFC 9964's ML-DSA-44, -65 or -87), computed in ONE place,
+  // `passkey_policy.ts`'s `question()`, never by a door; and the LANE the
+  // key was created in (#643, `classical` or `pqc`). The rule is on the
+  // ALGORITHM: with #643's switch off an ML-DSA key is made in the one
+  // lane and its row carries no lane, so a rule on the lane would refuse a
+  // post-quantum key. The lane is here for a realm's own rules.
+  PASSKEY_ALGORITHM: 'urn:sts:xacml:passkey:algorithm',
+  PASSKEY_POST_QUANTUM: 'urn:sts:xacml:passkey:post-quantum',
+  PASSKEY_LANE: 'urn:sts:xacml:passkey:lane',
   // environment: the SELECTED passkey policy profile's rows (#527, #535),
   // each after this prefix under its own name
   // (`urn:sts:xacml:passkey-policy:backupEligibility`).
@@ -613,9 +627,10 @@ class AuthorizationRequest {
   //   serial, serialHeld                       with `serial`
   //   attestation { verified, trusted, aaguid, listed, compromised, rank,
   //                 fips, unchecked }          with `attestation`
+  //   algorithm, postQuantum, lane            with `algorithm` (#718)
   //   policy { backupEligibility, enforcePinLength, minPinLength,
   //            pinLengthOnlyIfSupported, enforceAttestationAtSignIn,
-  //            enterpriseSerialAttribute }     always
+  //            enterpriseSerialAttribute, postQuantumRequired }  always
   //   settings { attestationPolicy, allowedAaguids, requiredRank,
   //              requireFips }                 with `attestation`
   // An empty string and an unknown value are left out, never sent as '', so
@@ -677,6 +692,16 @@ class AuthorizationRequest {
       this.resource(V.PASSKEY_METADATA_UNCHECKED, att.unchecked ? [true] : [],
                     T.BOOLEAN);
     }
+    // THE KEY'S ALGORITHM (#718). `postQuantum` is sent as given, a
+    // boolean, and false for anything else: the question computed it, and
+    // a fact the rule reads as "not post-quantum" must never be absent, or
+    // a requirement would let a key through by its silence.
+    if (has('algorithm')) {
+      this.resource(V.PASSKEY_ALGORITHM, one(given.algorithm));
+      this.resource(V.PASSKEY_POST_QUANTUM, [given.postQuantum === true],
+                    T.BOOLEAN);
+      this.resource(V.PASSKEY_LANE, one(given.lane));
+    }
     const policy = given.policy || {};
     const P = V.PASSKEY_POLICY_PREFIX;
     this.environment(P + 'backupEligibility', one(policy.backupEligibility));
@@ -690,6 +715,8 @@ class AuthorizationRequest {
                      [policy.enforceAttestationAtSignIn === true], T.BOOLEAN);
     this.environment(P + 'enterpriseSerialAttribute',
                      one(policy.enterpriseSerialAttribute));
+    this.environment(P + 'postQuantumRequired',
+                     one(policy.postQuantumRequired));
     const settings = given.settings || null;
     if (has('attestation') && settings) {
       this.setting('webauthn.attestationPolicy',

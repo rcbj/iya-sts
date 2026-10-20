@@ -4561,7 +4561,11 @@ class Authn {
   // answered may sign this person in, asked of the issuance policy with the
   // facts this line holds — the credential's BE flag as the door read it
   // (#528), and the minimum PIN length the key REPORTED at registration,
-  // read off its row on the person's entry (#529). Null for anything but a
+  // read off its row on the person's entry (#529), and its signature
+  // algorithm with the lane it was made in (#718) — the ROW's, through
+  // `keyAlgorithm()`, which also reads a row that recorded none; the
+  // ceremony's own where no row was found. Whether that algorithm is
+  // post-quantum is the question's to say. Null for anything but a
   // WebAuthn credential, or where the policy allows it.
   private passkeySignInRefusal(username: string, credential: any):
       { code: string; why: string; reason: string } | null {
@@ -4582,10 +4586,62 @@ class Authn {
     if (typeof credential.backupEligible === 'boolean') {
       facts.backupEligible = credential.backupEligible;
     }
+    if (key) {
+      const algorithm = credentials.keyAlgorithm(key);
+      facts.algorithm = algorithm.name;
+      facts.lane = algorithm.lane;
+    } else if (credential.algorithm) {
+      facts.algorithm = String(credential.algorithm);
+      facts.lane = String(credential.lane || 'classical');
+    }
     const out = passkeyPolicy.refusalFor('sign-in', facts);
     log.debug("Leaving Authn.passkeySignInRefusal(). " +
               (out ? out.code : 'allowed'));
     return out;
+  }
+
+  // A PASSKEY THE PASSKEY RULES REFUSED AT SIGN-IN FOR A REASON THAT
+  // CHANGES ITS STANDING (#718, the post-quantum requirement): marked on
+  // the key's row the first time per key and reason
+  // (`credentials.noteKeyPolicyRefused()`), and only then a CAEP
+  // credential-change by `policy`, as `attestationAtSignIn()` does for
+  // #530. Never throws: a signal that cannot be sent leaves the refusal as
+  // it is.
+  private notePasskeyStanding(username: string, credential: any,
+                              refusal: { code: string; why: string;
+                                         reason: string }): void {
+    const { log, credentials, accountSignals } = this.deps;
+    log.debug("Entering Authn.notePasskeyStanding(). " + refusal.reason);
+    try {
+      const id = String((credential && credential.id) || '');
+      const key = credentials.keysOf(username).filter(function (one) {
+        return String(one.credentialId) === id;
+      })[0] || null;
+      if (!key || !credentials.noteKeyPolicyRefused(username, id,
+                                                    refusal.reason,
+                                                    refusal.code,
+                                                    refusal.why)) {
+        log.debug("Leaving Authn.notePasskeyStanding(). Nothing new.");
+        return;
+      }
+      accountSignals.credentialChanged({
+        username: username,
+        credentialType: accountSignals.keyCredentialType(key),
+        fido2Aaguid: credentials.Credentials.aaguidString(key.aaguid),
+        friendlyName: String(key.label || ''),
+        changeType: 'update', initiatingEntity: 'policy', via: 'sign-in',
+        reasonAdmin: 'A passkey of ' + username + ' no longer meets this ' +
+                     'realm\'s passkey policy: ' + refusal.why,
+        reasonUser: 'One of your passkeys no longer meets this ' +
+                    'service\'s rules and cannot sign you in.' });
+      log.debug("Leaving Authn.notePasskeyStanding(). Signalled.");
+    } catch (e) {
+      // The refusal has been made and recorded already; a mark or a signal
+      // that could not be sent must not turn it into an error page.
+      log.debug("Caught in Authn.notePasskeyStanding(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Authn.notePasskeyStanding(). Threw.");
+    }
   }
 
   // THE ATTESTATION RULES AT SIGN-IN (#530): the key's recorded attestation
@@ -4890,7 +4946,11 @@ class Authn {
                    : syncedRefusal.reason === 'backup-eligible'
                      ? 'a synced (backup-eligible) passkey, where the ' +
                        'passkey policy takes only device-bound ones'
-                     : 'the issuance policy refused the passkey'),
+                     : syncedRefusal.reason === 'post-quantum'
+                       ? 'a passkey whose signature algorithm is not ' +
+                         'post-quantum, where the passkey policy requires ' +
+                         'a post-quantum one'
+                       : 'the issuance policy refused the passkey'),
         detail: { credential: 'webauthn',
                   credentialFingerprint: String(extra.credential &&
                                                 extra.credential.id
@@ -4898,6 +4958,13 @@ class Authn {
                         String(extra.credential.id)) : ''),
                   application: String(extra.application || '') }
       });
+      // A KEY THAT NO LONGER SIGNS ITS OWNER IN (#718): the first time per
+      // key and reason, its row is marked and CAEP's credential-change goes
+      // out by `policy` — #530's arrangement — so a relying party learns
+      // the credential's standing changed once, not at every attempt.
+      if (syncedRefusal.reason === 'post-quantum') {
+        this.notePasskeyStanding(username, extra.credential, syncedRefusal);
+      }
       extra.refusedWith = syncedRefusal.code;
       extra.refusedWhy = syncedRefusal.why;
       log.debug("Leaving Authn.startSessionHere(). The passkey policy " +
@@ -10691,10 +10758,27 @@ class Authn {
     // ceremony's options read it.
     this.deps.passkeyPolicy.select(username,
                                    step.authn && step.authn.application);
-    const known = credentials.keysOf(username).filter(function (one) {
+    const held = credentials.keysOf(username).filter(function (one) {
       return one.role === wantedRole;
     });
-    const mode = known.length ? 'get' : 'create';
+    // ONLY THE POST-QUANTUM KEYS WHILE THE PROFILE REQUIRES ONE AT SIGN-IN
+    // (#718, rcbj's decision 3), by the question's own reading of each
+    // key's algorithm (`postQuantumRefusal()`), so `allowCredentials` never
+    // offers an authenticator a key the policy would refuse after the
+    // ceremony. A person who holds keys of this role and none of them
+    // post-quantum is told before any ceremony (`postQuantumRefused`
+    // below, refused at `mfaWebauthnOptions()`) — and is NOT offered an
+    // enrolment instead: the mode is decided on what they hold.
+    const pqRequired = this.deps.passkeyPolicy.requiresPostQuantum('sign-in');
+    const known = pqRequired ? held.filter((one) => {
+      return !this.deps.passkeyPolicy.postQuantumRefusal(
+        credentials.keyAlgorithm(one), 'sign-in');
+    }) : held;
+    const pqRefusal = pqRequired && held.length && !known.length
+      ? this.deps.passkeyPolicy.postQuantumRefusal(
+          credentials.keyAlgorithm(held[0]), 'sign-in')
+      : null;
+    const mode = held.length ? 'get' : 'create';
     // ONE CHOICE PER PASSKEY (#534), where the passkey policy says so and
     // there is more than one to choose from: until one is chosen the page
     // lists them, and once one is, the ceremony names only it. A chosen id
@@ -10711,9 +10795,19 @@ class Authn {
     // `laneRefusal()` of it), and read back from the step — never from the
     // browser's answer — by the registration branch. A new choice before
     // the ceremony ran takes a new handle, the lane's own.
-    const chosenLane = mode === 'create' && lane ? String(lane) : '';
+    // WHILE A POST-QUANTUM PASSKEY IS REQUIRED AT REGISTRATION AND BOTH
+    // LANES ARE ON (#718), the post-quantum lane is the only one
+    // (`enrolmentLane()`): a classical choice, or none, becomes it, so the
+    // credential is made under the lane's own handle and replaces nothing.
+    const chosenLane = mode === 'create' && lane
+      ? webauthnPolicy.enrolmentLane(String(lane)) : '';
     if (chosenLane && chosenLane !== String(step.lane || 'classical')) {
       step.lane = chosenLane;
+      step.userHandle = '';
+      pendingMfa.set(mfaId, step);
+    } else if (mode === 'create' && !step.lane &&
+               webauthnPolicy.enrolmentLane('') !== 'classical') {
+      step.lane = webauthnPolicy.enrolmentLane('');
       step.userHandle = '';
       pendingMfa.set(mfaId, step);
     }
@@ -10742,7 +10836,12 @@ class Authn {
       // In product mode an RP ID that does not fit is said on the page as
       // well as refused at the act: a ceremony drawn under a refusal would
       // be a browser prompt whose answer is thrown away.
-      problem: String(this.rpIdProblem(base) || ''),
+      problem: String(this.rpIdProblem(base) ||
+                      (pqRefusal ? pqRefusal.why : '') || ''),
+      // NO POST-QUANTUM KEY WHERE ONE IS REQUIRED (#718): the refusal the
+      // ceremony would end in, said before it runs.
+      postQuantumRefused: pqRefusal ? { code: pqRefusal.code,
+                                        why: pqRefusal.why } : null,
       // The technical fold (#470): what this ceremony asks for. The
       // ceremony's own names stay as they are; what is said ABOUT them is
       // in the page's language (#539).
@@ -12748,6 +12847,29 @@ class Authn {
     }
     const facts = this.webauthnFacts(baseUrlOf(req), mfaId, found.step, key,
                                      String(lane || ''));
+    // NO POST-QUANTUM KEY WHERE THE PROFILE REQUIRES ONE (#718): refused
+    // before the ceremony is armed, so nobody touches a key the policy
+    // would refuse — and recorded as the refusal it is, a session refused.
+    if (facts.postQuantumRefused) {
+      const refusal = facts.postQuantumRefused;
+      audit.audit({
+        action: 'session.refuse', actor: String(found.step.username || ''),
+        errorCode: refusal.code,
+        protocol: String((found.step.authn && found.step.authn.protocol) ||
+                         'OAuth 2.0 / OIDC'), channel: 'http', target: '',
+        summary: 'a session for ' + String(found.step.username || '') +
+                 ' was refused before the passkey step\'s ceremony: the ' +
+                 'passkey policy requires a post-quantum passkey and they ' +
+                 'hold none',
+        detail: { credential: 'webauthn',
+                  application: String((found.step.authn &&
+                                       found.step.authn.application) || '') }
+      });
+      errorCodes.mark(res, refusal.code);
+      this.stepRefused(res, refusal.why);
+      log.debug('Leaving Authn.mfaWebauthnOptions(). No post-quantum key.');
+      return;
+    }
     if (facts.choices.length) {
       errorCodes.mark(res, 'STS-AUTHN-0329');
       this.stepRefused(res, 'Choose one of your passkeys first.');
