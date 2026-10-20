@@ -15935,6 +15935,70 @@ const CODES = [
       'not store the change. The sign-in stands; the pin is tried again at ' +
       'the next (#693).',
     spec: 'logged' },
+  // #693 phase 2b: the OpenID4VCI key proof by DID, and a credential bound
+  // to the person's proven DID. Numbered from 0140 so that the DID claim
+  // built beside it (#693 phase 2a) can take the numbers after 0129.
+  { code: 'STS-VC-0140',
+    summary: 'A Credential Request\'s jwt proof carried both a jwk and a ' +
+      'kid in its header; OpenID4VCI 1.0 Appendix F.1 says either MUST NOT ' +
+      'be present with the other (#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0141',
+    summary: 'A Credential Request\'s jwt proof named its key by a kid that ' +
+      'is not a DID URL naming a did:jwk or did:key verification method ' +
+      '(no fragment, not a DID, or a method this issuer does not resolve) ' +
+      '(#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0142',
+    summary: 'A Credential Request\'s jwt proof named its key by a did:web ' +
+      'kid. Holder binding to a did:web is not built: a remote host can ' +
+      'change its DID document between the proof and a relying party\'s ' +
+      'verification (#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0143',
+    summary: 'A Credential Request\'s jwt proof named a did:jwk or did:key ' +
+      'kid that did not resolve, or whose DID document has no ' +
+      'verification method with that id (#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0144',
+    summary: 'A Credential Request\'s jwt proof named a DID verification ' +
+      'method that the DID document does not list under authentication — ' +
+      'a did:jwk whose key says use "enc", for one (#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0145',
+    summary: 'A credential configuration that binds to the person\'s DID ' +
+      '(oid4vci.didHolderBinding) was asked for with a proof that names no ' +
+      'DID: a jwt proof carrying a jwk, or the attestation proof type ' +
+      '(#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0146',
+    summary: 'A credential configuration that binds to the person\'s DID ' +
+      'was asked for on an access token that names no person this realm ' +
+      'verified: not verified here, disowned by a sign-out, not granted for ' +
+      'credential issuance, or naming no directory entry (#693).',
+    spec: 'credential_request_denied (HTTP 400)' },
+  { code: 'STS-VC-0147',
+    summary: 'A credential configuration that binds to the person\'s DID ' +
+      'was asked for, or a deferred one collected, for a person whose ' +
+      'account is disabled (#693).',
+    spec: 'credential_request_denied (HTTP 400)' },
+  { code: 'STS-VC-0148',
+    summary: 'A credential bound to the person\'s DID was asked for, or a ' +
+      'deferred one collected, with a proof by a DID enrolled for nobody ' +
+      'here: never enrolled, or removed since the offer or the request ' +
+      '(#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0149',
+    summary: 'A credential bound to the person\'s DID was asked for, or a ' +
+      'deferred one collected, with a proof by a DID an administrator ' +
+      'enrolled for the person by value: it was never proved, and only a ' +
+      'proved DID is bound (#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0150',
+    summary: 'A credential bound to the person\'s DID was asked for, or a ' +
+      'deferred one collected, with a proof by a DID enrolled for somebody ' +
+      'else (#693).',
+    spec: 'invalid_proof (HTTP 400)' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',

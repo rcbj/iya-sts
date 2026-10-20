@@ -5787,6 +5787,14 @@
     "en": "7f75db9b5f30bc72",
     "text": "串接的 PEM 憑證，屬於此簽發者採信其金鑰證明的 Wallet Provider 與金鑰儲存元件：證明必須能以其中一把金鑰驗證，或由其中之一所簽發的憑證（其 x5c）簽署。留空表示不信任任何一方，此時金鑰證明會被拒絕。"
   },
+  "oid4vci.didHolderBinding|label": {
+    "en": "03baba1fe888a560",
+    "text": "綁定到本人的 DID"
+  },
+  "oid4vci.didHolderBinding|description": {
+    "en": "89f8d541b4738289",
+    "text": "其憑證綁定到本人的 DID 而非金鑰的憑證設定。對列出的每一個設定，錢包的證明必須以 kid 指明其金鑰，且該 kid 是本人在其 Self-issued IDs 頁面上證明過的 did:jwk 或 did:key URL（管理員輸入的項目不夠），憑證會攜帶該 DID：dc+sd-jwt 中為 cnf.kid，jwt_vc_json 中為 credentialSubject.id、sub 和 cnf.kid，ldp_vc 中為 credentialSubject.id。中繼資料會為其聲明 did:jwk 和 did:key。同一批次的每個副本都攜帶同一個 DID，因此可以互相關聯——這就是所做的取捨。留空時，每個設定都像以前一樣綁定到金鑰。不提供 did:web。"
+  },
   "vcApi.enabled|label": {
     "en": "5c2f9e8aabdd4d3b",
     "text": "提供 W3C VC API"

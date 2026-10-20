@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4543** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4554** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -78,7 +78,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 126
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 137
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 48
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
@@ -3629,6 +3629,17 @@ Raised from: oid4vc/.
 | `STS-VC-0127` | A self-issued ID Token for a did:web enrolled before key pinning, with no key pinned, was refused in product mode and audited (siop.key.refused): the person enrols it again by proving it. Development pins the key on first use instead (mode.pinsSelfIssuedKeysOnFirstUse(), #693). | HTTP 403 refusal at /authn-api/wallet (the sign-in signs nobody in) |
 | `STS-VC-0128` | A SIOPv2 enrolment's did:web was not resolved: its DID document could not be fetched (an internal address in product mode, a redirect, a failure, too large), or this enrolment transaction had already fetched one document, which is all it may (#693). | the enrolment signs nobody in: HTTP 403 refusal at /authn-api/wallet |
 | `STS-VC-0129` | A did:web enrolled with no pinned key signed in in development mode and its key could not be pinned: the directory did not store the change. The sign-in stands; the pin is tried again at the next (#693). | logged |
+| `STS-VC-0140` | A Credential Request's jwt proof carried both a jwk and a kid in its header; OpenID4VCI 1.0 Appendix F.1 says either MUST NOT be present with the other (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0141` | A Credential Request's jwt proof named its key by a kid that is not a DID URL naming a did:jwk or did:key verification method (no fragment, not a DID, or a method this issuer does not resolve) (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0142` | A Credential Request's jwt proof named its key by a did:web kid. Holder binding to a did:web is not built: a remote host can change its DID document between the proof and a relying party's verification (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0143` | A Credential Request's jwt proof named a did:jwk or did:key kid that did not resolve, or whose DID document has no verification method with that id (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0144` | A Credential Request's jwt proof named a DID verification method that the DID document does not list under authentication — a did:jwk whose key says use "enc", for one (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0145` | A credential configuration that binds to the person's DID (oid4vci.didHolderBinding) was asked for with a proof that names no DID: a jwt proof carrying a jwk, or the attestation proof type (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0146` | A credential configuration that binds to the person's DID was asked for on an access token that names no person this realm verified: not verified here, disowned by a sign-out, not granted for credential issuance, or naming no directory entry (#693). | credential_request_denied (HTTP 400) |
+| `STS-VC-0147` | A credential configuration that binds to the person's DID was asked for, or a deferred one collected, for a person whose account is disabled (#693). | credential_request_denied (HTTP 400) |
+| `STS-VC-0148` | A credential bound to the person's DID was asked for, or a deferred one collected, with a proof by a DID enrolled for nobody here: never enrolled, or removed since the offer or the request (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0149` | A credential bound to the person's DID was asked for, or a deferred one collected, with a proof by a DID an administrator enrolled for the person by value: it was never proved, and only a proved DID is bound (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0150` | A credential bound to the person's DID was asked for, or a deferred one collected, with a proof by a DID enrolled for somebody else (#693). | invalid_proof (HTTP 400) |
 
 ## STS-SSF
 

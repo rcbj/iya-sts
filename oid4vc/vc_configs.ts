@@ -81,6 +81,24 @@ const VCI_LDP_SCOPE = 'identity_credential_ldp';
 
 const VC_CONTEXT = 'https://www.w3.org/2018/credentials/v1';
 
+// ---------------------------------------------------------------------------
+// HOW A CONFIGURATION'S CREDENTIALS ARE BOUND TO THEIR HOLDER (#693 phase
+// 2b). `key`, the default and what every configuration did until then: to
+// the key the wallet's proof names, by its JWK (or by the did:jwk of it, for
+// ldp_vc). `did`: to a did:jwk or did:key the PERSON proved with their wallet
+// (oid4vc/siop.ts), named by the proof's `kid` — opt-in per configuration
+// through `oid4vci.didHolderBinding`, because one DID in every credential
+// makes them linkable. did:web is not among the methods: oid4vc/CLAUDE.md
+// says why.
+// ---------------------------------------------------------------------------
+const HOLDER_BINDING_KEY = 'key';
+
+const HOLDER_BINDING_DID = 'did';
+
+// `cryptographic_binding_methods_supported` for a `did` configuration:
+// OpenID4VCI 1.0 section 12.2.4's "did:" prefixed method names.
+const DID_BINDING_METHODS = ['did:jwk', 'did:key'];
+
 // Every credential this issuer offers, by credential_configuration_id — the
 // one list the header argues for.
 const VCI_CONFIGS: Record<string, VciConfig> = {};
@@ -196,6 +214,20 @@ class VcConfigs {
    * by DID, and the configuration it is based on.
    */
   static readonly VCI_CONFIGS = VCI_CONFIGS;
+  /**
+   * The holder binding every configuration has unless it is named in
+   * `oid4vci.didHolderBinding`: to the key the proof names.
+   */
+  static readonly HOLDER_BINDING_KEY = HOLDER_BINDING_KEY;
+  /**
+   * The holder binding to a DID the person proved (#693).
+   */
+  static readonly HOLDER_BINDING_DID = HOLDER_BINDING_DID;
+  /**
+   * The `cryptographic_binding_methods_supported` of a configuration bound to
+   * the person's DID: `did:jwk` and `did:key`.
+   */
+  static readonly DID_BINDING_METHODS = DID_BINDING_METHODS;
 
   /**
    * Builds the configuration reader from the logger and the settings.
@@ -297,6 +329,29 @@ class VcConfigs {
     const c = VCI_CONFIGS[configId];
     log.debug("Leaving VcConfigs.vciUsesIssuerDid().");
     return !!(c && c.issuerDid);
+  }
+
+  // HOW THIS CONFIGURATION BINDS ITS HOLDER (#693): `did` where
+  // `oid4vci.didHolderBinding` names it, `key` otherwise — and for an id this
+  // issuer does not offer. Read each time, so a change reaches the next
+  // metadata document and the next Credential Request together.
+  /**
+   * Returns how a configuration's credentials are bound to their holder:
+   * `did` (to a DID the person proved) where `oid4vci.didHolderBinding` names
+   * it, `key` otherwise.
+   *
+   * @param configId - the configuration's id
+   * @returns `key` or `did`
+   */
+  vciHolderBindingOf(configId: string): string {
+    const { log, config } = this.deps;
+    log.debug("Entering VcConfigs.vciHolderBindingOf().");
+    const named = [].concat(config.value('oid4vci.didHolderBinding') || [])
+      .map(String);
+    const out = VCI_CONFIGS[configId] && named.indexOf(configId) >= 0
+      ? HOLDER_BINDING_DID : HOLDER_BINDING_KEY;
+    log.debug("Leaving VcConfigs.vciHolderBindingOf(). " + out);
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -427,5 +482,9 @@ export = {
   vciFormatOf: slot.forward('vciFormatOf'),
   vciUsesIssuerDid: slot.forward('vciUsesIssuerDid'),
   vciSigningAlgsFor: slot.forward('vciSigningAlgsFor'),
+  vciHolderBindingOf: slot.forward('vciHolderBindingOf'),
+  HOLDER_BINDING_KEY: VcConfigs.HOLDER_BINDING_KEY,
+  HOLDER_BINDING_DID: VcConfigs.HOLDER_BINDING_DID,
+  DID_BINDING_METHODS: VcConfigs.DID_BINDING_METHODS,
   configIdOfIdentifier: slot.forward('configIdOfIdentifier')
 };

@@ -802,6 +802,14 @@ const DEVICE_ENROLLMENT_PROFILES = ENROLLMENT_PROFILES.concat(['device']);
 // oid4vc/vc_issuer.ts's IMPLEMENTED_ENC_VALUES, for both OID4VCI rows.
 const OID4VCI_ENC_VALUES = ['A128GCM', 'A256GCM'];
 
+// oid4vc/vc_configs.ts's VCI_CONFIGS ids, for `oid4vci.didHolderBinding`
+// (#693).
+const OID4VCI_CONFIG_IDS = ['IdentityCredential',
+                            'IdentityCredentialJwtVcJson',
+                            'IdentityCredentialLdpVc',
+                            'IdentityCredentialDid',
+                            'IdentityCredentialLdpVcDid'];
+
 // THE KEM AND HPKE JWE ALGS (#82): `common/crypto.js`'s section 4a table,
 // written out because this file requires nothing in this repository.
 // `tests/jwe_pq_kem.js` holds the two equal. The ML-KEM six are
@@ -11246,6 +11254,30 @@ const SETTINGS = [
                  'of these keys, or be signed by a certificate (its x5c) ' +
                  'one of them issued. Empty trusts none, and a key ' +
                  'attestation is then refused.' },
+
+  // THE PERSON'S DID AS THE HOLDER (#693 phase 2b): a configuration named
+  // here binds its credentials to a did:jwk or did:key the person PROVED
+  // with their wallet (oid4vc/siop.ts, provenSubjectsOf()) instead of to a
+  // bare key. Opt-in per configuration and empty by default, because one
+  // DID in every credential makes them linkable, which a key per copy
+  // prevents. oid4vc/CLAUDE.md argues it.
+  { key: 'oid4vci.didHolderBinding', group: 'OID4VCI',
+    label: 'Bind to the person\'s DID',
+    env: 'OID4VCI_DID_HOLDER_BINDING', type: 'csv', dflt: '',
+    runtime: true,
+    csvValues: OID4VCI_CONFIG_IDS,
+    description: 'The credential configurations whose credentials are ' +
+                 'bound to the person\'s DID rather than to a key. For each ' +
+                 'one named, the wallet\'s proof must name its key by a kid ' +
+                 'that is a did:jwk or did:key URL the person proved on ' +
+                 'their Self-issued IDs page (an administrator\'s entry is ' +
+                 'not enough), and the credential carries that DID: cnf.kid ' +
+                 'in a dc+sd-jwt, credentialSubject.id, sub and cnf.kid in a ' +
+                 'jwt_vc_json, credentialSubject.id in an ldp_vc. The ' +
+                 'metadata says did:jwk and did:key for it. Every copy of a ' +
+                 'batch carries the same DID, so they are linkable — the ' +
+                 'trade this makes. Empty binds every configuration to a ' +
+                 'key, as before. did:web is not offered.' },
 
   // --- The W3C VC API (#598) ------------------------------------------------
   //
