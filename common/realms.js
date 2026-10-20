@@ -2918,6 +2918,99 @@ function keyed(factory, onLookup) {
 // A Map, per realm. Every member of the Map interface is delegated, including
 // the iterator — `for (const [k, v] of store)` is a shape this codebase uses.
 //
+// ---------------------------------------------------------------------------
+// A SECONDARY INDEX, KEPT BY THE PARTITION ITSELF (#766, 2026-10-20).
+//
+// `options.indexBy(value, key)` answers the index keys a record is filed
+// under (an array of strings, possibly empty), and `lookup(indexKey)` answers
+// the keys of the ambient realm's records filed under one. It is kept by the
+// partition Map, in its own `set`, `delete` and `clear`, because every way a
+// record enters or leaves a store ends there — the facade, the journalling
+// view, a restore and a row another process wrote (the handle's `restore` and
+// `remove`, `reconciledRestore()`) — so no door can forget it, and a store
+// that offers no `indexBy` gets a plain Map as before.
+//
+// **AN INDEXED FIELD CHANGES ONLY THROUGH `set`.** A record mutated in place
+// is not re-filed; the owner's `indexBy` names fields that never change on
+// a record (a token's `username` and `sub`), or the owner writes it back.
+// ---------------------------------------------------------------------------
+// A HOT PATH, ALL OF IT: `file()`, `unfile()`, `indexKeysOf()`, `set()`,
+// `delete()`, `clear()` and `lookup()` run on every write to an indexed
+// store and every question asked of one, so none has an Entering/Leaving
+// pair — the exception the code style allows, stated as it requires.
+class IndexedMap extends Map {
+  constructor(indexBy) {
+    super();
+    this.indexBy = indexBy;
+    /** @type {Map<string, Set<any>>} */
+    this.byIndex = new Map();
+  }
+
+  indexKeysOf(value, key) {
+    let keys = [];
+    try {
+      keys = value === undefined ? [] : (this.indexBy(value, key) || []);
+    } catch (e) {
+      // A record the owner cannot index is filed under nothing; it is still
+      // in the Map, so a walk finds it.
+      keys = [];
+    }
+    return keys;
+  }
+
+  file(value, key) {
+    this.indexKeysOf(value, key).forEach((ik) => {
+      if (!ik) {
+        return;
+      }
+      let held = this.byIndex.get(ik);
+      if (!held) {
+        held = new Set();
+        this.byIndex.set(ik, held);
+      }
+      held.add(key);
+    });
+  }
+
+  unfile(value, key) {
+    this.indexKeysOf(value, key).forEach((ik) => {
+      const held = this.byIndex.get(ik);
+      if (held) {
+        held.delete(key);
+        if (!held.size) {
+          this.byIndex.delete(ik);
+        }
+      }
+    });
+  }
+
+  set(key, value) {
+    if (super.has(key)) {
+      this.unfile(super.get(key), key);
+    }
+    super.set(key, value);
+    this.file(value, key);
+    return this;
+  }
+
+  delete(key) {
+    if (super.has(key)) {
+      this.unfile(super.get(key), key);
+    }
+    return super.delete(key);
+  }
+
+  clear() {
+    this.byIndex.clear();
+    super.clear();
+  }
+
+  lookup(indexKey) {
+    const held = this.byIndex.get(String(indexKey));
+    return held ? Array.from(held) : [];
+  }
+}
+
 // The JSDoc (#50) says what a caller holds: a Map, plus `realmMap()`. The
 // facade is built as a plain object with the iterator attached afterwards,
 // which the checker cannot see as a Map, so the return is cast.
@@ -2925,11 +3018,16 @@ function keyed(factory, onLookup) {
  * Makes a Map partitioned by realm, answering the ambient realm's Map.
  *
  * @param {any} [options]
- * @returns {Map<any, any> & { realmMap: (id?: any) => Map<any, any> }}
+ * @returns {Map<any, any> & { realmMap: (id?: any) => Map<any, any>,
+ *   lookup: (indexKey: string) => any[] }}
  */
 function map(options) {
   log.debug("Entering map().");
-  const per = keyed(function () { return new Map(); });
+  const indexBy = options && typeof options.indexBy === 'function'
+    ? options.indexBy : null;
+  const per = keyed(function () {
+    return indexBy ? new IndexedMap(indexBy) : new Map();
+  });
   // `reconcile`, for a per-realm store partly built from code — see the
   // contract above sharedMap(). The two accessors below ask it exactly as
   // sharedMap()'s do, through the same two functions, with the realm the row
@@ -3061,6 +3159,15 @@ function map(options) {
   }
 
   const facade = {
+    // The keys of the ambient realm's records filed under one index key
+    // (`options.indexBy`, #766); empty for a store that has no index.
+    lookup: function (indexKey) {
+      log.debug("Entering lookup().");
+      const target = per();
+      log.debug("Leaving lookup().");
+      return typeof target.lookup === 'function' ? target.lookup(indexKey)
+        : [];
+    },
     // The realm's own Map, for the callers that genuinely want the whole thing
     // (a purge, a sweep across realms, a console page counting them). It is a
     // JOURNALLING VIEW — see viewOf() above.

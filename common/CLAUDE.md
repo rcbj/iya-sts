@@ -3397,6 +3397,18 @@ with `Cannot find module` naming a file the operator never mentioned.
      forgotten — the shortest window in which a revoked token works again —
      with an undated one last, and `STS-OAUTH-0787` logged at most once a
      minute. `tests/revoked_jti_expiry.js` holds all three.
+   - **THE TOKEN REGISTER IS INDEXED BY PERSON (#766, 2026-10-20).**
+     `holdsLiveIssuance()`, asked before every CAEP token-claims-change,
+     walked every record of the realm (up to `MAX_TOKENS`) — 9% of a request
+     worker under a password-write load on 8081. `realms.map()` takes
+     `indexBy(value, key)` and offers `lookup(indexKey)`: the index is kept
+     by the PARTITION Map (`IndexedMap`) in its own `set`, `delete` and
+     `clear`, which is where every way a record enters or leaves a store
+     ends — the facade, the journalling view, a restore, a replicated row —
+     so no door can forget it. `tokens` files each record under `u:<username>`
+     and `s:<sub>`; the question visits those and asks the walk's own test.
+     **An indexed field changes only through `set`**: neither changes on a
+     token record. `tests/token_register_index.js`.
 
 3c. **`audit.js` is a library too, it sits BESIDE `admin_stats.js` rather than
    under it, and one dependency into it is inverted.** `admin_stats.js` answers
