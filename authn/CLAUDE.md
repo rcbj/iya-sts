@@ -494,6 +494,14 @@ contract:
   latest event's. It decides nothing — compliance, risk, policy, CAEP and
   token claims (#164 phases 3–6) read it — and a recogniser that throws
   records null (`STS-DEVICE-0029`) rather than failing a sign-in.
+* **which WebAuthn ceremony, and whether the key's attestation is trusted
+  (#723).** A WebAuthn event's `context.credential` carries `ceremony`
+  (`assertion`, or `registration` for a key enrolled in that act) and
+  `attestationTrusted` (the stored statement's `trusted`) beside
+  `backupEligible`. Both finishers write them, and so does the usernameless
+  door. `common/phishing_resistance.ts` reads them for EAP's `phr` and
+  `phrh` (`common/CLAUDE.md` 3cp). `phishingEvidenceOf()` copies them onto
+  the event the issuance policy is asked about before the session exists.
 * **appending on re-authentication.** `startSession()` recognises the same
   `sub` on a live, chosen, authenticated sign-on session behind the cookie and
   hands off to `reauthenticateSession()`, whose header lists what it does and,

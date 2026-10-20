@@ -1993,14 +1993,16 @@ so must `admin-ui/admin.ts`.
    is held to `authn.pendingTtlS` rather than waived — and the token's `auth_time`
    is true either way, which is what the resource server checks.
 
-   **WHAT MEETS WHAT.** Ordered levels; `hwk`/`phr`/`phrh` (RFC 8176 METHOD
-   names, accepted in `acr_values` before this and not published) met by two
-   factors whose `amr` names `hwk` — not by a one-time code; anything else only by
+   **WHAT MEETS WHAT.** Ordered levels; `hwk` (an RFC 8176 METHOD name,
+   accepted in `acr_values` before this and not published) met by two
+   factors whose `amr` names `hwk` — not by a one-time code; `phr` and `phrh`,
+   which were read the same way until #723, by 3cp; anything else only by
    that exact `acr`, which is why an unknown value still gets one sign-in (a
    federation partner may report it). A token with no `auth_time` does not meet a
    `max_age`, and no clock skew is allowed on the age.
 
-   **THE REST**: `acr_values_supported` (0, 1, mfa) in `asMetadata()` and so both
+   **THE REST**: `acr_values_supported` (0, 1, mfa, and since #723 phr and
+   phrh) in `asMetadata()` and so both
    discovery documents; `acr` and `auth_time` in `introspectionOf()`; the
    challenge (`challengeHeader()`) under the scheme the token was presented with,
    carrying both auth-params when both are required; codes 0500..0509 and
@@ -5053,6 +5055,56 @@ comes from; this section covers what this directory does with it.
 * **`checkIssuance()` passes `opts.registered_device` to the gate** where
   the token request proved a device. Otherwise the gate reads the session's
   device. `xacml/CLAUDE.md` covers the two device rules.
+
+## 3cp. `phr` AND `phrh`: OPENID CONNECT EAP ACR VALUES 1.0, REQUESTED AND ASSERTED (2026-10-19, #723)
+
+A relying party could not ask for a phishing-resistant sign-in or tell from a
+token that it got one. EAP ACR Values 1.0 section 2 has two context classes
+for it. `common/phishing_resistance.ts` says what earns which
+(`common/CLAUDE.md` 3cp). This section covers what `step_up.ts` does with
+them.
+
+* **Requested through 3an's machinery, unchanged**: `acr_values`, an
+  essential `acr` claims request, a client's `default_acr_values`
+  (`oauthDefaultAcrValues`, which is the per-application requirement), and a
+  detail type's required acr.
+* **A SESSION meets them by its evidence; a TOKEN only by carrying one as
+  its `acr`**, and `phrh` states `phr`. This is the behaviour change for a
+  resource server: `mfa` with `amr` `hwk` used to meet `phr`. That was the
+  dishonest half, because a wallet sets `hwk` too and a synced passkey after a
+  password was `phrh`.
+* **NOT RUNGS.** `mfa` does not meet them (two phishable factors are still
+  phishable), and they do not meet `mfa` (a passkey alone is `acr "1"`). A
+  token carrying one meets `0` and `1` (`hadLevelOf()`).
+* **THE SCREEN**: a request whose every producible value is an EAP class
+  demands `screenDemand('key')`: a security key, alone or as the step after a
+  password. `phr mfa` demands nothing in common, by the intersection rule.
+  `hwk` keeps password-plus-key.
+* **THE REFUSALS**, on the return leg or under the round-trip marker, are
+  `unmet_authentication_requirements`:
+  * `STS-OAUTH-0970` when nothing phishing-resistant happened;
+  * `STS-OAUTH-0971` for `phrh` on a sign-in that earned only `phr`. Its
+    description says why (backup-eligible, attestation not trusted, a
+    certificate), from `hardwareShortfallOf()`.
+  
+  A person with no key under `phr` is offered the enrolment as before. The key
+  enrolled earns nothing in that act, so that sign-in is refused once and the
+  next one, an assertion, is `phr`. EAP section 4 is the reason, and it is a
+  decision put to rcbj on #723.
+* **WHAT THE TOKEN SAYS** is the value requested and met (3an's decision 3).
+  A detail type's required `phr` on a passkey session is now carried as the
+  token's `acr` when the session's own `1` would not state it, so the token
+  endpoint's detail check meets it (`assessSession()`).
+* **Published**: `acr_values_supported` is `0, 1, mfa, phr, phrh,
+  urn:sts:acr:compliant-device`.
+* **Nothing asked, nothing changes**: `acr` stays `"1"` or `"mfa"`.
+* **The operator's floor** is the issuance policy's, not this module's
+  (`xacml/CLAUDE.md`).
+* **Not done**: SAML `AuthnContextClassRef` and WS-Federation `wauth` keep
+  their own tables. GNAP interaction is not covered. `allowCredentials` is not
+  narrowed to keys that could earn `phrh`.
+
+`tests/eap_acr_values.js` holds it.
 
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
 

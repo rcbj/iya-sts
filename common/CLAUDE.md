@@ -12777,3 +12777,39 @@ suite SWEPT rather than the policy weakened for it.
   federated newcomer.
 
 `tests/attribute_policy.js` holds it in process.
+
+## 3cp. `phishing_resistance.ts`: WHAT EARNS OPENID CONNECT EAP's `phr` AND `phrh` (#723, 2026-10-19)
+
+**OpenID Connect EAP ACR Values 1.0 (Final, 2025) defines two `acr` values**
+for exactly the property a passkey has and a password lacks: `phr`,
+phishing-resistant, and `phrh`, the same with the key hardware-protected. This
+leaf is the ONE place that says what this service's evidence earns of them.
+It answers from an authentication EVENT, and it claims nothing the event does
+not record. That is the same rule that keeps a passwordless key at `acr "1"`.
+The header quotes section 2 and argues each row:
+
+| The event | Earns |
+|---|---|
+| a WebAuthn ASSERTION (`context.credential.kind` `webauthn`, `ceremony` `assertion`), first factor or the step after a password | `phr` |
+| the same, the key's stored attestation TRUSTED and BE clear | `phr`, `phrh` |
+| a key REGISTERED in the same act (`ceremony` `registration`) | nothing: EAP section 4, provisioned on a phishable secret |
+| a TLS client certificate | `phr`, never `phrh` |
+| a federation partner's `acr` `phr` / `phrh` | what the partner said |
+| a password, any one-time code, an emailed link, a recovery code, a wallet, a Kerberos ticket, an anonymous session | nothing; `amr` `hwk` is not read |
+
+* **A SESSION IS ITS LATEST AUTHENTICATED EVENT**, as its `acr`, `amr` and
+  `auth_time` already are (`authn/CLAUDE.md`). A `prompt=login` answered with
+  a password after a passkey leaves nothing.
+* **The evidence is on the event**: `authn.ts` records `ceremony` and
+  `attestationTrusted` beside `backupEligible` (`authn/CLAUDE.md`, the event's
+  credential).
+* **`factOf()` is never empty**: `none` when nothing was earned. That is the
+  issuance policy's `urn:sts:xacml:phishing-resistance`, so a rule can tell
+  "not phishing-resistant" from "not asked" (`xacml/CLAUDE.md`).
+* **It decides nothing.** `oauth-oidc/step_up.ts` decides whether a request
+  for either is met (`oauth-oidc/CLAUDE.md` 3cp), and the issuance policy
+  decides whether an application may be issued to.
+* A LEAF: bunyan only. `issuance_gate.js`, which is in the parent's Kerberos
+  COPY closure, requires it LAZILY and only on a browser issuance.
+
+`tests/eap_acr_values.js` holds it, in process and over HTTP.
