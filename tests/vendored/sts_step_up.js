@@ -1224,7 +1224,7 @@ async function theMonitor() {
                        JSON.stringify(section.events));
     assert.strictEqual(section.clientsParam, "stepUpClientsPage");
     assert.deepStrictEqual(section.acrValuesSupported,
-      ["0", "1", "mfa", "urn:sts:acr:compliant-device"]);
+      ["0", "1", "mfa", "phr", "phrh", "urn:sts:acr:compliant-device"]);
     assert.deepStrictEqual(section.ownResourceRequirement,
                            { acr_values: null, max_age: null });
   });

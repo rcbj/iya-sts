@@ -70,6 +70,14 @@ const kpac = require('../kerberos/krb5_pac.js');
 const trusts = require('../kerberos/krb5_trusts');
 const wire = require('./vendored/krb5_wire.js');
 const grants = require('./tools/cross_realm_grants');
+// ARMS `issuance_gate.js`'s decider, the PEP the KDC's role question goes
+// to. The service always loads it (`common/protocol_stack.ts`, 23c); a test
+// process that does not answers every role question "allowed — the XACML
+// role subsystem is not loaded", so XR1 and XR5, which assert rcbj's
+// explicit-grants-only rule across a trust, passed only when another file
+// run in the same process had armed it, and failed in a run of this file
+// alone (the memory mode's one job per process).
+require('../xacml/xacml_role_pep');
 
 const log = require('bunyan').createLogger({
   name: 'kerberos_cross_realm_delegation',
