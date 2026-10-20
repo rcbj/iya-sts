@@ -419,6 +419,22 @@
     "en": "ce837804788fa2c5",
     "text": "Aucune expiration : supprimées avec le principal, lorsque son enregistrement est remplacé (un changement de mot de passe ou une restauration), ou lorsqu’il est le moins récemment utilisé au-delà de la limite ; jamais persistées."
   },
+  "caches.store.krb5.trust-keys.title": {
+    "en": "9e19b75405074ba3",
+    "text": "Clés de confiance Kerberos inter-domaines"
+  },
+  "caches.store.krb5.trust-keys.description": {
+    "en": "44c86730ace05ee9",
+    "text": "Les principaux krbtgt inter-domaines construits à partir des enregistrements de confiance de ce domaine (ou=kerberosTrusts), chacun avec les clés dérivées de son mot de passe partagé ou ouvertes depuis son scellement, conservés pour chaque référence après la première."
+  },
+  "caches.store.krb5.trust-keys.bound": {
+    "en": "c9282e1e84dbe9e3",
+    "text": "Appliquée : au plus 512 par domaine (deux clés pour chacun d’au plus 256 enregistrements) ; le plus ancien est retiré et reconstruit à sa prochaine utilisation."
+  },
+  "caches.store.krb5.trust-keys.lifetime": {
+    "en": "37ee5778f968cdd3",
+    "text": "Pas d’expiration : remplacé dès que son enregistrement change (les octets de l’enregistrement sont comparés à chaque utilisation), et retiré avec l’enregistrement ; jamais persisté."
+  },
   "caches.store.ldap.credential-tallies.title": {
     "en": "41d340493639d53a",
     "text": "Personnes et détenteurs d’identifiants, comptés"

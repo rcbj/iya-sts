@@ -11281,7 +11281,8 @@ const SETTINGS = [
     env: 'KRB5_MAX_REFERRAL_HOPS', type: 'int', dflt: 5, min: 1, max: 16,
     runtime: true,
     description: 'How many trusts one cross-realm path may cross before this ' +
-                 'KDC refuses to refer it further (KDC_ERR_PATH_NOT_ACCEPTED). ' +
+                 'KDC refuses to refer it further ' +
+                 '(KDC_ERR_PATH_NOT_ACCEPTED). ' +
                  'A direct trust is one crossing; each realm a path is ' +
                  'referred through adds one. The trusts themselves are ' +
                  'records in the realm\'s directory (ou=kerberosTrusts), and ' +

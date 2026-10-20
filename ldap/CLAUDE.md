@@ -2919,9 +2919,9 @@ random keys are the same pair under `ou=applications`, `krb5ServiceKeys` and
 
 **`seed()` builds two things and only the first is structural.** The base and the
 containers — `ou=users`, `ou=groups`, `ou=applications`, `ou=federations`,
-`ou=policies`, `ou=roles`, `ou=peps`, `ou=passwordPolicies`, the SPIFFE pair and,
-in the default realm only, `ou=trustAnchors` (`ou=crl` is made on demand when a
-CRL is published) — are what every door that
+`ou=policies`, `ou=roles`, `ou=peps`, `ou=passwordPolicies`, the SPIFFE pair,
+`ou=kerberosTrusts` (#430) and, in the default realm only, `ou=trustAnchors`
+(`ou=crl` is made on demand when a CRL is published) — are what every door that
 provisions somebody writes UNDER, and they are seeded in both modes. Everything below
 them is demonstration data and `mode.seedsDemoData()` decides it: `cn=admin`, alice, bob
 and carol (carol's `employeeType: admin` is read by the seeded XACML policy),
@@ -3005,6 +3005,27 @@ is still attached after a successful bind, so the first ldapjs `error` the LDAPS
 server emits later — a client's malformed BindRequest is enough — is logged as
 `STS-LDAP-0028` "could not bind" and sets `tlsListening` false on a listener that
 is still answering.
+
+## `ou=kerberosTrusts`, THE KERBEROS TRUST REGISTER (#430, 2026-10-19)
+
+**One entry per partner Kerberos realm**, of this service's class
+`stsKrb5Trust`, owned by `kerberos/krb5_trusts.ts` (`kerberos/CLAUDE.md`,
+*KERBEROS TRUSTS AS RECORDS*, has the design). This file keeps the container
+(seeded in both modes, structural) and three functions over it —
+`listKerberosTrustEntries`, `writeKerberosTrustEntry` (REPLACES, and puts the
+container back if a restored directory predates it),
+`deleteKerberosTrustEntry` — filled into the register's `setDirectory()` slot,
+whose rule 3e argument is beside the fill. `seed()` also writes what
+`krb5Trusts.seedEntries()` answers: in the DEFAULT realm while it seeds
+demonstration data, the trust with PARTNER.COM that four retired settings
+built; nothing anywhere else. **The keys, `stsKrb5TrustKeys`, are in
+SECRET_ATTRIBUTES and `CREDENTIAL_ATTRIBUTE_DOORS`**: withheld from every read
+in product and refused over the socket in both modes, the register being the
+door that seals them and keeps the record that describes them in step. The
+record (`stsKrb5TrustData`) and the six trustedDomain names written beside it
+(`trustPartner`, `flatName`, `securityIdentifier`, `trustDirection`,
+`trustAttributes`, `trustType`) are public, and merged into `OWN_NAMES` so they
+come back with their spelling.
 
 ## `ou=passwordPolicies`, `pwdHistory`, AND THE ONE DOOR THAT WROTE A PASSWORD IN THE CLEAR (2026-09-12)
 

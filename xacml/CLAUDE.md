@@ -1576,6 +1576,19 @@ in the environment, `urn:sts:xacml:exchange:*`):
    chose. Where neither policy answers, the subject's own choice stands
    (`STS-XACML-0087`): `may_act` restricts, so dropping it would widen.
 
+**THE FACTS OF A QUESTION ASKED ACROSS A KERBEROS TRUST (#430 Phase 1,
+2026-10-19)** are defined in `xacml_request.js` and read by no rule yet — the
+cross-realm rules are #430's Phase 3. `exchange:subject-realm`,
+`exchange:actor-realm` and `exchange:target-realm` (the Kerberos realm of each
+party, in its category), and in the environment `exchange:trust-partner`,
+`trust-type` (`external`, `trust-realm`), `trust-direction` (`inbound`,
+`outbound`, `bidirectional`), `trust-attribute` (each of [MS-ADTS]
+6.1.6.7.9's bits by name, as `kerberos/krb5_trusts.ts` records them),
+`trust-path` (the realms crossed, the client's first) and `trust-hops` (an
+integer). **Each is sent only when the question names it**, so every question
+asked before #430 is the request it was, attribute for attribute; an absent
+realm is never an empty value a rule could compare.
+
 AND ONE PER-SCOPE RULE: **`exchange-widens-scope`**, at stage `exchange` of the
 per-scope question, refuses in product a scope the verified subject token
 does not carry (`STS-OAUTH-0621`), from two facts the token endpoint sends —

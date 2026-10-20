@@ -419,6 +419,22 @@
     "en": "ce837804788fa2c5",
     "text": "不會過期：隨主體一併捨棄、在其記錄被取代時（密碼變更或還原）捨棄，或在超過上限時作為最久未使用者被捨棄；從不持久保存。"
   },
+  "caches.store.krb5.trust-keys.title": {
+    "en": "9e19b75405074ba3",
+    "text": "Kerberos 跨領域信任金鑰"
+  },
+  "caches.store.krb5.trust-keys.description": {
+    "en": "44c86730ace05ee9",
+    "text": "依此領域的信任記錄（ou=kerberosTrusts）建立的跨領域 krbtgt 主體，每個都帶有由其共用密碼衍生或自其封存中開啟的金鑰，於第一次轉介之後的每次轉介中保留使用。"
+  },
+  "caches.store.krb5.trust-keys.bound": {
+    "en": "c9282e1e84dbe9e3",
+    "text": "強制執行：每個領域最多 512 個（最多 256 筆記錄，每筆兩個金鑰）；最舊的會被捨棄，並於下次使用時重新建立。"
+  },
+  "caches.store.krb5.trust-keys.lifetime": {
+    "en": "37ee5778f968cdd3",
+    "text": "不會過期：其記錄一旦變更即被取代（每次使用時都會比較記錄的位元組），並隨記錄一併移除；從不持久保存。"
+  },
   "caches.store.ldap.credential-tallies.title": {
     "en": "41d340493639d53a",
     "text": "人員與認證持有者計數"

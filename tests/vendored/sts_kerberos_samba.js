@@ -51,9 +51,10 @@
 //   * SPN — `<h>.<domain>`: simple_tests asks for `host/<SERVICE_USERNAME>`.
 //
 // Each module runs under exactly one. xrealm_tests runs against the DEFAULT
-// realm's development trust (krb5.trustedRealm), the one trust this service
-// has; where the default realm is in product mode there is none, and the
-// module is recorded as not applicable.
+// realm's development trust with PARTNER.COM — since #430 a trust RECORD
+// seeded in development (kerberos/krb5_trusts.ts), where it was the setting
+// krb5.trustedRealm; where the default realm is in product mode there is
+// none, and the module is recorded as not applicable.
 //
 // WHAT FAILS THIS JOB: any test that FAILS or ERRORS and is not in
 // EXCEPTIONS below — each also recorded on #204 with its reason — and fewer
@@ -572,8 +573,10 @@ async function test() {
   log.info("=== 0. the realm, its principals and their keys ===");
   await setUp(k);
   k.defaultRealm = String(await facts.setting(api, "krb5.realm") || "");
-  k.trustedRealm = String(await facts.setting(api, "krb5.trustedRealm") ||
-                          "");
+  // The development trust's partner (#430): a seeded record, no longer a
+  // setting this job can read. The Kerberos trusts API arrives with #430's
+  // console phase; until then the seed's partner is the fact.
+  k.trustedRealm = "PARTNER.COM";
   k.defaultPassword = String(await facts.setting(api, "krb5.userPassword") ||
                              "");
   const product = await facts.isProduct(api);

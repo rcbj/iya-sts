@@ -33,6 +33,9 @@
 //   E. `transited` ENCODING (RFC 4120 section 3.3.3.2): compression, its
 //      reading, the client's and server's realms, and an elided hierarchy.
 //   F. THE FOUR RETIRED SETTINGS stop a start, in child processes.
+//   G. THE POLICY'S VOCABULARY: the trust facts an exchange question carries
+//      across a trust (`xacml/xacml_request.js`), and that a question that
+//      crossed none is the request it always was.
 //
 // IN PROCESS because the trust records, the keys and the tickets have to be
 // opened with keys only the inside holds, and because three Kerberos realms
@@ -221,7 +224,8 @@ function storeSection(t) {
        outgoing: { password: SHARED } }, 'STS-KRB-0218',
      'a NetBIOS name past fifteen characters'],
     [{ partnerRealm: 'X.TEST', suffixes: ['not a host'], outgoing:
-       { password: SHARED } }, 'STS-KRB-0219', 'a suffix that is not a DNS name'],
+       { password: SHARED } }, 'STS-KRB-0219',
+     'a suffix that is not a DNS name'],
     [{ partnerRealm: 'X.TEST', suffixes: [principals.REALM.toLowerCase()],
        outgoing: { password: SHARED } }, 'STS-KRB-0219',
      'this realm\'s own domain as a suffix'],
@@ -441,6 +445,12 @@ async function hopToGamma(t, aliceTgt) {
   return { stage: third.ok ? 0 : 3, r: third, first: first, second: second };
 }
 
+function walkSummary(walk) {
+  log.debug("Entering walkSummary().");
+  log.debug("Leaving walkSummary().");
+  return JSON.stringify({ stage: walk.stage, error: String(errorOf(walk.r)) });
+}
+
 async function multiHopSection(t) {
   log.debug("Entering multiHopSection().");
   t.log.info('=== D. a path through a transitive trust ===');
@@ -469,7 +479,7 @@ async function multiHopSection(t) {
           walk.second.srealm === BETA,
           'D3. ' + ALPHA + ' refers to ' + BETA + ', ' + BETA + ' refers on ' +
           'to ' + GAMMA + ', and ' + GAMMA + ' issues the service ticket',
-          JSON.stringify({ stage: walk.stage, error: String(errorOf(walk.r)) }));
+          walkSummary(walk));
   if (walk.stage === 0) {
     const part = await openTicket('kt-c', walk.r.ticket,
                                   spn('web.gamma.test'));
@@ -484,8 +494,8 @@ async function multiHopSection(t) {
                             Buffer.from(part.transited.contents)
                               .toString()]));
     t.check(walk.r.flagNames.indexOf('transited-policy-checked') !== -1,
-            'D5. and TRANSITED-POLICY-CHECKED: ' + GAMMA + ' accepted ' + ALPHA +
-            ' through ' + BETA + ' by its record\'s namespace',
+            'D5. and TRANSITED-POLICY-CHECKED: ' + GAMMA + ' accepted ' +
+            ALPHA + ' through ' + BETA + ' by its record\'s namespace',
             JSON.stringify(walk.r.flagNames));
   }
 
@@ -497,7 +507,7 @@ async function multiHopSection(t) {
           /maxReferralHops/.test(errorOf(walk.r).eText),
           'D6. with krb5.maxReferralHops 1 in ' + BETA + ', the second ' +
           'crossing is refused: KDC_ERR_PATH_NOT_ACCEPTED (STS-KRB-0226)',
-          JSON.stringify({ stage: walk.stage, error: String(errorOf(walk.r)) }));
+          walkSummary(walk));
   realms.clearOverride('kt-b', 'krb5.maxReferralHops');
 
   // A NON-TRANSITIVE TRUST is not a way through.
@@ -510,7 +520,7 @@ async function multiHopSection(t) {
           /non-transitive/.test(errorOf(walk.r).eText),
           'D7. ' + BETA + '\'s trust with ' + ALPHA + ' NON-TRANSITIVE: ' +
           ALPHA + '\'s people are not referred onward (STS-KRB-0227)',
-          JSON.stringify({ stage: walk.stage, error: String(errorOf(walk.r)) }));
+          walkSummary(walk));
   const direct = await wire.tgsExchange(T, walk.first || aliceTgt,
                                         spn('web.beta.test'), BETA);
   t.check(direct.ok, 'D8. and still accepts them for its own services',
@@ -529,7 +539,7 @@ async function multiHopSection(t) {
           'D9. ' + GAMMA + ', whose trust with ' + BETA + ' routes ' +
           'beta.test only, refuses alice@' + ALPHA + ' arriving through it: ' +
           'the transited-policy check (STS-KRB-0228)',
-          JSON.stringify({ stage: walk.stage, error: String(errorOf(walk.r)) }));
+          walkSummary(walk));
   log.debug("Leaving multiHopSection().");
 }
 
@@ -603,9 +613,61 @@ function retiredSection(t) {
   log.debug("Leaving retiredSection().");
 }
 
+// ---------------------------------------------------------------------------
+// G. THE POLICY'S VOCABULARY.
+// ---------------------------------------------------------------------------
+function vocabularySection(t) {
+  log.debug("Entering vocabularySection().");
+  t.log.info('=== G. the trust facts of an exchange question ===');
+  const xacmlRequest = require('../xacml/xacml_request');
+  const V = xacmlRequest.VOCABULARY;
+  const ids = function (request) {
+    log.debug("Entering ids().");
+    const out = {};
+    request.categories.forEach(function (category) {
+      category.attributes.forEach(function (one) {
+        out[one.attributeId] = one.values.map(function (v) {
+          return v.lexical;
+        });
+      });
+    });
+    log.debug("Leaving ids().");
+    return out;
+  };
+  const base = { subject: { id: 'alice' }, actor: { id: 'HTTP/a' },
+                 target: { id: 'HTTP/b', count: 1 } };
+  const plain = ids(new xacmlRequest.AuthorizationRequest().exchange(base));
+  t.check(Object.keys(plain).every(function (id) {
+    return !/:(trust-|subject-realm|actor-realm|target-realm)/.test(id);
+  }), 'G1. a question that crossed no trust carries none of the new facts',
+          JSON.stringify(Object.keys(plain)));
+  const across = ids(new xacmlRequest.AuthorizationRequest().exchange(
+    Object.assign({}, base, {
+      subject: { id: 'alice', realm: ALPHA },
+      actor: { id: 'HTTP/a', realm: ALPHA },
+      target: { id: 'HTTP/b', count: 1, realm: GAMMA },
+      trust: { partner: BETA, type: 'trust-realm', direction: 'bidirectional',
+               attributes: ['forest-transitive'], path: [ALPHA, BETA],
+               hops: 2 } })));
+  t.check(across[V.EXCHANGE_SUBJECT_REALM][0] === ALPHA &&
+          across[V.EXCHANGE_ACTOR_REALM][0] === ALPHA &&
+          across[V.EXCHANGE_TARGET_REALM][0] === GAMMA &&
+          across[V.EXCHANGE_TRUST_PARTNER][0] === BETA &&
+          across[V.EXCHANGE_TRUST_TYPE][0] === 'trust-realm' &&
+          across[V.EXCHANGE_TRUST_DIRECTION][0] === 'bidirectional' &&
+          across[V.EXCHANGE_TRUST_ATTRIBUTE][0] === 'forest-transitive' &&
+          across[V.EXCHANGE_TRUST_PATH].join(',') === ALPHA + ',' + BETA &&
+          across[V.EXCHANGE_TRUST_HOPS][0] === '2',
+          'G2. one across a trust carries the partner, type, direction, ' +
+          'attributes, path, hop count and each party\'s Kerberos realm',
+          JSON.stringify(across));
+  log.debug("Leaving vocabularySection().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   storeSection(t);
+  vocabularySection(t);
   await keySection(t);
   transitedSection(t);
   retiredSection(t);

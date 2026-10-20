@@ -132,8 +132,8 @@
     "text": "Kerberos v5"
   },
   "realms.support.kerberos-v5.note": {
-    "en": "42fe03497278a0e3",
-    "text": "每个信任领域一个 KDC，位于共享端口 88 上，通过每个请求中的 Kerberos 领域名称加以区分——这是协议本身已经携带的区分依据。领域创建时 krb5.enabled 为关闭；为其设置自己的 krb5.realm（两个领域不能应答同一个名称）并开启，该领域就会根据自己的设置构建自己的主体数据库、长期密钥和 krbtgt。它的人员就是其自己目录子树中的人员。原始 UDP/TCP 88 和不带前缀的 /KdcProxy 按名称路由；领域自己的 /realm/<id>/KdcProxy 固定于该领域，会以 KDC_ERR_WRONG_REALM 拒绝其他领域的名称。仍属于进程的是：两个套接字，以及开发模式下与 krb5.trustedRealm 的信任——信任领域之间不信任彼此的 Kerberos。在 2026-09-15 之前，整个进程只有一个 KDC、一个主体数据库和一个领域名称。SPNEGO 通过 HTTP 承载同样的票据，因此其路由与其他路由一样在每个领域的路径前缀下应答。"
+    "en": "3a0d2e06a69e5eda",
+    "text": "每个信任领域一个 KDC，位于共享端口 88 上，通过每个请求中的 Kerberos 领域名称加以区分——这是协议本身已经携带的区分依据。领域创建时 krb5.enabled 为关闭；为其设置自己的 krb5.realm（两个领域不能应答同一个名称）并开启，该领域就会根据自己的设置构建自己的主体数据库、长期密钥和 krbtgt。它的人员就是其自己目录子树中的人员。原始 UDP/TCP 88 和不带前缀的 /KdcProxy 按名称路由；领域自己的 /realm/<id>/KdcProxy 固定于该领域，会以 KDC_ERR_WRONG_REALM 拒绝其他领域的名称。仍属于进程的是：两个套接字。Kerberos 信任是领域自己目录中的一条记录（ou=kerberosTrusts），因此两个信任领域可以通过各自一侧的记录信任彼此的 Kerberos。在 2026-09-15 之前，整个进程只有一个 KDC、一个主体数据库和一个领域名称。SPNEGO 通过 HTTP 承载同样的票据，因此其路由与其他路由一样在每个领域的路径前缀下应答。"
   },
   "realms.support.certificate-authority-crl-ocsp.family": {
     "en": "1a5d99f237a9a182",

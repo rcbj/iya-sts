@@ -323,7 +323,8 @@ Three refusals keep the routing honest, and each is a code in
 
 * **Turning Kerberos on without a `krb5.realm` of its own** — `STS-KRB-0123`.
 * **A name another realm already answers to** — `STS-KRB-0124`: another realm's,
-  the default realm's, or `krb5.trustedRealm`. Compared without regard to case,
+  the default realm's, or the development partner realm (`PARTNER.COM`) the
+  default realm answers as. Compared without regard to case,
   because two realms that differ only in case are two realms nobody can tell
   apart in a `krb5.conf`.
 * **Renaming or clearing it while Kerberos is on** — `STS-KRB-0125`. Every key
@@ -347,16 +348,18 @@ rules: a ticket is accepted in the realm that issued
 it, and a ticket from another realm presented under a realm's prefix is refused
 (`STS-KRB-0126`).
 
-**Trust realms do not trust each other's Kerberos.** A realm's KDC holds no
-inter-realm key for another realm, so a ticket from one is not a referral to
-another — it is unknown there. The cross-realm referral this service does serve
-is the development-mode second realm (`krb5.trustedRealm`, `PARTNER.COM`), which
-belongs to the default realm alone.
+**Trust realms may trust each other's Kerberos (#430)** — through a Kerberos
+trust record on each side, in each realm's own directory (`ou=kerberosTrusts`);
+nothing is implied by two realms living in one service. A referral from one
+realm's KDC to the other's is followed on the same port 88, each answering for
+its own Kerberos realm. See [Kerberos trusts](kerberos.md#kerberos-trusts).
+Development mode seeds the default realm's trust with `PARTNER.COM`, the second
+realm its KDC answers as.
 
 **What is still the process's:** the KDC's socket (`krb5.kdcPort`), so a realm
-cannot move or take a port of its own, and that development trust. A realm administrator manages their realm's Kerberos —
-principals, keytabs and the settings the database is built from — and those five
-settings stay service-wide.
+cannot move or take a port of its own. A realm administrator manages their
+realm's Kerberos — principals, keytabs, trusts and the settings the database is
+built from — and that one setting stays service-wide.
 
 ### Optionally separated — listeners of its own (#99, #472)
 

@@ -419,6 +419,22 @@
     "en": "ce837804788fa2c5",
     "text": "Sin caducidad: se descartan con el principal, cuando se reemplaza su registro (un cambio de contraseña o una restauración), o cuando es el usado menos recientemente por encima del límite; nunca se persisten."
   },
+  "caches.store.krb5.trust-keys.title": {
+    "en": "9e19b75405074ba3",
+    "text": "Claves de confianza Kerberos entre dominios"
+  },
+  "caches.store.krb5.trust-keys.description": {
+    "en": "44c86730ace05ee9",
+    "text": "Los principales krbtgt entre dominios construidos a partir de los registros de confianza de este dominio (ou=kerberosTrusts), cada uno con las claves derivadas de su contraseña compartida o abiertas de su sello, conservados para cada referencia después de la primera."
+  },
+  "caches.store.krb5.trust-keys.bound": {
+    "en": "c9282e1e84dbe9e3",
+    "text": "Aplicado: como máximo 512 por dominio (dos claves por cada uno de como máximo 256 registros); el más antiguo se descarta y se vuelve a construir en su siguiente uso."
+  },
+  "caches.store.krb5.trust-keys.lifetime": {
+    "en": "37ee5778f968cdd3",
+    "text": "Sin caducidad: se reemplaza en cuanto cambia su registro (los bytes del registro se comparan en cada uso) y se descarta con el registro; nunca se persiste."
+  },
   "caches.store.ldap.credential-tallies.title": {
     "en": "41d340493639d53a",
     "text": "Personas y titulares de credenciales, contados"

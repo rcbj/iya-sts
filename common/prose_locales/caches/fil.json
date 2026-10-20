@@ -419,6 +419,22 @@
     "en": "ce837804788fa2c5",
     "text": "Walang expiry: tinatanggal kasama ng principal, kapag pinalitan ang record nito (pagpapalit ng password o restore), o kapag ito ang least recently used na lampas sa hangganan; hindi kailanman pine-persist."
   },
+  "caches.store.krb5.trust-keys.title": {
+    "en": "9e19b75405074ba3",
+    "text": "Mga inter-realm trust key ng Kerberos"
+  },
+  "caches.store.krb5.trust-keys.description": {
+    "en": "44c86730ace05ee9",
+    "text": "Ang mga inter-realm krbtgt principal na binuo mula sa mga trust record ng realm na ito (ou=kerberosTrusts), bawat isa ay may mga key na hinango mula sa shared password nito o binuksan mula sa seal nito, na itinatago para sa bawat referral pagkatapos ng una."
+  },
+  "caches.store.krb5.trust-keys.bound": {
+    "en": "c9282e1e84dbe9e3",
+    "text": "Ipinapatupad: hanggang 512 bawat realm (dalawang key para sa bawat isa sa hanggang 256 na record); inaalis ang pinakaluma at muling binubuo sa susunod na paggamit nito."
+  },
+  "caches.store.krb5.trust-keys.lifetime": {
+    "en": "37ee5778f968cdd3",
+    "text": "Walang expiry: pinapalitan sa sandaling magbago ang record nito (ikinukumpara ang mga byte ng record sa bawat paggamit), at inaalis kasama ng record; hindi kailanman pine-persist."
+  },
   "caches.store.ldap.credential-tallies.title": {
     "en": "41d340493639d53a",
     "text": "Mga tao at may hawak ng credential, binilang"

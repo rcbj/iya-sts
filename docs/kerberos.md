@@ -47,8 +47,12 @@ client cannot guess.
   the client's **claims** (#493, [PAC claims](#pac-claims) below).
 * **Renewable tickets**, bounded by `krb5.ticketLifetimeSeconds` and
   `krb5.renewLifetimeSeconds` (Active Directory's ten hours and seven days).
-* **Cross-realm referrals**, in development mode, to a second realm
-  (`krb5.trustedRealm`, `PARTNER.COM`) through an inter-realm trust key.
+* **Cross-realm referrals** through **Kerberos trusts**: one record per
+  partner realm in the realm's own directory (`ou=kerberosTrusts`), holding
+  the inter-realm keys — two trust realms of this service may trust each
+  other, and a path through transitive trusts carries `transited` (#430,
+  [Kerberos trusts](#kerberos-trusts) below). Development mode seeds a trust
+  with `PARTNER.COM`.
 * **A deliberate clock offset** (`krb5.clockOffset`), so `KRB_AP_ERR_SKEW` can
   be produced on purpose — in development mode only: a product realm's KDC runs
   on the machine's clock whatever is stored (#181) — and **names that stay unknown**
@@ -218,8 +222,57 @@ it on is refused until it has a `krb5.realm` no other realm answers to
 * Every name in a realm's database follows that realm's own domain — a realm
   called `CORP.BANK.EXAMPLE` holds `alice@CORP.BANK.EXAMPLE` and
   `HTTP/web.corp.bank.example`.
-* **Trust realms do not trust each other's Kerberos**: no referrals between
-  them. The two sockets and the development second realm stay the process's.
+* **Trust realms may trust each other's Kerberos** (#430), through a trust
+  record on each side — [Kerberos trusts](#kerberos-trusts), next. The two
+  sockets stay the process's.
+
+### Kerberos trusts
+
+A trust is a **record per partner realm**, kept in the realm's own directory
+under `ou=kerberosTrusts` (`cn=<partner realm>`), beside the
+`trustPartner`, `flatName`, `securityIdentifier`, `trustDirection`,
+`trustAttributes` and `trustType` an Active Directory administrator expects
+to read with `ldapsearch`. It holds:
+
+* the partner's Kerberos realm, NetBIOS name and domain SID;
+* the keys this realm holds — the **incoming** `krbtgt/<this realm>@<partner>`
+  (this realm accepts the partner's tickets) and the **outgoing**
+  `krbtgt/<partner>@<this realm>` (this realm refers its people to the
+  partner) — each with its kvno; the direction is derived from which are held;
+* each key from a **shared trust password** (RFC 3961 string-to-key with RFC
+  4120's default salt, `<issuing realm>krbtgt<other realm>`, which is what a
+  partner KDC derives from the same password) or **generated** and shown once;
+  sealed where keys persist, and never returned by any read;
+* the type: an **external** KDC, or another **trust realm** of this service;
+* its attributes, from the closed set of [MS-ADTS] 6.1.6.7.9:
+  `non-transitive`, `quarantined` (on by default), `forest-transitive`,
+  `cross-organization`, `within-forest`, `treat-as-external`,
+  `no-tgt-delegation`, `enable-tgt-delegation`;
+* the **DNS suffixes routed** to the partner, its enctypes (AES by default),
+  and whether it is enabled.
+
+**Routing.** A service host this realm does not hold is referred to the
+partner whose record routes its DNS suffix most specifically (this realm's
+own domain wins over a suffix no longer than it). For a realm behind the
+partner, that partner refers it on — a path is built only through
+**transitive** records, and `krb5.maxReferralHops` bounds it. Every ticket
+issued from a cross-realm ticket-granting ticket carries the realms it came
+through in `transited` (RFC 4120 section 3.3.3.2) and is checked against
+this realm's record for the partner that issued it — a non-transitive trust
+accepts the partner's own people only, and a realm outside the record's
+routed namespace is refused (`KDC_ERR_PATH_NOT_ACCEPTED`); a ticket that
+passed carries TRANSITED-POLICY-CHECKED. A **disabled** trust refers nobody
+and accepts nothing, and keeps its keys.
+
+**Not yet:** SID filtering on arrival, the trust attributes' effect on
+delegation across a trust (S4U2Self, S4U2Proxy and forwarded TGTs), and the
+console tab and `/admin-api` operations that manage a record — #430's later
+phases. Until the console's tab exists, a record is managed through the
+library `kerberos/krb5_trusts.ts` and seen with `ldapsearch`. The four
+settings that built the development trust (`krb5.trustedRealm`,
+`krb5.trustPassword`, `krb5.trustedDomainSid`, `krb5.trustedKrbtgtPassword`)
+were removed with no replacement setting: a start that still names one is
+refused.
 
 ### Stored long-term keys (product mode)
 
@@ -721,7 +774,7 @@ holds); the person has no key yet (step 1).
 |---|---|---|
 | User accounts | any name authenticates and **every user shares one password** (`password!`, `krb5.userPassword`), created on first sight | directory people authenticate with **keys derived from their own password**; nobody is created on demand |
 | Service accounts | a service-shaped name is created on demand for a host in `krb5.serviceDomains`, with `krb5.autoServicePassword` | nothing is created on demand; service principals are made at `/admin/kerberos/principals` |
-| Fixtures | alice, bob, misconfigured users, a computer account, delegation services with `msDS-*` rules, and the trusted second realm | none; `PARTNER.COM` is `KDC_ERR_WRONG_REALM` |
+| Fixtures | alice, bob, misconfigured users, a computer account, delegation services with `msDS-*` rules, the second realm `PARTNER.COM` and a trust record for it | none; `PARTNER.COM` is `KDC_ERR_WRONG_REALM`, and only the trusts an operator records exist |
 | `krbtgt` | derived from the published `krb5.krbtgtPassword`, until rotated by hand | a **random** key, stored sealed on the directory and rotated every `krb5.krbtgtRotationIntervalDays` (#169); `krb5.krbtgtPassword` is ignored |
 | The acceptor's account | built from the published password | built from `krb5.servicePassword` when it is set to something of your own; otherwise the SPN gets a **random** stored key, made once (see [Stored long-term keys](#stored-long-term-keys-product-mode)) |
 | The shared passwords | published as settings, so a reader can decrypt a ticket and read its PAC | not used |
@@ -772,10 +825,7 @@ modes**, and a replay is refused in both. See
 | `krb5.krbtgtPassword` | `KRB5_KRBTGT_PASSWORD` | `krbtgt-mock-password` | no | Development only: the password the key that seals every TGT is derived from. Product keys `krbtgt` at random and ignores it (#169). |
 | `krb5.krbtgtRotationIntervalDays` | `KRB5_KRBTGT_ROTATION_INTERVAL_DAYS` | `180` | yes | How old a realm's `krbtgt` key gets before the `krb5.krbtgt-rotate` job replaces it; `0` is off. Product only; a rotation by hand works in both modes. |
 | `krb5.domainSid` | `KRB5_DOMAIN_SID` | `S-1-5-21-1004336348-1177238915-682003330` | no | The domain SID every PAC is built under. |
-| `krb5.trustedRealm` | `KRB5_TRUSTED_REALM` | `PARTNER.COM` | no | The second realm, for cross-realm referrals (development). |
-| `krb5.trustPassword` | `KRB5_TRUST_PASSWORD` | `inter-realm-trust-password` | no | The shared secret of the cross-realm trust. |
-| `krb5.trustedDomainSid` | `KRB5_TRUSTED_DOMAIN_SID` | `S-1-5-21-2035427030-2118130302-1178042555` | no | The trusted realm's domain SID. |
-| `krb5.trustedKrbtgtPassword` | `KRB5_TRUSTED_KRBTGT_PASSWORD` | `partner-krbtgt-password` | no | The trusted realm's krbtgt password. |
+| `krb5.maxReferralHops` | `KRB5_MAX_REFERRAL_HOPS` | `5` | yes | How many trusts one cross-realm path may cross before the KDC refuses to refer it further (`KDC_ERR_PATH_NOT_ACCEPTED`). |
 | `krb5.spnegoAuthentication` | `KRB5_SPNEGO_AUTHENTICATION` | `true` | yes | Whether `/authn/spnego` may turn a ticket into a browser session. |
 | `krb5.spnegoLoginButton` | `KRB5_SPNEGO_LOGIN_BUTTON` | `true` | yes | Show "Sign in with Kerberos" on `/authn/login`. |
 | `krb5.personKeys` | `KRB5_PERSON_KEYS` | `true` | yes | Product mode only: derive and store people's keys from their passwords; off, the KDC refuses every person. |
@@ -836,8 +886,10 @@ appconfig file.
 * **Port 88 routes by the realm name in the request.** Every AS-REQ and TGS-REQ
   names a realm, so that is the discriminator; routing once, before any
   handler, means no handler can answer from the wrong realm's database.
-* **Trust realms do not trust each other's Kerberos.** A realm's KDC holds no
-  `krbtgt/<other realm>`.
+* **A trust is a record, never implied** (#430). Two trust realms trust each
+  other's Kerberos only through a trust record on each side; until 2026-10-19
+  they could not at all. The keys held decide the direction, and a path is
+  built only through transitive trusts and checked where it arrives.
 * **A full replay cache refuses rather than forgets.** Evicting an Authenticator
   still inside its window would let an attacker push a captured AP-REQ out and
   replay it.
@@ -928,8 +980,8 @@ worth keeping:
 
 Service, computer and `krbtgt` accounts keep their own distinct passwords.
 Nobody types those, and `krbtgt/EXAMPLE.COM`, `krbtgt/PARTNER.COM` and the
-trust have to hold three *different* secrets, or every assertion about which
-key sealed which ticket would pass for the wrong reason.
+trust record's key have to hold three *different* secrets, or every assertion
+about which key sealed which ticket would pass for the wrong reason.
 
 ### The misconfigured principals are the point
 
@@ -983,7 +1035,9 @@ matters.
 In development this KDC answers for both `EXAMPLE.COM` and `PARTNER.COM`, which
 a real one never does — the simplification hides finding the other realm's KDC
 (DNS and SRV records) and none of the protocol. A trust is not a setting: it is
-one principal, `krbtgt/PARTNER.COM@EXAMPLE.COM`, whose key both realms hold. Ask
+one key, `krbtgt/PARTNER.COM@EXAMPLE.COM`, which both realms hold — a trust
+record of the default realm, seeded in development (see
+[Kerberos trusts](#kerberos-trusts)). Ask
 for a service in the other realm and this KDC does not refuse; it issues a
 ticket-granting ticket for that realm sealed with the trust key and expects the
 client to notice. The trap is on the client side, which is why it is worth

@@ -419,6 +419,22 @@
     "en": "ce837804788fa2c5",
     "text": "Ingen utgång: släpps tillsammans med principalen, när dess post ersätts (ett lösenordsbyte eller en återställning), eller när den är den minst nyligen använda över gränsen; skrivs aldrig ner beständigt."
   },
+  "caches.store.krb5.trust-keys.title": {
+    "en": "9e19b75405074ba3",
+    "text": "Kerberos-förtroendenycklar mellan sfärer"
+  },
+  "caches.store.krb5.trust-keys.description": {
+    "en": "44c86730ace05ee9",
+    "text": "De krbtgt-principaler mellan sfärer som byggs från den här sfärens förtroendeposter (ou=kerberosTrusts), var och en med nycklarna härledda från dess delade lösenord eller öppnade ur dess försegling, och som hålls för varje hänvisning efter den första."
+  },
+  "caches.store.krb5.trust-keys.bound": {
+    "en": "c9282e1e84dbe9e3",
+    "text": "Tillämpas: högst 512 per sfär (två nycklar för var och en av högst 256 poster); den äldsta tas bort och byggs igen vid nästa användning."
+  },
+  "caches.store.krb5.trust-keys.lifetime": {
+    "en": "37ee5778f968cdd3",
+    "text": "Ingen utgång: ersätts så snart dess post ändras (postens byte jämförs vid varje användning) och tas bort med posten; sparas aldrig beständigt."
+  },
   "caches.store.ldap.credential-tallies.title": {
     "en": "41d340493639d53a",
     "text": "Personer och innehavare av behörighetsuppgifter, räknade"

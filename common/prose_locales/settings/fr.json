@@ -5636,8 +5636,8 @@
     "text": "Royaume"
   },
   "krb5.realm|description": {
-    "en": "b7b392027324a1ef",
-    "text": "Le royaume que sert ce KDC. Sa forme en minuscules est le domaine DNS, d’où proviennent les domaines de service par défaut et le nom de domaine du PAC. Sur un domaine de confiance, c’est le nom d’après lequel le port 88 achemine les requêtes de ce domaine : il doit être défini avant krb5.enabled, deux domaines ne peuvent pas le partager (ni krb5.trustedRealm), et la comparaison faite lors de cette vérification ne tient pas compte de la casse."
+    "en": "6542fd41442d0e39",
+    "text": "Le royaume que sert ce KDC. Sa forme en minuscules est le domaine DNS, d’où proviennent les domaines de service par défaut et le nom de domaine du PAC. Sur un domaine de confiance, c’est le nom d’après lequel le port 88 achemine les requêtes de ce domaine : il doit être défini avant krb5.enabled, deux domaines ne peuvent pas le partager (ni le domaine partenaire de développement auquel le domaine par défaut répond), et la comparaison faite lors de cette vérification ne tient pas compte de la casse."
   },
   "krb5.realm|restartReason": {
     "en": "f45bb3f394b52261",
@@ -5879,53 +5879,13 @@
     "en": "0ed445787254dab6",
     "text": "l’identité PAC de chaque principal est construite au démarrage. Un DOMAINE DE CONFIANCE peut néanmoins le porter : la base de principaux d’un domaine est construite lorsque son Kerberos est activé et reconstruite lorsque cette valeur change, si bien que rien de la valeur du domaine n’a été consommé au démarrage"
   },
-  "krb5.trustedRealm|label": {
-    "en": "83fea03ad45f6f5a",
-    "text": "Royaume approuvé"
+  "krb5.maxReferralHops|label": {
+    "en": "ae50da753613f751",
+    "text": "Nombre maximal de confiances franchies par un chemin de référence"
   },
-  "krb5.trustedRealm|description": {
-    "en": "18a007649941a47a",
-    "text": "Le second royaume, pour les référencements inter-royaumes. Une approbation n’est pas un indicateur : c’est une clé partagée détenue par un principal dans chaque royaume."
-  },
-  "krb5.trustedRealm|restartReason": {
-    "en": "b7b28d1b7d6102d8",
-    "text": "le second royaume et l’approbation entre eux sont construits au démarrage"
-  },
-  "krb5.trustPassword|label": {
-    "en": "e2d7ee2fece4c004",
-    "text": "Mot de passe de l’approbation"
-  },
-  "krb5.trustPassword|description": {
-    "en": "ef84f44ff5ee5b94",
-    "text": "Le secret partagé que les deux royaumes détiennent pour l’approbation inter-royaumes."
-  },
-  "krb5.trustPassword|restartReason": {
-    "en": "de2c8d7ceb818a8d",
-    "text": "la clé inter-royaumes en est dérivée au démarrage"
-  },
-  "krb5.trustedDomainSid|label": {
-    "en": "e860150a3e9f46b7",
-    "text": "SID du domaine approuvé"
-  },
-  "krb5.trustedDomainSid|description": {
-    "en": "7c21d4f2a2b9776a",
-    "text": "Le SID de domaine de l’autre royaume. Il diffère volontairement de celui-ci : le filtrage des SID à travers une approbation porte sur le domaine auquel appartient un SID."
-  },
-  "krb5.trustedDomainSid|restartReason": {
-    "en": "fc2b22b6756dc2a3",
-    "text": "les principaux du royaume approuvé sont construits au démarrage"
-  },
-  "krb5.trustedKrbtgtPassword|label": {
-    "en": "bb06a006346e82df",
-    "text": "Mot de passe krbtgt du royaume approuvé"
-  },
-  "krb5.trustedKrbtgtPassword|description": {
-    "en": "fc3a521802800c0d",
-    "text": "Le mot de passe krbtgt du royaume approuvé."
-  },
-  "krb5.trustedKrbtgtPassword|restartReason": {
-    "en": "5288888535130e80",
-    "text": "les clés krbtgt de ce royaume en sont dérivées au démarrage"
+  "krb5.maxReferralHops|description": {
+    "en": "e88d21d50bcd7495",
+    "text": "Combien de confiances un chemin inter-domaines peut franchir avant que ce KDC refuse de le référer plus loin (KDC_ERR_PATH_NOT_ACCEPTED). Une confiance directe compte pour un franchissement ; chaque domaine par lequel un chemin est référé en ajoute un. Les confiances elles-mêmes sont des enregistrements dans l’annuaire du domaine (ou=kerberosTrusts), et un chemin n’est construit qu’à travers des enregistrements marqués transitifs."
   },
   "krb5.spnegoAuthentication|label": {
     "en": "0a014fa4b2685cd7",

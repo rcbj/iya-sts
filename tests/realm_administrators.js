@@ -288,17 +288,16 @@ function childMain() {
                  { action: 'set', key: 'spiffe.maxRecordedConnections' }) &&
          // KERBEROS, PER KEY SINCE 2026-09-15. The rows a realm's principal
          // database is built from are the realm administrator's — it has a
-         // Kerberos realm of its own — and the two SOCKETS and the
-         // development-mode trust are still the service's. This was the
-         // `krb5.` prefix until that date, which refused all of them.
+         // Kerberos realm of its own — and the KDC's SOCKET is still the
+         // service's. This was the `krb5.` prefix until that date, which
+         // refused all of them. The development-mode trust's four settings
+         // were the service's too until #430 retired them.
          !refused(realmState, '/admin/config',
                   { action: 'set', key: 'krb5.realm' }) &&
          !refused(realmState, '/admin/config',
                   { action: 'set', key: 'krb5.enabled' }) &&
          refused(realmState, '/admin/config',
-                 { action: 'set', key: 'krb5.kdcPort' }) &&
-         refused(realmState, '/admin/config',
-                 { action: 'set', key: 'krb5.trustedRealm' }),
+                 { action: 'set', key: 'krb5.kdcPort' }),
          'settings naming the service are refused by name wherever they are ' +
          'posted, and a realm\'s own are not',
          JSON.stringify(settings && settings.settings));

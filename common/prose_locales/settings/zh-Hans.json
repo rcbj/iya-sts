@@ -5636,8 +5636,8 @@
     "text": "领域"
   },
   "krb5.realm|description": {
-    "en": "b7b392027324a1ef",
-    "text": "此 KDC 服务的 Kerberos 领域。其小写形式即为域，默认服务域和 PAC 的域名都来源于此。在信任领域上，它是端口 88 路由该领域请求所依据的名称：必须在 krb5.enabled 之前设置，任何两个领域都不能共用它（也不能与 krb5.trustedRealm 相同），检查时不区分大小写。"
+    "en": "6542fd41442d0e39",
+    "text": "此 KDC 服务的 Kerberos 领域。其小写形式即为域，默认服务域和 PAC 的域名都来源于此。在信任领域上，它是端口 88 路由该领域请求所依据的名称：必须在 krb5.enabled 之前设置，任何两个领域都不能共用它（也不能与默认领域在开发模式下所应答的伙伴领域相同），检查时不区分大小写。"
   },
   "krb5.realm|restartReason": {
     "en": "f45bb3f394b52261",
@@ -5879,53 +5879,13 @@
     "en": "0ed445787254dab6",
     "text": "每个主体的 PAC 身份在启动时构建。但信任领域仍可携带此项：领域的主体数据库在其 Kerberos 开启时构建，并在此项更改时重建，因此启动时并未使用该领域的值"
   },
-  "krb5.trustedRealm|label": {
-    "en": "83fea03ad45f6f5a",
-    "text": "受信任领域"
+  "krb5.maxReferralHops|label": {
+    "en": "ae50da753613f751",
+    "text": "引荐路径最多跨越的信任数"
   },
-  "krb5.trustedRealm|description": {
-    "en": "18a007649941a47a",
-    "text": "用于跨领域引荐的第二个领域。信任不是一个标志：它是由每个领域中的一个主体共同持有的共享密钥。"
-  },
-  "krb5.trustedRealm|restartReason": {
-    "en": "b7b28d1b7d6102d8",
-    "text": "第二个领域及两者之间的信任在启动时构建"
-  },
-  "krb5.trustPassword|label": {
-    "en": "e2d7ee2fece4c004",
-    "text": "信任密码"
-  },
-  "krb5.trustPassword|description": {
-    "en": "ef84f44ff5ee5b94",
-    "text": "两个领域为跨领域信任共同持有的共享密钥。"
-  },
-  "krb5.trustPassword|restartReason": {
-    "en": "de2c8d7ceb818a8d",
-    "text": "领域间密钥在启动时由它派生"
-  },
-  "krb5.trustedDomainSid|label": {
-    "en": "e860150a3e9f46b7",
-    "text": "受信任域 SID"
-  },
-  "krb5.trustedDomainSid|description": {
-    "en": "7c21d4f2a2b9776a",
-    "text": "另一个领域的域 SID。它有意与本领域的不同：跨信任的 SID 筛选关注的是 SID 属于哪个域。"
-  },
-  "krb5.trustedDomainSid|restartReason": {
-    "en": "fc2b22b6756dc2a3",
-    "text": "受信任领域的主体在启动时构建"
-  },
-  "krb5.trustedKrbtgtPassword|label": {
-    "en": "bb06a006346e82df",
-    "text": "受信任领域 krbtgt 密码"
-  },
-  "krb5.trustedKrbtgtPassword|description": {
-    "en": "fc3a521802800c0d",
-    "text": "受信任领域的 krbtgt 密码。"
-  },
-  "krb5.trustedKrbtgtPassword|restartReason": {
-    "en": "5288888535130e80",
-    "text": "该领域的 krbtgt 密钥在启动时由它派生"
+  "krb5.maxReferralHops|description": {
+    "en": "e88d21d50bcd7495",
+    "text": "一条跨领域路径在此 KDC 拒绝继续引荐之前最多可以跨越多少个信任（KDC_ERR_PATH_NOT_ACCEPTED）。直接信任算一次跨越；路径每经过一个被引荐的领域再加一次。信任本身是领域目录中的记录（ou=kerberosTrusts），路径只会通过标记为可传递的记录构建。"
   },
   "krb5.spnegoAuthentication|label": {
     "en": "0a014fa4b2685cd7",

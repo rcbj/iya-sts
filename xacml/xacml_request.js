@@ -175,6 +175,34 @@ const VOCABULARY = Object.freeze({
   // person, `appMayAct` on an application), as the `may_act` claim would
   // name it — the fact the `assign-may-act` question decides on.
   EXCHANGE_SUBJECT_DELEGATE: 'urn:sts:xacml:exchange:subject-delegate',
+  // THE FACTS OF A QUESTION ASKED ACROSS A KERBEROS TRUST (#430 Phase 1,
+  // defined now; the rules that read them are its Phase 3). Gathered from
+  // the trust record (`kerberos/krb5_trusts.ts`) by the Kerberos side of
+  // `delegation_policy.ts`; nothing here decides, and none is sent for a
+  // question that crossed no trust.
+  //
+  // access-subject / intermediary-subject / resource: the KERBEROS REALM the
+  // subject, the actor and the target (R) each belong to — `ALPHA.TEST` —
+  // so a rule can tell a foreign front end (`SPN@OTHER`) from a local one.
+  EXCHANGE_SUBJECT_REALM: 'urn:sts:xacml:exchange:subject-realm',
+  EXCHANGE_ACTOR_REALM: 'urn:sts:xacml:exchange:actor-realm',
+  EXCHANGE_TARGET_REALM: 'urn:sts:xacml:exchange:target-realm',
+  // environment: the partner realm whose trust the question arrived across
+  // (the realm that issued the presented ticket), the trust's type
+  // (`external` or `trust-realm`), its direction as this realm holds it
+  // (`inbound`, `outbound`, `bidirectional`), each of its attributes by name
+  // ([MS-ADTS] 6.1.6.7.9's closed set: `non-transitive`, `quarantined`,
+  // `forest-transitive`, `cross-organization`, `within-forest`,
+  // `treat-as-external`, `no-tgt-delegation`, `enable-tgt-delegation`), the
+  // realms the path crossed in order (the client's realm first, as RFC 4120
+  // section 3.3.3.2's `transited` and the issuing realm make it), and how
+  // many trusts it crossed (an integer).
+  EXCHANGE_TRUST_PARTNER: 'urn:sts:xacml:exchange:trust-partner',
+  EXCHANGE_TRUST_TYPE: 'urn:sts:xacml:exchange:trust-type',
+  EXCHANGE_TRUST_DIRECTION: 'urn:sts:xacml:exchange:trust-direction',
+  EXCHANGE_TRUST_ATTRIBUTE: 'urn:sts:xacml:exchange:trust-attribute',
+  EXCHANGE_TRUST_PATH: 'urn:sts:xacml:exchange:trust-path',
+  EXCHANGE_TRUST_HOPS: 'urn:sts:xacml:exchange:trust-hops',
   // THE FACTS OF A GNAP ACCESS RIGHT (#432 phase 3): one question per right,
   // action-id `issue-gnap-right`, the right's type (or its reference string)
   // as the resource-id. Gathered by `gnap/gnap_rights.ts`; nothing here
@@ -545,6 +573,9 @@ class AuthorizationRequest {
   //   target  { id, count, registered, requiredRoles, accepts }   (R)
   //   requestedSemantics, semantics, mayActPresent, mayActNamesActor,
   //   protectedGroups
+  //   (#430) subject.realm, actor.realm, target.realm — Kerberos realms —
+  //   and trust { partner, type, direction, attributes, path, hops } for a
+  //   question asked across a Kerberos trust; absent, none of them is sent
   // An unknown identifier is left out rather than sent as '', so no absent
   // party can ever compare equal to another. Booleans are always sent.
   exchange(facts) {
@@ -602,6 +633,27 @@ class AuthorizationRequest {
     this.environment(V.EXCHANGE_MAY_ACT_NAMES_ACTOR,
                      [!!given.mayActNamesActor], model.TYPE.BOOLEAN);
     this.environment(V.EXCHANGE_PROTECTED_GROUP, list(given.protectedGroups));
+    // #430: only when known, so a question that names no Kerberos realm is
+    // the request it always was, attribute for attribute.
+    if (subject.realm) {
+      this.subject(V.EXCHANGE_SUBJECT_REALM, one(subject.realm));
+    }
+    if (actor.realm) {
+      this.attribute(I, V.EXCHANGE_ACTOR_REALM, one(actor.realm));
+    }
+    if (target.realm) {
+      this.resource(V.EXCHANGE_TARGET_REALM, one(target.realm));
+    }
+    const trust = given.trust || null;
+    if (trust) {
+      this.environment(V.EXCHANGE_TRUST_PARTNER, one(trust.partner));
+      this.environment(V.EXCHANGE_TRUST_TYPE, one(trust.type));
+      this.environment(V.EXCHANGE_TRUST_DIRECTION, one(trust.direction));
+      this.environment(V.EXCHANGE_TRUST_ATTRIBUTE, list(trust.attributes));
+      this.environment(V.EXCHANGE_TRUST_PATH, list(trust.path));
+      this.environment(V.EXCHANGE_TRUST_HOPS, [Number(trust.hops) || 0],
+                       model.TYPE.INTEGER);
+    }
     return this;
   }
 

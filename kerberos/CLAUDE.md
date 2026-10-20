@@ -5,8 +5,9 @@ HTTP as SPNEGO (RFC 4559/4178), and **a way of signing in with it**. (The
 Kerberos-protected demonstration service and pages left for the development
 companion on #595 — *The demonstration left the runtime*, at the foot.) Twenty-one files, and they divide into three groups — the
 two stored-key modules of 2026-09-12, the two FAST modules of 2026-09-22, the
-krbtgt rotation of 2026-09-23 and the two PKINIT modules of 2026-10-05 belong
-to the service group and are described at the foot.
+krbtgt rotation of 2026-09-23, the two PKINIT modules of 2026-10-05 and the
+trust register of 2026-10-19 (#430, `krb5_trusts.ts`) belong to the service
+group and are described at the foot.
 
 **The codec**, which knows nothing about this service: `krb5_primitives.js`,
 `krb5_asn1.js`, `krb5_crypto.js`, `krb5_messages.js`, `krb5_ndr.js`,
@@ -944,17 +945,21 @@ negotiation begun under one realm's prefix could be continued under another's.
 than here because they are about a realm's OVERRIDES and must be made before
 anything is built: Kerberos on with no `krb5.realm` of its own
 (`STS-KRB-0123`), a name another realm answers to (`STS-KRB-0124`, compared
-without regard to case, including the default realm's and `krb5.trustedRealm`),
+without regard to case, including the default realm's and the development
+partner realm it answers as, PARTNER.COM — `krb5.trustedRealm` until #430),
 and a rename or clear while it is on (`STS-KRB-0125`, because every key in that
 realm's database is salted with the name).
 
-**What is still the PROCESS's**, and each for a reason that has not changed: the
-KDC's socket (`krb5.kdcPort`; `krb5.servicePort` was the other, until #595),
-and the development-mode second
-realm and its trust (`krb5.trustedRealm` and its three settings). **Trust realms
-do not trust each other's Kerberos** — rcbj's decision — so a realm's KDC holds
-no `krbtgt/<other realm>` and a service in another realm's domain is unknown
-there rather than a referral.
+**What is still the PROCESS's**, for a reason that has not changed: the KDC's
+socket (`krb5.kdcPort`; `krb5.servicePort` was the other, until #595). This
+paragraph also listed *the development-mode second realm and its trust
+(`krb5.trustedRealm` and its three settings)*, and said **trust realms do not
+trust each other's Kerberos** — rcbj's decision of 2026-09-15, so a realm's KDC
+held no `krbtgt/<other realm>`. **#430 REVERSED IT (rcbj's decision 1 on the
+ticket):** two trust realms may trust each other's Kerberos, but only through
+an explicit trust record on each side — *KERBEROS TRUSTS AS RECORDS*, below.
+The development second realm's own database (PARTNER.COM) is still the default
+realm's fixture; its trust is a seeded record.
 
 **What has no test yet:** a person keyed in a non-default realm signing in over
 SPNEGO end to end (the acceptor's realm routing is asserted in
@@ -1129,6 +1134,129 @@ RFC 3961 random-to-key per enctype, shown once at creation (Phase 4) and
 written to the partner's record by "pair" when the partner is a trust realm
 in this process.
 
+## KERBEROS TRUSTS AS RECORDS (#430 Phase 1, 2026-10-19)
+
+**A TRUST IS A DIRECTORY ENTRY, ONE PER PARTNER** (rcbj's decision 2 on #430),
+`cn=<partner Kerberos realm>,ou=kerberosTrusts,<the realm's base>`, kept by
+`krb5_trusts.ts`. The record is one JSON value (`stsKrb5TrustData`); the keys are
+`stsKrb5TrustKeys`, sealed where keys persist (`keystore.seal()`, label
+`kerberos-trust-keys`), withheld from every read in product (SECRET_ATTRIBUTES)
+and refused over the socket in both modes (`CREDENTIAL_ATTRIBUTE_DOORS`). Six
+attributes of Active Directory's trustedDomain object ([MS-ADTS] 6.1.6.7) are
+written beside it as a MIRROR for `ldapsearch` — `trustPartner`, `flatName`,
+`securityIdentifier`, `trustDirection`, `trustAttributes`, `trustType` — and are
+never read back: the JSON is the truth, so the two cannot disagree in a way that
+matters.
+
+* **THE KEYS HELD ARE THE TRUTH, THE DIRECTION IS DERIVED.** INCOMING is
+  `krbtgt/<us>@<partner>` (this realm accepts the partner's tickets), OUTGOING is
+  `krbtgt/<partner>@<us>` (this realm refers to the partner); `trustDirection` is
+  1, 2 or 3 from which are held. Each has a kvno and a source: a shared
+  PASSWORD, kept and turned into keys by `longTermKey()` with RFC 4120's
+  default salt `<issuing realm>krbtgt<other realm>`, or GENERATED (random per
+  enctype, shown once by the act that made it). Changing enctypes under a
+  generated key is refused rather than leaving a key missing.
+* **NO INTER-REALM PRINCIPAL IS IN THE PRINCIPAL DATABASE ANY MORE.**
+  `krb5_principals.js`'s `find()` answers `krbtgt/X@R` (X not R) from the
+  ambient realm's record — outgoing when R is ours, incoming when X is ours —
+  through `trustPrincipalFor()`, and `krb5_trusts.ts` caches the built principal
+  per realm against a digest of the two stored values (`krb5.trust-keys` on
+  `/admin/caches`). So nothing about a trust is a CONFIGURED principal, a
+  restored row cannot override a record, and the reconcile rules of the
+  database never meet one. A generated key cleared by the key cache's bound is
+  put back from the record (`trustKeyMaterial`).
+* **ROUTING** (`realmForService()` → `routeHost()`): the enabled record with an
+  outgoing key whose routed suffix matches the host most specifically, the
+  realm's own domain winning over a suffix no longer than it. The answer is
+  the NEXT HOP; for a realm behind the partner, the partner's KDC routes on.
+* **THE PATH** (`crossRealmPath()` in `krb5_kdc.js`, `pathProblem()` here):
+  asked before a ticket is issued from a TGT another realm issued, and before
+  any referral. The record for the issuing realm must be enabled with an
+  incoming key; a `non-transitive` one accepts the partner's own people only
+  and refers nobody onward; every realm on the path (the client's, then
+  `transited`) must be in the record's namespace (the partner or under one of
+  its suffixes) and none may be this realm; an elided hierarchy (`,,`) is
+  refused; `krb5.maxReferralHops` (realm-overridable, runtime) bounds the
+  crossings. A pass sets TRANSITED-POLICY-CHECKED (cleared from what is
+  inherited, so only the KDC that checked says so). `transited` is written
+  DOMAIN-X500-COMPRESS: the presented one's realms plus the presented ticket's
+  issuer when that is neither the client's realm nor this one. Refusals are
+  KDC_ERR_PATH_NOT_ACCEPTED (28), `STS-KRB-0226`–`0228`; a ticket through a
+  disabled trust is named as such (`STS-KRB-0229`).
+* **THE DEVELOPMENT PARTNER IS NOT CHECKED.** The default KDC also answers as
+  PARTNER.COM, a fixture of that realm's DATABASE, not a realm with a register;
+  a path into it is carried in `transited` and not checked, and no flag says it
+  was. Its trust is the seeded record of the default realm (outgoing, from the
+  password the retired `krb5.trustPassword` shipped, quarantined, routing
+  `partner.com`), written by the directory's `seed()` with
+  `krb5Trusts.seedEntries()`; a deleted seed stays deleted while the container
+  exists.
+* **TWO TRUST REALMS** pair with `pair(otherRealmId, …)`: both records in one
+  act, mirrored (this realm's outgoing is the other's incoming), from one
+  password or one generated key set, nothing written unless both validate and
+  the first taken back if the second write fails.
+* **THE FOUR SETTINGS ARE RETIRED WITH NO SHIM** (decision 3): REPLACED_SETTINGS
+  refuses a start that names `krb5.trustedRealm`, `krb5.trustPassword`,
+  `krb5.trustedDomainSid` or `krb5.trustedKrbtgtPassword`, in the appconfig file
+  or the environment (`STS-CORE-0105`). Their readers went with them:
+  `cluster.js`'s agreement list, `admin_scope.ts`'s service-only list (a trust is
+  the realm administrator's now, like its people), the three env layers, and
+  `realms.js`'s name check, which asks the principal database what the default
+  realm's KDC answers as.
+* **THE POLICY'S VOCABULARY** (`xacml/xacml_request.js`, defined now, read by
+  rules in Phase 3): `exchange:subject-realm`, `actor-realm`, `target-realm`,
+  and `trust-partner`, `trust-type`, `trust-direction`, `trust-attribute`,
+  `trust-path`, `trust-hops`, sent only for a question that names them, so every
+  existing question is the request it was.
+
+**THE SLOT (rule 3e).** `setDirectory()` takes three functions over
+`ou=kerberosTrusts`, validated whole, filled by `ldap/ldap_server.js` beside the
+key register's. It answers yes both ways round: the register is reached from the
+KDC (15) and the principal database, so a require from here to the directory
+would register every `/admin/ldap/*` page ahead of the KDC's own routes and drag
+the directory into the parent project's COPY closure; and the directory requires
+this register, so a require back is a cycle. **Without a directory** the records
+are a per-realm map of the process (`realms.map()`), seeded on first read the way
+`seed()` seeds a tree — which is what keeps PARTNER.COM's referral working in an
+in-process job that never loads the directory. The composition root builds the
+instance at 14c, right after the KDC is required, BEFORE the directory's facade
+call (a facade called first would build a default instance the root could not
+replace).
+
+**WHAT IS NOT DONE, and is the ticket's later phases:** SID filtering on arrival
+(the `quarantined` bit is recorded, on by default, and filters nothing yet —
+`krb5_kdc.js` still says so where it re-signs a PAC); the trust attributes'
+effect on ok-as-delegate ([MS-KILE] 3.3.5.7.5) and on S4U across realms; the
+product rule that a trust with SID filtering off is not honoured unless the
+realm says so (decision 4, with its setting); classic delegation across realms
+(decision 5); rotating a trust key with a grace period; the console tab and
+`/admin-api`. A record is managed through `krb5_trusts.ts`'s functions (`add`,
+`update`, `setEnabled`, `remove`, `pair`) until then.
+
+**OWED TO THE PARENT PROJECT'S COPY CLOSURE (#430).** `krb5_kdc.js` asks the
+register on EVERY TGS-REQ (`crossRealmPath()`) and `krb5_principals.js` on
+every cross-realm name and every routing miss, both through
+`principals.trustRegister()`, a LAZY `require('./krb5_trusts')` inside a `try`
+— so the four in-process jobs load it at their first TGS-REQ. The commit that
+bumps the `sts/` pin across #430 owes `COPY sts/kerberos/krb5_trusts.js
+./sts/kerberos/`, COMPILED from its `.ts` (the #186 precedent for a lazily
+reached TypeScript module; the 2026-10-13 rule that a module required AT LOAD is
+`.js` in the checkout does not apply to a lazy one), and with it
+`common/instance_slot.js` (compiled) and, reached lazily when a record is read,
+`common/keystore.js` — each wherever the parent's set does not already carry it.
+Everything else it requires at load (`helpers`, `config`, `realms`, `mode`,
+`error_codes`, `crypto`, `cache_registry`, `krb5_crypto`) is already in the
+closure. **A copy WITHOUT it loads and says so** (`STS-KRB-0225`, once) and holds
+no trust — so the parent's referral assertions in `krb5_tgs_ap.js`, which walk
+the PARTNER.COM trust, fail until the line is added. `common/realms.js`'s new
+lazy require of `krb5_principals.js` and `xacml/xacml_request.js`'s new
+vocabulary add nothing.
+
+**TESTS.** `tests/kerberos_trusts.js` (tests/CLAUDE.md has the row); the
+routing and delegation files are unchanged in what they assert, except that the
+development partner is `principals.DEV_PARTNER_REALM` where it was
+`TRUSTED_REALM`.
+
 ## PRODUCT MODE, AND THE LITERALS AN AUDIT FOUND IN THIS DIRECTORY (2026-09-12)
 
 **The DEFAULT realm's principal database is built at REQUIRE TIME in the mode the
@@ -1144,7 +1272,8 @@ the database they belong to, so the two cannot disagree.
 **What product mode (`mode.seedsDemoData()` false) does NOT create**: every entry in
 `DEFINITIONS` below `krbtgt` — alice, bob and the five misconfigured users, the
 computer account, the four delegation services with their literal passwords and their
-`msDS-*` rules — and the whole second realm (`TRUSTED_DEFINITIONS`, the trust). The
+`msDS-*` rules — and the whole second realm (`TRUSTED_DEFINITIONS`, and since #430
+its trust RECORD, which `krb5_trusts.ts` seeds in development only). The
 realm list is then one realm, so `PARTNER.COM` is `KDC_ERR_WRONG_REALM`.
 
 **What it creates, and the one refusal each carries.** `krbtgt/<realm>` and the account

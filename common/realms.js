@@ -1673,7 +1673,8 @@ function checkOverrides(overrides) {
 //      realm's own `krb5.realm`, the default realm's, or a Kerberos realm the
 //      default realm's KDC answers as besides its own (the development
 //      partner, PARTNER.COM, since #430 retired `krb5.trustedRealm`; asked of
-//      the principal database, LAZILY — it requires this file). Compared without
+//      the principal database, LAZILY — it requires this file). Compared
+//      without
 //      regard to case: Kerberos names are case-sensitive on the wire, and two
 //      realms that differ only in case are two realms a person cannot tell
 //      apart in a krb5.conf.
