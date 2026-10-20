@@ -842,8 +842,8 @@ void roles;
 // One for every page, with the nav in it, so a page cannot be added without
 // a way back — which held for the SECTIONS and did not hold for the pages under
 // them until `up` existed, because the nav's answer on a drill-down was the
-// section's own tab, drawn as text. See navBar(). The CSS is inline because
-// app.js sets `default-src 'none'` with `style-src 'unsafe-inline'`: a
+// section's own tab, drawn as text. See WebShell.navBar(). The CSS is inline
+// because app.js sets `default-src 'none'` with `style-src 'unsafe-inline'`: a
 // stylesheet as its own resource would need its own exception and would buy
 // nothing.
 //
@@ -1397,7 +1397,7 @@ const SECTIONS = [
       //
       //   * **It is drawn with `active` = `/admin/users` and an `up`**, so
       //     the Users tab is marked (as a LINK, which is what `up` means to
-      //     `navItem()`) and the trail reads
+      //     `WebShell.navItem()`) and the trail reads
       //     `Admin console › Users › New user`. All seven `respond()` calls
       //     in that handler pass it, including the two refusals and the
       //     success page — a page that lost its trail on the one response
@@ -3191,74 +3191,6 @@ class AdminConsole {
     return WebKit.listViewOf(section, query);
   }
 
-  // `up` is set on a drill-down — a page reached from a link on one of the
-  // sections below rather than one of the sections itself — and what it changes
-  // is the ACTIVE TAB.
-  //
-  // That tab was drawn as plain text on every page whose `active` matched, and
-  // `active` is the section's path on the list page and on every page
-  // underneath it alike. So on a drill-down the one control that pointed at the
-  // list was the one control this shell had turned off, and the only way back
-  // from /admin/applications?application=x was the browser's own Back button or
-  // a link at the foot of a long page. On a drill-down the tab is a LINK: still
-  // bold, because the reader is inside that section, and underlined so that
-  // "the section you are in" cannot be read as "not clickable".
-  //
-  // It is one `<nav>` holding one `<ul>` per section with a heading above it.
-  // The heading is plain text and NOT a link, for the reason the section is not
-  // a crumb: there is no page behind it. The section containing the page being
-  // drawn is marked, so a reader who arrived on a deep link can see where they
-  // are without reading every label.
-  //
-  // A GROUP inside a section is drawn as an `<li>` holding a heading and a
-  // `<ul>` of its own, rather than as a second `<ul>` beside the first: a group
-  // belongs INSIDE the section's list — it is three of that list's items said
-  // together — and a sibling list would tell a screen reader the section ended
-  // where the group began. Its heading is plain text for the same reason the
-  // section's is, and the marker on the group holding the current page is a
-  // rule down the left like the section's, one level in.
-  /**
-   * Draws the console's navigation: the realm chooser and every section.
-   *
-   * A realm administrator sees only the pages of their realm and no chooser.
-   *
-   * @param active - the path of the page being drawn
-   * @param up - upTo()'s answer on a drill-down, or nothing
-   * @param req - the request, or nothing
-   * @returns the `<nav>` as HTML
-   */
-  navBar(active, up, req) {
-    const { log, gateStateFor } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.navBar(). active=" + active);
-    // A REALM ADMINISTRATOR'S SIDEBAR (2026-09-14, #32) leaves out the pages
-    // that belong to the whole service, which the gate would refuse them, and
-    // the realm switcher, since their console is one realm. The service
-    // administrator's is unchanged.
-    const state = req ? gateStateFor(req) : null;
-    const realmOnly = !!(state && state.authority === 'realm');
-    const html = '<nav aria-label="Admin console sections">' +
-      // FIRST, inside this card rather than above it. It does not select a page
-      // — it selects which service the pages are about — but it is the first
-      // question a reader has about the column, so it is the first thing in it.
-      (realmOnly ? '' : this.realmChooser(req)) +
-      this.visibleSections(state).map(function (section) {
-        const inThisSection = self.sectionPages(section)
-          .filter(function (item) {
-          return item.path === active;
-        }).length > 0;
-        const links = section.items.map(function (item) {
-          return self.navItem(item, active, up);
-        }).join('');
-        return '<div class="navsec' + (inThisSection ? ' open' : '') + '">' +
-          '<p class="navhead" title="' + self.esc(section.what) + '">' +
-          self.esc(section.title) + '</p><ul>' + links + '</ul></div>';
-      }).join('') + '</nav>';
-    log.debug("Leaving AdminConsole.navBar(). " + SECTIONS.length +
-              " section(s).");
-    return html;
-  }
-
   // SECTIONS as one state may see it: service pages dropped for a realm
   // administrator, a group with nothing left dropped with them, and a section
   // with nothing left dropped too. The table itself is never edited.
@@ -3306,77 +3238,6 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.visibleSections(). " + out.length +
               " section(s).");
     return out;
-  }
-
-  // One row of a section's list: a page, or a group holding pages.
-  /**
-   * Draws one row of a section's list: a page, or a group holding pages.
-   *
-   * @param item - the row
-   * @param active - the path of the page being drawn
-   * @param up - upTo()'s answer on a drill-down, or nothing
-   * @returns the `<li>` as HTML
-   */
-  navItem(item, active, up) {
-    const { log } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.navItem(). " +
-              (this.isNavGroup(item) ? 'group ' + item.title
-                                                         : 'page ' +
-                                                             item.path));
-    if (!this.isNavGroup(item)) {
-      if (item.hidden) {
-        log.debug("Leaving AdminConsole.navItem(). A hidden page.");
-        return '';
-      }
-      log.debug("Leaving AdminConsole.navItem(). A page.");
-      return this.navLink(item, active, up);
-    }
-    const open = this.groupPages(item.items).filter(function (page) {
-      return page.path === active;
-    }).length > 0;
-    // A row of a group may itself be a group (none is since 2026-10-12), so
-    // each row is drawn by this method again rather than by navLink().
-    const html = '<li class="navgrp' + (open ? ' open' : '') + '">' +
-      '<p class="navsub" title="' + this.esc(item.what) + '">' +
-      this.esc(item.title) +
-      '</p><ul>' + item.items.map(function (row) {
-        return self.navItem(row, active, up);
-      }).join('') + '</ul></li>';
-    log.debug("Leaving AdminConsole.navItem(). A group of " +
-              item.items.length + " page(s).");
-    return html;
-  }
-
-  /**
-   * Draws one page's nav entry.
-   *
-   * The active page is plain text, or a link back up on a drill-down.
-   *
-   * @param item - the page's NAV row
-   * @param active - the path of the page being drawn
-   * @param up - upTo()'s answer on a drill-down, or nothing
-   * @returns the `<li>` as HTML
-   */
-  navLink(item, active, up) {
-    const { log } = this.deps;
-    log.debug("Entering AdminConsole.navLink(). path=" + item.path);
-    if (item.path === active) {
-      if (up) {
-        log.debug("Leaving AdminConsole.navLink(). Active, and a drill-down.");
-        return '<li><a class="here" href="' + this.esc(up.href) + '"' +
-               ' title="Back to ' + this.esc(up.label) + '"' +
-               // A drill-down's active item IS a link, so it is already in the
-               // tab order and must stay there — only the autofocus is added.
-               ' autofocus>' + this.esc(item.label) + '</a></li>';
-      }
-      log.debug("Leaving AdminConsole.navLink(). Active.");
-      return '<li><span class="here"' + ACTIVE_NAV_FOCUS +
-             ' aria-current="page">' + this.esc(item.label) + '</span></li>';
-    }
-    log.debug("Leaving AdminConsole.navLink().");
-    return '<li><a href="' + this.esc(item.path) + '">' + this.esc(item.label) +
-           '</a></li>';
   }
 
   /**
@@ -3447,39 +3308,6 @@ class AdminConsole {
     const here = String(req.originalUrl || '/admin');
     log.debug("Leaving AdminConsole.realmRelativePath().");
     return here.slice(realms.currentPrefix().length) || '/admin';
-  }
-
-  /**
-   * Draws the trust realm switcher, a GET form to the realm switch route.
-   *
-   * @param req - the request
-   * @returns the form as HTML; empty when no realm is defined
-   */
-  realmChooser(req) {
-    const { log, realms } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.realmChooser().");
-    if (!realms.active()) {
-      log.debug("Leaving AdminConsole.realmChooser(). No realms are defined.");
-      return '';
-    }
-    const currentId = realms.currentId();
-    const options = realms.list().map(function (realm) {
-      return '<option value="' + self.esc(realm.id) + '"' +
-        (realm.id === currentId ? ' selected' : '') + '>' +
-        self.esc(realm.name) + '</option>';
-    }).join('');
-    log.debug("Leaving AdminConsole.realmChooser(). " + realms.count() +
-              " realm(s).");
-    return '<form class="realmpick" method="get" action="' +
-      this.esc(this.realmRoot(req) + REALM_SWITCH_PATH) + '">' +
-      '<label for="realmpick">Trust realm</label>' +
-      '<input type="hidden" name="to" value="' +
-        this.esc(this.realmRelativePath(req)) + '">' +
-      '<div class="realmpickrow">' +
-        '<select id="realmpick" name="realm">' + options + '</select>' +
-        '<button class="secondary">Go</button>' +
-      '</div></form>';
   }
 
   // ---------------------------------------------------------------------------
@@ -8939,9 +8767,6 @@ const ONE_LINE_CHARS = WebKit.ONE_LINE_CHARS;
 // browser carries the same names.
 const LIST_PARAMS = WebKit.LIST_PARAMS;
 
-// One page's link. Split out of navBar() when groups arrived so that a page
-// draws the same way at either depth — the active-tab-is-a-link rule above is
-// the kind that gets applied to one of two copies.
 // WHAT SCROLLS THE SIDEBAR TO THE PAGE YOU ARE ON (2026-09-05).
 //
 // `nav` is its own scroll container — `.side` is sticky and the card inside it
