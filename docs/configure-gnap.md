@@ -257,3 +257,486 @@ POST /gnap
 The answer carries `access_token` and no `interact`. A right whose type
 declares `interaction: always`, or names a `consentActions` action, still needs
 the person, and is refused `invalid_interaction` when no interaction is offered.
+
+---
+
+# Access rights
+
+## Declare an access type
+
+An access right's `type` (RFC 9635 section 8) is declared by the resource
+server that owns it, in the **access-type catalogue**. GNAP and OAuth's rich
+authorization requests (RFC 9396) read the same catalogue: the resource
+server's `oauthAuthorizationDetailsType`. A right of a declared type that
+names no location is for its owning resource server. What each member does
+is listed in [GNAP → Access types](gnap.md#one-catalogue-for-gnap-and-rfc-9396).
+
+Taken from `sts_gnap_catalogue.js`.
+
+**Console:**
+1. Open the resource server's page (**Directory → Applications**, then its
+   row) and its **Access types** tab.
+2. Under **Declare or replace a type**, fill in:
+   - **Type**: `cat-payment`
+   - **Description**: `Initiate and track a payment`
+   - **Actions**: `initiate`, `status` and `refund`, one per line
+   - **Required members**: `actions`
+   - **Bearer token**: `false`
+   - **Maximum token lifetime (s)**: `120`
+   - **Introspection claims**: `email`
+   - **Limits schema**:
+     `{"type":"object","properties":{"amount":{"type":"number","minimum":0},"currency":{"type":"string"}},"required":["amount"],"additionalProperties":false}`
+3. Click **Save the type**.
+
+A type of the same name is replaced. **Remove** beside a type takes it off.
+
+**API:**
+```bash
+api applications/set-access-type '{
+  "application": "gnap-rs-1", "type": "cat-payment",
+  "description": "Initiate and track a payment",
+  "actions": ["initiate", "status", "refund"],
+  "requiredMembers": ["actions"],
+  "bearer": false, "maxLifetimeS": 120, "introspectionClaims": ["email"],
+  "limits": {"type": "object",
+             "properties": {"amount": {"type": "number", "minimum": 0},
+                            "currency": {"type": "string"}},
+             "required": ["amount"], "additionalProperties": false}}'
+
+api applications/remove-access-type '{"application":"gnap-rs-1","type":"cat-payment"}'
+```
+
+A list may be an array or text with one value per line. `requiredMembers` is
+stored as the definition's `required`. A definition that does not read is
+refused with the reason (`STS-REG-0294`), and the type already declared stays.
+`GET /admin-api/applications?application=gnap-rs-1` shows the definitions,
+under `oauthAuthorizationDetailsType`.
+
+With that type declared, a right such as
+`{"type":"cat-payment","actions":["status","initiate"],"limits":{"amount":25,"currency":"EUR"}}`
+is granted, its token lives at most 120 seconds and is audienced to
+`gnap-rs-1`. These are refused:
+
+| Request | Refusal |
+|---|---|
+| the `bearer` flag on a token carrying the type | `request_denied` |
+| an action the type does not list, such as `delete` | `invalid_request` |
+| `limits` the schema refuses, such as `{"amount":-5}` | `invalid_request` |
+| `limits` on a type that declares no limits schema | `invalid_request` |
+
+## Who must be asked, per type
+
+Three more members decide whether the resource owner sees the approval page
+and how strongly they must be signed in. Taken from
+`sts_gnap_interaction.js`, which declares one type of each kind:
+
+```bash
+api applications/set-access-type '{"application":"int-rs","type":"int-never","interaction":"never"}'
+api applications/set-access-type '{"application":"int-rs","type":"int-always","interaction":"always"}'
+api applications/set-access-type '{"application":"int-rs","type":"int-default",
+  "actions":["read","delete"],"consentActions":["delete"]}'
+api applications/set-access-type '{"application":"int-rs","type":"int-mfa","acr":"mfa"}'
+```
+
+In the console these are the **Interaction (phase 6)**, **Actions forcing
+consent (phase 6)** and **Authentication level (phase 6)** boxes of the same
+form.
+
+| Type | What happens |
+|---|---|
+| `int-never` | Issued to any client, acting as itself, with nobody asked. |
+| `int-default` with `read` | A trusted client (`gnapSkipInteraction`) skips the page. A remembered approval skips it too. |
+| `int-default` with `delete` | `delete` is a consent action, so the person sees the page every time. |
+| `int-always` | The person sees the page every time, whatever the client and whatever they approved before. |
+| `int-mfa` | The person's sign-in must meet `mfa`. A password-only session is sent to sign in again, and refused `request_denied` if it comes back short. |
+
+## Access references and resource sets
+
+A right may also be a plain string, an **access reference**. A resource
+server can register a resource set and get a reference for it (RFC 9767
+section 3.4), which also fixes the token formats it accepts. Taken from
+`sts_gnap_rs.js`.
+
+**Request**, signed with the resource server's key:
+```json
+POST /gnap/resource
+{"access": [{"type": "https://rs.gnap.test/photos", "actions": ["read"],
+             "locations": ["https://rs.gnap.test/api"]}],
+ "resource_server": {"key": {"proof": "httpsig", "jwk": {…}}},
+ "token_formats_supported": ["macaroon"]}
+→ 200 {"resource_reference": "…", "introspection_endpoint": "…/gnap/introspect"}
+```
+
+The same set registered again returns the same reference. A set whose only
+format this server does not issue is refused `invalid_request`, and so is an
+empty `access`. The job declares the photos type on the resource server first
+(`oauthAuthorizationDetailsType`), because product mode refuses an undeclared
+type.
+
+A client then asks for the reference: `"access": ["<resource_reference>"]`.
+A reference nobody registered is carried onto the token while
+`gnap.unknownAccessReferences` is `accept` (the default). Set it to `refuse`
+to answer `request_denied` instead.
+
+Registered sets are listed on **Protocols → GNAP → Registered resource sets**
+with a **Delete** on each. Through the API:
+```bash
+api gnap/delete-resource-set '{"reference":"<resource_reference>"}'
+```
+Tokens already issued keep the rights they carry.
+
+---
+
+# The grant
+
+## Redirect interaction, redirect finish
+
+The usual grant. A person approves in a browser and comes back to the
+client's finish URI. Taken from `gnap_flow.js` (`redirectGrant`), which every
+GNAP job uses.
+
+**1. The grant request**, signed with the client's key:
+```json
+POST /gnap
+{"access_token": {"access": [{"type": "cat-payment", "actions": ["status"]}]},
+ "client": {"key": {"proof": "httpsig", "jwk": {…}},
+            "display": {"name": "GNAP job", "uri": "https://client.gnap.test/"}},
+ "interact": {"start": ["redirect"],
+              "finish": {"method": "redirect",
+                         "uri": "https://client.gnap.test/callback",
+                         "nonce": "n-<random>"}}}
+```
+
+The answer carries `interact.redirect` (a `/gnap/interact/{id}` URI),
+`interact.finish` (the server's nonce), `interact.expires_in`, a `continue`
+object with `uri`, `access_token.value` and `wait`, and, with
+`gnap.instanceIds` on, an `instance_id`.
+
+**2. The person.** The client sends the person to `interact.redirect`. It
+forwards to the approval page, `/gnap/approve/{id}`, which asks them to sign
+in first. The page needs scripts. If `gnap.consentRequired` is off, the page
+is skipped once they have signed in.
+
+**3. The finish.** The person's browser returns to the finish URI with `hash`
+and `interact_ref`. The client checks the hash (section 4.2.3): base64url of
+SHA-256 over its own nonce, the server's nonce, `interact_ref` and the grant
+endpoint URI, joined by newlines.
+
+**4. The continuation**, signed with the same key:
+```
+POST <continue.uri>
+  Authorization: GNAP <continue.access_token.value>
+  {"interact_ref": "<interact_ref>"}
+```
+The answer carries `access_token` (its `value`, `expires_in`, `access` and,
+with `gnap.tokenManagement` on, a `manage` object) and a new `continue`.
+
+The client presents the token at the resource server as
+`Authorization: GNAP <token>`, signed with its key. Another key, or no
+signature, is refused there. An `interact_ref` presented twice is
+`too_many_attempts`.
+
+If the person clicks deny, the finish still happens, and the continuation
+answers with no `access_token`.
+
+**Settings** (console: **Protocols → GNAP → Settings**):
+
+| Setting | Default | Why you would change it |
+|---|---|---|
+| `gnap.interactionLifetimeS` | `600` | How long the interaction URIs and user codes stay usable. |
+| `gnap.continueWaitS` | `5` | The `wait` the client is told; continuing sooner is `too_fast`. |
+| `gnap.consentRequired` | `true` | Off approves as soon as the person signs in. |
+| `gnap.rememberApprovals` | `true` | Off asks the person again every time. |
+| `gnap.interactionStartModes` | `redirect,app,user_code,user_code_uri` | Removes a start mode for the whole realm. |
+
+## User code and app interaction
+
+For a device with no browser. Taken from `sts_gnap_core.js` (section 5).
+
+**Request:**
+```json
+POST /gnap
+{"access_token": {"access": […]},
+ "client": {"key": {…}},
+ "interact": {"start": ["user_code", "user_code_uri", "app"]}}
+```
+
+The answer carries `interact.user_code` (`gnap.userCodeLength` characters,
+8 by default), `interact.user_code_uri` with the same `code` and a `uri`, and
+`interact.app`, a `/gnap/app/{id}` URI. There is no finish, so the client
+polls its `continue.uri` until the person has approved; before that the
+answer carries a new `continue` and no token. The person enters the code at
+`/gnap/code`. It is not case-sensitive, and spaces and hyphens are ignored.
+
+Polling sooner than `wait` is refused `too_fast` (`sts_gnap_core.js` section 13
+sets `gnap.continueWaitS` to `30` to show it). After `gnap.maxPolls` polls
+(60) the grant is finalized with `too_many_attempts`.
+
+## Push finish
+
+The server POSTs `{hash, interact_ref}` as JSON to the client's push URI
+instead of redirecting the browser. Taken from `sts_gnap_core.js` (section 6).
+
+```json
+"interact": {"start": ["redirect"],
+             "finish": {"method": "push", "uri": "https://client.gnap.test:8443/push",
+                        "nonce": "n-<random>"}}
+```
+
+* Register the push URI in `gnapFinishUri`; product mode uses no other.
+* The push URI must be `https`. To trust a listener certified by your own CA,
+  put the CA in a PEM file the service can read and set `gnap.pushCaFile` to
+  its path. The job does this rather than skipping verification, so that it
+  passes in product mode.
+* `gnap.pushAllowedHosts` limits the hosts a push may go to.
+  `gnap.pushTimeoutMs` (5000) bounds it. `gnap.pushFinish` off stops every push.
+
+The push URI and port above are illustrations; the job picks its own port.
+
+## Several tokens, bearer tokens and subject information
+
+Taken from `sts_gnap_core.js` (section 7).
+
+```json
+"access_token": [{"label": "bound", "access": […]},
+                 {"label": "carry", "access": […], "flags": ["bearer"]}],
+"subject": {"sub_id_formats": ["opaque", "iss_sub", "email"],
+            "assertion_formats": ["id_token", "saml2"]}
+```
+
+* With several tokens, each needs a `label`, and labels must differ. The
+  answer is an array, one token per label.
+* A `bearer` token is presented without a signature. `gnap.bearerTokens` off,
+  or `gnapBearerTokens` `FALSE` on the client, refuses the flag with
+  `invalid_flag`.
+* Subject information is released only if the person leaves **Who you are**
+  ticked on the approval page. The formats offered are `gnap.subIdFormats` and
+  `gnap.assertionFormats`.
+
+## A grant that waits for an absent person
+
+A request may name a person who is not at the browser, or offer no
+interaction at all. With `gnap.ownerApproval` on (off by default), the grant
+waits for that person on their portal, under **Sign-in requests**
+(`/portal/ciba`), while the client polls. Taken from
+`sts_gnap_interaction.js` (section 5).
+
+```bash
+api config/set '{"key":"gnap.ownerApproval","value":"true"}'
+api config/set '{"key":"gnap.ownerApprovalLifetimeS","value":"300"}'
+```
+
+```json
+POST /gnap
+{"access_token": {"access": [{"type": "int-default", "actions": ["read"]}]},
+ "client": {"key": {…}},
+ "user": {"sub_ids": [{"format": "email", "email": "owner@gnap.test"}]}}
+```
+
+The answer carries `continue` and no token. The `wait` is long enough that
+`gnap.maxPolls` polls cover the lifetime. Approved, the next poll collects
+the tokens; denied, it is `user_denied`. One person may have at most
+`gnap.ownerApprovalMaxPending` (5) waiting.
+
+---
+
+# After the grant
+
+## Modify or revoke a grant
+
+Taken from `sts_gnap_core.js` (section 8). Both requests are signed and carry
+`Authorization: GNAP <continue.access_token.value>`.
+
+```
+PATCH <continue.uri>
+  {"access_token": {"access": [{"type": "…", "actions": ["read"]}]}}
+
+DELETE <continue.uri>
+  → 204
+```
+
+* Narrowing the access issues a new token with no interaction. Widening it
+  needs the person again: with no interaction offered it is `request_denied`.
+* A modification may not carry `client` (`invalid_request`).
+* While `gnap.revokeOnModify` is on (the default), a modification revokes the
+  grant's earlier tokens, unless they were issued `durable`
+  (`gnap.durableTokens`, off by default).
+* `DELETE` revokes the grant and every token issued under it.
+
+An administrator revokes a grant on **Protocols → GNAP → Grants**, with
+**Revoke**, or on the person's **GNAP grants** tab. The person can revoke it
+themselves on `/portal/gnap`. Through the API:
+```bash
+api gnap/revoke-grant '{"grant":"<grant id>"}'
+api gnap/revoke-grant '{"grant":"<grant id>","user":"<username>"}'   # only if that person approved it
+```
+`GET /admin-api/gnap` lists the grant ids. `GET /admin-api/users?user=<name>`
+lists a person's as `gnapGrants`.
+
+## Rotate, rekey and revoke a token
+
+Each token issued with `gnap.tokenManagement` on carries `manage.uri` and
+`manage.access_token`. Taken from `sts_gnap_core.js` (section 9). Each
+request carries `Authorization: GNAP <manage.access_token.value>`.
+
+| Request | What it does |
+|---|---|
+| `POST <manage.uri>` with no body | Rotates the token: a new value with the same access, and a new `manage`. The old value and the old management token stop working (`invalid_rotation`). |
+| `POST <manage.uri>` with `{"key": <new key object>}`, signed by the old key **and** the new one | Rotates the client's key (section 6.1.1). Signed by the old key alone, it is `invalid_rotation`. |
+| `DELETE <manage.uri>` | Revokes the token: `204`. |
+
+With an HTTP signature, the new key signs over the old signature
+(`tag="gnap-rotate"`, covering `"signature";key="sig1"` and
+`"signature-input";key="sig1"`). With `jwsd` and `jws`, the proof is nested
+(sections 7.3.3.1 and 7.3.4.1). A bearer token's key cannot be rotated.
+`gnap.keyRotation` off answers `key_rotation_not_supported`.
+
+## Introspection (RFC 9767 section 3.3)
+
+A resource server asks about a token it was given, signed with its own key.
+Taken from `sts_gnap_catalogue.js` (section 2).
+
+```json
+POST /gnap/introspect
+{"access_token": "<token>", "resource_server": {"key": {…}}}
+→ {"active": true, "access": […], …}
+```
+
+Each resource server sees only the rights of its own types, and the person's
+claims its type lists in `introspectionClaims`. `gnap.introspection` off turns
+the endpoint off. The RS-facing discovery document is
+`/.well-known/gnap-as-rs`.
+
+## Token derivation (RFC 9767 section 4)
+
+A resource server exchanges a token it was given for one to a downstream
+resource server, with no more access. Taken from `sts_gnap_rs.js` (section 4)
+and `sts_gnap_delegation.js` (section II).
+
+**Register the relationship.** The deriving resource server's
+`appAllowedToDelegateTo` names the downstream one (or the downstream one's
+`appAllowedToActOnBehalfOf` names the deriving one). In the console:
+**Add to** `appAllowedToDelegateTo` on the deriving server's page. Through
+the API:
+```bash
+api applications/add '{"application":"gd-rs-a","attribute":"appAllowedToDelegateTo","value":"gd-rs-b"}'
+```
+
+**Request**, signed with the deriving resource server's key:
+```json
+POST /gnap
+{"client": {"key": {…}},
+ "existing_access_token": "<the token it was handed>",
+ "access_token": {"access": [ … no more than that token carries … ]}}
+```
+
+More access than the original is `request_denied`, unless the catalogue
+declares the new type `derivableFrom` a type the original carries. A
+resource server the token was not issued for cannot derive from it. At most
+`gnap.maxDerivationDepth` (2) derivations are allowed, and
+`gnap.tokenDerivation` off refuses them all. Without the relationship,
+product mode refuses `request_denied` and development mode issues the token
+and records the refusal it would have been. The derived token names the
+chain in `act`.
+
+## Impersonation: a trusted client acting for a person
+
+A trusted client may present an ID Token or SAML assertion about a person in
+`user` and get tokens for that person with nobody asked. This is decided by
+the same [delegation and impersonation](delegation.md) policy as OAuth token
+exchange. Taken from `sts_gnap_delegation.js` (section I).
+
+**Register the client:**
+```bash
+api applications/create '{
+  "identifier": "gd-imp", "kind": "gnap-client", "protocols": ["gnap"],
+  "fields": {"gnapKey": "{\"proof\":\"httpsig\",\"jwk\":{…}}",
+             "gnapSkipInteraction": "TRUE",
+             "gnapFinishUri": ["https://client.gnap.test/callback"],
+             "appDelegationSemantics": ["impersonation"],
+             "appAllowedToDelegateTo": ["gd-rs-a", "gd-rs-b", "gd-rs-c"]}}'
+```
+In the console: create it as a client, then **Set** `gnapSkipInteraction` to
+`TRUE` and **Add to** `appDelegationSemantics` and `appAllowedToDelegateTo`.
+
+**Request:**
+```json
+POST /gnap
+{"client": {"key": {…}},
+ "access_token": {"access": [{"type": "https://rs.gnap.test/photos",
+                              "actions": ["read"],
+                              "locations": ["https://rs-a.deleg.test/api"]}]},
+ "user": {"assertions": [{"format": "id_token", "value": "<ID Token>"}]}}
+```
+
+The ID Token must have been issued **to this client**. The job gets one from
+an ordinary grant that asked for `"subject": {"assertion_formats":
+["id_token"]}`. An assertion issued to another client is refused
+`unknown_user`. A client without `impersonation` in its semantics is refused
+in product mode. Every act is listed on **Monitoring → Delegation** under
+protocol `GNAP`.
+
+## A client that proves its key with mutual TLS
+
+The key is the TLS client certificate: `{"proof": "mtls", "cert":
+"<base64 DER>"}`. `gnap.keyProofs` includes `mtls` by default, and it needs
+the main port on HTTPS. Taken from `sts_gnap_mtls.js`.
+
+* **Pinned** (`gnap.mtlsTrust` `pinned`, development's `auto`): register the
+  certificate itself as `gnapKey`. A self-signed one is fine.
+* **PKI** (`pki`, product's `auto`): the certificate must chain to the client
+  truststore and be bound to the entry. The simplest way is to issue it from
+  this realm's CA to the application:
+
+```bash
+api pki/build '{"organisation":"Gnapmtls","country":"US"}'       # once per realm
+api applications/issue-tls-client-certificate '{"application":"pki-issued",
+  "password":"<file password>","keyAlg":"ec-p256","label":"first"}'
+```
+
+In the console the issue button is on the application's **Credentials** tab
+(**Issue a TLS client certificate from this realm's CA**). It is drawn for an
+application declared for OAuth 2.0 or **TLS / mutual TLS**, so tick that
+family as well as GNAP. Under PKI a certificate can be replaced at the
+authority with no change to the registration, and a revoked one is refused in
+both models. `gnapMtlsTrust` `pki` on one entry makes it stricter than a
+pinned realm; `pinned` in a PKI realm is refused (`STS-REG-0196`).
+
+---
+
+# The server
+
+## Named authorization servers
+
+Each named authorization server profile is also a GNAP authorization server,
+at `/<profile>/gnap`, and may override the discovery members. What it
+publishes is what its grant endpoint enforces. Taken from `sts_gnap_core.js`
+(section 12):
+
+```bash
+api authorization-servers/set '{"profile":"gnapas1",
+  "member":"interaction_start_modes_supported","value":"[\"user_code\"]"}'
+```
+After this, `OPTIONS /gnapas1/gnap` lists only `user_code`, and a
+`redirect` request there is refused `invalid_interaction`. The profiles are
+on `/admin/authorization-servers`.
+
+## Shared Signals
+
+A grant or token revoked sends CAEP `session-revoked`, and a modified grant
+sends `token-claims-change`, while `gnap.caepEvents` is on. A GNAP application
+can own a Shared Signals stream with its GNAP token: declare `ssf.read` and
+`ssf.manage` in its `oauthAllowedScope`, ask for them as access rights, and
+present the token to `/ssf/stream` with the `GNAP` scheme and a signature.
+Taken from `sts_gnap_signals.js`. See
+[Configuring Shared Signals](configure-shared-signals.md) for the stream
+itself, and [GNAP → Shared Signals](gnap.md#shared-signals) for which events
+such a stream hears.
+
+## Related
+
+* [GNAP](gnap.md): what each feature does, and every setting.
+* [Delegation and impersonation](delegation.md): the policy derivation and impersonation are decided by.
+* [Applications](applications.md): the registry these recipes write to.
+* [Management API](management-api.md): the token, and the OpenAPI document at `/admin-api/openapi.json`.
+* [Configuring OAuth 2.0 grants](configure-oauth2-grants.md) and [Configuring Shared Signals](configure-shared-signals.md).
