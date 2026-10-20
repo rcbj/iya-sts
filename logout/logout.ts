@@ -3427,6 +3427,10 @@ class Logout {
         : '<div class="warn">' + t.html('logout.result.nothingEnded') +
           '</div>') +
       federationSlo.renderPartnerLogouts(result.partnerLogouts || []) +
+      // Close the tab (rcbj, 2026-10-20), after the partner sign-outs, which
+      // are steps to take in this tab first. web_signout_pages.ts draws the
+      // same sentence on the static page.
+      '<p><strong>' + t.html('logout.result.closeTab') + '</strong></p>' +
       '<p class="sub">' + t.html('logout.result.seeDetails') + '</p>' +
       // The way on (rcbj, 2026-10-12): root-relative, so app.js puts it
       // under the realm on the way out.
