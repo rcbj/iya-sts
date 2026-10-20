@@ -2039,6 +2039,10 @@
     "en": "9d8cd20df8e552da",
     "text": "sumusulat sa LDAP directory — ang application entry, sa pamamagitan ng parehong function na naaabot ng isang ldapadd"
   },
+  "stsmetadata.endpoints./admin-api/saml-idp-initiated.what": {
+    "en": "21744c52a0800ce5",
+    "text": "HINDI-SPEC (#749). Ang mga SAML 2.0 service provider at SAML 1.1 relying party na pinapayagan ang pag-sign in na sinimulan ng identity provider — ang setting ng realm o ang override ng entry, na itinatanong sa function na itinatanong ng /launch/{app} — isang hilera bawat application at pamilya, bawat isa ay may sariling /launch link at ang sariling unsolicited endpoint ng protocol, naka-page. Sinasalamin ang tab na IdP-Initiated SSO ng /admin/saml2."
+  },
   "stsmetadata.endpoints./admin-api/saml-attributes.what": {
     "en": "e35e055c9faedc42",
     "text": "NON-SPEC. Ang dalawang SAML attribute set ng parehong store, ang katalogo ng mga LDAP attribute type na pinagpipilian ng mga ito, at ang nag-iisang patakarang sa kanila: ang AttributeNamespace na nakukuha ng SAML 1.1 attribute kapag hindi ito pinangalanan ng tawag. Walang reserved-name list dito at ang kawalang iyon ang sagot — patakaran ng JWT ang listahang iyon. Kapareho ng GET /admin/saml-attributes."

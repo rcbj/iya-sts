@@ -6805,6 +6805,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'optional and buys two things — a metadata document to hand ' +
           'somebody, and a NAME to put in providerId so the audience is not ' +
           'guessed. Mirrors POST /admin/saml11.' },
+  { path: '/admin-api/saml-idp-initiated', group: 'Management API',
+    name: 'SAML applications a sign-in may start here for',
+    specs: ['saml2-profiles', 'saml11-profiles'],
+    what: 'NON-SPEC (#749). The SAML 2.0 service providers and SAML 1.1 ' +
+          'relying parties for which an identity-provider-initiated ' +
+          'sign-in is allowed — the realm setting or the entry\'s ' +
+          'override, asked through the function /launch/{app} asks — one ' +
+          'row per application and family, each with its /launch link and ' +
+          'the protocol\'s own unsolicited endpoint, paged. Mirrors the ' +
+          'IdP-Initiated SSO tab of /admin/saml2.' },
   { path: '/admin-api/saml-attributes', group: 'Management API',
     name: 'Custom SAML attributes',
     specs: ['saml2', 'saml11'],

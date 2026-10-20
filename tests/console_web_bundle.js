@@ -1124,7 +1124,7 @@ function childMain() {
     const samlTabIds = [
       'saml-tab-metadata', 'saml-tab-global-settings',
       'saml-tab-shared-settings', 'saml-tab-saml2', 'saml-tab-saml11',
-      'saml-tab-assertions', 'saml-tab-attributes'
+      'saml-tab-idp-initiated', 'saml-tab-assertions', 'saml-tab-attributes'
     ];
     const samlMetadataTab =
       /<section class="tabpanel first" id="saml-tab-metadata">([\s\S]*?)<\/section>/
@@ -1196,12 +1196,15 @@ function childMain() {
       'consoleSaml.saml2.intro');
     const saml11Intro = WebKit.context({}, true).t.html(
       'consoleSaml.saml11.intro');
-    note(samlTabIds.every(function (id) {
-      return samlHtml.indexOf('id="' + id + '"') >= 0;
+    note(samlTabIds.every(function (id, n) {
+      return samlHtml.indexOf('id="' + id + '"') >= 0 &&
+        (n === 0 || samlHtml.indexOf('id="' + samlTabIds[n - 1] + '"') <
+                    samlHtml.indexOf('id="' + id + '"'));
     }) && !!samlMetadataTab && !!samlGlobalTab && !!samlSharedTab &&
          !!saml2Tab && !!saml11Tab && !!samlAssertionTab &&
          !!samlAttributeTab,
-         'D-SAML-tabs. the combined SAML page has all seven peer tabs',
+         'D-SAML-tabs. the combined SAML page has all eight peer tabs, in ' +
+         'order',
          samlTabIds.filter(function (id) {
            return samlHtml.indexOf('id="' + id + '"') < 0;
          }).join(', '));

@@ -2039,6 +2039,10 @@
     "en": "9d8cd20df8e552da",
     "text": "écrit dans l’annuaire LDAP — l’entrée de l’application, par la même fonction qu’atteint un ldapadd"
   },
+  "stsmetadata.endpoints./admin-api/saml-idp-initiated.what": {
+    "en": "21744c52a0800ce5",
+    "text": "NON STANDARD (#749). Les fournisseurs de services SAML 2.0 et les parties de confiance SAML 1.1 pour lesquels une connexion initiée par le fournisseur d’identité est autorisée — le paramètre du domaine ou la surcharge de l’entrée, interrogés par la fonction qu’interroge /launch/{app} — une ligne par application et par famille, chacune avec son lien /launch et le point de terminaison non sollicité propre au protocole, paginées. Reflète l’onglet IdP-Initiated SSO de /admin/saml2."
+  },
   "stsmetadata.endpoints./admin-api/saml-attributes.what": {
     "en": "e35e055c9faedc42",
     "text": "NON-SPEC. Les deux ensembles d’attributs SAML du même stockage, le catalogue des types d’attributs LDAP parmi lesquels ils choisissent, et la seule règle qui leur est propre : l’AttributeNamespace que reçoit un attribut SAML 1.1 lorsque l’appel n’en nomme pas. Il n’y a pas de liste de noms réservés ici et cette absence est la réponse — cette liste est une règle JWT. Équivalent de GET /admin/saml-attributes."

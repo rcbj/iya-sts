@@ -2039,6 +2039,10 @@
     "en": "9d8cd20df8e552da",
     "text": "寫入 LDAP 目錄——應用程式項目，透過 ldapadd 所到達的同一個函式"
   },
+  "stsmetadata.endpoints./admin-api/saml-idp-initiated.what": {
+    "en": "21744c52a0800ce5",
+    "text": "非規範（#749）。允許身分提供者發起登入的 SAML 2.0 服務提供者和 SAML 1.1 信賴方——領域設定或項目的覆寫，透過 /launch/{app} 所詢問的同一函式詢問——每個應用程式和協定族一列，每列附有其 /launch 連結和該協定本身的非請求端點，分頁顯示。對應 /admin/saml2 的 IdP-Initiated SSO 分頁。"
+  },
   "stsmetadata.endpoints./admin-api/saml-attributes.what": {
     "en": "e35e055c9faedc42",
     "text": "非規範。同一儲存區的兩個 SAML 屬性集、它們從中選擇的 LDAP 屬性型別目錄，以及專屬於它們的一條規則：呼叫未指名時 SAML 1.1 屬性所得到的 AttributeNamespace。這裡沒有保留名稱清單，而這個缺席本身就是答案——那份清單是 JWT 的規則。對應 GET /admin/saml-attributes。"

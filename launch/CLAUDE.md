@@ -6,7 +6,7 @@
 library so that the account API and the management API can require it long
 before this route is registered.
 
-## One URL, three readers
+## One URL, four readers
 
 The same URL is:
 
@@ -16,6 +16,15 @@ The same URL is:
 * the card at the top of each protocol sub-tab of the application in the
   console (the management API's application view carries `launchUrls`, so a
   script reads the same thing);
+* the **IdP-Initiated SSO** tab of Protocols → SAML (#749), one row per SAML
+  2.0 or SAML 1.1 application whose switch is on, from
+  `GET /admin-api/saml-idp-initiated`
+  (`admin-core/admin_views.ts`, `samlIdpInitiatedJson()`). **It decides
+  which rows with `LaunchLinks.protocolsOf()` and `LaunchLinks.enabled()`,
+  this door's own two questions**, so it cannot list an application the door
+  refuses with STS-LAUNCH-0005; a row `missingOf()` reports as lacking an
+  assertion consumer service is listed WITH that, not dropped, because the
+  switch is on and the link answers STS-LAUNCH-0006 until it is fixed;
 * whatever an operator pastes elsewhere — a bookmark, an intranet page.
 
 They are one URL on purpose. A portal that linked straight to

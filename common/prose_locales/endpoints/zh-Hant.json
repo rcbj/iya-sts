@@ -1103,6 +1103,10 @@
     "en": "f507cdd5e7327df3",
     "text": "SAML 1.1 依賴方動作"
   },
+  "endpoints.route./admin-api/saml-idp-initiated.name": {
+    "en": "70297dbc6d423d65",
+    "text": "可以從這裡發起登入的 SAML 應用程式"
+  },
   "endpoints.route./admin-api/saml-attributes.name": {
     "en": "e9808df4bc485128",
     "text": "自訂 SAML 屬性"

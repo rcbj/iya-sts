@@ -808,9 +808,15 @@ const PAGES: WebPage[] = [
       saml11: '/admin-api/saml11',
       saml11Detail: '/admin-api/saml11',
       assertions: '/admin-api/saml-assertions',
-      attributes: '/admin-api/saml-attributes'
+      attributes: '/admin-api/saml-attributes',
+      // THE IdP-INITIATED SSO TAB (#749): always asked, and handed its own
+      // page (`idpInitiatedPage`) and the shared `per`, so its pager moves
+      // its list and not the SAML 2.0 tab's `page`.
+      idpInitiated: '/admin-api/saml-idp-initiated'
     },
-    composeWhen: { saml11Detail: ['rp'] },
+    composeWhen: { saml11Detail: ['rp'],
+                   idpInitiated: ['idpInitiatedPage', 'per'] },
+    composeAlways: ['idpInitiated'],
     drill: {
       param: 'sp',
       sample: function (list: Json): string | null {
@@ -1699,7 +1705,8 @@ class WebPages {
       return SamlPage.saml11Detail(context, view.saml11Detail);
     }
     if (page.path === '/admin/saml2') {
-      if (!view.saml11 || !view.assertions || !view.attributes) {
+      if (!view.saml11 || !view.assertions || !view.attributes ||
+          !view.idpInitiated) {
         throw new Error('The SAML page is missing a tab view.');
       }
       const endpoints: Json[] = [];
@@ -1757,6 +1764,11 @@ class WebPages {
         { id: 'saml-tab-saml11',
           label: 'SAML 1.1 IdP',
           html: saml11Body },
+        // After the two identity providers whose applications it lists
+        // (#749), before the assertion and attribute tabs.
+        { id: 'saml-tab-idp-initiated',
+          label: context.t.text('consoleSaml.idpInitiated.tab'),
+          html: SamlPage.idpInitiatedBody(context, view.idpInitiated) },
         { id: 'saml-tab-assertions',
           label: context.t.text('consolePages.title.saml-assertions'),
           html: SamlAssertionsPage.body(context, assertionView) },

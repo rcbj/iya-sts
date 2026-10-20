@@ -9652,6 +9652,114 @@ class AdminViews {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // PROTOCOLS → SAML → IdP-Initiated SSO (#749): the realm's SAML 2.0 and
+  // SAML 1.1 applications a sign-in may be STARTED HERE for, one row per
+  // application and family, each with the link a person follows.
+  //
+  // **THE QUESTION IS THE DOOR'S OWN, ASKED THROUGH THE DOOR'S OWN
+  // FUNCTIONS.** Which families an entry can be launched in is
+  // `LaunchLinks.protocolsOf()`, and whether the switch is on for it is
+  // `LaunchLinks.enabled()` — the realm's `saml2.idpInitiatedSso` /
+  // `saml11.idpInitiatedSso` unless the entry's `saml2IdpInitiatedSso` /
+  // `saml11IdpInitiatedSso` says otherwise, through
+  // `applications.settingFor()` — which is what `/launch/{app}`
+  // (`launch/launch.ts`) asks before it hands the browser on. A second
+  // reading here would be a tab that lists an application the door then
+  // refuses (STS-LAUNCH-0005). What a row still LACKS — an assertion
+  // consumer service to send the answer to — is `missingOf()`'s, carried on
+  // the row rather than used to drop it: the switch is on, and the operator
+  // who turned it on needs to see that the link cannot work yet
+  // (STS-LAUNCH-0006), which is what the application's own launch card says
+  // too.
+  //
+  // **THE LINK IS `/launch/{app}?protocol=…`**, the one URL
+  // docs/idp-initiated-sso.md gives a person and the portal's Sign in link
+  // uses (`LaunchLinks.launchUrl()`, built where the sign-in service is
+  // advertised, realm prefix included); the protocol's own endpoint
+  // (`/saml2/unsolicited/{sp}`, `/saml11/sso/{rp}`) rides beside it, as it
+  // does on the launch card, for a partner who wants the native form.
+  //
+  // **BOUNDED AS ITS NEIGHBOURS ARE.** The rows come from
+  // `applications.list()`, the ambient realm's kept listing of
+  // `ou=applications` — what `saml2ServiceProviders()` and
+  // `saml11RelyingParties()` read — and never from `ou=users` or
+  // `ou=devices`, which `tests/no_full_directory_walk_in_requests.js`
+  // guards; only the page shown is decorated (pagedRows()). The list is
+  // `idpInitiated`, paged on `idpInitiatedPage` — pagingOf()'s name for a
+  // list that shares its page with others, here the SAML 2.0 tab's `page` —
+  // with `per` shared.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds the IdP-Initiated SSO tab's JSON: the SAML applications a sign-in
+   * may be started here for, one page of them, and the realm's two switches.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
+  samlIdpInitiatedJson(req) {
+    const { log, baseUrlOf, applications, config } = this.deps;
+    log.debug("Entering AdminViews.samlIdpInitiatedJson().");
+    const base = baseUrlOf(req);
+    const families = ['saml2', 'saml11'];
+    const candidates = [];
+    applications.list().forEach(function (view) {
+      LaunchLinks.protocolsOf(view).forEach(function (row) {
+        if (families.indexOf(row.id) < 0 ||
+            !LaunchLinks.enabled(view.identifier, row.id)) {
+          return;
+        }
+        candidates.push({ view: view, protocol: row });
+      });
+    });
+    // A stable order, so a page holds the same rows between two clicks: by
+    // identifier, then SAML 2.0 before SAML 1.1.
+    candidates.sort(function (a, b) {
+      const byId = String(a.view.identifier)
+        .localeCompare(String(b.view.identifier));
+      return byId || families.indexOf(a.protocol.id) -
+                     families.indexOf(b.protocol.id);
+    });
+    const paged = this.pagedRows(req.query || {}, candidates, {
+      name: 'idpInitiated', noun: 'sign-in links',
+      decorate: function (one) {
+        const view = one.view;
+        const fields = view.fields || {};
+        const entity = Array.isArray(fields.samlEntityId)
+          ? fields.samlEntityId[0] : fields.samlEntityId;
+        return {
+          identifier: view.identifier,
+          name: view.name || '',
+          entityId: String(entity || '') || view.identifier,
+          protocol: one.protocol.id,
+          label: one.protocol.label,
+          attribute: one.protocol.attribute,
+          launchUrl: LaunchLinks.launchUrl(base, view.identifier,
+                                           one.protocol.id),
+          endpoint: LaunchLinks.endpointUrl(base, view, one.protocol.id, ''),
+          missing: LaunchLinks.missingOf(view, one.protocol.id)
+        };
+      }
+    });
+    // THE REALM'S TWO SWITCHES, as the door reads one for an application
+    // with nothing on its entry: `settingFor()` with no identifier, so a
+    // mode that forces a setting is reported as the mode has it.
+    const realm = families.map(function (id) {
+      const row = LaunchLinks.protocol(id);
+      return { protocol: id, label: row.label, setting: row.setting,
+               attribute: row.attribute,
+               enabled: applications.settingFor('', row.setting,
+                                                config) === true };
+    });
+    log.debug("Leaving AdminViews.samlIdpInitiatedJson(). " +
+              candidates.length + " row(s).");
+    return {
+      idpInitiated: paged.shown,
+      idpInitiatedPaging: this.pagingJson(paged.paging),
+      realmSwitches: realm
+    };
+  }
+
   // WHAT /admin/authorization-servers ANSWERS: the profiles, and one of them.
   /**
    * Builds `/admin/authorization-servers`'s list of profiles.
@@ -14554,6 +14662,7 @@ export = {
   saml11DetailJson: slot.forward('saml11DetailJson'),
   saml11Json: slot.forward('saml11Json'),
   saml11ListJson: slot.forward('saml11ListJson'),
+  samlIdpInitiatedJson: slot.forward('samlIdpInitiatedJson'),
   saml2ServiceProviders: slot.forward('saml2ServiceProviders'),
   saml2Facts: slot.forward('saml2Facts'),
   valuesFor: slot.forward('valuesFor'),
