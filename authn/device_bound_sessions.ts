@@ -635,6 +635,7 @@ class DeviceBoundSessions {
 
   // A refusal: logged with its code, recorded, and answered in English with
   // no code — the code is an operator's (root CLAUDE.md).
+  // error-code: none — the definition of this helper; every caller passes its code
   private refuse(res: Json, status: number, code: string, why: string,
                  session: Json, action: string): void {
     const { log, audit, errorCodes } = this.deps;
@@ -677,6 +678,7 @@ class DeviceBoundSessions {
     this.deps.authn().clearSessionCookie(res);
     this.appendHeader(res, 'Set-Cookie', BOUND_COOKIE + '=; Max-Age=0; ' +
                       this.cookieAttributes());
+    // error-code: none — `code` is the caller's literal (STS-AUTHN-0403, -0404)
     this.refuse(res, 401, code, 'the refresh ' + why + '; the session was ' +
                 'ended', session, 'refresh');
     log.debug("Leaving DeviceBoundSessions.endSession().");
@@ -744,6 +746,7 @@ class DeviceBoundSessions {
     }
     const proof = this.readProof(req);
     if (proof.code) {
+      // error-code: none — readProof()'s literal (STS-AUTHN-0393, -0394)
       this.refuse(res, 400, proof.code, proof.why, session, 'registration');
       log.debug("Leaving DeviceBoundSessions.register(). Unreadable proof.");
       return;
@@ -879,6 +882,7 @@ class DeviceBoundSessions {
     }
     const proof = this.readProof(req);
     if (proof.code) {
+      // error-code: none — readProof()'s literal (STS-AUTHN-0393, -0394)
       this.refuse(res, 400, proof.code, proof.why, session, 'refresh');
       log.debug("Leaving DeviceBoundSessions.refresh(). Unreadable proof.");
       return;
