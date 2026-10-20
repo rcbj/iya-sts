@@ -2141,8 +2141,13 @@ client authentication each takes, PKCE, `/user/emails` failing, the Google
 issuer rules, the collision case (a provider's person named and addressed as
 a local one lands on an entry of their own), the realm switch at every door,
 `fedSubjectClaim`, the provider's MFA claim and the credential fingerprint.
-**Not covered yet:** an over-HTTP job (`tests/vendored/`, `local: true`), and
-a consumer provider on an application's chooser beside an enterprise partner.
+`tests/vendored/sts_federation_consumer.js` (`local: true`) drives the
+category over HTTP between two realms of one service through the
+`generic-oidc` profile. It covers the realm switch at creation and at the
+login endpoint, creation from the profile, the list's category, a newcomer's
+own entry with a namesake left alone, and any-existing refused. **Not covered
+yet:** a consumer provider on an application's chooser beside an enterprise
+partner, and any profile against its live provider.
 
 ### Sign in with Apple (#565)
 
