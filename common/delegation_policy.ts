@@ -621,11 +621,29 @@ class DelegationPolicy {
       actorRole: setting('delegation.actorRole') };
     if (question.trust) {
       facts.trust = question.trust;
+      // A USER OF ANOTHER REALM has no entry here, and so no roles from one;
+      // what they do hold is what every authenticated person holds
+      // (EVERYBODY, ALL_AUTHENTICATED_USERS) — the trust vouched for the
+      // authentication. Without it an application requiring EVERYBODY
+      // would refuse every foreign user for want of a role nobody lacks.
+      if (!subject.registered) {
+        let foreignRoles: string[] = [];
+        try {
+          foreignRoles = this.deps.roles.rolesOf({ kind: 'user',
+            name: subject.id, authenticated: true }) || [];
+        } catch (e) {
+          log.debug("Caught in DelegationPolicy.decide(): " +
+                    ((e && e.message) || e));
+          foreignRoles = [];
+        }
+        facts.subject = Object.assign({}, facts.subject,
+                                      { roles: foreignRoles });
+      }
       facts.localRealm = String(question.localRealm || '');
       facts.mechanism = question.mechanism === 'S4U2Proxy'
         ? (question.rbcd ? 'S4U2Proxy-rbcd' : 'S4U2Proxy-classic')
         : String(question.mechanism || '');
-      facts.subject = Object.assign({}, subject,
+      facts.subject = Object.assign({}, facts.subject,
                                     { realm: question.subjectRealm || '' });
       facts.actor = Object.assign({}, actor,
                                   { realm: question.actorRealm || '' });

@@ -1737,8 +1737,8 @@ class Krb5Trusts {
         return false;                                         // R5
       }
       if (localForest.indexOf(c.domain) !== -1 &&             // R9, R14
-          boundary !== 'WithinForest' &&
-          boundary !== 'PrivilegedIdentityManagement') {
+          (boundary === 'CrossForest' || boundary === 'External' ||
+           boundary === 'QuarantinedExternal')) {
         return false;
       }
       if (boundary === 'QuarantinedExternal' ||               // R10, R11
