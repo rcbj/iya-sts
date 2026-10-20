@@ -1467,7 +1467,13 @@ class AdminApi {
               '`userDisplayName`, `rpNameExtras` and `credentialLabel` ' +
               'are the names a passkey prompt and a new key show. ' +
               '`aggregateDevices` (on) offers a person\'s passkeys as one ' +
-              'sign-in choice; off, one per passkey.',
+              'sign-in choice; off, one per passkey. ' +
+              '`postQuantumRequired` (`off`, #718) set to `sign-in` lets ' +
+              'only a post-quantum (ML-DSA) passkey sign a person in, as ' +
+              'the first credential or the second factor, and ' +
+              '`registration-and-sign-in` refuses a classical one at ' +
+              'registration too; refused while the realm offers no ML-DSA ' +
+              '(STS-AUTHN-0357).',
         example: { allowUsernameless: false, requireUsernameless: false,
                    securityKeyResidentKey: 'required',
                    backupEligibility: 'allow',
@@ -1479,7 +1485,7 @@ class AdminApi {
                    enterpriseSerialAttribute: '',
                    userDisplayName: 'displayName, givenName sn',
                    rpNameExtras: 'none', credentialLabel: '',
-                   aggregateDevices: true }
+                   aggregateDevices: true, postQuantumRequired: 'off' }
       },
       // #539: the fifth kind, with named profiles chosen by application.
       locale: {

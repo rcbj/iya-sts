@@ -211,6 +211,7 @@
   "keys.rolePrimary": "取代密碼",
   "keys.roleMfa": "密碼之後的第二步驟",
   "keys.syncedRefused": "此密碼金鑰可同步，而此領域現在只接受綁定裝置的密碼金鑰，因此它無法讓您登入。請移除它，並註冊安全金鑰或僅存放在單一裝置上的密碼金鑰。",
+  "keys.postQuantumRefused": "此密碼金鑰使用傳統演算法簽署，而此領域現在只接受後量子（ML-DSA）密碼金鑰，因此它無法讓您登入。請移除它，並註冊後量子密碼金鑰。",
   "keys.removeAndRegister": "移除它並註冊另一個。",
   "keys.details": "詳細資料",
   "keys.used": "用途",

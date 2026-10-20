@@ -1836,7 +1836,12 @@ class UsersPage {
         '<td class="num">' + kit.esc(String(one.signCount || 0)) + '</td>' +
         // THE SIGNATURE ALGORITHM (2026-10-01): the one this key signs with,
         // and so the one every sign-in with it is verified with.
-        '<td>' + UsersPage.algorithmCell(t, one.algorithm) + '</td>' +
+        '<td>' + UsersPage.algorithmCell(t, one.algorithm) +
+        // A CLASSICAL KEY THE PERSON'S PROFILE NO LONGER LETS SIGN THEM IN
+        // (#718): the refusal's own sentence, which stays English (#539).
+        (one.postQuantumRefused
+          ? '<div class="note state-invalid passkey-post-quantum-refused">' +
+            kit.esc(one.postQuantumRefused) + '</div>' : '') + '</td>' +
         '<td>' + UsersPage.attestationCell(t, one.attestation, one.aaguid) +
         '</td>' +
         '<td>' + kit.esc(backup) +

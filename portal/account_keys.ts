@@ -190,6 +190,11 @@ class AccountKeys {
                  'meets this service\'s rules.') : '',
       // ONE WHOSE MINIMUM PIN THE REALM NO LONGER ACCEPTS (#529).
       pinRefused: pin ? String(pin.why || '') : '',
+      // A CLASSICAL KEY WHERE THE PERSON'S PROFILE REQUIRES A POST-QUANTUM
+      // ONE AT SIGN-IN (#718), from the same question the sign-in asks of
+      // its algorithm, so the page and the refusal cannot disagree.
+      postQuantumRefused: !!passkeyPolicy.postQuantumRefusal(algorithm,
+                                                             'sign-in'),
       backupEligible: one.backupEligible === true ? true
         : (one.backupEligible === false ? false : null),
       backupState: one.backupState === true,

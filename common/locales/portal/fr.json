@@ -211,6 +211,7 @@
   "keys.rolePrimary": "au lieu d’un mot de passe",
   "keys.roleMfa": "deuxième étape après votre mot de passe",
   "keys.syncedRefused": "Cette clé d’accès peut être synchronisée, et ce domaine n’accepte désormais que les clés d’accès liées à un appareil : elle ne vous connectera donc pas. Supprimez-la et enregistrez une clé de sécurité ou une clé d’accès conservée sur un seul appareil.",
+  "keys.postQuantumRefused": "Cette clé d’accès signe avec un algorithme classique, et ce domaine n’accepte désormais que les clés d’accès post-quantiques (ML-DSA) : elle ne vous connectera donc pas. Supprimez-la et enregistrez une clé d’accès post-quantique.",
   "keys.removeAndRegister": "Supprimez-la et enregistrez-en une autre.",
   "keys.details": "Détails",
   "keys.used": "Utilisée",

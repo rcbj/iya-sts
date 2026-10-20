@@ -211,6 +211,7 @@
   "keys.rolePrimary": "sa halip na password",
   "keys.roleMfa": "ikalawang hakbang pagkatapos ng iyong password",
   "keys.syncedRefused": "Puwedeng i-sync ang passkey na ito, at mga passkey na nakatali sa isang device lang ang tinatanggap ngayon ng realm na ito, kaya hindi ka nito mai-sign in. Alisin ito at mag-register ng security key o ng passkey na nasa iisang device lang.",
+  "keys.postQuantumRefused": "Classical na algorithm ang ginagamit ng passkey na ito sa pag-sign, at mga post-quantum (ML-DSA) na passkey lang ang tinatanggap ngayon ng realm na ito, kaya hindi ka nito mai-sign in. Alisin ito at mag-register ng post-quantum na passkey.",
   "keys.removeAndRegister": "Alisin ito at mag-register ng iba.",
   "keys.details": "Mga detalye",
   "keys.used": "Ginagamit",
