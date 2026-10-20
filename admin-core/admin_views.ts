@@ -4318,8 +4318,11 @@ class AdminViews {
     // Filter first, then page — pagingOf()'s rule, and for its reason.
     const filtered = all.filter(function (row) {
       if (wantedProtocol && row.protocol !== wantedProtocol) return false;
+      // `accountSet` (#731) so that the page's link from a row's browser
+      // narrows the list to the sessions of that one browser.
       return self.chooserMatches([row.username, row.sub, row.handle, row.key,
-                                  row.kind, row.protocol], wantedText);
+                                  row.kind, row.protocol, row.accountSet],
+                                 wantedText);
     });
     const paging = this.pagingOf(query, filtered.length, { noun: 'sessions' });
     const shown = filtered.slice(paging.offset, paging.offset + paging.perPage);
@@ -4402,9 +4405,42 @@ class AdminViews {
         unauthenticatedKept: !!config.value('authn.unauthenticatedSessions'),
         paging: this.pagingJson(paging),
         // The unauthenticated section's page (#313), on `anonymousPage`.
-        unauthenticatedPaging: this.pagingJson(anonymousPage.paging)
+        unauthenticatedPaging: this.pagingJson(anonymousPage.paging),
+        // WHAT THE BROWSERS' ACCOUNT SETS DID (#561's TR-3, drawn since
+        // #731): `admin_stats.accountChoiceCounts()`, every process's rows
+        // added up. Rule 7: the page draws it, so this operation answers
+        // it. `enabled` is the setting as this realm has it now, and the
+        // counts are answered whatever it is — a realm that had it on this
+        // morning still has what it counted then.
+        accountChoices: this.accountChoicesJson()
       }
     };
+  }
+
+  /**
+   * The account-choice counters of the ambient realm (#561, #731), for
+   * `/admin/sessions` and `GET /admin-api/sessions`.
+   *
+   * @returns `{ enabled, counts }`; `counts` is kind → number, the seven
+   *   kinds `admin_stats.recordAccountChoice()` takes
+   */
+  accountChoicesJson() {
+    const { log, config, stats } = this.deps;
+    log.debug("Entering AdminViews.accountChoicesJson().");
+    let counts = {};
+    try {
+      counts = stats.accountChoiceCounts();
+    } catch (e) {
+      // A counter that cannot be read is drawn as none, never as a page
+      // that fails: these are a refinement of what the page is for.
+      log.debug("Caught in AdminViews.accountChoicesJson(): " +
+                ((e && e.message) || e));
+      counts = {};
+    }
+    const out = { enabled: config.value('authn.multipleAccounts') === true,
+                  counts: counts };
+    log.debug("Leaving AdminViews.accountChoicesJson().");
+    return out;
   }
 
   // ---------------------------------------------------------------------------

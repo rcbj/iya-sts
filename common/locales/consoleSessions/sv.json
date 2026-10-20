@@ -73,5 +73,18 @@
   "noExpiry": "<strong>ingen utgång</strong>",
   "noExpiryNote": "den slutar när något avslutar den",
   "expired": "utgången",
-  "inDuration": "om {duration}"
+  "inDuration": "om {duration}",
+  "accountSet": "webbläsare",
+  "accountSetTitle": "Kontouppsättning {id}: den här sessionen delar webbläsare med alla andra sessioner i den. Följ länken för att lista dem.",
+  "hAccounts": "Flera konton i en webbläsare",
+  "accountsLead": "Vad webbläsarnas kontouppsättningar har gjort i den här sfären, räknat sedan tjänsten startade och summerat över alla processer. Läs <strong>frågade efter konto</strong> bredvid <strong>konto valt</strong>: en begäran som inte kunde avgöra vilket konto den gällde visar kontoväljaren, och händer det oftare än personer väljer skickar en förlitande part ingen ledtråd.",
+  "accountsOff": "<strong>Flera inloggade konton i en webbläsare är avstängt i den här sfären</strong> (<code>authn.multipleAccounts</code>). Siffrorna räknades medan det var påslaget.",
+  "accountsNote": "Ett konto som <strong>bytts till</strong> blev, när det valdes, webbläsarens standardkonto; <strong>utgångna</strong> räknar utloggade konton som togs bort efter <code>authn.rememberedAccountDays</code>. Ingen siffra namnger en person eller en webbläsare.",
+  "accounts.selected": "konto valt",
+  "accounts.ambiguous": "frågade efter konto",
+  "accounts.selectFailed": "val avvisat",
+  "accounts.added": "konton tillagda",
+  "accounts.switched": "standard bytt",
+  "accounts.forgotten": "konton glömda",
+  "accounts.expired": "ihågkomna konton utgångna"
 }

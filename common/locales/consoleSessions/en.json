@@ -73,5 +73,18 @@
   "noExpiry": "<strong>no expiry</strong>",
   "noExpiryNote": "it ends when something ends it",
   "expired": "expired",
-  "inDuration": "in {duration}"
+  "inDuration": "in {duration}",
+  "accountSet": "browser",
+  "accountSetTitle": "Account set {id}: this session shares a browser with every other session in it. Follow the link to list them.",
+  "hAccounts": "Several accounts in one browser",
+  "accountsLead": "What the browsers&rsquo; account sets did in this realm, counted since this service started, every process added up. Read <strong>asked which account</strong> beside <strong>account chosen</strong>: a request that could not tell which account it was for shows the account picker, and one that does so more often than people choose is a relying party that sends no hint.",
+  "accountsOff": "<strong>Several signed-in accounts in one browser are off in this realm</strong> (<code>authn.multipleAccounts</code>). These figures were counted while they were on.",
+  "accountsNote": "An account <strong>switched</strong> when choosing it also made it the browser&rsquo;s default; <strong>expired</strong> counts signed-out accounts dropped after <code>authn.rememberedAccountDays</code>. No figure names a person or a browser.",
+  "accounts.selected": "account chosen",
+  "accounts.ambiguous": "asked which account",
+  "accounts.selectFailed": "choice refused",
+  "accounts.added": "accounts added",
+  "accounts.switched": "default switched",
+  "accounts.forgotten": "accounts forgotten",
+  "accounts.expired": "remembered accounts expired"
 }

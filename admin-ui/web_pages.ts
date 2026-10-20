@@ -296,7 +296,7 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   // more than one section; each renderer marks its own. Listeners draws
   // tabs of its own and is not here.
   '/admin/metrics': ['calls', 'tokens', 'artifacts', 'sessions'],
-  '/admin/sessions': ['live', 'unauthenticated'],
+  '/admin/sessions': ['live', 'unauthenticated', 'accounts'],
   '/admin/tokens': ['invalidate', 'issued'],
   '/admin/delegation': ['happened', 'chains', 'register', 'kerberos',
                         'policy'],
