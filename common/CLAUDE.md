@@ -12777,3 +12777,68 @@ suite SWEPT rather than the policy weakened for it.
   federated newcomer.
 
 `tests/attribute_policy.js` holds it in process.
+
+## 3cq. `recoveryAssurance`: ACCOUNT RECOVERY NO WEAKER THAN THE PASSKEY IT REPLACES (#724, 2026-10-19)
+
+A follow-up of #544. The passkey policy's rows (3ch) hold only a PASSKEY
+sign-in: `passkeySignInRefusal()` answers early for any other credential.
+Step 1 of the ticket (its comment of 2026-10-19) established that every way
+back into an account that asks for no passkey led past them:
+
+* a reset link (the forgot-password form's or an administrator's), an
+  administrator's generated password, or an activation link sent to somebody
+  who already had an account — none signs anybody in, but the password it
+  leaves signs a passkey-only person in on ONE factor at the next sign-in;
+* a recovery code, in place of an `mfa` passkey at the second-factor step;
+* an emailed code or link (#64), as a first or a second factor.
+
+**The row**: `recoveryAssurance` — `any`, `not-weaker` or `operator-only`.
+**`any` in development, `not-weaker` in product: rcbj's decision on #724,
+2026-10-19** ("not-weaker in product is fine for now. We will change that if
+it starts creating problems."). The default is `mode.recoversWeakerThanPasskeys()`,
+read through a GETTER on `DEFAULTS`, because the mode is a setting. It is the
+ONLY row a save may leave out (`optional`): callers that sent the whole
+profile before it existed — the console's older form, a vendored job — are
+not refused, and the default stays.
+
+* **"Covered" is a person who holds a passkey of either role**
+  (`credentials.holdsPasskey()`). Nobody else is affected by any value.
+* **A pending recovery is on the ENTRY** (`stsRecoveryPending`, `<door>
+  <instant>`), so every node and a restart agree. `credentials.noteRecovery()`
+  writes it, only for a covered person and only while the selected profile is
+  not `any` — so switching the row later does not reach back to recoveries
+  made while it allowed them. The doors that write it: the reset link's
+  spend (`portal/account_reset.ts`, `password-reset` or `admin-reset` by the
+  link's `stsPasswordResetSource`), the administrator's `reset-password`
+  (`admin-password`), and the activation link's finish (`activation`, only
+  where a passkey enrolled BEFORE the link was issued is held:
+  `noteActivationRecovery()`). The first passkey sign-in clears it
+  (`authn.ts`'s `recoveryCompleted()`, audit `authn.recovery.completed`).
+* **The question is the issuance policy's** (`recover-account`, xacml/
+  CLAUDE.md), asked through `passkeyPolicy.recoveryRefusal()` with the facts
+  the caller holds, because this leaf reads no credential. It is asked
+  BEFORE a door writes (`at: 'door'`) and at every session's start (`at:
+  'session'`), the latter only where there is a recovery to ask about.
+* **`not-weaker` limits, it does not lock out.** `startSessionHere()` refuses
+  (`STS-AUTHN-0381`) a session a passkey did not answer; at the sign-in
+  screen `refusedSession()` turns that into the set-up step instead
+  (`recoveryEnrolment()`): only a passkey offered, `proved` and `recovery`,
+  the ceremony a REGISTRATION whatever keys the person holds, the key in the
+  `mfa` role through `credentials.addKey()` (so the profile's registration
+  rules hold it), and NO session at the end — the browser goes back to the
+  caller and signs in with the new passkey. Where no passkey can be
+  registered here (`STS-AUTHN-0383`) the refusal is drawn. Every other door
+  (federation, a certificate, SPNEGO) simply gets the refusal.
+* **`operator-only` adds refusals of the self-service doors**
+  (`STS-AUTHN-0380`): the forgot-password request mails nothing
+  (`mail_uses.ts`, before a recovery code is spent; the form's one sentence
+  either way), a self-issued link is refused at its spend (403, its own
+  sentence — the holder has proved the mailbox already), the second-factor
+  step offers no recovery code or emailed factor (`narrowStep()`), and one
+  used anyway is refused at the session. **The session an operator's door
+  leads to is limited as under `not-weaker`** — a choice made in building
+  it, put to rcbj on the ticket.
+* **CAEP**: the reset already sends `credential-change` (password); the
+  passkey registered at the step sends `credential-change` (create) where it
+  is written, so the portal's Security activity shows both.
+* Codes `STS-AUTHN-0380` to `0383`. `tests/recovery_assurance.js` holds it.

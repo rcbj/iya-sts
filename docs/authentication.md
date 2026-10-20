@@ -322,6 +322,7 @@ row says `disallow`. See [XACML](xacml.md).
 | `credentialLabel` | empty | The name a new passkey is given; `{provider}` and `{kind}` are filled in. |
 | `aggregateDevices` | on | A person's passkeys are one sign-in choice; off, one per passkey (below). |
 | `enterpriseSerialAttribute` | empty | The attribute of a person's entry holding the serials of the security keys issued to them; set, a key registers only if its enterprise attestation names one of them (below). |
+| `recoveryAssurance` | `any` in development, `not-weaker` in product | Whether recovering an account without its passkey restores access at once (`any`), only once a new passkey has signed the person in (`not-weaker`), or only through an administrator and then only that way (`operator-only`) (below). |
 
 **Both portal buttons ask for a discoverable credential by default.** *Create
 a passkey* always asks `residentKey: required`. *Use a security key* asks
@@ -331,6 +332,34 @@ through either button; while it is on, it asks `securityKeyResidentKey`. A
 realm can lower that to `preferred` or `discouraged` to spare a security key's
 few resident slots, and a key enrolled that way may need the username to sign
 in.
+
+**Account recovery** (`recoveryAssurance`). A password reset link, the
+forgot-password form, an activation link, a recovery code and an emailed code
+or link all get a person back into their account without their passkey. For
+a person who holds a passkey, that would make the passkey policy's other rows
+easy to step round: a mailed link and a password reach the same applications
+a device-bound, attested security key does.
+
+* `any` (the default in development) restores access at once.
+* `not-weaker` (the default in product) lets the recovery happen, but the
+  first sign-in after it that is not a passkey sign-in reaches no
+  application. The sign-in screen asks the person to register a new passkey,
+  held to this policy's registration rules, and then sends them back to sign
+  in with it. That passkey sign-in completes the recovery. It applies to the
+  sign-in after a reset or activation link, after a password an
+  administrator generated, and to a recovery code or an emailed code or link
+  used at sign-in.
+* `operator-only` does the same, and also refuses the self-service doors to
+  a person who holds a passkey: the forgot-password form sends no mail (and
+  answers its usual sentence), a reset link they asked for is refused when it
+  is used, and the sign-in step offers no recovery code or emailed factor.
+  Only an administrator's reset link, generated password or activation link
+  remains.
+
+A person holding no passkey is not affected by any value. Whether a recovery
+may restore access is decided by the issuance policy (`recover-account`), so
+a realm's own policy can refine it. The codes are `STS-AUTHN-0380` (refused)
+and `STS-AUTHN-0381` (limited to registering a passkey).
 
 **Synced passkeys** (`backupEligibility`). A *synced* passkey is one its
 provider copies to the person's other devices, or keeps a backup of: a

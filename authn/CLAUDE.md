@@ -2642,6 +2642,29 @@ refusal AND the older one beside it (`STS-AUTHN-0024`, product enrolling for
 somebody who does not exist) had always answered 500. It falls back to the
 `why` now.
 
+## AFTER AN ACCOUNT RECOVERY, A PASSKEY FIRST (#724, 2026-10-19)
+
+The design is `common/CLAUDE.md` 3cq; what this module does with it:
+
+* **`startSessionHere()` asks the recovery question** right after the passkey
+  rules, for every door but a keyed or unauthenticated one, and only where a
+  recovery is pending on the entry or the credential is itself a recovery
+  door (`backup-code`, `email-code`, `email-link`). A refusal is a
+  `session.refuse` row carrying `STS-AUTHN-0380` or `0381`, and
+  `detail.recoveryLimited` for the second.
+* **`refusedSession()` turns `recoveryLimited` into the set-up step**
+  (`recoveryEnrolment()`) at the sign-in screen's doors, which pass the
+  pending record: `factor: 'enrol'`, `proved`, `recovery`, `mfaAllowed:
+  ['securityKey']`. `mfaSetupFacts()` says `recovery`, and the page draws
+  `authn.mfaSetup.subRecovery` (seven catalogs). `webauthnFacts()` draws a
+  REGISTRATION for a recovery step whatever keys the person holds, and
+  `finishWebauthn()` starts no session for one: `returnToCaller()`, so the
+  application asks for a sign-in and the new passkey answers it.
+* **That passkey's session clears the recovery** (`recoveryCompleted()`, at
+  both of `startSessionHere()`'s successful exits).
+* **`narrowStep()` closes the self-service links** (recovery code, emailed
+  factor) where the policy refuses them to this person.
+
 ## A DISABLED ACCOUNT IS REFUSED AT `startSession()` AND AT EVERY SESSION IT ALREADY HAS (2026-09-17)
 
 `common/account_state.ts` owns the state (`common/CLAUDE.md`, 3at); this module
