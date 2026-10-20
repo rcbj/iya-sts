@@ -1831,6 +1831,39 @@ request.
   proof-then-enrolment, the narrowed enrolment and the OAuth and
   WS-Federation re-prompts.
 
+### A phishing-resistant authentication, as a fact and as a floor (#723, 2026-10-19)
+
+**`AUTHN_ATTRIBUTE.PHISHING_RESISTANCE`** (`urn:sts:xacml:phishing-resistance`)
+is an ENVIRONMENT bag. It holds OpenID Connect EAP ACR Values 1.0's `phr` and
+`phrh` as the authentication earned them (`common/phishing_resistance.ts`,
+`common/CLAUDE.md` 3cp), or **`none`**.
+
+* **The gate supplies it** (`issuance_gate.js`'s `phishingFactsOf()`) on
+  #457's four browser kinds, from the event a session is about to record or
+  the session's latest. It rides along whenever the policy is asked and does
+  not make it asked.
+* **It is never empty when sent.** A rule that holds on `none` therefore never
+  speaks to an issuance the gate did not describe: a token grant, WS-Trust,
+  Kerberos, or a gated sign-in door's pre-check before its second factor.
+* **The floor: two role-issuance options, empty by default**, so no existing
+  document changes:
+  * `requirePhishingResistant` adds `:rule:phishing-resistant`, a Deny for the
+    listed application handles on `none`;
+  * `requireHardwareProtected` adds `:rule:hardware-protected`, a Deny on a
+    non-empty bag without `phrh`.
+  
+  Each carries the AUTHENTICATION obligation, which is `refuseEmailFactor`'s.
+  The PEP therefore refuses where the role question was waived. The
+  obligation's `AUTHN_ATTRIBUTE.REFUSAL` assignment
+  (`phishing-resistant` / `hardware-protected`) makes the PEP's sentence
+  name what the authentication lacked, not the roles the person holds.
+* **A floor, not a step-up.** The rule refuses, and the client's
+  `acr_values=phr` (or the application's `oauthDefaultAcrValues`) is what
+  sends the person to the key first (`oauth-oidc/CLAUDE.md` 3cp). The option's
+  help says to set both.
+* `tests/eap_acr_values.js` D and E7 hold the rules through the PDP and over
+  HTTP.
+
 ## THE FOURTEENTH DEFECT: TWO CONTAINERS CLAIMING A PAGE THAT WAS NEVER WRITTEN
 
 `xacml_store.ts` and `xacml_pep_registry.ts` each carry a `SCHEMA` whose comment

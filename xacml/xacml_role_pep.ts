@@ -186,6 +186,10 @@ interface IssuanceQuestion {
   // See `common/mfa_mechanisms.ts`.
   mfaMechanisms?: string[] | null;
   allowedMfaMechanisms?: string[] | null;
+  // WHETHER THE AUTHENTICATION WAS PHISHING-RESISTANT (#723): OpenID Connect
+  // EAP ACR Values 1.0's `phr` and `phrh` earned, or [`none`], sent by the
+  // gate on every browser issuance. See `common/phishing_resistance.ts`.
+  phishingResistance?: string[] | null;
   // WHO MAY ACT FOR WHOM (#186): present, this is the exchange question
   // `issuance_gate.checkExchange()` asks, answered with a verdict
   // (`decideExchange()`).
@@ -677,6 +681,7 @@ class XacmlRolePep {
     this.authorityAttributes(req, asked.authority);
     this.mechanismAttributes(req, asked);
     this.mfaAttributes(req, asked);
+    this.phishingAttributes(req, asked);
     this.deviceAttributes(req, asked);
     // THE PROTOCOL DECLARATION, only where the gate named both halves: the
     // declaration on the resource (it is a fact about the application), the
@@ -810,6 +815,26 @@ class XacmlRolePep {
   }
 
   // -------------------------------------------------------------------------
+  // WHETHER THE AUTHENTICATION WAS PHISHING-RESISTANT (#723), as an
+  // environment bag: `phr`, `phrh`, or `none` — never empty when sent, so a
+  // rule that holds on `none` is inapplicable to every issuance the gate did
+  // not describe (a token grant, WS-Trust, Kerberos). Sent whenever the gate
+  // named it.
+  // -------------------------------------------------------------------------
+  private phishingAttributes(req: any, asked: IssuanceQuestion): void {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.phishingAttributes().");
+    if (!Array.isArray(asked.phishingResistance) ||
+        !asked.phishingResistance.length) {
+      log.debug("Leaving XacmlRolePep.phishingAttributes(). None.");
+      return;
+    }
+    req.environment(AUTHN.PHISHING_RESISTANCE,
+                    asked.phishingResistance.map(String));
+    log.debug("Leaving XacmlRolePep.phishingAttributes().");
+  }
+
+  // -------------------------------------------------------------------------
   // THE REGISTERED DEVICE AS ENVIRONMENT ATTRIBUTES (#164 decision 3, phase
   // 6) — `xacml_templates.ts`'s DEVICE_ATTRIBUTE. Sent only where the gate
   // asked the device question (a requirement array, however empty); then
@@ -871,6 +896,26 @@ class XacmlRolePep {
                                                         : hit.value) : '';
     log.debug("Leaving XacmlRolePep.deviceObligationOf(). " + said);
     return said === 'compromised' ? 'compromised' : 'not-compliant';
+  }
+
+  // What an authentication Deny says the authentication lacked (#723):
+  // `phishing-resistant`, `hardware-protected`, or null for a Deny that
+  // names nothing (an emailed factor's) or is not about the authentication.
+  private authenticationRefusalOf(answer: any): string | null {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.authenticationRefusalOf().");
+    const found = (answer && answer.obligations || []).filter(function (o) {
+      return o && o.id === AUTHN.OBLIGATION;
+    })[0];
+    const hit = found ? (found.assignments || []).filter(function (a) {
+      return a.attributeId === AUTHN.REFUSAL;
+    })[0] : null;
+    const said = hit ? String(hit.lexical !== undefined ? hit.lexical
+                                                        : hit.value) : '';
+    log.debug("Leaving XacmlRolePep.authenticationRefusalOf(). " +
+              (said || 'none'));
+    return said === 'phishing-resistant' || said === 'hardware-protected'
+      ? said : null;
   }
 
   // The risk obligation on a Deny, read: `{ action, factor }`, or null when
@@ -1580,6 +1625,22 @@ class XacmlRolePep {
     log.debug("Entering XacmlRolePep.reasonFor().");
     const who = asked.subject && asked.subject.name
       ? '"' + asked.subject.name + '"' : 'the caller';
+    // A DENY SAYING WHAT THE AUTHENTICATION LACKED (#723) says that: the
+    // role sentence would tell somebody who holds every role that they
+    // hold every role.
+    const lacked = this.authenticationRefusalOf(answer);
+    if (lacked) {
+      log.debug("Leaving XacmlRolePep.reasonFor(). The authentication.");
+      return '"' + asked.application + '" requires ' +
+        (lacked === 'hardware-protected'
+          ? 'a phishing-resistant authentication with a hardware-protected ' +
+            'key (OpenID Connect EAP ACR Values 1.0, phrh)'
+          : 'a phishing-resistant authentication (OpenID Connect EAP ACR ' +
+            'Values 1.0, phr)') +
+        ', and ' + who + '\'s was not one. A passkey or security key ' +
+        'already registered meets phr; phrh needs one whose attestation ' +
+        'this realm trusts and that is not backup-eligible.';
+    }
     if (answer.decision === model.DECISION.DENY ||
         answer.decision === model.DECISION.NOT_APPLICABLE) {
       log.debug("Leaving XacmlRolePep.reasonFor().");

@@ -479,11 +479,13 @@ function childMain() {
     // --- a. discovery --------------------------------------------------------
     const anon = browser(port);
     let r = await anon.go('GET', '/.well-known/oauth-authorization-server');
-    // The ladder, then the compliant-device class (#164 phase 6).
-    const PUBLISHED = '["0","1","mfa","urn:sts:acr:compliant-device"]';
+    // The ladder, OpenID Connect EAP's two classes (#723), then the
+    // compliant-device class (#164 phase 6).
+    const PUBLISHED = '["0","1","mfa","phr","phrh",' +
+                      '"urn:sts:acr:compliant-device"]';
     note(JSON.stringify(r.json.acr_values_supported) === PUBLISHED,
-         '3a1. RFC 8414 metadata publishes acr_values_supported 0, 1, mfa ' +
-         'and the compliant-device class',
+         '3a1. RFC 8414 metadata publishes acr_values_supported 0, 1, mfa, ' +
+         'phr, phrh and the compliant-device class',
          JSON.stringify(r.json.acr_values_supported));
     r = await anon.go('GET', '/.well-known/openid-configuration');
     note(JSON.stringify(r.json.acr_values_supported) === PUBLISHED,

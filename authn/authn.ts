@@ -4400,6 +4400,29 @@ class Authn {
   // WHO VOUCHED FOR AN AUTHENTICATION: this service, a federation partner,
   // or a Kerberos ticket. Its own function since #457, because the sign-in
   // mechanism question asks it of an authentication before its event exists.
+  // THE CREDENTIAL FACTS OpenID Connect EAP's `phr` AND `phrh` ARE READ FROM
+  // (#723), copied from what a door handed in: the ceremony, the key's
+  // attestation trust and its backup eligibility. `eventContext()` records
+  // the same three on the event; this is the copy the issuance policy is
+  // asked with before the event exists.
+  private phishingEvidenceOf(given) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.phishingEvidenceOf().");
+    const out: Record<string, any> = {};
+    const g = given || {};
+    if (g.ceremony === 'assertion' || g.ceremony === 'registration') {
+      out.ceremony = g.ceremony;
+    }
+    if (typeof g.attestationTrusted === 'boolean') {
+      out.attestationTrusted = g.attestationTrusted;
+    }
+    if (typeof g.backupEligible === 'boolean') {
+      out.backupEligible = g.backupEligible;
+    }
+    log.debug("Leaving Authn.phishingEvidenceOf().");
+    return out;
+  }
+
   private authorityOf(detail) {
     const { log } = this.deps;
     log.debug("Entering Authn.authorityOf().");
@@ -4697,6 +4720,16 @@ class Authn {
     // And the passkey's lane (#643).
     if (given.lane === 'classical' || given.lane === 'pqc') {
       credential.lane = String(given.lane);
+    }
+    // WHICH WEBAUTHN CEREMONY, AND WHETHER THE KEY'S ATTESTATION IS TRUSTED
+    // (#723): the evidence `common/phishing_resistance.ts` reads for OpenID
+    // Connect EAP's `phr` and `phrh`, on the event so a later request for
+    // either is answered from what this sign-in actually proved.
+    if (given.ceremony === 'assertion' || given.ceremony === 'registration') {
+      credential.ceremony = given.ceremony;
+    }
+    if (typeof given.attestationTrusted === 'boolean') {
+      credential.attestationTrusted = given.attestationTrusted;
     }
     // THE BROWSER FINGERPRINT (#62 P6), where the realm asked for one and
     // the sign-in form carried it — as a digest, like the User-Agent: the
@@ -6058,9 +6091,13 @@ class Authn {
       amr: (amr || []).map(String), acr: String(acr || ''),
       authenticated: extra.authenticated !== false,
       authority: this.authorityOf(extra),
-      context: { credential: { kind: extra.credential &&
+      context: { credential: Object.assign({ kind: extra.credential &&
                                extra.credential.kind
-                                 ? String(extra.credential.kind) : '' } }
+                                 ? String(extra.credential.kind) : '' },
+        // AND WHAT EAP'S `phr` AND `phrh` ARE READ FROM (#723), so the
+        // gate's `urn:sts:xacml:phishing-resistance` fact for this sign-in
+        // is the one the event will record.
+        this.phishingEvidenceOf(extra.credential)) }
     };
     // Asked only of an application that allows only some: asking it of every
     // gated sign-in would put the session to the policy a second time, and
@@ -12988,7 +13025,13 @@ class Authn {
         algorithm: String(verdict.algorithm || ''),
         coseAlg: Number(verdict.coseAlg) || undefined,
         // Its lane (#643).
-        lane: credentials.keyLane(known) } };
+        lane: credentials.keyLane(known),
+        // AN ASSERTION BY A KEY WHOSE STORED ATTESTATION IS OR IS NOT
+        // TRUSTED (#723): what `common/phishing_resistance.ts` reads for
+        // EAP's `phr` and `phrh`.
+        ceremony: 'assertion',
+        attestationTrusted: !!(known.attestation &&
+                               known.attestation.trusted === true) } };
     pending.delete(record.id);
     // `hwk` the key and `user` the authenticator's verification of the
     // person (RFC 8176), and acr `mfa`, because those are two factors.
@@ -13074,6 +13117,11 @@ class Authn {
     // about where a sign-in came from.
     const answered = verdict.answeredBy ||
       { id: verdict.credentialId, aaguid: verdict.aaguid };
+    // WHICH CEREMONY (#723): an assertion by a stored key, or a key
+    // REGISTERED in this act — which EAP ACR Values 1.0 section 4 counts as
+    // provisioned on the strength of whatever came before it, so it earns
+    // no `phr` (`common/phishing_resistance.ts`).
+    const registered = String(body.mode) === 'create';
     const flags = verdict.flags || {};
     const said = { request: req, risk: step.risk,
       application: String(step.authn.application || ''), credential: {
@@ -13089,7 +13137,10 @@ class Authn {
         coseAlg: Number(verdict.coseAlg) || undefined,
         // AND ITS LANE (#643): the stored key's, or the step's for a key
         // just registered.
-        lane: String(answered.lane || step.lane || 'classical') } };
+        lane: String(answered.lane || step.lane || 'classical'),
+        ceremony: registered ? 'registration' : 'assertion',
+        attestationTrusted: !registered && answered.attestationTrusted ===
+                            true } };
     const started = this.startSession(res, step.username, amr, acr,
                                       step.authn.protocol, said);
     if (this.refusedSession(res, base, step.authn, step.username, started,
@@ -14874,7 +14925,11 @@ class Authn {
           // stored record, since the assertion names itself only by id.
           verdict.answeredBy = { id: known.credentialId,
                                  aaguid: known.aaguid || null,
-                                 lane: credentials.keyLane(known) };
+                                 lane: credentials.keyLane(known),
+                                 // Whether the key's stored statement is
+                                 // trusted, for EAP's `phrh` (#723).
+                                 attestationTrusted: !!(known.attestation &&
+                                   known.attestation.trusted === true) };
           // THROUGH `credentials.spendAssertion()` AND NOT A WRITE OF ITS
           // OWN, which is the same argument `removeKey()` carries: that file
           // is the one place the signature counter is recorded, and a second

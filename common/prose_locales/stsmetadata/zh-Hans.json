@@ -344,8 +344,12 @@
     "text": "full：每个授权服务器上的 POST /oauth2/par，对客户端进行身份验证的方式与令牌端点完全相同（因此在 RFC 9700、OAuth 2.1 和产品模式下执行，在开发模式下只做观察），接受颁发者、令牌端点和 PAR 端点作为客户端断言的受众；推送中的 request_uri 会被拒绝；推送的请求按授权端点自己的检查进行校验；`request` 对象按 RFC 9101 的要求验证并绑定到已通过身份验证的客户端，在要求签名对象的地方普通推送会被拒绝；返回 201，带一个绑定到客户端和授权服务器的 256 位 urn:ietf:params:oauth:request_uri: 引用，expires_in 取自 oauth2.parRequestUriLifetimeS；405、413 和 429；第 2.4 节针对已通过身份验证的客户端的未注册 redirect_uri 受一个设置控制（关闭）；request_uri 可在登录和同意的各个环节中使用，并在签发授权响应时被消耗，过期和重放的会以 invalid_request_uri 拒绝；全局、按客户端（注册时、控制台上和 /admin-api 上的 require_pushed_authorization_requests）以及按授权服务器的强制策略；两个元数据成员；使用 request_uri 时会再次询问客户端策略；以及推送时的 DPoP 证明会绑定授权码（RFC 9449 第 10.1 节）。在 /admin/oauth2/monitor 上计数并列出。"
   },
   "stsmetadata.specs.rfc9470.coverage": {
-    "en": "77eec06ed075ef4d",
-    "text": "full：授权端点在每种模式下、无论是否带 openid，都认可 acr_values 和 max_age——不满足它们的会话会让此人重新登录一次（要求两个因素会强制进入第二因素步骤），prompt=none 应答 login_required，登录后仍不满足的要求会以 unmet_authentication_requirements 拒绝（第 5 节）；acr 值按 0 < 1 < mfa 排序，授权码、ID 令牌和访问令牌携带所满足的最优先的请求值；两份发现文档中都有 acr_values_supported；JWT 访问令牌（第 6.1 节）和内省（第 6.2 节）中有 acr 和 auth_time；以及第 3 节带 acr_values 和 max_age 的 401 insufficient_user_authentication 质询，由本服务自己的资源服务器（UserInfo、OpenID4VCI 端点、SCIM、SSF）根据 oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS 发送；资源应用的 oauthStepUpAcrValues / oauthStepUpMaxAge 会被记录下来，由作为该应用的资源服务器执行。限制：本服务的登录只产生三种上下文类别；其他任何 acr 值只有在联合登录恰好报告该 acr 时才能满足。在 /admin/oauth2/monitor 上计数。"
+    "en": "910cd847e99f6395",
+    "text": "full：授权端点在每种模式下、无论是否带 openid，都认可 acr_values 和 max_age——不满足它们的会话会让此人重新登录一次（要求两个因素会强制进入第二因素步骤），prompt=none 应答 login_required，登录后仍不满足的要求会以 unmet_authentication_requirements 拒绝（第 5 节）；acr 值按 0 < 1 < mfa 排序，授权码、ID 令牌和访问令牌携带所满足的最优先的请求值；两份发现文档中都有 acr_values_supported；JWT 访问令牌（第 6.1 节）和内省（第 6.2 节）中有 acr 和 auth_time；以及第 3 节带 acr_values 和 max_age 的 401 insufficient_user_authentication 质询，由本服务自己的资源服务器（UserInfo、OpenID4VCI 端点、SCIM、SSF）根据 oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS 发送；资源应用的 oauthStepUpAcrValues / oauthStepUpMaxAge 会被记录下来，由作为该应用的资源服务器执行。限制：本服务的登录产生三种有序的上下文类别，以及 OpenID Connect EAP ACR Values 1.0 的两种类别（它们不在这一阶梯上）；其他任何 acr 值只有在联合登录恰好报告该 acr 时才能满足。在 /admin/oauth2/monitor 上计数。"
+  },
+  "stsmetadata.specs.oidc-eap-acr.coverage": {
+    "en": "d427a89d52168651",
+    "text": "partial：phr 和 phrh（第 2 节）发布在 acr_values_supported 中，通过 acr_values、必需的 acr claims 请求以及客户端的 default_acr_values 得到遵循——此时登录界面会要求安全密钥——并在登录确实获得它们时作为 ID Token 和访问令牌的 acr 携带，否则以 unmet_authentication_requirements 拒绝。phr 由 WebAuthn 断言（单独或在密码之后）或 TLS 客户端证书获得；phrh 由其密钥具有受信任的证明且 backup-eligible 标志清零的断言获得；在同一次登录中注册的密钥两者都不能获得（第 4 节）。不请求两者的请求让 acr 保持原样。签发策略可以看到 urn:sts:xacml:phishing-resistance，两个 role-issuance 选项可为某个应用要求其中之一。amr 值 pop（第 3 节）只由钱包登录写入。缺少：SAML AuthnContextClassRef 和 WS-Federation wauth 不映射这两个值。"
   },
   "stsmetadata.specs.rfc9101.coverage": {
     "en": "a6099e44ece03aa7",

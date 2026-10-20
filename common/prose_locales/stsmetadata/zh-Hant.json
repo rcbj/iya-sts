@@ -344,8 +344,12 @@
     "text": "full：在每個授權伺服器上提供 POST /oauth2/par，完全以權杖端點的方式驗證用戶端（因此在 RFC 9700、OAuth 2.1 與產品模式下強制執行，在開發模式下僅觀察記錄），接受簽發者、權杖端點與 PAR 端點作為用戶端斷言的對象；推送中的 request_uri 會被拒絕；推送的請求以授權端點自己的檢查加以驗證；`request` 物件依 RFC 9101 的要求驗證，繫結至已驗證的用戶端，在要求已簽署物件時純推送會被拒絕；以 201 回應一個繫結至用戶端與授權伺服器的 256 位元 urn:ietf:params:oauth:request_uri: 參照，expires_in 取自 oauth2.parRequestUriLifetimeS；405、413 與 429；第 2.4 節針對「已驗證」用戶端的未註冊 redirect_uri，受一項設定控制（關閉）；request_uri 可在登入與同意的各個階段使用，並在簽發授權回應時用盡，過期與重放者以 invalid_request_uri 拒絕；要求原則可全域設定、依用戶端設定（註冊時、主控台上與 /admin-api 上的 require_pushed_authorization_requests）以及依授權伺服器設定；兩個中繼資料成員；使用 request_uri 時會再次詢問用戶端原則；推送時的 DPoP 證明會繫結授權碼（RFC 9449 第 10.1 節）。在 /admin/oauth2/monitor 上計數並列出。"
   },
   "stsmetadata.specs.rfc9470.coverage": {
-    "en": "77eec06ed075ef4d",
-    "text": "full：授權端點在每種模式下、無論有無 openid，都遵循 acr_values 與 max_age——不符合它們的工作階段會讓該人重新登入一次（要求兩個因素時會強制進入第二因素步驟），prompt=none 回應 login_required，而在該次登入後仍未滿足的要求會以 unmet_authentication_requirements 拒絕（第 5 節）；acr 值依 0 < 1 < mfa 排序，授權碼、ID Token 與存取權杖攜帶所滿足之「所請求」值中最優先者；兩份探索文件中都有 acr_values_supported；JWT 存取權杖（第 6.1 節）與內省（第 6.2 節）中有 acr 與 auth_time；以及第 3 節帶有 acr_values 與 max_age 的 401 insufficient_user_authentication 挑戰，由本服務自己的資源伺服器（UserInfo、OpenID4VCI 端點、SCIM、SSF）依 oauth2.stepUpAcrValues／oauth2.stepUpMaxAgeS 送出；資源應用程式的 oauthStepUpAcrValues／oauthStepUpMaxAge 會被記錄下來，由身為該應用程式的資源伺服器強制執行。限制：本服務的登入會產生三種內容類別；任何其他 acr 值只能由回報恰好該 acr 的聯盟登入滿足。在 /admin/oauth2/monitor 上計數。"
+    "en": "910cd847e99f6395",
+    "text": "full：授權端點在每種模式下、無論有無 openid，都遵循 acr_values 與 max_age——不符合它們的工作階段會讓該人重新登入一次（要求兩個因素時會強制進入第二因素步驟），prompt=none 回應 login_required，而在該次登入後仍未滿足的要求會以 unmet_authentication_requirements 拒絕（第 5 節）；acr 值依 0 < 1 < mfa 排序，授權碼、ID Token 與存取權杖攜帶所滿足之「所請求」值中最優先者；兩份探索文件中都有 acr_values_supported；JWT 存取權杖（第 6.1 節）與內省（第 6.2 節）中有 acr 與 auth_time；以及第 3 節帶有 acr_values 與 max_age 的 401 insufficient_user_authentication 挑戰，由本服務自己的資源伺服器（UserInfo、OpenID4VCI 端點、SCIM、SSF）依 oauth2.stepUpAcrValues／oauth2.stepUpMaxAgeS 送出；資源應用程式的 oauthStepUpAcrValues／oauthStepUpMaxAge 會被記錄下來，由身為該應用程式的資源伺服器強制執行。限制：本服務的登入會產生三種有序的內容類別，以及 OpenID Connect EAP ACR Values 1.0 的兩種類別（它們不在這個階梯上）；任何其他 acr 值只能由回報恰好該 acr 的聯盟登入滿足。在 /admin/oauth2/monitor 上計數。"
+  },
+  "stsmetadata.specs.oidc-eap-acr.coverage": {
+    "en": "d427a89d52168651",
+    "text": "partial：phr 與 phrh（第 2 節）發布在 acr_values_supported 中，透過 acr_values、必要的 acr claims 請求以及用戶端的 default_acr_values 受到遵循——此時登入畫面會要求安全金鑰——並在登入確實取得它們時作為 ID Token 與存取權杖的 acr 攜帶，否則以 unmet_authentication_requirements 拒絕。phr 由 WebAuthn 斷言（單獨或在密碼之後）或 TLS 用戶端憑證取得；phrh 由其金鑰具有受信任的證明且 backup-eligible 旗標為零的斷言取得；在同一次登入中註冊的金鑰兩者都無法取得（第 4 節）。不請求兩者的請求會讓 acr 維持原樣。簽發政策可看見 urn:sts:xacml:phishing-resistance，兩個 role-issuance 選項可為某個應用程式要求其中之一。amr 值 pop（第 3 節）只由錢包登入寫入。缺少：SAML AuthnContextClassRef 與 WS-Federation wauth 不會對應這兩個值。"
   },
   "stsmetadata.specs.rfc9101.coverage": {
     "en": "a6099e44ece03aa7",

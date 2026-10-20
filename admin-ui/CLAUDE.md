@@ -5827,7 +5827,10 @@ passwordless sign-in still records `amr ["hwk"]` and `acr "1"` even under
 `required`. RFC 8176 has no value for *the authenticator verified the user* that
 this service could honestly assert, and claiming `mfa` because the ceremony was
 phishing-resistant would be the exact fake this profile refuses everywhere else.
-The page says so rather than leaving it to be discovered.
+The page says so rather than leaving it to be discovered. **Phishing
+resistance has a context class of its own since #723**, OpenID Connect EAP's
+`phr`. A token carries it only when a client asked for it and the ceremony
+earned it, never in place of `mfa` (`oauth-oidc/CLAUDE.md` 3cp).
 
 ### The mechanism report is the reason either page is worth having
 
