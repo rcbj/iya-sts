@@ -66,6 +66,46 @@ provider.
 * **The provider's tokens are not kept.** The access token is used to read the
   person's profile and then dropped, and no refresh token is asked for.
 
+## Connecting a provider to an existing account
+
+People who already have an account here connect a provider to it on the
+portal's **Connected accounts** page (`/portal/connected-accounts`). They are
+signed in as themselves, select **Connect**, and sign in at the provider. From
+then on, a sign-in through that provider is them. **Disconnect** removes the
+connection and ends the sessions it started.
+
+A connect needs:
+
+* a sign-in whose risk is LOW or unscored;
+* an authentication within `federation.connectRecentAuthMinutes` (ten
+  minutes by default). Otherwise the person is asked to sign in again first.
+
+The connect is finished only in the browser it was started in. A provider
+account already connected to somebody else is refused, as is an
+administrator's account unless the relationship sets
+`fedMayAssertAdministrators`. The person is mailed a security notice.
+
+## Risk
+
+Consumer sign-ins are scored like any other ([Risk scoring](risk-scoring.md)),
+with three signals of their own: `new-federated-provider`, `network-signups`
+and an operator's weight on one relationship (`federation:<id>=<factor>` in
+`risk.signalFactors`).
+
+* **A newcomer is assessed too.** Their first sign-in is not scored, but it is
+  decided on the evidence, such as a network that has created many accounts in
+  the hour.
+* **The policy can refuse creation separately.** Creating the account is its
+  own question to the issuance policy (`create-account`), so a policy can
+  refuse creation while existing people still sign in.
+* **A step-up is answered here.** When the policy asks an existing person's
+  federated sign-in for a step-up, the person answers with an authenticator
+  app or security key they hold here. Someone who holds neither is refused.
+* **The policy is told the category.** The issuance policy receives the
+  category (`urn:sts:xacml:authn-category`), the provider
+  (`urn:sts:xacml:authn-provider`) and whether the address is verified
+  (`urn:sts:xacml:email-verified`).
+
 ## The catalogue
 
 | Provider (`fedProvider`) | Protocol | The person is | The address is |

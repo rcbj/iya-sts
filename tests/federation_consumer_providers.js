@@ -828,6 +828,102 @@ function childMain() {
       });
     });
 
+    // ===== K. CONNECTED ACCOUNTS, FROM THE PORTAL ===========================
+    const portalSignin = require(ROOT + '/tests/vendored/portal_signin');
+    const RAE = 'fcp-rae';
+    const RAE_PASSWORD = 'Fcp-Rae-' + process.pid + '-Passw0rd!';
+    inSp(function () {
+      ldap.createUser(RAE, { invent: false, attributes: {
+        givenName: 'Rae', sn: 'Local', mail: 'rae@sp.example' } });
+      credentials.setPassword(RAE, RAE_PASSWORD);
+    });
+    const spBase = base + '/realm/' + SP;
+    const rae = await portalSignin.signInToThePortal(spBase, RAE, null,
+                                                     { password: RAE_PASSWORD });
+    note(!!rae.token, 'K1. a local person signs in to the portal');
+    // A connect, followed through the provider and back.
+    async function connect(id, withCookie) {
+      const asked = await rae.api('POST', '/account-api/connected-accounts',
+                                  { action: 'connect', id: id });
+      const location = asked.json && asked.json.location;
+      const set = asked.headers && asked.headers.getSetCookie
+        ? asked.headers.getSetCookie() : [];
+      jar = {};
+      if (withCookie) {
+        set.forEach(function (line) {
+          const pair = String(line).split(';')[0];
+          const at = pair.indexOf('=');
+          if (at > 0) {
+            jar[pair.slice(0, at)] = pair.slice(at + 1);
+          }
+        });
+      }
+      if (!location) {
+        return { asked: asked, back: '' };
+      }
+      let r = await request('GET', location);
+      for (let hop = 0; hop < 6; hop += 1) {
+        const at = String(r.headers.location || '');
+        if (/\/portal\/connected-accounts/.test(at)) {
+          return { asked: asked, back: at };
+        }
+        if (!(r.status >= 300 && r.status < 400 && at)) {
+          break;
+        }
+        r = await request('GET', new URL(at, base).toString());
+      }
+      return { asked: asked, back: '', last: r };
+    }
+    people.discord = { profile: { id: '9100', username: 'rae-at-discord',
+      email: 'rae@discord.example', verified: true } };
+    const linked = await connect('cp-discord', true);
+    const raeEntry = entryOf(RAE);
+    note(/done=/.test(linked.back) && attr(raeEntry, 'federationLink')
+      .indexOf('cp-discord https://discord.com 9100') >= 0,
+         'K2. Connect: the provider\'s subject becomes a link on the ' +
+         'person\'s own entry, and the portal is told done', linked.back +
+         ' ' + JSON.stringify(attr(raeEntry, 'federationLink')) + ' ' +
+         JSON.stringify(linked.asked && linked.asked.json));
+    note(attr(raeEntry, 'mail')[0] === 'rae@sp.example',
+         'K3. connecting writes nothing else onto the entry');
+    started.length = 0;
+    authn.startSession = function (res, username, amr, acr) {
+      started.push({ username: username, amr: amr, acr: acr });
+      return realStart.apply(this, arguments);
+    };
+    await signIn('cp-discord');
+    authn.startSession = realStart;
+    note(started.some(function (one) {
+      return String(one.username).toLowerCase() === RAE;
+    }), 'K4. a sign-in through the connected provider is the person',
+         JSON.stringify(started));
+    const viewed = await rae.api('GET', '/account-api/connected-accounts');
+    note(viewed.status === 200 && (viewed.json.providers || []).some(
+      function (p) { return p.id === 'cp-discord' && p.connected; }),
+         'K5. the page lists the provider as connected',
+         JSON.stringify(viewed.json));
+    people.discord = { profile: { id: '9200', username: 'rae-other',
+      email: 'other@discord.example', verified: true } };
+    const csrf = await connect('cp-github', false);
+    note(!/done=/.test(csrf.back) &&
+         !attr(entryOf(RAE), 'federationLink').some(function (v) {
+           return /^cp-github /.test(v);
+         }),
+         'K6. a connect finished in a browser without its binding cookie ' +
+         'links nothing (the account-linking CSRF)', csrf.back);
+    people.discord = { profile: { id: '80351110224678912', username: 'n',
+      email: 'n@example.com', verified: true } };
+    const taken = await connect('cp-discord', true);
+    note(/problem=/.test(taken.back),
+         'K7. a provider account already connected to somebody else is ' +
+         'refused', taken.back);
+    const dropped = await rae.api('POST', '/account-api/connected-accounts',
+                                  { action: 'disconnect', id: 'cp-discord' });
+    note(dropped.status === 200 && !attr(entryOf(RAE), 'federationLink')
+      .some(function (v) { return /^cp-discord /.test(v); }),
+         'K8. Disconnect removes the connection', dropped.status + ' ' +
+         JSON.stringify(attr(entryOf(RAE), 'federationLink')));
+
     // ===== B. THE REALM SWITCH ==============================================
     inSp(function () {
       config.setOverride('federation.consumerProviders', 'false');

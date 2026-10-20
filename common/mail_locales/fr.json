@@ -45,6 +45,11 @@
       "text": "L’adresse e-mail du compte {{username}} a été modifiée le {{when}} : c’est désormais {{address}}. Ce message a été envoyé à l’adresse précédente.\n\nSi vous ne vous y attendiez pas, contactez dès maintenant la personne qui gère votre compte.\n",
       "html": "<p>L’adresse e-mail du compte <strong>{{username}}</strong> a été modifiée le {{when}} : c’est désormais {{address}}. Ce message a été envoyé à l’adresse précédente.</p><p>Si vous ne vous y attendiez pas, contactez dès maintenant la personne qui gère votre compte.</p>"
     },
+    "account-connected": {
+      "subject": "Un compte a été connecté à votre compte {{service}}",
+      "text": "Un compte chez {{provider}} a été connecté au compte {{username}} le {{when}}, et peut désormais servir à s’y connecter.\n\nSi ce n’était pas vous, déconnectez-le dans Comptes connectés et contactez dès maintenant la personne qui gère votre compte.\n",
+      "html": "<p>Un compte chez {{provider}} a été connecté au compte <strong>{{username}}</strong> le {{when}}, et peut désormais servir à s’y connecter.</p><p>Si ce n’était pas vous, déconnectez-le dans Comptes connectés et contactez dès maintenant la personne qui gère votre compte.</p>"
+    },
     "access-request": {
       "subject": "{{service}} : une application demande un accès",
       "text": "L’application {{client}} demande un accès au nom du compte {{username}} : {{rights}}.\n\nRien n’est autorisé tant que vous ne l’avez pas approuvé. Pour approuver ou refuser la demande, connectez-vous et ouvrez cette page dans les {{expiresMinutes}} minutes :\n\n{{link}}\n\nSi vous ne reconnaissez pas cette demande, refusez-la sur cette page ou ignorez ce message : elle expire d’elle-même.\n",

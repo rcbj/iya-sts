@@ -648,6 +648,7 @@ var config = {
     usernamePrefix: "",                                                      // Prefix for federated usernames
     loginButtons: true,                                                      // Offer partners at the sign-in screen
     consumerProviders: false,                                                // Consumer and social identity providers
+    connectRecentAuthMinutes: 10,                                            // Connecting a provider: how recent the sign-in must be (min)
     outbound: true,                                                          // Make back-channel requests to partners
     outboundTimeoutMs: 15000,                                                // Back-channel timeout (ms)
     outboundAllowHttp: false,                                                // Allow http:// to a partner (development only)

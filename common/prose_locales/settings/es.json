@@ -4071,6 +4071,14 @@
     "en": "635dc4f49d935e03",
     "text": "Permite que este dominio se federe con proveedores de consumo y sociales —Google, Discord, GitHub y el resto del catálogo— como relaciones de una categoría propia (#565). DESACTIVADO por defecto: un dominio con él desactivado no puede recibir uno, no puede activar uno y rechaza en cada puerta un inicio de sesión a través de uno, incluida una relación escrita con ldapmodify. A los socios empresariales no les afecta en ninguna posición. Quien llega por primera vez a través de un proveedor de consumo obtiene una entrada propia, y una dirección nunca se usa para emparejar a una persona existente."
   },
+  "federation.connectRecentAuthMinutes|label": {
+    "en": "cbe8f387555868ea",
+    "text": "Conectar un proveedor: antigüedad máxima del inicio de sesión (min)"
+  },
+  "federation.connectRecentAuthMinutes|description": {
+    "en": "f0edd885053c8b09",
+    "text": "Hace cuánto tiempo como máximo debe haberse autenticado una persona para conectar un proveedor de consumo o social a su cuenta en la página Cuentas conectadas del portal (#565). Si hace más, se le pide que inicie sesión de nuevo primero: una conexión permite al proveedor iniciar su sesión a partir de entonces."
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "Hacer solicitudes por canal secundario a los socios"

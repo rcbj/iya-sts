@@ -8243,6 +8243,16 @@ const SETTINGS = [
                  'consumer provider gets an entry of their own, and an ' +
                  'address is never used to match an existing person.' },
 
+  { key: 'federation.connectRecentAuthMinutes', group: 'Federation',
+    label: 'Connecting a provider: how recent the sign-in must be (min)',
+    env: 'STS_FEDERATION_CONNECT_RECENT_AUTH_MINUTES', type: 'int', dflt: 10,
+    min: 1, max: 1440, runtime: true,
+    description: 'How recently a person must have authenticated to connect ' +
+                 'a consumer or social provider to their account on the ' +
+                 'portal\'s Connected accounts page (#565). Older, and they ' +
+                 'are asked to sign in again first: a connection lets the ' +
+                 'provider sign them in from then on.' },
+
   { key: 'federation.outbound', group: 'Federation',
     label: 'Make back-channel requests to partners',
     env: 'STS_FEDERATION_OUTBOUND', type: 'bool', dflt: true, runtime: true,

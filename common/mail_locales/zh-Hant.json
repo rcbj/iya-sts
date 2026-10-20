@@ -45,6 +45,11 @@
       "text": "帳戶 {{username}} 的電子郵件地址已於 {{when}} 變更為 {{address}}。此郵件已寄送至變更前的地址。\n\n如果您沒有預期到這種情況，請立即聯絡您的帳戶管理員。\n",
       "html": "<p>帳戶 <strong>{{username}}</strong> 的電子郵件地址已於 {{when}} 變更為 {{address}}。此郵件已寄送至變更前的地址。</p><p>如果您沒有預期到這種情況，請立即聯絡您的帳戶管理員。</p>"
     },
+    "account-connected": {
+      "subject": "有帳戶已連結到您的 {{service}} 帳戶",
+      "text": "{{provider}} 上的一個帳戶已於 {{when}} 連結到帳戶 {{username}}，現在可以用它登入該帳戶。\n\n如果這不是您本人操作，請在「已連結的帳戶」中中斷連結，並立即聯絡您的帳戶管理員。\n",
+      "html": "<p>{{provider}} 上的一個帳戶已於 {{when}} 連結到帳戶 <strong>{{username}}</strong>，現在可以用它登入該帳戶。</p><p>如果這不是您本人操作，請在「已連結的帳戶」中中斷連結，並立即聯絡您的帳戶管理員。</p>"
+    },
     "access-request": {
       "subject": "{{service}}：有應用程式要求存取權",
       "text": "應用程式 {{client}} 要求代表帳戶 {{username}} 取得存取權：{{rights}}。\n\n在您核准之前，不會允許任何存取。如需核准或拒絕，請在 {{expiresMinutes}} 分鐘內登入並開啟此頁面：\n\n{{link}}\n\n如果您不認得此要求，請在該頁面拒絕，或忽略此郵件：它會自行過期。\n",

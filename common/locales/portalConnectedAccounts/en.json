@@ -1,0 +1,14 @@
+{
+  "heading": "Connected accounts",
+  "sub": "Connect an account you hold at one of these providers, and sign in here with it. A connection is yours: nobody else can make one for you, and disconnecting it ends the sessions it started.",
+  "none": "This realm offers no provider to connect.",
+  "connected": "Connected — you can sign in here with it.",
+  "connect": "Connect",
+  "disconnect": "Disconnect",
+  "notConnected": "You have no connection to that provider.",
+  "doneDisconnected": "Disconnected.",
+  "doneConnected": "{provider} is connected to your account.",
+  "noSession": "This service no longer knows which sign-in this page is part of, so a connection started from it could not be finished. Sign in again and connect from there.",
+  "riskRefused": "An account cannot be connected from this sign-in. Sign in again and connect from there.",
+  "notConnectable": "That provider cannot be connected now."
+}

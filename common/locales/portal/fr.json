@@ -55,6 +55,8 @@
   "nav.device.heading": "Connecter un appareil",
   "nav.claim-sources.label": "Sources de revendications",
   "nav.claim-sources.heading": "Sources de revendications connectées",
+  "nav.connected-accounts.label": "Comptes connectés",
+  "nav.connected-accounts.heading": "Comptes connectés",
   "shell.navAria": "Pages du compte",
   "shell.signedInAs": "Connecté en tant que <strong>{name}</strong>",
   "shell.signOut": "Se déconnecter",

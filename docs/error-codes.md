@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4410** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4417** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
-* [Federation (`STS-FED`)](#sts-fed) — 157
+* [Federation (`STS-FED`)](#sts-fed) — 161
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 130
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 237
 * [Management API (`STS-API`)](#sts-api) — 84
-* [User portal (`STS-PORTAL`)](#sts-portal) — 94
+* [User portal (`STS-PORTAL`)](#sts-portal) — 97
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
 * [Registries (`STS-REG`)](#sts-reg) — 178
@@ -2553,6 +2553,10 @@ Raised from: federation/.
 | `STS-FED-0178` | A federated sign-in was not finished after a step-up on risk: the browser at /federation/stepup/{handle} holds no session whose latest authentication is a second factor made through that step, as the person, after the partner answered — or the step ended with an error (#565). | HTTP 403 |
 | `STS-FED-0179` | A federated sign-in that would have CREATED a person's entry was refused: the issuance policy denied create-account on its risk facts and the partner's category (#565). Nobody was created; an existing person is not asked this question. | HTTP 403 |
 | `STS-FED-0180` | fedAuthorizeParams was refused: a value is not `<name>=<value>`, or names a parameter this service sets itself (response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request, request_uri) (#565). | HTTP 400 (console and API) |
+| `STS-FED-0181` | A provider was not connected to an account (#565): the sign-on session the connect was started from has ended, or is no longer the person's. | HTTP 303 back to /portal/connected-accounts with a problem |
+| `STS-FED-0182` | A provider was not connected to an account (#565): the provider's account is already connected to somebody else here, so the directory would not write the link. | HTTP 303 back to /portal/connected-accounts with a problem |
+| `STS-FED-0183` | A provider was not connected to an account (#565): the account is a console administrator's or holds REMOTE_PEPS, and the relationship does not set fedMayAssertAdministrators. | HTTP 303 back to /portal/connected-accounts with a problem |
+| `STS-FED-0184` | A connect could not be started (#565): the relationship is not a usable consumer provider in OpenID Connect or OAuth 2.0. | HTTP 400 (account API) |
 
 ## STS-OIDFED
 
@@ -4829,6 +4833,9 @@ Raised from: portal/.
 | `STS-PORTAL-0590` | A Credential Offer asked for on /portal/wallet was refused because the sign-on session the portal's token was issued on is no longer known, or continued without signing in: a pre-authorized offer is made on that session's authority (#589, #240). | HTTP 403 JSON |
 | `STS-PORTAL-0591` | A credential a person asked to remove on /portal/wallet is not one this realm records as issued to them: the id names no credential of theirs (an expired one is no longer recorded, and another person's is never theirs to name) (#661). | HTTP 400 JSON |
 | `STS-PORTAL-0592` | A Credential Offer asked for on /portal/wallet named a signing algorithm its configuration's credentials are not signed with: the configuration's `signingAlgs` (vc_configs.ts vciSigningAlgsFor()) are the ones it may choose. | HTTP 400 JSON |
+| `STS-PORTAL-0610` | A connect on /portal/connected-accounts was refused (#565): the token is on no sign-on session this service still holds, so the provider's return could not be bound to one. | HTTP 400 JSON |
+| `STS-PORTAL-0611` | A connect on /portal/connected-accounts was refused (#565): the sign-on session's risk is MEDIUM or HIGH, and connecting a provider is never done from a session risk scoring doubts. | HTTP 403 JSON |
+| `STS-PORTAL-0613` | A disconnect on /portal/connected-accounts named a provider the person has no connection to (#565). | HTTP 400 JSON |
 
 ## STS-ACCOUNT
 

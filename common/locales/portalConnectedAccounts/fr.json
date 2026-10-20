@@ -1,0 +1,14 @@
+{
+  "heading": "Comptes connectés",
+  "sub": "Connectez un compte que vous détenez chez l’un de ces fournisseurs, et connectez-vous ici avec lui. Une connexion vous appartient : personne d’autre ne peut l’établir pour vous, et la supprimer met fin aux sessions qu’elle a ouvertes.",
+  "none": "Ce domaine ne propose aucun fournisseur à connecter.",
+  "connected": "Connecté — vous pouvez vous connecter ici avec ce compte.",
+  "connect": "Connecter",
+  "disconnect": "Déconnecter",
+  "notConnected": "Vous n’avez aucune connexion à ce fournisseur.",
+  "doneDisconnected": "Déconnecté.",
+  "doneConnected": "{provider} est connecté à votre compte.",
+  "noSession": "Ce service ne sait plus de quelle connexion cette page fait partie, donc une connexion lancée depuis celle-ci ne pourrait pas aboutir. Reconnectez-vous et connectez le compte depuis là.",
+  "riskRefused": "Aucun compte ne peut être connecté depuis cette connexion. Reconnectez-vous et connectez le compte depuis là.",
+  "notConnectable": "Ce fournisseur ne peut pas être connecté pour le moment."
+}

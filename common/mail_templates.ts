@@ -230,6 +230,24 @@ const BUILT_IN: TemplateSpec[] = [
           '</strong> was changed at {{when}}, to {{address}}. This message ' +
           'went to the address it had before.</p><p>If you did not expect ' +
           'this, contact whoever manages your account now.</p>' },
+  // #565: a consumer or social provider connected to the account from the
+  // portal (`federation_sp.ts`'s `finishConnect()`). From then on that
+  // provider signs this person in, so it is a security notice: one nobody
+  // can decline.
+  { id: 'account-connected', category: 'security',
+    title: 'An account was connected',
+    values: ['username', 'when', 'provider'],
+    links: [],
+    subject: 'An account was connected to your {{service}} account',
+    text: 'An account at {{provider}} was connected to the account ' +
+          '{{username}} at {{when}}, and can now be used to sign in to it.' +
+          '\n\nIf this was not you, disconnect it under Connected accounts ' +
+          'and contact whoever manages your account now.\n',
+    html: '<p>An account at {{provider}} was connected to the account ' +
+          '<strong>{{username}}</strong> at {{when}}, and can now be used to ' +
+          'sign in to it.</p><p>If this was not you, disconnect it under ' +
+          'Connected accounts and contact whoever manages your account ' +
+          'now.</p>' },
   // -------------------------------------------------------------------------
   // #432 PHASE 6: A GNAP GRANT WAITING FOR ITS RESOURCE OWNER (RFC 9635
   // section 1.4). A NOTIFICATION, the one category a person may decline: the

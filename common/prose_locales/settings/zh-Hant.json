@@ -4071,6 +4071,14 @@
     "en": "635dc4f49d935e03",
     "text": "允許此領域與消費者和社群提供者（Google、Discord、GitHub 以及目錄中的其他提供者）建立聯合，作為獨立類別的關係（#565）。預設關閉：關閉時，領域不能新增、不能啟用此類關係，並在每個入口拒絕透過它們的登入，包括由 ldapmodify 寫入的關係。無論開關處於何種狀態，企業合作夥伴都不受影響。透過消費者提供者首次到來的人會取得自己的項目，地址絕不會用於比對既有的人員。"
   },
+  "federation.connectRecentAuthMinutes|label": {
+    "en": "cbe8f387555868ea",
+    "text": "連結提供者：登入須在多久之內（分鐘）"
+  },
+  "federation.connectRecentAuthMinutes|description": {
+    "en": "f0edd885053c8b09",
+    "text": "在入口網站的「已連結的帳戶」頁面上將消費者或社群提供者連結到自己的帳戶時，此人最近一次驗證須在多少分鐘之內（#565）。超過這個時間，會先要求其重新登入：連結之後，該提供者即可讓此人登入。"
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "向夥伴發出後端通道要求"

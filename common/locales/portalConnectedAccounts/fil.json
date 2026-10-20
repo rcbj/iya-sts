@@ -1,0 +1,14 @@
+{
+  "heading": "Mga nakakonektang account",
+  "sub": "Ikonekta ang isang account na hawak mo sa isa sa mga provider na ito, at mag-sign in dito gamit ito. Iyo ang isang koneksyon: walang ibang makagagawa nito para sa iyo, at ang pag-disconnect nito ay tumatapos sa mga session na sinimulan nito.",
+  "none": "Walang inaalok ang realm na ito na provider na maikokonekta.",
+  "connected": "Nakakonekta — maaari kang mag-sign in dito gamit ito.",
+  "connect": "Ikonekta",
+  "disconnect": "I-disconnect",
+  "notConnected": "Wala kang koneksyon sa provider na iyon.",
+  "doneDisconnected": "Na-disconnect.",
+  "doneConnected": "Nakakonekta na ang {provider} sa iyong account.",
+  "noSession": "Hindi na alam ng serbisyong ito kung aling pag-sign in ang kinabibilangan ng pahinang ito, kaya hindi matatapos ang koneksyong sinimulan mula rito. Mag-sign in muli at kumonekta mula roon.",
+  "riskRefused": "Hindi maikokonekta ang isang account mula sa pag-sign in na ito. Mag-sign in muli at kumonekta mula roon.",
+  "notConnectable": "Hindi maikokonekta ang provider na iyon ngayon."
+}

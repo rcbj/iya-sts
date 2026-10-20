@@ -4071,6 +4071,14 @@
     "en": "635dc4f49d935e03",
     "text": "允许此领域与消费者和社交提供方（Google、Discord、GitHub 以及目录中的其他提供方）建立联合，作为独立类别的关系（#565）。默认关闭：关闭时，领域不能添加、不能启用此类关系，并在每个入口拒绝通过它们的登录，包括由 ldapmodify 写入的关系。无论开关处于何种状态，企业合作方都不受影响。通过消费者提供方首次到来的人会获得自己的条目，地址绝不会用于匹配已有的人员。"
   },
+  "federation.connectRecentAuthMinutes|label": {
+    "en": "cbe8f387555868ea",
+    "text": "连接提供方：登录须在多久之内（分钟）"
+  },
+  "federation.connectRecentAuthMinutes|description": {
+    "en": "f0edd885053c8b09",
+    "text": "在门户的“已连接的账户”页面上将消费者或社交提供方连接到自己的账户时，此人最近一次身份验证须在多少分钟之内（#565）。超过这个时间，会先要求其重新登录：连接之后，该提供方即可让此人登录。"
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "向合作方发出反向通道请求"

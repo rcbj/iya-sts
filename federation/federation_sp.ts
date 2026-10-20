@@ -668,7 +668,11 @@ class FederationSp {
       application: (context && context.application) || '',
       // The sign-in screen's pending record, for a restart at the person's
       // home cell (#98 D9); '' in single-cell mode.
-      authnPending: (context && context.authnPending) || ''
+      authnPending: (context && context.authnPending) || '',
+      // A CONNECT FROM THE PORTAL (#565): who is connecting, from which
+      // sign-on session and browser, and where to go back to. Null for a
+      // sign-in.
+      connect: (context && context.connect) || null
     };
   }
 
@@ -1357,6 +1361,13 @@ class FederationSp {
   private completeSignIn(req, res, record, result) {
     const { fedMap, errorCodes, log, federation } = this.deps;
     log.debug("Entering FederationSp.completeSignIn(). id=" + record.fedId);
+    // A CONNECT FROM THE PORTAL (#565) is not a sign-in: the partner's
+    // verified subject is linked to the person who asked, and nothing else
+    // happens. See finishConnect().
+    if (result.connect) {
+      log.debug("Leaving FederationSp.completeSignIn(). A connect.");
+      return this.finishConnect(req, res, record, result);
+    }
     const mapped = fedMap.mapIncoming(record, result.bag, result.subject);
     // What was dropped, for /admin/federation (#94). A store that cannot be
     // written costs the list and never the sign-in.
@@ -2259,6 +2270,171 @@ class FederationSp {
                              Object.assign({}, decision, {
                                how: 'confirmed', create: false,
                                link: context.link || decision.link }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // CONNECTING A PROVIDER TO AN ACCOUNT, FROM THE PORTAL (#565, the plan's
+  // decision 6). The person is signed in, and asks `/account-api` to connect
+  // a consumer provider: this mints the flow — the context of an ordinary
+  // federated sign-in, carrying who asked, the sign-on session the token was
+  // issued on and the digest of a secret the browser is given in
+  // LINK_COOKIE — and answers the provider's authorization address. The
+  // provider answers at the assertion consumer service as for any sign-in,
+  // every check made there, and completeSignIn() hands the verified answer
+  // to finishConnect() rather than signing anybody in.
+  //
+  // OpenID Connect and OAuth 2.0 relationships only, of the consumer
+  // category: an enterprise partner's links are an administrator's (the
+  // console, `/admin-api`, SCIM), and this is the person's door.
+  // Answers `{ ok, location, binding }` or `{ ok: false, code, why }`.
+  // ---------------------------------------------------------------------------
+  beginConnect(req, spec) {
+    const { federation, randomId, baseUrlOf, log } = this.deps;
+    log.debug("Entering FederationSp.beginConnect(). " + spec.relationship);
+    const record = federation.get(String(spec.relationship || ''));
+    if (!record || record.fedRole !== 'service-provider' ||
+        !federation.signsIn(record) || !federation.isUsable(record) ||
+        federation.categoryOf(record) !== 'consumer' ||
+        (record.fedProtocol !== 'oidc' && record.fedProtocol !== 'oauth2') ||
+        String(record.fedTrustAnchor || '').trim()) {
+      log.debug("Leaving FederationSp.beginConnect(). Not connectable.");
+      return { ok: false, code: 'STS-FED-0184',
+               why: 'That provider cannot be connected here now.' };
+    }
+    const binding = randomId(24);
+    const pkce = this.pkcePair();
+    const handle = this.putContext({
+      id: record.fedId, protocol: record.fedProtocol, returnTo: '',
+      authnPending: '', application: '',
+      nonce: 'n-' + randomId(16),
+      pkceVerifier: pkce.verifier, pkceChallenge: pkce.challenge,
+      connect: { username: String(spec.username), at: Date.now(),
+                 session: String(spec.sessionId || ''),
+                 bindingHash: this.bindingHashOf(binding),
+                 back: String(spec.back || '') }
+    });
+    const location = this.authorizationRequestUrl(baseUrlOf(req), record,
+                                                  this.heldContext(handle));
+    log.debug("Leaving FederationSp.beginConnect(). To the provider.");
+    return { ok: true, location: location, binding: binding,
+             cookie: LINK_COOKIE + '=' + binding + '; Path=/; HttpOnly; ' +
+                     'SameSite=Lax; Max-Age=' +
+                     Math.max(60, Math.floor(this.contextTtlMs() / 1000)) +
+                     (this.deps.config.value('global.https') ? '; Secure'
+                                                             : '') };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PROVIDER ANSWERED A CONNECT (#565). Verified already — the signature,
+  // the issuer, the audience, the nonce, PKCE — by the protocol branch that
+  // called completeSignIn(). What is asked here is the account-linking
+  // CSRF's question and the subject's:
+  //   1. this is the BROWSER the connect began in (LINK_COOKIE, STS-FED-0111);
+  //   2. the sign-on session the token was issued on is still live and still
+  //      the person's (STS-FED-0181);
+  //   3. the partner may assert this person: a console administrator or a
+  //      holder of REMOTE_PEPS only where fedMayAssertAdministrators says so
+  //      (STS-FED-0183), and the partner's own stop on them (#373) holds;
+  //   4. the link is nobody else's (the directory refuses a link two entries
+  //      would carry, STS-FED-0182).
+  // Then the link `<relationship> <issuer> <subject>` is written onto the
+  // person's entry — through the directory's write hook, which tells CAEP
+  // and RISC what changed — the person is mailed a security notice, and the
+  // browser goes back to the portal page. Nothing else is written: the
+  // partner's attributes are not, because the person did not ask for that.
+  // ---------------------------------------------------------------------------
+  private finishConnect(req, res, record, result) {
+    const { authn, federation, links, audit, errorCodes, log } = this.deps;
+    log.debug("Entering FederationSp.finishConnect(). " + record.fedId);
+    const c = result.connect || {};
+    const back = (problem: string, done?: string) => {
+      log.debug("Entering back().");
+      const target = String(c.back || '/portal/connected-accounts');
+      const joiner = target.indexOf('?') >= 0 ? '&' : '?';
+      res.status(303).set('Cache-Control', 'no-store')
+        .set('Location', target + joiner + (problem
+          ? 'problem=' + encodeURIComponent(problem)
+          : 'done=' + encodeURIComponent(done))).end();
+      log.debug("Leaving back().");
+      return undefined;
+    };
+    const presented = String(authn.cookiesOf(req)[LINK_COOKIE] || '');
+    res.append('Set-Cookie', LINK_COOKIE + '=; Path=/; HttpOnly; ' +
+               'SameSite=Lax; Max-Age=0');
+    if (!presented || !this.sameBinding(this.bindingHashOf(presented),
+                                        String(c.bindingHash || ''))) {
+      errorCodes.mark(res, 'STS-FED-0111');
+      log.debug("Leaving FederationSp.finishConnect(). Another browser.");
+      return back('The provider was not connected: this request was ' +
+                  'started in another browser. Start it again from this ' +
+                  'page.');
+    }
+    const signOn = c.session ? authn.sessionById(c.session) : null;
+    if (!signOn || authn.sessionEnded(signOn) ||
+        signOn.authenticated === false ||
+        String((signOn.user || {}).username || '').toLowerCase() !==
+          String(c.username || '').toLowerCase()) {
+      errorCodes.mark(res, 'STS-FED-0181');
+      log.debug("Leaving FederationSp.finishConnect(). Session ended.");
+      return back('The provider was not connected: the sign-in it was ' +
+                  'started from has ended. Sign in again and connect from ' +
+                  'there.');
+    }
+    if (!federation.boolOf(record.fedMayAssertAdministrators, false) &&
+        this.administratorRole(String(c.username))) {
+      errorCodes.mark(res, 'STS-FED-0183');
+      audit.failure('STS-FED-0183', {
+        protocol: 'Federation', channel: 'http', target: record.fedId,
+        summary: c.username + ' was not connected to ' + record.fedId +
+                 ': a console administrator\'s account is not connected to ' +
+                 'a provider unless the relationship allows it',
+        outcome: 'refused', detail: { relationship: record.fedId,
+                                      username: c.username } });
+      log.debug("Leaving FederationSp.finishConnect(). An administrator.");
+      return back('The provider was not connected: an administrator\'s ' +
+                  'account cannot be signed in to through it.');
+    }
+    // THE PARTNER'S OWN STOP ON THIS PERSON (#373): a partner that said the
+    // person is disabled at its end is not connected to them here.
+    if (fedBlocks.blockOf(record.fedId, String(c.username))) {
+      errorCodes.mark(res, 'STS-FED-0156');
+      log.debug("Leaving FederationSp.finishConnect(). Blocked.");
+      return back('The provider was not connected: it has said this ' +
+                  'account is disabled at its end.');
+    }
+    const stable = links.stableSubjectOf(record, result);
+    const value = links.linkValue(record.fedId, stable.issuer,
+                                  stable.subject);
+    const written = federation.writeFederationLink(String(c.username), value,
+                                                   true, {});
+    if (!written || written.ok === false) {
+      errorCodes.mark(res, 'STS-FED-0182');
+      audit.failure('STS-FED-0182', {
+        protocol: 'Federation', channel: 'http', target: record.fedId,
+        summary: c.username + ' was not connected to ' + record.fedId +
+                 ': ' + ((written && written.errors) || []).join(' '),
+        outcome: 'refused', detail: { relationship: record.fedId,
+                                      username: c.username } });
+      log.debug("Leaving FederationSp.finishConnect(). Not written.");
+      return back('The provider was not connected: that account at the ' +
+                  'provider is already connected to somebody here.');
+    }
+    audit.record({ category: 'portal', action: 'federation.connected',
+      actor: String(c.username), target: record.fedId, outcome: 'success',
+      summary: '"' + c.username + '" connected ' + record.fedId + ' (' +
+               (record.fedName || record.fedId) + ') to their account ' +
+               '(#565)' });
+    try {
+      require('../common/mail_uses').notice('account-connected',
+        String(c.username), { values: {
+          provider: String(record.fedName || record.fedId) },
+          via: 'a connected account' });
+    } catch (e) {
+      log.debug("Caught in FederationSp.finishConnect(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving FederationSp.finishConnect(). Connected.");
+    return back('', String(record.fedName || record.fedId));
   }
 
   // ---------------------------------------------------------------------------
@@ -4070,6 +4246,7 @@ class FederationSp {
         amr: this.federatedAmr([]),
         acr: contents.context || '',
         returnTo: this.fromContext(context).returnTo,
+        connect: this.fromContext(context).connect,
         application: this.fromContext(context).application,
         authnPending: this.fromContext(context).authnPending
       });
@@ -4293,6 +4470,7 @@ class FederationSp {
         sessionNotOnOrAfter: bound.at,
         amr: this.federatedAmr([]), acr: contents.context || '',
         returnTo: this.fromContext(context).returnTo,
+        connect: this.fromContext(context).connect,
         application: this.fromContext(context).application,
         authnPending: this.fromContext(context).authnPending
       });
@@ -4878,6 +5056,7 @@ class FederationSp {
               ? String(idToken) : '',
             acr: reading.acr,
             returnTo: this.fromContext(context).returnTo,
+            connect: this.fromContext(context).connect,
             application: this.fromContext(context).application,
             authnPending: this.fromContext(context).authnPending
           });
@@ -5036,6 +5215,7 @@ class FederationSp {
             amr: reading.amr,
             acr: reading.acr,
             returnTo: this.fromContext(context).returnTo,
+            connect: this.fromContext(context).connect,
             application: this.fromContext(context).application,
             authnPending: this.fromContext(context).authnPending
           });
@@ -5118,6 +5298,7 @@ class FederationSp {
           issuer: String(record.fedPeer || ''),
           bag: reading.bag, amr: reading.amr, acr: reading.acr,
           returnTo: this.fromContext(context).returnTo,
+          connect: this.fromContext(context).connect,
           application: this.fromContext(context).application,
           authnPending: this.fromContext(context).authnPending
         });
@@ -5677,6 +5858,9 @@ export = {
    * Forwards to `FederationSp.takeContext()`.
    */
   takeContext: slot.forward('takeContext'),
+  // The portal's connect (#565), reached by `portal/portal_connected_accounts`
+  // at request time.
+  beginConnect: slot.forward('beginConnect'),
   /**
    * Forwards to `FederationSp.sessionBoundOf()`.
    */

@@ -1,0 +1,14 @@
+{
+  "heading": "Anslutna konton",
+  "sub": "Anslut ett konto du har hos någon av dessa leverantörer och logga in här med det. En anslutning är din: ingen annan kan göra den åt dig, och att koppla från den avslutar de sessioner den startade.",
+  "none": "Denna sfär erbjuder ingen leverantör att ansluta.",
+  "connected": "Ansluten — du kan logga in här med det.",
+  "connect": "Anslut",
+  "disconnect": "Koppla från",
+  "notConnected": "Du har ingen anslutning till den leverantören.",
+  "doneDisconnected": "Frånkopplad.",
+  "doneConnected": "{provider} är anslutet till ditt konto.",
+  "noSession": "Denna tjänst vet inte längre vilken inloggning den här sidan hör till, så en anslutning som startas härifrån kan inte slutföras. Logga in igen och anslut därifrån.",
+  "riskRefused": "Ett konto kan inte anslutas från den här inloggningen. Logga in igen och anslut därifrån.",
+  "notConnectable": "Den leverantören kan inte anslutas nu."
+}

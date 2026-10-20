@@ -11222,6 +11222,25 @@ const CODES = [
       'client_id, redirect_uri, state, scope, nonce, code_challenge, ' +
       'code_challenge_method, response_mode, request, request_uri) (#565).',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0181',
+    summary: 'A provider was not connected to an account (#565): the sign-on ' +
+      'session the connect was started from has ended, or is no longer the ' +
+      'person\'s.',
+    spec: 'HTTP 303 back to /portal/connected-accounts with a problem' },
+  { code: 'STS-FED-0182',
+    summary: 'A provider was not connected to an account (#565): the ' +
+      'provider\'s account is already connected to somebody else here, so ' +
+      'the directory would not write the link.',
+    spec: 'HTTP 303 back to /portal/connected-accounts with a problem' },
+  { code: 'STS-FED-0183',
+    summary: 'A provider was not connected to an account (#565): the account ' +
+      'is a console administrator\'s or holds REMOTE_PEPS, and the ' +
+      'relationship does not set fedMayAssertAdministrators.',
+    spec: 'HTTP 303 back to /portal/connected-accounts with a problem' },
+  { code: 'STS-FED-0184',
+    summary: 'A connect could not be started (#565): the relationship is not ' +
+      'a usable consumer provider in OpenID Connect or OAuth 2.0.',
+    spec: 'HTTP 400 (account API)' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
@@ -21036,6 +21055,20 @@ const CODES = [
       'algorithm its configuration\'s credentials are not signed with: the ' +
       'configuration\'s `signingAlgs` (vc_configs.ts vciSigningAlgsFor()) ' +
       'are the ones it may choose.',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0610',
+    summary: 'A connect on /portal/connected-accounts was refused (#565): ' +
+      'the token is on no sign-on session this service still holds, so the ' +
+      'provider\'s return could not be bound to one.',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0611',
+    summary: 'A connect on /portal/connected-accounts was refused (#565): ' +
+      'the sign-on session\'s risk is MEDIUM or HIGH, and connecting a ' +
+      'provider is never done from a session risk scoring doubts.',
+    spec: 'HTTP 403 JSON' },
+  { code: 'STS-PORTAL-0613',
+    summary: 'A disconnect on /portal/connected-accounts named a provider ' +
+      'the person has no connection to (#565).',
     spec: 'HTTP 400 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',

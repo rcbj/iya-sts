@@ -4071,6 +4071,14 @@
     "en": "635dc4f49d935e03",
     "text": "Låter denna sfär federera med konsument- och sociala leverantörer — Google, Discord, GitHub och resten av katalogen — som relationer i en egen kategori (#565). AV som standard: en sfär med den avslagen kan inte få en, kan inte aktivera en och vägrar vid varje dörr en inloggning genom en, även en relation skriven med ldapmodify. Företagspartner påverkas inte i något läge. Den som kommer för första gången genom en konsumentleverantör får en egen post, och en adress används aldrig för att matcha en befintlig person."
   },
+  "federation.connectRecentAuthMinutes|label": {
+    "en": "cbe8f387555868ea",
+    "text": "Ansluta en leverantör: hur ny inloggningen måste vara (min)"
+  },
+  "federation.connectRecentAuthMinutes|description": {
+    "en": "f0edd885053c8b09",
+    "text": "Hur nyligen en person måste ha autentiserat sig för att ansluta en konsument- eller social leverantör till sitt konto på portalens sida Anslutna konton (#565). Äldre än så, och de ombeds logga in igen först: en anslutning låter leverantören logga in dem från och med då."
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "Gör bakkanalsbegäranden till partner"

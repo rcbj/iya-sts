@@ -42,6 +42,7 @@ import DevicesPages = require('./web_devices');
 import CibaPages = require('./web_ciba');
 import DevicePages = require('./web_device');
 import ClaimSourcesPages = require('./web_claim_sources');
+import ConnectedAccountsPages = require('./web_connected_accounts');
 import ActivationPages = require('./web_activation');
 import ResetPages = require('./web_reset');
 
@@ -73,6 +74,7 @@ const PAGES: PortalPage[] = [].concat(
   CibaPages.PAGES,
   DevicePages.PAGES,
   ClaimSourcesPages.PAGES,
+  ConnectedAccountsPages.PAGES,
   ActivationPages.PAGES,
   ResetPages.PAGES);
 

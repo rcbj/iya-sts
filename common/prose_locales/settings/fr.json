@@ -4071,6 +4071,14 @@
     "en": "635dc4f49d935e03",
     "text": "Permet à ce domaine de se fédérer avec des fournisseurs grand public et sociaux — Google, Discord, GitHub et le reste du catalogue — sous forme de relations d'une catégorie à part (#565). DÉSACTIVÉ par défaut : un domaine où il est désactivé ne peut pas en recevoir, ne peut pas en activer, et refuse à chaque porte une connexion passant par l'un d'eux, y compris une relation écrite par ldapmodify. Les partenaires d'entreprise n'en sont affectés dans aucune position. Un nouveau venu passant par un fournisseur grand public obtient sa propre entrée, et une adresse n'est jamais utilisée pour retrouver une personne existante."
   },
+  "federation.connectRecentAuthMinutes|label": {
+    "en": "cbe8f387555868ea",
+    "text": "Connecter un fournisseur : ancienneté maximale de la connexion (min)"
+  },
+  "federation.connectRecentAuthMinutes|description": {
+    "en": "f0edd885053c8b09",
+    "text": "Depuis combien de temps au plus une personne doit s’être authentifiée pour connecter un fournisseur grand public ou social à son compte sur la page Comptes connectés du portail (#565). Au-delà, il lui est demandé de se reconnecter d’abord : une connexion permet au fournisseur de la connecter à partir de ce moment."
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "Effectuer des requêtes par canal de retour vers les partenaires"
