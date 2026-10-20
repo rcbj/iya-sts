@@ -1232,12 +1232,11 @@ instance at 14c, right after the KDC is required, BEFORE the directory's facade
 call (a facade called first would build a default instance the root could not
 replace).
 
-**WHAT IS NOT DONE, and is the ticket's later phases:** rotating a trust key
-with a grace period; the console tab and `/admin-api`. This paragraph also
-listed SID filtering, ok-as-delegate across a trust, S4U across realms, the
-product honour rule and classic delegation across realms: Phases 2 and 3
-built them, in the two sections below. A record is managed through `krb5_trusts.ts`'s functions (`add`,
-`update`, `setEnabled`, `remove`, `pair`) until then.
+**WHAT WAS NOT DONE HERE IS DONE NOW.** This paragraph listed rotating a trust
+key with a grace period and the console tab and `/admin-api` as later phases;
+Phase 4 built them (*THE TRUSTS IN THE CONSOLE AND `/admin-api`*, below), as
+Phases 2 and 3 built SID filtering, ok-as-delegate across a trust, S4U across
+realms, the product honour rule and classic delegation across realms.
 
 **OWED TO THE PARENT PROJECT'S COPY CLOSURE (#430).** `krb5_kdc.js` asks the
 register on EVERY TGS-REQ (`crossRealmPath()`) and `krb5_principals.js` on
@@ -1400,7 +1399,70 @@ and accepts nothing, and `STS-KRB-0229` says why.
 topLevelNames: [{ name, enabled }] }`, cross-forest only, `STS-KRB-0237`),
 `claimsTransformation` (`drop-all` | `allow-all`, `STS-KRB-0238`), and the
 attribute bit `pim-trust` (with `treat-as-external` and `forest-transitive`,
-`STS-KRB-0217`).
+`STS-KRB-0217`). Phase 4's form carries all three.
+
+## THE TRUSTS IN THE CONSOLE AND `/admin-api` (#430 Phase 4, 2026-10-20)
+
+**The library decides, the two doors share one function each.** Protocols →
+Kerberos → **Trusts** (`kerberos/web_kerberos_trusts.ts`) is drawn from `GET
+/admin-api/kerberos/trusts` (`adminViews.kerberosTrustsJson()`), and its seven
+controls post `/admin/kerberos/trusts`, which the console resolves to `POST
+/admin-api/kerberos/trusts/{add,update,enable,disable,rotate-key,remove,pair}`
+(`adminActions.kerberosTrustsAction()`). Everything a record may hold, and
+every refusal, is still `krb5_trusts.ts`'s; the action layer turns a form's
+`direction` and `keySource` into the two key sides, asks `confirm` of a
+removal (`STS-ADMIN-0860`) and writes the audit row, by the trust's name and
+never a key.
+
+**A KEY ALREADY HELD IS CHANGED ONLY BY `rotate-key`.** `update` keeps every
+held key whatever the form's key source says, takes the source only for a
+side its `direction` adds, and drops a side its direction no longer names.
+That keeps the one act that changes a key the one that keeps the old one for
+a grace.
+
+**ROTATION WITH GRACE: ONE PREVIOUS INCOMING VERSION** (`rotateKey()`,
+`previousKey()`). The new keys are at the current kvno plus one; the incoming
+version replaced is the record's `previousIncoming` (its secret sealed beside
+the others), and `ticketKeyFor()` in the KDC opens a ticket naming that kvno
+with it while `krb5.trustKeyGraceSeconds` (zero: the ticket lifetime plus the
+clock skew, as `krb5.retainedKeyTtlS` reads it) has not passed since
+`retiredAt`, and answers KRB_AP_ERR_BADKEYVER (`STS-KRB-0115`) after. Only
+the INCOMING side is kept: the partner seals with it until its own side
+changes, while an outgoing key is used from the next referral and an old one
+is of no use to anybody here. A second rotation inside the grace ends the
+first one's. `mirror` (a trust-realm partner) rotates the partner realm's
+record in the same act, with the same keys the other way round and the SAME
+kvno — the two records hold one principal each and must agree on its kvno.
+
+**PAIR** (`mirror()`, distinct from `pair()`, which writes two records from
+nothing) writes the partner trust realm's record for a record held here, or
+makes its keys match where it has one, changing nothing else there. It and a
+mirrored rotation write ANOTHER realm's directory, so `admin-ui/admin_scope.ts`
+refuses both to a realm administrator (`STS-ADMIN-0787`, and `STS-API-0112`
+for a realm token): a realm administrator manages their realm's trusts and
+nothing else.
+
+**THE HEALTH COLUMN** is `health()`: findings with a `kind` the console
+translates and an English `text` for the API's reader — disabled, not
+quarantined (and, in product with `krb5.requireSidFilteringInProduct`, not
+used), incoming key held or missing, outgoing missing, suffixes routed or
+none, and for a trust-realm partner whether it holds the matching record.
+
+**THE APPLICATION PANEL** is `applicationAcross()`, attached to an
+application's view as `page.krb5Across` when it declares `krb5`: each
+`SPN@REALM` of another realm in `appAllowedToActOnBehalfOf` with the trust
+path it needs and what is wrong with it, each in `appAllowedToDelegateTo`
+flagged where classic delegation across realms is off here or in the other
+trust realm, each `krb5S4uSelfRealm` realm, and each trust's TGT-delegation
+bits against `krb5TrustedForDelegation` and `krb5ForeignTgtDelegation`. Its
+`choices.krb5S4uSelfRealm` (the realms the trusts accept, plus what the entry
+holds) become the field's choices on the Kerberos sub-tab.
+
+**TESTS**: `tests/kerberos_trusts_admin.js` (in process: the acts and view,
+pairing, rotation with grace across two trust realms, who may, the panel, the
+tab) and `tests/vendored/sts_kerberos_trusts_api.js` (`local: true`, over
+HTTP; written and registered, run by the suite). `sts_kerberos_samba.js`
+reads the development trust's partner from the API.
 
 ## PRODUCT MODE, AND THE LITERALS AN AUDIT FOUND IN THIS DIRECTORY (2026-09-12)
 
