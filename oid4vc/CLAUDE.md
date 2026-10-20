@@ -787,6 +787,83 @@ must be https (`didWebUrl()`), so the fetch is driven in process with a
 stubbed `fetchDocument` and, for the internal-address refusal, the real
 `fetchPublished()`.
 
+### #693 phase 2b: the person's proven DID as the holder (2026-10-20)
+
+The review's second row: a credential bound to a DID the person PROVED,
+for `did:jwk` and `did:key` only. Four pieces:
+
+1. **A KEY PROOF BY DID** (`vc_issuer.ts`, `verifyProofJwt()` and
+   `proofKeyOfKid()`). OpenID4VCI 1.0 Appendix F.1 lets a `jwt` proof name its
+   key with `kid`: "If the Credential shall be bound to a DID, the kid refers
+   to a DID URL which identifies a particular key in the DID Document". It also
+   says that each of `kid`, `jwk` and `x5c` "MUST NOT be present if" another
+   is, so `jwk` with `kid` is refused (`STS-VC-0140`). The `kid` has to be a
+   DID URL with a fragment naming a did:jwk or did:key method (`STS-VC-0141`).
+   It is resolved by `vc_did_resolver.ts`, from the identifier and with no
+   fetch, and only once the typ, alg, aud, iat and c_nonce checks have passed.
+   The method has to be in the document's `authentication` (`STS-VC-0144`).
+   **The specification names no relationship**, and `authentication` is DID
+   Core section 5.3.1's for proving control, which is what a proof of
+   possession does. That choice also refuses a did:jwk whose key says
+   `use: "enc"`. A did:web `kid` is refused outright (`STS-VC-0142`). A
+   configuration bound to a KEY binds to the key a `kid` names in the same
+   way as to a `jwk`, so nothing about it changed.
+2. **THE BINDING IS OPT-IN PER CONFIGURATION**: `oid4vci.didHolderBinding`, a
+   `csv` row whose closed set is `vc_configs.ts`'s ids (`OID4VCI_CONFIG_IDS`,
+   held equal by `tests/closed_setting_values.js`), empty by default.
+   `vciHolderBindingOf(id)` answers `key` or `did`. It is a setting rather
+   than a field of `VCI_CONFIGS` because the configurations are constants and
+   the realm's choice is configuration, which gives the console and
+   `/admin-api` parity for free (rule 7). For a `did` configuration,
+   `didBindingRefusal()` runs at the request, before the c_nonce is spent, and
+   again when a deferred one is collected. Every proof must name a DID
+   (`STS-VC-0145`, which also covers the `attestation` proof type). The person
+   is `signInSubjectOf()`'s VERIFIED subject (`STS-VC-0146`): a development
+   token this realm did not verify could name anybody, and `holderNameFrom()`
+   reads one unverified. Their account must not be disabled (`STS-VC-0147`).
+   Each DID must be in `siop.provenSubjectsOf()`: one enrolled for nobody,
+   never or since removed, is `STS-VC-0148`; one an administrator enrolled by
+   value is `STS-VC-0149`; and somebody else's is `STS-VC-0150`. **`siop.ts`
+   is unchanged**: the issuer reads it, lazily, through its deps. The codes
+   start at 0140 so that the DID claim (phase 2a), built beside this one,
+   could take the numbers after 0129.
+3. **WHAT THE CREDENTIAL CARRIES.**
+   * `dc+sd-jwt`: `cnf: { kid: <DID URL> }`, which is RFC 7800 section 3.4's
+     `kid` confirmation method. SD-JWT VC's `cnf` is "as defined in
+     [RFC7800]", with a JWK only RECOMMENDED. `sub` is unchanged because
+     SD-JWT VC says "There is no requirement for a binding to exist between
+     sub and cnf claims".
+   * `jwt_vc_json`: `credentialSubject.id` and `sub` are the DID, since
+     VCDM 1.1's JWT encoding has `sub` represent `credentialSubject.id`, and
+     `cnf.kid` is the DID URL.
+   * `ldp_vc`: `credentialSubject.id` is the DID. For a did:jwk that is what
+     it always was.
+   The metadata's `cryptographic_binding_methods_supported` is
+   `["did:jwk","did:key"]`, set after the DID variants clone their sibling,
+   because the binding is each configuration's own. `proof_types_supported`
+   is unchanged. The issued register keeps the DID as `holderDid` in every
+   format. **The Verifier reads `cnf.kid` and a did:key subject**
+   (`cnfKeyOf()`, `ldpFacts()`), only for did:jwk and did:key and never by a
+   fetch, so a DID-bound credential signs in like any other.
+4. **THE TRADE IS LINKABILITY.** Every copy of a batch, and every later
+   credential from that configuration, carries the same DID, which is what
+   per-copy keys and the rounded validity times exist to prevent. That is why
+   the binding is a configuration's opt-in and never a default. The nonces and
+   `unlinkableTimes()` are unchanged.
+
+**did:web is excluded, and why.** Phase 1 pins a did:web's key at
+enrolment, which protects a SIGN-IN. A credential is checked later, by a
+relying party who resolves the DID itself. The host can change its document
+between the proof here and that check, so a credential bound to a did:web says
+nothing durable about the key. Building it needs the relying party's half of
+the pin, or a key-named binding beside the DID: a design of its own.
+
+`tests/oid4vci_did_binding.js` holds all of it in process: the kid proofs and
+their five refusals, the metadata, each format's output, the batch, every
+refusal above including a DID removed after the token and during a deferral,
+and the sign-in in every format. **What has no test**: an HTTP job
+(`tests/vendored/`, `local: true`), and a real wallet sending a `kid` proof.
+
 ## THE x509 CLIENT IDENTIFIER PREFIXES: `x509_san_dns` AND `x509_hash` (#230, 2026-09-26)
 
 Found by #187: the OIDF `oid4vp-1final-verifier-test-plan` has signed

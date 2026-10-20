@@ -62,6 +62,11 @@ The two `…Did` configurations are cloned from their plain siblings and differ
 only in how the issuer names itself, so both routes can be compared against
 one issuer.
 
+The holder binding in the table is the default. Any configuration named in
+`oid4vci.didHolderBinding` binds instead to a DID the person proved
+(`did:jwk`, `did:key`), as described in
+[Bound to the person's DID](#bound-to-the-persons-did).
+
 `dc+sd-jwt` and `jwt_vc_json` credentials are signed with
 `oid4vci.credentialSigningAlgorithm` (RS256 by default; ML-DSA, SLH-DSA and
 the composites are allowed and are signed in the worker pool). `ldp_vc` is
@@ -236,6 +241,15 @@ means the whole configured set.
   post-quantum included) and the `attestation` proof type. A `c_nonce` is spent
   once across the whole cluster. A proof's `iat` must be within
   `oid4vci.proofIatWindowS` of now.
+* **The key, by value or by DID** (Appendix F.1). A `jwt` proof names its key
+  with `jwk`, or with a `kid` that is a DID URL naming a `did:jwk` or
+  `did:key` verification method (`did:jwk:…#0`, `did:key:z…#z…`). Both DID
+  methods resolve from the identifier, so nothing is fetched. The method has
+  to be listed under the DID document's `authentication`, which rules out a
+  `did:jwk` whose key says `use: "enc"`. Appendix F.1 says that `jwk` and
+  `kid` MUST NOT both be present, so such a proof is refused, and so is a
+  `did:web` `kid`. A configuration bound to a key binds to the key a `kid`
+  names in the same way it binds to a `jwk`.
 * **Key attestations** (Appendix D). An attestation in a `jwt` proof's
   `key_attestation` header, or as an `attestation` proof, is verified against
   `oid4vci.keyAttestationTrustedCertificates` and recorded.
@@ -310,6 +324,54 @@ credential itself. A row is written only when the access token:
 This register, and not the credential's own `sub`, is what decides whom a
 presentation may [sign in](oid4vp.md#signing-in-with-a-wallet). A credential
 issued on any other token is still issued, but it signs nobody in.
+
+### Bound to the person's DID
+
+A configuration named in `oid4vci.didHolderBinding` (none by default) binds
+its credentials to a DID **the person proved**, not to a bare key. That means
+a `did:jwk` or `did:key` the person enrolled by proving it with their wallet
+on `/portal/self-issued` (see [OpenID4VP](oid4vp.md)). For such a
+configuration:
+
+* the metadata's `cryptographic_binding_methods_supported` is
+  `["did:jwk", "did:key"]` (section 12.2.4's `did:` method names), and
+  `proof_types_supported` does not change;
+* every proof has to name its key by a `kid` DID URL. A `jwk` proof or the
+  `attestation` proof type is refused with `invalid_proof`;
+* the access token has to name a person this realm verified: verified
+  here, not revoked, granted for credential issuance, and naming an
+  account. Otherwise the request is refused with `credential_request_denied`,
+  as it is when the account is disabled;
+* each DID has to be one of that person's **proved** subjects. A DID an
+  administrator enrolled by value, somebody else's DID, and a DID enrolled
+  for nobody (including one removed after the offer) are refused with
+  `invalid_proof`. A deferred issuance is checked again when it is
+  collected.
+
+What the credential carries:
+
+| Format | The DID is in |
+|---|---|
+| `dc+sd-jwt` | `cnf.kid`, the DID URL (RFC 7800 section 3.4). `sub` is unchanged: SD-JWT VC requires no binding between `sub` and `cnf` |
+| `jwt_vc_json` | `credentialSubject.id` and `sub` (the DID), and `cnf.kid` (the DID URL) |
+| `ldp_vc` | `credentialSubject.id`, the person's DID, where it used to be the `did:jwk` of the key |
+
+**Every copy is linkable.** A batch's copies all carry the same DID, and so
+does every later credential from that configuration. Ordinary key binding
+(one key per copy, rounded validity times) exists to prevent exactly that. This
+is the trade a configuration makes by opting in, so the binding is opt-in per
+configuration and never the default. The nonces and rounded validity times are
+unchanged.
+
+**`did:web` is not offered.** The service pins a `did:web`'s key at
+enrolment, but the host can still change its document between the proof and
+the moment a relying party resolves the DID to check a presentation. Binding a
+credential to a DID whose key can change after issuance needs a design of its
+own.
+
+The Verifier reads the key that `cnf.kid` and a `did:key` subject name, so a
+DID-bound credential [signs its holder in](oid4vp.md#signing-in-with-a-wallet)
+in every format.
 
 ### The issuer named by a DID
 
@@ -423,6 +485,7 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.cNonceCacheSize` | `OID4VCI_C_NONCE_CACHE_SIZE` | `10000` | yes | How many `c_nonce` values a realm holds; past it the oldest is dropped. |
 | `oid4vci.keyAttestationRequired` | `OID4VCI_KEY_ATTESTATION_REQUIRED` | `false` | yes | Require a key attestation with every credential request, and advertise it. |
 | `oid4vci.keyAttestationTrustedCertificates` | `OID4VCI_KEY_ATTESTATION_TRUSTED_CERTIFICATES` | *(empty)* | yes | PEM certificates of the Wallet Providers whose key attestations are believed; empty trusts none. |
+| `oid4vci.didHolderBinding` | `OID4VCI_DID_HOLDER_BINDING` | *(empty)* | yes | The configurations bound to the person's proved `did:jwk` or `did:key` instead of to a key. |
 | `oid4vci.statusListTtlS` | `OID4VCI_STATUS_LIST_TTL_S` | `300` | yes | The `ttl` (and HTTP `max-age`) of this realm's status lists. |
 | `oid4vci.statusListLifetimeS` | `OID4VCI_STATUS_LIST_LIFETIME_S` | `86400` | yes | How long a status list token, or a Bitstring Status List credential, says it is valid. |
 | `oid4vci.issuerDisplayName` | `OID4VCI_ISSUER_DISPLAY_NAME` | `IdP Tools Credential Issuer` | yes | The metadata's `display.name`. |
