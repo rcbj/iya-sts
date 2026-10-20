@@ -980,6 +980,14 @@ const JOBS = [
   // another lane loads.
   // `local: true`: this repository's own sign-in screen and API.
   { file: 'sts_passkey_usernameless.js', browser: false, local: true },
+  // A CLASSICAL PASSKEY AND A POST-QUANTUM ONE SIDE BY SIDE (#643): both
+  // enrolled at `/account-api/keys` in a throwaway realm with
+  // `webauthn.pqcAlongsideClassical` on, each lane's handle, algorithms and
+  // name, the Signal API's data per lane, and a usernameless sign-in with
+  // either. A realm of its own, because the switch changes every passkey
+  // enrolment in its realm.
+  // `local: true`: this repository's own portal, sign-in screen and API.
+  { file: 'sts_passkey_dual_lane.js', browser: false, local: true },
   // AN APPLICATION'S PASSKEY POLICY (#609): the named passkey policies
   // naming an application, read back through `GET /admin-api/applications`'s
   // `page.passkeyPolicies` in precedence order with the one that applies
