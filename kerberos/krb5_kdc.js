@@ -3538,6 +3538,34 @@ async function answerAsReq(request, fast) {
     }
   }
 
+  // A SERVICE TICKET ASKED FOR AT THE AS (#747): the role gate
+  // answerTgsReq() asks, asked here for the one AS-REQ that names a service
+  // rather than `krbtgt` (`kinit -S HTTP/web.example.com`), so a role the
+  // service requires cannot be stepped round by skipping the TGS. The same
+  // question in the same words — the client is always of this realm here —
+  // and the same refusal, KDC_ERR_POLICY with STS-KRB-0039.
+  if (!isTgtRequest(body.sname)) {
+    const asServiceName = ((body.sname || {}).name || []).join('/');
+    const asRoleAnswer = gate.check({
+      application: asServiceName + '@' + asRealm,
+      kind: gate.ISSUANCE.KERBEROS_TICKET,
+      subject: { kind: 'user', name: body.cname.name.join('/'),
+                 authenticated: true },
+      claims: null
+    });
+    if (!asRoleAnswer.allowed) {
+      log.info('krb5: the issuance policy refused a service ticket for ' +
+               body.cname.name.join('/') + ' to ' + asServiceName +
+               ', asked for at the AS. ' + asRoleAnswer.why);
+      log.debug("Leaving answerAsReq(). Refused by the issuance policy.");
+      return errorReply(12, {
+        errorCode: 'STS-KRB-0039',
+        crealm: body.realm, cname: body.cname, sname: body.sname,
+        eText: asRoleAnswer.why
+      });
+    }
+  }
+
   // Issue. The session key is fresh per ticket; both copies of it — the one in
   // the ticket for the service and the one in the enc-part for the client —
   // must be the same bytes, which is the whole mechanism.
@@ -4564,11 +4592,21 @@ async function answerTgsReq(request, state) {
   // the same question `/oauth2/token` and `/saml2/sso` are asked and has
   // nothing to do with delegation.
   //
-  // It is asked at the TGS and not at the AS, and that is a decision rather
-  // than an omission: an AS-REQ is answered with a TGT for `krbtgt`, which is
-  // this KDC's own ticket-granting service and not an application anybody
-  // would put a requirement on. A requirement belongs to the SERVICE somebody
-  // is reaching, and the TGS is where a client asks for one.
+  // A requirement belongs to the SERVICE somebody is reaching, and the TGS is
+  // where a client normally asks for one. The AS asks the same question for
+  // the one AS-REQ that names a service rather than `krbtgt` (`kinit -S`,
+  // #747): answerAsReq(), beside its risk decision. A TGT is this KDC's own
+  // ticket-granting service and no application anybody puts a requirement
+  // on, so neither exchange asks about one.
+  //
+  // THE SERVICE IS NAMED `SPN@<answering realm>` (#747, 2026-10-20), the
+  // name every door gives its entry (`create-service`, the sighting at the
+  // end of this function, the delegation seeds). It was the bare SPN, and
+  // the PEP's reads of `appRequiredRole` have no realm fallback, so a role
+  // required on the entry those doors made was never enforced here. The gate
+  // resolves the name to the entry that exists — the bare SPN's first, as
+  // before, then this one (`issuance_gate.js`'s kerberosEntryOf()) — so an
+  // entry an operator named by the bare SPN decides exactly as it did.
   //
   // KDC_ERR_POLICY (12) is the error the specification has for exactly this —
   // "KDC policy rejects request" — and it is the right word rather than a
@@ -4609,7 +4647,7 @@ async function answerTgsReq(request, state) {
   }
   const kerberosRoleAnswer = roleQuestionWaived ? { allowed: true, why: '' }
     : gate.check({
-      application: serviceName,
+      application: serviceName + '@' + answeringRealm,
       kind: gate.ISSUANCE.KERBEROS_TICKET,
       subject: presenterAcross
         ? { kind: 'user', name: presenterName + '@' + ticketPart.crealm,

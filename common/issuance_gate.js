@@ -332,7 +332,11 @@ function check(request) {
   // THE PROTOCOL DECLARATION (2026-10-01) rides along whenever the
   // application named is declared for something, and makes the policy asked
   // past the role shortcut in product, where its rule can refuse.
-  const protocol = protocolFactsOf(asked);
+  // A KERBEROS SERVICE IS ASKED ABOUT BY ITS ENTRY'S OWN NAME (#747), read
+  // once here so that every fact below and the PEP's own reads of the
+  // requirement are about the same entry: kerberosEntryOf().
+  const named = kerberosEntryOf(asked);
+  const protocol = protocolFactsOf(named);
   // `mode.js` is required LAZILY: it is a leaf, but this file is in the
   // parent project's Kerberos COPY closure and a top-level require here would
   // add a file to it (kerberos/CLAUDE.md).
@@ -362,7 +366,7 @@ function check(request) {
     return allow('Nothing named an application, so there is no requirement ' +
                  'to check.');
   }
-  const question = Object.assign({}, asked, {
+  const question = Object.assign({}, named, {
     protocol: asked.protocol || PROTOCOL_OF_KIND[String(asked.kind)] || '',
     risk: risk,
     device: device,
@@ -601,9 +605,8 @@ function phishingFactsOf(asked) {
 // is nothing to compare — no application, no family (a session), or an
 // application declared for nothing, which no rule refuses. Required LAZILY,
 // for `disabledSubject()`'s reason: this file is a leaf. A Kerberos service
-// is named without its realm by the KDC, so its entry is also looked up with
-// `@<krb5.realm>`. Never throws: a registry that cannot be read declares
-// nothing.
+// arrives already named by its entry (kerberosEntryOf(), #747). Never
+// throws: a registry that cannot be read declares nothing.
 // ---------------------------------------------------------------------------
 function protocolFactsOf(asked) {
   log.debug('Entering protocolFactsOf().');
@@ -618,14 +621,7 @@ function protocolFactsOf(asked) {
   let declared = [];
   try {
     const applications = require('./applications');
-    const names = [String(asked.application)];
-    if (asked.kind === ISSUANCE.KERBEROS_TICKET &&
-        names[0].indexOf('@') < 0 && config.value('krb5.realm')) {
-      names.push(names[0] + '@' + String(config.value('krb5.realm')));
-    }
-    for (let i = 0; i < names.length && !declared.length; i += 1) {
-      declared = applications.declaredFamiliesFor(names[i]);
-    }
+    declared = applications.declaredFamiliesFor(String(asked.application));
   } catch (e) {
     log.debug('Caught in protocolFactsOf(): ' + ((e && e.message) || e));
     declared = [];
@@ -637,6 +633,69 @@ function protocolFactsOf(asked) {
   log.debug('Leaving protocolFactsOf(). ' + families.join(',') + ' against ' +
             declared.join(','));
   return { families: families, declared: declared };
+}
+
+// ---------------------------------------------------------------------------
+// THE ENTRY A KERBEROS SERVICE IS ASKED ABOUT BY (#747, 2026-10-20).
+//
+// A service's entry has one of two names, and nothing about a request says
+// which: every door that makes one — `create-service` from the console and
+// the Management API, the TGS's sighting (`applications.seen()`), the
+// delegation seeds — names it `SPN@REALM`, and an operator may have made one
+// by the bare SPN before any of those existed. Until #747 the KDC asked by
+// the bare SPN and only `protocolFactsOf()` tried the other name, so
+// `requiredRolesOf()` and `requiresNarrowedRoles()` — the PEP's reads of
+// `appRequiredRole` — never found the entry the doors made, and a role a
+// service required was not enforced at the TGS.
+//
+// So the name is resolved HERE, once, and the question carries it: the bare
+// SPN when an entry has that name (what was enforced before, unchanged, and
+// still the one that decides when both exist, as protocolFactsOf() chose),
+// then `SPN@REALM`, and the name as asked when neither exists. The realm is
+// the one the caller names (the KDC sends `SPN@<answering realm>`), or the
+// ambient trust realm's `krb5.realm` for a bare name. The registry is the
+// ambient realm's, so another trust realm's entry of the same name is never
+// read. Required LAZILY, for `disabledSubject()`'s reason. Never throws: a
+// registry that cannot be read leaves the name as asked.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the request with a Kerberos service's application named by the
+ * entry that exists for it, bare SPN first, then `SPN@REALM`.
+ *
+ * @param asked - the issuance request
+ * @returns the request itself, or a copy carrying the resolved `application`
+ */
+function kerberosEntryOf(asked) {
+  log.debug('Entering kerberosEntryOf().');
+  const given = String(asked.application || '');
+  if (asked.kind !== ISSUANCE.KERBEROS_TICKET || !given) {
+    log.debug('Leaving kerberosEntryOf(). Not a Kerberos service.');
+    return asked;
+  }
+  const at = given.lastIndexOf('@');
+  const realm = String(config.value('krb5.realm') || '');
+  const names = at >= 0 ? [given.slice(0, at), given]
+    : (realm ? [given, given + '@' + realm] : [given]);
+  let found = '';
+  try {
+    const applications = require('./applications');
+    for (let i = 0; i < names.length && !found; i += 1) {
+      if (applications.get(names[i])) {
+        found = names[i];
+      }
+    }
+  } catch (e) {
+    log.debug('Caught in kerberosEntryOf(): ' + ((e && e.message) || e));
+    // No registry in this process: the name as asked, which every reader
+    // of it then treats as an unknown application (EVERYBODY).
+    found = '';
+  }
+  if (!found || found === given) {
+    log.debug('Leaving kerberosEntryOf(). As asked: ' + given);
+    return asked;
+  }
+  log.debug('Leaving kerberosEntryOf(). ' + given + ' is ' + found);
+  return Object.assign({}, asked, { application: found });
 }
 
 // Whether a subject name is a disabled account. Never throws: a reader that
