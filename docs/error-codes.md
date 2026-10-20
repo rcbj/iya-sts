@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4459** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4460** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 29
 * [Federation (`STS-FED`)](#sts-fed) — 146
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 241
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 242
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 130
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
@@ -2879,7 +2879,7 @@ Raised from: kerberos/.
 | `STS-KRB-0229` | A cross-realm ticket-granting ticket was refused: the trust it came through is disabled, or holds no incoming key. | KDC_ERR_S_PRINCIPAL_UNKNOWN (7) |
 | `STS-KRB-0230` | An S4U request or a forwarded TGT across a Kerberos trust was refused by the issuance policy: the trust is disabled, or does not accept the user's realm (no incoming key). | KDC_ERR_POLICY (12) |
 | `STS-KRB-0231` | S4U2Self for a user of another Kerberos realm was refused: the service does not list that realm in krb5S4uSelfRealm. | KDC_ERR_POLICY (12); [MS-SFU] 3.1.5.1.1.2 |
-| `STS-KRB-0232` | Classic constrained delegation across a Kerberos trust was refused: krb5.crossRealmClassicDelegation is off. | KDC_ERR_POLICY (12) or KDC_ERR_BADOPTION (13); [MS-SFU] 3.2.5.2 |
+| `STS-KRB-0232` | Classic constrained delegation across a Kerberos trust was refused by the front end's realm: its own krb5.crossRealmClassicDelegation is off, so it does not refer the evidence. | KDC_ERR_POLICY (12) or KDC_ERR_BADOPTION (13); [MS-SFU] 3.2.5.2 |
 | `STS-KRB-0233` | A TGT was not delegated across a Kerberos trust: [MS-KILE] 3.3.5.7.5's conditions on the trust's attributes do not hold, or the service refuses it (krb5ForeignTgtDelegation deny). | KDC_ERR_BADOPTION (13); [MS-KILE] 3.3.5.7.5 |
 | `STS-KRB-0234` | S4U2Self across Kerberos realms could not be referred: no enabled trust routes the user's or the requester's realm. | KDC_ERR_WRONG_REALM (68) |
 | `STS-KRB-0235` | An S4U request would be referred across a Kerberos trust whose outgoing key this realm cannot use. | KDC_ERR_S_PRINCIPAL_UNKNOWN (7) |
@@ -2889,6 +2889,7 @@ Raised from: kerberos/.
 | `STS-KRB-0239` | A PAC arriving across a Kerberos trust may not cross it: its logon domain is in this realm's forest across a cross-forest or external boundary, or is not a domain the trust passes. | KDC_ERR_POLICY (12); [MS-PAC] 4.1.2.2 |
 | `STS-KRB-0240` | S4U2Proxy evidence that crossed a Kerberos trust was refused: its PAC's server, KDC or ticket signature does not verify with the inter-realm key that sealed it, so the ticket or its PAC was altered or forged after the issuing realm signed it. | [MS-SFU] 3.2.5.2.3, [MS-PAC] 2.8: KRB_AP_ERR_MODIFIED (41) |
 | `STS-KRB-0241` | A Kerberos trust's key rotation or pairing was refused: no such key, no source for the new key, a partner that is not a trust realm of this service, or the partner realm's side could not be written. | none — the console and /admin-api (#430) |
+| `STS-KRB-0242` | Classic constrained delegation across a Kerberos trust was refused by the target's realm: the front end's realm referred the evidence, and this realm's own krb5.crossRealmClassicDelegation is off (both realms must turn it on). | KDC_ERR_POLICY (12); [MS-SFU] 3.2.5.2 |
 
 ## STS-LDAP
 

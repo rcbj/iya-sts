@@ -113,6 +113,10 @@ interface Krb5TrustsDeps {
   // requires THIS file lazily, so a require at load would be a cycle.
   keystore: () => Json;
   principals: () => Json;
+  // LAZILY too: the audit log, which every filtered ticket writes a row to
+  // (rcbj, 2026-10-19). Already in the parent's COPY closure through
+  // krb5_kdc.js; lazy so a register built in a test never reaches it at load.
+  audit: () => Json;
 }
 
 // A refusal: the code it is recorded under and the sentence the caller sees.
@@ -326,6 +330,9 @@ class Krb5Trusts {
       },
       principals: function (): Json {
         return require('./krb5_principals');
+      },
+      audit: function (): Json {
+        return require('../common/audit');
       }
     };
   }
@@ -2184,14 +2191,24 @@ class Krb5Trusts {
    * Filters a PAC that arrived through the trust with a partner: every row
    * of kerberos/CLAUDE.md's *SID FILTERING: THE RULES*.
    *
+   * A PAC it changed writes ONE AUDIT ROW, `krb5.trust.sid-filtered`
+   * (rcbj, 2026-10-19): the per-event record is the audit log, so the trust,
+   * the principal and the SIDs removed or added are there, and the service
+   * log has a debug line at most.
+   *
    * @param pacBytes - the PAC
    * @param partner - the partner the ticket arrived from
    * @param localSid - this realm's own domain SID
-   * @returns `{ bytes, removed, refused, boundary }` — `refused` a sentence
-   *   when the PAC may not cross at all (R8, R17), else ''
+   * @param principal - who the ticket is for, `name@REALM`, for the audit
+   *   row; the PAC's own logon name and domain when not given
+   * @returns `{ bytes, removed, refused, boundary, sids }` — `refused` a
+   *   sentence when the PAC may not cross at all (R8, R17), else ''; `sids`
+   *   every SID the PAC carries once filtered (the user's, its groups', its
+   *   extra SIDs and resource groups), which is what a role may be granted to
+   *   across a trust (`common/roles.js`)
    */
   sidFilter(pacBytes: Uint8Array, partner: string,
-            localSid: string): Json {
+            localSid: string, principal?: string): Json {
     const { log, kpac } = this.deps;
     log.debug("Entering Krb5Trusts.sidFilter(). " + partner);
     const self = this;
@@ -2231,6 +2248,34 @@ class Krb5Trusts {
       return sid ? String(sid.text || sid) : '';
     };
     const logonDomain = sidText(info.logonDomainId);
+    // EVERY SID THE PAC CARRIES once filtered: the user's and its groups'
+    // (LogonDomainId-RID, which no rule filters), the extra SIDs and the
+    // resource groups that were kept.
+    const carriedSids = function (extra: Json[], resources: Json[],
+                                  resourceDomainSid: string): string[] {
+      const out: string[] = [];
+      const add = function (one: string): void {
+        if (one && out.indexOf(one) === -1) {
+          out.push(one);
+        }
+      };
+      if (logonDomain) {
+        add(logonDomain + '-' + info.userId);
+        add(logonDomain + '-' + info.primaryGroupId);
+        (info.groups || []).forEach(function (g: Json): void {
+          add(logonDomain + '-' + g.relativeId);
+        });
+      }
+      (extra || []).forEach(function (one: Json): void {
+        add(sidText(one.sid));
+      });
+      if (resourceDomainSid) {
+        (resources || []).forEach(function (g: Json): void {
+          add(resourceDomainSid + '-' + g.relativeId);
+        });
+      }
+      return out;
+    };
     // R8: across a CrossForest or External boundary, a PAC whose logon
     // domain is in this realm's forest is invalid authorization data.
     if ((boundary === 'CrossForest' || boundary === 'External' ||
@@ -2353,10 +2398,11 @@ class Krb5Trusts {
         droppedBuffers.push(b.type);
       }
     });
+    const sids = carriedSids(keptSids, keptResources, resourceDomain);
     if (!removed.length && !added.length && !droppedBuffers.length) {
       log.debug("Leaving Krb5Trusts.sidFilter(). Nothing to change.");
       return { bytes: pacBytes, removed: [], refused: '',
-               boundary: boundary };
+               boundary: boundary, sids: sids };
     }
     const time = function (ft: Json): Json {
       return !ft ? null : (ft.never ? 'never' : (ft.unset ? null : ft.date));
@@ -2403,17 +2449,56 @@ class Krb5Trusts {
         logonBytes : b.bytes };
     });
     const bytes = kpac.assemblePac(entries).bytes;
-    log.info('krb5: SID filtering on arrival from ' + partner + ' (' +
-             boundary + ' boundary)' +
-             (removed.length ? ' removed ' + removed.join(', ') : '') +
-             (added.length ? '; added ' + added.join(', ') : '') +
-             (droppedBuffers.length ? '; dropped PAC buffer(s) of type ' +
-               droppedBuffers.join(', ') : '') + '.');
+    this.recordFiltered(partner, boundary, principal ||
+      (String(info.effectiveName || '') +
+       (info.logonDomainName ? '@' + String(info.logonDomainName) : '')),
+      removed, added, droppedBuffers);
     log.debug("Leaving Krb5Trusts.sidFilter(). " + removed.length +
               " removed.");
     return { bytes: bytes, removed: removed, added: added,
              droppedBuffers: droppedBuffers, refused: '',
-             boundary: boundary };
+             boundary: boundary, sids: sids };
+  }
+
+  // THE AUDIT ROW FOR A FILTERED TICKET (rcbj, 2026-10-19): it was an info
+  // line per ticket in the service log, which is the per-event record this
+  // service keeps in the audit log instead (`common/audit.js`; the
+  // no-per-event-failure-logs rule). The trust, the principal and the SIDs —
+  // identifiers a PAC carries in the clear to every service it reaches — and
+  // never a key. Recording never fails the ticket: audit.audit() swallows.
+  private recordFiltered(partner: string, boundary: string,
+                         principal: string, removed: string[],
+                         added: string[], dropped: number[]): void {
+    const { log, realms } = this.deps;
+    log.debug("Entering Krb5Trusts.recordFiltered(). " + partner);
+    let auditLog: Json = null;
+    try {
+      auditLog = this.deps.audit();
+    } catch (e) {
+      log.debug("Caught in Krb5Trusts.recordFiltered(): " +
+                ((e && e.message) || e));
+      auditLog = null;
+    }
+    if (!auditLog || typeof auditLog.audit !== 'function') {
+      log.debug("Leaving Krb5Trusts.recordFiltered(). No audit log.");
+      return;
+    }
+    auditLog.audit({
+      action: 'krb5.trust.sid-filtered', protocol: 'Kerberos',
+      channel: 'kerberos', actor: principal, target: partner,
+      summary: 'SID filtering on a ticket for ' + (principal || '?') +
+               ' that crossed the trust with ' + partner + ' (' + boundary +
+               ' boundary)' +
+               (removed.length ? ': removed ' + removed.join(', ') : '') +
+               (added.length ? '; added ' + added.join(', ') : '') +
+               (dropped.length ? '; dropped PAC buffer(s) of type ' +
+                 dropped.join(', ') : '') + '.',
+      detail: { trust: partner, trustRealm: realms.currentId(),
+                boundary: boundary, principal: principal,
+                removed: removed.join(' '), added: added.join(' '),
+                droppedBuffers: dropped.join(' ') }
+    });
+    log.debug("Leaving Krb5Trusts.recordFiltered().");
   }
 
   // =========================================================================

@@ -12655,7 +12655,9 @@ const CODES = [
     spec: 'KDC_ERR_POLICY (12); [MS-SFU] 3.1.5.1.1.2' },
   { code: 'STS-KRB-0232',
     summary: 'Classic constrained delegation across a Kerberos trust was ' +
-      'refused: krb5.crossRealmClassicDelegation is off.',
+      'refused by the front end\'s realm: its own ' +
+      'krb5.crossRealmClassicDelegation is off, so it does not refer the ' +
+      'evidence.',
     spec: 'KDC_ERR_POLICY (12) or KDC_ERR_BADOPTION (13); [MS-SFU] 3.2.5.2' },
   { code: 'STS-KRB-0233',
     summary: 'A TGT was not delegated across a Kerberos trust: [MS-KILE] ' +
@@ -12702,6 +12704,12 @@ const CODES = [
       'realm of this service, or the partner realm\'s side could not be ' +
       'written.',
     spec: 'none — the console and /admin-api (#430)' },
+  { code: 'STS-KRB-0242',
+    summary: 'Classic constrained delegation across a Kerberos trust was ' +
+      'refused by the target\'s realm: the front end\'s realm referred the ' +
+      'evidence, and this realm\'s own krb5.crossRealmClassicDelegation is ' +
+      'off (both realms must turn it on).',
+    spec: 'KDC_ERR_POLICY (12); [MS-SFU] 3.2.5.2' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
