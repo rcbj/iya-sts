@@ -1851,10 +1851,10 @@ class Authn {
     // -----------------------------------------------------------------------
     // SEVERAL ACCOUNTS IN ONE BROWSER (#561): WHICH SESSION, ASKED FIRST.
     //
-    // Off — `authn.multipleAccounts` is off by default — nothing below this
-    // block changes and the cookie alone decides, as it always did. On,
-    // `resolveAccount()` answers from the browser's account set in the
-    // order the plan's section 2 gives: a selection ticket spent on this
+    // Off — `authn.multipleAccounts` is ON by default since 2026-10-20 —
+    // nothing below this block changes and the cookie alone decides, as it
+    // always did. On, `resolveAccount()` answers from the browser's account
+    // set in the order the plan's section 2 gives: a selection ticket spent on this
     // request, then a protocol hint (`hintAccount()`), then the only live
     // session; with several live and nothing to choose by it answers
     // nobody, and `accountChoiceNeeded()` says why — so every protocol that

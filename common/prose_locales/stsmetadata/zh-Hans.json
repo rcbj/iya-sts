@@ -2436,8 +2436,8 @@
     "text": "询问要在应用的哪个联合身份提供方处登录；需要 ?authn= id，因此不带参数访问时应答 400"
   },
   "stsmetadata.endpoints./authn/accounts.what": {
-    "en": "133e09e2d14aa686",
-    "text": "一个浏览器中登录多个账号（#561），在 authn.multipleAccounts 开启时（默认关闭）。来自持有多个已登录账号的浏览器、却未指明其中任何一个的请求——其流程中未选择账号，也没有指明账号的 login_hint 或 id_token_hint——会被发送到这里，OpenID Connect 的 prompt=select_account（Core 第 3.1.2.1 节）也是如此。每个已登录账号以其自身继续流程，其会话会被再次检查，对其不满足的双因素要求，以该账号重新登录来回应；浏览器记住的每个已退出账号都可以重新登录或忘记；“使用其他账号”即普通登录。一个静态页面，由 /authn-api/pending/{id}/accounts 绘制。"
+    "en": "879e6a76bfdaffce",
+    "text": "一个浏览器中登录多个账号（#561），在 authn.multipleAccounts 开启时（默认开启）。来自持有多个已登录账号的浏览器、却未指明其中任何一个的请求——其流程中未选择账号，也没有指明账号的 login_hint 或 id_token_hint——会被发送到这里，OpenID Connect 的 prompt=select_account（Core 第 3.1.2.1 节）也是如此。每个已登录账号以其自身继续流程，其会话会被再次检查，对其不满足的双因素要求，以该账号重新登录来回应；浏览器记住的每个已退出账号都可以重新登录或忘记；“使用其他账号”即普通登录。一个静态页面，由 /authn-api/pending/{id}/accounts 绘制。"
   },
   "stsmetadata.endpoints./authn/accounts.effect": {
     "en": "ac430d30ba3b9a6a",

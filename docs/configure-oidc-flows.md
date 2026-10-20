@@ -628,14 +628,15 @@ that block third-party cookies never send the cookie the iframe reads.
 With `authn.multipleAccounts` on, one browser can stay signed in as several
 people, and an authorization request chooses between them.
 [Several accounts in one browser](multiple-accounts.md) describes it in full.
-It is **off by default** in both modes, and off nothing below happens.
+It is **on by default** in both modes (since 2026-10-20); off, nothing below
+happens.
 
 Taken from `sts_multi_account.js`.
 
 **Setting** (console: **Server configuration → Configuration**, the **Web
 security** group; it is per realm):
 ```bash
-api config/set '{"key":"authn.multipleAccounts","value":true}'
+api config/set '{"key":"authn.multipleAccounts","value":false}'   # to turn it off
 ```
 
 `authn.maxBrowserAccounts` (default `10`) and `authn.rememberedAccountDays`

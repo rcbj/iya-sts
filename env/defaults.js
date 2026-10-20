@@ -193,7 +193,7 @@ var config = {
     sessionReadTimeoutMs: 2000,     // Session read timeout (milliseconds)
     pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
     mfaStepTtlS: 300,               // How long a second-factor step waits (seconds)
-    multipleAccounts: false,        // Several signed-in accounts in one browser
+    multipleAccounts: true,         // Several signed-in accounts in one browser
     maxBrowserAccounts: 10,         // Most accounts one browser remembers
     rememberedAccountDays: 30,      // How long a signed-out account is remembered (days)
     passwordAloneDoors: "",         // Password-only doors that accept a password alone

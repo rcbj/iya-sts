@@ -734,7 +734,10 @@ function partOffRow(t) {
 function run(t) {
   log.debug("Entering run().");
   realms.run(realms.DEFAULT_REALM, function () {
-    partOffRow(t);
+    // OFF EXPLICITLY, since the default is on (#751).
+    withSettings({ 'authn.multipleAccounts': false }, function () {
+      partOffRow(t);
+    });
     withSettings({ 'authn.multipleAccounts': true }, function () {
       const before = stats.accountChoiceCounts();
       partSignIns(t);

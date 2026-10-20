@@ -59,7 +59,7 @@ administrator who opens the plain `/portal` is sent to their realm's portal.
 
 **Switch user** is in the same menu, with
 [several accounts in one browser](multiple-accounts.md) turned on in the
-realm (`authn.multipleAccounts`, off by default): the other accounts signed
+realm (`authn.multipleAccounts`, on by default): the other accounts signed
 in to this browser, each a press away, and **Sign in with another account**.
 The account the tab leaves stays signed in, and other tabs keep theirs.
 The account switched to gets exactly what its own roles give it — a person

@@ -43,6 +43,7 @@ const path = require('path');
 
 const realms = require('../common/realms');
 const authn = require('../authn/authn');
+const config = require('../common/config');
 const caep = require('../ssf/caep');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
@@ -481,6 +482,20 @@ function run(t) {
   log.debug("Leaving run().");
 }
 
+// THE OLD DEFAULT, SET EXPLICITLY (#751): `authn.multipleAccounts` is on by
+// default since 2026-10-20 (rcbj), and a change of person here is a
+// REPLACEMENT of the browser's session, as it was when it was off.
+async function runWithOneSessionPerBrowser(t) {
+  log.debug("Entering runWithOneSessionPerBrowser().");
+  config.setOverride('authn.multipleAccounts', 'false');
+  try {
+    await run(t);
+  } finally {
+    config.clearOverride('authn.multipleAccounts');
+  }
+  log.debug("Leaving runWithOneSessionPerBrowser().");
+}
+
 module.exports = {
   name: 'session_reauthentication',
   describe: 'the same person re-authenticating keeps the session (sid, ' +
@@ -489,5 +504,5 @@ module.exports = {
             'a ' +
             'different person still replaces it; no fixation through an ' +
             'arrival cookie',
-  run: run
+  run: runWithOneSessionPerBrowser
 };

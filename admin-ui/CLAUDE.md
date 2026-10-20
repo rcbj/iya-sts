@@ -3858,8 +3858,10 @@ they were (`tests/multi_account_tabs.js` 6).
   tab leaves stays signed in (`…switch.kept`). **Off it is still not
   drawn, to the byte** (`tests/multi_account_tabs.js` 6): with the setting
   off a sign-in as somebody else ENDS the browser's session, so an option
-  promising otherwise would be false — the choice the request left open,
-  kept conservative and the owner's to reverse.
+  promising otherwise would be false. **rcbj answered the other half the
+  same day: the setting is ON BY DEFAULT since 2026-10-20**
+  (`authn/CLAUDE.md`), so the group is what a console shows unless a realm
+  turns the setting off.
 * **A SWITCH AND THE POPUP'S SIGN-IN AGAIN (#508, #731) CANNOT BE CONFUSED**,
   and `tests/multi_account_tabs.js` 9 holds why: a switch is a whole-page
   navigation whose record carries `expect` (the subject chosen), never the

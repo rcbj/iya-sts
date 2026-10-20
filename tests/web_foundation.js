@@ -601,10 +601,14 @@ async function run(t) {
       clean[key] = process.env[key];
     }
   });
+  // THE OLD DEFAULT, SET EXPLICITLY (#751): `authn.multipleAccounts` is on
+  // by default since 2026-10-20, and A1 compares the shells with the ones
+  // drawn by hand before #561, which carry no `data-sts-accounts`.
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
       env: Object.assign(clean, { LOG_LEVEL: 'fatal', STS_LOG_LEVEL: 'fatal',
-                                  WF_ROOT: ROOT, WF_OUT: out }),
+                                  WF_ROOT: ROOT, WF_OUT: out,
+                                  STS_AUTHN_MULTIPLE_ACCOUNTS: 'false' }),
       encoding: 'utf8', timeout: 180000, cwd: ROOT
     });
   let findings = null;

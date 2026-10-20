@@ -2436,8 +2436,8 @@
     "text": "pregunta en cuál de los proveedores de identidad federados de una aplicación iniciar sesión; necesita un id ?authn=, así que seguirlo sin él responde 400"
   },
   "stsmetadata.endpoints./authn/accounts.what": {
-    "en": "133e09e2d14aa686",
-    "text": "VARIAS CUENTAS CON LA SESIÓN INICIADA EN UN NAVEGADOR (#561), cuando authn.multipleAccounts está activado (está desactivado de forma predeterminada). Una solicitud de un navegador que tiene más de una cuenta con la sesión iniciada y no nombra ninguna — ninguna cuenta elegida en su flujo, ningún login_hint ni id_token_hint que nombre una — se envía aquí, igual que el prompt=select_account de OpenID Connect (sección 3.1.2.1 de Core). Cada cuenta con la sesión iniciada continúa el flujo como ella misma, con su sesión comprobada de nuevo, y una exigencia de dos factores que no cumple se responde volviendo a iniciar sesión como ella; cada cuenta con la sesión cerrada que el navegador recuerda puede volver a iniciar sesión u olvidarse; Usar otra cuenta es el inicio de sesión normal. Una página estática, dibujada a partir de /authn-api/pending/{id}/accounts."
+    "en": "879e6a76bfdaffce",
+    "text": "VARIAS CUENTAS CON LA SESIÓN INICIADA EN UN NAVEGADOR (#561), cuando authn.multipleAccounts está activado (está activado de forma predeterminada). Una solicitud de un navegador que tiene más de una cuenta con la sesión iniciada y no nombra ninguna — ninguna cuenta elegida en su flujo, ningún login_hint ni id_token_hint que nombre una — se envía aquí, igual que el prompt=select_account de OpenID Connect (sección 3.1.2.1 de Core). Cada cuenta con la sesión iniciada continúa el flujo como ella misma, con su sesión comprobada de nuevo, y una exigencia de dos factores que no cumple se responde volviendo a iniciar sesión como ella; cada cuenta con la sesión cerrada que el navegador recuerda puede volver a iniciar sesión u olvidarse; Usar otra cuenta es el inicio de sesión normal. Una página estática, dibujada a partir de /authn-api/pending/{id}/accounts."
   },
   "stsmetadata.endpoints./authn/accounts.effect": {
     "en": "ac430d30ba3b9a6a",

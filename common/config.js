@@ -2152,9 +2152,10 @@ const SETTINGS = [
                  'rate limiter bounds the attempts inside it.' },
 
   // ---------------------------------------------------------------------
-  // SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561). Off by default in
-  // both modes (the plan's D2), runtime and so per realm, read where it is
-  // used: `authn/account_sets.ts` and `authn/authn.ts`. Off, nothing here
+  // SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561). ON BY DEFAULT in
+  // both modes since 2026-10-20 (rcbj on #751: "default it to on"; it was
+  // off, the plan's D2, until then), runtime and so per realm, read where it
+  // is used: `authn/account_sets.ts` and `authn/authn.ts`. Off, nothing here
   // exists — no `sts_accounts` cookie, no picker — and a different person
   // signing in ends the browser's session exactly as before. In `Web
   // security` beside the session clocks, because what it changes is what a
@@ -2163,7 +2164,7 @@ const SETTINGS = [
   // ---------------------------------------------------------------------
   { key: 'authn.multipleAccounts', group: 'Web security',
     label: 'Several signed-in accounts in one browser',
-    env: 'STS_AUTHN_MULTIPLE_ACCOUNTS', type: 'bool', dflt: false,
+    env: 'STS_AUTHN_MULTIPLE_ACCOUNTS', type: 'bool', dflt: true,
     runtime: true,
     description: 'Let one browser hold sign-on sessions for several people ' +
                  'at once, and choose between them. On, signing in as a ' +
@@ -2175,7 +2176,7 @@ const SETTINGS = [
                  'than one is signed in is sent to the account picker at ' +
                  '/authn/accounts, and prompt=select_account shows it. ' +
                  'Every session keeps its own lifetime, idle timeout, ' +
-                 'step-up state and sign-out. Off, the default, the ' +
+                 'step-up state and sign-out. On is the default. Off, the ' +
                  'browser has one session and a different person signing ' +
                  'in ends it. Takes effect at the next request either way, ' +
                  'and ends nothing: turned on, a browser\'s existing ' +

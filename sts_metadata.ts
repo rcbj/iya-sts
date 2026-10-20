@@ -7769,7 +7769,7 @@ const ENDPOINTS: EndpointEntry[] = [
             'continues as; needs an ?authn= id, so following it bare ' +
             'answers 400',
     what: 'SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561), where ' +
-          'authn.multipleAccounts is on (it is off by default). A request ' +
+          'authn.multipleAccounts is on (it is on by default). A request ' +
           'from a browser holding more than one signed-in account that ' +
           'names none of them — no account chosen in its flow, no ' +
           'login_hint or id_token_hint naming one — is sent here, and so is ' +

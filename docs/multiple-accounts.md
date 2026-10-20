@@ -5,22 +5,29 @@ nav_order: 10
 
 # Several signed-in accounts in one browser
 
-By default a browser holds **one** sign-on session here (see
-[Sessions](sessions.md)): signing in as somebody else ends the session the
-browser had. With `authn.multipleAccounts` on, one browser may stay signed in
-as **several people at once** — a person with a work account and an
-administrator account, a support desk trying two test users side by side — and
-choose between them as it goes.
+One browser may stay signed in as **several people at once** — a person with
+a work account and an administrator account, a support desk trying two test
+users side by side — and choose between them as it goes. This is
+`authn.multipleAccounts`.
 
-The setting is **off by default in both modes**. Off, nothing on this page
-exists: no extra cookie, no account picker, no new prompt, and every protocol
-answers exactly as it does without it.
+The setting is **on by default in both modes since 2026-10-20** (it was off
+until then). Turned off, a browser holds **one** sign-on session (see
+[Sessions](sessions.md)) and signing in as somebody else ends the session the
+browser had; nothing else on this page exists — no extra cookie, no account
+picker, no new prompt — and every protocol answers exactly as it does without
+it.
 
-## Turning it on
+**What changed with the default.** On a service that had never set it, the
+account picker now appears whenever more than one account is signed in in a
+browser and a request does not say which it is for, and signing in as
+somebody else no longer ends the first person's session — it adds an account.
+Set `authn.multipleAccounts` to `false` in a realm for the old behaviour.
+
+## The settings
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `authn.multipleAccounts` | `STS_AUTHN_MULTIPLE_ACCOUNTS` | `false` | yes — at the next request | One browser may hold sign-on sessions for several people; a request that does not say which one it is for, while more than one is signed in, is sent to the account picker. |
+| `authn.multipleAccounts` | `STS_AUTHN_MULTIPLE_ACCOUNTS` | `true` | yes — at the next request | One browser may hold sign-on sessions for several people; a request that does not say which one it is for, while more than one is signed in, is sent to the account picker. |
 | `authn.maxBrowserAccounts` | `STS_AUTHN_MAX_BROWSER_ACCOUNTS` | `10` | yes | The most accounts one browser keeps, signed in and signed out together (1–50). |
 | `authn.rememberedAccountDays` | `STS_AUTHN_REMEMBERED_ACCOUNT_DAYS` | `30` | yes | How long a browser keeps offering an account that signed out there (1–365). |
 
@@ -29,7 +36,7 @@ settings in the console, or with `POST /admin-api/config/set` under the realm's
 prefix. This table is a copy of rows in `common/config.js`; the live source is
 the console page and `GET /admin-api/config` ([Configuration](configuration.md)).
 
-**Turning it on ends nothing.** A browser that was already signed in keeps its
+**Turning it on ends nothing**, nor did the change of default. A browser that was already signed in keeps its
 session, which becomes the first account of its list the next time it is
 needed. **Turning it off ends nothing either**: the browser's current account
 carries on alone, and the others run out on their own clocks or are signed out

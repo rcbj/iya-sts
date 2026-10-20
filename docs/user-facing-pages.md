@@ -112,7 +112,7 @@ portal's tokens. A person signed in to the admin console is signed in to the
 portal through single sign-on, with no screen.
 
 **Switch user**, with [several accounts in one browser](multiple-accounts.md)
-turned on in the realm, is a menu in the header beside Sign out: it lists
+on in the realm (the default), is a menu in the header beside Sign out: it lists
 the other accounts signed in to this browser — choosing one draws this tab
 as that person with nothing typed — and **Sign in with another account**,
 which adds an account. The account the tab leaves stays signed in, so you

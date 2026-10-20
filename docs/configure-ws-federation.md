@@ -329,7 +329,7 @@ GET /wsfed?wa=wsignout1.0[&wtrealm=<wtrealm>][&wreply=<URL>]
 * **With `wreply`**, the page offers a link back rather than redirecting, so
   the cleanup images can finish.
 * **`wsignoutcleanup1.0`** ends the session and sends no cleanups of its own.
-* **Several accounts in one browser** (`authn.multipleAccounts`, off by
+* **Several accounts in one browser** (`authn.multipleAccounts`, on by
   default; see [Multiple accounts](multiple-accounts.md)): `wsignout1.0` asks
   which account to sign out of when more than one signed in to `wtrealm`.
   `wsignoutcleanup1.0` ends all of them.
