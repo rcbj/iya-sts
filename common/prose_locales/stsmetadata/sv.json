@@ -2432,8 +2432,8 @@
     "text": "frågar vid vilken av en applikations federerade identitetsleverantörer man ska logga in; kräver ett ?authn=-id, så att följa den utan det ger 400"
   },
   "stsmetadata.endpoints./authn/accounts.what": {
-    "en": "133e09e2d14aa686",
-    "text": "FLERA INLOGGADE KONTON I EN WEBBLÄSARE (#561), när authn.multipleAccounts är på (det är av som standard). En begäran från en webbläsare med fler än ett inloggat konto som inte namnger något av dem — inget konto valt i dess flöde, ingen login_hint eller id_token_hint som namnger ett — skickas hit, liksom OpenID Connects prompt=select_account (Core avsnitt 3.1.2.1). Varje inloggat konto fortsätter flödet som sig självt, med sin session kontrollerad igen, och ett krav på två faktorer som det inte uppfyller besvaras med en ny inloggning som det; varje utloggat konto som webbläsaren kommer ihåg kan loggas in igen eller glömmas; Använd ett annat konto är den vanliga inloggningen. En statisk sida, ritad från /authn-api/pending/{id}/accounts."
+    "en": "879e6a76bfdaffce",
+    "text": "FLERA INLOGGADE KONTON I EN WEBBLÄSARE (#561), när authn.multipleAccounts är på (det är på som standard). En begäran från en webbläsare med fler än ett inloggat konto som inte namnger något av dem — inget konto valt i dess flöde, ingen login_hint eller id_token_hint som namnger ett — skickas hit, liksom OpenID Connects prompt=select_account (Core avsnitt 3.1.2.1). Varje inloggat konto fortsätter flödet som sig självt, med sin session kontrollerad igen, och ett krav på två faktorer som det inte uppfyller besvaras med en ny inloggning som det; varje utloggat konto som webbläsaren kommer ihåg kan loggas in igen eller glömmas; Använd ett annat konto är den vanliga inloggningen. En statisk sida, ritad från /authn-api/pending/{id}/accounts."
   },
   "stsmetadata.endpoints./authn/accounts.effect": {
     "en": "ac430d30ba3b9a6a",

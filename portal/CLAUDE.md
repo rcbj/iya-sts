@@ -820,7 +820,9 @@ authorization request and the sign-out's address are the bytes they were.
   no other account signed in too (saying so, `portal.accounts.none`), ending
   on the line that the account the tab leaves stays signed in
   (`portal.accounts.kept`) — the console's group, for the console's reasons
-  (`admin-ui/CLAUDE.md` 8c-iv). Off, still not drawn.
+  (`admin-ui/CLAUDE.md` 8c-iv). Off, still not drawn — and off is no
+  longer the default: `authn.multipleAccounts` is on by default since
+  2026-10-20 (rcbj, #751; `authn/CLAUDE.md`).
   `tests/vendored/sts_multi_account_tabs.js` 2a switches a real tab to bob
   and back to alice from it, nothing typed.
 * **A SWITCH** asks over a form typed in, aborts what is in flight —

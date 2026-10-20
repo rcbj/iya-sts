@@ -2432,8 +2432,8 @@
     "text": "demande auprès duquel des fournisseurs d’identité fédérés d’une application se connecter ; requiert un identifiant ?authn=, si bien qu’il répond 400 lorsqu’il est suivi sans paramètres"
   },
   "stsmetadata.endpoints./authn/accounts.what": {
-    "en": "133e09e2d14aa686",
-    "text": "PLUSIEURS COMPTES CONNECTÉS DANS UN MÊME NAVIGATEUR (#561), lorsque authn.multipleAccounts est activé (il est désactivé par défaut). Une requête d’un navigateur détenant plus d’un compte connecté qui n’en nomme aucun — aucun compte choisi dans son flux, aucun login_hint ni id_token_hint en nommant un — est envoyée ici, de même que le prompt=select_account d’OpenID Connect (section 3.1.2.1 de Core). Chaque compte connecté poursuit le flux en son nom, sa session vérifiée de nouveau, et une exigence de deux facteurs qu’il ne satisfait pas reçoit pour réponse une nouvelle connexion en son nom ; chaque compte déconnecté que le navigateur mémorise peut être reconnecté ou oublié ; Utiliser un autre compte est la connexion ordinaire. Une page statique, dessinée à partir de /authn-api/pending/{id}/accounts."
+    "en": "879e6a76bfdaffce",
+    "text": "PLUSIEURS COMPTES CONNECTÉS DANS UN MÊME NAVIGATEUR (#561), lorsque authn.multipleAccounts est activé (il est activé par défaut). Une requête d’un navigateur détenant plus d’un compte connecté qui n’en nomme aucun — aucun compte choisi dans son flux, aucun login_hint ni id_token_hint en nommant un — est envoyée ici, de même que le prompt=select_account d’OpenID Connect (section 3.1.2.1 de Core). Chaque compte connecté poursuit le flux en son nom, sa session vérifiée de nouveau, et une exigence de deux facteurs qu’il ne satisfait pas reçoit pour réponse une nouvelle connexion en son nom ; chaque compte déconnecté que le navigateur mémorise peut être reconnecté ou oublié ; Utiliser un autre compte est la connexion ordinaire. Une page statique, dessinée à partir de /authn-api/pending/{id}/accounts."
   },
   "stsmetadata.endpoints./authn/accounts.effect": {
     "en": "ac430d30ba3b9a6a",

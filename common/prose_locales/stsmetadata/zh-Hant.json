@@ -2432,8 +2432,8 @@
     "text": "詢問要在應用程式的哪個聯盟身分識別提供者登入；需要 ?authn= id，因此直接開啟會回應 400"
   },
   "stsmetadata.endpoints./authn/accounts.what": {
-    "en": "133e09e2d14aa686",
-    "text": "一個瀏覽器中登入多個帳號（#561），在 authn.multipleAccounts 開啟時（預設關閉）。來自持有多個已登入帳號的瀏覽器、卻未指明其中任何一個的請求——其流程中未選擇帳號，也沒有指明帳號的 login_hint 或 id_token_hint——會被送到這裡，OpenID Connect 的 prompt=select_account（Core 第 3.1.2.1 節）也是如此。每個已登入帳號以其自身繼續流程，其工作階段會再次檢查，對其不符合的雙因素要求，以該帳號重新登入來回應；瀏覽器記住的每個已登出帳號都可以重新登入或忘記；「使用其他帳號」即一般登入。一個靜態頁面，由 /authn-api/pending/{id}/accounts 繪製。"
+    "en": "879e6a76bfdaffce",
+    "text": "一個瀏覽器中登入多個帳號（#561），在 authn.multipleAccounts 開啟時（預設開啟）。來自持有多個已登入帳號的瀏覽器、卻未指明其中任何一個的請求——其流程中未選擇帳號，也沒有指明帳號的 login_hint 或 id_token_hint——會被送到這裡，OpenID Connect 的 prompt=select_account（Core 第 3.1.2.1 節）也是如此。每個已登入帳號以其自身繼續流程，其工作階段會再次檢查，對其不符合的雙因素要求，以該帳號重新登入來回應；瀏覽器記住的每個已登出帳號都可以重新登入或忘記；「使用其他帳號」即一般登入。一個靜態頁面，由 /authn-api/pending/{id}/accounts 繪製。"
   },
   "stsmetadata.endpoints./authn/accounts.effect": {
     "en": "ac430d30ba3b9a6a",

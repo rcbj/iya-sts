@@ -13,6 +13,8 @@
 // design; this file is the contract of its first two delivery steps — the
 // plan's *Tests* row for this file:
 //
+//   0. the setting is ON BY DEFAULT since 2026-10-20 (#751); every part
+//      that holds the old behaviour sets it off explicitly.
 //   1. with `authn.multipleAccounts` OFF, a different person signing in
 //      ends the browser's session exactly as before, and nothing of the set
 //      exists (no cookie, no row);
@@ -633,7 +635,10 @@ function partAdopt(t) {
   log.debug("Entering partAdopt().");
   t.log.info('=== 9. a session from before the setting gets a set (D12) ===');
   const b = browser();
-  const alice = signIn(b, 'mas-early-alice').session;
+  // OFF EXPLICITLY, since the default is on (#751).
+  const alice = withSettings({ 'authn.multipleAccounts': false }, function () {
+    return signIn(b, 'mas-early-alice').session;
+  });
   t.check(!b.jar[AccountSets.cookieName()], 'signed in with the setting off');
   withSettings({ 'authn.multipleAccounts': true }, function () {
     const req = b.req('/oauth2/authorize');
@@ -728,7 +733,21 @@ function partUnread(t) {
 function run(t) {
   log.debug("Entering run().");
   realms.run(realms.DEFAULT_REALM, function () {
-    partOff(t);
+    // THE DEFAULT IS ON SINCE 2026-10-20 (rcbj on #751, "default it to
+    // on"), in both modes: what the row says and what is read with no
+    // override, so every part below that wants it off says so itself.
+    const row = config.SETTINGS.filter(function (one) {
+      return one.key === 'authn.multipleAccounts';
+    })[0];
+    t.check(config.value('authn.multipleAccounts') === true &&
+            !!row && row.dflt === true &&
+            require('../env/defaults.js').authn.multipleAccounts === true,
+            'authn.multipleAccounts is on by default (#751)',
+            String(config.value('authn.multipleAccounts')));
+    // The parts that hold the OLD behaviour set it off explicitly.
+    withSettings({ 'authn.multipleAccounts': false }, function () {
+      partOff(t);
+    });
     partAdopt(t);
     withSettings({ 'authn.multipleAccounts': true }, function () {
       partOn(t);

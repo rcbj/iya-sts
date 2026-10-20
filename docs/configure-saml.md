@@ -490,7 +490,7 @@ by its `SessionIndex`; the Keycloak job sends one.
 
 ## Several accounts in one browser
 
-With `authn.multipleAccounts` on (off by default), one browser may be signed
+With `authn.multipleAccounts` on (the default), one browser may be signed
 in as several people at once. [Several accounts in one browser](multiple-accounts.md)
 describes the setting. For SAML 2.0 it changes three things:
 

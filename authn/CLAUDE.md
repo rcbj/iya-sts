@@ -646,9 +646,17 @@ resolver follows.
 
 ## SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561, 2026-10-19)
 
-**`authn.multipleAccounts`, OFF BY DEFAULT in both modes (the plan's D2)**,
-runtime and so per realm, read where it is used. **Off, nothing below
-exists**: no `sts_accounts` cookie, no picker, `sessionOf()` reads the cookie
+**`authn.multipleAccounts`, ON BY DEFAULT in both modes SINCE 2026-10-20**
+— rcbj's decision on #751, "default it to on"; it was off by default until
+then (the plan's D2) — runtime and so per realm, read where it is used.
+**It is a behaviour change for every realm that never set it**: the account
+picker now appears whenever a browser holds more than one signed-in account
+and a request names none, and signing in as somebody else ADDS an account
+instead of ending the first session. No product-mode rule asks for it off
+(`common/mode.js` names it nowhere), so the default is the same in both
+modes. Tests that need the old behaviour set it off EXPLICITLY, and
+`tests/multi_account_sessions.js` asserts the new default. **Off, nothing
+below exists**: no `sts_accounts` cookie, no picker, `sessionOf()` reads the cookie
 alone, and a different person signing in ends the browser's session through
 `dropSession('a new sign-in in the same browser')` as it always did —
 `tests/multi_account_sessions.js` part 1 holds that. The plan is the comment
