@@ -1011,6 +1011,14 @@
     "en": "fb33eabeb83379da",
     "text": "开启后只请求后量子通行密钥算法——RFC 9964 的 `ML-DSA-44`（-48）、`ML-DSA-65`（-49）和 `ML-DSA-87`（-50）——取 `webauthn.algorithms` 列出的其中那些，若一个都未列出则取全部三个。此后新的通行密钥必须是 ML-DSA：用其他算法创建的会在注册时被拒绝（WebAuthn 第 7.1 节）。它收窄的是请求的内容：已注册的经典密钥仍可继续登录。大多数身份验证器尚不支持 ML-DSA，此项开启时无法注册。"
   },
+  "webauthn.pqcAlongsideClassical|label": {
+    "en": "664b4753cc8439b0",
+    "text": "经典通行密钥旁的后量子通行密钥"
+  },
+  "webauthn.pqcAlongsideClassical|description": {
+    "en": "e35e276b9d933828",
+    "text": "开启后，一个人可以同时持有经典通行密钥和后量子（ML-DSA）通行密钥，在能同时创建两者的身份验证器上可放在同一设备。每个通行密钥都在此人选择的“通道”中创建：经典通道请求去掉 ML-DSA 的 `webauthn.algorithms`（若一个不剩则为 `ES256` 和 `RS256`），后量子通道只请求 ML-DSA。每个通道都有自己的用户句柄，因此第二个通行密钥不会在身份验证器上替换第一个，并有自己的排除列表；凭据管理器以表明其算法的名称显示后量子通行密钥——创建时为 `<username>+ml-dsa`，当此人的所有后量子通行密钥都使用同一算法时为 `<username>+ml-dsa-65`（例如）——这个名称从不用于登录。`webauthn.maxKeysPerPerson` 计入两个通道。`webauthn.pqcOnly` 开启时不能开启。关闭时，每个仪式都与以前一样，已注册的后量子通行密钥仍可登录；不能再创建新的。"
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "用户验证"

@@ -1011,6 +1011,14 @@
     "en": "fb33eabeb83379da",
     "text": "Activé, UNIQUEMENT les algorithmes de clé d’accès post-quantiques sont demandés — les `ML-DSA-44` (-48), `ML-DSA-65` (-49) et `ML-DSA-87` (-50) de RFC 9964 — ceux d’entre eux que nomme `webauthn.algorithms`, et les trois s’il n’en nomme aucun. Une nouvelle clé d’accès doit alors être ML-DSA : une clé créée avec un autre algorithme est refusée à l’enregistrement (WebAuthn section 7.1). Cela restreint ce qui est DEMANDÉ : une clé classique déjà enrôlée continue de permettre la connexion. La plupart des authentificateurs ne prennent encore en charge aucun ML-DSA et ne peuvent pas s’enregistrer tant que ce paramètre est activé."
   },
+  "webauthn.pqcAlongsideClassical|label": {
+    "en": "664b4753cc8439b0",
+    "text": "Une clé d’accès post-quantique à côté d’une classique"
+  },
+  "webauthn.pqcAlongsideClassical|description": {
+    "en": "e35e276b9d933828",
+    "text": "Activé, une personne peut détenir à la fois une clé d’accès classique et une clé d’accès post-quantique (ML-DSA), sur le même authentificateur s’il sait créer les deux. Chaque clé d’accès est créée dans une VOIE que la personne choisit : la voie classique demande `webauthn.algorithms` sans ML-DSA (`ES256` et `RS256` s’il n’en reste aucun), la voie post-quantique ne demande que ML-DSA. Chaque voie a son propre identifiant d’utilisateur, de sorte que la seconde clé d’accès ne remplace pas la première sur l’authentificateur, et sa propre liste d’exclusion ; un gestionnaire d’identifiants affiche la clé post-quantique sous un nom qui indique son algorithme — `<username>+ml-dsa` à sa création, `<username>+ml-dsa-65` (par exemple) dès que toutes les clés post-quantiques de la personne utilisent celui-là — qui n’est jamais un nom avec lequel on se connecte. `webauthn.maxKeysPerPerson` compte les deux voies. Ne peut pas être activé tant que `webauthn.pqcOnly` l’est. Désactivé, chaque cérémonie est comme avant, et une clé d’accès post-quantique déjà enregistrée continue de permettre la connexion ; une nouvelle ne peut pas être créée."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Vérification de l’utilisateur"

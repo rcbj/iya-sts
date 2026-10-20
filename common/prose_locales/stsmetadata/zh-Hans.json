@@ -488,8 +488,8 @@
     "text": "full：在每种模式下（#143，在 #139 中构建）：response_mode query.jwt、fragment.jwt、form_post.jwt 和 jwt（code 用 query，其他用 fragment）；带 iss、aud 和 exp（oauth2.jarmResponseLifetimeS）的响应参数，使用客户端的 authorization_signed_response_alg 签名（RS256，或在 FAPI 1.0 Advanced 下为 PS256），并在其注册了 authorization_encrypted_response_alg 时加密；错误以同样方式应答；明文带令牌的 query.jwt 会被拒绝（2.3.1）；第 3 节和第 4 节的元数据和注册成员。"
   },
   "stsmetadata.specs.webauthn.coverage": {
-    "en": "ad2559da570e5a62",
-    "text": "partial：依赖方一侧：注册（第 7.1 节）和断言（第 7.2 节）都会被验证——质询、源、RP ID 哈希、用户在场和用户验证标志、BE/BS、凭据的 alg 与 pubKeyCredParams 的对照、1023 字节的凭据 id、签名计数器，以及对 authenticatorData || SHA-256(clientDataJSON) 的签名，支持 ES256/384/512、RS256/384/512、PS256/384/512、EdDSA 和 ML-DSA-44/65/87（RFC 9964）密钥。自 #105 起，证明声明会按 webauthn.attestationPolicy 在第 8 节的全部八种格式（packed、tpm、android-key、android-safetynet、fido-u2f、none、apple、compound）下验证——by-mode 在产品模式下为存在即验证，在开发模式下为关闭——其证书链针对已配置的信任锚和 FIDO Metadata Service 的根证书验证，查询其吊销状态，MDS 报告为已泄露的型号会被拒绝。缺失：企业证明（第 5.4.7 节）没有 RP ID 允许列表，身份验证扩展不做处理。它独立于调试器自己的解码器编写，以便两者相互核对（tests/webauthn_cross_impl.js）。"
+    "en": "84ea7cdfbe803962",
+    "text": "partial：依赖方一侧：注册（第 7.1 节）和断言（第 7.2 节）都会被验证——质询、源、RP ID 哈希、用户在场和用户验证标志、BE/BS、凭据的 alg 与 pubKeyCredParams 的对照、1023 字节的凭据 id、签名计数器，以及对 authenticatorData || SHA-256(clientDataJSON) 的签名，支持 ES256/384/512、RS256/384/512、PS256/384/512、EdDSA 和 ML-DSA-44/65/87（RFC 9964）密钥。自 #105 起，证明声明会按 webauthn.attestationPolicy 在第 8 节的全部八种格式（packed、tpm、android-key、android-safetynet、fido-u2f、none、apple、compound）下验证——by-mode 在产品模式下为存在即验证，在开发模式下为关闭——其证书链针对已配置的信任锚和 FIDO Metadata Service 的根证书验证，查询其吊销状态，MDS 报告为已泄露的型号会被拒绝。自 #643 起，可以同时持有经典通行密钥和后量子（ML-DSA）通行密钥（webauthn.pqcAlongsideClassical）：每个通道都有自己的用户句柄（第 5.4.3 节）、算法列表和 excludeCredentials，Signal API（第 5.1.10 节）按通道各发送一次。缺失：企业证明（第 5.4.7 节）没有 RP ID 允许列表，身份验证扩展不做处理。它独立于调试器自己的解码器编写，以便两者相互核对（tests/webauthn_cross_impl.js）。"
   },
   "stsmetadata.specs.rfc4226.coverage": {
     "en": "ffd9d22cf4ecfd57",

@@ -1011,6 +1011,14 @@
     "en": "fb33eabeb83379da",
     "text": "Activado solicita ÚNICAMENTE los algoritmos poscuánticos de llave de acceso — `ML-DSA-44` (-48), `ML-DSA-65` (-49) y `ML-DSA-87` (-50) de RFC 9964 — los que de ellos nombre `webauthn.algorithms`, y los tres si no nombra ninguno. Una llave de acceso nueva debe ser entonces ML-DSA: una creada con otro algoritmo se rechaza al registrarse (WebAuthn sección 7.1). Restringe lo que se SOLICITA: una llave clásica ya registrada sigue iniciando sesión. La mayoría de los autenticadores aún no admiten ML-DSA y no pueden registrarse mientras esto está activado."
   },
+  "webauthn.pqcAlongsideClassical|label": {
+    "en": "664b4753cc8439b0",
+    "text": "Llave de acceso poscuántica junto a una clásica"
+  },
+  "webauthn.pqcAlongsideClassical|description": {
+    "en": "e35e276b9d933828",
+    "text": "Activada, una persona puede tener a la vez una llave de acceso clásica y una poscuántica (ML-DSA), en el mismo autenticador si puede crear ambas. Cada llave de acceso se crea en una VÍA que la persona elige: la vía clásica solicita `webauthn.algorithms` sin ML-DSA (`ES256` y `RS256` si no queda ninguno), la vía poscuántica solicita solo ML-DSA. Cada vía tiene su propio identificador de usuario, de modo que la segunda llave de acceso no sustituye a la primera en el autenticador, y su propia lista de exclusión; un gestor de credenciales muestra la poscuántica con un nombre que indica su algoritmo —`<username>+ml-dsa` al crearla, `<username>+ml-dsa-65` (por ejemplo) cuando todas las llaves poscuánticas de la persona usan ese— que nunca es un nombre con el que se inicie sesión. `webauthn.maxKeysPerPerson` cuenta ambas vías. No puede activarse mientras `webauthn.pqcOnly` lo esté. Desactivada, cada ceremonia es como antes, y una llave de acceso poscuántica ya registrada sigue iniciando sesión; no se puede crear una nueva."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Verificación del usuario"

@@ -1011,6 +1011,14 @@
     "en": "fb33eabeb83379da",
     "text": "På begär ENDAST de postkvantsäkra passkey-algoritmerna — RFC 9964:s `ML-DSA-44` (-48), `ML-DSA-65` (-49) och `ML-DSA-87` (-50) — de av dem som `webauthn.algorithms` namnger, och alla tre där den inte namnger någon. En ny passkey måste då vara ML-DSA: en som skapats med en annan algoritm vägras vid registreringen (WebAuthn avsnitt 7.1). Det begränsar vad som BEGÄRS: en klassisk nyckel som redan registrerats fortsätter att logga in. De flesta autentiserare stöder ännu inte ML-DSA och kan inte registrera medan detta är på."
   },
+  "webauthn.pqcAlongsideClassical|label": {
+    "en": "664b4753cc8439b0",
+    "text": "Postkvantnyckel bredvid en klassisk"
+  },
+  "webauthn.pqcAlongsideClassical|description": {
+    "en": "e35e276b9d933828",
+    "text": "På kan en person ha en klassisk nyckel och en postkvantnyckel (ML-DSA) samtidigt, på samma autentiserare om den kan skapa båda. Varje nyckel skapas i ett SPÅR som personen väljer: det klassiska spåret begär `webauthn.algorithms` utan ML-DSA (`ES256` och `RS256` om inget återstår), postkvantspåret begär bara ML-DSA. Varje spår har sitt eget användarhandtag, så att den andra nyckeln inte ersätter den första på autentiseraren, och sin egen exkluderingslista; en lösenordshanterare visar postkvantnyckeln under ett namn som anger dess algoritm — `<username>+ml-dsa` när den skapas, `<username>+ml-dsa-65` (till exempel) när alla personens postkvantnycklar använder just den — som aldrig är ett namn någon loggar in med. `webauthn.maxKeysPerPerson` räknar båda spåren. Kan inte vara på medan `webauthn.pqcOnly` är det. Av är varje ceremoni som förut, och en redan registrerad postkvantnyckel fortsätter att logga in; en ny kan inte skapas."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Användarverifiering"
