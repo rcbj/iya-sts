@@ -67,12 +67,25 @@ class SignoutSurface extends WebSurface {
    */
   async send(path: string, body: Json): Promise<Json> {
     const csrf = String((this.lastAnswer && this.lastAnswer.csrf) || '');
-    const res = await this.env.fetch(this.url(path), {
-      method: 'POST', credentials: 'same-origin',
-      headers: { 'Accept': 'application/json',
-                 'Content-Type': 'application/json',
-                 'X-CSRF-Token': csrf },
-      body: JSON.stringify(body) });
+    let res: Json = null;
+    try {
+      res = await this.env.fetch(this.url(path), {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Accept': 'application/json',
+                   'Content-Type': 'application/json',
+                   'X-CSRF-Token': csrf },
+        body: JSON.stringify(body) });
+    } catch (e) {
+      // THE SERVICE COULD NOT BE REACHED (#731): the act was never answered,
+      // so nothing is known to have been signed out — and a page that said
+      // nothing, the act's rejection unhandled, left the person to assume
+      // it had been. It is a refusal drawn over the page, in English as
+      // every refusal here is, and the page and the account control are
+      // left as they were (nothing changed, so nothing is announced).
+      return { status: 0, json: { ok: false, errors: [
+        'The service could not be reached, so nothing was signed out. ' +
+        'Check the connection and try again.'] } };
+    }
     const json = await res.json().catch(function () {
       return null;
     });
