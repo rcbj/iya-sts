@@ -646,9 +646,11 @@ alone, and a different person signing in ends the browser's session through
 on #561 headed *Implementation plan*, its D1–D12 taken as recommended; what
 this section records is what was built and where the code made the plan
 change. Delivery steps 1 and 2 (the set, resolution, the picker) are here;
-the SAML, WS-Federation and GNAP hints, the other `startSession()` callers'
-tickets, sign-out's account choice and the console's and portal's runtimes
-are later steps and say so where they land.
+steps 3 and 4 — the protocols' hints, the doors' tickets and the sign-outs —
+are in the directory of each protocol (`saml/`, `ws-federation/`, `gnap/`,
+`federation/`, `oauth-oidc/` 3ax and RP-Initiated Logout, `logout/`), and
+what they asked of this module is in the contract table below. The
+console's and the portal's runtimes are a later step.
 
 ### The account set: the server's, per browser (D1, D7)
 
@@ -761,16 +763,27 @@ setting on, so a row is otherwise unchanged.
 * **The consent screen** (`oauth-oidc/consent_screen.ts`), whose Allow or
   Deny resumes the authorization request through `accountTicketFor()` for
   the person it asked; its own check hints that person first.
-* A `startSession()` caller that does NOT leave through `returnToCaller()` —
-  federation's ACS, the certificate sign-in, WS-Trust's browser path —
-  resumes with no ticket today, so a browser with several accounts reaches
-  the picker after it: delivery step 3 owes them `accountTicketFor()`.
+* **Every other door that resumes a flow** (delivery step 3, checked one by
+  one): federation's ACS resumes the flow itself and mints
+  `accountTicketFor(req, returnTo, { sid })` (`federation/CLAUDE.md`); the
+  Kerberos door and the wallet door leave through `completeAuthentication()`,
+  which IS `returnToCaller()`, on the same response the session was started
+  on, so they were ticketed already. The certificate sign-in
+  (`GET /tls/sign-in`) resumes nothing — it answers JSON naming who was
+  signed in, and its caller names that account on its next request — and
+  WS-Trust's session is a side effect of a SOAP exchange with no browser
+  flow to resume; neither needed a ticket.
 
 ### What later steps call — the contracts
 
 | Export | Contract |
 |---|---|
-| `hintAccount(req, { loginHint, sub, sid })` | Before `sessionOf()`. A hint naming a live account in the set chooses it; one naming none makes `sessionOf()` answer null and `accountChoiceNeeded()` `hint-unmatched`. `username` is read as `loginHint`; empty members ignored; a no-op with the setting off. The OIDC authorization endpoint calls it; SAML's `<Subject>` and GNAP's subject hint are next. |
+| `hintAccount(req, { loginHint, sub, sid, soft })` | Before `sessionOf()`. A hint naming a live account in the set chooses it; one naming none makes `sessionOf()` answer null and `accountChoiceNeeded()` `hint-unmatched` — unless it is **`soft`** (step 3), when it is then no hint at all and the request resolves as if it carried none: GNAP's `user`, whose naming somebody other than the person at the browser has a meaning of its own, a sid a page recorded for its own later calls, and RP-Initiated Logout's `id_token_hint` sid. `username` is read as `loginHint`; empty members ignored; a no-op with the setting off. Callers: the OIDC authorization endpoint, SAML 2.0's `<Subject>`, GNAP, consent, sign-out. |
+| `hintAccountKey(req, key)` | The same, from an account's KEY (a subject, or `name:<username>`), as the pages that ask which account carry it. |
+| `accountSessionsOf(req)` | The live session rows of the browser's set, in the order they joined it, no side effects; [] off. Session Management's browser states, SAML Single Logout by NameID, WS-Federation's sign-outs. |
+| `signedInAccounts(req)` | Those accounts as `{ key, sub, username, displayName, current, sid }` — `sid` for the server's own use (a confirmation value), never drawn. |
+| `endSession(req, res, sid)` | With the setting on, `sid` names a session of THIS browser's set to end instead of the cookie's (the set's cookie proves possession; a sid of anybody else's is ignored); then `afterAccountSignOut()`. Off, `sid` is ignored and the function is what it was. |
+| `afterAccountSignOut(req, res)` | After one or more accounts signed out: the cookie cleared only where the browser's DEFAULT session ended, the most recently added live account then made the default (a fresh handle APPENDED after the clear, its OP browser state kept), and Session Management's state list written again. `logout/logout.ts`'s `endFor()` calls it in place of clearing the cookie. |
 | `accountChoiceNeeded(req)` | `null`, or `{ reason: 'ambiguous' \| 'hint-unmatched', accounts, hint }`. Null with the setting off. `prompt=none`/`IsPassive` callers answer from it. |
 | `beginAuthentication({ …, accountChoice, request })` | `accountChoice` `'always'` (select_account: the picker whenever the browser holds any account), `'never'` (a fresh sign-in, prompt=login / ForceAuthn), absent (the picker when ambiguous). `request` defaults to `audit.currentRequest()`. With one account resolved and no hint, its name is filled in. |
 | `accountTicketFor(req, target, hint)` | `target` with `sts_account=` added for the live account `hint` names in this browser's set; unchanged otherwise or with the setting off. For any door that resumes a flow outside `returnToCaller()`. |
@@ -823,6 +836,11 @@ Bound as every act here (JSON, Origin, CSRF); a body refused is
 
 ### The clean-up job, the audit rows, the counters
 
+* **MAKING AN ACCOUNT THE DEFAULT KEEPS ITS OP BROWSER STATE**
+  (`makeDefaultSession()`, `appendDefaultSession()`): it is not a sign-in,
+  and a fresh state would tell every relying party of that account
+  `changed` under OpenID Connect Session Management (`oauth-oidc/CLAUDE.md`
+  3ax).
 * **`authn.account-set-expiry`**, a cluster job per realm, hourly
   (`cluster/CLAUDE.md`'s table): `sweepAccountSets()` prunes every set and
   deletes an empty one. It walks the realm's sets, as the session expiry

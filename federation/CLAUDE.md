@@ -2025,6 +2025,16 @@ SHARED SIGNALS*) argues it. What lives here:
   delete forgets the relationship's stream there first. The map marks a
   relationship receiving signals on its consuming arrow.
 
+## THE ACS RESUMES WITH A SELECTION TICKET (#561, 2026-10-19)
+
+`finishSignIn()` sends the browser on to `returnTo` itself rather than
+through `authn.returnToCaller()`, so it mints what that function mints: with
+`authn.multipleAccounts` on, `authn.accountTicketFor(req, returnTo,
+{ sid })` for the session just started. Without it a browser holding several
+accounts would land on the account picker after signing in through a
+partner. Unchanged with the setting off. Federation's own Single Logout and
+`endPartnerSession()` are already per session and did not change.
+
 ## A NEWCOMER THE ATTRIBUTE POLICY WOULD REFUSE (#396, 2026-10-19)
 
 Where `fedAutocreateUsers` lets a first sign-in create the person, product mode

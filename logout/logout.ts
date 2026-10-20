@@ -4508,6 +4508,10 @@ export = {
   SIGNED_OUT_PATH: SIGNED_OUT_PATH,
   signOutView: slot.forward('signOutView'),
   signOutAct: slot.forward('signOutAct'),
+  // The sign-out's account step (#561), for `GET` and `POST
+  // /authn-api/logout/accounts`.
+  signOutAccountsView: slot.forward('signOutAccountsView'),
+  signOutAccountsAct: slot.forward('signOutAccountsAct'),
   surfacePaths: slot.forward('surfacePaths'),
   // The list of families, for /admin/logout and the management API's OpenAPI
   // document — both describe what this endpoint reaches, and a second list

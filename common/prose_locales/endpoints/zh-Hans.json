@@ -1487,6 +1487,10 @@
     "en": "196d3a7dc50ac8ef",
     "text": "注销会终止什么，以及注销本身"
   },
+  "endpoints.route./authn-api/logout/accounts.name": {
+    "en": "ee44950fe4f4a290",
+    "text": "退出登录针对哪个账户"
+  },
   "endpoints.route./authn-api/consent/:id.name": {
     "en": "1f22b542171d33ef",
     "text": "同意界面询问的内容及答复"

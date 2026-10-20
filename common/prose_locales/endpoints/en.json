@@ -371,6 +371,7 @@
   "endpoints.route./authn-api/wallet/:state/status.name": "Collect a wallet sign-in",
   "endpoints.route./authn-api/wallet/:state/dc-api.name": "Wallet sign-in: the Digital Credentials API answer",
   "endpoints.route./authn-api/logout.name": "What a sign-out would end, and the sign-out",
+  "endpoints.route./authn-api/logout/accounts.name": "Which account a sign-out is for",
   "endpoints.route./authn-api/consent/:id.name": "What the consent screen asks, and the answer",
   "endpoints.route./authn-api/password-change/:id.name": "A forced password change",
   "endpoints.route./authn-api/password-change/:id/start-over.name": "Start a sign-in over from the password change",

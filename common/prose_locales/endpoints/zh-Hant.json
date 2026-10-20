@@ -1487,6 +1487,10 @@
     "en": "196d3a7dc50ac8ef",
     "text": "登出會終止什麼，以及登出本身"
   },
+  "endpoints.route./authn-api/logout/accounts.name": {
+    "en": "ee44950fe4f4a290",
+    "text": "登出針對哪個帳戶"
+  },
   "endpoints.route./authn-api/consent/:id.name": {
     "en": "1f22b542171d33ef",
     "text": "同意畫面詢問的內容及回答"

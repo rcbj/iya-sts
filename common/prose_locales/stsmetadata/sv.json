@@ -2575,6 +2575,14 @@
     "en": "c2016f561ef917cf",
     "text": "POST avslutar sessioner och återkallar det personen innehar"
   },
+  "stsmetadata.endpoints./authn-api/logout/accounts.what": {
+    "en": "ff574754aa7ad4ab",
+    "text": "UTANFÖR SPECIFIKATION (#561). GET svarar utloggningens kontosteg — webbläsarens inloggade konton efter nyckel, aldrig ett sid; POST med CSRF-token väljer ett (dess utloggningssida följer) eller loggar ut alla. 400 där authn.multipleAccounts är av."
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.effect": {
+    "en": "69d6a2e59b3f0a48",
+    "text": "POST med all loggar ut alla konton i webbläsaren"
+  },
   "stsmetadata.endpoints./authn-api/consent/:id.what": {
     "en": "b0e6e117fd23a284",
     "text": "NON-SPEC (#576). GET svarar med samtyckesskärmens vy — applikationen, varje scope och auktoriseringsdetalj, de gränser en person får sänka, det som redan har godkänts — och CSRF-token; POST tar emot Tillåt eller Neka som JSON, med en Origin från den här tjänsten och webbläsarsessionens X-CSRF-Token, och endast från den person frågan ställdes till. Id:t är en bärarbefogenhet och loggas aldrig."

@@ -2575,6 +2575,14 @@
     "en": "c2016f561ef917cf",
     "text": "POST met fin aux sessions et révoque ce que la personne détient"
   },
+  "stsmetadata.endpoints./authn-api/logout/accounts.what": {
+    "en": "ff574754aa7ad4ab",
+    "text": "HORS SPÉCIFICATION (#561). GET répond l’étape des comptes de la déconnexion — les comptes connectés du navigateur par leur clé, jamais un sid ; POST avec le jeton CSRF en choisit un (sa page de déconnexion suit) ou les déconnecte tous. 400 là où authn.multipleAccounts est désactivé."
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.effect": {
+    "en": "69d6a2e59b3f0a48",
+    "text": "POST avec all déconnecte tous les comptes du navigateur"
+  },
   "stsmetadata.endpoints./authn-api/consent/:id.what": {
     "en": "b0e6e117fd23a284",
     "text": "NON-SPEC (#576). GET répond par la vue de l’écran de consentement — l’application, chaque portée et chaque détail d’autorisation, les limites qu’une personne peut abaisser, ce qui a déjà été accepté — et le jeton CSRF ; POST reçoit Autoriser ou Refuser en JSON, avec une Origin de ce service et le X-CSRF-Token de la session du navigateur, et uniquement de la personne à qui la question a été posée. L’identifiant est une capacité au porteur et n’est jamais journalisé."

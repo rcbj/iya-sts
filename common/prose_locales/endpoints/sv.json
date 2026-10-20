@@ -1487,6 +1487,10 @@
     "en": "196d3a7dc50ac8ef",
     "text": "Vad en utloggning skulle avsluta, och utloggningen"
   },
+  "endpoints.route./authn-api/logout/accounts.name": {
+    "en": "ee44950fe4f4a290",
+    "text": "Vilket konto en utloggning gäller"
+  },
   "endpoints.route./authn-api/consent/:id.name": {
     "en": "1f22b542171d33ef",
     "text": "Vad samtyckesskärmen frågar, och svaret"

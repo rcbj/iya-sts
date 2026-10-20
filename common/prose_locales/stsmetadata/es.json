@@ -2575,6 +2575,14 @@
     "en": "c2016f561ef917cf",
     "text": "POST termina sesiones y revoca lo que tiene la persona"
   },
+  "stsmetadata.endpoints./authn-api/logout/accounts.what": {
+    "en": "ff574754aa7ad4ab",
+    "text": "NO ESPECIFICADO (#561). GET responde el paso de cuentas del cierre de sesión: las cuentas con sesión iniciada del navegador por su clave, nunca un sid; POST con el token CSRF elige una (sigue su página de cierre de sesión) o cierra la sesión de todas. 400 donde authn.multipleAccounts está desactivado."
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.effect": {
+    "en": "69d6a2e59b3f0a48",
+    "text": "POST con all cierra la sesión de todas las cuentas del navegador"
+  },
   "stsmetadata.endpoints./authn-api/consent/:id.what": {
     "en": "b0e6e117fd23a284",
     "text": "NON-SPEC (#576). GET responde con la vista de la pantalla de consentimiento —la aplicación, cada ámbito y detalle de autorización, los límites que una persona puede reducir, lo que ya se aceptó— y el token CSRF; POST recibe Permitir o Denegar como JSON, con un Origin de este servicio y el X-CSRF-Token de la sesión del navegador, y solo de la persona a la que se preguntó. El id es una capacidad al portador y nunca se registra en el log."

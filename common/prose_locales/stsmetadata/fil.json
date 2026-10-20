@@ -2575,6 +2575,14 @@
     "en": "c2016f561ef917cf",
     "text": "tinatapos ng POST ang mga session at binabawi ang hawak ng tao"
   },
+  "stsmetadata.endpoints./authn-api/logout/accounts.what": {
+    "en": "ff574754aa7ad4ab",
+    "text": "HINDI-SPEC (#561). Sumasagot ang GET ng hakbang ng account ng pag-sign out — ang mga naka-sign in na account ng browser ayon sa susi nito, hindi kailanman isang sid; pumipili ang POST na may CSRF token ng isa (susunod ang pahina ng pag-sign out nito) o isina-sign out ang lahat. 400 kung naka-off ang authn.multipleAccounts."
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.effect": {
+    "en": "69d6a2e59b3f0a48",
+    "text": "Isina-sign out ng POST na may all ang bawat account sa browser"
+  },
   "stsmetadata.endpoints./authn-api/consent/:id.what": {
     "en": "b0e6e117fd23a284",
     "text": "NON-SPEC (#576). Sinasagot ng GET ang view ng consent screen — ang application, bawat scope at authorization detail, ang mga limit na maaaring babaan ng isang tao, ang mga nasang-ayunan na — at ang CSRF token; tumatanggap ang POST ng Allow o Deny bilang JSON, may Origin ng serbisyong ito at ang X-CSRF-Token ng session ng browser, at mula lamang sa taong tinanong. Ang id ay isang bearer capability at hindi kailanman inilalagay sa log."

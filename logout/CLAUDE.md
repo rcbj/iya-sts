@@ -286,6 +286,58 @@ touched** (#569's rule), and nothing they answer changed.
 process and `tests/vendored/authn_signin.js`'s `signOut()` over HTTP, which
 every job that signed out through the form now signs out through.
 
+## SEVERAL ACCOUNTS IN ONE BROWSER (#561, 2026-10-19)
+
+`authn/CLAUDE.md`, *Several signed-in accounts in one browser*, is the
+design; this is the sign-out half (the plan's section 5, D5). **With
+`authn.multipleAccounts` off nothing below exists**: no step, no `account`
+in any view, the operations below 400 (`STS-LOGOUT-0013`), the cookie
+cleared exactly where it was (`tests/multi_account_logout.js` 1).
+
+* **THE ACCOUNT STEP COMES FIRST** where the browser holds more than one
+  signed-in account and the request names none (`accountStep()`): `GET
+  /logout` answers the shell rather than sending the browser to sign in —
+  `sessionOf()` answers nobody for such a browser, which used to mean "sign
+  in first" — and `GET /authn-api/logout` answers the step's view, `state:
+  'accounts'`: each account by KEY, its names and whether it is the
+  browser's default, never a sid. **`login_hint` PRESELECTS** one (the
+  console and the portal pass the tab's own account) and chooses nothing,
+  because a sign-out is the person's act. The JSON door answers 409
+  `account_choice_required` with the accounts (`STS-LOGOUT-0011`).
+
+  | Operation | What |
+  |---|---|
+  | `GET /authn-api/logout/accounts` | the step's view, whatever the number of accounts; `csrf` |
+  | `POST /authn-api/logout/accounts` `{ account }` | a key: `next: inventory`, the address `/logout?account=<key>`; `all`: every account in this browser signed out, answered as the act is (the result's view, or the signed-out document's form); 409 a key no longer signed in here (`STS-LOGOUT-0012`) |
+
+* **THE STEP AFTER IT IS TODAY'S INVENTORY** for that person, its forms
+  carrying `account` (`view.account`), and `subjectOf()` hands it to
+  `authn.hintAccountKey()` first: a key chooses only among THIS browser's
+  accounts, whose cookie proves the browser holds them. A posted `username`
+  is a SOFT hint there — the caller's own account among several.
+* **EVERY ACCOUNT IN THIS BROWSER is each person's own global sign-out**,
+  one after another — their sessions, tokens and codes wherever they are,
+  credentials spared, as the inventory's first button does for one person —
+  and one result (`mergedResult()`) drawn or fanned out. The plan said
+  "every account in this browser" and left what each one loses open; the
+  person's global sign-out is the one act this page already defines for a
+  person, and the narrower reading (this browser's sign-on sessions only)
+  would leave tokens and relying-party sessions behind with no page to end
+  them from.
+* **THE COOKIE**: `endFor()` calls `authn.afterAccountSignOut()` instead of
+  clearing the cookie — it is cleared only where the browser's DEFAULT
+  session ended, the next live account then becomes the default, and an
+  account that signed out moves to the set's remembered accounts (the
+  session's end does that, as for any ending). Signing alice out of a
+  browser whose default is bob leaves bob's cookie alone.
+
+The words are the `logout.accounts.*` keys, in every shipped catalog. The
+protocols' own sign-outs choose their session in their directories:
+RP-Initiated Logout (`oauth-oidc/CLAUDE.md`), SAML 2.0 front-channel Single
+Logout (`saml/CLAUDE.md`), WS-Federation's two messages
+(`ws-federation/CLAUDE.md`); federation SLO, front- and back-channel logout
+are per session already and did not change.
+
 ## What a logout reaches, protocol by protocol — and what it does not
 
 Two of these mechanisms did not exist before this feature and are argued where

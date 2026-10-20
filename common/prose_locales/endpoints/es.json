@@ -1487,6 +1487,10 @@
     "en": "196d3a7dc50ac8ef",
     "text": "Lo que terminaría un cierre de sesión, y el cierre de sesión"
   },
+  "endpoints.route./authn-api/logout/accounts.name": {
+    "en": "ee44950fe4f4a290",
+    "text": "A qué cuenta corresponde un cierre de sesión"
+  },
   "endpoints.route./authn-api/consent/:id.name": {
     "en": "1f22b542171d33ef",
     "text": "Lo que pregunta la pantalla de consentimiento, y la respuesta"

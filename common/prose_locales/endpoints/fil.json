@@ -1487,6 +1487,10 @@
     "en": "196d3a7dc50ac8ef",
     "text": "Ang tatapusin ng isang pag-sign out, at ang pag-sign out"
   },
+  "endpoints.route./authn-api/logout/accounts.name": {
+    "en": "ee44950fe4f4a290",
+    "text": "Para sa aling account ang isang pag-sign out"
+  },
   "endpoints.route./authn-api/consent/:id.name": {
     "en": "1f22b542171d33ef",
     "text": "Ang itinatanong ng consent screen, at ang sagot"

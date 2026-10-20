@@ -1487,6 +1487,10 @@
     "en": "196d3a7dc50ac8ef",
     "text": "Ce qu’une déconnexion terminerait, et la déconnexion"
   },
+  "endpoints.route./authn-api/logout/accounts.name": {
+    "en": "ee44950fe4f4a290",
+    "text": "Pour quel compte est une déconnexion"
+  },
   "endpoints.route./authn-api/consent/:id.name": {
     "en": "1f22b542171d33ef",
     "text": "Ce que demande l’écran de consentement, et la réponse"

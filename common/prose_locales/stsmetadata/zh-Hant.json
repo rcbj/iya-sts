@@ -2575,6 +2575,14 @@
     "en": "c2016f561ef917cf",
     "text": "POST 終止工作階段並撤銷此人持有的內容"
   },
+  "stsmetadata.endpoints./authn-api/logout/accounts.what": {
+    "en": "ff574754aa7ad4ab",
+    "text": "非規範 (#561)。GET 回應登出的帳戶步驟——瀏覽器中已登入的帳戶，按其鍵列出，絕不含 sid；帶 CSRF 權杖的 POST 選擇其中一個（隨後是其登出頁面）或讓所有帳戶登出。authn.multipleAccounts 關閉時回應 400。"
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.effect": {
+    "en": "69d6a2e59b3f0a48",
+    "text": "帶 all 的 POST 讓瀏覽器中的所有帳戶登出"
+  },
   "stsmetadata.endpoints./authn-api/consent/:id.what": {
     "en": "b0e6e117fd23a284",
     "text": "NON-SPEC (#576)。GET 回應同意畫面的檢視——應用程式、每個範圍與授權詳細資料、使用者可以降低的限額、已經同意的內容——以及 CSRF 權杖；POST 以 JSON 接收「允許」或「拒絕」，須帶有本服務的 Origin 與瀏覽器工作階段的 X-CSRF-Token，且只接受被詢問者本人的回答。此 id 是持有人憑證，從不寫入記錄檔。"

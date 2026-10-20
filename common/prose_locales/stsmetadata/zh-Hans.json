@@ -2575,6 +2575,14 @@
     "en": "c2016f561ef917cf",
     "text": "POST 终止会话并撤销此人持有的内容"
   },
+  "stsmetadata.endpoints./authn-api/logout/accounts.what": {
+    "en": "ff574754aa7ad4ab",
+    "text": "非规范 (#561)。GET 返回退出登录的账户步骤——浏览器中已登录的账户，按其键列出，绝不含 sid；带 CSRF 令牌的 POST 选择其中一个（随后是其退出登录页面）或让所有账户退出。authn.multipleAccounts 关闭时返回 400。"
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.effect": {
+    "en": "69d6a2e59b3f0a48",
+    "text": "带 all 的 POST 让浏览器中的所有账户退出登录"
+  },
   "stsmetadata.endpoints./authn-api/consent/:id.what": {
     "en": "b0e6e117fd23a284",
     "text": "NON-SPEC (#576)。GET 返回同意界面的视图——应用、每个作用域和授权详情、用户可以降低的限额、已经同意的内容——以及 CSRF 令牌；POST 以 JSON 接收“允许”或“拒绝”，需带有本服务的 Origin 和浏览器会话的 X-CSRF-Token，且只接受被提问者本人的答复。该 id 是持有者凭据，从不写入日志。"
