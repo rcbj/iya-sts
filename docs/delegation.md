@@ -113,7 +113,7 @@ an `ldapmodify`.
 | `krb5TrustedForDelegation` | a Kerberos service | **Kerberos only, off by default.** Unconstrained delegation: it may receive and use a user's forwarded TGT. | `TRUSTED_FOR_DELEGATION` |
 | `appAllowedProtocol` | any application | Protocols the application is used with. The controls above apply to whichever of WS-Trust, OAuth 2.0, Kerberos and GNAP it lists; there are no per-protocol copies. | — |
 
-**On a person's entry** (Directory → People → the person, *Delegation*):
+**On a person's entry** (Directory → Users → the person, *Who may act for them*):
 
 | Attribute | Meaning |
 |---|---|
@@ -122,7 +122,7 @@ an `ldapmodify`.
 | `stsDefaultDelegationSemantics` | Their default, after the actor's. |
 | `stsMayAct` | One party this person names as their delegate. Their access tokens (and WS-Trust JWTs) carry RFC 8693 section 4.4's `may_act` claim naming it — the issuance policy's `assign-may-act` question assigns it, and a realm's policy may name another party or none. |
 
-**Realm settings** (Protocols → OAuth 2.0 → Delegation, and `GET
+**Realm settings** (Protocols → Delegation, and `GET
 /admin-api/config`):
 
 | Setting | Environment variable | Default | What it does |
@@ -186,7 +186,7 @@ Delegation still says what refused it.
 ### Writing your own rules
 
 The rules are rules of the issuance policy, so a realm can add its own. A
-realm's issuance policy (Directory → Policies → XACML) is asked **first**;
+realm's issuance policy (Protocols → XACML, the Policies tab) is asked **first**;
 the built-in policy answers whatever it says nothing about. To refuse more,
 write a Deny on action-id `exchange-token` with the obligation
 `urn:sts:xacml:obligation:exchange` (verdict `refuse`, refusal `policy`); the
