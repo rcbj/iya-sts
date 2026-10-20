@@ -38,6 +38,9 @@
 //  11. a set that cannot be read acts as nobody and its picker answers 503
 //      with Retry-After (rcbj's decision 3) — and section 6 asserts that
 //      every selection rotates the set's handle (decision 1).
+//  12. the portal's wallet enrolment (2026-10-20, rcbj on 8081): with two
+//      accounts live it names its own as `login_hint` and is admitted; with
+//      no hint, or one naming nobody here, it is refused (STS-VC-0093).
 //
 // WHY IN PROCESS. Which row a session is, what the set holds and whether a
 // ticket was spent are facts about the stores; an HTTP caller sees cookies
@@ -730,6 +733,48 @@ function partUnread(t) {
   log.debug("Leaving partUnread().");
 }
 
+// ---------------------------------------------------------------------------
+// 12. THE PORTAL'S WALLET ENROLMENT NAMES ITS ACCOUNT (2026-10-20). Two
+// people signed in in one browser made `/authn/wallet?siop=1&enrol=1`
+// refuse for both, because sessionOf() answers nobody for a request that
+// names neither; the portal's link now carries `login_hint`.
+// ---------------------------------------------------------------------------
+function partEnrolHint(t) {
+  log.debug("Entering partEnrolHint().");
+  const vcSignin = require('../oid4vc/vc_signin');
+  const errorCodes = require('../common/error_codes');
+  withSettings({ 'oid4vp.signIn': true, 'oid4vp.signInSelfIssued': true },
+               function () {
+    const b = browser();
+    signIn(b, 'mas-enrol-alice');
+    signIn(b, 'mas-enrol-bob');
+    const ask = function (url) {
+      log.debug("Entering ask().");
+      const req = b.req(url);
+      vcSignin.startView(req, req.res, { query: req.query, csrf: '' });
+      log.debug("Leaving ask().");
+      return { status: req.res.statusCode,
+               code: errorCodes.codeOf(req.res) || '' };
+    };
+    const bare = ask('/authn-api/wallet?siop=1&enrol=1');
+    t.check(bare.status === 403 && bare.code === 'STS-VC-0093',
+            '12a. with two accounts live, an enrolment naming neither is ' +
+            'refused, STS-VC-0093', bare.status + ' ' + bare.code);
+    const hinted = ask('/authn-api/wallet?siop=1&enrol=1&login_hint=' +
+                       'mas-enrol-alice');
+    t.check(hinted.status === 200 && hinted.code !== 'STS-VC-0093',
+            '12b. naming one of them as login_hint, it is admitted',
+            hinted.status + ' ' + hinted.code);
+    const stranger = ask('/authn-api/wallet?siop=1&enrol=1&login_hint=' +
+                         'mas-enrol-carol');
+    t.check(stranger.status === 403 && stranger.code === 'STS-VC-0093',
+            '12c. a login_hint naming nobody signed in here is refused, ' +
+            'never another account in its place',
+            stranger.status + ' ' + stranger.code);
+  });
+  log.debug("Leaving partEnrolHint().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   realms.run(realms.DEFAULT_REALM, function () {
@@ -752,6 +797,7 @@ function run(t) {
     withSettings({ 'authn.multipleAccounts': true }, function () {
       partOn(t);
       partUnread(t);
+      partEnrolHint(t);
     });
     made.forEach(function (sid) {
       if (authn.sessionById(sid)) {

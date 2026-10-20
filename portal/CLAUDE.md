@@ -1523,6 +1523,12 @@ for that session's person and sends them back here with `?enrolled=1`.
 Nothing is typed, because a DID pasted into a box could be somebody else's —
 the one person it would then let in. The removal form names the SUBJECT,
 never whose it is (`STS-PORTAL-0087` when it is not theirs).
+**The link names the tab's own account as `login_hint`** (2026-10-20, rcbj
+on 8081): with `authn.multipleAccounts` on and two people signed in in one
+browser, a request naming neither is answered nobody, so the enrolment was
+refused (`STS-VC-0093`) for everyone who had used Switch user. The hint
+only chooses among the sessions the browser already holds; one naming
+nobody here is still refused (`oid4vc/vc_signin.ts`, `startable()`).
 `portal_self_issued.ts` draws it the way `portal_delegate.ts` does. An
 administrator enrols by value from `/admin/users` and `/admin-api`
 (`oid4vc/CLAUDE.md`, 3ba).

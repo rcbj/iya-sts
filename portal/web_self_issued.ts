@@ -81,7 +81,12 @@ class SelfIssuedPages {
         : '<p id="siop-none">' + t.html('portalSelfIssued.none') + '</p>') +
       (view.enabled
         ? '<p><a class="button" id="siop-enrol" href="/authn/wallet?siop=1' +
-          '&amp;enrol=1">' + t.html('portalSelfIssued.enrol') +
+          '&amp;enrol=1' +
+          // This tab's account, so a browser holding several sessions
+          // enrols for this one (`portal_self_issued.ts`, `loginHint`).
+          (view.loginHint ? '&amp;login_hint=' +
+            kit.esc(encodeURIComponent(String(view.loginHint))) : '') +
+          '">' + t.html('portalSelfIssued.enrol') +
           '</a></p><p class="sub">' + t.html('portalSelfIssued.enrolNote') +
           ' ' + t.html('portalSelfIssued.reprove') + '</p>'
         : '<p class="sub" id="siop-off">' + t.html('portalSelfIssued.off') +
