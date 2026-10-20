@@ -2213,14 +2213,26 @@ prefixed so it is not UUID-shaped (`STS-LDAP-0090` refuses one as a subject
 identifier); a Group member's `type` agrees with the `$ref` the harness itself
 chose; and this service's own `federationLinks` name the service-provider-side
 relationship the job creates, since a random one is refused (`STS-FED-0105`).
+**In product mode it adapts a fourth** (2026-10-20): a User created with only
+its required members is given a random `name.familyName` and `name.givenName`,
+because the realm's attribute policy (#396) requires `sn` and `cn` of every
+person and refuses a create without them (`STS-LDAP-0162`). scim2/test-suite
+is a compiled binary that cannot be told what to send, so in product mode the
+job points it at a loopback proxy of its own (`startNamingProxy()`) that
+forwards every request unchanged except that a User POST or PUT — direct or
+inside `/Bulk` — with no `name` is given a fixed one. Every answer reaches the
+harness as the service sent it. Development mode, which does not enforce the
+policy, runs both harnesses unadapted on this point.
 
 **The exceptions** are the job's `EXCEPTIONS` table and a comment on #206, one
 reason each: scim2/test-suite's `TestResource` resource type, which only its
 built-in server defines; its hard-coded `nickName` and `home` email, both no
 longer published because the directory cannot hold them; its fuzzed Group
 member `$ref` at `https://example.com/…`; its joining of an ABSOLUTE `$ref`
-onto its base URL; and, in scim2-tester, `active` (always said — `scim/CLAUDE.md`)
-and an add to `federationLinks` on a resource it had already given one.
+onto its base URL; and, in scim2-tester, `active` (always said — `scim/CLAUDE.md`),
+an add to `federationLinks` on a resource it had already given one, and — in
+product mode — a PATCH removing `name` whole, which would take the required
+`sn` and `cn` away and is refused (`STS-LDAP-0164`).
 
 **By hand on a host**: point `STS_SCIM2_TESTER_PYTHON` at a virtual
 environment made from `requirements.txt` (any Python the wheels install on)

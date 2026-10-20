@@ -1221,6 +1221,10 @@ In product mode a provisioned person is held to the realm's attribute policy
 and a realm's custom attributes are not a SCIM extension — SCIMMY's schema
 definitions are the process's, not a realm's. A follow-up ticket of #396
 records both. `sts_scim_conformance.js`'s realm saves a policy requiring only
-`uid`, `cn` and `sn` (RFC 7643 requires only `userName`); a harness case
-writing a person with no `name.familyName` is refused in product mode for
-`sn`, and would be an exception recorded on #396.
+`uid`, `cn` and `sn` (RFC 7643 requires only `userName`). Both harnesses
+create people with nothing but a `userName`, which product mode refuses for
+`sn`, so in product mode the job gives each such User a name — in
+scim2-tester's driver, and through a loopback proxy for the compiled
+scim2/test-suite (`tests/CLAUDE.md`, *The SCIM conformance harnesses*); the
+one case left, scim2-tester's PATCH removing `name` whole, is refused
+(STS-LDAP-0164) and is an exception in the job's table.
