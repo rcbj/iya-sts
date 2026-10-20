@@ -43,6 +43,22 @@
     "en": "0d7ef2a117733512",
     "text": "Tills något under sfärens ou=applications ändras; nästa läsning tolkar det då på nytt."
   },
+  "caches.store.applications.load.title": {
+    "en": "87b6608598fd495b",
+    "text": "Applikationsposter lästa efter identifierare"
+  },
+  "caches.store.applications.load.description": {
+    "en": "449808b7934fff9f",
+    "text": "En applikations post och dess tolkade post, efter identifierare, så att en inloggnings kontroller inte läser och tolkar posten för varje fråga."
+  },
+  "caches.store.applications.load.bound": {
+    "en": "38c179a5cfbc2761",
+    "text": "MAX_LOAD_MEMO (256) identifierare per sfär; därutöver kastas de sparade svaren."
+  },
+  "caches.store.applications.load.lifetime": {
+    "en": "a1430f3b77ef4dc8",
+    "text": "Tills något under sfärens ou=applications ändras; nästa läsning frågar då katalogen på nytt."
+  },
   "caches.store.applications.ssf-allowed-events.title": {
     "en": "da62d279c1ec6d48",
     "text": "Behörigheter för Shared Signals-mottagare"

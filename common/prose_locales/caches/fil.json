@@ -43,6 +43,22 @@
     "en": "0d7ef2a117733512",
     "text": "Hanggang may magbago sa ilalim ng ou=applications ng realm; pagkatapos ay ipa-parse itong muli ng susunod na read."
   },
+  "caches.store.applications.load.title": {
+    "en": "87b6608598fd495b",
+    "text": "Mga entry ng application na binasa ayon sa identifier"
+  },
+  "caches.store.applications.load.description": {
+    "en": "449808b7934fff9f",
+    "text": "Ang entry ng isang application at ang na-parse nitong record, ayon sa identifier, para hindi basahin at i-parse ng mga pagsusuri ng isang sign-in ang entry sa bawat tanong."
+  },
+  "caches.store.applications.load.bound": {
+    "en": "38c179a5cfbc2761",
+    "text": "MAX_LOAD_MEMO (256) na identifier bawat realm; lampas doon, itinatapon ang mga naitabing sagot."
+  },
+  "caches.store.applications.load.lifetime": {
+    "en": "a1430f3b77ef4dc8",
+    "text": "Hanggang may magbago sa ilalim ng ou=applications ng realm; pagkatapos ay muling tatanungin ng susunod na read ang directory."
+  },
   "caches.store.applications.ssf-allowed-events.title": {
     "en": "da62d279c1ec6d48",
     "text": "Mga permission ng Shared Signals receiver"

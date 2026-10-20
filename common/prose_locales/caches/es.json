@@ -43,6 +43,22 @@
     "en": "0d7ef2a117733512",
     "text": "Hasta que cambia cualquier cosa bajo ou=applications del dominio; la siguiente lectura lo vuelve a analizar."
   },
+  "caches.store.applications.load.title": {
+    "en": "87b6608598fd495b",
+    "text": "Entradas de aplicación leídas por identificador"
+  },
+  "caches.store.applications.load.description": {
+    "en": "449808b7934fff9f",
+    "text": "La entrada de una aplicación y su registro analizado, por identificador, para que las comprobaciones de un inicio de sesión no lean ni analicen la entrada en cada pregunta."
+  },
+  "caches.store.applications.load.bound": {
+    "en": "38c179a5cfbc2761",
+    "text": "MAX_LOAD_MEMO (256) identificadores por dominio; por encima, se descartan las respuestas conservadas."
+  },
+  "caches.store.applications.load.lifetime": {
+    "en": "a1430f3b77ef4dc8",
+    "text": "Hasta que cambia cualquier cosa bajo ou=applications del dominio; la siguiente lectura vuelve a consultar el directorio."
+  },
   "caches.store.applications.ssf-allowed-events.title": {
     "en": "da62d279c1ec6d48",
     "text": "Permisos de receptores de Shared Signals"

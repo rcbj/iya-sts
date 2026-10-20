@@ -43,6 +43,22 @@
     "en": "0d7ef2a117733512",
     "text": "直到该领域 ou=applications 下的任何内容发生变化；之后的下一次读取会重新解析它。"
   },
+  "caches.store.applications.load.title": {
+    "en": "87b6608598fd495b",
+    "text": "按标识符读取的应用条目"
+  },
+  "caches.store.applications.load.description": {
+    "en": "449808b7934fff9f",
+    "text": "按标识符保存的单个应用条目及其解析后的记录，使登录过程中的各项检查不必每次都读取并解析该条目。"
+  },
+  "caches.store.applications.load.bound": {
+    "en": "38c179a5cfbc2761",
+    "text": "每个领域最多 MAX_LOAD_MEMO（256）个标识符；超出后丢弃已保存的应答。"
+  },
+  "caches.store.applications.load.lifetime": {
+    "en": "a1430f3b77ef4dc8",
+    "text": "直到该领域 ou=applications 下的任何内容发生变化；之后的下一次读取会重新查询目录。"
+  },
   "caches.store.applications.ssf-allowed-events.title": {
     "en": "da62d279c1ec6d48",
     "text": "Shared Signals 接收方权限"
