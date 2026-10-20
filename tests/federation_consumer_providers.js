@@ -1126,8 +1126,10 @@ function childMain() {
       return jwt.sign({ iss: pbase + '/apple', aud: 'com.example.web',
         jti: jti, iat: iat, events: JSON.stringify({
           type: 'email-disabled', sub: '001234.abcdef0123456789.0123' }) },
-      signing.privateKey, { algorithm: 'RS256', noTimestamp: true,
-                            keyid: 'fake-google-1' });
+      // No `noTimestamp`: jsonwebtoken DELETES a payload's `iat` under it,
+      // and this one is the notification's only bound. Without it the
+      // given `iat` is kept and no `exp` is added.
+      signing.privateKey, { algorithm: 'RS256', keyid: 'fake-google-1' });
     };
     const nowS = Math.floor(Date.now() / 1000);
     const freshNoExp = await request('POST', '/realm/' + SP +
