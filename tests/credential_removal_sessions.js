@@ -337,7 +337,8 @@ function childMain() {
         refresh = code ? await redeem(b, code, a.verifier) : '';
       }
       return { b: b, mode: String(c.mode || ''), next: answer.next,
-               refresh: refresh, text: String(answer.text || '').slice(0, 200) };
+               refresh: refresh,
+               text: String(answer.text || '').slice(0, 200) };
     };
     // Two sessions of one person, one per key, each holding a refresh
     // token: A enrolled on first use, B added beside it and asserted.
