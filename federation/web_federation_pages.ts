@@ -77,6 +77,10 @@ const PAGES = [
   { path: '/federation/login/:id', embedded: true, operation: none,
     render: draw, title: title },
   { path: '/federation/link/:id', embedded: true, operation: none,
+    render: draw, title: title },
+  // Where a step-up after a partner returns (#565): a refusal, or the
+  // signed-in page.
+  { path: '/federation/stepup/:id', embedded: true, operation: none,
     render: draw, title: title }
 ];
 

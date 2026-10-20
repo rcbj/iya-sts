@@ -4139,6 +4139,22 @@
     "en": "89dfe2967675cad2",
     "text": "Afficher un bouton par relation utilisable côté fournisseur de services sur /authn/login, afin qu’une identité fédérée puisse satisfaire N’IMPORTE QUEL flux déjà en cours — une requête d’autorisation OAuth 2.0, une connexion WS-Federation, une AuthnRequest SAML, la console d’administration. C’est toute la raison pour laquelle les boutons sont là plutôt que seulement sur /federation/login/{id}. Seules les relations qui fonctionneraient réellement sont proposées — un bouton menant à un refus serait pire que pas de bouton."
   },
+  "federation.consumerProviders|label": {
+    "en": "96a08e7b4a520c19",
+    "text": "Fournisseurs d'identité grand public et sociaux"
+  },
+  "federation.consumerProviders|description": {
+    "en": "635dc4f49d935e03",
+    "text": "Permet à ce domaine de se fédérer avec des fournisseurs grand public et sociaux — Google, Discord, GitHub et le reste du catalogue — sous forme de relations d'une catégorie à part (#565). DÉSACTIVÉ par défaut : un domaine où il est désactivé ne peut pas en recevoir, ne peut pas en activer, et refuse à chaque porte une connexion passant par l'un d'eux, y compris une relation écrite par ldapmodify. Les partenaires d'entreprise n'en sont affectés dans aucune position. Un nouveau venu passant par un fournisseur grand public obtient sa propre entrée, et une adresse n'est jamais utilisée pour retrouver une personne existante."
+  },
+  "federation.connectRecentAuthMinutes|label": {
+    "en": "cbe8f387555868ea",
+    "text": "Connecter un fournisseur : ancienneté maximale de la connexion (min)"
+  },
+  "federation.connectRecentAuthMinutes|description": {
+    "en": "f0edd885053c8b09",
+    "text": "Depuis combien de temps au plus une personne doit s’être authentifiée pour connecter un fournisseur grand public ou social à son compte sur la page Comptes connectés du portail (#565). Au-delà, il lui est demandé de se reconnecter d’abord : une connexion permet au fournisseur de la connecter à partir de ce moment."
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "Effectuer des requêtes par canal de retour vers les partenaires"
@@ -7430,6 +7446,14 @@
   "risk.networkFailureThreshold|description": {
     "en": "b3df2afcc6f13f99",
     "text": "Le nombre de mots de passe refusés depuis un réseau (le préfixe d’adresse selon lequel la notation du risque regroupe) au cours de la dernière heure qui place le signal network-failures sur chaque connexion en provenant. Toutes les personnes derrière un même NAT partagent ce compteur."
+  },
+  "risk.networkSignupThreshold|label": {
+    "en": "c6993a7b6026347a",
+    "text": "Comptes qu’un réseau peut créer en une heure avant un signal"
+  },
+  "risk.networkSignupThreshold|description": {
+    "en": "05e7067b3abe2a57",
+    "text": "Combien de comptes les connexions fédérées depuis un même réseau (le préfixe d’adresse par lequel l’évaluation des risques regroupe) peuvent créer au cours de la dernière heure avant que le signal network-signups soit posé sur chaque connexion depuis ce réseau (#565). Un fournisseur grand public rend un compte aussi bon marché qu’un compte chez le fournisseur : c’est donc la limite à l’inscription en masse depuis un réseau. Non compté pour une adresse figurant sur la liste d’autorisation de l’opérateur du domaine."
   },
   "risk.signalFactors|label": {
     "en": "0a173b571b34160c",

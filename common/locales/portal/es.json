@@ -55,6 +55,8 @@
   "nav.device.heading": "Iniciar sesión en un dispositivo",
   "nav.claim-sources.label": "Fuentes de claims",
   "nav.claim-sources.heading": "Fuentes de claims conectadas",
+  "nav.connected-accounts.label": "Cuentas conectadas",
+  "nav.connected-accounts.heading": "Cuentas conectadas",
   "shell.navAria": "Páginas de la cuenta",
   "shell.signedInAs": "Sesión iniciada como <strong>{name}</strong>",
   "shell.signOut": "Cerrar sesión",

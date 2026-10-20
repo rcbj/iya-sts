@@ -38,6 +38,7 @@
   "options.federatedOwnMany": "Det här programmet loggar in sina användare hos en av dessa federerade identitetsleverantörer. Välj den där du har ett konto. Inget lösenord skrivs in här, och inget kontrolleras där heller såvitt den här tjänsten kan avgöra — det den kontrollerar är partnerns signatur.",
   "options.federatedOwnOne": "Det här programmet loggar in sina användare hos en federerad identitetsleverantör. Inget lösenord skrivs in här, och inget kontrolleras där heller såvitt den här tjänsten kan avgöra — det den kontrollerar är partnerns signatur.",
   "options.federatedAny": "Eller logga in med en federerad identitetsleverantör. Inget lösenord skrivs in här, och inget kontrolleras där heller såvitt den här tjänsten kan avgöra — det den kontrollerar är partnerns signatur.",
+  "options.continueWith": "Fortsätt med {provider}",
   "options.kerberosWithheldKey": "Integrerad Kerberos-inloggning erbjuds inte för den här begäran: den kräver en nyckel.",
   "options.kerberosWithheldMfa": "Integrerad Kerberos-inloggning erbjuds inte för den här begäran: den kräver två faktorer, och en biljett påstår det som dess egna flaggor påstår — oftast en.",
   "options.kerberos": "Eller logga in med en Kerberos-biljett, om den här datorn har en. Inget skrivs in och tjänsten kontrollerar biljetten i stället för ett namn — den enda inloggningen här som vilar på en inloggningsuppgift den faktiskt har verifierat.",

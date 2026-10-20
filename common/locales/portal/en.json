@@ -55,6 +55,8 @@
   "nav.device.heading": "Sign in a device",
   "nav.claim-sources.label": "Claim sources",
   "nav.claim-sources.heading": "Connected claim sources",
+  "nav.connected-accounts.label": "Connected accounts",
+  "nav.connected-accounts.heading": "Connected accounts",
   "shell.navAria": "Account pages",
   "shell.signedInAs": "Signed in as <strong>{name}</strong>",
   "shell.signOut": "Sign out",

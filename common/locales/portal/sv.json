@@ -55,6 +55,8 @@
   "nav.device.heading": "Logga in en enhet",
   "nav.claim-sources.label": "Anspråkskällor",
   "nav.claim-sources.heading": "Anslutna anspråkskällor",
+  "nav.connected-accounts.label": "Anslutna konton",
+  "nav.connected-accounts.heading": "Anslutna konton",
   "shell.navAria": "Kontosidor",
   "shell.signedInAs": "Inloggad som <strong>{name}</strong>",
   "shell.signOut": "Logga ut",

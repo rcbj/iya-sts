@@ -557,6 +557,18 @@ An identity-provider-side relationship shows, read only, the Shared Signals
 streams its application holds on this service's own transmitter: what this
 service tells the partner.
 
+### Consumer and social providers
+
+Google, Discord, GitHub and other consumer providers are relationships of
+their own category, consumer rather than enterprise
+([#565](https://github.com/rcbj/iya-sts/issues/565)). Each one is an OpenID
+Connect or OAuth 2.0 relationship that names its provider in `fedProvider`.
+Everything above applies to them. They are off in a realm until
+`federation.consumerProviders` is on. A newcomer gets an entry of their own,
+and an email address is never used to match an existing person.
+[Consumer and social providers](federation-consumer-providers.md) has the
+steps, the catalogue and which of the requested platforms can be supported.
+
 ### The federation map
 
 `/admin/federation/map`, reached from a link on the relationship table, draws
@@ -634,6 +646,7 @@ this*.
 | `federation.max` | `STS_FEDERATION_MAX` | `50` | yes | How many relationships may exist under `ou=federations`; past it a new one is refused, never an old one evicted. |
 | `federation.usernamePrefix` | `STS_FEDERATION_USERNAME_PREFIX` | *(empty)* | yes | Put in front of the confirm-lookup name and the `any-existing` name, after that value is reduced to the part before the last `@`. Empty, the default, means `alice@partner.example` confirms the local `alice`. An entry created under `link-at-first-sign-in` or `jit-namespaced` is `<relationship>~<subject>` either way. |
 | `federation.loginButtons` | `STS_FEDERATION_LOGIN_BUTTONS` | `true` | yes | Show a button per usable service-provider-side relationship on `/authn/login`. |
+| `federation.consumerProviders` | `STS_FEDERATION_CONSUMER_PROVIDERS` | `false` | yes | Allow consumer and social providers in this realm. See *Consumer and social providers*. |
 | `federation.outbound` | `STS_FEDERATION_OUTBOUND` | `true` | yes | Whether this service may call a partner's token, UserInfo or JWKS endpoint at all. |
 | `federation.outboundTimeoutMs` | `STS_FEDERATION_OUTBOUND_TIMEOUT_MS` | `15000` | yes | How long to wait for a partner before the sign-in fails with an error naming the timeout. |
 | `federation.outboundAllowHttp` | `STS_FEDERATION_OUTBOUND_ALLOW_HTTP` | `false` | yes | Accept an `http://` partner endpoint, logged on every request. Development only: product refuses plain http. |

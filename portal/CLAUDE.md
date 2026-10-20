@@ -1929,3 +1929,28 @@ not repeated in `/account-api` (`mgmt-api/CLAUDE.md` *OWNERS*,
   what `canWrite` reads. The shell names `/admin-api`'s listener where it is
   elsewhere (`data-sts-api`, and `connect-src`).
 
+## CONNECTED ACCOUNTS (#565, 2026-10-19)
+
+`/portal/connected-accounts` (`portal_connected_accounts.ts`,
+`web_connected_accounts.ts`) is where a person connects a consumer or social
+provider to their own account. It is two `/account-api` operations, on the
+claim sources' pattern: Connect answers `location`, the provider's address.
+**There is no callback of this page's own**: the provider answers at the
+federation module's assertion consumer service, where every check of a
+federated sign-in is made, and `federation_sp.ts`'s `finishConnect()` writes
+the link and sends the browser back with `done` or `problem`. The browser
+binding is the federation module's `sts_fed_link`, set on Connect's answer.
+
+The account-takeover checks are this page's, before anything starts:
+* a sign-on session (`STS-PORTAL-0610`) whose risk is LOW or unscored
+  (`STS-PORTAL-0611`, a refusal, never a step-up);
+* an authentication within `federation.connectRecentAuthMinutes`, or the
+  answer is `stepUp` (`prompt=login`, `max_age`).
+
+**Any authentication counts as recent, not only a password**, a departure
+from the plan's "authenticated locally" (2026-10-19). A person whose account
+a provider made has no password here, and proving that provider again proves
+the account. The federation module and the directory are reached at request
+time (8a-acct is before 10c and 21). `federation/CLAUDE.md` has the
+federation half.
+

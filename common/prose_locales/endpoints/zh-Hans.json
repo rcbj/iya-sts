@@ -1291,6 +1291,14 @@
     "en": "b1f3d17607ed42ee",
     "text": "首次登录时关联伙伴的主体"
   },
+  "endpoints.route./federation/stepup/:handle.name": {
+    "en": "1b454ff71565d1ab",
+    "text": "在因风险而加强验证后完成联合登录"
+  },
+  "endpoints.route./federation/notifications/:id.name": {
+    "en": "4111365a4c05f259",
+    "text": "提供方的服务器到服务器通知（#565）"
+  },
   "endpoints.route./federation/slo/:id.name": {
     "en": "4974c5129575d272",
     "text": "伙伴的注销（在浏览器中，#167）"

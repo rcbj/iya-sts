@@ -665,7 +665,17 @@ const AUTHN_ATTRIBUTE = {
   ALLOWED_MFA_MECHANISM: 'urn:sts:xacml:allowed-mfa-mechanism',
   // The obligation the `mfa-mechanism` rule's Deny carries (#475): the PEP
   // reads it as "sign in again with one of the allowed second factors".
-  MFA_MECHANISM_OBLIGATION: 'urn:sts:xacml:obligation:mfa-mechanism'
+  MFA_MECHANISM_OBLIGATION: 'urn:sts:xacml:obligation:mfa-mechanism',
+  // A FEDERATED AUTHENTICATION (#565), sent only when a federation partner
+  // vouched for it: `consumer` for a consumer or social provider (a
+  // relationship naming `fedProvider`) and `enterprise` otherwise …
+  CATEGORY: 'urn:sts:xacml:authn-category',
+  // … the provider — `google`, `discord`, `github`… — empty for an
+  // enterprise partner …
+  PROVIDER: 'urn:sts:xacml:authn-provider',
+  // … and whether the address the partner sent counts as verified, `true` or
+  // `false`: a consumer provider's is unverified unless the provider said so.
+  EMAIL_VERIFIED: 'urn:sts:xacml:email-verified'
 };
 
 // ---------------------------------------------------------------------------

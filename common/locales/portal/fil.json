@@ -55,6 +55,8 @@
   "nav.device.heading": "Mag-sign in ng device",
   "nav.claim-sources.label": "Mga pinagmumulan ng claim",
   "nav.claim-sources.heading": "Mga nakakonektang pinagmumulan ng claim",
+  "nav.connected-accounts.label": "Mga nakakonektang account",
+  "nav.connected-accounts.heading": "Mga nakakonektang account",
   "shell.navAria": "Mga pahina ng account",
   "shell.signedInAs": "Naka-sign in bilang <strong>{name}</strong>",
   "shell.signOut": "Mag-sign out",

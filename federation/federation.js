@@ -200,6 +200,9 @@ const applications = require('./../common/applications');
 // `any-existing` is refused in product (#109): a relationship may not be SET to
 // it there. A leaf over config.js; it requires nothing here back.
 const mode = require('./../common/mode');
+// The consumer provider profiles (#565): a leaf, so requiring it closes
+// nothing.
+const consumerProviders = require('./consumer_providers');
 // The attributes no outside source may write (#94): a map naming one as its
 // target is refused. A leaf, so this require closes no cycle.
 const SourcedAttributes = require('./../common/sourced_attributes');
@@ -240,6 +243,12 @@ const PATHS = {
   metadata: '/federation/metadata',
   // Where the local sign-in of `link-at-first-sign-in` returns to (#109).
   link: '/federation/link',
+  // Where a provider tells this service of a revoked consent or a deleted
+  // account (#565: Sign in with Apple's server-to-server notifications).
+  notifications: '/federation/notifications',
+  // Where a second factor asked for on risk, after a partner, returns to
+  // (#565): the federated sign-in is finished there.
+  stepup: '/federation/stepup',
   // A PARTNER'S SIGN-OUT (#167). `slo` is the one path every browser-borne
   // sign-out arrives at — a SAML LogoutRequest or LogoutResponse, a
   // WS-Federation wsignoutcleanup1.0, and the browser coming back from an
@@ -935,6 +944,18 @@ const SCHEMA = {
       what: 'One of saml2, saml11, wsfed, oidc, oauth2 — the five ' +
             'sign-in protocols — or ssf, a partner that only sends Shared ' +
             'Signals and signs nobody in.' },
+    // A CONSUMER PROVIDER (#565): the profile this relationship was made
+    // from, and so its category. See consumer_providers.ts.
+    { name: 'fedProvider', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'THE CONSUMER OR SOCIAL PROVIDER THIS RELATIONSHIP IS (google, ' +
+            'discord, github, generic-oidc, generic-oauth2), or empty for ' +
+            'an enterprise partner. Set when the relationship is created and ' +
+            'never changed: the provider\'s profile wrote its endpoints onto ' +
+            'this entry then, and supplies at every sign-in where the ' +
+            'subject, the address and its verification come from. A ' +
+            'relationship naming a provider is in the consumer category, ' +
+            'which a realm turns on with federation.consumerProviders.' },
     { name: 'fedPeer', kind: 'single', role: 'both', from: 'this register',
       what: 'THE PARTNER\'S OWN IDENTIFIER, in whatever its protocol calls ' +
             'it: a SAML entityID, an OpenID Connect issuer, a WS-Federation ' +
@@ -997,6 +1018,14 @@ const SCHEMA = {
             'a URL an administrator CONFIGURED. Leave it empty and paste the ' +
             'keys into fedJwks instead if this service is not to make the ' +
             'call.' },
+    { name: 'fedEmailsUrl', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'A SECOND PROFILE ENDPOINT, for a provider that publishes a ' +
+            'person\'s verified address apart from the rest (GitHub\'s ' +
+            '/user/emails). Dialled with the same access token and under the ' +
+            'same policy as fedUserinfoUrl, and only for a relationship whose ' +
+            'provider profile reads it. Its failure costs the address, never ' +
+            'the sign-in.' },
     { name: 'fedJwks', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'The partner\'s public keys as a JWKS document, verbatim. Read ' +
@@ -1039,6 +1068,56 @@ const SCHEMA = {
             'a REAL foreign service, which is a stronger statement than ' +
             'anything else in this directory — see the header. Never written ' +
             'to the audit log and never printed on a page.' },
+    // SIGN IN WITH APPLE (#565): a client secret that is a JWT this service
+    // signs, and an authorization code returned by form_post.
+    { name: 'fedResponseMode', kind: 'single', role: 'service-provider',
+      from: 'this register', enum: ['query', 'form_post'],
+      what: 'HOW THE AUTHORIZATION CODE COMES BACK: query (the default, the ' +
+            'code on the redirect) or form_post (OAuth 2.0 Form Post ' +
+            'Response Mode), which Sign in with Apple requires whenever a ' +
+            'name or an address is asked for. form_post arrives as a ' +
+            'cross-site POST, so a browser sends it no SameSite=Lax cookie.' },
+    { name: 'fedAllowedTenants', kind: 'multi', role: 'service-provider',
+      from: 'this register',
+      what: 'MICROSOFT, ANY TENANT ONLY: the tenant ids whose people may sign ' +
+            'in, one per value. fedPeer then holds {tenantid}, filled from ' +
+            'each token\'s tid, and a token from a tenant not listed is ' +
+            'refused. Empty refuses every tenant.' },
+    { name: 'fedTeamId', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'APPLE ONLY: the Apple Developer team id, the iss of the client ' +
+            'secret this service signs for every token request.' },
+    { name: 'fedKeyId', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'APPLE ONLY: the id of the Sign in with Apple key, the kid of ' +
+            'the client secret this service signs.' },
+    { name: 'fedClientSigningKey', kind: 'single', role: 'service-provider',
+      sensitive: true, from: 'this register',
+      what: 'APPLE ONLY: THE PRIVATE KEY this service signs its client ' +
+            'secret with (the .p8 file Apple issued, a P-256 key in PKCS ' +
+            '#8 PEM). It is a credential at Apple. It is sealed under the ' +
+            'key-encryption key wherever keys persist, never shown and ' +
+            'never written to the audit log. A client secret signed with it ' +
+            'lives five minutes and is minted per token request.' },
+    { name: 'fedAuthorizeParams', kind: 'multi', role: 'service-provider',
+      from: 'this register',
+      what: 'EXTRA AUTHORIZATION REQUEST PARAMETERS, one per value, written ' +
+            '`<name>=<value>`, for a provider that needs one (Twitch\'s ' +
+            '`claims`, to be sent an address). OpenID Connect and OAuth 2.0 ' +
+            'only. The parameters this service sets itself — response_type, ' +
+            'client_id, redirect_uri, state, scope, nonce, code_challenge, ' +
+            'code_challenge_method, response_mode, request and request_uri ' +
+            '— are refused here, because one of them changed here would ' +
+            'undo a check this service makes.' },
+    { name: 'fedTokenAuth', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      enum: ['client_secret_basic', 'client_secret_post'],
+      what: 'HOW THIS SERVICE AUTHENTICATES AT THE PARTNER\'S TOKEN ' +
+            'ENDPOINT: client_secret_basic (the default, which RFC 6749 ' +
+            'section 2.3.1 says a server MUST support) or client_secret_post, ' +
+            'for a partner that reads the secret only from the body. With no ' +
+            'fedClientSecret this service is a public client and neither ' +
+            'applies.' },
     { name: 'fedScope', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'The scope asked of the partner. `openid profile email` is the ' +
@@ -1074,6 +1153,17 @@ const SCHEMA = {
             'subject itself: the NameID, or `sub`. It does not name an ' +
             'entry this sign-in CREATES: that name is the relationship and ' +
             'the partner\'s stable subject (#358).' },
+    { name: 'fedSubjectClaim', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'PLAIN OAUTH 2.0 ONLY: the member of the profile endpoint\'s ' +
+            'answer that is the partner\'s stable identifier for the ' +
+            'person, as a dotted path (id, data.id). Empty keeps what this ' +
+            'service has always done — sub, then id, then user_id. It is the ' +
+            'SUBJECT, the half of a federation link that must never change, ' +
+            'which is not the username (fedUsernameSource). An OpenID ' +
+            'Connect partner\'s subject is the ID Token\'s sub, which OpenID ' +
+            'Connect Core section 5.7 makes the only stable one, and a ' +
+            'consumer provider\'s is its profile\'s.' },
     { name: 'fedAttributeMap', kind: 'multi', role: 'service-provider',
       from: 'this register',
       what: 'ONE VALUE PER MAPPING, written `<incoming name>=<LDAP ' +
@@ -1531,16 +1621,25 @@ const EDITABLE = {
   fedTokenUrl: 'set',
   fedUserinfoUrl: 'set',
   fedJwksUri: 'set',
+  fedEmailsUrl: 'set',
   fedJwks: 'set',
   fedTrustAnchor: 'set',
   fedSigningCertificate: 'set',
   fedClientId: 'set',
   fedClientSecret: 'set',
+  fedTokenAuth: 'set',
+  fedAuthorizeParams: 'multi',
+  fedResponseMode: 'set',
+  fedAllowedTenants: 'multi',
+  fedTeamId: 'set',
+  fedKeyId: 'set',
+  fedClientSigningKey: 'set',
   fedScope: 'set',
   fedResponseType: 'set',
   fedBinding: 'set',
   fedSignRequest: 'set',
   fedUsernameSource: 'set',
+  fedSubjectClaim: 'set',
   fedAutocreateUsers: 'set',
   fedUpdateUserAttributes: 'set',
   fedProvisionGroups: 'set',
@@ -2265,6 +2364,28 @@ function readinessOf(record) {
     needs.forEach(function (name) {
       if (!String(record[name] || '').trim()) missing.push(name);
     });
+    // A CONSUMER PROVIDER (#565): its profile's fields, and the realm's
+    // switch. The switch is a READINESS question rather than a check at each
+    // door, so the sign-in screen, the chooser, home realm discovery, a
+    // broker and the endpoints themselves all refuse it through the one
+    // answer they already ask for.
+    if (consumerProviders.categoryOf(record) === 'consumer') {
+      const profile = consumerProviders.profileFor(record.fedProvider);
+      if (!profile) {
+        missing.push('fedProvider (' + record.fedProvider + ' is not a ' +
+                     'provider this service has a profile for)');
+      } else {
+        profile.needs.forEach(function (name) {
+          if (!String(record[name] || '').trim() &&
+              missing.indexOf(name) < 0) {
+            missing.push(name);
+          }
+        });
+      }
+      if (!consumerProvidersOn()) {
+        missing.push('federation.consumerProviders (off in this realm)');
+      }
+    }
     // A SIGNALS-ONLY PARTNER (#374) is ready when this realm can reach its
     // stream; that is the whole of what it does.
     if (record.fedProtocol === 'ssf') {
@@ -2343,8 +2464,14 @@ function readinessOf(record) {
 function encrypts(record) {
   log.debug("Entering encrypts().");
   log.debug("Leaving encrypts().");
+  // A CONSUMER PROVIDER ENCRYPTS NOTHING TO ANYBODY (#565): none of the
+  // catalogue's providers takes a relying party's encryption key, and an
+  // ID Token on the authorization code flow is not encrypted here anyway
+  // (encryptionRequired()), so issuing it a key would be a certificate under
+  // the realm's Intermediate that nobody will ever use.
   return !!record && record.fedRole === 'service-provider' &&
-         ENCRYPTING_PROTOCOLS.indexOf(record.fedProtocol) >= 0;
+         ENCRYPTING_PROTOCOLS.indexOf(record.fedProtocol) >= 0 &&
+         consumerProviders.categoryOf(record) !== 'consumer';
 }
 
 // `xml` for SAML 2.0 and WS-Federation, `jose` for OpenID Connect.
@@ -2512,6 +2639,73 @@ function encryptionRequired(record) {
          !boolOf(record.fedAllowUnencrypted, false);
 }
 
+// The authorization request parameters this service sets itself (#565):
+// `fedAuthorizeParams` may not name one.
+const RESERVED_AUTHORIZE_PARAMS = ['response_type', 'client_id',
+  'redirect_uri', 'state', 'scope', 'nonce', 'code_challenge',
+  'code_challenge_method', 'response_mode', 'request', 'request_uri'];
+
+// What a write may not do to a consumer relationship, or to the fields #565
+// added (#565). Answers null, or the code, the audit sentence and the
+// message, as subjectFieldProblem() does.
+function consumerFieldProblem(record, field, value) {
+  log.debug("Entering consumerFieldProblem(). field=" + field);
+  const consumer = consumerProviders.categoryOf(record) === 'consumer';
+  if (consumer && field === 'fedSubjectPolicy' && value === 'any-existing') {
+    log.debug("Leaving consumerFieldProblem(). any-existing on a consumer.");
+    return { code: 'STS-FED-0172',
+             why: 'any-existing is refused on a consumer relationship',
+             message: 'any-existing is refused on a consumer relationship ' +
+                      'in every mode: it would let anybody with an account ' +
+                      'at the provider sign in as the local person their ' +
+                      'name matches.' };
+  }
+  if (consumer && field === 'fedEnabled' && boolOf(value, false) &&
+      !consumerProvidersOn()) {
+    log.debug("Leaving consumerFieldProblem(). The realm switch is off.");
+    return { code: 'STS-FED-0171',
+             why: 'federation.consumerProviders is off in this realm',
+             message: 'Consumer and social providers are off in this ' +
+                      'realm, so this relationship cannot be enabled. Turn ' +
+                      'on federation.consumerProviders first.' };
+  }
+  if (field === 'fedAuthorizeParams' && value !== '') {
+    const at = value.indexOf('=');
+    const name = at > 0 ? value.slice(0, at).trim() : '';
+    if (!/^[A-Za-z0-9_.-]{1,64}$/.test(name) ||
+        RESERVED_AUTHORIZE_PARAMS.indexOf(name.toLowerCase()) >= 0) {
+      log.debug("Leaving consumerFieldProblem(). Not an extra parameter.");
+      return { code: 'STS-FED-0180',
+               why: 'fedAuthorizeParams "' + name + '" is not a parameter ' +
+                    'that may be added',
+               message: 'fedAuthorizeParams takes `<name>=<value>`, and the ' +
+                        'name may not be one this service sets itself (' +
+                        RESERVED_AUTHORIZE_PARAMS.join(', ') + ').' };
+    }
+  }
+  if (field === 'fedSubjectClaim' && value !== '') {
+    if (record.fedProtocol !== 'oauth2' || consumer) {
+      log.debug("Leaving consumerFieldProblem(). Not a plain OAuth 2.0 one.");
+      return { code: 'STS-FED-0173',
+               why: 'fedSubjectClaim applies to a plain OAuth 2.0 ' +
+                    'enterprise relationship only',
+               message: 'fedSubjectClaim applies to a plain OAuth 2.0 ' +
+                        'relationship that names no provider. An OpenID ' +
+                        'Connect subject is the ID Token\'s sub, and a ' +
+                        'consumer provider\'s is its profile\'s.' };
+    }
+    const problem = consumerProviders.pathProblem(value);
+    if (problem) {
+      log.debug("Leaving consumerFieldProblem(). Not a path.");
+      return { code: 'STS-FED-0174',
+               why: 'fedSubjectClaim is not a path: ' + problem,
+               message: 'fedSubjectClaim was not changed: ' + problem + '.' };
+    }
+  }
+  log.debug("Leaving consumerFieldProblem(). Nothing wrong.");
+  return null;
+}
+
 // The four fields' values a write may NOT hold, or null.
 function encryptionFieldProblem(record, field, value) {
   log.debug("Entering encryptionFieldProblem(). field=" + field);
@@ -2644,6 +2838,18 @@ function isEnabled(record) {
  * @param record - the federation relationship
  * @returns whether it is usable
  */
+/**
+ * Says whether this realm has consumer and social providers turned on
+ * (`federation.consumerProviders`, #565).
+ *
+ * @returns whether it does
+ */
+function consumerProvidersOn() {
+  log.debug("Entering consumerProvidersOn().");
+  log.debug("Leaving consumerProvidersOn().");
+  return boolOf(config.value('federation.consumerProviders'), false);
+}
+
 function isUsable(record) {
   log.debug("Entering isUsable().");
   log.debug("Leaving isUsable().");
@@ -2760,6 +2966,8 @@ function openSignalsSecret(stored) {
 // otherwise refuse every secret or seal one under a key that dies with the
 // process. `applications.js`'s sealsClientSecrets() makes the same choice.
 const CLIENT_SECRET_SEAL_LABEL = 'federation-client-secret';
+// Apple's signing key (#565), sealed as the client secret is.
+const SIGNING_KEY_SEAL_LABEL = 'federation-client-signing-key';
 
 /**
  * Seals a relationship's client secret where the process holds a durable
@@ -2768,7 +2976,7 @@ const CLIENT_SECRET_SEAL_LABEL = 'federation-client-secret';
  * @param value - the secret
  * @returns `{ ok, value }`, `ok` false when it should be sealed and cannot be
  */
-function sealClientSecret(value) {
+function sealClientSecret(value, label) {
   log.debug("Entering sealClientSecret().");
   const keystore = require('../common/keystore');
   if (!keystore.persists() || !keystore.sealed() ||
@@ -2776,11 +2984,41 @@ function sealClientSecret(value) {
     log.debug("Leaving sealClientSecret(). No durable key.");
     return { ok: true, value: String(value) };
   }
-  const closed = keystore.seal(String(value), CLIENT_SECRET_SEAL_LABEL);
+  const closed = keystore.seal(String(value),
+                               label || CLIENT_SECRET_SEAL_LABEL);
   log.debug("Leaving sealClientSecret(). " + (closed ? 'Sealed.' :
                                                       'Not sealed.'));
   return closed ? { ok: true, value: SEALED_PREFIX + closed }
                 : { ok: false, value: '' };
+}
+
+/**
+ * Returns a relationship's client signing key (Apple's, #565), opened, as a
+ * PEM: a value pasted without its PEM armour is given it.
+ *
+ * @param record - the relationship
+ * @returns the PEM, or empty when there is none or it will not open
+ */
+function clientSigningKeyOf(record) {
+  log.debug("Entering clientSigningKeyOf().");
+  const text = String((record && record.fedClientSigningKey) || '');
+  let opened = text;
+  if (text.indexOf(SEALED_PREFIX) === 0) {
+    const keystore = require('../common/keystore');
+    opened = String(keystore.open(text.slice(SEALED_PREFIX.length),
+                                  SIGNING_KEY_SEAL_LABEL) || '');
+    if (!opened) {
+      log.warn(errorCodes.tag('STS-FED-0157') + 'federation: the client ' +
+               'signing key of relationship "' + String(record.fedId || '') +
+               '" is sealed and will not open under this process\'s ' +
+               'key-encryption key; set it again.');
+    }
+  }
+  const body = opened.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+  log.debug("Leaving clientSigningKeyOf().");
+  return body ? '-----BEGIN PRIVATE KEY-----\n' +
+    (body.match(/.{1,64}/g) || []).join('\n') +
+    '\n-----END PRIVATE KEY-----\n' : '';
 }
 
 /**
@@ -2910,7 +3148,13 @@ function optionOf(record) {
     protocol: record.fedProtocol,
     protocolLabel: (protocolRow(record.fedProtocol) ||
                     {}).label || record.fedProtocol,
-    peer: record.fedPeer
+    peer: record.fedPeer,
+    // The category and the provider (#565), so a sign-in page can group the
+    // consumer providers apart from the enterprise partners.
+    category: consumerProviders.categoryOf(record),
+    provider: String(record.fedProvider || ''),
+    providerLabel: (consumerProviders.profileFor(record.fedProvider) ||
+                    {}).label || ''
   };
 }
 
@@ -3600,12 +3844,33 @@ function create(spec) {
   const id = String(info.fedId || info.id || '').trim();
   const problem = idProblem(id);
   if (problem) errors.push(problem);
-  const role = String(info.fedRole || info.role || '').trim();
+  // A consumer provider is always consumed from (#565), so naming one is
+  // enough to say the role.
+  const role = String(info.fedRole || info.role ||
+                      ((info.fedProvider || info.provider)
+                        ? 'service-provider' : '')).trim();
   if (ROLE_IDS.indexOf(role) === -1) {
     errors.push('Unknown role "' + role + '". The two are: ' +
                 ROLE_IDS.join(', ') + '.');
   }
-  const protocol = String(info.fedProtocol || info.protocol || '').trim();
+  // A CONSUMER PROVIDER (#565) names its own protocol: `provider` alone is
+  // enough, and a protocol given beside it must be the profile's.
+  const providerId = String(info.fedProvider || info.provider || '').trim();
+  const profile = providerId ? consumerProviders.profileFor(providerId)
+                             : null;
+  const protocol = String(info.fedProtocol || info.protocol ||
+                          (profile ? profile.protocol : '')).trim();
+  if (providerId && !profile) {
+    errors.push('Unknown provider "' + providerId + '". The ' +
+                consumerProviders.ids().length + ' are: ' +
+                consumerProviders.ids().join(', ') + '.');
+  }
+  if (profile && (role !== 'service-provider' ||
+                  protocol !== profile.protocol)) {
+    errors.push('A ' + profile.label + ' relationship is a ' +
+                profile.protocol + ' relationship with this service as the ' +
+                'service provider: this service consumes from it.');
+  }
   if (PROTOCOL_IDS.indexOf(protocol) === -1) {
     errors.push('Unknown protocol "' + protocol + '". The ' +
                 PROTOCOL_IDS.length + ' are: ' +
@@ -3620,9 +3885,28 @@ function create(spec) {
   }
   if (errors.length) {
     log.debug('Leaving create(). Refused: ' + errors.join(' '));
-    actionRefused('STS-FED-0061', id, 'the id, role or protocol is not valid');
+    if (providerId && (!profile || role !== 'service-provider' ||
+                       protocol !== profile.protocol)) {
+      actionRefused('STS-FED-0170', id, 'the provider, or the role or ' +
+                                        'protocol beside it, is not valid');
+    } else {
+      actionRefused('STS-FED-0061', id, 'the id, role or protocol is not ' +
+                                        'valid');
+    }
     log.debug("Leaving create().");
     return { ok: false, errors: errors };
+  }
+  // THE REALM SWITCH (#565): a realm that has not turned consumer providers
+  // on cannot be given one, by any door.
+  if (profile && !consumerProvidersOn()) {
+    log.debug('Leaving create(). Consumer providers are off here.');
+    actionRefused('STS-FED-0171', id, 'federation.consumerProviders is off ' +
+                                      'in this realm');
+    log.debug("Leaving create().");
+    return { ok: false,
+             errors: ['Consumer and social providers are off in this realm. ' +
+                      'Turn on federation.consumerProviders first; ' +
+                      'enterprise relationships are not affected by it.'] };
   }
   if (!haveDirectory()) {
     log.debug('Leaving create(). There is no directory to write into.');
@@ -3707,7 +3991,7 @@ function create(spec) {
     // itself is issued by `federation_encryption.ts` right after this, which
     // the console and /admin-api both do; this function is synchronous and
     // issuing is not.
-    if (ENCRYPTING_PROTOCOLS.indexOf(protocol) >= 0) {
+    if (ENCRYPTING_PROTOCOLS.indexOf(protocol) >= 0 && !profile) {
       const family = protocol === 'oidc' ? 'jose' : 'xml';
       record.fedEncryptionKeyType = defaultKeyTypeFor(protocol);
       record.fedKeyManagementAlgorithm =
@@ -3721,12 +4005,26 @@ function create(spec) {
     record.fedApplication = String(info.fedApplication || info.application ||
                                    '').trim();
   }
+  // THE PROFILE'S DEFAULTS, written onto the entry like the protocol's above
+  // and for their reason (#565): the endpoints a sign-in dials are on the
+  // entry, where an administrator can read and change them. And the
+  // consumer defaults rcbj chose — a newcomer gets an entry of their own,
+  // `<relationship>~<subject>`, and an address is never a matching key —
+  // because a consumer provider's people are the public.
+  if (profile) {
+    consumerProviders.apply(record, profile, info);
+    record.fedSubjectPolicy = 'jit-namespaced';
+    record.fedAutocreateUsers = boolText(true);
+    record.fedUsernameSource = '';
+  }
   // Phrased to need no indefinite article. "a OpenID Connect" and "an SAML
   // 2.0" are both wrong, and the usual a/an-by-first-letter rule produces
   // exactly those two — the article follows the SOUND, and three of these five
   // labels are initialisms.
   const note = 'registered as a federation relationship: ' +
-    (protocolRow(protocol) || {}).label + ', with this service as the ' +
+    (profile ? profile.label + ' (' : '') +
+    (protocolRow(protocol) || {}).label + (profile ? ')' : '') +
+    ', with this service as the ' +
     String((roleRow(role) || {}).short || role).toLowerCase();
   record.description = [note];
   if (!persist(record)) {
@@ -4054,6 +4352,10 @@ function update(id, change) {
     value = value.trim().replace(/^@+/, '').toLowerCase();
   }
   const refusal = subjectFieldProblem(field, value) ||
+                  // Removing a value is never refused, as below.
+                  (row.editable === 'multi' &&
+                   String(info.mode || 'add') === 'remove'
+                    ? null : consumerFieldProblem(record, field, value)) ||
                   encryptionFieldProblem(record, field, value) ||
                   // Removing a value is never refused: a mapping written
                   // before #94 must be removable.
@@ -4158,9 +4460,11 @@ function update(id, change) {
   // refused rather than written in clear where they should be sealed and
   // cannot be. `fedClientSecret` is sealed since 2026-10-01, under a
   // durable key only — see sealClientSecret().
-  if (row.name === 'fedClientSecret' && value !== '' &&
+  if ((row.name === 'fedClientSecret' ||
+       row.name === 'fedClientSigningKey') && value !== '' &&
       String(value).indexOf(SEALED_PREFIX) !== 0) {
-    const sealed = sealClientSecret(value);
+    const sealed = sealClientSecret(value, row.name === 'fedClientSigningKey'
+      ? SIGNING_KEY_SEAL_LABEL : CLIENT_SECRET_SEAL_LABEL);
     if (!sealed.ok) {
       log.debug('Leaving update(). The client secret could not be sealed.');
       actionRefused('STS-FED-0157', id, field + ' could not be sealed');
@@ -4837,6 +5141,7 @@ module.exports = {
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose,
   clientSecretOf: clientSecretOf,
+  clientSigningKeyOf: clientSigningKeyOf,
   PATHS: PATHS,
   ROLES: ROLES,
   ROLE_IDS: ROLE_IDS,
@@ -4882,6 +5187,8 @@ module.exports = {
   // A partner's Shared Signals (#373, #374).
   SIGNAL_FIELDS: SIGNAL_FIELDS,
   signsIn: signsIn,
+  consumerProvidersOn: consumerProvidersOn,
+  categoryOf: consumerProviders.categoryOf,
   signalsEnabled: signalsEnabled,
   signalsIssuerOf: signalsIssuerOf,
   signalsCredentialOf: signalsCredentialOf,

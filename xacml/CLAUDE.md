@@ -2272,3 +2272,26 @@ client a person's token was issued to). An object that is not there answers
 empty bags. So `/admin/xacml/decide`, a remote PEP and the management API ask
 the same question and get the same answer. The facts and the protections are
 argued in `common/CLAUDE.md` (3cn). `tests/owner_administration.js` holds it.
+
+## A FEDERATED AUTHENTICATION'S CATEGORY (#565, 2026-10-19)
+
+Three environment attributes, sent only when a federation partner vouched
+for the authentication. The gate's `authorityFactsOf()` reads them from the
+event being recorded or the session's latest, and `xacml_role_pep.ts`'s
+`authorityAttributes()` puts them in, so a rule about them is inapplicable
+to every other sign-in:
+
+| Attribute (`AUTHN_ATTRIBUTE`) | Values |
+|---|---|
+| `urn:sts:xacml:authn-category` (`CATEGORY`) | `consumer` for a consumer or social provider (a relationship with `fedProvider`), `enterprise` otherwise |
+| `urn:sts:xacml:authn-provider` (`PROVIDER`) | the provider: `google`, `discord`, `github`… absent for an enterprise partner |
+| `urn:sts:xacml:email-verified` (`EMAIL_VERIFIED`) | `true` or `false`: a consumer provider's address is unverified unless the provider said so |
+
+And one action-id: **`create-account`** (`ISSUANCE.ACCOUNT`), asked by
+`federation/federation_sp.ts` before the session of a sign-in that would
+CREATE the person, roles waived, with the sign-in's risk facts. No built-in
+rule names it, so the risk rules decide it as they decide a session, and it
+is the action an operator's rule targets to refuse creation (by category, an
+unverified address, a level) while existing people still sign in.
+`STS-FED-0179` is its refusal.
+

@@ -11333,6 +11333,102 @@ const CODES = [
       'Provisioning never creates such a group and never adds anybody to ' +
       'one; the sign-in stands (#358).',
     spec: 'none (audited; the sign-in proceeds)' },
+  { code: 'STS-FED-0170',
+    summary: 'A federation relationship was not created: the consumer ' +
+      'provider named is not one this service has a profile for, or the ' +
+      'role or protocol given beside it is not the profile\'s (a consumer ' +
+      'provider is consumed from, in its own protocol) (#565).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0171',
+    summary: 'A consumer or social provider relationship was not created, ' +
+      'or not enabled, because federation.consumerProviders is off in this ' +
+      'realm (#565).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0172',
+    summary: 'fedSubjectPolicy any-existing was refused on a consumer ' +
+      'relationship, in every mode: it would sign anybody with an account at ' +
+      'the provider in as the local person their name matches (#565).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0173',
+    summary: 'fedSubjectClaim was refused on a relationship that is not a ' +
+      'plain OAuth 2.0 enterprise one: an OpenID Connect subject is the ID ' +
+      'Token\'s sub, and a consumer provider\'s is its profile\'s (#565).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0174',
+    summary: 'fedSubjectClaim was refused because it is not a dotted path of ' +
+      'member names, or names __proto__, constructor or prototype (#565).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0175',
+    summary: 'A sign-in through a consumer or social provider was refused at ' +
+      '/federation/login/{id} or the assertion consumer service because ' +
+      'federation.consumerProviders is off in this realm (#565).',
+    spec: 'HTTP 403' },
+  { code: 'STS-FED-0176',
+    summary: 'A consumer provider\'s address endpoint (fedEmailsUrl, ' +
+      'GitHub\'s /user/emails) did not answer; the sign-in continued with ' +
+      'no address written (#565).',
+    spec: 'none (audited; the sign-in proceeds)' },
+  { code: 'STS-FED-0177',
+    summary: 'A plain OAuth 2.0 sign-in named nobody: the profile endpoint ' +
+      'or access token answered, and the rule that names the subject — the ' +
+      'consumer provider profile\'s, fedSubjectClaim, or sub / id / user_id ' +
+      '— found no value (#565).',
+    spec: 'HTTP 502' },
+  { code: 'STS-FED-0178',
+    summary: 'A federated sign-in was not finished after a step-up on risk: ' +
+      'the browser at /federation/stepup/{handle} holds no session whose ' +
+      'latest authentication is a second factor made through that step, as ' +
+      'the person, after the partner answered — or the step ended with an ' +
+      'error (#565).',
+    spec: 'HTTP 403' },
+  { code: 'STS-FED-0179',
+    summary: 'A federated sign-in that would have CREATED a person\'s entry ' +
+      'was refused: the issuance policy denied create-account on its risk ' +
+      'facts and the partner\'s category (#565). Nobody was created; an ' +
+      'existing person is not asked this question.',
+    spec: 'HTTP 403' },
+  { code: 'STS-FED-0180',
+    summary: 'fedAuthorizeParams was refused: a value is not `<name>=<value>`, ' +
+      'or names a parameter this service sets itself (response_type, ' +
+      'client_id, redirect_uri, state, scope, nonce, code_challenge, ' +
+      'code_challenge_method, response_mode, request, request_uri) (#565).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0181',
+    summary: 'A provider was not connected to an account (#565): the sign-on ' +
+      'session the connect was started from has ended, or is no longer the ' +
+      'person\'s.',
+    spec: 'HTTP 303 back to /portal/connected-accounts with a problem' },
+  { code: 'STS-FED-0182',
+    summary: 'A provider was not connected to an account (#565): the ' +
+      'provider\'s account is already connected to somebody else here, so ' +
+      'the directory would not write the link.',
+    spec: 'HTTP 303 back to /portal/connected-accounts with a problem' },
+  { code: 'STS-FED-0183',
+    summary: 'A provider was not connected to an account (#565): the account ' +
+      'is a console administrator\'s or holds REMOTE_PEPS, and the ' +
+      'relationship does not set fedMayAssertAdministrators.',
+    spec: 'HTTP 303 back to /portal/connected-accounts with a problem' },
+  { code: 'STS-FED-0184',
+    summary: 'A connect could not be started (#565): the relationship is not ' +
+      'a usable consumer provider in OpenID Connect or OAuth 2.0.',
+    spec: 'HTTP 400 (account API)' },
+  { code: 'STS-FED-0185',
+    summary: 'Sign in with Apple\'s client secret could not be signed for a ' +
+      'token request (#565): fedTeamId, fedKeyId, fedClientId or ' +
+      'fedClientSigningKey is missing, the key will not open, or it is not ' +
+      'a P-256 key.',
+    spec: 'HTTP 500 (the federation surface)' },
+  { code: 'STS-FED-0186',
+    summary: 'A provider\'s server-to-server notification was refused ' +
+      '(#565): it did not verify against the relationship\'s keys, named ' +
+      'another issuer or audience, carried no event or no jti, or had ' +
+      'already been accepted once.',
+    spec: 'HTTP 400' },
+  { code: 'STS-FED-0187',
+    summary: 'A provider\'s server-to-server notification arrived for a ' +
+      'relationship that takes none: unknown, not usable, or not a provider ' +
+      'whose profile receives notifications (#565).',
+    spec: 'HTTP 404' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
@@ -16372,6 +16468,12 @@ const CODES = [
       'the reactions to a change of level may be missing. The session was ' +
       'decided on the amended assessment.',
     spec: 'none — a warning in the log' },
+  { code: 'STS-RISK-0050',
+    summary: 'Not a refusal: the row a federated sign-in that CREATED a ' +
+      'person\'s entry leaves in the risk failures register, under its own ' +
+      'door, for the network-signups signal to count. No password signal ' +
+      'counts it (#565).',
+    spec: 'none (a risk register row; the sign-in proceeds)' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +
@@ -21307,6 +21409,20 @@ const CODES = [
       'model that ends the sessions it signed in could not be reached ' +
       '(#722). The removal stands.',
     spec: 'logged; the removal is answered as done' },
+  { code: 'STS-PORTAL-0610',
+    summary: 'A connect on /portal/connected-accounts was refused (#565): ' +
+      'the token is on no sign-on session this service still holds, so the ' +
+      'provider\'s return could not be bound to one.',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0611',
+    summary: 'A connect on /portal/connected-accounts was refused (#565): ' +
+      'the sign-on session\'s risk is MEDIUM or HIGH, and connecting a ' +
+      'provider is never done from a session risk scoring doubts.',
+    spec: 'HTTP 403 JSON' },
+  { code: 'STS-PORTAL-0613',
+    summary: 'A disconnect on /portal/connected-accounts named a provider ' +
+      'the person has no connection to (#565).',
+    spec: 'HTTP 400 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },

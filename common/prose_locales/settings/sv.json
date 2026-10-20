@@ -4139,6 +4139,22 @@
     "en": "89dfe2967675cad2",
     "text": "Visa en knapp per användbar relation på tjänsteleverantörssidan på /authn/login, så att en federerad identitet kan uppfylla VILKET flöde som helst som redan pågår — en OAuth 2.0-auktoriseringsbegäran, en WS-Federation-inloggning, en SAML AuthnRequest, administratörskonsolen. Det är hela skälet till att knapparna finns där och inte bara på /federation/login/{id}. Endast relationer som faktiskt skulle fungera erbjuds — en knapp som leder till en avvisning vore sämre än ingen knapp."
   },
+  "federation.consumerProviders|label": {
+    "en": "96a08e7b4a520c19",
+    "text": "Konsument- och sociala identitetsleverantörer"
+  },
+  "federation.consumerProviders|description": {
+    "en": "635dc4f49d935e03",
+    "text": "Låter denna sfär federera med konsument- och sociala leverantörer — Google, Discord, GitHub och resten av katalogen — som relationer i en egen kategori (#565). AV som standard: en sfär med den avslagen kan inte få en, kan inte aktivera en och vägrar vid varje dörr en inloggning genom en, även en relation skriven med ldapmodify. Företagspartner påverkas inte i något läge. Den som kommer för första gången genom en konsumentleverantör får en egen post, och en adress används aldrig för att matcha en befintlig person."
+  },
+  "federation.connectRecentAuthMinutes|label": {
+    "en": "cbe8f387555868ea",
+    "text": "Ansluta en leverantör: hur ny inloggningen måste vara (min)"
+  },
+  "federation.connectRecentAuthMinutes|description": {
+    "en": "f0edd885053c8b09",
+    "text": "Hur nyligen en person måste ha autentiserat sig för att ansluta en konsument- eller social leverantör till sitt konto på portalens sida Anslutna konton (#565). Äldre än så, och de ombeds logga in igen först: en anslutning låter leverantören logga in dem från och med då."
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "Gör bakkanalsbegäranden till partner"
@@ -7430,6 +7446,14 @@
   "risk.networkFailureThreshold|description": {
     "en": "b3df2afcc6f13f99",
     "text": "Hur många avvisade lösenord från ett nätverk (det adressprefix som riskpoängsättningen grupperar efter) under den senaste timmen som sätter signalen network-failures på varje inloggning därifrån. Varje person bakom en NAT delar detta antal."
+  },
+  "risk.networkSignupThreshold|label": {
+    "en": "c6993a7b6026347a",
+    "text": "Konton ett nätverk får skapa på en timme innan en signal"
+  },
+  "risk.networkSignupThreshold|description": {
+    "en": "05e7067b3abe2a57",
+    "text": "Hur många konton federerade inloggningar från ett och samma nätverk (adressprefixet riskbedömningen grupperar efter) får skapa under den senaste timmen innan signalen network-signups läggs på varje inloggning därifrån (#565). En konsumentleverantör gör ett konto lika billigt som ett konto hos leverantören, så detta är gränsen för att ett nätverk registrerar sig i mängd. Räknas inte för en adress på sfärens tillåtelselista från operatören."
   },
   "risk.signalFactors|label": {
     "en": "0a173b571b34160c",

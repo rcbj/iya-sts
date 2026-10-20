@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4466** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4488** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 29
-* [Federation (`STS-FED`)](#sts-fed) — 146
+* [Federation (`STS-FED`)](#sts-fed) — 164
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 241
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 130
@@ -80,7 +80,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 122
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 47
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 48
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 355
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 240
 * [Management API (`STS-API`)](#sts-api) — 85
-* [User portal (`STS-PORTAL`)](#sts-portal) — 95
+* [User portal (`STS-PORTAL`)](#sts-portal) — 98
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
@@ -2568,6 +2568,24 @@ Raised from: federation/.
 | `STS-FED-0162` | The scheduler job federation.provision-idle could not disable a person whose only sign-in path is one relationship and whose federationLastSeen is past fedProvisionIdleMinutes. The next run tries again (#358). | none — logged |
 | `STS-FED-0163` | fedProvisionCap or fedProvisionIdleMinutes was set to something that is not empty and not a non-negative integer (#358). | HTTP 400 (console and API) |
 | `STS-FED-0164` | A group name in a partner's assertion was refused because the group grants something by being held: a group a setting names (admin.readGroup, admin.writeGroup, roles.remotePepGroup, roles.xacmlUserGroup), a group a role, an owner value, an application's delegation subject group or a relationship's fedSubjectGroup names, or a group an XACML policy names. Provisioning never creates such a group and never adds anybody to one; the sign-in stands (#358). | none (audited; the sign-in proceeds) |
+| `STS-FED-0170` | A federation relationship was not created: the consumer provider named is not one this service has a profile for, or the role or protocol given beside it is not the profile's (a consumer provider is consumed from, in its own protocol) (#565). | HTTP 400 (console and API) |
+| `STS-FED-0171` | A consumer or social provider relationship was not created, or not enabled, because federation.consumerProviders is off in this realm (#565). | HTTP 400 (console and API) |
+| `STS-FED-0172` | fedSubjectPolicy any-existing was refused on a consumer relationship, in every mode: it would sign anybody with an account at the provider in as the local person their name matches (#565). | HTTP 400 (console and API) |
+| `STS-FED-0173` | fedSubjectClaim was refused on a relationship that is not a plain OAuth 2.0 enterprise one: an OpenID Connect subject is the ID Token's sub, and a consumer provider's is its profile's (#565). | HTTP 400 (console and API) |
+| `STS-FED-0174` | fedSubjectClaim was refused because it is not a dotted path of member names, or names __proto__, constructor or prototype (#565). | HTTP 400 (console and API) |
+| `STS-FED-0175` | A sign-in through a consumer or social provider was refused at /federation/login/{id} or the assertion consumer service because federation.consumerProviders is off in this realm (#565). | HTTP 403 |
+| `STS-FED-0176` | A consumer provider's address endpoint (fedEmailsUrl, GitHub's /user/emails) did not answer; the sign-in continued with no address written (#565). | none (audited; the sign-in proceeds) |
+| `STS-FED-0177` | A plain OAuth 2.0 sign-in named nobody: the profile endpoint or access token answered, and the rule that names the subject — the consumer provider profile's, fedSubjectClaim, or sub / id / user_id — found no value (#565). | HTTP 502 |
+| `STS-FED-0178` | A federated sign-in was not finished after a step-up on risk: the browser at /federation/stepup/{handle} holds no session whose latest authentication is a second factor made through that step, as the person, after the partner answered — or the step ended with an error (#565). | HTTP 403 |
+| `STS-FED-0179` | A federated sign-in that would have CREATED a person's entry was refused: the issuance policy denied create-account on its risk facts and the partner's category (#565). Nobody was created; an existing person is not asked this question. | HTTP 403 |
+| `STS-FED-0180` | fedAuthorizeParams was refused: a value is not `<name>=<value>`, or names a parameter this service sets itself (response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request, request_uri) (#565). | HTTP 400 (console and API) |
+| `STS-FED-0181` | A provider was not connected to an account (#565): the sign-on session the connect was started from has ended, or is no longer the person's. | HTTP 303 back to /portal/connected-accounts with a problem |
+| `STS-FED-0182` | A provider was not connected to an account (#565): the provider's account is already connected to somebody else here, so the directory would not write the link. | HTTP 303 back to /portal/connected-accounts with a problem |
+| `STS-FED-0183` | A provider was not connected to an account (#565): the account is a console administrator's or holds REMOTE_PEPS, and the relationship does not set fedMayAssertAdministrators. | HTTP 303 back to /portal/connected-accounts with a problem |
+| `STS-FED-0184` | A connect could not be started (#565): the relationship is not a usable consumer provider in OpenID Connect or OAuth 2.0. | HTTP 400 (account API) |
+| `STS-FED-0185` | Sign in with Apple's client secret could not be signed for a token request (#565): fedTeamId, fedKeyId, fedClientId or fedClientSigningKey is missing, the key will not open, or it is not a P-256 key. | HTTP 500 (the federation surface) |
+| `STS-FED-0186` | A provider's server-to-server notification was refused (#565): it did not verify against the relationship's keys, named another issuer or audience, carried no event or no jti, or had already been accepted once. | HTTP 400 |
+| `STS-FED-0187` | A provider's server-to-server notification arrived for a relationship that takes none: unknown, not usable, or not a provider whose profile receives notifications (#565). | HTTP 404 |
 
 ## STS-OIDFED
 
@@ -3747,6 +3765,7 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0045` | An upload or download meant as Google's Android attestation status list was not one: not JSON, or not an object whose `entries` are keyed by certificate serial (#256). Nothing was loaded. | HTTP 400 (management API); none for the download job |
 | `STS-RISK-0046` | The devices.android-status-refresh job could not download Google's Android attestation status list from devices.androidStatusUrl (#256); the active list, if any, is unchanged. | none — a warning in the log and a failed run |
 | `STS-RISK-0047` | A sign-in's risk assessment, amended with the registered device its WebAuthn ceremony proved (#259), could not be recorded: the history's device feature, the assessment row, the standing or the reactions to a change of level may be missing. The session was decided on the amended assessment. | none — a warning in the log |
+| `STS-RISK-0050` | Not a refusal: the row a federated sign-in that CREATED a person's entry leaves in the risk failures register, under its own door, for the network-signups signal to count. No password signal counts it (#565). | none (a risk register row; the sign-in proceeds) |
 
 ## STS-MAIL
 
@@ -4877,6 +4896,9 @@ Raised from: portal/.
 | `STS-PORTAL-0591` | A credential a person asked to remove on /portal/wallet is not one this realm records as issued to them: the id names no credential of theirs (an expired one is no longer recorded, and another person's is never theirs to name) (#661). | HTTP 400 JSON |
 | `STS-PORTAL-0592` | A Credential Offer asked for on /portal/wallet named a signing algorithm its configuration's credentials are not signed with: the configuration's `signingAlgs` (vc_configs.ts vciSigningAlgsFor()) are the ones it may choose. | HTTP 400 JSON |
 | `STS-PORTAL-0600` | A person removed a credential on /portal (a passkey, the authenticator app or the emailed second factor) and the sign-out model that ends the sessions it signed in could not be reached (#722). The removal stands. | logged; the removal is answered as done |
+| `STS-PORTAL-0610` | A connect on /portal/connected-accounts was refused (#565): the token is on no sign-on session this service still holds, so the provider's return could not be bound to one. | HTTP 400 JSON |
+| `STS-PORTAL-0611` | A connect on /portal/connected-accounts was refused (#565): the sign-on session's risk is MEDIUM or HIGH, and connecting a provider is never done from a session risk scoring doubts. | HTTP 403 JSON |
+| `STS-PORTAL-0613` | A disconnect on /portal/connected-accounts named a provider the person has no connection to (#565). | HTTP 400 JSON |
 
 ## STS-ACCOUNT
 

@@ -38,6 +38,7 @@
   "options.federatedOwnMany": "此應用程式透過以下其中一個聯合身分提供者讓使用者登入。請選擇您擁有帳戶的那一個。這裡不需輸入密碼，就本服務所知，對方那裡也不檢查密碼 — 本服務檢查的是合作夥伴的簽章。",
   "options.federatedOwnOne": "此應用程式透過一個聯合身分提供者讓使用者登入。這裡不需輸入密碼，就本服務所知，對方那裡也不檢查密碼 — 本服務檢查的是合作夥伴的簽章。",
   "options.federatedAny": "或透過聯合身分提供者登入。這裡不需輸入密碼，就本服務所知，對方那裡也不檢查密碼 — 本服務檢查的是合作夥伴的簽章。",
+  "options.continueWith": "使用 {provider} 繼續",
   "options.kerberosWithheldKey": "此要求不提供整合式 Kerberos 登入：它要求使用密碼金鑰。",
   "options.kerberosWithheldMfa": "此要求不提供整合式 Kerberos 登入：它要求兩個因素，而票證所宣告的只是其本身旗標所宣告的 — 通常只有一個。",
   "options.kerberos": "或使用 Kerberos 票證登入（如果這台電腦持有票證）。不需輸入任何內容，本服務檢查的是票證而非名稱 — 這是此處唯一建立在本服務真正驗證過之認證上的登入方式。",

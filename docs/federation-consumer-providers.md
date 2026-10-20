@@ -1,0 +1,202 @@
+---
+title: Consumer and social providers
+---
+
+# Consumer and social providers
+
+iya-sts can sign people in through consumer and social identity providers
+such as Google, Discord and GitHub
+([#565](https://github.com/rcbj/iya-sts/issues/565)). Each one is a
+[federation](federation.md) relationship of its own category, configured on
+**Protocols → Federation → Consumer and social providers**. An application
+does not need anything new. It keeps using its iya-sts integration, and the
+person signs in through a provider wherever an enterprise partner could
+appear: the sign-in screen, an application's own list of partners
+(`appFederationRelationship`), or a broker relationship.
+
+## Turning it on
+
+The realm setting `federation.consumerProviders` is **off by default**. While
+it is off, a realm cannot be given a consumer provider and cannot enable one.
+A sign-in through one is refused at every door, including a relationship
+written directly into the directory. Enterprise relationships are not
+affected by the setting.
+
+## Adding a provider
+
+1. Register an application (an "OAuth app" or "client") at the provider. As
+   its redirect URI, use the relationship's assertion consumer service:
+   `<base>/federation/acs/<id>`, or `<base>/realm/<realm>/federation/acs/<id>`
+   in a trust realm. The relationship's page shows the exact value.
+2. On the **Consumer and social providers** tab, find the provider and enter
+   an id, the client ID and the client secret, then select **Add**.
+   `POST /admin-api/federation/create` with `provider`, `clientId` and
+   `clientSecret` does the same.
+3. Enable the relationship.
+
+The provider's endpoints, issuer, scope and token-endpoint authentication are
+written onto the relationship when it is added. They are ordinary fields,
+shown on its page and editable there. **Where the person's identifier, email
+address and its verification come from is the provider's profile**, read at
+every sign-in, so a correction to a profile reaches every relationship of that
+provider.
+
+## Sign in with Apple
+
+Apple needs three things more than a client id. Enter them on the
+relationship's page:
+
+* **`fedTeamId`**: your Apple Developer team id.
+* **`fedKeyId`**: the id of your Sign in with Apple key.
+* **`fedClientSigningKey`**: that key's `.p8` file, pasted whole. It is sealed
+  wherever keys persist and is never shown again.
+
+The client id is the Services ID. iya-sts signs a fresh, five-minute client
+secret for every token request. The code comes back by `form_post`.
+
+Register `<base>/federation/notifications/<id>` as the relationship's
+server-to-server notification endpoint at Apple:
+
+* **`consent-revoked` and `account-delete`** remove the person's connection
+  through Apple, and end the sessions it started. The person's account here
+  stays.
+* **`email-disabled` and `email-enabled`** are recorded.
+
+**Connecting Apple from the portal needs HTTPS.** Apple's `form_post` is a
+cross-site POST, so the browser binding has to be a `SameSite=None; Secure`
+cookie.
+
+## A provider's security events
+
+A provider that sends Shared Signals about its users is configured exactly as
+an enterprise partner's are: in the relationship's *Shared Signals from this
+partner* section ([Shared Signals](shared-signals.md#receiving-from-a-federation-partner)).
+Its events end the sessions it started and can block its own sign-ins of a
+person, and nothing beyond that relationship. Google's Cross-Account
+Protection uses RISC this way. Whether its stream configuration works with
+this receiver **has not been verified**. Apple's notifications are their own
+endpoint, described above.
+
+## Who a person becomes
+
+* **A newcomer gets an entry of their own**, named after the relationship and
+  the provider's stable identifier for them, for example
+  `discord~80351110224678912`. Relationships of this category default to
+  `fedSubjectPolicy` `jit-namespaced`, with `fedAutocreateUsers` on.
+* **An email address is never used to find an existing person**, whether or
+  not it is verified. `any-existing` is refused on these relationships in
+  every mode. Two different policies still link an existing account:
+  `pre-linked` and `link-at-first-sign-in`. With `link-at-first-sign-in`, the
+  person must sign in here first.
+* **An address is unverified unless the provider says it is verified.** It is
+  still written to the entry. An unverified address opens no flow that needs
+  a verified one, such as emailed codes.
+* **The provider's attributes go through the same mapping as any partner's.**
+  `fedAttributeMap` and the default table decide what reaches the entry. A
+  provider's own member, such as GitHub's `company`, is listed under
+  *Sent and not written* until it is mapped. What is on the entry reaches the
+  tokens iya-sts issues through the usual release rules.
+* **A provider's own MFA claim does not count as MFA here.** The session
+  records the sign-in as `federated`, and nothing a provider says about how
+  the person authenticated satisfies a step-up.
+* **The provider's tokens are not kept.** The access token is used to read the
+  person's profile and then dropped, and no refresh token is asked for.
+
+## Connecting a provider to an existing account
+
+People who already have an account here connect a provider to it on the
+portal's **Connected accounts** page (`/portal/connected-accounts`). They are
+signed in as themselves, select **Connect**, and sign in at the provider. From
+then on, a sign-in through that provider is them. **Disconnect** removes the
+connection and ends the sessions it started.
+
+A connect needs:
+
+* a sign-in whose risk is LOW or unscored;
+* an authentication within `federation.connectRecentAuthMinutes` (ten
+  minutes by default). Otherwise the person is asked to sign in again first.
+
+The connect is finished only in the browser it was started in. A provider
+account already connected to somebody else is refused, as is an
+administrator's account unless the relationship sets
+`fedMayAssertAdministrators`. The person is mailed a security notice.
+
+## Risk
+
+Consumer sign-ins are scored like any other ([Risk scoring](risk-scoring.md)),
+with three signals of their own: `new-federated-provider`, `network-signups`
+and an operator's weight on one relationship (`federation:<id>=<factor>` in
+`risk.signalFactors`).
+
+* **A newcomer is assessed too.** Their first sign-in is not scored, but it is
+  decided on the evidence, such as a network that has created many accounts in
+  the hour.
+* **The policy can refuse creation separately.** Creating the account is its
+  own question to the issuance policy (`create-account`), so a policy can
+  refuse creation while existing people still sign in.
+* **A step-up is answered here.** When the policy asks an existing person's
+  federated sign-in for a step-up, the person answers with an authenticator
+  app or security key they hold here. Someone who holds neither is refused.
+* **The policy is told the category.** The issuance policy receives the
+  category (`urn:sts:xacml:authn-category`), the provider
+  (`urn:sts:xacml:authn-provider`) and whether the address is verified
+  (`urn:sts:xacml:email-verified`).
+
+## The catalogue
+
+| Provider (`fedProvider`) | Protocol | The person is | The address is |
+|---|---|---|---|
+| `google` | OpenID Connect | the ID Token's `sub` | `email`, verified where `email_verified` is true |
+| `discord` | OAuth 2.0 | `/users/@me`'s `id` | `email`, verified where `verified` is true |
+| `github` | OAuth 2.0 | `/user`'s numeric `id` (never `login`, which can be renamed) | the primary address on `/user/emails`, verified where GitHub says so. `/user`'s own `email` is the public one and is not used. |
+| `microsoft` | OpenID Connect, `consumers` authority | the ID Token's `sub` | `email`, never verified (Microsoft makes no statement) |
+| `microsoft-any` | OpenID Connect, `common` authority | the ID Token's `sub` | `email`, never verified. Only tenants listed in `fedAllowedTenants` (the personal-account tenant by default) |
+| `linkedin`, `yahoo`, `slack`, `salesforce` | OpenID Connect | the ID Token's `sub` | `email`, verified where `email_verified` is true |
+| `twitch` | OpenID Connect | the ID Token's `sub` | `email`, asked for by the `claims` parameter (`fedAuthorizeParams`), verified where `email_verified` is true |
+| `facebook` | OAuth 2.0, Graph API `/me` | the app-scoped `id` | `email`, never verified |
+| `amazon` | OAuth 2.0, `/user/profile` | `user_id` | `email`, never verified |
+| `spotify` | OAuth 2.0, `/v1/me` | `id` | `email`, never verified |
+| `x` | OAuth 2.0, `/2/users/me` | `data.id` | none |
+| `tiktok` | OAuth 2.0 (Login Kit), `client_key` | the token response's `open_id` | none |
+| `apple` | OpenID Connect, `form_post`, a client secret this service signs | the ID Token's `sub` (per team) | `email`, possibly a private relay address, verified where `email_verified` is true; the name from the one-time `user` field |
+| `generic-oidc` | OpenID Connect | the ID Token's `sub` | `email`, verified where `email_verified` is true |
+| `generic-oauth2` | OAuth 2.0 | `sub`, `id` or `user_id` | `email`, verified where `email_verified` is true |
+
+Use the two generic profiles for a provider outside the catalogue. Fill in its
+endpoints by hand, as you would for an enterprise partner.
+
+## Feasibility of the platforms requested
+
+**Ticket #565 names seventeen platforms.** This table records what each
+provider's published developer documentation says about signing a person in,
+as read when the catalogue was started (October 2026). Each row is checked
+again when its profile is built, because providers change their terms,
+endpoints and review requirements. **Built** means a profile exists today.
+
+| Platform | Protocol | Identifier | Email | Restrictions and notes | State |
+|---|---|---|---|---|---|
+| Google | OpenID Connect | `sub` (stable per Google account) | `email` with `email_verified` | `hd` names a Workspace domain. The ID Token's issuer has two spellings, both accepted. | **Built** |
+| Discord | OAuth 2.0, no ID Token | `id` (a snowflake) | `email` with `verified`, scope `email` | `mfa_enabled` describes the account, not this sign-in. | **Built** |
+| GitHub | OAuth 2.0, no ID Token | numeric `id` | the primary address on `/user/emails` (scope `user:email`) | The token endpoint answers JSON only when asked to. The secret is sent in the request body. | **Built** |
+| LinkedIn | OpenID Connect ("Sign In with LinkedIn using OpenID Connect") | `sub` | `email` with `email_verified` | The product must be added to the app in LinkedIn's developer portal. The token endpoint takes the secret in the body. | **Built** (profile; not yet run against the live provider) |
+| Microsoft (personal accounts) | OpenID Connect, `consumers` authority | `sub` (per application) | `email`, which Microsoft does not guarantee is verified | The issuer names the personal-account tenant. Organizational tenants are enterprise relationships, or the planned `microsoft-any` profile with an allow-list of tenants. | **Built**: `microsoft` (personal accounts) and `microsoft-any` (the `common` authority, for the tenants `fedAllowedTenants` lists; not yet run against the live provider) |
+| Yahoo | OpenID Connect | `sub` | `email` with `email_verified` | | **Built** (profile; not yet run against the live provider) |
+| Slack | OpenID Connect ("Sign in with Slack") | `sub` / `https://slack.com/user_id` | `email` with `email_verified` | A Slack identity belongs to a workspace (`https://slack.com/team_id`). | **Built** (profile; not yet run against the live provider) |
+| Twitch | OpenID Connect | `sub` | `email` with `email_verified`, only when requested with the `claims` parameter | Needs extra authorization parameters. | **Built** (profile, with its `claims` request in `fedAuthorizeParams`; not yet run against the live provider) |
+| Salesforce | OpenID Connect | `sub` (a URL naming the org and user) | `email` with `email_verified` | Login and test domains. A My Domain is an enterprise relationship. | **Built** (profile; not yet run against the live provider) |
+| Apple | OpenID Connect with Apple-specific parts | `sub` (per team) | `email`, possibly a private relay address | The client secret is a short-lived ES256 JWT signed with the developer's key. `form_post` is required when name or email is asked for, and the name arrives once, unsigned. Apple sends server-to-server notifications. Needs an Apple Developer Program membership. | **Built** (profile and three adapters: the client-secret JWT, the one-time `user` field, the server-to-server notifications; not yet run against the live provider) |
+| Facebook | OAuth 2.0 on the web, Graph API `/me` | app-scoped `id` | `email` with no verification statement, so treated as unverified | The OpenID Connect form (Limited Login) is for mobile apps. Some permissions need app review. | **Built** (profile; not yet run against the live provider) |
+| Amazon (Login with Amazon) | OAuth 2.0, `/user/profile` | `user_id` | `email` with no verification statement | | **Built** (profile; not yet run against the live provider) |
+| X / Twitter | OAuth 2.0 with PKCE, `/2/users/me` | `data.id` | Only with an elevated access tier and its email scope | The profile is nested under `data`. Access tiers and pricing apply. | **Built** (profile; not yet run against the live provider) |
+| TikTok (Login Kit) | OAuth 2.0 | `open_id` (per app), from the token response | none | Uses `client_key` instead of `client_id`. App review required. | **Built** (profile and the `tiktok-client-key` adapter; not yet run against the live provider) |
+| Spotify | OAuth 2.0, `/v1/me` | `id` | `email`, editable by the user, with no verification statement | The documentation frames it as authorization for its Web API rather than as sign-in. | **Built** (profile; the address is unverified; not yet run against the live provider) |
+| Sentry | OAuth 2.0 for integrations | to be established | to be established | Its OAuth exists to authorize an integration's API calls. Whether it supports signing a person in is not established. | Not yet feasible |
+| Netflix | none published | — | — | Netflix publishes no interface for signing a person in to a third party. | **Not feasible** |
+
+## Related
+
+* [Federation](federation.md): relationships, links, provisioning and the
+  subject policies these relationships use.
+* [Risk scoring](risk-scoring.md): consumer sign-ins are scored like any
+  other.
+* [Configuration](configuration.md): `federation.consumerProviders`.

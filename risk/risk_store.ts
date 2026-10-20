@@ -992,7 +992,9 @@ class RiskStore {
           (!o.nameHmac || row.nameHmac === o.nameHmac) &&
           (!o.prefix || row.addressPrefix === o.prefix) &&
           (!o.door || row.door === o.door) &&
-          (!o.excludeDoor || row.door !== o.excludeDoor);
+          // One door or a list of them (#565: the password signals leave
+          // out both a replayed code and an account a sign-in created).
+          [].concat(o.excludeDoor || []).indexOf(row.door) < 0;
       }).reverse();
     const offset = Number(o.offset) || 0;
     const limit = Number(o.limit) || 50;

@@ -8381,6 +8381,31 @@ const SETTINGS = [
                  'actually work are offered — a button leading to a refusal ' +
                  'would be worse than no button.' },
 
+  { key: 'federation.consumerProviders', group: 'Federation',
+    label: 'Consumer and social identity providers',
+    env: 'STS_FEDERATION_CONSUMER_PROVIDERS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Let this realm federate with consumer and social ' +
+                 'providers — Google, Discord, GitHub and the rest of the ' +
+                 'catalogue — as relationships of their own category ' +
+                 '(#565). OFF by default: a realm with it off cannot be ' +
+                 'given one, cannot enable one, and refuses a sign-in ' +
+                 'through one at every door, including a relationship ' +
+                 'written by ldapmodify. Enterprise partners are not ' +
+                 'affected by it in either position. A newcomer through a ' +
+                 'consumer provider gets an entry of their own, and an ' +
+                 'address is never used to match an existing person.' },
+
+  { key: 'federation.connectRecentAuthMinutes', group: 'Federation',
+    label: 'Connecting a provider: how recent the sign-in must be (min)',
+    env: 'STS_FEDERATION_CONNECT_RECENT_AUTH_MINUTES', type: 'int', dflt: 10,
+    min: 1, max: 1440, runtime: true,
+    description: 'How recently a person must have authenticated to connect ' +
+                 'a consumer or social provider to their account on the ' +
+                 'portal\'s Connected accounts page (#565). Older, and they ' +
+                 'are asked to sign in again first: a connection lets the ' +
+                 'provider sign them in from then on.' },
+
   { key: 'federation.outbound', group: 'Federation',
     label: 'Make back-channel requests to partners',
     env: 'STS_FEDERATION_OUTBOUND', type: 'bool', dflt: true, runtime: true,
@@ -13883,6 +13908,18 @@ const SETTINGS = [
                  'prefix risk scoring groups by) in the last hour put the ' +
                  'network-failures signal on every sign-in from it. Every ' +
                  'person behind one NAT shares this count.' },
+
+  { key: 'risk.networkSignupThreshold', group: 'Risk',
+    label: 'Accounts one network may create in an hour before a signal',
+    env: 'STS_RISK_NETWORK_SIGNUP_THRESHOLD', type: 'int', dflt: 10, min: 1,
+    max: 1000000, runtime: true,
+    description: 'How many accounts federated sign-ins from one network ' +
+                 '(the address prefix risk scoring groups by) may create in ' +
+                 'the last hour before the network-signups signal is put on ' +
+                 'every sign-in from it (#565). A consumer provider makes an ' +
+                 'account as cheap as an account at the provider, so this ' +
+                 'is the bound on a network signing up in bulk. Not counted ' +
+                 'for an address on the realm\'s operator allow list.' },
 
   // CALIBRATION (#62): the factors an operator sets, and the shares of
   // sign-ins the calibration report suggests thresholds for.

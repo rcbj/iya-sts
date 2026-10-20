@@ -183,6 +183,10 @@
     "en": "06ec8c6d5bce784c",
     "text": "En av saml2, saml11, wsfed, oidc, oauth2 — de fem inloggningsprotokollen — eller ssf, en partner som bara skickar Shared Signals och inte loggar in någon."
   },
+  "fed.schema.attributes.fedProvider.what": {
+    "en": "b2f68432f2b706d4",
+    "text": "DEN KONSUMENT- ELLER SOCIALA LEVERANTÖR SOM DENNA RELATION ÄR (google, discord, github, generic-oidc, generic-oauth2), eller tomt för en företagspartner. Sätts när relationen skapas och ändras aldrig: leverantörens profil skrev då sina slutpunkter på denna post, och anger vid varje inloggning varifrån subjektet, adressen och dess verifiering kommer. En relation som namnger en leverantör hör till konsumentkategorin, som en sfär slår på med federation.consumerProviders."
+  },
   "fed.schema.attributes.fedPeer.what": {
     "en": "267dac8cafddfb60",
     "text": "PARTNERNS EGEN IDENTIFIERARE, vad den än kallas i dess protokoll: ett SAML-entityID, en OpenID Connect-utfärdare, en WS-Federation-wtrealm. På en relation på tjänsteleverantörssidan KONTROLLERAS den — ett intygande vars Issuer inte är den här strängen avvisas — vilket är varför den inte bara är dokumentation, och sedan 2026-09-12 är den OBLIGATORISK där: en relation utan den är inte fullständigt konfigurerad."
@@ -215,6 +219,10 @@
     "en": "8abc51b744775c8b",
     "text": "Partnerns JWKS. HÄMTAS — vilket är raka motsatsen till vad oauthJwksUri på en applikationspost gör, och skillnaden är hela argumentet i federation_http.js: den ena är en URL som en oautentiserad anropare REGISTRERADE, den här är en URL som en administratör KONFIGURERADE. Lämna den tom och klistra in nycklarna i fedJwks i stället om den här tjänsten inte ska göra anropet."
   },
+  "fed.schema.attributes.fedEmailsUrl.what": {
+    "en": "8e6bd0b6ac698403",
+    "text": "EN ANDRA PROFILSLUTPUNKT, för en leverantör som publicerar en persons verifierade adress skild från resten (GitHubs /user/emails). Anropas med samma åtkomsttoken och under samma policy som fedUserinfoUrl, och bara för en relation vars leverantörsprofil läser den. Om den misslyckas kostar det adressen, aldrig inloggningen."
+  },
   "fed.schema.attributes.fedJwks.what": {
     "en": "e5d612d3437f7654",
     "text": "Partnerns publika nycklar som ett JWKS-dokument, ordagrant. Läses FÖRE fedJwksUri och uppdateras aldrig, så en relation med detta gör ingen utgående begäran efter nycklar alls."
@@ -235,6 +243,34 @@
     "en": "627419de92206a62",
     "text": "DEN HÄR TJÄNSTENS HEMLIGHET HOS PARTNERN, i klartext, i en katalog där varje bind lyckas. Det är en VERKLIG autentiseringsuppgift hos en VERKLIG extern tjänst, vilket är ett starkare påstående än något annat i den här katalogen — se rubriken. Skrivs aldrig till granskningsloggen och skrivs aldrig ut på en sida."
   },
+  "fed.schema.attributes.fedResponseMode.what": {
+    "en": "07cfe6e4177873df",
+    "text": "HUR AUKTORISERINGSKODEN KOMMER TILLBAKA: query (standard, koden i omdirigeringen) eller form_post (OAuth 2.0 Form Post Response Mode), som Sign in with Apple kräver när ett namn eller en adress efterfrågas. form_post kommer som en POST mellan webbplatser, så en webbläsare skickar ingen SameSite=Lax-cookie med den."
+  },
+  "fed.schema.attributes.fedAllowedTenants.what": {
+    "en": "1436122fe8c92048",
+    "text": "ENDAST MICROSOFT, VALFRI KLIENTORGANISATION: id:n för de klientorganisationer vars personer får logga in, ett per värde. fedPeer innehåller då {tenantid}, ifyllt från varje tokens tid, och en token från en organisation som inte finns i listan vägras. Tomt vägrar alla."
+  },
+  "fed.schema.attributes.fedTeamId.what": {
+    "en": "959f29403a917b46",
+    "text": "ENDAST APPLE: team-id:t för Apple Developer, iss i den klienthemlighet denna tjänst signerar för varje tokenbegäran."
+  },
+  "fed.schema.attributes.fedKeyId.what": {
+    "en": "557cedae99afdf0f",
+    "text": "ENDAST APPLE: id:t för nyckeln för Sign in with Apple, kid i den klienthemlighet denna tjänst signerar."
+  },
+  "fed.schema.attributes.fedClientSigningKey.what": {
+    "en": "411c7d1d5df63859",
+    "text": "ENDAST APPLE: DEN PRIVATA NYCKEL denna tjänst signerar sin klienthemlighet med (.p8-filen Apple utfärdade, en P-256-nyckel i PKCS #8 PEM). Den är en autentiseringsuppgift hos Apple. Den förseglas under nyckelkrypteringsnyckeln överallt där nycklar sparas, visas aldrig och skrivs aldrig till granskningsloggen. En klienthemlighet signerad med den lever i fem minuter och skapas för varje tokenbegäran."
+  },
+  "fed.schema.attributes.fedAuthorizeParams.what": {
+    "en": "4cf26c17034bb859",
+    "text": "EXTRA PARAMETRAR I AUKTORISERINGSBEGÄRAN, en per värde, skrivna `<name>=<value>`, för en leverantör som behöver en (Twitchs `claims`, för att få en adress). Endast OpenID Connect och OAuth 2.0. De parametrar denna tjänst själv sätter — response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request och request_uri — vägras här, eftersom en av dem ändrad här skulle göra en kontroll denna tjänst gör ogjord."
+  },
+  "fed.schema.attributes.fedTokenAuth.what": {
+    "en": "d86b5d2b605f0f05",
+    "text": "HUR DENNA TJÄNST AUTENTISERAR SIG VID PARTNERNS TOKENSLUTPUNKT: client_secret_basic (standardvärdet, som RFC 6749 avsnitt 2.3.1 säger att en server MÅSTE stödja) eller client_secret_post, för en partner som bara läser hemligheten från meddelandekroppen. Utan fedClientSecret är denna tjänst en publik klient och inget av dem gäller."
+  },
   "fed.schema.attributes.fedScope.what": {
     "en": "7f9479e6e589a23f",
     "text": "Det omfång som begärs av partnern. `openid profile email` är standard för en OIDC-relation och det finns ingen standard för en OAuth 2.0-relation, eftersom det en OAuth 2.0-auktoriseringsserver ger dig är helt lokalt för den."
@@ -254,6 +290,10 @@
   "fed.schema.attributes.fedUsernameSource.what": {
     "en": "e0e96af3e55ca105",
     "text": "VILKET INKOMMANDE VÄRDE SOM SLÅS UPP VID LINK-AT-FIRST-SIGN-IN, och matchas under any-existing — ett anspråksnamn för OIDC/OAuth 2.0, ett SAML Attribute Name för de andra. Tomt betyder subjektet självt: NameID, eller `sub`. Det namnger inte en post som den här inloggningen SKAPAR: det namnet är relationen och partnerns stabila subjekt (#358)."
+  },
+  "fed.schema.attributes.fedSubjectClaim.what": {
+    "en": "c52efd86a4983b41",
+    "text": "ENDAST REN OAUTH 2.0: den medlem i profilslutpunktens svar som är partnerns stabila identifierare för personen, som en punktad sökväg (id, data.id). Tomt behåller det denna tjänst alltid har gjort — sub, sedan id, sedan user_id. Det är SUBJEKTET, den halva av en federationslänk som aldrig får ändras, vilket inte är användarnamnet (fedUsernameSource). En OpenID Connect-partners subjekt är ID-tokenets sub, som OpenID Connect Core avsnitt 5.7 gör till det enda stabila, och en konsumentleverantörs är dess profils."
   },
   "fed.schema.attributes.fedAttributeMap.what": {
     "en": "4c966530efb4269f",

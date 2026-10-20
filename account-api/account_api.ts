@@ -150,6 +150,11 @@ const PROVIDERS: Array<() => Json> = [
   function () {
     return require('../portal/portal_claim_sources');
   },
+  // #565: /portal/connected-accounts, a consumer provider connected to the
+  // person's own account.
+  function () {
+    return require('../portal/portal_connected_accounts');
+  },
   function () {
     return require('../portal/account_activation');
   },

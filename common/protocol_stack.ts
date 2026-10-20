@@ -484,6 +484,11 @@ class ProtocolStack {
     this.build('portal/portal_claim_sources',
                require('../portal/portal_claim_sources'),
                'PortalClaimSources');
+    // #565: /portal/connected-accounts. It reaches the federation module
+    // (built at 10c) and the directory (21) at request time only.
+    this.build('portal/portal_connected_accounts',
+               require('../portal/portal_connected_accounts'),
+               'PortalConnectedAccounts');
     // THE MAIL CHANNEL (#63, 2026-09-22): two LIBRARIES (rule 3) that
     // register no route — the channel and its uses — built here, before the
     // portal whose `/portal/email`, `/portal/verify-email` and

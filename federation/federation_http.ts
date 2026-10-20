@@ -47,7 +47,7 @@
 //   ATTRIBUTE NAME, AND THE ATTRIBUTE NAME IS PASSED IN.** `fetchJson()` will
 //   not take a bare URL. It takes the relationship and the name of the
 //   attribute holding the URL, looks it up itself, and refuses a name that is
-//   not one of the three it is allowed to read. A caller that has a URL from
+//   not one of the four it is allowed to read. A caller that has a URL from
 //   somewhere else cannot use this module, which is the whole point — there is
 //   no back door here for the next feature that "just needs to fetch one
 //   thing".
@@ -179,10 +179,23 @@ const { URL } = url;
 // on every federated sign-in.
 const USER_AGENT = version.userAgent('federation');
 
-// THE THREE ATTRIBUTES THAT MAY HOLD A URL THIS SERVICE WILL DIAL. See the
-// header — this list is the mechanism, not a convenience. A fourth name here is
-// a new argument, not a new line.
-const DIALLABLE = ['fedTokenUrl', 'fedUserinfoUrl', 'fedJwksUri'];
+// THE ATTRIBUTES THAT MAY HOLD A URL THIS SERVICE WILL DIAL. See the header —
+// this list is the mechanism, not a convenience. A new name here is a new
+// argument, not a new line.
+//
+// **THE FOURTH, `fedEmailsUrl` (#565, 2026-10-19), IS THAT ARGUMENT MADE.**
+// GitHub publishes a person's verified address on a second endpoint,
+// `/user/emails`, and nowhere else: `/user`'s own `email` is the public
+// address, unverified and chosen for display. The URL has exactly
+// `fedUserinfoUrl`'s provenance — written onto the relationship by an
+// administrator, or by the provider's profile at creation, which is the
+// same administrator's act (`consumer_providers.ts`), and never by a request
+// — it carries the same bearer to the same partner, and it is dialled under
+// the same policy. Nothing about the SSRF position moves: it is still a URL
+// off a relationship entry, by attribute name. It is read only for a
+// relationship whose profile names the `emails` source.
+const DIALLABLE = ['fedTokenUrl', 'fedUserinfoUrl', 'fedJwksUri',
+                   'fedEmailsUrl'];
 
 // THE ATTRIBUTES `deliverForm()` MAY SEND TO (2026-09-17, #36), and they are a
 // list of their own for the header's reason: an address something is SENT to
@@ -1852,7 +1865,7 @@ class FederationHttp {
                 'asked to dial ' +
                 '"' + attribute + '" ' +
                 'on ' + id +
-                ', which is not one of the three attributes this service ' +
+                ', which is not one of the attributes this service ' +
                 'will follow (' + DIALLABLE.join(', ') + '). Refused. This ' +
                 'is a bug in the caller, not a misconfiguration — see the ' +
                 'header of federation_http.js.');

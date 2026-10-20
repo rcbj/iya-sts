@@ -4139,6 +4139,22 @@
     "en": "89dfe2967675cad2",
     "text": "Magpakita ng button bawat magagamit na service-provider-side relationship sa /authn/login, para matugunan ng isang federated identity ang ANUMANG flow na nagsimula na — isang OAuth 2.0 authorization request, isang WS-Federation sign-in, isang SAML AuthnRequest, ang admin console. Iyon ang buong dahilan kung bakit naroon ang mga button sa halip na sa /federation/login/{id} lang. Ang mga relationship lang na talagang gagana ang iniaalok — mas masahol ang button na humahantong sa pagtanggi kaysa sa walang button."
   },
+  "federation.consumerProviders|label": {
+    "en": "96a08e7b4a520c19",
+    "text": "Mga consumer at social na identity provider"
+  },
+  "federation.consumerProviders|description": {
+    "en": "635dc4f49d935e03",
+    "text": "Pinapayagan ang realm na ito na makipag-federate sa mga consumer at social na provider — Google, Discord, GitHub at ang iba pa sa katalogo — bilang mga relasyon ng sarili nilang kategorya (#565). NAKA-OFF bilang default: ang realm na naka-off ito ay hindi mabibigyan ng isa, hindi makapagpapagana ng isa, at tumatanggi sa bawat pinto sa pag-sign in sa pamamagitan ng isa, kasama ang relasyong isinulat ng ldapmodify. Hindi apektado ang mga enterprise na partner sa alinmang posisyon. Ang bagong dating sa pamamagitan ng consumer provider ay nakakakuha ng sariling entry, at hindi kailanman ginagamit ang address para itugma sa umiiral na tao."
+  },
+  "federation.connectRecentAuthMinutes|label": {
+    "en": "cbe8f387555868ea",
+    "text": "Pagkonekta ng provider: gaano kabago dapat ang pag-sign in (min)"
+  },
+  "federation.connectRecentAuthMinutes|description": {
+    "en": "f0edd885053c8b09",
+    "text": "Gaano kabago dapat nagpatunay ang isang tao para maikonekta ang isang consumer o social na provider sa kanyang account sa pahinang Mga nakakonektang account ng portal (#565). Kung mas luma, hihilingin muna sa kanila na mag-sign in muli: pinapayagan ng koneksyon ang provider na i-sign in sila mula noon."
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "Gumawa ng mga back-channel request sa mga partner"
@@ -7430,6 +7446,14 @@
   "risk.networkFailureThreshold|description": {
     "en": "b3df2afcc6f13f99",
     "text": "Ilang tinanggihang password mula sa isang network (ang address prefix na ginagamit sa pagpapangkat ng risk scoring) sa nakaraang oras ang naglalagay ng network-failures signal sa bawat sign-in mula rito. Pinagsasaluhan ng bawat tao sa likod ng iisang NAT ang bilang na ito."
+  },
+  "risk.networkSignupThreshold|label": {
+    "en": "c6993a7b6026347a",
+    "text": "Mga account na maaaring likhain ng isang network sa isang oras bago maging signal"
+  },
+  "risk.networkSignupThreshold|description": {
+    "en": "05e7067b3abe2a57",
+    "text": "Ilang account ang maaaring malikha sa nakaraang oras ng mga federated na pag-sign in mula sa iisang network (ang address prefix na ginagamit ng risk scoring sa pagpapangkat) bago ilagay ang network-signups na signal sa bawat pag-sign in mula rito (#565). Ginagawa ng isang consumer provider na kasing-mura ang isang account ng isang account sa provider, kaya ito ang hangganan sa maramihang pag-sign up ng isang network. Hindi binibilang para sa address na nasa operator allow list ng realm."
   },
   "risk.signalFactors|label": {
     "en": "0a173b571b34160c",

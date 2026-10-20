@@ -401,7 +401,12 @@ const NAV = [
       // same reason: a link hands this service a token at another provider
       // that vouches for this person. Drawn by `portal_claim_sources.ts`.
       { path: BASE + '/claim-sources', label: 'Claim sources',
-        heading: 'Connected claim sources' }
+        heading: 'Connected claim sources' },
+      // CONNECTED ACCOUNTS (#565), in this section for the claim sources'
+      // reason: a connection lets a consumer provider vouch for this person
+      // at sign-in. Drawn by `portal_connected_accounts.ts`.
+      { path: BASE + '/connected-accounts', label: 'Connected accounts',
+        heading: 'Connected accounts' }
     ] }
 ];
 

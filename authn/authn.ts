@@ -4407,7 +4407,15 @@ class Authn {
     if (detail.federation && detail.federation.id) {
       authority = { kind: 'federation', id: String(detail.federation.id),
                     peer: String(detail.federation.peer || ''),
-                    subject: String(detail.federation.subject || '') };
+                    subject: String(detail.federation.subject || ''),
+                    // Consumer or enterprise, which provider, and whether
+                    // the partner's address counts as verified (#565): what
+                    // the issuance policy is told about a federated sign-in.
+                    category: String(detail.federation.category ||
+                                     'enterprise'),
+                    provider: String(detail.federation.provider || ''),
+                    emailVerified: detail.federation.mailVerified === false
+                      ? 'false' : 'true' };
     } else if (detail.protocol === 'Kerberos v5' && detail.presented) {
       authority = { kind: 'kerberos', principal: String(detail.presented) };
     }
@@ -4663,6 +4671,11 @@ class Authn {
     }
     if (given.id) {
       credential.fingerprint = stsCrypto.credentialFingerprint(given.id);
+    }
+    // A FEDERATED SIGN-IN'S RELATIONSHIP (#565), by its id: not a secret, and
+    // what an operator's per-relationship risk factor names.
+    if (given.relationship) {
+      credential.relationship = String(given.relationship);
     }
     if (given.aaguid) {
       credential.aaguid = String(given.aaguid);
@@ -5377,13 +5390,21 @@ class Authn {
     }
     const user: any = userFor(username) || {};
     const engine = this.riskEngine();
-    if (!user.sub || !engine) {
+    // A NEWCOMER (#565): a federated sign-in that would CREATE the person has
+    // no entry yet, and so no `sub` — and that is the sign-in the evidence
+    // signals matter most for, since a consumer provider makes an account as
+    // cheap as signing in. The door names a provisional subject for it, one
+    // per partner subject, under which it is assessed as a first sign-in:
+    // unscored on the model, decided on the evidence.
+    const subject = user.sub ? String(user.sub)
+      : String(d.provisionalSubject || '');
+    if (!subject || !engine) {
       log.debug("Leaving Authn.assessSignIn(). Nobody to assess.");
       return null;
     }
     const headers = (req && req.headers) || {};
     const assessment = await engine.assess({
-      realm: realms.currentId(), subject: String(user.sub),
+      realm: realms.currentId(), subject: subject,
       username: String(username), sessionId: '',
       door: String(via || ''), clientId: String(d.application || ''),
       context: this.eventContext(d),
@@ -9170,12 +9191,63 @@ class Authn {
    * @param opts - `first: 'email'` after an emailed first factor
    * @returns whether it took over the response
    */
+  // ---------------------------------------------------------------------------
+  // A SECOND FACTOR HERE, AFTER A FEDERATION PARTNER (#565, the risk design's
+  // decision 1). A federated sign-in the policy answers with a step-up used
+  // to be refused outright — the partner authenticated the person, and this
+  // door could ask for nothing — and a consumer provider asserts no second
+  // factor this service believes. So the partner's verified answer is the
+  // FIRST factor, exactly as a wallet presentation is: a pending record is
+  // minted for the person, locked to their name and returning to the
+  // federation module's step-up address, and `beginSecondFactorAfterWallet()`
+  // asks for what they hold HERE — never enrolling one, because an elevated
+  // risk suspects exactly the person who would enrol their own. The
+  // federation module, not this one, then starts the federated session: this
+  // module requires nothing of it (4b).
+  // ---------------------------------------------------------------------------
+  /**
+   * Asks for a second factor this service holds for a person a federation
+   * partner signed in, where the issuance policy asked for a step-up.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param spec - `username`, `returnTo` (a path on this service), `via`,
+   *   `details` for the step's page, and `assessment`, the sign-in's risk
+   * @returns `{ handled }`, or `{ handled: false, refused, errorCode }`
+   */
+  beginSecondFactorAfterFederation(req: any, res: any, spec: any): any {
+    const { log } = this.deps;
+    log.debug("Entering Authn.beginSecondFactorAfterFederation(). " +
+              "username=" + spec.username);
+    const target = this.beginAuthentication({
+      returnTo: String(spec.returnTo || ''),
+      protocol: String(spec.via || 'Federation step-up'),
+      lockedUsername: String(spec.username || ''),
+      application: '',
+      details: spec.details || []
+    });
+    const id = new URL(String(target), 'http://step.invalid')
+      .searchParams.get('authn') || '';
+    const record = id ? pending.get(id) : null;
+    if (!record) {
+      log.debug("Leaving Authn.beginSecondFactorAfterFederation(). No " +
+                "pending record.");
+      return { handled: false, refused: 'Authentication failed.',
+               errorCode: 'STS-RISK-0018' };
+    }
+    log.debug("Leaving Authn.beginSecondFactorAfterFederation().");
+    return this.beginSecondFactorAfterWallet(req, res, record,
+      String(spec.username), { amr: ['federated'], acr: '' },
+      spec.assessment, { first: 'federation' });
+  }
+
   beginSecondFactorAfterWallet(req: any, res: any, record: any,
                                username: string, outcome: any,
                                assessment?: any,
                                opts?: { first?: string }): any {
     const { log, randomId, gate, credentials, stsCrypto, config } = this.deps;
     const firstIsEmail = !!(opts && opts.first === 'email');
+    const firstIsFederation = !!(opts && opts.first === 'federation');
     log.debug("Entering Authn.beginSecondFactorAfterWallet(). username=" +
               username);
     const enrolled = credentials.mechanismsFor(username);
@@ -9218,6 +9290,20 @@ class Authn {
         }
         riskFactor = riskAnswer.risk.factor;
       }
+    }
+    // AFTER A FEDERATION PARTNER (#565) the step-up is answered with a factor
+    // the person holds HERE — an authenticator app or a security key — and
+    // never with a password, which a consumer provider's newcomer does not
+    // have and which would prove nothing about the partner's sign-in.
+    // Holding neither is a refusal, never an enrolment.
+    if (firstIsFederation && riskFactor &&
+        !(enrolled.totp || enrolled.mfaKeys + enrolled.primaryKeys > 0)) {
+      this.settleRisk(risk, { decision: 'step-up', errorCode: 'STS-RISK-0018',
+                              policy: '' });
+      log.debug("Leaving Authn.beginSecondFactorAfterWallet(). After a " +
+                "partner, nothing held answers the step-up.");
+      return { handled: false, refused: 'Authentication failed.',
+               onRisk: true, errorCode: 'STS-RISK-0018' };
     }
     const needed = !!riskFactor ||
       (!already && (!!record.forceMfa || requirement.required ||
@@ -9263,8 +9349,8 @@ class Authn {
     // somebody who holds nothing: enrolling for them unproved is the bypass.
     // -----------------------------------------------------------------------
     const mfaAllowed = this.mfaAllowedFor(String(record.application || ''));
-    const passwordSecond = this.deps.authnPolicy.allows('password',
-                                                        'second-factor') &&
+    const passwordSecond = !firstIsFederation &&
+      this.deps.authnPolicy.allows('password', 'second-factor') &&
       mfaLib.allowsStepFactor(mfaAllowed, 'password');
     let thenEnrol = false;
     let narrowedAway = false;
@@ -9352,7 +9438,10 @@ class Authn {
     });
     this.narrowStep(pendingMfa.get(mfaId));
     void config;
-    log.info('authn: "' + username + '" signed in with a wallet and a second ' +
+    log.info('authn: "' + username + '" signed in with ' +
+             (opts && opts.first === 'federation' ? 'a federation partner'
+                                                  : 'a wallet') +
+             ' and a second ' +
              'factor is needed (' + (record.forceMfa ? 'the request demands ' +
              'two' : requirement.required ? 'required of them' :
              'they hold one') + '); asking for ' + factor + '.');
@@ -10168,6 +10257,10 @@ class Authn {
       return { id: String(one.id), label: String(one.label || ''),
                protocolLabel: String(one.protocolLabel || ''),
                peer: String(one.peer || ''),
+               // Consumer or enterprise, and which provider (#565), so the
+               // screen draws the consumer providers as a group of their own.
+               category: String(one.category || 'enterprise'),
+               provider: String(one.provider || ''),
                href: '/federation/login/' + encodeURIComponent(one.id) +
                      '?returnTo=' + back + forApplication + forRestart };
     });
@@ -15546,6 +15639,8 @@ export = {
   mfaStepFor: slot.forward('mfaStepFor'),
   finishWithWallet: slot.forward('finishWithWallet'),
   beginSecondFactorAfterWallet: slot.forward('beginSecondFactorAfterWallet'),
+  beginSecondFactorAfterFederation:
+    slot.forward('beginSecondFactorAfterFederation'),
   assessSignIn: slot.forward('assessSignIn'),
   adoptSessionRisk: slot.forward('adoptSessionRisk'),
   sessionsForRisk: slot.forward('sessionsForRisk'),

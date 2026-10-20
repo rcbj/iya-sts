@@ -98,7 +98,15 @@ const ISSUANCE = {
   // `common/cert_enrollment.ts` for an application subject, roles waived and
   // the device deferred: it is the protocol-declaration rule (#380) that
   // decides it, the family the caller names.
-  CERTIFICATE: 'issue-certificate'
+  CERTIFICATE: 'issue-certificate',
+  // AN ACCOUNT A FEDERATED SIGN-IN WOULD CREATE (#565), asked by
+  // `federation/federation_sp.ts` before the session whose funnel creates
+  // it, with the sign-in's risk facts and the partner's category, roles
+  // waived: so an operator's rule can refuse CREATION — a consumer
+  // provider's newcomer at MEDIUM, an unverified address — while existing
+  // people still sign in. The built-in risk rules apply to it as to a
+  // session.
+  ACCOUNT: 'create-account'
 };
 
 /**
@@ -361,6 +369,7 @@ function check(request) {
     allowedAuthnMechanisms: mechanisms ? mechanisms.allowed : null,
     mfaMechanisms: mfa ? mfa.satisfied : null,
     allowedMfaMechanisms: mfa ? mfa.allowed : null,
+    authority: authorityFactsOf(asked),
     rolesWaived: asked.rolesWaived === true || !enforceRoles ||
                  !asked.application
   });
@@ -409,6 +418,36 @@ function check(request) {
 // ---------------------------------------------------------------------------
 const BROWSER_KINDS = [ISSUANCE.SESSION, ISSUANCE.AUTHORIZATION_CODE,
                        ISSUANCE.SAML_ASSERTION, ISSUANCE.WSFED_TOKEN];
+
+// ---------------------------------------------------------------------------
+// WHO VOUCHED FOR THE AUTHENTICATION, WHEN A FEDERATION PARTNER DID (#565):
+// the relationship's category — consumer or enterprise — its provider, and
+// whether the address it sent counts as verified, from the event being
+// recorded or the session's latest one. Null for any other authentication,
+// so a rule about them is inapplicable to a password sign-in.
+// ---------------------------------------------------------------------------
+/**
+ * The federation facts of the authentication an issuance rests on (#565).
+ *
+ * @param asked - the issuance request
+ * @returns `{ category, provider, emailVerified }`, or null
+ */
+function authorityFactsOf(asked) {
+  log.debug('Entering authorityFactsOf().');
+  const events = asked.session && Array.isArray(asked.session.events)
+    ? asked.session.events : [];
+  const event = asked.authenticationEvent || events[events.length - 1] ||
+                null;
+  const authority = event && event.authority;
+  if (!authority || authority.kind !== 'federation') {
+    log.debug('Leaving authorityFactsOf(). Not federated.');
+    return null;
+  }
+  log.debug('Leaving authorityFactsOf(). ' + authority.category);
+  return { category: String(authority.category || 'enterprise'),
+           provider: String(authority.provider || ''),
+           emailVerified: String(authority.emailVerified || 'true') };
+}
 
 /**
  * The sign-in mechanism facts of a browser issuance (#457).

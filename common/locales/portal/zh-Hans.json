@@ -55,6 +55,8 @@
   "nav.device.heading": "为设备登录",
   "nav.claim-sources.label": "声明来源",
   "nav.claim-sources.heading": "已连接的声明来源",
+  "nav.connected-accounts.label": "已连接的账户",
+  "nav.connected-accounts.heading": "已连接的账户",
   "shell.navAria": "账户页面",
   "shell.signedInAs": "已登录为 <strong>{name}</strong>",
   "shell.signOut": "退出登录",

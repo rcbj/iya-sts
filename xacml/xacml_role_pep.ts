@@ -169,6 +169,11 @@ interface IssuanceQuestion {
   // THE AUTHENTICATION A SESSION STANDS ON (#64): `{ amr, acr, kinds }`,
   // named by `authn.startSession()` and by nothing else.
   authentication?: { amr?: string[]; acr?: string; kinds?: string[] } | null;
+  // A FEDERATED AUTHENTICATION'S FACTS (#565), from the gate: the
+  // relationship's category, its provider, and whether the address counts
+  // as verified. Null for any other authentication.
+  authority?: { category?: string; provider?: string;
+                emailVerified?: string } | null;
   // THE SIGN-IN MECHANISMS (#457): those the person's authentication
   // satisfies and those the application allows, sent by the gate on a
   // browser issuance to an application that allows only some, and null
@@ -669,6 +674,7 @@ class XacmlRolePep {
     }
     this.riskAttributes(req, asked.risk, String(subject.name || ''));
     this.authenticationAttributes(req, asked.authentication);
+    this.authorityAttributes(req, asked.authority);
     this.mechanismAttributes(req, asked);
     this.mfaAttributes(req, asked);
     this.deviceAttributes(req, asked);
@@ -713,6 +719,28 @@ class XacmlRolePep {
       req.environment(RISK.SCORE, [risk.score], model.TYPE.DOUBLE);
     }
     log.debug("Leaving XacmlRolePep.riskAttributes().");
+  }
+
+  // -------------------------------------------------------------------------
+  // A FEDERATED AUTHENTICATION'S CATEGORY, PROVIDER AND ADDRESS (#565), as
+  // environment attributes, sent by the gate only when a federation partner
+  // vouched for the authentication — so a rule about social sign-ins is
+  // inapplicable to every other one.
+  // -------------------------------------------------------------------------
+  private authorityAttributes(req: any, facts: any): void {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.authorityAttributes().");
+    if (!facts) {
+      log.debug("Leaving XacmlRolePep.authorityAttributes(). None.");
+      return;
+    }
+    req.environment(AUTHN.CATEGORY, [String(facts.category || 'enterprise')])
+      .environment(AUTHN.EMAIL_VERIFIED,
+                   [String(facts.emailVerified || 'true')]);
+    if (facts.provider) {
+      req.environment(AUTHN.PROVIDER, [String(facts.provider)]);
+    }
+    log.debug("Leaving XacmlRolePep.authorityAttributes().");
   }
 
   // -------------------------------------------------------------------------

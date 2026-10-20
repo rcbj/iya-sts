@@ -1464,6 +1464,7 @@ const JOBS = [
   // policies, the linking sign-in, the administrator refusal, the links set
   // and removed through /admin-api and SCIM — over HTTP, in either mode.
   { file: 'sts_federation_subject_policy.js', browser: false, local: true },
+  { file: 'sts_federation_consumer.js', browser: false, local: true },
   // A PARTNER'S SIGN-OUT (#167, 2026-09-23): SAML 2.0 Single Logout between
   // two realms in both directions, a partner written here for every
   // LogoutRequest refusal and SessionNotOnOrAfter, OpenID Connect

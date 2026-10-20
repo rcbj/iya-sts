@@ -415,6 +415,8 @@ class ProtocolEndpoints {
       '/admin/ssf': ['/ssf'].concat(SSF_DELIVERY).map(route),
       '/admin/federation': ['/federation', '/federation/login/:id',
                             '/federation/acs/:id', '/federation/link/:handle',
+                            '/federation/stepup/:handle',
+                            '/federation/notifications/:id',
                             '/federation/metadata/:id',
                             '/federation/slo/:id',
                             '/federation/backchannel-logout/:id',

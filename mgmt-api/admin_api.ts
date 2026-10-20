@@ -302,6 +302,8 @@ import riskDatasets = require('../risk/risk_datasets');
 import mailTemplates = require('../common/mail_templates');
 import identityAssurance = require('../common/identity_assurance');
 import federation = require('../federation/federation');
+// The consumer provider catalogue (#565): the enum of `create`'s `provider`.
+import consumerProviders = require('../federation/consumer_providers');
 // THE OPENID4VP VERIFIER (#587): `POST /verifications/start` builds its
 // request through the Verifier's own `startVerification()`, and the
 // document's closed sets are its START_VOCABULARY. A converted route module
@@ -12471,7 +12473,12 @@ class AdminApi {
                       enum: ['service-provider', 'identity-provider'] },
             description: 'Only the relationships in which this service takes ' +
                          'that role. `service-provider` is the direction ' +
-                         'that CONSUMES somebody else\'s assertions.' }
+                         'that CONSUMES somebody else\'s assertions.' },
+          { name: 'category', in: 'query', required: false,
+            schema: { type: 'string', enum: ['enterprise', 'consumer'] },
+            description: 'Only the enterprise partners, or only the ' +
+                         'consumer and social providers (#565): a ' +
+                         'relationship that names a `provider` is consumer.' }
         ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
           { name: 'links',
             description: 'With `relationship`: the people whose ' +
@@ -12580,7 +12587,33 @@ class AdminApi {
                                             'certificate stay THERE, where ' +
                                             'every protocol module reads ' +
                                             'them — this register holds a ' +
-                                            'pointer and not a copy.' }
+                                            'pointer and not a copy.' },
+                provider: { type: 'string',
+                            enum: consumerProviders.ids(),
+                            description: 'A CONSUMER OR SOCIAL PROVIDER ' +
+                                         '(#565): the profile the ' +
+                                         'relationship is made from. Its ' +
+                                         'endpoints, issuer, scope and ' +
+                                         'token authentication are written ' +
+                                         'onto the relationship, `role` must ' +
+                                         'be `service-provider` and ' +
+                                         '`protocol` the profile\'s (both ' +
+                                         'are in `consumerProviders` on ' +
+                                         '`GET /admin-api/federation`), and ' +
+                                         'the realm must have ' +
+                                         '`federation.consumerProviders` ' +
+                                         'on.' },
+                clientId: { type: 'string',
+                            description: 'With `provider`: this service\'s ' +
+                                         'client_id at the provider, set as ' +
+                                         '`fedClientId` in the same act.' },
+                clientSecret: { type: 'string',
+                                description: 'With `provider`: this ' +
+                                             'service\'s secret at the ' +
+                                             'provider, set as ' +
+                                             '`fedClientSecret` in the same ' +
+                                             'act and sealed as that field ' +
+                                             'always is. Never echoed.' }
               },
               required: ['id', 'role', 'protocol'],
               examples: [{ id: 'partner-a', role: 'service-provider',

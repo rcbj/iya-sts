@@ -55,6 +55,8 @@
   "nav.device.heading": "讓裝置登入",
   "nav.claim-sources.label": "宣告來源",
   "nav.claim-sources.heading": "已連結的宣告來源",
+  "nav.connected-accounts.label": "已連結的帳戶",
+  "nav.connected-accounts.heading": "已連結的帳戶",
   "shell.navAria": "帳戶頁面",
   "shell.signedInAs": "已登入為 <strong>{name}</strong>",
   "shell.signOut": "登出",
