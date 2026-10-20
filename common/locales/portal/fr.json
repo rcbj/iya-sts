@@ -515,5 +515,7 @@
   "done.codesSaved": "Vos {n} codes de récupération sont enregistrés. Seuls leurs hachages sont stockés : ce service ne pourra donc jamais vous les réafficher — conservez la copie que vous avez faite.",
   "done.keyOff": "Votre clé de signature {rfc} est retirée. Tout ce qui signe encore avec elle sera désormais refusé.",
   "done.passkeyMany": "Votre clé d’accès est prête. Vous en détenez {n} — si l’une est perdue, les autres vous connectent toujours.",
+  "done.sessionsEndedOne": "La session ouverte avec ce moyen est terminée.",
+  "done.sessionsEndedMany": "Les {n} sessions ouvertes avec ce moyen sont terminées.",
   "done.renamed": "Renommée en « {name} »."
 }

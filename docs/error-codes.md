@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4398** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4402** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 296
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 298
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 713
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -88,9 +88,9 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 237
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 238
 * [Management API (`STS-API`)](#sts-api) — 84
-* [User portal (`STS-PORTAL`)](#sts-portal) — 94
+* [User portal (`STS-PORTAL`)](#sts-portal) — 95
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
 * [Registries (`STS-REG`)](#sts-reg) — 178
@@ -1473,6 +1473,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0334` | Counting this realm's people for the users list's headline (#610) threw; the list is drawn without the directory's count. | — |
 | `STS-AUTHN-0335` | Counting this realm's credential holders, or which names seen signing in are people in its directory, for the users list's tiles (#610) threw; those tiles are drawn from the list instead. | — |
 | `STS-AUTHN-0336` | Writing the Android marker (stsAndroidAttestedCredential) of a person whose security keys say it is missing or wrong, during the Android attestation recheck's backfill, threw; that person's keys are rechecked only once a later write of them derives it (#615). | — |
+| `STS-AUTHN-0370` | A credential was removed (a passkey, an authenticator app, recovery codes or the emailed second factor) and a session it had signed in was still live after the sign-out that should have ended it (logout.ts endFactorSessions(), #722). The removal stands; the session ends at its own expiry or by /admin/sessions. | logged and audited; the removal is answered as done |
+| `STS-AUTHN-0371` | Ending the sessions a removed credential had signed in threw (logout.ts endFactorSessions(), #722). The removal stands and no session it signed in was ended by it. | logged and audited; the removal is answered as done |
 
 ## STS-OAUTH
 
@@ -4621,6 +4623,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0856` | Adding an owner to an application, on the application page or through POST /admin-api/applications/add-owner, was refused with no code of the registry's own; where the registry gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the application page |
 | `STS-ADMIN-0857` | Taking an owner off an application, on the application page or through POST /admin-api/applications/remove-owner, was refused with no code of the registry's own; where the registry gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the application page |
 | `STS-ADMIN-0858` | Creating a join token, on the agents page or through POST /admin-api/spiffe/agents/join-token, was refused because ttl was given and is not a positive number (#324). | HTTP 400 |
+| `STS-ADMIN-0870` | An administrator removed a credential (clear-key, clear-totp, clear-backup-codes or clear-email-factor) in a process with no sign-out model installed, so no session it signed in was ended (#722). The removal stands. | logged; the removal is answered as done |
 
 ## STS-API
 
@@ -4817,6 +4820,7 @@ Raised from: portal/.
 | `STS-PORTAL-0590` | A Credential Offer asked for on /portal/wallet was refused because the sign-on session the portal's token was issued on is no longer known, or continued without signing in: a pre-authorized offer is made on that session's authority (#589, #240). | HTTP 403 JSON |
 | `STS-PORTAL-0591` | A credential a person asked to remove on /portal/wallet is not one this realm records as issued to them: the id names no credential of theirs (an expired one is no longer recorded, and another person's is never theirs to name) (#661). | HTTP 400 JSON |
 | `STS-PORTAL-0592` | A Credential Offer asked for on /portal/wallet named a signing algorithm its configuration's credentials are not signed with: the configuration's `signingAlgs` (vc_configs.ts vciSigningAlgsFor()) are the ones it may choose. | HTTP 400 JSON |
+| `STS-PORTAL-0600` | A person removed a credential on /portal (a passkey, the authenticator app or the emailed second factor) and the sign-out model that ends the sessions it signed in could not be reached (#722). The removal stands. | logged; the removal is answered as done |
 
 ## STS-ACCOUNT
 

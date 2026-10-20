@@ -515,5 +515,7 @@
   "done.codesSaved": "已儲存您的 {n} 個復原碼。只儲存了它們的雜湊，因此本服務永遠無法再向您顯示——請保管好您做的副本。",
   "done.keyOff": "已移除您的 {rfc} 簽章金鑰。從現在起，任何仍以它簽署的內容都會被拒絕。",
   "done.passkeyMany": "您的密碼金鑰已就緒。您持有 {n} 個——如果遺失一個，其他的仍可讓您登入。",
+  "done.sessionsEndedOne": "以它登入的工作階段已結束。",
+  "done.sessionsEndedMany": "以它登入的 {n} 個工作階段已結束。",
   "done.renamed": "已重新命名為「{name}」。"
 }

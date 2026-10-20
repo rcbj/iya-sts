@@ -2254,6 +2254,52 @@ class AdminActions {
              message: result.message };
   }
 
+  // ---------------------------------------------------------------------------
+  // THE SESSIONS A REMOVED CREDENTIAL SIGNED IN (#722): ended, through the
+  // logout model's `endFactorSessions()`, by each of the four removals below
+  // — a security key, the authenticator app, the recovery codes and the
+  // emailed second factor. Only those sessions: unlike a password reset
+  // (`signOutEverywhere()`), a removal leaves every session the credential
+  // did not authenticate alone. Answered as a count for the result and the
+  // audit row; a process with no logout model ends nothing and says so
+  // (STS-ADMIN-0870), and nothing here undoes the removal.
+  // ---------------------------------------------------------------------------
+  private endFactorSessions(who, factor, ctx, what) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AdminActions.endFactorSessions(). who=" + who);
+    if (!logoutReader || typeof logoutReader.endFactorSessions !==
+        'function') {
+      log.warn(errorCodes.tag('STS-ADMIN-0870') + 'admin: ' + what + ' of "' +
+               who + '" was removed, and no sign-out module is loaded in ' +
+               'this process, so no session it signed in was ended.');
+      log.debug("Leaving AdminActions.endFactorSessions(). No logout module.");
+      return { ok: false, sessionsEnded: 0, failed: 0,
+               message: 'No sign-out module is loaded in this process, so ' +
+                        'no session it signed in was ended.' };
+    }
+    const ended = logoutReader.endFactorSessions(who, factor, {
+      actor: ctx.actor || who, channel: ctx.via, initiatingEntity: 'admin',
+      by: 'an administrator removing ' + what + ' (' +
+          (ctx.via === 'api' ? '/admin-api/users' : 'the admin console') + ')'
+    });
+    log.debug("Leaving AdminActions.endFactorSessions(). " +
+              ended.sessionsEnded + " ended.");
+    return ended;
+  }
+
+  // The sentence a removal's answer carries about the sessions it ended.
+  private sessionsEndedSentence(ended) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.sessionsEndedSentence().");
+    const n = Number((ended && ended.sessionsEnded) || 0);
+    const failed = Number((ended && ended.failed) || 0);
+    const words = (n === 1 ? ' 1 session it signed in was ended.'
+                           : ' ' + n + ' sessions it signed in were ended.') +
+      (failed ? ' ' + failed + ' could not be ended.' : '');
+    log.debug("Leaving AdminActions.sessionsEndedSentence().");
+    return words;
+  }
+
   private credentialAdminAction(action, body, ctx) {
     const { log, credentials, auditLog, accountSignals } = this.deps;
     log.debug("Entering AdminActions.credentialAdminAction(). action=" +
@@ -3333,6 +3379,12 @@ class AdminActions {
                                           'being cleared.'] });
       }
       const result = credentials.removeTotp(who);
+      // THE SESSIONS THE APP'S CODES SIGNED IN END (#722) — before the
+      // audit row below, which counts them.
+      const ended = result.ok
+        ? this.endFactorSessions(who, { kind: 'totp' }, ctx,
+                                 'the authenticator app')
+        : null;
       auditLog.record({
         category: 'authentication', action: 'admin.mfa.totp.cleared',
         actor: ctx.actor, target: who, outcome: result.ok ? 'success' :
@@ -3340,6 +3392,7 @@ class AdminActions {
         summary: (result.ok ? 'cleared' : 'could not clear') +
                  ' the authenticator app enrolment for ' + who,
         detail: { username: who, via: ctx.via,
+                  sessionsEnded: ended ? ended.sessionsEnded : undefined,
                   errors: result.ok ? undefined : (result.errors || []) }
       });
       if (result.ok) {
@@ -3355,6 +3408,11 @@ class AdminActions {
                  (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + '). ' +
                  'That account is down to one factor and they can enrol ' +
                  'again from /portal/mfa.');
+      }
+      if (ended) {
+        result.sessionsEnded = ended.sessionsEnded;
+        result.message = 'The authenticator app of ' + who + ' is ' +
+          'cleared.' + this.sessionsEndedSentence(ended);
       }
       log.debug("Leaving AdminActions.usersAction(). clear-totp " +
                 (result.ok ? "ok." : "refused."));
@@ -3398,6 +3456,11 @@ class AdminActions {
                                           'being cleared.'] });
       }
       const result = credentials.removeBackupCodes(who);
+      // THE SESSIONS A RECOVERY CODE SIGNED IN END (#722).
+      const ended = result.ok
+        ? this.endFactorSessions(who, { kind: 'backup-code' }, ctx,
+                                 'the recovery codes')
+        : null;
       auditLog.record({
         category: 'authentication', action: 'admin.mfa.backup-codes.cleared',
         actor: ctx.actor, target: who, outcome: result.ok ? 'success' :
@@ -3405,6 +3468,7 @@ class AdminActions {
         summary: (result.ok ? 'cleared' : 'could not clear') +
                  ' the recovery codes for ' + who,
         detail: { username: who, via: ctx.via,
+                  sessionsEnded: ended ? ended.sessionsEnded : undefined,
                   errors: result.ok ? undefined : (result.errors || []) }
       });
       if (result.ok) {
@@ -3415,6 +3479,11 @@ class AdminActions {
                  '" were cleared by ' +
                  (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + '). ' +
                  'The next second factor they enrol issues a new set.');
+      }
+      if (ended) {
+        result.sessionsEnded = ended.sessionsEnded;
+        result.message = 'The recovery codes of ' + who + ' are cleared.' +
+          this.sessionsEndedSentence(ended);
       }
       log.debug("Leaving AdminActions.usersAction(). clear-backup-codes " +
                 (result.ok ? "ok." : "refused."));
@@ -3437,15 +3506,23 @@ class AdminActions {
       }
       const result = require('../common/mail_factor').clear(who, ctx.actor,
         ctx.via, 'turned off by an administrator');
+      // THE SESSIONS THE EMAILED SECOND FACTOR SIGNED IN END (#722), and
+      // only when it was on: a person who had none has none to end.
+      const ended = result.ok && result.removed
+        ? this.endFactorSessions(who, { kind: 'email' }, ctx,
+                                 'the emailed second factor')
+        : null;
       log.info('admin: the emailed second factor of "' + who + '" was ' +
                (result.removed ? 'turned off' : 'already off') + ' by ' +
                (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + ').');
       log.debug("Leaving AdminActions.usersAction(). clear-email-factor.");
       return result.ok
         ? { ok: true, removed: !!result.removed,
+            sessionsEnded: ended ? ended.sessionsEnded : 0,
             message: result.removed
               ? 'The emailed second factor of ' + who + ' is off. They ' +
-                'turn it on again at /portal/mfa.'
+                'turn it on again at /portal/mfa.' +
+                this.sessionsEndedSentence(ended)
               : who + ' had no emailed second factor.' }
         : this.refused('STS-ADMIN-0814', { ok: false, errors: ['The ' +
             'emailed second factor of ' + who + ' could not be turned ' +
@@ -3564,6 +3641,13 @@ class AdminActions {
                        '.',
           reasonUser: 'A security key was removed from your account.' });
       }
+      // THE SESSIONS THAT KEY SIGNED IN END (#722) — as the first factor or
+      // as a step; every other session of theirs stays.
+      const ended = result.ok
+        ? this.endFactorSessions(who, { kind: 'webauthn',
+            credentialId: String(body.credentialId || '') }, ctx,
+            'a security key')
+        : null;
       auditLog.record({
         category: 'authentication', action: 'admin.mfa.key.cleared',
         actor: ctx.actor, target: who, outcome: result.ok ? 'success' :
@@ -3572,8 +3656,14 @@ class AdminActions {
                  ' a security key for ' + who,
         detail: { username: who, via: ctx.via,
                   credentialId: String(body.credentialId || ''),
+                  sessionsEnded: ended ? ended.sessionsEnded : undefined,
                   errors: result.ok ? undefined : (result.errors || []) }
       });
+      if (ended) {
+        result.sessionsEnded = ended.sessionsEnded;
+        result.message = 'The security key is removed from ' + who + '.' +
+          this.sessionsEndedSentence(ended);
+      }
       log.debug("Leaving AdminActions.usersAction(). clear-key " +
                 (result.ok ? "ok." : "refused."));
       return this.refusedBy('STS-ADMIN-0522', result);

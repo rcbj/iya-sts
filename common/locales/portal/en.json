@@ -515,5 +515,7 @@
   "done.codesSaved": "Your {n} recovery codes are saved. Only their hashes are stored, so this service can never show them to you again — keep the copy you made.",
   "done.keyOff": "Your {rfc} signing key is off. Anything still signing with it will be refused from now on.",
   "done.passkeyMany": "Your passkey is ready. You hold {n} — if one is lost the others still sign you in.",
+  "done.sessionsEndedOne": "The session signed in with it has ended.",
+  "done.sessionsEndedMany": "The {n} sessions signed in with it have ended.",
   "done.renamed": "Renamed to \"{name}\"."
 }
