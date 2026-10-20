@@ -168,6 +168,9 @@ import clusterClaims = require('../cluster/cluster_claims');
 import identityAssurance = require('../common/identity_assurance');
 // SIOPv2 (#129): an enrolment, when the browser collects one.
 import siop = require('./siop');
+// The audit row an enrolment writes (#693). `app.js` loads it first, so this
+// is a cache hit and moves nothing in the require order.
+import audit = require('../common/audit');
 
 const { log } = helpers;
 
@@ -220,6 +223,7 @@ interface VcSigninDeps {
   clusterClaims: typeof clusterClaims;
   identityAssurance: typeof identityAssurance;
   siop: typeof siop;
+  audit: typeof audit;
 }
 
 /**
@@ -284,7 +288,8 @@ class VcSignin {
       stsDid: vcDid.stsDid,
       clusterClaims: clusterClaims,
       identityAssurance: identityAssurance,
-      siop: siop
+      siop: siop,
+      audit: audit
     };
   }
 
@@ -1112,6 +1117,29 @@ class VcSignin {
     });
   }
 
+  // THE AUDIT ROW OF A WALLET ENROLMENT (#693), the shape of the portal's
+  // removal (`portal.siop.remove`): who enrolled what, whether it was a
+  // subject proved again, and on failure the code it was refused under.
+  private auditEnrolment(username: string, subject: string, tx: any,
+                         code: string, why: string, again: boolean): void {
+    const { log, audit } = this.deps;
+    log.debug("Entering VcSignin.auditEnrolment(). " + (code || 'ok'));
+    audit.record({
+      category: 'authentication', action: 'portal.siop.enrol',
+      errorCode: code || undefined,
+      actor: username, target: username,
+      outcome: code ? 'failure' : 'success',
+      summary: (code ? 'could not enrol' : again ? 'proved again'
+                                                 : 'enrolled') +
+               ' the self-issued subject ' + (subject || '(none verified)') +
+               ' with a wallet, from /portal/self-issued',
+      detail: { subject: subject || undefined, proof: 'wallet',
+                again: again || undefined,
+                transaction: this.tagOf(tx.state),
+                errors: code ? [why] : undefined } });
+    log.debug("Leaving VcSignin.auditEnrolment().");
+  }
+
   // ---------------------------------------------------------------------------
   // A DECIDED TRANSACTION, FINISHED: the refusal, or the session — after a
   // second factor where one is needed, or as the second factor itself. The
@@ -1132,6 +1160,12 @@ class VcSignin {
         : authn.WALLET_PATH + '?authn=' + encodeURIComponent(record.id) +
           (selfIssued ? '&siop=1' : '');
     if (!outcome.ok) {
+      if (ctx.enrol) {
+        this.auditEnrolment(String(tx.signIn.enrol.username),
+                            String(outcome.subject || ''), tx,
+                            outcome.errorCode || 'STS-VC-0061',
+                            String(outcome.reason || ''), false);
+      }
       errorCodes.mark(res, outcome.errorCode || 'STS-VC-0061');
       this.refuse(res, 403, String(outcome.reason || 'Nobody was signed in.'),
         this.refusedView('Nobody was signed in', ctx, {
@@ -1175,10 +1209,20 @@ class VcSignin {
 
     // AN ENROLMENT (#129): the proved key, for the person signed in here —
     // `siop.enrol()` refuses one enrolled for somebody else. No session is
-    // started: this browser already holds one.
+    // started: this browser already holds one. Since #693 it is recorded as
+    // PROVED (`proof: 'wallet'`), a did:web with the key that signed the
+    // proof pinned, a subject already theirs is proved again (re-pinned)
+    // rather than refused, and the outcome is AUDITED, as the removal and
+    // the administrator's enrolment always were.
     if (ctx.enrol) {
       const enrolled = siop.enrol(username, outcome.subject,
-                                  'enrolled with a wallet', 'self (SIOPv2)');
+                                  'enrolled with a wallet', 'self (SIOPv2)',
+                                  { proof: siop.PROOF_WALLET,
+                                    pinnedKeys: outcome.pinnedKeys || [] });
+      this.auditEnrolment(username, String(outcome.subject), tx,
+                          enrolled.ok ? '' : 'STS-VC-0094',
+                          enrolled.ok ? '' : String(enrolled.error),
+                          !!enrolled.again);
       if (!enrolled.ok) {
         errorCodes.mark(res, 'STS-VC-0094');
         this.refuse(res, 400, String(enrolled.error),

@@ -6562,7 +6562,10 @@ class AdminApi {
         summary: 'The self-issued (SIOPv2) subjects enrolled for one person',
         description: 'Each DID or RFC 9278 JWK thumbprint URI enrolled for ' +
                      'the person, with its label, when and by whom — every ' +
-                     'one a key whose self-issued ID Token signs them in. ' +
+                     'one a key whose self-issued ID Token signs them in — ' +
+                     'and how (`proof`: `wallet`, proved by the person, or ' +
+                     '`admin`, enrolled by value), with a did:web\'s ' +
+                     '`pinnedKeys` (#693). ' +
                      'Beside them, whether signing in that way is on ' +
                      '(`oid4vp.signInSelfIssued`), how many a person may ' +
                      'hold, and the subject syntaxes accepted.',
@@ -6717,24 +6720,51 @@ class AdminApi {
             // for the audit rows this action writes (#446). It was an empty
             // actor while this API authenticated only clients; with no token
             // (development's open API) it still is.
-            const result = adminActions.usersAction(request,
+            const answered = adminActions.usersAction(request,
                                              { via: 'api',
                                                actor: self.callerNameOf(res),
                                                // The address a password reset
                                                // link is built on (2026-09-13).
                                                base: baseUrlOf(req) });
-            held.settle(!!result.ok);
-            // A CREATE'S ACTIVATION LINK, ABSOLUTE as well (#446): it is
-            // pasted into a message, and the address it is built on —
-            // `global.publicBaseUrl` where one is pinned — is the server's
-            // to know, not a browser's.
-            if (result.ok && /^\//.test(String(result.activationUrl || ''))) {
-              result.activationLink = baseUrlOf(req) + result.activationUrl;
+            const send = function (result) {
+              log.debug("Entering send().");
+              held.settle(!!result.ok);
+              // A CREATE'S ACTIVATION LINK, ABSOLUTE as well (#446): it is
+              // pasted into a message, and the address it is built on —
+              // `global.publicBaseUrl` where one is pinned — is the
+              // server's to know, not a browser's.
+              if (result.ok &&
+                  /^\//.test(String(result.activationUrl || ''))) {
+                result.activationLink = baseUrlOf(req) +
+                  result.activationUrl;
+              }
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0030');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving send().");
+            };
+            // AN ACTION THAT ANSWERS LATER (#693): a by-value did:web
+            // enrolment fetches the DID document to pin its keys, so
+            // `usersAction()` hands back a promise for that one act; every
+            // other act still answers at once.
+            if (answered && typeof answered.then === 'function') {
+              log.debug("Leaving the management API users action " +
+                        "endpoint. Answered when the action settles.");
+              return answered.then(send, function (e) {
+                log.debug("Caught in the management API users action " +
+                          "endpoint: " + ((e && e.message) || e));
+                held.settle(false);
+                log.error(errorCodes.tag('STS-API-0136') + 'admin-api: ' +
+                          'the users action ' + request.action + ' failed: ' +
+                          ((e && e.message) || e));
+                errorCodes.mark(res, 'STS-API-0136');
+                self.sendJson(res, 500, { ok: false, errors: [
+                  'The action failed: ' + ((e && e.message) || e)] });
+              });
             }
-            if (!result.ok) {
-              errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0030');
-            }
-            self.sendJson(res, result.ok ? 200 : 400, result);
+            send(answered);
             log.debug("Leaving the management API users action endpoint.");
           });
             });
@@ -8092,7 +8122,15 @@ class AdminApi {
                          'subject is already enrolled for anybody in the ' +
                          'realm. A person enrols their own on ' +
                          '/portal/self-issued by proving the key with their ' +
-                         'wallet.',
+                         'wallet.\n\nWhat this enrols is recorded as BY ' +
+                         'VALUE (`proof: admin`, unproven), and nothing ' +
+                         'that releases or binds a subject reads it. A ' +
+                         'did:web\'s DID document is fetched now and every ' +
+                         'authentication key it names is pinned; a later ' +
+                         'sign-in with any other key is refused ' +
+                         '(STS-VC-0126). A document that cannot be fetched ' +
+                         'or names no such key is refused (STS-ADMIN-0871) ' +
+                         '(#693).',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',

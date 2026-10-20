@@ -32,15 +32,37 @@
 //     algorithm this service accepts (never `none`, never a MAC); `aud` names
 //     this Verifier's Client Identifier; `nonce` is the request's; `exp` is in
 //     the future and `iat` no older than `oid4vp.siopIdTokenMaxAgeS`.
-//   * **A did:web IS FETCHED ONLY WHEN IT IS ENROLLED.** `did:jwk` and
-//     `did:key` resolve from the identifier (`vc_data_integrity.ts`); a
-//     `did:web` resolves by fetching a document from the host it names, which
-//     is the presenter's kind of URL, so it is looked up among enrolled
-//     subjects FIRST and fetched only if a person or an administrator of this
-//     realm put it there — through `federation_http.fetchPublished()`, which
-//     brings the outbound kill switch, https, the internal-address refusal in
-//     product mode and no redirect. The root CLAUDE.md's list of URLs this
-//     service dials carries the row.
+//   * **A did:web IS FETCHED ONLY WHEN IT IS ENROLLED — OR BEING ENROLLED.**
+//     `did:jwk` and `did:key` resolve from the identifier
+//     (`vc_data_integrity.ts`); a `did:web` resolves by fetching a document
+//     from the host it names, which is the presenter's kind of URL, so it is
+//     looked up among enrolled subjects FIRST and fetched only if a person or
+//     an administrator of this realm put it there — through
+//     `federation_http.fetchPublished()`, which brings the outbound kill
+//     switch, https, the internal-address refusal in product mode and no
+//     redirect. Since #693 two more callers may fetch one that is not yet
+//     enrolled: a person's OWN ENROLMENT TRANSACTION (`expect.enrolment`),
+//     once per transaction and only after every check of the token that
+//     needs no key has passed, and an administrator's by-value enrolment
+//     (`enrolByValue()`). `federation/CLAUDE.md`'s list of URLs this service
+//     dials carries both rows (the twelfth and the nineteenth).
+//   * **A did:web's KEY IS PINNED (#693).** Whoever controls the host later
+//     holds the document, so the enrolment records the RFC 7638 thumbprint of
+//     the key the proof was signed with (by value: of every `authentication`
+//     key the document named then) in `pinnedKeys`, and a later token whose
+//     key the pin does not name is refused (STS-VC-0126) and audited — a
+//     changed document needs a fresh proof, which the portal's Enrol a wallet
+//     gives (proving an enrolled subject again re-pins it). An enrolment from
+//     before #693 carries no pin: development pins on first use, product
+//     refuses (STS-VC-0127) — `mode.pinsSelfIssuedKeysOnFirstUse()`.
+//     `did:jwk`, `did:key` and a thumbprint ARE their key, so nothing is
+//     pinned for them.
+//   * **PROVENANCE (#693).** Every enrolment says how it was made: `proof:
+//     'wallet'` (the person proved the key) or `'admin'` (an administrator
+//     enrolled it by value, unproven). A value from before #693 is read as
+//     `wallet` when its `by` is the self path's (`self (SIOPv2)`) and
+//     `admin` otherwise. `provenSubjectsOf()` is what releases or binds a
+//     subject (#693's phase 2) asks; a sign-in reads neither.
 //   * **THE OUTCOME.** An enrolled subject signs in as its person; an
 //     unenrolled one is refused IN BOTH MODES (rcbj, #129) — there is no
 //     development relaxation, because the signature is the only thing a
@@ -60,6 +82,7 @@ import config = require('../common/config');
 import credentials = require('../common/credentials');
 import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
+import mode = require('../common/mode');
 import vcDataIntegrity = require('./vc_data_integrity');
 
 // A loose JSON-shaped value: a token's claims, a DID document.
@@ -92,16 +115,53 @@ const MAX_SUBJECTS = 10;
 // Clock skew allowed on `exp` and on an `iat` in the future.
 const SKEW_S = 60;
 
+// HOW A SUBJECT WAS ENROLLED (#693): proved by the person's wallet, or given
+// by an administrator's value.
+/**
+ * The provenance of a subject the person proved with their wallet.
+ */
+const PROOF_WALLET = 'wallet';
+/**
+ * The provenance of a subject an administrator enrolled by value, unproven.
+ */
+const PROOF_ADMIN = 'admin';
+
+// The `by` the wallet enrolment writes, which is how a value from before
+// #693 (no `proof` member) is told to have been proved.
+const SELF_BY = /^self\b/;
+
 interface SiopDeps {
   log: typeof helpers.log;
   config: typeof config;
   credentials: typeof credentials;
   stsCrypto: typeof stsCrypto;
   errorCodes: typeof errorCodes;
+  mode: typeof mode;
   vcDataIntegrity: typeof vcDataIntegrity;
   fetchDocument: (url: string) => Promise<Json>;
+  audit: (event: Json) => void;
   nowSec: () => number;
 }
+
+// What `verifyIdToken()` is told about the transaction the token answers.
+// `enrolment` is set only for a person's own enrolment transaction
+// (`vc_signin.ts`'s `tx.signIn.enrol`): `username` is whose it is, and
+// `mayDial()` answers true once — the one did:web document that transaction
+// may fetch — and marks the transaction as having fetched it.
+interface IdTokenExpectation {
+  clientId: string;
+  nonce: string;
+  enrolment?: { username: string; mayDial: () => boolean } | null;
+}
+
+// An Error carrying the code its refusal is recorded under.
+const coded = function (code: string, message: string): Error {
+  helpers.log.debug("Entering coded(). " + code);
+  const e: Json = new Error(message);
+  e.code = code;
+  helpers.log.debug("Leaving coded().");
+  return e;
+};
 
 /**
  * Self-Issued OpenID Provider v2, the relying party's half (#129): the
@@ -123,6 +183,14 @@ class Siop {
    * How many self-issued subjects one person may enrol.
    */
   static readonly MAX_SUBJECTS = MAX_SUBJECTS;
+  /**
+   * The provenance of a subject the person proved with their wallet.
+   */
+  static readonly PROOF_WALLET = PROOF_WALLET;
+  /**
+   * The provenance of a subject an administrator enrolled by value.
+   */
+  static readonly PROOF_ADMIN = PROOF_ADMIN;
 
   /**
    * Builds the relying party half from the modules it reads.
@@ -151,7 +219,21 @@ class Siop {
       credentials: credentials,
       stsCrypto: stsCrypto,
       errorCodes: errorCodes,
+      mode: mode,
       vcDataIntegrity: vcDataIntegrity,
+      // `common/audit.js` LAZILY, as `signalChange()` reaches the signals:
+      // it loads the persistence layer, which a library this low in the
+      // require order has no business pulling forward. Recording never
+      // fails the act it records.
+      audit: function (event: Json): void {
+        helpers.log.debug("Entering audit().");
+        try {
+          require('../common/audit').record(event);
+        } catch (e) {
+          helpers.log.debug("Caught in audit(): " + ((e && e.message) || e));
+        }
+        helpers.log.debug("Leaving audit().");
+      },
       fetchDocument: function (url: string): Promise<Json> {
         helpers.log.debug("Entering fetchDocument().");
         const fedHttp = require('../federation/federation_http');
@@ -235,14 +317,37 @@ class Siop {
     return null;
   }
 
+  // HOW A VALUE WAS ENROLLED (#693): its `proof` where it says, and for a
+  // value from before #693, which says nothing, the self path's `by` read as
+  // proved and anything else as an administrator's — the conservative
+  // reading, since a value nobody can show was proved must not be released
+  // as though it had been.
+  /**
+   * Returns how an enrolled value was enrolled: `wallet` (proved) or `admin`
+   * (by value, unproven).
+   *
+   * @param one - an enrolled value, as `list()` returns it
+   * @returns `wallet` or `admin`
+   */
+  static provenanceOf(one: Json): string {
+    helpers.log.debug("Entering Siop.provenanceOf().");
+    const said = one && (one.proof === PROOF_WALLET ||
+                         one.proof === PROOF_ADMIN) ? one.proof : '';
+    const out = said || (one && SELF_BY.test(String(one.by || ''))
+      ? PROOF_WALLET : PROOF_ADMIN);
+    helpers.log.debug("Leaving Siop.provenanceOf(). " + out);
+    return out;
+  }
+
   // Every subject a person has enrolled, as { subject, label, enrolledAt,
-  // by }. null where the directory holds no entry for them.
+  // by, proof, provedAt?, pinnedKeys? }, `proof` filled in for a value from
+  // before #693. null where the directory holds no entry for them.
   /**
    * Returns every subject a person has enrolled.
    *
    * @param username - the person
-   * @returns `{ subject, label, enrolledAt, by }` rows, or null when the
-   *   directory holds no entry for them
+   * @returns `{ subject, label, enrolledAt, by, proof, provedAt?,
+   *   pinnedKeys? }` rows, or null when the directory holds no entry for them
    */
   list(username: unknown): Json[] | null {
     const { log, credentials } = this.deps;
@@ -255,8 +360,30 @@ class Siop {
     const self = this;
     const out = values.map(function (value) {
       return self.parseValue(value);
-    }).filter(Boolean);
+    }).filter(Boolean).map(function (one: Json) {
+      return Object.assign({}, one, { proof: Siop.provenanceOf(one) });
+    });
     log.debug("Leaving Siop.list(). " + out.length + ".");
+    return out;
+  }
+
+  // THE SUBJECTS A PERSON PROVED (#693): what a release or a binding of a
+  // subject reads — never one an administrator typed in. [] where they have
+  // none or no entry.
+  /**
+   * Returns the subjects a person enrolled by proving them with a wallet,
+   * never one an administrator enrolled by value.
+   *
+   * @param username - the person
+   * @returns the proved rows, as `list()` returns them; [] for none
+   */
+  provenSubjectsOf(username: unknown): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering Siop.provenSubjectsOf(). user=" + username);
+    const out = (this.list(username) || []).filter(function (one: Json) {
+      return one.proof === PROOF_WALLET;
+    });
+    log.debug("Leaving Siop.provenSubjectsOf(). " + out.length + ".");
     return out;
   }
 
@@ -284,9 +411,51 @@ class Siop {
     return owner;
   }
 
+  // Why `wanted` may not be enrolled for `name`, or '' — the checks every
+  // enrolment makes before anything is fetched or written. `again` is true
+  // when it is already theirs and this is a PROOF, which re-proves it (and
+  // re-pins a did:web) rather than refusing (#693).
+  private enrolProblem(name: string, wanted: string, proof: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering Siop.enrolProblem().");
+    if (!wanted) {
+      log.debug("Leaving Siop.enrolProblem(). Not a subject.");
+      return { error: 'not a self-issued subject: give a did:jwk, did:key ' +
+               'or did:web, an RFC 9278 JWK thumbprint URI, a base64url ' +
+               'SHA-256 JWK thumbprint, or a public JWK.' };
+    }
+    const held = this.list(name);
+    if (!held) {
+      log.debug("Leaving Siop.enrolProblem(). No entry.");
+      return { error: 'there is no directory entry for "' + name +
+                      '" in this realm.' };
+    }
+    const owner = this.ownerOf(wanted);
+    if (owner && owner.toLowerCase() !== name.toLowerCase()) {
+      log.debug("Leaving Siop.enrolProblem(). Somebody else's.");
+      return { error: 'that subject is already enrolled for another ' +
+                      'person in this realm; one key signs in one person.' };
+    }
+    if (owner && proof !== PROOF_WALLET) {
+      log.debug("Leaving Siop.enrolProblem(). Already theirs.");
+      return { error: 'that subject is already enrolled for ' + name + '.' };
+    }
+    if (!owner && held.length >= MAX_SUBJECTS) {
+      log.debug("Leaving Siop.enrolProblem(). Full.");
+      return { error: name + ' already has ' + MAX_SUBJECTS +
+               ' self-issued subjects enrolled; remove one first.' };
+    }
+    log.debug("Leaving Siop.enrolProblem(). None.");
+    return { error: '', held: held, again: !!owner };
+  }
+
   // Enrols a subject on a person. Returns { ok, enrolled } or { ok: false,
   // error }. The caller decides who may: the portal only after a SIOPv2
-  // round trip proved the key, the console and the API for Admin Write.
+  // round trip proved the key (`proof: 'wallet'`, with the key's thumbprint
+  // in `pinnedKeys` for a did:web), the console and the API for Admin Write
+  // (`proof: 'admin'`, the default; a did:web goes through
+  // `enrolByValue()`, which fetches the keys to pin). A did:web with no key
+  // to pin is refused: since #693 none is written without one.
   /**
    * Enrols a subject on a person. The caller decides who may: the portal after
    * a SIOPv2 round trip proved the key, the console and the API for Admin
@@ -296,56 +465,123 @@ class Siop {
    * @param subject - the subject
    * @param label - a label for it
    * @param by - who enrolled it
-   * @returns `{ ok, enrolled }`, or `{ ok: false, error }`
+   * @param options - `proof` (`wallet` or `admin`, the default) and, for a
+   *   did:web, `pinnedKeys`: the RFC 7638 thumbprints its sign-ins may use
+   * @returns `{ ok, enrolled, again }`, or `{ ok: false, error }`
    */
   enrol(username: unknown, subject: unknown, label: unknown,
-        by: unknown): Json {
+        by: unknown, options?: { proof?: string;
+                                 pinnedKeys?: string[] }): Json {
     const { log, credentials } = this.deps;
     log.debug("Entering Siop.enrol(). user=" + username);
+    const opts = options || {};
+    const proof = opts.proof === PROOF_WALLET ? PROOF_WALLET : PROOF_ADMIN;
     const name = String(username || '').trim();
     const wanted = this.normalise(subject);
-    if (!wanted) {
-      log.debug("Leaving Siop.enrol(). Not a subject.");
-      return { ok: false, error: 'not a self-issued subject: give a ' +
-               'did:jwk, did:key or did:web, an RFC 9278 JWK thumbprint URI, ' +
-               'a base64url SHA-256 JWK thumbprint, or a public JWK.' };
+    const problem = this.enrolProblem(name, wanted, proof);
+    if (problem.error) {
+      log.debug("Leaving Siop.enrol(). " + problem.error);
+      return { ok: false, error: problem.error };
     }
-    const held = this.list(name);
-    if (!held) {
-      log.debug("Leaving Siop.enrol(). No entry.");
-      return { ok: false, error: 'there is no directory entry for "' + name +
-                                 '" in this realm.' };
+    const web = /^did:web:/.test(wanted);
+    const pins = (Array.isArray(opts.pinnedKeys) ? opts.pinnedKeys : [])
+      .filter(function (one) {
+        return typeof one === 'string' && /^[A-Za-z0-9_-]{43}$/.test(one);
+      });
+    if (web && !pins.length) {
+      log.debug("Leaving Siop.enrol(). A did:web with no key to pin.");
+      return { ok: false, error: 'a did:web is enrolled with the key it ' +
+               'signs in with pinned: by proving it with a wallet, or by ' +
+               'value from a DID document that could be fetched.' };
     }
-    const owner = this.ownerOf(wanted);
-    if (owner && owner.toLowerCase() !== name.toLowerCase()) {
-      log.debug("Leaving Siop.enrol(). Somebody else's.");
-      return { ok: false, error: 'that subject is already enrolled for ' +
-               'another person in this realm; one key signs in one person.' };
+    const held: Json[] = problem.held;
+    const before = held.filter(function (one) {
+      return one.subject === wanted;
+    })[0];
+    const record: Json = {
+      subject: wanted,
+      label: String(label || (before && before.label) || '').trim()
+        .slice(0, 64),
+      enrolledAt: before ? before.enrolledAt : new Date().toISOString(),
+      by: String(by || ''),
+      proof: proof };
+    if (proof === PROOF_WALLET) {
+      record.provedAt = new Date().toISOString();
     }
-    if (owner) {
-      log.debug("Leaving Siop.enrol(). Already theirs.");
-      return { ok: false, error: 'that subject is already enrolled for ' +
-                                 name + '.' };
+    if (web) {
+      record.pinnedKeys = pins.filter(function (one, i) {
+        return pins.indexOf(one) === i;
+      });
     }
-    if (held.length >= MAX_SUBJECTS) {
-      log.debug("Leaving Siop.enrol(). Full.");
-      return { ok: false, error: name + ' already has ' + MAX_SUBJECTS +
-               ' self-issued subjects enrolled; remove one first.' };
-    }
-    const record = { subject: wanted,
-                     label: String(label || '').trim().slice(0, 64),
-                     enrolledAt: new Date().toISOString(),
-                     by: String(by || '') };
+    const next = problem.again
+      ? held.map(function (one) {
+        return one.subject === wanted ? record : one;
+      })
+      : held.concat([record]);
     const written = credentials.writeSelfIssuedSubjects(name,
-      held.concat([record]).map(function (one) {
+      next.map(function (one) {
         return JSON.stringify(one);
       }));
     if (written) {
-      this.signalChange(name, 'create', record, by);
+      this.signalChange(name, problem.again ? 'update' : 'create', record,
+                        by);
     }
     log.debug("Leaving Siop.enrol(). " + written);
-    return written ? { ok: true, enrolled: record } :
+    return written ? { ok: true, enrolled: record, again: !!problem.again } :
       { ok: false, error: 'the directory did not store it.' };
+  }
+
+  // AN ADMINISTRATOR'S ENROLMENT BY VALUE (#693). A did:jwk, did:key or
+  // thumbprint is its key and is enrolled as given. A did:web is FETCHED
+  // NOW — the administrator named it, under Admin Write, through the same
+  // `fetchPublished()` a sign-in uses — and every `authentication` key its
+  // document names with a `publicKeyJwk` is pinned; a document that cannot
+  // be fetched, names another id or names no such key is REFUSED
+  // (STS-ADMIN-0871) rather than enrolled unpinned, because an unpinned
+  // did:web is exactly what #693 removed. The checks that need no fetch run
+  // first, so a refusal for somebody else's subject or a full person dials
+  // nothing. Never rejects.
+  /**
+   * Enrols a subject by value for an administrator: a did:web's document is
+   * fetched and its authentication keys pinned, or the enrolment is refused.
+   * Never rejects.
+   *
+   * @param username - the person
+   * @param subject - the subject
+   * @param label - a label for it
+   * @param by - the administrator
+   * @returns `{ ok, enrolled }`, or `{ ok: false, error, code? }`
+   */
+  async enrolByValue(username: unknown, subject: unknown, label: unknown,
+                     by: unknown): Promise<Json> {
+    const { log, fetchDocument } = this.deps;
+    log.debug("Entering Siop.enrolByValue(). user=" + username);
+    const name = String(username || '').trim();
+    const wanted = this.normalise(subject);
+    if (!/^did:web:/.test(wanted)) {
+      log.debug("Leaving Siop.enrolByValue(). Not a did:web.");
+      return this.enrol(name, wanted || subject, label, by,
+                        { proof: PROOF_ADMIN });
+    }
+    const problem = this.enrolProblem(name, wanted, PROOF_ADMIN);
+    if (problem.error) {
+      log.debug("Leaving Siop.enrolByValue(). " + problem.error);
+      return { ok: false, error: problem.error };
+    }
+    let pins: string[] = [];
+    try {
+      const doc = await fetchDocument(Siop.didWebUrl(wanted));
+      pins = this.authenticationKeys(doc, wanted);
+    } catch (e) {
+      log.debug("Caught in Siop.enrolByValue(): " + ((e && e.message) || e));
+      log.debug("Leaving Siop.enrolByValue(). No key to pin.");
+      return { ok: false, code: 'STS-ADMIN-0871',
+               error: 'the DID document of ' + wanted + ' gave no key to ' +
+                      'pin: ' + ((e && e.message) || e) };
+    }
+    log.debug("Leaving Siop.enrolByValue(). " + pins.length + " key(s).");
+    return this.enrol(name, wanted, label, by,
+                      { proof: PROOF_ADMIN, pinnedKeys: pins });
   }
 
   // `by` is who removed it, as `enrol()` takes it: the person's own name
@@ -387,7 +623,8 @@ class Siop {
       { ok: false, error: 'the directory did not store the change.' };
   }
 
-  // CAEP `credential-change` FOR A SELF-ISSUED SUBJECT (#236, 2026-09-26).
+  // CAEP `credential-change` FOR A SELF-ISSUED SUBJECT (#236, 2026-09-26;
+  // `update` since #693, for a subject proved again, which re-pins it).
   // `enrol()` and `remove()` are the only writers of the enrolment — the
   // wallet round trip, the portal, the console and `/admin-api` all come
   // here — so the event is sent here (the #145 rule). The type is this
@@ -410,10 +647,12 @@ class Siop {
         changeType: change, initiatingEntity: byUser ? 'user' : 'admin',
         friendlyName: label, via: 'siop',
         reasonAdmin: (byUser ? name : 'An administrator') + ' ' +
-          (change === 'create' ? 'enrolled' : 'removed') + ' a self-issued ' +
-          'subject for ' + name + '.',
+          (change === 'create' ? 'enrolled'
+            : change === 'update' ? 'proved again' : 'removed') +
+          ' a self-issued subject for ' + name + '.',
         reasonUser: 'A self-issued (wallet) key was ' +
-          (change === 'create' ? 'enrolled on' : 'removed from') +
+          (change === 'create' ? 'enrolled on'
+            : change === 'update' ? 'proved again on' : 'removed from') +
           ' your account.' });
     } catch (e) {
       log.debug("Caught in Siop.signalChange(): " + ((e && e.message) || e));
@@ -463,9 +702,117 @@ class Siop {
       ? '/' + parts.join('/') + '/did.json' : '/.well-known/did.json');
   }
 
+  // A did:web DOCUMENT, read: its id must be the DID, and `full()` makes a
+  // relative method id absolute.
+  private static fullId(did: string, id: unknown): string {
+    helpers.log.debug("Entering Siop.fullId().");
+    const text = typeof id === 'string' ? id : '';
+    helpers.log.debug("Leaving Siop.fullId().");
+    return text.charAt(0) === '#' ? did + text : text;
+  }
+
+  // The verification method `absolute` names in a did:web document, which
+  // must be in its AUTHENTICATION relationship (SIOPv2 section 11.1), as a
+  // public JWK. Throws with the reason.
+  private didWebMethodKey(doc: Json, did: string, absolute: string): Json {
+    const { log, vcDataIntegrity } = this.deps;
+    log.debug("Entering Siop.didWebMethodKey().");
+    if (!doc || doc.id !== did) {
+      log.debug("Leaving Siop.didWebMethodKey(). Another DID's document.");
+      throw new Error('the did:web document fetched for ' + did + ' names ' +
+                      'id "' + (doc && doc.id) + '".');
+    }
+    const authenticates = (Array.isArray(doc.authentication)
+      ? doc.authentication : []).some(function (one: Json) {
+        return Siop.fullId(did, typeof one === 'string' ? one
+                                                        : one && one.id) ===
+               absolute;
+      });
+    if (!authenticates) {
+      log.debug("Leaving Siop.didWebMethodKey(). Not an authentication " +
+                "method.");
+      throw new Error(absolute + ' is not in the DID document\'s ' +
+                      'authentication relationship.');
+    }
+    const methods = (Array.isArray(doc.verificationMethod)
+      ? doc.verificationMethod : []).concat(
+        (Array.isArray(doc.authentication) ? doc.authentication : [])
+          .filter(function (one: Json) {
+            return one && typeof one === 'object';
+          }));
+    const method = methods.filter(function (one: Json) {
+      return one && Siop.fullId(did, one.id) === absolute;
+    })[0];
+    if (!method || !method.publicKeyJwk) {
+      log.debug("Leaving Siop.didWebMethodKey(). No publicKeyJwk.");
+      throw new Error(absolute + ' has no publicKeyJwk in the DID ' +
+                      'document.');
+    }
+    log.debug("Leaving Siop.didWebMethodKey().");
+    return vcDataIntegrity.publicJwkOf(method.publicKeyJwk);
+  }
+
+  // EVERY KEY A did:web DOCUMENT AUTHENTICATES WITH, as RFC 7638
+  // thumbprints: what an administrator's by-value enrolment pins (#693).
+  // Throws when there is none, or the document is another DID's.
+  /**
+   * Returns the RFC 7638 thumbprints of every authentication method of a
+   * did:web document that carries a `publicKeyJwk`.
+   *
+   * @param doc - the DID document
+   * @param did - the did:web it was fetched for
+   * @returns the thumbprints; throws when there is none
+   */
+  authenticationKeys(doc: Json, did: string): string[] {
+    const { log, stsCrypto } = this.deps;
+    const self = this;
+    log.debug("Entering Siop.authenticationKeys().");
+    if (!doc || doc.id !== did) {
+      log.debug("Leaving Siop.authenticationKeys(). Another DID's document.");
+      throw new Error('the did:web document fetched for ' + did + ' names ' +
+                      'id "' + (doc && doc.id) + '".');
+    }
+    const out: string[] = [];
+    (Array.isArray(doc.authentication) ? doc.authentication : [])
+      .forEach(function (one: Json) {
+        const absolute = Siop.fullId(did, typeof one === 'string' ? one
+                                                          : one && one.id);
+        try {
+          const print = stsCrypto.jwkThumbprint(
+            self.didWebMethodKey(doc, did, absolute));
+          if (out.indexOf(print) < 0) {
+            out.push(print);
+          }
+        } catch (e) {
+          log.debug("Caught in Siop.authenticationKeys(): " +
+                    ((e && e.message) || e));
+          // One method without a usable key is skipped; none at all is the
+          // refusal below.
+        }
+      });
+    if (!out.length) {
+      log.debug("Leaving Siop.authenticationKeys(). None.");
+      throw new Error('the DID document names no authentication method ' +
+                      'with a publicKeyJwk.');
+    }
+    log.debug("Leaving Siop.authenticationKeys(). " + out.length + ".");
+    return out;
+  }
+
   // The key a DID names for `kid`, which must be one of its AUTHENTICATION
-  // methods (SIOPv2 section 11.1). Throws with the reason.
-  private async didKey(did: string, kid: string): Promise<Json> {
+  // methods (SIOPv2 section 11.1). Throws with the reason — a coded Error
+  // where the refusal has a code of its own.
+  //
+  // A did:web is FETCHED only when it is enrolled, or for a person's own
+  // enrolment (`enrolment`, #693) — and in either case only when `claimsOk`:
+  // every check of the token that needs no key (aud, nonce, exp, iat; iss
+  // and the DID's syntax are checked before this is called) has already
+  // passed, so a token for another transaction, a replay or a stale one
+  // makes this service dial nothing. An enrolment fetches at most once
+  // (`mayDial()`), and a failed fetch there is STS-VC-0128.
+  private async didKey(did: string, kid: string, claimsOk: boolean,
+                       enrolment: IdTokenExpectation['enrolment']):
+      Promise<Json> {
     const { log, vcDataIntegrity, fetchDocument } = this.deps;
     log.debug("Entering Siop.didKey(). " + did.slice(0, 12));
     const absolute = kid.charAt(0) === '#' ? did + kid : kid;
@@ -484,60 +831,141 @@ class Siop {
       log.debug("Leaving Siop.didKey(). Resolved from the identifier.");
       return resolved.jwk;
     }
-    if (!this.ownerOf(did)) {
+    if (!enrolment && !this.ownerOf(did)) {
       log.debug("Leaving Siop.didKey(). An unenrolled did:web.");
       throw new Error(did + ' is not enrolled for anybody in this realm, ' +
-                      'and a did:web is fetched only when it is.');
+                      'and a did:web is fetched only when it is, or for ' +
+                      'the enrolment of it.');
     }
-    const doc = await fetchDocument(Siop.didWebUrl(did));
-    if (!doc || doc.id !== did) {
-      log.debug("Leaving Siop.didKey(). The document names another DID.");
-      throw new Error('the did:web document fetched for ' + did + ' names ' +
-                      'id "' + (doc && doc.id) + '".');
+    if (!claimsOk) {
+      log.debug("Leaving Siop.didKey(). The other checks failed; not " +
+                "fetched.");
+      throw new Error('the DID document of ' + did + ' was not fetched, ' +
+                      'because the ID Token\'s other checks (below) failed ' +
+                      'and a did:web is fetched only for a token that ' +
+                      'passed them.');
     }
-    const full = function (id: unknown): string {
-      const text = typeof id === 'string' ? id : '';
-      return text.charAt(0) === '#' ? did + text : text;
-    };
-    const authenticates = (Array.isArray(doc.authentication)
-      ? doc.authentication : []).some(function (one: Json) {
-        return full(typeof one === 'string' ? one : one && one.id) ===
-               absolute;
-      });
-    if (!authenticates) {
-      log.debug("Leaving Siop.didKey(). Not an authentication method.");
-      throw new Error(absolute + ' is not in the DID document\'s ' +
-                      'authentication relationship.');
+    if (enrolment && !enrolment.mayDial()) {
+      log.debug("Leaving Siop.didKey(). The enrolment already fetched one.");
+      throw coded('STS-VC-0128', 'this enrolment has already fetched a DID ' +
+                  'document, which is all one enrolment may; start it again.');
     }
-    const methods = (Array.isArray(doc.verificationMethod)
-      ? doc.verificationMethod : []).concat(
-        (doc.authentication || []).filter(function (one: Json) {
-          return one && typeof one === 'object';
-        }));
-    const method = methods.filter(function (one: Json) {
-      return one && full(one.id) === absolute;
-    })[0];
-    if (!method || !method.publicKeyJwk) {
-      log.debug("Leaving Siop.didKey(). No publicKeyJwk.");
-      throw new Error(absolute + ' has no publicKeyJwk in the DID ' +
-                      'document.');
+    let doc: Json = null;
+    try {
+      doc = await fetchDocument(Siop.didWebUrl(did));
+    } catch (e) {
+      log.debug("Caught in Siop.didKey(): " + ((e && e.message) || e));
+      log.debug("Leaving Siop.didKey(). Not fetched.");
+      throw enrolment
+        ? coded('STS-VC-0128', 'the DID document of ' + did + ' could not ' +
+                'be fetched: ' + ((e && e.message) || e))
+        : e;
     }
+    const key = this.didWebMethodKey(doc, did, absolute);
     log.debug("Leaving Siop.didKey(). Resolved by fetching.");
-    return vcDataIntegrity.publicJwkOf(method.publicKeyJwk);
+    return key;
+  }
+
+  // THE PIN (#693): the key that verified a did:web subject's token must be
+  // one its enrolment pinned. `{ ok, code, detail }`. An enrolment from
+  // before #693 has no pin: `mode.pinsSelfIssuedKeysOnFirstUse()` pins this
+  // key now (development), or the token is refused (product). A refusal is
+  // AUDITED here, where the reason is known (`siop.key.refused`), and so is
+  // a pin made on first use (`siop.key.pinned`).
+  private pinCheck(subject: string, jwk: Json): Json {
+    const { log, stsCrypto, credentials, mode, audit,
+            errorCodes } = this.deps;
+    log.debug("Entering Siop.pinCheck().");
+    const owner = this.ownerOf(subject);
+    const record = owner ? (this.list(owner) || []).filter(function (one) {
+      return one.subject === subject;
+    })[0] : null;
+    if (!record) {
+      // Not reached: the document is fetched only for an enrolled did:web
+      // outside an enrolment.
+      log.debug("Leaving Siop.pinCheck(). Not enrolled.");
+      return { ok: false, code: '', detail: subject + ' is not enrolled.' };
+    }
+    const print = stsCrypto.jwkThumbprint(jwk);
+    // `code` is one of the two below: STS-VC-0126 (a key the pin does not
+    // name) or STS-VC-0127 (no pin, in product mode).
+    const refuse = function (code: string, detail: string): Json {
+      log.debug("Entering refuse(). " + code);
+      audit({ category: 'authentication', action: 'siop.key.refused',
+              errorCode: code, actor: owner, target: owner,
+              outcome: 'refused',
+              summary: 'a self-issued sign-in for ' + subject + ' was ' +
+                       'refused: ' + detail,
+              detail: { subject: subject, keyThumbprint: print,
+                        pinnedKeys: (record.pinnedKeys || []).join(' ') } });
+      log.info(errorCodes.tag(code) + 'siop: ' + detail);
+      log.debug("Leaving refuse().");
+      return { ok: false, code: code, detail: detail };
+    };
+    const pins = Array.isArray(record.pinnedKeys) ? record.pinnedKeys : [];
+    if (pins.length) {
+      const ok = pins.indexOf(print) >= 0;
+      log.debug("Leaving Siop.pinCheck(). " + ok);
+      return ok ? { ok: true, code: '', detail: print + ', pinned when ' +
+                    subject + ' was enrolled' }
+        : refuse('STS-VC-0126', 'the DID document of ' + subject + ' now ' +
+                 'names a key (' + print + ') its enrolment did not pin, so ' +
+                 'it signs nobody in. If the wallet\'s key really changed, ' +
+                 'enrol the DID again by proving it on your portal\'s ' +
+                 'Self-issued IDs page.');
+    }
+    if (!mode.pinsSelfIssuedKeysOnFirstUse()) {
+      log.debug("Leaving Siop.pinCheck(). Unpinned, refused.");
+      return refuse('STS-VC-0127', subject + ' was enrolled before keys ' +
+                    'were pinned, and no key is pinned for it, so it signs ' +
+                    'nobody in here: enrol it again by proving it on your ' +
+                    'portal\'s Self-issued IDs page.');
+    }
+    // TRUST ON FIRST USE, development only: this key is pinned now. The
+    // write replaces the one value; `enrol()` and `remove()` stay the only
+    // writers of WHAT is enrolled.
+    const written = credentials.writeSelfIssuedSubjects(owner,
+      (this.list(owner) || []).map(function (one) {
+        return JSON.stringify(one.subject === subject
+          ? Object.assign({}, one, { pinnedKeys: [print] }) : one);
+      }));
+    if (!written) {
+      log.error(errorCodes.tag('STS-VC-0129') + 'siop: the key of ' +
+                subject + ' could not be pinned on first use; the sign-in ' +
+                'stands and the pin is tried again at the next.');
+    } else {
+      log.info('siop: ' + subject + ' (' + owner + ') was enrolled with no ' +
+               'pinned key; development mode pinned ' + print + ', the key ' +
+               'it signed in with (trust on first use).');
+      audit({ category: 'authentication', action: 'siop.key.pinned',
+              actor: owner, target: owner, outcome: 'success',
+              summary: 'pinned the key ' + print + ' of ' + subject +
+                       ' on first use (development mode)',
+              detail: { subject: subject, keyThumbprint: print } });
+    }
+    log.debug("Leaving Siop.pinCheck(). Pinned on first use.");
+    return { ok: true, code: '', detail: print + ', pinned now on first ' +
+             'use (development mode)' };
   }
 
   // -------------------------------------------------------------------------
-  // THE SELF-ISSUED ID TOKEN (section 11.1). `expect` is { clientId, nonce }.
-  // Returns { ok, checks, subject, jwk, claims }; never throws.
+  // THE SELF-ISSUED ID TOKEN (section 11.1). `expect` is { clientId, nonce,
+  // enrolment? }. Returns { ok, checks, subject, jwk, keyThumbprint, claims,
+  // errorCode, reason }; never throws. `errorCode` and `reason` are set only
+  // where a refusal has a code of its own (the pin, an enrolment's fetch).
   // -------------------------------------------------------------------------
   /**
    * Verifies a self-issued ID Token (section 11.1). Never throws.
    *
    * @param token - the ID Token
-   * @param expect - `{ clientId, nonce }`
-   * @returns `{ ok, checks, subject, jwk, claims }`
+   * @param expect - `{ clientId, nonce, enrolment? }`; `enrolment` only for
+   *   a person's own enrolment transaction, which may fetch an unenrolled
+   *   did:web once and is not held to a pin
+   * @returns `{ ok, checks, subject, jwk, keyThumbprint, claims, errorCode,
+   *   reason }`
    */
-  async verifyIdToken(token: unknown, expect: Json): Promise<Json> {
+  async verifyIdToken(token: unknown, expect: IdTokenExpectation):
+      Promise<Json> {
     const { log, stsCrypto, vcDataIntegrity, config, nowSec } = this.deps;
     log.debug("Entering Siop.verifyIdToken().");
     const checks: Json[] = [];
@@ -546,7 +974,8 @@ class Siop {
       return !!ok;
     };
     const out: Json = { ok: false, checks: checks, subject: '', jwk: null,
-                        claims: null };
+                        keyThumbprint: '', claims: null, errorCode: '',
+                        reason: '' };
     const text = typeof token === 'string' ? token.trim() : '';
     let header: Json = null;
     let claims: Json = null;
@@ -570,6 +999,41 @@ class Siop {
       log.debug("Leaving Siop.verifyIdToken(). iss is not sub.");
       return out;
     }
+    // THE CHECKS THAT NEED NO KEY, judged now and reported after the
+    // signature as they always were: a did:web is fetched only when they
+    // pass (#693), so nobody can make this service dial with a token for
+    // another transaction or a stale one.
+    const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+    const now = nowSec();
+    const maxAge = Number(config.value('oid4vp.siopIdTokenMaxAgeS'));
+    const exp = Number(claims.exp);
+    const iat = Number(claims.iat);
+    const claimChecks = [
+      { name: 'aud', ok: aud.indexOf(expect.clientId) >= 0,
+        detail: 'must name this Verifier, "' + expect.clientId + '"; it ' +
+                'names ' + JSON.stringify(claims.aud) },
+      { name: 'nonce', ok: typeof claims.nonce === 'string' &&
+        stsCrypto.constantTimeEquals(claims.nonce, String(expect.nonce)),
+        detail: 'must be this request\'s nonce' },
+      { name: 'exp', ok: isFinite(exp) && exp + SKEW_S > now,
+        detail: 'expires ' + claims.exp + ', now ' + now },
+      { name: 'iat', ok: isFinite(iat) && iat <= now + SKEW_S &&
+        now - iat <= maxAge,
+        detail: 'issued ' + claims.iat + ', now ' + now + ', at most ' +
+                maxAge + ' s old (oid4vp.siopIdTokenMaxAgeS)' }
+    ];
+    const claimsOk = claimChecks.every(function (one) {
+      return one.ok;
+    });
+    const reportClaims = function (): boolean {
+      log.debug("Entering reportClaims().");
+      const passed = claimChecks.map(function (one) {
+        return check(one.name, one.ok, one.detail);
+      }).every(Boolean);
+      log.debug("Leaving reportClaims(). " + passed);
+      return passed;
+    };
+    const enrolment = expect.enrolment || null;
     let jwk: Json = null;
     let subject = '';
     try {
@@ -579,7 +1043,8 @@ class Siop {
           throw new Error('"' + sub + '" is not a did:jwk, did:key or ' +
                           'did:web this Verifier resolves.');
         }
-        jwk = await this.didKey(sub, String(header.kid || ''));
+        jwk = await this.didKey(sub, String(header.kid || ''), claimsOk,
+                                enrolment);
       } else {
         const subJwk = claims.sub_jwk;
         if (!subJwk || typeof subJwk !== 'object' || subJwk.d !== undefined) {
@@ -598,6 +1063,12 @@ class Siop {
       }
     } catch (e) {
       check('subject key', false, (e && e.message) || String(e));
+      if (e && e.code) {
+        out.errorCode = e.code;
+        out.reason = 'The self-issued ID Token\'s key could not be ' +
+                     'resolved: ' + e.message;
+      }
+      reportClaims();
       log.debug("Leaving Siop.verifyIdToken(). No key.");
       return out;
     }
@@ -611,25 +1082,18 @@ class Siop {
       log.debug("Leaving Siop.verifyIdToken(). Signature.");
       return out;
     }
-    const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-    const now = nowSec();
-    const maxAge = Number(config.value('oid4vp.siopIdTokenMaxAgeS'));
-    const exp = Number(claims.exp);
-    const iat = Number(claims.iat);
-    const allOk = [
-      check('aud', aud.indexOf(expect.clientId) >= 0,
-            'must name this Verifier, "' + expect.clientId + '"; it names ' +
-            JSON.stringify(claims.aud)),
-      check('nonce', typeof claims.nonce === 'string' &&
-            stsCrypto.constantTimeEquals(claims.nonce, String(expect.nonce)),
-            'must be this request\'s nonce'),
-      check('exp', isFinite(exp) && exp + SKEW_S > now,
-            'expires ' + claims.exp + ', now ' + now),
-      check('iat', isFinite(iat) && iat <= now + SKEW_S &&
-            now - iat <= maxAge,
-            'issued ' + claims.iat + ', now ' + now + ', at most ' + maxAge +
-            ' s old (oid4vp.siopIdTokenMaxAgeS)')
-    ].every(Boolean);
+    let allOk = reportClaims();
+    out.keyThumbprint = stsCrypto.jwkThumbprint(jwk);
+    // THE PIN (#693), for a did:web outside its own enrolment — which is
+    // where the pin is MADE, so it is not held to one.
+    if (allOk && /^did:web:/.test(subject) && !enrolment) {
+      const pinned = this.pinCheck(subject, jwk);
+      allOk = check('pinned key', pinned.ok, pinned.detail);
+      if (!pinned.ok && pinned.code) {
+        out.errorCode = pinned.code;
+        out.reason = pinned.detail;
+      }
+    }
     out.ok = allOk;
     out.subject = subject;
     out.jwk = jwk;
@@ -688,9 +1152,13 @@ class Siop {
                subject: '' };
     };
     if (!verified || !verified.ok) {
-      return refuse('STS-VC-0090', 'The self-issued ID Token did not ' +
-                    'verify, so it signs nobody in. The checks above say ' +
-                    'which rule it broke.');
+      // A refusal with a code of its own (the pin, an enrolment's fetch,
+      // #693) says so; any other is the token not verifying.
+      return verified && verified.errorCode
+        ? refuse(String(verified.errorCode), String(verified.reason || ''))
+        : refuse('STS-VC-0090', 'The self-issued ID Token did not ' +
+                 'verify, so it signs nobody in. The checks above say ' +
+                 'which rule it broke.');
     }
     const username = this.ownerOf(verified.subject);
     if (!username) {
@@ -745,11 +1213,17 @@ export = {
   SUBJECT_SYNTAX_TYPES: SUBJECT_SYNTAX_TYPES,
   ID_TOKEN_ALGS: ID_TOKEN_ALGS,
   MAX_SUBJECTS: MAX_SUBJECTS,
+  PROOF_WALLET: PROOF_WALLET,
+  PROOF_ADMIN: PROOF_ADMIN,
   didWebUrl: Siop.didWebUrl,
+  provenanceOf: Siop.provenanceOf,
   normalise: slot.forward('normalise'),
   list: slot.forward('list'),
   ownerOf: slot.forward('ownerOf'),
   enrol: slot.forward('enrol'),
+  enrolByValue: slot.forward('enrolByValue'),
+  provenSubjectsOf: slot.forward('provenSubjectsOf'),
+  authenticationKeys: slot.forward('authenticationKeys'),
   remove: slot.forward('remove'),
   clientMetadata: slot.forward('clientMetadata'),
   verifyIdToken: slot.forward('verifyIdToken'),
