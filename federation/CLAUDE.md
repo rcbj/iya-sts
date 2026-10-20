@@ -16,6 +16,7 @@ relationship (#373); see *A PARTNER'S SHARED SIGNALS* below.
 | `federation_links.ts` | **The link between a partner's subject and a person** (#109): the `federationLink` format, the stable subject a verified response carries, the one check a requested link goes through (console, `/admin-api`, SCIM), and what removing one ends. A static utility class. |
 | `federation_blocks.ts` | **A partner's stop on one person** (#373): the (relationship, person) pairs a verified `account-disabled` from the partner's own Shared Signals put there, which `federation_sp.ts`'s `subjectDecision()` refuses (`STS-FED-0156`). A leaf store; `ssf/ssf_transmitters.ts` writes it. |
 | `federation_encryption.ts` | **What a partner encrypts to** (#168): each relationship's encryption key — issued under the realm's Intermediate, sealed, rotated with a grace period, retired by the scheduler job `federation.encryption-key-retire`, published — and the policy a partner's `EncryptedAssertion`, `EncryptedID`, `EncryptedAttribute`, WS-Federation token and JWE ID Token or Logout Token is decrypted under. A static utility class. See *A PARTNER'S ENCRYPTED ASSERTION* below. |
+| `consumer_providers.ts` | **Consumer and social providers as profiles** (#565): the catalogue (Google, Discord, GitHub, `generic-oidc`, `generic-oauth2`), `apply()` (the defaults written onto an entry at creation), `extract()` (the `source:path` rules read at sign-in) and `issuersFor()`. A leaf static utility class. See *CONSUMER AND SOCIAL PROVIDERS* below. |
 | `federation_provision.ts` | **The idle sweep of a relationship's created people** (#358): the cluster job `federation.provision-idle`. A static utility class. It registers the job at load and `federation_sp.ts` calls `registerIdleJob()` again, which finds the job already there. See *DYNAMIC PROVISIONING* below. |
 
 ---
@@ -2035,3 +2036,91 @@ creates nobody (STS-FED-0158, logged), and `authn.startSession()` refuses the
 sign-in as it refuses an unprovisioned person. rcbj's choice on #396 was this
 refusal over exempting the door; a sign-in step that asks the person for what
 the partner did not send is a follow-up ticket.
+
+## CONSUMER AND SOCIAL PROVIDERS (#565, 2026-10-19)
+
+**A consumer provider is a relationship, not a subsystem.** It is an `oidc`
+or `oauth2` service-provider relationship carrying `fedProvider`, which names
+a profile in `consumer_providers.ts`, and the CATEGORY is derived from it
+(`categoryOf()`): naming a provider is consumer, naming none is enterprise.
+There is no `fedCategory` to disagree with it. Being a relationship is what
+makes it usable wherever an enterprise partner is (the sign-in screen, an
+application's `appFederationRelationship` list, a broker's
+`fedAuthnRelationship`, links, `subjectDecision()`, cells, Shared Signals)
+without a second copy of any of them. rcbj's ten decisions are on the ticket.
+The ones a reader of this directory needs:
+
+* **A PROFILE IS USED AT TWO TIMES.** Its `defaults` (endpoints, `fedPeer`,
+  scope, `fedTokenAuth`) are WRITTEN ONTO THE ENTRY at `create()` and are
+  ordinary attributes from then on. Every URL dialled is still an attribute an
+  administrator owns, so `federation_http.ts`'s argument does not move. Its
+  extraction rules (where the subject, the named claims and `email_verified`
+  come from, as `source:path`) are READ LIVE at sign-in by
+  `FederationSp.consumerReading()`, never copied: a provider's departures
+  from OpenID Connect are a fact about the provider, fixed in one place.
+* **THE PROFILE BUILDS A CLAIM BAG AND NOTHING ELSE.** The bag then goes
+  through `federation_map.ts` exactly as a partner's does (`fedAttributeMap`,
+  the default table, #94's reserved targets), into the entry, and from there
+  through the release rules into what this service issues. A NAMED claim is
+  authoritative even when it finds nothing. GitHub's `/user` `email` is the
+  public address, and the profile reads `email` from `/user/emails`. When that
+  call fails, the raw `email` is removed rather than left to arrive under a
+  name the profile said not to read.
+* **AN OPENID CONNECT SUBJECT IS ALWAYS THE ID TOKEN'S `sub`** (Core 5.7),
+  whatever a profile says. A plain OAuth 2.0 profile names its subject, and a
+  rule that finds nothing is nobody (`STS-FED-0177`), never the old guess. An
+  ENTERPRISE `oauth2` relationship keeps the guess (`sub`, `id`, `user_id`)
+  unless `fedSubjectClaim` names a path. rcbj withdrew the plan's "replace
+  the guess": no existing relationship changes behaviour.
+* **THE REALM SWITCH IS A READINESS QUESTION.** `federation.consumerProviders`
+  (off) appears in `readinessOf()`'s `missing`, so every door that asks
+  readiness refuses through the answer it already asks for. The login
+  endpoint and the ACS name it by its own code (`STS-FED-0175`), and
+  `create()` and enabling refuse (`STS-FED-0171`). Enterprise relationships
+  are untouched in either position.
+* **THE CONSUMER DEFAULTS** are written at creation: `jit-namespaced`,
+  auto-create on, `fedUsernameSource` empty. So a newcomer is
+  `<relationship>~<subject>` and an address is never a matching key.
+  `any-existing` is refused on a consumer relationship in EVERY mode
+  (`STS-FED-0172`). A consumer relationship encrypts nothing
+  (`encrypts()`), so it is issued no key.
+* **THE ADDRESS IS UNVERIFIED UNLESS THE PROVIDER'S OWN STATEMENT SAYS TRUE**,
+  which is the reverse of an enterprise partner, whose address counts as
+  verified unless it says `email_verified: false`.
+* **A PROVIDER'S `amr`/`acr` SATISFY NOTHING** unless its profile's `mfa`
+  rule trusts them (none of the first three does). The session is
+  `['federated']` with no `acr`, and what was claimed is kept on the bag as
+  `provider_amr`/`provider_acr`. Every federated sign-in now hands the risk
+  engine `credential.fingerprint = fedId`, so each partner is a credential of
+  its own in the history.
+* **ISSUER ALIASES** (Google's bare `accounts.google.com`) are accepted only
+  while `fedPeer` is still the profile's: a relationship pointed elsewhere has
+  no business accepting Google's spelling. `common/crypto.js`'s
+  `checkJwtClaims()` takes a list of issuers for it.
+* **`fedEmailsUrl` IS THE FOURTH DIALLABLE NAME**, argued in
+  `federation_http.ts`'s header (the same provenance as `fedUserinfoUrl`). It
+  is asked only for a profile that reads the `emails` source. Its failure is
+  `STS-FED-0176` and costs the address, never the sign-in.
+* **NO PROVIDER'S OWN LIBRARY IS USED.** rcbj's order is: an existing
+  TypeScript module, then JavaScript, the provider's own first, and our own
+  code last. The first three were evaluated and rejected, each for bypassing
+  the outbound policy or the one-crypto rule, and the table is in
+  `consumer_providers.ts`'s header. The next profile asks the question again.
+
+The adapters (what a source and a path cannot say) are a CLOSED set named in
+the profile. `github-verified-email` is the first. Apple's client-secret JWT
+and `user` field, the Microsoft tenant issuer and TikTok's `client_key` are
+the next. Which platforms can be supported is
+`../docs/federation-consumer-providers.md`.
+
+### Tests
+
+`tests/federation_consumer_providers.js` drives a Discord, a GitHub and a
+Google sign-in in one process against provider-shaped servers. It covers the
+client authentication each takes, PKCE, `/user/emails` failing, the Google
+issuer rules, the collision case (a provider's person named and addressed as
+a local one lands on an entry of their own), the realm switch at every door,
+`fedSubjectClaim`, the provider's MFA claim and the credential fingerprint.
+**Not covered yet:** an over-HTTP job (`tests/vendored/`, `local: true`), and
+a consumer provider on an application's chooser beside an enterprise partner.
+

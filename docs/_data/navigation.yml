@@ -44,6 +44,7 @@
     - { title: WS-Trust, url: /ws-trust.html }
     - { title: WS-Federation, url: /ws-federation.html }
     - { title: Federation, url: /federation.html }
+    - { title: Consumer and social providers, url: /federation-consumer-providers.html }
 
 - section: Sign-in and sessions
   items:

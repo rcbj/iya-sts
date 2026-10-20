@@ -557,6 +557,18 @@ An identity-provider-side relationship shows, read only, the Shared Signals
 streams its application holds on this service's own transmitter: what this
 service tells the partner.
 
+### Consumer and social providers
+
+Google, Discord, GitHub and other consumer providers are relationships of
+their own category, consumer rather than enterprise
+([#565](https://github.com/rcbj/iya-sts/issues/565)). Each one is an OpenID
+Connect or OAuth 2.0 relationship that names its provider in `fedProvider`.
+Everything above applies to them. They are off in a realm until
+`federation.consumerProviders` is on. A newcomer gets an entry of their own,
+and an email address is never used to match an existing person.
+[Consumer and social providers](federation-consumer-providers.md) has the
+steps, the catalogue and which of the requested platforms can be supported.
+
 ### The federation map
 
 `/admin/federation/map`, reached from a link on the relationship table, draws
