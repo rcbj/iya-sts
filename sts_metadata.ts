@@ -1779,9 +1779,30 @@ const SPECS: Spec[] = [
               'application\'s oauthStepUpAcrValues / oauthStepUpMaxAge are ' +
               'recorded for the resource server that is the application to ' +
               'enforce. Limitation: this service\'s sign-in produces three ' +
-              'context classes; any other acr value is met only by a ' +
-              'federated sign-in ' +
-              'reporting exactly that acr. Counted on /admin/oauth2/monitor.' },
+              'ordered context classes and the two of OpenID Connect EAP ACR ' +
+              'Values 1.0, which are not on the ladder; any other acr value ' +
+              'is met only by a federated sign-in reporting exactly that ' +
+              'acr. Counted on /admin/oauth2/monitor.' },
+  { id: 'oidc-eap-acr', name: 'OpenID Connect EAP ACR Values 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-eap-acr-values-1_0.html',
+    coverage: 'partial: phr and phrh (section 2) are published in ' +
+              'acr_values_supported, honoured through acr_values, an ' +
+              'essential acr claims request and a client\'s ' +
+              'default_acr_values — the sign-in screen then asks for a ' +
+              'security key — and carried as the ID Token\'s and access ' +
+              'token\'s acr when the sign-in earned them, else refused ' +
+              'unmet_authentication_requirements. phr is earned by a ' +
+              'WebAuthn assertion (alone or after a password) or a TLS ' +
+              'client certificate; phrh by an assertion whose key has a ' +
+              'trusted attestation and a clear backup-eligible flag; a key ' +
+              'enrolled in the same sign-in earns neither (section 4). A ' +
+              'request for neither leaves acr as it was. The issuance ' +
+              'policy sees urn:sts:xacml:phishing-resistance, and two ' +
+              'role-issuance options require either for an application. ' +
+              'The pop amr value (section 3) is written by the wallet ' +
+              'sign-in only. Missing: SAML AuthnContextClassRef and ' +
+              'WS-Federation wauth do not map the two values.' },
   { id: 'rfc9101', name: 'RFC 9101 — JWT-Secured Authorization Request ' +
       '(JAR)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9101',
@@ -7377,7 +7398,8 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'OpenID Provider Configuration',
     specs: ['oidc-discovery', 'oidc', 'oidc-logout', 'oidc-bclogout',
             'oidc-ida', 'oidc-native-sso', 'oidc-ciba', 'rfc8414',
-                                                   'rfc9207', 'rfc9449'],
+                                                   'rfc9207', 'rfc9449',
+            'oidc-eap-acr'],
     what: 'What an OIDC client looks for first. The RFC 8414 document ' +
           'extended with what OpenID Connect Discovery adds — ' +
           'subject_types_supported, id_token_signing_alg_values_supported, ' +
@@ -7410,7 +7432,7 @@ const ENDPOINTS: EndpointEntry[] = [
       'endpoint',
     specs: ['rfc6749', 'oidc', 'rfc7636', 'rfc9396', 'rfc9207',
             'oidc-enterprise', 'oidc-key-binding',
-            'rfc9700', 'rfc9101', 'rfc9126', 'rfc9470',
+            'rfc9700', 'rfc9101', 'rfc9126', 'rfc9470', 'oidc-eap-acr',
             'oauth-multiple-response-types', 'jarm', 'fapi1-advanced'],
     effect: 'needs ' +
         'client_id and redirect_uri — answers 400 when followed bare, then ' +
