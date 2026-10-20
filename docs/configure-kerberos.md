@@ -371,7 +371,7 @@ api kerberos/principals/create-service '{"spn":"host/ws1.example.com"}' |
 ```
 
 **2. The person's authenticator app.** The person enrols one on the portal's
-MFA page. An administrator can require a second factor of them with
+MFA page, `/portal/mfa`. An administrator can require a second factor of them with
 **Require MFA for this person** on their page under **Directory → Users**
 (API `users/require-mfa` with `{"user":"alice"}`).
 
@@ -402,8 +402,8 @@ Taken from `sts_kerberos_pkinit.js`.
 
 PKINIT (RFC 4556) is on in every realm (`krb5.pkinit`). It is how a person
 whose second factor is a security key or smart card gets a ticket in product
-mode. The certificate must be one this realm issued to the person with
-smart-card logon in its extended key usage.
+mode. The certificate must be one this realm issued to the person, with
+PKINIT client authentication or smart-card logon in its extended key usage.
 
 **1. The certificate.** The job enrols a smart-card logon certificate over
 EST with the person's own password. Using `openssl` and `curl`:
@@ -419,8 +419,8 @@ curl -sk -u 'alice:<her password>' -H 'Content-Type: application/pkcs10' \
 ```
 
 The subject in the request is only a label: the certificate is named from
-the person's directory entry. ACME and SCEP can issue the same profile; see
-[Certificate enrollment](configure-cert-enrollment.md).
+the person's directory entry. ACME and SCEP can issue the same profile; see [EST](est.md),
+[ACME](acme.md) and [SCEP](scep.md).
 
 **2. The anchors.** `GET /.well-known/est/cacerts` answers three
 certificates: the EST Issuing CA, the realm's Intermediate, and the service
@@ -554,8 +554,8 @@ api realms/create '{"id":"trustb","domain":"trustb.example.net","name":"trustb",
 
 **Console**, in realm `trusta`:
 1. On **Protocols → Kerberos → Trusts**, under **Add a trust**: **Partner
-   realm** `TRUSTB.EXAMPLE.NET`, **Type** *Trust realm here*, **Trust realm**
-   `trustb`, **Direction** *Both ways*, **Key source** *Trust password* and a
+   realm** `TRUSTB.EXAMPLE.NET`, **Type** *Trust realm here*, **Trust realm
+   (for a trust realm here)** `trustb`, **Direction** *Both ways*, **Key source** *Trust password* and a
    **Trust password** of at least 16 characters. Leave `quarantined` ticked.
    Set **Routed DNS suffixes** to `trustb.example.net`.
 2. Click **Add the trust**. Its **Health** says that `trustb` holds no
@@ -619,7 +619,9 @@ api kerberos/trusts/remove '{"partnerRealm":"TRUSTB.EXAMPLE.NET","confirm":"TRUS
 A principal that arrived through a trust holds **none of the built-in roles**:
 `EVERYBODY` means authenticated in this realm. So a service that requires
 only `EVERYBODY`, the default, refuses everybody from the other realm with
-`KDC_ERR_POLICY`. To admit them, grant a [role](roles.md) to their whole
+`KDC_ERR_POLICY`. To admit them, grant a role (`/admin/roles`; see
+[XACML](xacml.md#the-embedded-peps-this-services-own-issuance-and-access))
+to their whole
 name (`alice@TRUSTA.EXAMPLE.NET`) or to a SID their PAC carries, such as the
 partner's Domain Users (`<partner domain SID>-513`). Then make the service
 require `EVERYBODY` or that role (`appRequiredRole`, the application's
@@ -720,8 +722,8 @@ api realms/create '{"id":"pac1","domain":"pac1.example.net","name":"pac1",
 
 **Console:** in that realm, on **Protocols → Kerberos → PAC claims**, add the
 rows of the realm's claim set, and tick the directory attributes to send. To
-give one service a row of its own, use **PAC claims** on that application's
-**Configuration** tab.
+give one service a row of its own, create it with `create-service` first,
+then use **PAC claims** on that application's **Configuration** tab.
 
 **API:**
 ```bash
