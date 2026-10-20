@@ -1588,8 +1588,8 @@
     "text": "NO ESTÁNDAR (#218). GET /admin/devices/monitor sobre JSON: los recuentos y la cronología día a día de registros, eliminaciones y expulsiones (?days=)."
   },
   "stsmetadata.endpoints./admin-api/users/self-issued-subjects.what": {
-    "en": "02ba0c938388e35a",
-    "text": "NO ESTÁNDAR (#129). Los DID y las huellas JWK inscritos para una persona, cada uno con su etiqueta y quién lo inscribió, junto a si oid4vp.signInSelfIssued está activado. POST /admin-api/users/enrol-self-issued-subject inscribe uno por valor; /admin-api/users/remove-self-issued-subject retira uno. Refleja el bloque Self-issued IDs de la página /admin/users de la persona."
+    "en": "5992e8bdddc060a8",
+    "text": "NO ESTÁNDAR (#129). Los DID y las huellas JWK inscritos para una persona, cada uno con su etiqueta, quién lo inscribió y cómo (demostrado por la billetera de la persona, o por valor), y un did:web con sus claves fijadas (#693), junto a si oid4vp.signInSelfIssued está activado. POST /admin-api/users/enrol-self-issued-subject inscribe uno por valor, obteniendo el documento de un did:web para fijar sus claves; /admin-api/users/remove-self-issued-subject retira uno. Refleja el bloque Self-issued IDs de la página /admin/users de la persona."
   },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",

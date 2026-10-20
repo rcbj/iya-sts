@@ -5622,9 +5622,11 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/users/self-issued-subjects', group: 'Management API',
     name: 'One person\'s self-issued (SIOPv2) subjects', specs: ['siopv2'],
     what: 'NON-SPEC (#129). The DIDs and JWK thumbprints enrolled for a ' +
-          'person, each with its label and who enrolled it, beside whether ' +
-          'oid4vp.signInSelfIssued is on. POST ' +
-          '/admin-api/users/enrol-self-issued-subject enrols one by value; ' +
+          'person, each with its label, who enrolled it and how (proved by ' +
+          'the person\'s wallet, or by value), and a did:web with its ' +
+          'pinned keys (#693), beside whether oid4vp.signInSelfIssued is ' +
+          'on. POST /admin-api/users/enrol-self-issued-subject enrols one ' +
+          'by value, fetching a did:web\'s document to pin its keys; ' +
           '/admin-api/users/remove-self-issued-subject takes one away. ' +
           'Mirrors the Self-issued IDs block on the person\'s /admin/users ' +
           'page.' },

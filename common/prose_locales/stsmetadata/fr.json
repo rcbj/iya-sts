@@ -1588,8 +1588,8 @@
     "text": "NON-SPEC (#218). GET /admin/devices/monitor en JSON : les décomptes et la chronologie jour par jour des enregistrements, suppressions et évictions (?days=)."
   },
   "stsmetadata.endpoints./admin-api/users/self-issued-subjects.what": {
-    "en": "02ba0c938388e35a",
-    "text": "NON-SPEC (#129). Les DID et empreintes JWK enrôlés pour une personne, chacun avec son libellé et qui l’a enrôlé, à côté de l’indication de l’activation de oid4vp.signInSelfIssued. POST /admin-api/users/enrol-self-issued-subject en enrôle un par valeur ; /admin-api/users/remove-self-issued-subject en retire un. Reflète le bloc Self-issued IDs de la page /admin/users de la personne."
+    "en": "5992e8bdddc060a8",
+    "text": "NON-SPEC (#129). Les DID et empreintes JWK enrôlés pour une personne, chacun avec son libellé, qui l’a enrôlé et comment (prouvé par le portefeuille de la personne, ou par valeur), et un did:web avec ses clés épinglées (#693), à côté de l’indication de l’activation de oid4vp.signInSelfIssued. POST /admin-api/users/enrol-self-issued-subject en enrôle un par valeur, en récupérant le document d’un did:web pour épingler ses clés ; /admin-api/users/remove-self-issued-subject en retire un. Reflète le bloc Self-issued IDs de la page /admin/users de la personne."
   },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",

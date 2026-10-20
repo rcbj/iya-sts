@@ -1588,8 +1588,8 @@
     "text": "NON-SPEC (#218). GET /admin/devices/monitor sa JSON: ang mga bilang at ang araw-araw na timeline ng mga registration, pag-aalis at eviction (?days=)."
   },
   "stsmetadata.endpoints./admin-api/users/self-issued-subjects.what": {
-    "en": "02ba0c938388e35a",
-    "text": "NON-SPEC (#129). Ang mga DID at JWK thumbprint na naka-enroll para sa isang tao, bawat isa kasama ang label nito at kung sino ang nag-enroll nito, katabi ng kung naka-on ang oid4vp.signInSelfIssued. Nag-e-enroll ng isa ayon sa value ang POST /admin-api/users/enrol-self-issued-subject; inaalis ng /admin-api/users/remove-self-issued-subject ang isa. Sinasalamin ang Self-issued IDs block sa /admin/users page ng tao."
+    "en": "5992e8bdddc060a8",
+    "text": "NON-SPEC (#129). Ang mga DID at JWK thumbprint na naka-enroll para sa isang tao, bawat isa kasama ang label nito, kung sino ang nag-enroll nito at kung paano (pinatunayan ng wallet ng tao, o ayon sa value), at ang isang did:web kasama ang mga naka-pin na key nito (#693), katabi ng kung naka-on ang oid4vp.signInSelfIssued. Nag-e-enroll ng isa ayon sa value ang POST /admin-api/users/enrol-self-issued-subject, kinukuha ang dokumento ng isang did:web para i-pin ang mga key nito; inaalis ng /admin-api/users/remove-self-issued-subject ang isa. Sinasalamin ang Self-issued IDs block sa /admin/users page ng tao."
   },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",

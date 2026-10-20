@@ -1588,8 +1588,8 @@
     "text": "非规范（#218）。以 JSON 形式提供的 GET /admin/devices/monitor：注册、删除和逐出的计数以及逐日时间线（?days=）。"
   },
   "stsmetadata.endpoints./admin-api/users/self-issued-subjects.what": {
-    "en": "02ba0c938388e35a",
-    "text": "非规范（#129）。为某人注册的 DID 和 JWK 指纹，每项附带其标签和注册者，旁边显示 oid4vp.signInSelfIssued 是否打开。POST /admin-api/users/enrol-self-issued-subject 按值注册一个；/admin-api/users/remove-self-issued-subject 将其删除。对应此人 /admin/users 页面上的“自签发 ID”块。"
+    "en": "5992e8bdddc060a8",
+    "text": "非规范（#129）。为某人注册的 DID 和 JWK 指纹，每项附带其标签、注册者和注册方式（由此人的钱包证明，或按值），did:web 还附带其固定的密钥（#693），旁边显示 oid4vp.signInSelfIssued 是否打开。POST /admin-api/users/enrol-self-issued-subject 按值注册一个，并获取 did:web 的文档以固定其密钥；/admin-api/users/remove-self-issued-subject 将其删除。对应此人 /admin/users 页面上的“自签发 ID”块。"
   },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
