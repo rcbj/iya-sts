@@ -561,9 +561,22 @@ function middlewareCase(t) {
     headers: { cookie: 'sts_session=unknownsid.handle' },
     url: '/oauth2/authorize'
   };
-  uses[0](req, res, function () {
-    nextCalled = true;
-  });
+  // EVERY MIDDLEWARE authn registers, in order, each one's next() the
+  // following one's: since #561 the account-selection ticket's middleware
+  // runs before the cookie's, so the cookie's is no longer uses[0].
+  const runFrom = function (i) {
+    log.debug("Entering runFrom().");
+    if (i >= uses.length) {
+      nextCalled = true;
+      log.debug("Leaving runFrom(). Past the last.");
+      return;
+    }
+    uses[i](req, res, function () {
+      runFrom(i + 1);
+    });
+    log.debug("Leaving runFrom().");
+  };
+  runFrom(0);
   t.equal(statusCode, 503, 'the middleware answers 503');
   t.equal(headers['Retry-After'], '5', 'Retry-After is set');
   t.equal(headers['Cache-Control'], 'no-store', 'the answer is not stored');

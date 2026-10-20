@@ -1845,7 +1845,8 @@ class Authn {
           return null;
         }
         const chosen = this.honouredSession(req, resolved.sid,
-                                            this.accountSessionRead(resolved.sid).session);
+                                            this.accountSessionRead(
+                                              resolved.sid).session);
         log.debug("Leaving Authn.sessionOf(). The account set's choice (" +
                   resolved.how + ").");
         return chosen;
@@ -2225,13 +2226,16 @@ class Authn {
   // name or e-mail address (or the subject that name resolves to), or ''.
   private matchAccountHint(live, hint) {
     const { log, helpers } = this.deps;
+    const self = this;
     log.debug("Entering Authn.matchAccountHint().");
     if (hint.sid && live.indexOf(String(hint.sid)) >= 0) {
       log.debug("Leaving Authn.matchAccountHint(). By sid.");
       return String(hint.sid);
     }
     const users = live.map(function (sid) {
-      return { sid: sid, user: (this.accountSessionRead(sid).session || {}).user || {} };
+      return { sid: sid,
+               user: (self.accountSessionRead(sid).session || {}).user ||
+                     {} };
     });
     const bySub = hint.sub ? users.filter(function (one) {
       return String(one.user.sub || '') === String(hint.sub);
@@ -2462,12 +2466,13 @@ class Authn {
     const self = this;
     log.debug("Entering Authn.accountSessionFor().");
     const sid = row ? Object.keys(row.sessions || {}).filter(function (one) {
-      const session = this.accountSessionRead(one).session;
+      const session = self.accountSessionRead(one).session;
       return self.accountSessionLive(one) &&
         self.sameIdentity(session.user, username);
     })[0] : '';
     log.debug("Leaving Authn.accountSessionFor(). " + (sid ? 'One.' : 'None.'));
-    return sid ? { id: sid, session: this.accountSessionRead(sid).session } : null;
+    return sid ? { id: sid, session: this.accountSessionRead(sid).session }
+               : null;
   }
 
   // ---------------------------------------------------------------------------
@@ -2609,7 +2614,7 @@ class Authn {
       return (Number(row.sessions[a].addedAt) || 0) -
              (Number(row.sessions[b].addedAt) || 0);
     }).map(function (sid) {
-      const session = this.accountSessionRead(sid).session;
+      const session = self.accountSessionRead(sid).session;
       const entry = row.sessions[sid];
       const account = self.accountOf(session);
       return { key: AccountSets.keyOf(account), sub: account.sub,
@@ -2703,7 +2708,7 @@ class Authn {
       return (Number(row.sessions[a].addedAt) || 0) -
              (Number(row.sessions[b].addedAt) || 0);
     }).map(function (sid) {
-      return this.accountSessionRead(sid).session;
+      return self.accountSessionRead(sid).session;
     }) : [];
     log.debug("Leaving Authn.accountSessionsOf(). " + out.length);
     return out;
@@ -8681,8 +8686,9 @@ class Authn {
     const row = sid ? this.accountSetOf(req) : null;
     const inSet = !!(row && row.sessions && row.sessions[sid] &&
                      this.accountSessionLive(sid));
-    const found = inSet ? { id: sid, session: this.accountSessionRead(sid).session }
-                        : this.cookieSession(req, SESSION_COOKIE);
+    const found = inSet
+      ? { id: sid, session: this.accountSessionRead(sid).session }
+      : this.cookieSession(req, SESSION_COOKIE);
     const id = found ? found.id : '';
     const presented = inSet || !!this.cookiesOf(req)[SESSION_COOKIE];
     const session = this.dropSession(id,
@@ -9404,7 +9410,8 @@ class Authn {
     let given = opts;
     if (req && choice !== 'never' && !opts.hint && !opts.lockedUsername) {
       const resolved = this.resolveAccount(req, false);
-      const chosen = resolved.sid ? this.accountSessionRead(resolved.sid).session : null;
+      const chosen = resolved.sid
+        ? this.accountSessionRead(resolved.sid).session : null;
       if (chosen && chosen.user && chosen.user.username) {
         given = Object.assign({}, opts, { hint: chosen.user.username });
       }
@@ -14871,7 +14878,8 @@ class Authn {
     if (AccountSets.enabled() && req) {
       const resolved = this.resolveAccount(req, false);
       if (!resolved.fallback) {
-        const chosen = resolved.sid ? this.accountSessionRead(resolved.sid).session : null;
+        const chosen = resolved.sid
+          ? this.accountSessionRead(resolved.sid).session : null;
         log.debug("Leaving Authn.auditActorOf(). The account set's.");
         return chosen && chosen.user ? String(chosen.user.username || '')
                                      : '';
