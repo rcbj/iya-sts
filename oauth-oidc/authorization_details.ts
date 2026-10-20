@@ -192,6 +192,34 @@ const definitionCount = cacheRegistry.register({
 // ALLOW, ONCE: `username client digest` → expiry. Persisted, because the
 // consent POST and the authorization endpoint's second pass may be answered by
 // two different request workers.
+// THE DECLARED TYPES, per realm, kept by the application registry's clock
+// (#758): `declaredTypes()` built a view of every application per call, and
+// a sign-in asked it several times (`asMetadata()` on every authorization,
+// `audienceFor()`, `bearerRefusedBy()`, `requiredAcrsOf()` at issuance) — 6%
+// of a request worker under a sign-in load. What it builds depends on the
+// registry and nothing else (no setting, no clock), so it is kept until
+// `applications.listingVersion()` moves: every write under ou=applications,
+// a write naming no DN, and a row another process wrote that this one
+// applied. With no clock (a test's stub) nothing is kept.
+const declaredHeld = realms.keyed(function (): { version: unknown;
+                                                 types: Record<string, Json> |
+                                                        null } {
+  return { version: null, types: null };
+});
+
+// Frozen, because every caller of `declaredTypes()` now shares one answer:
+// a caller that changed it would change it for the next request. None does
+// today; a new one that tries throws rather than corrupting it.
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    Object.keys(value as Record<string, unknown>).forEach(function (key) {
+      deepFreeze((value as Record<string, unknown>)[key]);
+    });
+  }
+  return value;
+}
+
 const consented = realms.map({ persist: 'authorization_details.consented',
                                // #333: `expires`, in ms. Beside it (#432
                                // phase 5) the details as the person LOWERED
@@ -308,9 +336,31 @@ class AuthorizationDetails {
    * @returns type to definition
    */
   declaredTypes(): Record<string, Json> {
+    const { log, applications } = this.deps;
+    log.debug("Entering AuthorizationDetails.declaredTypes().");
+    const version = typeof applications.listingVersion === 'function'
+      ? applications.listingVersion() : null;
+    if (version === null || version === undefined) {
+      log.debug("Leaving AuthorizationDetails.declaredTypes(). No clock.");
+      return this.buildDeclaredTypes();
+    }
+    const held = declaredHeld();
+    if (held.types && held.version === version) {
+      log.debug("Leaving AuthorizationDetails.declaredTypes(). Kept.");
+      return held.types;
+    }
+    held.types = deepFreeze(this.buildDeclaredTypes());
+    held.version = version;
+    log.debug("Leaving AuthorizationDetails.declaredTypes(). Built.");
+    return held.types;
+  }
+
+  // What `declaredTypes()` keeps: every application's declarations, read
+  // from the registry. Its warnings are said once per registry version.
+  private buildDeclaredTypes(): Record<string, Json> {
     const { log, applications, errorCodes } = this.deps;
     const self = this;
-    log.debug("Entering AuthorizationDetails.declaredTypes().");
+    log.debug("Entering AuthorizationDetails.buildDeclaredTypes().");
     const out: Record<string, Json> = {};
     const rows = applications.list().slice(0).sort(function (a, b) {
       return String(a.identifier) < String(b.identifier) ? -1 :
@@ -341,7 +391,7 @@ class AuthorizationDetails {
         out[definition.type] = self.resourceDefinition(definition, row);
       });
     });
-    log.debug("Leaving AuthorizationDetails.declaredTypes(). " +
+    log.debug("Leaving AuthorizationDetails.buildDeclaredTypes(). " +
               Object.keys(out).length + " type(s).");
     return out;
   }
