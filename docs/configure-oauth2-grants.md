@@ -463,7 +463,7 @@ In development mode any password is accepted except the reserved value
 A device with no browser shows the person a code, and the person approves it
 on another device.
 
-**Settings** (on `/admin/oauth2`; the values are from `sts_device_key_binding.js`):
+**Settings** (**Protocols → OAuth 2.0 / OIDC**, **Global settings** tab; the values are from `sts_device_key_binding.js`):
 
 ```bash
 api config/set '{"key":"oauth2.deviceAuthorization","value":true}'
@@ -566,7 +566,7 @@ JWS claims  {"iss":"https://issuer.example.test/jwtbearer","sub":"alice",
              "aud":"<BASE>/oauth2/token","iat":…,"exp":iat+120,"jti":"<random>"}
 ```
 
-**Settings** (on `/admin/oauth2`):
+**Settings** (**Protocols → OAuth 2.0 / OIDC**, **Global settings** tab):
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -750,7 +750,7 @@ person to be authenticated. The person approves on `/portal/ciba`, and the
 client collects the tokens by polling or is notified. Taken from
 `sts_ciba.js`.
 
-**Setting** (on `/admin/oauth2`):
+**Setting** (**Protocols → OAuth 2.0 / OIDC**, **Global settings** tab):
 ```bash
 api config/set '{"key":"oauth2.ciba","value":true}'
 ```
@@ -809,7 +809,7 @@ settings are `oid4vci.txCodeLength` (default 5) and `oid4vci.txCodeMaxAttempts`
 ## Client authentication methods
 
 `oauthTokenEndpointAuthMethod` names the methods: a checkbox per method on the
-application's page, and a list in the API (`applications/add` and
+application's **OAuth 2.0 / OpenID Connect** sub-tab, and a list in the API (`applications/add` and
 `applications/remove`, or an array in `create`). **A client may hold several**
 — a secret and a key pair, say — and the token endpoint accepts whichever one
 a request presents: a `client_assertion` is `private_key_jwt` or
@@ -831,7 +831,7 @@ more on the application:
 | `client_secret_jwt` | `oauthClientSecret`; optionally `oauthTokenEndpointAuthSigningAlg` (`HS256`/`HS384`/`HS512`) | a client assertion with an HMAC signature, addressed to the issuer or the token endpoint. An `HS512` key must be at least 512 bits (RFC 7518 section 3.2). | `sts_client_authentication.js` |
 | `private_key_jwt` | a key: `pki/issue` as in [JWT bearer](#jwt-bearer-rfc-7523), or `oauthJwks` or `oauthJwksUri` | `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer`, with `iss` = `sub` = the client_id and `aud` = the token endpoint | `sts_jwt_bearer_grant.js` |
 | `saml2_bearer` | `pki/issue` with `"purpose":"saml"` | `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:saml2-bearer`, with `Issuer` = `Subject` = the client_id | `sts_saml2_bearer_grant.js` |
-| `tls_client_auth` | a certificate issued on its page (**Credentials → Mutual TLS (RFC 8705) → Issue a TLS client certificate from this realm's CA**; API: `applications/issue-tls-client-certificate`), or exactly one of `oauthTlsClientAuthSubjectDn`, `…SanDns`, `…SanUri`, `…SanIp`, `…SanEmail` | the certificate in the TLS handshake; the token is bound to it (`cnf.x5t#S256`) | `sts_client_authentication.js` (a certificate from this realm's CA), `tests/rfc8705_mtls.js` (the subject parameters) |
+| `tls_client_auth` | a certificate issued on its **Credentials** tab (**Mutual TLS (RFC 8705) → Issue a TLS client certificate from this realm's CA**; API: `applications/issue-tls-client-certificate`), or exactly one of `oauthTlsClientAuthSubjectDn`, `…SanDns`, `…SanUri`, `…SanIp`, `…SanEmail` | the certificate in the TLS handshake; the token is bound to it (`cnf.x5t#S256`) | `sts_client_authentication.js` (a certificate from this realm's CA), `tests/rfc8705_mtls.js` (the subject parameters) |
 | `self_signed_tls_client_auth` | `oauthJwks` with `x5c`, or `oauthTlsClientCertificateThumbprint` | the certificate in the TLS handshake | `sts_client_authentication.js` (`x5c`), `tests/rfc8705_mtls.js` (thumbprint) |
 | `attest_jwt_client_auth` | the realm setting `oauth2.clientAttestationTrustAnchors` or `…TrustedKeys` | the `OAuth-Client-Attestation` and `…-PoP` headers | `sts_client_attestation.js` |
 
