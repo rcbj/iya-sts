@@ -11678,6 +11678,12 @@ const CODES = [
     summary: 'The session a refused step-up had started could not be ended ' +
       '(#729). The refusal stands.',
     spec: 'none — logged' },
+  { code: 'STS-FED-0194',
+    summary: 'A held federated answer — the linking step, the step-up on ' +
+      'risk or the newcomer\'s profile form — returned without the signer ' +
+      'that verified it, so the signer\'s revocation could not be asked ' +
+      'again and the step was refused rather than finished unchecked.',
+    spec: 'HTTP 500 page' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +

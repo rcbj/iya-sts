@@ -364,8 +364,20 @@ else's; `consume()` already returned the OAuth branch's promise. Pinning still
 decides WHICH key is believed; revocation decides whether its issuer still
 stands behind it. A partner key with no certificate is a bare key with nothing
 to look up, and the opaque-token OAuth 2.0 path verifies no signature at all.
-`tests/revocation_status.js` section 18 asserts the helper and reads the five
+`tests/revocation_status.js` section 18 asserts the helper and reads the
 `completeSignIn()` call sites out of the source.
+
+**A HELD ANSWER IS ASKED AGAIN WHEN ITS STEP RETURNS (2026-10-20).** Three
+steps hold a verified answer while the person does something here — the
+linking step's local sign-in, #729's step-up on risk and its newcomer's
+profile form — and finish it minutes later. Until then they finished on the
+check made before the person left, so a key revoked in between still signed
+somebody in. Every answer now carries `signer` where its signature was
+verified (`certificate`, `jwk` with the key, or `none` for the opaque token's
+profile answer), the three returns ask `signerStillAccepted()` again with it
+(`heldSigner()`), and a held answer with no `signer` is refused
+(`STS-FED-0194`) rather than finished unchecked. Seven `completeSignIn()`
+sites, six wrapped; the seventh is the opaque token's.
 
 ---
 

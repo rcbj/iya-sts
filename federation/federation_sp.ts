@@ -982,13 +982,18 @@ class FederationSp {
    * @param proceed - what completes the sign-in
    * @param jwk - the partner key that verified a JWT, if that is what is
    *   checked
+   * @param unsigned - true for an answer no signature was verified on (the
+   *   opaque OAuth 2.0 token's profile answer), re-entering from a held step:
+   *   there is no signer to look up, and the sign-in goes on
    * @returns a promise of what `proceed` or the refusal returns
    */
-  signerStillAccepted(req, res, record, proceed, jwk?) {
+  signerStillAccepted(req, res, record, proceed, jwk?, unsigned?: boolean) {
     const { errorCodes, revocationStatus, log } = this.deps;
     log.debug("Entering FederationSp.signerStillAccepted(). id=" +
               record.fedId);
-    const checked = jwk
+    const checked = unsigned === true
+      ? Promise.resolve({ refused: false, unsigned: true })
+      : jwk
       ? revocationStatus.registeredKeyVerdictFor(jwk,
                                                  'the key "' +
           (jwk.kid || '(no ' +
@@ -1014,6 +1019,12 @@ class FederationSp {
           'replace ' + (jwk ? 'the key' : 'fedSigningCertificate') +
           ' with the partner\'s current one.');
       }
+      if (verdict.unsigned) {
+        log.debug('signerStillAccepted(): the answer rested on no ' +
+                  'signature (an opaque access token), so no signer is ' +
+                  'looked up.');
+        return proceed();
+      }
       log.debug('signerStillAccepted(): ' +
                 revocationStatus.registeredSummary(verdict) + '.');
       return proceed();
@@ -1028,6 +1039,83 @@ class FederationSp {
       return this.refuse(res, record, 500, 'This service failed while ' +
                                       'reading the response', e.message);
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SIGNER A HELD ANSWER RESTED ON (batch 10, after #729).
+  //
+  // Three steps HOLD a verified answer while the person does something else
+  // and finish the sign-in when they come back: the linking step's local
+  // sign-in, the step-up on risk (`/federation/stepup/{handle}`) and the
+  // newcomer's profile form (`/federation/profile/{handle}`). Each comes
+  // back minutes later — up to `federation.requestTtlMin` — and a signing
+  // certificate or partner key revoked in between is exactly what
+  // signerStillAccepted() exists to catch, so a held answer is checked
+  // AGAIN when the step returns, and never finishes on the strength of a
+  // check made before the person left.
+  //
+  // So every answer carries `signer`, written where its signature was
+  // verified: `{ kind: 'certificate' }` for the relationship's
+  // fedSigningCertificate (SAML 2.0, SAML 1.1, WS-Federation), `{ kind:
+  // 'jwk', jwk }` for the partner key that verified a JWT (OIDC, a JWT
+  // access token), and `{ kind: 'none' }` for the opaque OAuth 2.0 token's
+  // profile answer, where no signature was verified at all. A held answer
+  // with no `signer` is refused (STS-FED-0194) rather than finished
+  // unchecked: nothing this module writes lacks one, so its absence is a
+  // defect, and the safe reading of a defect is no.
+  // ---------------------------------------------------------------------------
+  /**
+   * The `signer` an answer carries: what verified it, for the re-check when
+   * a held step returns.
+   *
+   * @param kind - `certificate`, `jwk` or `none`
+   * @param jwk - with `jwk`, the key that verified the token
+   * @returns the descriptor
+   */
+  static signerOf(kind: string, jwk?: any): { kind: string; jwk?: any } {
+    helpers.log.debug("Entering FederationSp.signerOf(). " + kind);
+    helpers.log.debug("Leaving FederationSp.signerOf().");
+    return kind === 'jwk' ? { kind: 'jwk', jwk: jwk || null }
+                          : { kind: kind === 'none' ? 'none' : 'certificate' };
+  }
+
+  /**
+   * Reads a held answer's `signer` into signerStillAccepted()'s two last
+   * arguments, or refuses the step when it has none.
+   *
+   * @param res - the response
+   * @param record - the federation relationship
+   * @param result - the held answer
+   * @returns `{ jwk, unsigned }`, or `{ refused }` with the refusal's return
+   */
+  private heldSigner(res, record, result): any {
+    const { errorCodes, log } = this.deps;
+    log.debug("Entering FederationSp.heldSigner(). id=" + record.fedId);
+    const signer = result && result.signer;
+    const kind = signer ? String(signer.kind || '') : '';
+    if (kind === 'none') {
+      log.debug("Leaving FederationSp.heldSigner(). Nothing was signed.");
+      return { jwk: undefined, unsigned: true };
+    }
+    if (kind === 'jwk' && signer.jwk && typeof signer.jwk === 'object') {
+      log.debug("Leaving FederationSp.heldSigner(). A partner key.");
+      return { jwk: signer.jwk, unsigned: false };
+    }
+    if (kind === 'certificate') {
+      log.debug("Leaving FederationSp.heldSigner(). The certificate.");
+      return { jwk: undefined, unsigned: false };
+    }
+    log.error(errorCodes.tag('STS-FED-0194') + 'federation: ' + record.fedId +
+              ': a held answer returned without the signer that verified ' +
+              'it; the step is refused rather than finished unchecked.');
+    errorCodes.mark(res, 'STS-FED-0194');
+    log.debug("Leaving FederationSp.heldSigner(). No signer.");
+    return { refused: this.refuse(res, record, 500, 'This service failed ' +
+                                  'while finishing the sign-in',
+      'The partner\'s answer was held while you were asked for something ' +
+      'here, and what verified it was not held with it, so whether that ' +
+      'signer may still be used cannot be asked. Start the federated ' +
+      'sign-in again.') };
   }
 
   // ---------------------------------------------------------------------------
@@ -2135,7 +2223,9 @@ class FederationSp {
         spNameQualifier: result.spNameQualifier || '',
         sessionIndex: result.sessionIndex || '',
         sessionNotOnOrAfter: Number(result.sessionNotOnOrAfter) || 0,
-        sid: result.sid || '', idToken: result.idToken || ''
+        sid: result.sid || '', idToken: result.idToken || '',
+        // What verified it, asked again when the step returns (heldSigner()).
+        signer: result.signer || null
       }
     });
     let target = '';
@@ -2316,12 +2406,21 @@ class FederationSp {
         context.username + '. Nothing was linked. Start the federated ' +
         'sign-in again.');
     }
+    // The signer, asked again: the answer was verified before the local
+    // sign-in this step waited for (heldSigner()).
+    const held = this.heldSigner(res, record, context.result);
+    if (held.refused !== undefined) {
+      log.debug("Leaving the federation linking endpoint. No signer held.");
+      return held.refused;
+    }
     log.debug("Leaving the federation linking endpoint. Linking " +
               context.username + ".");
-    return this.finishSignIn(req, res, record, context.result, mapped,
-                             Object.assign({}, decision, {
-                               how: 'confirmed', create: false,
-                               link: context.link || decision.link }));
+    return this.signerStillAccepted(req, res, record, () => {
+      return this.finishSignIn(req, res, record, context.result, mapped,
+                               Object.assign({}, decision, {
+                                 how: 'confirmed', create: false,
+                                 link: context.link || decision.link }));
+    }, held.jwk, held.unsigned);
   }
 
   // ---------------------------------------------------------------------------
@@ -3012,11 +3111,20 @@ class FederationSp {
     const proved = (latest.amr || []).map(String).filter(function (one) {
       return one !== 'federated';
     });
+    // The signer, asked again: the answer was verified before the second
+    // factor this step waited for (heldSigner()).
+    const held = this.heldSigner(res, record, context.result);
+    if (held.refused !== undefined) {
+      log.debug("Leaving the federation step-up endpoint. No signer held.");
+      return held.refused;
+    }
     log.debug("Leaving the federation step-up endpoint. Finishing " +
               context.username + ".");
-    return this.completeSignIn(req, res, record,
-      Object.assign({}, context.result, {
-        amr: this.federatedAmr(proved), acr: 'mfa', steppedUp: true }));
+    return this.signerStillAccepted(req, res, record, () => {
+      return this.completeSignIn(req, res, record,
+        Object.assign({}, context.result, {
+          amr: this.federatedAmr(proved), acr: 'mfa', steppedUp: true }));
+    }, held.jwk, held.unsigned);
   }
 
   // ---------------------------------------------------------------------------
@@ -3458,9 +3566,18 @@ class FederationSp {
     log.info('federation: the newcomer ' + context.username + ' through ' +
              record.fedId + ' gave ' + Object.keys(values).join(', ') +
              '; finishing the sign-in.');
+    // The signer, asked again: the answer was verified before the form this
+    // step waited for (heldSigner()).
+    const held = this.heldSigner(res, record, context.result);
+    if (held.refused !== undefined) {
+      log.debug("Leaving the federation profile submission. No signer held.");
+      return held.refused;
+    }
     log.debug("Leaving the federation profile submission. Finishing.");
-    return this.completeSignIn(req, res, record,
-      Object.assign({}, context.result, { profileSupplied: values }));
+    return this.signerStillAccepted(req, res, record, () => {
+      return this.completeSignIn(req, res, record,
+        Object.assign({}, context.result, { profileSupplied: values }));
+    }, held.jwk, held.unsigned);
   }
 
   // The values a newcomer gave, on the mapped attributes this sign-in
@@ -5143,6 +5260,7 @@ class FederationSp {
         bag: contents.bag,
         amr: this.federatedAmr([]),
         acr: contents.context || '',
+        signer: FederationSp.signerOf('certificate'),
         returnTo: this.fromContext(context).returnTo,
         connect: this.fromContext(context).connect,
         application: this.fromContext(context).application,
@@ -5367,6 +5485,7 @@ class FederationSp {
         sessionIndex: contents.sessionIndex,
         sessionNotOnOrAfter: bound.at,
         amr: this.federatedAmr([]), acr: contents.context || '',
+        signer: FederationSp.signerOf('certificate'),
         returnTo: this.fromContext(context).returnTo,
         connect: this.fromContext(context).connect,
         application: this.fromContext(context).application,
@@ -5976,6 +6095,7 @@ class FederationSp {
             idToken: String(record.fedEndSessionUrl || '').trim()
               ? String(idToken) : '',
             acr: reading.acr,
+            signer: FederationSp.signerOf('jwk', verified.jwk),
             returnTo: this.fromContext(context).returnTo,
             connect: this.fromContext(context).connect,
             application: this.fromContext(context).application,
@@ -6135,6 +6255,7 @@ class FederationSp {
             issuer: String(payload.iss || record.fedPeer || ''),
             amr: reading.amr,
             acr: reading.acr,
+            signer: FederationSp.signerOf('jwk', verified.jwk),
             returnTo: this.fromContext(context).returnTo,
             connect: this.fromContext(context).connect,
             application: this.fromContext(context).application,
@@ -6218,6 +6339,8 @@ class FederationSp {
           // one whose profile endpoint answered.
           issuer: String(record.fedPeer || ''),
           bag: reading.bag, amr: reading.amr, acr: reading.acr,
+          // No signature was verified on a profile endpoint's answer.
+          signer: FederationSp.signerOf('none'),
           returnTo: this.fromContext(context).returnTo,
           connect: this.fromContext(context).connect,
           application: this.fromContext(context).application,

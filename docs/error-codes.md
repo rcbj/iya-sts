@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4535** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4536** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 29
-* [Federation (`STS-FED`)](#sts-fed) — 170
+* [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 242
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 130
@@ -2628,6 +2628,7 @@ Raised from: federation/.
 | `STS-FED-0191` | A /federation/profile/{handle} form was sent five times without the values this service needs, so the step was ended and nothing was created (#729). | HTTP 400 page |
 | `STS-FED-0192` | A federated sign-in was refused after its step-up on risk, so the session the step-up's local second factor had started was ended through the ordinary sign-out (audit row, CAEP, back-channel Logout Tokens) and its cookie cleared: no session outlives a refused sign-in (#729). | none — the refusal's own page; logged |
 | `STS-FED-0193` | The session a refused step-up had started could not be ended (#729). The refusal stands. | none — logged |
+| `STS-FED-0194` | A held federated answer — the linking step, the step-up on risk or the newcomer's profile form — returned without the signer that verified it, so the signer's revocation could not be asked again and the step was refused rather than finished unchecked. | HTTP 500 page |
 
 ## STS-OIDFED
 
