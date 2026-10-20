@@ -998,7 +998,7 @@ their sessions and their account, to this portal, over OpenID CAEP and RISC.
 `ssf/ssf_receivers.ts` holds the design, `ssf/CLAUDE.md` argues it, and the A01
 half is above. Three things belong here.
 
-**IT IS UNDER *Your account* AND NOT UNDER *How you sign in*.** That section
+**IT IS UNDER *Your account* AND NOT UNDER *How I sign in*.** That section
 holds the CREDENTIALS on this person's entry, one page each, and every page in
 it is a control — a password form, a key list, an authenticator enrolment. This
 is not a control and not about a credential: it is a RECORD, and a reader
@@ -1245,7 +1245,7 @@ from `/admin/pki` is unaffected, which is the point of having the switch.
 
 ### Where it is filed, and the argument that was refused
 
-Under **How you sign in**, whose own description is *the credentials on your own
+Under **How I sign in**, whose own description is *the credentials on your own
 entry, one page each*. The argument for *Your account* — that this key never
 signs anybody IN, since there is no browser session at the end of it — was
 considered and refused: it is an argument about the section's TITLE rather than
