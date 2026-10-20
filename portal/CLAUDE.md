@@ -536,6 +536,18 @@ What that changed, and why each piece is the way it is:
   post-quantum passkeys are unknown in that account. The post-quantum name
   says its algorithm (`<username>+ml-dsa-65`) once every post-quantum key
   uses one. `authn/CLAUDE.md` (*Two lanes*) argues the rest.
+* **A post-quantum passkey required (#718)**: each row carries
+  `postQuantumRefused`, from `passkeyPolicy.postQuantumRefusal()` asked of
+  the key's algorithm under the person's selected profile — the same
+  question the sign-in asks, so the page and the refusal cannot disagree —
+  and the page draws `#passkey-post-quantum-refused` with
+  `portal.keys.postQuantumRefused` (seven languages; a warning, not a
+  refusal, so it is translated as `syncedRefused` is). Under
+  `registration-and-sign-in` the armed ceremony offers only ML-DSA and,
+  with both lanes on, `lanes` is `["pqc"]`, so the page asks nothing and
+  `begin`'s `classical` default becomes the post-quantum lane
+  (`webauthnPolicy.enrolmentLane()`). `authn/CLAUDE.md` (*A post-quantum
+  passkey required*) argues the rest.
 
 `tests/passkey_management.js` holds the credential layer, and
 `tests/vendored/sts_portal_backup_keys.js` holds the page over HTTP: the two
