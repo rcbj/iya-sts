@@ -54,6 +54,7 @@ const adminScope = require('../admin-ui/admin_scope');
 const WebKit = require('../admin-ui/web_kit');
 const KerberosTrustsPage = require('../kerberos/web_kerberos_trusts');
 const wire = require('./vendored/krb5_wire.js');
+const grants = require('./tools/cross_realm_grants');
 
 const log = require('bunyan').createLogger({
   name: 'kerberos_trusts_admin',
@@ -160,6 +161,13 @@ function setUp(t) {
     t.check(made.ok, 'precondition: trust realm ' + IDS[name] + ' with ' +
             'Kerberos on for ' + name, JSON.stringify(made.errors || []));
   });
+  // A principal of another realm holds only what it was granted (#430,
+  // rcbj 2026-10-19): BETA admits ALPHA's principals to its web service.
+  const admitted = grants.admitPartners(realms.get(IDS[BETA]), [SIDS[ALPHA]],
+                                        ['HTTP/web.beta.test'], BETA);
+  t.check(!admitted.length, 'precondition: ' + BETA + ' grants ' +
+          grants.ROLE + ' to ' + ALPHA + '\'s Domain Users and its web ' +
+          'service requires it', JSON.stringify(admitted));
   log.debug("Leaving setUp().");
 }
 

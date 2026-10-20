@@ -56,6 +56,7 @@ const kdc = require('../kerberos/krb5_kdc.js');
 const kcrypto = require('../kerberos/krb5_crypto.js');
 const trusts = require('../kerberos/krb5_trusts');
 const wire = require('./vendored/krb5_wire.js');
+const grants = require('./tools/cross_realm_grants');
 
 const log = require('bunyan').createLogger({ name: 'kerberos_trusts',
   level: process.env.LOG_LEVEL || 'info' });
@@ -700,6 +701,24 @@ async function run(t) {
   const c = makeRealm('kt-c', GAMMA);
   t.check(!!a && !!b && !!c, 'precondition: three trust realms, each with ' +
           'Kerberos on for its own Kerberos realm');
+  // A principal of another realm holds only what it was granted (#430,
+  // rcbj 2026-10-19): each realm admits the other two to its web service.
+  if (a && b && c) {
+    const admitted = [[a, ALPHA], [b, BETA], [c, GAMMA]].map(function (one) {
+      return grants.admitPartners(one[0], Object.keys(DOMAIN_SIDS)
+        .filter(function (name) {
+          return name !== one[1];
+        }).map(function (name) {
+          return DOMAIN_SIDS[name];
+        }), ['HTTP/web.' + one[1].toLowerCase()], one[1]);
+    }).reduce(function (all, some) {
+      return all.concat(some);
+    }, []);
+    t.check(!admitted.length, 'precondition: each realm grants ' +
+            grants.ROLE + ' to the others\' Domain Users and Computers and ' +
+            'its web service requires it (or EVERYBODY)',
+            JSON.stringify(admitted));
+  }
   try {
     if (a && b && c) {
       await pairedSection(t);

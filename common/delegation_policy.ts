@@ -128,6 +128,9 @@ interface DecideQuestion {
   actorRealm?: string;
   targetRealm?: string;
   foreignSource?: boolean;
+  // The SIDs a subject of another realm still carries after SID filtering
+  // (#430): the only grants, beside its name, that roles.js reads for it.
+  subjectSids?: string[];
 }
 
 // What `decide()` answers. `refusal` says which rule refused, so each door can
@@ -583,6 +586,13 @@ class DelegationPolicy {
       sourceId = String(question.source[0] || '');
     }
     const source = sourceId ? this.partyFacts(sourceId) : null;
+    // A FRONT END OF ANOTHER REALM with no entry here requires nothing HERE
+    // (#430): what its own entry requires is its realm's to ask, and was
+    // asked there before the evidence was issued or referred. Read as the
+    // default EVERYBODY it would refuse every subject of another realm,
+    // who holds no built-in role (`common/roles.js`).
+    const foreignSourceUnregistered = !!question.foreignSource && !!source &&
+      !source.registered;
     const asked = (question.targets || []).map(function (one) {
       return String(one || '').trim();
     }).filter(function (one) { return !!one; });
@@ -601,7 +611,7 @@ class DelegationPolicy {
     const facts = {
       subject: subject, actor: actor,
       source: { id: sourceId,
-                requiredRoles: sourceId
+                requiredRoles: sourceId && !foreignSourceUnregistered
                   ? applications.requiredRolesOf(sourceId) : [],
                 delegatesTo: source ? source.delegatesTo : [] },
       target: { id: targetId || (asked[0] || ''), count: asked.length,
@@ -621,16 +631,20 @@ class DelegationPolicy {
       actorRole: setting('delegation.actorRole') };
     if (question.trust) {
       facts.trust = question.trust;
-      // A USER OF ANOTHER REALM has no entry here, and so no roles from one;
-      // what they do hold is what every authenticated person holds
-      // (EVERYBODY, ALL_AUTHENTICATED_USERS) — the trust vouched for the
-      // authentication. Without it an application requiring EVERYBODY
-      // would refuse every foreign user for want of a role nobody lacks.
+      // A USER OF ANOTHER REALM has no entry here, and so no roles from one
+      // — and, since rcbj's decision of 2026-10-19, NOT the roles every
+      // person authenticated here holds either: EVERYBODY and
+      // ALL_AUTHENTICATED_USERS mean "authenticated in THIS realm". They
+      // hold only a role granted to them by name (`alice@PARTNER.TEST`) or
+      // to one of their FILTERED SIDs (`roles.js`, THE RESOLVER), so an
+      // application requiring only EVERYBODY refuses them (`authority`)
+      // until it is narrowed to a role somebody granted.
       if (!subject.registered) {
         let foreignRoles: string[] = [];
         try {
           foreignRoles = this.deps.roles.rolesOf({ kind: 'user',
-            name: subject.id, authenticated: true }) || [];
+            name: subject.id, authenticated: true, crossRealm: true,
+            sids: question.subjectSids || [] }) || [];
         } catch (e) {
           log.debug("Caught in DelegationPolicy.decide(): " +
                     ((e && e.message) || e));

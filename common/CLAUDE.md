@@ -5515,6 +5515,12 @@ across from the answer.
 
 ### `EVERYBODY` is what makes this off by default without being absent
 
+**Except for a principal that arrived through a Kerberos trust** (#430, rcbj
+2026-10-19): `rolesOf()` with `crossRealm: true` answers no built-in role at
+all, and a configured one only by the whole name or a filtered SID
+(`sids`). `kerberos/CLAUDE.md` (*A principal that arrived through a trust
+holds only its grants*) argues it and its consequence.
+
 Six roles are BUILT IN, computed from the context of the decision, and in no
 container: `EVERYBODY`, `ALL_AUTHENTICATED_USERS`,
 `ALL_UNAUTHENTICATED_USERS`, `ALL_APPLICATIONS`,

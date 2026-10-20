@@ -256,8 +256,9 @@ class Krb5Delegation {
    *   components; `rbcd` says resource-based delegation permitted a proxy
    *   request. ACROSS A TRUST (#430): `trustPartner`, the realm the ticket
    *   arrived from or is referred to, whose record's facts the policy reads,
-   *   and `requesterRealm` / `targetRealm` where those parties are of
-   *   another realm
+   *   `requesterRealm` / `targetRealm` where those parties are of another
+   *   realm, and `subjectSids`, the SIDs a subject of another realm carries
+   *   once SID-filtered
    * @returns `delegation_policy.decide()`'s decision
    */
   decide(question: Json): Json {
@@ -282,7 +283,11 @@ class Krb5Delegation {
       trust: trust, localRealm: question.realm,
       subjectRealm: question.subjectRealm || question.realm,
       actorRealm: requesterRealm, targetRealm: targetRealm,
-      foreignSource: requesterRealm !== question.realm
+      foreignSource: requesterRealm !== question.realm,
+      // A subject of another realm's filtered SIDs (#430): with its name,
+      // the only grants it holds a role by (`common/roles.js`).
+      subjectSids: Array.isArray(question.subjectSids)
+        ? question.subjectSids.map(String) : []
     } : {};
     const decision = delegationPolicy.decide(Object.assign({
       protocol: 'Kerberos',

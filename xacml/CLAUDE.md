@@ -1603,7 +1603,12 @@ the realm has it. A foreign subject or actor named `SPN@REALM` is exempt from
 the rules that ask this realm's registers about it (unregistered target,
 unknown actor, user-actor role, subject group) only across a trust, and the
 delegation and impersonation rules accept RBCD naming the foreign actor and a
-classic list vouched by the front end's realm. `tests/tools/exchange_oracle.js`
+classic list vouched by the front end's realm. **No rule grants a foreign
+subject a role**: what it holds arrives resolved, and since 2026-10-19 that
+is only what was granted to its name or its filtered SIDs — never EVERYBODY
+or ALL_AUTHENTICATED_USERS (`kerberos/CLAUDE.md`). `classic-across-realms`
+is asked in whichever realm is deciding, so each realm refuses on its own
+setting. `tests/tools/exchange_oracle.js`
 states every one of them independently, and both `exchange_policy` files run
 the across-a-trust product against it. `kerberos/CLAUDE.md` (*Delegation
 across a trust, built*) carries the reasoning.
