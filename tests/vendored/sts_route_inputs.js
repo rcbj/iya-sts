@@ -425,21 +425,56 @@ async function test() {
       // in this realm answers on purpose — scim, ssf and xacml.enabled, and
       // vcApi.enabled since #598 — and nothing here produces it by accident
       // (an uncaught throw is express's 500).
-      if ((answer.status >= 500 && answer.status !== 501) ||
-          answer.status === -1) {
+      if (answer.status === -1) {
+        timedOut.push(one);
+      } else if (answer.status >= 500 && answer.status !== 501) {
         failures.push(one.route.method + " " + one.route.path + " <- " +
-                      one.label + " => " +
-                      (answer.status === -1 ? "TIMED OUT" : answer.status));
+                      one.label + " => " + answer.status);
       }
     }
     log.debug("Leaving probeWorker().");
   };
+  // -----------------------------------------------------------------------
+  // A TIMEOUT IS ASKED AGAIN, ONCE, ALONE (2026-10-20, CI run 39464473145).
+  //
+  // What this job exists to catch is a handler that never answers THIS
+  // input — an uncaught throw in a callback, an event loop that stopped —
+  // and that is a property of the input, so it times out the second time
+  // too. What it caught in the `cluster` mode was neither: both nodes went
+  // quiet for nine seconds while a five-thousand-row burst of other jobs'
+  // writes replicated (STS-STORE-0039 and STS-CLUSTER-0018 on both, the
+  // read barrier giving up at its 4.6s deadline, the balancer showing two
+  // connections to node B closed by this probe at 8.1s with no response),
+  // and the two probes of `GET /logout/signout.css` that arrived in that
+  // window — a handler that sends a constant stylesheet — timed out while
+  // the other inputs to the same route a second earlier were answered. So a
+  // probe that times out is sent again, one at a time, after the pass, and
+  // only a second timeout is the finding; a 5xx is never retried, because a
+  // throw is a throw however busy the service was.
+  // -----------------------------------------------------------------------
+  const timedOut = [];
   const workers = [];
   for (let i = 0; i < concurrency; i++) {
     workers.push(probeWorker());
   }
   await Promise.all(workers);
-  log.info("[probe] " + probes + " probe(s), " + concurrency + " at a time.");
+  for (const one of timedOut) {
+    const again = await request(one.route.method, one.url,
+                                one.body ? one.body.data : null,
+                                one.body ? one.body.type : null);
+    log.info("[probe] " + one.route.method + " " + one.route.path + " <- " +
+             one.label + " timed out, and asked again alone answered " +
+             (again.status === -1 ? "nothing either" : again.status) + ".");
+    if (again.status === -1 ||
+        (again.status >= 500 && again.status !== 501)) {
+      failures.push(one.route.method + " " + one.route.path + " <- " +
+                    one.label + " => " +
+                    (again.status === -1 ? "TIMED OUT twice"
+                                         : "TIMED OUT, then " + again.status));
+    }
+  }
+  log.info("[probe] " + probes + " probe(s), " + concurrency + " at a time, " +
+           timedOut.length + " asked again after a timeout.");
 
   assert.ok(probes >= MINIMUM_PROBES,
     "only " + probes + " probes ran, and the floor is " + MINIMUM_PROBES +
