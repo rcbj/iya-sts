@@ -543,6 +543,22 @@
     "en": "1c2c57f79cea4fb0",
     "text": "Tills något under sfärens ou=users skrivs."
   },
+  "caches.store.ldap.service-accounts.title": {
+    "en": "cf6e6b4822e4f795",
+    "text": "Katalogens tjänstekonton"
+  },
+  "caches.store.ldap.service-accounts.description": {
+    "en": "c438b52f56cdcb94",
+    "text": "Namnen på en sfärs tjänstekonton, så att ett omfångsbeslut som frågar om en person äger ett inte frågar katalogen efter alla."
+  },
+  "caches.store.ldap.service-accounts.bound": {
+    "en": "3fab118dee48ec80",
+    "text": "Strukturell: en lista per sfär, lika stor som dess tjänstekonton."
+  },
+  "caches.store.ldap.service-accounts.lifetime": {
+    "en": "6d41d8c344106c1b",
+    "text": "Tills en skrivning rör en post som är, eller var, ett tjänstekonto; nästa läsning frågar då katalogen på nytt."
+  },
   "caches.store.ldap.subtree-listings.title": {
     "en": "89d5ba5e5411f55d",
     "text": "Listningar av katalogbehållare"

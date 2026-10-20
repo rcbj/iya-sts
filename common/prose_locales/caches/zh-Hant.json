@@ -543,6 +543,22 @@
     "en": "1c2c57f79cea4fb0",
     "text": "直到領域的 ou=users 下有任何寫入。"
   },
+  "caches.store.ldap.service-accounts.title": {
+    "en": "cf6e6b4822e4f795",
+    "text": "目錄服務帳戶"
+  },
+  "caches.store.ldap.service-accounts.description": {
+    "en": "c438b52f56cdcb94",
+    "text": "領域中服務帳戶的名稱，讓詢問某人是否擁有服務帳戶的範圍決策不必向目錄查詢全部服務帳戶。"
+  },
+  "caches.store.ldap.service-accounts.bound": {
+    "en": "3fab118dee48ec80",
+    "text": "結構性：每個領域一份清單，大小等於其服務帳戶數。"
+  },
+  "caches.store.ldap.service-accounts.lifetime": {
+    "en": "6d41d8c344106c1b",
+    "text": "直到某次寫入涉及一個現在是或曾經是服務帳戶的項目；下次讀取時會重新查詢目錄。"
+  },
   "caches.store.ldap.subtree-listings.title": {
     "en": "89d5ba5e5411f55d",
     "text": "目錄容器清單"

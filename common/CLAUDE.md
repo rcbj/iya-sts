@@ -12748,6 +12748,16 @@ roles), `protectionOf()`, and the administrator's mark (`setProtected()`). A
 asks these for the PDP, and an override of `access-control` may read them
 differently. A library (rule 3): every register is reached lazily.
 
+**`ownsAnything()` ASKS NOTHING OF THE STORE FOR AN ORDINARY PERSON (#759,
+2026-10-20)**, and it is still computed at the decision: the service accounts
+are the directory's kept names (`ldap/CLAUDE.md`, the service accounts'
+clock), the applications' owners come off the kept listing
+(`applications.ownerValues()`, no view of every application built), and both
+are current at the very next decision after a write. It asked the store for
+every service account and built a view of every application on every scope
+decision of every sign-in — about 7% of a request worker under a sign-in
+load. `tests/sign_in_owner_reads.js`.
+
 **OWNER_READ AND OWNER_WRITE ARE COMPUTED** (rcbj's decision 2), from the four
 owner attributes when a decision is made: `roles.js`'s ninth and tenth
 built-ins, and the first that AUTHORIZE a permission (`owner:read`,

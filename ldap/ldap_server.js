@@ -2485,6 +2485,10 @@ const serviceAccountListings = realms.keyed(function () {
   return { names: null, dnKeys: new Set(), version: -1, usersDn: '' };
 });
 
+// Its counter, set where it is registered with the other directory caches;
+// a no-op until then (the seed runs before that).
+let serviceAccountsCount = { hit: function () {}, miss: function () {} };
+
 // WHETHER THIS MODULE HAS FINISHED LOADING (#145), declared up here for the
 // group index's reason above: `putEntry()` runs during the seed, while this
 // file is still loading, and its membership note reads `groupRuleFor()`,
@@ -20747,9 +20751,11 @@ function serviceAccountNames() {
   const users = normalizeDn(usersDn());
   if (held.names && held.version === serviceAccountsVersion &&
       held.usersDn === users) {
+    serviceAccountsCount.hit();
     log.debug('Leaving serviceAccountNames(). Kept, ' + held.names.length);
     return held.names.slice(0);
   }
+  serviceAccountsCount.miss();
   const version = serviceAccountsVersion;
   const out = [];
   const keys = new Set();
@@ -25732,6 +25738,41 @@ function describeDirectoryCaches() {
           basis: 'group version (#618)'
         });
       });
+      return out;
+    }
+  });
+  // The service accounts by realm (#759), kept by their own clock.
+  serviceAccountsCount = cacheRegistry.register({
+    name: 'ldap.service-accounts',
+    title: 'Directory service accounts',
+    description: 'The names of a realm\'s service accounts, so a scope ' +
+      'decision that asks whether a person owns one does not ask the ' +
+      'directory for all of them.',
+    owner: 'ldap/ldap_server.js',
+    scope: 'realm',
+    maxEntries: oneIndexPerRealm,
+    bound: 'Structural: one list per realm, the size of its service ' +
+      'accounts.',
+    lifetime: function () {
+      log.debug("Entering the service accounts' lifetime().");
+      log.debug("Leaving the service accounts' lifetime().");
+      return 'Until a write touches an entry that is, or was, a service ' +
+        'account; the next read then asks the directory again.';
+    },
+    entries: function () {
+      log.debug("Entering the service accounts' entries().");
+      const out = [];
+      serviceAccountListings.existing().forEach(function (held, id) {
+        if (!held.names) {
+          return;
+        }
+        out.push({ realm: id, key: held.names.length +
+                     ' service account(s)',
+                   validUntil: null,
+                   valid: held.version === serviceAccountsVersion,
+                   basis: 'service account version (#759)' });
+      });
+      log.debug("Leaving the service accounts' entries().");
       return out;
     }
   });
