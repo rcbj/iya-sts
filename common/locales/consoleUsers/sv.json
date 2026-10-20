@@ -508,6 +508,7 @@
   "emailFactorBlock.needsWrite": "Att ange adressen kräver <strong>Admin Write</strong>.",
   "algorithmCell.postQuantum": "postkvant",
   "algorithmCell.insecure": "osäker",
+  "algorithmCell.lanePqc": "postkvantspår, bredvid en klassisk nyckel",
   "attestationCell.claimedTitle": "Inget om autentiseraren verifierades",
   "attestationCell.formatPolicy": " (format {format}, policy {policy})",
   "attestationCell.claimedTitleAfter": ". AAGUID:t, där det finns ett, är vad autentiseraren påstod.",

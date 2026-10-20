@@ -2528,7 +2528,13 @@ class UsersPage {
           t.html('consoleUsers.algorithmCell.postQuantum') + '</span>' : '') +
       (algorithm.insecure
         ? ' <span class="state-revoked">' +
-          t.html('consoleUsers.algorithmCell.insecure') + '</span>' : '');
+          t.html('consoleUsers.algorithmCell.insecure') + '</span>' : '') +
+      // THE POST-QUANTUM LANE (#643): a key created beside a classical one,
+      // under the person's second user handle. A classical key, and every
+      // key from before the lanes, says nothing more.
+      (algorithm.lane === 'pqc'
+        ? ' <span class="state-none">' +
+          t.html('consoleUsers.algorithmCell.lanePqc') + '</span>' : '');
   }
 
   // A key's attestation, for its row (#105): what the statement proved, or

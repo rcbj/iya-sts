@@ -508,6 +508,7 @@
   "emailFactorBlock.needsWrite": "Kailangan ng <strong>Admin Write</strong> para itakda ang address.",
   "algorithmCell.postQuantum": "post-quantum",
   "algorithmCell.insecure": "hindi secure",
+  "algorithmCell.lanePqc": "post-quantum lane, katabi ng isang classical na passkey",
   "attestationCell.claimedTitle": "Walang na-verify tungkol sa authenticator",
   "attestationCell.formatPolicy": " (format {format}, policy {policy})",
   "attestationCell.claimedTitleAfter": ". Ang AAGUID, kung mayroon, ay ang sinabi ng authenticator.",

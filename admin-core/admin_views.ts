@@ -13518,8 +13518,10 @@ class AdminViews {
                  // authenticator's claim, which is why it is beside it.
                  aaguid: one.aaguid || null,
                  // ITS SIGNATURE ALGORITHM (2026-10-01): name, COSE id,
-                 // and whether it is post-quantum or insecure.
+                 // and whether it is post-quantum or insecure — and its lane
+                 // (#643), there and here.
                  algorithm: credentials.keyAlgorithm(one),
+                 lane: credentials.keyLane(one),
                  attestation: one.attestation || null,
                  // WHAT THE PASSKEY PAGES SHOW (#470): the name a page draws
                  // (the label, else the default), the group — `device` or

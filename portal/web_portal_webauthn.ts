@@ -114,7 +114,8 @@ class PortalWebAuthn {
   // THE SIGNAL API (#470), WebAuthn Level 3 section 5.1.10: where the page
   // carries `#wa-signal`, the credential manager is told which of this
   // person's passkeys this service still accepts, and their name.
-  // Feature-detected and best-effort.
+  // Feature-detected and best-effort. ONCE PER LANE (#643): `#wa-signal-pqc`
+  // carries the post-quantum lane's own handle, name and ids, sent apart.
   /**
    * Sends the signals a `#wa-signal` element describes.
    *
@@ -158,6 +159,7 @@ class PortalWebAuthn {
    */
   static wire(doc: Json, window: Json, submit: (form: Json) => void): void {
     PortalWebAuthn.signal(doc.getElementById('wa-signal'), window);
+    PortalWebAuthn.signal(doc.getElementById('wa-signal-pqc'), window);
     const d = doc.getElementById('wa-data');
     const go = doc.getElementById('wa-go');
     if (!d || !go) {

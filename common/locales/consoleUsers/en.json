@@ -508,6 +508,7 @@
   "emailFactorBlock.needsWrite": "Setting the address needs <strong>Admin Write</strong>.",
   "algorithmCell.postQuantum": "post-quantum",
   "algorithmCell.insecure": "insecure",
+  "algorithmCell.lanePqc": "post-quantum lane, beside a classical passkey",
   "attestationCell.claimedTitle": "Nothing about the authenticator was verified",
   "attestationCell.formatPolicy": " (format {format}, policy {policy})",
   "attestationCell.claimedTitleAfter": ". The AAGUID, where there is one, is what the authenticator claimed.",

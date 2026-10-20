@@ -508,6 +508,7 @@
   "emailFactorBlock.needsWrite": "Establecer la dirección requiere <strong>Admin Write</strong>.",
   "algorithmCell.postQuantum": "poscuántico",
   "algorithmCell.insecure": "inseguro",
+  "algorithmCell.lanePqc": "vía poscuántica, junto a una llave de acceso clásica",
   "attestationCell.claimedTitle": "No se verificó nada sobre el autenticador",
   "attestationCell.formatPolicy": " (formato {format}, política {policy})",
   "attestationCell.claimedTitleAfter": ". El AAGUID, si lo hay, es lo que afirmó el autenticador.",

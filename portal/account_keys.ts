@@ -82,6 +82,11 @@ const ENROL_KEY_FORM = vz.object({
   // afterwards.
   kind: vt.opt(vt.oneOf(['passkey', 'security-key']))
     .describe('`begin`: which call to action was pressed.'),
+  // THE LANE (#643): a classical passkey or a post-quantum one, where the
+  // realm offers both. Carried on the pending enrolment, never read back.
+  lane: vt.opt(vt.oneOf(['classical', 'pqc']))
+    .describe('`begin`: `classical` (the default) or `pqc`, where the realm ' +
+              'offers a post-quantum passkey beside a classical one.'),
   enrolment_id: vt.opt(vt.base64url)
     .describe('`finish`: the pending enrolment the ceremony answers.'),
   credential: vz.string().max(validation.CAP.TEXT).optional()
@@ -195,6 +200,9 @@ class AccountKeys {
       algorithm: { text: String(algorithm.text || ''),
                    postQuantum: !!algorithm.postQuantum,
                    insecure: !!algorithm.insecure },
+      // THE LANE IT WAS CREATED IN (#643): `classical` (every key before the
+      // lanes) or `pqc`.
+      lane: credentials.keyLane(one),
       attestation: att ? {
         verified: !!att.verified, trusted: !!att.trusted,
         model: String(att.model || ''), type: String(att.type || ''),
@@ -230,23 +238,31 @@ class AccountKeys {
     const policy: Json = webauthnPolicy.settings();
     const username = caller.username;
     const pending: Json = credentials.pendingKeyEnrolmentFor(username);
+    // THE CAP COUNTS BOTH LANES (#643): one total, as `addKey()` holds it.
     const out: Json = { enabled: !!policy.enabled,
                         count: mechanisms.keys.length,
                         atCap: mechanisms.keys.length >=
                                policy.maxKeysPerPerson,
-                        roles: [], kinds: [], pending: null };
+                        roles: [], kinds: [], pending: null,
+                        // The lanes a new passkey may be created in (#643):
+                        // the page asks which only where there are two.
+                        lanes: webauthnPolicy.lanes() };
     if (pending) {
       const rpId = authn.rpIdOf(base);
+      const lane = String(pending.lane || 'classical');
+      // THE NAME THE PROMPT SHOWS (#533), the policy's userDisplayName
+      // first — the post-quantum lane's naming ML-DSA (#643).
+      const user = credentials.laneUser(username,
+        passkeyPolicy.displayNameFor(username,
+          String((caller.session.user || {}).name || username)), lane);
       out.pending = {
         id: pending.id, kind: pending.kind || '', role: pending.role,
-        challenge: pending.challenge, rpId: rpId, user: username,
+        lane: lane,
+        challenge: pending.challenge, rpId: rpId, user: user.name,
         userHandle: pending.userHandle || '',
-        // The name the prompt shows (#533), the policy's userDisplayName
-        // first.
-        display: passkeyPolicy.displayNameFor(username,
-          String((caller.session.user || {}).name || username)),
+        display: user.displayName,
         exclude: (pending.exclude || []).slice(0),
-        options: webauthnPolicy.creationOptions(rpId, pending.kind)
+        options: webauthnPolicy.creationOptions(rpId, pending.kind, lane)
       };
     }
     if (policy.mfaAllowed) {
@@ -267,31 +283,48 @@ class AccountKeys {
   // signal names exactly this person's credentials; a person holding only
   // keys registered under their name is sent none. Never while a ceremony is
   // armed.
+  //
+  // **ONE ENTRY PER LANE (#643)**: a credential manager keeps the classical
+  // and the post-quantum passkey as two accounts, each under its own user
+  // handle, so each is told its OWN handle, name and credential ids — one
+  // signal under the classical handle naming every key would tell it the
+  // post-quantum passkeys are unknown there and to forget them. A lane whose
+  // handle the person does not hold is not signalled. The post-quantum
+  // lane's name says its algorithm once the rows record one
+  // (`credentials.laneSignalUser()`).
   /**
-   * The Signal API's data, or null.
+   * The Signal API's data, one entry per lane whose handle is held.
    *
    * @param caller - the signed-in person
    * @param keys - the person's keys
    * @param base - the base the request arrived on
-   * @returns the data, or null
+   * @returns the entries, possibly none
    */
-  signalView(caller: AccountCaller, keys: Json[], base: string): Json {
+  signalView(caller: AccountCaller, keys: Json[], base: string): Json[] {
     const { log, credentials, passkeyPolicy, authn } = this.deps;
     log.debug("Entering AccountKeys.signalView().");
     const username = caller.username;
-    const handle = credentials.userHandleOf(username);
-    if (!handle) {
-      log.debug("Leaving AccountKeys.signalView(). No user handle is held.");
-      return null;
-    }
-    log.debug("Leaving AccountKeys.signalView().");
-    return { rpId: authn.rpIdOf(base), userId: handle,
-             accepted: keys.map(function (one: Json): string {
-               return one.credentialId;
-             }),
-             name: username,
-             display: passkeyPolicy.displayNameFor(username,
-               String((caller.session.user || {}).name || username)) };
+    const display = passkeyPolicy.displayNameFor(username,
+      String((caller.session.user || {}).name || username));
+    const rpId = authn.rpIdOf(base);
+    const out: Json[] = [];
+    credentials.LANES.forEach(function (lane: string): void {
+      const handle = credentials.userHandleOf(username, { lane: lane });
+      if (!handle) {
+        return;
+      }
+      const user = credentials.laneSignalUser(username, display, lane, keys);
+      out.push({ lane: lane, rpId: rpId, userId: handle,
+                 accepted: keys.filter(function (one: Json): boolean {
+                   return credentials.keyLane(one) === lane;
+                 }).map(function (one: Json): string {
+                   return one.credentialId;
+                 }),
+                 name: user.name, display: user.displayName });
+    });
+    log.debug("Leaving AccountKeys.signalView(). " + out.length +
+              " lane(s).");
+    return out;
   }
 
   /**
@@ -323,7 +356,8 @@ class AccountKeys {
       }),
       named: held ? String(named) : '',
       enrol: enrol,
-      signal: enrol.pending ? null : this.signalView(caller, keys, base)
+      // ONE PER LANE (#643); none while a ceremony is armed.
+      signals: enrol.pending ? [] : this.signalView(caller, keys, base)
     };
   }
 
@@ -370,7 +404,9 @@ class AccountKeys {
       // touched their key. `beginKeyEnrolment()` makes every one of those
       // checks.
       const begun: Json = credentials.beginKeyEnrolment(username, {
-        role: String(body.role || 'mfa'), kind: String(body.kind || '') });
+        role: String(body.role || 'mfa'), kind: String(body.kind || ''),
+        // The lane (#643), refused there where the realm does not offer it.
+        lane: String(body.lane || 'classical') });
       if (!begun.ok) {
         log.debug("Leaving AccountKeys.enrol(). Refused to start.");
         return refused(400, ctx.errorCodes.codeOf(begun) || 'STS-PORTAL-0033',
@@ -381,6 +417,7 @@ class AccountKeys {
         actor: username, outcome: 'success',
         summary: username + ' started creating a passkey',
         detail: { role: begun.role, kind: begun.kind || 'any',
+                  lane: begun.lane || 'classical',
                   excluded: begun.exclude.length,
                   address: websecurity.addressOf(req) }
       });
@@ -482,6 +519,7 @@ class AccountKeys {
                  ' credential',
         detail: { role: done.role, held: done.held,
                   algorithm: credentials.keyAlgorithm(enrolled).text,
+                  lane: credentials.keyLane(enrolled),
                   address: websecurity.addressOf(req) }
       });
       log.info('portal: ' + username + ' created a "' + done.role +
@@ -617,7 +655,9 @@ class AccountKeys {
           'what its attestation proved and whether the realm\'s passkey ' +
           'policy refuses it at sign-in. `enrol` says whether you may add ' +
           'one and, while a registration is waiting, the ceremony to run ' +
-          '(`enrol.pending`). `signal` is the WebAuthn Signal API\'s data.',
+          '(`enrol.pending`) and the lanes a passkey may be created in ' +
+          '(`enrol.lanes`, #643). `signals` is the WebAuthn Signal API\'s ' +
+          'data, one entry per lane whose user handle you hold.',
         query: KEYS_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
@@ -629,8 +669,8 @@ class AccountKeys {
         mirrors: 'POST ' + ctx.PORTAL + '/keys',
         summary: 'Begins, finishes or cancels adding a passkey',
         description: '`begin` mints a challenge and holds it (the policy ' +
-          'checked at the door); `finish` verifies the browser\'s ' +
-          'registration with the sign-in screen\'s address rules and ' +
+          'and the `lane`, #643, checked at the door); `finish` verifies ' +
+          'the browser\'s registration with the sign-in screen\'s address rules and ' +
           'answers `go` naming the new passkey; `cancel` drops the waiting ' +
           'one. A refusal carries the page\'s `view`.',
         body: ENROL_KEY_FORM,
