@@ -45,6 +45,14 @@ client cannot guess.
 * **A signed [MS-PAC]** in every ticket, built under `krb5.domainSid`, with
   `krb5.logonServer` as the LogonServer — and, while `krb5.pacClaims` is on,
   the client's **claims** (#493, [PAC claims](#pac-claims) below).
+* **A role a service requires** (`appRequiredRole` on the service's
+  application entry, its **Roles** tab) is asked before a service ticket is
+  issued — at the TGS, and at the AS for a service ticket asked for there
+  (`kinit -S`) — and refused `KDC_ERR_POLICY` (`STS-KRB-0039`), the e-text
+  naming the role. The entry is the one `create-service` and the KDC itself
+  make, `HTTP/web.example.com@EXAMPLE.COM`; an entry named by the bare SPN,
+  `HTTP/web.example.com`, is read first and decides when both exist (#747).
+  A ticket-granting ticket is not asked about.
 * **Renewable tickets**, bounded by `krb5.ticketLifetimeSeconds` and
   `krb5.renewLifetimeSeconds` (Active Directory's ten hours and seven days).
 * **Cross-realm referrals** through **Kerberos trusts**: one record per

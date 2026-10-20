@@ -2724,6 +2724,43 @@ nobody, so **nothing is owed to the parent project**.
 
 ---
 
+## A ROLE A SERVICE REQUIRES: ITS ENTRY BY EITHER NAME, AT THE TGS AND THE AS (#747, 2026-10-20)
+
+**Until #747 a role required on a Kerberos service's entry was not
+enforced.** Every door that makes the entry names it `SPN@REALM` —
+`create-service` (`krb5_person_keys.ts`'s `normaliseSpn()`), the TGS's own
+sighting (`applications.seen()` at the end of `answerTgsReq()`), the
+delegation seeds — while `answerTgsReq()` asked the issuance gate about the
+bare SPN, and the PEP's reads of `appRequiredRole` (`requiredRolesOf()`,
+`requiresNarrowedRoles()`) have no realm fallback. Only `protocolFactsOf()`
+tried both names, so the protocol declaration was read off the entry and
+the role requirement never was. `tests/tools/cross_realm_grants.js` wrote
+every requirement under both names to get round it.
+
+* **The KDC names the service `SPN@<answering realm>`** and the gate
+  resolves it ONCE, in `issuance_gate.js`'s `kerberosEntryOf()`, before
+  `protocolFactsOf()` and the decider: the bare SPN's entry if there is
+  one, then `SPN@REALM`, else the name as asked. The bare entry being read
+  first is what keeps it deciding exactly as before, and it is the order
+  `protocolFactsOf()` already used. The registry is the ambient trust
+  realm's, so a per-realm KDC (#33) reads its own realm's entries only.
+  No require was added here or in the gate (the lazy `./applications`
+  require was already `protocolFactsOf()`'s), so the parent's COPY closure
+  is unchanged.
+* **The AS asks too, for a service ticket asked for there** (`kinit -S`),
+  beside the risk decision in `answerAsReq()`: the same question, the same
+  refusal (`KDC_ERR_POLICY`, `STS-KRB-0039`). Before, the AS asked nothing
+  about roles, on the claim that an AS-REQ is answered with a TGT — true of
+  nearly every one, and a way round any service's requirement for the
+  rest. A TGT is still not asked about in either exchange.
+* **S4U2Self and S4U2Proxy** reach the same gate call in `answerTgsReq()`
+  (the service being the requester itself, or the target), so they follow
+  the same resolution; the cross-realm paths that answer with a referral
+  return before it, as before.
+* `tests/kerberos_service_roles.js` holds all of it: the `SPN@REALM` entry
+  refused and issued, the bare entry unchanged and preferred, another
+  realm's entry not applying, and the AS.
+
 ## PORT 88 IS ANSWERED IN A REQUEST WORKER (2026-10-07, rcbj's decision)
 
 **THE RACE.** The KDC answered TCP and UDP 88 in the FRONT process, from the

@@ -629,10 +629,10 @@ require `EVERYBODY` or that role (`appRequiredRole`, the application's
 
 The in-process job `kerberos_cross_realm_delegation.js` does this with a role
 named `trust-partners` (a name it invented), granted to each partner's
-`-513` and `-515` SIDs. It sets the requirement on the service under two
-names: the entry `HTTP/web.beta.test@BETA.TEST` and an entry named by the
-bare SPN, `HTTP/web.beta.test`, because the KDC's role check at the TGS looks
-the service up by the bare SPN.
+`-513` and `-515` SIDs, and sets the requirement on the service's entry,
+`HTTP/web.beta.test@BETA.TEST` — the name `create-service` gives it. An entry
+named by the bare SPN, `HTTP/web.beta.test`, is read first if you made one,
+so set the requirement on whichever of the two the service has.
 
 ### Delegation across the trust
 

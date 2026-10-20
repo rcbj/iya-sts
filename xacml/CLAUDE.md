@@ -1778,9 +1778,10 @@ application declared for nothing and a session are never refused by it.
 * **The gate supplies both** (`common/issuance_gate.js`'s `protocolFactsOf()`):
   the families from `FAMILIES_OF_KIND` or the caller's `protocolFamilies` (the
   SAML 2.0, SAML 1.1 and GNAP sites name theirs), the declaration off the entry
-  (a Kerberos service also as `<name>@<krb5.realm>`, since the KDC names it
-  without its realm). In product it makes the policy asked past the
-  `roles.enforceIssuance` shortcut, as risk and the device do.
+  (a Kerberos service by the entry `kerberosEntryOf()` resolves — the bare
+  SPN's, then `SPN@REALM`, #747 — which the PEP's role reads use too). In
+  product it makes the policy asked past the `roles.enforceIssuance`
+  shortcut, as risk and the device do.
 * **The PEP enforces the obligation** (`PROTOCOL_ATTRIBUTE.OBLIGATION`) before
   risk and where the role question was waived, as the device's: it is not about
   roles, and a step-up cannot answer it. `STS-XACML-0084` on the audit row; the
