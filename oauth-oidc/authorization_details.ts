@@ -207,6 +207,39 @@ const declaredHeld = realms.keyed(function (): { version: unknown;
   return { version: null, types: null };
 });
 
+// Described to `/admin/caches` (rule 3ap). One answer per realm.
+const declaredCount = cacheRegistry.register({
+  name: 'oauth2.declared-authorization-details-types',
+  title: 'Declared authorization_details types',
+  description: 'The RFC 9396 types a realm\'s applications declare, each ' +
+    'with the resource that answers for it, so an authorization does not ' +
+    'build a view of every application to find them.',
+  owner: 'oauth-oidc/authorization_details.ts',
+  scope: 'realm',
+  maxEntries: function (): number {
+    return 1;
+  },
+  bound: 'Structural: one answer per realm, the size of the types its ' +
+    'applications declare.',
+  lifetime: function (): string {
+    return 'Until anything under the realm\'s ou=applications changes; ' +
+      'the next read then builds it again.';
+  },
+  entries: function (): unknown[] {
+    const out: unknown[] = [];
+    declaredHeld.existing().forEach(function (held: Json, id: string): void {
+      if (!held.types) {
+        return;
+      }
+      out.push({ realm: id,
+                 key: Object.keys(held.types).length + ' type(s)',
+                 validUntil: null,
+                 basis: 'ou=applications version' });
+    });
+    return out;
+  }
+});
+
 // Frozen, because every caller of `declaredTypes()` now shares one answer:
 // a caller that changed it would change it for the next request. None does
 // today; a new one that tries throws rather than corrupting it.
@@ -346,9 +379,11 @@ class AuthorizationDetails {
     }
     const held = declaredHeld();
     if (held.types && held.version === version) {
+      declaredCount.hit();
       log.debug("Leaving AuthorizationDetails.declaredTypes(). Kept.");
       return held.types;
     }
+    declaredCount.miss();
     held.types = deepFreeze(this.buildDeclaredTypes());
     held.version = version;
     log.debug("Leaving AuthorizationDetails.declaredTypes(). Built.");

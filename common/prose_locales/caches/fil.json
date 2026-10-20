@@ -699,6 +699,22 @@
     "en": "bfe4788c0fa5b7fe",
     "text": "Ipinapatupad: 256 key set bawat realm; tinatanggal ang pinakaluma at kinukuha muli kapag kailangan na ulit."
   },
+  "caches.store.oauth2.declared-authorization-details-types.title": {
+    "en": "3f4c1bef936a03c4",
+    "text": "Mga idineklarang authorization_details type"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.description": {
+    "en": "5eba0c7bb76a5960",
+    "text": "Ang mga RFC 9396 type na idinedeklara ng mga application ng isang realm, bawat isa kasama ang resource na sumasagot dito, para hindi bumuo ang isang authorization ng view ng bawat application para mahanap ang mga ito."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.bound": {
+    "en": "d25b94e5d9062281",
+    "text": "Istruktural: isang sagot bawat realm, kasinlaki ng mga type na idinedeklara ng mga application nito."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.lifetime": {
+    "en": "3bfa4ec2d7a5b1f4",
+    "text": "Hanggang may magbago sa ilalim ng ou=applications ng realm; pagkatapos ay muli itong bubuuin ng susunod na read."
+  },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",
     "text": "Mga na-redeem na authorization code"

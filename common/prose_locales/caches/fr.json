@@ -699,6 +699,22 @@
     "en": "bfe4788c0fa5b7fe",
     "text": "Appliquée : 256 jeux de clés par domaine, le plus ancien étant supprimé puis récupéré à nouveau lorsqu’il est de nouveau nécessaire."
   },
+  "caches.store.oauth2.declared-authorization-details-types.title": {
+    "en": "3f4c1bef936a03c4",
+    "text": "Types authorization_details déclarés"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.description": {
+    "en": "5eba0c7bb76a5960",
+    "text": "Les types RFC 9396 que déclarent les applications d’un domaine, chacun avec la ressource qui en répond, afin qu’une autorisation ne construise pas une vue de chaque application pour les trouver."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.bound": {
+    "en": "d25b94e5d9062281",
+    "text": "Structurelle : une réponse par domaine, de la taille des types que déclarent ses applications."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.lifetime": {
+    "en": "3bfa4ec2d7a5b1f4",
+    "text": "Jusqu’à ce que quoi que ce soit change sous ou=applications du domaine ; la lecture suivante la reconstruit alors."
+  },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",
     "text": "Codes d’autorisation échangés"

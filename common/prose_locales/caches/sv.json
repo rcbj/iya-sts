@@ -699,6 +699,22 @@
     "en": "bfe4788c0fa5b7fe",
     "text": "Upprätthållen: 256 nyckeluppsättningar per sfär, där den äldsta släpps och hämtas igen nästa gång den behövs."
   },
+  "caches.store.oauth2.declared-authorization-details-types.title": {
+    "en": "3f4c1bef936a03c4",
+    "text": "Deklarerade authorization_details-typer"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.description": {
+    "en": "5eba0c7bb76a5960",
+    "text": "De RFC 9396-typer som en sfärs applikationer deklarerar, var och en med den resurs som svarar för den, så att en auktorisering inte bygger en vy av varje applikation för att hitta dem."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.bound": {
+    "en": "d25b94e5d9062281",
+    "text": "Strukturell: ett svar per sfär, lika stort som de typer dess applikationer deklarerar."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.lifetime": {
+    "en": "3bfa4ec2d7a5b1f4",
+    "text": "Tills något under sfärens ou=applications ändras; nästa läsning bygger det då på nytt."
+  },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",
     "text": "Inlösta auktoriseringskoder"

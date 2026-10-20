@@ -699,6 +699,22 @@
     "en": "bfe4788c0fa5b7fe",
     "text": "Aplicado: 256 conjuntos de claves por dominio; el más antiguo se descarta y se vuelve a obtener la próxima vez que se necesite."
   },
+  "caches.store.oauth2.declared-authorization-details-types.title": {
+    "en": "3f4c1bef936a03c4",
+    "text": "Tipos de authorization_details declarados"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.description": {
+    "en": "5eba0c7bb76a5960",
+    "text": "Los tipos RFC 9396 que declaran las aplicaciones de un dominio, cada uno con el recurso que responde por él, para que una autorización no construya una vista de cada aplicación para encontrarlos."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.bound": {
+    "en": "d25b94e5d9062281",
+    "text": "Estructural: una respuesta por dominio, del tamaño de los tipos que declaran sus aplicaciones."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.lifetime": {
+    "en": "3bfa4ec2d7a5b1f4",
+    "text": "Hasta que cambia cualquier cosa bajo ou=applications del dominio; la siguiente lectura la vuelve a construir."
+  },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",
     "text": "Códigos de autorización canjeados"
