@@ -479,6 +479,14 @@
     "en": "51871a2d4ac5a3aa",
     "text": "輪詢夥伴的 Shared Signals 串流為輪詢串流（RFC 8936）的每個聯盟關係：其所持有的 Security Event Token 會經過驗證、處理並確認。"
   },
+  "sched.jobs.ssf.internal-poll.title": {
+    "en": "61d86947032a491a",
+    "text": "主控台與入口網站的 Shared Signals 輪詢"
+  },
+  "sched.jobs.ssf.internal-poll.describe": {
+    "en": "e68a7ab4fba5e9f4",
+    "text": "此服務自己的管理主控台與使用者入口網站在每個領域中透過 RFC 8936 輪詢從 /ssf/poll 收取其串流上等待的安全事件權杖（Security Event Token）——經過驗證、記錄、處理並確認（#771）。"
+  },
   "sched.jobs.ssf.stream-maintenance.title": {
     "en": "7b2875452b588faa",
     "text": "Shared Signals 串流維護"

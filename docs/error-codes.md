@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4565** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4570** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -79,7 +79,7 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 138
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 125
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 48
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
@@ -3776,6 +3776,11 @@ Raised from: ssf/.
 | `STS-SSF-0132` | A Shared Signals act on a federation relationship whose signals are off (fedSignalsEnabled), or an unblock of a person the relationship has not blocked (#373). | console / /admin-api refusal (HTTP 400) |
 | `STS-SSF-0140` | A Shared Signals event about a non-human principal (#221 P5) could not be decided or started: a token-claims-change about an application's own token or role, the RISC account-purged of a deleted application entry, or the credential-change of a removed SPIFFE registration entry. The act itself stands. | none — logged; nothing is sent to a receiver |
 | `STS-SSF-0141` | Whether an application entry's credentials (client secrets, registered keys, key pairs, certificates) moved on a write could not be decided or announced, so no CAEP credential-change was sent for it (#221 P5). The write itself stands. | none — logged; nothing is sent to a receiver |
+| `STS-SSF-0142` | This service's own receivers were asked to poll a URL that is not this process's own loopback origin (#771). A programming error: the internal poll dials nothing else. | none — the poll is not made |
+| `STS-SSF-0143` | This service's own RFC 8936 poll endpoint answered one of its own two receivers with something other than a 200 and a JSON object (#771): the credential, the stream or the family refused it. | none — logged by the internal poll; nothing was collected |
+| `STS-SSF-0144` | The internal poll (#771) could not collect a surface's Security Event Tokens in a realm: the request failed or was refused. They stay queued on the stream and the next run tries again. | none — logged once per change of outcome |
+| `STS-SSF-0145` | A poll for one of this service's own receiver streams presented the wrong authorization header, or none (#771). Only this service's own receivers hold the credential. | RFC 8935 section 2.4 shape, err access_denied (HTTP 401) |
+| `STS-SSF-0146` | A Security Event Token was pushed to one of this service's own receive endpoints while its stream is delivered by poll (#771). Nothing is agreed to be pushed there. | RFC 8935 section 2.4 shape, err invalid_request (HTTP 400) |
 
 ## STS-RISK
 

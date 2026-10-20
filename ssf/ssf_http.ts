@@ -945,6 +945,186 @@ class SsfHttp {
   }
 
   // -------------------------------------------------------------------------
+  // THIS SERVICE'S OWN TWO RECEIVERS COLLECTING FROM THIS SERVICE'S OWN POLL
+  // ENDPOINT (#771, 2026-10-20). RFC 8936 turns the direction round: the
+  // RECEIVER dials, and what it dials is the transmitter. So this is not a
+  // push and `ssf.pushDelivery` does not govern it — that setting is about
+  // POSTing an event OUT to an address a receiver chose, and this request
+  // goes to one address only, this process's own loopback origin, which is
+  // refused here for anything else.
+  //
+  // **THE SAME PIN AS `pushSet()`**, for the same reason and in the same
+  // three forms: the trust anchor while there is one, this process's own leaf
+  // for a supplied certificate with none (#311), and plain http only where
+  // the listener is http. A redirect is not followed and the answer is
+  // bounded by `ssf.pushMaxResponseBytes` times the batch, since a poll's
+  // answer carries many SETs where a push's carries none.
+  // -------------------------------------------------------------------------
+  /**
+   * Polls this service's own RFC 8936 endpoint, on the loopback origin only,
+   * as one of its own two receivers.
+   *
+   * @param url - the poll endpoint, on `loopbackOrigin()`
+   * @param request - the RFC 8936 poll request
+   * @param authorizationHeader - the receiver's credential
+   * @param maxEvents - the batch asked for, which bounds the answer's size
+   * @returns a promise of `{ ok, status, json, why, errorCode }`; it never
+   * rejects
+   */
+  pollOwn(url: unknown, request: unknown, authorizationHeader: string,
+          maxEvents: number): Promise<{ ok: boolean; status: number;
+            json: any; why: string; errorCode?: string }> {
+    const { log, loadTlsServer, userAgent } = this.deps;
+    log.debug("Entering SsfHttp.pollOwn().");
+    if (!this.isOwnLoopback(url)) {
+      log.debug("Leaving SsfHttp.pollOwn(). Not this process.");
+      return Promise.resolve({ ok: false, status: 0, json: null,
+        errorCode: 'STS-SSF-0142',
+        why: 'pollOwn() dials this process\'s own loopback origin and ' +
+             'nothing else, and ' + String(url) + ' is not it' });
+    }
+    const target = new URL(String(url).trim());
+    const secure = target.protocol === 'https:';
+    let anchor = '';
+    let ownLeaf = '';
+    if (secure) {
+      try {
+        anchor = String(loadTlsServer().serverCertificate().trustAnchorPem ||
+                        '');
+        ownLeaf = String(loadTlsServer().serverCertificate().fingerprint256 ||
+                         '');
+      } catch (e) {
+        log.debug("Caught in SsfHttp.pollOwn(): " + ((e && e.message) || e));
+        log.debug("Leaving SsfHttp.pollOwn(). No server certificate.");
+        return Promise.resolve({ ok: false, status: 0, json: null,
+          errorCode: 'STS-SSF-0035',
+          why: 'this service\'s own TLS certificate could not be read to ' +
+               'verify the connection against: ' + ((e && e.message) || e) });
+      }
+    }
+    const body = Buffer.from(JSON.stringify(request || {}), 'utf8');
+    const headers: Record<string, string | number> = {
+      'Content-Type': 'application/json',
+      'Content-Length': body.length,
+      'Accept': 'application/json',
+      'User-Agent': userAgent,
+      'Authorization': String(authorizationHeader || '')
+    };
+    const limit = this.maxBodyBytes() * Math.max(1, Number(maxEvents) || 1);
+    const timeoutMs = this.timeoutMs();
+    log.debug("Leaving SsfHttp.pollOwn(). Dialling " + target.origin + '.');
+    return new Promise(function (resolve) {
+      const done = function (result: { ok: boolean; status: number;
+          json: any; why: string; errorCode?: string }): void {
+        log.debug("Entering done().");
+        resolve(result);
+        log.debug("Leaving done().");
+      };
+      const requestOptions: https.RequestOptions = {
+        protocol: target.protocol,
+        hostname: target.hostname,
+        port: target.port || (secure ? 443 : 80),
+        path: target.pathname + target.search,
+        method: 'POST',
+        headers: headers,
+        rejectUnauthorized: secure,
+        ca: anchor ? [anchor] : undefined
+      };
+      // Pinned: the anchor with the name check skipped (the certificate
+      // names this service and the connection names the loopback address),
+      // or exactly this process's own leaf. See pushSet().
+      if (secure) {
+        requestOptions.checkServerIdentity = function (host: string,
+            cert: { fingerprint256?: string }) {
+          const norm = function (f: string): string {
+            return String(f || '').replace(/:/g, '').toLowerCase();
+          };
+          if (anchor) {
+            return undefined;
+          }
+          return ownLeaf && norm(cert && cert.fingerprint256) === norm(ownLeaf)
+            ? undefined
+            : new Error('the loopback peer did not present this ' +
+                        'process\'s own certificate');
+        };
+      }
+      let request = null;
+      try {
+        request = (secure ? https : http).request(requestOptions,
+                                                  function (response) {
+          const status = response.statusCode || 0;
+          const chunks: Buffer[] = [];
+          let bytes = 0;
+          let overflowed = false;
+          response.on('data', function (chunk: Buffer) {
+            if (overflowed) {
+              return;
+            }
+            bytes += chunk.length;
+            if (bytes > limit) {
+              overflowed = true;
+              response.destroy();
+              return;
+            }
+            chunks.push(chunk);
+          });
+          response.on('end', function () {
+            if (overflowed) {
+              return done({ ok: false, status: status, json: null,
+                errorCode: 'STS-SSF-0037',
+                why: 'it answered with more than ' + limit + ' bytes' });
+            }
+            let json = null;
+            try {
+              json = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+            } catch (e) {
+              log.debug("Caught in a callback in pollOwn(): " +
+                        ((e && e.message) || e));
+              json = null;
+            }
+            if (status === 200 && json && typeof json === 'object') {
+              return done({ ok: true, status: status, json: json, why: '' });
+            }
+            return done({ ok: false, status: status, json: json,
+              errorCode: 'STS-SSF-0143',
+              why: 'it answered ' + status + (json && json.err
+                ? ': ' + String(json.err) + ' — ' +
+                  String(json.description || '').slice(0, 300) : '') });
+          });
+          response.on('error', function (e) {
+            log.debug("Caught in a callback in pollOwn(): " +
+                      ((e && e.message) || e));
+            done({ ok: false, status: status, json: null,
+              errorCode: 'STS-SSF-0040',
+              why: 'the response failed: ' + e.message });
+          });
+        });
+      } catch (e) {
+        log.debug("Caught in a callback in pollOwn(): " +
+                  ((e && e.message) || e));
+        return done({ ok: false, status: 0, json: null,
+          errorCode: 'STS-SSF-0041',
+          why: 'the request could not be built: ' + e.message });
+      }
+      request.setTimeout(timeoutMs, function () {
+        request.destroy();
+        done({ ok: false, status: 0, json: null, errorCode: 'STS-SSF-0042',
+          why: 'it did not answer within ' + timeoutMs +
+               'ms (ssf.pushTimeoutMs)' });
+      });
+      request.on('error', function (e) {
+        log.debug("Caught in a callback in pollOwn(): " +
+                  ((e && e.message) || e));
+        done({ ok: false, status: 0, json: null, errorCode: 'STS-SSF-0043',
+          why: 'the request failed: ' + (e.code ? e.code + ' — ' : '') +
+               e.message });
+      });
+      request.write(body);
+      request.end();
+    });
+  }
+
+  // -------------------------------------------------------------------------
   // THE PUSH CAP (2026-09-14): at most `ssf.pushConcurrency` pushes in flight
   // in this process, the rest waiting in order, at most `ssf.pushBacklog` of
   // them.
@@ -1245,5 +1425,6 @@ export = {
   PUSH_TRANSPORT: PUSH_TRANSPORT,
   allowedHosts: slot.forward('allowedHosts'),
   urlProblem: slot.forward('urlProblem'),
-  pushSet: slot.forward('pushSet')
+  pushSet: slot.forward('pushSet'),
+  pollOwn: slot.forward('pollOwn')
 };

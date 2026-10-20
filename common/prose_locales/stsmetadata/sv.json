@@ -1176,16 +1176,16 @@
     "text": "ICKE-SPEC. Portalens enda stilmall (#568)."
   },
   "stsmetadata.endpoints./portal/signals/receive.what": {
-    "en": "88962f04a48dd187",
-    "text": "PUSH-LEVERANS ENLIGT RFC 8935 AVSNITT 2.1, MED DEN HÄR TJÄNSTEN I BÅDA ÄNDAR (2026-09-10). Portalens ström namnger den här sökvägen som sin `delivery.endpoint_url`, på den här tjänstens egen loopback-adress, och `ssf/ssf_http.ts` POSTar varje SET hit som application/secevent+jwt med strömmens `authorization_header`. DET ÄR EN RIKTIG HTTP-BEGÄRAN MED AVSIKT: att lämna händelsen till sidan inom processen skulle hoppa över kroppen, mediatypen, auktoriseringshuvudet och signaturen, vilket är allt en mottagare gör — samma argument som `common/oidc_rp.ts` för om att lösa in en auktoriseringskod inom processen, fört på nytt för ett annat protokoll. OAUTENTISERAD VIA SESSION MEN INTE OBEVAKAD: det den kontrollerar är bärartoken på dess egen ström, präglad per ström och per start och given till ingenting annat än den här tjänstens egen sändare, jämförd i konstant tid; därefter `aud`, med nekan `invalid_audience` för en SET adresserad till någon annan; därefter signaturen. En felformad eller feladresserad token REGISTRERAS OCH NEKAS snarare än kastas, eftersom det som kom fram är just frågan som ställs. Avsiktligt INTE hastighetsbegränsad, vilket varje slutpunkt för inloggningsuppgifter i den filen är: en begränsare skulle tyst kasta någons meddelande om inaktiverat konto under belastning."
+    "en": "b5f30a87646c3fed",
+    "text": "PUSH-LEVERANS ENLIGT RFC 8935 AVSNITT 2.1, MED DEN HÄR TJÄNSTEN I BÅDA ÄNDAR (2026-09-10) — FÖR EN STRÖM SOM SATTS TILLBAKA TILL PUSH sedan #771, som gjorde portalens förinställda ström till en RFC 8936-pollningsström som portalen hämtar från /ssf/poll; så länge den är det nekas en push hit. Satt till push namnger strömmen den här sökvägen som sin `delivery.endpoint_url`, på den här tjänstens egen loopback-adress, och `ssf/ssf_http.ts` POSTar varje SET hit som application/secevent+jwt med strömmens `authorization_header`. DET ÄR EN RIKTIG HTTP-BEGÄRAN MED AVSIKT: att lämna händelsen till sidan inom processen skulle hoppa över kroppen, mediatypen, auktoriseringshuvudet och signaturen, vilket är allt en mottagare gör — samma argument som `common/oidc_rp.ts` för om att lösa in en auktoriseringskod inom processen, fört på nytt för ett annat protokoll. OAUTENTISERAD VIA SESSION MEN INTE OBEVAKAD: det den kontrollerar är bärartoken på dess egen ström, präglad per ström och per start och given till ingenting annat än den här tjänstens egen sändare, jämförd i konstant tid; därefter `aud`, med nekan `invalid_audience` för en SET adresserad till någon annan; därefter signaturen. En felformad eller feladresserad token REGISTRERAS OCH NEKAS snarare än kastas, eftersom det som kom fram är just frågan som ställs. Avsiktligt INTE hastighetsbegränsad, vilket varje slutpunkt för inloggningsuppgifter i den filen är: en begränsare skulle tyst kasta någons meddelande om inaktiverat konto under belastning."
   },
   "stsmetadata.endpoints./portal/signals/receive.effect": {
     "en": "cae5ee202c7c115e",
     "text": "registrerar en Security Event Token som levererats till användarportalen"
   },
   "stsmetadata.endpoints./portal/signals/receive.coverage": {
-    "en": "ec6133bbe750c0f0",
-    "text": "full för mottagning enligt RFC 8935 avsnitt 2.1: mediatypen, auktoriseringshuvudet, 202 med tom kropp och nekandeformen {err, description} i avsnitt 2.4. Den implementerar inte RFC 8936-pollning i den här änden — den här mottagaren är en push-mottagare — och ingenting här gör omförsök, vilket är sändarens sida av samma avsiktliga utelämnande."
+    "en": "e0809edeada1161b",
+    "text": "full för mottagning enligt RFC 8935 avsnitt 2.1: mediatypen, auktoriseringshuvudet, 202 med tom kropp och nekandeformen {err, description} i avsnitt 2.4. Den är bara push-halvan — portalens pollningshalva är jobbet ssf.internal-poll (#771) — och ingenting här gör omförsök, vilket är sändarens sida av samma avsiktliga utelämnande."
   },
   "stsmetadata.endpoints./portal/claim-sources/callback.what": {
     "en": "fe33bd3204e812ee",

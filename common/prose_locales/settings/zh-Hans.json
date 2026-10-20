@@ -6992,12 +6992,20 @@
     "text": "将控制台和门户注册为接收方"
   },
   "ssf.internalReceivers|description": {
-    "en": "29e7cb1d4e0c30f3",
-    "text": "本服务是否为其自身的管理控制台和用户门户预置 Shared Signals 流，使两者各自在自己的端点上通过 RFC 8935 推送接收每个 CAEP 和 RISC 事件，并在 /admin/signals 和 /portal/signals 上显示收到的内容。它们是普通的流——在 /admin/ssf 上暂停、缩小或删除其中一个，它会保持该状态直到重启。注意 ssf.pushDelivery 对这一投递的管辖与对其他任何投递相同：关闭时，事件会在两个流上排队，不会到达任一页面。"
+    "en": "1a148e2b3a63a17d",
+    "text": "本服务是否为其自身的管理控制台和用户门户预置 Shared Signals 流，使两者各自接收每个 CAEP 和 RISC 事件——每隔 ssf.internalPollMs 通过 RFC 8936 轮询从本服务自己的 /ssf/poll 收取（#771）——并在 /admin/signals 和 /portal/signals 上显示收到的内容。它们是普通的流——在 /admin/ssf 上暂停、缩小或删除其中一个，它会保持该状态直到重启。"
   },
   "ssf.internalReceivers|restartReason": {
     "en": "75c18a7223a2e0a3",
     "text": "这两个流在 require ssf/ssf.ts 时以及构建每个领域时预置，因此原地关闭此项会留下已存在的流，而开启也不会创建任何流"
+  },
+  "ssf.internalPollMs|label": {
+    "en": "245d4495769ca599",
+    "text": "控制台和门户轮询间隔（毫秒）"
+  },
+  "ssf.internalPollMs|description": {
+    "en": "b80cedcb611f2fd3",
+    "text": "本服务自己的管理控制台和用户门户多久收取一次其流中保存的内容：通过 RFC 8936 轮询从 /ssf/poll 收取（ssf.internal-poll 调度作业），每个请求最多 ssf.pollMaxEvents 个 SET。这是安全事件令牌（Security Event Token）在任一界面看到并据此行动之前最长的等待时间。0 关闭该作业，此时事件会在两个流上排队，不会到达任一页面。"
   },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",

@@ -42,26 +42,42 @@
 // it has to verify, addressed to an audience it has to recognise.
 //
 // ---------------------------------------------------------------------------
-// DELIVERY IS RFC 8935 PUSH, OVER THE LOOPBACK INTERFACE, AND IN-PROCESS
-// DELIVERY WAS WRITTEN FIRST AND TAKEN OUT.
+// DELIVERY IS RFC 8936 POLL, OVER THE LOOPBACK INTERFACE, SINCE #771
+// (2026-10-20) — AND IN-PROCESS DELIVERY WAS WRITTEN FIRST AND TAKEN OUT.
 //
-// Handing the SET to the inbox by function call would have skipped the body,
-// the media type, the authorization header and the signature — which is to say
-// it would have skipped everything a receiver does, leaving only the part that
+// Handing the SET to the inbox by function call would have skipped the
+// request, the authorization header and the signature — which is to say it
+// would have skipped everything a receiver does, leaving only the part that
 // looks run. That is `oidc_rp.js`'s own argument about redeeming an
 // authorization code in process, made again rather than cited, because this is
 // a different protocol and the skipped steps are different steps.
 //
-// So the stream's `delivery.endpoint_url` is this service's own address and
-// `ssf_http.ts` dials it like any other receiver — with its certificate pinned,
-// the three lines `oidc_rp.js`'s back channel uses. `ssf_http.ts`'s
-// `isOwnLoopback()` carries the two bounds that do not apply to this one
-// address and why.
+// **IT WAS RFC 8935 PUSH UNTIL #771**: the stream's `delivery.endpoint_url`
+// was this service's own receive path and `ssf_http.ts` POSTed every SET to
+// it, one request each. Every password write sends CAEP credential-change to
+// both surfaces, so under a load of twenty writes a second that was forty
+// loopback requests a second through the front process, each answered on the
+// one request worker the batch lane is confined to — which then missed the
+// read barrier often enough to be the sign-in's five-second p95 on 8081.
+// rcbj's decision on #771: keep them genuine receivers and change the
+// delivery method, so each surface COLLECTS from this service's own
+// `/ssf/poll` — `ssf.pollMaxEvents` SETs to a request — with the credential
+// below, from the `ssf.internal-poll` scheduler job, every
+// `ssf.internalPollMs`. Every SET is still verified, and its `typ`, issuer
+// and audience checked, by the code a push went through (`take()`), and
+// acknowledged (or refused, in `setErrs`) on the next request.
 //
-// **`ssf.pushDelivery` IS NOT ONE OF THE EXEMPTIONS.** With it off this service
-// makes no outbound request at all and both internal receivers go silent. That
-// is said at seeding time, on both inbox pages and in `status()` below, rather
-// than left to be discovered as "the page shows nothing".
+// **WHAT IT COSTS IS LATENCY**: a SET waits on its stream for up to one poll
+// interval before a surface sees it, so a signal that ends a console or a
+// portal session ends it up to `ssf.internalPollMs` later than a push did.
+// The receive endpoints stay, and answer a push only for a stream an operator
+// has set back to push.
+//
+// `ssf_http.ts`'s `pollOwn()` dials this process's own loopback origin and
+// nothing else, with `pushSet()`'s pin. **IT IS NOT A PUSH, SO
+// `ssf.pushDelivery` DOES NOT GOVERN IT**: that setting stops this service
+// POSTing an event to an address a receiver chose, and here the receiver is
+// this service and the address is its own.
 //
 // ---------------------------------------------------------------------------
 // THE STREAMS ARE IN EVERY REALM, AND FOR A REASON OF THEIR OWN.
@@ -205,6 +221,11 @@ SURFACES.forEach(function (one) {
 // inbox cap pushes it out; nothing reads it.
 // ---------------------------------------------------------------------------
 const inbox = realms.map({ persist: 'ssf_receivers.inbox' });
+
+// The internal poll's last failure per `<realm>|<surface>`, so that a poll
+// failing every second is logged when it starts failing and when it stops,
+// and not between (#771). This process's own; never persisted.
+const pollOutcomes = new Map<string, string>();
 
 // ---------------------------------------------------------------------------
 // THE BEARER TOKEN ON A SEEDED STREAM, AND WHY IT IS DERIVED RATHER THAN
@@ -611,32 +632,26 @@ class SsfReceivers {
       // Before anything is looked for: a store carried over from before the
       // id was derived may hold several of these. See sweepDuplicates().
       this.sweepDuplicates(surface);
-      if (this.streamFor(surface.id)) {
+      const existing = this.streamFor(surface.id);
+      if (existing) {
+        this.moveToPoll(surface, existing);
         log.debug('seedStreams(): ' + surface.id + ' already has a stream in ' +
                   'this realm and it was left alone.');
         return;
       }
-      const endpoint = this.endpointFor(surface);
       const created = streams.createStream({
         events_requested: wanted,
         description: surface.label + ' (this service\'s own ' +
                      surface.inboxPath + ')',
+        // POLL SINCE #771 — see the header. RFC 8936 has no member a
+        // receiver sets here: the poll endpoint is the transmitter's, and the
+        // credential is the one `receiverToken()` derives, which the surface
+        // PRESENTS at `/ssf/poll` where a push used to carry it to the
+        // surface. Derived rather than random since 2026-09-11, so that the
+        // several processes of a dispatched service agree on it without
+        // anybody telling them.
         delivery: {
-          method: streams.DELIVERY_PUSH,
-          endpoint_url: endpoint,
-          // A CREDENTIAL THIS SERVICE MINTS FOR ITSELF, per stream and per
-          // start. It is what the receive endpoint checks, and it is the reason
-          // that endpoint can sit outside the console's gate without being a
-          // hole: `delivery.authorization_header` is the one member of a stream
-          // configuration that IS a credential, and until this stream existed
-          // nothing in this service ever set one — so the code path that sends
-          // it had never run against a receiver that reads it.
-          //
-          // **DERIVED RATHER THAN RANDOM SINCE 2026-09-11**, so that the
-          // several processes of a dispatched service seed the same token
-          // without anybody telling them. See `receiverToken()` above for what
-          // a random one cost.
-          authorization_header: this.receiverToken(surface)
+          method: streams.DELIVERY_POLL
         }
       }, { issuer: this.issuerForSeeding(), principal: 'internal',
            // ON THE CONTEXT AND NOT IN THE BODY ABOVE — see createStream(). The
@@ -676,17 +691,44 @@ class SsfReceivers {
         'and it stays that way until a restart.');
       made++;
     });
-    if (made && !config.value('ssf.pushDelivery')) {
-      log.warn('ssf: the admin console and the user portal are registered as ' +
-               'receivers in the "' + realms.currentId() + '" realm and ' +
-               'NOTHING WILL REACH THEM: ssf.pushDelivery is off, so this ' +
-               'service makes no outbound request at all — including the ' +
-               'one to itself. Both inbox pages say so. Turn it on, or ' +
-               'accept that the events queue on the two streams and are ' +
-               'visible on /admin/ssf.');
-    }
     log.debug("Leaving SsfReceivers.seedStreams(). " + made + ' created.');
     return made;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A STREAM SEEDED AS PUSH BEFORE #771, MOVED TO POLL.
+  //
+  // "An existing stream is left exactly as it is" is about what somebody
+  // MEANT — a pause, narrowed event types — and a store from before #771
+  // holds these two as push streams to this service's own receive path
+  // because that is how they were seeded, not because anybody chose it. So
+  // that one member moves, once, and nothing else: the status, the event
+  // types, the queue and the counters stay, and what was queued is collected
+  // by the first poll. A push stream delivering anywhere ELSE was set so by
+  // an operator, and is left alone.
+  // ---------------------------------------------------------------------------
+  private moveToPoll(surface?, record?) {
+    const { log, audit, realms, streams } = this.deps;
+    log.debug("Entering SsfReceivers.moveToPoll(). " + surface.id);
+    const delivery = record.delivery || {};
+    if (delivery.method !== streams.DELIVERY_PUSH ||
+        String(delivery.endpoint_url || '') !== this.endpointFor(surface)) {
+      log.debug("Leaving SsfReceivers.moveToPoll(). Not a seeded push " +
+                "stream.");
+      return false;
+    }
+    record.delivery = { method: streams.DELIVERY_POLL };
+    streams.note(record, 'delivery', 'Moved from RFC 8935 push to RFC 8936 ' +
+      'poll (#771): this service\'s own ' + surface.label + ' now collects ' +
+      'its events from /ssf/poll, many to a request, rather than being ' +
+      'POSTed each one.');
+    audit.audit({ action: 'ssf.stream.delivery', category: 'signals',
+      protocol: 'SSF', channel: 'internal', outcome: 'success',
+      target: record.stream_id,
+      summary: 'The ' + surface.label + '\'s receiver stream in the "' +
+        realms.currentId() + '" realm moved from push to poll delivery' });
+    log.debug("Leaving SsfReceivers.moveToPoll(). Moved.");
+    return true;
   }
 
   // The issuer a seeded stream carries. There is no request to read a Host
@@ -786,6 +828,18 @@ class SsfReceivers {
             'delivered here. It is seeded at startup and is an ordinary ' +
             'stream — if it was deleted, it stays deleted until a restart.' } };
     }
+    // A POLL STREAM IS NOT PUSHED TO (#771): nothing is agreed to arrive here,
+    // and the stream carries no authorization_header for a push to present.
+    if ((record.delivery || {}).method !== this.deps.streams.DELIVERY_PUSH) {
+      log.debug("Leaving SsfReceivers.accept(). A poll stream.");
+      errorCodes.mark(req && req.res, 'STS-SSF-0146');
+      return { status: 400, entry: null,
+        body: { err: 'invalid_request',
+          description: 'The ' + surface.label + '\'s stream in the "' +
+            realms.currentId() + '" realm is delivered by RFC 8936 poll: ' +
+            'this receiver collects its events from /ssf/poll, and nothing ' +
+            'is agreed to be pushed here.' } };
+    }
     // -------------------------------------------------------------------------
     // THE CREDENTIAL. The stream's own `delivery.authorization_header`,
     // compared in constant time.
@@ -857,6 +911,30 @@ class SsfReceivers {
     }
     const contentType = String((req.headers || {})['content-type'] || '')
       .split(';')[0].trim().toLowerCase();
+    log.debug("Leaving SsfReceivers.accept(). Taken.");
+    return this.take(surface, record, token, {
+      res: req.res, contentType: contentType, via: 'push',
+      // RECORDED AND NOT REFUSED, which was `/ssf/receive`'s decision (#593
+      // deleted it) and is made here on its own terms: a transmitter that
+      // sends a SET as `application/jwt` is very slightly wrong, the event
+      // did arrive, and a receiver that refused it would be testing the
+      // transmitter's pedantry. What it must not do is go unsaid, so it is a
+      // column on the page.
+      correctMediaType: contentType === transport.SET_MEDIA_TYPE });
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT A RECEIVER DOES WITH A SET, HOWEVER IT ARRIVED (#771). A push reaches
+  // it from `accept()` once the stream's credential matched; a poll from
+  // `acceptPolled()`, the credential having been this receiver's to present.
+  // Everything from here is the same code for both, which is what keeps the
+  // two delivery methods from coming to disagree about what is checked.
+  // ---------------------------------------------------------------------------
+  private take(surface?, record?, token?, how?): Loose {
+    const { log, audit, errorCodes, events, iso, randomId } = this.deps;
+    log.debug("Entering SsfReceivers.take(). " + surface.id);
+    const res = how.res;
+    const contentType = how.contentType;
     const read = events.readSet(token);
     const verdict = events.verifySet(token, read.header);
     const claims = read.claims || {};
@@ -867,12 +945,9 @@ class SsfReceivers {
       // Its digest and never the SET (#614): see `inbox`.
       tokenDigest: stsCrypto.credentialDigest(token),
       contentType: contentType,
-      // RECORDED AND NOT REFUSED, which was `/ssf/receive`'s decision (#593
-      // deleted it) and is made here on its own terms: a transmitter that sends a SET
-      // as `application/jwt` is very slightly wrong, the event did arrive, and
-      // a receiver that refused it would be testing the transmitter's pedantry.
-      // What it must not do is go unsaid, so it is a column on the page.
-      correctMediaType: contentType === transport.SET_MEDIA_TYPE,
+      correctMediaType: !!how.correctMediaType,
+      // `push` or `poll` (#771): how this SET reached the receiver.
+      via: how.via,
       header: read.header,
       claims: read.claims,
       problem: read.problem,
@@ -921,7 +996,7 @@ class SsfReceivers {
     entry.reactions = this.actOn(surface, entry);
     this.record_(surface.id, entry);
     audit.audit({ action: 'ssf.event.receive', category: 'signals',
-      protocol: 'SSF', channel: 'http',
+      protocol: 'SSF', channel: how.via === 'poll' ? 'poll' : 'http',
       outcome: (read.problem || !entry.audienceOk || !entry.issuerOk ||
                 !entry.typOk) ? 'failure' : 'success',
       errorCode: read.problem ? 'STS-SSF-0069'
@@ -933,12 +1008,13 @@ class SsfReceivers {
                (entry.verified ? ' and verified' : ''),
       detail: { surface: surface.id, stream: record.stream_id,
         types: Object.keys(claims.events || {}),
-        audienceOk: entry.audienceOk, contentType: contentType } });
+        audienceOk: entry.audienceOk, contentType: contentType,
+        via: how.via } });
 
     if (read.problem) {
-      log.debug("Leaving SsfReceivers.accept(). Malformed.");
-      errorCodes.mark(req.res, 'STS-SSF-0069');
-      log.debug("Leaving SsfReceivers.accept().");
+      log.debug("Leaving SsfReceivers.take(). Malformed.");
+      errorCodes.mark(res, 'STS-SSF-0069');
+      log.debug("Leaving SsfReceivers.take().");
       return { status: 400, entry: entry,
         body: { err: 'invalid_request',
           description: read.problem +
@@ -947,8 +1023,8 @@ class SsfReceivers {
             'being asked.' } };
     }
     if (!entry.typOk) {
-      log.debug("Leaving SsfReceivers.accept(). Not explicitly typed.");
-      errorCodes.mark(req.res, 'STS-SSF-0104');
+      log.debug("Leaving SsfReceivers.take(). Not explicitly typed.");
+      errorCodes.mark(res, 'STS-SSF-0104');
       return { status: 400, entry: entry,
         body: { err: 'invalid_request',
           description: 'This Security Event Token\'s header has typ ' +
@@ -957,8 +1033,8 @@ class SsfReceivers {
             'and is on ' + surface.inboxPath + '.' } };
     }
     if (!entry.issuerOk) {
-      log.debug("Leaving SsfReceivers.accept(). Wrong issuer.");
-      errorCodes.mark(req.res, 'STS-SSF-0105');
+      log.debug("Leaving SsfReceivers.take(). Wrong issuer.");
+      errorCodes.mark(res, 'STS-SSF-0105');
       return { status: 400, entry: entry,
         body: { err: 'invalid_issuer',
           description: 'This Security Event Token\'s iss is ' +
@@ -972,9 +1048,9 @@ class SsfReceivers {
                ' addressed to ' + JSON.stringify(claims.aud) + ', and it ' +
                'answers to "' + surface.audience + '". It is recorded and ' +
                'refused.');
-      log.debug("Leaving SsfReceivers.accept(). Wrong audience.");
-      errorCodes.mark(req.res, 'STS-SSF-0070');
-      log.debug("Leaving SsfReceivers.accept().");
+      log.debug("Leaving SsfReceivers.take(). Wrong audience.");
+      errorCodes.mark(res, 'STS-SSF-0070');
+      log.debug("Leaving SsfReceivers.take().");
       return { status: 400, entry: entry,
         body: { err: 'invalid_audience',
           description: 'This receiver is "' + surface.audience + '" and that ' +
@@ -983,17 +1059,202 @@ class SsfReceivers {
     }
     // Refused in product mode whatever the setting says (#117).
     if (!entry.verified && this.deps.mode.refusesUnverifiedSignals()) {
-      log.debug("Leaving SsfReceivers.accept(). Signature required.");
-      errorCodes.mark(req.res, 'STS-SSF-0071');
-      log.debug("Leaving SsfReceivers.accept().");
+      log.debug("Leaving SsfReceivers.take(). Signature required.");
+      errorCodes.mark(res, 'STS-SSF-0071');
+      log.debug("Leaving SsfReceivers.take().");
       return { status: 400, entry: entry,
         body: { err: 'invalid_key', description: entry.verificationNote } };
     }
     // 202 with an EMPTY body, which is what RFC 8935 section 2.3 says. A
     // document here would be something a transmitter could come to depend on
     // that no receiver has to send.
-    log.debug("Leaving SsfReceivers.accept(). Accepted.");
+    log.debug("Leaving SsfReceivers.take(). Accepted.");
     return { status: 202, entry: entry, body: null };
+  }
+
+  // ---------------------------------------------------------------------------
+  // POLL DELIVERY, THE RECEIVER'S HALF (#771). See the header.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether a poll at `/ssf/poll` for one of this service's own receiver
+   * streams presented that receiver's credential, compared in constant time.
+   * `/ssf/poll` asks it instead of its ordinary gate for an internal stream,
+   * which no remote caller owns.
+   *
+   * @param record - the internal stream named by the poll
+   * @param presented - the request's `Authorization` header
+   * @returns true when it is the surface's own credential
+   */
+  authorizesPoll(record?, presented?) {
+    const { log } = this.deps;
+    log.debug("Entering SsfReceivers.authorizesPoll().");
+    const surface = this.surfaceOf(record && record.internalSurface);
+    const ok = !!surface && this.enabled() &&
+               this.sameSecret(String(presented || ''),
+                               this.receiverToken(surface));
+    log.debug("Leaving SsfReceivers.authorizesPoll(). " + ok);
+    return ok;
+  }
+
+  /**
+   * Takes one SET a surface collected by poll (RFC 8936) from its stream in
+   * the ambient realm, through the same checks and the same inbox a push
+   * goes through (`take()`).
+   *
+   * @param surfaceId - the surface's id
+   * @param token - the SET, as the poll answer carried it
+   * @returns `{ status, body, entry }`: 202 with the entry when it passed
+   * every check, else 400 with RFC 8935 section 2.4's `{ err, description }`
+   */
+  acceptPolled(surfaceId?, token?): Loose {
+    const { log } = this.deps;
+    log.debug("Entering SsfReceivers.acceptPolled(). " + surfaceId);
+    const surface = this.surfaceOf(surfaceId);
+    const record = surface && this.enabled() ? this.streamFor(surface.id)
+                                             : null;
+    const text = String(token || '').trim();
+    if (!record || (record.delivery || {}).method !==
+                     this.deps.streams.DELIVERY_POLL || !text) {
+      log.debug("Leaving SsfReceivers.acceptPolled(). Nothing to take.");
+      // error-code: none — the poll loop's own; it goes back in setErrs
+      return { status: 400, entry: null,
+        body: { err: 'invalid_request',
+          description: !text ? 'The poll answer carried an empty SET.'
+            : 'This receiver has no poll stream in this realm.' } };
+    }
+    log.debug("Leaving SsfReceivers.acceptPolled().");
+    return this.take(surface, record, text, { res: null,
+      // RFC 8936 section 2.2 carries each SET as a JSON string in an
+      // application/json answer, so there is no per-SET media type to be
+      // wrong about.
+      contentType: 'application/json', via: 'poll', correctMediaType: true });
+  }
+
+  // ONE SURFACE'S STREAM IN THE AMBIENT REALM, DRAINED: ask, take each SET,
+  // and acknowledge (or refuse, in `setErrs`) on the next request, until the
+  // transmitter has nothing more and nothing is left to acknowledge — the
+  // shape of `ssf_transmitters.ts`'s `pollOnce()`. Bounded by what was
+  // waiting when it began, so a stream filling as fast as it is drained is
+  // left for the next run rather than holding this one.
+  private async pollSurface(surface?, record?, waiting?): Promise<Loose> {
+    const { log, config, realms, transport } = this.deps;
+    log.debug("Entering SsfReceivers.pollSurface(). " + surface.id);
+    const out: Loose = { requests: 0, received: 0, acknowledged: 0,
+                         refused: 0, why: '' };
+    const url = transport.loopbackOrigin() + realms.currentPrefix() +
+                '/ssf/poll';
+    const batch = Math.max(1, Number(config.value('ssf.pollMaxEvents')) || 1);
+    const rounds = Math.ceil(Math.max(1, Number(waiting) || 0) / batch) + 1;
+    let ack: string[] = [];
+    let setErrs: Loose = {};
+    for (let i = 0; i <= rounds; i++) {
+      const last = i === rounds;
+      const asked: Loose = { returnImmediately: true,
+        stream_id: record.stream_id, maxEvents: last ? 0 : batch };
+      if (ack.length) {
+        asked.ack = ack;
+      }
+      if (Object.keys(setErrs).length) {
+        asked.setErrs = setErrs;
+      }
+      const answer = await transport.pollOwn(url, asked,
+        this.receiverToken(surface), batch);
+      out.requests++;
+      out.acknowledged += ack.length;
+      ack = [];
+      setErrs = {};
+      if (!answer.ok) {
+        out.why = answer.why;
+        out.errorCode = answer.errorCode;
+        break;
+      }
+      const sets = (answer.json && answer.json.sets) || {};
+      Object.keys(sets).forEach((jti) => {
+        const taken = this.acceptPolled(surface.id, sets[jti]);
+        out.received++;
+        if (taken.status === 202) {
+          ack.push(jti);
+        } else {
+          out.refused++;
+          setErrs[jti] = { err: String((taken.body || {}).err ||
+                                       'invalid_request'),
+                           description: String((taken.body || {})
+                             .description || '') };
+        }
+      });
+      if (last || (!answer.json.moreAvailable && !ack.length &&
+                   !Object.keys(setErrs).length)) {
+        break;
+      }
+    }
+    log.debug("Leaving SsfReceivers.pollSurface(). " +
+              JSON.stringify(out));
+    return out;
+  }
+
+  /**
+   * The `ssf.internal-poll` job's body (#771): in every realm, each surface
+   * whose stream is a poll stream with something waiting collects it from
+   * this service's own `/ssf/poll`. A failure is logged once per change of
+   * outcome, and what was not collected stays queued for the next run.
+   *
+   * @returns a promise of the totals
+   */
+  async pollAll(): Promise<Loose> {
+    const { log, errorCodes, realms, streams } = this.deps;
+    log.debug("Entering SsfReceivers.pollAll().");
+    const total: Loose = { streams: 0, requests: 0, received: 0,
+                           acknowledged: 0, refused: 0, failed: 0 };
+    if (!this.enabled()) {
+      log.debug("Leaving SsfReceivers.pollAll(). Off.");
+      return total;
+    }
+    for (const realm of realms.list()) {
+      await realms.run(realm, async () => {
+        for (const surface of SURFACES) {
+          const record = this.streamFor(surface.id);
+          if (!record || (record.delivery || {}).method !==
+                         streams.DELIVERY_POLL) {
+            continue;
+          }
+          // What THIS process sees waiting. A SET its replica has not yet
+          // applied is collected by the next run; an empty stream is not
+          // dialled at all, which is what keeps a realm nobody uses free.
+          const waiting = streams.queueOf(record).length;
+          if (!waiting) {
+            continue;
+          }
+          total.streams++;
+          const one = await this.pollSurface(surface, record, waiting);
+          total.requests += one.requests;
+          total.received += one.received;
+          total.acknowledged += one.acknowledged;
+          total.refused += one.refused;
+          const key = realms.currentId() + '|' + surface.id;
+          const was = pollOutcomes.get(key) || '';
+          if (one.why) {
+            total.failed++;
+            if (was !== one.why) {
+              log.error(errorCodes.tag('STS-SSF-0144') + 'ssf: the ' +
+                        surface.label + ' could not collect its events in ' +
+                        'the "' + realms.currentId() + '" realm: ' + one.why +
+                        (one.errorCode ? ' (' + one.errorCode + ')' : '') +
+                        '. They stay queued on ' + record.stream_id +
+                        ' and the next run tries again; this is logged ' +
+                        'again only when the outcome changes.');
+            }
+            pollOutcomes.set(key, one.why);
+          } else if (was) {
+            log.info('ssf: the ' + surface.label + ' is collecting its ' +
+                     'events in the "' + realms.currentId() + '" realm ' +
+                     'again.');
+            pollOutcomes.delete(key);
+          }
+        }
+      });
+    }
+    log.debug("Leaving SsfReceivers.pollAll(). " + JSON.stringify(total));
+    return total;
   }
 
   // ---------------------------------------------------------------------------
@@ -1491,7 +1752,7 @@ class SsfReceivers {
    * @returns the status, or null for an unknown surface
    */
   status(surfaceId?) {
-    const { log, config, events, realms, streams } = this.deps;
+    const { log, config, events, realms, streams, transport } = this.deps;
     log.debug("Entering SsfReceivers.status(). " + surfaceId);
     const surface = this.surfaceOf(surfaceId);
     if (!surface) {
@@ -1525,7 +1786,15 @@ class SsfReceivers {
         aud: record.aud,
         status: record.status,
         statusReason: record.statusReason,
-        endpoint_url: (record.delivery || {}).endpoint_url || '',
+        // `push` or `poll` (#771), and where: for poll, the endpoint this
+        // surface collects from, which is the transmitter's.
+        delivery: (record.delivery || {}).method === streams.DELIVERY_POLL
+          ? 'poll' : 'push',
+        endpoint_url: (record.delivery || {}).method === streams.DELIVERY_POLL
+          ? transport.loopbackOrigin() + realms.currentPrefix() +
+            '/ssf/poll?stream_id=' + encodeURIComponent(record.stream_id)
+          : (record.delivery || {}).endpoint_url || '',
+        pollEveryMs: Number(config.value('ssf.internalPollMs')) || 0,
         delivers: record.events_delivered.length,
         requested: record.events_requested.length,
         caepDelivered: record.events_delivered.filter((uri) => {
@@ -1556,7 +1825,14 @@ class SsfReceivers {
         'stream, so if it was deleted at /admin/ssf or through /admin-api it ' +
         'stays deleted until a restart.');
     } else {
-      if (!out.pushDelivery) {
+      const polled = out.stream.delivery === 'poll';
+      if (polled && !out.stream.pollEveryMs) {
+        out.why.push('ssf.internalPollMs is 0, so the ssf.internal-poll ' +
+          'job is off and this surface collects nothing from its poll ' +
+          'stream. Events are still built and QUEUED on it (' +
+          out.stream.queued + ' waiting) and are visible at /admin/ssf.');
+      }
+      if (!polled && !out.pushDelivery) {
         out.why.push('ssf.pushDelivery is off, so this service makes no ' +
           'outbound request — including the one to itself. Events are still ' +
           'built and QUEUED on the stream (' + out.stream.queued +
@@ -1782,6 +2058,9 @@ export = {
   streamFor: slot.forward('streamFor'),
   endpointFor: slot.forward('endpointFor'),
   accept: slot.forward('accept'),
+  acceptPolled: slot.forward('acceptPolled'),
+  authorizesPoll: slot.forward('authorizesPoll'),
+  pollAll: slot.forward('pollAll'),
   listFor: slot.forward('listFor'),
   isAbout: slot.forward('isAbout'),
   isSetTyp: SsfReceivers.isSetTyp,

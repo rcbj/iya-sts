@@ -119,6 +119,8 @@
   "sched.jobs.ssf.dead-letter-sweep.describe": "Deletes this process's expired dead letters, probes dead streams that are due (one node only) and logs the summary of what was dead-lettered since the last sweep.",
   "sched.jobs.ssf.foreign-poll.title": "Federation partners' Shared Signals poll",
   "sched.jobs.ssf.foreign-poll.describe": "Polls every federation relationship whose partner's Shared Signals stream is a poll stream (RFC 8936): the Security Event Tokens it holds are verified, acted on and acknowledged.",
+  "sched.jobs.ssf.internal-poll.title": "Console and portal Shared Signals poll",
+  "sched.jobs.ssf.internal-poll.describe": "This service's own admin console and user portal collect the Security Event Tokens waiting on their streams, in every realm, over RFC 8936 poll from /ssf/poll — verified, recorded, acted on and acknowledged (#771).",
   "sched.jobs.ssf.stream-maintenance.title": "Shared Signals stream maintenance",
   "sched.jobs.ssf.stream-maintenance.describe": "Pauses, disables or deletes a stream whose receiver has been inactive for ssf.inactivityTimeoutS (SSF 1.0 section 8.1.1), announcing a pause or disable with a stream-updated event first, and sends a verification event to every enabled stream that has had none from this transmitter for ssf.verificationEveryS (section 8.1.4).",
   "sched.jobs.tls.ticket-key-rotate.title": "TLS session-ticket key rotation",

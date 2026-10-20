@@ -4693,7 +4693,10 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['ssf', 'rfc8935', 'rfc8417'],
     effect: 'records a Security Event Token delivered to the user portal',
     what: 'RFC 8935 SECTION 2.1 PUSH DELIVERY, WITH THIS SERVICE AT BOTH ' +
-          'ENDS (2026-09-10). The portal\'s stream names this path as its ' +
+          'ENDS (2026-09-10) — FOR A STREAM SET BACK TO PUSH since #771, ' +
+          'which made the portal\'s seeded stream an RFC 8936 poll stream ' +
+          'it collects from /ssf/poll; while it is one, a push here is ' +
+          'refused. Set to push, the stream names this path as its ' +
           '`delivery.endpoint_url`, on this service\'s own loopback ' +
           'address, and `ssf/ssf_http.ts` POSTs each SET here as ' +
           'application/secevent+jwt with the stream\'s ' +
@@ -4715,9 +4718,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'under load.',
     coverage: 'full for RFC 8935 section 2.1 receipt: the media type, the ' +
               'authorization header, the 202 with an empty body, and section ' +
-              '2.4\'s {err, description} refusal shape. It does not ' +
-              'implement RFC 8936 poll at this end — this receiver is a push ' +
-              'receiver — and nothing here retries, which is the ' +
+              '2.4\'s {err, description} refusal shape. It is the push half ' +
+              'only — the portal\'s poll half is the ssf.internal-poll job ' +
+              '(#771) — and nothing here retries, which is the ' +
               'transmitter\'s side of the same deliberate omission.' },
   { path: '/portal/claim-sources/callback', group: 'User portal',
     name: 'Connected claim sources — the provider\'s answer',

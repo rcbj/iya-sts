@@ -151,6 +151,10 @@
     "en": "e88db26ddb6a4159",
     "text": "刪除此程序中已過期的無法遞送項目，探測已到期的失效串流（僅限一個節點），並記錄自上次清理以來移入無法遞送隊列的摘要。"
   },
+  "sched.jobs.ssf.internal-poll.describe": {
+    "en": "e68a7ab4fba5e9f4",
+    "text": "此服務自己的管理主控台與用戶入口網站在每個領域中透過 RFC 8936 輪詢從 /ssf/poll 收取其串流上等待的安全事件權杖（Security Event Token）——經過驗證、記錄、處理並確認（#771）。"
+  },
   "sched.sentence.clockDatabase": {
     "en": "4510afc0b42a97bf",
     "text": "數據庫"

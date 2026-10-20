@@ -13287,14 +13287,32 @@ const SETTINGS = [
                    'turning it on would create none',
     description: 'Whether this service seeds a Shared Signals stream for its ' +
                  'OWN admin console and user portal, so that each takes ' +
-                 'delivery of every CAEP and RISC event over RFC 8935 push ' +
-                 'at an endpoint of its own and draws what arrived at ' +
-                 '/admin/signals and /portal/signals. They are ORDINARY ' +
+                 'delivery of every CAEP and RISC event — collecting them ' +
+                 'over RFC 8936 poll from this service\'s own /ssf/poll ' +
+                 'every ssf.internalPollMs (#771) — and draws what arrived ' +
+                 'at /admin/signals and /portal/signals. They are ORDINARY ' +
                  'streams — pause one, narrow it or delete it at /admin/ssf ' +
-                 'and it stays that way until a restart. Note that ' +
-                 'ssf.pushDelivery governs this delivery like any other: ' +
-                 'with it off the events queue on the two streams and reach ' +
-                 'neither page.' },
+                 'and it stays that way until a restart.' },
+
+  // -------------------------------------------------------------------------
+  // HOW OFTEN THOSE TWO COLLECT (#771). The ssf.internal-poll job's interval:
+  // the longest a SET waits on its stream before the console or the portal
+  // sees it — and so how much later than a push did a received signal ends a
+  // surface's session. Each run polls only the streams with something
+  // waiting, many SETs to a request.
+  // -------------------------------------------------------------------------
+  { key: 'ssf.internalPollMs', group: 'SSF',
+    label: 'Console and portal poll interval (milliseconds)',
+    env: 'STS_SSF_INTERNAL_POLL_MS', type: 'int', dflt: 1000, min: 0,
+    max: 60000, runtime: true,
+    description: 'How often this service\'s own admin console and user ' +
+                 'portal collect what their streams hold, over RFC 8936 ' +
+                 'poll from /ssf/poll (the ssf.internal-poll scheduler job), ' +
+                 'up to ssf.pollMaxEvents SETs to a request. It is the ' +
+                 'longest a Security Event Token waits before either surface ' +
+                 'sees it and acts on it. 0 turns the job off, and the ' +
+                 'events then queue on the two streams and reach neither ' +
+                 'page.' },
 
   { key: 'ssf.maxStreams', group: 'SSF', label: 'Streams per receiver',
     env: 'STS_SSF_MAX_STREAMS', type: 'int', dflt: 25, min: 1, max: 1000,
