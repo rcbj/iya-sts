@@ -3291,10 +3291,12 @@ serviceAccountPolicy.SCHEMA.attributes.forEach(function (row) {
 serviceAccounts.SCHEMA.personAttributes.forEach(function (row) {
   learnName(row.name, 'the service-account schema');
 });
-// #527: the passkey policy's attributes.
-passkeyPolicy.SCHEMA.attributes.forEach(function (row) {
-  learnName(row.name, 'the passkey policy schema');
-});
+// #527: the passkey policy's attributes, and (#724) the two it maintains on
+// a person.
+passkeyPolicy.SCHEMA.attributes.concat(passkeyPolicy.SCHEMA.personAttributes)
+  .forEach(function (row) {
+    learnName(row.name, 'the passkey policy schema');
+  });
 // #539: the locale policy's attributes.
 localePolicy.SCHEMA.attributes.concat(localePolicy.SCHEMA.personAttributes)
   .forEach(function (row) {
@@ -12506,22 +12508,42 @@ if (typeof credentials.setDirectory === 'function') {
       log.debug("Leaving readPasswordResetLink().");
       return flags && flags.passwordResetToken
         ? { hash: flags.passwordResetToken,
-            expires: flags.passwordResetExpires }
+            expires: flags.passwordResetExpires,
+            source: flags.passwordResetSource }
         : null;
     },
-    writePasswordResetLink: function (key, hash, expires) {
+    // `source` (#724): who issued it, `self` or `operator`, which the
+    // recovery question asks at the link's spend.
+    writePasswordResetLink: function (key, hash, expires, source) {
       log.debug("Entering writePasswordResetLink().");
       if (!hash) {
         const cleared = writePersonFlag(key, 'stsPasswordResetToken', '') &&
-                        writePersonFlag(key, 'stsPasswordResetExpires', '');
+                        writePersonFlag(key, 'stsPasswordResetExpires', '') &&
+                        writePersonFlag(key, 'stsPasswordResetSource', '');
         log.debug("Leaving writePasswordResetLink(). Cleared.");
         return cleared;
       }
       const written =
         writePersonFlag(key, 'stsPasswordResetToken', String(hash)) &&
-        writePersonFlag(key, 'stsPasswordResetExpires', String(expires));
+        writePersonFlag(key, 'stsPasswordResetExpires', String(expires)) &&
+        writePersonFlag(key, 'stsPasswordResetSource',
+                        source ? String(source) : '');
       log.debug("Leaving writePasswordResetLink(). Written.");
       return written;
+    },
+    // A RECOVERY WAITING FOR A PASSKEY SIGN-IN (#724): `<door> <instant>`,
+    // or '' to clear it.
+    readRecoveryPending: function (key) {
+      log.debug("Entering readRecoveryPending().");
+      const flags = readPersonFlags(key);
+      log.debug("Leaving readRecoveryPending().");
+      return flags ? String(flags.recoveryPending || '') : '';
+    },
+    writeRecoveryPending: function (key, value) {
+      log.debug("Entering writeRecoveryPending().");
+      log.debug("Leaving writeRecoveryPending().");
+      return writePersonFlag(key, 'stsRecoveryPending',
+                             value ? String(value) : '');
     },
     // TAKING A PASSWORD AWAY (2026-09-13), for a reset link that revokes the
     // one the person had. `clearStoredPassword()` below says what it keeps.
@@ -13768,6 +13790,13 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
 //                              and spelt by `common/authn_policy.ts`'s schema.
 //   stsMailFactorFailures      consecutive failed emailed codes or links; the
 //                              factor is cleared at the policy's limit.
+//   stsPasswordResetSource     who issued the reset link beside it, `self` or
+//                              `operator` (#724), written and cleared with it.
+//   stsRecoveryPending         `<door> <instant>`: a recovery restored access
+//                              to a person holding a passkey and no passkey
+//                              has signed them in since (#724). Both named
+//                              and spelt by `common/passkey_policy.ts`'s
+//                              schema.
 //
 // One reader and one writer for them, narrowed to exactly these names, so that
 // neither slot below becomes a general attribute writer.
@@ -13868,7 +13897,10 @@ const PERSON_FLAGS = ['pwdReset', 'stsBootstrapAdministrator',
                       'stsMailVerified', 'stsMailVerifyToken',
                       'stsMailVerifyExpires', 'stsMailVerifyAddress',
                       // #64: see MAIL_FLAGS.
-                      'stsMailFactor', 'stsMailFactorFailures'];
+                      'stsMailFactor', 'stsMailFactorFailures',
+                      // #724: the reset link's issuer, and a recovery
+                      // waiting for a passkey sign-in.
+                      'stsPasswordResetSource', 'stsRecoveryPending'];
 
 // The value an administrator's lock is written with: the draft's "locked
 // permanently, until a password administrator unlocks it".
@@ -13897,6 +13929,8 @@ function readPersonFlags(key) {
            mfaRequired: one('stsMfaRequired').toUpperCase() === 'TRUE',
            passwordResetToken: one('stsPasswordResetToken'),
            passwordResetExpires: Number(one('stsPasswordResetExpires') || 0),
+           passwordResetSource: one('stsPasswordResetSource'),
+           recoveryPending: one('stsRecoveryPending'),
            accountLockedTime: one('pwdAccountLockedTime'),
            notDelegated: one('stsNotDelegated').toUpperCase() === 'TRUE',
            mayAct: one('stsMayAct') };

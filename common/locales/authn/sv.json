@@ -66,6 +66,7 @@
   "mfaSetup.title": "Konfigurera en andra faktor",
   "mfaSetup.heading": "Konfigurera en andra faktor",
   "mfaSetup.subProved": "Programmet du loggar in i godtar inte den andra faktor du just angav för <code>{name}</code>. Konfigurera en som det godtar; ingen loggas in förrän du har gjort det.",
+  "mfaSetup.subRecovery": "<code>{name}</code> återställdes utan sin nyckel, och den här sfären låter det inte nå något program förrän en nyckel har loggat in dig. Registrera en ny nyckel här; sedan loggar du in med den. Ingen loggas in förrän du har gjort det.",
   "mfaSetup.subOptional": "Du har en administratörsroll, och <code>{name}</code> har ingen andra faktor ännu. Vi rekommenderar att du konfigurerar en nu; du kan hoppa över detta och logga in med ditt lösenord, och du får frågan igen nästa gång.",
   "mfaSetup.subRequired": "En andra faktor krävs för <code>{name}</code>, och du har ingen ännu. Ingen loggas in förrän en har konfigurerats.",
   "mfaSetup.totpHeading": "En autentiseringsapp",

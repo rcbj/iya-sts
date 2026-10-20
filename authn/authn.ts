@@ -4584,6 +4584,157 @@ class Authn {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE RECOVERY QUESTION AT THE SESSION'S START (#724). A session for a
+  // person who holds a passkey, when a recovery is PENDING on their entry (a
+  // reset or activation link was spent, or an administrator gave out a
+  // password, and no passkey has signed them in since) or when the
+  // credential that answered is itself a recovery door (a recovery code, an
+  // emailed code or link). The issuance policy decides (`recover-account`):
+  // under the passkey policy's `recoveryAssurance` `not-weaker` such a
+  // session reaches no application unless a passkey answered
+  // (STS-AUTHN-0381), and under `operator-only` a self-service door is
+  // refused outright (STS-AUTHN-0380). Asked only where there is a recovery
+  // to ask about, so an ordinary sign-in costs one read of the entry and no
+  // evaluation. Null where the policy allows it.
+  // ---------------------------------------------------------------------------
+  private recoveryRefusalAtSession(username: string, credential: any):
+      { code: string; why: string; reason: string } | null {
+    const { log, passkeyPolicy, credentials } = this.deps;
+    log.debug("Entering Authn.recoveryRefusalAtSession().");
+    const kind = String((credential && credential.kind) || '');
+    const door = passkeyPolicy.RECOVERY_CREDENTIALS[kind] || '';
+    const pending = credentials.recoveryPending(username);
+    if (!pending && !door) {
+      log.debug("Leaving Authn.recoveryRefusalAtSession(). No recovery.");
+      return null;
+    }
+    const out = passkeyPolicy.recoveryRefusal({ username: username,
+      door: door, at: 'session', credential: kind,
+      covered: credentials.holdsPasskey(username), pending: !!pending });
+    log.debug("Leaving Authn.recoveryRefusalAtSession(). " +
+              (out ? out.code : 'allowed'));
+    return out;
+  }
+
+  // A PASSKEY SIGNED THEM IN AFTER A RECOVERY (#724): the pending recovery
+  // is cleared, and an audit row says so. Only a passkey that has passed
+  // every passkey rule above reaches here, which is what "a passkey
+  // satisfying the profile" means.
+  private recoveryCompleted(username: string, extra: any): void {
+    const { log, credentials, audit } = this.deps;
+    log.debug("Entering Authn.recoveryCompleted().");
+    if (!extra || !extra.credential ||
+        String(extra.credential.kind || '') !== 'webauthn') {
+      log.debug("Leaving Authn.recoveryCompleted(). Not a passkey.");
+      return;
+    }
+    const pending = credentials.recoveryPending(username);
+    if (!pending) {
+      log.debug("Leaving Authn.recoveryCompleted(). None pending.");
+      return;
+    }
+    credentials.setRecoveryPending(username, '');
+    audit.audit({
+      action: 'authn.recovery.completed', actor: username,
+      target: username, channel: 'http', outcome: 'success',
+      summary: 'a passkey signed ' + username + ' in after an account ' +
+               'recovery (' + pending.door + '); the recovery is complete',
+      detail: { door: pending.door, since: pending.at,
+                application: String(extra.application || '') }
+    });
+    log.info('authn: a passkey signed "' + username + '" in after the ' +
+             'recovery through ' + pending.door + '; it is no longer ' +
+             'pending.');
+    log.debug("Leaving Authn.recoveryCompleted().");
+  }
+
+  // Under a passkey policy that refuses self-service recovery to this
+  // person (#724), a minted step offers neither a recovery code nor the
+  // emailed factor. Asked of the issuance policy as the door would be.
+  private closeSelfServiceRecovery(step: any): void {
+    const { log, passkeyPolicy, credentials } = this.deps;
+    log.debug("Entering Authn.closeSelfServiceRecovery().");
+    const username = String(step.username || '');
+    const covered = credentials.holdsPasskey(username);
+    if (!covered) {
+      log.debug("Leaving Authn.closeSelfServiceRecovery(). Holds no " +
+                "passkey.");
+      return;
+    }
+    const refuses = function (door: string): boolean {
+      log.debug("Entering refuses(). " + door);
+      const refused = !!passkeyPolicy.recoveryRefusal({ username: username,
+        door: door, at: 'door', covered: true });
+      log.debug("Leaving refuses(). " + refused);
+      return refused;
+    };
+    if (step.backup && refuses('recovery-code')) {
+      step.backup = false;
+    }
+    if (step.email && refuses(String(step.email) === 'link' ? 'email-link'
+                                                            : 'email-code')) {
+      step.email = '';
+    }
+    log.debug("Leaving Authn.closeSelfServiceRecovery().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SESSION A RECOVERY LEADS TO, LIMITED TO REGISTERING A PASSKEY (#724).
+  // `refusedSession()` calls it for STS-AUTHN-0381 at a door of the sign-in
+  // screen, in place of drawing the refusal: the set-up step, offering ONLY
+  // a passkey, minted `proved` (the recovery and the factor just given are
+  // the proof; the person holds a passkey they cannot use) and `recovery`,
+  // which makes the passkey page draw a REGISTRATION whatever keys they hold
+  // and makes its finisher start NO session (`finishWebauthn()`): the
+  // browser goes back to the application, which asks for a sign-in, and the
+  // passkey just registered is what clears the recovery. The key goes
+  // through `credentials.addKey()`, so the profile's registration rules
+  // hold it. False where no passkey can be registered here, and the refusal
+  // is drawn instead.
+  // ---------------------------------------------------------------------------
+  private recoveryEnrolment(res: any, record: any, username: string,
+                            said: any): boolean {
+    const { log, randomId, stsCrypto, audit, errorCodes } = this.deps;
+    log.debug("Entering Authn.recoveryEnrolment().");
+    const offered = this.enrolmentOfferedFor(['securityKey']);
+    if (!offered.webauthn) {
+      log.info(errorCodes.tag('STS-AUTHN-0383') + 'authn: a sign-in of "' +
+               username + '" after an account recovery cannot register a ' +
+               'passkey here (security keys are off, or not allowed as a ' +
+               'second factor); refused.');
+      log.debug("Leaving Authn.recoveryEnrolment(). Nothing to register.");
+      return false;
+    }
+    const setupId = randomId(24);
+    pendingMfa.set(setupId, {
+      authn: record, username: username,
+      challenge: stsCrypto.randomBytes(32).toString('base64url'),
+      factor: 'enrol', alternate: '', backup: false, passwordless: false,
+      requiredBy: 'recovery', proved: true, recovery: true,
+      mfaAllowed: ['securityKey'], risk: said && said.risk,
+      riskDecision: said && said.riskDecision,
+      expires: Date.now() + this.mfaStepTtlMs()
+    });
+    audit.audit({
+      action: 'authn.recovery.limited', outcome: 'success',
+      errorCode: 'STS-AUTHN-0381', actor: username, target: username,
+      channel: 'http', protocol: record && record.protocol,
+      summary: 'a sign-in of ' + username + ' after an account recovery ' +
+               'was limited to registering a passkey',
+      detail: { credential: String((said && said.credential &&
+                                    said.credential.kind) || ''),
+                application: String((record && record.application) || '') }
+    });
+    log.info('authn: "' + username + '" signed in after an account ' +
+             'recovery without a passkey; asking them to register one ' +
+             'before anything is signed in.');
+    errorCodes.mark(res, 'STS-AUTHN-0381');
+    this.stepAnswer(res, 'mfa', 'enrol', setupId, MFA_SETUP_PATH, 'mfa');
+    log.debug("Leaving Authn.recoveryEnrolment().");
+    return true;
+  }
+
   // THE ATTESTATION RULES AT SIGN-IN (#530): the key's recorded attestation
   // held to the rules in force now, where the passkey policy says so — the
   // issuance policy deciding since #536. A
@@ -4898,6 +5049,44 @@ class Authn {
       extra.refusedWhy = syncedRefusal.why;
       log.debug("Leaving Authn.startSessionHere(). The passkey policy " +
                 "refused the passkey.");
+      return null;
+    }
+    // -------------------------------------------------------------------------
+    // ACCOUNT RECOVERY NO WEAKER THAN THE PASSKEY IT REPLACES (#724), asked
+    // here for the passkey rules' reason: every door reaches this line. See
+    // `recoveryRefusalAtSession()`. A keyed caller (SCIM, the SPIRE Server
+    // API) is a program and is not asked; an unauthenticated session names
+    // nobody. `recoveryLimited` tells `refusedSession()` to offer the
+    // registration of a passkey rather than draw the refusal.
+    // -------------------------------------------------------------------------
+    const recoveryRefused = extra.authenticated === false || extra.key ? null
+      : this.recoveryRefusalAtSession(username, extra.credential);
+    if (recoveryRefused) {
+      const limited = recoveryRefused.reason === 'recovery-enrol-first';
+      log.info('authn: a session for "' + username + '" was REFUSED at the ' +
+               (via || 'sign-in') + ' door: the passkey policy holds an ' +
+               'account recovery to the passkey it replaces (' +
+               recoveryRefused.code + ').');
+      audit.audit({
+        action: 'session.refuse', actor: String(username || ''),
+        errorCode: recoveryRefused.code,
+        protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
+        summary: 'a session for ' + username + ' was refused at the ' +
+                 (via || 'sign-in') + ' door: ' + (limited
+                   ? 'after an account recovery only a passkey reaches an ' +
+                     'application'
+                   : 'the passkey policy lets only an operator recover ' +
+                     'this account'),
+        detail: { credential: String(extra.credential &&
+                                     extra.credential.kind),
+                  reason: recoveryRefused.reason,
+                  application: String(extra.application || '') }
+      });
+      extra.refusedWith = recoveryRefused.code;
+      extra.refusedWhy = recoveryRefused.why;
+      extra.recoveryLimited = limited;
+      log.debug("Leaving Authn.startSessionHere(). The recovery question " +
+                "refused.");
       return null;
     }
     // -------------------------------------------------------------------------
@@ -5265,6 +5454,7 @@ class Authn {
       const again = this.reauthenticateSession(res, current.session, username,
                                                amr,
                                                acr, via, extra);
+      this.recoveryCompleted(username, extra);
       this.settleRisk(risk, { decision: riskDecision, sessionId: again.id,
                               context: extra.risk &&
                                        extra.risk.sessionContext });
@@ -5576,6 +5766,8 @@ class Authn {
         id: sessionId, username: String((user && user.username) ||
                                         username) };
     }
+    // A PASSKEY AFTER A RECOVERY (#724) completes it.
+    this.recoveryCompleted(username, extra);
     log.debug("Leaving Authn.startSessionHere(). " + username +
               " is signed in (amr " +
               (amr || []).join(',') + ").");
@@ -7273,6 +7465,14 @@ class Authn {
       return false;
     }
     const said = detail || {};
+    // AFTER AN ACCOUNT RECOVERY (#724): the registration of a passkey, in
+    // place of the refusal, where one can be registered here.
+    if (said.recoveryLimited && record &&
+        this.recoveryEnrolment(res, record, username, said)) {
+      log.debug("Leaving Authn.refusedSession(). To the recovery " +
+                "enrolment.");
+      return true;
+    }
     // A REMEMBERED BROWSER'S COOKIE THAT CAUSED OR SHARED THE REFUSAL (#265)
     // — a copy, somebody else's, or a device since marked compromised — is
     // cleared, so the next attempt from this browser is not refused on it
@@ -7296,7 +7496,9 @@ class Authn {
                      code === 'STS-AUTHN-0298' ||
                      code === 'STS-AUTHN-0305' ||
                      code === 'STS-AUTHN-0313' ||
-                     code === 'STS-AUTHN-0315') && said.refusedWhy
+                     code === 'STS-AUTHN-0315' ||
+                     code === 'STS-AUTHN-0380' ||
+                     code === 'STS-AUTHN-0381') && said.refusedWhy
       ? String(said.refusedWhy)
       : 'Authentication failed for ' + username + '.';
     log.info('authn: the session for "' + username + '" was refused at the ' +
@@ -10399,6 +10601,13 @@ class Authn {
   private narrowStep(step: any): void {
     const { log } = this.deps;
     log.debug('Entering Authn.narrowStep().');
+    // NO SELF-SERVICE RECOVERY OFFERED WHERE THE PASSKEY POLICY REFUSES IT
+    // (#724): the recovery-code and emailed links are not drawn for a
+    // passkey holder under `operator-only`. `startSessionHere()` refuses
+    // either anyway; this keeps the step from offering a door that fails.
+    if (step && (step.backup || step.email)) {
+      this.closeSelfServiceRecovery(step);
+    }
     const allowed = step && Array.isArray(step.mfaAllowed)
       ? step.mfaAllowed : [];
     if (!step || !allowed.length || step.thenEnrol) {
@@ -10539,7 +10748,10 @@ class Authn {
     const out: any = {
       state: 'choose',
       offered: this.enrolmentOfferedFor(step.mfaAllowed || []),
-      optional: !!step.optional, proved: !!step.proved, totp: null };
+      optional: !!step.optional, proved: !!step.proved,
+      // AFTER AN ACCOUNT RECOVERY (#724): the page says why only a passkey
+      // is offered, and that nothing is signed in afterwards.
+      recovery: !!step.recovery, totp: null };
     const held = step.factor === 'enrol-totp'
       ? credentials.pendingTotpFor(step.username) : null;
     if (held) {
@@ -10685,7 +10897,9 @@ class Authn {
     const known = credentials.keysOf(username).filter(function (one) {
       return one.role === wantedRole;
     });
-    const mode = known.length ? 'get' : 'create';
+    // A RECOVERY ENROLMENT (#724) REGISTERS, whatever keys the person holds:
+    // the step exists because they cannot use the one they have.
+    const mode = step.recovery ? 'create' : (known.length ? 'get' : 'create');
     // ONE CHOICE PER PASSKEY (#534), where the passkey policy says so and
     // there is more than one to choose from: until one is chosen the page
     // lists them, and once one is, the ceremony names only it. A chosen id
@@ -11469,6 +11683,25 @@ class Authn {
                   return one !== 'hwk';
                 }).concat(['hwk']);
     const acr = step.passwordless ? '1' : 'mfa';
+    // A PASSKEY REGISTERED AFTER AN ACCOUNT RECOVERY (#724): NO SESSION. The
+    // browser goes back to the caller, whose request asks for a sign-in, and
+    // the passkey just registered is what signs the person in and completes
+    // the recovery (`recoveryCompleted()`). The registration's CAEP
+    // credential-change was sent where it was written.
+    if (step.recovery) {
+      this.deps.audit.audit({
+        action: 'authn.mfa.enrolled', outcome: 'success',
+        actor: step.username, target: step.username, channel: 'http',
+        protocol: step.authn && step.authn.protocol,
+        summary: step.username + ' registered a passkey after an account ' +
+                 'recovery; nothing is signed in until it is used',
+        detail: { requiredBy: 'recovery' }
+      });
+      this.returnToCaller(res, step.authn, null, null);
+      log.debug("Leaving Authn.finishWebauthn(). A recovery passkey " +
+                "registered; back to sign in with it.");
+      return;
+    }
     // A PROOF BEFORE AN ENROLMENT (#475): no session yet; the set-up
     // screen, offering what the application allows.
     if (step.thenEnrol && !step.passwordless) {

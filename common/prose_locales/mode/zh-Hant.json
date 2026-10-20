@@ -239,6 +239,18 @@
     "en": "cddc7c3db475d360",
     "text": "只要該人持有驗證器應用程式或 mfa 角色的安全金鑰，或被要求提供第二因素，該 AS-REQ 就會在密碼通過驗證後以 KDC_ERR_POLICY（12）拒絕，STS-KRB-0135（密碼錯誤時仍為 KDC_ERR_PREAUTH_FAILED）。擁有驗證器應用程式的人，可透過 RFC 6113 FAST armor 搭配 RFC 6560 OTP 預先驗證取得票證——密碼與代碼在同一次交換中——且票證攜帶 RFC 8129 指示符 `otp`。應用程式密碼絕不會成為 Kerberos 金鑰。"
   },
+  "mode.requirements.recovery-assurance.what": {
+    "en": "3c8ef817d4ad4971",
+    "text": "預設情況下，帳戶復原不弱於它所取代的密碼金鑰"
+  },
+  "mode.requirements.recovery-assurance.development": {
+    "en": "523ca60d0edeedd0",
+    "text": "密碼金鑰原則的 recoveryAssurance 預設為 any：密碼重設連結、啟用連結、復原碼或透過電子郵件寄送的代碼或連結會立即恢復存取權限，無論此人持有何種密碼金鑰。"
+  },
+  "mode.requirements.recovery-assurance.product": {
+    "en": "7491bb7b906772bb",
+    "text": "預設為 not-weaker：對於持有密碼金鑰的人，復原後第一次不是透過密碼金鑰的登入不能存取任何應用程式（STS-AUTHN-0381）。登入畫面會請其註冊一個符合密碼金鑰原則的密碼金鑰，然後用它登入。在兩種模式下，領域自己的設定都優先。"
+  },
   "mode.requirements.resource-metadata-import.what": {
     "en": "fb298f641de33009",
     "text": "RFC 9728 受保護資源中繼資料的匯入，遵循文件用戶端所遵循的規則"

@@ -2291,6 +2291,10 @@ class AdminActions {
       // what the password is, and a link left behind would let whoever holds it
       // replace that decision.
       credentials.consumePasswordReset(who);
+      // AN OPERATOR'S RECOVERY (#724): for a person holding a passkey, the
+      // sign-in this password leads to is held by the passkey policy's
+      // recoveryAssurance until a passkey signs them in.
+      credentials.noteRecovery(who, 'admin-password');
       const signedOut = this.signOutEverywhere(who, ctx, 'a password reset');
       audited('admin.password.reset',
               'an administrator reset the password of ' + who,

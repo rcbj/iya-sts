@@ -239,6 +239,18 @@
     "en": "cddc7c3db475d360",
     "text": "Cet AS-REQ est refusé avec KDC_ERR_POLICY (12), STS-KRB-0135, après vérification du mot de passe (un mauvais mot de passe donne toujours KDC_ERR_PREAUTH_FAILED), dès que la personne détient une application d’authentification ou une clé de sécurité dans le rôle mfa, ou qu’un second facteur lui est exigé. Une personne disposant d’une application d’authentification obtient un ticket via l’armure FAST de RFC 6113 avec la pré-authentification OTP de RFC 6560 — mot de passe et code en un seul échange — et il porte l’indicateur RFC 8129 `otp`. Un mot de passe d’application n’est jamais une clé Kerberos."
   },
+  "mode.requirements.recovery-assurance.what": {
+    "en": "3c8ef817d4ad4971",
+    "text": "Une récupération de compte n’est pas plus faible que la clé d’accès qu’elle remplace, par défaut"
+  },
+  "mode.requirements.recovery-assurance.development": {
+    "en": "523ca60d0edeedd0",
+    "text": "Le recoveryAssurance de la politique des clés d’accès vaut any par défaut : un lien de réinitialisation du mot de passe, un lien d’activation, un code de récupération ou un code ou lien envoyé par courriel rétablit l’accès immédiatement, quelle que soit la clé d’accès que détient la personne."
+  },
+  "mode.requirements.recovery-assurance.product": {
+    "en": "7491bb7b906772bb",
+    "text": "Il vaut not-weaker par défaut : pour une personne qui détient une clé d’accès, la première connexion après une récupération qui n’est pas une connexion par clé d’accès n’atteint aucune application (STS-AUTHN-0381). L’écran de connexion lui demande d’enregistrer une clé d’accès conforme à la politique des clés d’accès, puis de se connecter avec elle. La valeur propre d’un domaine prévaut dans les deux modes."
+  },
   "mode.requirements.resource-metadata-import.what": {
     "en": "fb298f641de33009",
     "text": "Une importation de métadonnées de ressource protégée RFC 9728 est soumise aux règles que suit un client du document"

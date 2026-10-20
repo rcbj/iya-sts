@@ -239,6 +239,18 @@
     "en": "cddc7c3db475d360",
     "text": "只要此人持有身份验证器应用或 mfa 角色的安全密钥，或者被要求提供第二因素，该 AS-REQ 就会在密码验证通过后以 KDC_ERR_POLICY（12）、STS-KRB-0135 被拒绝（错误的密码仍然是 KDC_ERR_PREAUTH_FAILED）。持有身份验证器应用的人可通过 RFC 6113 FAST armor 配合 RFC 6560 OTP 预身份验证获得票据——密码和验证码在一次交换中完成——该票据带有 RFC 8129 指示符 `otp`。应用密码永远不是 Kerberos 密钥。"
   },
+  "mode.requirements.recovery-assurance.what": {
+    "en": "3c8ef817d4ad4971",
+    "text": "默认情况下，账户恢复不弱于它所替代的通行密钥"
+  },
+  "mode.requirements.recovery-assurance.development": {
+    "en": "523ca60d0edeedd0",
+    "text": "通行密钥策略的 recoveryAssurance 默认为 any：密码重置链接、激活链接、恢复代码或通过电子邮件发送的代码或链接会立即恢复访问权限，无论此人持有何种通行密钥。"
+  },
+  "mode.requirements.recovery-assurance.product": {
+    "en": "7491bb7b906772bb",
+    "text": "默认为 not-weaker：对于持有通行密钥的人，恢复后第一次不是通过通行密钥的登录不能访问任何应用（STS-AUTHN-0381）。登录界面会请其注册一个符合通行密钥策略的通行密钥，然后用它登录。在两种模式下，领域自己的设置都优先。"
+  },
   "mode.requirements.resource-metadata-import.what": {
     "en": "fb298f641de33009",
     "text": "RFC 9728 受保护资源元数据导入遵循该文档的客户端所遵循的规则"

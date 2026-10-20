@@ -8801,9 +8801,12 @@ class Credentials {
    * returned in the clear once; its hash is stored.
    *
    * @param username - the person
+   * @param options - `{ source }`: who issued it, `self` (the
+   *   forgot-password form) or `operator` (the default), recorded beside it
+   *   for the recovery question at its spend (#724)
    * @returns `{ ok: true, username, token, expires, … }`, or a refusal
    */
-  issuePasswordReset(username) {
+  issuePasswordReset(username, options?) {
     const { log, crypto, errorCodes } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
@@ -8831,7 +8834,7 @@ class Credentials {
     let written = false;
     try {
       written = directory.writePasswordResetLink(name, crypto.hashSecret(token),
-                                                 expires);
+        expires, options && options.source === 'self' ? 'self' : 'operator');
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0164') + 'credentials: writing a ' +
                 'password reset link for ' + name + ' threw: ' + e.message);
@@ -8897,13 +8900,180 @@ class Credentials {
       return coded('STS-AUTHN-0167', { ok: false, reason: 'mismatch' });
     }
     log.debug("Leaving Credentials.checkPasswordReset(). Valid.");
-    return { ok: true, reason: 'valid', expires: held.expires };
+    // WHO ISSUED IT (#724): a link written before the source was recorded
+    // is an operator's, which is the only door that existed then that the
+    // recovery question would not refuse.
+    return { ok: true, reason: 'valid', expires: held.expires,
+             source: held.source === 'self' ? 'self' : 'operator' };
   }
 
   // Spend it — when the new password is STORED, not when the link is opened,
   // for the activation link's reason: a link burned by a mail scanner or a
   // prefetch would strand somebody whose password was removed when it was
   // issued.
+  // -------------------------------------------------------------------------
+  // A RECOVERY WAITING FOR A PASSKEY SIGN-IN (#724). Written on the person's
+  // entry (`stsRecoveryPending`, `<door> <instant>`) when a recovery door is
+  // spent for a person who holds a passkey, read by `authn.ts`'s
+  // `startSessionHere()` for the recovery question, and cleared by the first
+  // passkey sign-in after it. On the ENTRY, not in a map, so every node and
+  // a restart agree on it.
+  // -------------------------------------------------------------------------
+  /**
+   * Tells whether the person holds a passkey of either role (#724): what a
+   * recovery would be weaker than.
+   *
+   * @param username - the person
+   * @returns true when they hold at least one
+   */
+  holdsPasskey(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.holdsPasskey().");
+    const held = this.mechanismsFor(String(username || '').trim());
+    const out = !!held && (Number(held.primaryKeys || 0) +
+                           Number(held.mfaKeys || 0)) > 0;
+    log.debug("Leaving Credentials.holdsPasskey(). " + out);
+    return out;
+  }
+
+  /**
+   * The pending recovery on a person's entry (#724).
+   *
+   * @param username - the person
+   * @returns `{ door, at }`, or null where none is pending
+   */
+  recoveryPending(username) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.recoveryPending().");
+    if (!directory || typeof directory.readRecoveryPending !== 'function') {
+      log.debug("Leaving Credentials.recoveryPending(). No store.");
+      return null;
+    }
+    let raw = '';
+    try {
+      raw = String(directory.readRecoveryPending(
+        String(username || '').trim()) || '');
+    } catch (e) {
+      log.debug("Caught in Credentials.recoveryPending(): " +
+                ((e && e.message) || e));
+      raw = '';
+    }
+    if (!raw) {
+      log.debug("Leaving Credentials.recoveryPending(). None.");
+      return null;
+    }
+    const parts = raw.split(' ');
+    log.debug("Leaving Credentials.recoveryPending(). " + parts[0]);
+    return { door: parts[0] || '', at: parts[1] || '' };
+  }
+
+  /**
+   * Records, or clears, a pending recovery on a person's entry (#724).
+   *
+   * @param username - the person
+   * @param door - the recovery door, or '' to clear it
+   * @returns true when it was written
+   */
+  setRecoveryPending(username, door) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.setRecoveryPending(). door=" + door);
+    if (!directory || typeof directory.writeRecoveryPending !== 'function') {
+      log.debug("Leaving Credentials.setRecoveryPending(). No store.");
+      return false;
+    }
+    const name = String(username || '').trim();
+    const value = door ? String(door) + ' ' + new Date().toISOString() : '';
+    let written = false;
+    try {
+      written = !!directory.writeRecoveryPending(name, value);
+    } catch (e) {
+      log.debug("Caught in Credentials.setRecoveryPending(): " +
+                ((e && e.message) || e));
+      written = false;
+    }
+    if (!written) {
+      log.error(errorCodes.tag('STS-AUTHN-0382') + 'credentials: the ' +
+                'pending recovery of ' + name + ' could not be ' +
+                (door ? 'written' : 'cleared') + '.');
+    }
+    log.debug("Leaving Credentials.setRecoveryPending(). " + written);
+    return written;
+  }
+
+  /**
+   * Records that a recovery door restored access (#724), where it matters:
+   * the person holds a passkey and the passkey policy selected for them
+   * holds a recovery to it (`recoveryAssurance` not `any`). Under `any`
+   * nothing is written, so a later change of the row does not reach back to
+   * a recovery made while it allowed one.
+   *
+   * @param username - the person
+   * @param door - the recovery door (`passkey_policy.ts`'s RECOVERY_DOORS)
+   * @returns true when a pending recovery was written
+   */
+  noteRecovery(username, door) {
+    const { log, passkeyPolicy } = this.deps;
+    log.debug("Entering Credentials.noteRecovery(). door=" + door);
+    const name = String(username || '').trim();
+    if (!name || !this.holdsPasskey(name)) {
+      log.debug("Leaving Credentials.noteRecovery(). Holds no passkey.");
+      return false;
+    }
+    if (!passkeyPolicy.hasSelection()) {
+      passkeyPolicy.select(name, '');
+    }
+    if (passkeyPolicy.recoveryAssurance() === 'any') {
+      log.debug("Leaving Credentials.noteRecovery(). The policy allows any.");
+      return false;
+    }
+    const written = this.setRecoveryPending(name, String(door || ''));
+    log.debug("Leaving Credentials.noteRecovery(). " + written);
+    return written;
+  }
+
+  /**
+   * Records an activation link as a recovery (#724) where the person held a
+   * passkey BEFORE the link was issued — an administrator's link to somebody
+   * who had already set up an account. A passkey the activation itself
+   * enrolled is not one it could be weaker than. Called before the link is
+   * consumed, while its expiry (and so its issue, the TTL before it) can
+   * still be read.
+   *
+   * @param username - the person
+   * @returns true when a pending recovery was written
+   */
+  noteActivationRecovery(username) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.noteActivationRecovery().");
+    const name = String(username || '').trim();
+    let held = null;
+    try {
+      held = directory && typeof directory.readActivation === 'function'
+        ? directory.readActivation(name) : null;
+    } catch (e) {
+      log.debug("Caught in Credentials.noteActivationRecovery(): " +
+                ((e && e.message) || e));
+      held = null;
+    }
+    const issuedAt = held && held.expires
+      ? Number(held.expires) - this.activationTtlMs() : 0;
+    const before = issuedAt > 0 && this.keysOf(name).some(function (one) {
+      return Number(one.enrolledAt || 0) > 0 &&
+             Number(one.enrolledAt) < issuedAt;
+    });
+    if (!before) {
+      log.debug("Leaving Credentials.noteActivationRecovery(). No passkey " +
+                "held before the link.");
+      return false;
+    }
+    const out = this.noteRecovery(name, 'activation');
+    log.debug("Leaving Credentials.noteActivationRecovery(). " + out);
+    return out;
+  }
+
   /**
    * Spends the password reset token, when the new password is stored.
    *
@@ -9790,6 +9960,11 @@ export = {
   issuePasswordReset: slot.forward('issuePasswordReset'),
   checkPasswordReset: slot.forward('checkPasswordReset'),
   consumePasswordReset: slot.forward('consumePasswordReset'),
+  holdsPasskey: slot.forward('holdsPasskey'),
+  recoveryPending: slot.forward('recoveryPending'),
+  setRecoveryPending: slot.forward('setRecoveryPending'),
+  noteRecovery: slot.forward('noteRecovery'),
+  noteActivationRecovery: slot.forward('noteActivationRecovery'),
   passwordResetPending: slot.forward('passwordResetPending'),
   mfaRequirementFor: slot.forward('mfaRequirementFor'),
   accountDisabled: slot.forward('accountDisabled'),

@@ -45,14 +45,20 @@ const REASONS = {
   'attestation-aaguid': { register: '', use: 'STS-AUTHN-0316' },
   'attestation-unlisted': { register: '', use: 'STS-AUTHN-0316' },
   'attestation-level': { register: '', use: 'STS-AUTHN-0316' },
-  'attestation-fips': { register: '', use: 'STS-AUTHN-0316' }
+  'attestation-fips': { register: '', use: 'STS-AUTHN-0316' },
+  // #724: `recover-account` records the `use` column.
+  'recovery-self-service': { register: '', use: 'STS-AUTHN-0380' },
+  'recovery-enrol-first': { register: '', use: 'STS-AUTHN-0381' }
 };
+
+const RECOVER = 'recover-account';
 
 /**
  * The code a reason records at a stage, or ''.
  *
  * @param {string} reason - the rule's reason
- * @param {string} action - `register-passkey` or `use-passkey`
+ * @param {string} action - `register-passkey`, `use-passkey` or
+ *   `recover-account`
  * @returns {string} the error code, or ''
  */
 function codeFor(reason, action) {
@@ -61,6 +67,34 @@ function codeFor(reason, action) {
   const code = row ? row[action === REGISTER ? 'register' : 'use'] : '';
   log.debug('Leaving codeFor(). ' + (code || 'none'));
   return code;
+}
+
+/**
+ * The two recovery rules (#724), read from the facts: `xacml_templates.ts`'s
+ * `recovery-self-service` and `recovery-enrol-first`, in that order.
+ *
+ * @param {Record<string, any>} q - the question
+ * @param {(group: string) => boolean} carries - whether a group is carried
+ * @param {Record<string, any>} policy - the profile's rows
+ * @returns {string} the reason, or ''
+ */
+function recoveryReason(q, carries, policy) {
+  log.debug('Entering recoveryReason().');
+  const r = q.recovery || {};
+  const row = String(policy.recoveryAssurance || '');
+  let reason = '';
+  if (!carries('recovery') || r.covered !== true) {
+    reason = '';
+  } else if (r.selfService === true && row === 'operator-only') {
+    reason = 'recovery-self-service';
+  } else if (r.at === 'session' &&
+             (r.pending === true || !!String(r.door || '')) &&
+             String(r.credential || '') !== 'webauthn' &&
+             (row === 'not-weaker' || row === 'operator-only')) {
+    reason = 'recovery-enrol-first';
+  }
+  log.debug('Leaving recoveryReason(). ' + (reason || 'none'));
+  return reason;
 }
 
 /**
@@ -98,7 +132,9 @@ function strictReading(question) {
     (settings.attestationPolicy !== 'off' || demandsTrust);
   const register = q.action === REGISTER;
   let reason = '';
-  if (carries('backup-eligible') && q.backupEligible === true &&
+  if (q.action === RECOVER) {
+    reason = recoveryReason(q, carries, policy);
+  } else if (carries('backup-eligible') && q.backupEligible === true &&
       policy.backupEligibility === 'disallow') {
     reason = 'backup-eligible';
   } else if (carries('pin-length') && policy.enforcePinLength === true &&

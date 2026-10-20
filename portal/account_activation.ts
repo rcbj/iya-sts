@@ -341,6 +341,9 @@ class AccountActivation {
     log.debug("Entering AccountActivation.finish(). " + username);
     const password = !!credentials.mechanismsFor(username).password;
     res[LINK_SPENT] = true;
+    // AN OPERATOR'S RECOVERY (#724), for a person who held a passkey before
+    // this link was issued: read before the link is consumed.
+    credentials.noteActivationRecovery(username);
     credentials.consumeActivation(username);
     audit.record({
       category: 'authentication', action: 'portal.activate',

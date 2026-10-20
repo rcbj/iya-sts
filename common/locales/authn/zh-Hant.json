@@ -66,6 +66,7 @@
   "mfaSetup.title": "設定第二因素",
   "mfaSetup.heading": "設定第二因素",
   "mfaSetup.subProved": "您正在登入的應用程式不接受您剛才為 <code>{name}</code> 提供的第二因素。請設定一個它接受的因素；完成之前不會登入。",
+  "mfaSetup.subRecovery": "<code>{name}</code> 是在沒有其密碼金鑰的情況下復原的，在密碼金鑰讓您登入之前，此領域不允許它存取任何應用程式。請在此註冊一個新的密碼金鑰，然後使用它登入。完成之前不會登入。",
   "mfaSetup.subOptional": "您擁有管理員角色，而 <code>{name}</code> 尚未設定第二因素。建議現在設定一個；您也可以略過此步驟，只用密碼登入，下次還會再詢問您。",
   "mfaSetup.subRequired": "<code>{name}</code> 需要第二因素，而您尚未設定。設定完成之前不會登入。",
   "mfaSetup.totpHeading": "驗證器應用程式",

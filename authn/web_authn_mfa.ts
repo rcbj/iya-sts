@@ -341,7 +341,8 @@ class WebAuthnMfa {
     }
     const offered = s.offered || {};
     return '<h1>' + t.html('authn.mfaSetup.heading') + '</h1><p class="sub">' +
-      (s.proved ? t.html('authn.mfaSetup.subProved', { name: name })
+      (s.recovery ? t.html('authn.mfaSetup.subRecovery', { name: name })
+        : s.proved ? t.html('authn.mfaSetup.subProved', { name: name })
         : (s.optional ? t.html('authn.mfaSetup.subOptional', { name: name })
                       : t.html('authn.mfaSetup.subRequired', { name: name }))) +
       '</p>' + WebAuthnMfa.error(ctx) +

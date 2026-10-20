@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4398** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4402** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 296
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 300
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 713
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1473,6 +1473,10 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0334` | Counting this realm's people for the users list's headline (#610) threw; the list is drawn without the directory's count. | — |
 | `STS-AUTHN-0335` | Counting this realm's credential holders, or which names seen signing in are people in its directory, for the users list's tiles (#610) threw; those tiles are drawn from the list instead. | — |
 | `STS-AUTHN-0336` | Writing the Android marker (stsAndroidAttestedCredential) of a person whose security keys say it is missing or wrong, during the Android attestation recheck's backfill, threw; that person's keys are rechecked only once a later write of them derives it (#615). | — |
+| `STS-AUTHN-0380` | A self-service account recovery — the forgot-password form, a reset link the person asked for, a recovery code or an emailed code or link at sign-in — was refused for a person who holds a passkey: the passkey policy's recoveryAssurance is operator-only (#724), decided by the issuance policy (recover-account). | none — the forgot-password form answers its one sentence; the reset link and the sign-in screen say why |
+| `STS-AUTHN-0381` | A session for a person who holds a passkey, after an account recovery (one pending on their entry, or a recovery code or an emailed code or link at this sign-in), was not started because no passkey answered: the passkey policy's recoveryAssurance is not-weaker or operator-only (#724). At the sign-in screen the person is asked to register a passkey instead. | none — no session; the set-up step, or the refusal |
+| `STS-AUTHN-0382` | A pending account recovery (stsRecoveryPending) could not be written onto, or cleared from, a person's entry (#724). Written, the next sign-in is not held to the passkey; cleared, the next sign-in is held again. | — |
+| `STS-AUTHN-0383` | A sign-in after an account recovery could not be offered the registration of a passkey (#724): security keys are switched off, or not allowed as a second factor, in this realm. The session is refused instead (STS-AUTHN-0381), and an administrator has to help. | none — the sign-in screen says why |
 
 ## STS-OAUTH
 

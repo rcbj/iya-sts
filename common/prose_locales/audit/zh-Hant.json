@@ -191,6 +191,18 @@
     "en": "9f66bf08890386c9",
     "text": "某人在登入時設定了必要的第二因素"
   },
+  "audit.actions.authn.recovery.refused.label": {
+    "en": "d8ba643a9e0a83b8",
+    "text": "密碼金鑰原則拒絕了一次自助帳戶復原"
+  },
+  "audit.actions.authn.recovery.limited.label": {
+    "en": "497fee88cee8044f",
+    "text": "帳戶復原後的一次登入被限制為只能註冊密碼金鑰"
+  },
+  "audit.actions.authn.recovery.completed.label": {
+    "en": "6c8028e5950a3cd4",
+    "text": "帳戶復原後，密碼金鑰讓某人登入了"
+  },
   "audit.actions.authn.sign-in.started-over.label": {
     "en": "2773b5e084cf4499",
     "text": "有人離開了登入步驟並重新開始登入"

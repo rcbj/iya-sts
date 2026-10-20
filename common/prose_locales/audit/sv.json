@@ -191,6 +191,18 @@
     "en": "9f66bf08890386c9",
     "text": "Någon konfigurerade en obligatorisk andra faktor vid inloggningen"
   },
+  "audit.actions.authn.recovery.refused.label": {
+    "en": "d8ba643a9e0a83b8",
+    "text": "Nyckelpolicyn nekade en kontoåterställning via självbetjäning"
+  },
+  "audit.actions.authn.recovery.limited.label": {
+    "en": "497fee88cee8044f",
+    "text": "En inloggning efter en kontoåterställning begränsades till att registrera en nyckel"
+  },
+  "audit.actions.authn.recovery.completed.label": {
+    "en": "6c8028e5950a3cd4",
+    "text": "En nyckel loggade in någon efter en kontoåterställning"
+  },
   "audit.actions.authn.sign-in.started-over.label": {
     "en": "2773b5e084cf4499",
     "text": "Någon lämnade ett inloggningssteg och började om inloggningen"
