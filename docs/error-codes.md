@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4462** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4466** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 307
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 309
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 714
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -88,9 +88,9 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 239
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 240
 * [Management API (`STS-API`)](#sts-api) — 85
-* [User portal (`STS-PORTAL`)](#sts-portal) — 94
+* [User portal (`STS-PORTAL`)](#sts-portal) — 95
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
@@ -1485,6 +1485,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0355` | A passkey was not registered: its signature algorithm is not post-quantum (RFC 9964's ML-DSA-44, -65 or -87) and the selected passkey policy profile requires a post-quantum passkey at registration (postQuantumRequired registration-and-sign-in, #718). Decided on the algorithm, not the lane. Asked where every key is written, so the sign-in screen, /portal/keys and an activation link all refuse it. | the ceremony's page, drawn again with the reason |
 | `STS-AUTHN-0356` | A passkey did not sign anybody in: its signature algorithm is not post-quantum (RFC 9964's ML-DSA) and the selected passkey policy profile requires a post-quantum passkey at sign-in (postQuantumRequired sign-in or registration-and-sign-in, #718), as the first credential or as the second factor. Recorded on a session.refuse row; also when the passkey step finds the person holds no post-quantum key and refuses before the ceremony, and when a device link would use such a key. | the sign-in screen or the step's page, drawn again with the reason |
 | `STS-AUTHN-0357` | A passkey policy save was refused: it requires a post-quantum passkey (postQuantumRequired not off) while the realm offers no ML-DSA algorithm at registration (webauthn.algorithms names none, and neither webauthn.pqcOnly nor webauthn.pqcAlongsideClassical is on), so no passkey anybody could register would satisfy it (#718). | HTTP 400 (management API) |
+| `STS-AUTHN-0370` | A credential was removed (a passkey, an authenticator app, recovery codes or the emailed second factor) and a session it had signed in was still live after the sign-out that should have ended it (logout.ts endFactorSessions(), #722). The removal stands; the session ends at its own expiry or by /admin/sessions. | logged and audited; the removal is answered as done |
+| `STS-AUTHN-0371` | Ending the sessions a removed credential had signed in threw (logout.ts endFactorSessions(), #722). The removal stands and no session it signed in was ended by it. | logged and audited; the removal is answered as done |
 
 ## STS-OAUTH
 
@@ -4676,6 +4678,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0858` | Creating a join token, on the agents page or through POST /admin-api/spiffe/agents/join-token, was refused because ttl was given and is not a positive number (#324). | HTTP 400 |
 | `STS-ADMIN-0859` | A Kerberos trusts action, on the Trusts tab of /admin/kerberos or through POST /admin-api/kerberos/trusts/{action}, was refused: an unknown action, or a trust this realm does not hold (#430). | HTTP 400 |
 | `STS-ADMIN-0860` | Removing a Kerberos trust was refused because confirm did not repeat the partner realm: the removal takes the trust's keys with it (#430). | HTTP 400 |
+| `STS-ADMIN-0870` | An administrator removed a credential (clear-key, clear-totp, clear-backup-codes or clear-email-factor) in a process with no sign-out model installed, so no session it signed in was ended (#722). The removal stands. | logged; the removal is answered as done |
 
 ## STS-API
 
@@ -4873,6 +4876,7 @@ Raised from: portal/.
 | `STS-PORTAL-0590` | A Credential Offer asked for on /portal/wallet was refused because the sign-on session the portal's token was issued on is no longer known, or continued without signing in: a pre-authorized offer is made on that session's authority (#589, #240). | HTTP 403 JSON |
 | `STS-PORTAL-0591` | A credential a person asked to remove on /portal/wallet is not one this realm records as issued to them: the id names no credential of theirs (an expired one is no longer recorded, and another person's is never theirs to name) (#661). | HTTP 400 JSON |
 | `STS-PORTAL-0592` | A Credential Offer asked for on /portal/wallet named a signing algorithm its configuration's credentials are not signed with: the configuration's `signingAlgs` (vc_configs.ts vciSigningAlgsFor()) are the ones it may choose. | HTTP 400 JSON |
+| `STS-PORTAL-0600` | A person removed a credential on /portal (a passkey, the authenticator app or the emailed second factor) and the sign-out model that ends the sessions it signed in could not be reached (#722). The removal stands. | logged; the removal is answered as done |
 
 ## STS-ACCOUNT
 

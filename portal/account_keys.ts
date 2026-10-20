@@ -586,16 +586,26 @@ class AccountKeys {
       changeType: 'delete', initiatingEntity: 'user', via: 'portal',
       reasonAdmin: username + ' removed a passkey.',
       reasonUser: 'You removed a passkey.' });
+    // THE SESSIONS THAT KEY SIGNED IN END (#722) — as the first factor or as
+    // a step — and every other stays, this one included unless the key
+    // signed it in: somebody removing a passkey they do not recognise signs
+    // out whoever enrolled it. After the removal and its signal, and never
+    // undoing either.
+    const ended: Json = ctx.endFactorSessions(username, { kind: 'webauthn',
+      credentialId: String(body.credentialId || '') }, 'a passkey');
     audit.record({
       category: 'authentication', action: 'portal.key.removed',
       actor: username, outcome: 'success',
       summary: username + ' removed one of their passkeys',
       detail: { remaining: removed.remaining,
+                sessionsEnded: ended.sessionsEnded,
                 address: websecurity.addressOf(req) }
     });
+    const said = ctx.translatorFor(username).text('portal.done.passkeyRemoved');
     log.debug("Leaving AccountKeys.remove(). Removed.");
-    return ctx.json(res, 200, { ok: true, message:
-      ctx.translatorFor(username).text('portal.done.passkeyRemoved') });
+    return ctx.json(res, 200, { ok: true,
+      message: ended.sentence ? said + ' ' + ended.sentence : said,
+      sessionsEnded: ended.sessionsEnded });
   }
 
   // RENAMING ONE (#470): `remove`'s door in every respect that matters, and
@@ -688,7 +698,9 @@ class AccountKeys {
         mirrors: 'POST ' + ctx.PORTAL + '/remove-key',
         summary: 'Removes one of your passkeys',
         description: 'Refused where it would leave you no way to sign in. ' +
-          'Your relying parties are told over CAEP.',
+          'Your relying parties are told over CAEP, and every session the ' +
+          'passkey signed in ends (`sessionsEnded` counts them, #722); ' +
+          'your other sessions stay.',
         body: REMOVE_KEY_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {

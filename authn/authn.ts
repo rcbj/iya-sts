@@ -4564,6 +4564,77 @@ class Authn {
   }
 
   // ---------------------------------------------------------------------------
+  // DID THIS FACTOR AUTHENTICATE THIS SESSION? (#722, 2026-10-19)
+  //
+  // Asked by `logout/logout.ts`'s `endFactorSessions()` when a person or an
+  // administrator removes a credential: every session one of whose
+  // authentication events names the credential ends, and every other
+  // survives. It is asked HERE because the event is this module's record and
+  // its shape is this module's to read — a second reader of
+  // `context.credential` elsewhere would be a second answer to "what proved
+  // this".
+  //
+  // `factor.kind` is one of four:
+  //
+  //   * `webauthn` with `credentialId`: an event whose credential is a
+  //     WebAuthn one with that id's fingerprint (`eventContext()` keeps the
+  //     fingerprint, never the id) — as the first factor (a passkey) or as a
+  //     step after a password, at a sign-in or a re-authentication;
+  //   * `totp`: an event the authenticator app's code completed;
+  //   * `backup-code`: an event a recovery code completed;
+  //   * `email`: an event the emailed code or link completed AS A SECOND
+  //     FACTOR. Clearing that factor leaves the emailed FIRST factor (a
+  //     sign-in link) alone, so its sessions stay: a first-factor event's
+  //     `amr` is the one `otp` (`finishEmailFirstFactor()`), and a second
+  //     factor's carries the first factor's beside it.
+  //
+  // EVERY EVENT IS READ, not the latest: a session that began with the key
+  // being removed and then re-authenticated with another was still the
+  // removed key's to begin with. `MAX_SESSION_EVENTS` keeps the first event
+  // and the latest ones, so the event that BEGAN a session is never dropped;
+  // a middle one can be, and that loses nothing an attacker could use —
+  // reaching a middle event at all means holding the session already.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether one of a session's authentication events was completed by
+   * the factor named (#722).
+   *
+   * @param session - the session
+   * @param factor - `{ kind: 'webauthn', credentialId }`, or `{ kind }` for
+   *   `totp`, `backup-code` or `email`
+   * @returns true when an event names it
+   */
+  sessionNamesFactor(session, factor) {
+    const { log, stsCrypto } = this.deps;
+    log.debug("Entering Authn.sessionNamesFactor().");
+    const kind = String((factor && factor.kind) || '');
+    const events = session && Array.isArray(session.events)
+      ? session.events : [];
+    const print = kind === 'webauthn'
+      ? stsCrypto.credentialFingerprint(String(factor.credentialId || ''))
+      : '';
+    if (!kind || (kind === 'webauthn' && !print)) {
+      log.debug("Leaving Authn.sessionNamesFactor(). No factor named.");
+      return false;
+    }
+    const named = events.some(function (event) {
+      const given = (event && event.context && event.context.credential) ||
+                    {};
+      const was = String(given.kind || '');
+      if (kind === 'webauthn') {
+        return was === 'webauthn' && String(given.fingerprint || '') === print;
+      }
+      if (kind === 'email') {
+        return was.indexOf('email-') === 0 &&
+               Array.isArray(event.amr) && event.amr.length > 1;
+      }
+      return was === kind;
+    });
+    log.debug("Leaving Authn.sessionNamesFactor(). " + named);
+    return named;
+  }
+
+  // ---------------------------------------------------------------------------
   // WHERE AN AUTHENTICATION CAME FROM, AND WITH WHAT (#62 P0, 2026-09-22).
   //
   // The request is the caller's `detail.request` where it passed one, and
@@ -15405,6 +15476,9 @@ export = {
   // Who vouched for a session's latest sign-in — asked by the authorization
   // endpoint for the bootstrap administrator's claim at issuance (#446).
   latestAuthorityOf: slot.forward('latestAuthorityOf'),
+  // Whether a removed credential authenticated a session (#722), for
+  // `logout/logout.ts`'s `endFactorSessions()`.
+  sessionNamesFactor: slot.forward('sessionNamesFactor'),
   endSessionById: slot.forward('endSessionById'),
   afterSignIn: slot.forward('afterSignIn'),
   endEverySessionIn: slot.forward('endEverySessionIn'),

@@ -7128,7 +7128,9 @@ class AdminApi {
               examples: [{ user: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'Whose enrolment was cleared.' },
+            responseDescription: 'Whose enrolment was cleared. ' +
+              '`sessionsEnded` counts the sessions the app\'s codes ' +
+              'signed in, which were ended (#722); every other stays.' },
 
           // -----------------------------------------------------------------
           // THE THIRD REMOVAL (2026-09-10), AND IT IS ALSO THE ONLY ISSUING
@@ -7175,7 +7177,9 @@ class AdminApi {
               examples: [{ user: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'Whose set was cleared.' },
+            responseDescription: 'Whose set was cleared. ' +
+              '`sessionsEnded` counts the sessions a recovery code ' +
+              'signed in, which were ended (#722); every other stays.' },
 
           // THE EMAILED SECOND FACTOR AND THE ADDRESS (#64).
           { action: 'clear-email-factor', operationId: 'clearUserEmailFactor',
@@ -7199,7 +7203,9 @@ class AdminApi {
               examples: [{ user: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'Whether a factor was turned off.' },
+            responseDescription: 'Whether a factor was turned off. ' +
+              '`sessionsEnded` counts the sessions the emailed second factor ' +
+              'signed in, which were ended (#722); every other stays.' },
 
           { action: 'set-aud-sub', operationId: 'setUserAudSub',
             summary: 'Record the account id a client knows somebody by',
@@ -8488,7 +8494,9 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription:
-              'Whether the key was removed, or why it was not.' },
+              'Whether the key was removed, or why it was not. ' +
+              '`sessionsEnded` counts the sessions the key ' +
+              'signed in, which were ended (#722); every other stays.' },
 
           // #470 (rcbj's decision D): the console's Rename on a person's
           // Passkeys table, and the same writer the person's own
@@ -10054,7 +10062,9 @@ class AdminApi {
               examples: [{ username: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'Whose enrolment was cleared.' },
+            responseDescription: 'Whose enrolment was cleared. ' +
+              '`sessionsEnded` counts the sessions the app\'s codes ' +
+              'signed in, which were ended (#722); every other stays.' },
 
           { action: 'clear-key', operationId: 'clearSecurityKey',
             summary: 'Remove one of somebody\'s security keys',
@@ -10084,7 +10094,9 @@ class AdminApi {
               examples: [{ username: 'alice', credentialId: 'q1w2e3r4' }],
               additionalProperties: false
             },
-            responseDescription: 'How many keys are left.' },
+            responseDescription: 'How many keys are left. ' +
+              '`sessionsEnded` counts the sessions the key ' +
+              'signed in, which were ended (#722); every other stays.' },
 
           { action: 'clear-email-factor', operationId: 'clearEmailFactor',
             summary: 'Turn off somebody\'s emailed second factor',
@@ -10105,7 +10117,9 @@ class AdminApi {
               examples: [{ username: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'Whether a factor was turned off.' }
+            responseDescription: 'Whether a factor was turned off. ' +
+              '`sessionsEnded` counts the sessions the emailed second factor ' +
+              'signed in, which were ended (#722); every other stays.' }
         ] },
 
       // ONE CREDENTIAL'S LINEAGE (#446): the console page had no

@@ -524,5 +524,7 @@
   "done.codesSaved": "Sus {n} códigos de recuperación están guardados. Solo se almacenan sus hashes, así que este servicio nunca podrá volver a mostrárselos: conserve la copia que hizo.",
   "done.keyOff": "Su clave de firma {rfc} está quitada. A partir de ahora se rechazará todo lo que siga firmando con ella.",
   "done.passkeyMany": "Su llave de acceso está lista. Tiene {n}: si pierde una, las demás le siguen permitiendo iniciar sesión.",
+  "done.sessionsEndedOne": "La sesión iniciada con este método terminó.",
+  "done.sessionsEndedMany": "Las {n} sesiones iniciadas con este método terminaron.",
   "done.renamed": "Se cambió el nombre a «{name}»."
 }

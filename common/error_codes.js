@@ -6380,6 +6380,18 @@ const CODES = [
       'webauthn.pqcAlongsideClassical is on), so no passkey anybody could ' +
       'register would satisfy it (#718).',
     spec: 'HTTP 400 (management API)' },
+  { code: 'STS-AUTHN-0370',
+    summary: 'A credential was removed (a passkey, an authenticator app, ' +
+      'recovery codes or the emailed second factor) and a session it had ' +
+      'signed in was still live after the sign-out that should have ended ' +
+      'it (logout.ts endFactorSessions(), #722). The removal stands; the ' +
+      'session ends at its own expiry or by /admin/sessions.',
+    spec: 'logged and audited; the removal is answered as done' },
+  { code: 'STS-AUTHN-0371',
+    summary: 'Ending the sessions a removed credential had signed in threw ' +
+      '(logout.ts endFactorSessions(), #722). The removal stands and no ' +
+      'session it signed in was ended by it.',
+    spec: 'logged and audited; the removal is answered as done' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -20456,6 +20468,12 @@ const CODES = [
       'not repeat the partner realm: the removal takes the trust\'s keys ' +
       'with it (#430).',
     spec: 'HTTP 400' },
+  { code: 'STS-ADMIN-0870',
+    summary: 'An administrator removed a credential (clear-key, ' +
+      'clear-totp, clear-backup-codes or clear-email-factor) in a process ' +
+      'with no sign-out model installed, so no session it signed in was ' +
+      'ended (#722). The removal stands.',
+    spec: 'logged; the removal is answered as done' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -21283,6 +21301,12 @@ const CODES = [
       'configuration\'s `signingAlgs` (vc_configs.ts vciSigningAlgsFor()) ' +
       'are the ones it may choose.',
     spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0600',
+    summary: 'A person removed a credential on /portal (a passkey, the ' +
+      'authenticator app or the emailed second factor) and the sign-out ' +
+      'model that ends the sessions it signed in could not be reached ' +
+      '(#722). The removal stands.',
+    spec: 'logged; the removal is answered as done' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },

@@ -480,6 +480,10 @@ class Logout {
         FAMILIES: instance.describedFamilies(),
         inventoryFor: instance.inventoryFor.bind(instance),
         terminate: instance.terminate.bind(instance),
+        // The sessions a removed credential signed in (#722), for the
+        // console's and the API's clear-key, clear-totp, clear-backup-codes
+        // and clear-email-factor.
+        endFactorSessions: instance.endFactorSessions.bind(instance),
         // /admin/sessions and GET /admin-api/sessions (2026-09-04). The whole
         // list rather than one identity's, and the rules that go with it —
         // see liveSessions() for why enumerating them is this module's job
@@ -2822,6 +2826,147 @@ class Logout {
     return result;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE SESSIONS A REMOVED CREDENTIAL SIGNED IN (#722, 2026-10-19).
+  //
+  // Removing a passkey ended nothing: the person's relying parties were told
+  // over CAEP and every session the key had signed in went on working until
+  // it expired — so somebody who found an unfamiliar passkey on their account
+  // and removed it left whoever enrolled it signed in. A password reset
+  // already signed the person out everywhere; this is the narrower act a
+  // credential's removal calls for.
+  //
+  // **WHICH SESSIONS: THE ONES THE CREDENTIAL AUTHENTICATED, AND NO OTHER.**
+  // `authn.sessionNamesFactor()` reads every authentication event on each of
+  // the person's sessions — as the first factor or as a step, at the sign-in
+  // or a re-authentication — and a session it names is ended. One it does not
+  // name survives, the session the person is removing the key FROM included:
+  // somebody removing a lost key from another device stays signed in, and
+  // somebody removing the key they are signed in with is signed out by it.
+  //
+  // **HOW: A SELECTIVE `terminate()`, the act `/logout` and `/admin/logout`
+  // perform**, so the session ends through `endSessionById()` — its derived
+  // sessions, the RFC 9700 refresh revocation, the front- and back-channel
+  // Logout Tokens and CAEP `session-revoked` all follow from there, once for
+  // the cluster under the `authn.session-end` claim — with the one audit row
+  // for the act. The selection ALSO names the tokens and the authorization
+  // codes issued on those sessions (the `token` and `code` rows whose
+  // `sessionId` is one of them), and GNAP grants follow by `endsWithSession`:
+  // a session ending revokes only its online refresh tokens, and the access
+  // tokens and `offline_access` refresh tokens of a session a stranger held
+  // are exactly what a removal is meant to take back.
+  //
+  // **ACROSS THE CLUSTER**: the sessions are read from `authn.sessions`, the
+  // persisted and replicated store every process and node shares, so a
+  // session signed in on another node is found and ended here.
+  //
+  // **A SESSION THAT IS STILL THERE AFTERWARDS IS A FAILURE OF ITS OWN**
+  // (STS-AUTHN-0370), logged and audited; a throw is STS-AUTHN-0371. Neither
+  // undoes the removal, which has already been written and signalled — a
+  // credential put back because a sign-out failed would be the worse half.
+  // ---------------------------------------------------------------------------
+  /**
+   * Ends every session of a person that the factor named authenticated, with
+   * the tokens and codes issued on those sessions; every other session stays.
+   *
+   * @param username - the person whose credential was removed
+   * @param factor - `{ kind: 'webauthn', credentialId }`, or `{ kind }` for
+   *   `totp`, `backup-code` or `email` (`authn.sessionNamesFactor()`)
+   * @param opts - terminate()'s `by`, `actor`, `initiatingEntity`, `channel`
+   * @returns `{ ok, sessionsEnded, itemsEnded, failed, sessionIds, message }`
+   */
+  endFactorSessions(username?: string, factor?: Loose, opts?: Loose): Loose {
+    const { log, audit, authn, errorCodes, stats } = this.deps;
+    const options = opts || {};
+    const who = String(username || '');
+    const kind = String((factor && factor.kind) || '');
+    log.debug("Entering Logout.endFactorSessions(). " + who + ", " + kind);
+    const key = who ? stats.identityKeyOf(who) : '';
+    const none = { ok: true, sessionsEnded: 0, itemsEnded: 0, failed: 0,
+                   sessionIds: [], message: '' };
+    if (!key || !kind) {
+      log.debug("Leaving Logout.endFactorSessions(). Nobody or nothing named.");
+      return none;
+    }
+    const ended = {};
+    let result: Loose = null;
+    try {
+      const ctx = this.contextFor(key);
+      ctx.sessions.forEach((session) => {
+        if (authn.sessionNamesFactor(session, factor)) {
+          ended[session.id] = true;
+        }
+      });
+      const ids = Object.keys(ended);
+      if (!ids.length) {
+        log.debug("Leaving Logout.endFactorSessions(). It authenticated no " +
+                  "live session.");
+        return none;
+      }
+      // `session` rows are ended by id; the tokens and codes issued on those
+      // sessions ride along. NOTHING SELECTED IS NEVER SENT: an empty
+      // selection is a global sign-out to `terminate()`, and there is always
+      // at least one `session:` id here.
+      const selection = ids.map((id) => { return 'session:' + id; });
+      this.allRows(ctx).forEach((r) => {
+        if ((r.family === 'token' || r.family === 'code') && r.terminable &&
+            r.sessionId && ended[r.sessionId]) {
+          selection.push(String(r.id));
+        }
+      });
+      result = this.terminate(key, selection, Object.assign({}, options, {
+        providerCommand: false }));
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0371') + 'logout: ending the ' +
+                'sessions a removed ' + kind + ' credential of ' + who +
+                ' signed in threw: ' + ((e && e.stack) || e));
+      audit.failure('STS-AUTHN-0371', {
+        protocol: 'Logout', channel: options.channel || 'http', target: key,
+        outcome: 'error',
+        summary: 'The sessions a removed credential signed in could not ' +
+                 'be ended',
+        detail: { factor: kind, why: String((e && e.message) || e) } });
+      log.debug("Leaving Logout.endFactorSessions(). Threw.");
+      return { ok: false, sessionsEnded: 0, itemsEnded: 0,
+               failed: Object.keys(ended).length,
+               sessionIds: [], message: 'The sessions it signed in could ' +
+               'not be ended.' };
+    }
+    // WHAT IS STILL THERE is the failure, whatever `terminate()` said: a row
+    // it reported as already ended is gone, and that is the outcome asked for.
+    const still = Object.keys(ended).filter((id) => {
+      return !!authn.sessionById(id);
+    });
+    if (still.length) {
+      log.warn(errorCodes.tag('STS-AUTHN-0370') + 'logout: ' + still.length +
+               ' session(s) a removed ' + kind + ' credential of ' + who +
+               ' signed in are still live after the sign-out; the removal ' +
+               'stands.');
+      audit.failure('STS-AUTHN-0370', {
+        protocol: 'Logout', channel: options.channel || 'http', target: key,
+        outcome: 'error',
+        summary: still.length + ' session(s) a removed credential signed ' +
+                 'in could not be ended',
+        detail: { factor: kind, sessions: still.join(', ') } });
+    }
+    const gone = Object.keys(ended).filter((id) => {
+      return still.indexOf(id) < 0;
+    });
+    const out = { ok: !still.length, sessionsEnded: gone.length,
+      itemsEnded: ((result && result.terminated) || []).length,
+      failed: still.length, sessionIds: gone,
+      message: gone.length + ' session(s) it signed in ended' +
+               (still.length ? ', ' + still.length + ' could not be' : '') +
+               '.' };
+    log.info('logout: removing a ' + kind + ' credential of ' + who +
+             ' ended ' + gone.length + ' session(s) it signed in' +
+             (still.length ? '; ' + still.length + ' could not be ended' : '') +
+             '.');
+    log.debug("Leaving Logout.endFactorSessions(). " + gone.length +
+              " ended.");
+    return out;
+  }
+
   // Every row, flattened, WITH its secret — the internal form, for terminate().
   // Not exported: `inventoryFor()` is what anything outside this module reads.
   private allRows(ctx?) {
@@ -4309,6 +4454,10 @@ export = {
   // A person's grants and tokens and nothing else (#432): what a received
   // signal's `signal-revoke-grants` ends.
   revokeGrantsOf: slot.forward('revokeGrantsOf'),
+  // The sessions a removed credential signed in (#722): the portal's and
+  // the console's removals of a passkey, an authenticator app, recovery
+  // codes and the emailed second factor.
+  endFactorSessions: slot.forward('endFactorSessions'),
   // A federation partner's sign-out (#167): the one session it named, ended
   // through terminate(), and what a browser then has to draw.
   endPartnerSession: slot.forward('endPartnerSession'),

@@ -524,5 +524,7 @@
   "done.codesSaved": "您的 {n} 个恢复码已保存。只存储了它们的哈希，因此本服务永远无法再向您显示——请保管好您留存的副本。",
   "done.keyOff": "您的 {rfc} 签名密钥已移除。从现在起，任何仍用它签名的内容都会被拒绝。",
   "done.passkeyMany": "您的通行密钥已就绪。您持有 {n} 个——即使丢失一个，其他的仍可让您登录。",
+  "done.sessionsEndedOne": "用它登录的会话已结束。",
+  "done.sessionsEndedMany": "用它登录的 {n} 个会话已结束。",
   "done.renamed": "已重命名为“{name}”。"
 }

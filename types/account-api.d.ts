@@ -66,6 +66,10 @@ export interface AccountContext {
   // Marks `code` and answers `{ ok: false, errors, ...extra }`.
   refuse(res: any, status: number, code: string, errors: string | string[],
          extra?: any): unknown;
+  // Ends the sessions a credential the person just removed signed in
+  // (#722): `{ sessionsEnded, failed, sentence }`, the sentence in their
+  // language and empty when none ended.
+  endFactorSessions(username: string, factor: any, what: string): any;
 }
 
 // ONE OPERATION, which is both a route and a row of the OpenAPI document.

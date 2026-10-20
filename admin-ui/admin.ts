@@ -6100,6 +6100,10 @@ class AdminConsole {
                      // that page saying no reader is installed on a service
                      // that plainly has one.
                      typeof reader.liveSessions === 'function' &&
+                     // endFactorSessions() joined them on 2026-10-19 (#722),
+                     // for the four credential removals on /admin/users,
+                     // and is validated with them for the same reason.
+                     typeof reader.endFactorSessions === 'function' &&
                      Array.isArray(reader.FAMILIES);
     if (!complete) {
       // A warning and not a throw, for the reason admin_rbac.js's install has:
@@ -6107,7 +6111,8 @@ class AdminConsole {
       // that says why it cannot answer.
       log.warn(errorCodes.tag('STS-ADMIN-0014') + 'admin: a logout reader ' +
                'was offered that does not carry inventoryFor(), terminate(), ' +
-               'liveSessions() and FAMILIES. It is refused whole — a partial ' +
+               'liveSessions(), endFactorSessions() and FAMILIES. It is ' +
+               'refused whole — a partial ' +
                'one would leave /admin/logout and /admin/sessions listing ' +
                'what is live and unable to end any of it, which is the worst ' +
                'of the two halves.');

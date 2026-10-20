@@ -524,5 +524,7 @@
   "done.codesSaved": "Na-save na ang iyong {n} recovery code. Mga hash lang nila ang itinatabi, kaya hindi na kailanman maipapakita sa iyo ulit ng serbisyong ito — ingatan ang kopyang ginawa mo.",
   "done.keyOff": "Naka-off na ang iyong {rfc} signing key. Tatanggihan na mula ngayon ang anumang pumipirma pa gamit ito.",
   "done.passkeyMany": "Handa na ang iyong passkey. May hawak kang {n} — kung mawala ang isa, maisa-sign in ka pa rin ng iba.",
+  "done.sessionsEndedOne": "Natapos na ang session na na-sign in gamit ito.",
+  "done.sessionsEndedMany": "Natapos na ang {n} session na na-sign in gamit ito.",
   "done.renamed": "Pinalitan ang pangalan ng \"{name}\"."
 }

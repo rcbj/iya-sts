@@ -331,11 +331,16 @@ class AccountMfa {
         return refuse(400, codeOf(removed, 'STS-PORTAL-0021'),
                       (removed.errors || ['It could not be removed.'])[0]);
       }
+      // THE SESSIONS THE APP'S CODES SIGNED IN END (#722); every other
+      // stays. Never undoing the removal.
+      const ended: Json = ctx.endFactorSessions(username, { kind: 'totp' },
+                                                'the authenticator app');
       audit.record({
         category: 'authentication', action: 'portal.mfa.removed',
         actor: username, outcome: 'success',
         summary: username + ' removed their own authenticator app',
-        detail: { address: websecurity.addressOf(req) }
+        detail: { address: websecurity.addressOf(req),
+                  sessionsEnded: ended.sessionsEnded }
       });
       // CAEP credential-change (#145), as the console's clear-totp sends.
       const signals = this.deps.accountSignals();
@@ -347,8 +352,10 @@ class AccountMfa {
       log.info('portal: ' + username + ' removed their authenticator app. ' +
                'That account is down to one factor.');
       log.debug("Leaving AccountMfa.act(). Removed.");
+      const said = t.text('portal.done.totpRemoved');
       return ctx.json(res, 200, { ok: true,
-                                  message: t.text('portal.done.totpRemoved') });
+        message: ended.sentence ? said + ' ' + ended.sentence : said,
+        sessionsEnded: ended.sessionsEnded });
     }
 
     // THE EMAILED SECOND FACTOR (#64). `common/mail_factor.ts` decides, and
@@ -363,11 +370,19 @@ class AccountMfa {
         return refuse(400, codeOf(done, 'STS-PORTAL-0092'),
                       (done.errors || ['That could not be done.'])[0]);
       }
+      // TURNED OFF, THE SESSIONS IT SIGNED IN AS A SECOND FACTOR END (#722),
+      // and only when it was on.
+      const ended: Json = action === 'email-factor-off' && done.removed
+        ? ctx.endFactorSessions(username, { kind: 'email' },
+                                'the emailed second factor')
+        : { sessionsEnded: 0, sentence: '' };
+      const said = action === 'email-factor-on'
+        ? t.text('portal.done.emailOn') : t.text('portal.done.emailOff');
       log.debug("Leaving AccountMfa.act(). Email factor changed.");
       // Back to the card it was on, as the redirect's `#email-factor` did.
       return ctx.json(res, 200, { ok: true,
-        message: action === 'email-factor-on'
-          ? t.text('portal.done.emailOn') : t.text('portal.done.emailOff'),
+        message: ended.sentence ? said + ' ' + ended.sentence : said,
+        sessionsEnded: ended.sessionsEnded,
         go: ctx.PORTAL + '/mfa#email-factor' });
     }
 
@@ -584,7 +599,8 @@ class AccountMfa {
         summary: 'Sets up, confirms or removes your second factors',
         description: '`start` mints a secret and holds it (ask the view for ' +
           'the QR code); `confirm` checks a code from the app (rate ' +
-          'limited) and enrols it; `remove` takes it off. ' +
+          'limited) and enrols it; `remove` takes it off, and ends ' +
+          'every session its codes signed in (`sessionsEnded`, #722). ' +
           '`generate-codes` answers a set of recovery codes ONCE, in ' +
           '`view.fresh`, and stores nothing; `confirm-codes` stores their ' +
           'hashes; `discard-codes` throws the pending set away. ' +
