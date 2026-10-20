@@ -641,7 +641,11 @@ const AUTHN_ATTRIBUTE = {
   // the authentication earned them (`common/phishing_resistance.ts`), or
   // `none` — never empty when sent, so a rule on `none` speaks only to an
   // issuance the gate described: the four browser kinds.
-  PHISHING_RESISTANCE: 'urn:sts:xacml:phishing-resistance'
+  PHISHING_RESISTANCE: 'urn:sts:xacml:phishing-resistance',
+  // An assignment on the authentication obligation (#723) naming WHAT the
+  // authentication lacked — `phishing-resistant` or `hardware-protected` —
+  // so the refusal the PEP writes says that, and not the role sentence.
+  REFUSAL: 'urn:sts:xacml:authentication-refusal'
 };
 
 // ---------------------------------------------------------------------------
@@ -1575,6 +1579,14 @@ const TEMPLATES: TemplateRow[] = [
           B.designator(env, AUTHN_ATTRIBUTE.PHISHING_RESISTANCE,
                        TYPE.STRING)]);
       };
+      const lacked = function lacked(what: string): any[] {
+        log.debug("Entering lacked().");
+        log.debug("Leaving lacked().");
+        return [{ id: AUTHN_ATTRIBUTE.OBLIGATION, on: model.EFFECT.DENY,
+                  assignments: [{ attributeId: AUTHN_ATTRIBUTE.REFUSAL,
+                    category: null, issuer: null,
+                    expression: B.value(TYPE.STRING, what) }] }];
+      };
       if (phrApps.length) {
         riskRules.push({
           id: options.idBase + ':rule:phishing-resistant',
@@ -1584,8 +1596,7 @@ const TEMPLATES: TemplateRow[] = [
                        '(OpenID Connect EAP ACR Values 1.0, phr).',
           target: null,
           condition: B.apply(F1 + 'and', [appIn(phrApps), earned('none')]),
-          obligations: [{ id: AUTHN_ATTRIBUTE.OBLIGATION,
-                          on: model.EFFECT.DENY, assignments: [] }],
+          obligations: lacked('phishing-resistant'),
           advice: []
         });
       }
@@ -1606,8 +1617,7 @@ const TEMPLATES: TemplateRow[] = [
                              TYPE.STRING)]),
               B.value(TYPE.INTEGER, '0')]),
             B.apply(F1 + 'not', [earned('phrh')])]),
-          obligations: [{ id: AUTHN_ATTRIBUTE.OBLIGATION,
-                          on: model.EFFECT.DENY, assignments: [] }],
+          obligations: lacked('hardware-protected'),
           advice: []
         });
       }

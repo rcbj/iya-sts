@@ -870,6 +870,26 @@ class XacmlRolePep {
     return said === 'compromised' ? 'compromised' : 'not-compliant';
   }
 
+  // What an authentication Deny says the authentication lacked (#723):
+  // `phishing-resistant`, `hardware-protected`, or null for a Deny that
+  // names nothing (an emailed factor's) or is not about the authentication.
+  private authenticationRefusalOf(answer: any): string | null {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.authenticationRefusalOf().");
+    const found = (answer && answer.obligations || []).filter(function (o) {
+      return o && o.id === AUTHN.OBLIGATION;
+    })[0];
+    const hit = found ? (found.assignments || []).filter(function (a) {
+      return a.attributeId === AUTHN.REFUSAL;
+    })[0] : null;
+    const said = hit ? String(hit.lexical !== undefined ? hit.lexical
+                                                        : hit.value) : '';
+    log.debug("Leaving XacmlRolePep.authenticationRefusalOf(). " +
+              (said || 'none'));
+    return said === 'phishing-resistant' || said === 'hardware-protected'
+      ? said : null;
+  }
+
   // The risk obligation on a Deny, read: `{ action, factor }`, or null when
   // the Deny is not about risk. The action defaults to `refuse`: an
   // obligation this PEP cannot read is a policy saying no, not a policy
@@ -1577,6 +1597,22 @@ class XacmlRolePep {
     log.debug("Entering XacmlRolePep.reasonFor().");
     const who = asked.subject && asked.subject.name
       ? '"' + asked.subject.name + '"' : 'the caller';
+    // A DENY SAYING WHAT THE AUTHENTICATION LACKED (#723) says that: the
+    // role sentence would tell somebody who holds every role that they
+    // hold every role.
+    const lacked = this.authenticationRefusalOf(answer);
+    if (lacked) {
+      log.debug("Leaving XacmlRolePep.reasonFor(). The authentication.");
+      return '"' + asked.application + '" requires ' +
+        (lacked === 'hardware-protected'
+          ? 'a phishing-resistant authentication with a hardware-protected ' +
+            'key (OpenID Connect EAP ACR Values 1.0, phrh)'
+          : 'a phishing-resistant authentication (OpenID Connect EAP ACR ' +
+            'Values 1.0, phr)') +
+        ', and ' + who + '\'s was not one. A passkey or security key ' +
+        'already registered meets phr; phrh needs one whose attestation ' +
+        'this realm trusts and that is not backup-eligible.';
+    }
     if (answer.decision === model.DECISION.DENY ||
         answer.decision === model.DECISION.NOT_APPLICABLE) {
       log.debug("Leaving XacmlRolePep.reasonFor().");

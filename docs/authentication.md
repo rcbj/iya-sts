@@ -678,11 +678,16 @@ for.
 | holds a `primary` key, passwordless box ticked | the passwordless ceremony |
 
 A relying party can **demand** more. `acr_values` that only two factors can
-meet (`mfa`, `hwk`, `phr`, `phrh`) ticks the second-factor box and refuses the
-passwordless path server-side. A demand for a hardware key (RFC 8176 `hwk`, or
-a WS-Federation `wauth` for a hardware token) allows only a security key, alone
+meet (`mfa`, `hwk`) ticks the second-factor box and refuses the passwordless
+path server-side. A demand for a hardware key (RFC 8176 `hwk`, or a
+WS-Federation `wauth` for a hardware token) allows only a security key, alone
 or after a password, and refuses the code and recovery-code steps
-(`STS-AUTHN-0204`). A WS-Federation `wauth` for **multi-factor** is met only by
+(`STS-AUTHN-0204`). A demand for a **phishing-resistant** sign-in (OpenID
+Connect EAP's `phr`, or `phrh` for a hardware-protected key) asks for a
+security key the same way. A passkey alone meets it. A synced or unattested
+passkey meets `phr` and never `phrh`. A key enrolled during that sign-in meets
+neither: it was added on the strength of a password. See [OAuth security
+profiles](oauth-security.md#phishing-resistant-sign-in-phr-phrh). A WS-Federation `wauth` for **multi-factor** is met only by
 a session that really had two factors, so a passwordless key does not meet it.
 A session that does not meet a demand is sent through the sign-in screen again
 with what was asked for required, rather than answered. See
