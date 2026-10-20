@@ -2371,6 +2371,14 @@
     "en": "6cf5af064bdc580d",
     "text": "詢問要在應用程式的哪個聯盟身分識別提供者登入；需要 ?authn= id，因此直接開啟會回應 400"
   },
+  "stsmetadata.endpoints./authn/accounts.what": {
+    "en": "133e09e2d14aa686",
+    "text": "一個瀏覽器中登入多個帳號（#561），在 authn.multipleAccounts 開啟時（預設關閉）。來自持有多個已登入帳號的瀏覽器、卻未指明其中任何一個的請求——其流程中未選擇帳號，也沒有指明帳號的 login_hint 或 id_token_hint——會被送到這裡，OpenID Connect 的 prompt=select_account（Core 第 3.1.2.1 節）也是如此。每個已登入帳號以其自身繼續流程，其工作階段會再次檢查，對其不符合的雙因素要求，以該帳號重新登入來回應；瀏覽器記住的每個已登出帳號都可以重新登入或忘記；「使用其他帳號」即一般登入。一個靜態頁面，由 /authn-api/pending/{id}/accounts 繪製。"
+  },
+  "stsmetadata.endpoints./authn/accounts.effect": {
+    "en": "ac430d30ba3b9a6a",
+    "text": "詢問登入以瀏覽器中哪個已登入帳號繼續；需要 ?authn= id，因此直接前往會回應 400"
+  },
   "stsmetadata.endpoints./authn/spnego.what": {
     "en": "23818b4a272ea292",
     "text": "「整合式驗證，也是此處唯一一種建立在本服務真正驗證過之認證上的登入」。在其他各處，輸入的使用者名稱「就是」身分；Kerberos 無法這樣運作，因為在那裡密碼就是金鑰——因此此入口會依真實的長期金鑰檢查真實的服務票證，透過本服務自己的接受器，沒有自己的協定程式碼。其背後的 KDC 仍是協定所允許的最寬鬆程度（任何使用者名稱、一個共用密碼、首次出現時建立帳戶），這讓開發模式保持寬鬆——驗證是真實的，帳戶原則則不是。它「對每個應用程式都可用」，但不為任何應用程式註冊：/authn/login 上的按鈕會為任何正在進行的流程提供它，應用程式項目上的 appAuthnMechanism: spnego 會將該應用程式的使用者直接送來這裡，而身分識別提供者端聯盟關係上的 fedAuthnMechanism: spnego 則讓 Kerberos 票證能滿足一個從未聽說過 Kerberos 的外部合作夥伴。工作階段隨後宣告的內容讀取自「票證」本身的旗標——pre-authent 為 amr [\"pwd\"]，hw-authent 為 [\"hwk\"]，兩者皆有則兩者皆列，兩者皆未宣告的票證則什麼都沒有，因為本服務不會指名任何認證都未證明的要素。它接受 ?authn=，「絕不」接受 returnTo：返回位址在待處理記錄上，因此這裡完全沒有開放式重新導向的攻擊面。無法取得票證的用戶端會看到一個連結至登入畫面的頁面，因為單純的 401 Negotiate 在每個未針對此主機設定的瀏覽器中都是死路。krb5.spnegoAuthentication 可將其關閉，此時它會回應 403 並說明，而非 404。"
@@ -2490,6 +2498,26 @@
   "stsmetadata.endpoints./authn-api/pending/:id/partners.what": {
     "en": "278e1af859a5f658",
     "text": "NON-SPEC（#571）。選擇器的檢視，依據應用程式的項目重新解析。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts.what": {
+    "en": "6b11ee5ab38d4107",
+    "text": "NON-SPEC（#561）。帳號選擇器的檢視：瀏覽器的已登入帳號與已記住帳號，每個都以其金鑰而絕不以 sid 標示，以及其動作所帶的 CSRF 權杖。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/select.what": {
+    "en": "32d3c868fcbeef9a",
+    "text": "NON-SPEC（#561）。再次檢查該帳號的工作階段；回應以一次性選擇票證恢復流程。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/another.what": {
+    "en": "e292828cb4e3c235",
+    "text": "NON-SPEC（#561）。使用其他帳號：一般登入，在瀏覽器的每個位置都已登入時會被拒絕。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/forget.what": {
+    "en": "ca27920f84beeb19",
+    "text": "NON-SPEC（#561）。僅限在此瀏覽器中登出的帳號；不觸及任何工作階段。"
+  },
+  "stsmetadata.endpoints./authn-api/accounts.what": {
+    "en": "f96dbce662dca61d",
+    "text": "NON-SPEC（#561）。瀏覽器的已登入帳號與已記住帳號及其狀態，供帳號選單使用——絕不包含 sid 或權杖；authn.multipleAccounts 關閉時為空。"
   },
   "stsmetadata.endpoints./authn-api/pending/:id/password.what": {
     "en": "f09b8dc5712df29f",

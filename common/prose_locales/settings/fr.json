@@ -699,6 +699,30 @@
     "en": "33bc4846535a784f",
     "text": "De combien de temps dispose quelqu’un qui a passé l’étape du mot de passe pour présenter son second facteur — une clé de sécurité, un code d’une application d’authentification ou un code de récupération — avant que l’étape expire et que la connexion doive être recommencée. C’est la fenêtre pendant laquelle un code deviné peut être essayé, c’est pourquoi elle est plus courte que l’horloge de l’écran lui-même ; le limiteur de débit borne les tentatives à l’intérieur."
   },
+  "authn.multipleAccounts|label": {
+    "en": "96144493272617dc",
+    "text": "Plusieurs comptes connectés dans un même navigateur"
+  },
+  "authn.multipleAccounts|description": {
+    "en": "d0b4899bdae1c43d",
+    "text": "Permet à un navigateur de détenir des sessions d’authentification unique pour plusieurs personnes à la fois, et de choisir entre elles. Activé, la connexion d’une autre personne AJOUTE une session à l’ensemble de comptes du navigateur (le témoin `sts_accounts`) au lieu de mettre fin à celle qu’il avait ; une requête qui ne dit pas à quel compte elle est destinée — aucun compte choisi dans ce flux, aucun login_hint, id_token_hint ni Subject SAML n’en nommant un — alors que plusieurs comptes sont connectés est envoyée au sélecteur de comptes à /authn/accounts, et prompt=select_account l’affiche. Chaque session conserve sa propre durée de vie, son délai d’inactivité, son état d’authentification renforcée et sa déconnexion. Désactivé, par défaut, le navigateur a une seule session et la connexion d’une autre personne y met fin. Prend effet à la requête suivante dans les deux sens et ne met fin à rien : activé, la session existante d’un navigateur devient le premier compte de son ensemble ; désactivé, la session par défaut du navigateur continue seule et les autres expirent comme d’habitude."
+  },
+  "authn.maxBrowserAccounts|label": {
+    "en": "19115cee7c688f64",
+    "text": "Nombre maximal de comptes mémorisés par un navigateur"
+  },
+  "authn.maxBrowserAccounts|description": {
+    "en": "fa642faef7e66a0f",
+    "text": "Avec plusieurs comptes connectés activé, le nombre maximal de comptes que contient l’ensemble de comptes d’un navigateur, connectés et déconnectés confondus. Une connexion qui le dépasserait retire d’abord le compte déconnecté depuis le plus longtemps ; quand chaque place est occupée par un compte connecté, la connexion est refusée (STS-AUTHN-0340) et le sélecteur indique qu’un compte doit d’abord être déconnecté."
+  },
+  "authn.rememberedAccountDays|label": {
+    "en": "9e38d0738504c1e3",
+    "text": "Durée de mémorisation d’un compte déconnecté (jours)"
+  },
+  "authn.rememberedAccountDays|description": {
+    "en": "a1fe0b6f510982c4",
+    "text": "Avec plusieurs comptes connectés activé, pendant combien de temps le sélecteur de comptes continue de proposer un compte qui s’est déconnecté dans ce navigateur — son nom d’utilisateur, son nom affiché et son sujet, jamais un identifiant secret, conservés sur le serveur — afin qu’on puisse s’y reconnecter ou l’oublier. La tâche planifiée `authn.account-set-expiry` le retire ensuite."
+  },
   "oidcRp.maxFlows|label": {
     "en": "f517b7686e6225fc",
     "text": "Connexions de la console et du portail en cours, par domaine"

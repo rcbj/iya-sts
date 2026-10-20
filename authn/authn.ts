@@ -2095,7 +2095,14 @@ class Authn {
   // resolves its account as if it had carried none. With the setting off
   // the request is not touched at all.
   // ---------------------------------------------------------------------------
-  private spendAccountTicket(req) {
+  /**
+   * Takes an account selection ticket off a request and spends it (#561);
+   * the middleware every request passes. Exported for
+   * `tests/multi_account_sessions.js`.
+   *
+   * @param req - the request
+   */
+  spendAccountTicket(req) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Authn.spendAccountTicket().");
     if (!AccountSets.enabled()) {
@@ -15168,6 +15175,7 @@ export = {
   hintAccount: slot.forward('hintAccount'),
   accountChoiceNeeded: slot.forward('accountChoiceNeeded'),
   accountTicketFor: slot.forward('accountTicketFor'),
+  spendAccountTicket: slot.forward('spendAccountTicket'),
   noteAccountAmbiguous: slot.forward('noteAccountAmbiguous'),
   browserAccounts: slot.forward('browserAccounts'),
   pendingForAccounts: slot.forward('pendingForAccounts'),

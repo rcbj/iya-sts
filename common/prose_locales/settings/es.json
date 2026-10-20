@@ -699,6 +699,30 @@
     "en": "33bc4846535a784f",
     "text": "Cuánto tiempo tiene alguien que ha superado el paso de la contraseña para presentar su segundo factor — una llave de seguridad, un código de una aplicación de autenticación o un código de recuperación — antes de que el paso venza y haya que empezar de nuevo el inicio de sesión. Es la ventana en la que se puede probar siquiera un código adivinado, por eso es más corta que el reloj propio de la pantalla; el limitador de tasa acota los intentos dentro de ella."
   },
+  "authn.multipleAccounts|label": {
+    "en": "96144493272617dc",
+    "text": "Varias cuentas con la sesión iniciada en un navegador"
+  },
+  "authn.multipleAccounts|description": {
+    "en": "d0b4899bdae1c43d",
+    "text": "Permite que un navegador mantenga sesiones de inicio de sesión único de varias personas a la vez y elegir entre ellas. Activado, el inicio de sesión de otra persona AÑADE una sesión al conjunto de cuentas del navegador (la cookie `sts_accounts`) en lugar de cerrar la que tenía; una solicitud que no dice para qué cuenta es — ninguna cuenta elegida en este flujo, ningún login_hint, id_token_hint ni Subject de SAML que nombre una — mientras hay más de una con la sesión iniciada se envía al selector de cuentas en /authn/accounts, y prompt=select_account lo muestra. Cada sesión conserva su propia duración, su tiempo de inactividad, su estado de autenticación reforzada y su cierre de sesión. Desactivado, el valor predeterminado, el navegador tiene una sola sesión y el inicio de sesión de otra persona la cierra. Surte efecto en la siguiente solicitud en ambos sentidos y no cierra nada: al activarlo, la sesión existente de un navegador pasa a ser la primera cuenta de su conjunto; al desactivarlo, la sesión predeterminada del navegador continúa sola y las demás caducan como de costumbre."
+  },
+  "authn.maxBrowserAccounts|label": {
+    "en": "19115cee7c688f64",
+    "text": "Máximo de cuentas que recuerda un navegador"
+  },
+  "authn.maxBrowserAccounts|description": {
+    "en": "fa642faef7e66a0f",
+    "text": "Con varias cuentas con la sesión iniciada activado, el máximo de cuentas que contiene el conjunto de cuentas de un navegador, con la sesión iniciada y cerrada juntas. Un inicio de sesión que lo superaría elimina primero la cuenta que cerró la sesión hace más tiempo; cuando cada plaza la ocupa una cuenta con la sesión iniciada, el inicio de sesión se rechaza (STS-AUTHN-0340) y el selector indica que primero debe cerrarse la sesión de una cuenta."
+  },
+  "authn.rememberedAccountDays|label": {
+    "en": "9e38d0738504c1e3",
+    "text": "Cuánto tiempo se recuerda una cuenta con la sesión cerrada (días)"
+  },
+  "authn.rememberedAccountDays|description": {
+    "en": "a1fe0b6f510982c4",
+    "text": "Con varias cuentas con la sesión iniciada activado, durante cuánto tiempo el selector de cuentas sigue ofreciendo una cuenta que cerró la sesión en este navegador — su nombre de usuario, su nombre para mostrar y su sujeto, nunca una credencial, guardados en el servidor — para volver a iniciar sesión con ella u olvidarla. La tarea programada `authn.account-set-expiry` la elimina después."
+  },
   "oidcRp.maxFlows|label": {
     "en": "f517b7686e6225fc",
     "text": "Inicios de sesión de la consola y el portal en curso, por dominio"
