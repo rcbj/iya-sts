@@ -227,6 +227,18 @@
     "en": "2a529b7dda255daa",
     "text": "Sa limang pintong iyon, tinatanggihan ang sariling password ng tao — sinasagot eksakto tulad ng maling password, at binibilang laban sa rate limit bilang isa (STS-AUTHN-0213 sa audit row at sa log lang) — tuwing may hawak siyang authenticator app o security key sa mfa role, o hinihingan siya ng second factor (stsMfaRequired, ang authentication policy). Ang APP PASSWORD na ginawa niya sa /portal/app-passwords, naka-scope sa pinto, ang tinatanggap sa halip. Pinapangalanan ng authn.passwordAloneDoors ang mga pintong tumatanggap pa rin ng password, na nagbababa sa bawat ganoong tao sa iisang factor doon."
   },
+  "mode.requirements.kerberos-sid-filtering.what": {
+    "en": "e3950aa2a75faaec",
+    "text": "Ang isang Kerberos trust ay iginagalang lamang habang nagfi-filter ito ng mga SID"
+  },
+  "mode.requirements.kerberos-sid-filtering.development": {
+    "en": "75b6728bdcc111d0",
+    "text": "Ang trust record na naka-off ang quarantined ay ginagamit tulad ng iba: nire-refer ang mga ticket sa pamamagitan nito at tinatanggap mula rito, at ang PAC na dumarating sa kabila nito ay fini-filter ayon sa sinasabi ng trust boundary nito, nang wala ang patakaran ng quarantine na tanging ang mga SID ng pinagkakatiwalaang domain ang dumaraan."
+  },
+  "mode.requirements.kerberos-sid-filtering.product": {
+    "en": "e9c9138415ca5310",
+    "text": "Ang trust record na naka-off ang quarantined ay walang nire-refer at walang tinatanggap (sinasabi ng STS-KRB-0229 kung bakit) habang naka-on ang krb5.requireSidFilteringInProduct, na siyang default. Ang pag-off ng setting na iyon sa realm ay ang operator na tumatanggap ng mga SID ng partner."
+  },
   "mode.requirements.kerberos-second-factor.what": {
     "en": "6bb019d0381a77a4",
     "text": "Ang taong may hawak o dapat may hawak ng second factor ay hindi nakakakuha ng Kerberos ticket sa password lang"

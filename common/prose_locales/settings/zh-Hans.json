@@ -5879,6 +5879,22 @@
     "en": "0ed445787254dab6",
     "text": "每个主体的 PAC 身份在启动时构建。但信任领域仍可携带此项：领域的主体数据库在其 Kerberos 开启时构建，并在此项更改时重建，因此启动时并未使用该领域的值"
   },
+  "krb5.crossRealmClassicDelegation|label": {
+    "en": "d94511f367aa2305",
+    "text": "跨信任的经典委派"
+  },
+  "krb5.crossRealmClassicDelegation|description": {
+    "en": "f95686ad2d2053e6",
+    "text": "经典约束委派（前端上的 appAllowedToDelegateTo）是否可以跨越 Kerberos 信任。默认关闭：它在单个领域内定义，而基于资源的委派（目标上的 appAllowedToActOnBehalfOf，命名 SPN@REALM）才是跨越的那种。开启时，前端所在领域在引荐证据前检查自己的列表，目标所在领域将其视为已检查；两个领域都必须开启。"
+  },
+  "krb5.requireSidFilteringInProduct|label": {
+    "en": "f4bc0b8bb8e18123",
+    "text": "要求信任过滤 SID"
+  },
+  "krb5.requireSidFilteringInProduct|description": {
+    "en": "120e89b9d4c0b3e4",
+    "text": "在产品模式下，Kerberos 信任仅在过滤 SID 时使用（其 quarantined 属性，默认开启）。在领域上关闭此项，即运营者接受伙伴未经过滤的 SID。开发模式无论此项如何都使用每个信任。"
+  },
   "krb5.maxReferralHops|label": {
     "en": "ae50da753613f751",
     "text": "引荐路径最多跨越的信任数"

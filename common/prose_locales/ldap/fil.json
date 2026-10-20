@@ -1179,6 +1179,14 @@
     "en": "3b66e9eeaaad2290",
     "text": "TRUE o FALSE, FALSE bilang default: ang Kerberos service na ito ay TRUSTED FOR DELEGATION — unconstrained (ang TRUSTED_FOR_DELEGATION ng Active Directory). May dalang ok-as-delegate ang mga service ticket nito, na nagsasabi sa client na puwede nitong i-forward dito ang TGT nito; ang sinumang may hawak ng na-forward na TGT ay makakakilos bilang taong iyon saanman. Hindi kailanman forwardable ang TGT ng isang protektadong tao, kaya hindi ito kailanman nafo-forward anuman ang pagkakatakda nito. Ang constrained delegation (appAllowedToDelegateTo, appAllowedToActOnBehalfOf) ang mas ligtas na alternatibo."
   },
+  "applications.schema.attributes.krb5S4uSelfRealm.what": {
+    "en": "1549deb6e1db2854",
+    "text": "ANG MGA KERBEROS REALM NA ANG MGA USER AY MAAARING KUHANAN NG SERBISYONG ITO NG MGA S4U2SELF TICKET, bukod sa sarili nito. ANG WALANG LAMAN AY NANGANGAHULUGANG SARILING REALM LAMANG. Ang isang value ay dapat isang realm na ang mga ticket ay tinatanggap ng mga trust ng realm na ito — isang trust na may incoming key, o isang realm na niruruta ng isang transitive na trust — at sinusuri ito sa pagsulat."
+  },
+  "applications.schema.attributes.krb5ForeignTgtDelegation.what": {
+    "en": "8f20493c35397916",
+    "text": "`inherit` (ang default) o `deny`: ang sinasabi ng serbisyong ito tungkol sa isang TGT na idinelegate dito SA KABILA NG ISANG TRUST — ok-as-delegate sa mga ticket nito para sa user ng ibang realm. Sinusunod ng `inherit` ang mga attribute ng trust ([MS-KILE] 3.3.5.7.5); tinatanggihan ito ng `deny` anuman ang sabihin ng mga iyon. Nagpapakitid lamang ito: walang anuman dito ang nagpapagana ng hindi pinapagana ng trust."
+  },
   "applications.schema.attributes.krb5ServiceKeys.what": {
     "en": "35f24692c1cc40a5",
     "text": "ANG MGA RANDOM NA LONG-TERM KEY NG ISANG SERVICE PRINCIPAL, isa bawat enctype, sa IISANG value: isang JSON document na nagpapangalan sa SPN, sa realm at sa kvno katabi ng mga key, NAKA-SEAL sa ilalim ng key-encryption key saanman mas matagal ang buhay ng key na iyon kaysa sa process. Iisang value sa halip na isa bawat enctype para hindi mailipat ang key sa ibang entry o ibang kvno nang hindi nabibigo ang seal. Katumbas ng password: ITINATAGO ito sa bawat page at bawat sagot ng /admin-api, at ang tanging pagkakataong lumalabas ito sa serbisyong ito ay bilang keytab na ibinibigay ng create o rotate."

@@ -5879,6 +5879,22 @@
     "en": "0ed445787254dab6",
     "text": "la identidad PAC de cada principal se construye al arrancar. Un DOMINIO DE CONFIANZA puede tenerlo de todos modos: la base de principales de un dominio se construye cuando se activa su Kerberos y se reconstruye cuando esto cambia, así que nada del valor del dominio se consumió al arrancar"
   },
+  "krb5.crossRealmClassicDelegation|label": {
+    "en": "d94511f367aa2305",
+    "text": "Delegación clásica a través de confianzas"
+  },
+  "krb5.crossRealmClassicDelegation|description": {
+    "en": "f95686ad2d2053e6",
+    "text": "Si la delegación restringida CLÁSICA (appAllowedToDelegateTo en el front end) puede cruzar una confianza Kerberos. Desactivada por defecto: se define dentro de un dominio, y la delegación basada en recursos (appAllowedToActOnBehalfOf en el destino, nombrando SPN@REALM) es la que cruza. Activada, el dominio del front end comprueba su propia lista antes de referir la evidencia, y el dominio del destino la da por comprobada; ambos dominios deben activarla."
+  },
+  "krb5.requireSidFilteringInProduct|label": {
+    "en": "f4bc0b8bb8e18123",
+    "text": "Exigir filtrado de SID en las confianzas"
+  },
+  "krb5.requireSidFilteringInProduct|description": {
+    "en": "120e89b9d4c0b3e4",
+    "text": "En modo producto, una confianza Kerberos solo se usa mientras filtra los SID (su atributo quarantined, activado por defecto). Desactivar esto en un dominio es el operador aceptando los SID de un socio sin filtrar. El modo de desarrollo usa cada confianza diga lo que diga esto."
+  },
   "krb5.maxReferralHops|label": {
     "en": "ae50da753613f751",
     "text": "Máximo de confianzas que cruza una ruta de referencia"

@@ -93,10 +93,9 @@
 //    constant, and every field of the reply follows it.
 //  * **A PAC arriving across a trust is RE-SIGNED, not rebuilt.** The target
 //    realm has no copy of the client's account. It carries the buffers across
-//    and signs them with its own keys. **SID filtering is not implemented** —
-//    that is the control which stops the other realm asserting membership of
-//    groups in this one, and its absence is stated rather than left as a
-//    silence.
+//    and signs them with its own keys — after SID FILTERING (#430), the
+//    control which stops the other realm asserting membership of groups in
+//    this one: filterArriving(), and kerberos/CLAUDE.md's numbered table.
 //
 // ---------------------------------------------------------------------------
 // DELEGATION is served too, all four ways, and the mock draws the distinctions
@@ -108,8 +107,9 @@
 // story of resource-based delegation, and the FORWARDED block in handleTgsReq()
 // for the one control that limits unconstrained delegation at all.
 //
-// It does NOT check request signatures, does not implement kpasswd, and does
-// not apply SID filtering across a trust. PKINIT (RFC 4556, with anonymous
+// It does NOT check request signatures and does not implement kpasswd. SID
+// filtering across a trust is applied since #430. PKINIT (RFC 4556, with
+// anonymous
 // PKINIT for FAST armor) is served since #179 — krb5_pkinit.ts, reached
 // through the key source like FAST, below. The AS and TGS exchanges are both
 // served; the AP exchange belongs to a SERVICE rather than to a KDC and lives
@@ -741,12 +741,11 @@ async function buildPacFor(client, opts) {
 //    supposed to apply policy to. Since #430 it is filled (crossRealmPath()),
 //    and the path is checked against the trust records before a referral
 //    goes onward.
-//  * **The PAC is not re-signed here and is not stripped either.** The referral
-//    ticket carries the client's PAC from the issuing realm; the TARGET realm's
-//    KDC is what re-signs it with its own keys. That is also where Windows
-//    applies SID filtering, which this mock does NOT implement — a note rather
-//    than a silence, because SID filtering is the control that stops the other
-//    realm asserting membership of groups in this one.
+//  * **The PAC is carried, and re-signed only where it already crossed a
+//    trust.** A first-hop referral carries the client's PAC from the issuing
+//    realm; the TARGET realm's KDC re-signs it with its own keys after SID
+//    filtering (#430). A referral onward from a realm the PAC already crossed
+//    into is SID-filtered and re-signed here, for the next trust.
 // ---------------------------------------------------------------------------
 async function issueReferral(ctx) {
   log.debug('Entering issueReferral(). target=' + ctx.targetRealm);

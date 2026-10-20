@@ -2447,8 +2447,9 @@ const REQUIREMENTS = [
     what: 'A Kerberos trust is honoured only while it filters SIDs',
     development: 'A trust record with quarantined off is used like any ' +
                  'other: tickets are referred through it and accepted from ' +
-                 'it, and a PAC arriving across it loses only the SIDs of ' +
-                 'this realm\'s own domain.',
+                 'it, and a PAC arriving across it is filtered as its ' +
+                 'trust boundary says, without the quarantine\'s rule ' +
+                 'that only the trusted domain\'s SIDs pass.',
     product: 'A trust record with quarantined off refers nobody and ' +
              'accepts nothing (STS-KRB-0229 names why) while ' +
              'krb5.requireSidFilteringInProduct is on, which is the ' +

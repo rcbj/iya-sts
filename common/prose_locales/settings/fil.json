@@ -5879,6 +5879,22 @@
     "en": "0ed445787254dab6",
     "text": "binubuo sa startup ang PAC identity ng bawat principal. Maaari pa rin itong dalhin ng isang TRUST REALM: binubuo ang principal database ng realm kapag ino-on ang Kerberos nito at binubuo ulit kapag nagbago ito, kaya walang bahagi ng value ng realm ang nagamit sa startup"
   },
+  "krb5.crossRealmClassicDelegation|label": {
+    "en": "d94511f367aa2305",
+    "text": "Classic na delegation sa kabila ng mga trust"
+  },
+  "krb5.crossRealmClassicDelegation|description": {
+    "en": "f95686ad2d2053e6",
+    "text": "Kung ang CLASSIC na constrained delegation (appAllowedToDelegateTo sa front end) ay maaaring tumawid sa isang Kerberos trust. Naka-off bilang default: tinutukoy ito sa loob ng iisang realm, at ang resource-based na delegation (appAllowedToActOnBehalfOf sa target, na nagpapangalan ng SPN@REALM) ang tumatawid. Kapag naka-on, sinusuri ng realm ng front end ang sarili nitong listahan bago i-refer ang ebidensya, at itinuturing ito ng realm ng target na nasuri na; dapat itong i-on ng parehong realm."
+  },
+  "krb5.requireSidFilteringInProduct|label": {
+    "en": "f4bc0b8bb8e18123",
+    "text": "Hingin ang SID filtering sa mga trust"
+  },
+  "krb5.requireSidFilteringInProduct|description": {
+    "en": "120e89b9d4c0b3e4",
+    "text": "Sa product mode, ginagamit lamang ang isang Kerberos trust habang nagfi-filter ito ng mga SID (ang quarantined na attribute nito, naka-on bilang default). Ang pag-off nito sa isang realm ay ang operator na tumatanggap ng mga SID ng partner nang hindi fini-filter. Ginagamit ng development ang bawat trust anuman ang sabihin nito."
+  },
   "krb5.maxReferralHops|label": {
     "en": "ae50da753613f751",
     "text": "Pinakamaraming trust na tinatawid ng isang referral path"

@@ -5879,6 +5879,22 @@
     "en": "0ed445787254dab6",
     "text": "每個主體的 PAC 身分在啟動時建構。即便如此，「信任領域」仍可設定它：領域的主體資料庫在其 Kerberos 開啟時建構，並在此值變更時重建，因此領域的值在啟動時並未被使用"
   },
+  "krb5.crossRealmClassicDelegation|label": {
+    "en": "d94511f367aa2305",
+    "text": "跨信任的傳統委派"
+  },
+  "krb5.crossRealmClassicDelegation|description": {
+    "en": "f95686ad2d2053e6",
+    "text": "傳統限制委派（前端上的 appAllowedToDelegateTo）是否可以跨越 Kerberos 信任。預設關閉：它在單一領域內定義，而以資源為基礎的委派（目標上的 appAllowedToActOnBehalfOf，命名 SPN@REALM）才是跨越的那種。開啟時，前端所在領域在轉介證據前檢查自己的清單，目標所在領域將其視為已檢查；兩個領域都必須開啟。"
+  },
+  "krb5.requireSidFilteringInProduct|label": {
+    "en": "f4bc0b8bb8e18123",
+    "text": "要求信任過濾 SID"
+  },
+  "krb5.requireSidFilteringInProduct|description": {
+    "en": "120e89b9d4c0b3e4",
+    "text": "在產品模式下，Kerberos 信任僅在過濾 SID 時使用（其 quarantined 屬性，預設開啟）。在領域上關閉此項，即營運者接受夥伴未經過濾的 SID。開發模式無論此項如何都使用每個信任。"
+  },
   "krb5.maxReferralHops|label": {
     "en": "ae50da753613f751",
     "text": "轉介路徑最多跨越的信任數"

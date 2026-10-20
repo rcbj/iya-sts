@@ -5879,6 +5879,22 @@
     "en": "0ed445787254dab6",
     "text": "varje principals PAC-identitet byggs vid start. En FÖRTROENDESFÄR kan ändå bära det: en sfärs principaldatabas byggs när dess Kerberos slås på och byggs om när detta ändras, så inget av sfärens värde förbrukades vid start"
   },
+  "krb5.crossRealmClassicDelegation|label": {
+    "en": "d94511f367aa2305",
+    "text": "Klassisk delegering över förtroenden"
+  },
+  "krb5.crossRealmClassicDelegation|description": {
+    "en": "f95686ad2d2053e6",
+    "text": "Om KLASSISK begränsad delegering (appAllowedToDelegateTo på frontänden) får korsa ett Kerberos-förtroende. Av som standard: den är definierad inom en sfär, och resursbaserad delegering (appAllowedToActOnBehalfOf på målet, som namnger SPN@REALM) är den som korsar. På kontrollerar frontändens sfär sin egen lista innan den hänvisar beviset, och målets sfär tar det som kontrollerat; båda sfärerna måste slå på den."
+  },
+  "krb5.requireSidFilteringInProduct|label": {
+    "en": "f4bc0b8bb8e18123",
+    "text": "Kräv SID-filtrering på förtroenden"
+  },
+  "krb5.requireSidFilteringInProduct|description": {
+    "en": "120e89b9d4c0b3e4",
+    "text": "I produktläge används ett Kerberos-förtroende bara medan det filtrerar SID:er (dess quarantined-attribut, på som standard). Att slå av detta på en sfär är operatören som accepterar en partners SID:er ofiltrerade. Utvecklingsläget använder varje förtroende vad detta än säger."
+  },
   "krb5.maxReferralHops|label": {
     "en": "ae50da753613f751",
     "text": "Högsta antal förtroenden en hänvisningsväg korsar"

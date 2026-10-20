@@ -1179,6 +1179,14 @@
     "en": "3b66e9eeaaad2290",
     "text": "TRUE o FALSE, FALSE de forma predeterminada: este servicio Kerberos es DE CONFIANZA PARA DELEGACIÓN — sin restricciones (el TRUSTED_FOR_DELEGATION de Active Directory). Sus tickets de servicio llevan ok-as-delegate, que indica a un cliente que puede reenviar su TGT aquí; quien tenga un TGT reenviado puede actuar como esa persona en cualquier parte. El TGT de una persona protegida nunca es reenviable, así que nunca se reenvía se defina como se defina esto. La delegación restringida (appAllowedToDelegateTo, appAllowedToActOnBehalfOf) es la alternativa más segura."
   },
+  "applications.schema.attributes.krb5S4uSelfRealm.what": {
+    "en": "1549deb6e1db2854",
+    "text": "LOS DOMINIOS KERBEROS PARA CUYOS USUARIOS ESTE SERVICIO PUEDE OBTENER TICKETS S4U2SELF, además del suyo. VACÍO SIGNIFICA SOLO SU PROPIO DOMINIO. Un valor debe ser un dominio cuyos tickets aceptan las confianzas de este dominio — una confianza con una clave entrante, o un dominio que una confianza transitiva enruta — y se comprueba al escribirlo."
+  },
+  "applications.schema.attributes.krb5ForeignTgtDelegation.what": {
+    "en": "8f20493c35397916",
+    "text": "`inherit` (el predeterminado) o `deny`: lo que este servicio dice de un TGT que se le delega A TRAVÉS DE UNA CONFIANZA — ok-as-delegate en sus tickets para un usuario de otro dominio. `inherit` sigue los atributos de la confianza ([MS-KILE] 3.3.5.7.5); `deny` lo rechaza digan lo que digan. Solo restringe: nada aquí habilita lo que la confianza no habilita."
+  },
   "applications.schema.attributes.krb5ServiceKeys.what": {
     "en": "35f24692c1cc40a5",
     "text": "LAS CLAVES ALEATORIAS DE LARGA DURACIÓN DE UN PRINCIPAL DE SERVICIO, una por enctype, en UN solo valor: un documento JSON que nombra el SPN, el dominio y el kvno junto a las claves, SELLADO bajo la clave de cifrado de claves dondequiera que esa clave sobreviva al proceso. Un solo valor en lugar de uno por enctype para que una clave no pueda moverse a otra entrada u otro kvno sin que falle el sello. Equivalente a una contraseña: se RETIENE en todas las páginas y en todas las respuestas de /admin-api, y la única vez que sale de este servicio es como el keytab que entrega una creación o una rotación."

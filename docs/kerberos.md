@@ -247,7 +247,14 @@ to read with `ldapsearch`. It holds:
 * its attributes, from the closed set of [MS-ADTS] 6.1.6.7.9:
   `non-transitive`, `quarantined` (on by default), `forest-transitive`,
   `cross-organization`, `within-forest`, `treat-as-external`,
-  `no-tgt-delegation`, `enable-tgt-delegation`;
+  `no-tgt-delegation`, `enable-tgt-delegation`, `pim-trust` (which needs
+  `treat-as-external`, which needs `forest-transitive`);
+* for a forest trust, the partner forest's **forest trust information**
+  ([MS-ADTS] 6.1.6.9.3): its domains (SID, DNS and NetBIOS names, whether
+  each domain's SIDs are enabled) and its top-level names, each enabled or
+  not — what SID filtering checks a foreign SID against;
+* the **claims transformation** for a claims set arriving across it,
+  `drop-all` (the default) or `allow-all`;
 * the **DNS suffixes routed** to the partner, its enctypes (AES by default),
   and whether it is enabled.
 
@@ -264,10 +271,43 @@ routed namespace is refused (`KDC_ERR_PATH_NOT_ACCEPTED`); a ticket that
 passed carries TRANSITED-POLICY-CHECKED. A **disabled** trust refers nobody
 and accepts nothing, and keeps its keys.
 
-**Not yet:** SID filtering on arrival, the trust attributes' effect on
-delegation across a trust (S4U2Self, S4U2Proxy and forwarded TGTs), and the
-console tab and `/admin-api` operations that manage a record — #430's later
-phases. Until the console's tab exists, a record is managed through the
+**SID filtering on arrival.** Every PAC arriving across a trust — in a
+cross-realm TGT, in S4U evidence, in a referral — is filtered as the trust's
+boundary says before it is re-signed here ([MS-PAC] 4.1.2.2, under the
+boundaries and SID classes of [MS-ADTS] 6.1.6.7): a SID that may not cross
+is removed, and the claims set is kept or dropped as the record's claims
+transformation says. A `quarantined` trust passes only the trusted domain's
+own SIDs, and refuses a user of any other domain; a PAC whose logon domain
+is in this realm's own forest is refused across a forest or external
+boundary (both `STS-KRB-0239`). The rules, row by row, are in
+`kerberos/CLAUDE.md`. In product mode a trust with `quarantined` off is not
+used at all while `krb5.requireSidFilteringInProduct` is on (the default,
+`STS-KRB-0229`).
+
+**Delegation across a trust.** All three Kerberos delegation paths cross a
+trust, each decided by the realm's exchange policy like any other
+delegation:
+
+* **S4U2Self** for a user of another realm walks the referrals [MS-SFU]
+  describes, through as many transitive trusts as the path needs; the
+  service must name the user's realm in its `krb5S4uSelfRealm` attribute,
+  and a trust must accept that realm. PA-S4U-X509-USER is accepted for a
+  foreign user the same way.
+* **S4U2Proxy** to a target in another realm is **resource-based**:
+  the target's `appAllowedToActOnBehalfOf` names the front end as
+  `SPN@REALM`, and the trusts on both sides must be enabled. Classic
+  constrained delegation (`appAllowedToDelegateTo`) stays within a realm
+  unless `krb5.crossRealmClassicDelegation` is on in BOTH realms. The
+  forwardable and protected-user rules are the same as within a realm.
+* **A TGT delegated across a trust** (ok-as-delegate, and a FORWARDED
+  request) follows the trust's two bits ([MS-KILE] 3.3.5.7.5):
+  `within-forest` or `enable-tgt-delegation` allows it, `no-tgt-delegation`
+  or `quarantined` refuses it, and a target's `krb5ForeignTgtDelegation`
+  set to `deny` refuses it whatever the trust says — that attribute only
+  narrows. Protected users are refused as always.
+
+**Not yet:** the console tab and `/admin-api` operations that manage a
+record — #430's later phase. Until the console's tab exists, a record is managed through the
 library `kerberos/krb5_trusts.ts` and seen with `ldapsearch`. The four
 settings that built the development trust (`krb5.trustedRealm`,
 `krb5.trustPassword`, `krb5.trustedDomainSid`, `krb5.trustedKrbtgtPassword`)
@@ -826,6 +866,8 @@ modes**, and a replay is refused in both. See
 | `krb5.krbtgtRotationIntervalDays` | `KRB5_KRBTGT_ROTATION_INTERVAL_DAYS` | `180` | yes | How old a realm's `krbtgt` key gets before the `krb5.krbtgt-rotate` job replaces it; `0` is off. Product only; a rotation by hand works in both modes. |
 | `krb5.domainSid` | `KRB5_DOMAIN_SID` | `S-1-5-21-1004336348-1177238915-682003330` | no | The domain SID every PAC is built under. |
 | `krb5.maxReferralHops` | `KRB5_MAX_REFERRAL_HOPS` | `5` | yes | How many trusts one cross-realm path may cross before the KDC refuses to refer it further (`KDC_ERR_PATH_NOT_ACCEPTED`). |
+| `krb5.crossRealmClassicDelegation` | `KRB5_CROSS_REALM_CLASSIC_DELEGATION` | `false` | yes | Whether classic constrained delegation may cross a trust; both realms must turn it on. Resource-based delegation crosses without it. |
+| `krb5.requireSidFilteringInProduct` | `KRB5_REQUIRE_SID_FILTERING_IN_PRODUCT` | `true` | yes | In product mode, use a trust only while it is `quarantined`. |
 | `krb5.spnegoAuthentication` | `KRB5_SPNEGO_AUTHENTICATION` | `true` | yes | Whether `/authn/spnego` may turn a ticket into a browser session. |
 | `krb5.spnegoLoginButton` | `KRB5_SPNEGO_LOGIN_BUTTON` | `true` | yes | Show "Sign in with Kerberos" on `/authn/login`. |
 | `krb5.personKeys` | `KRB5_PERSON_KEYS` | `true` | yes | Product mode only: derive and store people's keys from their passwords; off, the KDC refuses every person. |
@@ -1025,10 +1067,9 @@ level finds nothing. A TGT gets two signatures and a service ticket four
 (sections 2.8.2 and 2.8.3).
 
 Client claims are produced while `krb5.pacClaims` is on ([PAC
-claims](#pac-claims)); device info is not, and **SID filtering across a trust is
-not implemented** — a re-signed PAC keeps every SID it arrived with, which is
-the one place this KDC is more permissive than a real one in a way that
-matters.
+claims](#pac-claims)); device info is not. **A PAC arriving across a trust
+is SID-filtered before it is re-signed** ([Kerberos trusts](#kerberos-trusts));
+device info arriving across one is dropped.
 
 ### Two realms, one shared key, and a referral that looks like success
 

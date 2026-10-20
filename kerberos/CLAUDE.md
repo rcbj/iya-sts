@@ -1223,14 +1223,11 @@ instance at 14c, right after the KDC is required, BEFORE the directory's facade
 call (a facade called first would build a default instance the root could not
 replace).
 
-**WHAT IS NOT DONE, and is the ticket's later phases:** SID filtering on arrival
-(the `quarantined` bit is recorded, on by default, and filters nothing yet —
-`krb5_kdc.js` still says so where it re-signs a PAC); the trust attributes'
-effect on ok-as-delegate ([MS-KILE] 3.3.5.7.5) and on S4U across realms; the
-product rule that a trust with SID filtering off is not honoured unless the
-realm says so (decision 4, with its setting); classic delegation across realms
-(decision 5); rotating a trust key with a grace period; the console tab and
-`/admin-api`. A record is managed through `krb5_trusts.ts`'s functions (`add`,
+**WHAT IS NOT DONE, and is the ticket's later phases:** rotating a trust key
+with a grace period; the console tab and `/admin-api`. This paragraph also
+listed SID filtering, ok-as-delegate across a trust, S4U across realms, the
+product honour rule and classic delegation across realms: Phases 2 and 3
+built them, in the two sections below. A record is managed through `krb5_trusts.ts`'s functions (`add`,
 `update`, `setEnabled`, `remove`, `pair`) until then.
 
 **OWED TO THE PARENT PROJECT'S COPY CLOSURE (#430).** `krb5_kdc.js` asks the
@@ -1256,6 +1253,137 @@ vocabulary add nothing.
 routing and delegation files are unchanged in what they assert, except that the
 development partner is `principals.DEV_PARTNER_REALM` where it was
 `TRUSTED_REALM`.
+
+## DELEGATION ACROSS A TRUST, BUILT (#430 Phases 2 and 3, 2026-10-19)
+
+The flows of *DELEGATION ACROSS A TRUST* above, in `krb5_kdc.js`, with the
+vendored codec untouched. Every decision is the issuance policy's; the KDC
+sends it facts and turns its refusal kinds into codes.
+
+* **S4U2SELF** (`crossRealmSelf()`): four places a KDC stands in the walk,
+  told apart by this realm, the user's (PA-FOR-USER's userRealm) and the
+  requester's (the presented ticket's crealm), and by whether the presented
+  ticket's PAC names somebody other than its cname (`pacIdentity()`). Out
+  toward the user's realm with no S4U information; the user's realm builds
+  their PAC into a referral TGT whose cname stays the SERVICE ([MS-SFU]
+  3.2.5.1.1), not forwardable for a protected user, its `transited` started
+  empty; realms between walk it back (SID-filtered, re-signed); home issues
+  the ticket and asks the policy with the trust's facts. A trust refusal
+  (`trust-*`, `self-realm`) refuses the request (KDC_ERR_POLICY); any other
+  leaves the ticket not forwardable, as within a realm. A request for a
+  service this realm does not hold is resolved BEFORE the plain referral
+  would refer the requester instead (`s4uAsked` in `answerTgsReq()`).
+  **The path check follows the USER** for a ticket walking back
+  (`crossRealmPath()`): the transited path is the user's realm to the
+  service's.
+* **S4U2PROXY** (in `resolveS4u()`): to a target a trust routes, the front
+  end's KDC turns the evidence into a cross-realm TGT for the USER
+  (`proxy-referral`, its PAC re-signed for the trust); the target's KDC opens
+  that evidence with its incoming key (`evidenceAcross`), SID-filters its PAC,
+  and checks resource-based delegation against the front end named
+  `SPN@ITS-REALM` (`relationship()`'s `frontRealm`). The evidence is not
+  PAC-verified with this realm's krbtgt — another realm signed it — but it is
+  sealed in the trust key the front end cannot open, so its flags are the
+  issuing realm's word. CLASSIC across realms is refused unless
+  `krb5.crossRealmClassicDelegation` (off, runtime, per realm): the front
+  end's realm checks its own `appAllowedToDelegateTo` before it refers, and
+  the target's realm takes that referral as VOUCHED (`classicVouched`) — both
+  realms must turn it on. Forwardable evidence and the protected-user rules
+  are unchanged; `transitedServices` names the front end with its realm.
+* **TGT DELEGATION** ([MS-KILE] 3.3.5.7.5): a referral carries ok-as-delegate
+  only where the trust record enables it (`tgtDelegationAllowed()`) and, past
+  the first hop, the source ticket carried it; a service ticket for a user of
+  another realm carries it only where the referral did, the service has
+  `krb5TrustedForDelegation`, and the policy's `forwarded` question allows it
+  (the trust's bits, the service's `krb5ForeignTgtDelegation`). A FORWARDED
+  request across a trust asks the same question. **UNCERTAIN:** the first
+  hop's "source ticket" is this realm's own TGT, which never carries the flag;
+  it is read as not applicable rather than as a DisableCondition.
+* **THE POLICY** (`xacml_templates.ts`, the `exchange-token` question): five
+  Deny rules read only across a trust — `trust-disabled`, `trust-direction`,
+  `self-realm`, `classic-across-realms`, `tgt-delegation` (codes
+  `STS-KRB-0230`–`0233`) — and the generic rules learn that a foreign actor
+  the target names needs no entry here, that resource-based delegation to a
+  foreign target is the target realm's, that a vouched classic delegation is
+  allowed where the setting is on, and that a forwarded TGT has no source. A
+  foreign user holds the roles every authenticated person holds. The oracle
+  (`tests/tools/exchange_oracle.js`) carries the same rules.
+* **THE SERVICE'S TWO WORDS**: `krb5S4uSelfRealm` (multi; values checked at
+  the write against `acceptsRealm()`, `STS-REG-0361`) and
+  `krb5ForeignTgtDelegation` (`inherit` | `deny`, a closed set).
+
+**OWED TO THE PARENT PROJECT'S COPY CLOSURE**: nothing new beyond Phase 1's
+line for `kerberos/krb5_trusts.js` — `krb5_trusts.ts` now requires
+`krb5_pac.js`, already in the closure, and the KDC's new requires are none.
+`kerberos/krb5_delegation.ts`, already owed since #186, reaches
+`principals.trustRegister()` only.
+
+**TESTS**: `tests/kerberos_cross_realm_delegation.js` (between three trust
+realms, each case and refusal, and SID filtering row by row);
+`tests/exchange_policy.js` (163,840 cross-realm combinations) and
+`tests/exchange_policy_exhaustive.js` (every combination of the cross-realm
+dimensions). Not run: the interop jobs (MIT `kvno -U`, Heimdal `kgetcred`,
+Samba's cross-realm s4u and xrealm tests).
+
+## SID FILTERING: THE RULES (#430 Phase 2, rcbj's scope of 2026-10-19)
+
+**The table is the specification's, row by row**, from [MS-ADTS] 6.1.6.7
+(the trusted domain object's essential attributes: `securityIdentifier`,
+`trustAttributes` 6.1.6.7.9, `msDS-TrustForestTrustInfo` 6.1.6.9.3,
+`trustType`), the filtering it selects in [MS-PAC] 4.1.2.2, the claims
+traversal of [MS-ADTS] 3.1.1.11.2.11 ([MS-CTA]), and [MS-KILE] 3.3.5.7.5 for
+TACO. `krb5_trusts.ts`'s `sidFilter()` marks each row `R<n>` where it is
+enforced, and `tests/kerberos_cross_realm_delegation.js` tests each row as
+`SF-R<n>`. The TRUST BOUNDARY comes from the record's bits (`boundaryOf()`):
+within-forest → WithinForest, or QuarantinedWithinForest with quarantined;
+forest-transitive → CrossForest, External with treat-as-external,
+PrivilegedIdentityManagement with treat-as-external and pim-trust; anything
+else → External, or QuarantinedExternal with quarantined (the default).
+"This realm's forest" is its own domain SID and the SIDs of the partners its
+records mark within-forest.
+
+| # | Rule | Boundaries | PAC fields | Citation | Tested |
+|---|---|---|---|---|---|
+| 1 | AlwaysFilter SIDs never cross: S-1-0-0, S-1-1-0, S-1-2-0, S-1-3-0..3, S-1-5, S-1-5-1..8, S-1-5-5-*, S-1-5-10..14, S-1-5-18..20, S-1-5-32[-*], S-1-5-64-*, S-1-5-R (R<1000, unlisted), S-1-6..9 | all | ExtraSids, resource groups | [MS-PAC] 4.1.2.2 | SF-R1, SF-R1-E2E |
+| 2 | NeverFilter SIDs always cross: S-1-4, S-1-5-15, S-1-5-21-0-0-0-496/497, S-1-5-1000-*, S-1-5-R (R>1000), S-1-10. **UNCERTAIN:** S-1-18-* is in no row (the table predates it) and is kept; whether NeverFilter SIDs cross a quarantined boundary is not said, and they are kept | all | ExtraSids | [MS-PAC] 4.1.2.2; [MS-DTYP] 2.4.2.4 | SF-R2 |
+| 3 | EDC (S-1-5-9) is filtered at CrossForest, External, QuarantinedExternal and PIM; kept within the forest | per row | ExtraSids | [MS-PAC] 4.1.2.2 (EDC) | SF-R3 |
+| 4 | A malformed domain SID never crosses: S-1-5-21, S-1-5-21-x, S-1-5-21-x-y, a domain's own S-1-5-21-X-Y-Z, too many RIDs | all | ExtraSids, resource groups | [MS-PAC] 4.1.2.2 | SF-R4 |
+| 5 | ForestSpecific (S-1-5-21-D-R, R<1000) is filtered at QuarantinedWithinForest, CrossForest, External and QuarantinedExternal unless D is the trusted domain (a CrossForest trust: a domain of its forest trust information). **UNCERTAIN:** "that domain" read as the trusted domain | per row | ExtraSids, resource groups | [MS-PAC] 4.1.2.2 (ForestSpecific) | SF-R5 |
+| 6 | DomainSpecific 1: a SID of this realm's own domain with a constant RID (R<1000) is filtered, every boundary | all | ExtraSids, resource groups | [MS-PAC] 4.1.2.2 (DomainSpecific) | SF-R6 |
+| 7 | DomainSpecific 2: a constant-RID SID whose domain is not the PAC's LogonDomainId is filtered, every boundary. **UNCERTAIN:** the table's `ForestSpecific*` marks are read as also DomainSpecific | all | ExtraSids, resource groups | [MS-PAC] 4.1.2.2 | SF-R7 |
+| 8 | DomainSpecific 3: across CrossForest or External (and QuarantinedExternal), a PAC whose LogonDomainId is in this realm's forest fails — the ticket is refused (`STS-KRB-0239`) | CrossForest, External, QuarantinedExternal | LogonDomainId | [MS-PAC] 4.1.2.2 | SF-R8 |
+| 9 | SIDs local to this realm's forest do not come over a cross-forest or external trust | CrossForest, External, QuarantinedExternal | ExtraSids, resource groups | [MS-PAC] 4.1.2.2 (CrossForest, External) | SF-R9 |
+| 10 | QuarantinedExternal passes only the trusted domain's SIDs (all except on TDO: `securityIdentifier`) | QuarantinedExternal | ExtraSids, resource groups | [MS-PAC] 4.1.2.2; [MS-ADTS] 6.1.6.7.9 TAQD | SF-R10 |
+| 11 | QuarantinedWithinForest passes only S-1-5-9 and the SIDs the TDO describes | QuarantinedWithinForest | ExtraSids, resource groups | [MS-PAC] 4.1.2.2 | SF-R11 |
+| 12 | CrossForest passes only SIDs of the trusted forest's domains whose SID matching is enabled in its forest trust information (LSA_SID_DISABLED_ADMIN, _CONFLICT off); with none recorded, the partner's domain. **Needs the record field `forestTrustInfo`** | CrossForest | ExtraSids, resource groups | [MS-PAC] 4.1.2.2 (FtInfo); [MS-ADTS] 6.1.6.9.3, 6.1.6.9.3.1 | SF-R12 |
+| 13 | TREAT_AS_EXTERNAL makes a cross-forest trust External for filtering (SID history from other forests crosses); evaluated only with FOREST_TRANSITIVE (refused otherwise, `STS-KRB-0217`) | CrossForest → External | all of the above | [MS-ADTS] 6.1.6.7.9 TATE | SF-R13 |
+| 14 | PIM_TRUST with TREAT_AS_EXTERNAL on a forest trust: SIDs local to this forest come over; EDC is filtered. **Needs the record bit `pim-trust`** | PrivilegedIdentityManagement | ExtraSids | [MS-ADTS] 6.1.6.7.9 TAPT; [MS-PAC] 4.1.2.2 | SF-R14 |
+| 15 | Account SIDs (R≥1000) of other domains are not filtered at domain and external boundaries | External | ExtraSids (SID history) | [MS-PAC] 4.1.2.2 | SF-R15 |
+| 16 | Resource groups are the SIDs ResourceGroupDomainSid-RID and cross as those SIDs would; ResourceGroupDomainSid is dropped with the last one | all | ResourceGroupDomainSid, ResourceGroupIds | [MS-PAC] 2.5, 4.1.2.2 | SF-R16 |
+| 17 | A user of a domain the boundary does not pass — a quarantined trust's user not of the trusted domain, a cross-forest trust's user outside the forest trust information — may not cross: the ticket is refused (`STS-KRB-0239`). **UNCERTAIN:** the specification filters SIDs and says nothing of the user's own SID, which cannot be removed without the PAC naming nobody | quarantined, CrossForest | LogonDomainId, UserId | [MS-PAC] 4.1.2.2 (inferred) | SF-R17 |
+| 18 | PAC_DEVICE_INFO's SIDs are subject to the same rules; this service does not decode that buffer, so it is DROPPED on arrival rather than passed unfiltered. **UNCERTAIN, and partial** | all | PAC_DEVICE_INFO | [MS-PAC] 2.12, 4.1.2.2 | SF-R18 |
+| 19 | Claims entering across a trust with no transformation policy are dropped; `claimsTransformation: allow-all` is [MS-CTA]'s issue-every-claim rule. **Partial:** the rest of [MS-CTA]'s rule language is not implemented (`STS-KRB-0238` refuses anything else). **Needs the record field `claimsTransformation`** | all | PAC_CLIENT_CLAIMS_INFO, PAC_DEVICE_CLAIMS_INFO | [MS-ADTS] 3.1.1.11.2.11; [MS-CTA] 2.1 | SF-R19 |
+| 20 | The Member boundary (AlwaysFilter and the member server's own prefix) | Member | — | [MS-PAC] 4.1.2.2 | **No test: cannot apply** — this KDC is not a member server receiving a PAC; its acceptor validates its own realm's tickets |
+| 21 | WithinDomain: no filtering between a domain's own controllers | WithinDomain | — | [MS-PAC] 4.1.2.2 | **No test: cannot apply** — a realm's KDC is one controller; there is no trust within a domain to cross |
+| 22 | WithinForest (not quarantined): only AlwaysFilter and DomainSpecific apply | WithinForest | ExtraSids | [MS-PAC] 4.1.2.2 | SF-R22 |
+| 23 | Invalid SIDs are AlwaysFilter | all | ExtraSids | [MS-PAC] 4.1.2.2 | **No test: cannot arise** — a structurally invalid SID fails NDR decoding, and the vendored codec then refuses the whole PAC before any filtering; `sidClass()` still classes a malformed text as AlwaysFilter |
+| 24 | CROSS_ORGANIZATION adds OTHER_ORGANIZATION (S-1-5-1000) to ExtraSids. **Partial:** its ACL check (ACTRL_DS_CONTROL_ACCESS on the server's account) has no account security descriptor here to check | all with cross-organization | ExtraSids | [MS-KILE] 3.3.5.7.5; [MS-ADTS] 6.1.6.7.9 TACO | SF-R24 |
+
+**24 rows; 21 tested** (20, 21 and 23 say why not). Where filtering happens:
+a service ticket from a cross-realm TGT, an onward referral, an S4U2Self
+referral walking back, and a cross-realm S4U2Proxy evidence ticket
+(`filterArriving()` in `krb5_kdc.js`) — never for the development partner
+PARTNER.COM, which holds no record. **Product does not honour a trust with
+quarantined off** while `krb5.requireSidFilteringInProduct` (on) stays on
+(`mode.requiresSidFilteringOnTrusts()`, a REQUIREMENTS row): it refers nobody
+and accepts nothing, and `STS-KRB-0229` says why.
+
+**Record fields Phase 4's form owes** (each validated, with its code):
+`forestTrustInfo` (`{ domains: [{ sid, dnsName, netbiosName, sidEnabled }],
+topLevelNames: [{ name, enabled }] }`, cross-forest only, `STS-KRB-0237`),
+`claimsTransformation` (`drop-all` | `allow-all`, `STS-KRB-0238`), and the
+attribute bit `pim-trust` (with `treat-as-external` and `forest-transitive`,
+`STS-KRB-0217`).
 
 ## PRODUCT MODE, AND THE LITERALS AN AUDIT FOUND IN THIS DIRECTORY (2026-09-12)
 
