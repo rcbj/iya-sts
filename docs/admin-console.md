@@ -161,7 +161,9 @@ The navigation is a grouped list down the left. Its five sections:
   kind of content.
 * **Protocols** — a page, or a group of pages, per protocol family: OAuth2 /
   OIDC (settings, authorization servers, token lifetimes, custom claims,
-  UserInfo claims), SAML, Verifiable Credentials, XACML (Metadata, Settings,
+  UserInfo claims), SAML (Metadata, Global settings, Shared profile
+  settings, SAML 2.0 IdP, SAML 1.1 IdP, IdP-Initiated SSO, Assertions and
+  Attributes tabs), Verifiable Credentials, XACML (Metadata, Settings,
   Policies, Policy editor, Remote PEPs and Try a decision tabs), SCIM, SSF
   (Metadata, Shared Signals, CAEP and RISC tabs), Kerberos (Metadata, Settings,
   PAC claims and Principals tabs), Federation, OpenID
