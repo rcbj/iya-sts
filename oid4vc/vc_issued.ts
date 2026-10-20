@@ -169,7 +169,9 @@ interface Issued {
   removedAt?: number;
   removedVia?: string;
   // THE HOLDER'S DID, for a DID-bound (`ldp_vc`) credential (#670): the
-  // `did:jwk` its subject names. The key itself is the row's `jkt`.
+  // `did:jwk` its subject names — and since #693, in any format, the
+  // person's proven DID a configuration bound to it carries. The key itself
+  // is the row's `jkt`.
   holderDid?: string;
 }
 

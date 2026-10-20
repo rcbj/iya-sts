@@ -10026,6 +10026,13 @@ const PROTOCOL_SETTINGS_PAGES = [
            'recorded, and decides whether a wallet sign-in claims ' +
            '<code>hwk</code> and <code>acr "mfa"</code>. ' +
            '<code>oid4vci.keyAttestationRequired</code> requires one.',
+           '<strong>A configuration may bind to the person\'s DID.</strong> ' +
+           'One named in <code>oid4vci.didHolderBinding</code> takes only a ' +
+           'proof whose <code>kid</code> is a <code>did:jwk</code> or ' +
+           '<code>did:key</code> the person proved on their Self-issued IDs ' +
+           'page, and its credentials carry that DID — so every copy, a ' +
+           'batch\'s too, is linkable to the others. Off for every ' +
+           'configuration by default; <code>did:web</code> is not offered.',
            '<strong>The two DID settings change what a VERIFIER has to ' +
            'resolve, and they are restart-only.</strong> With ' +
            '<code>oid4vci.sdJwtIssuerDid</code> or ' +
