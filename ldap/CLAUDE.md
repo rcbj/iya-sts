@@ -2802,6 +2802,22 @@ than something this service wrote. They were added with `stsTotpCredential`
 rather than left, because a table that is right about the new attribute and
 wrong about its three siblings is worse than one that is wrong about all four.
 
+### The post-quantum lane's user handle (#643, 2026-10-19)
+
+`stsWebauthnPqcUserHandle` sits beside `stsWebauthnUserHandle` (#474) on a
+person's entry: single-valued, minted by `common/credentials.ts`, in
+`OWN_NAMES` and in the credential doors (`CREDENTIAL_ATTRIBUTE_DOORS`, so
+the socket refuses a write of it). `readWebauthnUserHandle()` and
+`writeWebauthnUserHandle()` take a lane; **the second handle is written only
+where the first is already held**, so `webauthnUserHandleHolder()` — the
+owner index, now answering the owner and the lane — still walks the holders
+of `stswebauthnuserhandle` alone and indexes both values from each. That is
+what kept `persistence/directory_queries.js`'s ASKED_ATTRIBUTES, and the
+GIN expression index built from it, unchanged: a new asked name is a new
+index expression and a schema version. Cells need nothing: the attribute's
+name matches `cell_sessions.ts`'s credential pattern (`webauthn`), so it
+never leaves home, as the first handle never does.
+
 ## THE USER PORTAL'S SLOT, AND THE ONE HOOK HERE THAT HANDS OVER A WHOLE ENTRY (2026-09-11)
 
 `portal.setDirectory({ personEntry })`, filled at this module's require time

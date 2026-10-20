@@ -12159,6 +12159,27 @@ issuance policy DECIDES:
 * **#535's selection of which profile applies stays code.** It chooses the
   settings and decides nothing.
 
+### `credentials.ts`'s half of the passkey lanes (#643, 2026-10-19)
+
+The lanes are argued in `authn/CLAUDE.md` (*Two lanes*); what this file
+keeps is the person's half. **`userHandleOf(name, { mint, lane })`** answers
+the post-quantum lane's handle (`stsWebauthnPqcUserHandle`) for `lane:
+'pqc'`, minting the classical one first, because the directory writes the
+second only beside the first. **`beginKeyEnrolment()` takes `lane`** and
+carries it on the pending record with the lane's handle and an exclude list
+of the lane's keys only; `checkKeyEnrolment()` holds the credential to the
+lane's algorithms; **`addKey()` asks `webauthnPolicy.laneRefusal()` again**
+(the enforcement at the one writer, as for the role), writes `lane: 'pqc'`
+on a post-quantum row and nothing on a classical one — so a row written
+with the switch off is the row it always was, and `keyLane()` reads no lane
+as classical — and adopts a lane's handle the entry lacks.
+`keyAlgorithm()` answers the `lane` beside the algorithm, which is how the
+console's and the API's key rows carry it. `laneUser()` and
+`laneSignalUser()` are the names a credential manager shows
+(`<username>+ml-dsa`, then `<username>+ml-dsa-65`), `isLaneName()` the
+shape the sign-in screen refuses, and `userHandleHolder()` the owner AND
+lane of either handle. `maxKeysPerPerson` stays one total.
+
 ## 3ci. `i18n.ts`, `page_locale.ts`, `locale_policy.ts`: THE LANGUAGE A PAGE IS DRAWN IN (#539, 2026-10-09)
 
 rcbj: "multi-lingual support to the admin portal, authentication service,

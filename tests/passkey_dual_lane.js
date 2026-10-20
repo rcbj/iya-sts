@@ -245,11 +245,19 @@ function childMain() {
     const refusedAct = function (posted) {
       return posted.apiStatus === 400 && posted.next === 'refused';
     };
-    // The last session.start row for a person, as the sign-in wrote it.
+    // The session.start row of a person's newest session: the one whose
+    // session this function has not answered before (the audit list's own
+    // order is not what the assertion is about).
+    const seenSessions = {};
     const lastStart = function (name) {
-      return audit.list().filter(function (row) {
-        return row.action === 'session.start' && row.actor === name;
-      }).pop() || null;
+      const fresh = audit.list().filter(function (row) {
+        return row.action === 'session.start' && row.actor === name &&
+               !seenSessions[(row.detail || {}).sessionId];
+      });
+      fresh.forEach(function (row) {
+        seenSessions[(row.detail || {}).sessionId] = true;
+      });
+      return fresh.length === 1 ? fresh[0] : null;
     };
     // An enrolment, begun and answered: `make(begun)` is the credential.
     const enrol = async function (name, opts, make) {
@@ -412,6 +420,7 @@ function childMain() {
          credentials.ownerOfUserHandle(pRow.userHandle) === 'pkl-alice',
          '6a. either handle names the same person, and its lane',
          JSON.stringify([holderC, holderP]));
+    lastStart('pkl-alice');
     let posted = await usernameless(function (challenge) {
       return aliceClassical.assert(challenge);
     });

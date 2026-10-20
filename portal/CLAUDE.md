@@ -523,6 +523,19 @@ What that changed, and why each piece is the way it is:
   ceremony is armed, so the page loads one script tag. Every response of
   both handlers and of `remove-key` and `rename-key` goes through
   `sendKeysPage()`, so the script is allowed wherever the element is drawn.
+* **Two lanes (#643, `webauthn.pqcAlongsideClassical`)**: while the realm
+  offers both, the enrolment form carries a classical / post-quantum radio
+  (`KeysPages.laneChoice()`, shared with the activation's setup form) and
+  `POST /account-api/keys` `begin` takes `lane`, carried on the pending
+  enrolment; the armed ceremony is that lane's handle, name
+  (`<username>+ml-dsa` for the post-quantum lane), algorithms and exclude
+  list. Each row's Details say its lane. **The Signal API is sent once per
+  lane** — the view's `signals`, drawn as `#wa-signal` and `#wa-signal-pqc`,
+  each with that lane's handle, name and ids only: one signal under the
+  classical handle naming every key would tell the credential manager the
+  post-quantum passkeys are unknown in that account. The post-quantum name
+  says its algorithm (`<username>+ml-dsa-65`) once every post-quantum key
+  uses one. `authn/CLAUDE.md` (*Two lanes*) argues the rest.
 
 `tests/passkey_management.js` holds the credential layer, and
 `tests/vendored/sts_portal_backup_keys.js` holds the page over HTTP: the two

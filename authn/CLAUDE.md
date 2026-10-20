@@ -2203,6 +2203,67 @@ before a username is read:
 
 `tests/passkey_discoverable.js` holds it with a real ceremony.
 
+## TWO LANES: A CLASSICAL PASSKEY AND A POST-QUANTUM ONE SIDE BY SIDE (#643, 2026-10-19)
+
+**`webauthn.pqcAlongsideClassical`** (per realm, off by default) lets one
+person hold an ES256 passkey and an ML-DSA passkey at once, on one
+authenticator where it can make both. Off, every ceremony is the bytes it
+was. Three things stopped it, and each lane answers all three:
+
+* **One user handle.** Under CTAP 2.x a new discoverable credential for the
+  same RP ID and handle REPLACES the one the authenticator held, and a
+  credential manager does the same — the second registration silently
+  removed the first from the device while its row stayed here. The
+  post-quantum lane has its own handle, `stsWebauthnPqcUserHandle`, minted on
+  first use and kept, and written only BESIDE the classical one
+  (`ldap_server.js` refuses otherwise) so the owner index walks one asked
+  name and the database's asked-names index did not change.
+* **One exclude list.** Each lane excludes only its own keys
+  (`credentials.keyLane()`; a row with no `lane` — every key before #643, and
+  every classical key since — is classical).
+* **One algorithm list, ML-DSA first.** `webauthnPolicy.algorithmsOffered(lane)`:
+  the classical lane is the list less ML-DSA (ES256 and RS256 where that
+  leaves none), the post-quantum lane ML-DSA alone (`pqcOnly`'s narrowing).
+  `checkKeyEnrolment()` and `mfaWebauthnAct()` pass the LANE's list as
+  `expectedAlgorithms`, so a credential in the wrong lane is section 7.1's
+  `STS-AUTHN-0228`.
+
+**The lane is chosen at the start and carried** — the pending enrolment's
+`lane` on `/portal/keys` and at activation, `step.lane` on the sign-in step
+(`POST /authn-api/mfa/{id}/webauthn/options` takes `lane`; the page draws the
+radios only where `lanes()` has two) — never read back off the browser's
+answer, the role's rule. `webauthnPolicy.laneRefusal()` is asked at the door
+and again in `addKey()`: an unknown lane `STS-AUTHN-0350`, the post-quantum
+lane where the realm does not offer it `STS-AUTHN-0351` (so a switch turned
+off refuses a new one, while a post-quantum key already held goes on
+signing in), no ML-DSA the verifier can check `STS-AUTHN-0352` (unreachable
+with today's verifier). The switch beside `webauthn.pqcOnly` is refused at
+every write (`laneWriteRule()`, `STS-AUTHN-0353`); where both reach the
+process another way, `pqcOnly` wins and there is one lane.
+`webauthn.maxKeysPerPerson` is one total across both lanes.
+
+**The post-quantum lane is named by its algorithm** (rcbj on #643): created
+as `<username>+ml-dsa` / `<display> (ML-DSA)` (`credentials.laneUser()`),
+because which ML-DSA the authenticator picks is not known yet; signalled as
+`<username>+ml-dsa-65` / `<display> (ML-DSA-65)` once every post-quantum key
+the person holds uses that one algorithm, and the generic name otherwise
+(`credentials.laneSignalUser()`). **It is never a sign-in name**: nothing
+strips the suffix, and `screenAct()` refuses a typed name ending
+`+ml-dsa`, `+ml-dsa-<n>` or `+pqc` (`credentials.isLaneName()`,
+`STS-AUTHN-0354`) in every mode, so nobody signs in — in development, is
+created — under the name a password manager shows.
+
+**Sign-in needs nothing new**: `allowCredentials` names every key, either
+handle names the same person (`credentials.userHandleHolder()` answers the
+lane too), and step 6 compares with the handle on the KEY's row, so a
+post-quantum key returning the classical handle is `STS-AUTHN-0303`. The
+session event and the `session.start` row record the key's lane beside its
+algorithm (`credentialLane`).
+
+**Tests**: `tests/passkey_dual_lane.js` (in process, real ES256 and ML-DSA
+ceremonies), and `tests/vendored/sts_passkey_dual_lane.js` over
+`/account-api` and the sign-in screen.
+
 ## THE WEBAUTHN ADDRESS RULES (2026-09-12)
 
 Two changes to what a ceremony is held to, both about the address a request

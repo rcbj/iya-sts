@@ -209,6 +209,27 @@ trusted statement. What each key's statement proved is shown beside it on
 whose statement nothing verified is shown as *claimed*: a client that believed
 this service's word on an unverified statement would have learned something
 false about a real device.
+**A classical passkey and a post-quantum one, side by side**
+(`webauthn.pqcAlongsideClassical`, off by default, per realm). An
+authenticator replaces a passkey it already holds for this service when it
+is asked for another under the same account, and is asked for ML-DSA first
+whenever it supports it, so by default one person holds one kind or the
+other on a device. With the setting on, every place a passkey is created —
+`/portal/keys`, the activation link, the sign-in screen's first passkey and
+its set-up step — asks which: **classical** (the configured algorithms less
+ML-DSA) or **post-quantum** (ML-DSA only). Each kind is its own account to
+the authenticator and the password manager, with its own user handle, so
+both fit on one device. The post-quantum one is listed as
+`<username>+ml-dsa` when it is created, and as `<username>+ml-dsa-65` (for
+example) once every post-quantum passkey the person holds uses that one
+algorithm; that name is never typed to sign in, and the sign-in screen
+refuses it (`STS-AUTHN-0354`). Either passkey signs the person in, with or
+without the username. `webauthn.maxKeysPerPerson` counts both kinds. The
+setting cannot be on together with `webauthn.pqcOnly` (`STS-AUTHN-0353`).
+Turned off, a post-quantum passkey already held goes on signing in and no
+new one can be created (`STS-AUTHN-0351`). Few authenticators make ML-DSA
+passkeys yet.
+
 **`webauthn.userVerification` is the one ceremony option
 that is enforced**, because the UV flag sits inside the bytes the authenticator
 signed. The others are requests to the browser, and what came back is recorded
@@ -885,6 +906,7 @@ See [What is not checked](what-is-not-checked.md).
 | `webauthn.rpId` | `STS_WEBAUTHN_RP_ID` | *(empty: the host)* | yes | Widen the RP ID to a registrable domain suffix of the host. |
 | `webauthn.allowedOrigins` | `STS_WEBAUTHN_ALLOWED_ORIGINS` | *(empty: derived)* | yes | The origins a ceremony is accepted from; empty derives one from the address. |
 | `webauthn.algorithms` | `STS_WEBAUTHN_ALGORITHMS` | every algorithm the verifier checks, ML-DSA-44/65/87 (-48/-49/-50) first | yes | `pubKeyCredParams`, in preference order. On **Protocols → WebAuthn** each algorithm has a checkbox (requested or not) and a number (1 is the most preferred). See [Configuration](configuration.md) for the list. |
+| `webauthn.pqcAlongsideClassical` | `STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL` | `false` | yes | Let a person hold a classical and a post-quantum (ML-DSA) passkey at once, choosing the kind when creating one (see above). Refused beside `webauthn.pqcOnly`. |
 | `webauthn.userVerification` | `STS_WEBAUTHN_USER_VERIFICATION` | `required` | yes | Whether the authenticator must verify the person; `required` is enforced. |
 | `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` | yes | The attestation conveyance asked for at registration. Whether a statement is verified is `webauthn.attestationPolicy`'s decision, not this setting's ([WebAuthn](#webauthn), above). |
 | `webauthn.timeoutMs` | `STS_WEBAUTHN_TIMEOUT_MS` | `60000` | yes | The `timeout` hint handed to the browser. |
