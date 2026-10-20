@@ -752,7 +752,27 @@ function signoutCases(root) {
     { label: 'a name that may not be used, development', path: '/logout',
       ctx: fr, view: { state: 'refused', verifiesCredentials: false } },
     { label: 'nobody to sign out', path: '/logout', ctx: en,
-      view: { state: 'nobody' } }
+      view: { state: 'nobody' } },
+    // SEVERAL ACCOUNTS IN ONE BROWSER (#561): the account step, preselected
+    // by login_hint and by the default, and the inventory after it carrying
+    // the account chosen.
+    { label: 'the account step, preselected, in English', path: '/logout',
+      ctx: en, view: { state: 'accounts', naming: 'off',
+        preselected: 'urn:uuid:a<1>',
+        accounts: [{ key: 'urn:uuid:a<1>', username: 'alice',
+                     displayName: 'Alice <A> & "co"', current: false },
+                   { key: 'name:bob', username: 'bob', displayName: 'bob',
+                     current: true }] } },
+    { label: 'the account step, the default chosen, in French',
+      path: '/logout', ctx: fr, view: { state: 'accounts', naming: 'product',
+        preselected: '',
+        accounts: [{ key: 'urn:uuid:c', username: 'carol',
+                     displayName: 'Carol', current: true },
+                   { key: 'urn:uuid:d', username: 'dave',
+                     displayName: 'dave', current: false }] } },
+    { label: 'the inventory after the account step', path: '/logout',
+      ctx: en, view: Object.assign(inventory('off', 'alice'),
+                                   { account: 'urn:uuid:a<1>' }) }
   ];
 }
 
