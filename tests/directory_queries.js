@@ -364,8 +364,8 @@ async function schema(t) {
             return sql.slice(0, 60);
           }).join(' | '));
   t.check(statements.some(function (s) {
-    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 21;
-  }), 'C6. and records version 21');
+    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 22;
+  }), 'C6. and records version 22');
   // THE TWO INDEXES VERSION 18 REPLACED (#618) are dropped where the
   // catalogue still lists them, after the indexes that replace them.
   const retired = [];
