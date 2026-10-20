@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4562** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4565** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -78,7 +78,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 137
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 138
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 48
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 242
 * [Management API (`STS-API`)](#sts-api) — 86
-* [User portal (`STS-PORTAL`)](#sts-portal) — 100
+* [User portal (`STS-PORTAL`)](#sts-portal) — 102
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
@@ -3646,6 +3646,7 @@ Raised from: oid4vc/.
 | `STS-VC-0148` | A credential bound to the person's DID was asked for, or a deferred one collected, with a proof by a DID enrolled for nobody here: never enrolled, or removed since the offer or the request (#693). | invalid_proof (HTTP 400) |
 | `STS-VC-0149` | A credential bound to the person's DID was asked for, or a deferred one collected, with a proof by a DID an administrator enrolled for the person by value: it was never proved, and only a proved DID is bound (#693). | invalid_proof (HTTP 400) |
 | `STS-VC-0150` | A credential bound to the person's DID was asked for, or a deferred one collected, with a proof by a DID enrolled for somebody else (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0151` | A row of the issued register that an index entry names (a person's history on /portal/wallet, or a wallet's notification) could not be read: the store threw. The row is left out of that answer and the index entry is KEPT as it was, since a read that failed says nothing about whether the row is gone (2026-10-20). | logged; the read answers the rows it could read |
 
 ## STS-SSF
 
@@ -4970,6 +4971,8 @@ Raised from: portal/.
 | `STS-PORTAL-0613` | A disconnect on /portal/connected-accounts named a provider the person has no connection to (#565). | HTTP 400 JSON |
 | `STS-PORTAL-0614` | A disconnect on /portal/connected-accounts was refused: the consumer provider is the account's only way in — no password, no passkey that signs in, and no other connection — so removing it would lock the person out (#729). They are told to add another way first. | HTTP 409 JSON |
 | `STS-PORTAL-0615` | Marking a preferred DID on /portal/self-issued was refused: the subject is not enrolled for the signed-in person, was enrolled by an administrator's value rather than proved with their wallet, is a JWK thumbprint rather than a DID, or the directory did not store the change (#693). | HTTP 400 JSON |
+| `STS-PORTAL-0616` | /portal/self-issued (GET /account-api/self-issued) was refused: the directory holds no entry for the person the token names, so there is no list of their self-issued subjects to show — answered as a refusal rather than as an empty list, which would read as "none enrolled" (2026-10-20). | HTTP 404 JSON |
+| `STS-PORTAL-0617` | /portal/wallet (its history, an offer or a Remove) was refused: the token's `sub` and its person do not name one another — the subject is not that person's entry, and the person's entry has another subject or none — so the history the subject indexes would be somebody else's or nobody's (2026-10-20). Sign in again. | HTTP 403 JSON |
 
 ## STS-ACCOUNT
 

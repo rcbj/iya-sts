@@ -1146,7 +1146,21 @@ second catalogue. What is more than a number, and what
 * **NO SCANS FOR ONE PERSON** (rcbj, 2026-10-17: "lists are maintained as
   you go"): `vc_issued.ts` indexes rows by subject and credentials by
   `notification_id` as they are recorded and drops them where it deletes a
-  row; the reader prunes a key the size bound evicted. Still scanning, and
+  row — the size bound's evictions included, read before `makeRoom()` takes
+  them. **A READER NEVER PRUNES A KEY FOR A ROW IT CANNOT SEE** (2026-10-20):
+  a `realms.map()` store is this process's copy, and `get()` answers
+  `undefined` alike for a row that is gone and for one that has not arrived
+  (another process's write still in the change log, a row the restore could
+  not open) — there is no "absent" to tell from "not here", so until then a
+  transient miss pruned the person's entry for good and their history read
+  as empty. Now a key is dropped only where this module deleted the row
+  itself, or where the row IS here and names another subject (or no longer
+  carries the notification); a read that throws keeps the entry and logs
+  `STS-VC-0151` once per read. A key left behind costs a dead lookup and
+  ends with the entry's own `expiresAt`. The backfill mark moved to
+  `#indexed-v2` the same day, so each realm is indexed once more and gets
+  back what an older reader pruned (`indexRow()` adds a key once).
+  `tests/vc_issued_index.js` holds all of it. Still scanning, and
   older than the indexes: `sweep()` on every `record()`, `lookupHolder()`
   (an `ldp_vc` sign-in) and `rowsForSubject(null)` (everyone's, for a global
   sign-out).

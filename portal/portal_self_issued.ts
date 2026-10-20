@@ -27,6 +27,13 @@
 // (portal/CLAUDE.md): the removal names the SUBJECT, never whose it is, and
 // so does marking a proved DID as the preferred one (#693, `prefer` and
 // `unprefer` on the same POST), which the `did` claim releases.
+//
+// **NO ENTRY IS A REFUSAL, NOT AN EMPTY LIST** (2026-10-20). `siop.list()`
+// answers null where the directory holds no entry for the token's person,
+// and the view read that as `[]` — so a token naming somebody the directory
+// does not hold drew "none enrolled", indistinguishable from a person who
+// enrolled nothing. The GET refuses it (STS-PORTAL-0616, 404) and the page
+// says why; an entry with nothing enrolled is still the empty list.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
@@ -94,12 +101,15 @@ class PortalSelfIssued {
    * self-issued sign-in is on.
    *
    * @param username - the signed-in person
+   * @param listed - what `siop.list()` already answered for them, if it was
+   *   asked; read here otherwise
    * @returns `{ enabled, subjects }`
    */
-  view(username: string): Json {
+  view(username: string, listed?: Json[] | null): Json {
     const { log, siop, config } = this.deps;
     log.debug("Entering PortalSelfIssued.view().");
-    const held = siop.list(username) || [];
+    const held: Json[] = (listed === undefined ? siop.list(username)
+                                               : listed) || [];
     log.debug("Leaving PortalSelfIssued.view(). " + held.length);
     return { enabled: !!config.value('oid4vp.signInSelfIssued'),
              // Whether the preferred DID is released as the `did` claim in
@@ -117,6 +127,48 @@ class PortalSelfIssued {
                         // The one proved DID marked as preferred (#693).
                         preferred: one.preferred === true };
              }) };
+  }
+
+  /**
+   * The GET: the page's view, or a refusal where the directory holds no
+   * entry for the token's person (STS-PORTAL-0616) — never an empty list
+   * standing in for "nobody here".
+   *
+   * @param ctx - the account API's helpers
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param enrolled - whether the wallet sign-in has just enrolled a subject
+   * @returns nothing
+   */
+  answer(ctx: AccountContext, res: Json, caller: AccountCaller,
+         enrolled: boolean): unknown {
+    const { log, siop } = this.deps;
+    log.debug("Entering PortalSelfIssued.answer().");
+    const who = caller.username;
+    const held = siop.list(who);
+    if (!Array.isArray(held)) {
+      const why = 'The directory holds no entry for ' + JSON.stringify(who) +
+        ', the person your sign-in names, so there is no list of ' +
+        'self-issued IDs to show. Sign out and sign in again; if this ' +
+        'persists, ask an administrator to look at your account.';
+      ctx.audit.record({
+        category: 'authentication', action: 'portal.siop.view',
+        errorCode: 'STS-PORTAL-0616', actor: who, target: who,
+        outcome: 'failure',
+        summary: 'could not be shown their self-issued IDs on ' +
+                 '/portal/self-issued: the directory holds no entry for them',
+        detail: { sub: caller.sub || undefined, errors: [why] }
+      });
+      log.debug("Leaving PortalSelfIssued.answer(). No entry.");
+      return ctx.refuse(res, 404, 'STS-PORTAL-0616', why);
+    }
+    const view = this.view(who, held);
+    if (enrolled) {
+      view.notice = ctx.translatorFor(who)
+        .text('portalSelfIssued.doneEnrolled');
+    }
+    log.debug("Leaving PortalSelfIssued.answer().");
+    return ctx.json(res, 200, view);
   }
 
   /**
@@ -217,16 +269,18 @@ class PortalSelfIssued {
           'self-issued sign-in is on; `didClaim`: whether the preferred ' +
           'DID may be released as the `did` claim here. A ' +
           'key is enrolled by proving it, at /authn/wallet?siop=1&enrol=1, ' +
-          'which comes back with `enrolled=1`; `notice` then says so.',
+          'which comes back with `enrolled=1`; `notice` then says so. ' +
+          'Where the directory holds no entry for the person the token ' +
+          'names it is refused (STS-PORTAL-0616) rather than answered as ' +
+          'an empty list.',
         query: SELF_ISSUED_QUERY,
+        statuses: {
+          404: 'The directory holds no entry for the token\'s person ' +
+               '(STS-PORTAL-0616).'
+        },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
-          const view = self.view(caller.username);
-          if (input.query.enrolled === '1') {
-            view.notice = ctx.translatorFor(caller.username)
-              .text('portalSelfIssued.doneEnrolled');
-          }
-          return ctx.json(res, 200, view);
+          return self.answer(ctx, res, caller, input.query.enrolled === '1');
         } },
       { method: 'POST', path: ctx.BASE + '/self-issued',
         operationId: 'removeSelfIssued', tag: 'Self-issued IDs',

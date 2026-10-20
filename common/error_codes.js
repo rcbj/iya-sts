@@ -16032,6 +16032,13 @@ const CODES = [
       'deferred one collected, with a proof by a DID enrolled for somebody ' +
       'else (#693).',
     spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0151',
+    summary: 'A row of the issued register that an index entry names (a ' +
+      'person\'s history on /portal/wallet, or a wallet\'s notification) ' +
+      'could not be read: the store threw. The row is left out of that ' +
+      'answer and the index entry is KEPT as it was, since a read that ' +
+      'failed says nothing about whether the row is gone (2026-10-20).',
+    spec: 'logged; the read answers the rows it could read' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -21849,6 +21856,20 @@ const CODES = [
       'is a JWK thumbprint rather than a DID, or the directory did not ' +
       'store the change (#693).',
     spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0616',
+    summary: '/portal/self-issued (GET /account-api/self-issued) was ' +
+      'refused: the directory holds no entry for the person the token ' +
+      'names, so there is no list of their self-issued subjects to show — ' +
+      'answered as a refusal rather than as an empty list, which would ' +
+      'read as "none enrolled" (2026-10-20).',
+    spec: 'HTTP 404 JSON' },
+  { code: 'STS-PORTAL-0617',
+    summary: '/portal/wallet (its history, an offer or a Remove) was ' +
+      'refused: the token\'s `sub` and its person do not name one another ' +
+      '— the subject is not that person\'s entry, and the person\'s entry ' +
+      'has another subject or none — so the history the subject indexes ' +
+      'would be somebody else\'s or nobody\'s (2026-10-20). Sign in again.',
+    spec: 'HTTP 403 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },

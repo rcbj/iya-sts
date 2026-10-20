@@ -1547,6 +1547,15 @@ it; the page says whether this realm releases the mark as the `did` claim
 (`didClaim` on the view). What it is and what releases it:
 `oid4vc/CLAUDE.md` and `oauth-oidc/CLAUDE.md` (*The `did` claim*).
 
+**NO ENTRY IS A REFUSAL, NOT AN EMPTY LIST** (2026-10-20, rcbj after an
+investigation of empty portal lists on 8081). `siop.list()` answers null where
+the directory holds no entry for the token's person, and the view read that as
+`[]` — "none enrolled", indistinguishable from a person who enrolled nothing.
+`GET /account-api/self-issued` now refuses it (`STS-PORTAL-0616`, 404, audited
+`portal.siop.view`) and the page draws its heading and no list under the
+runtime's message; an entry with nothing enrolled is still the empty list.
+`tests/portal_list_refusals.js` holds both.
+
 ## `/portal/wallet`: A CREDENTIAL ABOUT YOURSELF, INTO YOUR OWN WALLET (2026-10-12, #589)
 
 The third page here that HANDS SOMEBODY A CREDENTIAL, and the first whose
@@ -1569,6 +1578,24 @@ pre-authorized offer).
   /portal/wallet` as rule 7's twin asks.
 * **THE SUBJECT IS THE TOKEN'S**: the offer names `caller.username` and the
   token's `sub`, and a body naming anybody is ignored — the A01 rule above.
+* **AND THE TOKEN'S `sub` AND PERSON MUST NAME EACH OTHER** (2026-10-20,
+  rcbj). The history is read by `caller.sub` (`vc_issued.ts`'s subject
+  index) and the page is `caller.username`'s; where they disagree the
+  history was somebody else's, or — with no index entry — an empty list that
+  read as "nothing issued". The history, an offer and a Remove each refuse it
+  (`STS-PORTAL-0617`, 403, audited as the operation's own action or
+  `portal.vc.view`) before anything is read or written by that subject.
+  **EITHER DIRECTION TIES THEM**: `subjectForName(username)` is the subject
+  (it folds a name the way the directory files it — a certificate subject, a
+  namespaced federated uid), or `nameForSubject(sub)` is the username (which
+  also reads the legacy `urn:sts:user:` form). Every token this service
+  issues the portal passes: `sub` is the session user's and `username` that
+  user's name, in the realm the token is audienced to, one token per
+  multi-account tab; and a process with no directory compares nothing and
+  refuses nothing. The page, refused, draws no form and no history. Agreeing
+  with nothing indexed is still the empty history.
+  `tests/portal_list_refusals.js` holds the refusals; the wallet's own jobs
+  hold that a person signed in to the portal is never refused.
 * **IT IS MADE ON THE SIGN-ON SESSION THE TOKEN WAS ISSUED ON**
   (`caller.signOn`), which CAEP reports as `session-presented` naming
   OpenID4VCI. Where the token registry no longer says
