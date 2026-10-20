@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4537** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4543** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -78,7 +78,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 122
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 126
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 48
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
@@ -88,8 +88,8 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 240
-* [Management API (`STS-API`)](#sts-api) — 85
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 241
+* [Management API (`STS-API`)](#sts-api) — 86
 * [User portal (`STS-PORTAL`)](#sts-portal) — 99
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
@@ -3625,6 +3625,10 @@ Raised from: oid4vc/.
 | `STS-VC-0123` | A verification start named a redirect_uri (#594) that is not an absolute http(s) URL without a fragment, or — where only registered addresses are accepted — not one of the calling client's registered redirect URIs. | HTTP 400 JSON { ok: false, errors } at /admin-api/verifications/start |
 | `STS-VC-0124` | The trusted list at /oid4vci/trusted-list (ETSI TS 119 602) was not served: the service has no Root certificate authority, or no ES256 or RS256 key whose certificate chain the list could carry in x5c (oid4vci.trustedListCertificateHeader set to x5u or none, or the key not yet certified). | HTTP 503 text/plain |
 | `STS-VC-0125` | The trusted list at /oid4vci/trusted-list could not be signed: the signer threw. The message is in the log. | HTTP 500 text/plain |
+| `STS-VC-0126` | A self-issued ID Token for an enrolled did:web was signed by a key its enrolment did not pin: the DID document now names another key. Refused in both modes and audited (siop.key.refused); the person enrols the DID again by proving it on /portal/self-issued (#693). | HTTP 403 refusal at /authn-api/wallet (the sign-in signs nobody in) |
+| `STS-VC-0127` | A self-issued ID Token for a did:web enrolled before key pinning, with no key pinned, was refused in product mode and audited (siop.key.refused): the person enrols it again by proving it. Development pins the key on first use instead (mode.pinsSelfIssuedKeysOnFirstUse(), #693). | HTTP 403 refusal at /authn-api/wallet (the sign-in signs nobody in) |
+| `STS-VC-0128` | A SIOPv2 enrolment's did:web was not resolved: its DID document could not be fetched (an internal address in product mode, a redirect, a failure, too large), or this enrolment transaction had already fetched one document, which is all it may (#693). | the enrolment signs nobody in: HTTP 403 refusal at /authn-api/wallet |
+| `STS-VC-0129` | A did:web enrolled with no pinned key signed in in development mode and its key could not be pinned: the directory did not store the change. The sign-in stands; the pin is tried again at the next (#693). | logged |
 
 ## STS-SSF
 
@@ -4743,6 +4747,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0859` | A Kerberos trusts action, on the Trusts tab of /admin/kerberos or through POST /admin-api/kerberos/trusts/{action}, was refused: an unknown action, or a trust this realm does not hold (#430). | HTTP 400 |
 | `STS-ADMIN-0860` | Removing a Kerberos trust was refused because confirm did not repeat the partner realm: the removal takes the trust's keys with it (#430). | HTTP 400 |
 | `STS-ADMIN-0870` | An administrator removed a credential (clear-key, clear-totp, clear-backup-codes or clear-email-factor) in a process with no sign-out model installed, so no session it signed in was ended (#722). The removal stands. | logged; the removal is answered as done |
+| `STS-ADMIN-0871` | enrol-self-issued-subject was refused for a did:web: its DID document could not be fetched, names another id, or names no authentication method with a publicKeyJwk, so there was no key to pin (#693). | HTTP 400 (API) |
 
 ## STS-API
 
@@ -4837,6 +4842,7 @@ Raised from: mgmt-api/.
 | `STS-API-0133` | The access-control policy's owner rule refused a management API request made with an owner's token (#607): the caller does not own the object, the object is closed to its owners, the action is not one an owner may take on its kind, or it would remove the last owner. | HTTP 403 |
 | `STS-API-0134` | A request to close an object to its owners, or open it again, named no kind of the four or no object (#607). | HTTP 400 |
 | `STS-API-0135` | A Kerberos trusts action through POST /admin-api/kerberos/trusts/{action} threw inside this service; the log says why (#430). | HTTP 500 |
+| `STS-API-0136` | A management API users action that answers later (a by-value did:web enrolment, which fetches the DID document) failed inside this service; the log says why (#693). | HTTP 500 |
 
 ## STS-PORTAL
 

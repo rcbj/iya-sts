@@ -1351,6 +1351,29 @@ function enrolsKeysOnFirstUse() {
   return !isProduct();
 }
 
+// Does a SIOPv2 `did:web` subject enrolled BEFORE #693 — so with no key
+// thumbprint pinned on its enrolment — sign in with whatever key its document
+// names today, and have that key pinned on the spot (2026-10-20, #693)?
+// Development says yes, trust on first use, with a log line and an audit row,
+// so an enrolment a tester made last week keeps working. Product says no: the
+// key the document names now is whoever controls that host now, and nothing
+// recorded says it is the key the person or the administrator enrolled, so
+// the sign-in is refused (STS-VC-0127) and the person enrols again by a fresh
+// proof. A did:web enrolled since #693 always carries its pin, and a key the
+// pin does not name is refused in both modes (STS-VC-0126). `oid4vc/siop.ts`
+// asks it.
+/**
+ * Tells whether a `did:web` self-issued subject enrolled with no pinned key
+ * is pinned to the key it signs in with the first time (trust on first use).
+ *
+ * @returns true in development mode
+ */
+function pinsSelfIssuedKeysOnFirstUse() {
+  log.debug("Entering pinsSelfIssuedKeysOnFirstUse().");
+  log.debug("Leaving pinsSelfIssuedKeysOnFirstUse().");
+  return !isProduct();
+}
+
 // May a WebAuthn registration's ATTESTATION STATEMENT go unverified (#105,
 // 2026-09-23)? `webauthn.attestationPolicy`'s default, `by-mode`, asks it:
 // development records the statement's format and verifies nothing, as it
@@ -2434,6 +2457,19 @@ const REQUIREMENTS = [
     product: 'It is refused. A primary key is added on /portal/keys behind ' +
              'a session, by an activation link, or by an operator.',
     where: 'authn/authn.ts' },
+  // #693 (2026-10-20).
+  { id: 'siop-did-web-pin',
+    what: 'A did:web self-issued subject signs in only with a key pinned ' +
+          'when it was enrolled',
+    development: 'A did:web enrolled before key pinning, with no key ' +
+                 'pinned, signs in with the key its document names on its ' +
+                 'next sign-in, and that key is pinned then (trust on first ' +
+                 'use), with a log line and an audit row.',
+    product: 'That sign-in is refused (STS-VC-0127), audited, and the ' +
+             'person enrols the DID again by proving it on ' +
+             '/portal/self-issued. In both modes a key the pin does not ' +
+             'name is refused (STS-VC-0126).',
+    where: 'oid4vc/siop.ts' },
   // #105 (2026-09-23).
   { id: 'webauthn-attestation',
     what: 'A security key\'s attestation statement is verified before the ' +
@@ -4121,6 +4157,7 @@ module.exports = {
   grantsUncataloguedAccess: grantsUncataloguedAccess,
   honoursUngrantedPermissions: honoursUngrantedPermissions,
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
+  pinsSelfIssuedKeysOnFirstUse: pinsSelfIssuedKeysOnFirstUse,
   acceptsUnverifiedAttestation: acceptsUnverifiedAttestation,
   acceptsUnattestedDeviceKeys: acceptsUnattestedDeviceKeys,
   refusesUncheckedAttestationRevocation: refusesUncheckedAttestationRevocation,

@@ -203,6 +203,18 @@
     "en": "e773ade2b33e515a",
     "text": "Tinatanggihan ito. Ang primary key ay idinadagdag sa /portal/keys sa likod ng session, sa pamamagitan ng activation link, o ng isang operator."
   },
+  "mode.requirements.siop-did-web-pin.what": {
+    "en": "a8f5db1a7e30f55d",
+    "text": "Nagsa-sign in lang ang isang did:web na self-issued subject gamit ang key na na-pin noong na-enroll ito"
+  },
+  "mode.requirements.siop-did-web-pin.development": {
+    "en": "df2d670db990d330",
+    "text": "Ang isang did:web na na-enroll bago nagkaroon ng pag-pin ng key, na walang naka-pin na key, ay nagsa-sign in gamit ang key na pinangalanan ng dokumento nito sa susunod nitong sign-in, at ang key na iyon ay naka-pin na noon (trust on first use), may log line at audit row."
+  },
+  "mode.requirements.siop-did-web-pin.product": {
+    "en": "f2869db882e1f25d",
+    "text": "Tinatanggihan ang sign-in na iyon (STS-VC-0127), ina-audit, at ine-enroll muli ng tao ang DID sa pamamagitan ng pagpapatunay nito sa /portal/self-issued. Sa parehong mode, tinatanggihan ang key na hindi pinangalanan ng pin (STS-VC-0126)."
+  },
   "mode.requirements.webauthn-attestation.what": {
     "en": "8c22563b2f23268b",
     "text": "Vine-verify ang attestation statement ng security key bago i-register ang key"

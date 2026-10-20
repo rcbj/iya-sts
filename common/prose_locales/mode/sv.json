@@ -203,6 +203,18 @@
     "en": "e773ade2b33e515a",
     "text": "Den avvisas. En primär nyckel läggs till på /portal/keys bakom en session, via en aktiveringslänk eller av en operatör."
   },
+  "mode.requirements.siop-did-web-pin.what": {
+    "en": "a8f5db1a7e30f55d",
+    "text": "Ett självutfärdat did:web-subjekt loggar bara in med en nyckel som fästes när det registrerades"
+  },
+  "mode.requirements.siop-did-web-pin.development": {
+    "en": "df2d670db990d330",
+    "text": "En did:web som registrerades innan nycklar fästes, utan fäst nyckel, loggar in med den nyckel dess dokument anger vid nästa inloggning, och den nyckeln fästs då (tillit vid första användning), med en loggrad och en granskningsrad."
+  },
+  "mode.requirements.siop-did-web-pin.product": {
+    "en": "f2869db882e1f25d",
+    "text": "Den inloggningen nekas (STS-VC-0127), granskas, och personen registrerar DID:en igen genom att bevisa den på /portal/self-issued. I båda lägena nekas en nyckel som fästningen inte anger (STS-VC-0126)."
+  },
   "mode.requirements.webauthn-attestation.what": {
     "en": "8c22563b2f23268b",
     "text": "En säkerhetsnyckels attesteringsutsaga verifieras innan nyckeln registreras"

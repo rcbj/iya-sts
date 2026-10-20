@@ -1316,8 +1316,17 @@ const ACTIONS = [
     label: 'A person took their signing key pair off' },
   { action: 'portal.signing-key.csrf', category: 'authentication',
     label: 'A signing key form was refused for its CSRF token' },
+  { action: 'portal.siop.enrol', category: 'authentication',
+    label: 'A person enrolled a self-issued subject by proving it with a ' +
+           'wallet' },
   { action: 'portal.siop.remove', category: 'authentication',
     label: 'A person removed a self-issued subject' },
+  { action: 'siop.key.pinned', category: 'authentication',
+    label: 'A did:web self-issued subject enrolled with no pinned key was ' +
+           'pinned to the key it signed in with (development only)' },
+  { action: 'siop.key.refused', category: 'authentication',
+    label: 'A did:web self-issued sign-in was refused: the key was not the ' +
+           'one pinned at enrolment, or none was pinned' },
   { action: 'portal.vc.offer', category: 'protocol',
     label: 'A person made a Credential Offer for their own wallet' },
   { action: 'portal.vc.remove', category: 'protocol',

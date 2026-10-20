@@ -203,6 +203,18 @@
     "en": "e773ade2b33e515a",
     "text": "会被拒绝。主密钥须在会话保护下于 /portal/keys 上添加，或通过激活链接添加，或由操作员添加。"
   },
+  "mode.requirements.siop-did-web-pin.what": {
+    "en": "a8f5db1a7e30f55d",
+    "text": "did:web 自签发主体只能使用登记时固定的密钥登录"
+  },
+  "mode.requirements.siop-did-web-pin.development": {
+    "en": "df2d670db990d330",
+    "text": "在密钥固定之前登记、没有固定任何密钥的 did:web，在下一次登录时使用其文档所列的密钥登录，该密钥随即被固定（首次使用即信任），并记录一行日志和一条审计记录。"
+  },
+  "mode.requirements.siop-did-web-pin.product": {
+    "en": "f2869db882e1f25d",
+    "text": "该登录被拒绝（STS-VC-0127）并记入审计，此人需在 /portal/self-issued 上证明该 DID 以重新登记。在两种模式下，固定记录中未列出的密钥都会被拒绝（STS-VC-0126）。"
+  },
   "mode.requirements.webauthn-attestation.what": {
     "en": "8c22563b2f23268b",
     "text": "安全密钥的证明声明会在密钥注册前被验证"
