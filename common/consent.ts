@@ -1070,7 +1070,13 @@ class Consent {
         // identifier resolves to the application that exposes it and to the
         // description somebody typed; everything else is just a word, and
         // saying so is better than inventing a sentence about it.
-        permission: applications.forPermission(scope) || null
+        permission: applications.forPermission(scope) || null,
+        // THE `did` SCOPE RELEASES THE PERSON'S PREFERRED DID (#693) where
+        // the realm releases it, and the screen says so rather than calling
+        // it an ordinary scope. Only the person's own answer to this row
+        // releases one (`oauth-oidc/did_claim.ts`).
+        releasesDid: scope === 'did' &&
+          self.deps.config.value('oauth2.didClaim') === true
       };
     });
     // THE POLICY DECIDES WHICH ARE OUTSTANDING (#305): each scope with

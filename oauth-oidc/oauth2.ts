@@ -326,6 +326,9 @@ import claimAttributes = require('../common/claim_attributes');
 // its scope was granted, and how a resource server's declared claims combine
 // with the client's (#395). A library.
 import scopeClaims = require('../common/scope_claims');
+// THE `did` CLAIM (#693): a person's preferred, proved DID, applied last to
+// an ID Token and a UserInfo response. A library; it reaches SIOPv2 lazily.
+import didClaim = require('./did_claim');
 import identityAssurance = require('../common/identity_assurance');
 // THE DEVICE REGISTER (#130): Native SSO mints and checks its device_secret
 // against `ou=devices`. A library over `credentials.ts`; it requires nothing
@@ -2039,7 +2042,12 @@ class OAuth2Server {
         // CAEP profile names (`ssf.read`, `ssf.manage`). They go only where
         // the family is on, so the promise and what is behind it stay
         // together.
-        config.value('ssf.enabled') !== false ? ssfScopes.published() : []),
+        config.value('ssf.enabled') !== false ? ssfScopes.published() : [])
+        .concat(
+          // The `did` claim's scope (#693), only while the realm releases
+          // it: a scope that asks for nothing is a promise with nothing
+          // behind it.
+          didClaim.enabled() ? [didClaim.SCOPE] : []),
       // All three, and form_post is the one that was advertised here and NOT
       // implemented for a long time — every request got a 302 whatever it asked
       // for, so a client that requested form_post sat waiting for a POST that
@@ -3162,7 +3170,10 @@ class OAuth2Server {
                            IDA_REGISTERED_CLAIMS,
                            // OpenID Connect for Identity Assurance 1.0
                            // section 7 (#127): the element itself.
-                           ['verified_claims']),
+                           ['verified_claims'],
+                           // The person's preferred DID (#693), while the
+                           // realm releases it.
+                           didClaim.enabled() ? [didClaim.CLAIM] : []),
       // OIDC Core 5.6: all three, the other two from Claims Providers a
       // person linked (#147, `claims_providers.ts`).
       claim_types_supported: ['normal', 'aggregated', 'distributed'],
@@ -5087,9 +5098,11 @@ class OAuth2Server {
     // Claims Provider the person linked supplies, is referenced to that
     // provider. `claims_providers.ts` argues what is sent and when; it never
     // replaces a value the entry holds, and a provider that fails is left out.
+    // Never `did` (#693): a Claims Provider is not a way round its rules.
     const unanswered = self.requestedClaimNames(opts.claims, 'id_token')
       .filter(function (name: string): boolean {
-        return payloadWithCustom[name] === undefined;
+        return payloadWithCustom[name] === undefined &&
+          name !== didClaim.CLAIM;
       });
     if (unanswered.length) {
       try {
@@ -5104,6 +5117,14 @@ class OAuth2Server {
                  'Providers could not be asked: ' + ((e && e.message) || e));
       }
     }
+    // THE `did` CLAIM (#693), LAST: whatever any layer above put under the
+    // name is removed, and the person's preferred, proved DID goes in only
+    // when every condition `did_claim.ts` names holds — the setting, the
+    // scope granted and declared, the person's own consent, a public
+    // subject (or the client's opt-in), an account that is not disabled.
+    didClaim.apply(payloadWithCustom, { username: user.username,
+                                        clientId: opts.client_id,
+                                        scope: opts.scope }, 'ID Token');
     // OIDC Core section 3.1.3.7: an ID Token is signed with the algorithm the
     // client REGISTERED as `id_token_signed_response_alg`, and with RS256 when
     // it registered none — which is what every client here does unless it says
@@ -12624,9 +12645,10 @@ class OAuth2Server {
     // Claims Provider the person linked supplies (`claims_providers.ts`). A
     // provider that fails is left out, and so is the whole step if the
     // library itself throws — the rest of the response is still owed.
+    // Never `did` (#693): a Claims Provider is not a way round its rules.
     const unanswered = self.requestedClaimNames(request, 'userinfo')
       .filter(function (name: string): boolean {
-        return body[name] === undefined;
+        return body[name] === undefined && name !== didClaim.CLAIM;
       });
     const referenced = unanswered.length
       ? Promise.resolve().then(function () {
@@ -12642,6 +12664,11 @@ class OAuth2Server {
       if (sources) {
         Object.assign(body, sources);
       }
+      // THE `did` CLAIM (#693), LAST, as in the ID Token: decided again on
+      // every call from the token's scope and client, so a consent withdrawn
+      // or a mark cleared since the token was issued takes it out now.
+      didClaim.apply(body, { username: username, clientId: claims.client_id,
+                             scope: claims.scope }, 'UserInfo response');
       return self.protectUserinfo(body, registered, base, claims);
     });
     protection.then(function (protectedOut) {

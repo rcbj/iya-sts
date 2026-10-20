@@ -1047,6 +1047,10 @@
     "en": "f6af7681f3d25fd7",
     "text": "En administratör tog bort en persons självutfärdade (SIOPv2) subjekt"
   },
+  "audit.actions.admin.siop.preferred.label": {
+    "en": "3c3a62cf5e46c516",
+    "text": "En administratör markerade en persons bevisade DID som föredraget, eller tog bort markeringen"
+  },
   "audit.actions.ssf.signals.discover.label": {
     "en": "55d2d7d9682c339a",
     "text": "En federationspartners Shared Signals-konfiguration upptäcktes"
@@ -1334,6 +1338,10 @@
   "audit.actions.portal.siop.remove.label": {
     "en": "b6f77328c0b99b89",
     "text": "En person tog bort ett självutfärdat subjekt"
+  },
+  "audit.actions.portal.siop.prefer.label": {
+    "en": "7e6377e63c113f97",
+    "text": "En person markerade ett bevisat DID som sitt föredragna, eller tog bort markeringen"
   },
   "audit.actions.siop.key.pinned.label": {
     "en": "a2cc99b16a4a406e",

@@ -8,8 +8,9 @@
 // ---------------------------------------------------------------------------
 // `/portal/self-issued`, DRAWN IN THE BROWSER (#568), from `GET
 // /account-api/self-issued` (`portal_self_issued.ts`): the enrolled SIOPv2
-// subjects, a Remove button each, and the link that enrols one by proving it
-// at `/authn/wallet` — a plain link, because that is a sign-in, not a form.
+// subjects, a Remove button each, a Prefer button on each proved DID (#693),
+// and the link that enrols one by proving it at `/authn/wallet` — a plain
+// link, because that is a sign-in, not a form.
 //
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
@@ -46,7 +47,7 @@ class SelfIssuedPages {
         // by an administrator, unproven.
         (one.proof === 'wallet' ? t.html('portalSelfIssued.proofWallet')
                                 : t.html('portalSelfIssued.proofAdmin')) +
-        '</td><td>' +
+        '</td><td>' + SelfIssuedPages.preferCell(one, t) + '</td><td>' +
         '<form method="post" action="' + kit.esc(PATH) + '">' +
         '<input type="hidden" name="action" value="remove">' +
         '<input type="hidden" name="subject" value="' + kit.esc(one.subject) +
@@ -61,8 +62,14 @@ class SelfIssuedPages {
         ? '<table><tr><th>' + t.html('portalSelfIssued.subject') +
           '</th><th>' + t.html('portalSelfIssued.label') + '</th><th>' +
           t.html('portalSelfIssued.enrolled') + '</th><th>' +
-          t.html('portalSelfIssued.how') + '</th><th></th></tr>' +
-          rows.join('') + '</table>'
+          t.html('portalSelfIssued.how') + '</th><th>' +
+          t.html('portalSelfIssued.preferred') + '</th><th></th></tr>' +
+          rows.join('') + '</table>' +
+          // What the mark is for (#693), and whether this realm releases it.
+          '<p class="sub" id="siop-preferred-note">' +
+          t.html(view.didClaim ? 'portalSelfIssued.preferredNoteOn'
+                               : 'portalSelfIssued.preferredNoteOff') +
+          '</p>'
         : '<p id="siop-none">' + t.html('portalSelfIssued.none') + '</p>') +
       (view.enabled
         ? '<p><a class="button" id="siop-enrol" href="/authn/wallet?siop=1' +
@@ -71,6 +78,32 @@ class SelfIssuedPages {
           ' ' + t.html('portalSelfIssued.reprove') + '</p>'
         : '<p class="sub" id="siop-off">' + t.html('portalSelfIssued.off') +
           '</p>') + '</div>';
+  }
+
+  /**
+   * One row's preferred-DID cell (#693): the mark and a button that clears
+   * it, a button that sets it on a proved DID, and nothing on a subject that
+   * cannot be preferred — one an administrator added, or a thumbprint.
+   *
+   * @param one - the row
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static preferCell(one: Json, t: Json): string {
+    const form = function (action: string, label: string): string {
+      return '<form method="post" action="' + kit.esc(PATH) + '">' +
+        '<input type="hidden" name="action" value="' + action + '">' +
+        '<input type="hidden" name="subject" value="' + kit.esc(one.subject) +
+        '"><button type="submit">' + label + '</button></form>';
+    };
+    if (one.preferred) {
+      return '<strong>' + t.html('portalSelfIssued.isPreferred') +
+        '</strong> ' + form('unprefer', t.html('portalSelfIssued.unprefer'));
+    }
+    if (one.proof === 'wallet' && /^did:/.test(String(one.subject))) {
+      return form('prefer', t.html('portalSelfIssued.prefer'));
+    }
+    return '';
   }
 
   /**

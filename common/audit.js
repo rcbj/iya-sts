@@ -1151,6 +1151,9 @@ const ACTIONS = [
   { action: 'admin.siop.removed', category: 'admin',
     label: 'An administrator removed a person\'s self-issued (SIOPv2) ' +
            'subject' },
+  { action: 'admin.siop.preferred', category: 'admin',
+    label: 'An administrator marked a person\'s proved DID as preferred, ' +
+           'or cleared the mark' },
   // A federation partner's Shared Signals (#153, #373): ssf_transmitters.ts
   // records these through its own `audited()`, three by name and six as
   // 'ssf.signals.' + the stream act — none had a row until the widened
@@ -1321,6 +1324,11 @@ const ACTIONS = [
            'wallet' },
   { action: 'portal.siop.remove', category: 'authentication',
     label: 'A person removed a self-issued subject' },
+  // THE PREFERRED DID (#693, phase 2): the one proved DID the `did` claim
+  // releases, marked or cleared by the person.
+  { action: 'portal.siop.prefer', category: 'authentication',
+    label: 'A person marked a proved DID as their preferred one, or ' +
+           'cleared the mark' },
   { action: 'siop.key.pinned', category: 'authentication',
     label: 'A did:web self-issued subject enrolled with no pinned key was ' +
            'pinned to the key it signed in with (development only)' },

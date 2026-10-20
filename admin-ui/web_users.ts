@@ -2291,7 +2291,8 @@ class UsersPage {
     // with a Remove each, and a form that enrols one BY VALUE — the
     // administrator's door; the person's own proves the key on
     // `/portal/self-issued`. `POST /admin-api/users/enrol-self-issued-subject`
-    // and `remove-self-issued-subject` are the same two acts (rule 7), and
+    // and `remove-self-issued-subject` are the same two acts (rule 7), as is
+    // `set-preferred-self-issued-subject` for the preferred DID (#693), and
     // `GET /admin-api/users/self-issued-subjects` is this list.
     const siopView = data.selfIssued;
     const siopRow = function (one) {
@@ -2304,6 +2305,27 @@ class UsersPage {
         '</td><td>' + (one.proof === 'wallet'
           ? t.html('consoleUsers.mfaSection.siopProofWallet')
           : t.html('consoleUsers.mfaSection.siopProofAdmin')) +
+        // THE PREFERRED DID (#693): the mark, and a button that sets it on
+        // a proved DID or clears it — `set-preferred-self-issued-subject`.
+        '</td><td>' + (one.preferred
+          ? '<strong>' + t.html('consoleUsers.mfaSection.siopIsPreferred') +
+            '</strong> ' : '') +
+        (state.write && (one.preferred || (one.proof === 'wallet' &&
+                                           /^did:/.test(String(one.subject))))
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" ' +
+            'value="set-preferred-self-issued-subject">' +
+            '<input type="hidden" name="user" value="' + kit.esc(key) +
+            '"><input type="hidden" name="subject" value="' +
+            (one.preferred ? '' : kit.esc(one.subject)) + '">' +
+            '<input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + kit.esc(back) +
+            '"><button type="submit"' +
+            kit.tip(t.text('consoleUsers.mfaSection.siopPreferTip')) + '>' +
+            (one.preferred ? t.html('consoleUsers.mfaSection.siopUnprefer')
+                           : t.html('consoleUsers.mfaSection.siopPrefer')) +
+            '</button></form>'
+          : '') +
         '</td><td>' +
         (state.write
           ? '<form method="post" action="/admin/users">' +
@@ -2328,7 +2350,8 @@ class UsersPage {
           '</th><th>' + t.html('consoleUsers.mfaSection.thLabel') +
           '</th><th>' + t.html('consoleUsers.mfaSection.enrolled') + '</th>' +
           '<th>' + t.html('consoleUsers.mfaSection.siopThProof') + '</th>' +
-          '<th></th></tr>' + siopView.subjects.map(siopRow).join('') +
+          '<th>' + t.html('consoleUsers.mfaSection.siopThPreferred') +
+          '</th><th></th></tr>' + siopView.subjects.map(siopRow).join('') +
           '</table>'
         : kit.note(t.html('consoleUsers.mfaSection.siopNone'))) +
       (state.write

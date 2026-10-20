@@ -3843,6 +3843,14 @@
     "en": "2394ee67a689920d",
     "text": "Isagawa ang OpenID Connect Key Binding 1.0 (#150). Kapag naka-on: nakalista sa discovery document ang scope na `bound_key`, maaari itong hingin ng client na walang idinedeklarang scope, at ang request para dito ay dapat magbigay ng `dpop_jkt` at gumamit ng code flow (tinatanggihan kung hindi, STS-OAUTH-0704 at 0705); pinangangalanan ng ID Token ang DPoP key (`cnf.jwk`, `typ: dpop+id_token`), dapat itong patunayan ng token request gamit ang `c_s256`, at bawat refresh ay dapat manggaling sa parehong key. **Kapag naka-off, wala ito, at ang serbisyo ay OpenID Connect Core lamang**: hindi ina-advertise ang `bound_key`, hindi tinatanggihan ang request na may dala nito — binabalewala ang scope at hindi ibinibigay, gaya ng pagtrato ng Core sa scope na hindi kinikilos ng OP — at walang ID Token na naka-bind. I-off ito kung saan humihingi ang mga relying party ng bawat ina-advertise na scope at walang alam sa Key Binding (#315). Ang grant na naka-bind na bago ito i-off ay patuloy na sinusuri ang key nito sa refresh."
   },
+  "oauth2.didClaim|label": {
+    "en": "d0b89f9c74f06728",
+    "text": "Ang claim na did"
+  },
+  "oauth2.didClaim|description": {
+    "en": "473d9916a85b21bb",
+    "text": "Ibinibigay ang gustong DID ng isang tao bilang claim na `did`, sa ID Token at sa sagot ng UserInfo, sa likod ng scope na `did` (#693). Kapag naka-on, ibinibigay lamang ang claim kapag idinedeklara ng client ang `did` sa oauthAllowedScope nito (sa parehong mode; wala ito sa anumang default na set), hiniling ng request ang scope, pumayag mismo ang tao rito para sa client na iyon (hindi binibilang ang global consent), minarkahan ng tao na gusto ang isang DID na PINATUNAYAN nila gamit ang kanilang wallet (hindi kailanman isang itinype ng administrator), at hindi naka-disable ang account. Ang client na gumagamit ng pairwise o ephemeral na subject identifier ay hindi kailanman sinasabihan nito maliban kung TRUE ang oauthDidClaimWithPairwise nito, dahil sinisira ng isang stable na DID ang unlinkability na dahilan ng pag-iral ng mga iyon. Inaalis ang claim na pinangalanang `did` mula sa anumang ibang layer. Naka-off: hindi ina-advertise ang scope at hindi kailanman ibinibigay ang claim."
+  },
   "oauth2.sessionManagement|label": {
     "en": "9b2a882aa3250c63",
     "text": "OpenID Connect Session Management"

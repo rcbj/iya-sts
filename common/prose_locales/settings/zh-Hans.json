@@ -3843,6 +3843,14 @@
     "en": "2394ee67a689920d",
     "text": "执行 OpenID Connect Key Binding 1.0（#150）。开启时：发现文档列出 `bound_key` 范围，未声明任何范围的客户端可以请求它，请求它时必须提供 `dpop_jkt` 并使用授权码流程（否则拒绝，STS-OAUTH-0704 和 0705）；随后 ID Token 指明 DPoP 密钥（`cnf.jwk`，`typ: dpop+id_token`），令牌请求必须用 `c_s256` 证明该密钥，且每次刷新都必须来自同一密钥。**关闭时，它不存在，服务仅为 OpenID Connect Core**：不公布 `bound_key`，携带它的请求不会被拒绝——该范围被忽略且不授予，正如 Core 对待 OP 不处理的范围——也不绑定任何 ID Token。若依赖方会请求所有已公布的范围且不了解 Key Binding，请将其关闭（#315）。关闭前已绑定的授权在刷新时仍检查其密钥。"
   },
+  "oauth2.didClaim|label": {
+    "en": "d0b89f9c74f06728",
+    "text": "did 声明"
+  },
+  "oauth2.didClaim|description": {
+    "en": "473d9916a85b21bb",
+    "text": "在 `did` 范围之后，将某人的首选 DID 作为 `did` 声明放入 ID Token 和 UserInfo 响应中（#693）。开启时，仅在以下条件全部满足时才提供该声明：客户端在其 oauthAllowedScope 上声明了 `did`（两种模式均如此；它不在任何默认集合中），请求要求了该范围，此人亲自为该客户端同意了它（全局同意不算），此人将一个用钱包证明过的 DID 标记为首选（绝不是管理员输入的 DID），并且账户未被禁用。使用成对或临时主体标识符的客户端永远不会被告知，除非其 oauthDidClaimWithPairwise 为 TRUE，因为稳定的 DID 会破坏它们存在所要保障的不可关联性。来自任何其他层的名为 `did` 的声明会被移除。关闭：不公布该范围，也从不提供该声明。"
+  },
   "oauth2.sessionManagement|label": {
     "en": "9b2a882aa3250c63",
     "text": "OpenID Connect Session Management"

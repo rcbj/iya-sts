@@ -7842,6 +7842,28 @@ const SETTINGS = [
                  'every advertised scope and know nothing of Key Binding ' +
                  '(#315). A grant already bound before it was turned off ' +
                  'keeps its key check on refresh.' },
+  // THE `did` CLAIM (#693, phase 2): a person's preferred, proved DID
+  // released to a client they consented to. Off by default, and
+  // `oauth-oidc/did_claim.ts` holds every other condition.
+  { key: 'oauth2.didClaim', group: 'OAuth 2.0 / OIDC',
+    label: 'The did claim',
+    env: 'STS_OAUTH2_DID_CLAIM', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Release a person\'s preferred DID as the `did` claim, in ' +
+                 'the ID Token and the UserInfo response, behind the `did` ' +
+                 'scope (#693). With it on, the claim is released only when ' +
+                 'the client declares `did` on its oauthAllowedScope (in ' +
+                 'both modes; it is in no default set), the request asked ' +
+                 'for the scope, the person consented to it for that client ' +
+                 'themselves (a global consent does not count), the person ' +
+                 'marked a DID they PROVED with their wallet as preferred ' +
+                 '(never one an administrator typed in), and the account is ' +
+                 'not disabled. A client using pairwise or ephemeral subject ' +
+                 'identifiers is never told it unless its ' +
+                 'oauthDidClaimWithPairwise is TRUE, because a stable DID ' +
+                 'defeats the unlinkability those exist for. A claim called ' +
+                 '`did` from any other layer is removed. Off: the scope is ' +
+                 'not advertised and the claim is never released.' },
   { key: 'oauth2.sessionManagement', group: 'OAuth 2.0 / OIDC',
     label: 'OpenID Connect Session Management',
     env: 'STS_OAUTH2_SESSION_MANAGEMENT', type: 'bool', dflt: false,

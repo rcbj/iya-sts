@@ -6,6 +6,7 @@
   "scope.permission": "{description} — inilalantad ng <code>{identifier}</code>, at ipapadala ang access token sa <code>{baseUri}</code>",
   "scope.permissionNamed": "ang permiso na “{name}”",
   "scope.ordinary": "isang karaniwang scope: walang ibinibigay na kahulugan dito ang serbisyong ito at ilalagay ito sa scope claim ng token nang walang pagbabago",
+  "scope.did": "ang iyong gustong DID — ang decentralized identifier na pinatunayan mo gamit ang iyong wallet at minarkahang gusto sa iyong pahina ng mga self-issued ID. Pareho ang halaga nito para sa bawat application na pagsasabihan mo, kaya maaari ka nilang makilala bilang iisang tao",
   "detail.understood": "naiintindihan ng <code>{resource}</code>, at ipapadala ang access token sa <code>{audience}</code>",
   "detail.described": "{description} — naiintindihan ng <code>{resource}</code>, at ipapadala ang access token sa <code>{audience}</code>",
   "detailsNote": "May dalang <strong>{count, plural, one {# authorization detail} other {# authorization detail}}</strong> ang request na ito (RFC 9396). Tatanungin ka tungkol sa mga ito sa bawat pagkakataon: ang Payagan ay pagsang-ayon sa eksaktong nakalista, para sa iisang request na ito lang.",

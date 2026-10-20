@@ -1047,6 +1047,10 @@
     "en": "f6af7681f3d25fd7",
     "text": "May administrator na nag-alis ng self-issued (SIOPv2) subject ng isang tao"
   },
+  "audit.actions.admin.siop.preferred.label": {
+    "en": "3c3a62cf5e46c516",
+    "text": "Minarkahan ng isang administrator na gusto ang isang pinatunayang DID ng isang tao, o inalis ang marka"
+  },
   "audit.actions.ssf.signals.discover.label": {
     "en": "55d2d7d9682c339a",
     "text": "Natuklasan ang Shared Signals configuration ng isang federation partner"
@@ -1334,6 +1338,10 @@
   "audit.actions.portal.siop.remove.label": {
     "en": "b6f77328c0b99b89",
     "text": "May taong nag-alis ng self-issued subject"
+  },
+  "audit.actions.portal.siop.prefer.label": {
+    "en": "7e6377e63c113f97",
+    "text": "Minarkahan ng isang tao na gusto ang isang pinatunayang DID, o inalis ang marka"
   },
   "audit.actions.siop.key.pinned.label": {
     "en": "a2cc99b16a4a406e",

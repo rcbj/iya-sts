@@ -3843,6 +3843,14 @@
     "en": "2394ee67a689920d",
     "text": "Utför OpenID Connect Key Binding 1.0 (#150). På: discovery-dokumentet listar scopet `bound_key`, en klient som inte deklarerar några scopes får be om det, och en begäran om det måste ange `dpop_jkt` och använda kodflödet (avvisas annars, STS-OAUTH-0704 och 0705); ID-tokenet namnger då DPoP-nyckeln (`cnf.jwk`, `typ: dpop+id_token`), tokenbegäran måste bevisa den med `c_s256`, och varje förnyelse måste komma från samma nyckel. **Av finns det inte, och tjänsten är enbart OpenID Connect Core**: `bound_key` annonseras inte, en begäran som innehåller det avvisas inte — scopet ignoreras och beviljas inte, så som Core behandlar ett scope en OP inte agerar på — och inget ID-token binds. Stäng av det där förlitande parter begär varje annonserat scope och inte känner till Key Binding (#315). Ett beviljande som redan var bundet innan det stängdes av behåller sin nyckelkontroll vid förnyelse."
   },
+  "oauth2.didClaim|label": {
+    "en": "d0b89f9c74f06728",
+    "text": "Anspråket did"
+  },
+  "oauth2.didClaim|description": {
+    "en": "473d9916a85b21bb",
+    "text": "Lämnar ut en persons föredragna DID som anspråket `did`, i ID Token och i UserInfo-svaret, bakom scopet `did` (#693). När det är på lämnas anspråket ut endast när klienten deklarerar `did` i sitt oauthAllowedScope (i båda lägena; det finns i ingen standarduppsättning), begäran bad om scopet, personen själv samtyckte till det för den klienten (ett globalt samtycke räknas inte), personen markerade ett DID som hen BEVISADE med sin plånbok som föredraget (aldrig ett som en administratör skrev in) och kontot inte är inaktiverat. En klient som använder parvisa eller efemära subjektidentifierare får det aldrig om inte dess oauthDidClaimWithPairwise är TRUE, eftersom ett stabilt DID upphäver den olänkbarhet de finns för. Ett anspråk som heter `did` från något annat lager tas bort. Av: scopet annonseras inte och anspråket lämnas aldrig ut."
+  },
   "oauth2.sessionManagement|label": {
     "en": "9b2a882aa3250c63",
     "text": "OpenID Connect Session Management"

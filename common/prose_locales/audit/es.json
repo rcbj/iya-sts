@@ -1047,6 +1047,10 @@
     "en": "f6af7681f3d25fd7",
     "text": "Un administrador quitó el sujeto autoemitido (SIOPv2) de una persona"
   },
+  "audit.actions.admin.siop.preferred.label": {
+    "en": "3c3a62cf5e46c516",
+    "text": "Un administrador marcó como preferido un DID demostrado de una persona, o quitó la marca"
+  },
   "audit.actions.ssf.signals.discover.label": {
     "en": "55d2d7d9682c339a",
     "text": "Se descubrió la configuración de Shared Signals de un socio de federación"
@@ -1334,6 +1338,10 @@
   "audit.actions.portal.siop.remove.label": {
     "en": "b6f77328c0b99b89",
     "text": "Una persona quitó un sujeto autoemitido"
+  },
+  "audit.actions.portal.siop.prefer.label": {
+    "en": "7e6377e63c113f97",
+    "text": "Una persona marcó como preferido un DID demostrado, o quitó la marca"
   },
   "audit.actions.siop.key.pinned.label": {
     "en": "a2cc99b16a4a406e",

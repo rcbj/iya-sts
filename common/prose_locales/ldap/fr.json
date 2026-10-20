@@ -623,6 +623,10 @@
     "en": "2b77aa6b404dbdc0",
     "text": "`sector_identifier_uri` d’OIDC Core section 8.1 : une URL https dont l’HÔTE est le secteur pour lequel un `sub` pairwise est dérivé, afin que plusieurs hôtes de redirection d’une même organisation voient un seul sujet. Un ENREGISTREMENT qui en nomme un le voit RÉCUPÉRÉ et doit figurer dans le tableau JSON qu’il sert, chacun de ses URI de redirection ; un URI écrit ici par un administrateur est la déclaration de l’administrateur et n’est pas récupéré. Vide : le secteur est l’hôte des URI de redirection, qui doivent alors tous partager le même."
   },
+  "applications.schema.attributes.oauthDidClaimWithPairwise.what": {
+    "en": "6a260538fdd857e4",
+    "text": "TRUE : ce client peut recevoir le DID préféré de la personne (la revendication `did`, oauth2.didClaim) bien qu’il utilise des identifiants de sujet par paire ou éphémères. Toute autre valeur, et pour un client à sujet public cela n’a pas d’importance : jamais. Un `sub` par paire ou éphémère existe pour que ce client ne puisse pas corréler la personne avec d’autres clients, et un DID est la même valeur chez chaque client qui le reçoit, ce qui annule cela — ne l’activez que là où ce client doit de toute façon connaître la personne par son DID. Un enregistrement ne peut pas le définir."
+  },
   "applications.schema.attributes.oauthTokenEndpointAuthSigningAlg.what": {
     "en": "c3cee680e93f74e1",
     "text": "`token_endpoint_auth_signing_alg` d’OIDC Core section 9 / RFC 7591 : l’UNIQUE algorithme JWS avec lequel doit être signée l’assertion d’authentification de ce client. Une assertion signée avec tout autre algorithme est refusée, dans tous les modes. Vide : tout algorithme que la méthode autorise."

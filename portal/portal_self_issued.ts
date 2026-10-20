@@ -24,7 +24,9 @@
 // **SINCE #568 THESE ARE TWO `/account-api` OPERATIONS**, and the page is
 // drawn in the browser by `web_self_issued.ts`. **THE IDENTITY IS THE
 // TOKEN'S AND THERE IS NO PARAMETER FOR IT** — the portal's rule
-// (portal/CLAUDE.md): the removal names the SUBJECT, never whose it is.
+// (portal/CLAUDE.md): the removal names the SUBJECT, never whose it is, and
+// so does marking a proved DID as the preferred one (#693, `prefer` and
+// `unprefer` on the same POST), which the `did` claim releases.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
@@ -48,9 +50,12 @@ interface PortalSelfIssuedDeps {
 }
 
 const REMOVE_FORM = vz.object({
-  action: vt.opt(vt.oneOf(['remove'])).describe('`remove`, the one act.'),
+  action: vt.opt(vt.oneOf(['remove', 'prefer', 'unprefer']))
+    .describe('`remove` (the default) takes the subject off; `prefer` ' +
+              'marks it as your preferred DID (#693), and `unprefer` ' +
+              'clears the mark.'),
   subject: vz.string().max(2048)
-    .describe('The enrolled subject to remove, from the list.')
+    .describe('The enrolled subject, from the list.')
 });
 
 const SELF_ISSUED_QUERY = vz.object({
@@ -97,6 +102,9 @@ class PortalSelfIssued {
     const held = siop.list(username) || [];
     log.debug("Leaving PortalSelfIssued.view(). " + held.length);
     return { enabled: !!config.value('oid4vp.signInSelfIssued'),
+             // Whether the preferred DID is released as the `did` claim in
+             // this realm (#693): the page says so beside the mark.
+             didClaim: config.value('oauth2.didClaim') === true,
              subjects: held.map(function (one: Json): Json {
                return { subject: String(one.subject),
                         label: String(one.label || ''),
@@ -105,8 +113,51 @@ class PortalSelfIssued {
                         // How it was enrolled (#693): `wallet`, proved by
                         // the person, or `admin`, by an administrator's
                         // value.
-                        proof: String(one.proof || siop.PROOF_ADMIN) };
+                        proof: String(one.proof || siop.PROOF_ADMIN),
+                        // The one proved DID marked as preferred (#693).
+                        preferred: one.preferred === true };
              }) };
+  }
+
+  /**
+   * Marks one of the caller's proved DIDs as preferred, or clears the mark
+   * (#693).
+   *
+   * @param ctx - the account API's helpers
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @returns nothing
+   */
+  prefer(ctx: AccountContext, res: Json, caller: AccountCaller,
+         body: Json): unknown {
+    const { log, siop } = this.deps;
+    log.debug("Entering PortalSelfIssued.prefer(). " + body.action);
+    const who = caller.username;
+    const clearing = body.action === 'unprefer';
+    const result = siop.setPreferred(who, clearing ? '' : body.subject);
+    ctx.audit.record({
+      category: 'authentication', action: 'portal.siop.prefer',
+      errorCode: result.ok ? undefined : 'STS-PORTAL-0615',
+      actor: who, target: who, outcome: result.ok ? 'success' : 'failure',
+      summary: (result.ok ? '' : 'could not ') +
+               (clearing ? 'cleared the preferred DID'
+                         : 'marked ' + body.subject + ' as the preferred ' +
+                           'DID') + ' on /portal/self-issued',
+      detail: { subject: clearing ? undefined : body.subject,
+                was: result.ok ? (result.was || undefined) : undefined,
+                errors: result.ok ? undefined : [result.error] }
+    });
+    if (!result.ok) {
+      log.debug("Leaving PortalSelfIssued.prefer(). Refused.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0615', result.error,
+                        { view: this.view(who) });
+    }
+    log.debug("Leaving PortalSelfIssued.prefer(). Done.");
+    return ctx.json(res, 200, { ok: true,
+      message: ctx.translatorFor(who).text(clearing
+        ? 'portalSelfIssued.doneUnpreferred'
+        : 'portalSelfIssued.donePreferred') });
   }
 
   /**
@@ -161,8 +212,10 @@ class PortalSelfIssued {
         description: '`subjects`: each enrolled self-issued subject (a DID ' +
           'or a JWK thumbprint), its label, when and by whom it was ' +
           'enrolled, and how (`proof`: `wallet`, proved by you, or ' +
-          '`admin`, by an administrator). `enabled`: whether the ' +
-          'self-issued sign-in is on. A ' +
+          '`admin`, by an administrator), and whether it is your ' +
+          'preferred DID (`preferred`, #693). `enabled`: whether the ' +
+          'self-issued sign-in is on; `didClaim`: whether the preferred ' +
+          'DID may be released as the `did` claim here. A ' +
           'key is enrolled by proving it, at /authn/wallet?siop=1&enrol=1, ' +
           'which comes back with `enrolled=1`; `notice` then says so.',
         query: SELF_ISSUED_QUERY,
@@ -178,12 +231,23 @@ class PortalSelfIssued {
       { method: 'POST', path: ctx.BASE + '/self-issued',
         operationId: 'removeSelfIssued', tag: 'Self-issued IDs',
         access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/self-issued',
-        summary: 'Removes a self-issued subject of yours',
-        description: 'The subject no longer signs you in. One that is not ' +
-          'enrolled for you is refused.',
+        summary: 'Removes a self-issued subject of yours, or marks one ' +
+                 'as your preferred DID',
+        description: '`remove` (the default): the subject no longer signs ' +
+          'you in. One that is not enrolled for you is refused. `prefer` ' +
+          '(#693): marks one DID you PROVED with your wallet as your ' +
+          'preferred one — the one a client you consent to may be told as ' +
+          'the `did` claim, where the realm releases it ' +
+          '(`oauth2.didClaim`); a subject an administrator added, or a ' +
+          'JWK thumbprint, is refused (STS-PORTAL-0615). `unprefer` clears ' +
+          'the mark. Removing the preferred subject clears it too.',
         body: REMOVE_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
+          if (input.body.action === 'prefer' ||
+              input.body.action === 'unprefer') {
+            return self.prefer(ctx, res, caller, input.body);
+          }
           return self.remove(ctx, res, caller, input.body);
         } }
     ];
