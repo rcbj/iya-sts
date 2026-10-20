@@ -2406,6 +2406,19 @@ and answers a body that throws inside the promise (`unavailable` for an
 unreadable store, otherwise STS-LDAP-0143). With nothing to screen the
 handler still runs in the same tick. `tests/breached_passwords.js` section F.
 
+**A clear password is HASHED in that stage too, on libuv's thread pool
+(#756, 2026-10-20)**, whether or not the breach screen is on — so an add or
+modify carrying one is asynchronous in both modes now. `preparePassword()`
+is synchronous inside the body, and its scrypt held a request worker's event
+loop for about 70 ms a write: a third of a worker under a password load.
+`screenedThen()` makes one `hashSecretAsync()` per clear value into
+`req.stsPrehashed`; `passwordWriteRefusal()` takes one for the value it is
+setting (`takePrehashed()`, used once, a fresh salt each) and hands it to
+`preparePassword()` as `hashOfThisPassword`, which uses it in place of its
+own `hashSecret()`. Every policy, history and breach decision is still made
+in the body, against the entry as it is then; a value with no hash waiting
+is hashed there as before. `tests/password_scrypt_off_loop.js` section B.
+
 ### The wrapper goes on at REGISTRATION, beside the realm wrapper
 
 For that wrapper's reason, stated one section up: seven bodies each remembering
