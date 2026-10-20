@@ -699,8 +699,9 @@ signed request may use **all four Client Identifier prefixes** — six since
   (`siop.sameHolder()`), and the person is the credential's.
 * **A did:web is fetched only when it is enrolled** (`didKey()` asks
   `ownerOf()` first): it is the presenter's kind of URL, and the enrolment is
-  what makes it the person's or the administrator's — the root `CLAUDE.md`'s
-  row of URLs this service dials carries it.
+  what makes it the person's or the administrator's — `federation/CLAUDE.md`'s
+  list of URLs this service dials carries it (the twelfth row; the
+  nineteenth since #693, below).
 * **The prefixes live in `signedClientId()`**: the DID URL `kid`
   (`helpers.signJwt()`'s `kidDid`), the Verifier Attestation in the `jwt`
   header (a configured one is checked against this realm's key and refused
@@ -715,9 +716,76 @@ signed request may use **all four Client Identifier prefixes** — six since
   chooses its mode, and a fragment needs a script on a page here) and dynamic
   discovery of a Self-Issued OP (the static `siopv2:` configuration).
 
-`tests/siop.js` holds the library and the request builder in process;
-`tests/vendored/sts_siop.js` (local) drives the sign-in, both enrolments, the
-refusals and the bar door's `form_post` over HTTP.
+### #693's four prerequisites (2026-10-20, rcbj: "Do all that")
+
+The review on #693 found four things to fix before a DID is released in a
+claim or bound to a credential (phase 2). All four are built:
+
+1. **A did:web's key is PINNED.** `siop.ts` fetched `did.json` on every
+   sign-in with no memory of what it said, so whoever controlled the host
+   later — a new owner, a hijacked domain — held the sign-in key, and nothing
+   noticed. Each did:web value now carries `pinnedKeys`, RFC 7638 SHA-256
+   thumbprints: by proof, the key that signed the enrolment's ID Token; by
+   value, every `authentication` method with a `publicKeyJwk` the document
+   named WHEN the administrator enrolled it. **By value fetches then, and a
+   document that cannot be fetched or names no such key is REFUSED
+   (`STS-ADMIN-0871`)** rather than enrolled unpinned — the choice the review
+   left open; an unpinned did:web is exactly what this removed, and an
+   administrator who can name a DID can name one whose host answers. A later
+   token whose key the pin does not name is refused in BOTH modes
+   (`STS-VC-0126`, audited `siop.key.refused`), and the person re-enrols by
+   a fresh proof. `did:jwk`, `did:key` and thumbprints are their key and pin
+   nothing. **A value from before #693 has no pin**:
+   `mode.pinsSelfIssuedKeysOnFirstUse()` (REQUIREMENTS `siop-did-web-pin`) —
+   development pins the key it signs in with (trust on first use, a log line
+   and `siop.key.pinned`; `STS-VC-0129` if the write fails, the sign-in
+   standing), product refuses (`STS-VC-0127`, audited). Since the admin path
+   is now `async` (`siop.enrolByValue()`), `usersAction()` returns a promise
+   for that one act and `/admin-api`'s users handler waits for a thenable
+   (`STS-API-0136` if it rejects, which it is written not to).
+2. **PROVENANCE.** Each value says `proof: 'wallet'` (the person proved it,
+   with `provedAt`) or `'admin'` (by value, unproven). A value from before
+   #693 is read as `wallet` when its `by` is the self path's `self (SIOPv2)`
+   and `admin` otherwise — conservative, so nothing unproven is ever read as
+   proved. `list()` fills it in, `/admin/users`, `/admin-api` and
+   `/portal/self-issued` show it, and **`siop.provenSubjectsOf(username):
+   Json[]`** — the proved rows only — is what phase 2's claim and binding
+   read. A sign-in reads neither: an administrator's entry signs in as it
+   always did.
+3. **A did:web can be enrolled BY PROOF.** `didKey()` refused an unenrolled
+   did:web, so only an administrator could add one. Now
+   `verifyIdToken(token, { clientId, nonce, enrolment })` resolves one inside
+   a person's own enrolment transaction (`vc_verifier.ts`'s
+   `answerSelfIssued()` passes `enrolment` only for `tx.signIn.enrol`, never
+   with a `vp_token`), and **only after every check that needs no key has
+   passed** — `iss === sub`, the DID's syntax, then `aud`, `nonce`, `exp` and
+   `iat`, which are now judged BEFORE the key and still reported after it —
+   so a token for another transaction, a replay or a stale one dials
+   nothing. **One fetch per transaction** (`mayDial()`, its mark written
+   through the store before the fetch); a second, or a failed fetch, is
+   `STS-VC-0128`. That rule applies to every did:web fetch, not just an
+   enrolment's: an enrolled did:web is no longer fetched for a token whose
+   other checks failed. The enrolment is not held to a pin — it is where the
+   pin is made — and **proving a subject already yours proves it again**
+   (`again`, CAEP `update`): the re-pin flow, and how an administrator's
+   entry becomes a proved one. `federation/CLAUDE.md`'s nineteenth row is the
+   argument for the new dial.
+4. **The wallet enrolment is AUDITED**: `portal.siop.enrol` from
+   `vc_signin.ts`'s enrol branch, the removal's shape — success, or failure
+   with the code (`STS-VC-0094` refused by `siop.enrol()`, or the
+   transaction's own code when the proof did not verify).
+
+`tests/siop.js` holds the library and the request builder in process —
+since #693 also the pin, provenance, the per-mode legacy rule, the
+enrolment-only fetch, the internal-address refusal in product and the
+by-value refusals (sections 5, 8-11); `tests/vendored/sts_siop.js` (local)
+drives the sign-in, both enrolments, the refusals and the bar door's
+`form_post` over HTTP, and the provenance and the enrolment's audit row.
+**What has no test**: a did:web enrolled by proof end to end over HTTP —
+the job has no https document host on the service's network, and a did:web
+must be https (`didWebUrl()`), so the fetch is driven in process with a
+stubbed `fetchDocument` and, for the internal-address refusal, the real
+`fetchPublished()`.
 
 ## THE x509 CLIENT IDENTIFIER PREFIXES: `x509_san_dns` AND `x509_hash` (#230, 2026-09-26)
 
