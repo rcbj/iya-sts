@@ -599,7 +599,7 @@ empty.
 
 ## Configuration
 
-There are 63 settings in three groups, and the SSF table also lists one GNAP
+There are 77 settings in three groups, and the SSF table also lists one GNAP
 setting that affects streams. Every one can be changed while the service runs
 except `ssf.internalReceivers`. The CAEP and RISC groups have no
 effect on SSF itself: turning either vocabulary off only removes its event
@@ -652,6 +652,12 @@ types from what a stream may ask for.
 | `ssf.authScopeWrite` | `STS_SSF_AUTH_SCOPE_WRITE` | `ssf.manage` | yes | The scope that creates, updates or deletes a stream, changes subjects or status, or asks for verification. The CAEP profile name `ssf.manage` is always accepted, even when this is renamed. Write includes read, so a name set here reads as well. |
 | `ssf.receiveRequireSignature` | `STS_SSF_RECEIVE_REQUIRE_SIGNATURE` | `false` | yes | Refuses a received SET whose signature fails, with 400 `invalid_key`, in development mode. Product mode always refuses one (#117). |
 | `ssf.actOnSignalsInDevelopment` | `STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT` | `false` | yes | The console and portal end their own sessions on a received signal in development too; product always does. |
+| `ssf.signalsRevokeGrants` | `STS_SSF_SIGNALS_REVOKE_GRANTS` | `true` | yes | A verified event from a federation partner that the `signal-response` policy answers with `signal-revoke-grants` revokes the person's GNAP grants, OAuth grants, tokens and authorization codes (#432). See *Receiving from a federation partner*. |
+| `ssf.foreignPollS` | `STS_SSF_FOREIGN_POLL_S` | `30` | yes | How often the `ssf.foreign-poll` scheduler job polls every federation partner whose stream is a poll stream. |
+| `ssf.foreignPollMaxEvents` | `STS_SSF_FOREIGN_POLL_MAX_EVENTS` | `50` | yes | The `maxEvents` asked of a partner in one poll. |
+| `ssf.foreignPollMaxRounds` | `STS_SSF_FOREIGN_POLL_MAX_ROUNDS` | `5` | yes | How many polls one run makes while the partner says `moreAvailable`. |
+| `ssf.foreignInboxMax` | `STS_SSF_FOREIGN_INBOX_MAX` | `500` | yes | How many SETs from partners a realm keeps, the oldest dropped first. A replayed `jti` is recognised against these. |
+| `ssf.foreignTimeoutMs` | `STS_SSF_FOREIGN_TIMEOUT_MS` | `10000` | yes | How long one request to a partner's Shared Signals (discovery, its token endpoint, stream management, a poll) may take. |
 | `ssf.legacySubClaim` | `STS_SSF_LEGACY_SUB_CLAIM` | `false` | yes | Deliberate defect, development only: adds the deprecated `sub` claim beside `sub_id`. |
 | `ssf.breakSetSignature` | `STS_SSF_BREAK_SET_SIGNATURE` | `false` | yes | Deliberate defect, development only: changes one character of every SET's signature. |
 | `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | A stream owned by a GNAP application only hears about people who approved a grant to it. A stream owned by a GNAP resource server hears only `session-revoked` for the GNAP tokens and grants audienced to it (#432). |
