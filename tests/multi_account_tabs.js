@@ -49,6 +49,9 @@ const PortalShell = require('../portal/web_portal_shell');
 const WebSurface = require('../common/web_surface');
 const WebAccounts = require('../common/web_accounts');
 const WebMessages = require('../common/web_messages');
+// Node's English default for a renderer handed no translator, which this
+// module installs as it loads (`common/i18n.ts`).
+const i18n = require('../common/i18n');
 
 const log = require('bunyan').createLogger({
   name: 'multi_account_tabs',
@@ -723,9 +726,12 @@ async function run(t) {
     await surfaceChecks(t);
   } finally {
     // A SURFACE'S TRANSLATOR IS THE PROCESS'S DEFAULT once it loads
-    // (`WebI18n.load()`), and here it has no catalogs: put back node's own,
-    // or every test after this one in the process draws keys.
-    WebMessages.WebTranslator.setDefault(null);
+    // (`WebI18n.load()`), and here it has no catalogs: put back node's own
+    // English one, as `common/i18n.ts` installs it, or every test after
+    // this one in the process draws keys.
+    WebMessages.WebTranslator.setDefault(function () {
+      return i18n.translator(['en']);
+    });
   }
   log.debug("Leaving run().");
 }
