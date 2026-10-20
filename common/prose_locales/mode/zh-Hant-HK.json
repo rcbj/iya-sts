@@ -160,8 +160,8 @@
     "text": "以上皆無。目錄、主體數據庫與登錄只保存經設定或佈建的內容，別無其他——兩個 XACML 角色群組存在但為空，而 KDC 拒絕以本儲存庫中公開的密碼建立 krbtgt 或其服務帳戶。"
   },
   "mode.requirements.test-double.what": {
-    "en": "f06cf29c4a61e31d",
-    "text": "服務元數據文件表明本服務是測試替身"
+    "en": "f037d7b70aacf864",
+    "text": "服務將自己描述為測試替身"
   },
   "mode.requirements.saml-request-signatures.development": {
     "en": "6958e9df9b9440fb",

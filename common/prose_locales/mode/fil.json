@@ -612,16 +612,16 @@
     "text": "Wala ni isa. Ang hawak ng directory, ng principal database at ng registry ay ang na-configure o na-provision, at wala nang iba — umiiral ang dalawang XACML role group at walang laman, at tumatanggi ang KDC na buuin ang krbtgt o ang service account nito gamit ang mga password na nakalathala sa repository na ito."
   },
   "mode.requirements.test-double.what": {
-    "en": "f06cf29c4a61e31d",
-    "text": "Sinasabi ng service metadata document na test double ang serbisyong ito"
+    "en": "f037d7b70aacf864",
+    "text": "Inilalarawan ng serbisyo ang sarili nito bilang test double"
   },
   "mode.requirements.test-double.development": {
-    "en": "241755f4aaf4cb6b",
-    "text": "true ang `testDouble` sa GET /admin-api/sts-metadata: walang sinusuring password ang serbisyong ito at walang vina-validate na access token, at hindi dapat basahin ang listahan ng endpoint bilang pahayag na ginagawa nito iyon."
+    "en": "ffe468af90a49423",
+    "text": "Ang `testDouble` ay true sa GET /admin-api/sts-metadata: walang password na sinusuri ang serbisyong ito at walang access token na vina-validate, at hindi dapat basahin ang listahan ng mga endpoint bilang pahayag na ginagawa nito ito. Ipinapakita ng index ng console ang Ang sadyang hindi nito ginagawa."
   },
   "mode.requirements.test-double.product": {
-    "en": "252476cbd5f62e18",
-    "text": "false ang `testDouble`: vine-verify ang mga password at vina-validate ang mga access token, at sinasabi iyon ng dokumento."
+    "en": "2fef3ea99ceb768a",
+    "text": "Ang `testDouble` ay false: sinusuri ang mga password at vina-validate ang mga access token, at sinasabi ito ng dokumento. Hindi ipinapakita ng index ng console ang listahang iyon."
   },
   "mode.requirements.claim-values.what": {
     "en": "3e4acbf9a020d8f8",
