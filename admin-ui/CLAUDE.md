@@ -160,8 +160,13 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    claims and UserInfo claims; Metadata is first and opens by default, with
    the explanatory notes and endpoint list, and Global settings holds the
    authorization server's forms. **SAML is one page** with Metadata first,
-   then Global settings, shared-profile    settings, **SAML 2.0 IdP**, **SAML 1.1 IdP**, assertion
-   settings and Custom SAML attributes. The profile notes and combined
+   then Global settings, shared-profile    settings, **SAML 2.0 IdP**, **SAML 1.1 IdP**,
+   **IdP-Initiated SSO** (#749), assertion
+   settings and Custom SAML attributes. IdP-Initiated SSO is composed from
+   `GET /admin-api/saml-idp-initiated` on every view (`composeAlways`), paged
+   on `idpInitiatedPage` so its pager does not move the SAML 2.0 tab's
+   `page`; which applications it lists is the `/launch` door's own question
+   (`launch/CLAUDE.md`). The profile notes and combined
    endpoint list are on Metadata; Global settings holds each profile's own
    defaults, while the shared `SAML` configuration group and assertion
    defaults have tabs of their own. The page is a direct Protocols item
