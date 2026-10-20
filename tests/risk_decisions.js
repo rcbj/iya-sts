@@ -200,13 +200,16 @@ function childMain() {
          // stage's refusals in order and its allow.
          'passkey-register-backup-eligible,passkey-register-pin-length,' +
          'passkey-register-serial-missing,passkey-register-serial-not-held,' +
+         // #718's post-quantum rule, one per stage.
+         'passkey-register-post-quantum,' +
          'passkey-register-allowed,' +
          'passkey-use-backup-eligible,passkey-use-pin-length,' +
          'passkey-use-attestation-unchecked,' +
          'passkey-use-attestation-compromised,' +
          'passkey-use-attestation-untrusted,passkey-use-attestation-aaguid,' +
          'passkey-use-attestation-unlisted,passkey-use-attestation-level,' +
-         'passkey-use-attestation-fips,passkey-use-allowed,' +
+         'passkey-use-attestation-fips,passkey-use-post-quantum,' +
+         'passkey-use-allowed,' +
          // The exchange rules (#186): the semantics, the refusals in order,
          // the allows, and the may_act question.
          'exchange-semantics-requested,exchange-semantics-actor-default,' +
@@ -214,6 +217,10 @@ function childMain() {
          'exchange-semantics-realm-default,exchange-may-act,' +
          'exchange-several-targets,exchange-unregistered-target,' +
          'exchange-no-target,exchange-protected-subject,' +
+         // A Kerberos trust's five (#430 Phase 3).
+         'exchange-trust-disabled,exchange-trust-direction,' +
+         'exchange-self-realm,exchange-classic-across-realms,' +
+         'exchange-tgt-delegation,' +
          'exchange-unknown-actor,exchange-user-actor-role,' +
          'exchange-semantics,exchange-subject-group,exchange-authority,' +
          'exchange-delegation,exchange-impersonation,' +
@@ -695,9 +702,10 @@ function childMain() {
          // six transfer rules of #98, the protocol-declaration rule, the
          // twenty exchange rules of #186, the fourteen per-right GNAP
          // rules of #432, the sign-in mechanism rule of #457, the
-         // second-factor rule of #475, and the fifteen passkey rules of
-         // #536.
-         unprotectedPolicy.policy.rules.length === 80,
+         // second-factor rule of #475, the fifteen passkey rules of
+         // #536, #718's two post-quantum passkey rules and the five
+         // Kerberos-trust exchange rules of #430 Phase 3.
+         unprotectedPolicy.policy.rules.length === 87,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 
