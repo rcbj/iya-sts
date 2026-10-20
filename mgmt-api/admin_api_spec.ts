@@ -2254,6 +2254,39 @@ const SCHEMAS = {
       }
     }, PAGING_PROPERTIES)),
 
+  SamlIdpInitiatedList: openObject(
+    'The realm\'s SAML 2.0 and SAML 1.1 applications an identity-provider-' +
+    'initiated sign-in may be started here for (#749): one row per ' +
+    'application and family whose switch is on — the realm\'s ' +
+    '`saml2.idpInitiatedSso` / `saml11.idpInitiatedSso` unless the entry\'s ' +
+    '`saml2IdpInitiatedSso` / `saml11IdpInitiatedSso` says otherwise, read ' +
+    'by the same function `/launch/{app}` asks. It holds nothing: every row ' +
+    'is an entry in `ou=applications`.',
+    {
+      idpInitiated: {
+        type: 'array',
+        description: 'One page of them, by identifier. Each carries ' +
+                     '`identifier` (the registry identifier, which ' +
+                     '`GET /admin-api/applications?application=` takes), ' +
+                     '`name`, `entityId`, `protocol` (`saml2` or `saml11`), ' +
+                     '`label`, `attribute` (the entry\'s override), ' +
+                     '`launchUrl` (the `/launch/{app}?protocol=` link a ' +
+                     'person follows, realm prefix included), `endpoint` ' +
+                     '(the protocol\'s own unsolicited endpoint) and ' +
+                     '`missing` (what the link cannot work without; empty ' +
+                     'when it can).',
+        items: openObject('One application in one family.', {})
+      },
+      idpInitiatedPaging: pagingObject('idpInitiated'),
+      realmSwitches: {
+        type: 'array',
+        description: 'The realm\'s two settings as an entry with no ' +
+                     'override reads them: `protocol`, `label`, `setting`, ' +
+                     '`attribute` and `enabled`.',
+        items: openObject('One family\'s realm switch.', {})
+      }
+    }),
+
   AuthorizationServerList: openObject(
     'Every authorization server profile this process publishes a discovery ' +
     'document for. The path component the two discovery shapes carry selects ' +

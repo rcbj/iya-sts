@@ -13434,6 +13434,56 @@ class AdminApi {
           log.debug("Leaving the management API SAML 1.1 endpoint.");
         } },
 
+      // PROTOCOLS → SAML → IdP-Initiated SSO (#749), rule 7's half of the
+      // tab: a read, so `admin:read`, and per realm as every operation here
+      // is. The view is `adminViews.samlIdpInitiatedJson()`, which asks the
+      // door's own `LaunchLinks.enabled()`.
+      { method: 'GET', path: BASE + '/saml-idp-initiated',
+        tag: 'SAML 2.0',
+        operationId: 'getSamlIdpInitiatedApplications',
+        summary: 'The SAML applications a sign-in may be started here for, ' +
+                 'with each one\'s link',
+        description: 'Every SAML 2.0 service provider and SAML 1.1 relying ' +
+                     'party in this realm for which an ' +
+                     'identity-provider-initiated sign-in would be ALLOWED: ' +
+                     'the realm\'s `saml2.idpInitiatedSso` / ' +
+                     '`saml11.idpInitiatedSso` (off by default), unless the ' +
+                     'entry\'s `saml2IdpInitiatedSso` / ' +
+                     '`saml11IdpInitiatedSso` says otherwise — asked through ' +
+                     'the function `GET /launch/{app}` asks, so a row here ' +
+                     'is never one the link refuses with STS-LAUNCH-0005. ' +
+                     'One row per application and family; an application ' +
+                     'on in both is two rows.\n\n`launchUrl` is the link a ' +
+                     'person follows (`/launch/{app}?protocol=`, this ' +
+                     'realm\'s, on the sign-in service\'s listener) and ' +
+                     '`endpoint` the protocol\'s own unsolicited endpoint ' +
+                     'the link hands the browser to. A row whose `missing` ' +
+                     'is not empty is switched on and cannot work yet — it ' +
+                     'has no registered assertion consumer service, and ' +
+                     'the link answers STS-LAUNCH-0006 — and is listed so ' +
+                     'that it can be fixed.\n\n`realmSwitches` says ' +
+                     'whether each realm setting is on: with both off, only ' +
+                     'an entry\'s own override can put a row here.\n\nPaged ' +
+                     'on `idpInitiatedPage` and `per`, by identifier.',
+        mirrors: 'GET /admin/saml2',
+        parameters: this.detailPagingParameters([
+          { name: 'idpInitiated',
+            description: 'The applications, by identifier.' }
+        ]).concat(this.pagingParameters().filter(function (one) {
+          return one.name === 'per';
+        })),
+        responseDescription: 'One page of the applications, its paging and ' +
+                             'the realm\'s two switches.',
+        responseSchema:
+          { $ref: '#/components/schemas/SamlIdpInitiatedList' },
+        handler: function (req, res) {
+          log.debug("Entering the management API SAML IdP-initiated " +
+                    "endpoint.");
+          self.sendJson(res, 200, adminViews.samlIdpInitiatedJson(req));
+          log.debug("Leaving the management API SAML IdP-initiated " +
+                    "endpoint.");
+        } },
+
       { method: 'POST', route: BASE + '/saml11/:action',
         tag: 'SAML 1.1',
         mirrors: 'POST /admin/saml2#saml-tab-saml11',
