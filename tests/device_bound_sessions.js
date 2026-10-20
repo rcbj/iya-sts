@@ -301,7 +301,8 @@ function childMain() {
     const aliceOffer = offerOf(alice.r);
     const bobby = await signIn('db-bobby', jar);
     const bobOffer = offerOf(bobby.r);
-    note(!!jar.sts_accounts && alice.sid && bobby.sid && alice.sid !== bobby.sid &&
+    note(!!jar.sts_accounts && alice.sid && bobby.sid &&
+         alice.sid !== bobby.sid &&
          !!authn.sessionById(alice.sid) && !!authn.sessionById(bobby.sid),
          '9a. two people sign in in one browser and both stay signed in',
          JSON.stringify(Object.keys(jar)));
@@ -411,7 +412,8 @@ function childMain() {
     const again = await signIn('db-bobby', thief);
     const setNow = AccountSets.byId(authn.sessionById(again.sid)
       .accountSetId) || {};
-    note(again.sid && again.sid !== bobby.sid && !authn.sessionById(bobby.sid) &&
+    note(again.sid && again.sid !== bobby.sid &&
+         !authn.sessionById(bobby.sid) &&
          Object.keys(setNow.sessions || {}).indexOf(bobby.sid) < 0,
          '12. the same person signing in where the bound key is not proved ' +
          'replaces the bound session, never two of one person in the set',
