@@ -110,5 +110,9 @@
   "federation.partners.partner": "Partner",
   "federation.partners.signOutThere": "Logga ut där också",
   "federation.partners.signOutAt": "Logga ut hos {partner}",
-  "federation.partners.note": "Du loggade in här via de här identitetsleverantörerna, och din session där är fortfarande aktiv. Var och en är en länk eller ett formulär snarare än en automatisk omdirigering: den här sidan kör inget skript, och att gå vidare till en partner är ett medvetet klick."
+  "federation.partners.note": "Du loggade in här via de här identitetsleverantörerna, och din session där är fortfarande aktiv. Var och en är en länk eller ett formulär snarare än en automatisk omdirigering: den här sidan kör inget skript, och att gå vidare till en partner är ett medvetet klick.",
+  "wsfed.chooseAccount.title": "Vilket konto? — WS-Federation",
+  "wsfed.chooseAccount.heading": "Vilket konto ska loggas ut?",
+  "wsfed.chooseAccount.intro": "{count} konton i den här webbläsaren är inloggade på <code>{realm}</code>. Välj det som ska loggas ut; de andra förblir inloggade.",
+  "wsfed.chooseAccount.signOut": "Logga ut <strong>{who}</strong>"
 }

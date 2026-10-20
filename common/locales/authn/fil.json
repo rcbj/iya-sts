@@ -148,5 +148,21 @@
   "secondFactor.emailLinkInstead": "I-email na lang sa akin ang isang sign-in link",
   "home.title": "Ituloy ang pag-sign in",
   "home.text": "Nasa ibang rehiyon ng serbisyong ito ang iyong account. Magpatuloy para mag-sign in doon.",
-  "home.continue": "Magpatuloy"
+  "home.continue": "Magpatuloy",
+  "accounts.title": "Pumili ng account — serbisyo ng pagpapatunay",
+  "accounts.heading": "Pumili ng account",
+  "accounts.at": "Serbisyo ng pagpapatunay sa <code>{base}</code>",
+  "accounts.blurb": "Naka-sign in ang browser na ito sa higit sa isang account. Piliin kung alin ang gagamitin para magpatuloy, o mag-sign in gamit ang ibang account.",
+  "accounts.blurbNamed": "Piliin ang account na gagamitin para magpatuloy sa <code>{application}</code>, o mag-sign in gamit ang ibang account.",
+  "accounts.signedIn": "Naka-sign in",
+  "accounts.signedOut": "Naka-sign out sa browser na ito",
+  "accounts.signedInAt": "Nag-sign in noong {when}",
+  "accounts.signedOutAt": "Nag-sign out noong {when}",
+  "accounts.select": "Magpatuloy",
+  "accounts.signInAgain": "Mag-sign in muli",
+  "accounts.forget": "Kalimutan",
+  "accounts.anotherHeading": "Ibang account",
+  "accounts.another": "Gumamit ng ibang account",
+  "accounts.full": "Naka-sign in ang browser na ito sa {max} account, ang pinakamaraming kaya nito. Mag-sign out sa isa sa mga ito para gumamit ng iba.",
+  "accounts.signingInFor": "Nagsa-sign in para sa: <code>{protocol}</code>"
 }

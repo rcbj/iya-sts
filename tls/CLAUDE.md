@@ -1922,3 +1922,22 @@ in a child (no certificate, an untrusted one, a trusted one, the proxy
 settings both ways, the page drawn and escaped, the pin);
 `tests/vendored/sts_tls_connection.js` (local) asks a running service, in every
 mode; `tests/diagnostic_pages.js` holds the old paths unrouted.
+
+## Several accounts in one browser (#561, 2026-10-19)
+
+With `authn.multipleAccounts` on in the certificate's realm, `GET
+/tls/sign-in`'s "already signed in on this browser" check
+(`startCertificateSessionIn()`) no longer asks `sessionOf()`: for a browser
+holding two accounts and naming neither it answers nobody, and for one
+holding one it answers that one — somebody else, perhaps — so the
+certificate's holder would have been told they were "already" signed in as
+whoever the cookie named. The question is asked of the CERTIFICATE'S account
+instead (`certificateAccountHeld()`, by login name as `startSession()`
+matches a re-authentication): the session is always started, and
+`startSession()` RE-AUTHENTICATES that account's session where the browser's
+set holds it live and ADDS one beside the others where it does not. Still one
+session per person per browser, however many fetches; the answer says which
+(`account: 'reauthenticated' | 'added'`, absent with the setting off). The
+cell placement's `held` (`placeCertificateSignIn()`) asks the same question.
+Off, the function is what it was. The design is `authn/CLAUDE.md`, *Several
+signed-in accounts in one browser*.

@@ -2431,6 +2431,14 @@
     "en": "6cf5af064bdc580d",
     "text": "询问要在应用的哪个联合身份提供方处登录；需要 ?authn= id，因此不带参数访问时应答 400"
   },
+  "stsmetadata.endpoints./authn/accounts.what": {
+    "en": "133e09e2d14aa686",
+    "text": "一个浏览器中登录多个账号（#561），在 authn.multipleAccounts 开启时（默认关闭）。来自持有多个已登录账号的浏览器、却未指明其中任何一个的请求——其流程中未选择账号，也没有指明账号的 login_hint 或 id_token_hint——会被发送到这里，OpenID Connect 的 prompt=select_account（Core 第 3.1.2.1 节）也是如此。每个已登录账号以其自身继续流程，其会话会被再次检查，对其不满足的双因素要求，以该账号重新登录来回应；浏览器记住的每个已退出账号都可以重新登录或忘记；“使用其他账号”即普通登录。一个静态页面，由 /authn-api/pending/{id}/accounts 绘制。"
+  },
+  "stsmetadata.endpoints./authn/accounts.effect": {
+    "en": "ac430d30ba3b9a6a",
+    "text": "询问登录以浏览器中哪个已登录账号继续；需要 ?authn= id，因此直接访问会返回 400"
+  },
   "stsmetadata.endpoints./authn/spnego.what": {
     "en": "23818b4a272ea292",
     "text": "集成认证，也是此处唯一一个依赖本服务真正验证过的凭据的登录。在其他地方，所输入的用户名就是身份；Kerberos 无法这样工作，因为那里的密码就是密钥——所以这个入口会针对真实的长期密钥检查真实的服务票据，经由本服务自己的接受方，且没有任何自己的协议代码。其背后的 KDC 仍然在协议允许的范围内尽可能宽松（任意用户名、一个共享密码、首次见到时创建账户），这正是使开发模式保持宽松的原因——验证是真的，账户策略不是。它对每个应用都可用，且不为任何应用注册：/authn/login 上的按钮为任何正在进行的流程提供它，应用条目上的 appAuthnMechanism: spnego 会将该应用的人员直接送到这里，而身份提供方一侧联合关系上的 fedAuthnMechanism: spnego 则使 Kerberos 票据能满足一个从未听说过 Kerberos 的外部合作方。会话随后声明的内容读取自票据自身的标志——pre-authent 对应 amr [\"pwd\"]，hw-authent 对应 [\"hwk\"]，两者都有则两者都声明，两者都不声明的票据则什么都不声明，因为本服务不会说出任何凭据都未证明的因素。它接受 ?authn=，绝不接受 returnTo：返回地址在待处理记录上，因此这里完全没有开放重定向的攻击面。无法获取票据的客户端会看到一个链接到登录界面的页面，因为对于未针对此主机配置的每个浏览器来说，单纯的 401 Negotiate 都是死路。krb5.spnegoAuthentication 可将其关闭，届时它应答 403 并说明这一点，而不是 404。"
@@ -2567,6 +2575,26 @@
     "en": "278e1af859a5f658",
     "text": "NON-SPEC（#571）。选择器的视图，根据应用的条目重新解析。"
   },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts.what": {
+    "en": "6b11ee5ab38d4107",
+    "text": "NON-SPEC（#561）。账号选择器的视图：浏览器的已登录账号和已记住账号，每个都以其键而绝不以 sid 标识，以及其操作所带的 CSRF 令牌。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/select.what": {
+    "en": "32d3c868fcbeef9a",
+    "text": "NON-SPEC（#561）。再次检查该账号的会话；响应以一次性选择票据恢复流程。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/another.what": {
+    "en": "e292828cb4e3c235",
+    "text": "NON-SPEC（#561）。使用其他账号：普通登录，在浏览器的每个位置都已登录时会被拒绝。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/forget.what": {
+    "en": "ca27920f84beeb19",
+    "text": "NON-SPEC（#561）。仅限在此浏览器中退出的账号；不触及任何会话。"
+  },
+  "stsmetadata.endpoints./authn-api/accounts.what": {
+    "en": "f96dbce662dca61d",
+    "text": "NON-SPEC（#561）。浏览器的已登录账号和已记住账号及其状态，供账号菜单使用——绝不包含 sid 或令牌；authn.multipleAccounts 关闭时为空。"
+  },
   "stsmetadata.endpoints./authn-api/pending/:id/password.what": {
     "en": "f09b8dc5712df29f",
     "text": "NON-SPEC（#571）。登录按钮：JSON、本服务的 Origin，以及浏览器会话的 X-CSRF-Token。与原来的表单一样受速率限制、进行风险评分并由签发策略决定；应答指明下一步。"
@@ -2622,6 +2650,14 @@
   "stsmetadata.endpoints./authn-api/logout.effect": {
     "en": "c2016f561ef917cf",
     "text": "POST 终止会话并撤销此人持有的内容"
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.what": {
+    "en": "ff574754aa7ad4ab",
+    "text": "非规范 (#561)。GET 返回退出登录的账户步骤——浏览器中已登录的账户，按其键列出，绝不含 sid；带 CSRF 令牌的 POST 选择其中一个（随后是其退出登录页面）或让所有账户退出。authn.multipleAccounts 关闭时返回 400。"
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.effect": {
+    "en": "69d6a2e59b3f0a48",
+    "text": "带 all 的 POST 让浏览器中的所有账户退出登录"
   },
   "stsmetadata.endpoints./authn-api/consent/:id.what": {
     "en": "b0e6e117fd23a284",

@@ -2151,6 +2151,61 @@ const SETTINGS = [
                  'is why it is shorter than the screen\'s own clock; the ' +
                  'rate limiter bounds the attempts inside it.' },
 
+  // ---------------------------------------------------------------------
+  // SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561). Off by default in
+  // both modes (the plan's D2), runtime and so per realm, read where it is
+  // used: `authn/account_sets.ts` and `authn/authn.ts`. Off, nothing here
+  // exists — no `sts_accounts` cookie, no picker — and a different person
+  // signing in ends the browser's session exactly as before. In `Web
+  // security` beside the session clocks, because what it changes is what a
+  // browser's sign-on cookie means; `authn/CLAUDE.md`, *Several signed-in
+  // accounts in one browser*, argues the design.
+  // ---------------------------------------------------------------------
+  { key: 'authn.multipleAccounts', group: 'Web security',
+    label: 'Several signed-in accounts in one browser',
+    env: 'STS_AUTHN_MULTIPLE_ACCOUNTS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Let one browser hold sign-on sessions for several people ' +
+                 'at once, and choose between them. On, signing in as a ' +
+                 'different person ADDS a session to the browser\'s account ' +
+                 'set (the `sts_accounts` cookie) instead of ending the one ' +
+                 'it had; a request that does not say which account it is ' +
+                 'for — no account chosen in this flow, no login_hint, ' +
+                 'id_token_hint or SAML Subject naming one — while more ' +
+                 'than one is signed in is sent to the account picker at ' +
+                 '/authn/accounts, and prompt=select_account shows it. ' +
+                 'Every session keeps its own lifetime, idle timeout, ' +
+                 'step-up state and sign-out. Off, the default, the ' +
+                 'browser has one session and a different person signing ' +
+                 'in ends it. Takes effect at the next request either way, ' +
+                 'and ends nothing: turned on, a browser\'s existing ' +
+                 'session becomes the first account of its set; turned ' +
+                 'off, the browser\'s default session carries on alone and ' +
+                 'the others run out as usual.' },
+
+  { key: 'authn.maxBrowserAccounts', group: 'Web security',
+    label: 'Most accounts one browser remembers',
+    env: 'STS_AUTHN_MAX_BROWSER_ACCOUNTS', type: 'int', dflt: 10,
+    min: 1, max: 50, runtime: true,
+    description: 'With several signed-in accounts on, the most accounts one ' +
+                 'browser\'s account set holds, signed-in and signed-out ' +
+                 'together. A sign-in that would go past it first drops the ' +
+                 'signed-out account that signed out longest ago; when ' +
+                 'every place is held by a signed-in account the sign-in ' +
+                 'is refused (STS-AUTHN-0340) and the picker says that one ' +
+                 'account must be signed out first.' },
+
+  { key: 'authn.rememberedAccountDays', group: 'Web security',
+    label: 'How long a signed-out account is remembered (days)',
+    env: 'STS_AUTHN_REMEMBERED_ACCOUNT_DAYS', type: 'int', dflt: 30,
+    min: 1, max: 365, runtime: true,
+    description: 'With several signed-in accounts on, how long the account ' +
+                 'picker keeps offering an account that signed out in this ' +
+                 'browser — its username, display name and subject, never ' +
+                 'a credential, kept on the server — so it can be signed ' +
+                 'in to again or forgotten. The scheduler job ' +
+                 '`authn.account-set-expiry` drops it after that.' },
+
   { key: 'oidcRp.maxFlows', group: 'Web security',
     label: 'Console and portal sign-ins in flight, per realm',
     env: 'STS_OIDC_RP_MAX_FLOWS',

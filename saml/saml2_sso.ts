@@ -1707,6 +1707,7 @@ class Saml2Sso {
                    String(policy.getAttribute('AllowCreate') || '') === 'true' :
                    false,
       subjectHint: '',
+      subjectHintFormat: '',
       requestedAuthnContexts: [],
       signed: !!firstByLocal(root, 'Signature'),
       signingCertificate: ''
@@ -1720,6 +1721,11 @@ class Saml2Sso {
     if (subject) {
       const nameId = firstByLocal(subject, 'NameID');
       out.subjectHint = nameId ? (nameId.textContent || '').trim() : '';
+      // Its Format too (#561), because a `transient` value names a session
+      // of another sign-in and nobody's account: it is never offered as a
+      // hint about which account in the browser the request is for.
+      out.subjectHintFormat = nameId ? (nameId.getAttribute('Format') || '')
+                                     : '';
     }
     if (requested) {
       const refs = requested.getElementsByTagNameNS('*',
@@ -1966,6 +1972,23 @@ class Saml2Sso {
   // naming a format gets that format back, whatever it is — and where it does
   // not, the service provider's own `saml2NameIdFormat` decides before the
   // setting does.
+  // The account hint an AuthnRequest carries (#561): its <saml:Subject>
+  // NameID, which this identity provider issues as the username or the mail
+  // address (`nameIdValueFor()`), so it is read as a login name. A
+  // `transient` NameID is per session and names nobody, so it is no hint.
+  private accountHintOf(request) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.accountHintOf().");
+    const value = String((request && request.subjectHint) || '');
+    if (!value || String(request.subjectHintFormat || '') ===
+        'urn:oasis:names:tc:SAML:2.0:nameid-format:transient') {
+      log.debug("Leaving Saml2Sso.accountHintOf(). None.");
+      return {};
+    }
+    log.debug("Leaving Saml2Sso.accountHintOf().");
+    return { loginHint: value };
+  }
+
   private nameIdFormatFor(request, spEntityId?) {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.nameIdFormatFor().");
@@ -3217,6 +3240,15 @@ class Saml2Sso {
 
     // --- step 4: a session
     // ----------------------------------------------------
+    // WHICH ACCOUNT, WHERE THE BROWSER HOLDS SEVERAL (#561): the
+    // AuthnRequest's <saml:Subject> NameID is handed to the sign-in service
+    // as a hint before the session is asked for, so the session answered is
+    // the one it names — as OpenID Connect's `login_hint` is at the
+    // authorization endpoint. A NameID naming no live account here answers
+    // no session (never another account), and the sign-in screen is drawn
+    // with that name filled in. Nothing changes with `authn.multipleAccounts`
+    // off.
+    this.deps.authn.hintAccount(req, this.accountHintOf(request));
     const session = sessionOf(req);
     const wantsMfa = request.requestedAuthnContexts.some(function (ref) {
       return AC_MFA_DEMANDS.indexOf(ref) >= 0;
@@ -3259,6 +3291,19 @@ class Saml2Sso {
         // ignored.
         log.debug("IsPassive is set and there is no usable session, so " +
                   "NoPassive goes back.");
+        // SEVERAL ACCOUNTS AND NOTHING TO CHOOSE BY (#561) is a case of the
+        // same rule: the account picker is user interface, so it is
+        // NoPassive too — said in the status message and recorded as the
+        // `account.ambiguous` row. `accountChoiceNeeded()` is null with
+        // `authn.multipleAccounts` off, and the message is then today's.
+        const accountChoice = session ? null
+          : this.deps.authn.accountChoiceNeeded(req);
+        const ambiguous = !!(accountChoice &&
+                             accountChoice.reason === 'ambiguous');
+        if (ambiguous) {
+          this.deps.authn.noteAccountAmbiguous(req, 'SAML 2.0',
+            'NoPassive was answered (IsPassive)');
+        }
         errorCodes.mark(res, 'STS-SAML-0008');
         const refusal = this.buildResponse({
           issuer: idpEntityId, sp: spEntityId,
@@ -3267,8 +3312,12 @@ class Saml2Sso {
           statusMessage: session
             ? 'The session here has one factor and this request asked for ' +
               'more, and IsPassive forbids asking for it.'
-            : 'There is no browser session here, and IsPassive forbids ' +
-              'asking for one.'
+            : (ambiguous
+              ? 'This browser is signed in to ' + accountChoice.accounts +
+                ' accounts and the request names none of them, and ' +
+                'IsPassive forbids asking which.'
+              : 'There is no browser session here, and IsPassive forbids ' +
+                'asking for one.')
         });
         this.deliver(res, {
                binding: wanted.binding, destination: acsUrl,
@@ -3316,6 +3365,12 @@ class Saml2Sso {
         // opt-out away rather than being refused — what WS-Federation's wauth
         // does with the same demand too. See the note on AC_MFA_DEMANDS.
         forceMfa: wantsMfa,
+        // WHETHER THE ACCOUNT PICKER COMES FIRST (#561), where the browser
+        // holds several accounts: ForceAuthn asks for a fresh
+        // authentication, so never — the prompt=login of this protocol.
+        // Read only with `authn.multipleAccounts` on.
+        accountChoice: request.forceAuthn ? 'never' : '',
+        request: req,
         protocol: 'SAML 2.0',
         details: [
           { label: 'Service provider', value: spEntityId,
@@ -5123,7 +5178,17 @@ class Saml2Sso {
     // The session ends here. `endSession()` returns what it dropped, which is
     // how the page below can name the other service providers that were signed
     // in — and which is why the list has to be read BEFORE the answer is built.
-    let session = endSession(req, res);
+    //
+    // WHICH SESSION, IN A BROWSER HOLDING SEVERAL ACCOUNTS (#561, the plan's
+    // section 5): the one in this browser's account set that the
+    // SessionIndex — checked against this service provider and the NameID
+    // by `sessionNamedBy()` — or else the NameID names; otherwise the
+    // browser's default, as always. `endSession()` ends a named session only
+    // where it is in this browser's set, and ignores it with
+    // `authn.multipleAccounts` off.
+    let session = endSession(req, res, this.sloAccountOf(req, spEntityId,
+                                                          sessionIndex,
+                                                          nameId));
     // THE BACK CHANNEL (#192). A LogoutRequest a service provider sends
     // SERVER TO SERVER — Keycloak's broker does, and saml-profiles-2.0-os
     // section 4.4 allows every binding for it — arrives with no browser and
@@ -5246,6 +5311,37 @@ class Saml2Sso {
   // was given this NameID there. `{ session }`, `{ mismatch: true }` when the
   // session exists and the rest does not hold, or `{}` when there is no such
   // session — already ended, which a logout may answer Success to.
+  // The session of this browser's account set a front-channel LogoutRequest
+  // names (#561): its SessionIndex where `sessionNamedBy()` finds that session
+  // signed in to this service provider with this NameID, else the session in
+  // the set that was issued this NameID there; '' for none, or with
+  // `authn.multipleAccounts` off.
+  private sloAccountOf(req, spEntityId, sessionIndex, nameId): string {
+    const { authn } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.sloAccountOf().");
+    if (!authn.multipleAccounts()) {
+      log.debug("Leaving Saml2Sso.sloAccountOf(). Off.");
+      return '';
+    }
+    const named = sessionIndex
+      ? this.sessionNamedBy(spEntityId, sessionIndex, nameId) : {};
+    if (named.session) {
+      log.debug("Leaving Saml2Sso.sloAccountOf(). By SessionIndex.");
+      return String(named.session.id);
+    }
+    const byName = nameId ? authn.accountSessionsOf(req)
+      .filter(function (one) {
+        const there = (one.saml2ServiceProviders || {})[spEntityId];
+        const given = there && there.nameId !== undefined ? there.nameId
+          : ((one.user && one.user.username) || '');
+        return !!there && given === nameId;
+      })[0] : null;
+    log.debug("Leaving Saml2Sso.sloAccountOf(). " +
+              (byName ? 'By NameID.' : 'None.'));
+    return byName ? String(byName.id) : '';
+  }
+
   private sessionNamedBy(spEntityId, sessionIndex, nameId): any {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.sessionNamedBy().");

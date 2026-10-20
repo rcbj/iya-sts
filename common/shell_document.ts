@@ -34,6 +34,14 @@
 //     the page is and that it needs its script.
 //   * A REFUSAL in place of the notice, and NO script, where the surface
 //     already knows it cannot work here (the console's callback refused).
+//   * `data-sts-accounts="on"` WHERE `authn.multipleAccounts` IS ON in the
+//     ambient realm (#561), and nothing at all where it is off. Every
+//     runtime reads its browser's account list (`GET /authn-api/accounts`)
+//     only where the shell says so (`WebAccounts.announced()`), so with the
+//     setting off a page makes exactly the requests it made before #561 and
+//     its shell is to the byte the one it was. Drawn HERE rather than by
+//     each surface so that no shell can forget it: every static surface's
+//     document comes through `document()`.
 //
 // HOW IT IS SENT (`serve()`): `Cache-Control: no-store` — the document is
 // public and carries nothing, but its attributes are per request — and the
@@ -63,6 +71,7 @@ import zlib = require('zlib');
 import fs = require('fs');
 import path = require('path');
 import helpers = require('./helpers');
+import config = require('./config');
 
 const { log } = helpers;
 
@@ -152,6 +161,28 @@ class ShellDocument {
   }
 
   /**
+   * Whether the ambient realm lets one browser hold several signed-in
+   * accounts (#561): what `data-sts-accounts` says to the runtime.
+   *
+   * @returns `authn.multipleAccounts`; false where it cannot be read
+   */
+  static accountsOn(): boolean {
+    log.debug("Entering ShellDocument.accountsOn().");
+    let on = false;
+    try {
+      on = config.value('authn.multipleAccounts') === true;
+    } catch (e) {
+      // A setting that cannot be read is its default, which is off; the
+      // shell is then the one it always was.
+      log.debug("Caught in ShellDocument.accountsOn(): " +
+                ((e && e.message) || e));
+      on = false;
+    }
+    log.debug("Leaving ShellDocument.accountsOn(). " + on);
+    return on;
+  }
+
+  /**
    * Draws a shell document.
    *
    * @param spec - what it is drawn from
@@ -161,7 +192,10 @@ class ShellDocument {
     log.debug("Entering ShellDocument.document(). " + spec.title);
     const esc = spec.esc || ShellDocument.esc;
     const refused = spec.refusal !== null && spec.refusal !== undefined;
-    const attributes = (spec.attributes || []).filter(function (one) {
+    const attributes = (spec.attributes || []).concat(
+      [['data-sts-accounts', ShellDocument.accountsOn() ? 'on' : ''] as
+        [string, string]]
+    ).filter(function (one) {
       return one && one[1];
     }).map(function (one) {
       return ' ' + one[0] + '="' + esc(one[1]) + '"';

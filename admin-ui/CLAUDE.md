@@ -3706,6 +3706,82 @@ tells the truth is `checkVisibility({contentVisibilityAuto:true,
 visibilityProperty:true})`, which answers false. A check written the obvious way
 fails against a menu that is behaving perfectly.
 
+### 8c-iv. SEVERAL ACCOUNTS IN ONE BROWSER: ONE PER TAB, AND THE MENU'S SWITCH (#561, 2026-10-19)
+
+With `authn.multipleAccounts` on, one browser may hold several signed-in
+accounts (`authn/CLAUDE.md`, *Several signed-in accounts in one browser*),
+and **each console tab is exactly one of them** (the plan's section 6,
+delivery step 5). Off — and that is the test the whole section answers
+to — nothing below is stored, sent or drawn: the menu, the sign-in's
+record, the authorization request and the sign-out's address are the bytes
+they were (`tests/multi_account_tabs.js` 6).
+
+* **THE TAB'S ACCOUNT IS `{ sub, username }` IN SESSIONSTORAGE**
+  (`sts-console-account`, beside the PKCE record) — no token, sid or key.
+  `SpaClient.readAccounts()` writes it whenever the shell is fetched, from
+  `GET /authn-api/accounts` and the signed-in subject, and REMOVES it when
+  the list says off, so a tab that saw the setting on stops hinting once it
+  is turned off. **Every sign-in the runtime starts sends it as
+  `login_hint`** (`authorizeUrl()`): a reload, the popup's sign-in again
+  (#508), a switch. A new tab has nothing kept and names nobody — the
+  server signs it in silently with one live account and shows its picker
+  with more (decision 3); a duplicated or restored tab has its own copy and
+  resumes that account, which the server checks at the authorization
+  request (decision 4).
+* **THE LIST IS READ FROM THE CONSOLE'S OWN ORIGIN**, with the cookie
+  (`common/web_accounts.ts`). `common/cors.js` never sends
+  `Access-Control-Allow-Credentials`, so where `/authn-api` is on another
+  listener than the console (#472) the list cannot be read, reads as off,
+  and the menu is today's — the plan assumed the list was always reachable,
+  and the code says it is not. Anything but a 200 with `enabled: true` is
+  off.
+* **THE MENU** (`WebShell.accountItems()`, inside 8c-iii's `<details>`, in
+  `#sts-account-switch`): a button per OTHER signed-in account, *Sign in
+  with another account*, then the Sign out form as before. Buttons, not
+  links: a switch is an act the runtime does on the press, and it carries
+  the account's KEY (its subject), never a sid. Sign out goes to
+  `/logout?login_hint=<the tab's username>`, which preselects that account
+  there; off, to `/logout` as it always did.
+* **A SWITCH (`switchAccount()`), and Sign in with another account
+  (`signInAnother()`, `prompt=login` and no hint)**, in this order:
+  1. a form typed in since the page was drawn (`dirty`, set by an `input`
+     or `change` in a form and cleared by every drawing) asks
+     `window.confirm()` first, and declining changes nothing;
+  2. `endIdentity()` ABORTS every request in flight — one AbortController
+     per identity, threaded through `sendOnce()` and
+     `SpaClient.tokenRequest()` — and moves the identity on, so an answer
+     that arrives anyway (a browser that cannot abort, a stand-in) is
+     ABORTED, never drawn; `route()` checks it too before drawing;
+  3. `discardViews()` drops the shell, `me`, the form table, the request
+     schemas, the view, a sign-in again in progress (its waiting requests
+     answered false), the restore record (#508), and the client's tokens,
+     subject, DPoP key, nonce and metadata — a key is made again for the
+     next sign-in, as a page load makes one;
+  4. the sign-in's record carries `expect`, the subject switched to, and
+     `finishSignIn()` REFUSES an answer for any other (*Switching accounts
+     was refused*, English as every refusal here): its tokens are not
+     kept, so the tab stays the account it was and a reload resumes that
+     one by its hint.
+* **THE POPUP'S CHECK, GENERALISED** (`SpaClient.answerIsFor()`): until
+  #561 a different `sub` coming back from the popup was taken and the page
+  drawn again for them. With the setting on and an account kept, the popup
+  asked for the tab's account by its hint, so an answer for another is
+  refused the way a switch's is, and the bar says so
+  (`consoleRuntime.accounts.otherAccount`). Off, it is #508's behaviour to
+  the byte.
+* **OTHER TABS** hear only that the browser's list CHANGED, on
+  `BroadcastChannel('sts-accounts')` (`listenForAccounts()`): they read the
+  list again and draw the menu's items again in place
+  (`redrawAccountMenu()`), and nothing else — a message never changes a
+  tab's account, never carries one, and is never echoed. A callback that
+  added an account to the browser (Sign in with another account, or a
+  subject other than the one kept) announces `added`. Out of order or
+  missed, a message costs a stale menu until the next read
+  (`tests/multi_account_tabs.js` 5).
+* **NONE OF IT IS A BOUNDARY.** `/admin-api` decides from the token's own
+  subject and session; a tab that kept a stale view would still be refused
+  what its account may not do.
+
 ### 8c-ii. THE SHELL WITH NOBODY IN IT (2026-09-10)
 
 **THE SIGN-OUT PAGE IS DRAWN BY THE SAME `page()` AS EVERY OTHER, AND FOR AN

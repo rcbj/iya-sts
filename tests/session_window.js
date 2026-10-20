@@ -561,9 +561,22 @@ function middlewareCase(t) {
     headers: { cookie: 'sts_session=unknownsid.handle' },
     url: '/oauth2/authorize'
   };
-  uses[0](req, res, function () {
-    nextCalled = true;
-  });
+  // EVERY MIDDLEWARE authn registers, in order, each one's next() the
+  // following one's: since #561 the account-selection ticket's middleware
+  // runs before the cookie's, so the cookie's is no longer uses[0].
+  const runFrom = function (i) {
+    log.debug("Entering runFrom().");
+    if (i >= uses.length) {
+      nextCalled = true;
+      log.debug("Leaving runFrom(). Past the last.");
+      return;
+    }
+    uses[i](req, res, function () {
+      runFrom(i + 1);
+    });
+    log.debug("Leaving runFrom().");
+  };
+  runFrom(0);
   t.equal(statusCode, 503, 'the middleware answers 503');
   t.equal(headers['Retry-After'], '5', 'Retry-After is set');
   t.equal(headers['Cache-Control'], 'no-store', 'the answer is not stored');
@@ -1047,6 +1060,64 @@ function shedErrorCase(t) {
   log.debug("Leaving shedErrorCase().");
 }
 
+// AN ACCOUNT SET (#561) LISTS SESSIONS THE WINDOW MAY NOT HOLD. A member
+// evicted from the window is still live, and a member whose read fails is
+// not absent: the expiry job must move neither to remembered. Before the
+// merge with #350 the set read the realm map, which while the window is on
+// is a cache, and every non-resident account was signed out of its set.
+function accountSetCase(t) {
+  log.debug("Entering accountSetCase().");
+  t.log.info('on: an account set keeps a member the window does not hold');
+  freshWindow();
+  clearSessions();
+  const AccountSets = require('../authn/account_sets');
+  const body = sessionBody('acct-window', {
+    user: { username: 'acct-window', sub: 'urn:uuid:acct-window' }
+  });
+  const digest = sidDigest(body.id);
+  queryFn = function (name, args) {
+    if (name === 'session.read' && args && args[1] === digest) {
+      return { session: body };
+    }
+    return emptyAnswer(name);
+  };
+  const row = AccountSets.fresh();
+  AccountSets.addSession(row, body.id, { sub: body.user.sub,
+    username: body.user.username, displayName: body.user.username });
+  AccountSets.save(row);
+  t.equal(authn.sessions.realmMap().has(body.id), false,
+          'the member is not resident in this process');
+  authn.sweepAccountSets();
+  let kept = AccountSets.byId(row.id);
+  t.check(!!(kept && kept.sessions && kept.sessions[body.id]),
+          'the expiry job keeps a live member the window had to read');
+  // A SECOND member, never read before, whose read fails.
+  const other = sessionBody('acct-window-unread', {
+    user: { username: 'acct-unread', sub: 'urn:uuid:acct-window-unread' }
+  });
+  const otherDigest = sidDigest(other.id);
+  queryFn = function (name, args) {
+    if (name === 'session.read' && args && args[1] === otherDigest) {
+      throw new Error('account member unread');
+    }
+    if (name === 'session.read' && args && args[1] === digest) {
+      return { session: body };
+    }
+    return emptyAnswer(name);
+  };
+  const second = AccountSets.byId(row.id);
+  AccountSets.addSession(second, other.id, { sub: other.user.sub,
+    username: other.user.username, displayName: other.user.username });
+  AccountSets.save(second);
+  authn.sweepAccountSets();
+  kept = AccountSets.byId(row.id);
+  t.check(!!(kept && kept.sessions && kept.sessions[other.id]),
+          'and keeps one whose read FAILED: a failed read is not absence');
+  AccountSets.remove(row.id);
+  freshWindow();
+  log.debug("Leaving accountSetCase().");
+}
+
 async function onHalf(t) {
   log.debug("Entering onHalf().");
   t.equal(sessionWindow.active(), true, 'explicit on with the three ' +
@@ -1068,6 +1139,7 @@ async function onHalf(t) {
   await restoreCase(t);
   upgradeCase(t);
   partialWalkCase(t);
+  accountSetCase(t);
   log.debug("Leaving onHalf().");
 }
 

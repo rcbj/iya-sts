@@ -38,5 +38,10 @@
   "tab.details": "Detalles",
   "list.colProtocol": "Protocolo",
   "inventory.listNote": "Márquelos en la lista de arriba. Si no marca nada, no se termina nada.",
-  "inventory.detailsNote": "Marque los tokens y las credenciales en las tablas de arriba. Si no marca nada, no se termina nada."
+  "inventory.detailsNote": "Marque los tokens y las credenciales en las tablas de arriba. Si no marca nada, no se termina nada.",
+  "accounts.intro": "Este navegador tiene iniciada la sesión de {count} cuentas. Elija la cuenta cuya sesión quiere cerrar, o cierre la sesión de todas las cuentas de este navegador.",
+  "accounts.current": "(la predeterminada de este navegador)",
+  "accounts.all": "Todas las cuentas de este navegador",
+  "accounts.continue": "Continuar",
+  "accounts.note": "Una cuenta muestra todo aquello en lo que sigue con la sesión iniciada, para terminarlo todo o lo que marque. Todas las cuentas termina todo lo que tiene cada una, como hace el cierre de sesión global de cada una."
 }

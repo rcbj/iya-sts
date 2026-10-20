@@ -110,5 +110,9 @@
   "federation.partners.partner": "Partner",
   "federation.partners.signOutThere": "Mag-sign out din doon",
   "federation.partners.signOutAt": "Mag-sign out sa {partner}",
-  "federation.partners.note": "Nag-sign in ka rito sa pamamagitan ng mga identity provider na ito, at aktibo pa ang session mo roon. Link o form ang bawat isa sa halip na awtomatikong redirect: walang script na pinapatakbo ang page na ito, at sinadyang pag-click ang pag-alis papunta sa isang partner."
+  "federation.partners.note": "Nag-sign in ka rito sa pamamagitan ng mga identity provider na ito, at aktibo pa ang session mo roon. Link o form ang bawat isa sa halip na awtomatikong redirect: walang script na pinapatakbo ang page na ito, at sinadyang pag-click ang pag-alis papunta sa isang partner.",
+  "wsfed.chooseAccount.title": "Aling account? — WS-Federation",
+  "wsfed.chooseAccount.heading": "Aling account ang dapat i-sign out?",
+  "wsfed.chooseAccount.intro": "Naka-sign in sa <code>{realm}</code> ang {count} account sa browser na ito. Piliin ang isa-sign out; mananatiling naka-sign in ang iba.",
+  "wsfed.chooseAccount.signOut": "I-sign out si <strong>{who}</strong>"
 }

@@ -4,6 +4,7 @@
   "request.access": "Åtkomst: <code>{scope}</code>. Upphör {when}.",
   "request.noScope": "(ingen angiven)",
   "request.warning": "<strong>Godkänn bara en enhet som står framför dig</strong> och som du själv har börjat logga in på. Den som har skickat dig den här koden vill att du loggar in DEM som dig.",
+  "request.as": "Du godkänner som <strong>{name}</strong>: enheten loggas in som det här kontot. Byt konto först om du vill godkänna som ett annat av kontona som är inloggade i den här webbläsaren.",
   "request.approve": "Godkänn",
   "request.deny": "Neka",
   "find.heading": "Logga in en enhet",

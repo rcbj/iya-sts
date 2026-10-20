@@ -187,8 +187,12 @@ class SignoutPages {
     const held = families.filter(function (f: Json) {
       return (f.rows || []).length;
     }).length;
+    // The account the step chose (#561), carried by every form after it so
+    // the act is for the same person; only where the view names one.
     const who = '<input type="hidden" name="username" value="' +
-      esc(view.username) + '">';
+      esc(view.username) + '">' + (view.account
+      ? '<input type="hidden" name="account" value="' + esc(view.account) +
+        '">' : '');
     const naming = view.naming === 'open'
       ? t.html('logout.inventory.anyUserOpen')
       : (view.naming === 'off' ? t.html('logout.inventory.anyUserOff')
@@ -237,6 +241,46 @@ class SignoutPages {
         { id: 'logout-details', label: t.text('logout.tab.details'),
           html: details }
       ]);
+  }
+
+  /**
+   * The account step (#561): a browser holding several signed-in accounts
+   * chooses which to sign out — one of them, then that person's inventory —
+   * or every account in this browser. The one `login_hint` named is
+   * preselected; otherwise the browser's default.
+   *
+   * @param view - the step's view
+   * @param ctx - the render context
+   * @returns the HTML
+   */
+  static accounts(view: Json, ctx: Json): string {
+    const t = ctx.t;
+    const accounts = view.accounts || [];
+    const chosen = String(view.preselected || '') ||
+      String((accounts.filter(function (one: Json) {
+        return one.current;
+      })[0] || {}).key || '');
+    const rows = accounts.map(function (one: Json) {
+      const name = one.displayName && one.displayName !== one.username
+        ? esc(one.displayName) + ' <span class="sub">(' + esc(one.username) +
+          ')</span>'
+        : esc(one.username);
+      return '<li><label><input type="radio" name="account" value="' +
+        esc(one.key) + '"' + (one.key === chosen ? ' checked' : '') + '> ' +
+        name + (one.current
+          ? ' <span class="sub">' + t.html('logout.accounts.current') +
+            '</span>' : '') + '</label></li>';
+    }).join('');
+    return '<h1>' + t.html('logout.heading') + '</h1>' +
+      '<p class="sub">' + t.html('logout.accounts.intro',
+                                 { count: accounts.length }) + '</p>' +
+      '<form method="post" action="/logout/accounts" ' +
+      'data-sts-step="accounts"><ul class="accounts">' + rows +
+      '<li><label><input type="radio" name="account" value="all"' +
+      (chosen ? '' : ' checked') + '> ' + t.html('logout.accounts.all') +
+      '</label></li></ul><div class="actions"><button type="submit">' +
+      t.html('logout.accounts.continue') + '</button><span class="sub">' +
+      t.html('logout.accounts.note') + '</span></div></form>';
   }
 
   /**
@@ -345,6 +389,9 @@ class SignoutPages {
     if (view.state === 'inventory') {
       return SignoutPages.inventory(view, ctx);
     }
+    if (view.state === 'accounts') {
+      return SignoutPages.accounts(view, ctx);
+    }
     return SignoutPages.refused(view, ctx);
   }
 
@@ -378,13 +425,20 @@ class SignoutPages {
 
 /**
  * The surface's one page: `/logout`, drawn from `GET /authn-api/logout`
- * asked with the location's `username` alone.
+ * asked with the location's `username`, and — several accounts in one
+ * browser (#561) — its `account` and `login_hint`.
  */
 const PAGES = [
   { path: '/logout',
     operation: function (query: Json): string {
-      return '/authn-api/logout' + (query.username
-        ? '?username=' + encodeURIComponent(String(query.username)) : '');
+      const asked = ['username', 'account', 'login_hint']
+        .filter(function (name) {
+          return !!query[name];
+        }).map(function (name) {
+          return name + '=' + encodeURIComponent(String(query[name]));
+        });
+      return '/authn-api/logout' + (asked.length ? '?' + asked.join('&')
+                                                 : '');
     },
     render: function (view: Json, ctx: Json): string {
       return SignoutPages.page(view, ctx);

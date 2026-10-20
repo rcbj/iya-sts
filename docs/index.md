@@ -60,6 +60,7 @@ configuration recipes, in the console and through the API, for each
 **Sessions and signals** —
 [Sessions](sessions.md) ·
 [Identity-provider-initiated sign-in](idp-initiated-sso.md) ·
+[Several accounts in one browser](multiple-accounts.md) ·
 [Signing out](signing-out.md) ·
 [Risk scoring](risk-scoring.md) ·
 [Devices](devices.md) ·

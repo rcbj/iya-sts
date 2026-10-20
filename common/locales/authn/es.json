@@ -148,5 +148,21 @@
   "secondFactor.emailLinkInstead": "Enviarme en su lugar un enlace de inicio de sesión por correo",
   "home.title": "Continuar con el inicio de sesión",
   "home.text": "Su cuenta se guarda en otra región de este servicio. Continúe para iniciar sesión allí.",
-  "home.continue": "Continuar"
+  "home.continue": "Continuar",
+  "accounts.title": "Elija una cuenta — servicio de autenticación",
+  "accounts.heading": "Elija una cuenta",
+  "accounts.at": "Servicio de autenticación en <code>{base}</code>",
+  "accounts.blurb": "Este navegador tiene la sesión iniciada en más de una cuenta. Elija con cuál continuar o inicie sesión con otra cuenta.",
+  "accounts.blurbNamed": "Elija la cuenta con la que continuar a <code>{application}</code> o inicie sesión con otra cuenta.",
+  "accounts.signedIn": "Con la sesión iniciada",
+  "accounts.signedOut": "Con la sesión cerrada en este navegador",
+  "accounts.signedInAt": "Sesión iniciada el {when}",
+  "accounts.signedOutAt": "Sesión cerrada el {when}",
+  "accounts.select": "Continuar",
+  "accounts.signInAgain": "Volver a iniciar sesión",
+  "accounts.forget": "Olvidar",
+  "accounts.anotherHeading": "Otra cuenta",
+  "accounts.another": "Usar otra cuenta",
+  "accounts.full": "Este navegador tiene la sesión iniciada en {max} cuentas, el máximo que admite. Cierre la sesión de una de ellas para usar otra.",
+  "accounts.signingInFor": "Inicio de sesión para: <code>{protocol}</code>"
 }

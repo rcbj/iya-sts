@@ -531,5 +531,11 @@
   "done.passkeyMany": "Your passkey is ready. You hold {n} — if one is lost the others still sign you in.",
   "done.sessionsEndedOne": "The session signed in with it has ended.",
   "done.sessionsEndedMany": "The {n} sessions signed in with it have ended.",
-  "done.renamed": "Renamed to \"{name}\"."
+  "done.renamed": "Renamed to \"{name}\".",
+  "accounts.menu": "Switch account",
+  "accounts.menuTitle": "The other accounts signed in in this browser, and a sign-in as another account. Switching changes this tab only.",
+  "accounts.switchTitle": "Use this tab as {user}. Other tabs keep the accounts they are.",
+  "accounts.another": "Sign in with another account",
+  "accounts.anotherTitle": "Sign in as a different person in this tab. The accounts already signed in in this browser stay signed in, and other tabs keep theirs.",
+  "accounts.unsaved": "This page has changes that have not been saved. Switch account anyway? They will be lost."
 }

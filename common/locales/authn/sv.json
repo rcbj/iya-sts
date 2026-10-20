@@ -148,5 +148,21 @@
   "secondFactor.emailLinkInstead": "Skicka en inloggningslänk till min e-post i stället",
   "home.title": "Fortsätt logga in",
   "home.text": "Ditt konto finns i en annan region av den här tjänsten. Fortsätt för att logga in där.",
-  "home.continue": "Fortsätt"
+  "home.continue": "Fortsätt",
+  "accounts.title": "Välj ett konto — autentiseringstjänst",
+  "accounts.heading": "Välj ett konto",
+  "accounts.at": "Autentiseringstjänst på <code>{base}</code>",
+  "accounts.blurb": "Den här webbläsaren är inloggad på mer än ett konto. Välj vilket du vill fortsätta med, eller logga in med ett annat konto.",
+  "accounts.blurbNamed": "Välj kontot du vill fortsätta till <code>{application}</code> med, eller logga in med ett annat konto.",
+  "accounts.signedIn": "Inloggade",
+  "accounts.signedOut": "Utloggade i den här webbläsaren",
+  "accounts.signedInAt": "Inloggad {when}",
+  "accounts.signedOutAt": "Utloggad {when}",
+  "accounts.select": "Fortsätt",
+  "accounts.signInAgain": "Logga in igen",
+  "accounts.forget": "Glöm",
+  "accounts.anotherHeading": "Ett annat konto",
+  "accounts.another": "Använd ett annat konto",
+  "accounts.full": "Den här webbläsaren är inloggad på {max} konton, det högsta antal den får ha. Logga ut från ett av dem för att använda ett annat.",
+  "accounts.signingInFor": "Inloggning för: <code>{protocol}</code>"
 }

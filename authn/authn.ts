@@ -230,6 +230,11 @@ import cells = require('../common/cells');
 import cellRouting = require('../common/cell_routing');
 import cellPlacement = require('../common/cell_placement');
 import sessionWindow = require('./session_window');
+// A BROWSER'S ACCOUNT SET (#561): the list of sign-on sessions one browser
+// holds while `authn.multipleAccounts` is on, and the selection tickets. A
+// LIBRARY that requires only `common/` leaves and nothing of this file, so
+// the require closes no cycle and moves no route.
+import AccountSets = require('./account_sets');
 
 // The path a caller sends the browser to. Exported, because the two callers
 // build a URL out of it and a string spelled twice is a string that drifts.
@@ -243,6 +248,10 @@ const LOGIN_PATH = '/authn/login';
 // reached only with an `?authn=` id, exactly as the screen is, because what it
 // needs is the pending record and not a partner list somebody could compose.
 const SELECT_IDP_PATH = '/authn/select-idp';
+// THE ACCOUNT PICKER (#561): which of a browser's signed-in accounts a flow
+// continues as, or Use another account. A page of the sign-in surface,
+// keyed by the pending sign-in's id as the chooser is.
+const ACCOUNTS_PATH = '/authn/accounts';
 // THE TWO SECOND-FACTOR SCREENS. `/authn/webauthn` predates this constant and
 // is written out in the markup it belongs to; `/authn/totp` (2026-09-10) is
 // named here because THREE things build a URL out of it — the form's action,
@@ -760,6 +769,8 @@ const ARRIVAL_PATHS = [
   '/authn/login',
   '/authn/select-idp',
   '/authn/password-change',
+  // AND THE ACCOUNT PICKER (#561), whose acts are bound to the same cookie.
+  '/authn/accounts',
   // AND THE STEPS AFTER IT (#572, #573), for the same reason: each is a
   // shell whose acts are bound to that cookie. `/authn/email-link` covers
   // `/authn/email-link/open`, where a mailed link lands.
@@ -939,6 +950,8 @@ let sessionObserver = null;
 // The scheduler job's id, and its interval's setting.
 const SESSION_EXPIRY_JOB = 'authn.session-expiry';
 const SESSION_SWEEP_SETTING = 'authn.sessionSweepS';
+// The account sets' clean-up job (#561).
+const ACCOUNT_SET_EXPIRY_JOB = 'authn.account-set-expiry';
 
 // ---------------------------------------------------------------------------
 // A SESSION'S END IS REPORTED ONCE, HOWEVER MANY PROCESSES NOTICE IT
@@ -1263,6 +1276,10 @@ class Authn {
   static wire(instance: Authn): void {
     helpers.log.debug("Entering Authn.wire().");
     audit.setActorResolver(instance.auditActorOf.bind(instance));
+    // AND THE SESSION THE ACTOR ACTED AS (#561): with several accounts in
+    // one browser the name alone does not say which session a row was.
+    audit.setActorSessionResolver(
+      instance.auditActorSessionOf.bind(instance));
     helpers.log.debug("Leaving Authn.wire().");
   }
 
@@ -1823,14 +1840,60 @@ class Authn {
   sessionOf(req, ignoreBinding?) {
     const { log } = this.deps;
     log.debug("Entering Authn.sessionOf().");
+    // -----------------------------------------------------------------------
+    // SEVERAL ACCOUNTS IN ONE BROWSER (#561): WHICH SESSION, ASKED FIRST.
+    //
+    // Off — `authn.multipleAccounts` is off by default — nothing below this
+    // block changes and the cookie alone decides, as it always did. On,
+    // `resolveAccount()` answers from the browser's account set in the
+    // order the plan's section 2 gives: a selection ticket spent on this
+    // request, then a protocol hint (`hintAccount()`), then the only live
+    // session; with several live and nothing to choose by it answers
+    // nobody, and `accountChoiceNeeded()` says why — so every protocol that
+    // sends a person to `beginAuthentication()` reaches the picker with no
+    // change of its own. A browser with no set, or a set with no live
+    // session, falls through to the cookie, exactly as before. The session
+    // it names is then held to every rule below, as the cookie's is.
+    // -----------------------------------------------------------------------
+    if (AccountSets.enabled()) {
+      const resolved = this.resolveAccount(req, true);
+      if (!resolved.fallback) {
+        if (!resolved.sid) {
+          log.debug("Leaving Authn.sessionOf(). Several accounts and " +
+                    "nothing chooses one (" + resolved.reason + ").");
+          return null;
+        }
+        const chosen = this.honouredSession(req, resolved.sid,
+                                            this.accountSessionRead(
+                                              resolved.sid).session);
+        log.debug("Leaving Authn.sessionOf(). The account set's choice (" +
+                  resolved.how + ").");
+        return chosen;
+      }
+    }
     const found = this.cookieSession(req, SESSION_COOKIE);
     if (!found || found.error) {
       log.debug("Leaving Authn.sessionOf(). No session cookie naming a " +
                 "session this server holds, with its current handle.");
       return null;
     }
-    const id = found.id;
-    const session = found.session;
+    const session = this.honouredSession(req, found.id, found.session);
+    log.debug("Leaving Authn.sessionOf().");
+    return session;
+  }
+
+  // What `sessionOf()` holds a session to once it knows which one: ended
+  // or idle, an arrival nobody chose, a disabled or deleted account — each
+  // swept on the way past — and otherwise the session, its use noted. Split
+  // out for #561 so that the cookie's session and the account set's choice
+  // meet exactly the same rules; the body is `sessionOf()`'s as it was.
+  private honouredSession(req, id, session) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.honouredSession(). sid=" + id);
+    if (!session) {
+      log.debug("Leaving Authn.honouredSession(). No such session.");
+      return null;
+    }
     const ended = this.sessionEnded(session);
     if (ended) {
       // Through expireSession() and not a bare delete: this is a session ENDING
@@ -1839,7 +1902,7 @@ class Authn {
       this.expireSession(sessions.realmMap(), id, session, 'a request that ' +
                                                            'presented it',
                          ended);
-      log.debug("Leaving Authn.sessionOf(). The session had " +
+      log.debug("Leaving Authn.honouredSession(). The session had " +
                 (ended === 'idle' ? "gone idle" : "expired") + " and was " +
                     "discarded.");
       return null;
@@ -1874,7 +1937,8 @@ class Authn {
     // construction rather than by everybody remembering.
     // -------------------------------------------------------------------------
     if (session.chosen === false) {
-      log.debug("Leaving Authn.sessionOf(). An anonymous session nobody has " +
+      log.debug("Leaving Authn.honouredSession(). An anonymous session " +
+                "nobody has " +
                 "chosen yet.");
       return null;
     }
@@ -1887,7 +1951,8 @@ class Authn {
     if (this.sessionAccountDisabled(session)) {
       this.dropSession(id, 'an administrator disabling the account',
                        false, req, 'admin');
-      log.debug("Leaving Authn.sessionOf(). The account is disabled; the " +
+      log.debug("Leaving Authn.honouredSession(). The account is " +
+                "disabled; the " +
                 "session was ended.");
       return null;
     }
@@ -1902,7 +1967,8 @@ class Authn {
     if (this.sessionAccountGone(session)) {
       this.dropSession(id, 'the deletion of the account', false, req,
                        'admin');
-      log.debug("Leaving Authn.sessionOf(). The account was deleted; the " +
+      log.debug("Leaving Authn.honouredSession(). The account was " +
+                "deleted; the " +
                 "session was ended.");
       return null;
     }
@@ -1919,9 +1985,837 @@ class Authn {
     }
     this.noteSessionUsed(sessions.realmMap(), id, session);
     this.noticeRiskDrift(session, req);
-    log.debug("Leaving Authn.sessionOf(). Signed in as " +
+    log.debug("Leaving Authn.honouredSession(). Signed in as " +
               session.user.username + ".");
     return session;
+  }
+
+  // ===========================================================================
+  // SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561).
+  //
+  // `authn/account_sets.ts` holds the list — which sessions one browser
+  // signed in to, which accounts signed out there — and the selection
+  // tickets. What follows is what this module does with it: which session a
+  // request acts as (`resolveAccount()`, read by `sessionOf()`), the hint a
+  // protocol passes (`hintAccount()`), why no session was answered
+  // (`accountChoiceNeeded()`), the ticket a flow resumes on, the enrolment
+  // of a session that just started, the move to "remembered" of one that
+  // ended, and the picker's views and acts. Every one of them is a no-op
+  // with `authn.multipleAccounts` off, which is the default, and
+  // `authn/CLAUDE.md`, *Several signed-in accounts in one browser*, argues
+  // the design.
+  // ===========================================================================
+
+  // The browser's account set: the one this request created or rotated, or
+  // the one its cookie names. Null when it has none, or when reading it
+  // threw — a set that cannot be read is a browser with none, which is the
+  // setting-off behaviour and never a refusal.
+  private accountSetOf(req) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.accountSetOf().");
+    if (!req) {
+      log.debug("Leaving Authn.accountSetOf(). No request.");
+      return null;
+    }
+    try {
+      const row = req.stsAccountSetId
+        ? AccountSets.byId(req.stsAccountSetId)
+        : AccountSets.setOf(this.cookiesOf(req));
+      log.debug("Leaving Authn.accountSetOf(). " + (row ? row.id : 'None.'));
+      return row;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0344') + 'authn: a browser\'s ' +
+                'account set could not be read: ' + ((e && e.message) || e));
+      log.debug("Leaving Authn.accountSetOf(). Threw.");
+      return null;
+    }
+  }
+
+  // Whether a session may be in an account set at all: a browser's own
+  // sign-in, not an arrival nobody chose, not the anonymous principal, not a
+  // hosted surface's relying-party row and not a keyed API caller.
+  private accountEligible(session) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.accountEligible().");
+    const ok = !!(session && session.user && session.chosen !== false &&
+                  session.authenticated !== false && !session.rpSurface &&
+                  !session.credentialKey);
+    log.debug("Leaving Authn.accountEligible(). " + ok);
+    return ok;
+  }
+
+  // Whether the session a set lists is live, with no side effects: the
+  // store holds it, it is eligible, and neither clock has run out. A set
+  // lists sids and never decides this itself (the plan's section 1). The
+  // session chosen from the list is then held to `honouredSession()`, which
+  // also asks about a disabled or deleted account.
+  private accountSessionLive(sid) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.accountSessionLive().");
+    const session = this.accountSessionRead(sid).session;
+    const live = !!(session && this.accountEligible(session) &&
+                    !this.sessionEnded(session));
+    log.debug("Leaving Authn.accountSessionLive(). " + live);
+    return live;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SESSION A SET LISTS, READ THE WAY #350'S READERS READ ONE. With
+  // `authn.sessionWindow` on (and `auto` turns it on whenever minted
+  // persistence is) the realm map holds only the window's resident rows, so
+  // a set member evicted from it is NOT in `sessions.get()` and is still
+  // live: reading the map would have made the expiry job move every
+  // non-resident account to remembered, and the picker forget it. So the
+  // window when it is on, the map when it is off, as `sessionById()` reads.
+  //
+  // `{ session }`, null where the store holds none, or `{ session: null,
+  // error: true }` where the read FAILED — which is not absence (#350): a
+  // caller that would end, forget or substitute on absence keeps the member
+  // instead (`accountSessionKept()`), and `resolveAccount()` answers nobody
+  // rather than choosing among the members it could read.
+  // ---------------------------------------------------------------------------
+  private accountSessionRead(sid): { session: any; error?: boolean } {
+    const { log, realms } = this.deps;
+    log.debug("Entering Authn.accountSessionRead().");
+    const key = String(sid || '');
+    if (!key) {
+      log.debug("Leaving Authn.accountSessionRead(). No sid.");
+      return { session: null };
+    }
+    if (this.windowOn()) {
+      const read = sessionWindow.get(realms.currentId(), key);
+      if (!read.ok && read.error) {
+        log.debug("Leaving Authn.accountSessionRead(). Unread.");
+        return { session: null, error: true };
+      }
+      log.debug("Leaving Authn.accountSessionRead(). Through the window.");
+      return { session: read.ok ? read.session : null };
+    }
+    log.debug("Leaving Authn.accountSessionRead().");
+    return { session: sessions.get(key) || null };
+  }
+
+  // Whether a set should KEEP listing a session: it is live, or its read
+  // failed and nothing can be said about it. What the prune, the expiry job
+  // and the full-set count ask, so that a store that could not answer for a
+  // moment never signs an account out of its browser's set (#350's rule that
+  // a failed read is not absence).
+  private accountSessionKept(sid) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.accountSessionKept().");
+    const kept = this.accountSessionLive(sid) ||
+                 !!this.accountSessionRead(sid).error;
+    log.debug("Leaving Authn.accountSessionKept(). " + kept);
+    return kept;
+  }
+
+  // What a set remembers of a session's account: its subject, its name and
+  // the name to show. Never the sid, which the set keys it by.
+  private accountOf(session) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.accountOf().");
+    const user = (session && session.user) || {};
+    log.debug("Leaving Authn.accountOf().");
+    return { sub: String(user.sub || ''),
+             username: String(user.username || ''),
+             displayName: String(user.name || user.username || '') };
+  }
+
+  // A session's own set, stamped on the row so that its end can find the
+  // set by key (`accountSessionEnded()`) without a scan.
+  private stampAccountSet(sid, session, setId) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.stampAccountSet().");
+    if (session && session.accountSetId !== setId) {
+      session.accountSetId = setId;
+      sessions.set(String(sid), session);
+    }
+    log.debug("Leaving Authn.stampAccountSet().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE BROWSER'S SET, MADE AROUND ITS SESSION WHERE IT HAS NONE (the plan's
+  // D12). Turning the setting on ends nothing and asks nobody to sign in
+  // again: the first request that needs the set and carries a live
+  // `sts_session` and no `sts_accounts` makes the set around that session,
+  // which becomes its first account. `create` false (the audit actor, an
+  // observer) only reads. The cookie goes on the request's own response
+  // (`req.res`), and a response already sent makes nothing — a set the
+  // browser was never told about would be a row nothing could reach.
+  // ---------------------------------------------------------------------------
+  private ensureAccountSet(req, create) {
+    const { log, audit, stats } = this.deps;
+    log.debug("Entering Authn.ensureAccountSet().");
+    const have = this.accountSetOf(req);
+    if (have || !create || !req) {
+      log.debug("Leaving Authn.ensureAccountSet(). " +
+                (have ? 'It has one.' : 'None, and none made.'));
+      return have;
+    }
+    const found = this.cookieSession(req, SESSION_COOKIE);
+    const res = req.res;
+    if (!found || !this.accountEligible(found.session) ||
+        !this.accountSessionLive(found.id) || !res || res.headersSent ||
+        typeof res.append !== 'function') {
+      log.debug("Leaving Authn.ensureAccountSet(). Nothing to make it " +
+                "around.");
+      return null;
+    }
+    const row = AccountSets.fresh();
+    AccountSets.addSession(row, found.id, this.accountOf(found.session));
+    const value = AccountSets.rotate(row);
+    AccountSets.save(row);
+    AccountSets.writeCookie(res, value);
+    req.stsAccountSetId = row.id;
+    this.stampAccountSet(found.id, found.session, row.id);
+    stats.recordAccountChoice('added');
+    audit.audit({
+      action: 'account.add', actor: String(found.session.user.username || ''),
+      protocol: 'Authentication', channel: 'http', target: found.id,
+      summary: 'the browser\'s session for ' + found.session.user.username +
+               ' became the first account of a new account set ' + row.id,
+      detail: { accountSet: row.id, sessionId: found.id,
+                sub: String(found.session.user.sub || ''), adopted: true }
+    });
+    log.debug("Leaving Authn.ensureAccountSet(). Made " + row.id + ".");
+    return row;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHICH SESSION A REQUEST ACTS AS, WITH SEVERAL IN THE BROWSER (the plan's
+  // section 2), in this order:
+  //
+  //   1. a selection ticket spent on this request (`spendAccountTicket()`
+  //      left its sid on `req.stsAccountSelection`);
+  //   2. a protocol hint (`hintAccount()`): a sid, a subject, a login name;
+  //      a hint that names no live session here answers NOBODY
+  //      (`hint-unmatched`) — never another account in its place;
+  //   3. the only live session;
+  //   4. nobody (`ambiguous`).
+  //
+  // `{ fallback: true }` where the browser has no set or no live session in
+  // it: the caller reads the cookie, as with the setting off. Otherwise
+  // `{ sid, how }` or `{ sid: '', reason, live, hint }`. No side effects but
+  // the D12 set (`create`).
+  // ---------------------------------------------------------------------------
+  private resolveAccount(req, create) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.resolveAccount().");
+    const row = this.ensureAccountSet(req, create);
+    if (!row) {
+      log.debug("Leaving Authn.resolveAccount(). No set.");
+      return { fallback: true };
+    }
+    // A MEMBER WHOSE READ FAILED (#350) is not absent, so choosing among
+    // the others — "the only live one" — could act as the wrong person.
+    // Nobody, then: the request is sent to sign in, never substituted.
+    const unread = Object.keys(row.sessions || {}).some(function (sid) {
+      return !!self.accountSessionRead(sid).error;
+    });
+    if (unread) {
+      log.debug("Leaving Authn.resolveAccount(). A member could not be " +
+                "read.");
+      return { sid: '', reason: 'unread', row: row, live: 0 };
+    }
+    const live = Object.keys(row.sessions || {}).filter(function (sid) {
+      return self.accountSessionLive(sid);
+    });
+    if (!live.length) {
+      log.debug("Leaving Authn.resolveAccount(). No live session in it.");
+      return { fallback: true, row: row };
+    }
+    const selected = String((req && req.stsAccountSelection) || '');
+    if (selected && live.indexOf(selected) >= 0) {
+      log.debug("Leaving Authn.resolveAccount(). The ticket's.");
+      return { sid: selected, how: 'ticket', row: row, live: live.length };
+    }
+    const hint = req && req.stsAccountHint;
+    const match = hint ? this.matchAccountHint(live, hint) : '';
+    if (hint && (match || !hint.soft)) {
+      log.debug("Leaving Authn.resolveAccount(). " +
+                (match ? 'The hint\'s.' : 'The hint names nobody here.'));
+      return match
+        ? { sid: match, how: 'hint', row: row, live: live.length }
+        : { sid: '', reason: 'hint-unmatched', row: row, live: live.length,
+            hint: String(hint.loginHint || '') };
+    }
+    // A SOFT hint naming nobody here is no hint (GNAP's `user`, whose
+    // naming somebody other than the person at the browser has a meaning
+    // of its own — `hintAccount()`'s header).
+    if (live.length === 1) {
+      log.debug("Leaving Authn.resolveAccount(). The only one.");
+      return { sid: live[0], how: 'only', row: row, live: 1 };
+    }
+    log.debug("Leaving Authn.resolveAccount(). Ambiguous: " + live.length +
+              " live.");
+    return { sid: '', reason: 'ambiguous', row: row, live: live.length };
+  }
+
+  // The live session a hint names: its sid, then its subject, then its login
+  // name or e-mail address (or the subject that name resolves to), or ''.
+  private matchAccountHint(live, hint) {
+    const { log, helpers } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.matchAccountHint().");
+    if (hint.sid && live.indexOf(String(hint.sid)) >= 0) {
+      log.debug("Leaving Authn.matchAccountHint(). By sid.");
+      return String(hint.sid);
+    }
+    const users = live.map(function (sid) {
+      return { sid: sid,
+               user: (self.accountSessionRead(sid).session || {}).user ||
+                     {} };
+    });
+    const bySub = hint.sub ? users.filter(function (one) {
+      return String(one.user.sub || '') === String(hint.sub);
+    })[0] : null;
+    if (bySub) {
+      log.debug("Leaving Authn.matchAccountHint(). By subject.");
+      return bySub.sid;
+    }
+    const name = String(hint.loginHint || '').trim().toLowerCase();
+    if (name) {
+      let subject = '';
+      try {
+        subject = String(helpers.subjectForName(hint.loginHint) || '');
+      } catch (e) {
+        // A directory that cannot answer leaves the name to match by itself.
+        log.debug("Caught in Authn.matchAccountHint(): " +
+                  ((e && e.message) || e));
+        subject = '';
+      }
+      const byName = users.filter(function (one) {
+        return String(one.user.username || '').toLowerCase() === name ||
+          String(one.user.email || '').toLowerCase() === name ||
+          (!!subject && String(one.user.sub || '') === subject);
+      })[0];
+      if (byName) {
+        log.debug("Leaving Authn.matchAccountHint(). By name.");
+        return byName.sid;
+      }
+    }
+    log.debug("Leaving Authn.matchAccountHint(). None.");
+    return '';
+  }
+
+  /**
+   * Says why `sessionOf()` answered nobody for a browser holding several
+   * accounts (#561), or null where it did not.
+   *
+   * `ambiguous`: more than one live account and nothing in this request
+   * chose one — the account picker is the answer, or OpenID Connect's
+   * `account_selection_required` under `prompt=none`. `hint-unmatched`: a
+   * protocol hint named an account with no live session in this browser —
+   * the sign-in screen is the answer, with the hint's name filled in. Null
+   * with `authn.multipleAccounts` off.
+   *
+   * @param req - the request
+   * @returns `{ reason, accounts, hint }`, or null
+   */
+  accountChoiceNeeded(req) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.accountChoiceNeeded().");
+    if (!AccountSets.enabled() || !req) {
+      log.debug("Leaving Authn.accountChoiceNeeded(). Off.");
+      return null;
+    }
+    const resolved = this.resolveAccount(req, true);
+    if (resolved.fallback || resolved.sid) {
+      log.debug("Leaving Authn.accountChoiceNeeded(). Resolved.");
+      return null;
+    }
+    log.debug("Leaving Authn.accountChoiceNeeded(). " + resolved.reason);
+    return { reason: resolved.reason, accounts: resolved.live,
+             hint: resolved.hint || '' };
+  }
+
+  /**
+   * Passes a protocol's hint about which account a request is for (#561):
+   * OpenID Connect's `login_hint` and the `sub` and `sid` of a verified
+   * `id_token_hint`, a SAML `<Subject>`'s name, a GNAP subject hint.
+   *
+   * Call it BEFORE `sessionOf()`. It changes nothing with
+   * `authn.multipleAccounts` off; on, a hint naming a live account in the
+   * browser's set chooses it silently, and one naming none makes
+   * `sessionOf()` answer nobody (never another account) and
+   * `accountChoiceNeeded()` answer `hint-unmatched`. Empty members are
+   * ignored; a hint with none is no hint.
+   *
+   * `soft` (#561 step 3, for GNAP) makes a hint that names nobody live
+   * here no hint at all rather than a choice of nobody: the request then
+   * resolves as if it carried none. GNAP's `user` is that kind — a person
+   * at the browser who is not the user the grant request named is a case
+   * RFC 9635 and #432's owner approval give a meaning of their own — and so
+   * is a session id a page recorded for its own later calls.
+   *
+   * @param req - the request
+   * @param hint - `{ loginHint, sub, sid, soft }`; `username` is read as
+   *   `loginHint`
+   */
+  hintAccount(req, hint) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.hintAccount().");
+    const h = hint || {};
+    const loginHint = String(h.loginHint || h.username || '').slice(0, 512);
+    const sub = String(h.sub || '').slice(0, 512);
+    const sid = String(h.sid || '').slice(0, 128);
+    if (req && (loginHint || sub || sid)) {
+      req.stsAccountHint = { loginHint: loginHint, sub: sub, sid: sid,
+                             soft: !!h.soft };
+    }
+    log.debug("Leaving Authn.hintAccount().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SELECTION TICKET ON THIS REQUEST (the plan's section 2, step 1),
+  // taken off before any route reads the query and spent at once: a later
+  // request carrying it finds nothing. It counts only where it was minted
+  // for THIS browser's set, for THIS path, and names a session still live in
+  // the set; anything else is ignored (STS-AUTHN-0346) and the request
+  // resolves its account as if it had carried none. With the setting off
+  // the request is not touched at all.
+  // ---------------------------------------------------------------------------
+  /**
+   * Takes an account selection ticket off a request and spends it (#561);
+   * the middleware every request passes. Exported for
+   * `tests/multi_account_sessions.js`.
+   *
+   * @param req - the request
+   */
+  spendAccountTicket(req) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.spendAccountTicket().");
+    if (!AccountSets.enabled()) {
+      log.debug("Leaving Authn.spendAccountTicket(). Off.");
+      return;
+    }
+    const ticket = AccountSets.stripTicket(req);
+    if (!ticket) {
+      log.debug("Leaving Authn.spendAccountTicket(). None.");
+      return;
+    }
+    const row = AccountSets.spendTicket(ticket);
+    const set = this.accountSetOf(req);
+    const path = String(req.url || '').split('?')[0];
+    const why = !row ? 'it is unknown, spent or expired'
+      : !set || set.id !== row.setId ? 'it was issued to another browser'
+      : row.path !== path ? 'it was issued for another address'
+      : !set.sessions[row.sid] || !this.accountSessionLive(row.sid)
+        ? 'the session it names is no longer live in this browser'
+        : '';
+    if (why) {
+      log.info(errorCodes.tag('STS-AUTHN-0346') + 'authn: an account ' +
+               'selection ticket on ' + path + ' was ignored: ' + why + '.');
+      log.debug("Leaving Authn.spendAccountTicket(). Ignored.");
+      return;
+    }
+    req.stsAccountSelection = row.sid;
+    log.debug("Leaving Authn.spendAccountTicket(). Spent.");
+  }
+
+  // The address a finished sign-in returns to, with a ticket for the session
+  // it started or re-authenticated where a set holds it (`res.locals`, set
+  // by `enrolInAccountSet()`). Unchanged with the setting off, or where the
+  // sign-in added nothing to a set.
+  private ticketedReturn(res, record, target) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.ticketedReturn().");
+    const locals = (res && res.locals) || {};
+    if (!AccountSets.enabled() || !locals.stsAccountSession ||
+        !locals.stsAccountSet) {
+      log.debug("Leaving Authn.ticketedReturn(). Unchanged.");
+      return target;
+    }
+    const ticket = AccountSets.mintTicket(locals.stsAccountSet,
+                                          locals.stsAccountSession,
+                                          String(target).split('?')[0],
+                                          (record && record.id) || '');
+    log.debug("Leaving Authn.ticketedReturn().");
+    return AccountSets.withTicket(target, ticket);
+  }
+
+  /**
+   * Adds a selection ticket to an address a flow resumes on, for the
+   * account a hint names in this browser's set (#561). The consent screen
+   * calls it, so the authorization request it returns to acts as the
+   * account that consented.
+   *
+   * Unchanged with `authn.multipleAccounts` off, or where the hint names no
+   * live account here.
+   *
+   * @param req - the request
+   * @param target - the address, a path on this service
+   * @param hint - `{ loginHint, sub, sid }`, as `hintAccount()` takes
+   * @returns the address, with `sts_account=` on it where one was minted
+   */
+  accountTicketFor(req, target, hint) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.accountTicketFor().");
+    if (!AccountSets.enabled() || !req) {
+      log.debug("Leaving Authn.accountTicketFor(). Off.");
+      return target;
+    }
+    const prior = req.stsAccountHint;
+    this.hintAccount(req, hint);
+    const resolved = this.resolveAccount(req, false);
+    req.stsAccountHint = prior;
+    if (resolved.fallback || !resolved.sid || !resolved.row) {
+      log.debug("Leaving Authn.accountTicketFor(). Nobody to name.");
+      return target;
+    }
+    const ticket = AccountSets.mintTicket(resolved.row.id, resolved.sid,
+                                          String(target).split('?')[0], '');
+    log.debug("Leaving Authn.accountTicketFor().");
+    return AccountSets.withTicket(target, ticket);
+  }
+
+  // How many live sessions a browser holds for the cap: its set's, and the
+  // default cookie's where that is live and not in the set yet (D12).
+  private liveAccountCount(row, defaultFound) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.liveAccountCount().");
+    let n = row ? Object.keys(row.sessions || {}).filter(function (sid) {
+      return self.accountSessionKept(sid);
+    }).length : 0;
+    if (defaultFound && this.accountEligible(defaultFound.session) &&
+        this.accountSessionLive(defaultFound.id) &&
+        !(row && row.sessions && row.sessions[defaultFound.id])) {
+      n++;
+    }
+    log.debug("Leaving Authn.liveAccountCount(). " + n);
+    return n;
+  }
+
+  // A live session of the person signing in, in this browser's set: the
+  // session a second sign-in as them re-authenticates (one live session per
+  // subject per browser), or null.
+  private accountSessionFor(row, username) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.accountSessionFor().");
+    const sid = row ? Object.keys(row.sessions || {}).filter(function (one) {
+      const session = self.accountSessionRead(one).session;
+      return self.accountSessionLive(one) &&
+        self.sameIdentity(session.user, username);
+    })[0] : '';
+    log.debug("Leaving Authn.accountSessionFor(). " + (sid ? 'One.' : 'None.'));
+    return sid ? { id: sid, session: this.accountSessionRead(sid).session }
+               : null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SESSION THAT STARTED (OR WAS RE-AUTHENTICATED) GOES INTO THE BROWSER'S
+  // SET. The browser's previous default session goes in first where it is
+  // live and not there yet (D12); sessions that ended meanwhile move to
+  // remembered; a remembered entry for this account is replaced; the handle
+  // rotates (a sign-in is a change of privilege) and the cookie is appended
+  // AFTER the session cookie, which `setCookieHeader()` writes by
+  // replacing. `res.locals` then names the session and the set, which is
+  // what `returnToCaller()` mints the flow's ticket from.
+  // ---------------------------------------------------------------------------
+  private enrolInAccountSet(req, res, session, defaultFound) {
+    const { log, audit, stats, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.enrolInAccountSet(). sid=" + session.id);
+    try {
+      const row = this.accountSetOf(req) || AccountSets.fresh();
+      if (defaultFound && defaultFound.id !== session.id &&
+          this.accountEligible(defaultFound.session) &&
+          this.accountSessionLive(defaultFound.id) &&
+          !row.sessions[defaultFound.id]) {
+        AccountSets.addSession(row, defaultFound.id,
+                               this.accountOf(defaultFound.session));
+        this.stampAccountSet(defaultFound.id, defaultFound.session, row.id);
+      }
+      AccountSets.prune(row, function (sid) {
+        return sid === session.id || self.accountSessionKept(sid);
+      });
+      const added = !row.sessions[session.id];
+      const done = AccountSets.addSession(row, session.id,
+                                          this.accountOf(session));
+      if (!done.ok) {
+        // `startSessionHere()` refused a full set before the session was
+        // made, so this is two sign-ins racing for the last place.
+        log.warn(errorCodes.tag('STS-AUTHN-0340') + 'authn: session ' +
+                 session.id + ' could not join its browser\'s account set, ' +
+                 'which is full; it is the browser\'s session alone.');
+        log.debug("Leaving Authn.enrolInAccountSet(). Full.");
+        return;
+      }
+      const value = AccountSets.rotate(row);
+      AccountSets.save(row);
+      AccountSets.writeCookie(res, value);
+      if (req) {
+        req.stsAccountSetId = row.id;
+      }
+      this.stampAccountSet(session.id, session, row.id);
+      if (res && res.locals) {
+        res.locals.stsAccountSession = session.id;
+        res.locals.stsAccountSet = row.id;
+      }
+      if (added) {
+        stats.recordAccountChoice('added');
+        audit.audit({
+          action: 'account.add', actor: String(session.user.username || ''),
+          protocol: session.via || 'Authentication', channel: 'http',
+          target: session.id,
+          summary: session.user.username + ' was added to account set ' +
+                   row.id + ' (' + Object.keys(row.sessions).length +
+                   ' signed in)',
+          detail: { accountSet: row.id, sessionId: session.id,
+                    sub: String(session.user.sub || ''),
+                    signedIn: Object.keys(row.sessions).length,
+                    droppedRemembered: done.dropped }
+        });
+      }
+      log.debug("Leaving Authn.enrolInAccountSet(). " + row.id);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0344') + 'authn: session ' +
+                session.id + ' could not be put in its browser\'s account ' +
+                'set: ' + ((e && e.message) || e));
+      log.debug("Leaving Authn.enrolInAccountSet(). Threw.");
+    }
+  }
+
+  // A session that ended — signed out, expired, evicted, ended by an
+  // administrator — moves to its set's remembered accounts, found by the
+  // set id stamped on it. Never throws: the session has ended whatever
+  // happens to the list.
+  private accountSessionEnded(session) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.accountSessionEnded().");
+    if (!session || !session.accountSetId) {
+      log.debug("Leaving Authn.accountSessionEnded(). In no set.");
+      return;
+    }
+    try {
+      const row = AccountSets.byId(session.accountSetId);
+      if (row && AccountSets.endSession(row, session.id)) {
+        AccountSets.save(row);
+      }
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0344') + 'authn: session ' +
+                session.id + ' ended and could not be moved to its ' +
+                'account set\'s remembered accounts: ' +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving Authn.accountSessionEnded().");
+  }
+
+  // Makes a session the browser's default — the one `sts_session` names —
+  // by minting it a fresh handle: the browser lost the old one when another
+  // sign-in wrote the cookie, and the set is what proved it may have it.
+  // Written by replacing, so before any cookie appended to `res`.
+  private makeDefaultSession(res, session) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.makeDefaultSession(). sid=" + session.id);
+    // The OP browser state (#121) is KEPT: becoming the default is not a
+    // sign-in, and a fresh state would tell every relying party of this
+    // account "changed" (OpenID Connect Session Management, the plan's
+    // section 7). Only the handle is new.
+    const browserState = session.browserState;
+    const value = this.mintSessionHandle(session);
+    if (browserState) {
+      session.browserState = browserState;
+    }
+    sessions.set(session.id, session);
+    this.setCookieHeader(res, this.sessionCookieLine(SESSION_COOKIE, value));
+    log.debug("Leaving Authn.makeDefaultSession().");
+  }
+
+  // The accounts a set holds, as the picker and `GET /authn-api/accounts`
+  // show them: key, subject, names, state and times — never a sid or a
+  // token. Live accounts first, in the order they signed in; then the
+  // signed-out ones, the latest first.
+  private accountRows(row, req) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.accountRows().");
+    if (!row) {
+      log.debug("Leaving Authn.accountRows(). No set.");
+      return [];
+    }
+    const own = req ? this.cookieSession(req, SESSION_COOKIE) : null;
+    const live = Object.keys(row.sessions || {}).filter(function (sid) {
+      return self.accountSessionLive(sid);
+    }).sort(function (a, b) {
+      return (Number(row.sessions[a].addedAt) || 0) -
+             (Number(row.sessions[b].addedAt) || 0);
+    }).map(function (sid) {
+      const session = self.accountSessionRead(sid).session;
+      const entry = row.sessions[sid];
+      const account = self.accountOf(session);
+      return { key: AccountSets.keyOf(account), sub: account.sub,
+               username: account.username,
+               displayName: account.displayName || entry.displayName,
+               state: 'signed-in',
+               signedInAt: self.sessionStartedAt(session) || 0,
+               authTime: Number(session.authTime) || 0,
+               current: !!(own && own.id === sid) };
+    });
+    const remembered = Object.keys(row.remembered || {}).map(function (key) {
+      const entry = row.remembered[key];
+      return { key: key, sub: String(entry.sub || ''),
+               username: String(entry.username || ''),
+               displayName: String(entry.displayName || entry.username || ''),
+               state: 'signed-out',
+               signedOutAt: Number(entry.signedOutAt) || 0,
+               current: false };
+    }).sort(function (a, b) {
+      return b.signedOutAt - a.signedOutAt;
+    });
+    log.debug("Leaving Authn.accountRows(). " + live.length + " live, " +
+              remembered.length + " remembered.");
+    return (live as any[]).concat(remembered);
+  }
+
+  // A browser's set brought up to date for a page: sessions that ended move
+  // to remembered and old remembered accounts go, written back only where
+  // something changed.
+  private freshAccountSet(req) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.freshAccountSet().");
+    const row = this.ensureAccountSet(req, true);
+    if (row) {
+      const done = AccountSets.prune(row, function (sid) {
+        return self.accountSessionKept(sid);
+      });
+      if (done.ended || done.expired) {
+        AccountSets.save(row);
+      }
+    }
+    log.debug("Leaving Authn.freshAccountSet().");
+    return row;
+  }
+
+  /**
+   * The accounts this browser holds, for `GET /authn-api/accounts` (#561):
+   * each account's key, subject, names, state (`signed-in` or
+   * `signed-out`), times and whether it is the browser's default — never a
+   * sid or a token.
+   *
+   * @param req - the request
+   * @returns `{ enabled, accounts, max }`; with `authn.multipleAccounts`
+   *   off, `{ enabled: false, accounts: [] }`
+   */
+  browserAccounts(req) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.browserAccounts().");
+    if (!AccountSets.enabled()) {
+      log.debug("Leaving Authn.browserAccounts(). Off.");
+      return { enabled: false, accounts: [], max: 0 };
+    }
+    const row = this.freshAccountSet(req);
+    log.debug("Leaving Authn.browserAccounts().");
+    return { enabled: true, accounts: this.accountRows(row, req),
+             max: AccountSets.maxAccounts() };
+  }
+
+  /**
+   * The live sessions this browser's account set holds (#561), in the order
+   * they joined it, with no side effects: for the OP browser state of
+   * OpenID Connect Session Management, and for sign-out's account choice.
+   *
+   * @param req - the request
+   * @returns the session rows; [] with `authn.multipleAccounts` off or for a
+   *   browser with no set
+   */
+  accountSessionsOf(req) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.accountSessionsOf().");
+    if (!AccountSets.enabled() || !req) {
+      log.debug("Leaving Authn.accountSessionsOf(). Off.");
+      return [];
+    }
+    const row = this.accountSetOf(req);
+    const out = row ? Object.keys(row.sessions || {}).filter(function (sid) {
+      return self.accountSessionLive(sid);
+    }).sort(function (a, b) {
+      return (Number(row.sessions[a].addedAt) || 0) -
+             (Number(row.sessions[b].addedAt) || 0);
+    }).map(function (sid) {
+      return self.accountSessionRead(sid).session;
+    }) : [];
+    log.debug("Leaving Authn.accountSessionsOf(). " + out.length);
+    return out;
+  }
+
+  /**
+   * The session id an audit row's actor acted as, resolved the way
+   * `sessionOf()` resolves it, with no side effects (#561). '' with
+   * `authn.multipleAccounts` off, so a row is then unchanged.
+   *
+   * @param req - the request
+   * @returns the sid, or ''
+   */
+  auditActorSessionOf(req) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.auditActorSessionOf().");
+    if (!AccountSets.enabled() || !req) {
+      log.debug("Leaving Authn.auditActorSessionOf(). Off.");
+      return '';
+    }
+    const resolved = this.resolveAccount(req, false);
+    if (!resolved.fallback) {
+      log.debug("Leaving Authn.auditActorSessionOf(). The set's.");
+      return String(resolved.sid || '');
+    }
+    const found = this.cookieSession(req, SESSION_COOKIE);
+    log.debug("Leaving Authn.auditActorSessionOf(). The cookie's.");
+    return found ? String(found.id) : '';
+  }
+
+  /**
+   * Records that a request could not tell which of several accounts it was
+   * for (#561): the `account.ambiguous` audit row and its counter. The
+   * picker records its own; `oauth2.ts` calls this where it answers
+   * `account_selection_required`.
+   *
+   * @param req - the request
+   * @param via - the protocol, for the row
+   * @param answer - what was done about it, for the summary
+   */
+  noteAccountAmbiguous(req, via, answer) {
+    const { log, audit, stats } = this.deps;
+    log.debug("Entering Authn.noteAccountAmbiguous().");
+    const row = this.accountSetOf(req);
+    stats.recordAccountChoice('ambiguous');
+    audit.audit({
+      action: 'account.ambiguous', actor: '', protocol: via || '',
+      channel: 'http', target: row ? row.id : '',
+      summary: 'a request from a browser with several signed-in accounts ' +
+               'named none of them; ' + String(answer || 'the account ' +
+                                               'picker was shown'),
+      detail: { accountSet: row ? row.id : '',
+                signedIn: row ? Object.keys(row.sessions || {}).length : 0 }
+    });
+    log.debug("Leaving Authn.noteAccountAmbiguous().");
+  }
+
+  /**
+   * The body of the scheduler job `authn.account-set-expiry` (#561): every
+   * account set in the ambient realm pruned — sessions that ended move to
+   * remembered, remembered accounts past `authn.rememberedAccountDays` are
+   * dropped — and every set left empty deleted.
+   *
+   * @returns `{ sets, ended, expired, deleted }`
+   */
+  sweepAccountSets() {
+    const { log, stats } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.sweepAccountSets().");
+    const done = AccountSets.sweep(function (sid) {
+      return self.accountSessionKept(sid);
+    });
+    if (done.expired) {
+      stats.recordAccountChoice('expired', done.expired);
+    }
+    log.debug("Leaving Authn.sweepAccountSets().");
+    return done;
   }
 
   // Whether a signed-in session's person is disabled. The anonymous principal
@@ -3524,6 +4418,8 @@ class Authn {
     // place, or one row the sweep sheds. Never another subject's row.
     const evicted = why === 'capacity';
     store.delete(id);
+    // An expiry and an eviction move the account to remembered too (#561).
+    this.accountSessionEnded(session);
     // THE BACK-CHANNEL LOGOUT TOKENS, ON AN EXPIRY TOO (2026-09-17, #36
     // follow-up) — while `oauth2.backchannelLogoutOnExpiry` is on, which it is
     // by default: Back-Channel Logout lets the provider notify whenever its
@@ -6222,13 +7118,35 @@ class Authn {
     // authentication to add to; a keyed API caller has no browser and no
     // cookie. A relying-party row cannot arrive here at all, because its cookie
     // is not `sts_session`.
-    const current = extra.request ? this.cookieSession(extra.request,
-                                                       SESSION_COOKIE) : null;
-    if (current && current.error) {
+    const defaultFound = extra.request
+      ? this.cookieSession(extra.request, SESSION_COOKIE) : null;
+    if (defaultFound && defaultFound.error) {
       extra.refusedWith = 'STS-AUTHN-0338';
       log.debug("Leaving Authn.startSessionHere(). The session could not " +
                 "be read.");
       return null;
+    }
+    // -------------------------------------------------------------------------
+    // SEVERAL ACCOUNTS IN ONE BROWSER (#561). With `authn.multipleAccounts`
+    // on, a browser's sign-in is checked against its ACCOUNT SET rather than
+    // its one cookie: the same person already live in the set is a
+    // re-authentication of THAT session (one live session per subject per
+    // browser), whichever session the cookie happens to name; a different
+    // person ADDS a session, so the previous one is not ended below. Only a
+    // browser's own authenticated sign-in takes part — a keyed caller, a
+    // caller that sets no cookie and the anonymous session behave as before.
+    // -------------------------------------------------------------------------
+    const multiAccount = !!(extra.request && !extra.key &&
+      extra.cookie !== false && extra.authenticated !== false &&
+      AccountSets.enabled());
+    const accountSet = multiAccount ? this.accountSetOf(extra.request) : null;
+    let current = defaultFound;
+    if (multiAccount && !(defaultFound && defaultFound.session.user &&
+        this.sameIdentity(defaultFound.session.user, username))) {
+      const theirs = this.accountSessionFor(accountSet, username);
+      if (theirs) {
+        current = theirs;
+      }
     }
     const reauthenticating = !!(current && !extra.key &&
       extra.authenticated !== false &&
@@ -6242,6 +7160,37 @@ class Authn {
       deviceBound.honours(current.session, extra.request) &&
       current.session.user && this.sameIdentity(current.session.user,
                                                 username));
+    // A FULL SET REFUSES A NEW ACCOUNT (#561, the plan's D11): every place
+    // `authn.maxBrowserAccounts` allows is held by a signed-in account, so
+    // one must be signed out first. A remembered account would have been
+    // dropped to make room; a live one never is.
+    if (multiAccount && !reauthenticating) {
+      const held = this.liveAccountCount(accountSet, defaultFound);
+      if (held >= AccountSets.maxAccounts()) {
+        const why = 'This browser is already signed in to ' + held +
+          ' accounts, the most it may hold. Sign out of one of them first.';
+        log.info(errorCodes.tag('STS-AUTHN-0340') + 'authn: a session for "' +
+                 username + '" was REFUSED at the ' + (via || 'sign-in') +
+                 ' door: its browser\'s account set is full (' + held +
+                 ' signed in, authn.maxBrowserAccounts).');
+        audit.audit({
+          action: 'session.refuse', actor: String(username || ''),
+          errorCode: 'STS-AUTHN-0340',
+          protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
+          summary: 'a session for ' + username + ' was refused at the ' +
+                   (via || 'sign-in') + ' door: the browser is signed in ' +
+                   'to as many accounts as it may hold',
+          detail: { accountSet: accountSet ? accountSet.id : '',
+                    signedIn: held,
+                    application: String(extra.application || '') }
+        });
+        extra.refusedWith = 'STS-AUTHN-0340';
+        extra.refusedWhy = why;
+        log.debug("Leaving Authn.startSessionHere(). The account set is " +
+                  "full.");
+        return null;
+      }
+    }
     // Ended after admission, below. Empty when this browser had no session,
     // when that session is the arrival being upgraded, or when this is the
     // same person re-authenticating.
@@ -6251,8 +7200,9 @@ class Authn {
       // AN ARRIVAL SESSION IS NOT ENDED, it is upgraded — ending it would write
       // a sign-out audit row and a CAEP `session-revoked` for a session nobody
       // was ever in, every time anybody signed in. Nor is a session the same
-      // person is re-authenticating on.
-      if (previous && !reauthenticating &&
+      // person is re-authenticating on. NOR, with several accounts on (#561),
+      // a different person's: their session stays in the browser's set.
+      if (previous && !reauthenticating && !multiAccount &&
           !(arrived && arrived.id === previous)) {
         replaceId = previous;
       }
@@ -6567,6 +7517,9 @@ class Authn {
                                                amr,
                                                acr, via, extra);
       this.recoveryCompleted(username, extra);
+      if (multiAccount) {
+        this.enrolInAccountSet(extra.request, res, again, defaultFound);
+      }
       this.settleRisk(risk, { decision: riskDecision, sessionId: again.id,
                               context: extra.risk &&
                                        extra.risk.sessionContext });
@@ -6876,6 +7829,11 @@ class Authn {
       // sessions, the same answer asks the browser for a key. Nothing is
       // written; a browser that does not speak DBSC ignores the header.
       deviceBound.offer(res, session);
+    }
+    // INTO THE BROWSER'S ACCOUNT SET (#561), after the session cookie: that
+    // one is written by replacing, the set's is appended.
+    if (multiAccount) {
+      this.enrolInAccountSet(extra.request, res, session, defaultFound);
     }
     // The session itself, as its own audit event. It is deliberately separate
     // from the authentication recorded on the line above: the two are one act
@@ -7273,6 +8231,12 @@ class Authn {
     if (deleteAfter && id) {
       sessions.delete(id);
     }
+    // THE ACCOUNT IS REMEMBERED AS SIGNED OUT in its browser's set (#561),
+    // whoever ended the session: the picker offers it again, or forgets it.
+    // Here, after the delete, and not where the session is first read: with
+    // the window on (#350) a children read that fails returns above with the
+    // session NOT ended, and its account must stay signed in in the set.
+    this.accountSessionEnded(session);
     if (session) {
       const planned = this.planBackchannel(session, via || 'a sign-out',
                                            'sign-out');
@@ -7935,15 +8899,27 @@ class Authn {
   /**
    * Ends the session the request's cookie names and clears the cookie.
    *
-   * Only a cookie carrying the current handle ends anything.
+   * Only a cookie carrying the current handle ends anything. With
+   * `authn.multipleAccounts` on (#561), `sid` may name another session of
+   * this browser's account set, which the set's cookie proves the browser
+   * holds — a bare sid is never enough — and that one is ended instead;
+   * the cookie is then cleared only where the browser's default session
+   * ended, and the next live account becomes the default
+   * (`afterAccountSignOut()`). Off, `sid` is ignored.
    *
    * @param req - the request
    * @param res - the response
+   * @param sid - a session of this browser's account set, or nothing
    * @returns the ended session, or null
    */
-  endSession(req, res) {
+  endSession(req, res, sid?) {
     const { log } = this.deps;
     log.debug("Entering Authn.endSession().");
+    if (AccountSets.enabled()) {
+      const ended = this.endAccountSession(req, res, String(sid || ''));
+      log.debug("Leaving Authn.endSession(). Several accounts.");
+      return ended;
+    }
     // ONLY A COOKIE CARRYING THE CURRENT HANDLE ENDS ANYTHING. The sid is not a
     // secret — every relying party that received an ID Token holds it — so a
     // sign-out endpoint that honoured `sts_session=<sid>` would let any of them
@@ -7966,6 +8942,143 @@ class Authn {
                                                   : 'There was no session to ' +
                                                     'drop.'));
     return session || null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SIGN-OUT IN A BROWSER HOLDING SEVERAL ACCOUNTS (#561, the plan's
+  // section 5). `endSession()`'s body with the setting on: the session a
+  // protocol named (`sid`) where it is live in THIS browser's set, else the
+  // one the cookie names, as always; the cookie only where it was the
+  // browser's default; the next live account made the default.
+  // ---------------------------------------------------------------------------
+  private endAccountSession(req, res, sid) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.endAccountSession().");
+    const row = sid ? this.accountSetOf(req) : null;
+    const inSet = !!(row && row.sessions && row.sessions[sid] &&
+                     this.accountSessionLive(sid));
+    const found = inSet
+      ? { id: sid, session: this.accountSessionRead(sid).session }
+      : this.cookieSession(req, SESSION_COOKIE);
+    const id = found ? found.id : '';
+    const presented = inSet || !!this.cookiesOf(req)[SESSION_COOKIE];
+    const session = this.dropSession(id,
+                                     'the sign-out endpoint for this browser',
+                                     presented, req, 'user');
+    this.afterAccountSignOut(req, res);
+    log.debug("Leaving Authn.endAccountSession(). " +
+              (session ? 'Dropped ' + id + (inSet ? ', named in the set.'
+                                                  : ', the cookie\'s.')
+                       : 'Nothing to drop.'));
+    return session || null;
+  }
+
+  /**
+   * Puts a browser's cookies right after one or more of its accounts signed
+   * out (#561): with the browser's default session (`sts_session`) ended,
+   * the cookie is cleared and the most recently added live account of the
+   * set becomes the default; with it still live, the cookie is left alone.
+   * The OP browser states of OpenID Connect Session Management are written
+   * again for the accounts still signed in. A no-op with
+   * `authn.multipleAccounts` off.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns `{ defaultEnded, defaultNow }`: whether the default had ended,
+   *   and the sid that is the default now ('' for none)
+   */
+  afterAccountSignOut(req, res) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.afterAccountSignOut().");
+    if (!AccountSets.enabled() || !req || !res) {
+      log.debug("Leaving Authn.afterAccountSignOut(). Off.");
+      return { defaultEnded: false, defaultNow: '' };
+    }
+    const found = this.cookieSession(req, SESSION_COOKIE);
+    const defaultLive = !!(found && this.accountSessionLive(found.id));
+    const live = this.accountSessionsOf(req);
+    let now = defaultLive ? found.id : '';
+    if (!defaultLive) {
+      this.clearSessionCookie(res);
+      const next = live.length ? live[live.length - 1] : null;
+      if (next) {
+        this.appendDefaultSession(res, next);
+        now = String(next.id);
+      }
+    }
+    const library = this.sessionManagementLibrary();
+    if (library && library.enabled() && typeof res.append === 'function') {
+      library.writeCookie(res, library.browserStatesValue(
+        live.map(library.browserStateOf)));
+    }
+    log.debug("Leaving Authn.afterAccountSignOut(). Default " +
+              (defaultLive ? 'kept.' : (now ? 'moved.' : 'gone.')));
+    return { defaultEnded: !defaultLive, defaultNow: now };
+  }
+
+  // The next default after a sign-out, its cookie APPENDED after the clear
+  // (`clearSessionCookie()` appends too), so the later line is the one the
+  // browser keeps. A fresh handle, as `makeDefaultSession()` mints one, and
+  // its OP browser state kept, for that function's reason.
+  private appendDefaultSession(res, session) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.appendDefaultSession(). sid=" + session.id);
+    const browserState = session.browserState;
+    const value = this.mintSessionHandle(session);
+    if (browserState) {
+      session.browserState = browserState;
+    }
+    sessions.set(session.id, session);
+    if (typeof res.append === 'function') {
+      res.append('Set-Cookie', this.sessionCookieLine(SESSION_COOKIE, value));
+    }
+    log.debug("Leaving Authn.appendDefaultSession().");
+  }
+
+  /**
+   * Hands a request an account KEY as its hint (#561): the key a page drew
+   * an account by (`AccountSets.keyOf()`: its subject, or `name:<username>`
+   * for one with none) — sign-out's account step, and the account a
+   * protocol's sign-out page asked about. A no-op for an empty key.
+   *
+   * @param req - the request
+   * @param key - the account's key
+   */
+  hintAccountKey(req, key) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.hintAccountKey().");
+    const k = String(key || '');
+    if (k) {
+      this.hintAccount(req, k.indexOf('name:') === 0
+        ? { loginHint: k.slice(5) } : { sub: k });
+    }
+    log.debug("Leaving Authn.hintAccountKey().");
+  }
+
+  /**
+   * The signed-in accounts of this browser's set, for a sign-out that asks
+   * which (#561): each `{ key, sub, username, displayName, current, sid }`
+   * — the sid for the server's own use (a protocol page's confirmation
+   * value), never to be drawn. [] with `authn.multipleAccounts` off.
+   *
+   * @param req - the request
+   * @returns the accounts, in the order they joined the set
+   */
+  signedInAccounts(req) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.signedInAccounts().");
+    const found = req ? this.cookieSession(req, SESSION_COOKIE) : null;
+    const out = this.accountSessionsOf(req).map(function (session) {
+      const account = self.accountOf(session);
+      return { key: AccountSets.keyOf(account), sub: account.sub,
+               username: account.username,
+               displayName: account.displayName || account.username,
+               current: !!(found && found.id === session.id),
+               sid: String(session.id) };
+    });
+    log.debug("Leaving Authn.signedInAccounts(). " + out.length);
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -8524,8 +9637,128 @@ class Authn {
    * @throws an Error when `returnTo` is not a path on this service
    */
   beginAuthentication(opts) {
-    const { log, randomId, federation } = this.deps;
+    const { log, audit, errorCodes } = this.deps;
     log.debug("Entering Authn.beginAuthentication(). protocol=" +
+              (opts.protocol || '(unnamed)'));
+    if (!AccountSets.enabled()) {
+      const target = this.beginAuthenticationHere(opts);
+      log.debug("Leaving Authn.beginAuthentication().");
+      return target;
+    }
+    // -----------------------------------------------------------------------
+    // SEVERAL ACCOUNTS IN ONE BROWSER (#561): THE PICKER COMES FIRST WHERE
+    // THERE IS A CHOICE TO MAKE, and the caller still cannot tell.
+    //
+    // `opts.accountChoice` is the caller's word on it: `always` (OpenID
+    // Connect's prompt=select_account) shows the picker whenever the
+    // browser holds any account; `never` (prompt=login, which asks for a
+    // fresh sign-in) never does; absent, the picker is shown when
+    // `accountChoiceNeeded()` says the request is AMBIGUOUS. The request is
+    // `opts.request`, or the one being answered (`audit.currentRequest()`),
+    // so a protocol module passes nothing new. Where a single account
+    // resolved and no hint was given, its name is filled in — a re-sign-in
+    // for a step-up is for the account the flow chose.
+    // -----------------------------------------------------------------------
+    const req = opts.request || audit.currentRequest();
+    const choice = String(opts.accountChoice || '');
+    let pick = '';
+    if (req && choice !== 'never') {
+      if (choice === 'always') {
+        const row = this.freshAccountSet(req);
+        pick = row && AccountSets.size(row) ? 'select_account' : '';
+      } else {
+        const need = this.accountChoiceNeeded(req);
+        if (need && need.reason === 'ambiguous') {
+          pick = 'ambiguous';
+        } else if (need && need.reason === 'hint-unmatched') {
+          log.info(errorCodes.tag('STS-AUTHN-0341') + 'authn: a hint named ' +
+                   'an account with no live session in this browser; the ' +
+                   'person is sent to sign in rather than given another ' +
+                   'account.');
+        }
+      }
+    }
+    let given = opts;
+    if (req && choice !== 'never' && !opts.hint && !opts.lockedUsername) {
+      const resolved = this.resolveAccount(req, false);
+      const chosen = resolved.sid
+        ? this.accountSessionRead(resolved.sid).session : null;
+      if (chosen && chosen.user && chosen.user.username) {
+        given = Object.assign({}, opts, { hint: chosen.user.username });
+      }
+    }
+    const target = this.beginAuthenticationHere(given);
+    if (!pick) {
+      log.debug("Leaving Authn.beginAuthentication(). No choice to make.");
+      return target;
+    }
+    const picker = this.routeToAccounts(given, target, pick, req);
+    log.debug("Leaving Authn.beginAuthentication(). The account picker.");
+    return picker;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PICKER'S RECORD (#561). Where the sign-in would have gone to a page
+  // of this service with a pending record (the screen, the chooser, the
+  // Kerberos and wallet doors), that record is the picker's too, marked
+  // `accountChoice` and given `afterAccounts`, the address Use another
+  // account continues to. Where it would have left at once (a federation
+  // partner chosen by configuration) a record is minted for the picker
+  // alone, `accountsOnly`, which `pendingFor()` refuses — so it can never be
+  // drawn as a sign-in screen the application did not allow.
+  // ---------------------------------------------------------------------------
+  private routeToAccounts(opts, target, why, req) {
+    const { log, randomId, audit, stats } = this.deps;
+    log.debug("Entering Authn.routeToAccounts(). " + why);
+    const named = /[?&]authn=([^&]+)/.exec(String(target));
+    let record = null;
+    if (named) {
+      try {
+        record = pending.get(decodeURIComponent(named[1]));
+      } catch (e) {
+        // A target this function did not make; a record of its own below.
+        log.debug("Caught in Authn.routeToAccounts(): " +
+                  ((e && e.message) || e));
+        record = null;
+      }
+    }
+    if (!record) {
+      record = { id: randomId(18), accountsOnly: true,
+                 returnTo: String(opts.returnTo || ''),
+                 details: Array.isArray(opts.details) ? opts.details : [],
+                 hint: '', protocol: opts.protocol || 'OAuth 2.0 / OIDC',
+                 application: String(opts.application || ''),
+                 uiLocales: String(opts.uiLocales || '').slice(0, 256),
+                 expires: Date.now() + this.pendingTtlMs() };
+    }
+    record.accountChoice = true;
+    record.accountChoiceReason = why;
+    record.afterAccounts = String(target);
+    pending.set(record.id, record);
+    const row = this.accountSetOf(req);
+    stats.recordAccountChoice('ambiguous');
+    audit.audit({
+      action: 'account.ambiguous', actor: '',
+      protocol: record.protocol || '', channel: 'http',
+      target: row ? row.id : '',
+      summary: why === 'select_account'
+        ? 'the relying party asked for the account picker ' +
+          '(prompt=select_account)'
+        : 'a request from a browser with several signed-in accounts ' +
+          'named none of them; the account picker was shown',
+      detail: { accountSet: row ? row.id : '', reason: why,
+                application: String(record.application || ''),
+                signedIn: row ? Object.keys(row.sessions || {}).length : 0 }
+    });
+    log.debug("Leaving Authn.routeToAccounts().");
+    return ACCOUNTS_PATH + '?authn=' + encodeURIComponent(record.id);
+  }
+
+  // What `beginAuthentication()` did before #561, whole: the federation
+  // partner, the chooser, the Kerberos and wallet doors, or the screen.
+  private beginAuthenticationHere(opts) {
+    const { log, randomId, federation } = this.deps;
+    log.debug("Entering Authn.beginAuthenticationHere(). protocol=" +
               (opts.protocol || '(unnamed)'));
     const returnTo = String(opts.returnTo || '');
     // Same-origin, and a path: see the header. A caller that gets this wrong is
@@ -8563,7 +9796,7 @@ class Authn {
       log.info('authn: domain_hint "' + String(opts.domainHint) + '" names ' +
                'the home realm of the federation relationship "' +
                hinted.fedId + '", so this sign-in goes straight there.');
-      log.debug("Leaving Authn.beginAuthentication(). Home realm.");
+      log.debug("Leaving Authn.beginAuthenticationHere(). Home realm.");
       return federation.PATHS.login + '/' + encodeURIComponent(hinted.fedId) +
         '?returnTo=' + encodeURIComponent(returnTo) +
         '&application=' + encodeURIComponent(String(opts.application || '')) +
@@ -8606,7 +9839,7 @@ class Authn {
                     'entry name a relationship this service cannot use, and ' +
                     'no page is drawn to say so: ' + home.problems.join(' ')
                   : ''));
-      log.debug("Leaving Authn.beginAuthentication(). Federated to " +
+      log.debug("Leaving Authn.beginAuthenticationHere(). Federated to " +
                 home.relationship.fedId + ".");
       return target;
     }
@@ -8824,7 +10057,7 @@ class Authn {
                     'entry name something this service cannot use and are ' +
                     'shown on the page as such.'
                   : ''));
-      log.debug("Leaving Authn.beginAuthentication(). " + record.id +
+      log.debug("Leaving Authn.beginAuthenticationHere(). " + record.id +
                 " goes to the chooser and will return to " + returnTo + ".");
       return SELECT_IDP_PATH + '?authn=' + encodeURIComponent(record.id);
     }
@@ -8861,7 +10094,7 @@ class Authn {
                'meets a 401 there and a link back to this screen; nothing is ' +
                'lost, because the request is on the pending record either ' +
                'way.');
-      log.debug("Leaving Authn.beginAuthentication(). " + record.id +
+      log.debug("Leaving Authn.beginAuthenticationHere(). " + record.id +
                 " goes to the Kerberos door and will return to " + returnTo +
                 ".");
       return SPNEGO_PATH + '?authn=' + encodeURIComponent(record.id);
@@ -8879,11 +10112,11 @@ class Authn {
                     chosen.via + '" says so'
                   : ', because its entry under ou=applications declares it') +
                ', so this sign-in goes straight to ' + WALLET_PATH + '.');
-      log.debug("Leaving Authn.beginAuthentication(). " + record.id +
+      log.debug("Leaving Authn.beginAuthenticationHere(). " + record.id +
                 " goes to the wallet door.");
       return WALLET_PATH + '?authn=' + encodeURIComponent(record.id);
     }
-    log.debug("Leaving Authn.beginAuthentication(). " + record.id +
+    log.debug("Leaving Authn.beginAuthenticationHere(). " + record.id +
               " will return to " +
               returnTo + ".");
     return LOGIN_PATH + '?authn=' + encodeURIComponent(record.id);
@@ -9271,6 +10504,12 @@ class Authn {
       res.redirect(303, target);
       log.debug("Leaving leave().");
     };
+    // THE FLOW RESUMES AS THE SESSION THIS SIGN-IN STARTED (#561): a
+    // selection ticket for it, where the session joined a browser's account
+    // set. Nothing changes with several accounts off.
+    if (!error) {
+      target = this.ticketedReturn(res, record, target);
+    }
     if (error) {
       leave();
     } else {
@@ -10407,7 +11646,34 @@ class Authn {
       log.debug("Leaving Authn.pendingFor(). A restart-only record.");
       return null;
     }
+    // A PICKER-ONLY RECORD (#561, `routeToAccounts()`) is not a sign-in
+    // either: the flow it holds goes to a federation partner, and drawing a
+    // screen for it would offer a mechanism the application does not allow.
+    if (record.accountsOnly) {
+      log.debug("Leaving Authn.pendingFor(). A picker-only record.");
+      return null;
+    }
     log.debug("Leaving Authn.pendingFor(). Found it.");
+    return record;
+  }
+
+  /**
+   * The pending sign-in the account picker is drawn for (#561): a record
+   * waiting on an account choice, picker-only ones included, or null.
+   *
+   * @param id - the pending sign-in's id
+   * @returns the record, or null
+   */
+  pendingForAccounts(id) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.pendingForAccounts().");
+    const record = pending.get(String(id || ''));
+    if (!record || record.expires < Date.now() || record.restartOnly ||
+        !record.accountChoice) {
+      log.debug("Leaving Authn.pendingForAccounts(). None waiting.");
+      return null;
+    }
+    log.debug("Leaving Authn.pendingForAccounts(). Found it.");
     return record;
   }
 
@@ -11303,6 +12569,242 @@ class Authn {
     };
     log.debug("Leaving Authn.selectIdpView().");
     return view;
+  }
+
+  // ===========================================================================
+  // THE ACCOUNT PICKER (#561): `/authn/accounts?authn=<id>`, drawn by the
+  // sign-in surface from `GET /authn-api/pending/{id}/accounts` and acted on
+  // through `POST …/accounts/select`, `…/another` and `…/forget`. It belongs
+  // to the pending flow, as the chooser does: every account is named by its
+  // KEY (`AccountSets.keyOf()`: the subject), never by a sid, and every
+  // choice is checked again on the server — the page is not a boundary.
+  // ===========================================================================
+  /**
+   * The account picker's view for a pending sign-in (#561): the browser's
+   * accounts (key, names, state, times), whether Use another account is
+   * open, and the protocol's rows. Never a sid.
+   *
+   * @param req - the request
+   * @param record - the pending sign-in, waiting on an account choice
+   * @returns the view
+   */
+  accountsView(req, record): any {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering Authn.accountsView().");
+    const row = this.freshAccountSet(req);
+    const accounts = this.accountRows(row, req);
+    const live = accounts.filter(function (one) {
+      return one.state === 'signed-in';
+    }).length;
+    const view = {
+      id: String(record.id),
+      base: baseUrlOf(req),
+      protocol: String(record.protocol || ''),
+      application: String(record.application || ''),
+      reason: String(record.accountChoiceReason || ''),
+      accounts: accounts,
+      another: { open: live < AccountSets.maxAccounts() },
+      max: AccountSets.maxAccounts(),
+      details: (Array.isArray(record.details) ? record.details : [])
+        .map(function (d) {
+          return { label: String(d.label || ''),
+                   value: d.value == null ? '' : String(d.value),
+                   note: d.note ? String(d.note) : '' };
+        })
+    };
+    log.debug("Leaving Authn.accountsView(). " + accounts.length +
+              " account(s).");
+    return view;
+  }
+
+  // A refusal at the picker: the sentence, English, and the picker drawn
+  // again by the page from a fresh view.
+  private accountsRefused(res, status, code, why) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.accountsRefused(). " + code);
+    errorCodes.mark(res, code);
+    this.answerJson(res, status, { ok: false, next: 'refused',
+                                   errors: [String(why)] });
+    log.debug("Leaving Authn.accountsRefused().");
+  }
+
+  // Back to the flow, as the session chosen: the record is spent and the
+  // address carries a ticket for that session in this set.
+  private resumeAs(res, record, row, sid) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.resumeAs().");
+    pending.delete(record.id);
+    const ticket = AccountSets.mintTicket(row.id, sid,
+                                          String(record.returnTo)
+                                            .split('?')[0],
+                                          record.id);
+    const target = AccountSets.withTicket(record.returnTo, ticket);
+    this.answerJson(res, 200, { ok: true, next: 'redirect',
+                                location: this.locationOf(res, target) });
+    log.debug("Leaving Authn.resumeAs().");
+  }
+
+  // On to the sign-in the picker stood in front of, with `hint` filled in
+  // (or cleared): the screen, the chooser, the Kerberos or wallet door, or
+  // a federation partner for a picker-only record, which is spent.
+  private onToSignIn(res, record, hint) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.onToSignIn().");
+    const after = String(record.afterAccounts ||
+                         LOGIN_PATH + '?authn=' +
+                         encodeURIComponent(record.id));
+    if (record.accountsOnly) {
+      pending.delete(record.id);
+    } else {
+      record.accountChoice = false;
+      record.hint = String(hint || '');
+      pending.set(record.id, record);
+    }
+    this.answerJson(res, 200, { ok: true, next: 'redirect',
+                                location: this.locationOf(res, after) });
+    log.debug("Leaving Authn.onToSignIn().");
+  }
+
+  /**
+   * One act at the account picker (#561): `select` continues the flow as a
+   * signed-in account (or signs a signed-out one in again), `another` goes
+   * on to the sign-in for a new account, `forget` forgets a signed-out
+   * account. Each is checked again here; the answer is `/authn-api`'s next
+   * step.
+   *
+   * @param req - the API's request
+   * @param res - its response
+   * @param record - the pending sign-in, waiting on an account choice
+   * @param body - `{ action, account }`
+   */
+  accountsAct(req, res, record, body): void {
+    const { log, audit, stats } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.accountsAct(). " + body.action);
+    const row = this.freshAccountSet(req);
+    const key = String(body.account || '');
+    const liveSid = row
+      ? Object.keys(row.sessions || {}).filter(function (sid) {
+        return AccountSets.keyOf(row.sessions[sid]) === key &&
+          self.accountSessionLive(sid);
+      })[0] || ''
+      : '';
+    if (body.action === 'another') {
+      const live = row ? this.liveAccountCount(row, null) : 0;
+      if (live >= AccountSets.maxAccounts()) {
+        this.accountsRefused(res, 409, 'STS-AUTHN-0340',
+          'This browser is already signed in to ' + live + ' accounts, the ' +
+          'most it may hold. Sign out of one of them first.');
+        log.debug("Leaving Authn.accountsAct(). Full.");
+        return;
+      }
+      this.onToSignIn(res, record, '');
+      log.debug("Leaving Authn.accountsAct(). Use another account.");
+      return;
+    }
+    if (body.action === 'forget') {
+      if (liveSid) {
+        this.accountsRefused(res, 409, 'STS-AUTHN-0347',
+          'That account is still signed in. Sign it out first; only a ' +
+          'signed-out account can be forgotten.');
+        log.debug("Leaving Authn.accountsAct(). Live.");
+        return;
+      }
+      const entry = row && row.remembered ? row.remembered[key] : null;
+      if (!row || !AccountSets.forget(row, key)) {
+        this.accountsRefused(res, 409, 'STS-AUTHN-0345',
+          'That account is not one this browser remembers.');
+        log.debug("Leaving Authn.accountsAct(). Not remembered.");
+        return;
+      }
+      AccountSets.save(row);
+      stats.recordAccountChoice('forgotten');
+      audit.audit({
+        action: 'account.forget',
+        actor: String((entry && entry.username) || ''),
+        protocol: 'Authentication', channel: 'http', target: row.id,
+        summary: String((entry && entry.username) || 'an account') +
+                 ' was forgotten by account set ' + row.id,
+        detail: { accountSet: row.id, sub: String((entry && entry.sub) || ''),
+                  sessionId: '' }
+      });
+      this.answerJson(res, 200, { ok: true, next: 'stay' });
+      log.debug("Leaving Authn.accountsAct(). Forgotten.");
+      return;
+    }
+    // SELECT. A signed-out account signs in again, its name filled in.
+    if (!liveSid) {
+      const remembered = row && row.remembered ? row.remembered[key] : null;
+      if (remembered) {
+        this.onToSignIn(res, record, String(remembered.username || ''));
+        log.debug("Leaving Authn.accountsAct(). Signs in again.");
+        return;
+      }
+      stats.recordAccountChoice('selectFailed');
+      this.accountsRefused(res, 409, 'STS-AUTHN-0345',
+        'That account is no longer signed in here. Choose it again to sign ' +
+        'in, or choose another.');
+      log.debug("Leaving Authn.accountsAct(). Not live.");
+      return;
+    }
+    // THE SESSION IS HELD TO EVERYTHING `sessionOf()` HOLDS IT TO, now: it
+    // may have ended between the page and the click, or its account been
+    // disabled.
+    const session = this.honouredSession(req, liveSid,
+                                         this.accountSessionRead(liveSid).session);
+    if (!session) {
+      stats.recordAccountChoice('selectFailed');
+      this.accountsRefused(res, 409, 'STS-AUTHN-0345',
+        'That account\'s session has just ended. Choose it again to sign ' +
+        'in, or choose another.');
+      log.debug("Leaving Authn.accountsAct(). Ended meanwhile.");
+      return;
+    }
+    // A DEMAND THE SESSION DOES NOT MEET IS A RE-AUTHENTICATION OF IT, NEVER
+    // A WAY PAST IT: two factors demanded (acr_values, RequestedAuthnContext,
+    // wauth) of a one-factor session send the person to sign in again as
+    // that account. Everything else the protocol asks — `max_age`, RFC
+    // 9470's acr — it asks again on the request this resumes, of this
+    // session, as of any other.
+    if (record.forceMfa && String(session.acr || '') !== 'mfa') {
+      this.onToSignIn(res, record, String(session.user.username || ''));
+      log.debug("Leaving Authn.accountsAct(). Two factors demanded.");
+      return;
+    }
+    const before = this.cookieSession(req, SESSION_COOKIE);
+    const switched = !before || before.id !== liveSid;
+    if (switched) {
+      this.makeDefaultSession(res, session);
+    }
+    row.lastActiveSid = liveSid;
+    AccountSets.save(row);
+    stats.recordAccountChoice('selected');
+    const detail = { accountSet: row.id, sessionId: liveSid,
+                     sub: String(session.user.sub || ''),
+                     protocol: String(record.protocol || ''),
+                     application: String(record.application || '') };
+    audit.audit({
+      action: 'account.select', actor: String(session.user.username || ''),
+      protocol: String(record.protocol || ''), channel: 'http',
+      target: liveSid,
+      summary: session.user.username + ' was chosen at the account picker ' +
+               'of account set ' + row.id,
+      detail: detail
+    });
+    if (switched) {
+      stats.recordAccountChoice('switched');
+      audit.audit({
+        action: 'account.switch', actor: String(session.user.username || ''),
+        protocol: String(record.protocol || ''), channel: 'http',
+        target: liveSid,
+        summary: 'the browser\'s default account became ' +
+                 session.user.username,
+        detail: Object.assign({}, detail,
+                              { previousSessionId: before ? before.id : '' })
+      });
+    }
+    this.resumeAs(res, record, row, liveSid);
+    log.debug("Leaving Authn.accountsAct(). Selected.");
   }
 
   // THE LIST IS RESOLVED AGAIN when the chooser is asked for — the GET's
@@ -13700,6 +15202,20 @@ class Authn {
   auditActorOf(req) {
     const { log } = this.deps;
     log.debug("Entering Authn.auditActorOf().");
+    // THE ACCOUNT THE REQUEST ACTED AS (#561), with several in the browser:
+    // resolved in `sessionOf()`'s order, with nothing made or swept, so a
+    // row names the account the request was answered for — '' where the
+    // request could not tell which (the picker's own rows say so).
+    if (AccountSets.enabled() && req) {
+      const resolved = this.resolveAccount(req, false);
+      if (!resolved.fallback) {
+        const chosen = resolved.sid
+          ? this.accountSessionRead(resolved.sid).session : null;
+        log.debug("Leaving Authn.auditActorOf(). The account set's.");
+        return chosen && chosen.user ? String(chosen.user.username || '')
+                                     : '';
+      }
+    }
     const found = this.cookieSession(req, SESSION_COOKIE);
     const session = found && !found.error ? found.session : null;
     if (!session) {
@@ -15392,6 +16908,25 @@ class Authn {
     const self = this;
     log.debug("Entering Authn.registerRoutes().");
 
+    // -----------------------------------------------------------------------
+    // AN ACCOUNT SELECTION TICKET IS TAKEN OFF EVERY REQUEST FIRST (#561),
+    // before any route below reads the query — so a relying party never
+    // sees it and a SAML redirect binding's signed query is the one it
+    // signed — and spent (`spendAccountTicket()`). With
+    // `authn.multipleAccounts` off nothing is touched. A failure here costs
+    // the selection, never the request.
+    // -----------------------------------------------------------------------
+    app.use((req, res, next) => {
+      try {
+        this.spendAccountTicket(req);
+      } catch (e) {
+        log.error(errorCodes.tag('STS-AUTHN-0344') + 'authn: an account ' +
+                  'selection ticket could not be read: ' +
+                  ((e && e.message) || e));
+      }
+      next();
+    });
+
     app.use((req, res, next) => {
       // A session read that failed is not a missing cookie. Nothing below
       // may mint a replacement arrival, and the cookie stays.
@@ -15501,6 +17036,30 @@ class Authn {
       this.signInShell(req, res, String(record.application || ''));
       log.debug("Leaving the federation chooser. Offered " + usable +
                 " partner(s) for " + record.id + ".");
+    });
+
+    // THE ACCOUNT PICKER (#561), a shell like the chooser's: the browser asks
+    // `GET /authn-api/pending/{id}/accounts` for the accounts. Refused
+    // where the setting is off or the sign-in is not waiting on a choice.
+    app.get(ACCOUNTS_PATH, (req, res) => {
+      log.debug("Entering the account picker.");
+      const asked = validation.check(req, 'query', PENDING_ID_QUERY);
+      if (!asked.ok) {
+        errorCodes.mark(res, 'STS-AUTHN-0001');
+        return this.refuseInvalid(res, asked);
+      }
+      const record = AccountSets.enabled()
+        ? this.pendingForAccounts(asked.value.authn) : null;
+      if (!record) {
+        log.debug("Leaving the account picker. Nothing waits on a choice.");
+        errorCodes.mark(res, AccountSets.enabled() ? 'STS-AUTHN-0003'
+                                                   : 'STS-AUTHN-0343');
+        return oauthError(res, 400, 'invalid_request',
+          'There is no sign-in waiting under that id, or it has expired. ' +
+          'Start the request again from the application that sent you here.');
+      }
+      this.signInShell(req, res, String(record.application || ''));
+      log.debug("Leaving the account picker.");
     });
 
     // The screen. A GET, because that is what a redirect from a protocol
@@ -15744,6 +17303,33 @@ scheduler.register({
   }
 });
 
+// ---------------------------------------------------------------------------
+// THE ACCOUNT SETS' CLEAN-UP, AS A SCHEDULER JOB (#561), beside the session
+// expiry: in each realm, every browser's account set is brought up to date —
+// a session that ended moves to remembered, a remembered account older than
+// `authn.rememberedAccountDays` is dropped — and a set left empty is
+// deleted. A CLUSTER job run per realm, so the store it walks is the
+// realm's; hourly, because nothing waits on it: a set is pruned again
+// whenever its browser draws the picker, and a remembered account past its
+// days is only an extra row there until the next run.
+// ---------------------------------------------------------------------------
+scheduler.register({
+  id: ACCOUNT_SET_EXPIRY_JOB,
+  title: 'Account set expiry',
+  describe: 'Brings every browser\'s account set up to date (#561): an ' +
+            'account whose session ended is remembered as signed out, one ' +
+            'remembered longer than authn.rememberedAccountDays is dropped, ' +
+            'and an empty set is deleted.',
+  owner: 'authn/authn.ts',
+  scope: 'realm',
+  everyMs: function (): number {
+    return 60 * 60 * 1000;
+  },
+  run: function (): any {
+    return slot.get().sweepAccountSets();
+  }
+});
+
 // A realm's removal ends its sessions first and waits for what that sends
 // (#232; `realms.retire()`). Registered here, at 8 in the require order, so it
 // runs before the directory's and Shared Signals' hooks: the sessions end
@@ -15859,6 +17445,28 @@ export = {
   sessions: sessions,
   cookiesOf: slot.forward('cookiesOf'),
   sessionOf: slot.forward('sessionOf'),
+  // SEVERAL ACCOUNTS IN ONE BROWSER (#561): `authn/CLAUDE.md`, *Several
+  // signed-in accounts in one browser*, has each one's contract.
+  hintAccount: slot.forward('hintAccount'),
+  accountSessionsOf: slot.forward('accountSessionsOf'),
+  afterAccountSignOut: slot.forward('afterAccountSignOut'),
+  hintAccountKey: slot.forward('hintAccountKey'),
+  signedInAccounts: slot.forward('signedInAccounts'),
+  accountChoiceNeeded: slot.forward('accountChoiceNeeded'),
+  accountTicketFor: slot.forward('accountTicketFor'),
+  spendAccountTicket: slot.forward('spendAccountTicket'),
+  noteAccountAmbiguous: slot.forward('noteAccountAmbiguous'),
+  browserAccounts: slot.forward('browserAccounts'),
+  pendingForAccounts: slot.forward('pendingForAccounts'),
+  accountsView: slot.forward('accountsView'),
+  accountsAct: slot.forward('accountsAct'),
+  sweepAccountSets: slot.forward('sweepAccountSets'),
+  auditActorSessionOf: slot.forward('auditActorSessionOf'),
+  ACCOUNTS_PATH: ACCOUNTS_PATH,
+  multipleAccounts: AccountSets.enabled,
+  ACCOUNT_SET_COOKIE: AccountSets.COOKIE,
+  ACCOUNT_TICKET_PARAM: AccountSets.TICKET_PARAM,
+  accountSetCookieName: AccountSets.cookieName,
   // The console's reader, and the ONE caller it has. It answers the same
   // question across every realm's partition because there is only ever one
   // session cookie in the browser; the header above it argues why that is the

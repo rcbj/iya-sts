@@ -273,6 +273,34 @@ two switches from #710 — `wsfed.spInitiatedSso` (on) and
 `/launch/{app}` (#713) is expected to send a WS-Federation launch to this
 link rather than to a second implementation.
 
+## SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561, 2026-10-19)
+
+`authn/CLAUDE.md`, *Several signed-in accounts in one browser*, is the
+design; off, nothing here changes. **This protocol carries no hint about
+which account** — `whr` names a home realm, not a person — so a sign-in from
+a browser with several reaches the picker through `beginAuthentication()`.
+**`wfresh` is `accountChoice: 'never'`, whatever its value**: the return
+address drops `wfresh` (`requeryString()`), so an account chosen at the
+picker would be answered on the way back however old its authentication
+was; a fresh sign-in is what section 13.2.1 asks for, and signing in as an
+account already in the set re-authenticates its session.
+
+**The two sign-outs** (`signOutAccounts()`):
+
+* **`wsignout1.0`** ends the one session of the set that signed in to
+  `wtrealm`; with more than one it ASKS WHICH (`askWhichAccount()`): a page
+  of links, each this same GET with the account's key as
+  `sts_signout_account`, which names only this browser's own accounts.
+  Links rather than forms because the message is a GET that signs out on
+  arrival already. A sign-out naming no realm, or one none of them signed
+  in to, ends the default session, as always.
+* **`wsignoutcleanup1.0` stays non-interactive** (it arrives as an image):
+  it ends EVERY session of the set that signed in to `wtrealm`, and the page
+  names each.
+
+The words are `handoff.wsfed.chooseAccount.*`. `tests/multi_account_protocols.js`
+6 and `tests/multi_account_logout.js` 8.
+
 ## What no test covers yet
 
 `tests/saml_family_hardcoded.js` pins the 2026-09-12 changes above, and

@@ -759,6 +759,30 @@
     "en": "33bc4846535a784f",
     "text": "Hur lång tid den som har klarat lösenordssteget har på sig att visa upp sin andra faktor — en säkerhetsnyckel, en kod från en autentiseringsapp eller en återställningskod — innan steget går ut och inloggningen måste startas om. Det är fönstret inom vilket en gissad kod över huvud taget kan prövas, vilket är varför det är kortare än skärmens egen klocka; hastighetsbegränsaren begränsar försöken inom det."
   },
+  "authn.multipleAccounts|label": {
+    "en": "96144493272617dc",
+    "text": "Flera inloggade konton i en webbläsare"
+  },
+  "authn.multipleAccounts|description": {
+    "en": "d0b4899bdae1c43d",
+    "text": "Låt en webbläsare hålla inloggningssessioner för flera personer samtidigt och välja mellan dem. På: när en annan person loggar in LÄGGS en session TILL i webbläsarens kontouppsättning (cookien `sts_accounts`) i stället för att den gamla avslutas; en begäran som inte säger vilket konto den gäller — inget konto valt i detta flöde, ingen login_hint, id_token_hint eller SAML Subject som namnger ett — medan fler än ett är inloggat skickas till kontoväljaren på /authn/accounts, och prompt=select_account visar den. Varje session behåller sin egen livslängd, inaktivitetsgräns, step-up-status och utloggning. Av, standardvärdet: webbläsaren har en session och en annan persons inloggning avslutar den. Träder i kraft vid nästa begäran åt båda hållen och avslutar ingenting: påslagen blir webbläsarens befintliga session det första kontot i dess uppsättning; avslagen fortsätter webbläsarens standardsession ensam och de andra löper ut som vanligt."
+  },
+  "authn.maxBrowserAccounts|label": {
+    "en": "19115cee7c688f64",
+    "text": "Flest konton som en webbläsare kommer ihåg"
+  },
+  "authn.maxBrowserAccounts|description": {
+    "en": "fa642faef7e66a0f",
+    "text": "Med flera inloggade konton påslaget, det högsta antalet konton som en webbläsares kontouppsättning håller, inloggade och utloggade tillsammans. En inloggning som skulle gå förbi det tar först bort det utloggade konto som loggade ut för längst sedan; när varje plats hålls av ett inloggat konto nekas inloggningen (STS-AUTHN-0340) och väljaren säger att ett konto först måste loggas ut."
+  },
+  "authn.rememberedAccountDays|label": {
+    "en": "9e38d0738504c1e3",
+    "text": "Hur länge ett utloggat konto sparas (dagar)"
+  },
+  "authn.rememberedAccountDays|description": {
+    "en": "a1fe0b6f510982c4",
+    "text": "Med flera inloggade konton påslaget, hur länge kontoväljaren fortsätter att erbjuda ett konto som loggade ut i den här webbläsaren — dess användarnamn, visningsnamn och subjekt, aldrig en inloggningsuppgift, sparade på servern — så att det kan loggas in igen eller glömmas. Det schemalagda jobbet `authn.account-set-expiry` tar bort det därefter."
+  },
   "oidcRp.maxFlows|label": {
     "en": "f517b7686e6225fc",
     "text": "Pågående inloggningar i konsol och portal, per sfär"

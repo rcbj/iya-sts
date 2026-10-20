@@ -29,6 +29,13 @@
 //   * A CALLBACK THIS TAB DID NOT START (`handCallbackToStarter()`). A
 //     same-device wallet comes back in another tab. That tab offers the
 //     authorization response to the tab that still holds the PKCE record.
+//   * ONE ACCOUNT PER TAB (#561, with `authn.multipleAccounts` on): the
+//     tab's account `{ sub, username }` in sessionStorage
+//     (`storedAccount()`), sent as `login_hint` on every sign-in the
+//     runtime starts; the IDENTITY every request belongs to
+//     (`identitySignal()`, `endIdentity()`), so a switch aborts what is in
+//     flight and an answer that arrives anyway is not believed; and the one
+//     subject check both runtimes make of an answer (`answerIsFor()`).
 //
 // What each application does with a page — routing, drawing, its forms —
 // stays in its own runtime (`admin-ui/web_runtime.ts`,
@@ -49,6 +56,7 @@
 // ---------------------------------------------------------------------------
 
 import WebPage = require('./web_page');
+import WebAccounts = require('./web_accounts');
 
 type Json = any;
 
@@ -64,6 +72,9 @@ interface SpaClientOptions {
   // The `data-sts-*` attributes of the shell's html element, by the first
   // path segment each stands for: `{ '/oauth2': 'data-sts-oauth', ... }`.
   elsewhere: Record<string, string>;
+  // The sessionStorage key the tab's account is kept under (#561):
+  // `sts-console-account`, `sts-portal-account`.
+  accountKey?: string;
 }
 
 /**
@@ -94,6 +105,19 @@ class SpaClient extends WebPage {
   // `elsewhere`, read from the shell's `data-sts-*` attributes.
   // The realm's authorization server metadata, read once (`asMetadata()`).
   protected metadata: Json;
+  // THE TAB'S ACCOUNT (#561): where it is kept, the browser's account list
+  // as last read (`WebAccounts.off()` until it is), and the channel a change
+  // to the list is heard on.
+  protected accountKey: string;
+  protected accounts: Json;
+  protected accountChannel: Json;
+  // THE IDENTITY EVERY REQUEST IS SENT FOR (#561): a number that a switch
+  // moves on, and the abort controller of the requests sent under it. A
+  // request remembers the number it was sent under, and an answer that
+  // comes back under another is not believed, whether or not the browser
+  // could abort it.
+  protected identity: number;
+  protected identityController: Json;
 
   /**
    * Makes the client.
@@ -117,6 +141,226 @@ class SpaClient extends WebPage {
     this.nonce = '';
     this.subject = '';
     this.metadata = null;
+    this.accountKey = options.accountKey || '';
+    this.accounts = WebAccounts.off();
+    this.accountChannel = null;
+    this.identity = 0;
+    this.identityController = null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE ACCOUNT PER TAB (#561, the plan's section 6).
+  //
+  // EVERYTHING HERE IS INERT WITH `authn.multipleAccounts` OFF: nothing is
+  // stored unless the list said `enabled`, and a sign-in sends a hint only
+  // where something is stored — so a browser that never saw the setting on
+  // sends the requests it always sent.
+  //
+  // WHAT IS STORED is `{ sub, username }` and nothing else — no token, no
+  // sid, no key — in sessionStorage, which is the TAB's: a new tab has
+  // nothing (and so no hint: the server signs it in silently with one live
+  // account and shows the picker with more, decision 3), and a duplicated or
+  // restored tab has its own copy (and resumes that account, checked by the
+  // server at the authorization request, decision 4).
+  // ---------------------------------------------------------------------------
+  /**
+   * The tab's account, where one is kept.
+   *
+   * @returns `{ sub, username }`, or null
+   */
+  storedAccount(): Json {
+    if (!this.accountKey || !this.env.sessionStorage) {
+      return null;
+    }
+    try {
+      const saved = JSON.parse(this.env.sessionStorage.getItem(
+        this.accountKey) || 'null');
+      return saved && (saved.sub || saved.username)
+        ? { sub: String(saved.sub || ''),
+            username: String(saved.username || '') } : null;
+    } catch (e) {
+      // Not JSON: no account kept, so no hint — a new tab's behaviour.
+      return null;
+    }
+  }
+
+  /**
+   * Keeps the tab's account, or forgets it.
+   *
+   * @param account - `{ sub, username }`, or null to forget it
+   * @returns nothing
+   */
+  keepAccount(account: Json): void {
+    if (!this.accountKey || !this.env.sessionStorage) {
+      return;
+    }
+    try {
+      if (!account || !(account.sub || account.username)) {
+        this.env.sessionStorage.removeItem(this.accountKey);
+        return;
+      }
+      this.env.sessionStorage.setItem(this.accountKey, JSON.stringify({
+        sub: String(account.sub || ''),
+        username: String(account.username || '') }));
+    } catch (e) {
+      // STORAGE REFUSED: the tab signs in without a hint next time, which is
+      // a new tab's behaviour and never another account's.
+      return;
+    }
+  }
+
+  /**
+   * The `login_hint` a sign-in sends: what the caller names, else the tab's
+   * account, else none.
+   *
+   * @param extra - what the sign-in was started with: `login_hint` ('' for
+   *   none at all, as Sign in with another account asks)
+   * @returns the hint, or ''
+   */
+  hintFor(extra: Json): string {
+    if (extra && typeof extra.login_hint === 'string') {
+      return extra.login_hint;
+    }
+    const kept = this.storedAccount();
+    return kept ? String(kept.username || kept.sub || '') : '';
+  }
+
+  /**
+   * Reads the browser's account list, keeps it, and keeps the tab's account
+   * from it: the signed-in subject's username, or forgets the account where
+   * the list is off.
+   *
+   * @param username - the signed-in person's username as the application
+   *   knows it, for a subject the list does not name
+   * @returns the list
+   */
+  async readAccounts(username: string): Promise<Json> {
+    const list = await WebAccounts.fetchList(this.env, this.prefix);
+    this.accounts = list;
+    if (!list.enabled) {
+      // OFF: nothing kept, so the next sign-in is today's.
+      this.keepAccount(null);
+      return list;
+    }
+    if (this.subject) {
+      const found = WebAccounts.bySubject(list, this.subject);
+      this.keepAccount({ sub: this.subject,
+                         username: found ? String(found.username || '')
+                                         : String(username || '') });
+    }
+    return list;
+  }
+
+  /**
+   * Whether an answer is for the subject asked for: the one subject check
+   * the console's popup made first (#508) and every switch makes now
+   * (#561).
+   *
+   * @param expected - the subject asked for
+   * @param idToken - the ID Token the token endpoint answered
+   * @returns whether its `sub` is that subject
+   */
+  static answerIsFor(expected: string, idToken: Json): boolean {
+    const got = SpaClient.subjectOf(idToken);
+    return !!expected && !!got && expected === got;
+  }
+
+  /**
+   * The abort signal of the identity requests are being sent for now.
+   *
+   * @returns the signal, or undefined where the browser has no
+   *   AbortController
+   */
+  identitySignal(): Json {
+    if (!this.identityController) {
+      const win = this.env.window;
+      const AC = (win && win.AbortController) ||
+        (typeof AbortController === 'function' ? AbortController : null);
+      if (!AC) {
+        return undefined;
+      }
+      this.identityController = new AC();
+    }
+    return this.identityController.signal;
+  }
+
+  /**
+   * Ends the identity requests are sent for: every request in flight is
+   * aborted, and an answer to one sent before is not believed.
+   *
+   * @returns nothing
+   */
+  endIdentity(): void {
+    this.identity++;
+    const controller = this.identityController;
+    this.identityController = null;
+    if (controller) {
+      controller.abort();
+    }
+  }
+
+  /**
+   * Discards what this client holds for the identity that just ended: the
+   * tokens, the subject, the DPoP key and its nonce, and the metadata. A
+   * key is made again for the next sign-in, as a page load makes one.
+   *
+   * @returns nothing
+   */
+  discardClient(): void {
+    this.accessToken = '';
+    this.refreshToken = '';
+    this.expiresAt = 0;
+    this.subject = '';
+    this.key = null;
+    this.publicJwk = null;
+    this.nonce = '';
+    this.metadata = null;
+  }
+
+  /**
+   * Listens for changes to the browser's account list, once: each change
+   * reads the list again and hands it to `then`, and changes nothing else.
+   *
+   * @param then - draws the menu again from the list
+   * @returns nothing
+   */
+  listenForAccounts(then: (list: Json) => void): void {
+    if (this.accountChannel || !this.accounts.enabled) {
+      return;
+    }
+    const self = this;
+    this.accountChannel = WebAccounts.openChannel(this.env, function () {
+      WebAccounts.fetchList(self.env, self.prefix).then(function (list) {
+        // A LIST READ ON A MESSAGE IS NEVER ANNOUNCED: only a change this
+        // tab made is (`WebAccounts`).
+        self.accounts = list;
+        then(list);
+        return list;
+      }, function () {
+        // `fetchList()` catches its own failures; nothing reaches here.
+        return null;
+      });
+    });
+  }
+
+  /**
+   * Announces that this tab changed the browser's account list.
+   *
+   * @param change - `added`, `signed-out`, `forgotten` or `changed`
+   * @returns nothing
+   */
+  announceAccounts(change: string): void {
+    if (!this.accounts.enabled) {
+      return;
+    }
+    const channel = this.accountChannel ||
+      WebAccounts.openChannel(this.env, function () {
+        return undefined;
+      });
+    channel.post(change);
+    if (!this.accountChannel) {
+      channel.close();
+    }
   }
 
   // `SpaClient.queryOf()` is `WebPage.queryOf()`, inherited.
@@ -270,13 +514,30 @@ class SpaClient extends WebPage {
    */
   async tokenRequest(form: Json): Promise<Json> {
     const endpoint = this.url('/oauth2/token');
+    // THE IDENTITY IT IS SENT FOR (#561): a switch aborts it, and an answer
+    // that comes back after one is not kept.
+    const identity = this.identity;
+    const aborted = { status: 0, aborted: true,
+                      json: { error: 'aborted' } };
     for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await this.env.fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded',
-                   'DPoP': await this.proof('POST', endpoint, '') },
-        body: new URLSearchParams(form).toString()
-      });
+      let res: Json = null;
+      try {
+        res = await this.env.fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded',
+                     'DPoP': await this.proof('POST', endpoint, '') },
+          body: new URLSearchParams(form).toString(),
+          signal: this.identitySignal()
+        });
+      } catch (e) {
+        if (identity !== this.identity) {
+          return aborted;
+        }
+        throw e;
+      }
+      if (identity !== this.identity) {
+        return aborted;
+      }
       this.keepNonce(res);
       const json = await res.json().catch(function () {
         return {};

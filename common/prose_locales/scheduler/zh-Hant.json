@@ -7,6 +7,14 @@
     "en": "e753a576c8530ce3",
     "text": "從每個已到排程間隔的屬性來源讀取此領域人員的下一頁資料，寫入其項目（#94）。每次執行每個來源處理 attributeSources.refreshBatch 位人員。"
   },
+  "sched.jobs.authn.account-set-expiry.title": {
+    "en": "849356c9b70cc0f3",
+    "text": "帳號集到期"
+  },
+  "sched.jobs.authn.account-set-expiry.describe": {
+    "en": "d643d71a0089a802",
+    "text": "更新每個瀏覽器的帳號集（#561）：工作階段已結束的帳號被記為已登出，記住超過 authn.rememberedAccountDays 的帳號被移除，空的帳號集被刪除。"
+  },
   "sched.jobs.authn.session-expiry.title": {
     "en": "0d2b2447af869e65",
     "text": "工作階段到期"

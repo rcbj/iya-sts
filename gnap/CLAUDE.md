@@ -1259,6 +1259,27 @@ the check and adds nothing, as before). Behind
 unchanged. `tests/registered_targets.js` (T5) holds it in both modes,
 through `judgeRequested()` on a `GnapGrants` built in the test.
 
+## SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561, 2026-10-19)
+
+`authn/CLAUDE.md`, *Several signed-in accounts in one browser*, is the
+design; off, nothing here changes. **The grant request's `user`
+(`grant.userHint`, RFC 9635 section 2.4) is the subject hint** — the `subject`
+member asks what to RETURN, and names nobody. It is handed to
+`authn.hintAccount()` **SOFT** (`hintAccountFor()`): it chooses its account
+where the browser holds it live, and otherwise is no hint at all, because a
+person at the browser who is not that user has a meaning of its own here
+(#432's approval by an absent owner) and is not a reason to send them to sign
+in. With no hint that chooses and several accounts, `GET /gnap/approve`
+reaches the picker through `beginAuthentication()`.
+
+**THE PAGE'S OWN CALLS CARRY NO TICKET**, so the session the approval page
+was drawn for is recorded on the interaction (`grant.interaction.accountSid`,
+`noteAccountFor()`, written only with the setting on) and every
+`/gnap-api/approve` call hints it, as a sid that names a session only in THIS
+browser's set. Without it, a browser whose account was chosen at the picker
+would draw the page and then find its view and its answer ambiguous.
+`tests/multi_account_protocols.js` 8.
+
 ## A token for nobody in particular is refused (#593, 2026-10-12)
 
 **rcbj's decision 4 on #591.** The demonstration resource server

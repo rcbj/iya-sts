@@ -2431,6 +2431,14 @@
     "en": "6cf5af064bdc580d",
     "text": "pregunta en cuál de los proveedores de identidad federados de una aplicación iniciar sesión; necesita un id ?authn=, así que seguirlo sin él responde 400"
   },
+  "stsmetadata.endpoints./authn/accounts.what": {
+    "en": "133e09e2d14aa686",
+    "text": "VARIAS CUENTAS CON LA SESIÓN INICIADA EN UN NAVEGADOR (#561), cuando authn.multipleAccounts está activado (está desactivado de forma predeterminada). Una solicitud de un navegador que tiene más de una cuenta con la sesión iniciada y no nombra ninguna — ninguna cuenta elegida en su flujo, ningún login_hint ni id_token_hint que nombre una — se envía aquí, igual que el prompt=select_account de OpenID Connect (sección 3.1.2.1 de Core). Cada cuenta con la sesión iniciada continúa el flujo como ella misma, con su sesión comprobada de nuevo, y una exigencia de dos factores que no cumple se responde volviendo a iniciar sesión como ella; cada cuenta con la sesión cerrada que el navegador recuerda puede volver a iniciar sesión u olvidarse; Usar otra cuenta es el inicio de sesión normal. Una página estática, dibujada a partir de /authn-api/pending/{id}/accounts."
+  },
+  "stsmetadata.endpoints./authn/accounts.effect": {
+    "en": "ac430d30ba3b9a6a",
+    "text": "pregunta con cuál de las cuentas con la sesión iniciada del navegador continúa un inicio de sesión; necesita un id ?authn=, así que seguirla sin él responde 400"
+  },
   "stsmetadata.endpoints./authn/spnego.what": {
     "en": "23818b4a272ea292",
     "text": "AUTENTICACIÓN INTEGRADA, Y EL ÚNICO INICIO DE SESIÓN DE AQUÍ QUE SE BASA EN UNA CREDENCIAL QUE ESTE SERVICIO VERIFICÓ REALMENTE. En cualquier otro sitio el nombre de usuario escrito ES la identidad; Kerberos no puede funcionar así, porque allí la contraseña es la clave, así que esta puerta comprueba un ticket de servicio real contra una clave de larga duración real, mediante el propio aceptador de este servicio y sin código de protocolo propio. El KDC que hay detrás sigue siendo tan permisivo como lo permite el protocolo (cualquier nombre de usuario, una contraseña compartida, una cuenta creada al primer contacto), que es lo que mantiene permisivo el modo de desarrollo: la verificación es real, la política de cuentas no. Está DISPONIBLE PARA TODAS LAS APLICACIONES y registrado para ninguna: un botón en /authn/login lo ofrece para el flujo que ya esté en curso, appAuthnMechanism: spnego en una entrada de aplicación envía a las personas de esa aplicación directamente aquí, y fedAuthnMechanism: spnego en una relación de federación del lado del proveedor de identidad hace que un ticket Kerberos satisfaga a un socio externo que nunca ha oído hablar de Kerberos. Lo que la sesión declara después se lee de los indicadores propios del TICKET: amr [\"pwd\"] para pre-authent, [\"hwk\"] para hw-authent, ambos para ambos, y nada en absoluto para un ticket que no declara ninguno, porque este servicio no nombrará un factor que ninguna credencial haya demostrado. Recibe ?authn= y NUNCA un returnTo: la dirección de retorno está en el registro pendiente, así que aquí no hay ninguna superficie de redirección abierta. Un cliente que no puede obtener un ticket llega a una página con un enlace a la pantalla de inicio de sesión, porque un 401 Negotiate a secas es un callejón sin salida en todo navegador no configurado para este host. krb5.spnegoAuthentication lo desactiva, y entonces responde 403 indicándolo en lugar de 404."
@@ -2567,6 +2575,26 @@
     "en": "278e1af859a5f658",
     "text": "NON-SPEC (#571). La vista del selector, resuelta de nuevo a partir de la entrada de la aplicación."
   },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts.what": {
+    "en": "6b11ee5ab38d4107",
+    "text": "NON-SPEC (#561). La vista del selector de cuentas: las cuentas con la sesión iniciada y las recordadas del navegador, cada una por su clave y nunca por un sid, y el token CSRF que llevan sus acciones."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/select.what": {
+    "en": "32d3c868fcbeef9a",
+    "text": "NON-SPEC (#561). La sesión de la cuenta se comprueba de nuevo; la respuesta reanuda el flujo con un ticket de selección de un solo uso."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/another.what": {
+    "en": "e292828cb4e3c235",
+    "text": "NON-SPEC (#561). Usar otra cuenta: el inicio de sesión normal, rechazado mientras cada plaza del navegador tenga la sesión iniciada."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/accounts/forget.what": {
+    "en": "ca27920f84beeb19",
+    "text": "NON-SPEC (#561). Solo una cuenta que cerró la sesión en este navegador; no se toca ninguna sesión."
+  },
+  "stsmetadata.endpoints./authn-api/accounts.what": {
+    "en": "f96dbce662dca61d",
+    "text": "NON-SPEC (#561). Las cuentas con la sesión iniciada y las recordadas del navegador y sus estados, para un menú de cuentas — nunca un sid ni un token; vacío cuando authn.multipleAccounts está desactivado."
+  },
   "stsmetadata.endpoints./authn-api/pending/:id/password.what": {
     "en": "f09b8dc5712df29f",
     "text": "NON-SPEC (#571). El botón Iniciar sesión: JSON, un Origin de este servicio y el X-CSRF-Token de la sesión del navegador. Con limitación de tasa, puntuado por riesgo y decidido por la política de emisión como lo era el formulario; la respuesta nombra el paso siguiente."
@@ -2622,6 +2650,14 @@
   "stsmetadata.endpoints./authn-api/logout.effect": {
     "en": "c2016f561ef917cf",
     "text": "POST termina sesiones y revoca lo que tiene la persona"
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.what": {
+    "en": "ff574754aa7ad4ab",
+    "text": "NO ESPECIFICADO (#561). GET responde el paso de cuentas del cierre de sesión: las cuentas con sesión iniciada del navegador por su clave, nunca un sid; POST con el token CSRF elige una (sigue su página de cierre de sesión) o cierra la sesión de todas. 400 donde authn.multipleAccounts está desactivado."
+  },
+  "stsmetadata.endpoints./authn-api/logout/accounts.effect": {
+    "en": "69d6a2e59b3f0a48",
+    "text": "POST con all cierra la sesión de todas las cuentas del navegador"
   },
   "stsmetadata.endpoints./authn-api/consent/:id.what": {
     "en": "b0e6e117fd23a284",

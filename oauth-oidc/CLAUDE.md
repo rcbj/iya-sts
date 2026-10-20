@@ -2270,7 +2270,35 @@ the same day and read it at introspection instead.
    iframe. `tests/session_management.js` and
    `tests/vendored/sts_session_management.js` hold it.
 
+   **SEVERAL ACCOUNTS IN ONE BROWSER (#561, the plan's section 7).** With
+   `authn.multipleAccounts` on, the cookie carries the browser state of EVERY
+   live session of the browser's account set (`authn.accountSessionsOf()`),
+   the answering session's first, joined by `.` (base64url has none;
+   `browserStatesValue()`), and the script served is
+   `IFRAME_SCRIPT_ACCOUNTS` (`scriptFor()`), which hashes each in turn and
+   answers `unchanged` when any matches. So making another account the
+   default tells no relying party `changed` — `authn.ts` KEEPS the browser
+   state when it mints a default a new handle — and a sign-out changes only
+   the relying parties of the account that left, because
+   `authn.afterAccountSignOut()` writes the list again without it. **Off, the
+   script is byte for byte the one before #561**: the two scripts share a
+   head (`SCRIPT_HEAD`) and differ in their tails, and
+   `tests/multi_account_protocols.js` 3 holds the old one's SHA-256.
+
 ## RP-INITIATED LOGOUT 1.0, WHOLE (#124, WHICH FOLDED #115 IN, 2026-09-23)
+
+**SEVERAL ACCOUNTS IN ONE BROWSER (#561, the plan's section 5)**, only with
+`authn.multipleAccounts` on: the verified hint's `sid` is handed to
+`authn.hintAccount()` as a SOFT hint, so it chooses that session where it is
+live in THIS browser's account set — the set's cookie proves the browser
+holds it; presented by another browser it names nothing, so a bare sid stays
+as untrusted as below — and `endSession(req, res, sid)` ends that one, the
+cookie cleared only where it was the browser's default. With no hint that
+chooses and more than one account, the confirmation page ASKS WHICH: a form
+per account, each with that account's own `confirm_for` and its key as
+`sts_signout_account` (a key names only this browser's accounts), and a
+Stay signed in form; the words are `oauthPages.logout.askWhich*`,
+`signOutAccount` and `whyWhich`. `tests/multi_account_logout.js` 6.
 
 `end_session_endpoint` was graded `mock`: GET only, the session ended BEFORE
 the request was read, `id_token_hint` accepted and never read, `state` never
@@ -5170,8 +5198,17 @@ the decisions rcbj made on #118:
 
   An expired hint is still a hint. An encrypted one is refused by name.
 * **`select_account`** is the sign-in screen, where whoever signs in is the
-  account selected. **An essential `acr` in a claims request** is a step-up
-  requirement: `step_up.ts`'s `essentialAcrValuesOf()`.
+  account selected — with `authn.multipleAccounts` off. **On (#561) it is
+  the account picker** (`beginAuthentication({ accountChoice: 'always' })`),
+  `prompt=login` is `accountChoice: 'never'`, `login_hint` and a verified
+  `id_token_hint`'s `sub` and `sid` go to `authn.hintAccount()` before
+  `sessionOf()`, and `prompt=none` from a browser whose accounts nothing in
+  the request chooses between is answered `account_selection_required`
+  (section 3.1.2.6, `STS-OAUTH-0960`). The consent screen resumes the
+  authorization request with `authn.accountTicketFor()`, so it acts as the
+  account that consented. `authn/CLAUDE.md`, *Several signed-in accounts in
+  one browser*, argues all of it. **An essential `acr` in a claims request**
+  is a step-up requirement: `step_up.ts`'s `essentialAcrValuesOf()`.
 * **`offline_access`** (section 11): `offlineAccessScope()` strips it without a
   code, and without `prompt=consent` or a recorded consent to it. **A refresh
   token without it is online**: it carries `sid` inside its JWE, and the refresh

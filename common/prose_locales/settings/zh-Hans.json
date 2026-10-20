@@ -759,6 +759,30 @@
     "en": "33bc4846535a784f",
     "text": "通过密码步骤的人出示其第二因素——安全密钥、身份验证器应用中的验证码或恢复码——的时限，超过则该步骤过期，登录必须重新开始。它是猜测的验证码能够被尝试的唯一窗口，这就是它比界面自身计时更短的原因；速率限制器约束窗口内的尝试次数。"
   },
+  "authn.multipleAccounts|label": {
+    "en": "96144493272617dc",
+    "text": "一个浏览器中登录多个账号"
+  },
+  "authn.multipleAccounts|description": {
+    "en": "d0b4899bdae1c43d",
+    "text": "允许一个浏览器同时持有多人的单点登录会话，并在其间选择。开启时，另一个人登录会向浏览器的账号集（`sts_accounts` Cookie）中添加一个会话，而不是结束原有会话；当有多个账号已登录、而请求未说明针对哪个账号时——此流程中未选择账号，也没有指明账号的 login_hint、id_token_hint 或 SAML Subject——请求会被发送到 /authn/accounts 的账号选择器，prompt=select_account 也会显示它。每个会话保留各自的有效期、空闲超时、升级认证状态和退出登录。关闭（默认）时，浏览器只有一个会话，另一个人登录会结束它。无论开启还是关闭，都在下一个请求时生效，且不会结束任何会话：开启后，浏览器已有的会话成为其账号集的第一个账号；关闭后，浏览器的默认会话单独继续，其他会话照常到期。"
+  },
+  "authn.maxBrowserAccounts|label": {
+    "en": "19115cee7c688f64",
+    "text": "一个浏览器最多记住的账号数"
+  },
+  "authn.maxBrowserAccounts|description": {
+    "en": "fa642faef7e66a0f",
+    "text": "开启多账号登录时，一个浏览器的账号集最多容纳的账号数，已登录和已退出的合计。超出上限的登录会先移除退出时间最早的已退出账号；当每个位置都被已登录账号占用时，登录会被拒绝（STS-AUTHN-0340），选择器会提示必须先退出一个账号。"
+  },
+  "authn.rememberedAccountDays|label": {
+    "en": "9e38d0738504c1e3",
+    "text": "已退出账号的保留时长（天）"
+  },
+  "authn.rememberedAccountDays|description": {
+    "en": "a1fe0b6f510982c4",
+    "text": "开启多账号登录时，账号选择器在多长时间内继续提供在此浏览器中退出的账号——其用户名、显示名称和主体，从不包括凭据，保存在服务器上——以便重新登录或忘记它。之后由计划任务 `authn.account-set-expiry` 将其移除。"
+  },
   "oidcRp.maxFlows|label": {
     "en": "f517b7686e6225fc",
     "text": "每领域进行中的控制台和门户登录数"

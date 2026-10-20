@@ -1379,6 +1379,10 @@
     "en": "afae7eb3e60fb142",
     "text": "Choix du partenaire de fédération"
   },
+  "endpoints.route./authn/accounts.name": {
+    "en": "c3b323e274fa067a",
+    "text": "Sélecteur de comptes"
+  },
   "endpoints.route./authn/spnego.name": {
     "en": "0a014fa4b2685cd7",
     "text": "Se connecter avec un ticket Kerberos"
@@ -1459,6 +1463,26 @@
     "en": "cb0f4ae92fef3ded",
     "text": "Les partenaires de fédération entre lesquels choisir"
   },
+  "endpoints.route./authn-api/pending/:id/accounts.name": {
+    "en": "23c7f520afd7c0cb",
+    "text": "Les comptes avec lesquels une connexion peut se poursuivre"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/select.name": {
+    "en": "4c05cbd10261e5fe",
+    "text": "Continuer avec l’un des comptes du navigateur"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/another.name": {
+    "en": "8ffce6dab3c9d713",
+    "text": "Se connecter avec un autre compte"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/forget.name": {
+    "en": "ee74996a1d01a953",
+    "text": "Oublier un compte déconnecté"
+  },
+  "endpoints.route./authn-api/accounts.name": {
+    "en": "e263821d69f3f785",
+    "text": "Les comptes que détient ce navigateur"
+  },
   "endpoints.route./authn-api/pending/:id/password.name": {
     "en": "673a50377a1ff20b",
     "text": "Se connecter avec un mot de passe"
@@ -1502,6 +1526,10 @@
   "endpoints.route./authn-api/logout.name": {
     "en": "196d3a7dc50ac8ef",
     "text": "Ce qu’une déconnexion terminerait, et la déconnexion"
+  },
+  "endpoints.route./authn-api/logout/accounts.name": {
+    "en": "ee44950fe4f4a290",
+    "text": "Pour quel compte est une déconnexion"
   },
   "endpoints.route./authn-api/consent/:id.name": {
     "en": "1f22b542171d33ef",

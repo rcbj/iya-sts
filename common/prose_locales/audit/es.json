@@ -1435,6 +1435,26 @@
     "en": "775ac5b1f475f76f",
     "text": "Se actualizaron los metadatos SAML de un proveedor de servicios"
   },
+  "audit.actions.account.add.label": {
+    "en": "0fc7d9b61dee994d",
+    "text": "Una sesión se incorporó al conjunto de cuentas de un navegador"
+  },
+  "audit.actions.account.select.label": {
+    "en": "1fcc762640b7ba22",
+    "text": "Se eligió una cuenta en el selector de cuentas"
+  },
+  "audit.actions.account.switch.label": {
+    "en": "0b9681ea51a0edfa",
+    "text": "Cambió la cuenta predeterminada de un navegador"
+  },
+  "audit.actions.account.forget.label": {
+    "en": "17a75cbf0a350b17",
+    "text": "Un navegador olvidó una cuenta con la sesión cerrada"
+  },
+  "audit.actions.account.ambiguous.label": {
+    "en": "cc103c68ea2f6ef9",
+    "text": "Una solicitud no indicó para cuál de las cuentas del navegador era"
+  },
   "audit.actions.session.reauthenticate.label": {
     "en": "f6867c3c6a1d35bd",
     "text": "La misma persona volvió a iniciar sesión en una sesión activa"

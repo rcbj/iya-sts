@@ -7,6 +7,14 @@
     "en": "e753a576c8530ce3",
     "text": "对每个已到定时间隔的属性源，读取本领域人员的下一页数据并写入其条目（#94）。每次运行每个属性源处理 attributeSources.refreshBatch 个人员。"
   },
+  "sched.jobs.authn.account-set-expiry.title": {
+    "en": "849356c9b70cc0f3",
+    "text": "账号集过期"
+  },
+  "sched.jobs.authn.account-set-expiry.describe": {
+    "en": "d643d71a0089a802",
+    "text": "更新每个浏览器的账号集（#561）：会话已结束的账号被记为已退出，记住超过 authn.rememberedAccountDays 的账号被移除，空的账号集被删除。"
+  },
   "sched.jobs.authn.session-expiry.title": {
     "en": "0d2b2447af869e65",
     "text": "会话过期"
