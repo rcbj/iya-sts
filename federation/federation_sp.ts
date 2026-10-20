@@ -2310,6 +2310,9 @@ class FederationSp {
     }
     try {
       const now = Math.floor(Date.now() / 1000);
+      // certificate-header: none — signed with the key Apple issued for the
+      // Services ID (fedClientSigningKey), which no certificate of this
+      // service covers; Apple finds it by kid, and an x5c would be refused.
       const jws = stsCrypto.signJws({ iss: team, sub: client,
         aud: 'https://appleid.apple.com', iat: now, exp: now + 300 },
         key, { algorithm: 'ES256', keyid: kid });

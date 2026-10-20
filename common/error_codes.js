@@ -6397,6 +6397,34 @@ const CODES = [
       '(logout.ts endFactorSessions(), #722). The removal stands and no ' +
       'session it signed in was ended by it.',
     spec: 'logged and audited; the removal is answered as done' },
+  { code: 'STS-AUTHN-0380',
+    summary: 'A self-service account recovery — the forgot-password form, ' +
+      'a reset link the person asked for, a recovery code or an emailed ' +
+      'code or link at sign-in — was refused for a person who holds a ' +
+      'passkey: the passkey policy\'s recoveryAssurance is operator-only ' +
+      '(#724), decided by the issuance policy (recover-account).',
+    spec: 'none — the forgot-password form answers its one sentence; the ' +
+      'reset link and the sign-in screen say why' },
+  { code: 'STS-AUTHN-0381',
+    summary: 'A session for a person who holds a passkey, after an account ' +
+      'recovery (one pending on their entry, or a recovery code or an ' +
+      'emailed code or link at this sign-in), was not started because no ' +
+      'passkey answered: the passkey policy\'s recoveryAssurance is ' +
+      'not-weaker or operator-only (#724). At the sign-in screen the person ' +
+      'is asked to register a passkey instead.',
+    spec: 'none — no session; the set-up step, or the refusal' },
+  { code: 'STS-AUTHN-0382',
+    summary: 'A pending account recovery (stsRecoveryPending) could not be ' +
+      'written onto, or cleared from, a person\'s entry (#724). Written, ' +
+      'the next sign-in is not held to the passkey; cleared, the next ' +
+      'sign-in is held again.',
+    spec: '' },
+  { code: 'STS-AUTHN-0383',
+    summary: 'A sign-in after an account recovery could not be offered the ' +
+      'registration of a passkey (#724): security keys are switched off, or ' +
+      'not allowed as a second factor, in this realm. The session is ' +
+      'refused instead (STS-AUTHN-0381), and an administrator has to help.',
+    spec: 'none — the sign-in screen says why' },
   { code: 'STS-AUTHN-0390',
     summary: 'A Device Bound Session Credentials registration or refresh ' +
       '(POST /authn/dbsc/register, /authn/dbsc/refresh, #725) reached a ' +
@@ -6493,34 +6521,6 @@ const CODES = [
     summary: 'A sign-in could not be offered device binding: the response ' +
       'object takes no header. The session stands, unbound.',
     spec: '' },
-  { code: 'STS-AUTHN-0380',
-    summary: 'A self-service account recovery — the forgot-password form, ' +
-      'a reset link the person asked for, a recovery code or an emailed ' +
-      'code or link at sign-in — was refused for a person who holds a ' +
-      'passkey: the passkey policy\'s recoveryAssurance is operator-only ' +
-      '(#724), decided by the issuance policy (recover-account).',
-    spec: 'none — the forgot-password form answers its one sentence; the ' +
-      'reset link and the sign-in screen say why' },
-  { code: 'STS-AUTHN-0381',
-    summary: 'A session for a person who holds a passkey, after an account ' +
-      'recovery (one pending on their entry, or a recovery code or an ' +
-      'emailed code or link at this sign-in), was not started because no ' +
-      'passkey answered: the passkey policy\'s recoveryAssurance is ' +
-      'not-weaker or operator-only (#724). At the sign-in screen the person ' +
-      'is asked to register a passkey instead.',
-    spec: 'none — no session; the set-up step, or the refusal' },
-  { code: 'STS-AUTHN-0382',
-    summary: 'A pending account recovery (stsRecoveryPending) could not be ' +
-      'written onto, or cleared from, a person\'s entry (#724). Written, ' +
-      'the next sign-in is not held to the passkey; cleared, the next ' +
-      'sign-in is held again.',
-    spec: '' },
-  { code: 'STS-AUTHN-0383',
-    summary: 'A sign-in after an account recovery could not be offered the ' +
-      'registration of a passkey (#724): security keys are switched off, or ' +
-      'not allowed as a second factor, in this realm. The session is ' +
-      'refused instead (STS-AUTHN-0381), and an administrator has to help.',
-    spec: 'none — the sign-in screen says why' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

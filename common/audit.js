@@ -454,6 +454,13 @@ const ACTIONS = [
   // writes its own `session.end`.
   { action: 'session.renew', category: 'session',
     label: 'A hosted surface renewed its tokens within the same session' },
+  // DEVICE BOUND SESSION CREDENTIALS (#725): a sign-on session bound to a
+  // key its browser holds, and the bound cookie renewed on a proof of it.
+  { action: 'authn.session.bound', category: 'session',
+    label: 'A sign-on session was bound to a key its browser holds' },
+  { action: 'authn.session.refreshed', category: 'session',
+    label: 'A device-bound session\'s cookie was renewed on a proof of its ' +
+           'key' },
 
   // THE TWO THE PROTOCOL-INDEPENDENT LOGOUT WRITES, and they are `session`
   // rather than a category of their own because that is what they are ABOUT —
@@ -1206,6 +1213,16 @@ const ACTIONS = [
     label: 'A federation partner confirmed a sign-out this service sent' },
   { action: 'federation.unlink', category: 'directory',
     label: 'A federation link was removed from a person' },
+  // A CONSUMER PROVIDER'S PEOPLE (#565): a person connecting a provider to
+  // their own account on the portal, and a provider's server-to-server
+  // notification about one of its people (Apple's), fanned out to every
+  // cell since #727.
+  { action: 'federation.connected', category: 'directory',
+    label: 'A person connected a consumer or social provider to their ' +
+           'account' },
+  { action: 'federation.provider-notification', category: 'directory',
+    label: 'A consumer provider\'s notification about one of its people ' +
+           'was accepted' },
   { action: 'federation.group-ignored', category: 'directory',
     label: 'A partner\'s group name was not applied, because it names a ' +
            'group that relationship did not create or one that grants ' +

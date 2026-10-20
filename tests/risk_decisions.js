@@ -210,6 +210,10 @@ function childMain() {
          'passkey-use-attestation-unlisted,passkey-use-attestation-level,' +
          'passkey-use-attestation-fips,passkey-use-post-quantum,' +
          'passkey-use-allowed,' +
+         // #724's recovery rules: the two refusals of `recover-account`
+         // and its allow.
+         'passkey-use-recovery-self-service,' +
+         'passkey-use-recovery-enrol-first,passkey-recover-allowed,' +
          // The exchange rules (#186): the semantics, the refusals in order,
          // the allows, and the may_act question.
          'exchange-semantics-requested,exchange-semantics-actor-default,' +
@@ -703,9 +707,10 @@ function childMain() {
          // twenty exchange rules of #186, the fourteen per-right GNAP
          // rules of #432, the sign-in mechanism rule of #457, the
          // second-factor rule of #475, the fifteen passkey rules of
-         // #536, #718's two post-quantum passkey rules and the five
-         // Kerberos-trust exchange rules of #430 Phase 3.
-         unprotectedPolicy.policy.rules.length === 87,
+         // #536, #718's two post-quantum passkey rules, the five
+         // Kerberos-trust exchange rules of #430 Phase 3 and #724's three
+         // recovery rules.
+         unprotectedPolicy.policy.rules.length === 90,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 
