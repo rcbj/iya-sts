@@ -264,6 +264,10 @@ Things to know, each found by the suite's run of it
   (`key-0-0.key`) is base64 PKCS#8 without PEM armour.
 * It exits 0 whether or not it enrolled; read what it wrote.
 * It builds against OpenSSL 1.1 only (`FIPS_mode()` is gone from 3.0).
+  It therefore negotiates TLS 1.2, which every listener refuses by default
+  (`tls.disableTls12`, on since #429): set `tls.disableTls12` to `false`, or
+  the main port's `listenerMain.disableTls12` to `off`, before running it. The
+  suite's job turns `tls.disableTls12` off for its run and resets it after.
 * `-z` enrolls, but the challengePassword is not read (see *Not implemented*),
   and `--srp` is refused at the handshake.
 
