@@ -1711,9 +1711,14 @@ design. With `authn.multipleAccounts` off nothing here changes; on:
   picker; signing in as an account already in the set re-authenticates that
   session.
 * **`IsPassive` with a choice to make is `NoPassive`**: the picker is user
-  interface. The status message says how many accounts the request named
-  none of, and `authn.noteAccountAmbiguous()` writes the `account.ambiguous`
-  row. An `IsPassive` request with a `<Subject>` naming a live account is
+  interface. **The status message is generic and says nothing about the
+  browser's accounts** — no count, not even that there are several (rcbj's
+  decision on #561, batch 10): the Response reaches the service provider and
+  whatever page sent the passive request, so a count would tell any site how
+  many people use the browser. One sentence for every account-choice case;
+  `authn.noteAccountAmbiguous()` writes the `account.ambiguous` row, which
+  is where the operator reads how many. With the setting off the
+  no-session sentence is unchanged. An `IsPassive` request with a `<Subject>` naming a live account is
   answered as that account.
 * **Front-channel Single Logout ends the session of the set** its
   SessionIndex names (checked against this service provider and the NameID

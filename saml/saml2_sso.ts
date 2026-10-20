@@ -3293,9 +3293,20 @@ class Saml2Sso {
                   "NoPassive goes back.");
         // SEVERAL ACCOUNTS AND NOTHING TO CHOOSE BY (#561) is a case of the
         // same rule: the account picker is user interface, so it is
-        // NoPassive too — said in the status message and recorded as the
-        // `account.ambiguous` row. `accountChoiceNeeded()` is null with
-        // `authn.multipleAccounts` off, and the message is then today's.
+        // NoPassive too, recorded as the `account.ambiguous` row.
+        // `accountChoiceNeeded()` is null with `authn.multipleAccounts`
+        // off, and the message is then today's.
+        //
+        // **THE STATUS MESSAGE SAYS NOTHING ABOUT THE BROWSER'S ACCOUNTS**
+        // (rcbj's decision on #561). The Response goes to the service
+        // provider, and through the browser to whatever page posted the
+        // AuthnRequest — so "signed in to 3 accounts" would tell any site
+        // able to send a passive request how many people use this browser,
+        // and "no session" where there are several would be a different
+        // sentence for the same fact. One generic sentence for every
+        // account-choice case (ambiguous, a hint naming nobody here, a
+        // member that could not be read); how many and why is the audit
+        // row's, for the operator.
         const accountChoice = session ? null
           : this.deps.authn.accountChoiceNeeded(req);
         const ambiguous = !!(accountChoice &&
@@ -3312,10 +3323,9 @@ class Saml2Sso {
           statusMessage: session
             ? 'The session here has one factor and this request asked for ' +
               'more, and IsPassive forbids asking for it.'
-            : (ambiguous
-              ? 'This browser is signed in to ' + accountChoice.accounts +
-                ' accounts and the request names none of them, and ' +
-                'IsPassive forbids asking which.'
+            : (accountChoice
+              ? 'This request cannot be answered without asking the person ' +
+                'at the browser, and IsPassive forbids asking.'
               : 'There is no browser session here, and IsPassive forbids ' +
                 'asking for one.')
         });

@@ -27,7 +27,9 @@
 //      <Subject> NameID chooses its account silently, one naming nobody
 //      here goes to the sign-in screen with the name filled in, and a
 //      transient one is no hint; IsPassive with a choice to make is
-//      NoPassive saying so, with the `account.ambiguous` row; IsPassive
+//      NoPassive with a generic status message (rcbj's decision: nothing
+//      about the browser's accounts, no count), with the
+//      `account.ambiguous` row; IsPassive
 //      with a <Subject> is answered;
 //   5. SAML 1.1, which has no hint and no IsPassive: the picker;
 //   6. WS-Federation: the picker, and `wfresh` a fresh sign-in instead;
@@ -359,10 +361,14 @@ function childMain() {
     const rowsBefore = ambiguousRows();
     f = await drive(jar, authnRequest({ passive: true }), '');
     note(f.saml && f.saml.codes.indexOf('NoPassive') >= 0 &&
-         /signed in to 2 accounts/.test(f.saml.message) &&
+         f.saml.message === 'This request cannot be answered without ' +
+           'asking the person at the browser, and IsPassive forbids ' +
+           'asking.' &&
+         !/\d|account/i.test(f.saml.message) &&
          ambiguousRows() === rowsBefore + 1,
-         '4k. IsPassive with a choice to make is NoPassive, saying so, with ' +
-         'an account.ambiguous row', JSON.stringify({ saml: f.saml,
+         '4k. IsPassive with a choice to make is NoPassive, its status ' +
+         'message generic — no count, no word of accounts — with an ' +
+         'account.ambiguous row', JSON.stringify({ saml: f.saml,
            rows: ambiguousRows() - rowsBefore }));
     f = await drive(jar, authnRequest({ passive: true, subject: ALICE }), '');
     note(f.saml && f.saml.codes[0] === 'Success' && f.saml.nameId === ALICE,
