@@ -18,8 +18,12 @@ Arguments come from the environment so no token is on a command line:
   SCIM_FEDERATION_RELATIONSHIP, SCIM_FEDERATION_PEER
                   a service-provider-side federation relationship of the
                   realm and its peer, for the federationLinks member.
+  SCIM_POLICY_NAMES
+                  "1" in product mode: Users are created with a name, as
+                  the realm's attribute policy requires (the fourth
+                  adaptation, below).
 
-It adapts what scim2-tester SENDS in three places, each argued where it is
+It adapts what scim2-tester SENDS in four places, each argued where it is
 made below, and never what it checks.
 """
 
@@ -30,6 +34,9 @@ import traceback
 
 from httpx2 import Client
 from scim2_client.engines.httpx2 import SyncSCIMClient
+from scim2_models import Path
+from scim2_models import Required
+from scim2_models import Resource
 from scim2_tester import check_server
 from scim2_tester import filling
 import scim2_tester.checkers  # noqa: F401 -- loaded so its imports are seen
@@ -92,6 +99,42 @@ def generate_named_value(context, path, mutability=None, required=None):
         return PEER
     return value
 
+
+# THE FOURTH, for a User the harness creates with only its REQUIRED members
+# (create_and_register() without fill_all, which is most of its checks):
+# RFC 7643 section 4.1 requires only userName, but in product mode a person
+# is held to the realm's attribute policy (#396), and `uid`, `cn` and `sn`
+# are required by every policy because `person` lists cn and sn as MUST
+# (common/CLAUDE.md 3co). Such a create is refused 400 invalidValue
+# (STS-LDAP-0162), as it should be, and every User check behind it stops
+# there. So the person is given what any real provisioning client sends:
+# name.familyName (sn) and name.givenName, from which the service makes the
+# cn. The values stay random; the job's realm requires nothing more, and
+# what the harness CHECKS is unchanged. /Schemas does not yet publish the
+# policy's `required` (scim/CLAUDE.md, *THE ATTRIBUTE POLICY OVER SCIM*), or
+# the harness would fill these itself. The job sets SCIM_POLICY_NAMES in
+# product mode only; development does not enforce the policy, and its run
+# sends what the harness chose.
+_fill = filling.fill_with_random_values
+POLICY_NAMES = ("name.familyName", "name.givenName")
+
+
+def fill_with_policy_names(context, obj, paths=None, mutability=None,
+                           required=None):
+    filled = _fill(context, obj, paths=paths, mutability=mutability,
+                   required=required)
+    if (paths is None and required == [Required.true] and
+            isinstance(filled, Resource) and
+            "name" in type(filled).model_fields):
+        names = [one for one in Path[type(filled)].iter_paths()
+                 if str(one).split(":")[-1] in POLICY_NAMES]
+        if names:
+            _fill(context, filled, paths=names, mutability=mutability)
+    return filled
+
+
+if os.environ.get("SCIM_POLICY_NAMES") == "1":
+    filling.fill_with_random_values = fill_with_policy_names
 
 # Every module that imported the function by name holds its own reference,
 # so each is pointed at the wrapper, not only `filling`.

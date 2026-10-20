@@ -147,15 +147,24 @@ class FederationSurface extends WebSurface {
   }
 
   /**
-   * Refuses a form these pages do not have: nothing here is sent.
+   * Sends the one form these pages have — what a consumer provider's
+   * newcomer is asked for (#729) — as the browser's own POST, since its
+   * answer is the sign-in's: a redirect to where it was going, or a page.
+   * Any other form is refused: nothing else here is sent.
    *
    * @param form - the form
    * @param submitter - the button pressed, if any
    * @returns nothing
    */
   async submit(form: Json, submitter: Json): Promise<void> {
-    void form;
     void submitter;
+    if (form && form.id === 'federation-profile-form' &&
+        typeof form.submit === 'function') {
+      // HTMLFormElement.submit() fires no submit event, so this is not
+      // handled again.
+      form.submit();
+      return;
+    }
     this.flash = { error: 'This page sends nothing, so the form was not ' +
                           'sent.' };
     this.redraw();

@@ -745,7 +745,9 @@ crosses to a request worker is the caller, already plain.
 
 * **A caller over TCP** — no peer process to ask. It keeps the `transport:`,
   `endpoint:` and `peer:` selectors, and **product does not serve it without a
-  declared network** — see *The Workload API over TCP* below (#166).
+  declared network** — see *The Workload API over TCP* below (#166). Where
+  that declaration cannot be made, the Workload API is a process beside the
+  workload — see *A node-local workload agent* below (#324).
 * **A peer in another pid namespace** (pid 0 from `SO_PEERCRED`) — attested on
   its kernel uid and gid alone; nothing that needs the process is invented.
 * **The socket without the native module** — development serves it
@@ -816,6 +818,86 @@ bind in both modes with a gRPC client over TCP, the three doors, exact `peer:`;
 `tests/vendored/sts_spiffe_grpc.js` the network's view in both states. The test
 stacks (`docker-compose-run-tests.yml`) DECLARE their bridge, which only this
 launcher's containers are on, so the product modes exercise the declared path.
+Where the posture is not served, that job asserts the refusal and then runs
+the same checks through a workload agent (#324, below).
+
+### A node-local workload agent, where TCP cannot be honest (#324)
+
+**AWS CANNOT DECLARE THE SECTION 3 CONDITION, AND PUBLISHING 8092 WAS THE
+UNHEALTHY TARGET GROUP.** A Fargate task has one address and every realm
+binds `0.0.0.0`. The SPIFFE gRPC listeners do not read PROXY protocol, so
+the node sees the load balancer as `peer:` for every caller. Neither
+`spiffe.workloadTcpSourceAuthenticated` nor a named `spiffe.grpcHost` can
+be set honestly there. Declaring the setting, teaching the listeners PROXY,
+or matching `peer:` by a prefix would each weaken #166. None of those is
+done. The defaults of `spiffe.workloadPort` (8092) and
+`spiffe.workloadTcpSourceAuthenticated` (false) are unchanged, and the
+local compose stacks still declare their bridge.
+
+**THE WORKLOAD API MOVES NEXT TO THE WORKLOAD.** `workload_agent.ts` is a
+leaf process, not one of the six modules above and not registered by
+`protocol_stack.ts`. It requires node, `@grpc/grpc-js`,
+`@grpc/proto-loader`, pkijs, asn1js, bunyan and `common/error_codes.js`,
+and nothing that would load this service — not `spiffe_peer`, the unix
+attestor, `spiffe_grpc`, `spiffe_api`, `spiffe_id`, `common/config`,
+`common/helpers` or `common/crypto`. Requiring it from a test gets the
+class and no listener. `node spiffe/workload_agent.js` runs only when it
+is the main module. The image compiles it (`build-typescript.sh`); the
+host's `tsc` checks it and writes nothing. The peer-credentials addon is
+the same `native/peercred.node`, built only in an image.
+
+**IT JOINS OVER THE SPIRE SERVER API, WHICH IS THE PORT THAT IS SERVED.**
+`SpiffeApi.issueJoinToken()` is the one mint. `CreateJoinToken` and
+`POST /admin-api/spiffe/agents/join-token` (`createSpiffeJoinToken`) both
+call it, and so does the form on the agents list. The body is optional
+`{ ttl, agentId }`. A `ttl` that was given and is not a positive number
+is `STS-ADMIN-0858`. The cap and an alias stay `STS-SPIFFE-0059` and
+`0084`. The answer is `{ ok, token, expiresAt, agentSpiffeId }` or
+`{ ok: false, errorCode, status, message }`. The token is never logged,
+never an audit detail and never a store key — `joinTokenKey()` is its
+SHA-256, the rule this file already has. The agent reads the token from
+`STS_SPIFFE_JOIN_TOKEN` or `--join-token-file`. A `--join-token` flag is
+refused without the value being repeated, because `ps` shows argv. It
+writes one `AttestAgent` message, waits for the answer, and then
+half-closes. It retries only `UNAVAILABLE`, `PERMISSION_DENIED` and
+`DEADLINE_EXCEEDED`, and it does not log `err.details`. The agent id is
+the one the response names; `JoinTokenAttestor.agentIdFor` is the
+prediction, and the two are the same id.
+
+**THE SOCKET IS UNIX, AND THE CALLER IS THE PROCESS ON IT.** `start()`
+loads the native module before it binds. Without the module it throws
+`STS-SPIFFE-0148` and creates no socket. The directory is 0755, the
+socket is chmod-ed 0666, and an existing socket is unlinked (`ENOENT`
+ignored). Selectors are `unix:uid` and `unix:gid`, plus `unix:user` and
+`unix:group` when the name files have them. No supplementary group and
+no `path:` — `selectorsFor()` is the set a registration entry is written
+against. A peer in another pid namespace (pid 0) is uid and gid only.
+The security header is checked before the process is re-checked, so a
+missing `workload.spiffe.io: true` is `STS-SPIFFE-0003`. A process that
+has exited, whose pid was reused or that has executed another program is
+`PERMISSION_DENIED` (`STS-SPIFFE-0149`, recorded, never sent). A caller
+entitled to nothing is `STS-SPIFFE-0150`, this process's parallel of
+`0146`. The Server API refusing a mint, or not answering, is
+`STS-SPIFFE-0151`. `ValidateJWTSVID` reuses `0031`–`0038`. The two WIT
+methods stay `0029`. A held stream whose re-send fails is `0030` and is
+re-armed, not ended. No code is sent.
+
+**THE ROTATION TIMER IS NOT A SCHEDULER JOB.** A stream stays open and is
+written again at half the shortest lifetime the last message carried,
+floored at one second, by `setTimeout` inside `arm()`. `tick()` is the
+sibling that calls `arm()` again. The descriptor is in this process; the
+service's scheduler cannot write it. Bundle streams use a lifetime of
+60. `tests/no_periodic_timers.js` does not name it: the timeout sits in
+`arm`, whose body does not call `arm`, and the call does not name `arm`.
+
+**WHERE IT IS ASSERTED.** `tests/spiffe_workload_agent.js` is the
+in-process half, in a child, and does not weaken
+`tests/spiffe_workload_tcp_product.js`. `tests/vendored/sts_spiffe_grpc.js`
+still asserts the TCP refusal where the posture is not served, and then
+mints a join token, starts this agent and runs the rest of the job
+through its socket. On the declared bridge the job stays on TCP.
+`deploy/aws/CLAUDE.md` is the publish change: 8181 only. GCP and Azure
+still publish 8092; only AWS has been applied, and their files say so.
 
 ### The `local` entity, verified in product (#104)
 
@@ -1394,6 +1476,16 @@ same `startRealm('')` — and `recordCaller()` runs inside `prepareCall()`, whic
 is inside the handler and stays in the front process, so the ambient realm there
 is the socket's. A connection key (thumbprint and peer address) is one connection
 to one socket, so no entry could ever have been legitimately shared.
+
+A stream listener is the exception that run does not cover. `AttestAgent` and
+`SyncAuthorizedEntries` register `call.on('data')` and return; grpc-js emits
+the message from the HTTP/2 session, outside that run, so the listener was
+answered in the default realm. A join token minted for another realm was then
+refused as never issued (`STS-SPIFFE-0055`, gRPC status 7) and the workload
+agent could not attest (#324). `bindCallListeners()` wraps `call.on` and the
+other EventEmitter registrations with `realms.bind()` before the handler
+runs. A timer armed inside the run was already in the right realm. Unary
+methods capture the id while the run is on the stack (`methodRequest()`).
 `tests/realm_isolation.js` records a caller in a realm, in a child process, and
 reads the partition back.
 

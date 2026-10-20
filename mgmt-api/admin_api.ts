@@ -302,6 +302,8 @@ import riskDatasets = require('../risk/risk_datasets');
 import mailTemplates = require('../common/mail_templates');
 import identityAssurance = require('../common/identity_assurance');
 import federation = require('../federation/federation');
+// The consumer provider catalogue (#565): the enum of `create`'s `provider`.
+import consumerProviders = require('../federation/consumer_providers');
 // THE OPENID4VP VERIFIER (#587): `POST /verifications/start` builds its
 // request through the Verifier's own `startVerification()`, and the
 // document's closed sets are its START_VOCABULARY. A converted route module
@@ -386,6 +388,90 @@ const FIELD_GRID_MEMBERS = {
                           'list: each one is cleared when the form carries ' +
                           'no value for it.' }
 };
+// THE KERBEROS TRUST RECORD'S FIELDS (#430 Phase 4), the request body of
+// `add` and `update` on `/admin-api/kerberos/trusts`: what the Trusts tab's
+// form posts, under the names `kerberos/krb5_trusts.ts` reads. The lists take
+// a JSON array or the form's text (comma- or line-separated); a checkbox
+// column named `attribute` arrives as `attributes`, and `attributesShown`
+// says the form drew it, so none ticked is an empty list rather than none
+// sent. `forestTrustInfo` is the object, or the form's two text areas.
+const TRUST_FIELDS = {
+    type: 'object',
+    properties: {
+      partnerRealm: { type: 'string',
+                      description: 'The partner Kerberos realm, ' +
+                                   'PARTNER.EXAMPLE.' },
+      netbiosName: { type: 'string',
+                     description: 'Its NetBIOS (flat) name; the realm\'s ' +
+                                  'first label by default.' },
+      partnerSid: { type: 'string',
+                    description: 'Its domain SID, S-1-5-21-a-b-c; a ' +
+                                 'trust realm\'s own by default.' },
+      type: { type: 'string', enum: ['external', 'trust-realm'],
+              description: '`external` — a KDC elsewhere — or ' +
+                           '`trust-realm`, another trust realm of this ' +
+                           'service.' },
+      partnerTrustRealm: { type: 'string',
+                           description: 'For `trust-realm`: that trust ' +
+                                        'realm\'s id.' },
+      direction: { type: 'string',
+                   enum: ['bidirectional', 'inbound', 'outbound'],
+                   description: 'Which keys the record holds.' },
+      keySource: { type: 'string', enum: ['password', 'generate'],
+                   description: 'Where a key it does not hold yet comes ' +
+                                'from.' },
+      password: { type: 'string',
+                  description: 'The shared trust password, for ' +
+                               '`keySource: "password"`. Never shown back.' },
+      attributes: { type: 'array', items: { type: 'string' },
+                    description: '[MS-ADTS] 6.1.6.7.9\'s bits by name.' },
+      attributesShown: { type: 'string',
+                         description: 'Set by the console\'s form: the ' +
+                                      'attribute boxes were drawn.' },
+      suffixes: { type: ['array', 'string'], items: { type: 'string' },
+                  description: 'The DNS suffixes routed to the partner.' },
+      enctypes: { type: ['array', 'string'],
+                  items: { type: ['integer', 'string'] },
+                  description: 'The enctypes its keys are made for, by ' +
+                               'number; AES by default.' },
+      claimsTransformation: { type: 'string',
+                              enum: ['drop-all', 'allow-all'],
+                              description: 'What becomes of a claims set ' +
+                                           'arriving across it.' },
+      forestTrustInfo: { type: ['object', 'string', 'null'],
+                         description: 'A cross-forest trust\'s { domains: ' +
+                                      '[{ sid, dnsName, netbiosName, ' +
+                                      'sidEnabled }], topLevelNames: ' +
+                                      '[{ name, enabled }] }.' },
+      forestDomains: { type: 'string',
+                       description: 'The form\'s text: a domain per line, ' +
+                                    '`<sid> <dns name> <netbios name> ' +
+                                    '[disabled]`.' },
+      forestNames: { type: 'string',
+                     description: 'The form\'s text: a top-level name per ' +
+                                  'line, `<name> [disabled]`.' },
+      enabled: { type: 'boolean',
+                 description: 'Whether it is used; true by default.' }
+    },
+    required: ['partnerRealm'],
+    examples: [{ partnerRealm: 'PARTNER.EXAMPLE', direction: 'bidirectional',
+                 keySource: 'generate', attributes: ['quarantined'],
+                 suffixes: ['partner.example'] }],
+    additionalProperties: false
+};
+
+// The body of the acts that name a trust and nothing else.
+const TRUST_PARTNER_ONLY = {
+  type: 'object',
+  properties: {
+    partnerRealm: { type: 'string',
+                    description: 'The partner Kerberos realm.' }
+  },
+  required: ['partnerRealm'],
+  examples: [{ partnerRealm: 'PARTNER.EXAMPLE' }],
+  additionalProperties: false
+};
+
 const FIELD_GRID_PATTERN = {
   '^field\\.': { type: ['string', 'array'], items: { type: 'string' },
                    description: 'The console form\'s boxes: ' +
@@ -1125,6 +1211,50 @@ class AdminApi {
     return { ok: false, errors: this.errorsFromAjv(validate.errors) };
   }
 
+  // A WINDOWED CONSOLE PAGE THAT FAILED (#359, and the review of #692): an
+  // unreadable store is a 503 the caller may retry — the bridge's timeout
+  // (STS-LDAP-0130) or refusal (0131), the request's spent budget (0175),
+  // or an asynchronous question the store did not answer (0139, which
+  // `ldap_server.js`'s `storeAsked()` marks) — and anything else is the
+  // bug it is: a 500 under its own code, or `fallback` when it has none.
+  /**
+   * Answers a rejected directory page: 503 for an unreadable store, 500
+   * otherwise.
+   *
+   * @param res - the response
+   * @param e - the rejection
+   * @param what - what could not be drawn, for the log line
+   * @param fallback - the code of a failure that carries none
+   * @returns true when it was the store (a 503)
+   */
+  answerDirectoryFailure(res, e, what: string, fallback: string): boolean {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AdminApi.answerDirectoryFailure().");
+    const code = errorCodes.codeOf(e);
+    const store = code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131' ||
+      code === 'STS-LDAP-0139' || code === 'STS-LDAP-0175';
+    if (store) {
+      log.error(errorCodes.tag(code) + 'admin-api: ' + what + ' could not ' +
+                'be read from the store: ' + ((e && e.message) || e));
+      res.setHeader('Retry-After', '5');
+      // STS-LDAP-0130, STS-LDAP-0131, STS-LDAP-0139, STS-LDAP-0175.
+      errorCodes.mark(res, code);
+      this.sendJson(res, 503, { error: 'temporarily_unavailable',
+        error_description: 'The directory could not be read; try again ' +
+          'shortly.' });
+      log.debug("Leaving AdminApi.answerDirectoryFailure(). Unavailable.");
+      return true;
+    }
+    log.error(errorCodes.tag(code || fallback) + 'admin-api: ' + what +
+              ' could not be drawn: ' + ((e && e.stack) || e));
+    // The rejection's own code, or `fallback` (STS-LDAP-0176).
+    errorCodes.mark(res, code || fallback);
+    this.sendJson(res, 500, { error: 'server_error',
+      error_description: String((e && e.message) || e) });
+    log.debug("Leaving AdminApi.answerDirectoryFailure(). A failure.");
+    return false;
+  }
+
   // Every reply here is JSON, is never cached, and is pretty-printed. The last
   // of those is not decoration: the caller of a mock's admin API is usually a
   // person at a terminal or a test whose failure message is the body, and a 40
@@ -1423,7 +1553,13 @@ class AdminApi {
               '`userDisplayName`, `rpNameExtras` and `credentialLabel` ' +
               'are the names a passkey prompt and a new key show. ' +
               '`aggregateDevices` (on) offers a person\'s passkeys as one ' +
-              'sign-in choice; off, one per passkey.',
+              'sign-in choice; off, one per passkey. ' +
+              '`postQuantumRequired` (`off`, #718) set to `sign-in` lets ' +
+              'only a post-quantum (ML-DSA) passkey sign a person in, as ' +
+              'the first credential or the second factor, and ' +
+              '`registration-and-sign-in` refuses a classical one at ' +
+              'registration too; refused while the realm offers no ML-DSA ' +
+              '(STS-AUTHN-0357).',
         example: { allowUsernameless: false, requireUsernameless: false,
                    securityKeyResidentKey: 'required',
                    backupEligibility: 'allow',
@@ -1435,7 +1571,7 @@ class AdminApi {
                    enterpriseSerialAttribute: '',
                    userDisplayName: 'displayName, givenName sn',
                    rpNameExtras: 'none', credentialLabel: '',
-                   aggregateDevices: true }
+                   aggregateDevices: true, postQuantumRequired: 'off' }
       },
       // #539: the fifth kind, with named profiles chosen by application.
       locale: {
@@ -1450,6 +1586,26 @@ class AdminApi {
               'applies to the applications in `selectApplications`, and an ' +
               'application is on one named profile at most.',
         example: { defaultLocale: 'fr-CA', populatePreferredLanguage: true }
+      },
+      // #396: the sixth kind, with two acts of its own for the realm's
+      // custom attributes.
+      attributes: {
+        save: 'Writes `cn=default,ou=attributePolicies` in this realm\'s ' +
+              'directory, REPLACING what is there; a realm with no entry of ' +
+              'its own follows the default realm\'s, and the built-in ' +
+              'default is `givenName, sn, mail`. `requiredAttributes` is ' +
+              'the list (an array, or comma-separated) of attributes every ' +
+              'person must hold besides `uid`, `cn` and `sn`, which are ' +
+              'always required; a name a person here cannot be given a ' +
+              'value for — `userPassword`, a binary attribute, `memberOf`, ' +
+              'an `sts` attribute, or a custom attribute this realm does ' +
+              'not define — is refused (STS-LDAP-0166). **Enforced in ' +
+              'product mode**: a create without one is refused at every ' +
+              'door (STS-LDAP-0162), and an edit may not take one away ' +
+              '(STS-LDAP-0164). `GET /admin-api/policies?missing=count` ' +
+              'counts the people who lack one, where the directory is held ' +
+              'in memory.',
+        example: { requiredAttributes: ['givenName', 'sn', 'mail'] }
       }
     };
     const cap = function (text) {
@@ -1531,6 +1687,10 @@ class AdminApi {
           : field.type === 'locale'
             ? { type: 'string',
                 description: field.what + ' Default `' + field.dflt + '`.' }
+          : field.type === 'attributeList'
+            ? { oneOf: [{ type: 'array', items: { type: 'string' } },
+                        { type: 'string' }],
+                description: field.what + ' Default `' + field.dflt + '`.' }
           : field.type === 'list'
             ? { type: 'string',
                 description: field.what + ' An ordered, comma-separated ' +
@@ -1556,7 +1716,11 @@ class AdminApi {
         requestBody: {
           type: 'object',
           properties: properties,
-          required: module.FIELDS.map(function (field) {
+          // A row marked `optional` (the passkey policy's
+          // recoveryAssurance, #724) may be left out and keeps its default.
+          required: module.FIELDS.filter(function (field) {
+            return !field.optional;
+          }).map(function (field) {
             return field.key;
           }),
           examples: [Object.assign({ profile: module.DEFAULT_PROFILE },
@@ -1591,6 +1755,18 @@ class AdminApi {
         },
         responseDescription: 'Whether anything was removed, and the profile ' +
                              'now in force.' });
+      // A KIND'S OWN ACTS (#396), described by the kind itself.
+      (kind.extraActions || []).forEach(function (extra) {
+        out.push({
+          action: extra.action,
+          operationId: extra.operationId,
+          summary: extra.summary,
+          description: extra.description,
+          requestBodyRequired: true,
+          requestBody: extra.requestBody,
+          responseDescription: 'What was done, and the sentence saying so.'
+        });
+      });
     });
     log.debug("Leaving AdminApi.policyKindActions(). " + out.length + ".");
     return out;
@@ -3102,6 +3278,22 @@ class AdminApi {
           }, function (e) {
             log.debug("Caught in the management API cells endpoint: " +
                       ((e && e.message) || e));
+            const code = errorCodes.codeOf(e);
+            if (code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131' ||
+                code === 'STS-LDAP-0139' || code === 'STS-LDAP-0175') {
+              log.error(errorCodes.tag(code) +
+                        'admin-api: the cells page could not be read from ' +
+                        'the store: ' + ((e && e.message) || e));
+              res.setHeader('Retry-After', '5');
+              // STS-LDAP-0130, STS-LDAP-0131, STS-LDAP-0139, STS-LDAP-0175.
+              errorCodes.mark(res, code);
+              self.sendJson(res, 503, { error: 'temporarily_unavailable',
+                error_description: 'The directory could not be read; try ' +
+                  'again shortly.' });
+              log.debug("Leaving the management API cells endpoint. " +
+                        "Unavailable.");
+              return;
+            }
             errorCodes.mark(res, 'STS-CELL-0191');
             self.sendJson(res, 500, { error: 'server_error',
                                       error_description: String(
@@ -3142,6 +3334,31 @@ class AdminApi {
                                       req.stsCellRelay.from) || ''))
             .then(function (view) {
               self.sendJson(res, 200, view);
+              log.debug("Leaving the management API cell people endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API cell people " +
+                        "endpoint: " + ((e && e.message) || e));
+              const code = errorCodes.codeOf(e);
+              if (code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131' ||
+                  code === 'STS-LDAP-0139' || code === 'STS-LDAP-0175') {
+                log.error(errorCodes.tag(code) +
+                          'admin-api: a cell\'s residents could not be ' +
+                          'read from the store: ' + ((e && e.message) || e));
+                res.setHeader('Retry-After', '5');
+                // STS-LDAP-0130, STS-LDAP-0131, STS-LDAP-0139,
+                // STS-LDAP-0175.
+                errorCodes.mark(res, code);
+                self.sendJson(res, 503, { error: 'temporarily_unavailable',
+                  error_description: 'The directory could not be read; ' +
+                    'try again shortly.' });
+                log.debug("Leaving the management API cell people " +
+                          "endpoint. Unavailable.");
+                return;
+              }
+              errorCodes.mark(res, 'STS-CELL-0191');
+              self.sendJson(res, 500, { error: 'server_error',
+                                        error_description: String(
+                                          (e && e.message) || e) });
               log.debug("Leaving the management API cell people endpoint.");
             });
         } },
@@ -4761,9 +4978,14 @@ class AdminApi {
                      '`realm`, `schedule` (`text`, `everyMs`, `setting`, ' +
                      '`cron`, `manualOnly`), `state` (`enabled` or `off`) ' +
                      'and `offReason`, `manual` (whether it may be run now), ' +
+                     '`runsOn` (`worker`, `front` or `every-process`, #408) ' +
+                     'with `onFront` (why a cluster job stays on the front ' +
+                     'process) and `nice` (0 to 19), ' +
                      '`lastRun` and `running` (a run: `runId`, `state`, ' +
                      '`attempt`, `fenceAt`, `node`, `pid`, `startedAt`, ' +
-                     '`endedAt`, `durationMs`, `errorCode`, `why`), ' +
+                     '`endedAt`, `durationMs`, `ranIn` (`worker` or ' +
+                     '`front`), `deferredMs` (how long it was held for a ' +
+                     'busy worker), `errorCode`, `why`), ' +
                      '`queued` manual runs, `nextRunAt` (absolute, UTC), ' +
                      '`nextRunInMs` (by the DATABASE\'s clock at the time of ' +
                      'the request, so every node answers the same figure) ' +
@@ -6912,7 +7134,9 @@ class AdminApi {
               examples: [{ user: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'Whose enrolment was cleared.' },
+            responseDescription: 'Whose enrolment was cleared. ' +
+              '`sessionsEnded` counts the sessions the app\'s codes ' +
+              'signed in, which were ended (#722); every other stays.' },
 
           // -----------------------------------------------------------------
           // THE THIRD REMOVAL (2026-09-10), AND IT IS ALSO THE ONLY ISSUING
@@ -6959,7 +7183,9 @@ class AdminApi {
               examples: [{ user: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'Whose set was cleared.' },
+            responseDescription: 'Whose set was cleared. ' +
+              '`sessionsEnded` counts the sessions a recovery code ' +
+              'signed in, which were ended (#722); every other stays.' },
 
           // THE EMAILED SECOND FACTOR AND THE ADDRESS (#64).
           { action: 'clear-email-factor', operationId: 'clearUserEmailFactor',
@@ -6983,7 +7209,9 @@ class AdminApi {
               examples: [{ user: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'Whether a factor was turned off.' },
+            responseDescription: 'Whether a factor was turned off. ' +
+              '`sessionsEnded` counts the sessions the emailed second factor ' +
+              'signed in, which were ended (#722); every other stays.' },
 
           { action: 'set-aud-sub', operationId: 'setUserAudSub',
             summary: 'Record the account id a client knows somebody by',
@@ -8272,7 +8500,9 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription:
-              'Whether the key was removed, or why it was not.' },
+              'Whether the key was removed, or why it was not. ' +
+              '`sessionsEnded` counts the sessions the key ' +
+              'signed in, which were ended (#722); every other stays.' },
 
           // #470 (rcbj's decision D): the console's Rename on a person's
           // Passkeys table, and the same writer the person's own
@@ -9368,7 +9598,12 @@ class AdminApi {
                      '`stsDeviceSecretHash` is withheld, as from every ' +
                      'LDAP read; every other value is shown as the ' +
                      'directory holds it. Read-only: the register is ' +
-                     'edited through `/admin-api/devices`.',
+                     'edited through `/admin-api/devices`.\n\nWHERE THE ' +
+                     'DIRECTORY IS A WINDOW (#359) the count and the page ' +
+                     'are asked of the store, and a `q` looks inside at ' +
+                     'most a bounded number of entries and says so in ' +
+                     '`search`. A page past the walk\'s cap (100,000 ' +
+                     'entries) is empty and carries `pageCap`.',
         mirrors: 'GET /admin/ldap/devices',
         parameters: [
           { name: 'q', in: 'query', required: false, schema: { type: 'string' },
@@ -9383,10 +9618,19 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API directory devices " +
                     "endpoint.");
-          self.sendJson(res, 200, adminViews.directoryPageJson('devices',
-                                                               req));
-          log.debug("Leaving the management API directory devices " +
-                    "endpoint.");
+          Promise.resolve(adminViews.directoryPageJson('devices', req))
+            .then(function (json) {
+              self.sendJson(res, 200, json);
+              log.debug("Leaving the management API directory devices " +
+                        "endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API directory devices " +
+                        "endpoint: " + ((e && e.message) || e));
+              self.answerDirectoryFailure(res, e, 'the devices page',
+                                          'STS-LDAP-0176');
+              log.debug("Leaving the management API directory devices " +
+                        "endpoint. Refused.");
+            });
         } },
 
       // LAST OF THE EIGHT, and it is the one that answers about the SOCKETS
@@ -9511,10 +9755,22 @@ class AdminApi {
           { name: 'personq', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'Narrows `candidates` — the people a role could be ' +
-                         'granted to, from the directory and from who has ' +
-                         'signed in — to usernames containing this, ' +
-                         'case-insensitive. `candidateSearch` says how many ' +
-                         'candidates there are in all and how many matched.' },
+                         'granted to — to usernames containing this, ' +
+                         'case-insensitive. Where the directory is held in ' +
+                         'memory the list is the directory and who has ' +
+                         'signed in; where it is a window (#359) it is the ' +
+                         'direct children of ou=users, a page at a time, ' +
+                         'and a person who has signed in with no entry is ' +
+                         'not listed (a typed name can still be granted). ' +
+                         '`candidateSearch` says how many candidates there ' +
+                         'are in all and how many matched, and `complete` ' +
+                         'whether this page holds every one it counted: ' +
+                         'where it is false, `incomplete` says how many ' +
+                         'names a DN cannot hold were left out ' +
+                         '(`unusable`), how many counted rows the page ' +
+                         'did not reach (`short`, most often two entries ' +
+                         'sharing one RDN value), and whether the list ' +
+                         'stops at the walk\'s cap (`capped`, `cap`).' },
           { name: 'candidatesPage', in: 'query', required: false,
             schema: { type: 'integer', minimum: 1 },
             description: 'Which page of the matching `candidates`, answered ' +
@@ -9544,8 +9800,17 @@ class AdminApi {
           log.debug("Entering the management API admin roles endpoint.");
           // The layer, not the page: rbacView() built two tables and four forms
           // and this resource used none of them.
-          self.sendJson(res, 200, adminViews.rbacListJson(req).json);
-          log.debug("Leaving the management API admin roles endpoint.");
+          Promise.resolve(adminViews.rbacListJson(req)).then(function (body) {
+            self.sendJson(res, 200, body.json);
+            log.debug("Leaving the management API admin roles endpoint.");
+          }, function (e) {
+            log.debug("Caught in the management API admin roles endpoint: " +
+                      ((e && e.message) || e));
+            self.answerDirectoryFailure(res, e, 'the role roster',
+                                        'STS-LDAP-0176');
+            log.debug("Leaving the management API admin roles endpoint. " +
+                      "Refused.");
+          });
         } },
 
       { method: 'POST', route: BASE + '/rbac/:action', tag: 'Admin roles',
@@ -9803,7 +10068,9 @@ class AdminApi {
               examples: [{ username: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'Whose enrolment was cleared.' },
+            responseDescription: 'Whose enrolment was cleared. ' +
+              '`sessionsEnded` counts the sessions the app\'s codes ' +
+              'signed in, which were ended (#722); every other stays.' },
 
           { action: 'clear-key', operationId: 'clearSecurityKey',
             summary: 'Remove one of somebody\'s security keys',
@@ -9833,7 +10100,9 @@ class AdminApi {
               examples: [{ username: 'alice', credentialId: 'q1w2e3r4' }],
               additionalProperties: false
             },
-            responseDescription: 'How many keys are left.' },
+            responseDescription: 'How many keys are left. ' +
+              '`sessionsEnded` counts the sessions the key ' +
+              'signed in, which were ended (#722); every other stays.' },
 
           { action: 'clear-email-factor', operationId: 'clearEmailFactor',
             summary: 'Turn off somebody\'s emailed second factor',
@@ -9854,7 +10123,9 @@ class AdminApi {
               examples: [{ username: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'Whether a factor was turned off.' }
+            responseDescription: 'Whether a factor was turned off. ' +
+              '`sessionsEnded` counts the sessions the emailed second factor ' +
+              'signed in, which were ended (#722); every other stays.' }
         ] },
 
       // ONE CREDENTIAL'S LINEAGE (#446): the console page had no
@@ -10463,7 +10734,13 @@ class AdminApi {
                          'case worth being able to build for testing.\n\nThe ' +
                          'OAuth issuer is deliberately NOT seeded: it ' +
                          'defaults to naming the base URL a request arrived ' +
-                         'on, and that already carries the realm prefix.',
+                         'on, and that already carries the realm prefix.\n\n' +
+                         'Creation is capped by `realms.maxCount`, which ' +
+                         'counts the default realm. At the cap the create ' +
+                         'is refused and nothing is defined. Lowering the ' +
+                         'cap does not remove realms that already exist. ' +
+                         'Only a service administrator in the default realm ' +
+                         'may change the limit.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -10484,13 +10761,13 @@ class AdminApi {
                              description: 'Settings to set on the realm, ' +
                                           'named by the dot paths GET ' +
                                           '/admin-api/config lists. They win ' +
-                                          'over the seeded names. ' +
-                                          '`realms.enabled` and ' +
-                                          '`realms.pathSegment` are refused: ' +
-                                          'a realm that could switch realms ' +
-                                          'off, or move the prefix it was ' +
-                                          'found under, would ' +
-                                          'be doing it half way ' +
+                                          'over the seeded names. Every ' +
+                                          '`realms.*` key is refused on a ' +
+                                          'realm: one of them decides ' +
+                                          'whether realms exist and where ' +
+                                          'they are found, and a realm ' +
+                                          'carrying it would be changing ' +
+                                          'how it was reached half way ' +
                                           'through the request that found it.' }
               },
               required: ['id'],
@@ -10536,8 +10813,12 @@ class AdminApi {
                          'only which realm you have to be in to make the ' +
                          'call. A setting whose `editable` is false is ' +
                          'refused with the reason, exactly as it is on the ' +
-                         'service-wide resource, and `realms.enabled` and ' +
-                         '`realms.pathSegment` are refused outright.',
+                         'service-wide resource, and every `realms.*` key ' +
+                         'is refused outright. `realms.maxCount` is ' +
+                         'process-wide; only the default realm\'s service ' +
+                         'administrator changes it, and a create past that ' +
+                         'limit is refused. Lowering the limit does not ' +
+                         'remove realms.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -12196,7 +12477,12 @@ class AdminApi {
                       enum: ['service-provider', 'identity-provider'] },
             description: 'Only the relationships in which this service takes ' +
                          'that role. `service-provider` is the direction ' +
-                         'that CONSUMES somebody else\'s assertions.' }
+                         'that CONSUMES somebody else\'s assertions.' },
+          { name: 'category', in: 'query', required: false,
+            schema: { type: 'string', enum: ['enterprise', 'consumer'] },
+            description: 'Only the enterprise partners, or only the ' +
+                         'consumer and social providers (#565): a ' +
+                         'relationship that names a `provider` is consumer.' }
         ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
           { name: 'links',
             description: 'With `relationship`: the people whose ' +
@@ -12305,7 +12591,33 @@ class AdminApi {
                                             'certificate stay THERE, where ' +
                                             'every protocol module reads ' +
                                             'them — this register holds a ' +
-                                            'pointer and not a copy.' }
+                                            'pointer and not a copy.' },
+                provider: { type: 'string',
+                            enum: consumerProviders.ids(),
+                            description: 'A CONSUMER OR SOCIAL PROVIDER ' +
+                                         '(#565): the profile the ' +
+                                         'relationship is made from. Its ' +
+                                         'endpoints, issuer, scope and ' +
+                                         'token authentication are written ' +
+                                         'onto the relationship, `role` must ' +
+                                         'be `service-provider` and ' +
+                                         '`protocol` the profile\'s (both ' +
+                                         'are in `consumerProviders` on ' +
+                                         '`GET /admin-api/federation`), and ' +
+                                         'the realm must have ' +
+                                         '`federation.consumerProviders` ' +
+                                         'on.' },
+                clientId: { type: 'string',
+                            description: 'With `provider`: this service\'s ' +
+                                         'client_id at the provider, set as ' +
+                                         '`fedClientId` in the same act.' },
+                clientSecret: { type: 'string',
+                                description: 'With `provider`: this ' +
+                                             'service\'s secret at the ' +
+                                             'provider, set as ' +
+                                             '`fedClientSecret` in the same ' +
+                                             'act and sealed as that field ' +
+                                             'always is. Never echoed.' }
               },
               required: ['id', 'role', 'protocol'],
               examples: [{ id: 'partner-a', role: 'service-provider',
@@ -13763,7 +14075,22 @@ class AdminApi {
                                'mode.** The rest are recorded, in the way ' +
                                'being in this registry ' +
                                'at all is a record.\n\n' +
-                               this.familyScopeNote() }
+                               this.familyScopeNote() },
+                lifetimeDays: {
+                  type: ['integer', 'string'],
+                  description: 'The lifetime of the client secret the ' +
+                               'create carries in ' +
+                               '`fields.oauthClientSecret` (#394), as ' +
+                               '`add-secret` takes it: whole days, 0 to ' +
+                               '730, 0 never expiring; omitted or empty, ' +
+                               '`oauth2.clientSecretLifetimeDays` ' +
+                               '(`defaultSecretLifetimeDays` in GET ' +
+                               '/admin-api/applications/new). It is stamped ' +
+                               'on the secret\'s record as its `expires`. ' +
+                               'A lifetime outside that range is refused, ' +
+                               'and so is one given with no secret, or ' +
+                               'with a whole secret record, which keeps the ' +
+                               'expiry it carries.' }
               },
               // THE NEW-APPLICATION FORM'S BOXES (#446): the static console
               // sends /admin/applications/new's field grid here as it is,
@@ -20471,6 +20798,286 @@ class AdminApi {
                                  'true`.' }
         ] },
 
+      // -----------------------------------------------------------------------
+      // THE KERBEROS TRUSTS (#430 Phase 4, 2026-10-20).
+      //
+      // Rule 7: the Trusts tab of `/admin/kerberos` has seven controls — Add,
+      // and per row Edit, Enable or Disable, Rotate key, Remove and Pair —
+      // and this resource has the same seven, through
+      // `kerberosTrustsAction()` and `kerberosTrustsJson()` in
+      // `admin-core/`, which reach `kerberos/krb5_trusts.ts`.
+      //
+      // **NO KEY AND NO PASSWORD IS IN ANY REPLY**, but one: a key this
+      // service GENERATED (`keySource: "generate"`) is in `shown` once, base64
+      // per enctype, for the partner's administrator to enter on their side.
+      // A trust password is written and never shown back. The audit row of
+      // every act names the trust and never a key.
+      //
+      // **A REALM'S OWN**: a call under a realm prefix reads and writes that
+      // realm's records. `pair` — and `rotate-key` with `mirror` — write the
+      // matching record on ANOTHER trust realm too, so a realm
+      // administrator's token is refused them (`admin-ui/admin_scope.ts`).
+      // -----------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/kerberos/trusts', tag: 'Kerberos',
+        operationId: 'getKerberosTrusts',
+        summary: 'The realm\'s Kerberos trusts, with their keys described ' +
+                 'and never carried',
+        description: 'The trust records of the realm the call is in, paged ' +
+                     'with `?trustsPage=` and `?per=`, and one record whole ' +
+                     'with `?trust=<partner realm>` (`trust`, or ' +
+                     '`unknownTrust` naming a partner this realm holds no ' +
+                     'trust with).\n\nEach row: the partner realm, NetBIOS ' +
+                     'name and domain SID, the type (`external`, ' +
+                     '`trust-realm`), the direction, the [MS-ADTS] ' +
+                     '6.1.6.7.9 attributes by name and as the ' +
+                     '`trustAttributes` mask, the [MS-PAC] 4.1.2.2 ' +
+                     'boundary, the routed DNS suffixes, the enctypes, the ' +
+                     'forest trust information and claims transformation, ' +
+                     'and per key (`incoming`, `outgoing`) whether it is ' +
+                     'held, its kvno, its source and when it was set — the ' +
+                     'incoming side with the PREVIOUS version a rotation ' +
+                     'keeps and until when it is accepted. `health` lists ' +
+                     'the findings the console\'s health column draws ' +
+                     '(`kind`, `level`, `text`).\n\n`form` is what the add ' +
+                     'and edit forms are drawn from: the closed attribute ' +
+                     'set with its contradictions and requirements, the ' +
+                     'types, directions, key sources, enctypes, claims ' +
+                     'transformations, the shortest trust password, and ' +
+                     'the other trust realms a `trust-realm` partner may ' +
+                     'name. `settings` are the four the trusts read. **NO ' +
+                     'KEY MATERIAL IS IN THIS REPLY.**',
+        mirrors: 'GET /admin/kerberos',
+        parameters: this.pagingParameters().filter(function (one) {
+          return one.name === 'per';
+        }).concat(this.detailPagingParameters([
+          { name: 'trusts',
+            description: 'The realm\'s trust records.' }
+        ])).concat(<any[]>[
+          { name: 'trust', in: 'query', required: false,
+            description: 'One partner realm, for its record whole.',
+            schema: { type: 'string' } }
+        ]),
+        responseDescription: 'The trust records with their paging and ' +
+                             'health, the drill-down record, what the forms ' +
+                             'are drawn from, and the trust settings.',
+        responseSchema: { type: 'object',
+                          description: 'The realm\'s Kerberos trusts.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API Kerberos trusts endpoint.");
+          self.sendJson(res, 200, adminViews.kerberosTrustsJson(req));
+          log.debug("Leaving the management API Kerberos trusts endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/kerberos/trusts/:action',
+        tag: 'Kerberos',
+        mirrors: 'POST /admin/kerberos#kerberos-tab-trusts, POST ' +
+                 '/admin/kerberos/trusts',
+        handler: function (req, res) {
+          log.debug("Entering the management API Kerberos trusts action " +
+                    "endpoint.");
+          const body = parseBody(req);
+          let result;
+          try {
+            result = adminActions.kerberosTrustsAction(
+              self.withAction(req, body), { via: 'api',
+                actor: self.callerNameOf(res) || 'admin-api' });
+          } catch (e) {
+            log.error(errorCodes.tag('STS-API-0135') + 'admin-api: a ' +
+                      'Kerberos trusts action threw: ' +
+                      ((e && e.stack) || e));
+            errorCodes.mark(res, 'STS-API-0135');
+            self.sendJson(res, 500, { ok: false, errors: ['The action ' +
+              'failed inside this service; the log says why.'] });
+            log.debug("Leaving the management API Kerberos trusts action " +
+                      "endpoint. Threw.");
+            return;
+          }
+          if (result.ok && result.shown) {
+            // A generated key is in the body.
+            res.set('Cache-Control', 'no-store');
+          }
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                 'STS-ADMIN-0859');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API Kerberos trusts action " +
+                    "endpoint.");
+        },
+        actions: [
+          { action: 'add', operationId: 'addKerberosTrust',
+            summary: 'Add a trust with another Kerberos realm',
+            description: 'Writes a trust record in this realm\'s directory ' +
+                         '(`ou=kerberosTrusts`) for `partnerRealm`. ' +
+                         '`direction` decides which keys it holds — ' +
+                         '`inbound` the incoming `krbtgt/<us>@<partner>` ' +
+                         '(the partner\'s tickets are accepted), `outbound` ' +
+                         'the outgoing `krbtgt/<partner>@<us>` (this realm ' +
+                         'refers to the partner), `bidirectional` both — and ' +
+                         '`keySource` where each comes from: `password`, a ' +
+                         'shared trust password both KDCs derive the key ' +
+                         'from (RFC 3961 string-to-key, RFC 4120\'s default ' +
+                         'salt), written and never shown back; or ' +
+                         '`generate`, random keys returned ONCE in `shown`. ' +
+                         '`attributes` are [MS-ADTS] 6.1.6.7.9\'s bits by ' +
+                         'name (`quarantined` by default); a contradiction ' +
+                         'or a missing requirement is refused. ' +
+                         '`forestTrustInfo` belongs to a cross-forest trust ' +
+                         'only. Refused for this realm\'s own name, a ' +
+                         'partner already held, and every field out of ' +
+                         'shape, each with its own code.',
+            requestBodyRequired: true,
+            requestBody: TRUST_FIELDS,
+            responseDescription: 'The record\'s public view in `trust`, ' +
+                                 'and a generated key once in `shown`.' },
+          { action: 'update', operationId: 'updateKerberosTrust',
+            summary: 'Change a trust\'s fields',
+            description: 'Changes the record for `partnerRealm`: a field ' +
+                         'not given keeps its value. A key already held ' +
+                         'keeps its key — `rotate-key` changes one — and a ' +
+                         '`direction` that adds a side takes `keySource` ' +
+                         'for it, one that drops a side removes that key. ' +
+                         'The partner realm cannot change: every key is ' +
+                         'salted with it.',
+            requestBodyRequired: true,
+            requestBody: TRUST_FIELDS,
+            responseDescription: 'The record\'s public view in `trust`.' },
+          { action: 'enable', operationId: 'enableKerberosTrust',
+            summary: 'Turn a trust on',
+            description: 'The record for `partnerRealm` refers and accepts ' +
+                         'again, with the keys it kept.',
+            requestBodyRequired: true,
+            requestBody: TRUST_PARTNER_ONLY,
+            responseDescription: 'The record\'s public view.' },
+          { action: 'disable', operationId: 'disableKerberosTrust',
+            summary: 'Turn a trust off, keeping its keys',
+            description: 'A disabled trust refers nobody and accepts no ' +
+                         'ticket (`STS-KRB-0229`); its keys are kept, so ' +
+                         '`enable` restores it as it was.',
+            requestBodyRequired: true,
+            requestBody: TRUST_PARTNER_ONLY,
+            responseDescription: 'The record\'s public view.' },
+          { action: 'rotate-key', operationId: 'rotateKerberosTrustKey',
+            summary: 'Replace a trust\'s keys at the next kvno, keeping the ' +
+                     'incoming one for a grace',
+            description: 'New keys for `side` (`both`, the default, ' +
+                         '`incoming` or `outgoing`, of the sides held) at ' +
+                         'the current kvno plus one, from `keySource`. The ' +
+                         'incoming version it replaces still opens the ' +
+                         'partner\'s tickets for `krb5.trustKeyGraceSeconds` ' +
+                         '(by default the ticket lifetime plus the clock ' +
+                         'skew) and is refused KRB_AP_ERR_BADKEYVER after ' +
+                         'it. With `mirror: true` and a `trust-realm` ' +
+                         'partner, that realm\'s record is rotated in the ' +
+                         'same act the other way round — a service ' +
+                         'administrator\'s act. Without it the partner\'s ' +
+                         'administrator gives their side the same password ' +
+                         'or the keys in `shown`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                partnerRealm: { type: 'string',
+                                description: 'The partner Kerberos realm.' },
+                side: { type: 'string',
+                        enum: ['both', 'incoming', 'outgoing'],
+                        description: 'Which keys.' },
+                keySource: { type: 'string', enum: ['password', 'generate'],
+                             description: 'Where the new key comes from.' },
+                password: { type: 'string',
+                            description: 'The new trust password, for ' +
+                                         '`keySource: "password"`.' },
+                mirror: { type: 'boolean',
+                          description: 'Rotate the partner trust realm\'s ' +
+                                       'record too.' }
+              },
+              required: ['partnerRealm', 'keySource'],
+              examples: [{ partnerRealm: 'PARTNER.EXAMPLE',
+                           keySource: 'generate' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The record\'s view, the sides rotated, ' +
+                                 'the partner realm\'s record when ' +
+                                 'mirrored, and a generated key once in ' +
+                                 '`shown`.' },
+          { action: 'remove', operationId: 'removeKerberosTrust',
+            summary: 'Remove a trust and its keys',
+            description: 'Deletes the record for `partnerRealm`, keys and ' +
+                         'all: no referral is made through it and no ticket ' +
+                         'is accepted from it, at once. Confirmed by ' +
+                         '`confirm` repeating the partner realm ' +
+                         '(`STS-ADMIN-0860` otherwise). `disable` keeps the ' +
+                         'keys instead.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                partnerRealm: { type: 'string',
+                                description: 'The partner Kerberos realm.' },
+                confirm: { type: 'string',
+                           description: 'The partner realm again.' }
+              },
+              required: ['partnerRealm', 'confirm'],
+              examples: [{ partnerRealm: 'PARTNER.EXAMPLE',
+                           confirm: 'PARTNER.EXAMPLE' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether it was removed.' },
+          { action: 'pair', operationId: 'pairKerberosTrust',
+            summary: 'Write the matching record on the partner trust realm',
+            description: 'For a record whose partner is another trust ' +
+                         'realm of this service (`partnerRealm`), writes ' +
+                         'that realm\'s record for this one in the same ' +
+                         'act — its incoming key this realm\'s outgoing and ' +
+                         'the other way round, the same attributes and ' +
+                         'enctypes — or, where it already holds one, makes ' +
+                         'its keys match. With `otherRealm` (a trust realm\'s ' +
+                         'id) instead, writes BOTH records from nothing, from ' +
+                         'one password or one generated key set. Either way ' +
+                         'it writes another realm\'s directory, so it is a ' +
+                         'service administrator\'s act.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                partnerRealm: { type: 'string',
+                                description: 'A record held here, to ' +
+                                             'mirror.' },
+                otherRealm: { type: 'string',
+                              description: 'A trust realm\'s id, to pair ' +
+                                           'from nothing.' },
+                direction: { type: 'string',
+                             enum: ['bidirectional', 'inbound', 'outbound'],
+                             description: 'With `otherRealm`: the keys, ' +
+                                          'from this realm\'s side.' },
+                keySource: { type: 'string', enum: ['password', 'generate'],
+                             description: 'With `otherRealm`.' },
+                password: { type: 'string',
+                            description: 'With `keySource: "password"`.' },
+                attributes: { type: 'array',
+                              items: { type: 'string' },
+                              description: 'With `otherRealm`.' },
+                enctypes: { type: ['array', 'string'],
+                            items: { type: ['integer', 'string'] },
+                            description: 'With `otherRealm`.' },
+                suffixes: { type: ['array', 'string'],
+                            items: { type: 'string' },
+                            description: 'With `otherRealm`: what this ' +
+                                         'realm routes to the other.' },
+                partnerSuffixes: { type: ['array', 'string'],
+                                   items: { type: 'string' },
+                                   description: 'With `otherRealm`: what ' +
+                                                'the other routes here.' }
+              },
+              examples: [{ partnerRealm: 'BETA.EXAMPLE' },
+                         { otherRealm: 'beta', keySource: 'generate' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Both records\' views, whether the other ' +
+                                 'was created or matched, and a generated ' +
+                                 'key once in `shown`.' }
+        ] },
+
       { method: 'GET', path: BASE + '/audit', tag: 'Audit log',
         operationId: 'getAudit',
         summary: 'What happened here, in order, filtered and paged',
@@ -22403,10 +23010,30 @@ class AdminApi {
                      '`authn.mail.usable` says whether its two email ' +
                      'mechanisms can be on here, and a field with ' +
                      '`disabled: true` cannot be turned on until it ' +
-                     'can.\n\nIt is NOT the XACML policy repository, which ' +
+                     'can.\n\n**`attributes` is the attribute policy ' +
+                     '(#396)**: `required` the attributes every person here ' +
+                     'must hold, `catalogue` every attribute a person may be ' +
+                     'given (each `locked`, `required`, `custom`), `custom` ' +
+                     'the realm\'s own attributes, `enforced` whether it is ' +
+                     'enforced (product mode), and `missingFilter` the LDAP ' +
+                     'filter finding a person who lacks one.' +
+                     '\n\nIt is NOT the XACML policy repository, which ' +
                      'is `GET /admin-api/xacml/policies`.',
         mirrors: 'GET /admin/policies',
-        parameters: this.pagingParameters(),
+        // A CAST: `pagingParameters()`'s inferred element type is its two
+        // integer schemas, which this string `enum` is not one of.
+        parameters: (this.pagingParameters() as any[]).concat([
+          // #396: a walk of the realm's people, so only when asked.
+          { name: 'missing', in: 'query', required: false,
+            schema: { type: 'string', enum: ['count'] },
+            description: '`count` answers `attributes.missing`: how many ' +
+                         'people in this realm lack a value of an ' +
+                         'attribute the attribute policy requires. A walk ' +
+                         'of the realm\'s people, so asked only on request, ' +
+                         'and null where the directory is held in the store ' +
+                         '(`attributes.missingFilter` is the LDAP filter ' +
+                         'that finds them there).' }
+        ]),
         responseDescription: 'The kinds of policy, each kind\'s profile in ' +
                              'force with its field table and schema, and ' +
                              'the paged profiles.',
@@ -23322,7 +23949,9 @@ class AdminApi {
                      'SPIRE Server API. These entries are a RECORD rather ' +
                      'than configuration — everything on them was written by ' +
                      'this service — which is why nothing about an agent is ' +
-                     'editable and the only write is the ban.\n\n**Node ' +
+                     'editable. The writes are the ban, the unban, ' +
+                     'forgetting one, and creating a join token for an ' +
+                     'agent that has not attested yet.\n\n**Node ' +
                      'attestation is verified or refused.** An agent here ' +
                      'attested with a type the realm accepts ' +
                      '(spiffe.nodeAttestors) and an attestor verified, and ' +
@@ -23433,7 +24062,41 @@ class AdminApi {
                 [{ agent: 'spiffe://example.org/spire/agent/k8s_psat/abc' }],
               additionalProperties: false
             },
-            responseDescription: 'That it is forgotten.' }
+            responseDescription: 'That it is forgotten.' },
+
+          { action: 'join-token', operationId: 'createSpiffeJoinToken',
+            summary: 'Mint a join token for a workload agent',
+            description: 'How an operator provisions the sidecar agent that ' +
+                         'serves the Workload API on a Unix socket next to ' +
+                         'a workload (#324). The SPIRE Server API is what ' +
+                         'the agent attests to; this is the same join-token ' +
+                         'store `CreateJoinToken` writes, reached here ' +
+                         'because there is no admin SVID until a Workload ' +
+                         'API exists to fetch one from.\n\nThe token is ' +
+                         'shown once, in `token` and in `message`, and is ' +
+                         'not recorded. `agentSpiffeId` is the identity the ' +
+                         'token will attest, which is a digest of the token ' +
+                         'and is safe to keep: parent that agent\'s ' +
+                         'workload entries on it. An optional `agentId` ' +
+                         'registers an alias the way SPIRE does, and is not ' +
+                         'the `agent` field the ban takes.',
+            requestBodyRequired: false,
+            requestBody: {
+              type: 'object',
+              properties: {
+                ttl: { type: 'number',
+                       description: 'Lifetime in seconds. Omit it to use ' +
+                                    'spiffe.joinTokenTtl.' },
+                agentId: { type: 'string',
+                           description: 'Optional alias SPIFFE ID, ' +
+                                        'registered as an entry parented on ' +
+                                        'the agent this token attests.' }
+              },
+              examples: [{ ttl: 600 }],
+              additionalProperties: false
+            },
+            responseDescription: 'The token, once, and the agent SPIFFE ID ' +
+                                 'it will attest.' }
         ] },
       // CERTIFICATE ENROLLMENT (2026-09-13). Each family's operations are
       // declared beside the family, in a file that registers no route and

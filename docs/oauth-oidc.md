@@ -305,14 +305,17 @@ again for an unknown `kid` at most every `oauth2.clientJwksRefetchS`. The mutual
 described in [OAuth security](oauth-security.md#mutual-tls-rfc-8705).
 
 **An application may hold several client secrets, each with its own expiry.**
-The Credentials tab lists them with an Expires column; **Add a secret** mints
-one (with an optional lifetime in days and a description), **Remove** takes one away at
-once, and up to `oauth2.clientSecretsMax` (5 by default) are held. Any
+The Credentials tab lists them with an Expires column; **Add a client secret**
+mints one (with an optional lifetime in days and a description), **Remove**
+takes one away at once, and up to `oauth2.clientSecretsMax` (5 by default) are held. Any
 unexpired secret authenticates at the token endpoint; the newest unexpired one
 is what this service signs and encrypts with where a client secret is the key
 (HS256 ID Tokens, JARM). A secret past its expiry is refused in product mode.
-**Rotate secret** adds a new one and keeps the old ones working for
-`oauth2.clientSecretOverlapS`; **Regenerate secret** replaces them all at once.
+**Rotate the client secret** adds a new one and keeps the old ones working for
+`oauth2.clientSecretOverlapS`; **Regenerate: replace every secret** replaces
+them all at once. The first secret's lifetime can be given when the
+application is created (#394): **Lifetime (days)** beside **Generate Secret**
+on the create form, or `lifetimeDays` on `POST /admin-api/applications/create`.
 A daily scheduler job warns about secrets close to expiry and removes expired
 ones an application holds a live secret beside.
 
@@ -583,8 +586,11 @@ records what the client has asked for.
 
 * **This service's own protected scopes** — `admin:read`, `admin:write`, the
   SCIM scopes (`scim.scopeRead`, `scim.scopeWrite`), the Shared Signals scopes
-  (`ssf.authScopeRead`, `ssf.authScopeWrite`) and the embedded debugger's
-  permission — are issued only to a client that lists them, **in both modes**.
+  (`ssf.authScopeRead`, `ssf.authScopeWrite`, and always `ssf.read` and
+  `ssf.manage`; write includes read, so listing a write scope authorizes the
+  read scope as well) and the
+  embedded debugger's permission — are issued only to a client that lists
+  them, **in both modes**.
   `/admin-api`, SCIM and Shared Signals ask again on every call, so withdrawing
   a declaration cuts off tokens already issued. A registration cannot declare
   one (`invalid_client_metadata`); an administrator does. The seeded
@@ -900,8 +906,10 @@ OpenID Connect Enterprise Extensions 1.0 (#148), in every mode:
   `fedHomeRealmDomain` lists the domain receives the person's sign-in
   directly, unless the application names a partner of its own.
 * **Third-party-initiated login** from the portal adds `tenant`,
-  `domain_hint` (the realm's DNS domain) and `target_link_uri` (the
-  application's registered https home page) to `iss` and `login_hint`.
+  `domain_hint` (the realm's DNS domain) and `target_link_uri` (the link's
+  `target`, which must be one of the client's registered https addresses,
+  else the application's registered https home page) to `iss` and
+  `login_hint`.
 
 ### Signing in a device (RFC 8628)
 

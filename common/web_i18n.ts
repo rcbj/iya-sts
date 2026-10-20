@@ -75,6 +75,8 @@ interface PageLike {
 class WebI18n {
   private readonly env: Json;
   private readonly page: PageLike;
+  // The namespaces it loads; a control the service turns on adds one
+  // (`include()`).
   private readonly namespaces: string[];
   private index: Json;
   private parts: Json[];
@@ -102,6 +104,22 @@ class WebI18n {
     this.parts = [];
     this.files = {};
     this.chosen = '';
+  }
+
+  /**
+   * Adds a namespace the page draws, for the next `load()` — a control a
+   * page draws only when the service says so (#561's account control),
+   * whose words are fetched only then.
+   *
+   * @param namespace - the namespace
+   * @returns whether it was not loaded before
+   */
+  include(namespace: string): boolean {
+    if (this.namespaces.indexOf(namespace) >= 0) {
+      return false;
+    }
+    this.namespaces.push(namespace);
+    return true;
   }
 
   /**

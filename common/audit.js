@@ -385,6 +385,14 @@ const ACTIONS = [
     label: 'A second factor was set up at a sign-in of elevated risk' },
   { action: 'authn.mfa.enrolled', category: 'authentication',
     label: 'Somebody set up a required second factor at sign-in' },
+  // #724: account recovery held to the passkey it replaces.
+  { action: 'authn.recovery.refused', category: 'authentication',
+    label: 'The passkey policy refused a self-service account recovery' },
+  { action: 'authn.recovery.limited', category: 'authentication',
+    label: 'A sign-in after an account recovery was limited to registering ' +
+           'a passkey' },
+  { action: 'authn.recovery.completed', category: 'authentication',
+    label: 'A passkey signed somebody in after an account recovery' },
   { action: 'authn.sign-in.started-over', category: 'authentication',
     label: 'Somebody left a sign-in step and started the sign-in over' },
 
@@ -446,6 +454,13 @@ const ACTIONS = [
   // writes its own `session.end`.
   { action: 'session.renew', category: 'session',
     label: 'A hosted surface renewed its tokens within the same session' },
+  // DEVICE BOUND SESSION CREDENTIALS (#725): a sign-on session bound to a
+  // key its browser holds, and the bound cookie renewed on a proof of it.
+  { action: 'authn.session.bound', category: 'session',
+    label: 'A sign-on session was bound to a key its browser holds' },
+  { action: 'authn.session.refreshed', category: 'session',
+    label: 'A device-bound session\'s cookie was renewed on a proof of its ' +
+           'key' },
 
   // THE TWO THE PROTOCOL-INDEPENDENT LOGOUT WRITES, and they are `session`
   // rather than a category of their own because that is what they are ABOUT —
@@ -840,6 +855,12 @@ const ACTIONS = [
   // about a key version needs and all that anybody else should be given.
   { action: 'krb5.keys.derived', category: 'authentication',
     label: 'A person\'s Kerberos keys were derived from their password' },
+  // A TICKET THAT CROSSED A KERBEROS TRUST WAS SID-FILTERED (#430, rcbj's
+  // decision of 2026-10-19): one row per ticket whose PAC the filter changed,
+  // naming the trust, the principal and the SIDs removed or added — written
+  // by `kerberos/krb5_trusts.ts`'s sidFilter() in place of an info line.
+  { action: 'krb5.trust.sid-filtered', category: 'authentication',
+    label: 'A ticket that crossed a Kerberos trust was SID-filtered' },
   { action: 'admin.krb5.keys.cleared', category: 'admin',
     label: 'An operator cleared somebody\'s Kerberos keys' },
   { action: 'admin.krb5.service.created', category: 'admin',
@@ -1192,6 +1213,20 @@ const ACTIONS = [
     label: 'A federation partner confirmed a sign-out this service sent' },
   { action: 'federation.unlink', category: 'directory',
     label: 'A federation link was removed from a person' },
+  // A CONSUMER PROVIDER'S PEOPLE (#565): a person connecting a provider to
+  // their own account on the portal, and a provider's server-to-server
+  // notification about one of its people (Apple's), fanned out to every
+  // cell since #727.
+  { action: 'federation.connected', category: 'directory',
+    label: 'A person connected a consumer or social provider to their ' +
+           'account' },
+  { action: 'federation.provider-notification', category: 'directory',
+    label: 'A consumer provider\'s notification about one of its people ' +
+           'was accepted' },
+  { action: 'federation.group-ignored', category: 'directory',
+    label: 'A partner\'s group name was not applied, because it names a ' +
+           'group that relationship did not create or one that grants ' +
+           'something by being held (#358)' },
   { action: 'group.add-member', category: 'directory',
     label: 'A member was added to a group' },
   { action: 'group.add-owner', category: 'directory',
@@ -1285,6 +1320,8 @@ const ACTIONS = [
     label: 'A person removed a self-issued subject' },
   { action: 'portal.vc.offer', category: 'protocol',
     label: 'A person made a Credential Offer for their own wallet' },
+  { action: 'portal.vc.remove', category: 'protocol',
+    label: 'A person removed a credential this realm issued them' },
   { action: 'risk.feedback', category: 'authentication',
     label: 'Feedback on a risk assessment was recorded' },
   { action: 'risk.response', category: 'authentication',
@@ -1342,6 +1379,17 @@ const ACTIONS = [
     label: 'A SAML metadata MDQ lookup was made or refused' },
   { action: 'saml2.metadata.refresh', category: 'protocol',
     label: 'A service provider\'s SAML metadata was refreshed' },
+  // SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561): `authn/CLAUDE.md`.
+  { action: 'account.add', category: 'session',
+    label: 'A session joined a browser\'s account set' },
+  { action: 'account.select', category: 'session',
+    label: 'An account was chosen at the account picker' },
+  { action: 'account.switch', category: 'session',
+    label: 'A browser\'s default account changed' },
+  { action: 'account.forget', category: 'session',
+    label: 'A browser forgot a signed-out account' },
+  { action: 'account.ambiguous', category: 'session',
+    label: 'A request did not say which of a browser\'s accounts it was for' },
   { action: 'session.reauthenticate', category: 'session',
     label: 'The same person signed in again on a live session' },
   { action: 'session.refuse', category: 'session',
@@ -1449,6 +1497,11 @@ let dropped = 0;
 // anyway, because a session lookup must never be able to fail a request.
 // ---------------------------------------------------------------------------
 let actorResolver = null;
+// The session the actor acted as (#561), filled beside it by the same
+// module: with several signed-in accounts in one browser a row names the
+// account the request resolved to, and this says which of its sessions.
+// The same contract — no side effects, never throws, '' for none.
+let actorSessionResolver = null;
 
 // ---------------------------------------------------------------------------
 // WHERE THE ACT CAME FROM: THE CLIENT'S ADDRESS ON EVERY ROW (2026-09-18).
@@ -1576,6 +1629,39 @@ function setActorResolver(fn) {
   log.debug("An audit actor resolver was installed; HTTP events will now " +
             "name the signed-in user where there is one.");
   log.debug("Leaving setActorResolver().");
+}
+
+/**
+ * Installs the function that names the session an HTTP request acted as,
+ * for `recordHttp()`'s `detail.sessionId` (#561).
+ *
+ * @param fn - a function from a request to a session id, '' for none
+ */
+function setActorSessionResolver(fn) {
+  log.debug("Entering setActorSessionResolver().");
+  actorSessionResolver = fn;
+  log.debug("Leaving setActorSessionResolver().");
+}
+
+// The session id the resolver names, or ''. Never throws.
+function actorSessionOfRequest(req) {
+  log.debug("Entering actorSessionOfRequest().");
+  if (!actorSessionResolver) {
+    log.debug("Leaving actorSessionOfRequest(). No resolver.");
+    return '';
+  }
+  try {
+    const sid = String(actorSessionResolver(req) || '');
+    log.debug("Leaving actorSessionOfRequest().");
+    return sid;
+  } catch (e) {
+    // The actor resolver's reason: a nicety on a row must not fail the
+    // request it decorates.
+    log.error(errorCodes.tag('STS-REG-0047') + 'the audit actor session ' +
+              'resolver threw and was ignored: ' + e.message);
+    log.debug("Leaving actorSessionOfRequest(). Threw.");
+    return '';
+  }
 }
 
 function actorOfRequest(req) {
@@ -2045,6 +2131,9 @@ function recordHttp(req, res, detail) {
   // what the resolver reads. Nothing but that gate writes the member.
   const caller = res.locals && res.locals.apiCaller;
   const actor = (caller && String(caller.name || '')) || actorOfRequest(req);
+  // WHICH SESSION (#561): named only where the resolver names one — with
+  // several accounts in one browser — so a row is unchanged otherwise.
+  const actorSession = caller ? '' : actorSessionOfRequest(req);
   const posted = (action === 'admin.change' || action === 'api.change')
     ? actionOf(req) : '';
   const statusOutcome = outcomeOfStatus(res.statusCode);
@@ -2069,7 +2158,7 @@ function recordHttp(req, res, detail) {
              // AS AN OWNER (#607): the management API's gate let the call
              // through on the owner rule, so a delegated change reads as one.
              (caller && caller.owner ? ' as an owner' : ''),
-    detail: {
+    detail: Object.assign({
       method: req.method,
       status: res.statusCode,
       route: info.route || '',
@@ -2078,7 +2167,7 @@ function recordHttp(req, res, detail) {
       query: queryText(req.query),
       postedAction: posted,
       via: caller && caller.owner ? 'owner' : ''
-    }
+    }, actorSession ? { sessionId: actorSession } : {})
   });
   log.debug("Leaving recordHttp(). Recorded as " + action + ".");
   return row;
@@ -2470,6 +2559,7 @@ module.exports = {
   directoryActionFor: directoryActionFor,
   objectKindOf: objectKindOf,
   setActorResolver: setActorResolver,
+  setActorSessionResolver: setActorSessionResolver,
   withSource: withSource,
   currentAddress: ambientAddress,
   currentRequest: ambientRequest,

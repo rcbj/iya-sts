@@ -399,6 +399,10 @@
     "en": "bb7f9df5947fbef1",
     "text": "应用自己的主页：人们访问它的地方，因此也是登录它的起点。/portal/applications 中每一行都链接到它，没有此项的条目在那里显示为不带链接，而不是带一个猜测的地址。它是声明的，从不派生——旁边的重定向 URI 是回调而不是正门，因此没有任何东西从它们计算出此项。仅限 http 或 https，因为它会成为 href。"
   },
+  "applications.schema.attributes.appLaunchProtocol.what": {
+    "en": "cbbe60c9e914df65",
+    "text": "当链接未指明协议、且此应用在多个协议中开启了身份提供方发起的登录时，/launch/{app} 对此应用使用哪个协议：saml2、saml11、wsfed 或 oidc。"
+  },
   "applications.schema.attributes.appCorsOrigin.what": {
     "en": "03bcebb131e7b340",
     "text": "浏览器页面可以为此应用调用本服务的来源——`https://app.example.com`，每个值一个精确来源，不带路径也不带通配符。指明此应用为其客户端的请求（client_id、Basic 凭据、客户端断言，或签发给它的访问令牌）只有在其 Origin 列于此处时才会以 Access-Control-Allow-Origin 应答；完全不指明客户端的请求——发现、JWKS、DID 文档、CORS 预检——对列在本领域任何应用上的来源都会应答。留空则不允许任何第三方来源，两种模式下都是如此。本服务自己的来源（其监听器、global.publicBaseUrl、嵌入式调试器以及 global.corsOrigins）从不需要列出。写入时会规范化：协议方案和主机转为小写，默认端口被去除。"
@@ -472,8 +476,8 @@
     "text": "其信任链终止于的信任锚。"
   },
   "applications.schema.attributes.oauthClientId.what": {
-    "en": "1e1a912a88773d34",
-    "text": "client_id，也是三个协议族的标识符属性：OpenID Connect 依赖方就是 OAuth 客户端，在 OpenID4VCI 颁发方处领取凭据的钱包也以 OAuth 客户端身份进行身份验证，因此三者都在这里声明自己的名称，而不是用三个属性把同一事实写成三种形式。通常等于 appIdentifier，即协议出现记录所写入的值；第二个值是此应用也对应的 client_id——按环境区分的 id——这就是它累积记录而不是赋值的原因。在未声明任何 OAuth 协议族的条目上没有此项。"
+    "en": "be5cd98b933adf94",
+    "text": "client_id，也是三个协议族的标识符属性：OpenID Connect 依赖方就是 OAuth 客户端，在 OpenID4VCI 颁发方处领取凭据的钱包也以 OAuth 客户端身份进行身份验证，因此三者都在这里声明自己的名称，而不是用三个属性把同一事实写成三种形式。通常等于 appIdentifier，即协议出现记录所写入的值，也是创建时此项留空所写入的值（#393）；第二个值是此应用也对应的 client_id——按环境区分的 id——这就是它累积记录而不是赋值的原因。创建时填写的列表就是完整的列表。在未声明任何 OAuth 协议族的条目上没有此项。"
   },
   "applications.schema.attributes.oauthAudience.what": {
     "en": "85845f64442f584e",
@@ -536,8 +540,8 @@
     "text": "此应用请求过的作用域，随其请求累积。是观察到的，从不是声明的：不会据此允许或拒绝任何东西。应用可以被签发什么由 oauthAllowedScope 决定。"
   },
   "applications.schema.attributes.oauthAllowedScope.what": {
-    "en": "318365370d864543",
-    "text": "此客户端可以被签发的作用域——RFC 7591 第 2 节的 `scope`，即“客户端在请求访问令牌时可以使用的列表”。每个值一个作用域令牌。三类作用域以不同方式读取它。\n\n**本服务自己的受保护作用域**——admin:read 和 admin:write（/admin-api）、SCIM 作用域（scim.scopeRead、scim.scopeWrite）、共享信号作用域（ssf.authScopeRead、ssf.authScopeWrite）以及调试器权限——只签发给列出它们的客户端，两种模式下都是如此，而且每个作用域背后的资源服务器在每次调用时都会再次检查，因此在这里移除一个值会切断已签发的令牌。RFC 7591 注册不能声明它们；由管理员在这里声明。\n\n**其他所有作用域**，在产品模式中，只有在此列出时才会签发——或者在未列出任何内容时，属于默认集合时才签发：openid、profile、email、address、phone、offline_access 以及本领域的 OpenID4VCI 凭据作用域。在开发模式中，任何作用域都会签发。\n\n**指明某个应用或委托权限的作用域**保留其自身的规则（受众，以及 oauthDelegatedPermission），无需列出。\n\n列表之外的作用域会在授权端点和令牌端点被以 invalid_scope 拒绝（RFC 6749 第 3.3 节），并在刷新或令牌交换时被去除。与 oauthScope 不同，后者只是客户端请求过的内容。"
+    "en": "f61c0b99f0e3941f",
+    "text": "此客户端可以被签发的作用域——RFC 7591 第 2 节的 `scope`，即“客户端在请求访问令牌时可以使用的列表”。每个值一个作用域令牌。三类作用域以不同方式读取它。\n\n**本服务自己的受保护作用域**——admin:read 和 admin:write（/admin-api）、SCIM 作用域（scim.scopeRead、scim.scopeWrite）、共享信号作用域（ssf.authScopeRead、ssf.authScopeWrite，以及始终存在的 ssf.read 和 ssf.manage）以及调试器权限——只签发给列出它们的客户端，两种模式下都是如此。对共享信号而言，写入包含读取：列出写入作用域也就授权了读取作用域，而只列出读取作用域并不授权写入作用域。每个作用域背后的资源服务器在每次调用时都会再次检查，因此在这里移除一个值会切断已签发的令牌。RFC 7591 注册不能声明它们；由管理员在这里声明。\n\n**其他所有作用域**，在产品模式中，只有在此列出时才会签发——或者在未列出任何内容时，属于默认集合时才签发：openid、profile、email、address、phone、offline_access 以及本领域的 OpenID4VCI 凭据作用域。在开发模式中，任何作用域都会签发。\n\n**指明某个应用或委托权限的作用域**保留其自身的规则（受众，以及 oauthDelegatedPermission），无需列出。\n\n列表之外的作用域会在授权端点和令牌端点被以 invalid_scope 拒绝（RFC 6749 第 3.3 节），并在刷新或令牌交换时被去除。与 oauthScope 不同，后者只是客户端请求过的内容。"
   },
   "applications.schema.attributes.oauthPermissionBaseUri.what": {
     "en": "a2b16552f308a9b4",
@@ -1019,6 +1023,18 @@
     "en": "4a6e20c0380356cf",
     "text": "TRUE 或 FALSE：注销是否吊销此客户端的刷新令牌，覆盖 oauth2.revokeRefreshOnLogout。FALSE 才是值得关注的情况，也是按客户端设置此项有意义的原因——注销后还能通过刷新回到会话中的客户端，在真实部署中是一个真实存在的缺陷，而这使它可以针对一个客户端重现，其余客户端则行为正常。"
   },
+  "applications.schema.attributes.oauthThirdPartyInitiatedLogin.what": {
+    "en": "fff2d88eaeaf4e44",
+    "text": "TRUE 或 FALSE：/launch/{app}——以及用户门户的“登录”链接——是否可以将某人发送到此客户端的 oauthInitiateLoginUri（OpenID Connect Core 第 4 节），覆盖 oauth2.thirdPartyInitiatedLogin。"
+  },
+  "applications.schema.attributes.oauthSpInitiatedSso.what": {
+    "en": "50ec3dfde523d275",
+    "text": "TRUE 或 FALSE：当此客户端并非刚刚被启动时，/oauth2/authorize 是否应答它，覆盖 oauth2.spInitiatedSso。FALSE 只应答在同一会话上、oauth2.launchWindowS 之内紧随对此客户端的 /launch 之后的授权请求，每次启动一次，其他任何请求都以 unauthorized_client 拒绝。"
+  },
+  "applications.schema.attributes.oauthInitiateLoginUri.what": {
+    "en": "bee89c2346a1fa39",
+    "text": "由第三方发起此客户端登录的位置：OpenID Connect Core 第 4 节的 initiate_login_uri，/launch/{app} 和用户门户会带着 iss、login_hint 和 target_link_uri 将某人发送到这里。仅限 https，且不得带片段。"
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "由此客户端执行的 RFC 8693 令牌交换，是否在交换得到的访问令牌之外还获得一个 `refresh_token`，仅对它覆盖 oauth2.tokenExchangeRefreshToken。取三个词之一：`never`、`when-requested`（全服务范围的默认值——客户端以 RFC 8693 第 2.1 节的 `requested_token_type` 请求，只有请求了才会得到）或 `always`。\n\n它在执行交换的客户端上读取，而不是在受众上读取，因为刷新令牌是交给客户端的：它是该方持有、吊销并最终兑换的凭据。在值得关注的情况下，交换所涉及的主体在此注册表中根本没有条目，因为交换的全部意义就在于来自别处的 subject_token。\n\n**它适用于 OAuth 2.0 和 OpenID Connect 族，不适用于其他任何族，而且与这里的其他所有属性不同，这一点是强制执行的。** 未声明用于这两族之一的条目会被两个控制台入口和管理 API 拒绝，并指明需要先勾选的族——因为这里的值是关于令牌端点的策略，而一个任何令牌请求都无法指向的条目若携带它，看起来就像它已生效一样。此行上方的说明块对此进行了论证。`ldapmodify` 与访问其他属性一样可以访问此属性，且不受检查。\n\n不属于这三个词之一的值在写入时不算错误，但也不会被悄悄忽略：settingFor() 会发出警告，指明条目、属性及其所持有的值，并由全服务范围的设置决定——与此条目上其他每个覆盖项一样，诚实地对待三种状态。"
@@ -1143,6 +1159,22 @@
     "en": "1887a455954e9b4f",
     "text": "为此依赖方生成的 SAML 1.1 工件可被解析的时长，以秒计，覆盖 saml11.artifactTtlS。由 Browser/Artifact 配置文件的 SOAP 响应方兑换它，仅一次。"
   },
+  "applications.schema.attributes.saml2IdpInitiatedSso.what": {
+    "en": "00f7ceacfb9304e7",
+    "text": "TRUE 或 FALSE：此身份提供方是否可以发起对此服务提供方的登录——来自 /saml2/unsolicited 或 /launch/{app} 的未经请求的 Response（saml-profiles-2.0-os 第 4.1.5 节）——覆盖 saml2.idpInitiatedSso。仅对预期此类登录的服务提供方设为 TRUE：该 Response 不带 InResponseTo，因此服务提供方无法区分发给它的 Response 和被推入其浏览器的 Response。"
+  },
+  "applications.schema.attributes.saml2SpInitiatedSso.what": {
+    "en": "1cab33aadc246c17",
+    "text": "TRUE 或 FALSE：此服务提供方自己的 <samlp:AuthnRequest> 是否得到应答，覆盖 saml2.spInitiatedSso。FALSE 以 RequestDenied 应答，身份提供方发起的登录便成为唯一的进入途径。"
+  },
+  "applications.schema.attributes.saml11IdpInitiatedSso.what": {
+    "en": "6081871f6aca6a2f",
+    "text": "TRUE 或 FALSE：对此依赖方的 SAML 1.1 登录是否可以在这里发起——带 TARGET 而不带 shire 的 /saml11/sso/{rp}，或 /launch/{app}——覆盖 saml11.idpInitiatedSso。"
+  },
+  "applications.schema.attributes.saml11SpInitiatedSso.what": {
+    "en": "2376052fceb025ab",
+    "text": "TRUE 或 FALSE：此依赖方发起的 SAML 1.1 登录——Shibboleth 1.3 AuthnRequest 配置文件，即携带 shire 的请求——是否得到应答，覆盖 saml11.spInitiatedSso。该请求是一个未签名的 URL，因此 FALSE 关上的是门，而不能证明是谁开的门。"
+  },
   "applications.schema.attributes.samlAuthnRequestSigned.what": {
     "en": "2150507140b66231",
     "text": "当来自此服务提供方的最近一个 AuthnRequest 携带签名时为 TRUE——POST 绑定上的封装 ds:Signature，或 Redirect 绑定上第 3.4.4.1 节的 Signature 参数。它是被赋值的而不是累积的，因为它是关于最近一次请求的事实，一串布尔值的历史说明不了任何问题。"
@@ -1154,6 +1186,14 @@
   "applications.schema.attributes.wsfedReplyUrl.what": {
     "en": "1d6376f1797ef43c",
     "text": "为此应用回发登录响应的地址：第 13.2.1 节的 `wreply`，即 WS-Federation 的重定向 URI。直到 2026-08-25，它都被写入 samlAssertionConsumerService，这把 wreply 放进了 SAML 页面读取断言使用者服务和单点注销后备地址的属性中——一个属性保存两种协议的回送地址，于是 WS-Federation 应用看起来拥有一个它从未指定过的 SAML ACS。两个事实，两个属性。与旁边的 SAML 属性一样，它仅在产品模式下检查：开发模式不拒绝任何 wreply，因为一个会拒绝的服务只会减少而不是增加测试用例；产品模式只回发到此列表中的地址，观察到的地址绝不会被添加。开发模式记录的 wreply 会在 appReturnAddressObserved 上做标记，产品模式会拒绝它直到其被确认；在该标记出现之前记录的值不带标记，在领域切换到产品模式之前仍需审查。"
+  },
+  "applications.schema.attributes.wsfedIdpInitiatedSso.what": {
+    "en": "af8a13f7621cb3a1",
+    "text": "TRUE 或 FALSE：此身份提供方是否可以发起对此依赖方的登录——/wsfed/initiate/{rp} 或 /launch/{app}，POST 到其已注册的 wsfedReplyUrl——覆盖 wsfed.idpInitiatedSso。"
+  },
+  "applications.schema.attributes.wsfedSpInitiatedSso.what": {
+    "en": "d199b15200f6e9de",
+    "text": "TRUE 或 FALSE：此依赖方自己的 wsignin1.0 是否得到应答，覆盖 wsfed.spInitiatedSso。wsignin1.0 是一个未签名的 URL，因此 FALSE 关上的是门，而不能证明是谁开的门。"
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
     "en": "493ac4121c2076ca",
@@ -1178,6 +1218,14 @@
   "applications.schema.attributes.krb5TrustedForDelegation.what": {
     "en": "3b66e9eeaaad2290",
     "text": "TRUE 或 FALSE，默认 FALSE：此 Kerberos 服务受信任可进行委托——不受约束的委托（Active Directory 的 TRUSTED_FOR_DELEGATION）。它的服务票据带有 ok-as-delegate，告诉客户端可以把它的 TGT 转发到这里；持有被转发 TGT 的任何人都可以在任何地方以此人的身份行事。受保护者的 TGT 永远不可转发，因此无论此项如何设置都不会被转发。约束委托（appAllowedToDelegateTo、appAllowedToActOnBehalfOf）是更安全的替代方案。"
+  },
+  "applications.schema.attributes.krb5S4uSelfRealm.what": {
+    "en": "1549deb6e1db2854",
+    "text": "此服务可为其用户获取 S4U2SELF 票据的 KERBEROS 领域，除其自身领域外。为空表示仅限其自身领域。值必须是此领域的信任接受其票据的领域——持有传入密钥的信任，或可传递信任所路由的领域——并在写入时检查。"
+  },
+  "applications.schema.attributes.krb5ForeignTgtDelegation.what": {
+    "en": "8f20493c35397916",
+    "text": "`inherit`（默认）或 `deny`：此服务对跨信任委派给它的 TGT 的态度——其为另一领域用户签发的票据上的 ok-as-delegate。`inherit` 遵循信任的属性（[MS-KILE] 3.3.5.7.5）；`deny` 无论属性如何都拒绝。它只会收窄：这里不会启用信任未启用的内容。"
   },
   "applications.schema.attributes.krb5ServiceKeys.what": {
     "en": "35f24692c1cc40a5",

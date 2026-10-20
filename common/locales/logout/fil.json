@@ -5,7 +5,7 @@
   "startAgainEnd": ".",
   "inventory.holding": "Lahat ng hawak pa ng serbisyong ito para kay <code>{username}</code>, sa bawat protocol family na sinasalita nito.",
   "inventory.globalButton": "Global logout — tapusin ang lahat sa ibaba",
-  "inventory.globalNote": "Ang default. Ganito mismo ang ginagawa ng isang POST sa <code>/logout</code> na walang napili.",
+  "inventory.globalNote": "Ang default. Ganito mismo ang ginagawa ng isang POST sa <code>/logout</code> na walang napili. Mananatiling balido ang mga verifiable credential, at ang mga DID na nakatali sa mga ito.",
   "inventory.selectedButton": "Tapusin ang mga naka-tsek",
   "inventory.liveCount": "<strong>{total} aktibong item</strong> sa {families, plural, one {# family} other {# na family}}. May ilan na hindi kayang tapusin ninuman — nakalista ang mga ito kasama ang dahilan, dahil ang sign-out na nagtatago sa mga ito ay magmumukhang kumpleto kahit hindi.",
   "inventory.anyUserOpen": "Walang tinitingnang password ang serbisyong ito kahit saan, kaya ang <code>?username=</code> ay puwedeng tumukoy sa kahit sino at walang ibinibigay na hindi pa totoo — isang request lang ang kailangan para mag-sign in bilang sila. Pinapatay iyon ng <code>logout.anyUser</code>.",
@@ -38,5 +38,10 @@
   "tab.details": "Mga detalye",
   "list.colProtocol": "Protocol",
   "inventory.listNote": "I-tsek ang mga ito sa listahan sa itaas. Walang matatapos kung walang naka-tsek.",
-  "inventory.detailsNote": "I-tsek ang mga token at kredensyal sa mga talahanayan sa itaas. Walang matatapos kung walang naka-tsek."
+  "inventory.detailsNote": "I-tsek ang mga token at kredensyal sa mga talahanayan sa itaas. Walang matatapos kung walang naka-tsek.",
+  "accounts.intro": "Naka-sign in ang browser na ito sa {count} account. Piliin ang account na isa-sign out, o mag-sign out sa bawat account sa browser na ito.",
+  "accounts.current": "(ang default ng browser na ito)",
+  "accounts.all": "Bawat account sa browser na ito",
+  "accounts.continue": "Magpatuloy",
+  "accounts.note": "Ipinapakita ng isang account kung saan pa ito naka-sign in, para tapusin ang lahat o ang mga tsine-check mo. Tinatapos ng bawat account ang lahat ng hawak ng bawat isa, gaya ng ginagawa ng global logout ng bawat isa."
 }

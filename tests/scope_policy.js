@@ -11,11 +11,14 @@
 // Five claims, each about `common/scope_policy.ts` and the two places
 // `oauth-oidc/oauth2.ts` asks it:
 //
-//   A. THIS SERVICE'S OWN PROTECTED SCOPES — admin:*, the SCIM and Shared
-//      Signals scopes (by their SETTINGS, not their default spelling), the
-//      debugger permission — are refused to a client that does not declare
-//      them, IN BOTH MODES, and allowed to one that does; and the seeded
-//      clients declare what they use.
+//   A. THIS SERVICE'S OWN PROTECTED SCOPES — admin:*, the SCIM scopes (by
+//      their SETTINGS, not their default spelling), the Shared Signals
+//      scopes (the settings PLUS ssf.read and ssf.manage, which stay
+//      protected when a setting is renamed; ssf:read and ssf:write are not
+//      Shared Signals scopes, #334),
+//      the debugger permission — are refused to a client that does not
+//      declare them, IN BOTH MODES, and allowed to one that does; and the
+//      seeded clients declare what they use.
 //   B. EVERY OTHER SCOPE is issued freely in development, and in product only
 //      when the client's `oauthAllowedScope` lists it — or, with no list, when
 //      it is in the documented default set; a scope naming an application or
@@ -122,8 +125,8 @@ function claimA(t) {
               'declaring only scim:write');
       t.equal(codeOf(scopePolicy.refusal('scim:write', 'sp-declared')),
               null, m + ': and scim:write, which it declares, is allowed');
-      t.equal(codeOf(scopePolicy.refusal('ssf:write', '')), 'STS-OAUTH-0577',
-              m + ': a request naming no client cannot have ssf:write');
+      t.equal(codeOf(scopePolicy.refusal('ssf.manage', '')), 'STS-OAUTH-0577',
+              m + ': a request naming no client cannot have ssf.manage');
       t.equal(codeOf(scopePolicy.refusal(debuggerAccess.PERMISSION_ID,
                                          'sp-bare')),
               'STS-OAUTH-0577', m + ': nor the debugger permission');
@@ -145,8 +148,27 @@ function claimA(t) {
   } finally {
     config.clearOverride('scim.scopeWrite');
   }
-  t.check(oauth2.protectedScopes().indexOf('ssf:read') >= 0,
-          'oauth2.ts asks the same list');
+  t.check(oauth2.protectedScopes().indexOf('ssf.read') >= 0 &&
+          oauth2.protectedScopes().indexOf('ssf.manage') >= 0 &&
+          oauth2.protectedScopes().indexOf('ssf:read') < 0,
+          'oauth2.ts asks the same list: the profile names, and not ssf:read');
+  t.check(scopePolicy.isProtected('ssf.read') &&
+          scopePolicy.isProtected('ssf.manage') &&
+          !scopePolicy.isProtected('ssf:read') &&
+          !scopePolicy.isProtected('ssf:write'),
+          'ssf.read and ssf.manage are protected, and ssf:read and ' +
+          'ssf:write are not');
+  config.setOverride('ssf.authScopeRead', 'custom:read');
+  try {
+    t.check(scopePolicy.isProtected('custom:read') &&
+            scopePolicy.isProtected('ssf.read') &&
+            scopePolicy.isProtected('ssf.manage') &&
+            !scopePolicy.isProtected('ssf:read'),
+            'renaming ssf.authScopeRead adds a name and unprotects neither ' +
+            'fixed name');
+  } finally {
+    config.clearOverride('ssf.authScopeRead');
+  }
   log.debug("Leaving claimA().");
 }
 
@@ -155,6 +177,8 @@ function claimB(t) {
   t.log.info('=== B. every other scope ===');
   t.equal(codeOf(scopePolicy.refusal('anything:custom', 'sp-bare')), null,
           'development: an undeclared custom scope is issued');
+  t.equal(codeOf(scopePolicy.refusal('ssf:write', '')), null,
+          'development: ssf:write is an ordinary scope and is issued');
   config.setOverride('global.mode', 'product');
   try {
     t.equal(codeOf(scopePolicy.refusal('openid profile email', 'sp-bare')),
@@ -162,6 +186,8 @@ function claimB(t) {
     t.equal(codeOf(scopePolicy.refusal('anything:custom', 'sp-bare')),
             'STS-OAUTH-0578', 'product, no list: a custom scope is refused ' +
             'STS-OAUTH-0578');
+    t.equal(codeOf(scopePolicy.refusal('ssf:write', '')), 'STS-OAUTH-0578',
+            'product, no list: ssf:write is not a default scope');
     t.equal(codeOf(scopePolicy.refusal('vc:scope', 'sp-bare',
                                        { defaults: ['vc:scope'] })), null,
             'product, no list: the caller\'s defaults (OpenID4VCI) are in ' +

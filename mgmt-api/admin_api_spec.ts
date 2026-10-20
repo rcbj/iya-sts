@@ -852,16 +852,29 @@ const CONFIG_SETTING = openObject(
     },
     editable: {
       type: 'boolean',
-      description: 'Whether POST /config/set will take it. False means the ' +
-                   'value was consumed at startup — a bound socket, the TLS ' +
+      description: 'Whether POST /config/set will take it from the realm ' +
+                   'this answer was read in. False means either the value ' +
+                   'was consumed at startup — a bound socket, the TLS ' +
                    'certificate\'s names, the Kerberos principal database, ' +
                    'the directory\'s base DN — so changing it now would do ' +
-                   'nothing. It is refused rather than accepted, because an ' +
-                   'accepted change that does nothing reads as having worked.'
+                   'nothing, or `editRefusal` is set. It is refused rather ' +
+                   'than accepted, because an accepted change that does ' +
+                   'nothing reads as having worked.'
     },
     restartReason: { type: 'string',
-                     description: 'Why it is not editable. Present exactly ' +
-                                  'when `editable` is false.' },
+                     description: 'Why it is not editable, when the value ' +
+                                  'was consumed at startup. Present when ' +
+                                  '`editable` is false for that reason. ' +
+                                  'Absent when `editRefusal` is the reason.' },
+    editRefusal: { type: 'string',
+                   description: 'Why this row cannot be edited from the ' +
+                                'realm the reader is in. Present for ' +
+                                '`realms.maxCount` while a trust realm ' +
+                                'other than the default is ambient: the ' +
+                                'limit is process-wide and only a service ' +
+                                'administrator in the default realm may ' +
+                                'change it. Absent on every row of the ' +
+                                'default realm\'s answer.' },
     env: { type: 'string', description: 'Its environment variable.' },
     // `legacyEnv` is not documented while no setting carries one (#523
     // retired the last, STS_ISSUER): `describe()` still sends it for a row
@@ -1696,7 +1709,17 @@ const SCHEMAS = {
                      '`anonymousPage` (#313).',
         items: { $ref: '#/components/schemas/SessionRow' } },
       unauthenticatedPaging: openObject(
-        'Where in the unauthenticated sessions that page is.', {})
+        'Where in the unauthenticated sessions that page is.', {}),
+      accountChoices: openObject(
+        'What the browsers\' account sets did in this realm (#561, ' +
+        '#731): `enabled` is `authn.multipleAccounts` as the realm has it ' +
+        'now, and `counts` the seven counters every process keeps, added ' +
+        'up — `selected`, `ambiguous` (a request that could not tell which ' +
+        'account it was for), `selectFailed`, `added`, `switched`, ' +
+        '`forgotten` and `expired`. Answered whatever the setting is, ' +
+        'because what was counted while it was on is still true.',
+        { enabled: { type: 'boolean' },
+          counts: openObject('Kind → count.', {}) })
     }, PAGING_PROPERTIES)),
 
   SessionRow: openObject(
@@ -1753,12 +1776,30 @@ const SCHEMAS = {
                                  'matching member of `expiryRules`.' },
       amr: { type: 'array', items: { type: 'string' } },
       acr: { type: 'string' },
+      deviceBound: openObject(
+        'Whether a browser sign-on session is bound to a key its browser ' +
+        'holds (Device Bound Session Credentials, #725): `bound`, the ' +
+        'key\'s `alg`, `boundAt` (epoch ms), and how many times its bound ' +
+        'cookie was renewed on a proof of that key (`refreshes`, the last ' +
+        'at `refreshedAt`). `bound` is false on every other kind of row.',
+        { bound: { type: 'boolean' }, alg: { type: 'string' },
+          boundAt: { type: 'integer' }, refreshes: { type: 'integer' },
+          refreshedAt: { type: 'integer' } }),
       carries: { type: 'array', items: { type: 'string' },
                  description: 'What has signed in ON this session — OIDC ' +
                               'relying parties, WS-Federation realms, SAML ' +
                               '2.0 service providers — which is what makes ' +
                               'ending one reach further than it looks.' },
       detail: { type: 'string' },
+      accountSet: { type: 'string',
+                    description: 'The browser\'s account set this session ' +
+                                 'is in (#561), so the sessions that share ' +
+                                 'one browser can be told apart; empty where ' +
+                                 'it is in none, which is every row with ' +
+                                 '`authn.multipleAccounts` off. The id is ' +
+                                 'not a secret: the cookie\'s handle is, ' +
+                                 'and no answer carries it. `?q=` with it ' +
+                                 'lists that browser\'s sessions.' },
       terminable: { type: 'boolean',
                     description: 'Whether this service can end it. FALSE ' +
                                  'where a setting says otherwise ' +

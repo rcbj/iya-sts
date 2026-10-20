@@ -138,6 +138,9 @@ import revocation = require('./gnap_revocation');
 // WHICH CLIENTS MAY HOLD THIS SERVICE'S PROTECTED SCOPES (#110), the same
 // question the OAuth token endpoint asks. A library.
 import scopePolicy = require('../common/scope_policy');
+// The Shared Signals scope names (#334), so a grant asking for `ssf.read`
+// or `ssf.manage` names this transmitter and is not "for nobody".
+import ssfScopes = require('../common/ssf_scopes');
 // The TLS client certificate on a connection, and who this realm issued it to
 // (#107). A library.
 import mtls = require('../oauth-oidc/mtls');
@@ -1292,10 +1295,12 @@ class GnapGrants {
   //
   // **THE ONE RESOURCE SERVER THAT NEEDS NO ENTRY IS THIS SERVICE'S OWN
   // SHARED SIGNALS TRANSMITTER.** Its access is a reference string naming
-  // `ssf.authScopeRead` or `ssf.authScopeWrite`, or an object of type
-  // `ssf` (`ssf/ssf_auth.ts`'s `gnapCovers()`), and it REFUSES a token
-  // issued for a named resource server (STS-SSF-0079) — so a right of that
-  // shape names a resource server, this service's, and is not refused here.
+  // any published Shared Signals scope (`common/ssf_scopes.ts`: the two
+  // settings, `ssf.read` and `ssf.manage`), or an
+  // object of type `ssf` (`ssf/ssf_auth.ts`'s `gnapCovers()`), and it
+  // REFUSES a token issued for a named resource server (STS-SSF-0079) — so
+  // a right of that shape names a resource server, this service's, and is
+  // not refused here.
   //
   // **`invalid_request`, HTTP 400** (STS-GNAP-0904): RFC 9635 section 3.6
   // defines no error for an access request a resource server does not
@@ -1312,13 +1317,10 @@ class GnapGrants {
   // for no access token is not asked at all.
   // ---------------------------------------------------------------------------
   private noResourceServerRefusal(tokens) {
-    const { log, config } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering GnapGrants.noResourceServerRefusal().");
-    // `gnap_rights.ts`'s `protectedFacts()` reads the same two, the same
-    // way.
-    const ownScopes = [
-      String(config.value('ssf.authScopeRead') || 'ssf:read'),
-      String(config.value('ssf.authScopeWrite') || 'ssf:write')];
+    // `gnap_rights.ts`'s `protectedFacts()` reads the same vocabulary.
+    const ownScopes = ssfScopes.published();
     const namesTransmitter = function (right) {
       log.debug("Entering namesTransmitter().");
       log.debug("Leaving namesTransmitter().");

@@ -265,6 +265,7 @@ class WebAuthnMfa {
           '<form method="post" action="/authn/webauthn">' +
           (w.chosen ? '<input type="hidden" name="key" value="' +
                       esc(w.chosen.id) + '">' : '') +
+          (create ? WebAuthnMfa.laneChoice(w, t) : '') +
           '<div class="row"><button type="submit" id="wa-go" name="action" ' +
           'value="webauthn">' + (create ? t.html('authn.webauthn.create')
                                         : t.html('authn.webauthn.use')) +
@@ -297,6 +298,40 @@ class WebAuthnMfa {
         : t.html('authn.webauthn.amrSecond', { name: String(v.username) })) +
       '</div></details><div class="links">' +
       WebAuthnMfa.links(v, t, 'authn.webauthn.backup') + '</div>';
+  }
+
+  // WHICH LANE (#643): a classical passkey or a post-quantum one, asked only
+  // where the realm offers both (`webauthn.pqcAlongsideClassical`) and only
+  // of a registration. Radios inside the ceremony's form, so the button that
+  // runs the ceremony sends the choice; nothing is drawn with one lane, and
+  // the request is then exactly what it was.
+  /**
+   * The lane choice of a registration, or ''.
+   *
+   * @param w - the step's passkey facts
+   * @param t - the translator
+   * @returns the radios, or ''
+   */
+  static laneChoice(w: Json, t: Json): string {
+    const lanes: string[] = Array.isArray(w.lanes) ? w.lanes : [];
+    if (lanes.length < 2) {
+      return '';
+    }
+    const rows: Json = {
+      classical: [t.html('authn.webauthn.laneClassical'),
+                  t.html('authn.webauthn.laneClassicalWhat')],
+      pqc: [t.html('authn.webauthn.lanePqc'),
+            t.html('authn.webauthn.lanePqcWhat')]
+    };
+    const chosen = String(w.lane || 'classical');
+    return '<fieldset id="wa-lanes"><legend>' +
+      t.html('authn.webauthn.laneWhich') + '</legend>' +
+      lanes.map(function (lane: string): string {
+        return '<label><input type="radio" name="lane" value="' +
+          WebAuthnLogin.esc(lane) + '"' + (lane === chosen ? ' checked' : '') +
+          '> ' + rows[lane][0] + ' <span class="sub">' + rows[lane][1] +
+          '</span></label>';
+      }).join('<br>') + '</fieldset>';
   }
 
   /**
@@ -341,7 +376,8 @@ class WebAuthnMfa {
     }
     const offered = s.offered || {};
     return '<h1>' + t.html('authn.mfaSetup.heading') + '</h1><p class="sub">' +
-      (s.proved ? t.html('authn.mfaSetup.subProved', { name: name })
+      (s.recovery ? t.html('authn.mfaSetup.subRecovery', { name: name })
+        : s.proved ? t.html('authn.mfaSetup.subProved', { name: name })
         : (s.optional ? t.html('authn.mfaSetup.subOptional', { name: name })
                       : t.html('authn.mfaSetup.subRequired', { name: name }))) +
       '</p>' + WebAuthnMfa.error(ctx) +

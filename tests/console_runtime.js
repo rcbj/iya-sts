@@ -20,7 +20,7 @@
 //   1. Signing in begins with PKCE (S256), the realm's own authorize
 //      endpoint, `resource` naming its `/admin-api`, and the verifier and the
 //      state kept for the callback — and a callback whose state does not
-//      match is refused, not redeemed.
+//      match is not redeemed: a fresh sign-in begins.
 //   2. The runtime's own DPoP proofs are accepted: a token it asks for is
 //      DPoP-bound to its key, and `/admin-api/me` answers it as the person.
 //   3. A `use_dpop_nonce` refusal is retried once, with the nonce the server
@@ -213,11 +213,19 @@ function childMain() {
     one.env.location.search = '?code=abc&state=not-the-state';
     runtime = new ConsoleRuntime(one.env);
     await runtime.route();
-    note(/cannot be finished/.test(one.env.document.body.innerHTML) &&
-         !one.store['sts-console-signin'],
-         '1b. a callback whose state is not the one kept is refused, and ' +
-         'the kept values are spent', one.env.document.body.innerHTML
-           .slice(0, 160));
+    // Since 1179ebc4 such a callback starts a FRESH sign-in rather than
+    // drawing a refusal: a wallet or passkey return tab holds no PKCE
+    // record, and the session it made is already in this browser.
+    const restarted = new URL(one.assigned[1] || 'http://x/', origin);
+    const fresh = JSON.parse(one.store['sts-console-signin'] || '{}');
+    note(one.assigned.length === 2 &&
+         restarted.pathname === '/oauth2/authorize' &&
+         !!fresh.state && fresh.state !== saved.state &&
+         fresh.verifier !== saved.verifier &&
+         restarted.searchParams.get('state') === fresh.state,
+         '1b. a callback whose state is not the one kept redeems nothing: ' +
+         'the kept values are spent and a fresh sign-in begins',
+         one.assigned[1]);
 
     // --- 2. its proofs are accepted ---
     const two = makeEnv('/admin', '');

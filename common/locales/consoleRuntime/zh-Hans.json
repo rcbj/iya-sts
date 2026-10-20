@@ -13,5 +13,7 @@
   "signedInAgain": "已重新登录",
   "signedInAgain.text": "控制台将从您离开的地方继续。可以关闭此窗口。",
   "openConsole": "打开控制台",
-  "copied": "已复制"
+  "copied": "已复制",
+  "accounts.unsaved": "此页面有尚未保存的更改。仍要切换账户吗？这些更改将会丢失。",
+  "accounts.otherAccount": "该登录属于另一个账户，因此此标签页没有采用。请以 {user} 的身份重新登录，或从账户菜单中切换账户。"
 }

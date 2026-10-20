@@ -13,5 +13,7 @@
   "signedInAgain": "Inloggad igen",
   "signedInAgain.text": "Konsolen fortsätter där du var. Det här fönstret kan stängas.",
   "openConsole": "Öppna konsolen",
-  "copied": "Kopierat"
+  "copied": "Kopierat",
+  "accounts.unsaved": "Den här sidan har ändringar som inte har sparats. Byta konto ändå? De går förlorade.",
+  "accounts.otherAccount": "Den inloggningen gällde ett annat konto, så den här fliken tog inte emot den. Logga in igen som {user}, eller byt konto från kontomenyn."
 }

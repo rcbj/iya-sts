@@ -115,8 +115,10 @@ import devices = require('../common/devices');
 // person's page, and the policy that governs them.
 import serviceAccounts = require('../common/service_accounts');
 import serviceAccountPolicy = require('../common/service_account_policy');
-// THE SIGN-ON SESSION MAP, which `signOnSessionRows()` walks. It is the same
-// destructured-require trap one module along: admin.js pulls fourteen names
+// THE SIGN-ON SESSIONS. `signOnSessionRows()` asks `sessionsMatching`,
+// which reads the index while the window is on. The map kept on the deps
+// is that cache. The require is the same destructured-require trap one
+// module along: admin.js pulls fourteen names
 // out of two modules through multi-line destructures, and a name taken from
 // the second one is exactly as invisible to a move as one taken from the
 // first. `authn` is position 8 in the require order, so this is a cache hit
@@ -144,6 +146,8 @@ import claimAttributes = require('../common/claim_attributes');
 import scimMap = require('../scim/scim_map');
 import groupClaims = require('../common/group_claims');
 import applications = require('../common/applications');
+// The one identity-provider-initiated sign-in link per protocol (#426).
+import LaunchLinks = require('../common/launch_links');
 // A PERSON's assertion key pairs, for the Credentials section of their own
 // page (2026-09-13). A library: it holds no store and registers no route.
 import personAssertions = require('../common/person_assertions');
@@ -210,6 +214,10 @@ import krb5PersonKeys = require('../kerberos/krb5_person_keys');
 // change, with what the entry holds. A library whose directory arrives
 // through its own slot, so this require loads no route module.
 import personEditor = require('../ldap/person_editor');
+// The attribute policy (#396): the attributes every person must hold, drawn
+// on Directory > Policies, marked on the new-user form and a person's
+// Attributes tab.
+import attributePolicy = require('../common/attribute_policy');
 // RFC 9728's well-known path, which the new-application form names (#446).
 import resourceMetadata = require('../oauth-oidc/protected_resource_metadata');
 import oauth2 = require('../oauth-oidc/oauth2');
@@ -240,6 +248,8 @@ import requestSignature = require('../saml/request_signature');
 import spMetadata = require('../saml/sp_metadata');
 import authorizationServers = require('../oauth-oidc/authorization_servers');
 import federation = require('../federation/federation');
+// The consumer provider catalogue (#565), for the console's category.
+import consumerProviders = require('../federation/consumer_providers');
 // A federationLink's format (#109): a static utility class.
 import fedLinks = require('../federation/federation_links');
 // What a partner encrypts to (#168), for the relationship's page and API.
@@ -914,6 +924,9 @@ interface AdminViewsDeps {
   personEditor: typeof personEditor;
   // The krbtgt rotation (#169), lazily, for `admin_actions.ts`'s reason.
   krbtgtRotation: () => any;
+  // The Kerberos trust records (#430 Phase 4), lazily: the composition root
+  // builds the instance at 14c, and a view asks it only when drawn.
+  krb5Trusts: () => any;
   oauth2: typeof oauth2;
   backchannel: typeof backchannel;
   softwareStatement: typeof softwareStatement;
@@ -1096,6 +1109,9 @@ class AdminViews {
       personEditor: personEditor,
       krbtgtRotation: function () {
         return require('../kerberos/krb5_krbtgt_rotation');
+      },
+      krb5Trusts: function () {
+        return require('../kerberos/krb5_trusts');
       },
       oauth2: oauth2,
       backchannel: backchannel,
@@ -1590,14 +1606,26 @@ class AdminViews {
    * live.
    *
    * @returns the rows
+   * @throws when the session index could not be read
    */
   signOnSessionRows() {
-    const { log, sessions, sessionStartedAt } = this.deps;
+    const { log, sessionStartedAt } = this.deps;
     log.debug("Entering AdminViews.signOnSessionRows().");
     const nowMs = Date.now();
     const rows = [];
-    sessions.forEach(function (session, id) {
-      rows.push({
+    // The injected map is who is cached. The list is every session the
+    // index names while the window is on, and the map while it is off.
+    // Null is an unread page. An empty row list would draw nobody signed in.
+    const matched = authn.sessionsMatching(function () {
+      return true;
+    });
+    if (matched == null) {
+      log.debug("Leaving AdminViews.signOnSessionRows(). Unread.");
+      throw new Error('the sign-on sessions could not be read');
+    }
+    matched.forEach(function (session) {
+      const id = session && session.id;
+      rows.push(Object.assign({
         id: id,
         username: (session.user && session.user.username) || '',
         sub: (session.user && session.user.sub) || '',
@@ -1619,7 +1647,12 @@ class AdminViews {
         // the list wsignout1.0 has to fan out to, and seeing it is the only way
         // to know in advance what a sign-out is about to do.
         wsfedRealms: Object.keys(session.wsfedRealms || {})
-      });
+      },
+      // THE BROWSER'S ACCOUNT SET IT BELONGS TO (#561), where it is in one —
+      // several signed-in accounts in one browser, `authn/CLAUDE.md`. Only
+      // then, so a row is unchanged with `authn.multipleAccounts` off.
+      session.accountSetId ? { accountSet: String(session.accountSetId) }
+                           : {}));
     });
     rows.sort(function (a, b) { return b.startedAt - a.startedAt; });
     log.debug("Leaving AdminViews.signOnSessionRows(). " + rows.length +
@@ -1912,7 +1945,8 @@ class AdminViews {
    * @param req - the request
    * @returns the page's JSON, or a no-directory answer when none is loaded
    *   — or a PROMISE of the JSON where the page is asked of the store
-   *   asynchronously (`/admin/ldap/directory` in a windowed process, #616)
+   *   asynchronously (`/admin/ldap/directory`, #616, and
+   *   `/admin/ldap/devices`, #359, in a windowed process)
    */
   directoryPageJson(name, req) {
     const { log } = this.deps;
@@ -2438,6 +2472,43 @@ class AdminViews {
     return out;
   }
 
+  // What only the attribute policy has to say (#396): every attribute a
+  // person here may be given and which are required, the realm's custom
+  // attributes and the syntaxes one may have, and — only when the reader
+  // asks, `missing=count` — how many people lack a required attribute,
+  // which is a walk of the realm's people (said in `ldap_server.js`'s
+  // `peopleMissing()`). The LDAP filter that finds them is given either way.
+  private attributePolicyExtras(query) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.attributePolicyExtras().");
+    const q = query || {};
+    const required = attributePolicy.required();
+    const asked = String((Array.isArray(q.missing) ? q.missing[0]
+                                                   : q.missing) || '') ===
+                  'count';
+    const out = {
+      enforced: attributePolicy.enforced(),
+      alwaysRequired: attributePolicy.ALWAYS_REQUIRED.slice(),
+      required: required,
+      catalogue: attributePolicy.catalogue(),
+      custom: attributePolicy.definitions(),
+      maxCustom: attributePolicy.MAX_DEFINITIONS,
+      syntaxes: attributePolicy.SYNTAXES.map(function (one) {
+        return { id: one.id, what: one.what };
+      }),
+      // RFC 4515: every person under ou=users lacking any of them.
+      missingFilter: '(|' + required.map(function (one) {
+        return '(!(' + one + '=*))';
+      }).join('') + ')',
+      missingAsked: asked,
+      missing: asked ? attributePolicy.peopleMissing() : null,
+      actions: { define: 'define-person-attribute',
+                 remove: 'remove-person-attribute' }
+    };
+    log.debug("Leaving AdminViews.attributePolicyExtras().");
+    return out;
+  }
+
   /**
    * Builds Directory → Policies: every kind of policy and its profiles.
    *
@@ -2463,6 +2534,8 @@ class AdminViews {
         Object.assign(member, this.passwordPolicyExtras());
       } else if (kind.id === 'authn') {
         Object.assign(member, this.authnPolicyExtras(member));
+      } else if (kind.id === 'attributes') {
+        Object.assign(member, this.attributePolicyExtras(q));
       }
       out[kind.id] = member;
       const profiles = kind.module.list();
@@ -2470,7 +2543,11 @@ class AdminViews {
                        container: kind.container, governs: kind.governs,
                        profiles: profiles.length,
                        actions: [policyKinds.saveAction(kind),
-                                 policyKinds.resetAction(kind)] });
+                                 policyKinds.resetAction(kind)]
+                         .concat((kind.extraActions || []).map(
+                           function (one) {
+                             return one.action;
+                           })) });
       profiles.forEach(function (one) {
         rows.push({ kind: kind.id, name: one.name, stored: one.stored,
                     inherited: !!one.inherited, dn: one.dn,
@@ -4265,8 +4342,11 @@ class AdminViews {
     // Filter first, then page — pagingOf()'s rule, and for its reason.
     const filtered = all.filter(function (row) {
       if (wantedProtocol && row.protocol !== wantedProtocol) return false;
+      // `accountSet` (#731) so that the page's link from a row's browser
+      // narrows the list to the sessions of that one browser.
       return self.chooserMatches([row.username, row.sub, row.handle, row.key,
-                                  row.kind, row.protocol], wantedText);
+                                  row.kind, row.protocol, row.accountSet],
+                                 wantedText);
     });
     const paging = this.pagingOf(query, filtered.length, { noun: 'sessions' });
     const shown = filtered.slice(paging.offset, paging.offset + paging.perPage);
@@ -4349,9 +4429,42 @@ class AdminViews {
         unauthenticatedKept: !!config.value('authn.unauthenticatedSessions'),
         paging: this.pagingJson(paging),
         // The unauthenticated section's page (#313), on `anonymousPage`.
-        unauthenticatedPaging: this.pagingJson(anonymousPage.paging)
+        unauthenticatedPaging: this.pagingJson(anonymousPage.paging),
+        // WHAT THE BROWSERS' ACCOUNT SETS DID (#561's TR-3, drawn since
+        // #731): `admin_stats.accountChoiceCounts()`, every process's rows
+        // added up. Rule 7: the page draws it, so this operation answers
+        // it. `enabled` is the setting as this realm has it now, and the
+        // counts are answered whatever it is — a realm that had it on this
+        // morning still has what it counted then.
+        accountChoices: this.accountChoicesJson()
       }
     };
+  }
+
+  /**
+   * The account-choice counters of the ambient realm (#561, #731), for
+   * `/admin/sessions` and `GET /admin-api/sessions`.
+   *
+   * @returns `{ enabled, counts }`; `counts` is kind → number, the seven
+   *   kinds `admin_stats.recordAccountChoice()` takes
+   */
+  accountChoicesJson() {
+    const { log, config, stats } = this.deps;
+    log.debug("Entering AdminViews.accountChoicesJson().");
+    let counts = {};
+    try {
+      counts = stats.accountChoiceCounts();
+    } catch (e) {
+      // A counter that cannot be read is drawn as none, never as a page
+      // that fails: these are a refinement of what the page is for.
+      log.debug("Caught in AdminViews.accountChoicesJson(): " +
+                ((e && e.message) || e));
+      counts = {};
+    }
+    const out = { enabled: config.value('authn.multipleAccounts') === true,
+                  counts: counts };
+    log.debug("Leaving AdminViews.accountChoicesJson().");
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -7075,6 +7188,110 @@ class AdminViews {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // THE KERBEROS TRUSTS, AS THE TRUSTS TAB OF `/admin/kerberos` AND `GET
+  // /admin-api/kerberos/trusts` BOTH ANSWER IT (#430 Phase 4, 2026-10-20).
+  //
+  // The ambient realm's trust records, paged (`?trustsPage=`, `?per=`), each
+  // with its health findings and its last key change, and `?trust=<partner>`
+  // for one record whole. **NO KEY AND NO PASSWORD IS IN IT**: the records'
+  // public views describe each key (held, kvno, source, when set, the
+  // previous incoming version and until when it is accepted) and carry none.
+  // Beside the rows, what the form is drawn from — the closed attribute set
+  // and its dependency rules, the types, the enctypes, the claims
+  // transformations, the other trust realms a trust-realm partner may name —
+  // and the four settings the trusts read.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds the Trusts tab's JSON and `GET /admin-api/kerberos/trusts`.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
+  kerberosTrustsJson(req) {
+    const { log, config, realms, krb5Principals, krb5Trusts, mode,
+      adminActions } = this.deps;
+    log.debug("Entering AdminViews.kerberosTrustsJson().");
+    const query = (req && req.query) || {};
+    const trusts = krb5Trusts();
+    const kerberos = krb5Principals.kerberosRealmOf();
+    // The codec, for the enctypes' names: a leaf, required where it is read.
+    const kcrypto = require('../kerberos/krb5_crypto');
+    const named = function (ids) {
+      return (ids || []).map(function (id) {
+        return { id: Number(id), name: kcrypto.etypeName(Number(id)) };
+      });
+    };
+    const decorate = function (view) {
+      const setAts = [view.incoming && view.incoming.setAt,
+                      view.outgoing && view.outgoing.setAt]
+        .filter(Boolean).sort();
+      return Object.assign({}, view, {
+        enctypeNames: named(view.enctypes),
+        lastKeyChangeAt: setAts.length ? setAts[setAts.length - 1] : null,
+        health: trusts.health(view)
+      });
+    };
+    const all = kerberos.enabled ? trusts.list() : [];
+    const page = this.pagedRows(query, all,
+                                { name: 'trusts', noun: 'trusts',
+                                  decorate: decorate });
+    const asked = String(Array.isArray(query.trust) ? query.trust[0] :
+                         (query.trust || '')).trim();
+    const one = asked && kerberos.enabled ? trusts.get(asked) : null;
+    const hereId = realms.currentId();
+    const otherRealms = realms.list().filter(function (r) {
+      return r.id !== hereId && krb5Principals.enabledIn(r.id);
+    }).map(function (r) {
+      return { id: r.id, kerberosRealm: String(krb5Principals.nameOf(r.id) ||
+                                               '') };
+    });
+    const graceSetting = Number(config.value('krb5.trustKeyGraceSeconds'));
+    log.debug("Leaving AdminViews.kerberosTrustsJson(). " + all.length +
+              " trust(s).");
+    return {
+      realm: krb5Principals.REALM,
+      trustRealm: hereId,
+      kerberos: kerberos,
+      trusts: page.shown,
+      total: all.length,
+      trustsPaging: this.pagingJson(page.paging),
+      // `?trust=` (the drill-down): the record, or `unknownTrust` naming
+      // what was asked for and is not held.
+      trust: one ? decorate(one) : null,
+      unknownTrust: asked && !one ? asked : '',
+      product: !!mode.requiresSidFilteringOnTrusts(),
+      form: {
+        attributes: Object.keys(trusts.ATTRIBUTE_BITS),
+        defaultAttributes: trusts.DEFAULT_ATTRIBUTES.slice(),
+        contradictions: trusts.CONTRADICTIONS.map(function (row) {
+          return { a: row[0], b: row[1], why: row[2] };
+        }),
+        requires: trusts.REQUIRES.map(function (row) {
+          return { attribute: row[0], needs: row[1], why: row[2] };
+        }),
+        types: trusts.TYPES.slice(),
+        directions: ['bidirectional', 'inbound', 'outbound'],
+        keySources: ['password', 'generate'],
+        enctypes: named(krb5Principals.KDC_ETYPES),
+        defaultEnctypes: trusts.DEFAULT_ENCTYPES.slice(),
+        claimsTransformations: trusts.CLAIMS_TRANSFORMATIONS.slice(),
+        minPasswordLength: trusts.MIN_PASSWORD_LENGTH,
+        trustRealms: otherRealms
+      },
+      settings: {
+        crossRealmClassicDelegation:
+          !!config.value('krb5.crossRealmClassicDelegation'),
+        requireSidFilteringInProduct:
+          !!config.value('krb5.requireSidFilteringInProduct'),
+        maxReferralHops: Number(config.value('krb5.maxReferralHops')),
+        trustKeyGraceSeconds: graceSetting,
+        graceSeconds: trusts.graceSeconds()
+      },
+      actions: adminActions.KERBEROS_TRUST_ACTIONS.slice()
+    };
+  }
+
   // The whole report, for this page and for `GET /admin-api/ssf`. One function,
   // so the page and the API cannot disagree about what this transmitter is
   // doing — which is rule 7's entire subject.
@@ -8089,18 +8306,26 @@ class AdminViews {
         // section says about this mode.
         fields: applications.applicationFields().map(function (row) {
           return Object.assign({}, self.typedField(row), {
-            // And every field a sub-tab's simple view shows (#500), so the
-            // create form and the application page agree on what is usual.
-            inSimple: !!row.declaration || !!row.overrides ||
-              !!row.simple ||
+            // A primary name (#393) is the registry identifier, so the
+            // simplified create form does not draw it. The advanced view
+            // still does: the attribute stays a list, and a list typed
+            // there is the whole list. Every other declaration, override
+            // and sub-tab simple field stays (#500).
+            inSimple: !row.primaryName &&
+              (!!row.declaration || !!row.overrides || !!row.simple ||
               SAML_KEY_SOURCE_FIELDS.some(function (one) {
                 return one.attribute === row.attribute;
-              })
+              }))
           });
         }),
         fieldGroups: applications.FIELD_GROUPS,
         familyChoices: applications.FAMILY_CHOICES,
         longTextAttributes: applications.LONG_TEXT_ATTRIBUTES || [],
+        // What an empty `lifetimeDays` gives the first client secret (#394),
+        // in days, 0 for never: the create form's placeholder, and what a
+        // caller of the create is told it gets by sending nothing.
+        defaultSecretLifetimeDays:
+          Number(config.value('oauth2.clientSecretLifetimeDays')) || 0,
         persistence: { persistsDirectory:
                          !!persistence.status().persistsDirectory,
                        mode: persistence.status().mode },
@@ -8164,8 +8389,15 @@ class AdminViews {
                     simple: row.ldap.toLowerCase() === 'mail' });
       }
     });
+    // WHAT THE REALM'S ATTRIBUTE POLICY REQUIRES (#396), marked on each
+    // field and always in the simplified view: a form that hid a box a
+    // create would be refused for leaving empty would be a trap.
+    const required = attributePolicy.required().map(function (one) {
+      return one.toLowerCase();
+    });
     const out = rows.map(function (row) {
       const claim = claimOf[row.name.toLowerCase()];
+      const isRequired = required.indexOf(row.name.toLowerCase()) >= 0;
       return {
         attribute: row.name,
         type: row.multi ? 'array' : 'string',
@@ -8176,7 +8408,8 @@ class AdminViews {
         example: row.example,
         forText: row.label,
         families: [], everyFamily: true, group: row.group,
-        simple: !!row.simple
+        simple: !!row.simple || isRequired,
+        required: isRequired
       };
     });
     log.debug("Leaving AdminViews.newUserFieldRows(). " + out.length +
@@ -8287,8 +8520,14 @@ class AdminViews {
       gridFields: personEditor.editableAttributes().map(function (row) {
         return { attribute: row.name, label: row.label, group: row.group,
                  multi: row.multi, example: row.example,
-                 simple: row.simple, takes: row.note || 'text' };
+                 simple: row.simple, takes: row.note || 'text',
+                 custom: !!row.custom };
       }),
+      // WHAT A CREATE MUST CARRY (#396): the realm's attribute policy, and
+      // whether it is enforced here (product mode). `cn` is made from
+      // givenName and sn when it is left empty.
+      requiredAttributes: attributePolicy.required(),
+      requiredEnforced: attributePolicy.enforced(),
       credentials: CREDENTIAL_CHOICES.map(function (one) {
         return { id: one.id, label: one.label, what: one.what };
       }),
@@ -8404,6 +8643,21 @@ class AdminViews {
                                                 role: wantedRole || '',
                            per: req.query.per ? paging.perPage : '' };
     const knownKeys = this.knownUserKeys();
+    // A WINDOW PAGES THE STORE (#359). The list below is every person, which
+    // on a window is a synchronous walk. The page is asked of the store
+    // instead; this call stays so the in-memory directory still builds the
+    // union it always built.
+    const ldapMod = require('../ldap/ldap_server');
+    if (typeof ldapMod.directoryIsWindowed === 'function' &&
+        ldapMod.directoryIsWindowed()) {
+      log.debug("Leaving AdminViews.rbacListJson(). Windowed.");
+      return this.windowedRbacList(req, {
+        info: info, state: state, grants: grants,
+        wantedText: wantedText, needle: needle, wantedRole: wantedRole,
+        filtered: filtered, paging: paging, shown: shown,
+        filterParams: filterParams, knownKeys: knownKeys
+      });
+    }
     const candidates = rbac.candidates(Object.keys(knownKeys),
                                       realms.currentId());
 
@@ -8547,9 +8801,12 @@ class AdminViews {
           // twenty of twenty from twenty of five thousand.
           candidates: candidateShown,
           candidatesPaging: self.pagingJson(candidatePaging),
+          // Held in memory, the list is every candidate: whole (#359's
+          // windowed answer carries the same two keys).
           candidateSearch: {
             q: personWanted || null, total: candidates.length,
-            matched: candidateMatched.length
+            matched: candidateMatched.length, complete: true,
+            incomplete: null
           },
           picked: personAsked
             ? { asked: personAsked, candidate: picked }
@@ -8561,6 +8818,207 @@ class AdminViews {
           roleChoices: rbac.ROLES
       };
       }())
+    };
+  }
+
+  // Marks directory rows the console has seen authenticate. The key's own
+  // spelling is kept on a seen-only row; a directory row keeps the RDN.
+  private markSeen(rows: Array<{ username: string; seen: boolean }>,
+                   knownKeys: Record<string, any>):
+      Array<{ username: string; seen: boolean }> {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.markSeen().");
+    const keys = Object.keys(knownKeys || {});
+    rows.forEach(function (row) {
+      const hit = keys.filter(function (key) {
+        return String(key).toLowerCase() ===
+          String(row.username).toLowerCase();
+      })[0];
+      if (hit) {
+        row.seen = true;
+      }
+    });
+    log.debug("Leaving AdminViews.markSeen().");
+    return rows;
+  }
+
+  /**
+   * The two incompleteness notes of a windowed candidate list — the
+   * page's and the pane's — as one (#359): the unusable names and the
+   * shortfall of each, summed, and the cap if either reached it. Null
+   * when both pages were whole.
+   *
+   * @param a - one page's `incomplete`, or null
+   * @param b - the other's, or null
+   * @returns the note, or null
+   */
+  private foldIncomplete(a, b) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.foldIncomplete().");
+    if (!a && !b) {
+      log.debug("Leaving AdminViews.foldIncomplete(). Whole.");
+      return null;
+    }
+    const one = a || {};
+    const two = b || {};
+    const out = {
+      unusable: (Number(one.unusable) || 0) + (Number(two.unusable) || 0),
+      short: (Number(one.short) || 0) + (Number(two.short) || 0),
+      capped: Boolean(one.capped || two.capped),
+      cap: Number(one.cap || two.cap) || 0
+    };
+    log.debug("Leaving AdminViews.foldIncomplete().");
+    return out;
+  }
+
+  // `/admin/rbac` where the directory is a window (#359). The candidate
+  // list is one count and one page of the direct children of ou=users —
+  // the pane's slice is the same page when it asks the same offset — and
+  // a `person` not on that page is one lookup. People who have signed in
+  // and have no entry are not listed; a typed name can still be granted.
+  // The username is the lower-cased RDN.
+  private async windowedRbacList(req, built: {
+    info: any; state: any; grants: any[]; wantedText: string;
+    needle: string; wantedRole: string; filtered: any[]; paging: any;
+    shown: any[]; filterParams: Record<string, any>;
+    knownKeys: Record<string, any>;
+  }): Promise<any> {
+    const { log, rbac } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.windowedRbacList().");
+    const ldap = require('../ldap/ldap_server');
+    const personWanted = this.queryOne(req.query, 'personq').trim();
+    const census = await ldap.candidatePageAsync(0, 0, personWanted);
+    const matched = Number(census.matched) || 0;
+    const total = Number(census.total) || 0;
+    const candidateOptions = { name: 'candidates', defaultPer: CHOOSER_HITS,
+                               noun: 'people' };
+    let candidatePaging = this.pagingOf(req.query, matched,
+                                        candidateOptions);
+    const offsetAsked = parseInt(this.queryOne(req.query, 'personfrom'), 10);
+    if (this.queryOne(req.query, 'candidatesPage') === '' &&
+        isFinite(offsetAsked) &&
+        offsetAsked > 0 && offsetAsked < matched) {
+      const asPage = Object.assign({}, req.query, {
+        candidatesPage: String(Math.floor(offsetAsked /
+                                          candidatePaging.perPage) + 1)
+      });
+      candidatePaging = this.pagingOf(asPage, matched, candidateOptions);
+    }
+    let paneFrom = parseInt(this.queryOne(req.query, 'personfrom'), 10);
+    if (!isFinite(paneFrom) || paneFrom < 0 || paneFrom >= matched) {
+      paneFrom = 0;
+    }
+    const known = built.knownKeys;
+    const asked = await ldap.candidatePageAsync(
+      candidatePaging.offset, candidatePaging.perPage, personWanted,
+      { total: total, matched: matched });
+    const pageRows = this.markSeen(asked.rows, known);
+    const same = candidatePaging.offset === paneFrom &&
+      candidatePaging.perPage === CHOOSER_HITS;
+    const paneAsked = same ? asked
+      : await ldap.candidatePageAsync(paneFrom, CHOOSER_HITS, personWanted,
+          { total: total, matched: matched });
+    const paneRows = same ? pageRows : this.markSeen(paneAsked.rows, known);
+    // NOT A WHOLE PAGE, SAID (the review of #692): `matched` counts rows,
+    // and a name a DN cannot hold, a shared RDN value and the walk's cap
+    // each keep a counted row off the page. The page's answer says which
+    // (`candidatePageAsync()`), and the pane's is folded in when it asked
+    // a page of its own.
+    const incomplete = this.foldIncomplete(asked.incomplete,
+      same ? null : paneAsked.incomplete);
+    const personAsked = this.queryOne(req.query, 'person').trim();
+    let picked = null;
+    if (personAsked) {
+      const wanted = personAsked.toLowerCase();
+      picked = pageRows.filter(function (row) {
+        return row.username.toLowerCase() === wanted;
+      })[0] || paneRows.filter(function (row) {
+        return row.username.toLowerCase() === wanted;
+      })[0] || null;
+      if (!picked) {
+        const named = await ldap.candidateByNameAsync(personAsked);
+        if (named) {
+          this.markSeen([named], known);
+          picked = named;
+        } else {
+          const seenKey = Object.keys(known).filter(function (key) {
+            return String(key).toLowerCase() === wanted;
+          })[0];
+          if (seenKey) {
+            picked = { username: seenKey, inDirectory: false, seen: true };
+          }
+        }
+      }
+    }
+    const filterParams = built.filterParams;
+    filterParams.personq = personWanted;
+    filterParams.personfrom = this.queryOne(req.query, 'personfrom');
+    filterParams.person = personAsked;
+    const candidatePane = {
+      from: paneFrom, matched: matched, shown: paneRows
+    };
+    const knownHere: Record<string, boolean> = {};
+    built.shown.forEach(function (row) {
+      if (row.userKey && known[row.userKey]) {
+        knownHere[row.userKey] = true;
+      }
+    });
+    const pagingJson = this.pagingJson(built.paging);
+    const info = built.info;
+    const state = built.state;
+    const shown = built.shown;
+    const wantedText = built.wantedText;
+    const wantedRole = built.wantedRole;
+    const filtered = built.filtered;
+    const paging = built.paging;
+    log.debug("Leaving AdminViews.windowedRbacList(). " + matched +
+              " candidate(s) match.");
+    return {
+      info: info, state: state, grants: built.grants,
+      wantedText: wantedText, needle: built.needle,
+      wantedRole: wantedRole, filtered: filtered, paging: paging,
+      shown: shown, filterParams: filterParams, knownKeys: known,
+      candidates: pageRows, personWanted: personWanted,
+      personAsked: personAsked, picked: picked,
+      candidateMatched: pageRows,
+      json: {
+        enforced: info.enforced, openWhenEmpty: info.openWhenEmpty,
+        openToAnyone: info.openToAnyone,
+        closedToEveryone: info.closedToEveryone,
+        windowOpens: info.windowOpens,
+        bootstrapPasswordRequired: info.bootstrapPasswordRequired,
+        bootstrap: info.bootstrap,
+        available: info.available, groupsDn: info.groupsDn,
+        usersDn: info.usersDn,
+        grantCount: info.grantCount, matched: filtered.length,
+        shown: shown.length,
+        settings: configSettingsJson('/admin/rbac'),
+        filter: { q: wantedText || null, role: wantedRole || null },
+        page: paging.page, pages: paging.pages, perPage: paging.perPage,
+        firstRow: paging.firstRow, lastRow: paging.lastRow,
+        you: { username: state.username, roles: state.roles,
+               read: state.read, write: state.write,
+               viaEmptyRoster: state.open },
+        roles: info.roles.map(function (role) {
+          const out = Object.assign({}, role);
+          delete out.members;
+          delete out.claimed;
+          return out;
+        }),
+        grants: shown,
+        candidates: pageRows,
+        candidatesPaging: self.pagingJson(candidatePaging),
+        candidateSearch: {
+          q: personWanted || null, total: total, matched: matched,
+          complete: incomplete === null, incomplete: incomplete
+        },
+        picked: personAsked
+          ? { asked: personAsked, candidate: picked }
+          : null,
+        paging: pagingJson, candidatePane: candidatePane,
+        known: knownHere, roleChoices: rbac.ROLES
+      }
     };
   }
 
@@ -8738,6 +9196,91 @@ class AdminViews {
       });
       }())
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT AN APPLICATION WAS SEEN DOING (#706, #708), for the read-only lines
+  // at the head of its OAuth and SAML sub-tabs. Each list value carries
+  // `declared`: FALSE where the application declares a list and the value is
+  // not on it — rcbj's warning mark — so the page never compares lists
+  // itself. The four comparisons are the ones the endpoints make: a grant or
+  // response type outside a NON-EMPTY declared list (#289: an empty one
+  // restricts nothing), a redirect URI that is not registered (an empty list
+  // registers none), and a scope outside a non-empty `oauthAllowedScope`
+  // (#110). The SAML lists shadow nothing an endpoint refuses by, so every
+  // value is `declared`. The observed certificate is described, never
+  // drawn: its subject and SHA-256 thumbprint.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns what an application was seen doing, by attribute, each list
+   * value marked whether its declared twin allows it.
+   *
+   * @param fields - the application's fields
+   * @returns the lists, the last SAML request and the observed certificate
+   */
+  applicationObservedState(fields) {
+    const { log, applications, stsCrypto } = this.deps;
+    log.debug("Entering AdminViews.applicationObservedState().");
+    const listOf = function (name) {
+      return [].concat(fields[name] || []).map(String)
+        .filter(function (one) { return one !== ''; });
+    };
+    // `allowed` is the declared list, or null where nothing is declared and
+    // so nothing is outside it.
+    const marked = function (name, allowed, same?) {
+      const key = same || function (one) { return one; };
+      const keys = allowed ? allowed.map(key) : null;
+      return listOf(name).map(function (value) {
+        return { value: value,
+                 declared: !keys || keys.indexOf(key(value)) >= 0 };
+      });
+    };
+    const nonEmpty = function (name) {
+      const values = listOf(name);
+      return values.length ? values : null;
+    };
+    let certificate = null;
+    const observedCertificate = String(
+      fields.samlObservedSigningCertificate || '').trim();
+    if (observedCertificate) {
+      try {
+        const der = Buffer.from(observedCertificate.replace(
+          /-----[^-]+-----|\s+/g, ''), 'base64');
+        certificate = {
+          subject: String(stsCrypto.parseCertificate(der).subject || '')
+            .replace(/\n/g, ', '),
+          sha256: stsCrypto.certificateThumbprint(der,
+                                                  { format: 'colon-hex' })
+        };
+      } catch (e) {
+        log.debug("Caught in AdminViews.applicationObservedState(): " +
+                  ((e && e.message) || e));
+        // A value that does not parse is still a sighting; the line says
+        // so rather than the page losing it.
+        certificate = { subject: '', sha256: '', unreadable: true };
+      }
+    }
+    const signed = String(fields.samlAuthnRequestSigned || '');
+    const out = {
+      oauthGrantTypeObserved: marked('oauthGrantTypeObserved',
+                                     nonEmpty('oauthGrantType')),
+      oauthResponseTypeObserved: marked('oauthResponseTypeObserved',
+        nonEmpty('oauthResponseType'), applications.canonicalResponseType),
+      appRedirectUriObserved: marked('appRedirectUriObserved',
+                                     listOf('oauthRedirectUri')),
+      oauthScope: marked('oauthScope', nonEmpty('oauthAllowedScope')),
+      appAuthorizationServer: marked('appAuthorizationServer', null),
+      samlNameIdFormat: marked('samlNameIdFormat', null),
+      samlResponseBinding: marked('samlResponseBinding', null),
+      samlLastRequest: signed || fields.samlAuthnRequestVerification
+        ? Object.assign({ signed: signed === 'TRUE' },
+                        this.verificationOf(
+                          fields.samlAuthnRequestVerification))
+        : null,
+      samlObservedSigningCertificate: certificate
+    };
+    log.debug("Leaving AdminViews.applicationObservedState().");
+    return out;
   }
 
   // `<outcome> <binding> <sigAlg> [weak]`, as the SSO service records it, as
@@ -9916,11 +10459,21 @@ class AdminViews {
         longTextAttributes: applications.LONG_TEXT_ATTRIBUTES || [],
         // The lists the grid offers a search on, and what each searches
         // (#459): `applications` or `groups`.
-        fieldSearches: applications.FIELD_SEARCHES || {}
+        fieldSearches: applications.FIELD_SEARCHES || {},
+        // WHAT THE APPLICATION WAS SEEN DOING (#706, #708), drawn read-only
+        // at the head of the sub-tab whose settings each one shadows. None is
+        // a field of the grid, so none is in `fields`.
+        observed: self.applicationObservedState(fields)
       },
       // #609: the named passkey policies naming this application, read-only
       // on the Every protocol sub-tab.
       passkeyPolicies: self.applicationPasskeyPolicies(row),
+      // #426, #713: the identity-provider-initiated sign-in URL for each
+      // protocol the application can be launched in, drawn at the top of that
+      // protocol's sub-tab — `{ <protocol>: { url, enabled, missing,
+      // endpoint, … } }`, the same URL the user portal links and the door
+      // answers.
+      launchUrls: LaunchLinks.linksFor(row, base),
       cors: listOf('appCorsOrigin').map(function (stored) {
         return { stored: stored,
                  canonical: applications.corsOriginsOf(
@@ -10005,6 +10558,34 @@ class AdminViews {
     (out as any).ownership = self.ownershipOf('application', row.identifier);
     (out.config as any).fieldWarnings = scopeWarnings.length
       ? { wstrustJwtScope: scopeWarnings } : {};
+    // ACROSS TRUSTS (#430 Phase 4): for a Kerberos service, what its
+    // delegation attributes mean across this realm's trusts, computed here
+    // so the console's read-only panel and `GET /admin-api/applications
+    // ?application=` say the same; and the realms its krb5S4uSelfRealm may
+    // name, offered as the field's choices (with whatever it holds now, so
+    // a value whose trust was removed is still drawn and can be taken out).
+    (out as any).krb5Across = null;
+    if (declared.indexOf('krb5') >= 0) {
+      try {
+        const across = this.deps.krb5Trusts()
+          .applicationAcross(fields);
+        (out as any).krb5Across = across;
+        const offered = across.choices.krb5S4uSelfRealm
+          .concat(configValues.krb5S4uSelfRealm || [])
+          .filter(function (one, i, all) {
+            return all.indexOf(one) === i;
+          });
+        configFields.forEach(function (one) {
+          if (one.attribute === 'krb5S4uSelfRealm' && offered.length) {
+            one.choices = offered;
+          }
+        });
+      } catch (e) {
+        log.debug("Caught in AdminViews.applicationPageData(): " +
+                  ((e && e.message) || e));
+        (out as any).krb5Across = null;
+      }
+    }
     log.debug("Leaving AdminViews.applicationPageData().");
     return out;
   }
@@ -11362,8 +11943,10 @@ class AdminViews {
     const all = federation.list().map(this.federationRow.bind(this));
     const wantedText = String(req.query.q || '').trim().toLowerCase();
     const wantedRole = String(req.query.role || '').trim();
+    const wantedCategory = String(req.query.category || '').trim();
     const filtered = all.filter(function (row) {
       if (wantedRole && row.role !== wantedRole) return false;
+      if (wantedCategory && row.category !== wantedCategory) return false;
       if (!wantedText) return true;
       return (row.id + ' ' + row.name + ' ' + row.peer + ' ' + row.application)
         .toLowerCase().indexOf(wantedText) >= 0;
@@ -11376,6 +11959,10 @@ class AdminViews {
     const roleCounts: Record<string, number> = {};
     all.forEach(function (r) {
       roleCounts[r.role] = (roleCounts[r.role] || 0) + 1;
+    });
+    const categoryCounts: Record<string, number> = {};
+    all.forEach(function (r) {
+      categoryCounts[r.category] = (categoryCounts[r.category] || 0) + 1;
     });
     const notConfigured = all.filter(function (r) {
       return r.enabled && !r.ready;
@@ -11393,7 +11980,8 @@ class AdminViews {
           shown: paged.shown.length,
           ready: all.filter(function (r) { return r.usable; }).length,
           filter: { q: String(req.query.q || '') || null,
-                    role: wantedRole || null },
+                    role: wantedRole || null,
+                    category: wantedCategory || null },
           page: paging.page, pages: paging.pages, perPage: paging.perPage,
           firstRow: paging.firstRow, lastRow: paging.lastRow,
           container: federation.containerDn(),
@@ -11402,6 +11990,14 @@ class AdminViews {
           roles: federation.ROLES, protocols: federation.PROTOCOLS,
           paths: federation.PATHS,
           paging: pagingJson, roleCounts: roleCounts,
+          // CONSUMER AND SOCIAL PROVIDERS (#565): whether this realm has
+          // them on, how many of each category there are, and the
+          // catalogue a new one is made from.
+          categoryCounts: categoryCounts,
+          consumerProviders: {
+            on: federation.consumerProvidersOn(),
+            catalogue: consumerProviders.catalogue()
+          },
           enabledNotConfigured: notConfigured,
           authentications: authenticationTotal,
           relationships: paged.shown
@@ -11509,6 +12105,7 @@ class AdminViews {
       // "yes" and "1" into — and one of those is how a relationship stays
       // disabled while the page says it is on.
       return ['fedEnabled', 'fedAutocreateUsers', 'fedUpdateUserAttributes',
+              'fedProvisionGroups',
               'fedMayAssertAdministrators', 'fedSignRequest',
               'fedAllowUnsolicited', 'fedAcceptSignout',
               'fedRequireSignedLogout', 'fedAllowUnencrypted']
@@ -11648,8 +12245,20 @@ class AdminViews {
           schema: federation.SCHEMA.attributes,
           enumLabels: enumLabels,
           defaultSubjectPolicy: federation.DEFAULT_SUBJECT_POLICY,
+          // What a missing fedAutocreateUsers means in this mode (#358).
+          // The browser bundle cannot require mode.js.
+          autocreateDefault: mode.defaultsFederatedAutocreate(),
           subjectPolicy: federation.subjectPolicyOf(record),
           encrypts: federation.encrypts(record),
+          // The provider this relationship was made from (#565), with the
+          // profile's note and documentation for the page.
+          provider: (function () {
+            const p = consumerProviders.profileFor(record.fedProvider);
+            return p ? { id: p.id, label: p.label, note: p.note,
+                         docs: p.docs,
+                         realmOn: federation.consumerProvidersOn() }
+                     : null;
+          }()),
           paths: federation.PATHS, base: base, loginHref: login,
           metadataUrl: metadata,
           signOut: row.role === 'service-provider' ? signOut : {}
@@ -11705,6 +12314,11 @@ class AdminViews {
                       {}).label || record.fedProtocol,
       peer: record.fedPeer || '',
       application: record.fedApplication || '',
+      // The category and the provider (#565): consumer when it names one.
+      category: consumerProviders.categoryOf(record),
+      provider: record.fedProvider || '',
+      providerLabel: (consumerProviders.profileFor(record.fedProvider) ||
+                      {}).label || '',
       enabled: federation.isEnabled(record),
       ready: readiness.ready,
       missing: readiness.missing,
@@ -13168,6 +13782,19 @@ class AdminViews {
     const { log, credentials, totp, webauthnPolicy, backupCodes } = this.deps;
     log.debug("Entering AdminViews.mfaJson(). key=" + key);
     const mech = credentials.mechanismsFor(key);
+    // THE PASSKEY POLICY THAT HOLDS THIS PERSON (#718), selected for them
+    // as a sign-in with no application selects it, so each key row can say
+    // whether it would still sign them in. Lazily, as `forApplication()`
+    // reaches it above.
+    const passkeyPolicy = require('../common/passkey_policy');
+    const postQuantumRefusals = passkeyPolicy.withSelection(key, '',
+      function () {
+        return (mech.keys || []).map(function (one) {
+          const refused = passkeyPolicy.postQuantumRefusal(
+            credentials.keyAlgorithm(one), 'sign-in');
+          return refused ? String(refused.why || '') : '';
+        });
+      });
     if (!mech) {
       log.debug("Leaving AdminViews.mfaJson(). No credential store.");
       return null;
@@ -13206,7 +13833,7 @@ class AdminViews {
       // carries none, so there is no shape of this reply in which a caller
       // holding `admin:read` is handed a working second factor.
       backupCodes: mech.backupCodes,
-      keys: (mech.keys || []).map(function (one) {
+      keys: (mech.keys || []).map(function (one, index) {
         return { credentialId: one.credentialId, role: one.role,
                  label: one.label || null, signCount: one.signCount || 0,
                  enrolledAt: one.enrolledAt || 0,
@@ -13218,8 +13845,10 @@ class AdminViews {
                  // authenticator's claim, which is why it is beside it.
                  aaguid: one.aaguid || null,
                  // ITS SIGNATURE ALGORITHM (2026-10-01): name, COSE id,
-                 // and whether it is post-quantum or insecure.
+                 // and whether it is post-quantum or insecure — and its lane
+                 // (#643), there and here.
                  algorithm: credentials.keyAlgorithm(one),
+                 lane: credentials.keyLane(one),
                  attestation: one.attestation || null,
                  // WHAT THE PASSKEY PAGES SHOW (#470): the name a page draws
                  // (the label, else the default), the group — `device` or
@@ -13244,7 +13873,11 @@ class AdminViews {
                  deviceSerial: (one.attestation &&
                                 one.attestation.deviceSerial) || null,
                  // WHETHER IT SIGNS IN WITH NO USERNAME (#474), and why not.
-                 withoutUsername: credentials.withoutUsername(one) };
+                 withoutUsername: credentials.withoutUsername(one),
+                 // A CLASSICAL KEY THE PERSON'S PROFILE NO LONGER LETS SIGN
+                 // THEM IN (#718): the refusal's sentence, English as every
+                 // refusal is, or ''.
+                 postQuantumRefused: postQuantumRefusals[index] || '' };
       }),
       primaryKeys: mech.primaryKeys,
       mfaKeys: mech.mfaKeys,
@@ -14023,6 +14656,7 @@ export = {
   setTruststore: slot.forward('setTruststore'),
   truststoreJson: slot.forward('truststoreJson'),
   kerberosPrincipalsJson: slot.forward('kerberosPrincipalsJson'),
+  kerberosTrustsJson: slot.forward('kerberosTrustsJson'),
   krbtgtView: slot.forward('krbtgtView'),
   consoleRpSession: slot.forward('consoleRpSession'),
   gateStateFor: slot.forward('gateStateFor'),

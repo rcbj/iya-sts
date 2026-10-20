@@ -1134,6 +1134,18 @@ MORE than the row names, because that protocol has no per-ticket revocation.
 join between the two resources: every browser-session row carries the
 `sessionId` a token issued under it records.
 
+**SEVERAL ACCOUNTS IN ONE BROWSER (#561, drawn since #731)**: every row
+carries `accountSet`, the browser's account set a browser session is in
+(`''` on every other row, and on every row with `authn.multipleAccounts`
+off), and `?q=` with it lists that browser's sessions — the page links each
+row's short id there. The set's id is not a secret; the cookie's handle is,
+and no answer carries it. Beside the rows, `accountChoices` is `{ enabled,
+counts }`: `admin_stats.accountChoiceCounts()`, the seven counters every
+process keeps, which the page draws as its *Several accounts in one
+browser* tab. Both are answered by `AdminViews.sessionsView()`, the one
+function behind the page and the operation, so rule 7 holds by
+construction (`tests/multi_account_concurrency.js` 7).
+
 ## `/admin-api/caep/sessions`, AND THE GAP THE PARITY CHECK FOUND
 
 `/admin/caep-sessions` is a page of the console and had no operation naming it:
@@ -1516,6 +1528,31 @@ ever a real certificate would be left in every later job's handshakes. Its
 and asserts a read-only token is refused the write.
 
 
+## `/admin-api/kerberos/trusts` — THE KERBEROS TRUSTS (#430 Phase 4, 2026-10-20)
+
+`GET /admin-api/kerberos/trusts` (`per`, `trustsPage` answered by
+`trustsPaging`, and `trust` for one record whole) and `POST
+/admin-api/kerberos/trusts/{add,update,enable,disable,rotate-key,remove,pair}`,
+mirroring the Trusts tab of `/admin/kerberos` through
+`adminViews.kerberosTrustsJson()` and `adminActions.kerberosTrustsAction()`,
+which require `kerberos/krb5_trusts.ts` lazily (it is built by the
+composition root at 14c). Rule 7: seven controls, seven actions. Three things
+a caller is told:
+
+* **ONE REPLY CARRIES KEY MATERIAL, ONCE**: a key this service generated, in
+  `shown`, `no-store`. A trust password is never returned, and no read
+  carries a key (`tests/vendored/sts_kerberos_trusts_api.js` searches every
+  one).
+* **`remove` WANTS `confirm` REPEATING THE PARTNER REALM**, the console's typed
+  confirmation as a field, because it takes the keys with it.
+* **`pair`, AND `rotate-key` WITH `mirror`, ARE A SERVICE ADMINISTRATOR'S**:
+  each writes the partner trust realm's record, which a realm token may not
+  (`admin-ui/admin_scope.ts`, `STS-API-0112`).
+
+The application view (`GET /admin-api/applications?application=`) carries
+`page.krb5Across` for a Kerberos service, the console's *Across trusts*
+panel; `kerberos/CLAUDE.md` argues all of it.
+
 ## `/admin-api/kerberos/principals` — THE STORED KERBEROS KEYS (2026-09-12)
 
 `GET /admin-api/kerberos/principals` (paged with `per`, `peoplePage` and
@@ -1701,6 +1738,19 @@ doors. A caller that means nobody to hold anything sends `credential: "none"`;
 `sts_portal_totp.js` were changed to say so. A typed password on this door, and
 a generated one, meet the realm's password policy in product mode, and
 `set-password` does the same.
+
+### The attribute policy's two acts (#396, 2026-10-19)
+
+`POST /admin-api/policies/{save,reset}-attributes-policy` are the sixth
+kind's save and reset, generated from its FIELDS like every kind's; the field
+is `requiredAttributes`, `oneOf` a list or a comma-separated string (the
+`attributeList` type). Beside them are the first two actions a kind has OF ITS
+OWN, `define-person-attribute` and `remove-person-attribute`, described by the
+kind (`PolicyKind.extraActions`: summary, description and request body) and
+answered through `policiesAction()`'s `act` verb — the same resource, the same
+console form target, so rule 7 needed no new operation. `GET
+/admin-api/policies` grew `missing=count`, a walk of the realm's people asked
+only on request.
 
 ## `upload-certificate` AND `regenerate-secret` (2026-09-13)
 

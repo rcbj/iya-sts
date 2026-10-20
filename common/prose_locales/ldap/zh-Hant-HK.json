@@ -136,8 +136,8 @@
     "text": "此應用程式若經過註冊，是如何註冊的：\"administrator\"（在 /admin/applications/new 上或透過管理 API 建立）、\"rfc7591\"（POST /oauth2/register）、\"ldap:<bound DN>\"（在 ou=applications 下的 LDAP 新增，#504；未繫結者為 \"ldap\"）或 \"startup\"（本服務自己植入的客戶端之一）。只是出現的應用程式上沒有此屬性。由此登錄以及 LDAP 新增寫入，後者會保留其作者給定的值；LDAP 修改從不蓋印它。「在產品模式下，它決定了應用程式是否受服務」（#496）：沒有它的項目——開發模式下出現記錄所歸檔的項目——在每個協定入口都會被視為沒有應用程式。"
   },
   "applications.schema.attributes.oauthClientId.what": {
-    "en": "1e1a912a88773d34",
-    "text": "「CLIENT_ID」，也是三個家族的識別碼屬性：OpenID Connect 依賴方「就是」OAuth 客戶端，而在 OpenID4VCI 簽發者處領取憑證的錢包也以 OAuth 客戶端身分驗證，因此三者都在此宣告其名稱，而不是使用三個屬性，那會是同一事實的三種拼寫。通常等於 appIdentifier，也就是協定出現記錄所寫入的值；「第二個」值是此應用程式也會回應的 client_id——依環境區分的 ID——這就是它採累積而非指派的原因。在未宣告任何 OAuth 家族的項目上不存在。"
+    "en": "be5cd98b933adf94",
+    "text": "「CLIENT_ID」，也是三個家族的識別碼屬性：OpenID Connect 依賴方「就是」OAuth 客戶端，而在 OpenID4VCI 簽發者處領取憑證的錢包也以 OAuth 客戶端身分驗證，因此三者都在此宣告其名稱，而不是使用三個屬性，那會是同一事實的三種拼寫。通常等於 appIdentifier，也就是協定出現記錄所寫入的值，也是建立時此項留空所寫入的值（#393）；「第二個」值是此應用程式也會回應的 client_id——依環境區分的 ID——這就是它採累積而非指派的原因。建立時輸入的清單就是完整的清單。在未宣告任何 OAuth 家族的項目上不存在。"
   },
   "applications.schema.attributes.oauthAudience.what": {
     "en": "85845f64442f584e",
@@ -188,8 +188,8 @@
     "text": "看到此客戶端在授權端點要求過的 response_type。這是記錄而不是權限：oauthResponseType 才是它可以要求的。"
   },
   "applications.schema.attributes.oauthAllowedScope.what": {
-    "en": "318365370d864543",
-    "text": "「此客戶端可獲簽發的範圍」——RFC 7591 section 2 的 `scope`，即「客戶端在要求存取權杖時可使用的清單」。每個值一個範圍權杖。三種範圍以不同方式讀取它。\n\n**本服務自己的受保護範圍**——admin:read 與 admin:write（/admin-api）、SCIM 範圍（scim.scopeRead、scim.scopeWrite）、Shared Signals 範圍（ssf.authScopeRead、ssf.authScopeWrite）以及偵錯工具權限——「在兩種模式下」都只簽發給列出它們的客戶端，而每個範圍背後的資源伺服器在每次呼叫時都會再次詢問，因此在此移除一個值會切斷已簽發的權杖。RFC 7591 註冊不得宣告它們；由管理員在此宣告。\n\n**其他每個範圍**，在產品模式下只有列於此處時才會簽發——或者，未列出任何範圍時，屬於預設集合者才會簽發：openid、profile、email、address、phone、offline_access，以及此領域的 OpenID4VCI 憑證範圍。在開發模式下任何範圍都會簽發。\n\n**指名應用程式或委派權限的範圍**遵循其自身的規則（對象，以及 oauthDelegatedPermission），不必列出。\n\n清單之外的範圍在授權與權杖端點會以 invalid_scope 拒絕（RFC 6749 section 3.3），並從重新整理或權杖交換中移除。與 oauthScope 不同，後者只是客戶端要求過的內容。"
+    "en": "f61c0b99f0e3941f",
+    "text": "「此客戶端可獲簽發的範圍」——RFC 7591 section 2 的 `scope`，即「客戶端在要求存取權杖時可使用的清單」。每個值一個範圍權杖。三種範圍以不同方式讀取它。\n\n**本服務自己的受保護範圍**——admin:read 與 admin:write（/admin-api）、SCIM 範圍（scim.scopeRead、scim.scopeWrite）、Shared Signals 範圍（ssf.authScopeRead、ssf.authScopeWrite，以及一律存在的 ssf.read 與 ssf.manage）以及偵錯工具權限——「在兩種模式下」都只簽發給列出它們的客戶端。對共享信號而言，寫入包含讀取：列出寫入範圍也就授權了讀取範圍，而只列出讀取範圍並不授權寫入範圍。每個範圍背後的資源伺服器在每次呼叫時都會再次詢問，因此在此移除一個值會切斷已簽發的權杖。RFC 7591 註冊不得宣告它們；由管理員在此宣告。\n\n**其他每個範圍**，在產品模式下只有列於此處時才會簽發——或者，未列出任何範圍時，屬於預設集合者才會簽發：openid、profile、email、address、phone、offline_access，以及此領域的 OpenID4VCI 憑證範圍。在開發模式下任何範圍都會簽發。\n\n**指名應用程式或委派權限的範圍**遵循其自身的規則（對象，以及 oauthDelegatedPermission），不必列出。\n\n清單之外的範圍在授權與權杖端點會以 invalid_scope 拒絕（RFC 6749 section 3.3），並從重新整理或權杖交換中移除。與 oauthScope 不同，後者只是客戶端要求過的內容。"
   },
   "applications.schema.attributes.oauthPermissionBaseUri.what": {
     "en": "a2b16552f308a9b4",
@@ -570,6 +570,14 @@
   "applications.schema.attributes.krb5TrustedForDelegation.what": {
     "en": "3b66e9eeaaad2290",
     "text": "TRUE 或 FALSE，預設為 FALSE：此 Kerberos 服務「受信任可進行委派」——不受限制的委派（Active Directory 的 TRUSTED_FOR_DELEGATION）。其服務票證攜帶 ok-as-delegate，告訴客戶端可以將其 TGT 轉送到此處；持有轉送之 TGT 的人可以在任何地方以該人身分行事。受保護人員的 TGT 永遠不可轉送，因此無論此處如何設定都絕不會被轉送。受限制的委派（appAllowedToDelegateTo、appAllowedToActOnBehalfOf）是較安全的替代方案。"
+  },
+  "applications.schema.attributes.krb5S4uSelfRealm.what": {
+    "en": "1549deb6e1db2854",
+    "text": "此服務可為其用戶取得 S4U2SELF 票證的 KERBEROS 領域，除其自身領域外。空白表示僅限其自身領域。值必須是此領域的信任接受其票證的領域——持有傳入金鑰的信任，或可轉移信任所路由的領域——並於寫入時檢查。"
+  },
+  "applications.schema.attributes.krb5ForeignTgtDelegation.what": {
+    "en": "8f20493c35397916",
+    "text": "`inherit`（預設）或 `deny`：此服務對跨信任委派給它的 TGT 的態度——其為另一領域用戶簽發的票證上的 ok-as-delegate。`inherit` 遵循信任的屬性（[MS-KILE] 3.3.5.7.5）；`deny` 無論屬性如何都拒絕。它只會收窄：這裡不會啟用信任未啟用的內容。"
   },
   "applications.schema.attributes.appEnrolledCertificate.what": {
     "en": "8aa24cf06f1d004f",

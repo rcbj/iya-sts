@@ -40,6 +40,7 @@
 
 delete process.env.CONFIG_FILE;
 
+const storeDouble = require('./tools/store_double');
 const convertTool = require('../persistence/cell_convert');
 const tiers = require('../persistence/tiers');
 const tiered = require('../persistence/persistence_tiered');
@@ -617,8 +618,6 @@ async function statements(t) {
           dial.verifyChain === false && dial.verifyHostname === false,
           'for require the setting still decides, both halves together');
   const seen = [];
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
   function FakePool() {}
   FakePool.prototype.on = function () {};
   FakePool.prototype.query = function (sql, params) {
@@ -632,18 +631,14 @@ async function statements(t) {
   FakePool.prototype.end = function () {
     return Promise.resolve();
   };
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-    exports: { Pool: FakePool, Client: function () {} } };
+  const restore = storeDouble.install({ Pool: FakePool,
+                                        Client: function () {} });
   let store;
   try {
     store = convertTool.sqlStore({ url: 'postgres://sts_app@db/sts',
                                    verifyTls: false, name: 'global' });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
   await store.rows('sts_keys');
   await store.rows('sts_minted', { handle: ['dpop.seenJtis'] });

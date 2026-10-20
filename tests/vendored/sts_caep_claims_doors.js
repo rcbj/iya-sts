@@ -352,8 +352,8 @@ async function test() {
     kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "oidc", "ssf"],
     fields: { oauthClientId: [RECEIVER], oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post",
-              oauthAllowedScope: ["openid", "profile", "ssf:read",
-                                  "ssf:write", "scim:read", "scim:write"],
+              oauthAllowedScope: ["openid", "profile", "ssf.read",
+                                  "ssf.manage", "scim:read", "scim:write"],
               oauthRedirectUri: [REDIRECT],
               oauthGrantType: ["authorization_code", "client_credentials"],
               oauthResponseType: ["code"] } },
@@ -362,7 +362,7 @@ async function test() {
     await ok(realmApi + "/consent/grant-global-consent",
              { client: RECEIVER, scope: one }, "consented " + one);
   }
-  const token = await tokenFor("ssf:read ssf:write");
+  const token = await tokenFor("ssf.read ssf.manage");
   const created = await send(realmBase + "/ssf/stream", { method: "POST",
     headers: { "Content-Type": "application/json",
                Authorization: "Bearer " + token },
@@ -380,6 +380,13 @@ async function test() {
   const streamId = created.body.stream_id;
 
   log.info("=== a person with no address, signed in, holding tokens ===");
+  // THIS REALM'S OWN ATTRIBUTE POLICY (#396) asks no address: the person is
+  // created without one ON PURPOSE, so that step d sees email_verified flip
+  // once one is proved, and product mode's default (givenName, sn, mail)
+  // would refuse the create.
+  await ok(realmApi + "/policies/save-attributes-policy",
+    { profile: "default", requiredAttributes: ["givenName"] },
+    "this realm's attribute policy requires no address");
   await ok(realmApi + "/users/create", { username: ALICE, invent: false,
     credential: "password", password: PASSWORD,
     attributes: { cn: "CAEP " + ALICE, givenName: "Caep", sn: "Doors" } },

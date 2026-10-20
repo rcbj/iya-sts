@@ -515,9 +515,10 @@ default**:
   `login_required`.
 * **Levels are ordered `0` < `1` < `mfa`** and are published as
   `acr_values_supported`. A token carries the most preferred **requested**
-  value that was met. `hwk`, `phr` and `phrh` are met by two factors including a
-  security key. Any other value is met only by a sign-in that reports exactly
-  that `acr`.
+  value that was met. `hwk` is met by two factors including a security key.
+  Any other value is met only by a sign-in that reports exactly that `acr`.
+* **`phr` and `phrh`** (OpenID Connect EAP ACR Values 1.0) are published too,
+  and are not on the ladder. See *Phishing-resistant sign-in* below.
 * `acr` and `auth_time` ride in the access token and in introspection, and a
   refresh keeps them.
 * **The challenge** (section 3) comes from two places. This service's own
@@ -529,6 +530,50 @@ default**:
   with
   `WWW-Authenticate: Bearer error="insufficient_user_authentication"`, plus the
   `acr_values` and `max_age` it needs.
+
+### Phishing-resistant sign-in (`phr`, `phrh`)
+
+OpenID Connect EAP ACR Values 1.0 defines two `acr` values. `phr` means that
+a party under the relying party's control could not have gained what it needs
+to sign in as the person. `phrh` means that, and the key is held in a
+hardware-protected device or component. A client asks with `acr_values=phr`
+(or `phrh`), or with an essential `acr` claims request, or by registering
+`default_acr_values` (`oauthDefaultAcrValues` on the console). It reads the
+answer in the ID Token's `acr`.
+
+| The latest sign-in was | It earns |
+|---|---|
+| a passkey or security key already registered, alone or after a password | `phr` |
+| the same, with an attestation this realm **trusts** and the backup-eligible (BE) flag **clear** | `phr` and `phrh` |
+| a synced (backup-eligible) passkey, or an unattested key | `phr` only |
+| a TLS client certificate (`/tls/sign-in`) | `phr` only — nothing says where its private key lives |
+| a federation partner reporting `phr` / `phrh` | what the partner said |
+| a password, a one-time code, an emailed code or link, a recovery code, a wallet, a Kerberos ticket | nothing |
+| a key enrolled in the same sign-in on the strength of a password | nothing (EAP section 4) |
+
+* **A request naming only `phr` or `phrh` makes the sign-in screen ask for a
+  security key**, alone or after a password. A sign-in that still did not earn
+  the value is refused `unmet_authentication_requirements` (`STS-OAUTH-0970`;
+  `STS-OAUTH-0971` for `phrh` on a key that earned only `phr`, with the
+  reason in `error_description`).
+* **The values are not rungs.** `mfa` does not meet `phr` (a password and a
+  one-time code can be phished), and `phr` does not meet `mfa` (a passkey alone
+  is one factor here, `acr "1"`). A token carrying `phr` or `phrh` meets a
+  resource server's request for `1`, and `phrh` meets `phr`. A token meets
+  either only by carrying it as its `acr`; `amr` `hwk` is not read as one.
+* **Nothing changes for a client that does not ask**: its tokens carry `"1"`
+  or `"mfa"` as before.
+* `phrh` needs the attestation to have been verified when the key was
+  registered (`webauthn.attestationPolicy` `verify-if-present` or
+  `require-trusted`, and an anchor or the FIDO metadata for the model). Under
+  development's default, `off`, no key is trusted and `phrh` is never met.
+* **An operator's floor**: the issuance policy's `requirePhishingResistant`
+  and `requireHardwareProtected` options (application handles) refuse an
+  application anything issued on an authentication that did not earn the
+  value, whatever the client asked for. The policy sees the fact as
+  `urn:sts:xacml:phishing-resistance` (`phr`, `phrh` or `none`).
+* SAML's `AuthnContextClassRef` and WS-Federation's `wauth` do not read these
+  values.
 
 ### Not implemented
 

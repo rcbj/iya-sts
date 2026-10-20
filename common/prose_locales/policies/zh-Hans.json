@@ -1023,6 +1023,14 @@
     "en": "dcf08d219b55b2ed",
     "text": "默认关闭。证明规则（webauthn.attestation* 设置：策略、AAGUID 列表、认证级别和 FIPS）在注册通行密钥时检查。开启时，每次登录都会依据当时记录的内容和 FIDO Metadata Service 的当前状态再次检查，因此在规则收紧之前注册的密钥，或其型号后来被报告为已泄露的密钥，将无法再让任何人登录。没有可信证明的密钥无法通过任何要求证明的规则。"
   },
+  "passkey.FIELDS.postQuantumRequired.label": {
+    "en": "011c5d09e4f351f3",
+    "text": "要求后量子通行密钥"
+  },
+  "passkey.FIELDS.postQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off`（默认值）接受任何签名算法的通行密钥。`sign-in` 在通行密钥让某人登录时（作为第一凭据或第二因素）只接受后量子通行密钥，即算法为 ML-DSA-44、ML-DSA-65 或 ML-DSA-87（RFC 9964）的通行密钥；经典通行密钥仍可注册。`registration-and-sign-in` 在注册时也拒绝经典通行密钥，此时注册只提供 ML-DSA。决定因素是算法，而不是密钥创建时所在的通道。当领域不提供任何 ML-DSA 时（webauthn.algorithms 未列出任何 ML-DSA，且 webauthn.pqcOnly 和 webauthn.pqcAlongsideClassical 均未开启）将被拒绝。"
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "“创建通行密钥”发送的提示"
@@ -1087,6 +1095,14 @@
     "en": "128deae048d6edbf",
     "text": "默认开启：一个“使用通行密钥”步骤，其请求列出此人的所有通行密钥，浏览器提供当前可用的那一个。关闭时，拥有多个通行密钥的人会看到按名称列出的每个通行密钥的选项，请求只指明所选的那一个。"
   },
+  "passkey.FIELDS.recoveryAssurance.label": {
+    "en": "f1e6580ee3b2ee9c",
+    "text": "持有通行密钥者的账户恢复"
+  },
+  "passkey.FIELDS.recoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "开发模式下默认为 `any`，产品模式下默认为 `not-weaker`。不要求通行密钥的账户恢复方式——密码重置链接、激活链接、恢复代码、通过电子邮件发送的代码或链接——是否为持有通行密钥的人恢复访问权限。`any`：立即恢复。`not-weaker`：此后第一次不是通过通行密钥的登录不能访问任何应用；此人需注册一个符合此策略的通行密钥并用它登录。`operator-only`：同 not-weaker，并且拒绝自助方式（忘记密码表单、登录时的恢复代码或通过电子邮件发送的代码或链接）；只剩下管理员的重置链接、生成的密码或激活链接。保存时省略此项，则保留内置默认值。"
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "本服务用于通行密钥策略的类：通行密钥在此领域中的行为方式。该条目以配置文件命名（`cn=default`）。"
@@ -1123,6 +1139,10 @@
     "en": "dcf08d219b55b2ed",
     "text": "默认关闭。证明规则（webauthn.attestation* 设置：策略、AAGUID 列表、认证级别和 FIPS）在注册通行密钥时检查。开启时，每次登录都会依据当时记录的内容和 FIDO Metadata Service 的当前状态再次检查，因此在规则收紧之前注册的密钥，或其型号后来被报告为已泄露的密钥，将无法再让任何人登录。没有可信证明的密钥无法通过任何要求证明的规则。"
   },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off`（默认值）接受任何签名算法的通行密钥。`sign-in` 在通行密钥让某人登录时（作为第一凭据或第二因素）只接受后量子通行密钥，即算法为 ML-DSA-44、ML-DSA-65 或 ML-DSA-87（RFC 9964）的通行密钥；经典通行密钥仍可注册。`registration-and-sign-in` 在注册时也拒绝经典通行密钥，此时注册只提供 ML-DSA。决定因素是算法，而不是密钥创建时所在的通道。当领域不提供任何 ML-DSA 时（webauthn.algorithms 未列出任何 ML-DSA，且 webauthn.pqcOnly 和 webauthn.pqcAlongsideClassical 均未开启）将被拒绝。"
+  },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
     "text": "门户的 *创建通行密钥* 按顺序发送的 WebAuthn 提示（Level 3 第 5.4.8 节），取自 security-key、client-device 和 hybrid，或不发送。它们告诉浏览器优先采用哪种方式创建通行密钥。提示不得与 webauthn.authenticatorAttachment 相矛盾：client-device 意味着 platform，security-key 和 hybrid 意味着 cross-platform。"
@@ -1155,6 +1175,10 @@
     "en": "128deae048d6edbf",
     "text": "默认开启：一个“使用通行密钥”步骤，其请求列出此人的所有通行密钥，浏览器提供当前可用的那一个。关闭时，拥有多个通行密钥的人会看到按名称列出的每个通行密钥的选项，请求只指明所选的那一个。"
   },
+  "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "开发模式下默认为 `any`，产品模式下默认为 `not-weaker`。不要求通行密钥的账户恢复方式——密码重置链接、激活链接、恢复代码、通过电子邮件发送的代码或链接——是否为持有通行密钥的人恢复访问权限。`any`：立即恢复。`not-weaker`：此后第一次不是通过通行密钥的登录不能访问任何应用；此人需注册一个符合此策略的通行密钥并用它登录。`operator-only`：同 not-weaker，并且拒绝自助方式（忘记密码表单、登录时的恢复代码或通过电子邮件发送的代码或链接）；只剩下管理员的重置链接、生成的密码或激活链接。保存时省略此项，则保留内置默认值。"
+  },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
     "text": "命名通行密钥策略在为其登录时所适用的应用（标识符或 client_id）。"
@@ -1170,6 +1194,14 @@
   "passkey.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "此配置文件的用途，留给下一个人看。"
+  },
+  "passkey.SCHEMA.personAttributes.stsRecoveryPending.what": {
+    "en": "bb82df307a8e5b9a",
+    "text": "一次恢复为这个持有通行密钥的人恢复了访问权限，此后还没有通行密钥让其登录：方式和时间，格式为 `<door> <ISO 8601 instant>`。只要通行密钥策略的 recoveryAssurance 为 not-weaker 或 operator-only，不是通过通行密钥的登录就不能访问任何应用。由本服务维护。"
+  },
+  "passkey.SCHEMA.personAttributes.stsPasswordResetSource.what": {
+    "en": "110d1231fc9be5f4",
+    "text": "此条目上的密码重置链接由谁签发：`self`（忘记密码表单）或 `operator`（管理员）。与链接一起写入和清除。由本服务维护。"
   },
   "passkey.SELECTORS.selectApplications.what": {
     "en": "03ba679923c40b45",
@@ -1275,6 +1307,30 @@
     "en": "fa8fc40822659fe4",
     "text": "个人的通行密钥作为一个登录选项提供"
   },
+  "passkey.sentences.postQuantumOff": {
+    "en": "a8e0e01781dab9b0",
+    "text": "无论签名算法如何，通行密钥都可以登录和注册"
+  },
+  "passkey.sentences.postQuantumSignIn": {
+    "en": "2282f9fa1ff20b26",
+    "text": "只有后量子（ML-DSA）通行密钥能让人登录；经典通行密钥仍可注册"
+  },
+  "passkey.sentences.postQuantumEverywhere": {
+    "en": "79742dacfba54ede",
+    "text": "只有后量子（ML-DSA）通行密钥能被注册或让人登录"
+  },
+  "passkey.sentences.recoveryAny": {
+    "en": "7383156c8eb1e363",
+    "text": "无论此人持有何种通行密钥，账户恢复都会立即恢复访问权限"
+  },
+  "passkey.sentences.recoveryNotWeaker": {
+    "en": "37557fd6d60301ce",
+    "text": "账户恢复之后，持有通行密钥的人在符合此策略的通行密钥让其登录之前不能访问任何应用"
+  },
+  "passkey.sentences.recoveryOperatorOnly": {
+    "en": "1a8f0b4a3319a435",
+    "text": "持有通行密钥的人只能通过管理员恢复账户，之后在符合此策略的通行密钥让其登录之前不能访问任何应用"
+  },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",
     "text": "语言策略"
@@ -1366,6 +1422,118 @@
   "locale.sentences.param.noApplication": {
     "en": "cb8bd4fa96dda063",
     "text": "无应用"
+  },
+  "kinds.attributes.label": {
+    "en": "6619889d4a9f485d",
+    "text": "属性策略"
+  },
+  "kinds.attributes.governs": {
+    "en": "20a9273a811994df",
+    "text": "此领域中每个人都必须持有的属性，以及此处人员可以拥有的自定义属性"
+  },
+  "kinds.attributes.appliesTo": {
+    "en": "c68abf6d2b5ec2a2",
+    "text": "此领域中下一个创建的人员和下一次编辑；已经缺少必填属性的人员仍可使用所有其他入口"
+  },
+  "kinds.attributes.fallsBackTo": {
+    "en": "c352143b534bf909",
+    "text": "默认领域的配置文件（如有），否则为内置默认值（givenName、sn 和 mail）"
+  },
+  "kinds.attributes.param.noun": {
+    "en": "58bb93afc775aa81",
+    "text": "属性策略配置文件"
+  },
+  "attributes.FIELDS.requiredAttributes.label": {
+    "en": "59a6e795223fdea0",
+    "text": "必填属性"
+  },
+  "attributes.FIELDS.requiredAttributes.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "除始终必填的 uid、cn 和 sn 之外，此领域中每个人都必须有值的属性。列表，或以逗号分隔。可以是人员可拥有的任何属性：inetOrgPerson 架构、凭据目录、mail，以及此领域的自定义属性。在 product 模式下强制执行：缺少其中任何一项的创建在每个入口都会被拒绝，编辑也不能移除其中任何一项。默认为 givenName、sn 和 mail。"
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
+    "en": "12630f210e385441",
+    "text": "本服务用于属性策略的类：一个领域中每个人都必须持有的属性。以配置文件命名（`cn=default`）。"
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
+    "en": "a1a975c54d05126f",
+    "text": "本服务用于领域自定义属性的类，位于 ou=attributeDefinitions，以属性命名（`cn=<name>`）。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributeRequired.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "除始终必填的 uid、cn 和 sn 之外，此领域中每个人都必须有值的属性。列表，或以逗号分隔。可以是人员可拥有的任何属性：inetOrgPerson 架构、凭据目录、mail，以及此领域的自定义属性。在 product 模式下强制执行：缺少其中任何一项的创建在每个入口都会被拒绝，编辑也不能移除其中任何一项。默认为 givenName、sn 和 mail。"
+  },
+  "attributes.SCHEMA.attributes.description.what": {
+    "en": "8e8f462fddce3d22",
+    "text": "配置文件或自定义属性的用途，供下一个人参考。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributeLabel.what": {
+    "en": "8d93b7c14ddfd1af",
+    "text": "自定义属性的标签，显示在其名称旁边。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSyntax.what": {
+    "en": "b5ccce4927fccd38",
+    "text": "自定义属性的语法：string、integer、boolean、date、email、uri 或 dn。其值按该语法检查。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
+    "en": "b6a0dfd5be9d81fd",
+    "text": "自定义属性只有一个值时为 TRUE，有多个值时为 FALSE。"
+  },
+  "attributes.SYNTAXES.string.what": {
+    "en": "6f2c36f9a836b2f4",
+    "text": "文本，最多 1024 个字符，不含控制字符。"
+  },
+  "attributes.SYNTAXES.integer.what": {
+    "en": "258ac79871ab42ad",
+    "text": "整数（RFC 4517 第 3.3.16 节）。"
+  },
+  "attributes.SYNTAXES.boolean.what": {
+    "en": "5ab7cfb21a4d669d",
+    "text": "TRUE 或 FALSE（RFC 4517 第 3.3.3 节）。"
+  },
+  "attributes.SYNTAXES.date.what": {
+    "en": "70f2250e9d5c193d",
+    "text": "日期，存储为 YYYYMMDD，也接受 YYYY-MM-DD。"
+  },
+  "attributes.SYNTAXES.email.what": {
+    "en": "daebff95f510f8db",
+    "text": "电子邮件地址（RFC 5322 addr-spec，local@domain）。"
+  },
+  "attributes.SYNTAXES.uri.what": {
+    "en": "16bf68a2b162f491",
+    "text": "http 或 https URL。"
+  },
+  "attributes.SYNTAXES.dn.what": {
+    "en": "3feab9c94c12f33d",
+    "text": "可分辨名称（RFC 4514）。"
+  },
+  "attributes.sentences.required": {
+    "en": "a35b08811463b6be",
+    "text": "此领域中的人员必须持有 {{list}} 才能被创建，编辑也不能移除其中任何一项的值"
+  },
+  "attributes.sentences.enforced": {
+    "en": "babafe534682a510",
+    "text": "已强制执行：此领域处于 product 模式，因此每个创建或编辑人员的入口都会拒绝缺少它们的人员"
+  },
+  "attributes.sentences.notEnforced": {
+    "en": "9e7b85236de9223c",
+    "text": "未强制执行：此领域处于开发模式，只需用户名即可创建人员"
+  },
+  "attributes.sentences.custom": {
+    "en": "2296301f35c39ed9",
+    "text": "此领域定义了 {{n}} 个自定义属性：{{list}}"
+  },
+  "attributes.sentences.noCustom": {
+    "en": "f9d920b6ce8d9d03",
+    "text": "此领域未定义任何自定义属性"
+  },
+  "attributes.sentences.defined": {
+    "en": "3867ffa1e351efa2",
+    "text": "自定义属性 {{name}} 已在此领域的 {{dn}} 定义。现在可以将其赋予人员，并由此策略设为必填。"
+  },
+  "attributes.sentences.undefined": {
+    "en": "36e7b5eba26472f2",
+    "text": "自定义属性 {{name}} 已不再在此领域中定义。"
   },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",

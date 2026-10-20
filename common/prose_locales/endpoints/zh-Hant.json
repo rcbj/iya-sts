@@ -1039,6 +1039,14 @@
     "en": "e3b666e9c2cf04a5",
     "text": "建立、輪替或刪除服務主體、清除個人的金鑰、捨棄先前的金鑰版本，或輪替 krbtgt 金鑰"
   },
+  "endpoints.route./admin-api/kerberos/trusts.name": {
+    "en": "e92d42c7c01ab222",
+    "text": "Kerberos 信任"
+  },
+  "endpoints.route./admin-api/kerberos/trusts/:action.name": {
+    "en": "15792a8aae11b100",
+    "text": "新增、變更、啟用、停用、輪替、移除或配對 Kerberos 信任"
+  },
   "endpoints.route./admin-api/token-lifetimes.name": {
     "en": "ddad2319f680d9f9",
     "text": "權杖存留期"
@@ -1159,6 +1167,14 @@
     "en": "17543ed2ad8f5b73",
     "text": "「單一」依賴方的聯盟中繼資料"
   },
+  "endpoints.route./wsfed/initiate/:rp.name": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "由身分識別提供者發起的登入"
+  },
+  "endpoints.route./wsfed/initiate.name": {
+    "en": "fe8976709b142424",
+    "text": "由身分識別提供者發起的登入，依 wtrealm"
+  },
   "endpoints.route./saml2.name": {
     "en": "35f88743c0a1f5d7",
     "text": "此設定檔是什麼"
@@ -1275,6 +1291,18 @@
     "en": "b1f3d17607ed42ee",
     "text": "在首次登入時連結夥伴的主體"
   },
+  "endpoints.route./federation/stepup/:handle.name": {
+    "en": "1b454ff71565d1ab",
+    "text": "在因風險而加強驗證後完成聯合登入"
+  },
+  "endpoints.route./federation/profile/:handle.name": {
+    "en": "6f866f6622379301",
+    "text": "提供消費者提供者未傳送的資訊（#729）"
+  },
+  "endpoints.route./federation/notifications/:id.name": {
+    "en": "4111365a4c05f259",
+    "text": "提供者的伺服器對伺服器通知（#565）"
+  },
   "endpoints.route./federation/slo/:id.name": {
     "en": "4974c5129575d272",
     "text": "夥伴的登出，於瀏覽器中（#167）"
@@ -1323,6 +1351,10 @@
     "en": "91ef8dd96110c183",
     "text": "授權端點"
   },
+  "endpoints.route./launch/:app.name": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "由身分識別提供者發起的登入"
+  },
   "endpoints.route./logout.name": {
     "en": "1228edbd8a552e3b",
     "text": "登出所有服務"
@@ -1347,6 +1379,10 @@
     "en": "afae7eb3e60fb142",
     "text": "聯盟夥伴選擇器"
   },
+  "endpoints.route./authn/accounts.name": {
+    "en": "c3b323e274fa067a",
+    "text": "帳號選擇器"
+  },
   "endpoints.route./authn/spnego.name": {
     "en": "0a014fa4b2685cd7",
     "text": "以 Kerberos 票證登入"
@@ -1370,6 +1406,14 @@
   "endpoints.route./authn/backup-code.name": {
     "en": "305d816e110db5e1",
     "text": "復原碼第二因素步驟"
+  },
+  "endpoints.route./authn/dbsc/register.name": {
+    "en": "5577cc2228ead966",
+    "text": "裝置綁定工作階段註冊"
+  },
+  "endpoints.route./authn/dbsc/refresh.name": {
+    "en": "3defb4fd7920ec00",
+    "text": "裝置綁定工作階段重新整理"
   },
   "endpoints.route./authn/email-code.name": {
     "en": "f889f4695b9ab9f3",
@@ -1419,6 +1463,26 @@
     "en": "cb0f4ae92fef3ded",
     "text": "可供選擇的聯合身分合作夥伴"
   },
+  "endpoints.route./authn-api/pending/:id/accounts.name": {
+    "en": "23c7f520afd7c0cb",
+    "text": "登入可以繼續使用的帳號"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/select.name": {
+    "en": "4c05cbd10261e5fe",
+    "text": "以瀏覽器中的某個帳號繼續"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/another.name": {
+    "en": "8ffce6dab3c9d713",
+    "text": "使用其他帳號登入"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/forget.name": {
+    "en": "ee74996a1d01a953",
+    "text": "忘記一個已登出的帳號"
+  },
+  "endpoints.route./authn-api/accounts.name": {
+    "en": "e263821d69f3f785",
+    "text": "此瀏覽器持有的帳號"
+  },
   "endpoints.route./authn-api/pending/:id/password.name": {
     "en": "673a50377a1ff20b",
     "text": "使用密碼登入"
@@ -1462,6 +1526,10 @@
   "endpoints.route./authn-api/logout.name": {
     "en": "196d3a7dc50ac8ef",
     "text": "登出會終止什麼，以及登出本身"
+  },
+  "endpoints.route./authn-api/logout/accounts.name": {
+    "en": "ee44950fe4f4a290",
+    "text": "登出針對哪個帳戶"
   },
   "endpoints.route./authn-api/consent/:id.name": {
     "en": "1f22b542171d33ef",
@@ -1738,6 +1806,10 @@
   "endpoints.route./oid4vci/status-lists/bitstring/:purpose.name": {
     "en": "69e5a2172fd0dff1",
     "text": "Bitstring Status List 認證"
+  },
+  "endpoints.route./oid4vci/trusted-list.name": {
+    "en": "9d8d4bfb47367165",
+    "text": "信任清單（List of Trusted Entities）"
   },
   "endpoints.route./oid4vci/deferred_credential.name": {
     "en": "b64bd315376ba1ef",

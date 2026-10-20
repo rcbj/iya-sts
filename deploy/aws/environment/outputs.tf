@@ -75,8 +75,13 @@ output "load_balancer_ports" {
 }
 
 output "spiffe_default_ports" {
-  description = "The default realm's SPIFFE ports on the load balancer (spiffe_default.tf): workload and server."
+  description = "The default realm's SPIFFE port on the load balancer (spiffe_default.tf): the SPIRE Server API. The Workload API is not published (#324)."
   value       = local.spiffe_default_ports
+}
+
+output "spiffe_workload_port_accepted" {
+  description = "Accepted and not published (#324). An apply removes a Workload API listener that an earlier apply created."
+  value       = local.spiffe_workload_port_accepted
 }
 
 output "reports_bucket" {

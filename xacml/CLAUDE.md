@@ -1446,18 +1446,51 @@ two assertion doors for the attestation rules).
   and the `webauthn.attestation*` settings are setting facts.
 * **The answer carries `urn:sts:xacml:obligation:passkey`**: verdict
   `allow`/`refuse`, a code and a reason.
-* **The built-in `role-issuance` has thirteen rules** (parameter
+* **The built-in `role-issuance` has fifteen refusing rules** (parameter
   `decidePasskeys`), in the order the code asked. Each fires only on a
   question that names its fact group in `urn:sts:xacml:passkey:facts`, so the
   sign-in line's question never trips an attestation rule, nor the reverse.
 * **The codes are the ones the code recorded**: 0312-0317, 0320, 0321, and
   0322 for a realm's refusal with no code of its own.
+* **#718 ADDED THE POST-QUANTUM RULE, ONE PER ACTION, LAST AT EACH**, so a
+  key refused today for its BE flag or its PIN is refused for that still.
+  The fact group is `algorithm`: `urn:sts:xacml:passkey:algorithm` (the
+  JOSE name), `urn:sts:xacml:passkey:post-quantum` (a boolean) and
+  `urn:sts:xacml:passkey:lane`. The rule reads `post-quantum` and the row
+  `urn:sts:xacml:passkey-policy:postQuantumRequired` — `sign-in` and
+  `registration-and-sign-in` at `use-passkey` (0356), the second alone at
+  `register-passkey` (0355) — and NEVER the lane: with #643's switch off an
+  ML-DSA key is made in the one lane and its row records none, so a rule on
+  the lane would refuse a post-quantum key. `post-quantum` is computed once,
+  in `passkey_policy.ts`'s `question()`, and always sent with its group, so
+  an absent fact is never read as "classical"; the lane is there for a
+  realm's own rules. The remote PEP (`xacml-pep/`, `rust/`) carries no
+  passkey vocabulary, so it did not change. **A realm's own issuance
+  document built from the template between #536 and #718 does not carry
+  the rule**: it answers `use-passkey` with its `passkey-use-allowed`
+  Permit, which carries the obligation, so it DECIDES and the built-in rule
+  is not asked — the realm's document is the realm's, by design. Such a
+  realm rebuilds its document from the template to be held to the row; a
+  document built before #536 answers no passkey verdict and falls to the
+  built-in rules as it always did.
 * **Arranged as the transfer questions are**: `xacml_passkey_verdicts.js`
   serves both the PEP and the gate. A realm's own document decides where it
   carries the obligation; otherwise the built-in document decides. Where
   neither answers, `common/passkey_rules.js` reads the same rules from the
   facts.
 * **Not members of `ISSUANCE`.**
+* **A THIRD QUESTION, `recover-account` (#724; `common/CLAUDE.md` 3cq).**
+  Whether a way back into an account that asks for no passkey may restore
+  access, and whether a session after one may reach an application. Fact
+  group `recovery`: the door, where it is asked (`door` or `session`), the
+  credential that answered, and whether the door is self-service, whether
+  the person holds a passkey (`covered`) and whether a recovery is pending.
+  Two Deny rules after the `use-passkey` Permit: `recovery-self-service`
+  (`STS-AUTHN-0380`, under `recoveryAssurance: operator-only`) and
+  `recovery-enrol-first` (`STS-AUTHN-0381`, under `not-weaker` or
+  `operator-only`, at a session a passkey did not answer). Then a Permit.
+  `common/passkey_rules.js` reads both, and `tests/recovery_assurance.js`
+  holds the two to one truth table.
 
 #### The subject, and the application
 
@@ -1575,6 +1608,43 @@ in the environment, `urn:sts:xacml:exchange:*`):
    rule written for every action never drops a restriction the subject
    chose. Where neither policy answers, the subject's own choice stands
    (`STS-XACML-0087`): `may_act` restricts, so dropping it would widen.
+
+**THE FACTS OF A QUESTION ASKED ACROSS A KERBEROS TRUST (#430 Phase 1,
+2026-10-19)** are defined in `xacml_request.js`. `exchange:subject-realm`,
+`exchange:actor-realm` and `exchange:target-realm` (the Kerberos realm of each
+party, in its category), and in the environment `exchange:trust-partner`,
+`trust-type` (`external`, `trust-realm`), `trust-direction` (`inbound`,
+`outbound`, `bidirectional`), `trust-attribute` (each of [MS-ADTS]
+6.1.6.7.9's bits by name, as `kerberos/krb5_trusts.ts` records them),
+`trust-path` (the realms crossed, the client's first) and `trust-hops` (an
+integer). **Each is sent only when the question names it**, so every question
+asked before #430 is the request it was, attribute for attribute; an absent
+realm is never an empty value a rule could compare.
+
+**THE CROSS-REALM RULES THAT READ THEM (#430 Phase 3, 2026-10-19)** are five
+Deny rules of the built-in `role-issuance` document, placed just after
+`protected-subject` and refusing as `trust-disabled`, `trust-direction`,
+`self-realm`, `classic-across-realms` and `tgt-delegation` — the KDC asks and
+records (`STS-KRB-0230`–`0233`), and decides none of it with an `if` of its
+own. Phase 3 added four more facts: `exchange:trust-enabled`,
+`exchange:local-realm`, `exchange:mechanism` (now also `forwarded`, a TGT
+delegated across a trust), the actor's `exchange:actor-self-realm` (its
+`krb5S4uSelfRealm` values) and the target's
+`exchange:target-foreign-tgt-delegation` (`inherit` | `deny`, which only
+narrows), plus the setting `krb5.crossRealmClassicDelegation`, sent only when
+the realm has it. A foreign subject or actor named `SPN@REALM` is exempt from
+the rules that ask this realm's registers about it (unregistered target,
+unknown actor, user-actor role, subject group) only across a trust, and the
+delegation and impersonation rules accept RBCD naming the foreign actor and a
+classic list vouched by the front end's realm. **No rule grants a foreign
+subject a role**: what it holds arrives resolved, and since 2026-10-19 that
+is only what was granted to its name or its filtered SIDs — never EVERYBODY
+or ALL_AUTHENTICATED_USERS (`kerberos/CLAUDE.md`). `classic-across-realms`
+is asked in whichever realm is deciding, so each realm refuses on its own
+setting. `tests/tools/exchange_oracle.js`
+states every one of them independently, and both `exchange_policy` files run
+the across-a-trust product against it. `kerberos/CLAUDE.md` (*Delegation
+across a trust, built*) carries the reasoning.
 
 AND ONE PER-SCOPE RULE: **`exchange-widens-scope`**, at stage `exchange` of the
 per-scope question, refuses in product a scope the verified subject token
@@ -1772,6 +1842,39 @@ request.
 * `tests/mfa_mechanism_enforcement.js` holds the library, the rule, the
   proof-then-enrolment, the narrowed enrolment and the OAuth and
   WS-Federation re-prompts.
+
+### A phishing-resistant authentication, as a fact and as a floor (#723, 2026-10-19)
+
+**`AUTHN_ATTRIBUTE.PHISHING_RESISTANCE`** (`urn:sts:xacml:phishing-resistance`)
+is an ENVIRONMENT bag. It holds OpenID Connect EAP ACR Values 1.0's `phr` and
+`phrh` as the authentication earned them (`common/phishing_resistance.ts`,
+`common/CLAUDE.md` 3cp), or **`none`**.
+
+* **The gate supplies it** (`issuance_gate.js`'s `phishingFactsOf()`) on
+  #457's four browser kinds, from the event a session is about to record or
+  the session's latest. It rides along whenever the policy is asked and does
+  not make it asked.
+* **It is never empty when sent.** A rule that holds on `none` therefore never
+  speaks to an issuance the gate did not describe: a token grant, WS-Trust,
+  Kerberos, or a gated sign-in door's pre-check before its second factor.
+* **The floor: two role-issuance options, empty by default**, so no existing
+  document changes:
+  * `requirePhishingResistant` adds `:rule:phishing-resistant`, a Deny for the
+    listed application handles on `none`;
+  * `requireHardwareProtected` adds `:rule:hardware-protected`, a Deny on a
+    non-empty bag without `phrh`.
+  
+  Each carries the AUTHENTICATION obligation, which is `refuseEmailFactor`'s.
+  The PEP therefore refuses where the role question was waived. The
+  obligation's `AUTHN_ATTRIBUTE.REFUSAL` assignment
+  (`phishing-resistant` / `hardware-protected`) makes the PEP's sentence
+  name what the authentication lacked, not the roles the person holds.
+* **A floor, not a step-up.** The rule refuses, and the client's
+  `acr_values=phr` (or the application's `oauthDefaultAcrValues`) is what
+  sends the person to the key first (`oauth-oidc/CLAUDE.md` 3cp). The option's
+  help says to set both.
+* `tests/eap_acr_values.js` D and E7 hold the rules through the PDP and over
+  HTTP.
 
 ## THE FOURTEENTH DEFECT: TWO CONTAINERS CLAIMING A PAGE THAT WAS NEVER WRITTEN
 
@@ -2219,3 +2322,26 @@ client a person's token was issued to). An object that is not there answers
 empty bags. So `/admin/xacml/decide`, a remote PEP and the management API ask
 the same question and get the same answer. The facts and the protections are
 argued in `common/CLAUDE.md` (3cn). `tests/owner_administration.js` holds it.
+
+## A FEDERATED AUTHENTICATION'S CATEGORY (#565, 2026-10-19)
+
+Three environment attributes, sent only when a federation partner vouched
+for the authentication. The gate's `authorityFactsOf()` reads them from the
+event being recorded or the session's latest, and `xacml_role_pep.ts`'s
+`authorityAttributes()` puts them in, so a rule about them is inapplicable
+to every other sign-in:
+
+| Attribute (`AUTHN_ATTRIBUTE`) | Values |
+|---|---|
+| `urn:sts:xacml:authn-category` (`CATEGORY`) | `consumer` for a consumer or social provider (a relationship with `fedProvider`), `enterprise` otherwise |
+| `urn:sts:xacml:authn-provider` (`PROVIDER`) | the provider: `google`, `discord`, `github`… absent for an enterprise partner |
+| `urn:sts:xacml:email-verified` (`EMAIL_VERIFIED`) | `true` or `false`: a consumer provider's address is unverified unless the provider said so |
+
+And one action-id: **`create-account`** (`ISSUANCE.ACCOUNT`), asked by
+`federation/federation_sp.ts` before the session of a sign-in that would
+CREATE the person, roles waived, with the sign-in's risk facts. No built-in
+rule names it, so the risk rules decide it as they decide a session, and it
+is the action an operator's rule targets to refuse creation (by category, an
+unverified address, a level) while existing people still sign in.
+`STS-FED-0179` is its refusal.
+

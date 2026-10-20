@@ -49,6 +49,47 @@ points nowhere near the cookie.
 its sign-in request as a cross-site form POST, and `None` would be a change that
 needs its own argument.
 
+### Binding the cookie to the browser: Device Bound Session Credentials
+
+`sts_session` is a bearer cookie: copied off a machine, it works anywhere. With
+**`authn.deviceBoundSessions`** on (per realm, off by default), this service
+speaks the relying-party side of the W3C WebAppSec
+[Device Bound Session Credentials](https://w3c.github.io/webappsec-dbsc/)
+draft:
+
+1. The answer that sets `sts_session` carries
+   `Secure-Session-Registration: (ES256 RS256);path="/authn/dbsc/register";challenge="…"`.
+2. A browser that supports DBSC makes a key pair and posts a proof of it — a
+   `dbsc+jwt` JWT with the public key in its header and the challenge as its
+   `jti`, in `Secure-Session-Response` — to `POST /authn/dbsc/register`. The
+   session is now bound to that key, and the answer is the session's JSON
+   instructions and a second cookie, **`sts_session_bound`**, that lives
+   **`authn.deviceBoundCookieLifetimeS`** (ten minutes by default).
+3. From then on the session is honoured only beside a current
+   `sts_session_bound`. When it runs out, the browser posts to
+   `POST /authn/dbsc/refresh` with `Sec-Secure-Session-Id`; the answer is a
+   403 with a `Secure-Session-Challenge`, the browser signs it, and the
+   cookie is renewed.
+
+**A refresh signed by any other key, or replaying a challenge already spent,
+ends the session** as a sign-out does — CAEP `session-revoked`, Back-Channel
+Logout Tokens, and the session's audit row. A request that presents
+`sts_session` without the bound cookie is simply not signed in; the session is
+not ended, because the browser that holds the key renews the cookie before it
+sends anything.
+
+**With [several accounts in one browser](multiple-accounts.md) on**, each
+account binds on its own: a binding's cookie is named
+`sts_session_bound_<id>` after its DBSC session, each account is honoured
+only beside its own, and a refresh that ends one account's session leaves the
+others signed in.
+
+**A browser that does not support DBSC ignores the header** and keeps an
+ordinary session. `/admin/sessions` and the portal's Overview say whether a
+session is bound. The challenges and the bound cookie are MACs under a secret
+every node shares, so nothing about them is stored and every node accepts
+what another minted; each challenge is spent once for the whole cluster.
+
 ### What the record holds
 
 Keyed by an opaque 24-byte id, which is also on the record — because everything

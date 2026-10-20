@@ -252,5 +252,22 @@
   "through": "透過 ",
   "brokerNotUsable": "該關係無法使用，因此改為顯示登入畫面",
   "notAMechanism": "不是本服務具備的機制",
-  "authAtPartnerTitle": "在服務提供者一側的關係上，驗證發生在合作夥伴處，因此這裡沒有需要設定的內容。"
+  "authAtPartnerTitle": "在服務提供者一側的關係上，驗證發生在合作夥伴處，因此這裡沒有需要設定的內容。",
+  "labelCategory": "類別",
+  "anyCategory": "任何類別",
+  "categoryEnterprise": "企業",
+  "categoryConsumer": "消費者與社群",
+  "headingConsumer": "消費者與社群提供者",
+  "consumerOn": "此領域已<strong>啟用</strong>消費者與社群提供者（<code>federation.consumerProviders</code>）。",
+  "consumerOff": "此領域已<strong>關閉</strong>消費者與社群提供者。請在「設定」中開啟 <code>federation.consumerProviders</code> 後再新增；企業合作夥伴不受影響。",
+  "consumerWhat": "每個提供者都是一個獨立的聯合關係，新增時處於停用狀態。新增時會將它的端點寫入該關係，之後可在其頁面上修改。首次到來的人會取得自己的項目，地址絕不會用於比對既有的人員。請將其頁面上顯示的判斷提示取用者服務註冊為提供者的重新導向 URI，然後啟用它。",
+  "consumerListLink": "只列出消費者與社群提供者",
+  "thProvider": "提供者",
+  "thAddOne": "新增",
+  "thDocumentation": "文件",
+  "labelClientId": "用戶端 ID",
+  "labelClientSecret": "用戶端密鑰",
+  "buttonAddProvider": "新增",
+  "providerDocs": "提供者文件",
+  "providerRealmOff": "此領域已關閉消費者與社群提供者，因此在開啟 <code>federation.consumerProviders</code> 之前，此關係會拒絕所有登入。"
 }

@@ -45,6 +45,11 @@
       "text": "账户 {{username}} 的电子邮件地址已于 {{when}} 更改为 {{address}}。此邮件发送到了更改前的地址。\n\n如果您没有预料到这一情况，请立即联系您的账户管理员。\n",
       "html": "<p>账户 <strong>{{username}}</strong> 的电子邮件地址已于 {{when}} 更改为 {{address}}。此邮件发送到了更改前的地址。</p><p>如果您没有预料到这一情况，请立即联系您的账户管理员。</p>"
     },
+    "account-connected": {
+      "subject": "有账户已连接到您的 {{service}} 账户",
+      "text": "{{provider}} 上的一个账户已于 {{when}} 连接到账户 {{username}}，现在可以用它登录该账户。\n\n如果这不是您本人操作，请在“已连接的账户”中断开连接，并立即联系您的账户管理员。\n",
+      "html": "<p>{{provider}} 上的一个账户已于 {{when}} 连接到账户 <strong>{{username}}</strong>，现在可以用它登录该账户。</p><p>如果这不是您本人操作，请在“已连接的账户”中断开连接，并立即联系您的账户管理员。</p>"
+    },
     "access-request": {
       "subject": "{{service}}：有应用程序请求访问权限",
       "text": "应用程序 {{client}} 请求代表账户 {{username}} 获得访问权限：{{rights}}。\n\n在您批准之前，不会允许任何访问。如需批准或拒绝，请在 {{expiresMinutes}} 分钟内登录并打开此页面：\n\n{{link}}\n\n如果您不认识此请求，请在该页面拒绝，或忽略此邮件：它会自行过期。\n",

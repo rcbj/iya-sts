@@ -77,7 +77,9 @@ class ActivationPages {
       'value="mfa"> ' + t.html('portal.activate.roleMfa') + '</label>' +
       // WHICH KIND, `/portal/keys`' two calls to action as radios, because
       // this one form carries a password too.
-      (view.webauthnEnabled ? KeysPages.kindChoice(view.kinds, t) : '') +
+      (view.webauthnEnabled ? KeysPages.kindChoice(view.kinds, t) +
+        // The lane (#643), where the realm offers both.
+        KeysPages.laneChoice(view.lanes, t) : '') +
       '<p class="note">' + t.html('portal.activate.passkeyStepNote') +
       '</p>' +
       // THE AUTHENTICATOR APP: a checkbox and not a fourth radio — a SECOND

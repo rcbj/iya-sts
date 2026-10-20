@@ -438,6 +438,11 @@ class ConsentScreen {
   private answeredBy(req: Req, record: Json): Json {
     const { log, authn } = this.deps;
     log.debug("Entering ConsentScreen.answeredBy().");
+    // THE PERSON ASKED IS THE HINT (#561): with several accounts in one
+    // browser, the session answering is theirs where the browser holds it,
+    // never whichever account the browser signed in to last. Nothing
+    // changes with `authn.multipleAccounts` off.
+    authn.hintAccount(req, { loginHint: String(record.username || '') });
     const session = authn.sessionOf(req);
     if (!session) {
       log.debug("Leaving ConsentScreen.answeredBy(). Nobody is signed in.");
@@ -700,6 +705,13 @@ class ConsentScreen {
         'consent_error=' + encodeURIComponent(error) +
         '&consent_error_description=' + encodeURIComponent(description || '');
     }
+    // AND THE AUTHORIZATION REQUEST RESUMES AS THE PERSON WHO ANSWERED
+    // (#561): a selection ticket for their session in this browser's account
+    // set, so a browser holding several accounts does not ask which again.
+    // Unchanged with `authn.multipleAccounts` off.
+    target = authn.accountTicketFor(res.req, target,
+                                    { loginHint: String(record.username ||
+                                                        '') });
     authn.answerJson(res, 200, { ok: true, next: 'redirect',
                                  location: authn.locationOf(res, target) });
     log.debug("Leaving ConsentScreen.backToCaller(). Named " + target + ".");

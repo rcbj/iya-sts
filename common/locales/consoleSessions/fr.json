@@ -8,6 +8,8 @@
   "thSince": "Depuis",
   "thExpires": "Expire",
   "thCarries": "Porte",
+  "deviceBound": "Liée à la clé {alg} de son navigateur (DBSC)",
+  "deviceBoundTitle": "Device Bound Session Credentials : cette session a besoin d’un cookie de courte durée que seule une preuve de la clé du navigateur renouvelle. Renouvelé {n} fois.",
   "thCredentials": "Justificatifs",
   "leadBefore": "<strong>Chaque session que ce service détient en ce moment</strong>, dans les trois protocoles qui en ont une. Une session est un état que CE SERVICE détient et qui rend quelqu’un actuellement authentifié ; un jeton, une assertion, un ticket et un SVID sont des choses qu’il a REMISES, qui survivent à toute session d’ici, et ils se trouvent dans ",
   "leadTokens": "Jetons",
@@ -73,5 +75,18 @@
   "noExpiry": "<strong>aucune expiration</strong>",
   "noExpiryNote": "elle prend fin quand quelque chose y met fin",
   "expired": "expirée",
-  "inDuration": "dans {duration}"
+  "inDuration": "dans {duration}",
+  "accountSet": "navigateur",
+  "accountSetTitle": "Ensemble de comptes {id} : cette session partage un navigateur avec toutes les autres sessions de cet ensemble. Suivez le lien pour les lister.",
+  "hAccounts": "Plusieurs comptes dans un même navigateur",
+  "accountsLead": "Ce que les ensembles de comptes des navigateurs ont fait dans ce domaine, compté depuis le démarrage de ce service, tous les processus additionnés. Lisez <strong>compte demandé</strong> à côté de <strong>compte choisi</strong> : une requête qui ne pouvait pas dire à quel compte elle était destinée affiche le sélecteur de comptes, et si cela arrive plus souvent que les personnes ne choisissent, une partie utilisatrice n’envoie aucune indication.",
+  "accountsOff": "<strong>Plusieurs comptes connectés dans un même navigateur sont désactivés dans ce domaine</strong> (<code>authn.multipleAccounts</code>). Ces chiffres ont été comptés pendant qu’ils étaient activés.",
+  "accountsNote": "Un compte <strong>basculé</strong> est devenu, en étant choisi, le compte par défaut du navigateur ; <strong>expirés</strong> compte les comptes déconnectés retirés après <code>authn.rememberedAccountDays</code>. Aucun chiffre ne nomme une personne ni un navigateur.",
+  "accounts.selected": "compte choisi",
+  "accounts.ambiguous": "compte demandé",
+  "accounts.selectFailed": "choix refusé",
+  "accounts.added": "comptes ajoutés",
+  "accounts.switched": "défaut basculé",
+  "accounts.forgotten": "comptes oubliés",
+  "accounts.expired": "comptes mémorisés expirés"
 }

@@ -7,13 +7,21 @@
     "en": "e753a576c8530ce3",
     "text": "從每個已到排程間隔的屬性來源讀取此領域人員的下一頁資料，寫入其項目（#94）。每次執行每個來源處理 attributeSources.refreshBatch 位人員。"
   },
+  "sched.jobs.authn.account-set-expiry.title": {
+    "en": "849356c9b70cc0f3",
+    "text": "帳號集到期"
+  },
+  "sched.jobs.authn.account-set-expiry.describe": {
+    "en": "d643d71a0089a802",
+    "text": "更新每個瀏覽器的帳號集（#561）：工作階段已結束的帳號被記為已登出，記住超過 authn.rememberedAccountDays 的帳號被移除，空的帳號集被刪除。"
+  },
   "sched.jobs.authn.session-expiry.title": {
     "en": "0d2b2447af869e65",
     "text": "工作階段到期"
   },
   "sched.jobs.authn.session-expiry.describe": {
-    "en": "ca99d997bdb0c403",
-    "text": "在每個領域中結束所有已超過存留期或閒置逾時的登入工作階段：一筆稽核記錄、CAEP session-revoked 與後端通道 Logout Token，整個叢集只執行一次。"
+    "en": "5631096a0aa7c62f",
+    "text": "結束所有已超過存留期或閒置逾時的登入工作階段，並在每個領域中最多結束該領域 authn.sessionShedPerSweep 個同一主體自身的超額工作階段。"
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
@@ -78,6 +86,14 @@
   "sched.jobs.federation.encryption-key-retire.describe": {
     "en": "c8990a4ca5b5163e",
     "text": "在 federation.encryptionKeyGraceS 過後，從每個聯盟關係中移除被輪替取代的加密金鑰。該金鑰在那一刻就已停止解密；此作業只是將它從項目上移除。"
+  },
+  "sched.jobs.federation.provision-idle.title": {
+    "en": "20200542bb3c76b9",
+    "text": "聯盟佈建閒置清理"
+  },
+  "sched.jobs.federation.provision-idle.describe": {
+    "en": "94bd34c4b59a85a1",
+    "text": "當某人唯一的登入途徑是一個聯盟關係，且 federationLastSeen 早於該關係的 fedProvisionIdleMinutes 時，停用該人員。空白或 0 不影響任何人。項目與連結會保留。本機密碼或透過其他關係的連結不受影響。"
   },
   "sched.jobs.gnap.grant-expiry.title": {
     "en": "ed1bb7e24484e928",
@@ -438,6 +454,14 @@
   "sched.jobs.spiffe.sigstore-tuf-refresh.describe": {
     "en": "23ca3d0e22f4d09a",
     "text": "透過 TUF 擷取 sigstore 信任根（Fulcio CA、Rekor 與 CT 記錄金鑰），供 docker 工作負載證明者檢查映像檔簽章；重新整理失敗時保留上次驗證的集合。"
+  },
+  "sched.jobs.spiffe.target-reconcile.title": {
+    "en": "da689365a5c7e0b8",
+    "text": "SPIFFE 目標群組協調"
+  },
+  "sched.jobs.spiffe.target-reconcile.describe": {
+    "en": "42a6fe3359b6cc70",
+    "text": "將每個正在執行的工作的私有位址註冊到本叢集的 SPIFFE 目標群組中，並取消註冊不再有任何正在執行的工作使用的位址（#323）。"
   },
   "sched.jobs.ssf.dead-letter-sweep.title": {
     "en": "825439e56379bcb0",

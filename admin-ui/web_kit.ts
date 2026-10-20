@@ -246,6 +246,9 @@ const LIST_PARAMS = {
   // The Kerberos principals' two lists (2026-09-12), paged separately and
   // sharing one `per`. Spent by every row button's `back`.
   '/admin/kerberos/principals': ['per', 'peoplePage', 'servicesPage'],
+  // The Kerberos trusts' one list (#430 Phase 4), and the record drilled
+  // into. Spent by every row button's `back`.
+  '/admin/kerberos/trusts': ['per', 'trustsPage', 'trust'],
   // The back-channel deliveries' filter, search and paging (2026-09-17),
   // spent by the Retry button's `back`.
   '/admin/logout': ['family', 'per', 'page', 'deliveryState', 'deliveryq',
@@ -1617,6 +1620,93 @@ class WebKit {
       'M3 5h10l-1 10H4zm3 2v6h1V7zm3 0v6h1V7z"/></svg>';
   }
 
+  /**
+   * The check mark a value seen in use carries (#706), inline for the
+   * trash icon's reason.
+   *
+   * @returns the SVG as HTML
+   */
+  static checkIcon() {
+    return '<svg viewBox="0 0 16 16" width="12" height="12" ' +
+      'aria-hidden="true" focusable="false"><path fill="currentColor" ' +
+      'd="M6.2 11.6 2.6 8l1.1-1.1 2.5 2.5 6.1-6.1L13.4 4.4z"/></svg>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // A CHOICE THAT IS A URN IS LABELLED BY ITS LAST TWO SECTIONS (#708, rcbj):
+  // `urn:ietf:params:oauth:grant-type:token-exchange` is drawn as
+  // `grant-type:token-exchange`, so an extension grant fits its cell instead
+  // of running off the pane. The checkbox still posts the full value, and the
+  // tooltip carries it with what the value means where CHOICE_NOTES knows.
+  // CHOICE_NOTES is by attribute, then by value, a catalog key each: the
+  // descriptions are the console's prose, translated in the browser (#570).
+  // ---------------------------------------------------------------------------
+  static readonly CHOICE_NOTES: Record<string, Record<string, string>> = {
+    oauthGrantType: {
+      'authorization_code': 'consoleKit.grant.authorizationCode',
+      'implicit': 'consoleKit.grant.implicit',
+      'refresh_token': 'consoleKit.grant.refreshToken',
+      'client_credentials': 'consoleKit.grant.clientCredentials',
+      'password': 'consoleKit.grant.password',
+      'urn:ietf:params:oauth:grant-type:token-exchange':
+        'consoleKit.grant.tokenExchange',
+      'urn:ietf:params:oauth:grant-type:pre-authorized_code':
+        'consoleKit.grant.preAuthorizedCode',
+      'urn:ietf:params:oauth:grant-type:jwt-bearer':
+        'consoleKit.grant.jwtBearer',
+      'urn:ietf:params:oauth:grant-type:saml2-bearer':
+        'consoleKit.grant.saml2Bearer',
+      'urn:openid:params:grant-type:ciba': 'consoleKit.grant.ciba',
+      'urn:ietf:params:oauth:grant-type:device_code':
+        'consoleKit.grant.deviceCode'
+    }
+  };
+
+  /**
+   * The label a choice is drawn with: a URN's last two sections, any other
+   * value as it is.
+   *
+   * @param value - the value
+   * @returns the label
+   */
+  static choiceLabel(value) {
+    const text = String(value);
+    if (!/^urn:/i.test(text)) {
+      return text;
+    }
+    const parts = text.split(':');
+    return parts.length > 2 ? parts.slice(-2).join(':') : text;
+  }
+
+  /**
+   * The tooltip a choice carries: its full value where the label shortens
+   * it, and what it means where CHOICE_NOTES knows.
+   *
+   * @param attribute - the attribute
+   * @param value - the value
+   * @param t - the page's translator (#539)
+   * @returns the tooltip text, or '' for none
+   */
+  static choiceTipText(attribute, value, t) {
+    const key = (WebKit.CHOICE_NOTES[attribute] || {})[String(value)];
+    const note = key ? t.text(key) : '';
+    const full = WebKit.choiceLabel(value) !== String(value)
+      ? String(value) : '';
+    return [full, note].filter(Boolean).join(' — ');
+  }
+
+  /**
+   * The warning mark a value seen but not declared carries (#708), inline for
+   * the trash icon's reason.
+   *
+   * @returns the SVG as HTML
+   */
+  static warnIcon() {
+    return '<svg viewBox="0 0 16 16" width="12" height="12" ' +
+      'aria-hidden="true" focusable="false"><path fill="currentColor" ' +
+      'd="M8 1 15.5 14.5H.5zM7.2 6v4.4h1.6V6zm0 5.6v1.6h1.6v-1.6z"/></svg>';
+  }
+
   // The classes that make a block appear only when one of its families is
   // ticked. `pf` is what the stylesheet hides; each `pf-<id>` is what a checked
   // box shows. A block serving several families carries several, and appears
@@ -1648,6 +1738,7 @@ class WebKit {
    * @param values - the grid's values by attribute
    * @param options - `redraw` (the route "+" and delete post to), `showSet`
    *   (show a cell holding a value whatever is ticked), `generateSecret`,
+   *   `secretLifetime` (HTML drawn after Generate Secret, #394),
    *   and `protocols`, the families a cell's labels are named from;
    *   `views` (#500), the cell is classed `fg-adv` unless `row.simple`, so
    *   its form's simple / advanced switch (`viewSwitch()`) can hide it
@@ -1700,10 +1791,15 @@ class WebKit {
       control = '<div class="fg-checks" role="group"' + hint +
         ' aria-label="' + WebKit.esc(row.attribute) + '">' +
         offered(row.choices).map(function (value, n) {
-          return '<label class="fg-radio"><input type="checkbox" name="' +
+          // A URN by its last two sections, the whole value and its meaning
+          // in the tooltip (#708).
+          return '<label class="fg-radio"' +
+            WebKit.tip(WebKit.choiceTipText(row.attribute, value, t)) +
+            '><input type="checkbox" name="' +
             WebKit.esc(name + '.' + n) + '" value="' + WebKit.esc(value) + '"' +
             (held.map(String).indexOf(value) >= 0 ? ' checked' : '') + '>' +
-            WebKit.esc(value) + outside(row.choices, value) + '</label>';
+            WebKit.esc(WebKit.choiceLabel(value)) +
+            outside(row.choices, value) + '</label>';
         }).join('') + '</div>';
     } else if (row.type === 'array') {
       control = '<div class="fg-list">' + held.map(function (value, n) {
@@ -1779,7 +1875,10 @@ class WebKit {
             'value="generate-secret" formaction="' +
             WebKit.esc(opts.generateSecret) + '" formnovalidate' +
             WebKit.tip(t.text('consoleKit.grid.generate.tip')) +
-            '>' + t.html('consoleKit.grid.generate') + '</button>'
+            '>' + t.html('consoleKit.grid.generate') + '</button>' +
+            // The secret's lifetime beside it (#394), drawn by the page,
+            // which owns the words.
+            (opts.secretLifetime || '')
           : '');
     }
     const labels = row.forText !== undefined ? String(row.forText)
@@ -1836,6 +1935,8 @@ class WebKit {
       '<span class="fg-for">' + WebKit.esc(labels) +
       (row.type === 'array' ? t.html('consoleKit.grid.aList') : '') +
       (row.sensitive ? t.html('consoleKit.grid.aCredential') : '') +
+      // A FIELD A CREATE MUST FILL (#396): the realm's attribute policy.
+      (row.required ? t.html('consoleKit.grid.required') : '') +
       '</span>' +
       control +
       // #488: a value the service will not use as written, said beside the

@@ -13,5 +13,7 @@
   "signedInAgain": "Sesión iniciada de nuevo",
   "signedInAgain.text": "La consola continúa donde estaba. Puede cerrar esta ventana.",
   "openConsole": "Abrir la consola",
-  "copied": "Copiado"
+  "copied": "Copiado",
+  "accounts.unsaved": "Esta página tiene cambios sin guardar. ¿Cambiar de cuenta de todos modos? Se perderán.",
+  "accounts.otherAccount": "Ese inicio de sesión fue de otra cuenta, así que esta pestaña no lo aceptó. Vuelva a iniciar sesión como {user} o cambie de cuenta desde el menú de la cuenta."
 }

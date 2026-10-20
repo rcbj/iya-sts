@@ -5,7 +5,7 @@
   "startAgainEnd": ".",
   "inventory.holding": "Todo lo que este servicio aún conserva para <code>{username}</code>, en cada familia de protocolos que habla.",
   "inventory.globalButton": "Cierre de sesión global — terminar todo lo de abajo",
-  "inventory.globalNote": "La opción predeterminada. Un POST a <code>/logout</code> sin nada seleccionado hace exactamente esto.",
+  "inventory.globalNote": "La opción predeterminada. Un POST a <code>/logout</code> sin nada seleccionado hace exactamente esto. Las credenciales verificables, y los DID a los que están vinculadas, siguen siendo válidas.",
   "inventory.selectedButton": "Terminar los elementos marcados",
   "inventory.liveCount": "<strong>{total} elemento(s) activo(s)</strong> en {families, plural, one {# familia} other {# familias}}. Algunos no los puede terminar nadie — aparecen con el motivo, porque un cierre de sesión que los ocultara parecería completo sin serlo.",
   "inventory.anyUserOpen": "Este servicio no comprueba ninguna contraseña en ningún sitio, así que <code>?username=</code> nombra a cualquiera y no concede nada que no fuera ya posible — iniciar sesión como esa persona cuesta una sola solicitud. <code>logout.anyUser</code> lo desactiva.",
@@ -38,5 +38,10 @@
   "tab.details": "Detalles",
   "list.colProtocol": "Protocolo",
   "inventory.listNote": "Márquelos en la lista de arriba. Si no marca nada, no se termina nada.",
-  "inventory.detailsNote": "Marque los tokens y las credenciales en las tablas de arriba. Si no marca nada, no se termina nada."
+  "inventory.detailsNote": "Marque los tokens y las credenciales en las tablas de arriba. Si no marca nada, no se termina nada.",
+  "accounts.intro": "Este navegador tiene iniciada la sesión de {count} cuentas. Elija la cuenta cuya sesión quiere cerrar, o cierre la sesión de todas las cuentas de este navegador.",
+  "accounts.current": "(la predeterminada de este navegador)",
+  "accounts.all": "Todas las cuentas de este navegador",
+  "accounts.continue": "Continuar",
+  "accounts.note": "Una cuenta muestra todo aquello en lo que sigue con la sesión iniciada, para terminarlo todo o lo que marque. Todas las cuentas termina todo lo que tiene cada una, como hace el cierre de sesión global de cada una."
 }

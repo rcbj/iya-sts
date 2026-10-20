@@ -338,7 +338,12 @@ class SettingsForms {
     //
     // `form-action` is deliberately absent from this service's CSP (see
     // `common/app.js`), so nothing here is relaxed to allow it.
-    const reset = setting.overridden
+    // Hidden when `editRefusal` is set (#368). The control is already
+    // disabled, so the section's one Save does not post the key. This
+    // button posts on its own, through formaction, and clearOverride
+    // refuses that post from inside the realm. Offering it would be a
+    // button whose only result is the refusal.
+    const reset = setting.overridden && !setting.editRefusal
       ? '<button class="secondary" formaction="/admin/config?reset=' +
         kit.esc(encodeURIComponent(setting.key)) + '">' +
         t.html('consoleSettings.row.reset') + '</button>'
@@ -354,10 +359,16 @@ class SettingsForms {
     // function, and the row then fails to render with `Cannot access 'note'
     // before initialization` — at request time, on one page, which is the
     // slowest possible way to find out.
+    // `editRefusal` is a lock on THIS realm (#368, realms.maxCount). It is a
+    // different sentence from a restart: the value can be changed, from the
+    // default realm. "Restart required" would send an administrator to an
+    // appconfig file for a setting that realm changes live.
     const restart = setting.editable
       ? ''
-      : kit.note('<strong>' + t.html('consoleSettings.row.restart') +
-        '</strong> ' + kit.esc(setting.restartReason) + '.');
+      : (setting.editRefusal
+        ? kit.note(kit.esc(setting.editRefusal))
+        : kit.note('<strong>' + t.html('consoleSettings.row.restart') +
+          '</strong> ' + kit.esc(setting.restartReason) + '.'));
 
     // THE DESCRIPTION IS THE TOOLTIP AND THERE IS NO LONGER A FOLD
     // (2026-09-05).

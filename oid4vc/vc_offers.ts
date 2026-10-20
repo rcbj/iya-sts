@@ -310,6 +310,7 @@ interface VcOffersDeps {
   preAuthorizedCodes: DigestKeyedStore;
   deferredTransactions: DigestKeyedStore;
   deferredAccessTokenStore: Store;
+  signingAlgTokenStore: Store;
 }
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
@@ -363,7 +364,11 @@ const issuerStates = new DigestKeyedStore(
 // partition and this behaves as the plain Map it replaced. See
 // common/realms.js.
 // digest(code) -> { configurationIds, txCodeDigest, txCodeFailures, user,
-//                   deferred, expires }
+//                   deferred, signingAlg, expires }
+//
+// `signingAlg` (2026-10-16): the algorithm the person chose on
+// `/portal/wallet` for the credential, or '' for the configured one. The
+// token endpoint carries it to `signingAlgTokenStore` below.
 //
 // BOTH CREDENTIALS ARE DIGESTS (#614): the code keys the row by its digest,
 // and the Transaction Code is kept as `txCodeDigest` — see checkTxCode() for
@@ -428,6 +433,16 @@ const deferredTransactions = new DigestKeyedStore(
 // has any reason to learn that the store underneath changed.
 const deferredAccessTokenStore =
     realms.map({ persist: 'vc_offers.deferredAccessTokens', retain: 'age' });
+
+// THE ALGORITHM AN OFFER CHOSE, BY ACCESS TOKEN (2026-10-16): the token
+// endpoint writes the pre-authorized code's `signingAlg` here against the
+// token it mints, and the credential endpoint reads it — `deferredAccessTokens`'
+// arrangement, and for its reason: a value carried INSIDE the token would be
+// whatever an unverified token said in development mode, where the issuer
+// accepts one. Keyed by the token's digest, never the token.
+// digest(token) -> { alg, at }
+const signingAlgTokenStore =
+    realms.map({ persist: 'vc_offers.signingAlgTokens', retain: 'age' });
 
 // `oid4vci.offerTtlS` since 2026-09-12. The constant is the default and keeps
 // its name because `vc_issuer.ts` imports it; `offerTtlMs()` is the live value
@@ -565,8 +580,41 @@ class VcOffers {
       issuerStates: issuerStates,
       preAuthorizedCodes: preAuthorizedCodes,
       deferredTransactions: deferredTransactions,
-      deferredAccessTokenStore: deferredAccessTokenStore
+      deferredAccessTokenStore: deferredAccessTokenStore,
+      signingAlgTokenStore: signingAlgTokenStore
     };
+  }
+
+  /**
+   * Records the algorithm an offer chose against the access token minted
+   * from it (2026-10-16); '' records nothing.
+   *
+   * @param token - the access token
+   * @param alg - the algorithm, or ''
+   * @returns nothing
+   */
+  noteTokenSigningAlg(token: unknown, alg: string): void {
+    const { log, signingAlgTokenStore } = this.deps;
+    log.debug("Entering VcOffers.noteTokenSigningAlg().");
+    if (alg) {
+      signingAlgTokenStore.set(this.deferredTokenKey(token),
+                               { alg: String(alg), at: Date.now() });
+    }
+    log.debug("Leaving VcOffers.noteTokenSigningAlg().");
+  }
+
+  /**
+   * Returns the algorithm an access token's offer chose, or ''.
+   *
+   * @param token - the access token
+   * @returns the algorithm, or '' for the configured one
+   */
+  tokenSigningAlg(token: unknown): string {
+    const { log, signingAlgTokenStore } = this.deps;
+    log.debug("Entering VcOffers.tokenSigningAlg().");
+    const row = signingAlgTokenStore.get(this.deferredTokenKey(token));
+    log.debug("Leaving VcOffers.tokenSigningAlg().");
+    return row && row.alg ? String(row.alg) : '';
   }
 
   private deferredTokenKey(token: unknown) {
@@ -916,13 +964,16 @@ class VcOffers {
    * @param req - the request
    * @param configurationIds - the configurations on offer
    * @param mode - the use case
-   * @param options - `user`, whom a pre-authorized offer is for
+   * @param options - `user`, whom a pre-authorized offer is for, and
+   *   `signingAlg`, the algorithm its credential is signed with ('' for the
+   *   configured one)
    * @returns `{ offer, issuerState, preAuthorizedCode, txCode, mode,
    *   expires }`, `expires` when the offer and its code stop being honoured
    *   (ms since the epoch)
    */
   buildCredentialOffer(req: any, configurationIds: string[],
-                         mode: string, options?: { user?: any }) {
+                         mode: string, options?: { user?: any;
+                                                   signingAlg?: string }) {
     const { log, logArtifact, baseUrlOf, randomId, userFor, config,
             issuerStates, preAuthorizedCodes } = this.deps;
     log.debug("Entering VcOffers.buildCredentialOffer(). mode=" + mode);
@@ -955,6 +1006,7 @@ class VcOffers {
         txCodeFailures: 0,
         user: opts.user || userFor(this.vciOfferUsername()),
         deferred: mode === 'deferred',
+        signingAlg: String(opts.signingAlg || ''),
         expires: expires
       });
       offer.grants = {
@@ -1031,7 +1083,8 @@ class VcOffers {
    *   or `deferred`), `user` (whom a pre-authorized offer is for), `session`
    *   (the sign-on session the offer is made on, presented over CAEP),
    *   `byReference` (also store it and answer its reference) and `wallet`
-   *   (the wallet URL a link goes to, '' for none)
+   *   (the wallet URL a link goes to, '' for none) and `signingAlg` (the
+   *   algorithm the credential is signed with, '' for the configured one)
    * @returns `{ built, byValue, byReference }`: what
    *   `buildCredentialOffer()` built, and for each form its `query`, its
    *   `openid-credential-offer://` URI and its wallet link (byReference also
@@ -1039,7 +1092,8 @@ class VcOffers {
    */
   makeOffer(req: any, ask: { configurationIds: string[]; mode: string;
                              user?: any; session?: any;
-                             byReference?: boolean; wallet?: string }) {
+                             byReference?: boolean; wallet?: string;
+                             signingAlg?: string }) {
     const { log, baseUrlOf, randomId, loadAuthn, credentialOffers,
             issuerStates, preAuthorizedCodes,
             deferredTransactions } = this.deps;
@@ -1055,7 +1109,9 @@ class VcOffers {
     }
     const built = this.buildCredentialOffer(req, ask.configurationIds,
                                             ask.mode,
-                                            { user: ask.user || null });
+                                            { user: ask.user || null,
+                                              signingAlg: ask.signingAlg ||
+                                                          '' });
     // Sweep expired offers, states, codes and transactions while here. Each
     // is keyed by a digest (#614), so the sweep removes by the key it walks
     // rather than through `delete()`, which would hash it again.
@@ -1294,6 +1350,10 @@ export = {
   // #589: the maker of an offer, for the portal's `POST
   // /account-api/credentials/offers`; and the configured wallet.
   makeOffer: slot.forward('makeOffer'),
+  // 2026-10-16: the algorithm an offer chose, by the access token minted
+  // from it — written by the token endpoint, read by the credential one.
+  noteTokenSigningAlg: slot.forward('noteTokenSigningAlg'),
+  tokenSigningAlg: slot.forward('tokenSigningAlg'),
   configuredWalletUrl: slot.forward('configuredWalletUrl'),
   // #614: the facade the four credential-keyed stores are, for a reader that
   // must name its type, and the key a presented value is stored under.

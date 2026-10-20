@@ -720,25 +720,6 @@ function refusesExpiredClientSecrets() {
   return isProduct();
 }
 
-// Does the realm chooser in front of `/admin` and `/portal` LIST the realms?
-// (2026-09-14, #32.) A person arriving at either surface with no session, on a
-// service with realms defined, chooses which realm to sign in through.
-// Development draws every realm in a list, because the list is what somebody
-// exercising the service wants; product asks for the realm's id in a text box,
-// because a list drawn to anybody who can reach the page publishes every
-// tenant this deployment serves.
-/**
- * Tells whether the realm chooser in front of `/admin` and `/portal` lists the
- * realms; product asks for the realm's id instead.
- *
- * @returns true in development mode
- */
-function listsRealmsBeforeSignIn() {
-  log.debug("Entering listsRealmsBeforeSignIn().");
-  log.debug("Leaving listsRealmsBeforeSignIn().");
-  return !isProduct();
-}
-
 // May a claim VALUE be invented where the store holds none? A persona surname,
 // an address at a domain nobody owns with `email_verified: true`, a generated
 // birthdate in a signed credential, an `@example.com` subject in a security
@@ -754,6 +735,26 @@ function listsRealmsBeforeSignIn() {
 function inventsClaimValues() {
   log.debug("Entering inventsClaimValues().");
   log.debug("Leaving inventsClaimValues().");
+  return !isProduct();
+}
+
+// May a person be created without what the realm's attribute policy requires
+// (#396)? `common/attribute_policy.ts` holds a realm's list of the attributes
+// every person must carry — `uid`, `cn` and `sn` always, `givenName` and
+// `mail` by default — and development creates a person without them, as it
+// creates one at a sign-in with nothing typed: a client under test needs a
+// subject, and a fixture that had to describe somebody in full before it
+// could exist would be the same refusal at every door for nothing. Product
+// refuses the create, and an edit that would take a required value away.
+/**
+ * Tells whether a person may be created, or edited, without the attributes
+ * the realm's attribute policy requires.
+ *
+ * @returns true in development mode
+ */
+function createsIncompletePeople() {
+  log.debug("Entering createsIncompletePeople().");
+  log.debug("Leaving createsIncompletePeople().");
   return !isProduct();
 }
 
@@ -1488,6 +1489,49 @@ function issuesTicketsOnPasswordAlone() {
   return !isProduct();
 }
 
+// Must a Kerberos trust FILTER SIDS to be used at all (#430, rcbj's decision
+// 4)? Product says yes: a trust record with `quarantined` off would let the
+// partner assert any SID it likes in a PAC this realm re-signs, and
+// `kerberos/krb5_trusts.ts` does not honour one — unless the realm turns
+// krb5.requireSidFilteringInProduct off, which is the operator saying so.
+// Development uses such a record, as it uses every other configuration, so
+// a client can be exercised against an unfiltered trust.
+/**
+ * Tells whether a Kerberos trust must filter SIDs (`quarantined`) to be
+ * honoured, where the realm has not turned krb5.requireSidFilteringInProduct
+ * off.
+ *
+ * @returns true in product mode
+ */
+function requiresSidFilteringOnTrusts() {
+  log.debug("Entering requiresSidFilteringOnTrusts().");
+  log.debug("Leaving requiresSidFilteringOnTrusts().");
+  return isProduct();
+}
+
+// Does a way back into an account that asks for no passkey — a password
+// reset link, an activation link, a recovery code, an emailed code or link —
+// restore access to applications at once, for a person who holds a passkey
+// (#724, 2026-10-19)? It is the DEFAULT of the passkey policy's
+// `recoveryAssurance` row, never a rule of its own: a realm's row says
+// otherwise in either mode. Development says yes (`any`), what this service
+// did before the row existed. Product says no (`not-weaker`): the session a
+// recovery leads to may only register a passkey satisfying the profile, and
+// reaches no application until a passkey has signed the person in — rcbj's
+// decision on #724, 2026-10-19 ("not-weaker in product is fine for now").
+// `common/passkey_policy.ts` asks it for the built-in default.
+/**
+ * Tells whether an account recovery restores access before a passkey has
+ * signed the person in, by default (`recoveryAssurance: any`).
+ *
+ * @returns true in development mode
+ */
+function recoversWeakerThanPasskeys() {
+  log.debug("Entering recoversWeakerThanPasskeys().");
+  log.debug("Leaving recoversWeakerThanPasskeys().");
+  return !isProduct();
+}
+
 // May a federation partner's asserted NAME be matched straight onto an
 // existing local person, which is `fedSubjectPolicy: any-existing` (#109,
 // 2026-09-22)? Development says yes — it is what this service did before the
@@ -1508,6 +1552,26 @@ function issuesTicketsOnPasswordAlone() {
 function matchesFederatedNames() {
   log.debug("Entering matchesFederatedNames().");
   log.debug("Leaving matchesFederatedNames().");
+  return !isProduct();
+}
+
+// Does a NEW service-provider relationship create a directory entry for a
+// partner's subject nobody has linked (#358)? Development says yes — a mock
+// pointed at a partner is there to see the person arrive. Product says no:
+// a partner is the one source of identities whose volume this service does
+// not control, and creating them is the operator's act (`fedAutocreateUsers`
+// written TRUE), not the default. A relationship that already stores TRUE
+// or FALSE is that value in both modes; this predicate is only what a
+// missing one, and a relationship created now, means.
+/**
+ * Tells whether a new federation relationship creates entries for unlinked
+ * subjects (`fedAutocreateUsers`). A stored TRUE or FALSE wins in both modes.
+ *
+ * @returns true in development mode
+ */
+function defaultsFederatedAutocreate() {
+  log.debug("Entering defaultsFederatedAutocreate().");
+  log.debug("Leaving defaultsFederatedAutocreate().");
   return !isProduct();
 }
 
@@ -2316,6 +2380,19 @@ const REQUIREMENTS = [
              'the console-administrator refusal.',
     where: 'federation/federation_sp.ts, federation/federation_links.ts, ' +
            'federation/federation.js' },
+  { id: 'federated-autocreate',
+    what: 'A new federation relationship creates a directory entry for a ' +
+          'partner subject nobody has linked',
+    development: 'fedAutocreateUsers is written TRUE when the relationship ' +
+                 'is created, and a relationship that does not store the ' +
+                 'attribute creates. A stored FALSE still creates nobody.',
+    product: 'fedAutocreateUsers is written FALSE when the relationship is ' +
+             'created, and a missing attribute creates nobody ' +
+             '(STS-FED-0090). A relationship that already stores TRUE keeps ' +
+             'creating until it is edited. link-at-first-sign-in still ' +
+             'links an existing mapped person in both modes.',
+    where: 'common/mode.js, federation/federation.js, ' +
+           'federation/federation_sp.ts' },
   { id: 'federated-logout-signature',
     what: 'A federation partner\'s SAML sign-out is signed by that partner',
     development: 'A relationship whose fedRequireSignedLogout is set off ' +
@@ -2389,6 +2466,19 @@ const REQUIREMENTS = [
              'accept the password anyway, which lowers every such person to ' +
              'one factor there.',
     where: 'common/credentials.ts, common/app_passwords.ts' },
+  { id: 'kerberos-sid-filtering',
+    what: 'A Kerberos trust is honoured only while it filters SIDs',
+    development: 'A trust record with quarantined off is used like any ' +
+                 'other: tickets are referred through it and accepted from ' +
+                 'it, and a PAC arriving across it is filtered as its ' +
+                 'trust boundary says, without the quarantine\'s rule ' +
+                 'that only the trusted domain\'s SIDs pass.',
+    product: 'A trust record with quarantined off refers nobody and ' +
+             'accepts nothing (STS-KRB-0229 names why) while ' +
+             'krb5.requireSidFilteringInProduct is on, which is the ' +
+             'default. Turning that setting off on the realm is the ' +
+             'operator accepting the partner\'s SIDs.',
+    where: 'kerberos/krb5_trusts.ts, kerberos/krb5_kdc.js' },
   { id: 'kerberos-second-factor',
     what: 'A person who holds or must hold a second factor gets no Kerberos ' +
           'ticket on a password alone',
@@ -2405,6 +2495,22 @@ const REQUIREMENTS = [
              'one exchange — and it carries the RFC 8129 indicator `otp`. An ' +
              'app password is never a Kerberos key.',
     where: 'kerberos/krb5_kdc.js, kerberos/krb5_fast.ts' },
+  // #724 (2026-10-19).
+  { id: 'recovery-assurance',
+    what: 'An account recovery is no weaker than the passkey it replaces, ' +
+          'by default',
+    development: 'The passkey policy\'s recoveryAssurance defaults to any: ' +
+                 'a password reset link, an activation link, a recovery ' +
+                 'code or an emailed code or link restores access at once, ' +
+                 'whatever passkey the person holds.',
+    product: 'It defaults to not-weaker: for a person who holds a passkey, ' +
+             'the first sign-in after a recovery that is not a passkey ' +
+             'sign-in reaches no application (STS-AUTHN-0381). The sign-in ' +
+             'screen asks them to register a passkey that satisfies the ' +
+             'passkey policy, and then to sign in with it. A realm\'s own ' +
+             'row says otherwise in either mode.',
+    where: 'common/passkey_policy.ts, authn/authn.ts, ' +
+           'portal/account_reset.ts' },
   { id: 'resource-metadata-import',
     what: 'An RFC 9728 protected resource metadata import is held to the ' +
           'rules a client of the document follows',
@@ -2608,15 +2714,6 @@ const REQUIREMENTS = [
              'disclose its credentialStatus, is always refused. own-only ' +
              'and the per-issuer exemption are allowed.',
     where: 'oid4vc/vc_verifier.ts, oid4vc/vc_status.ts' },
-  { id: 'realm-chooser',
-    what: 'The realm chooser before sign-in lists every realm',
-    development: 'A browser with no session at /admin or /portal, on a ' +
-                 'service with trust realms defined, is shown a list of every ' +
-                 'realm to sign in through.',
-    product: 'The same page asks for the realm\'s id in a text box, so the ' +
-             'deployment\'s realms are not published to anybody who can ' +
-             'reach it.',
-    where: 'common/realm_chooser.ts' },
   { id: 'weaker-responses',
     what: 'A response may go out weaker than asked',
     development: 'An assertion or token that should have been encrypted and ' +
@@ -2881,6 +2978,27 @@ const REQUIREMENTS = [
     where: 'common/helpers.js, oauth-oidc/oauth2.ts, oid4vc/vc_claims.ts, ' +
            'ssf/ssf_subjects.js, ssf/risc.ts, ' +
            'common/identity_assurance.js' },
+  // 2026-10-19 (#396).
+  { id: 'required-attributes',
+    what: 'A person carries the attributes the realm\'s attribute policy ' +
+          'requires',
+    development: 'The policy is stored and drawn on Directory > Policies ' +
+                 'and not enforced: a person may be created with no more ' +
+                 'than a username, and an edit may empty any attribute ' +
+                 'but cn and sn.',
+    product: 'A create that leaves a required attribute without a value is ' +
+             'refused (STS-LDAP-0162) at every door — the console, ' +
+             '/admin-api, SCIM, an LDAP add (objectClassViolation, 65), a ' +
+             'HOBA registration and the bulk import (STS-LDAP-0163) — and a ' +
+             'federated first sign-in whose partner did not supply one ' +
+             'creates nobody (STS-FED-0158). An edit that would take a ' +
+             'required value away is refused (STS-LDAP-0164). uid, cn and ' +
+             'sn are always required; givenName and mail by default. A ' +
+             'person who already lacked one is not refused a sign-in or an ' +
+             'edit of something else.',
+    where: 'common/attribute_policy.ts, ldap/ldap_server.js, ' +
+           'ldap/person_editor.ts, scim/scim.ts, scim/scim_auth.ts, ' +
+           'persistence/bulk_import.js' },
   { id: 'saml-request-signatures',
     what: 'A SAML 2.0 service provider\'s request is signed',
     development: 'An unsigned AuthnRequest or LogoutRequest is accepted ' +
@@ -3968,8 +4086,8 @@ module.exports = {
   derivesKrbtgtFromPassword: derivesKrbtgtFromPassword,
   generatesAcceptorKey: generatesAcceptorKey,
   refusesExpiredClientSecrets: refusesExpiredClientSecrets,
-  listsRealmsBeforeSignIn: listsRealmsBeforeSignIn,
   inventsClaimValues: inventsClaimValues,
+  createsIncompletePeople: createsIncompletePeople,
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,
   requiresCellKek: requiresCellKek,
   opensTestControls: opensTestControls,
@@ -4003,7 +4121,10 @@ module.exports = {
   acceptsPasswordAloneFromSecondFactorAccounts:
     acceptsPasswordAloneFromSecondFactorAccounts,
   issuesTicketsOnPasswordAlone: issuesTicketsOnPasswordAlone,
+  requiresSidFilteringOnTrusts: requiresSidFilteringOnTrusts,
+  recoversWeakerThanPasskeys: recoversWeakerThanPasskeys,
   matchesFederatedNames: matchesFederatedNames,
+  defaultsFederatedAutocreate: defaultsFederatedAutocreate,
   acceptsUnsignedFederatedLogout: acceptsUnsignedFederatedLogout,
   acceptsUnencryptedFederatedAssertions: acceptsUnencryptedFederatedAssertions,
   acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,

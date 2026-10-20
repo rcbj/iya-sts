@@ -79,6 +79,14 @@
     "en": "758990e906bc4fb2",
     "text": "{{seconds}} s après la recherche ; une modification de la source supprime ses lignes."
   },
+  "caches.store.authn.session-window.title": {
+    "en": "c7d3b3347696bed7",
+    "text": "Fenêtre des sessions d’authentification"
+  },
+  "caches.store.authn.session-window.description": {
+    "en": "7a7d9e762890fe35",
+    "text": "Les sessions d’authentification qu’un processus détient lorsque authn.sessionWindow est actif (#350). Un défaut de cache est lu depuis la ligne scellée. L’éviction oublie la copie en mémoire une fois l’upsert validé et ne met pas fin à la session."
+  },
   "caches.store.certificates.parsed-facts.title": {
     "en": "5746d523daca087a",
     "text": "Informations de certificat analysées"
@@ -418,6 +426,22 @@
   "caches.store.krb5.long-term-keys.lifetime": {
     "en": "ce837804788fa2c5",
     "text": "Aucune expiration : supprimées avec le principal, lorsque son enregistrement est remplacé (un changement de mot de passe ou une restauration), ou lorsqu’il est le moins récemment utilisé au-delà de la limite ; jamais persistées."
+  },
+  "caches.store.krb5.trust-keys.title": {
+    "en": "9e19b75405074ba3",
+    "text": "Clés de confiance Kerberos inter-domaines"
+  },
+  "caches.store.krb5.trust-keys.description": {
+    "en": "44c86730ace05ee9",
+    "text": "Les principaux krbtgt inter-domaines construits à partir des enregistrements de confiance de ce domaine (ou=kerberosTrusts), chacun avec les clés dérivées de son mot de passe partagé ou ouvertes depuis son scellement, conservés pour chaque référence après la première."
+  },
+  "caches.store.krb5.trust-keys.bound": {
+    "en": "c9282e1e84dbe9e3",
+    "text": "Appliquée : au plus 512 par domaine (deux clés pour chacun d’au plus 256 enregistrements) ; le plus ancien est retiré et reconstruit à sa prochaine utilisation."
+  },
+  "caches.store.krb5.trust-keys.lifetime": {
+    "en": "37ee5778f968cdd3",
+    "text": "Pas d’expiration : remplacé dès que son enregistrement change (les octets de l’enregistrement sont comparés à chaque utilisation), et retiré avec l’enregistrement ; jamais persisté."
   },
   "caches.store.ldap.credential-tallies.title": {
     "en": "41d340493639d53a",

@@ -108,8 +108,8 @@
     "text": "Tagal ng pag-iingat sa idle na connection (s)"
   },
   "http.keepAliveTimeoutS|description": {
-    "en": "15ba4c34c3d3349e",
-    "text": "Gaano katagal, sa segundo, pinananatiling bukas ng isang HTTP listener ang idle na HTTP/1.1 connection para sa susunod na request ng client (5 ang sariling default ng node). Ang connection na pinanatili ay isang TLS handshake — at isang client-certificate prompt — na hindi na inuulit. Sinasagot nang sunud-sunod ang mga request na pina-pipeline ng client sa iisang connection. Sa likod ng balancer, panatilihing mas mataas dito ang idle timeout nito."
+    "en": "0fa763b61550474c",
+    "text": "Gaano katagal, sa segundo, pinananatiling bukas ng isang HTTP listener ang idle na connection para sa susunod na request ng client (5 ang sariling default ng node): isang HTTP/1.1 connection sa pagitan ng mga request, o isang HTTP/2 connection na walang dumaang frame, na saka isinasara nang maayos. Ang connection na pinanatili ay isang TLS handshake — at isang client-certificate prompt — na hindi na inuulit. Sinasagot nang sunud-sunod ang mga request na pina-pipeline ng client sa iisang connection. Sa likod ng balancer, panatilihing mas mataas dito ang idle timeout nito."
   },
   "http.headersTimeoutS|label": {
     "en": "af0b2f7be18e5943",
@@ -134,6 +134,22 @@
   "http.maxConnections|description": {
     "en": "1dda75e901fc49af",
     "text": "Ilang connection ang sabay-sabay na pinananatiling bukas ng isang HTTP listener; isinasara pagdating ang isa pang lampas doon. Ang 0, ang default, ay walang limit (ang sa node mismo)."
+  },
+  "http.http2|label": {
+    "en": "775d810d4f1a3356",
+    "text": "Mag-alok ng HTTP/2"
+  },
+  "http.http2|description": {
+    "en": "76d7c1691efa23fa",
+    "text": "Kung nag-aalok ang isang HTTPS listener ng HTTP/2 kapag hiniling ito ng client sa TLS handshake (ALPN). Kapag naka-on, ang default, iisang koneksyon ang nagdadala ng bawat request na sabay-sabay na ginagawa ng browser; sinasagot pa rin ang HTTP/1.1 para sa client na wala nang ibang hinihingi. Kapag naka-off, HTTP/1.1 ang bawat koneksyon — para sa client o balancer na may sirang HTTP/2. Agad na sumusunod sa pagbabago ang bagong koneksyon; pinananatili ng bukas nang koneksyon ang protocol nito. HTTP/1.1 lamang ang plain-HTTP na revocation listener, dahil walang handshake na mapag-aalukan nito."
+  },
+  "http.http2MaxConcurrentStreams|label": {
+    "en": "27fcdca12afd105b",
+    "text": "Mga stream bawat HTTP/2 connection"
+  },
+  "http.http2MaxConcurrentStreams|description": {
+    "en": "ec218fbbb4297601",
+    "text": "Ilang request ang puwedeng sabay-sabay na bukas sa isang HTTP/2 connection (SETTINGS_MAX_CONCURRENT_STREAMS); tinatanggihan ang stream na lampas dito hanggang may matapos. Ang 100, ang default, ang pinakamaliit na halagang inirerekomenda ng RFC 9113; walang limit ang sa node mismo, kaya madadala ng iisang connection ang trabaho ng libu-libo. Nililimitahan nito ang trabaho sa isang connection gaya ng paglimita ng http.maxConnections sa mga connection. Sinusunod agad ng bagong connection ang pagbabago, at pinapadalhan ng bagong halaga ang bukas na."
   },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
@@ -632,8 +648,8 @@
     "text": "Gaano kadalas tinatapos ang mga expired na session (segundo)"
   },
   "authn.sessionSweepS|description": {
-    "en": "852f6e4a8d15fa99",
-    "text": "Ang interval ng scheduler job na `authn.session-expiry` (Monitoring → Scheduler), na tumatapos sa bawat sign-on session na lumampas na sa lifetime o idle timeout nito — ang audit row, CAEP session-revoked at ang mga back-channel Logout Token ay ipinapadala nang ISANG BESES para sa buong cluster — bumalik man o hindi ang sinuman para ipakita ito. Pinapatay ng 0 ang job: tatanggihan pa rin ang expired na session tuwing ipapakita ito, at tatapusin sa sandaling iyon, pero walang sasabihan tungkol sa session na hindi na muling ipapakita. Nakapirming tatlumpung segundo ito sa bawat process hanggang 2026-09-22 (#49)."
+    "en": "7c9e47e90ca7211c",
+    "text": "Ang interval ng scheduler job na `authn.session-expiry` (Monitoring → Scheduler), na tumatapos sa bawat sign-on session na lumampas na sa lifetime o idle timeout nito — ang audit row, CAEP session-revoked at ang mga back-channel Logout Token ay ipinapadala nang ISANG BESES para sa buong cluster — bumalik man o hindi ang sinuman para ipakita ito. Tinatapos din ng parehong run, sa bawat realm, hanggang sa authn.sessionShedPerSweep ng realm na iyon sa sariling sobrang session ng iisang subject. Pinapatay ng 0 ang job: tatanggihan pa rin ang expired na session tuwing ipapakita ito, at tatapusin sa sandaling iyon, pero walang sasabihan tungkol sa session na hindi na muling ipapakita. Nakapirming tatlumpung segundo ito sa bawat process hanggang 2026-09-22 (#49)."
   },
   "authn.cookieDomain|label": {
     "en": "d384717cc62561e8",
@@ -659,13 +675,73 @@
     "en": "3d8175702c053473",
     "text": "Gaano katagal puwedeng HINDI GAMITIN ang isang session bago ito matapos, bukod pa sa absolute lifetime sa itaas. **Ang zero, ang default, ay nangangahulugang walang idle timeout**, na siyang palaging ginagawa ng serbisyong ito. Kapag itinakda, ang session na tinigilang gamitin ng isang tao ay natatapos ilang segundo matapos ang huling request nito, alinman sa dalawang limit ang mauna — at ang request sa admin console o sa user portal ay binibilang na paggamit ng sign-on session sa likod nito, kaya ang operator na nagtatrabaho sa console ay hindi masa-sign out dito ng idle clock sa session na hindi nila ipinapakita. Live ito: nalalapat ito sa mga session na umiiral na, dahil sinusuri ito kung saan binabasa ang session sa halip na itinatatak kung saan ito ginagawa."
   },
+  "authn.deviceBoundSessions|label": {
+    "en": "454fe488dcb65a89",
+    "text": "I-bind ang mga session sa key ng browser (DBSC)"
+  },
+  "authn.deviceBoundSessions|description": {
+    "en": "b88d9840f0b7c19c",
+    "text": "Kapag naka-on, hinihiling ng isang sign-in sa browser na i-bind ang sign-on session sa isang key na hawak nito (W3C Device Bound Session Credentials). Ang browser na gumagawa nito ay kailangang mag-renew pagkatapos ng isang panandaliang ikalawang cookie gamit ang proof ng key na iyon, kaya humihinto sa paggana ang kinopyang session cookie kapag nag-expire ang cookie na iyon; ang refresh na pinirmahan ng ibang key, o na umuulit ng challenge na nagastos na, ay nagtatapos sa session. Ang browser na hindi sumusuporta rito ay nananatili sa karaniwang session. Kapag naka-off, ang default, walang iniaalok, at ang session na naka-bind na ay itinuturing na karaniwang session."
+  },
+  "authn.deviceBoundCookieLifetimeS|label": {
+    "en": "0589864dcb16bffb",
+    "text": "Tagal ng bound cookie (segundo)"
+  },
+  "authn.deviceBoundCookieLifetimeS|description": {
+    "en": "eb2c0a8e31f615d9",
+    "text": "Gaano katagal nabubuhay ang cookie na kailangan ng isang device-bound session bago kailangang patunayan muli ng browser ang key nito, at kaya gaano katagal patuloy na gumagana ang isang kinopyang pares ng cookie. Hindi lalampas sa sariling katapusan ng session. Binabasa kapag nag-issue ng cookie."
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "Pinakamaraming sign-on session bawat realm"
   },
   "authn.maxSessions|description": {
-    "en": "02399d7a28c348d5",
-    "text": "Ang pinakamaraming sign-on session na hawak ng isang trust realm — mga browser sign-in, ang mga arrival session na ibinibigay sa browser sa front door ng isang protocol, ang sariling mga session ng console at portal, at ang mga session ng mga API, SCIM at SPIRE client. Sinusuri kapag GINAWA ang session: sa cap, tinatapos ang least recently used na session para magkaroon ng puwang, eksakto gaya ng pagtatapos ng expiry — isang audit row na may dalang STS-AUTHN-0292, CAEP session-revoked at mga back-channel Logout Token — kaya kailangang mag-sign in ulit ng may hawak nito. Kung wala ito, ang session expiry job lang ang naglilimita sa store, at ang biglang dami ng sign-in ay nagpapalaki sa bawat process hanggang makahabol ang job. Ang pagbaba nito ay may epekto sa susunod na session na gagawin, na siyang agad na tatapos sa bawat session na lampas sa bagong cap."
+    "en": "a5b6beb131a44df2",
+    "text": "Ang pinakamaraming session na hawak ng isang trust realm — mga sign-in sa browser, mga arrival session, ang sariling session ng console at ng portal, at ang mga session ng mga API, SCIM at SPIRE client. Sinusuri kapag GINAGAWA ang isang session. Sa cap, TINATANGGIHAN ang bagong row (STS-AUTHN-0337): walang tinatapos para magbigay-puwang sa ibang tao. Ang subject na nasa authn.maxSessionsPerSubject na ay mawawalan sa halip ng sarili nitong pinakalumang nabibilang na session (STS-AUTHN-0292), isang row, at papalit dito ang bagong row. Hindi tinatapos ng pagbaba nito ang mga session na hawak na. Tinatanggihan ang bagong row habang lumalampas pa ang realm sa bagong bilang; umaalis ang mga session sa pamamagitan ng lifetime, sign-out, revoke, o, kung lumalampas ang isang subject sa sarili nitong cap, sa pamamagitan ng susunod na insert ng subject na iyon at ng session sweep (hanggang authn.sessionShedPerSweep sa run ng realm na iyon)."
+  },
+  "authn.maxSessionsPerSubject|label": {
+    "en": "88aeb86239334502",
+    "text": "Pinakamaraming nabibilang na session bawat subject"
+  },
+  "authn.maxSessionsPerSubject|description": {
+    "en": "b825060c911d7200",
+    "text": "Ilang nabibilang na session ang maaaring hawak ng isang subject: isang piniling sign-on, isang keyed na API session, o isang relying-party session. Hindi nabibilang ang arrival, at iisang username ang ginagamit ng mga arrival, kaya hindi nakabatay sa username ang limitasyong ito. Sa cap, ang susunod na session na sisimulan ng subject na iyon ay tatapos sa sarili nitong pinakalumang nabibilang na row at papalit dito. Hindi kailanman ang row ng ibang subject, at hindi kailanman isang arrival. Hindi tinatapos ng relying-party session ang sign-on na kahahango lang nito. Isang row bawat insert; ang natitirang sobra ay kinukuha ng session sweep, hanggang authn.sessionShedPerSweep sa run ng realm na iyon. Ang value na mas mataas sa kasalukuyang authn.maxSessions ay binabasa bilang cap na iyon."
+  },
+  "authn.sessionShedPerSweep|label": {
+    "en": "83dd8742cd13895b",
+    "text": "Sariling sobrang session na tinatapos bawat sweep"
+  },
+  "authn.sessionShedPerSweep|description": {
+    "en": "d3d71af793b0befc",
+    "text": "Ilan sa sariling sobrang session ng isang subject ang tinatapos ng job na authn.session-expiry sa isang run ng realm na ito. Bawat realm ay gumagamit ng sarili nitong value. Ang pinakalumang nabibilang na row, isang subject sa bawat pagkakataon, hanggang matapos ang ganoong dami o wala nang lumalampas sa authn.maxSessionsPerSubject. Hindi nito tinatapos ang arrival dahil sa kapasidad, at hindi nito tinatapos ang subject na nasa o mas mababa sa cap nito kahit lumalampas ang realm sa authn.maxSessions. Hindi nagdudulot ng maramihang pagtatapos ang pagbaba ng cap."
+  },
+  "authn.sessionWindow|label": {
+    "en": "8f5e9b73e3237ec2",
+    "text": "May hangganang session window"
+  },
+  "authn.sessionWindow|description": {
+    "en": "59fc245bcee32b34",
+    "text": "Kung hawak ng isang process ang bawat sign-on session o isang may hangganang window ng mga ito. Ang auto, ang default, ay gumagamit ng window kapag naka-enable ang minted persistence, iisang cell ang serbisyo, at digest ang minted key. Kung hindi, pinapanatili nito ang buong map at nila-log ang STS-AUTHN-0339 nang isang beses sa pagsisimula. Tinatanggihan ang on sa pagsisimula sa ganoon ding kalagayan. Pinapanatili ng off ang buong map. Katangian ito ng process na ito: hindi maaaring magkaroon ng sariling value ang isang realm, at kailangan ng restart para baguhin ito."
+  },
+  "authn.sessionWindow|restartReason": {
+    "en": "ff36b8697d3f42a0",
+    "text": "hindi maibabalik ng pagsisimulang lumaktaw sa mga session body ang mga ito kapag pinatay ang window, kaya sasagutin bilang wala ang mga na-commit na session"
+  },
+  "authn.sessionCacheEntries|label": {
+    "en": "9745355bc4897a82",
+    "text": "Mga session na hawak ng isang process"
+  },
+  "authn.sessionCacheEntries|description": {
+    "en": "e5815f7302e5577e",
+    "text": "Ilang sign-on session ang hawak ng isang process kapag naka-on ang authn.sessionWindow. Iisang cache ang nagsisilbi sa bawat realm, kaya hindi ito masusukat ng isang realm. Ang session na lampas sa hangganan ay kinakalimutan sa memory pagkatapos ma-commit ang upsert nito. Hindi ito tinatapos. Nananatili ang row sa store at binabasa muli sa susunod na miss."
+  },
+  "authn.sessionReadTimeoutMs|label": {
+    "en": "c0f67cf6f4eb61c6",
+    "text": "Timeout ng pagbasa ng session (milliseconds)"
+  },
+  "authn.sessionReadTimeoutMs|description": {
+    "en": "04b8133757dcd380",
+    "text": "Gaano katagal maaaring maghintay ang isang pagbasa ng session, at gaano katagal hindi uulitin ang nabigong pagbasa. Ang 0 ay hindi naghihintay at hindi nagpapaliban sa susunod na miss. Ang paghihintay ay sa process na ito, hindi sa isang realm. Hindi itinuturing na nawawalang session ang nabigong pagbasa."
   },
   "authn.pendingTtlS|label": {
     "en": "d328ac4c11db98f0",
@@ -682,6 +758,30 @@
   "authn.mfaStepTtlS|description": {
     "en": "33bc4846535a784f",
     "text": "Gaano katagal ang taong nakapasa na sa password step para ipakita ang kanilang second factor — isang security key, code mula sa authenticator app o recovery code — bago mag-expire ang step at kailangang simulan ulit ang sign-in. Ito ang window kung saan masusubukan man lang ang nahulaang code, kaya mas maikli ito kaysa sa sariling orasan ng screen; nililimitahan ng rate limiter ang mga pagtatangka sa loob nito."
+  },
+  "authn.multipleAccounts|label": {
+    "en": "96144493272617dc",
+    "text": "Ilang naka-sign in na account sa iisang browser"
+  },
+  "authn.multipleAccounts|description": {
+    "en": "d0b4899bdae1c43d",
+    "text": "Hayaang maghawak ang isang browser ng mga sign-on session para sa ilang tao nang sabay, at pumili sa pagitan nila. Kapag naka-on, ang pag-sign in ng ibang tao ay NAGDARAGDAG ng session sa account set ng browser (ang cookie na `sts_accounts`) sa halip na tapusin ang dati nitong session; ang isang request na hindi nagsasabi kung para saang account ito — walang account na pinili sa flow na ito, walang login_hint, id_token_hint o SAML Subject na nagpapangalan ng isa — habang higit sa isa ang naka-sign in ay ipinapadala sa account picker sa /authn/accounts, at ipinapakita ito ng prompt=select_account. Pinapanatili ng bawat session ang sarili nitong lifetime, idle timeout, step-up state at sign-out. Kapag naka-off, ang default, iisa ang session ng browser at tinatapos ito ng pag-sign in ng ibang tao. Nagkakabisa sa susunod na request sa alinmang direksyon, at walang tinatapos: kapag in-on, ang kasalukuyang session ng browser ang nagiging unang account ng set nito; kapag in-off, mag-isang nagpapatuloy ang default na session ng browser at nag-e-expire ang iba gaya ng dati."
+  },
+  "authn.maxBrowserAccounts|label": {
+    "en": "19115cee7c688f64",
+    "text": "Pinakamaraming account na natatandaan ng isang browser"
+  },
+  "authn.maxBrowserAccounts|description": {
+    "en": "fa642faef7e66a0f",
+    "text": "Kapag naka-on ang ilang naka-sign in na account, ang pinakamaraming account na hawak ng account set ng isang browser, pinagsama ang naka-sign in at naka-sign out. Ang isang sign-in na lalampas dito ay unang nag-aalis ng naka-sign out na account na pinakamatagal nang nag-sign out; kapag ang bawat puwesto ay hawak ng naka-sign in na account, tinatanggihan ang sign-in (STS-AUTHN-0340) at sinasabi ng picker na kailangan munang i-sign out ang isang account."
+  },
+  "authn.rememberedAccountDays|label": {
+    "en": "9e38d0738504c1e3",
+    "text": "Gaano katagal natatandaan ang naka-sign out na account (araw)"
+  },
+  "authn.rememberedAccountDays|description": {
+    "en": "a1fe0b6f510982c4",
+    "text": "Kapag naka-on ang ilang naka-sign in na account, kung gaano katagal patuloy na iniaalok ng account picker ang isang account na nag-sign out sa browser na ito — ang username, display name at subject nito, hindi kailanman isang credential, na nakatago sa server — para ma-sign in muli o makalimutan ito. Inaalis ito pagkatapos noon ng scheduler job na `authn.account-set-expiry`."
   },
   "oidcRp.maxFlows|label": {
     "en": "f517b7686e6225fc",
@@ -994,6 +1094,14 @@
   "webauthn.pqcOnly|description": {
     "en": "fb33eabeb83379da",
     "text": "Kapag naka-on, hinihiling LAMANG ang mga post-quantum passkey algorithm — ang `ML-DSA-44` (-48), `ML-DSA-65` (-49) at `ML-DSA-87` (-50) ng RFC 9964 — alinman sa mga ito ang pinangangalanan ng `webauthn.algorithms`, at lahat ng tatlo kung wala itong pinangangalanan. Kailangang ML-DSA na ang bagong passkey: ang ginawa gamit ang ibang algorithm ay tinatanggihan sa registration (WebAuthn section 7.1). Pinapakitid nito ang HINIHILING: ang classical na key na na-enrol na ay patuloy na nakakapag-sign in. Karamihan ng authenticator ay wala pang suporta sa ML-DSA at hindi makakapag-register habang naka-on ito."
+  },
+  "webauthn.pqcAlongsideClassical|label": {
+    "en": "664b4753cc8439b0",
+    "text": "Post-quantum na passkey katabi ng isang classical"
+  },
+  "webauthn.pqcAlongsideClassical|description": {
+    "en": "e35e276b9d933828",
+    "text": "Kapag naka-on, maaaring sabay na hawakan ng isang tao ang isang classical na passkey at isang post-quantum (ML-DSA) na passkey, sa iisang authenticator kung kaya nitong gawin ang dalawa. Bawat passkey ay ginagawa sa isang LANE na pinipili ng tao: humihiling ang classical na lane ng `webauthn.algorithms` nang walang ML-DSA (`ES256` at `RS256` kung wala nang matitira), at ML-DSA lamang ang hinihiling ng post-quantum na lane. May sariling user handle ang bawat lane, kaya hindi pinapalitan ng pangalawang passkey ang una sa authenticator, at may sariling exclude list; ipinapakita ng credential manager ang post-quantum sa isang pangalang nagsasabi ng algorithm nito — `<username>+ml-dsa` kapag ginawa, `<username>+ml-dsa-65` (halimbawa) kapag iisang algorithm na ang gamit ng lahat ng post-quantum na passkey ng tao — na hindi kailanman pangalang ginagamit sa pag-sign in. Binibilang ng `webauthn.maxKeysPerPerson` ang dalawang lane. Hindi maaaring naka-on habang naka-on ang `webauthn.pqcOnly`. Kapag naka-off, gaya ng dati ang bawat ceremony, at patuloy na nakakapag-sign in ang post-quantum na passkey na naka-register na; hindi na makakagawa ng bago."
   },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
@@ -1512,12 +1620,20 @@
     "text": "Limit sa pag-start ng request worker (ms)"
   },
   "workers.startTimeoutMs|description": {
-    "en": "d618aed19286a7b1",
-    "text": "Gaano katagal puwedeng ihanda ng isang request o surface worker ang estado nito (ang store, ang mga key, ang mga minted row at ang coordination) bago nito iulat na hindi ito makapag-start. Tatlong sunod-sunod na pagkabigo at ititigil ng pool ang pag-fork at sasagutin ang lahat sa process na may hawak ng mga socket. Taasan ito kung saan mabagal ang pag-start ng isang worker — isang malaking realm key set na muling sinesertipikahan sa bawat pag-start, isang malamig na database (#311)."
+    "en": "81d7608fc4c1da1f",
+    "text": "Gaano katagal puwedeng ihanda ng isang request o surface worker ang estado nito (ang store, ang mga key, ang mga minted row at ang coordination) bago nito iulat na hindi ito makapag-start. Tatlong sunod-sunod na pagkabigo at ititigil ng pool ang pag-fork hanggang workers.giveUpRetryMs, saka susubukan ang isa; hanggang handa ito, nananatili ang mga request sa front process. Taasan ito kung saan mabagal ang pag-start ng isang worker — isang malaking realm key set na muling sinesertipikahan sa bawat pag-start, isang malamig na database (#311)."
   },
   "workers.startTimeoutMs|restartReason": {
     "en": "7ac1de67a7c566c0",
     "text": "isang beses itong binabasa ng worker, kapag nag-start ito"
+  },
+  "workers.giveUpRetryMs|label": {
+    "en": "4e9da2141c451b07",
+    "text": "Paghihintay ng muling subok pagkatapos sumuko (ms)"
+  },
+  "workers.giveUpRetryMs|description": {
+    "en": "e4e6fa0869cb03c2",
+    "text": "Gaano katagal maghihintay ang pool, pagkatapos na tatlong worker na magkakasunod ay hindi makapag-start, bago subukan muli ang ISANG worker. Dumodoble ang paghihintay pagkatapos ng bawat pagtatangkang nabigo rin, at hindi ito lalampas sa isang oras. Hanggang iulat ng worker na iyon na handa na ito, nananatili ang mga request kung saan inilagay sila ng pagsuko: ang front process, o ang protocol pool para sa mga hosted surface. Ang worker na makapag-start ay inaalis ang pagsuko at fino-fork ang natitira sa pool. Ang 0 ang dating asal: sumuko hanggang mag-restart ang process na ito. Binabasa ito kapag inarmas ang isang cool-down (#333)."
   },
   "workers.requestCount|label": {
     "en": "d742f198c4f9ad17",
@@ -1699,6 +1815,14 @@
     "en": "0ecee8de8ef29c3f",
     "text": "Gaano katagal naghihintay ang pag-alis ng isang trust realm na maihatid ang mga utang nito bago purgahin ang mga store nito: ang CAEP session-revoked at mga back-channel Logout Token ng bawat session na tinatapos nito, RISC account-purged para sa bawat tao rito, at SSF stream-updated (disabled) sa bawat stream. Ang anumang hindi pa naihahatid kapag naubos ang oras ay nilo-log (STS-CORE-0120) at sumasama sa realm. Ang 0 ay nagpapadala pa rin ng lahat at hindi naghihintay. Makakakolekta lang ang poll receiver habang tumatagal ang paghihintay."
   },
+  "realms.maxCount|label": {
+    "en": "017b530f97d0b9e0",
+    "text": "Pinakamaraming bilang ng realm"
+  },
+  "realms.maxCount|description": {
+    "en": "1a45b5c5965dd169",
+    "text": "Ilang trust realm ang maaaring hawakan ng cluster na ito, kasama ang built-in na default realm, kaya ang 10 ay ang default realm at siyam pang iba. Isang service administrator ang nagtatakda nito, at sa default realm lamang: mula sa loob ng ibang realm, naka-disable ang kontrol at tinatanggihan ang pagsulat. Ang pagbaba nito ay hindi nag-aalis ng mga realm na umiiral na; tinatanggihan ang paggawa hangga’t hindi pa bumabalik sa ilalim nito ang bilang. Bawat realm ay gumagamit ng memorya sa bawat proseso ng bawat node, kaya may hangganan."
+  },
   "oauth2.issuer|label": {
     "en": "373396d5608b3885",
     "text": "Issuer identifier"
@@ -1830,6 +1954,30 @@
   "oauth2.revokeRefreshOnLogout|description": {
     "en": "d6543ad76912e1b1",
     "text": "Sa bawat mode (#123), tapusin ang isang browser sign-on session at nire-revoke ang bawat refresh token na in-issue SA session na iyon nang walang offline_access — ang SHOULD ng OpenID Connect Back-Channel Logout 1.0 section 2.7, at ang MAY ng RFC 9700 section 2.2.2. Pinananatili ang token na binigyan ng offline_access: ang paglampas sa session ang mismong layunin ng scope na iyon (OIDC Core section 11). Ito ang nagbibigay ng kahulugan sa /oauth2/logout at sa wsignout1.0 ng WS-Federation para sa back channel: kung wala ito, tinatapos ng pag-sign out ang cookie at iniiwan ang pangmatagalang credential sa kamay ng client. NAKA-ON bilang default; kapag naka-off, o FALSE sa entry ng isang client, inuulit ang client na nagre-refresh pabalik. Hinahanap ang token ayon sa session kung saan ito IN-ISSUE."
+  },
+  "oauth2.thirdPartyInitiatedLogin|label": {
+    "en": "b7e8b085293fbd62",
+    "text": "Sign-in na sinimulan ng identity provider (third-party login)"
+  },
+  "oauth2.thirdPartyInitiatedLogin|description": {
+    "en": "d652b991521afa8d",
+    "text": "Kung ipinapadala ng /launch/{app} ang isang tao sa initiate_login_uri ng isang OpenID Connect client (OpenID Connect Core section 4) kasama ang iss, login_hint at target_link_uri, at kung iniaalok ng user portal ang link na iyon. NAKA-OFF bilang default; nangingibabaw dito ang oauthThirdPartyInitiatedLogin sa entry ng isang client para sa client na iyon. Pagkatapos ay nagsisimula ang client ng isang ordinaryong authorization request, kaya ang lahat ng kasunod ng link ay sariling sign-in ng client."
+  },
+  "oauth2.spInitiatedSso|label": {
+    "en": "a4cd88a5fec219e4",
+    "text": "Sign-in na sinimulan ng client"
+  },
+  "oauth2.spInitiatedSso|description": {
+    "en": "2ac22081ca9a60d6",
+    "text": "Kung sinasagot ng /oauth2/authorize ang client na hindi kalalunsad lang. NAKA-ON bilang default; nangingibabaw dito ang oauthSpInitiatedSso sa entry ng isang client. Kapag naka-off, sinasagot lang ang authorization request mula sa client na iyon kapag sumusunod ito sa isang /launch nito sa parehong session sa loob ng oauth2.launchWindowS, isang beses bawat launch; ang iba ay tinatanggihan ng unauthorized_client. Hindi apektado ang mga grant na hindi dumaraan sa authorization endpoint."
+  },
+  "oauth2.launchWindowS|label": {
+    "en": "9c1c1df5174c8754",
+    "text": "Launch window (segundo)"
+  },
+  "oauth2.launchWindowS|description": {
+    "en": "40b4f249f1f0c2d3",
+    "text": "Gaano katagal matapos ipadala ng /launch/{app} ang isang tao sa initiate_login_uri ng isang client ibinibilang pa rin ang authorization request ng client na iyon bilang sumusunod sa launch, para sa client na naka-off ang sariling pagsisimula (oauth2.spInitiatedSso)."
   },
   "oauth2.eddsaCurve|label": {
     "en": "6637f461a494b5b2",
@@ -2140,8 +2288,8 @@
     "text": "Lifetime ng client secret (araw)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "91dc7031f88426d1",
-    "text": "Ang lifetime, sa araw, ng bawat client secret na ginagawa o ibinibigay sa serbisyong ito, kaya ang `client_secret_expires_at` na inilalathala ng RFC 7591 section 3.2.1 para sa client na na-register sa POST /oauth2/register — ang default para sa bawat secret na ginagawa o ibinibigay (isang regeneration, isang rotation, isang idinagdag na secret, isang value na na-type sa console), maliban kung nagpapangalan ng iba ang add form. Ang ZERO, ang default, ay ang sariling \"never\" ng section na iyon. Itinatatak ito sa bawat secret kapag ginawa ito at hindi ginagalaw ng pagbabago sa ibang pagkakataon."
+    "en": "6ad202dff164f155",
+    "text": "Ang lifetime, sa araw, ng bawat client secret na ginagawa o ibinibigay sa serbisyong ito, kaya ang `client_secret_expires_at` na inilalathala ng RFC 7591 section 3.2.1 para sa client na na-register sa POST /oauth2/register — ang default para sa bawat secret na ginagawa o ibinibigay (isang regeneration, isang rotation, isang idinagdag na secret, isang value na na-type sa console), maliban kung nagpapangalan ng iba ang add form, o ang create form para sa unang secret ng isang application. Ang ZERO, ang default, ay ang sariling \"never\" ng section na iyon. Itinatatak ito sa bawat secret kapag ginawa ito at hindi ginagalaw ng pagbabago sa ibang pagkakataon."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",
@@ -4020,8 +4168,8 @@
     "text": "Prefix para sa mga federated username"
   },
   "federation.usernamePrefix|description": {
-    "en": "cd17a5b59a5cf957",
-    "text": "Inilalagay sa unahan ng bawat username na ibinibigay ng isang foreign identity provider, para dalawang entry ang federated na `alice` at ang lokal na `alice`. WALANG LAMAN bilang default, na nangangahulugang IISANG entry sila — at tunay na desisyon iyon sa halip na default na walang nag-isip. Tama ang walang laman para sa serbisyong itinuturo sa isang partner para makita kung ano ang bumabalik, dahil ang pangalang may prefix ay ginagawang hindi pamilyar ang bawat downstream na token at assertion. Itakda ito sa isang tulad ng `fed-` sa sandaling ang tanong ay kung naghahati ba sa namespace ang mga federated identity at mga lokal, na siyang tanong na dahilan ng pag-iral ng setting na ito. Inilalapat ito PAGKATAPOS mapili ang username, kaya hindi mababago ng pagbabago nito KUNG ALING papasok na value ang ginamit."
+    "en": "81424ee1cba2373a",
+    "text": "Inilalagay sa unahan ng pangalang hinahanap ng isang `link-at-first-sign-in` na confirm, at ng pangalang itinutugma ng `any-existing`, pagkatapos piliin ang value na iyon at paikliin sa bahaging bago ang huling `@`. WALANG LAMAN bilang default, kaya kinukumpirma ng subject ng partner na `alice@partner.example` ang lokal na `alice`. Itakda ito (halimbawa `fed-`) kapag hindi dapat makatagpo ng lokal na tao ang paghahanap na iyon. Ang entry na ginagawa ng sign-in sa ilalim ng `link-at-first-sign-in` o `jit-namespaced` ay `<relationship>~<subject>` alinman ang mangyari, at hindi bahagi ng pangalang iyon ang prefix na ito."
   },
   "federation.loginButtons|label": {
     "en": "712a94d0c664c839",
@@ -4030,6 +4178,30 @@
   "federation.loginButtons|description": {
     "en": "89dfe2967675cad2",
     "text": "Magpakita ng button bawat magagamit na service-provider-side relationship sa /authn/login, para matugunan ng isang federated identity ang ANUMANG flow na nagsimula na — isang OAuth 2.0 authorization request, isang WS-Federation sign-in, isang SAML AuthnRequest, ang admin console. Iyon ang buong dahilan kung bakit naroon ang mga button sa halip na sa /federation/login/{id} lang. Ang mga relationship lang na talagang gagana ang iniaalok — mas masahol ang button na humahantong sa pagtanggi kaysa sa walang button."
+  },
+  "federation.consumerProviders|label": {
+    "en": "96a08e7b4a520c19",
+    "text": "Mga consumer at social na identity provider"
+  },
+  "federation.consumerProviders|description": {
+    "en": "635dc4f49d935e03",
+    "text": "Pinapayagan ang realm na ito na makipag-federate sa mga consumer at social na provider — Google, Discord, GitHub at ang iba pa sa katalogo — bilang mga relasyon ng sarili nilang kategorya (#565). NAKA-OFF bilang default: ang realm na naka-off ito ay hindi mabibigyan ng isa, hindi makapagpapagana ng isa, at tumatanggi sa bawat pinto sa pag-sign in sa pamamagitan ng isa, kasama ang relasyong isinulat ng ldapmodify. Hindi apektado ang mga enterprise na partner sa alinmang posisyon. Ang bagong dating sa pamamagitan ng consumer provider ay nakakakuha ng sariling entry, at hindi kailanman ginagamit ang address para itugma sa umiiral na tao."
+  },
+  "federation.connectRecentAuthMinutes|label": {
+    "en": "cbe8f387555868ea",
+    "text": "Pagkonekta ng provider: gaano kabago dapat ang pag-sign in (min)"
+  },
+  "federation.connectRecentAuthMinutes|description": {
+    "en": "f0edd885053c8b09",
+    "text": "Gaano kabago dapat nagpatunay ang isang tao para maikonekta ang isang consumer o social na provider sa kanyang account sa pahinang Mga nakakonektang account ng portal (#565). Kung mas luma, hihilingin muna sa kanila na mag-sign in muli: pinapayagan ng koneksyon ang provider na i-sign in sila mula noon."
+  },
+  "federation.consumerProvisionCap|label": {
+    "en": "c93ac16ed967542f",
+    "text": "Mga consumer provider: mga account na puwedeng gawin ng bawat isa"
+  },
+  "federation.consumerProvisionCap|description": {
+    "en": "3e7e50d4c4690e0e",
+    "text": "Ilang tao ang puwedeng gawin ng relationship ng isang consumer o social provider, maliban kung iba ang sabi ng sariling fedProvisionCap ng relationship. Isinusulat sa isang consumer relationship kapag ginawa ito, at ginagamit para sa isang walang laman ang fedProvisionCap. Sa cap, tinatanggihan ang bagong dating (STS-FED-0090) at nakakapag-sign in pa rin ang taong nakakonekta na. Hindi apektado ang isang enterprise partner: walang limitasyon ang walang laman nitong fedProvisionCap."
   },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
@@ -4287,13 +4459,21 @@
     "en": "d5e8553e9978dfda",
     "text": "Kung tinatanggihan ang HINDI PINIRMAHANG <samlp:AuthnRequest> — at ang hindi pinirmahang <samlp:LogoutRequest> mula sa isang service provider. **Ang `auto` ay NAKA-ON sa product mode at NAKA-OFF sa development.** Ang `on` at `off` ay nagpapasya anuman ang mode; ang service provider na ang na-consume na metadata ay nagsasabing AuthnRequestsSigned=\"true\" ay pinanghahawakan doon kahit naka-off ito. Ito rin ang sinasabi ng WantAuthnRequestsSigned sa metadata ng identity provider na ito.\n\nVine-verify sa bawat mode ang pirmang NAROROON — ang query-string signature ng HTTP Redirect binding (section 3.4.4.1) o ang enveloped na pirma ng HTTP POST binding — laban sa mga NAKA-REGISTER na signing certificate ng service provider (samlSigningCertificate, mula sa metadata nito o itinakda sa pahinang SAML 2.0), hindi kailanman laban sa certificate na dala ng request, at tinatanggihan ang pirmang hindi nagve-verify. Kapag walang naka-register na certificate, nire-record ang pirma bilang hindi na-verify, na binibilang na HINDI PINIRMAHAN kapag naka-on ito."
   },
-  "saml2.unsolicitedSso|label": {
+  "saml2.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
-    "text": "Identity-provider-initiated na sign-in"
+    "text": "Sign-in na sinimulan ng identity provider"
   },
-  "saml2.unsolicitedSso|description": {
-    "en": "aff7c855f4363724",
-    "text": "Kung nagpapadala ang /saml2/unsolicited[/{sp}] ng UNSOLICITED na Response (saml-profiles-2.0-os section 4.1.5) — isang sign-in na sinimulan sa identity provider na ito, para sa service provider na hindi humingi: pinapangalanan ito ng `providerId` (o ng path segment), ng `shire` ang isa sa mga naka-register nitong assertion consumer service, ng `target` ang RelayState. Dapat naka-register ang service provider sa product, dapat ang address ay isa sa ini-register ng metadata o entry nito, at tinatanong ang issuance policy gaya ng sa anumang sign-in. Walang dalang InResponseTo ang assertion, kaya ang service provider ang nagpapasya para sa sarili nito kung tatanggap ito ng isa; i-off ito para sa realm na ang mga provider ay dapat sinasagot lang."
+  "saml2.idpInitiatedSso|description": {
+    "en": "9982a49370bf40a8",
+    "text": "Kung nagpapadala ang /saml2/unsolicited[/{sp}] — at ang /launch/{app} para sa SAML 2.0 — ng UNSOLICITED na Response (saml-profiles-2.0-os section 4.1.5): isang sign-in na sinimulan sa identity provider na ito para sa service provider na hindi humingi. NAKA-OFF bilang default; nangingibabaw dito ang saml2IdpInitiatedSso sa entry ng isang application para sa service provider na iyon lamang. Walang dalang InResponseTo ang assertion, kaya hindi matutukoy ng service provider ang Response na ipinadala rito mula sa itinulak sa browser nito ng ibang tao; i-on lang ito para sa mga provider na umaasa ng sign-in na sinimulan ng identity provider. Dapat rehistrado ang service provider sa product, dapat ang address ay isang nirehistro ng metadata o ng entry nito, at tinatanong ang issuance policy gaya ng sa anumang sign-in."
+  },
+  "saml2.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "Sign-in na sinimulan ng service provider"
+  },
+  "saml2.spInitiatedSso|description": {
+    "en": "92e8e438813d4044",
+    "text": "Kung sinasagot ang isang <samlp:AuthnRequest> sa /saml2/sso — ang sign-in na sinisimulan ng service provider. NAKA-ON bilang default; nangingibabaw dito ang saml2SpInitiatedSso sa entry ng isang application para sa service provider na iyon. Kapag naka-off, sinasagot ang request ng isang RequestDenied na Response, at maisa-sign in lang ang service provider sa pamamagitan ng sign-in na sinimulan ng identity provider."
   },
   "saml2.defaultSingleLogoutService|label": {
     "en": "a81a00ce8c57908e",
@@ -4439,6 +4619,22 @@
     "en": "2e68718a26d4706c",
     "text": "Gumawa ng application entry sa ilalim ng ou=applications sa unang pagkakataong mapangalanan ang isang relying party — sa pagdating ng TARGET, sa pagkuha ng metadata document, o sa pag-resolve ng artifact. Ang off ay nangangahulugang gumagana pa rin ang mga browser profile at nananatiling walang laman ang /admin/saml11, na siyang gusto ng taong nagpapatakbo ng load test at walang iba."
   },
+  "saml11.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Sign-in na sinimulan ng identity provider"
+  },
+  "saml11.idpInitiatedSso|description": {
+    "en": "37300a932ffca76b",
+    "text": "Kung sinasagot ang SAML 1.1 sign-in na SINIMULAN DITO: /saml11/sso/{rp} na may TARGET at walang shire, at /launch/{app} para sa SAML 1.1. NAKA-OFF bilang default; nangingibabaw dito ang saml11IdpInitiatedSso sa entry ng isang application para sa relying party na iyon. Tumatanggap ang relying party ng Response na hindi nito hiningi, na hindi nito matutukoy mula sa itinulak sa browser nito ng ibang tao."
+  },
+  "saml11.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "Sign-in na sinimulan ng service provider"
+  },
+  "saml11.spInitiatedSso|description": {
+    "en": "f4b88ca2b7aa9fbc",
+    "text": "Kung sinasagot ang SAML 1.1 sign-in na sinimulan ng relying party — ang Shibboleth 1.3 AuthnRequest profile, isang request na may dalang `shire`. NAKA-ON bilang default; nangingibabaw dito ang saml11SpInitiatedSso sa entry ng isang application. Payak na unsigned URL ang ganitong request, kaya ang pag-off dito ay nagsasara ng pinto sa halip na patunayan kung sino ang nagbukas nito."
+  },
   "saml11.requestTtlMin|label": {
     "en": "f2c40fce66df42af",
     "text": "Tagal ng hinahawakang flow (minuto)"
@@ -4502,6 +4698,22 @@
   "wstrust.jwtCertificateHeader|description": {
     "en": "d75340dbe09a7542",
     "text": "Kung pinapangalanan ng JWT na ibinabalik ng STS na ito sa isang RequestSecurityTokenResponse ang certificate chain ng key na pumirma rito. Dala ng SAML assertion ang certificate nito sa sarili nitong XML Signature at hindi ito apektado. Ang `x5u` — ang default — ay ang address ng chain sa serbisyong ito, `/pki/chain/{scope}/{sha256}.pem`, mga isandaang byte; ang `x5c` ay ang chain mismo na nakasama, leaf muna at huli ang service Root, base64 DER, ilang kilobyte; ang `both` ay pareho at ang `none` ay wala sa dalawa. Alinman dito, ito ang kailangan ng relying party na token lang ang hawak para maabot ang CRL distribution points, OCSP responder at caIssuers address ng bawat certificate. Walang natatanggap ang key na hindi pa naka-certify sa ilalim ng JOSE Issuing CA ng realm na ito, pati ang HMAC na pirma. Hinihingi ng RFC 7515 section 4.1.5 na gumamit ng TLS ang pag-fetch ng `x5u`: kapag naka-off ang global.https, `http://` ang address at tatanggi itong sundan ng isang mahigpit na verifier. Hindi kailanman binibigyan nito ang mga JWE header — walang ine-encrypt ang anumang certified key ng serbisyong ito. Puwedeng itakda bawat realm."
+  },
+  "wsfed.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Sign-in na sinimulan ng identity provider"
+  },
+  "wsfed.idpInitiatedSso|description": {
+    "en": "62f920d6663c4e4f",
+    "text": "Kung isina-sign in ng /wsfed/initiate/{rp} — at ng /launch/{app} para sa WS-Federation — ang isang tao sa relying party na hindi humingi, nagpo-post sa nakarehistrong wsfedReplyUrl nito. NAKA-OFF bilang default; nangingibabaw dito ang wsfedIdpInitiatedSso sa entry ng isang application para sa relying party na iyon. Tumatanggap ang relying party ng response na hindi nito hiningi, na hindi nito matutukoy mula sa itinulak sa browser nito ng ibang tao."
+  },
+  "wsfed.spInitiatedSso|label": {
+    "en": "705a2297f2762532",
+    "text": "Sign-in na sinimulan ng relying party"
+  },
+  "wsfed.spInitiatedSso|description": {
+    "en": "d16076a2c90701e3",
+    "text": "Kung sinasagot ang isang wsignin1.0 sa /wsfed — ang sign-in na sinisimulan ng relying party. NAKA-ON bilang default; nangingibabaw dito ang wsfedSpInitiatedSso sa entry ng isang application. Unsigned URL ang wsignin1.0, kaya ang pag-off dito ay nagsasara ng pinto sa halip na patunayan kung sino ang nagbukas nito."
   },
   "wsfed.assertionLifetimeMin|label": {
     "en": "92ee206f116fd412",
@@ -4964,8 +5176,32 @@
     "text": "Certificate header ng credential"
   },
   "oid4vci.credentialCertificateHeader|description": {
-    "en": "91cae7f95584d095",
-    "text": "Kung pinapangalanan ng na-issue na dc+sd-jwt o jwt_vc_json na CREDENTIAL ang certificate chain ng key na pumirma rito. Pinapangalanan ng SD-JWT VC ang `x5c` bilang isa sa mga paraan para mahanap ng verifier ang key ng isang issuer, kaya ang wallet o verifier na hindi kailanman kumukuha ng metadata ng issuer na ito ay makakapag-check pa rin ng pirma laban sa isang trust anchor. Hindi JWS ang ldp_vc at hindi ito apektado. Hindi isinasama ng x5c dito (at sa isang Status List Token) ang trust anchor, ang service Root, sa dulo, gaya ng hinihingi ng HAIP 1.0 section 6.1.1; hinihingi rin ng HAIP ang x5c, kaya nagtatakda ng x5c ang isang HAIP realm. Ang `x5u` — ang default — ay ang address ng chain sa serbisyong ito, `/pki/chain/{scope}/{sha256}.pem`, mga isandaang byte; ang `x5c` ay ang chain mismo na nakalagay sa loob, leaf ang una at ang service Root ang huli, base64 DER, ilang kilobyte; ang `both` ay pareho at ang `none` ay wala. Alinman dito, ito ang kailangan ng relying party na token lang ang hawak para maabot ang mga CRL distribution point, OCSP responder at caIssuers address ng bawat certificate. Ang key na hindi pa na-certify sa ilalim ng JOSE Issuing CA ng realm na ito, at ang HMAC na pirma, ay walang natatanggap na alinman. Hinihingi ng RFC 7515 section 4.1.5 na gumamit ng TLS ang pagkuha sa `x5u`: kapag naka-off ang global.https, `http://` ang address at tatanggi ang mahigpit na verifier na sundan ito. Hindi kailanman binibigyan nito ang mga JWE header — walang certified key ng serbisyong ito ang nag-e-encrypt ng anuman. Maitatakda kada realm."
+    "en": "250bb6d53e3ec407",
+    "text": "Kung dala ng isang inisyung dc+sd-jwt o jwt_vc_json na CREDENTIAL, at ng Token Status List Token na pinangangalanan ng status nito, ang certificate chain ng key na pumirma sa mga ito. Pinangangalanan ng SD-JWT VC ang `x5c` bilang paraan sa X.509 kung paano nahahanap ng verifier ang key ng isang issuer at hindi nito pinangangalanan ang `x5u`, at walang dalang `iss` ang Status List Token para hanapin ang metadata, kaya ang `x5c` — ang default — ang nagbibigay-daan sa isang wallet o verifier na hindi kailanman kumukuha ng metadata ng issuer na ito na suriin ang parehong signature laban sa trust anchor nito. Hindi JWS ang ldp_vc at hindi ito apektado. Inaalis ng x5c dito sa dulo ang trust anchor, ang Root ng serbisyo, gaya ng hinihingi ng HAIP 1.0 section 6.1.1; ang Root ang certificate na ibinibigay sa isang wallet o verifier upang pagkatiwalaan (/pki). Ang `x5u` ay ang address ng chain sa serbisyong ito, `/pki/chain/{scope}/{sha256}.pem`, mga isandaang byte; ang `x5c` — ang default — ay ang chain nang inline, una ang leaf at huli ang Root ng serbisyo, base64 DER, ilang kilobyte; ang `both` ay pareho at ang `none` ay wala. Alinman dito, ito ang kailangan ng isang relying party na token lang ang hawak upang maabot ang mga CRL distribution point, OCSP responder at caIssuers address ng bawat certificate. Ang key na hindi pa na-certify sa ilalim ng JOSE Issuing CA ng realm na ito, at ang HMAC na signature, ay walang natatanggap. Hinihingi ng RFC 7515 section 4.1.5 na gumamit ng TLS ang pagkuha sa `x5u`: kapag naka-off ang global.https, `http://` ang address at tatanggi itong sundan ng isang mahigpit na verifier. Hindi kailanman binibigyan ng isa ang mga JWE header — walang ine-encrypt ang anumang na-certify na key ng serbisyong ito. Maaaring itakda bawat realm."
+  },
+  "oid4vci.trustedListCertificateHeader|label": {
+    "en": "5e5d2b459a95e63d",
+    "text": "Certificate header ng trusted list"
+  },
+  "oid4vci.trustedListCertificateHeader|description": {
+    "en": "f0c703d8855dec84",
+    "text": "Kung dala ng trusted list sa /oid4vci/trusted-list ang chain ng key na pumirma rito. Tinatanggap lang ng isang wallet ang listahan kapag nasa x5c ang chain na iyon at nagtatapos sa ilalim ng isang list-operator CA na hawak nito, kaya `x5c` — ang default — o `both`: sa `x5u` o `none` hindi inihahain ang listahan (503). Inaalis sa dulo ang Root ng serbisyo, gaya sa isang credential. Ang `x5u` ay ang address ng chain sa serbisyong ito, `/pki/chain/{scope}/{sha256}.pem`, mga isandaang byte; ang `x5c` — ang default — ay ang chain nang inline, una ang leaf at huli ang Root ng serbisyo, base64 DER, ilang kilobyte; ang `both` ay pareho at ang `none` ay wala. Alinman dito, ito ang kailangan ng isang relying party na token lang ang hawak upang maabot ang mga CRL distribution point, OCSP responder at caIssuers address ng bawat certificate. Ang key na hindi pa na-certify sa ilalim ng JOSE Issuing CA ng realm na ito, at ang HMAC na signature, ay walang natatanggap. Hinihingi ng RFC 7515 section 4.1.5 na gumamit ng TLS ang pagkuha sa `x5u`: kapag naka-off ang global.https, `http://` ang address at tatanggi itong sundan ng isang mahigpit na verifier. Hindi kailanman binibigyan ng isa ang mga JWE header — walang ine-encrypt ang anumang na-certify na key ng serbisyong ito. Maaaring itakda bawat realm."
+  },
+  "oid4vci.trustedListTerritory|label": {
+    "en": "d7ee4e58b3ec36e2",
+    "text": "Teritoryo ng scheme ng trusted list"
+  },
+  "oid4vci.trustedListTerritory|description": {
+    "en": "bd18dadc2bd7bd5e",
+    "text": "Ang SchemeTerritory ng trusted list sa /oid4vci/trusted-list (ETSI TS 119 602 section 6.3.10): isang ISO 3166-1 alpha-2 na country code, o EU. Walang laman — ang default — ay inaalis ito."
+  },
+  "oid4vci.trustedListLifetimeH|label": {
+    "en": "53f55ba9239f4712",
+    "text": "Tagal ng trusted list (oras)"
+  },
+  "oid4vci.trustedListLifetimeH|description": {
+    "en": "795e14da580935eb",
+    "text": "Gaano kalayo pagkatapos ng ListIssueDateTime nito ang NextUpdate ng trusted list (ETSI TS 119 602 section 6.3.15), at kung gayon gaano kadalas itong pinipirmahan muli gamit ang susunod na sequence number: kapag nasa loob na ito ng isang oras (o ikasampu nito) bago ang NextUpdate, at tuwing nagbabago ang sinasabi nito."
   },
   "oid4vci.signedMetadataCertificateHeader|label": {
     "en": "74bcdd1bedcb52e5",
@@ -5580,8 +5816,8 @@
     "text": "Realm"
   },
   "krb5.realm|description": {
-    "en": "b7b392027324a1ef",
-    "text": "Ang realm na sine-serve ng KDC na ito. Ang lower-case na anyo nito ang domain, kung saan nagmumula ang mga default na service domain at ang domain name ng PAC. Sa isang trust realm, ito ang pangalang ginagamit ng port 88 sa pagruruta ng mga request ng realm na iyon: dapat itong itakda bago ang krb5.enabled, walang dalawang realm ang maaaring magbahagi nito (ni ng krb5.trustedRealm), at inihahambing ito nang hindi pinapansin ang case kapag chine-check iyon."
+    "en": "6542fd41442d0e39",
+    "text": "Ang realm na sine-serve ng KDC na ito. Ang lower-case na anyo nito ang domain, kung saan nagmumula ang mga default na service domain at ang domain name ng PAC. Sa isang trust realm, ito ang pangalang ginagamit ng port 88 sa pagruruta ng mga request ng realm na iyon: dapat itong itakda bago ang krb5.enabled, walang dalawang realm ang maaaring magbahagi nito (ni ng development partner realm na sinasagot ng default realm), at inihahambing ito nang hindi pinapansin ang case kapag chine-check iyon."
   },
   "krb5.realm|restartReason": {
     "en": "f45bb3f394b52261",
@@ -5823,53 +6059,37 @@
     "en": "0ed445787254dab6",
     "text": "binubuo sa startup ang PAC identity ng bawat principal. Maaari pa rin itong dalhin ng isang TRUST REALM: binubuo ang principal database ng realm kapag ino-on ang Kerberos nito at binubuo ulit kapag nagbago ito, kaya walang bahagi ng value ng realm ang nagamit sa startup"
   },
-  "krb5.trustedRealm|label": {
-    "en": "83fea03ad45f6f5a",
-    "text": "Pinagkakatiwalaang realm"
+  "krb5.crossRealmClassicDelegation|label": {
+    "en": "d94511f367aa2305",
+    "text": "Classic na delegation sa kabila ng mga trust"
   },
-  "krb5.trustedRealm|description": {
-    "en": "18a007649941a47a",
-    "text": "Ang pangalawang realm, para sa mga cross-realm referral. Hindi flag ang trust: isa itong shared key na hawak ng isang principal sa bawat realm."
+  "krb5.crossRealmClassicDelegation|description": {
+    "en": "f95686ad2d2053e6",
+    "text": "Kung ang CLASSIC na constrained delegation (appAllowedToDelegateTo sa front end) ay maaaring tumawid sa isang Kerberos trust. Naka-off bilang default: tinutukoy ito sa loob ng iisang realm, at ang resource-based na delegation (appAllowedToActOnBehalfOf sa target, na nagpapangalan ng SPN@REALM) ang tumatawid. Kapag naka-on, sinusuri ng realm ng front end ang sarili nitong listahan bago i-refer ang ebidensya, at itinuturing ito ng realm ng target na nasuri na; dapat itong i-on ng parehong realm."
   },
-  "krb5.trustedRealm|restartReason": {
-    "en": "b7b28d1b7d6102d8",
-    "text": "binubuo sa startup ang pangalawang realm at ang trust sa pagitan nila"
+  "krb5.requireSidFilteringInProduct|label": {
+    "en": "f4bc0b8bb8e18123",
+    "text": "Hingin ang SID filtering sa mga trust"
   },
-  "krb5.trustPassword|label": {
-    "en": "e2d7ee2fece4c004",
-    "text": "Password ng trust"
+  "krb5.requireSidFilteringInProduct|description": {
+    "en": "120e89b9d4c0b3e4",
+    "text": "Sa product mode, ginagamit lamang ang isang Kerberos trust habang nagfi-filter ito ng mga SID (ang quarantined na attribute nito, naka-on bilang default). Ang pag-off nito sa isang realm ay ang operator na tumatanggap ng mga SID ng partner nang hindi fini-filter. Ginagamit ng development ang bawat trust anuman ang sabihin nito."
   },
-  "krb5.trustPassword|description": {
-    "en": "ef84f44ff5ee5b94",
-    "text": "Ang shared secret na hawak ng parehong realm para sa cross-realm trust."
+  "krb5.maxReferralHops|label": {
+    "en": "ae50da753613f751",
+    "text": "Pinakamaraming trust na tinatawid ng isang referral path"
   },
-  "krb5.trustPassword|restartReason": {
-    "en": "de2c8d7ceb818a8d",
-    "text": "hinahango mula rito sa startup ang inter-realm key"
+  "krb5.maxReferralHops|description": {
+    "en": "e88d21d50bcd7495",
+    "text": "Ilang trust ang maaaring tawirin ng isang cross-realm path bago tumanggi ang KDC na ito na i-refer pa ito (KDC_ERR_PATH_NOT_ACCEPTED). Isang pagtawid ang isang direktang trust; nadaragdagan ng isa sa bawat realm na dinaraanan ng referral. Ang mga trust mismo ay mga record sa directory ng realm (ou=kerberosTrusts), at bumubuo lamang ng path sa pamamagitan ng mga record na minarkahang transitive."
   },
-  "krb5.trustedDomainSid|label": {
-    "en": "e860150a3e9f46b7",
-    "text": "Domain SID ng pinagkakatiwalaang domain"
+  "krb5.trustKeyGraceSeconds|label": {
+    "en": "e9a56607c04ebe5c",
+    "text": "Grace para sa na-rotate na trust key (s)"
   },
-  "krb5.trustedDomainSid|description": {
-    "en": "7c21d4f2a2b9776a",
-    "text": "Ang domain SID ng kabilang realm. Sinadyang naiiba ito sa isang ito: ang SID filtering sa isang trust ay tungkol sa kung kaninong domain kabilang ang isang SID."
-  },
-  "krb5.trustedDomainSid|restartReason": {
-    "en": "fc2b22b6756dc2a3",
-    "text": "binubuo sa startup ang mga principal ng pinagkakatiwalaang realm"
-  },
-  "krb5.trustedKrbtgtPassword|label": {
-    "en": "bb06a006346e82df",
-    "text": "Password ng krbtgt ng pinagkakatiwalaang realm"
-  },
-  "krb5.trustedKrbtgtPassword|description": {
-    "en": "fc3a521802800c0d",
-    "text": "Ang krbtgt password ng pinagkakatiwalaang realm."
-  },
-  "krb5.trustedKrbtgtPassword|restartReason": {
-    "en": "5288888535130e80",
-    "text": "hinahango mula rito sa startup ang mga krbtgt key ng realm na iyon"
+  "krb5.trustKeyGraceSeconds|description": {
+    "en": "0ee4268f63c3b908",
+    "text": "Gaano katagal pa nabubuksan ng papasok na inter-realm key na pinalitan ng Rotate key ng isang trust ang mga ticket ng partner, na patuloy na nagse-seal gamit ito hanggang magbago ang sarili nitong panig. ZERO — ang default — ay nangangahulugang krb5.ticketLifetimeSeconds dagdag ang krb5.clockSkew, binabasa kapag sinusuri ang bersyon. Ang isang numero ay ganoong dami ng segundo sa halip: sapat na katagal para mabago ng administrator ng partner ang kanilang panig. Isang naunang bersyon ang pinananatili bawat trust; lampas sa grace nito, tinatanggihan ang ticket sa ilalim nito ng KRB_AP_ERR_BADKEYVER."
   },
   "krb5.spnegoAuthentication|label": {
     "en": "0a014fa4b2685cd7",
@@ -6034,6 +6254,14 @@
   "ldap.workerDirectoryTimeoutMs|description": {
     "en": "bb7f7ca790c61dc0",
     "text": "Kapag ldap.workerDirectory=postgres-lru, gaano katagal naghihintay ang request worker sa database kapag kailangan nito ng directory entry na hindi nito hawak. Wala nang ibang ginagawa ang worker habang naghihintay, kaya ito rin ang pinakamatagal na mapipigil ng database outage ang isa sa mga request nito; kapag lumampas, tinatanggihan ang request (503, STS-LDAP-0130)."
+  },
+  "ldap.workerDirectoryBudgetMs|label": {
+    "en": "7af008dc55949ed0",
+    "text": "Budget ng directory ng worker bawat request (ms)"
+  },
+  "ldap.workerDirectoryBudgetMs|description": {
+    "en": "9b2485155e270c50",
+    "text": "Kapag ldap.workerDirectory=postgres-lru, kung gaano katagal, sa kabuuan, maaaring maghintay ang isang request sa /admin o /admin-api sa mga synchronous na pagbasa ng directory. Ang tanong na lalampas sa budget ay tinatanggihan (503, STS-LDAP-0175) at hindi itinatanong; ang isang mabagal na tanong ay nabibigo pa rin bilang STS-LDAP-0130 kapag nauna nitong nalampasan ang sarili nitong timeout. Walang ganitong budget ang ibang mga request."
   },
   "ldap.sizeLimit|label": {
     "en": "8486449552f77864",
@@ -6732,8 +6960,8 @@
     "text": "Mag-alok ng HTTP Basic"
   },
   "ssf.authBasic|description": {
-    "en": "5476ee40c62ce1bb",
-    "text": "Kung tumatanggap ang mga SSF endpoint ng HTTP Basic katabi ng mga OAuth 2.0 access token, at inilalathala ito sa authorization_schemes. Sa development, pumapasa ang anumang username na may anumang password maliban sa \"invalid\"; sa product mode, vine-verify ang password laban sa naka-hash na userPassword ng tao. Alinman dito, hawak ng Basic principal ang parehong scope, dahil walang dalang scope ang Basic — kaya ang deployment na gustong ipatupad ang ssf:read at ssf:write para sa bawat caller ay ino-off ito."
+    "en": "34a196af42de2673",
+    "text": "Kung tumatanggap ang mga SSF endpoint ng HTTP Basic katabi ng mga OAuth 2.0 access token, at inilalathala ito sa authorization_schemes. Sa development, pumapasa ang anumang username na may anumang password maliban sa \"invalid\"; sa product mode, vine-verify ang password laban sa naka-hash na userPassword ng tao. Alinman dito, hawak ng Basic principal ang parehong scope, dahil walang dalang scope ang Basic — kaya ang deployment na gustong ipatupad ang ssf.read at ssf.manage para sa bawat caller ay ino-off ito."
   },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
@@ -6832,16 +7060,16 @@
     "text": "Scope para basahin ang stream"
   },
   "ssf.authScopeRead|description": {
-    "en": "b3c6248d5c2a3f09",
-    "text": "Ang OAuth scope na dapat dala ng access token para BASAHIN ang stream configuration, ang status nito o ang poll queue. Inilalathala sa scopes_supported sa parehong discovery document, gaya mismo ng dalawang SCIM scope."
+    "en": "6a58acf43f1ab901",
+    "text": "Ang pangalan ng serbisyong ito para sa scope na nagbabasa ng stream configuration, ng status nito o ng poll queue. Ang default ay ang pangalan ng CAEP Interoperability Profile na ssf.read, na palaging tinatanggap kahit ito ay palitan ng pangalan. Pareho silang inilalathala sa scopes_supported. Kasama ng write ang read: ang token na may write scope ay maaari ring magbasa, at ang client na nagdedeklara ng write scope ay maaaring i-issue-han ng read scope."
   },
   "ssf.authScopeWrite|label": {
     "en": "3cf63aebc7df37eb",
     "text": "Scope para baguhin ang stream"
   },
   "ssf.authScopeWrite|description": {
-    "en": "ea33015fd3877e72",
-    "text": "Ang scope na kailangan para gumawa, mag-update o mag-delete ng stream, magdagdag o mag-alis ng subject, magbago ng status o humingi ng verification event. Hindi sapat ang read scope para sa alinman sa mga iyon, na siyang unang lugar sa serbisyong ito bukod sa SCIM kung saan nagkakaiba ang dalawang scope sa pinapayagan nila."
+    "en": "91d382139f5860a7",
+    "text": "Ang pangalan ng serbisyong ito para sa scope na gumagawa, nag-a-update o nagbubura ng stream, nagdadagdag o nag-aalis ng subject, nagbabago ng status o humihingi ng verification event. Ang default ay ang pangalan ng CAEP Interoperability Profile na ssf.manage, na palaging tinatanggap kahit ito ay palitan ng pangalan. Kasama ng write ang read, kaya nagbabasa rin ang pangalang itinakda rito, at gayundin ang pangalang itinakda sa parehong setting. Hindi sapat ang read scope para sa alinman sa mga pagsulat na iyon."
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",
@@ -7266,6 +7494,14 @@
   "risk.networkFailureThreshold|description": {
     "en": "b3df2afcc6f13f99",
     "text": "Ilang tinanggihang password mula sa isang network (ang address prefix na ginagamit sa pagpapangkat ng risk scoring) sa nakaraang oras ang naglalagay ng network-failures signal sa bawat sign-in mula rito. Pinagsasaluhan ng bawat tao sa likod ng iisang NAT ang bilang na ito."
+  },
+  "risk.networkSignupThreshold|label": {
+    "en": "c6993a7b6026347a",
+    "text": "Mga account na maaaring likhain ng isang network sa isang oras bago maging signal"
+  },
+  "risk.networkSignupThreshold|description": {
+    "en": "05e7067b3abe2a57",
+    "text": "Ilang account ang maaaring malikha sa nakaraang oras ng mga federated na pag-sign in mula sa iisang network (ang address prefix na ginagamit ng risk scoring sa pagpapangkat) bago ilagay ang network-signups na signal sa bawat pag-sign in mula rito (#565). Ginagawa ng isang consumer provider na kasing-mura ang isang account ng isang account sa provider, kaya ito ang hangganan sa maramihang pag-sign up ng isang network. Hindi binibilang para sa address na nasa operator allow list ng realm."
   },
   "risk.signalFactors|label": {
     "en": "0a173b571b34160c",
@@ -9315,6 +9551,30 @@
     "en": "56fac41f63177db7",
     "text": "Ilang naka-iskedyul o manual na run ang sabay-sabay na pinapatakbo ng leader, sa lahat ng job at trust realm. Ang slot ay multiple ng interval nito, kaya ang bawat oras-orasang job sa bawat realm ay dapat patakbuhin sa parehong segundo; bawat run ay may hawak na connection sa store habang nagke-claim at gumagawa ito, at apat ang mayroon ang postgres store. Naghihintay ang iba, inuuna ang Run now ng isang tao, at nagsisimula habang natatapos ang mga run. Hindi ito kailanman lalampas sa isang mas kaunti kaysa sa hawak ng pool, anuman ang itakda rito, kaya hindi makukuha ng scheduler ang bawat connection mula sa mga request."
   },
+  "scheduler.niceBusyThreshold|label": {
+    "en": "115ae6125244b30a",
+    "text": "Mga kahilingang isinasagawa ng abalang worker"
+  },
+  "scheduler.niceBusyThreshold|description": {
+    "en": "364260c11358e10c",
+    "text": "Ilang kahilingan ang maaaring isinasagawa ng isang request worker bago maghintay dito ang isang matiyagang naka-iskedyul na cluster run. Ibinibigay ng leader ang bawat run sa worker na pinakamaliit ang load, at pinipigil ang run ng isang job na ang nice ay higit sa 0 habang kahit ang worker na iyon ay may ganito karami. Ang 0 ay nangangahulugang hindi kailanman pinipigil ng bilang ang isang run."
+  },
+  "scheduler.niceLagMs|label": {
+    "en": "c0b9af3bbe7cb091",
+    "text": "Pagkaantala ng event loop ng abalang worker"
+  },
+  "scheduler.niceLagMs|description": {
+    "en": "0c0e3c66e7c2e010",
+    "text": "Ang pagkaantala ng event loop, sa milliseconds (ang ika-99 na percentile ng huling sampung-segundong ulat ng isang worker), kung saan itinuturing na abala ang isang request worker at naghihintay dito ang isang matiyagang naka-iskedyul na cluster run. Ang 0 ay nangangahulugang hindi kailanman pinipigil ng pagkaantala ang isang run."
+  },
+  "scheduler.niceMaxDeferS|label": {
+    "en": "07484a01ef8c2875",
+    "text": "Pinakamatagal na paghihintay ng run sa abalang worker"
+  },
+  "scheduler.niceMaxDeferS|description": {
+    "en": "22928f93b52af2b5",
+    "text": "Ang pinakamatagal, sa segundo, na pinipigil ang anumang naka-iskedyul na cluster run habang abala ang lahat ng request worker. Pinipigil ang isang job sa bahagi nito rito, nice / 19 nito, at hindi kailanman higit sa kalahati ng interval nito; lampas doon, tumatakbo ito anuman ang load. Ang manual na run, ang on-demand na job at ang job na may nice na 0 ay hindi kailanman pinipigil. Ang 0 ay nangangahulugang walang run na pinipigil."
+  },
   "attributeSources.hostPatterns|label": {
     "en": "04c2e7926c9351dd",
     "text": "Mga host na maaaring pangalanan ng attribute source"
@@ -10416,24 +10676,24 @@
     "text": "Main port: tagal ng pagpapanatili ng idle na connection (s)"
   },
   "listenerMain.keepAliveTimeoutS|description": {
-    "en": "d48d22c3af904939",
-    "text": "Para lang sa listener ng Main port: http.keepAliveTimeoutS. Ang -1, ang default, ay sumusunod sa http.keepAliveTimeoutS; ang anumang iba ay nagpapasya para sa listener na ito lang. Gaano katagal, sa segundo, pinananatiling bukas ng isang HTTP listener ang idle na HTTP/1.1 connection para sa susunod na request ng client (5 ang sariling default ng node). Ang connection na pinanatili ay isang TLS handshake — at isang client-certificate prompt — na hindi na inuulit. Sinasagot nang sunud-sunod ang mga request na pina-pipeline ng client sa iisang connection. Sa likod ng balancer, panatilihing mas mataas dito ang idle timeout nito."
+    "en": "a895a3ca14fdb99f",
+    "text": "Para lang sa listener ng Main port: http.keepAliveTimeoutS. Ang -1, ang default, ay sumusunod sa http.keepAliveTimeoutS; ang anumang iba ay nagpapasya para sa listener na ito lang. Gaano katagal, sa segundo, pinananatiling bukas ng isang HTTP listener ang idle na connection para sa susunod na request ng client (5 ang sariling default ng node): isang HTTP/1.1 connection sa pagitan ng mga request, o isang HTTP/2 connection na walang dumaang frame, na saka isinasara nang maayos. Ang connection na pinanatili ay isang TLS handshake — at isang client-certificate prompt — na hindi na inuulit. Sinasagot nang sunud-sunod ang mga request na pina-pipeline ng client sa iisang connection. Sa likod ng balancer, panatilihing mas mataas dito ang idle timeout nito."
   },
   "listenerDebugger.keepAliveTimeoutS|label": {
     "en": "76ffd87245c2ff28",
     "text": "Protocol debugger: tagal ng pagpapanatili ng idle na connection (s)"
   },
   "listenerDebugger.keepAliveTimeoutS|description": {
-    "en": "c772bcacfb6260cb",
-    "text": "Para lang sa listener ng Protocol debugger: http.keepAliveTimeoutS. Ang -1, ang default, ay sumusunod sa http.keepAliveTimeoutS; ang anumang iba ay nagpapasya para sa listener na ito lang. Gaano katagal, sa segundo, pinananatiling bukas ng isang HTTP listener ang idle na HTTP/1.1 connection para sa susunod na request ng client (5 ang sariling default ng node). Ang connection na pinanatili ay isang TLS handshake — at isang client-certificate prompt — na hindi na inuulit. Sinasagot nang sunud-sunod ang mga request na pina-pipeline ng client sa iisang connection. Sa likod ng balancer, panatilihing mas mataas dito ang idle timeout nito."
+    "en": "b63e0c1aae9ba585",
+    "text": "Para lang sa listener ng Protocol debugger: http.keepAliveTimeoutS. Ang -1, ang default, ay sumusunod sa http.keepAliveTimeoutS; ang anumang iba ay nagpapasya para sa listener na ito lang. Gaano katagal, sa segundo, pinananatiling bukas ng isang HTTP listener ang idle na connection para sa susunod na request ng client (5 ang sariling default ng node): isang HTTP/1.1 connection sa pagitan ng mga request, o isang HTTP/2 connection na walang dumaang frame, na saka isinasara nang maayos. Ang connection na pinanatili ay isang TLS handshake — at isang client-certificate prompt — na hindi na inuulit. Sinasagot nang sunud-sunod ang mga request na pina-pipeline ng client sa iisang connection. Sa likod ng balancer, panatilihing mas mataas dito ang idle timeout nito."
   },
   "listenerRevocation.keepAliveTimeoutS|label": {
     "en": "19f295348b85fba9",
     "text": "Revocation (plain HTTP): tagal ng pagpapanatili ng idle na connection (s)"
   },
   "listenerRevocation.keepAliveTimeoutS|description": {
-    "en": "0f76cf6236976ee9",
-    "text": "Para lang sa listener ng Revocation (plain HTTP): http.keepAliveTimeoutS. Ang -1, ang default, ay sumusunod sa http.keepAliveTimeoutS; ang anumang iba ay nagpapasya para sa listener na ito lang. Gaano katagal, sa segundo, pinananatiling bukas ng isang HTTP listener ang idle na HTTP/1.1 connection para sa susunod na request ng client (5 ang sariling default ng node). Ang connection na pinanatili ay isang TLS handshake — at isang client-certificate prompt — na hindi na inuulit. Sinasagot nang sunud-sunod ang mga request na pina-pipeline ng client sa iisang connection. Sa likod ng balancer, panatilihing mas mataas dito ang idle timeout nito."
+    "en": "dec63c7b7c394604",
+    "text": "Para lang sa listener ng Revocation (plain HTTP): http.keepAliveTimeoutS. Ang -1, ang default, ay sumusunod sa http.keepAliveTimeoutS; ang anumang iba ay nagpapasya para sa listener na ito lang. Gaano katagal, sa segundo, pinananatiling bukas ng isang HTTP listener ang idle na connection para sa susunod na request ng client (5 ang sariling default ng node): isang HTTP/1.1 connection sa pagitan ng mga request, o isang HTTP/2 connection na walang dumaang frame, na saka isinasara nang maayos. Ang connection na pinanatili ay isang TLS handshake — at isang client-certificate prompt — na hindi na inuulit. Sinasagot nang sunud-sunod ang mga request na pina-pipeline ng client sa iisang connection. Sa likod ng balancer, panatilihing mas mataas dito ang idle timeout nito."
   },
   "listenerMain.headersTimeoutS|label": {
     "en": "8d17a4d86aca9ed5",
@@ -10506,5 +10766,37 @@
   "listenerRevocation.maxConnections|description": {
     "en": "33c1557318481882",
     "text": "Para lang sa listener ng Revocation (plain HTTP): http.maxConnections. Ang -1, ang default, ay sumusunod sa http.maxConnections; ang anumang iba ay nagpapasya para sa listener na ito lang. Ilang connection ang sabay-sabay na pinananatiling bukas ng isang HTTP listener; ang isa pang lampas ay isinasara pagdating nito. Ang 0, ang default, ay walang limit (ang sa node)."
+  },
+  "listenerMain.http2|label": {
+    "en": "d17df93a132abc21",
+    "text": "Main port: mag-alok ng HTTP/2"
+  },
+  "listenerMain.http2|description": {
+    "en": "4362a834f16b5b21",
+    "text": "Para lang sa listener ng Main port: http.http2. Ang inherit, ang default, ay sumusunod sa http.http2; ang anumang iba ay nagpapasya para sa listener na ito lang. Kung nag-aalok ang isang HTTPS listener ng HTTP/2 kapag hiniling ito ng client sa TLS handshake (ALPN). Kapag naka-on, ang default, iisang koneksyon ang nagdadala ng bawat request na sabay-sabay na ginagawa ng browser; sinasagot pa rin ang HTTP/1.1 para sa client na wala nang ibang hinihingi. Kapag naka-off, HTTP/1.1 ang bawat koneksyon — para sa client o balancer na may sirang HTTP/2. Agad na sumusunod sa pagbabago ang bagong koneksyon; pinananatili ng bukas nang koneksyon ang protocol nito. HTTP/1.1 lamang ang plain-HTTP na revocation listener, dahil walang handshake na mapag-aalukan nito."
+  },
+  "listenerDebugger.http2|label": {
+    "en": "65d81b530197d8d7",
+    "text": "Protocol debugger: mag-alok ng HTTP/2"
+  },
+  "listenerDebugger.http2|description": {
+    "en": "95b887a7622f4880",
+    "text": "Para lang sa listener ng Protocol debugger: http.http2. Ang inherit, ang default, ay sumusunod sa http.http2; ang anumang iba ay nagpapasya para sa listener na ito lang. Kung nag-aalok ang isang HTTPS listener ng HTTP/2 kapag hiniling ito ng client sa TLS handshake (ALPN). Kapag naka-on, ang default, iisang koneksyon ang nagdadala ng bawat request na sabay-sabay na ginagawa ng browser; sinasagot pa rin ang HTTP/1.1 para sa client na wala nang ibang hinihingi. Kapag naka-off, HTTP/1.1 ang bawat koneksyon — para sa client o balancer na may sirang HTTP/2. Agad na sumusunod sa pagbabago ang bagong koneksyon; pinananatili ng bukas nang koneksyon ang protocol nito. HTTP/1.1 lamang ang plain-HTTP na revocation listener, dahil walang handshake na mapag-aalukan nito."
+  },
+  "listenerMain.http2MaxConcurrentStreams|label": {
+    "en": "c152ce6a507a8348",
+    "text": "Main port: mga stream bawat HTTP/2 connection"
+  },
+  "listenerMain.http2MaxConcurrentStreams|description": {
+    "en": "ba8c8cd0302f4417",
+    "text": "Para lang sa listener ng Main port: http.http2MaxConcurrentStreams. Ang -1, ang default, ay sumusunod sa http.http2MaxConcurrentStreams; ang anumang iba ay nagpapasya para sa listener na ito lang. Ilang request ang puwedeng sabay-sabay na bukas sa isang HTTP/2 connection (SETTINGS_MAX_CONCURRENT_STREAMS); tinatanggihan ang stream na lampas dito hanggang may matapos. Ang 100, ang default, ang pinakamaliit na halagang inirerekomenda ng RFC 9113; walang limit ang sa node mismo, kaya madadala ng iisang connection ang trabaho ng libu-libo. Nililimitahan nito ang trabaho sa isang connection gaya ng paglimita ng http.maxConnections sa mga connection. Sinusunod agad ng bagong connection ang pagbabago, at pinapadalhan ng bagong halaga ang bukas na."
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|label": {
+    "en": "a6a26cb5d1740fb5",
+    "text": "Protocol debugger: mga stream bawat HTTP/2 connection"
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|description": {
+    "en": "94c52205da70930f",
+    "text": "Para lang sa listener ng Protocol debugger: http.http2MaxConcurrentStreams. Ang -1, ang default, ay sumusunod sa http.http2MaxConcurrentStreams; ang anumang iba ay nagpapasya para sa listener na ito lang. Ilang request ang puwedeng sabay-sabay na bukas sa isang HTTP/2 connection (SETTINGS_MAX_CONCURRENT_STREAMS); tinatanggihan ang stream na lampas dito hanggang may matapos. Ang 100, ang default, ang pinakamaliit na halagang inirerekomenda ng RFC 9113; walang limit ang sa node mismo, kaya madadala ng iisang connection ang trabaho ng libu-libo. Nililimitahan nito ang trabaho sa isang connection gaya ng paglimita ng http.maxConnections sa mga connection. Sinusunod agad ng bagong connection ang pagbabago, at pinapadalhan ng bagong halaga ang bukas na."
   }
 }

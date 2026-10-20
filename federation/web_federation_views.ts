@@ -17,6 +17,8 @@
 //     returned to: the page `federation_sp.ts`'s `signedInPage()` still
 //     draws for the assertion consumer service, in the same `handoff`
 //     catalogs' words;
+//   * `profile` — what a consumer provider's newcomer is asked for before
+//     the account is created (#729), its words from `federationPages`;
 //   * `refused`, `off`, `noRelationship` — what the login and linking
 //     endpoints say when they will not go on: English, every word (#539's
 //     decision 6), as the server drew them, through the one outcome
@@ -58,6 +60,9 @@ class WebFederationViews {
     if (v.kind === 'signedIn') {
       return WebFederationViews.signedIn(v, ctx.t);
     }
+    if (v.kind === 'profile') {
+      return WebFederationViews.profile(v, ctx.t);
+    }
     if (v.kind === 'refused') {
       return WebFederationViews.refused(v);
     }
@@ -86,6 +91,9 @@ class WebFederationViews {
     }
     if (kind === 'signedIn') {
       return ctx.t.text('handoff.federation.signedIn.title');
+    }
+    if (kind === 'profile') {
+      return ctx.t.text('federationPages.profile.title');
     }
     if (kind === 'refused') {
       return 'Refused';
@@ -296,6 +304,45 @@ class WebFederationViews {
       t.html('handoff.federation.signedIn.backToIndex') + '</a> · <a href="' +
       esc(inConsole) + '">' + t.html('handoff.federation.signedIn.inConsole') +
       '</a></p>';
+  }
+
+  /**
+   * What a consumer provider's newcomer is asked for (#729): exactly the
+   * values this realm requires of every person that the provider did not
+   * send, in a form posted to `/federation/profile/{handle}` with the
+   * step's token. A field's label and a problem the server found are DATA
+   * (the attribute's own label, the server's English).
+   *
+   * @param v - the `profile` view: `action`, `csrf`, `fields`, `partner`,
+   *   `provider`, `problem`
+   * @param t - the translator
+   * @returns the body
+   */
+  static profile(v: Json, t: Json): string {
+    const fields = (Array.isArray(v.fields) ? v.fields : [])
+      .map(function (one: Json, at: number): string {
+        const id = 'profile-field-' + at;
+        return '<label for="' + id + '">' + esc(one.label || one.name) +
+          '</label><input type="' + (one.type === 'email' ? 'email'
+                                                           : 'text') +
+          '" id="' + id + '" name="' + esc(one.name) + '" required ' +
+          'maxlength="' + esc(String(Number(one.max) || 256)) + '"' +
+          (one.type === 'email' ? ' autocomplete="email"' : '') + '>';
+      }).join('');
+    return '<h1 id="federation-profile">' +
+      t.html('federationPages.profile.heading') + '</h1><p>' +
+      t.html('federationPages.profile.lead',
+             { partner: String(v.partner || v.provider || '') }) + '</p>' +
+      (v.problem
+        ? '<div class="err" id="federation-profile-problem">' +
+          esc(v.problem) + '</div>'
+        : '') +
+      '<form method="post" id="federation-profile-form" action="' +
+      esc(v.action) + '"><input type="hidden" name="csrf" value="' +
+      esc(v.csrf) + '">' + fields + '<div class="row"><button ' +
+      'type="submit" id="federation-profile-submit">' +
+      t.html('federationPages.profile.submit') + '</button></div></form>' +
+      '<p class="meta">' + t.html('federationPages.profile.note') + '</p>';
   }
 
   /**

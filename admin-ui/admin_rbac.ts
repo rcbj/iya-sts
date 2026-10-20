@@ -1633,6 +1633,25 @@ class AdminRbac {
     };
 
     if (directory) {
+      // A WINDOW ASKS THE STORE A PAGE (#359). This list is every person,
+      // and on a window that is a synchronous walk of ou=users. The page
+      // asks the store itself; a call that still arrives here answers
+      // nothing rather than walking.
+      let windowed = false;
+      try {
+        const ldap = require('../ldap/ldap_server');
+        windowed = typeof ldap.directoryIsWindowed === 'function' &&
+          ldap.directoryIsWindowed();
+      } catch (e) {
+        log.debug("Caught in AdminRbac.candidates(): " +
+                  ((e && e.message) || e));
+        windowed = false;
+      }
+      if (windowed) {
+        log.debug("Leaving AdminRbac.candidates(). Windowed: the page " +
+                  "asks the store.");
+        return [];
+      }
       // DNs, not entries (#352): the RDN is all this reads, and copying
       // every person's entry whole to read it was the page's cost.
       const dns = typeof directory.personDns === 'function'

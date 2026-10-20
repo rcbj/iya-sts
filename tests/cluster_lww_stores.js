@@ -36,6 +36,7 @@
 // each per process, and the runner shares its process with every other file.
 // ===========================================================================
 
+const storeDouble = require('./tools/store_double');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -272,13 +273,12 @@ function fakePg(db) {
   return { Pool: FakePool, Client: FakeClient };
 }
 
-// The `pg` double stays in the require cache for the child's whole life, so
-// `persistence.js` finds it when it creates its own driver in section D.
+// The database double stays in the layer's place (`tests/tools/
+// store_double.js`) for the child's whole life, so `persistence.js` finds it
+// when it creates its own driver in section D.
 function installFakePg(db) {
   log.debug("Entering installFakePg().");
-  const pgPath = require.resolve('pg');
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: fakePg(db) };
+  storeDouble.install(fakePg(db));
   log.debug("Leaving installFakePg().");
 }
 

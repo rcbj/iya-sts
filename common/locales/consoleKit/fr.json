@@ -32,6 +32,17 @@
   "grid.notSet": "non défini",
   "grid.example": "p. ex. ",
   "grid.outside": "(ne fait pas partie des valeurs autorisées)",
+  "grant.authorizationCode": "L’octroi par code d’autorisation (RFC 6749, section 4.1) : un code émis par le point de terminaison d’autorisation, échangé au point de terminaison de jeton.",
+  "grant.implicit": "L’octroi implicite (RFC 6749, section 4.2) : des jetons émis directement par le point de terminaison d’autorisation. Le mode RFC 9700 le refuse.",
+  "grant.refreshToken": "L’octroi par jeton d’actualisation (RFC 6749, section 6). Un client qui déclare des octrois sans celui-ci ne reçoit aucun jeton d’actualisation.",
+  "grant.clientCredentials": "L’octroi par identifiants client (RFC 6749, section 4.4) : un jeton pour le client lui-même, sans personne.",
+  "grant.password": "L’octroi par mot de passe du propriétaire de la ressource (RFC 6749, section 4.3). Le mode OAuth 2.1 le refuse.",
+  "grant.tokenExchange": "OAuth 2.0 Token Exchange (RFC 8693) : un jeton échangé contre un autre, pour la délégation ou l’usurpation d’identité.",
+  "grant.preAuthorizedCode": "L’octroi par code pré-autorisé d’OpenID4VCI : un portefeuille échange le code qu’une offre d’attestation transportait.",
+  "grant.jwtBearer": "Un JWT comme octroi d’autorisation (RFC 7523, section 2.1). Désactivé là où oauth2.jwtBearerGrant l’est.",
+  "grant.saml2Bearer": "Une assertion SAML 2.0 comme octroi d’autorisation (RFC 7522, section 2.1). Désactivé là où oauth2.saml2BearerGrant l’est.",
+  "grant.ciba": "OpenID Connect Client-Initiated Backchannel Authentication (CIBA) : la personne approuve sur un autre appareil. Désactivé sauf si oauth2.ciba est activé.",
+  "grant.deviceCode": "L’octroi par autorisation d’appareil (RFC 8628) : un appareil sans navigateur affiche un code que la personne saisit ailleurs. Désactivé sauf si oauth2.deviceAuthorization est activé.",
   "grid.valueN": "{attribute} valeur {n}",
   "grid.delete": "Supprimer cette valeur",
   "grid.deleteN": "Supprimer la valeur {n} de {attribute}",
@@ -77,5 +88,6 @@
   "mail.none": "Ce domaine n’a aucun transport de courrier (",
   "mail.link": "Courrier",
   "mail.noneAfter": ") : {what} vous est donc affiché pour que vous le transmettiez.",
-  "mail.box": "envoyer {what} par e-mail à l’adresse de son entrée, sans me l’afficher"
+  "mail.box": "envoyer {what} par e-mail à l’adresse de son entrée, sans me l’afficher",
+  "grid.required": " &middot; obligatoire"
 }

@@ -5,7 +5,7 @@
   "startAgainEnd": "。",
   "inventory.holding": "本服務在其支援的每個協定系列中仍為 <code>{username}</code> 保留的全部內容。",
   "inventory.globalButton": "全域登出 — 結束下方的所有內容",
-  "inventory.globalNote": "預設選項。向 <code>/logout</code> 傳送未選取任何內容的 POST 要求，效果與此完全相同。",
+  "inventory.globalNote": "預設選項。向 <code>/logout</code> 傳送未選取任何內容的 POST 要求，效果與此完全相同。可驗證憑證及其所綁定的 DID 保持有效。",
   "inventory.selectedButton": "結束已勾選的項目",
   "inventory.liveCount": "<strong>{total} 個有效項目</strong>，分布在 {families, plural, other {# 個系列}}中。其中一些任何人都無法結束 — 它們連同原因一併列出，因為隱藏它們的登出看似完整，實則不然。",
   "inventory.anyUserOpen": "本服務在任何地方都不檢查密碼，因此 <code>?username=</code> 可以指定任何人，且不會授予原本不具備的任何權限 — 以其身分登入只需一個要求。<code>logout.anyUser</code> 可關閉此功能。",
@@ -38,5 +38,10 @@
   "tab.details": "詳細資訊",
   "list.colProtocol": "協定",
   "inventory.listNote": "請在上方清單中勾選。未勾選任何項目則不會結束任何內容。",
-  "inventory.detailsNote": "請在上方表格中勾選權杖和憑證。未勾選任何項目則不會結束任何內容。"
+  "inventory.detailsNote": "請在上方表格中勾選權杖和憑證。未勾選任何項目則不會結束任何內容。",
+  "accounts.intro": "此瀏覽器已登入 {count} 個帳戶。請選擇要登出的帳戶，或登出此瀏覽器中的所有帳戶。",
+  "accounts.current": "（此瀏覽器的預設帳戶）",
+  "accounts.all": "此瀏覽器中的所有帳戶",
+  "accounts.continue": "繼續",
+  "accounts.note": "選擇一個帳戶會顯示它仍登入的所有內容，可全部結束或只結束您勾選的項目。所有帳戶會結束每個帳戶持有的一切，與各帳戶的全域登出相同。"
 }

@@ -81,6 +81,9 @@ interface MailUsesDeps {
   now: () => number;
   credentials: () => Json;
   accountSignals: () => Json;
+  // #724: the recovery question, asked before a self-service link is mailed.
+  // Optional, so a caller built before it (a test's fake) asks nothing.
+  passkeyPolicy?: () => Json;
 }
 
 /**
@@ -138,6 +141,9 @@ class MailUses {
       },
       accountSignals: function (): Json {
         return require('../ssf/account_signals');
+      },
+      passkeyPolicy: function (): Json {
+        return require('./passkey_policy');
       }
     };
   }
@@ -251,6 +257,26 @@ class MailUses {
     return config.value('mail.resetRequiresBackupCode') !== false;
   }
 
+  // The recovery question for the forgot-password door (#724): the code of
+  // its refusal, or ''. A person holding no passkey is not covered, and a
+  // process with no passkey policy (a test's deps) asks nothing.
+  private recoveryRefused(creds: Json, username: string): string {
+    const { log } = this.deps;
+    log.debug("Entering MailUses.recoveryRefused().");
+    const policy = this.deps.passkeyPolicy ? this.deps.passkeyPolicy() : null;
+    if (!policy || typeof creds.holdsPasskey !== 'function') {
+      log.debug("Leaving MailUses.recoveryRefused(). Not asked.");
+      return '';
+    }
+    policy.select(username, '');
+    const refused = policy.recoveryRefusal({ username: username,
+      door: 'forgot-password', at: 'door',
+      covered: creds.holdsPasskey(username) });
+    log.debug("Leaving MailUses.recoveryRefused(). " +
+              (refused ? refused.code : 'allowed'));
+    return refused ? refused.code : '';
+  }
+
   /**
    * Handles a person asking for a reset link: mails a single-use link to the
    * address on the entry when everything checks out, and fires RISC
@@ -312,6 +338,16 @@ class MailUses {
       log.debug("Leaving MailUses.requestReset(). Disabled.");
       return answer('the account is disabled', 'STS-MAIL-0030');
     }
+    // NO SELF-SERVICE RECOVERY FOR A PASSKEY HOLDER WHERE THE PASSKEY
+    // POLICY SAYS operator-only (#724), decided by the issuance policy and
+    // asked BEFORE a recovery code is spent or anything is mailed. The form's
+    // answer is the same sentence; the audit row names the code.
+    const recoveryCode = this.recoveryRefused(creds, username);
+    if (recoveryCode) {
+      log.debug("Leaving MailUses.requestReset(). Operator-only recovery.");
+      return answer('the passkey policy lets only an operator recover this ' +
+                    'account', recoveryCode);
+    }
     const who = mail.recipient(username);
     if (!who || !who.address) {
       log.debug("Leaving MailUses.requestReset(). No address.");
@@ -367,7 +403,7 @@ class MailUses {
                      String(verdict.remaining) + ' remain.',
         reasonUser: 'You used one of your recovery codes.' });
     }
-    const issued = creds.issuePasswordReset(username);
+    const issued = creds.issuePasswordReset(username, { source: 'self' });
     if (!issued || !issued.ok) {
       log.debug("Leaving MailUses.requestReset(). Not issued.");
       return answer('no link could be issued: ' +

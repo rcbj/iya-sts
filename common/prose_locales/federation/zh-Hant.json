@@ -183,6 +183,10 @@
     "en": "06ec8c6d5bce784c",
     "text": "saml2、saml11、wsfed、oidc、oauth2 其中之一——五種登入協定——或 ssf，即只傳送 Shared Signals、不讓任何人登入的夥伴。"
   },
+  "fed.schema.attributes.fedProvider.what": {
+    "en": "b2f68432f2b706d4",
+    "text": "此關係所代表的消費者或社群提供者（google、discord、github、generic-oidc、generic-oauth2），企業合作夥伴則為空。在建立關係時設定，此後從不變更：提供者的設定檔當時已將其端點寫入此項目，並在每次登入時說明主體、地址及其驗證來自何處。指定了提供者的關係屬於消費者類別，領域透過 federation.consumerProviders 啟用該類別。"
+  },
   "fed.schema.attributes.fedPeer.what": {
     "en": "267dac8cafddfb60",
     "text": "「夥伴自己的識別碼」，以其協定所用的稱呼表示：SAML entityID、OpenID Connect 簽發者、WS-Federation wtrealm。在服務提供者端的關係上它會被「檢查」——Issuer 不是此字串的斷言會被拒絕——這就是它不只是說明文字的原因，而且自 2026-09-12 起它在那裡是「必要的」：沒有它的關係並未完整設定。"
@@ -215,6 +219,10 @@
     "en": "8abc51b744775c8b",
     "text": "夥伴的 JWKS。「會被擷取」——這與應用程式項目上的 oauthJwksUri 恰恰相反，而這個差異就是 federation_http.js 中論證的全部：那個是未經驗證的呼叫者「註冊」的 URL，這個是管理員「設定」的 URL。若不希望本服務發出這個呼叫，請將它留空，改為把金鑰貼到 fedJwks 中。"
   },
+  "fed.schema.attributes.fedEmailsUrl.what": {
+    "en": "8e6bd0b6ac698403",
+    "text": "第二個設定檔端點，用於將個人已驗證地址與其餘資訊分開發布的提供者（GitHub 的 /user/emails）。使用與 fedUserinfoUrl 相同的存取權杖和相同的原則呼叫，且僅用於其提供者設定檔會讀取它的關係。它失敗時損失的是地址，絕不是登入。"
+  },
   "fed.schema.attributes.fedJwks.what": {
     "en": "e5d612d3437f7654",
     "text": "夥伴的公開金鑰，以 JWKS 文件原樣保存。在 fedJwksUri「之前」讀取且從不重新整理，因此攜帶此屬性的關係完全不會為金鑰發出外送請求。"
@@ -235,6 +243,34 @@
     "en": "627419de92206a62",
     "text": "「本服務在夥伴處的秘密」，以明文存放在每次繫結都會成功的目錄中。它是「真正的」外部服務上「真正的」憑證，這比此目錄中其他任何東西都更具分量——請參閱標頭。絕不會寫入稽核記錄，也絕不會印在頁面上。"
   },
+  "fed.schema.attributes.fedResponseMode.what": {
+    "en": "07cfe6e4177873df",
+    "text": "授權碼的返回方式：query（預設值，代碼在重新導向中）或 form_post（OAuth 2.0 Form Post Response Mode）；只要要求姓名或地址，Sign in with Apple 就要求使用後者。form_post 以跨網站 POST 的方式抵達，因此瀏覽器不會隨之傳送任何 SameSite=Lax Cookie。"
+  },
+  "fed.schema.attributes.fedAllowedTenants.what": {
+    "en": "1436122fe8c92048",
+    "text": "僅限 MICROSOFT 任何租用戶：其人員可以登入的租用戶 ID，每個值一個。此時 fedPeer 包含 {tenantid}，由每個權杖的 tid 填入；來自未列出租用戶的權杖會被拒絕。留空則拒絕所有租用戶。"
+  },
+  "fed.schema.attributes.fedTeamId.what": {
+    "en": "959f29403a917b46",
+    "text": "僅限 APPLE：Apple Developer 團隊 ID，即此服務為每次權杖請求簽署的用戶端密鑰的 iss。"
+  },
+  "fed.schema.attributes.fedKeyId.what": {
+    "en": "557cedae99afdf0f",
+    "text": "僅限 APPLE：Sign in with Apple 金鑰的 ID，即此服務簽署的用戶端密鑰的 kid。"
+  },
+  "fed.schema.attributes.fedClientSigningKey.what": {
+    "en": "411c7d1d5df63859",
+    "text": "僅限 APPLE：此服務用來簽署其用戶端密鑰的私密金鑰（Apple 核發的 .p8 檔案，PKCS #8 PEM 格式的 P-256 金鑰）。它是在 Apple 處的認證。凡是金鑰會持久保存的地方，它都以金鑰加密金鑰密封，從不顯示，也從不寫入稽核記錄。用它簽署的用戶端密鑰有效期為五分鐘，並且每次權杖請求時產生。"
+  },
+  "fed.schema.attributes.fedAuthorizeParams.what": {
+    "en": "4cf26c17034bb859",
+    "text": "額外的授權請求參數，每個值一個，寫作 `<name>=<value>`，供需要它的提供者使用（Twitch 的 `claims`，以便取得地址）。僅限 OpenID Connect 和 OAuth 2.0。此服務自行設定的參數——response_type、client_id、redirect_uri、state、scope、nonce、code_challenge、code_challenge_method、response_mode、request 與 request_uri——在此處會被拒絕，因為在此變更其中任何一個都會破壞此服務所做的一項檢查。"
+  },
+  "fed.schema.attributes.fedTokenAuth.what": {
+    "en": "d86b5d2b605f0f05",
+    "text": "此服務在合作夥伴權杖端點的驗證方式：client_secret_basic（預設值，RFC 6749 第 2.3.1 節規定伺服器必須支援）或 client_secret_post，用於只從請求本文讀取密鑰的合作夥伴。沒有 fedClientSecret 時，此服務是公開用戶端，兩者皆不適用。"
+  },
   "fed.schema.attributes.fedScope.what": {
     "en": "7f9479e6e589a23f",
     "text": "向夥伴要求的範圍。`openid profile email` 是 OIDC 關係的預設值，OAuth 2.0 關係則沒有預設值，因為 OAuth 2.0 授權伺服器會給你什麼完全由它自己決定。"
@@ -252,24 +288,40 @@
     "text": "以「本」服務的金鑰簽署外送 AuthnRequest。預設為「關閉」：大多數身分提供者不要求它，而要求它的夥伴會以指明問題的方式拒絕請求。開啟時，要在夥伴處設定的憑證就是本服務自己 SAML 中繼資料上的那一張。"
   },
   "fed.schema.attributes.fedUsernameSource.what": {
-    "en": "61e8ef6f6cf4a99d",
-    "text": "「哪個傳入值成為本機使用者名稱」——OIDC/OAuth 2.0 為宣告名稱，其他則為 SAML Attribute Name。空白表示使用主體本身：NameID 或 `sub`。這是唯一一個不可能悄悄弄錯的對應決策，因為它決定了人員會落在哪個目錄項目上。"
+    "en": "e0e96af3e55ca105",
+    "text": "「在 LINK-AT-FIRST-SIGN-IN 時查找哪個傳入值」，並在 any-existing 下進行比對——OIDC/OAuth 2.0 為宣告名稱，其他則為 SAML Attribute Name。空白表示使用主體本身：NameID 或 `sub`。它並不指名此次登入所「建立」的項目：該名稱由關係與夥伴的穩定主體組成（#358）。"
+  },
+  "fed.schema.attributes.fedSubjectClaim.what": {
+    "en": "c52efd86a4983b41",
+    "text": "僅限純 OAuth 2.0：設定檔端點回應中作為合作夥伴對此人穩定識別碼的成員，以點分路徑表示（id、data.id）。留空則維持此服務一貫的做法——先 sub，再 id，再 user_id。它是主體，即聯合連結中絕不能改變的那一半，而不是使用者名稱（fedUsernameSource）。OpenID Connect 合作夥伴的主體是 ID 權杖的 sub，OpenID Connect Core 第 5.7 節規定它是唯一穩定的識別；消費者提供者的主體由其設定檔決定。"
   },
   "fed.schema.attributes.fedAttributeMap.what": {
     "en": "4c966530efb4269f",
     "text": "「每個對應一個值」，寫成 `<incoming name>=<LDAP attribute>`。未列在此處的內容仍會抵達——federation_map.js 有一張預設表，涵蓋一般的 OIDC 宣告、SAML urn:oid: 名稱以及 WS-Federation 宣告 URI——因此這是給夥伴自己發明的名稱用的，而不是大家都在用的名稱。"
   },
   "fed.schema.attributes.fedAutocreateUsers.what": {
-    "en": "c047dc4310a6d6a9",
-    "text": "「動態佈建」：此夥伴第一次讓某人登入時建立目錄項目。預設為「開啟」。「關閉」表示該人必須「已經」在此處有項目——事先以 SCIM 或手動佈建——而為沒有項目的人進行的登入會被拒絕，因為工作階段需要一個項目作為其主體。（在 2026-09-14 之前，「關閉」會產生工作階段而沒有項目；穩定的主體讓這種狀態不再可能。）"
+    "en": "bfd1076470982a0d",
+    "text": "「動態佈建」：此夥伴第一次讓某人登入時建立目錄項目。在開發模式下建立關係時寫入 TRUE，在產品模式下寫入 FALSE（mode.defaultsFederatedAutocreate()）；兩者皆未儲存的關係以相同方式解讀。「關閉」表示該人必須「已經」在此處有項目——事先以 SCIM 或手動佈建——而為沒有項目的人進行的登入會被拒絕，因為工作階段需要一個項目作為其主體。（在 2026-09-14 之前，「關閉」會產生工作階段而沒有項目；穩定的主體讓這種狀態不再可能。）"
   },
   "fed.schema.attributes.fedUpdateUserAttributes.what": {
     "en": "4d516236bce43ce4",
     "text": "在「每次」登入時，依最新的斷言或權杖更新人員的目錄屬性。預設為「開啟」，這也是本服務一直以來的做法。「關閉」只在此次登入「建立」了項目時寫入夥伴的屬性，因此預先佈建的人員——或之後被人編輯過的人員——會保留目錄中的內容。無論如何，都會記錄該人是透過哪個關係與簽發者而來。"
   },
+  "fed.schema.attributes.fedProvisionGroups.what": {
+    "en": "7a8153e8814f97c9",
+    "text": "「依據夥伴的權杖建立群組成員資格」（#358）。預設為「關閉」，缺少值即為關閉。開啟時，斷言所攜帶的每個群組名稱，在每次成功登入時都會成為此次登入所佈建人員的成員資格。以此方式建立的群組會標記為此關係。已存在且未標記為此關係的名稱會被忽略、稽核（STS-FED-0161），登入繼續。僅憑成員身分就授予某種權限的群組——主控台群組、角色的成員群組、擁有者群組、原則所指名的群組——絕不會被建立或加入（STS-FED-0164）。它不滿足 fedSubjectGroup：該規則在加入任何人之前執行。"
+  },
+  "fed.schema.attributes.fedProvisionCap.what": {
+    "en": "6807b5eb2cff8e4f",
+    "text": "此關係可以建立多少人。0 表示不限。對企業合作夥伴而言，留空表示不限；消費者或社群提供者的關係預設絕不會不限：建立時會在此寫入 federation.consumerProvisionCap（除非領域另有設定，否則為 10000），留空的值即表示該設定。達到上限時，新主體會被拒絕 STS-FED-0090；已連結的人仍可登入。ldap.maxEntries 仍是領域的上限。這不是登入次數——那是 fedUsers。"
+  },
+  "fed.schema.attributes.fedProvisionIdleMinutes.what": {
+    "en": "29c243b9d96fac47",
+    "text": "「停用以此關係為唯一登入途徑的人員」，一旦 federationLastSeen 早於這麼多分鐘。空白或 0 表示關閉：不會因閒置而停用任何人。項目與連結會保留。擁有本機 userPassword 或透過其他關係連結的人員不受影響。夥伴的 account-disabled 訊號是另一回事（STS-FED-0156），只會封鎖該夥伴的登入。"
+  },
   "fed.schema.attributes.fedSubjectPolicy.what": {
-    "en": "2b9955272be86815",
-    "text": "「夥伴的主體如何成為本機人員」。主體是夥伴自己的穩定識別碼——iss + sub、持久 NameID 以及夥伴的實體 ID——人員以 federationLink 的形式攜帶它。link-at-first-sign-in（預設；空白即表示此值）：已連結的主體直接登入；指名現有人員但未連結的主體，必須先在「此處」以該人身分登入——密碼，以及在持有或要求時的第二因素——之後才會記錄連結並寫入夥伴的屬性；未指名任何人的主體，在佈建開啟時會獲得一個以此關係為命名空間的新項目。pre-linked：只有連結能讓任何人登入。jit-namespaced：未連結的主體一律獲得「新」項目 <relationship>~<name>，絕不會是現有人員。any-existing：夥伴傳送的名稱直接比對到本機人員，如同本服務在 #109 之前的做法——「僅限開發」，在產品模式下會被拒絕，而且它讓此夥伴能登入任何它能指名的帳戶。"
+    "en": "afab8ba90a854d71",
+    "text": "「夥伴的主體如何成為本機人員」。主體是夥伴自己的穩定識別碼——iss + sub、持久 NameID 以及夥伴的實體 ID——人員以 federationLink 的形式攜帶它。link-at-first-sign-in（預設；空白即表示此值）：已連結的主體直接登入；指名現有人員但未連結的主體，必須先在「此處」以該人身分登入——密碼，以及在持有或要求時的第二因素——之後才會記錄連結並寫入夥伴的屬性；未指名任何人的主體，在佈建開啟時會獲得一個以此關係為命名空間的新項目。pre-linked：只有連結能讓任何人登入。jit-namespaced：未連結的主體一律獲得「新」項目 <relationship>~<subject>，絕不會是現有人員。主體是夥伴的穩定識別碼，urn:uuid: 會折疊為 sub-<uuid>；它不是比對到的使用者名稱。any-existing：夥伴傳送的名稱直接比對到本機人員，如同本服務在 #109 之前的做法——「僅限開發」，在產品模式下會被拒絕，而且它讓此夥伴能登入任何它能指名的帳戶。"
   },
   "fed.schema.attributes.fedSubjectGroup.what": {
     "en": "a93a51b8d9b56949",
@@ -324,8 +376,8 @@
     "text": "「fedSignalsClientId 的秘密」，只要金鑰持久保存就以金鑰加密金鑰「密封」，且從不顯示。空白則使用 fedClientSecret，以相同方式密封。"
   },
   "fed.schema.attributes.fedSignalsScope.what": {
-    "en": "a496c6a310b8c156",
-    "text": "以用戶端認證要求的範圍。空白則要求 `ssf:read ssf:write`。"
+    "en": "ed55c437fcd421f1",
+    "text": "以用戶端認證要求的範圍。空白則要求 `ssf.manage`，它包含讀取。"
   },
   "fed.schema.attributes.fedSignalsBearer.what": {
     "en": "75ae4009add7e2d2",

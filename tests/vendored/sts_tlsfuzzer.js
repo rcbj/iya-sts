@@ -30,6 +30,15 @@
 // handshake, which is all a CertificateVerify probe needs. Nothing is
 // committed and nothing outlives the job's scratch directory.
 //
+// THE PLAN FOLLOWS THE CERTIFICATE THE LISTENER PRESENTS (#321). RSA is
+// what this service issues for itself. A supplied ECDSA certificate runs
+// the ECDSA-server scripts and records each RSA-only script as not
+// applicable. Any other key type is declined. A handshake that fails to
+// name a key keeps the RSA plan; when one listener names one and the other
+// does not, both use the key that was named. The handshake, the curve
+// name, the borrowed key and the decline sentence are
+// tests/vendored/tlsfuzzer_kit.js's, which tests/tlsfuzzer_plan.js calls.
+//
 // The job passes when every script passes: exit 0, FAIL 0, XPASS 0. Each
 // failure is printed with the probes that failed and the command that
 // reproduces it.
@@ -157,62 +166,46 @@ async function clientCertificates() {
   return { dir: dir, certificates: certificates };
 }
 
-// The key type of the certificate a listener presents ("rsa", "ec", ...),
-// or "" when the handshake fails.
-function presentedKeyType(host, port) {
-  log.debug("Entering presentedKeyType().");
-  return new Promise(function (resolve) {
-    const socket = tls.connect({ host: host, port: Number(port),
-      servername: host, rejectUnauthorized: false }, function () {
-        let type = "";
-        try {
-          const raw = socket.getPeerCertificate(false).raw;
-          type = String(new nodeCrypto.X509Certificate(raw).publicKey
-            .asymmetricKeyType || "");
-        } catch (e) {
-          log.debug("Caught in presentedKeyType(): " +
-                    ((e && e.message) || e));
-          type = "";
-        }
-        socket.end();
-        log.debug("Leaving presentedKeyType(). " + type);
-        resolve(type);
-      });
-    socket.on("error", function (e) {
-      log.debug("Caught in presentedKeyType(): " + ((e && e.message) || e));
-      log.debug("Leaving presentedKeyType(). No handshake.");
-      resolve("");
-    });
-  });
-}
-
 async function test() {
   log.debug("Entering test().");
   const where = targets();
-  // THE PLAN IS WRITTEN FOR RSA LISTENERS (#311). The listeners this service
-  // issues for itself present RSA, and tlsfuzzer_kit.js's plan runs the
-  // RSA-server scripts and skips the ECDSA-server ones on that basis. A
-  // deployment presenting a supplied certificate of another type — testidp's
-  // ACM leaf is ECDSA P-256 — fails the RSA scripts for a reason that is the
-  // plan's, not the service's; that is a skip until the plan has a variant
-  // for it.
-  const presented = await presentedKeyType(where.host, where.main);
-  if (presented && presented !== "rsa") {
-    expectation.declineToRun(log, "the main port presents a " + presented +
-      " certificate (a supplied one, e.g. a public ACM leaf), and this plan " +
-      "is written for the RSA certificate this service issues itself; an " +
-      "ECDSA plan is a separate piece of work");
+  const seen = {
+    main: await fuzzer.presentedCertificate(where.host, where.main),
+    ldaps: await fuzzer.presentedCertificate(where.host, where.ldaps)
+  };
+  const reason = fuzzer.declineReason(seen);
+  if (reason) {
+    expectation.declineToRun(log, reason);
     log.debug("Leaving test(). Skipped.");
     return;
   }
+  const mainCert = fuzzer.planFor(seen.main, seen.ldaps);
+  const ldapsCert = fuzzer.planFor(seen.ldaps, seen.main);
+  const described = function (cert) {
+    log.debug("Entering described().");
+    log.debug("Leaving described().");
+    return cert.type + (cert.curve ? " " + cert.curve : "");
+  };
   log.info("tlsfuzzer " + fs.readFileSync(path.join(fuzzer.TLSFUZZER_DIR,
     "tlsfuzzer", "COMMIT"), "utf8").trim() + ", tlslite-ng " +
     fs.readFileSync(path.join(fuzzer.TLSFUZZER_DIR, "tlslite-ng", "COMMIT"),
                     "utf8").trim() + ", against " + where.host + ":" +
-    where.main + " and :" + where.ldaps);
-  fuzzer.notApplicable().forEach(function (entry) {
-    log.info("  [not applicable] " + entry.script + ": " + entry.skip);
-  });
+    where.main + " (" + described(mainCert) + ") and :" + where.ldaps +
+    " (" + described(ldapsCert) + ")");
+  if (mainCert.type === ldapsCert.type) {
+    fuzzer.notApplicable(null, mainCert.type).forEach(function (entry) {
+      log.info("  [not applicable] " + entry.script + ": " + entry.reason);
+    });
+  } else {
+    fuzzer.notApplicable("main", mainCert.type).forEach(function (entry) {
+      log.info("  [not applicable] main " + entry.script + ": " +
+               entry.reason);
+    });
+    fuzzer.notApplicable("ldaps", ldapsCert.type).forEach(function (entry) {
+      log.info("  [not applicable] ldaps " + entry.script + ": " +
+               entry.reason);
+    });
+  }
   const made = await clientCertificates();
   // TLS 1.2 ON FOR THE RUN (#429): every listener is TLS 1.3 only by default,
   // and most of this plan probes TLS 1.2 behaviour. Turned on service-wide
@@ -223,7 +216,7 @@ async function test() {
   await kit.setting(null, "tls.disableTls12", false);
   try {
     await twelveIsOn(where);
-    await runThePlan(where, made);
+    await runThePlan(where, made, mainCert, ldapsCert);
   } finally {
     await kit.post(kit.realmApi(null) + "/config/reset",
                    { key: "tls.disableTls12" });
@@ -263,7 +256,7 @@ async function twelveIsOn(where) {
   log.debug("Leaving twelveIsOn().");
 }
 
-async function runThePlan(where, made) {
+async function runThePlan(where, made, mainCert, ldapsCert) {
   log.debug("Entering runThePlan().");
   const concurrency = Number(process.env.STS_TLSFUZZER_CONCURRENCY || 4);
   const report = function (r) {
@@ -278,10 +271,14 @@ async function runThePlan(where, made) {
   };
   const [main, ldaps] = await Promise.all([
     fuzzer.runPlan({ host: where.host, port: where.main,
-                     certificates: made.certificates }, "main",
+                     certificates: made.certificates,
+                     serverKey: mainCert.type, curve: mainCert.curve },
+                   "main",
                    { concurrency: concurrency, onResult: report }),
     fuzzer.runPlan({ host: where.host, port: where.ldaps,
-                     certificates: made.certificates }, "ldaps",
+                     certificates: made.certificates,
+                     serverKey: ldapsCert.type, curve: ldapsCert.curve },
+                   "ldaps",
                    { concurrency: concurrency, onResult: report })
   ]);
   fs.rmSync(made.dir, { recursive: true, force: true });
@@ -304,8 +301,9 @@ async function runThePlan(where, made) {
 }
 
 new Command()
-  .description("tlsfuzzer (#212) against the main HTTPS port and LDAPS 636, " +
-    "every applicable script, with client certificates made at run time.")
+  .description("tlsfuzzer (#212, #321) against the main HTTPS port and " +
+    "LDAPS 636, every script that applies to the certificate each " +
+    "listener presents, with client certificates made at run time.")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

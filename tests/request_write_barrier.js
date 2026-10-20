@@ -46,6 +46,7 @@
 
 delete process.env.CONFIG_FILE;
 
+const storeDouble = require('./tools/store_double');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -651,10 +652,7 @@ function fakePg() {
 
 function driverOverFakePg() {
   log.debug("Entering driverOverFakePg().");
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: fakePg() };
+  const restore = storeDouble.install(fakePg());
   try {
     log.debug("Leaving driverOverFakePg().");
     return require('../persistence/persistence_postgres').create({
@@ -663,11 +661,7 @@ function driverOverFakePg() {
              warn: function () {}, error: function () {} }
     });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
 }
 

@@ -229,6 +229,18 @@ function environmentFor(base, opts) {
   env.STS_HTTPS = String(process.env.STS_HTTPS === undefined
     ? 'true'
     : process.env.STS_HTTPS);
+  // THE REALM CAP, RAISED FOR A THROWAWAY INSTANCE (#368). realms.maxCount
+  // ships at 10, counting the default realm, and the fallback appconfig file
+  // above is env/local.js, which does not raise it — so a debug, trace or
+  // coverage run against this instance met the cap as soon as the protocol
+  // jobs had left nine realms standing, and every later create was refused
+  // STS-CORE-0161 for a reason no job was testing. env/test.js and
+  // env/docker-tests.js raise it to the setting's maximum for the same
+  // reason, and tests/run.js does for the in-process suite. A caller's own
+  // STS_REALMS_MAX_COUNT still wins.
+  if (process.env.STS_REALMS_MAX_COUNT === undefined) {
+    env.STS_REALMS_MAX_COUNT = '100000';
+  }
   if (opts.logLevel) {
     // The mock's own level. An EMPTY value is not a harmless default here:
     // bunyan throws `unknown level name: ""` while the service is still

@@ -248,10 +248,14 @@ async function setUp() {
   await set("notrusted", "appAllowedToDelegateTo", "add", idOf("back"));
   await set("rbcd", "appAllowedToActOnBehalfOf", "add", idOf("front"));
   await set("trusted", "krb5TrustedForDelegation", "set", "TRUE");
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
   for (const who of [PERSON, PROTECTED]) {
     await ok("/users/create", { username: who, invent: false,
                                 credential: "password", password: PASSWORD,
-                                attributes: { cn: who, sn: who } },
+                                attributes: { cn: who, givenName: "S4U",
+                                              sn: who,
+                                              mail: who + "@s4u.test" } },
              "created " + who);
   }
   await ok("/users/set-not-delegated", { user: PROTECTED, value: true },

@@ -268,7 +268,7 @@ async function receiverToken() {
   log.debug("Entering receiverToken().");
   const r = await hop(null, "POST", base + "/oauth2/token", { form: {
     grant_type: "client_credentials", client_id: RECEIVER,
-    client_secret: RECEIVER_SECRET, scope: "ssf:read ssf:write" } });
+    client_secret: RECEIVER_SECRET, scope: "ssf.read ssf.manage" } });
   assert.ok(r.json && r.json.access_token,
             "a receiver token: " + r.text.slice(0, 300));
   log.debug("Leaving receiverToken().");
@@ -373,7 +373,7 @@ async function test() {
     fields: { oauthClientId: RECEIVER, oauthClientSecret: RECEIVER_SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post",
               oauthGrantType: ["client_credentials"],
-              oauthAllowedScope: ["ssf:read", "ssf:write"] },
+              oauthAllowedScope: ["ssf.read", "ssf.manage"] },
     why: "the SSF receiver sts_native_sso.js reads its CAEP events with"
   });
   const ssfToken = await receiverToken();

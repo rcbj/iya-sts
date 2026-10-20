@@ -36,8 +36,8 @@
     "text": "此部署自己的代理與負載平衡器所連線的地址或 CIDR 範圍，以逗號分隔（10.0.0.0/8、fd00::/8）。僅在 global.trustProxy 開啟時讀取。「空白」（預設）維持舊規則：任何呼叫端的轉送標頭都會被採信，速率限制器取 X-Forwarded-For 最左側的項目，而那是客戶端自己寫的。「設定」後，X-Forwarded-For、X-Forwarded-Proto 與 X-Forwarded-Host 只在連線對端位於這些範圍之一時才被採信，客戶端則是 X-Forwarded-For 中最右側、不在範圍內的項目——因此直接連到節點的呼叫端既無法挑選自己的速率限制地址，也無法左右本服務對自身 URL 的認知。不是地址或範圍的值會被忽略並記錄，絕不會被放寬。global.proxyProtocol 開啟時，無論 global.trustProxy 如何設定，這「也」是採信 PROXY protocol 標頭的清單——而在那種情況下空白清單表示不信任任何人，因此服務會拒絕啟動。"
   },
   "http.keepAliveTimeoutS|description": {
-    "en": "15ba4c34c3d3349e",
-    "text": "HTTP 接聽程式為客戶端的下一個請求保留閒置 HTTP/1.1 連線的時間，以秒為單位（node 自己的預設值為 5）。保留連線就省下一次 TLS 交握——以及一次客戶端證書提示。客戶端在同一連線上管線化送出的請求會依序回應。位於負載平衡器後方時，請讓其閒置逾時大於此值。"
+    "en": "0fa763b61550474c",
+    "text": "HTTP 接聽程式為客戶端的下一個請求保留閒置連線的時間，以秒為單位（node 自己的預設值為 5）：即請求之間的 HTTP/1.1 連線，或沒有任何訊框經過的 HTTP/2 連線，後者隨後會被妥善關閉。保留連線就省下一次 TLS 交握——以及一次客戶端證書提示。客戶端在同一連線上管線化送出的請求會依序回應。位於負載平衡器後方時，請讓其閒置逾時大於此值。"
   },
   "http.headersTimeoutS|description": {
     "en": "7670a8ee39fa4e73",
@@ -212,8 +212,8 @@
     "text": "工作階段在結束之前可以「未被使用」多久，這是在上述絕對有效期之外的限制。**零（預設）表示沒有閒置逾時**，這是本服務一直以來的行為。設定後，某人停止使用的工作階段會在其最後一個請求之後的這麼多秒結束，兩個限制以先到者為準——而對管理主控台或用戶入口網站的請求，都算是使用了其背後的登入工作階段，因此在主控台中工作的營運者不會因為一個他並未出示之工作階段的閒置計時而被登出。它是即時的：它也適用於已存在的工作階段，因為它是在讀取工作階段時檢查，而非在建立時蓋章。"
   },
   "authn.maxSessions|description": {
-    "en": "02399d7a28c348d5",
-    "text": "信任領域持有的登入工作階段上限——瀏覽器登入、瀏覽器在協定入口取得的到達工作階段、主控台與入口網站自己的工作階段，以及 API、SCIM 與 SPIRE 客戶端的工作階段。在工作階段「建立」時檢查：達到上限時，最久未使用的工作階段會被結束以騰出空間，與到期結束的方式完全相同——一筆帶有 STS-AUTHN-0292 的稽核列、CAEP session-revoked 與後端通道 Logout Token——因此其持有者必須重新登入。沒有它時，只有工作階段到期工作會限制儲存區，一陣登入高峰會讓每個程序持續膨脹，直到該工作趕上為止。調低它會在下一個工作階段建立時生效，屆時會立即結束所有超出新上限的工作階段。"
+    "en": "a5b6beb131a44df2",
+    "text": "信任領域持有的工作階段上限——瀏覽器登入、到達工作階段、主控台與入口網站自己的工作階段，以及 API、SCIM 與 SPIRE 客戶端的工作階段。在工作階段「建立」時檢查。達到上限時，新列會被「拒絕」（STS-AUTHN-0337）：不會為了給別人騰出空間而結束任何工作階段。已達到 authn.maxSessionsPerSubject 的主體會改為失去其自身最舊的可計數工作階段（STS-AUTHN-0292），一列，由新列取而代之。調低此值不會結束已持有的工作階段。只要領域仍超過新數值，新列就會被拒絕；工作階段會因有效期、登出、撤銷而離開，或者在某個主體超過其自身上限時，因該主體之後的插入以及工作階段清掃（在該領域的執行中最多 authn.sessionShedPerSweep 個）而離開。"
   },
   "authn.pendingTtlS|description": {
     "en": "c6d347865a982374",
@@ -424,8 +424,8 @@
     "text": "本服務是什麼。`development` 就是 2026-09-06 之前每個版本的樣子：任何協定都不檢查密碼，未知的用戶、應用程式、服務主體或授權伺服器在第一次被指名時就會建立，OAuth 客戶端不需要秘密，而且——在 adminApi.authRequired 關閉時——/admin-api 是開放的，讓測試能驅動它，也讓不持有任何角色的人能重新進入。`product` 執行「相同」的協定實作，但移除了寬鬆之處：出示的認證會與該人目錄項目上雜湊後的 `userPassword` 比對驗證，每個被參照的物件都必須事先建立，每個宣告了機密方法的 OAuth 2.0 與 OpenID Connect 應用程式都必須以該方法驗證（公開客戶端則改受 RFC 9700 約束），每個僅限開發的設定都會被忽略，而在 adminApi.authRequired 關閉時，/admin-api 要求與主控台相同的登入與角色（開啟時——兩種模式的預設——則要求存取權杖）。它可依信任領域設定，因此同一程序可同時提供兩者。GET /admin/mode 列出每項要求，並說明每種模式下各給予什麼答案。\n\n它可以在執行時變更，而變更時順序很重要：在 adminApi.authRequired 關閉時，/admin-api 一直到此值被設為 `product` 的那一刻都是開放的，因此請「先」佈建認證，再切換。在沒有任何人持有認證時切換的領域將無從進入——啟動時的初始化只在啟動時執行，而不在變更時執行，這是刻意的，因為每次設定變動就產生一個管理員的服務，會是一個擁有沒人要求之管理員的服務。"
   },
   "workers.startTimeoutMs|description": {
-    "en": "d618aed19286a7b1",
-    "text": "請求或介面背景工作在回報無法啟動之前，可花多久時間建立其狀態（儲存區、金鑰、已鑄造的數據列與協調）。連續三次失敗後，集區便停止派生，並由持有通訊端的程序回應一切。在背景工作啟動較慢之處請調高此值——例如每次啟動都要重新認證的大型領域金鑰集、冷啟動的數據庫（#311）。"
+    "en": "81d7608fc4c1da1f",
+    "text": "請求或介面背景工作在回報無法啟動之前，可花多久時間建立其狀態（儲存區、金鑰、已鑄造的數據列與協調）。連續三次失敗後，集區便停止派生，直到 workers.giveUpRetryMs，然後再試一個；在它就緒之前，請求留在前端程序。在背景工作啟動較慢之處請調高此值——例如每次啟動都要重新認證的大型領域金鑰集、冷啟動的數據庫（#311）。"
   },
   "workers.requestCount|label": {
     "en": "d742f198c4f9ad17",
@@ -684,8 +684,8 @@
     "text": "客戶端秘密有效期（天）"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "91dc7031f88426d1",
-    "text": "本服務鑄造或被給予之每個客戶端秘密的有效期（以天計），因此也是 RFC 7591 第 3.2.1 節為在 POST /oauth2/register 註冊之客戶端所公告的 `client_secret_expires_at`——這是每個鑄造或被給予之秘密的預設值（重新產生、輪替、新增的秘密、在主控台上輸入的值），除非新增表單指名了其他值。「零」（預設）即該節自己的「永不」。它在每個秘密建立時蓋印其上，之後的變更不會移動它。"
+    "en": "6ad202dff164f155",
+    "text": "本服務鑄造或被給予之每個客戶端秘密的有效期（以天計），因此也是 RFC 7591 第 3.2.1 節為在 POST /oauth2/register 註冊之客戶端所公告的 `client_secret_expires_at`——這是每個鑄造或被給予之秘密的預設值（重新產生、輪替、新增的秘密、在主控台上輸入的值），除非新增表單指名了其他值，或建立表單為應用程式的第一個秘密指名了其他值。「零」（預設）即該節自己的「永不」。它在每個秘密建立時蓋印其上，之後的變更不會移動它。"
   },
   "oauth2.registeredClientIdPrefix|description": {
     "en": "f5316599bdd2c50a",
@@ -1379,10 +1379,6 @@
     "en": "37eb507f70b1793a",
     "text": "聯合用戶名稱的前置詞"
   },
-  "federation.usernamePrefix|description": {
-    "en": "cd17a5b59a5cf957",
-    "text": "加在外部身分識別提供者所提供之每個用戶名稱前面，讓聯合的 `alice` 與本機的 `alice` 成為兩個項目。預設為空白，表示它們是「同一個」項目——而這是一項真正的決定，而不是沒人想過的預設值。若是把本服務指向夥伴以觀察傳回的內容，空白是正確的，因為加了前置詞的名稱會讓下游的每個權杖與斷言看起來都很陌生。一旦問題變成聯合身分是否與本機身分共用命名空間——這正是此設定存在的目的——就將其設為類似 `fed-` 的值。它在選定用戶名稱「之後」才套用，因此變更它不會改變使用的是「哪個」傳入值。"
-  },
   "federation.outboundTimeoutMs|description": {
     "en": "6a4ac147d740738b",
     "text": "等待夥伴回應多久後放棄。它比一般逾時更重要，因為瀏覽器正在「等待」它——聯合登入時，某人正看著空白分頁，而此服務在兌換代碼——因此它短到足以讓失效的夥伴產生錯誤頁面而不是卡住，且錯誤會指出逾時。在 2026-08-30 之前它是 5000，改變的是此處的夥伴「通常就是此程序」：信任領域是此服務的邏輯副本，而任何人向全新領域要求的第一樣東西就是其 JWKS——這會促使該領域的十一把後量子金鑰產生，其中一把是 SLH-DSA-SHAKE-128s 金鑰，產生約需五秒。5000 這個預算之所以能運作，只是因為此服務「過去在回應時會阻塞」：事件迴圈停止時，強制執行該預算的計時器要等到回應完成後才能觸發。現在金鑰在 libuv 的線程池上產生（common/pq_native.js），並在建立領域時預先產生，因此一般擷取只需數毫秒——此值是為領域仍在誕生時抵達的那次擷取所準備的預算。"
@@ -1462,10 +1458,6 @@
   "saml2.requireSignedAuthnRequests|description": {
     "en": "d5e8553e9978dfda",
     "text": "是否拒絕「未簽署」的 <samlp:AuthnRequest>——以及來自服務提供者的未簽署 <samlp:LogoutRequest>。**`auto` 在產品模式下為開啟，在開發模式下為關閉。**`on` 與 `off` 則不論模式直接決定；已採用之元數據指出 AuthnRequestsSigned=\"true\" 的服務提供者，即使此設定關閉也會受其約束。它也是此身分識別提供者元數據中 WantAuthnRequestsSigned 所表示的內容。\n\n「存在」的簽章在每種模式下都會被驗證——HTTP Redirect 繫結的查詢字串簽章（section 3.4.4.1）或 HTTP POST 繫結的封入式簽章——對照的是服務提供者「已註冊」的簽署證書（samlSigningCertificate，來自其元數據或在 SAML 2.0 頁面上設定），絕不是要求所攜帶的證書，而無法通過驗證的簽章會被拒絕。沒有已註冊的證書時，簽章會記錄為未驗證，在此設定開啟時視為「未簽署」。"
-  },
-  "saml2.unsolicitedSso|description": {
-    "en": "aff7c855f4363724",
-    "text": "/saml2/unsolicited[/{sp}] 是否傳送「未經請求」的 Response（saml-profiles-2.0-os section 4.1.5）——在此身分識別提供者起始、針對未提出要求之服務提供者的登入：`providerId`（或路徑區段）指出它，`shire` 指出其已註冊的斷言取用服務之一，`target` 為 RelayState。在產品模式下服務提供者必須已註冊，地址必須是其元數據或其項目所註冊的地址，且會如任何登入一樣詢問簽發原則。斷言不攜帶 InResponseTo，因此服務提供者自行決定是否接受；對於其提供者只應被回應的領域，請關閉此設定。"
   },
   "saml2.defaultSingleLogoutService|label": {
     "en": "a81a00ce8c57908e",
@@ -1768,8 +1760,8 @@
     "text": "開啟時，未要求加密回應（credential_response_encryption）的認證要求會被拒絕，且元數據會指出 encryption_required: true。"
   },
   "oid4vci.credentialCertificateHeader|description": {
-    "en": "91cae7f95584d095",
-    "text": "簽發的 dc+sd-jwt 或 jwt_vc_json 「憑證（credential）」是否指出簽署它之金鑰的憑證鏈。SD-JWT VC 將 `x5c` 列為驗證器可找到簽發者金鑰的方式之一，因此從不擷取此簽發者元數據的錢包或驗證器，仍能依信任錨點檢查簽章。ldp_vc 不是 JWS，不受影響。此處（以及 Status List Token 上）的 x5c 會省略末端的信任錨點，也就是服務 Root，這是 HAIP 1.0 section 6.1.1 的要求；HAIP 也要求 x5c，因此 HAIP 領域會設定 x5c。`x5u`（預設值）是此服務上該憑證鏈的地址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c` 是內嵌的憑證鏈，葉憑證在前、服務 Root 在後，以 base64 DER 編碼，有數 KB；`both` 表示兩者皆有，`none` 表示兩者皆無。無論哪種方式，這都是僅持有該權杖的信賴方取得每張憑證的 CRL 發布點、OCSP 回應程式與 caIssuers 地址所需的資訊。尚未在此領域的 JOSE Issuing CA 下取得憑證的金鑰，以及 HMAC 簽章，兩者都不會加上。RFC 7515 section 4.1.5 要求 `x5u` 的擷取使用 TLS：若 global.https 關閉，地址會是 `http://`，嚴格的驗證器將拒絕跟隨。JWE 標頭永遠不會加上——此服務沒有任何已取得憑證的金鑰會加密任何內容。可依領域設定。"
+    "en": "250bb6d53e3ec407",
+    "text": "簽發的 dc+sd-jwt 或 jwt_vc_json 憑證及其狀態所指向的 Token Status List Token 是否攜帶簽署它們的金鑰的憑證鏈。SD-JWT VC 將 `x5c` 列為驗證方以 X.509 方式找到簽發方金鑰的途徑，並未列出 `x5u`；而 Status List Token 不帶可用於查找中繼資料的 `iss`，因此 `x5c`（預設）使從不取得本簽發方中繼資料的錢包或驗證方也能依據其信任錨核驗兩種簽章。ldp_vc 不是 JWS，不受影響。此處的 x5c 依 HAIP 1.0 第 6.1.1 節的要求在末尾省略信任錨，即服務根憑證；根憑證是提供給錢包或驗證方作為信任依據的憑證（/pki）。 `x5u` 是憑證鏈在本服務上的位址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c`（預設）是內嵌的憑證鏈，葉憑證在前、服務根憑證在後，base64 DER 編碼，數千位元組；`both` 表示兩者皆有，`none` 表示皆無。無論哪種，它都是只持有權杖的依賴方存取每張憑證的 CRL 發布點、OCSP 回應者與 caIssuers 位址所需的資訊。尚未由本領域 JOSE 簽發 CA 認證的金鑰以及 HMAC 簽章都不會獲得任何一項。RFC 7515 第 4.1.5 節要求取得 `x5u` 時使用 TLS：關閉 global.https 時位址為 `http://`，嚴格的驗證方會拒絕跟隨。JWE 標頭從不帶有此項——本服務沒有任何經認證的金鑰用於加密。可依領域設定。"
   },
   "oid4vci.signedMetadataCertificateHeader|label": {
     "en": "74bcdd1bedcb52e5",
@@ -2023,6 +2015,14 @@
     "en": "bb7f7ca790c61dc0",
     "text": "在 ldap.workerDirectory=postgres-lru 時，要求工作線程需要一個未持有的目錄項目時，等待數據庫多久。工作線程在等待期間不做其他事，因此這也是數據庫中斷能卡住其一個要求的最長時間；超過時該要求會被拒絕（503，STS-LDAP-0130）。"
   },
+  "ldap.workerDirectoryBudgetMs|label": {
+    "en": "7af008dc55949ed0",
+    "text": "工作線程每個要求的目錄預算（毫秒）"
+  },
+  "ldap.workerDirectoryBudgetMs|description": {
+    "en": "9b2485155e270c50",
+    "text": "在 ldap.workerDirectory=postgres-lru 時，一個 /admin 或 /admin-api 要求總共可以花多長時間等待同步目錄讀取。會超出預算的查詢將被拒絕（503，STS-LDAP-0175）且不會發出；單個緩慢的查詢若先超過其自身的逾時，仍以 STS-LDAP-0130 失敗。其他要求沒有這樣的預算。"
+  },
   "ldap.directoryReadableAttributes|description": {
     "en": "44bf1dfcca2f496c",
     "text": "在「產品」模式下，以人員身分繫結的連線可在「其他」人員項目上讀取的屬性，以逗號分隔、不區分大小寫比對；搜尋篩選只能看到這些，看不到他們的其他任何內容。留空（預設值）表示僅限本人：就該連線所知，其他人根本不在目錄中，對其 DN 的 base 搜尋會回應 noSuchObject。警告——放寬此項會讓領域中每個人都暴露給其他每個人：\"objectClass,cn,displayName,uid,mail\" 就是一本通訊錄，會讓任何擁有密碼的人取得完整的用戶名稱與地址清單，用以網絡釣魚或猜測密碼；telephoneNumber、title 等屬於個人資料；memberOf 與 employeeType 會告訴他們誰是管理員。不論此處為何，認證資料絕不可讀取。管理員（Admin Read 或 Admin Write）可讀取範圍內的一切。開發模式不授權任何 LDAP 讀取。"
@@ -2240,8 +2240,8 @@
     "text": "一個串流最多保留的無法投遞信件數。超過時會刪除「最舊」的，理由與 ssf.maxQueuedEvents 相同：檢視隊列的人想看的是最近失敗的內容。"
   },
   "ssf.authBasic|description": {
-    "en": "5476ee40c62ce1bb",
-    "text": "SSF 端點是否在 OAuth 2.0 存取權杖之外也接受 HTTP Basic，並在 authorization_schemes 中發布。在開發模式下，任何用戶名稱搭配 \"invalid\" 以外的任何密碼都能通過；在產品模式下，密碼會依該人員雜湊後的 userPassword 驗證。無論哪種情況，Basic 主體都擁有兩個範圍，因為 Basic 不攜帶任何範圍——因此要對每個呼叫者強制執行 ssf:read 與 ssf:write 的部署應關閉此項。"
+    "en": "34a196af42de2673",
+    "text": "SSF 端點是否在 OAuth 2.0 存取權杖之外也接受 HTTP Basic，並在 authorization_schemes 中發布。在開發模式下，任何用戶名稱搭配 \"invalid\" 以外的任何密碼都能通過；在產品模式下，密碼會依該人員雜湊後的 userPassword 驗證。無論哪種情況，Basic 主體都擁有兩個範圍，因為 Basic 不攜帶任何範圍——因此要對每個呼叫者強制執行 ssf.read 與 ssf.manage 的部署應關閉此項。"
   },
   "ssf.internalReceivers|description": {
     "en": "29e7cb1d4e0c30f3",
@@ -2256,8 +2256,8 @@
     "text": "一次 RFC 8936 輪詢最多傳回的 SET 數，不論接收端的 maxEvents 要求多少。回應會指出 moreAvailable，讓接收端知道要再回來——忽略該成員並假設一次輪詢就能清空隊列的客戶端，是常見到值得能隨時重現的缺陷：將此值設為 1。"
   },
   "ssf.authScopeRead|description": {
-    "en": "b3c6248d5c2a3f09",
-    "text": "存取權杖必須攜帶才能「讀取」串流組態、其狀態或輪詢隊列的 OAuth 範圍。在兩份探索文件的 scopes_supported 中發布，與兩個 SCIM 範圍完全相同。"
+    "en": "6a58acf43f1ab901",
+    "text": "此服務為讀取串流組態、其狀態或輪詢隊列的範圍所取的名稱。預設值是 CAEP Interoperability Profile 名稱 ssf.read，即使重新命名此項也一律接受。兩者都會在 scopes_supported 中發布。寫入包含讀取：攜帶寫入範圍的權杖也可以讀取，宣告寫入範圍的客戶端也可以獲簽讀取範圍。"
   },
   "ssf.legacySubClaim|description": {
     "en": "f9cae6d438dafa2d",
@@ -3348,16 +3348,16 @@
     "text": "僅適用於單元間通道監聽器：tls.sessionCacheSize。預設值 -1 依循 tls.sessionCacheSize；其他任何值只對此監聽器生效。監聽器在記憶體中保留多少個 TLS 工作階段，以便依「工作階段 ID」恢復——即不使用票證而恢復的 TLS 1.2 客戶端；超過時最舊的會被遺忘。預設為 2048（rcbj，2026-10-07），讓不使用票證的 TLS 1.2 客戶端也能恢復；0 則不保留任何工作階段，node 也不保留自己的工作階段快取，只依票證恢復——TLS 1.3 一律使用票證，且票證不需要伺服器記憶體。快取是每個程序各自擁有的，因此在負載平衡器之後，工作階段 ID 只能在建立它的節點上恢復（票證則可在任何地方以共用金鑰恢復）。不適用於 SPIFFE gRPC 監聽器，其伺服器由 grpc-js 擁有。"
   },
   "listenerMain.keepAliveTimeoutS|description": {
-    "en": "d48d22c3af904939",
-    "text": "僅適用於主連接埠監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為客戶端的下一個請求保持閒置 HTTP/1.1 連線開啟的時間（秒）（node 自己的預設值為 5）。保留下來的連線，就是不必重複的 TLS 交握——以及客戶端證書提示。客戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
+    "en": "a895a3ca14fdb99f",
+    "text": "僅適用於主連接埠監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為客戶端的下一個請求保持閒置連線開啟的時間（秒）（node 自己的預設值為 5）：即請求之間的 HTTP/1.1 連線，或沒有任何訊框經過的 HTTP/2 連線，後者隨後會被妥善關閉。保留下來的連線，就是不必重複的 TLS 交握——以及客戶端證書提示。客戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
   },
   "listenerDebugger.keepAliveTimeoutS|description": {
-    "en": "c772bcacfb6260cb",
-    "text": "僅適用於協定偵錯工具監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為客戶端的下一個請求保持閒置 HTTP/1.1 連線開啟的時間（秒）（node 自己的預設值為 5）。保留下來的連線，就是不必重複的 TLS 交握——以及客戶端證書提示。客戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
+    "en": "b63e0c1aae9ba585",
+    "text": "僅適用於協定偵錯工具監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為客戶端的下一個請求保持閒置連線開啟的時間（秒）（node 自己的預設值為 5）：即請求之間的 HTTP/1.1 連線，或沒有任何訊框經過的 HTTP/2 連線，後者隨後會被妥善關閉。保留下來的連線，就是不必重複的 TLS 交握——以及客戶端證書提示。客戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
   },
   "listenerRevocation.keepAliveTimeoutS|description": {
-    "en": "0f76cf6236976ee9",
-    "text": "僅適用於撤銷（純 HTTP）監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為客戶端的下一個請求保持閒置 HTTP/1.1 連線開啟的時間（秒）（node 自己的預設值為 5）。保留下來的連線，就是不必重複的 TLS 交握——以及客戶端證書提示。客戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
+    "en": "dec63c7b7c394604",
+    "text": "僅適用於撤銷（純 HTTP）監聽器：http.keepAliveTimeoutS。預設值 -1 依循 http.keepAliveTimeoutS；其他任何值只對此監聽器生效。HTTP 監聽器為客戶端的下一個請求保持閒置連線開啟的時間（秒）（node 自己的預設值為 5）：即請求之間的 HTTP/1.1 連線，或沒有任何訊框經過的 HTTP/2 連線，後者隨後會被妥善關閉。保留下來的連線，就是不必重複的 TLS 交握——以及客戶端證書提示。客戶端在同一條連線上以管線方式送出的請求會依序回應。在負載平衡器之後，請讓其閒置逾時高於此值。"
   },
   "listenerMain.headersTimeoutS|description": {
     "en": "8c10df66985844e6",

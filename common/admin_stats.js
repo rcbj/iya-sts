@@ -1566,7 +1566,9 @@ function recordCredential(format, detail) {
     // THE PERSON IT WAS ISSUED FOR, when that is not its subject (#38). An
     // ldp_vc names its HOLDER KEY as a did:jwk and says nothing about whose
     // wallet that is, so without this the credential was nobody's on
-    // /admin/users and beyond the reach of that person's global sign-out.
+    // /admin/users and beyond the reach of a sign-out that ends the issued
+    // row — an administrator's global sign-out, or the row ticked. The
+    // person's own Global logout at /logout leaves the row.
     // Set only where the issuer verified the access token that named them.
     person: detail.person || '',
     configId: detail.configId || '',
@@ -2027,6 +2029,83 @@ function scimCountsAll() {
   }).slice(0, SCIM_RECENT);
   log.debug("Leaving scimCountsAll().");
   return merged;
+}
+
+// ---------------------------------------------------------------------------
+// SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561): what the account sets
+// did, counted per realm — selections made, requests that could not tell
+// which account they were for (`ambiguous`), selections refused, accounts
+// added, forgotten and expired (a signed-out account dropped at
+// `authn.rememberedAccountDays`). The plan's TR-3: an operator asking "is
+// the picker being shown more than it should be" reads `ambiguous` beside
+// `selected`.
+//
+// `merge: 'own'` for the reason `scimCounts` is: a count is an INCREMENT, so
+// each process keeps its own row and `accountChoiceCounts()` adds them up.
+// Written only by `recordAccountChoice()`, which cannot throw.
+// ---------------------------------------------------------------------------
+const ACCOUNT_CHOICE_KINDS = ['selected', 'ambiguous', 'selectFailed',
+                              'added', 'forgotten', 'expired', 'switched'];
+
+const accountCounts = realms.obj(function () {
+  const out = {};
+  ACCOUNT_CHOICE_KINDS.forEach(function (kind) {
+    out[kind] = 0;
+  });
+  return out;
+}, { persist: 'admin_stats.accountCounts', merge: 'own' });
+
+/**
+ * Counts one thing a browser's account set did (#561). Never throws.
+ *
+ * @param kind - one of `selected`, `ambiguous`, `selectFailed`, `added`,
+ *   `forgotten`, `expired`, `switched`
+ * @param n - how many; 1 by default
+ */
+function recordAccountChoice(kind, n) {
+  log.debug("Entering recordAccountChoice(). " + kind);
+  try {
+    const name = String(kind || '');
+    if (ACCOUNT_CHOICE_KINDS.indexOf(name) < 0) {
+      log.debug("Leaving recordAccountChoice(). Not a kind.");
+      return;
+    }
+    const by = Math.max(1, Math.floor(Number(n) || 1));
+    accountCounts[name] = (Number(accountCounts[name]) || 0) + by;
+  } catch (e) {
+    // A counter must never fail the sign-in it counts.
+    log.debug("Caught in recordAccountChoice(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving recordAccountChoice().");
+}
+
+/**
+ * Every process's account-set counts for the ambient realm, added up.
+ *
+ * @returns kind → count
+ */
+function accountChoiceCounts() {
+  log.debug("Entering accountChoiceCounts().");
+  const out = {};
+  ACCOUNT_CHOICE_KINDS.forEach(function (kind) {
+    out[kind] = Number(accountCounts[kind]) || 0;
+  });
+  try {
+    replication.remoteRows('admin_stats.accountCounts', undefined, '')
+      .forEach(function (theirs) {
+        if (!theirs || typeof theirs !== 'object') {
+          return;
+        }
+        ACCOUNT_CHOICE_KINDS.forEach(function (kind) {
+          out[kind] += Number(theirs[kind]) || 0;
+        });
+      });
+  } catch (e) {
+    // Another process's rows are a refinement; this one's are the answer.
+    log.debug("Caught in accountChoiceCounts(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving accountChoiceCounts().");
+  return out;
 }
 
 /**
@@ -2908,6 +2987,25 @@ function recordAuthentication(detail) {
     log.debug("Leaving recordAuthentication().");
     return null;
   }
+  // A NAMESPACED FEDERATED UID KEEPS ITS '@' (#358). identityOf() splits on
+  // the last '@' so alice@a.example and a Kerberos principal share a row,
+  // and a confirm-link still wants that. A sign-in that creates
+  // `<relationship>~<subject>` has already chosen that whole string as the
+  // directory name: two partners' subjects that share a local-part are two
+  // people, and folding here would store `rel~alice` and hand the session
+  // the other entry's subject. identityKeyOf() itself is unchanged.
+  // subjectForName() looks the same name up whole before it folds, or the
+  // session would miss the entry this call asks the directory for.
+  if (info.federation) {
+    const form = identity.form;
+    const tilde = form.indexOf('~');
+    const at = form.indexOf('@');
+    if (tilde > 0 && at > tilde) {
+      identity.key = form;
+      identity.name = form;
+      identity.realm = '';
+    }
+  }
   const now = Date.now();
   const record = userRecord(identity);
   record.forms[identity.form] = (record.forms[identity.form] || 0) + 1;
@@ -2925,7 +3023,8 @@ function recordAuthentication(detail) {
   // the JWT recorder is: a throw out here would fail the request that was
   // accepting a credential, which is the tail wagging the dog. It is given the
   // NORMALISED identity rather than `presented`, so that the three spellings of
-  // one person seed one entry.
+  // one person seed one entry. A namespaced federated uid is the exception
+  // just above: its key is the name as presented, '@' included.
   // **THE DIRECTORY IS TOLD FIRST (2026-09-14)**, before the event and the
   // audit row below, where it used to be told last. A person's `sub` is their
   // entry's `entryUUID` now, so the entry an authentication creates has to
@@ -6792,6 +6891,10 @@ module.exports = {
   ISSUED_FAMILIES: ISSUED_FAMILIES,
   recordCall: recordCall,
   recordAuthentication: recordAuthentication,
+  // #561: the account sets' counters.
+  recordAccountChoice: recordAccountChoice,
+  accountChoiceCounts: accountChoiceCounts,
+  ACCOUNT_CHOICE_KINDS: ACCOUNT_CHOICE_KINDS,
   noteWebauthnEnrolled: noteWebauthnEnrolled,
   knownUser: knownUser,
   setUserObserver: setUserObserver,

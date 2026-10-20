@@ -574,8 +574,26 @@ async function provisionWallet(issuerBase, options) {
     fields.oauthRedirectUri = [].concat(opts.redirectUris);
     fields.oauthResponseType = ["code"];
   }
+  // THE SCOPES ARE DECLARED, ON `oauthAllowedScope` (iya-sts #708). They
+  // were written to `oauthScope`, which is what a client has ASKED FOR and is
+  // written by the token endpoint as requests arrive; an update may no longer
+  // add to it (STS-REG-0361), so the second job to reconcile this shared
+  // wallet was refused. RFC 7591 section 2's `scope` — "the list that the
+  // client can use when requesting access tokens" — is the declaration.
+  //
+  // AND IT IS EVERY CREDENTIAL SCOPE THIS ISSUER OFFERS, not only the ones
+  // this job asks for: WALLET_CLIENT_ID is one entry shared by every OID4VC
+  // job, a product-mode authorization server issues a client that declares
+  // anything only what it declares, and a declaration naming one job's scope
+  // would narrow every other job's request to nothing until it reconciled.
   if (opts.scopes && opts.scopes.length) {
-    fields.oauthScope = [].concat(opts.scopes);
+    const declared = [].concat(opts.scopes);
+    credentialScopes(await issuerMetadata(issuerBase)).forEach(function (one) {
+      if (declared.indexOf(one) < 0) {
+        declared.push(one);
+      }
+    });
+    fields.oauthAllowedScope = declared;
   }
   const entry = await registry.provision(registry.stsBaseFor(issuerBase), {
     identifier: clientId,

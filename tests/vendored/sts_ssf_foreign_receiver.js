@@ -391,7 +391,7 @@ async function test() {
   await ok(apiA + "/applications/create", { identifier: CLIENT,
     kind: "oauth2-client", name: CLIENT, protocols: ["oauth2", "ssf"],
     fields: { oauthClientId: [CLIENT],
-              oauthAllowedScope: ["ssf:read", "ssf:write"],
+              oauthAllowedScope: ["ssf.read", "ssf.manage"],
               oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post" } },
     "registered B's client at A");

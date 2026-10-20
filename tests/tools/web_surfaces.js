@@ -226,6 +226,37 @@ function authnCases(root) {
               application: 'urn:sp:<one>', partners: [partner, partner],
               problems: ['The relationship "gone" is disabled.'],
               details: details }, ctx: fr },
+    // THE ACCOUNT PICKER (#561): two signed in, one remembered, and a full
+    // browser whose Use another account is disabled.
+    { label: 'the account picker, two signed in and one remembered',
+      path: '/authn/accounts',
+      view: { id: 'acc', base: 'https://sts.example', protocol: 'OAuth 2.0',
+              application: 'app <one>', reason: 'ambiguous',
+              accounts: [
+                { key: 'urn:uuid:a', sub: 'urn:uuid:a', username: 'alice',
+                  displayName: 'Alice & Co', state: 'signed-in',
+                  signedInAt: 1760000000000, authTime: 1760000000000,
+                  current: true },
+                { key: 'urn:uuid:b', sub: 'urn:uuid:b', username: 'bob',
+                  displayName: 'bob', state: 'signed-in',
+                  signedInAt: 1760000060000, authTime: 1760000060000,
+                  current: false },
+                { key: 'urn:uuid:c', sub: 'urn:uuid:c', username: 'carol',
+                  displayName: 'Carol', state: 'signed-out',
+                  signedOutAt: 1760000120000, current: false }],
+              another: { open: true }, max: 10, details: details },
+      ctx: en },
+    { label: 'the account picker, full, in French',
+      path: '/authn/accounts',
+      view: { id: 'acc', base: 'https://sts.example', protocol: 'SAML 2.0',
+              application: '', reason: 'select_account',
+              accounts: [
+                { key: 'name:x', sub: '', username: 'x', displayName: 'x',
+                  state: 'signed-in', signedInAt: 0, authTime: 0,
+                  current: false }],
+              another: { open: false }, max: 1, details: [] },
+      ctx: Object.assign({}, fr, { error: 'That account\'s session has ' +
+                                          'just ended.' }) },
     { label: 'the forced password change, after a breach',
       path: '/authn/password-change',
       view: { id: 'def', username: 'carol & co',
@@ -721,7 +752,27 @@ function signoutCases(root) {
     { label: 'a name that may not be used, development', path: '/logout',
       ctx: fr, view: { state: 'refused', verifiesCredentials: false } },
     { label: 'nobody to sign out', path: '/logout', ctx: en,
-      view: { state: 'nobody' } }
+      view: { state: 'nobody' } },
+    // SEVERAL ACCOUNTS IN ONE BROWSER (#561): the account step, preselected
+    // by login_hint and by the default, and the inventory after it carrying
+    // the account chosen.
+    { label: 'the account step, preselected, in English', path: '/logout',
+      ctx: en, view: { state: 'accounts', naming: 'off',
+        preselected: 'urn:uuid:a<1>',
+        accounts: [{ key: 'urn:uuid:a<1>', username: 'alice',
+                     displayName: 'Alice <A> & "co"', current: false },
+                   { key: 'name:bob', username: 'bob', displayName: 'bob',
+                     current: true }] } },
+    { label: 'the account step, the default chosen, in French',
+      path: '/logout', ctx: fr, view: { state: 'accounts', naming: 'product',
+        preselected: '',
+        accounts: [{ key: 'urn:uuid:c', username: 'carol',
+                     displayName: 'Carol', current: true },
+                   { key: 'urn:uuid:d', username: 'dave',
+                     displayName: 'dave', current: false }] } },
+    { label: 'the inventory after the account step', path: '/logout',
+      ctx: en, view: Object.assign(inventory('off', 'alice'),
+                                   { account: 'urn:uuid:a<1>' }) }
   ];
 }
 

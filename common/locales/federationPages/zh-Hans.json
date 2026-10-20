@@ -33,5 +33,10 @@
   "index.configure": "在控制台中配置关系",
   "index.signInScreen": "登录界面",
   "index.buttonsOn": "登录界面会把每个可用的合作方显示为一个按钮。",
-  "index.buttonsOff": "federation.loginButtons 已关闭，因此登录界面不显示任何合作方。"
+  "index.buttonsOff": "federation.loginButtons 已关闭，因此登录界面不显示任何合作方。",
+  "profile.title": "一些信息",
+  "profile.heading": "创建账户前还需要一些信息",
+  "profile.lead": "{partner} 已为您登录，但没有发送本服务创建您的账户所需的全部信息。请填写以下信息以完成。",
+  "profile.submit": "创建我的账户",
+  "profile.note": "这些信息会保存在您在此处的账户中。您输入的电子邮件地址会被记录为未验证。"
 }

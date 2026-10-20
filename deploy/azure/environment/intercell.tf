@@ -46,7 +46,10 @@ resource "azurerm_lb_backend_address_pool" "intercell" {
 }
 
 # A TCP connect: the listener asks every caller for a certificate, and a
-# probe has none to give.
+# probe has none to give. Three consecutive failures take the node out of
+# this pool, the same count as the public probe (lb.tf, #330).
+# `probe_threshold` counts successes the same way. This probe does not
+# replace the VM; the public health check does.
 resource "azurerm_lb_probe" "intercell" {
   count               = local.multi ? 1 : 0
   name                = "intercell"
@@ -55,7 +58,7 @@ resource "azurerm_lb_probe" "intercell" {
   port                = local.intercell_port
   interval_in_seconds = 10
   number_of_probes    = 3
-  probe_threshold     = 2
+  probe_threshold     = 3
 }
 
 resource "azurerm_lb_rule" "intercell" {

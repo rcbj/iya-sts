@@ -39,6 +39,8 @@ groups to any number of remote SCIM service providers. See
 * **Query**: `filter` (section 3.4.2.2), `sortBy`, `sortOrder`, `startIndex`,
   `count`, `attributes` and `excludedAttributes`. A filter this server cannot
   evaluate is refused `400 invalidFilter`, never answered with an empty list.
+  A `startIndex` past `totalResults` returns an empty `Resources` and
+  `itemsPerPage` 0 (RFC 7644 section 3.4.2.4).
 * **Search by POST**: `/Users/.search`, `/Groups/.search`, and `/.search` at the
   root, which answers one filter from Users and Groups together. The body must
   carry the SearchRequest schema URN.
@@ -301,6 +303,15 @@ with `POST /admin-api/applications/add`
 Verifying a Basic password costs about 70 ms of
 CPU per request in product mode, so a bulk provisioning client should use a
 `scim:write` access token. See [what is not checked](what-is-not-checked.md).
+
+**In product mode a provisioned person must carry what the realm's
+[attribute policy](admin-console.md#policies--adminpolicies) requires**
+(#396): `uid`, `cn` and `sn` always, and by default `givenName` and `mail` —
+`userName`, `name.familyName`, `name.givenName` and `emails` over SCIM, with
+`displayName` as `cn` or, without one, `cn` made of the two names. A create
+without one is `400 invalidValue`, and so is a replace or a patch that would
+take one away. A HOBA registration creates an account with nothing but a name,
+so a realm that keeps the default policy refuses it.
 
 **In development mode the credential is a turnstile, not a lock.** Any password
 but `invalid` passes Basic, any username passes Digest with the shared

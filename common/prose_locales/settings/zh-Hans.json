@@ -108,8 +108,8 @@
     "text": "空闲连接保持时间（秒）"
   },
   "http.keepAliveTimeoutS|description": {
-    "en": "15ba4c34c3d3349e",
-    "text": "HTTP 监听器为等待客户端下一个请求而保持空闲 HTTP/1.1 连接打开的时长（秒）（node 自身的默认值为 5）。保持连接就省去了一次 TLS 握手——以及一次客户端证书提示。客户端在一个连接上流水线发送的请求按顺序应答。位于负载均衡器后面时，请使其空闲超时大于此值。"
+    "en": "0fa763b61550474c",
+    "text": "HTTP 监听器为等待客户端下一个请求而保持空闲连接打开的时长（秒）（node 自身的默认值为 5）：即请求之间的 HTTP/1.1 连接，或没有任何帧经过的 HTTP/2 连接，后者随后会被平稳关闭。保持连接就省去了一次 TLS 握手——以及一次客户端证书提示。客户端在一个连接上流水线发送的请求按顺序应答。位于负载均衡器后面时，请使其空闲超时大于此值。"
   },
   "http.headersTimeoutS|label": {
     "en": "af0b2f7be18e5943",
@@ -134,6 +134,22 @@
   "http.maxConnections|description": {
     "en": "1dda75e901fc49af",
     "text": "HTTP 监听器同时保持打开的连接数；超出的连接在到达时即被关闭。0（默认）表示不限制（node 自身的行为）。"
+  },
+  "http.http2|label": {
+    "en": "775d810d4f1a3356",
+    "text": "提供 HTTP/2"
+  },
+  "http.http2|description": {
+    "en": "76d7c1691efa23fa",
+    "text": "当客户端在 TLS 握手中（ALPN）请求 HTTP/2 时，HTTPS 监听器是否提供它。开启（默认值）时，一个连接承载浏览器并行发出的所有请求；对于只请求 HTTP/1.1 的客户端，仍以 HTTP/1.1 应答。关闭时，每个连接都是 HTTP/1.1——适用于 HTTP/2 行为异常的客户端或负载均衡器。新连接立即遵循更改；已打开的连接保持其协议。纯 HTTP 的吊销监听器只支持 HTTP/1.1，因为没有可以提供它的握手。"
+  },
+  "http.http2MaxConcurrentStreams|label": {
+    "en": "27fcdca12afd105b",
+    "text": "每个 HTTP/2 连接的流数"
+  },
+  "http.http2MaxConcurrentStreams|description": {
+    "en": "ec218fbbb4297601",
+    "text": "一个 HTTP/2 连接可同时打开的请求数（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的流会被拒绝，直到有流结束。默认值 100 是 RFC 9113 建议的最小值；node 自身的值没有上限，这会让一个连接承载成千上万个连接的工作量。它限制一个连接上的工作量，正如 http.maxConnections 限制连接数。新连接会立即遵循更改，已打开的连接会收到新值。"
   },
   "global.proxyProtocol|label": {
     "en": "390324c2e87e0a11",
@@ -632,8 +648,8 @@
     "text": "结束过期会话的频率（秒）"
   },
   "authn.sessionSweepS|description": {
-    "en": "852f6e4a8d15fa99",
-    "text": "调度器作业 `authn.session-expiry`（监控 → 调度器）的间隔，它会结束每个已超过有效期或空闲超时的单点登录会话——审计记录、CAEP session-revoked 和反向通道注销令牌对整个集群只发出一次——无论是否有人回来出示它。0 关闭此作业：过期会话在被出示时仍会被拒绝并在那一刻结束，但对于再也不被出示的会话，不会通知任何人。直到 2026-09-22（#49）之前，它在每个进程中都固定为三十秒。"
+    "en": "7c9e47e90ca7211c",
+    "text": "调度器作业 `authn.session-expiry`（监控 → 调度器）的间隔，它会结束每个已超过有效期或空闲超时的单点登录会话——审计记录、CAEP session-revoked 和反向通道注销令牌对整个集群只发出一次——无论是否有人回来出示它。同一次运行还会在每个领域中最多结束该领域 authn.sessionShedPerSweep 个同一主体自身的超额会话。0 关闭此作业：过期会话在被出示时仍会被拒绝并在那一刻结束，但对于再也不被出示的会话，不会通知任何人。直到 2026-09-22（#49）之前，它在每个进程中都固定为三十秒。"
   },
   "authn.cookieDomain|label": {
     "en": "d384717cc62561e8",
@@ -659,13 +675,73 @@
     "en": "3d8175702c053473",
     "text": "会话在结束前可以闲置不用的时长，叠加在上面的绝对有效期之上。**零（默认）表示没有空闲超时**，这是本服务一贯的行为。设置后，某人停止使用的会话会在其最后一次请求后这么多秒结束，以两个限制中先到者为准——对管理控制台或用户门户的请求算作对其背后单点登录会话的使用，因此在控制台中工作的运维人员不会因为一个他们并未出示的会话上的空闲计时而被注销。此项实时生效：它适用于已存在的会话，因为它是在读取会话时检查的，而不是在创建时写入的。"
   },
+  "authn.deviceBoundSessions|label": {
+    "en": "454fe488dcb65a89",
+    "text": "将会话绑定到浏览器的密钥（DBSC）"
+  },
+  "authn.deviceBoundSessions|description": {
+    "en": "b88d9840f0b7c19c",
+    "text": "开启时，登录会请求浏览器将单点登录会话绑定到它持有的密钥（W3C Device Bound Session Credentials）。这样做的浏览器随后必须用该密钥的证明来续订一个短期的第二个 cookie，因此复制的会话 cookie 会在该 cookie 过期时失效；由其他密钥签名的刷新，或重放已消耗质询的刷新，都会结束会话。不支持它的浏览器保留普通会话。关闭（默认）时不提供任何内容，已绑定的会话按普通会话处理。"
+  },
+  "authn.deviceBoundCookieLifetimeS|label": {
+    "en": "0589864dcb16bffb",
+    "text": "绑定 cookie 有效期（秒）"
+  },
+  "authn.deviceBoundCookieLifetimeS|description": {
+    "en": "eb2c0a8e31f615d9",
+    "text": "设备绑定会话所需的 cookie 在浏览器必须再次证明其密钥之前的有效时间，也就是复制的一对 cookie 能继续使用多久。绝不超过会话本身的结束时间。在签发 cookie 时读取。"
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "每领域最多单点登录会话数"
   },
   "authn.maxSessions|description": {
-    "en": "02399d7a28c348d5",
-    "text": "一个信任领域持有的单点登录会话的最大数量——浏览器登录、浏览器在协议入口处获得的到达会话、控制台和门户自己的会话，以及 API、SCIM 和 SPIRE 客户端的会话。在创建会话时检查：达到上限时会结束最近最少使用的会话以腾出空间，与到期结束会话的方式完全相同——一条带有 STS-AUTHN-0292 的审计记录、CAEP session-revoked 和反向通道注销令牌——因此其持有者必须重新登录。没有此项时，只有会话过期作业限制存储大小，一波登录会让每个进程不断增长，直到作业赶上。调低此值在下一次创建会话时生效，届时会立即结束超出新上限的所有会话。"
+    "en": "a5b6beb131a44df2",
+    "text": "一个信任领域持有的会话上限——浏览器登录、到达会话、控制台和门户自己的会话，以及 API、SCIM 和 SPIRE 客户端的会话。在会话“创建”时检查。达到上限时，新行会被“拒绝”（STS-AUTHN-0337）：不会为了给别人腾出空间而结束任何会话。已达到 authn.maxSessionsPerSubject 的主体会改为失去其自身最旧的可计数会话（STS-AUTHN-0292），一行，由新行取而代之。调低此值不会结束已持有的会话。只要领域仍超过新数值，新行就会被拒绝；会话会因有效期、登出、撤销而离开，或者在某个主体超过其自身上限时，因该主体之后的插入以及会话清扫（在该领域的运行中最多 authn.sessionShedPerSweep 个）而离开。"
+  },
+  "authn.maxSessionsPerSubject|label": {
+    "en": "88aeb86239334502",
+    "text": "每个主体最多可计数的会话"
+  },
+  "authn.maxSessionsPerSubject|description": {
+    "en": "b825060c911d7200",
+    "text": "一个主体可持有的可计数会话数量：一次已选择的单点登录、一个带密钥的 API 会话或一个依赖方会话。到达会话不计数，而且到达会话共享同一个用户名，因此此上限不以用户名为键。达到上限时，该主体启动的下一个会话会结束其自身最旧的可计数行并取而代之。绝不会是其他主体的行，也绝不会是到达会话。依赖方会话不会结束它刚刚派生自的单点登录。每次插入一行；其余超额由会话清扫收回，在该领域的运行中最多 authn.sessionShedPerSweep 个。高于当前 authn.maxSessions 的值按该上限读取。"
+  },
+  "authn.sessionShedPerSweep|label": {
+    "en": "83dd8742cd13895b",
+    "text": "每次清扫结束的自身超额会话"
+  },
+  "authn.sessionShedPerSweep|description": {
+    "en": "d3d71af793b0befc",
+    "text": "authn.session-expiry 作业在本领域的一次运行中结束多少个主体自身的超额会话。每个领域使用自己的值。从最旧的可计数行开始，一次一个主体，直到结束了这么多个，或者不再有人超过 authn.maxSessionsPerSubject。它不会因容量而结束到达会话，也不会结束处于或低于自身上限的主体，即使领域超过了 authn.maxSessions。降低上限不会造成批量结束。"
+  },
+  "authn.sessionWindow|label": {
+    "en": "8f5e9b73e3237ec2",
+    "text": "有界会话窗口"
+  },
+  "authn.sessionWindow|description": {
+    "en": "59fc245bcee32b34",
+    "text": "一个进程是持有所有单点登录会话，还是只持有其中的一个有界窗口。默认值 auto 在已启用签发数据持久化、服务只有一个单元且签发数据的键是摘要时使用窗口。否则保留完整映射，并在启动时记录一次 STS-AUTHN-0339。在同样的状态下，on 会在启动时被拒绝。off 保留完整映射。这是本进程的属性：领域不能有自己的值，更改它需要重启。"
+  },
+  "authn.sessionWindow|restartReason": {
+    "en": "ff36b8697d3f42a0",
+    "text": "跳过会话主体的启动无法在关闭窗口时将其放回，因此已提交的会话会被答复为不存在"
+  },
+  "authn.sessionCacheEntries|label": {
+    "en": "9745355bc4897a82",
+    "text": "一个进程持有的会话"
+  },
+  "authn.sessionCacheEntries|description": {
+    "en": "e5815f7302e5577e",
+    "text": "authn.sessionWindow 开启时一个进程持有多少个单点登录会话。一个缓存服务所有领域，因此领域无法设定其大小。超出上限的会话在其 upsert 提交后从内存中忘记。它不会被结束。该行仍保留在存储中，并在下次未命中时重新读取。"
+  },
+  "authn.sessionReadTimeoutMs|label": {
+    "en": "c0f67cf6f4eb61c6",
+    "text": "会话读取超时（毫秒）"
+  },
+  "authn.sessionReadTimeoutMs|description": {
+    "en": "04b8133757dcd380",
+    "text": "一次会话读取可以等待多久，以及失败的读取在多长时间内不重试。0 表示不等待，也不推迟下一次未命中。等待属于本进程，而不是某个领域。失败的读取不会被视为会话不存在。"
   },
   "authn.pendingTtlS|label": {
     "en": "d328ac4c11db98f0",
@@ -682,6 +758,30 @@
   "authn.mfaStepTtlS|description": {
     "en": "33bc4846535a784f",
     "text": "通过密码步骤的人出示其第二因素——安全密钥、身份验证器应用中的验证码或恢复码——的时限，超过则该步骤过期，登录必须重新开始。它是猜测的验证码能够被尝试的唯一窗口，这就是它比界面自身计时更短的原因；速率限制器约束窗口内的尝试次数。"
+  },
+  "authn.multipleAccounts|label": {
+    "en": "96144493272617dc",
+    "text": "一个浏览器中登录多个账号"
+  },
+  "authn.multipleAccounts|description": {
+    "en": "d0b4899bdae1c43d",
+    "text": "允许一个浏览器同时持有多人的单点登录会话，并在其间选择。开启时，另一个人登录会向浏览器的账号集（`sts_accounts` Cookie）中添加一个会话，而不是结束原有会话；当有多个账号已登录、而请求未说明针对哪个账号时——此流程中未选择账号，也没有指明账号的 login_hint、id_token_hint 或 SAML Subject——请求会被发送到 /authn/accounts 的账号选择器，prompt=select_account 也会显示它。每个会话保留各自的有效期、空闲超时、升级认证状态和退出登录。关闭（默认）时，浏览器只有一个会话，另一个人登录会结束它。无论开启还是关闭，都在下一个请求时生效，且不会结束任何会话：开启后，浏览器已有的会话成为其账号集的第一个账号；关闭后，浏览器的默认会话单独继续，其他会话照常到期。"
+  },
+  "authn.maxBrowserAccounts|label": {
+    "en": "19115cee7c688f64",
+    "text": "一个浏览器最多记住的账号数"
+  },
+  "authn.maxBrowserAccounts|description": {
+    "en": "fa642faef7e66a0f",
+    "text": "开启多账号登录时，一个浏览器的账号集最多容纳的账号数，已登录和已退出的合计。超出上限的登录会先移除退出时间最早的已退出账号；当每个位置都被已登录账号占用时，登录会被拒绝（STS-AUTHN-0340），选择器会提示必须先退出一个账号。"
+  },
+  "authn.rememberedAccountDays|label": {
+    "en": "9e38d0738504c1e3",
+    "text": "已退出账号的保留时长（天）"
+  },
+  "authn.rememberedAccountDays|description": {
+    "en": "a1fe0b6f510982c4",
+    "text": "开启多账号登录时，账号选择器在多长时间内继续提供在此浏览器中退出的账号——其用户名、显示名称和主体，从不包括凭据，保存在服务器上——以便重新登录或忘记它。之后由计划任务 `authn.account-set-expiry` 将其移除。"
   },
   "oidcRp.maxFlows|label": {
     "en": "f517b7686e6225fc",
@@ -994,6 +1094,14 @@
   "webauthn.pqcOnly|description": {
     "en": "fb33eabeb83379da",
     "text": "开启后只请求后量子通行密钥算法——RFC 9964 的 `ML-DSA-44`（-48）、`ML-DSA-65`（-49）和 `ML-DSA-87`（-50）——取 `webauthn.algorithms` 列出的其中那些，若一个都未列出则取全部三个。此后新的通行密钥必须是 ML-DSA：用其他算法创建的会在注册时被拒绝（WebAuthn 第 7.1 节）。它收窄的是请求的内容：已注册的经典密钥仍可继续登录。大多数身份验证器尚不支持 ML-DSA，此项开启时无法注册。"
+  },
+  "webauthn.pqcAlongsideClassical|label": {
+    "en": "664b4753cc8439b0",
+    "text": "经典通行密钥旁的后量子通行密钥"
+  },
+  "webauthn.pqcAlongsideClassical|description": {
+    "en": "e35e276b9d933828",
+    "text": "开启后，一个人可以同时持有经典通行密钥和后量子（ML-DSA）通行密钥，在能同时创建两者的身份验证器上可放在同一设备。每个通行密钥都在此人选择的“通道”中创建：经典通道请求去掉 ML-DSA 的 `webauthn.algorithms`（若一个不剩则为 `ES256` 和 `RS256`），后量子通道只请求 ML-DSA。每个通道都有自己的用户句柄，因此第二个通行密钥不会在身份验证器上替换第一个，并有自己的排除列表；凭据管理器以表明其算法的名称显示后量子通行密钥——创建时为 `<username>+ml-dsa`，当此人的所有后量子通行密钥都使用同一算法时为 `<username>+ml-dsa-65`（例如）——这个名称从不用于登录。`webauthn.maxKeysPerPerson` 计入两个通道。`webauthn.pqcOnly` 开启时不能开启。关闭时，每个仪式都与以前一样，已注册的后量子通行密钥仍可登录；不能再创建新的。"
   },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
@@ -1512,12 +1620,20 @@
     "text": "请求工作线程启动时限（毫秒）"
   },
   "workers.startTimeoutMs|description": {
-    "en": "d618aed19286a7b1",
-    "text": "请求或界面工作线程建立其状态（存储、密钥、已签发的行和协调）所允许的最长时间，超时则报告无法启动。连续失败三次后，池会停止派生工作线程，并在持有套接字的进程中应答一切。在工作线程启动较慢的地方请调高此值——例如每次启动都要重新认证的大型领域密钥集，或冷启动的数据库（#311）。"
+    "en": "81d7608fc4c1da1f",
+    "text": "请求或界面工作线程建立其状态（存储、密钥、已签发的行和协调）所允许的最长时间，超时则报告无法启动。连续失败三次后，池会停止派生工作线程，直到 workers.giveUpRetryMs，然后再试一个；在它就绪之前，请求留在前端进程中。在工作线程启动较慢的地方请调高此值——例如每次启动都要重新认证的大型领域密钥集，或冷启动的数据库（#311）。"
   },
   "workers.startTimeoutMs|restartReason": {
     "en": "7ac1de67a7c566c0",
     "text": "工作线程在启动时读取一次"
+  },
+  "workers.giveUpRetryMs|label": {
+    "en": "4e9da2141c451b07",
+    "text": "放弃后的重试等待（毫秒）"
+  },
+  "workers.giveUpRetryMs|description": {
+    "en": "e4e6fa0869cb03c2",
+    "text": "在连续三个工作线程启动失败之后，池在再次尝试一个工作线程之前等待多久。每次尝试仍然失败后，等待时间加倍，并且从不超过一小时。在该工作线程报告就绪之前，请求留在放弃时所处的位置：前端进程，或托管界面所用的协议池。一个工作线程启动成功便清除放弃，并派生池中其余的工作线程。0 是原先的行为：一直放弃，直到此进程重启。在排入冷却时读取（#333）。"
   },
   "workers.requestCount|label": {
     "en": "d742f198c4f9ad17",
@@ -1699,6 +1815,14 @@
     "en": "0ecee8de8ef29c3f",
     "text": "移除信任领域时，在清除其存储之前等待其应投递内容送达的时长：它所结束的每个会话的 CAEP session-revoked 和反向通道注销令牌、领域中每个人的 RISC account-purged，以及发往每个流的 SSF stream-updated（disabled）。时间用尽时尚未投递的内容会被记录（STS-CORE-0120），并随领域一同消失。0 仍会发送所有内容，但不等待。轮询接收方只能在等待期间收取。"
   },
+  "realms.maxCount|label": {
+    "en": "017b530f97d0b9e0",
+    "text": "领域数量上限"
+  },
+  "realms.maxCount|description": {
+    "en": "1a45b5c5965dd169",
+    "text": "此集群最多可容纳多少个信任领域，包括内置的默认领域，因此 10 表示默认领域加上另外九个。由服务管理员设置，且只能在默认领域中设置：在其他领域内部，该控件处于禁用状态，写入会被拒绝。调低此值不会移除已存在的领域；在数量回落到上限以下之前，创建会被拒绝。每个领域都会占用每个节点上每个进程的内存，这就是设置上限的原因。"
+  },
   "oauth2.issuer|label": {
     "en": "373396d5608b3885",
     "text": "颁发者标识符"
@@ -1830,6 +1954,30 @@
   "oauth2.revokeRefreshOnLogout|description": {
     "en": "d6543ad76912e1b1",
     "text": "在所有模式下（#123），结束浏览器单点登录会话时，在该会话上签发的、不带 offline_access 的每个刷新令牌都会被吊销——这是 OpenID Connect Back-Channel Logout 1.0 第 2.7 节的 SHOULD，也是 RFC 9700 第 2.2.2 节的 MAY。被授予 offline_access 的令牌会被保留：比会话存活更久正是该范围的用途（OIDC Core 第 11 节）。正是它让 /oauth2/logout 和 WS-Federation 的 wsignout1.0 对反向通道有意义：没有它，注销只结束了 Cookie，却把一个长期有效的凭据留在客户端手中。默认开启；关闭，或在某个客户端条目上设为 FALSE，可重现靠刷新重新回来的客户端。令牌按其签发时所在的会话查找。"
+  },
+  "oauth2.thirdPartyInitiatedLogin|label": {
+    "en": "b7e8b085293fbd62",
+    "text": "身份提供方发起的登录（第三方发起的登录）"
+  },
+  "oauth2.thirdPartyInitiatedLogin|description": {
+    "en": "d652b991521afa8d",
+    "text": "/launch/{app} 是否带着 iss、login_hint 和 target_link_uri 将某人发送到 OpenID Connect 客户端的 initiate_login_uri（OpenID Connect Core 第 4 节），以及用户门户是否提供该链接。默认关闭；客户端条目上的 oauthThirdPartyInitiatedLogin 会针对该客户端覆盖此项。随后客户端发起一个普通的授权请求，因此链接之后的一切都是客户端自己的登录。"
+  },
+  "oauth2.spInitiatedSso|label": {
+    "en": "a4cd88a5fec219e4",
+    "text": "客户端发起的登录"
+  },
+  "oauth2.spInitiatedSso|description": {
+    "en": "2ac22081ca9a60d6",
+    "text": "/oauth2/authorize 是否应答并非刚刚被启动的客户端。默认开启；客户端条目上的 oauthSpInitiatedSso 会覆盖此项。关闭时，来自该客户端的授权请求只有在同一会话上、oauth2.launchWindowS 之内紧随对它的 /launch 之后才会得到应答，每次启动一次；其他任何请求都以 unauthorized_client 拒绝。不经过授权端点的授权类型不受影响。"
+  },
+  "oauth2.launchWindowS|label": {
+    "en": "9c1c1df5174c8754",
+    "text": "启动窗口（秒）"
+  },
+  "oauth2.launchWindowS|description": {
+    "en": "40b4f249f1f0c2d3",
+    "text": "对于自身发起已被关闭（oauth2.spInitiatedSso）的客户端，在 /launch/{app} 将某人发送到该客户端的 initiate_login_uri 之后多长时间内，该客户端的授权请求仍算作紧随启动之后。"
   },
   "oauth2.eddsaCurve|label": {
     "en": "6637f461a494b5b2",
@@ -2140,8 +2288,8 @@
     "text": "客户端密钥有效期（天）"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "91dc7031f88426d1",
-    "text": "本服务生成或接收的每个客户端密钥的有效期（天），因而也是 RFC 7591 第 3.2.1 节为在 POST /oauth2/register 注册的客户端发布的 `client_secret_expires_at`——也是生成或接收的每个密钥（重新生成、轮换、添加的密钥、在控制台上输入的值）的默认值，除非添加表单指定了其他值。零（默认）即该节自己的“永不过期”。它在每个密钥创建时写入，之后的更改不会改变它。"
+    "en": "6ad202dff164f155",
+    "text": "本服务生成或接收的每个客户端密钥的有效期（天），因而也是 RFC 7591 第 3.2.1 节为在 POST /oauth2/register 注册的客户端发布的 `client_secret_expires_at`——也是生成或接收的每个密钥（重新生成、轮换、添加的密钥、在控制台上输入的值）的默认值，除非添加表单指定了其他值，或创建表单为应用的第一个密钥指定了其他值。零（默认）即该节自己的“永不过期”。它在每个密钥创建时写入，之后的更改不会改变它。"
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",
@@ -4020,8 +4168,8 @@
     "text": "联合用户名前缀"
   },
   "federation.usernamePrefix|description": {
-    "en": "cd17a5b59a5cf957",
-    "text": "加在外部身份提供方提供的每个用户名之前，使联合的 `alice` 和本地的 `alice` 成为两个条目。默认为空，这意味着它们是同一个条目——这是一个真正的决定，而不是无人考虑过的默认值。当把本服务指向某个合作方以查看返回内容时，留空是正确的，因为加了前缀的名称会让下游的每个令牌和断言看起来都很陌生。一旦问题变成联合身份是否与本地身份共享命名空间——这正是此设置存在的原因——就将其设为类似 `fed-` 的值。它在选定用户名之后才应用，因此更改它不会改变使用的是哪个传入值。"
+    "en": "81424ee1cba2373a",
+    "text": "放在 `link-at-first-sign-in` 确认所查找的名称以及 `any-existing` 所匹配的名称前面，在该值被选定并截取为最后一个 `@` 之前的部分之后。默认为空，因此伙伴主体 `alice@partner.example` 会确认本地的 `alice`。当该查找不得遇到本地人员时设置它（例如 `fed-`）。在 `link-at-first-sign-in` 或 `jit-namespaced` 下由登录创建的条目始终是 `<relationship>~<subject>`，此前缀不是该名称的一部分。"
   },
   "federation.loginButtons|label": {
     "en": "712a94d0c664c839",
@@ -4030,6 +4178,30 @@
   "federation.loginButtons|description": {
     "en": "89dfe2967675cad2",
     "text": "在 /authn/login 上为每个可用的服务提供方侧关系显示一个按钮，使联合身份可以满足任何已在进行中的流程——OAuth 2.0 授权请求、WS-Federation 登录、SAML AuthnRequest、管理控制台。这正是这些按钮出现在这里、而不仅仅在 /federation/login/{id} 上的全部原因。只提供确实能工作的关系——导向拒绝的按钮比没有按钮更糟。"
+  },
+  "federation.consumerProviders|label": {
+    "en": "96a08e7b4a520c19",
+    "text": "消费者和社交身份提供方"
+  },
+  "federation.consumerProviders|description": {
+    "en": "635dc4f49d935e03",
+    "text": "允许此领域与消费者和社交提供方（Google、Discord、GitHub 以及目录中的其他提供方）建立联合，作为独立类别的关系（#565）。默认关闭：关闭时，领域不能添加、不能启用此类关系，并在每个入口拒绝通过它们的登录，包括由 ldapmodify 写入的关系。无论开关处于何种状态，企业合作方都不受影响。通过消费者提供方首次到来的人会获得自己的条目，地址绝不会用于匹配已有的人员。"
+  },
+  "federation.connectRecentAuthMinutes|label": {
+    "en": "cbe8f387555868ea",
+    "text": "连接提供方：登录须在多久之内（分钟）"
+  },
+  "federation.connectRecentAuthMinutes|description": {
+    "en": "f0edd885053c8b09",
+    "text": "在门户的“已连接的账户”页面上将消费者或社交提供方连接到自己的账户时，此人最近一次身份验证须在多少分钟之内（#565）。超过这个时间，会先要求其重新登录：连接之后，该提供方即可让此人登录。"
+  },
+  "federation.consumerProvisionCap|label": {
+    "en": "c93ac16ed967542f",
+    "text": "消费者提供方：每个可创建的账户数"
+  },
+  "federation.consumerProvisionCap|description": {
+    "en": "3e7e50d4c4690e0e",
+    "text": "消费者或社交提供方的关系可以创建多少人，除非该关系自己的 fedProvisionCap 另有设置。创建消费者关系时写入其中，并用于 fedProvisionCap 为空的关系。达到上限时，新来者会被拒绝（STS-FED-0090），已连接的人仍可登录。企业合作方不受影响：其为空的 fedProvisionCap 表示不限。"
   },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
@@ -4287,13 +4459,21 @@
     "en": "d5e8553e9978dfda",
     "text": "是否拒绝未签名的 <samlp:AuthnRequest>——以及服务提供方未签名的 <samlp:LogoutRequest>。**`auto` 在产品模式下为打开，在开发模式下为关闭。**`on` 和 `off` 则不论模式如何都起决定作用；已导入元数据声明 AuthnRequestsSigned=\"true\" 的服务提供方，即使此设置关闭也要遵守该声明。它也决定了此身份提供方元数据中 WantAuthnRequestsSigned 的值。\n\n存在的签名在每种模式下都会被验证——HTTP Redirect 绑定的查询字符串签名（第 3.4.4.1 节）或 HTTP POST 绑定的封装型签名——对照服务提供方已注册的签名证书（samlSigningCertificate，来自其元数据或在 SAML 2.0 页面上设置）进行验证，而绝不对照请求所携带的证书，未通过验证的签名会被拒绝。没有已注册证书时，签名会被记录为未验证，在此设置打开时视为未签名。"
   },
-  "saml2.unsolicitedSso|label": {
+  "saml2.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "身份提供方发起的登录"
   },
-  "saml2.unsolicitedSso|description": {
-    "en": "aff7c855f4363724",
-    "text": "/saml2/unsolicited[/{sp}] 是否发送未经请求的 Response（saml-profiles-2.0-os 第 4.1.5 节）——一次在此身份提供方处发起、面向未提出请求的服务提供方的登录：`providerId`（或路径段）指明该服务提供方，`shire` 指明其已注册的某个断言消费者服务，`target` 为 RelayState。在产品模式下，服务提供方必须已注册，地址必须是其元数据或条目所注册的地址之一，并且会像任何登录一样询问签发策略。断言不携带 InResponseTo，因此由服务提供方自行决定是否接受；对于其提供方只应被应答的领域，请关闭此设置。"
+  "saml2.idpInitiatedSso|description": {
+    "en": "9982a49370bf40a8",
+    "text": "/saml2/unsolicited[/{sp}]——以及用于 SAML 2.0 的 /launch/{app}——是否发送未经请求的 Response（saml-profiles-2.0-os 第 4.1.5 节）：即在此身份提供方处为一个并未请求的服务提供方发起的登录。默认关闭；应用条目上的 saml2IdpInitiatedSso 会仅针对该服务提供方覆盖此项。断言不带 InResponseTo，因此服务提供方无法区分发给它的 Response 和他人推入其浏览器的 Response；只应为预期身份提供方发起的登录的提供方开启此项。在产品模式下服务提供方必须已注册，地址必须是其元数据或其条目所注册的地址，并且与任何登录一样会询问签发策略。"
+  },
+  "saml2.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "服务提供方发起的登录"
+  },
+  "saml2.spInitiatedSso|description": {
+    "en": "92e8e438813d4044",
+    "text": "/saml2/sso 上的 <samlp:AuthnRequest>——即服务提供方发起的登录——是否得到应答。默认开启；应用条目上的 saml2SpInitiatedSso 会针对该服务提供方覆盖此项。关闭时，请求会得到 RequestDenied Response，该服务提供方只能通过身份提供方发起的登录让人登录。"
   },
   "saml2.defaultSingleLogoutService|label": {
     "en": "a81a00ce8c57908e",
@@ -4439,6 +4619,22 @@
     "en": "2e68718a26d4706c",
     "text": "在首次指明某个依赖方时——通过到达的 TARGET、获取的元数据文档或解析的工件——在 ou=applications 下为其创建一个应用条目。关闭时，浏览器配置文件仍可工作，而 /admin/saml11 保持为空，这是进行负载测试的人想要的，其他人都不想要。"
   },
+  "saml11.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "身份提供方发起的登录"
+  },
+  "saml11.idpInitiatedSso|description": {
+    "en": "37300a932ffca76b",
+    "text": "在这里发起的 SAML 1.1 登录是否得到应答：带 TARGET 而不带 shire 的 /saml11/sso/{rp}，以及用于 SAML 1.1 的 /launch/{app}。默认关闭；应用条目上的 saml11IdpInitiatedSso 会针对该依赖方覆盖此项。依赖方会收到一个它并未请求的 Response，它无法将其与他人推入其浏览器的 Response 区分开。"
+  },
+  "saml11.spInitiatedSso|label": {
+    "en": "bb4ad97c345a0b02",
+    "text": "服务提供方发起的登录"
+  },
+  "saml11.spInitiatedSso|description": {
+    "en": "f4b88ca2b7aa9fbc",
+    "text": "依赖方发起的 SAML 1.1 登录——Shibboleth 1.3 AuthnRequest 配置文件，即携带 `shire` 的请求——是否得到应答。默认开启；应用条目上的 saml11SpInitiatedSso 会覆盖此项。此类请求是一个普通的未签名 URL，因此关闭此项关上的是门，而不能证明是谁开的门。"
+  },
   "saml11.requestTtlMin|label": {
     "en": "f2c40fce66df42af",
     "text": "保留的流程有效期（分钟）"
@@ -4502,6 +4698,22 @@
   "wstrust.jwtCertificateHeader|description": {
     "en": "d75340dbe09a7542",
     "text": "此 STS 在 RequestSecurityTokenResponse 中返回的 JWT 是否指明签署它的密钥的证书链。SAML 断言在其自身的 XML Signature 中携带证书，不受影响。`x5u`（默认值）是证书链在本服务上的地址 `/pki/chain/{scope}/{sha256}.pem`，约一百字节；`x5c` 是内联的证书链，叶证书在前、服务根证书在后，base64 DER 编码，有数千字节；`both` 表示两者都有，`none` 表示两者都没有。无论哪种，它都是仅持有令牌的依赖方访问每个证书的 CRL 分发点、OCSP 响应方和 caIssuers 地址所需的信息。尚未在此领域的 JOSE 签发 CA 下获得认证的密钥，以及 HMAC 签名，两者都不会得到。RFC 7515 第 4.1.5 节要求 `x5u` 的获取使用 TLS：global.https 关闭时，该地址为 `http://`，严格的验证方将拒绝跟随它。JWE 头部从不带有它——本服务没有任何经过认证的密钥用于加密任何内容。可按领域设置。"
+  },
+  "wsfed.idpInitiatedSso|label": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "身份提供方发起的登录"
+  },
+  "wsfed.idpInitiatedSso|description": {
+    "en": "62f920d6663c4e4f",
+    "text": "/wsfed/initiate/{rp}——以及用于 WS-Federation 的 /launch/{app}——是否让某人登录到一个并未请求的依赖方，POST 到其已注册的 wsfedReplyUrl。默认关闭；应用条目上的 wsfedIdpInitiatedSso 会针对该依赖方覆盖此项。依赖方会收到一个它并未请求的响应，它无法将其与他人推入其浏览器的响应区分开。"
+  },
+  "wsfed.spInitiatedSso|label": {
+    "en": "705a2297f2762532",
+    "text": "依赖方发起的登录"
+  },
+  "wsfed.spInitiatedSso|description": {
+    "en": "d16076a2c90701e3",
+    "text": "/wsfed 上的 wsignin1.0——即依赖方发起的登录——是否得到应答。默认开启；应用条目上的 wsfedSpInitiatedSso 会覆盖此项。wsignin1.0 是一个未签名的 URL，因此关闭此项关上的是门，而不能证明是谁开的门。"
   },
   "wsfed.assertionLifetimeMin|label": {
     "en": "92ee206f116fd412",
@@ -4964,8 +5176,32 @@
     "text": "凭证证书头"
   },
   "oid4vci.credentialCertificateHeader|description": {
-    "en": "91cae7f95584d095",
-    "text": "签发的 dc+sd-jwt 或 jwt_vc_json 凭证是否指明签署它的密钥的证书链。SD-JWT VC 将 `x5c` 列为验证方查找颁发者密钥的方式之一，因此从不获取此颁发者元数据的钱包或验证方仍可依据信任锚检查签名。ldp_vc 不是 JWS，不受影响。此处（以及状态列表令牌上）的 x5c 按 HAIP 1.0 第 6.1.1 节的要求，在末尾省略信任锚即服务根证书；HAIP 也要求 x5c，因此 HAIP 领域会设置 x5c。`x5u`（默认值）是证书链在本服务上的地址 `/pki/chain/{scope}/{sha256}.pem`，约一百字节；`x5c` 是内联的证书链，叶证书在前、服务根证书在后，base64 DER，数 KB；`both` 表示两者都有，`none` 表示两者都没有。无论哪种，它都是仅持有令牌的依赖方访问每个证书的 CRL 分发点、OCSP 响应器和 caIssuers 地址所需的信息。尚未在此领域的 JOSE 签发 CA 下获得认证的密钥以及 HMAC 签名，两者都不会获得。RFC 7515 第 4.1.5 节要求 `x5u` 的获取使用 TLS：global.https 关闭时，地址为 `http://`，严格的验证方会拒绝跟随它。JWE 头从不带有此项——本服务没有任何经过认证的密钥用于加密。可按领域设置。"
+    "en": "250bb6d53e3ec407",
+    "text": "签发的 dc+sd-jwt 或 jwt_vc_json 凭证及其状态所指向的 Token Status List Token 是否携带签署它们的密钥的证书链。SD-JWT VC 将 `x5c` 列为验证方以 X.509 方式找到签发方密钥的途径，并未列出 `x5u`；而 Status List Token 不带可用于查找元数据的 `iss`，因此 `x5c`（默认）使从不获取本签发方元数据的钱包或验证方也能依据其信任锚核验两种签名。ldp_vc 不是 JWS，不受影响。此处的 x5c 按 HAIP 1.0 第 6.1.1 节的要求在末尾省略信任锚，即服务根证书；根证书是提供给钱包或验证方作为信任依据的证书（/pki）。 `x5u` 是证书链在本服务上的地址 `/pki/chain/{scope}/{sha256}.pem`，约一百字节；`x5c`（默认）是内联的证书链，叶证书在前、服务根证书在后，base64 DER 编码，数千字节；`both` 表示两者都有，`none` 表示都没有。无论哪种，它都是只持有令牌的依赖方访问每个证书的 CRL 分发点、OCSP 响应者和 caIssuers 地址所需的信息。尚未由本领域 JOSE 签发 CA 认证的密钥以及 HMAC 签名都不会获得任何一项。RFC 7515 第 4.1.5 节要求获取 `x5u` 时使用 TLS：关闭 global.https 时地址为 `http://`，严格的验证方会拒绝跟随。JWE 头部从不带有此项——本服务没有任何经认证的密钥用于加密。可按领域设置。"
+  },
+  "oid4vci.trustedListCertificateHeader|label": {
+    "en": "5e5d2b459a95e63d",
+    "text": "信任列表证书头"
+  },
+  "oid4vci.trustedListCertificateHeader|description": {
+    "en": "f0c703d8855dec84",
+    "text": "/oid4vci/trusted-list 处的信任列表是否携带签署它的密钥的证书链。只有当该链在 x5c 中且终止于钱包持有的列表运营方 CA 之下时，钱包才接受该列表，因此应为 `x5c`（默认）或 `both`：设为 `x5u` 或 `none` 时不提供该列表（503）。与凭证一样，末尾省略服务根证书。 `x5u` 是证书链在本服务上的地址 `/pki/chain/{scope}/{sha256}.pem`，约一百字节；`x5c`（默认）是内联的证书链，叶证书在前、服务根证书在后，base64 DER 编码，数千字节；`both` 表示两者都有，`none` 表示都没有。无论哪种，它都是只持有令牌的依赖方访问每个证书的 CRL 分发点、OCSP 响应者和 caIssuers 地址所需的信息。尚未由本领域 JOSE 签发 CA 认证的密钥以及 HMAC 签名都不会获得任何一项。RFC 7515 第 4.1.5 节要求获取 `x5u` 时使用 TLS：关闭 global.https 时地址为 `http://`，严格的验证方会拒绝跟随。JWE 头部从不带有此项——本服务没有任何经认证的密钥用于加密。可按领域设置。"
+  },
+  "oid4vci.trustedListTerritory|label": {
+    "en": "d7ee4e58b3ec36e2",
+    "text": "信任列表方案地域"
+  },
+  "oid4vci.trustedListTerritory|description": {
+    "en": "bd18dadc2bd7bd5e",
+    "text": "/oid4vci/trusted-list 处信任列表的 SchemeTerritory（ETSI TS 119 602 第 6.3.10 节）：ISO 3166-1 alpha-2 国家代码或 EU。留空（默认）则省略。"
+  },
+  "oid4vci.trustedListLifetimeH|label": {
+    "en": "53f55ba9239f4712",
+    "text": "信任列表有效期（小时）"
+  },
+  "oid4vci.trustedListLifetimeH|description": {
+    "en": "795e14da580935eb",
+    "text": "信任列表的 NextUpdate 距其 ListIssueDateTime 的时长（ETSI TS 119 602 第 6.3.15 节），也就是以下一个序列号重新签署的频率：距 NextUpdate 不足一小时（或此时长的十分之一）时，以及其内容发生变化时。"
   },
   "oid4vci.signedMetadataCertificateHeader|label": {
     "en": "74bcdd1bedcb52e5",
@@ -5580,8 +5816,8 @@
     "text": "领域"
   },
   "krb5.realm|description": {
-    "en": "b7b392027324a1ef",
-    "text": "此 KDC 服务的 Kerberos 领域。其小写形式即为域，默认服务域和 PAC 的域名都来源于此。在信任领域上，它是端口 88 路由该领域请求所依据的名称：必须在 krb5.enabled 之前设置，任何两个领域都不能共用它（也不能与 krb5.trustedRealm 相同），检查时不区分大小写。"
+    "en": "6542fd41442d0e39",
+    "text": "此 KDC 服务的 Kerberos 领域。其小写形式即为域，默认服务域和 PAC 的域名都来源于此。在信任领域上，它是端口 88 路由该领域请求所依据的名称：必须在 krb5.enabled 之前设置，任何两个领域都不能共用它（也不能与默认领域在开发模式下所应答的伙伴领域相同），检查时不区分大小写。"
   },
   "krb5.realm|restartReason": {
     "en": "f45bb3f394b52261",
@@ -5823,53 +6059,37 @@
     "en": "0ed445787254dab6",
     "text": "每个主体的 PAC 身份在启动时构建。但信任领域仍可携带此项：领域的主体数据库在其 Kerberos 开启时构建，并在此项更改时重建，因此启动时并未使用该领域的值"
   },
-  "krb5.trustedRealm|label": {
-    "en": "83fea03ad45f6f5a",
-    "text": "受信任领域"
+  "krb5.crossRealmClassicDelegation|label": {
+    "en": "d94511f367aa2305",
+    "text": "跨信任的经典委派"
   },
-  "krb5.trustedRealm|description": {
-    "en": "18a007649941a47a",
-    "text": "用于跨领域引荐的第二个领域。信任不是一个标志：它是由每个领域中的一个主体共同持有的共享密钥。"
+  "krb5.crossRealmClassicDelegation|description": {
+    "en": "f95686ad2d2053e6",
+    "text": "经典约束委派（前端上的 appAllowedToDelegateTo）是否可以跨越 Kerberos 信任。默认关闭：它在单个领域内定义，而基于资源的委派（目标上的 appAllowedToActOnBehalfOf，命名 SPN@REALM）才是跨越的那种。开启时，前端所在领域在引荐证据前检查自己的列表，目标所在领域将其视为已检查；两个领域都必须开启。"
   },
-  "krb5.trustedRealm|restartReason": {
-    "en": "b7b28d1b7d6102d8",
-    "text": "第二个领域及两者之间的信任在启动时构建"
+  "krb5.requireSidFilteringInProduct|label": {
+    "en": "f4bc0b8bb8e18123",
+    "text": "要求信任过滤 SID"
   },
-  "krb5.trustPassword|label": {
-    "en": "e2d7ee2fece4c004",
-    "text": "信任密码"
+  "krb5.requireSidFilteringInProduct|description": {
+    "en": "120e89b9d4c0b3e4",
+    "text": "在产品模式下，Kerberos 信任仅在过滤 SID 时使用（其 quarantined 属性，默认开启）。在领域上关闭此项，即运营者接受伙伴未经过滤的 SID。开发模式无论此项如何都使用每个信任。"
   },
-  "krb5.trustPassword|description": {
-    "en": "ef84f44ff5ee5b94",
-    "text": "两个领域为跨领域信任共同持有的共享密钥。"
+  "krb5.maxReferralHops|label": {
+    "en": "ae50da753613f751",
+    "text": "引荐路径最多跨越的信任数"
   },
-  "krb5.trustPassword|restartReason": {
-    "en": "de2c8d7ceb818a8d",
-    "text": "领域间密钥在启动时由它派生"
+  "krb5.maxReferralHops|description": {
+    "en": "e88d21d50bcd7495",
+    "text": "一条跨领域路径在此 KDC 拒绝继续引荐之前最多可以跨越多少个信任（KDC_ERR_PATH_NOT_ACCEPTED）。直接信任算一次跨越；路径每经过一个被引荐的领域再加一次。信任本身是领域目录中的记录（ou=kerberosTrusts），路径只会通过标记为可传递的记录构建。"
   },
-  "krb5.trustedDomainSid|label": {
-    "en": "e860150a3e9f46b7",
-    "text": "受信任域 SID"
+  "krb5.trustKeyGraceSeconds|label": {
+    "en": "e9a56607c04ebe5c",
+    "text": "轮换后信任密钥的宽限期（秒）"
   },
-  "krb5.trustedDomainSid|description": {
-    "en": "7c21d4f2a2b9776a",
-    "text": "另一个领域的域 SID。它有意与本领域的不同：跨信任的 SID 筛选关注的是 SID 属于哪个域。"
-  },
-  "krb5.trustedDomainSid|restartReason": {
-    "en": "fc2b22b6756dc2a3",
-    "text": "受信任领域的主体在启动时构建"
-  },
-  "krb5.trustedKrbtgtPassword|label": {
-    "en": "bb06a006346e82df",
-    "text": "受信任领域 krbtgt 密码"
-  },
-  "krb5.trustedKrbtgtPassword|description": {
-    "en": "fc3a521802800c0d",
-    "text": "受信任领域的 krbtgt 密码。"
-  },
-  "krb5.trustedKrbtgtPassword|restartReason": {
-    "en": "5288888535130e80",
-    "text": "该领域的 krbtgt 密钥在启动时由它派生"
+  "krb5.trustKeyGraceSeconds|description": {
+    "en": "0ee4268f63c3b908",
+    "text": "信任的“轮换密钥”所替换的传入领域间密钥在多长时间内仍可打开伙伴的票据——伙伴会继续用它加密，直到其自身一侧更改。零（默认值）表示 krb5.ticketLifetimeSeconds 加上 krb5.clockSkew，在检查该版本时读取。数字则表示相应的秒数：足以让伙伴的管理员更改其一侧。每个信任保留一个先前版本；超过宽限期后，使用该版本的票据会以 KRB_AP_ERR_BADKEYVER 被拒绝。"
   },
   "krb5.spnegoAuthentication|label": {
     "en": "0a014fa4b2685cd7",
@@ -6034,6 +6254,14 @@
   "ldap.workerDirectoryTimeoutMs|description": {
     "en": "bb7f7ca790c61dc0",
     "text": "当 ldap.workerDirectory=postgres-lru 时，请求工作线程在需要一个它未持有的目录条目时等待数据库的时长。工作线程在等待期间不做任何其他事情，因此这也是数据库中断可以拖住其某个请求的最长时间；超过后请求会被拒绝（503，STS-LDAP-0130）。"
+  },
+  "ldap.workerDirectoryBudgetMs|label": {
+    "en": "7af008dc55949ed0",
+    "text": "工作线程每个请求的目录预算（毫秒）"
+  },
+  "ldap.workerDirectoryBudgetMs|description": {
+    "en": "9b2485155e270c50",
+    "text": "在 ldap.workerDirectory=postgres-lru 时，一个 /admin 或 /admin-api 请求总共可以花多长时间等待同步目录读取。会超出预算的查询将被拒绝（503，STS-LDAP-0175）且不会发出；单个缓慢的查询若先超过其自身的超时，仍以 STS-LDAP-0130 失败。其他请求没有这样的预算。"
   },
   "ldap.sizeLimit|label": {
     "en": "8486449552f77864",
@@ -6732,8 +6960,8 @@
     "text": "提供 HTTP Basic"
   },
   "ssf.authBasic|description": {
-    "en": "5476ee40c62ce1bb",
-    "text": "SSF 端点是否在 OAuth 2.0 访问令牌之外还接受 HTTP Basic，并在 authorization_schemes 中发布它。在开发模式下，任何用户名配合除 \"invalid\" 以外的任何密码均可通过；在产品模式下，密码会依据该人员经过哈希的 userPassword 进行验证。无论哪种情况，Basic 主体都同时拥有两个范围，因为 Basic 不携带范围——因此希望对每个调用方都强制执行 ssf:read 和 ssf:write 的部署应关闭此项。"
+    "en": "34a196af42de2673",
+    "text": "SSF 端点是否在 OAuth 2.0 访问令牌之外还接受 HTTP Basic，并在 authorization_schemes 中发布它。在开发模式下，任何用户名配合除 \"invalid\" 以外的任何密码均可通过；在产品模式下，密码会依据该人员经过哈希的 userPassword 进行验证。无论哪种情况，Basic 主体都同时拥有两个范围，因为 Basic 不携带范围——因此希望对每个调用方都强制执行 ssf.read 和 ssf.manage 的部署应关闭此项。"
   },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
@@ -6832,16 +7060,16 @@
     "text": "读取流所需的范围"
   },
   "ssf.authScopeRead|description": {
-    "en": "b3c6248d5c2a3f09",
-    "text": "访问令牌读取流配置、其状态或轮询队列时必须携带的 OAuth 范围。在两个发现文档的 scopes_supported 中发布，与两个 SCIM 范围完全相同。"
+    "en": "6a58acf43f1ab901",
+    "text": "本服务为读取流配置、其状态或轮询队列的范围所起的名称。默认值是 CAEP Interoperability Profile 名称 ssf.read，即使重命名此项，它也始终被接受。两者都会在 scopes_supported 中发布。写入包含读取：携带写入范围的令牌也可以读取，声明了写入范围的客户端也可以获签读取范围。"
   },
   "ssf.authScopeWrite|label": {
     "en": "3cf63aebc7df37eb",
     "text": "更改流所需的范围"
   },
   "ssf.authScopeWrite|description": {
-    "en": "ea33015fd3877e72",
-    "text": "创建、更新或删除流，添加或删除主体，更改状态或请求验证事件所需的范围。读取范围不足以执行其中任何操作，这是本服务中除 SCIM 之外第一个两个范围所允许内容不同的地方。"
+    "en": "91d382139f5860a7",
+    "text": "本服务为创建、更新或删除流、添加或移除主体、更改状态或请求验证事件的范围所起的名称。默认值是 CAEP Interoperability Profile 名称 ssf.manage，即使重命名此项，它也始终被接受。写入包含读取，因此在此设置的名称也可以读取，同时设置在两个设置项上的名称也是如此。读取范围不足以执行其中任何写入。"
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",
@@ -7266,6 +7494,14 @@
   "risk.networkFailureThreshold|description": {
     "en": "b3df2afcc6f13f99",
     "text": "在过去一小时内，来自单个网络（风险评分分组所依据的地址前缀）有多少次被拒绝的密码会使来自该网络的每次登录都带上 network-failures 信号。同一 NAT 后的每个人共享此计数。"
+  },
+  "risk.networkSignupThreshold|label": {
+    "en": "c6993a7b6026347a",
+    "text": "一个网络在一小时内可创建多少账户后产生信号"
+  },
+  "risk.networkSignupThreshold|description": {
+    "en": "05e7067b3abe2a57",
+    "text": "来自同一网络（风险评分用于分组的地址前缀）的联合登录在最近一小时内最多可创建多少个账户，超过后会在来自该网络的每次登录上加上 network-signups 信号（#565）。消费者提供方让一个账户的成本与在提供方处开一个账户相同，因此这是对一个网络批量注册的限制。对于领域运营方允许列表上的地址不计数。"
   },
   "risk.signalFactors|label": {
     "en": "0a173b571b34160c",
@@ -9315,6 +9551,30 @@
     "en": "56fac41f63177db7",
     "text": "领导者在所有作业和信任领域中同时进行多少个定时或手动运行。时间槽是其间隔的倍数，因此每个领域中的每个每小时作业都在同一秒到期；每次运行在认领和工作期间都会占用一个到存储的连接，而 postgres 存储有四个。其余的运行会等待——人员发起的“立即运行”优先——并在运行结束时开始。无论设为多少，它都不会超过连接池容量减一，因此调度器不会从请求那里占走所有连接。"
   },
+  "scheduler.niceBusyThreshold|label": {
+    "en": "115ae6125244b30a",
+    "text": "繁忙工作线程的进行中请求数"
+  },
+  "scheduler.niceBusyThreshold|description": {
+    "en": "364260c11358e10c",
+    "text": "请求工作线程最多可有多少个进行中的请求，超过后耐心的计划集群运行会等待它。领导者把每次运行交给负载最低的工作线程；只要连该工作线程也有这么多请求，nice 大于 0 的作业的运行就会被暂缓。0 表示请求数从不暂缓运行。"
+  },
+  "scheduler.niceLagMs|label": {
+    "en": "c0b9af3bbe7cb091",
+    "text": "繁忙工作线程的事件循环延迟"
+  },
+  "scheduler.niceLagMs|description": {
+    "en": "0c0e3c66e7c2e010",
+    "text": "事件循环延迟（毫秒，取工作线程最近一次十秒报告的第 99 百分位），达到该值时请求工作线程被视为繁忙，耐心的计划集群运行会等待它。0 表示延迟从不暂缓运行。"
+  },
+  "scheduler.niceMaxDeferS|label": {
+    "en": "07484a01ef8c2875",
+    "text": "运行等待繁忙工作线程的最长时间"
+  },
+  "scheduler.niceMaxDeferS|description": {
+    "en": "22928f93b52af2b5",
+    "text": "在所有请求工作线程都繁忙时，任何计划集群运行最多被暂缓的秒数。作业按其份额（nice / 19）被暂缓，且从不超过其间隔的一半；超过后无论负载如何都会运行。手动运行、按需作业和 nice 为 0 的作业从不暂缓。0 表示不暂缓任何运行。"
+  },
   "attributeSources.hostPatterns|label": {
     "en": "04c2e7926c9351dd",
     "text": "属性源可指定的主机"
@@ -10416,24 +10676,24 @@
     "text": "主端口：空闲连接保持时长（秒）"
   },
   "listenerMain.keepAliveTimeoutS|description": {
-    "en": "d48d22c3af904939",
-    "text": "仅针对主端口监听器：http.keepAliveTimeoutS。-1（默认值）时遵循 http.keepAliveTimeoutS；其他任何值只对此监听器作出决定。HTTP 监听器为客户端的下一个请求保持空闲 HTTP/1.1 连接打开的时长（秒）（node 自己的默认值为 5）。保持连接就意味着不必重复 TLS 握手——以及客户端证书提示。客户端在一个连接上流水线发送的请求会按顺序作答。在负载均衡器后面时，请将其空闲超时设得高于此值。"
+    "en": "a895a3ca14fdb99f",
+    "text": "仅针对主端口监听器：http.keepAliveTimeoutS。-1（默认值）时遵循 http.keepAliveTimeoutS；其他任何值只对此监听器作出决定。HTTP 监听器为客户端的下一个请求保持空闲连接打开的时长（秒）（node 自己的默认值为 5）：即请求之间的 HTTP/1.1 连接，或没有任何帧经过的 HTTP/2 连接，后者随后会被平稳关闭。保持连接就意味着不必重复 TLS 握手——以及客户端证书提示。客户端在一个连接上流水线发送的请求会按顺序作答。在负载均衡器后面时，请将其空闲超时设得高于此值。"
   },
   "listenerDebugger.keepAliveTimeoutS|label": {
     "en": "76ffd87245c2ff28",
     "text": "协议调试器：空闲连接保持时长（秒）"
   },
   "listenerDebugger.keepAliveTimeoutS|description": {
-    "en": "c772bcacfb6260cb",
-    "text": "仅针对协议调试器监听器：http.keepAliveTimeoutS。-1（默认值）时遵循 http.keepAliveTimeoutS；其他任何值只对此监听器作出决定。HTTP 监听器为客户端的下一个请求保持空闲 HTTP/1.1 连接打开的时长（秒）（node 自己的默认值为 5）。保持连接就意味着不必重复 TLS 握手——以及客户端证书提示。客户端在一个连接上流水线发送的请求会按顺序作答。在负载均衡器后面时，请将其空闲超时设得高于此值。"
+    "en": "b63e0c1aae9ba585",
+    "text": "仅针对协议调试器监听器：http.keepAliveTimeoutS。-1（默认值）时遵循 http.keepAliveTimeoutS；其他任何值只对此监听器作出决定。HTTP 监听器为客户端的下一个请求保持空闲连接打开的时长（秒）（node 自己的默认值为 5）：即请求之间的 HTTP/1.1 连接，或没有任何帧经过的 HTTP/2 连接，后者随后会被平稳关闭。保持连接就意味着不必重复 TLS 握手——以及客户端证书提示。客户端在一个连接上流水线发送的请求会按顺序作答。在负载均衡器后面时，请将其空闲超时设得高于此值。"
   },
   "listenerRevocation.keepAliveTimeoutS|label": {
     "en": "19f295348b85fba9",
     "text": "吊销（明文 HTTP）：空闲连接保持时长（秒）"
   },
   "listenerRevocation.keepAliveTimeoutS|description": {
-    "en": "0f76cf6236976ee9",
-    "text": "仅针对吊销（明文 HTTP）监听器：http.keepAliveTimeoutS。-1（默认值）时遵循 http.keepAliveTimeoutS；其他任何值只对此监听器作出决定。HTTP 监听器为客户端的下一个请求保持空闲 HTTP/1.1 连接打开的时长（秒）（node 自己的默认值为 5）。保持连接就意味着不必重复 TLS 握手——以及客户端证书提示。客户端在一个连接上流水线发送的请求会按顺序作答。在负载均衡器后面时，请将其空闲超时设得高于此值。"
+    "en": "dec63c7b7c394604",
+    "text": "仅针对吊销（明文 HTTP）监听器：http.keepAliveTimeoutS。-1（默认值）时遵循 http.keepAliveTimeoutS；其他任何值只对此监听器作出决定。HTTP 监听器为客户端的下一个请求保持空闲连接打开的时长（秒）（node 自己的默认值为 5）：即请求之间的 HTTP/1.1 连接，或没有任何帧经过的 HTTP/2 连接，后者随后会被平稳关闭。保持连接就意味着不必重复 TLS 握手——以及客户端证书提示。客户端在一个连接上流水线发送的请求会按顺序作答。在负载均衡器后面时，请将其空闲超时设得高于此值。"
   },
   "listenerMain.headersTimeoutS|label": {
     "en": "8d17a4d86aca9ed5",
@@ -10506,5 +10766,37 @@
   "listenerRevocation.maxConnections|description": {
     "en": "33c1557318481882",
     "text": "仅针对吊销（明文 HTTP）监听器：http.maxConnections。-1（默认值）时遵循 http.maxConnections；其他任何值只对此监听器作出决定。HTTP 监听器同时保持打开的连接数；超出的连接在到达时即被关闭。默认值 0 表示无限制（node 自己的默认值）。"
+  },
+  "listenerMain.http2|label": {
+    "en": "d17df93a132abc21",
+    "text": "主端口：提供 HTTP/2"
+  },
+  "listenerMain.http2|description": {
+    "en": "4362a834f16b5b21",
+    "text": "仅针对主端口监听器：http.http2。inherit（默认值）时遵循 http.http2；其他任何值只对此监听器作出决定。当客户端在 TLS 握手中（ALPN）请求 HTTP/2 时，HTTPS 监听器是否提供它。开启（默认值）时，一个连接承载浏览器并行发出的所有请求；对于只请求 HTTP/1.1 的客户端，仍以 HTTP/1.1 应答。关闭时，每个连接都是 HTTP/1.1——适用于 HTTP/2 行为异常的客户端或负载均衡器。新连接立即遵循更改；已打开的连接保持其协议。纯 HTTP 的吊销监听器只支持 HTTP/1.1，因为没有可以提供它的握手。"
+  },
+  "listenerDebugger.http2|label": {
+    "en": "65d81b530197d8d7",
+    "text": "协议调试器：提供 HTTP/2"
+  },
+  "listenerDebugger.http2|description": {
+    "en": "95b887a7622f4880",
+    "text": "仅针对协议调试器监听器：http.http2。inherit（默认值）时遵循 http.http2；其他任何值只对此监听器作出决定。当客户端在 TLS 握手中（ALPN）请求 HTTP/2 时，HTTPS 监听器是否提供它。开启（默认值）时，一个连接承载浏览器并行发出的所有请求；对于只请求 HTTP/1.1 的客户端，仍以 HTTP/1.1 应答。关闭时，每个连接都是 HTTP/1.1——适用于 HTTP/2 行为异常的客户端或负载均衡器。新连接立即遵循更改；已打开的连接保持其协议。纯 HTTP 的吊销监听器只支持 HTTP/1.1，因为没有可以提供它的握手。"
+  },
+  "listenerMain.http2MaxConcurrentStreams|label": {
+    "en": "c152ce6a507a8348",
+    "text": "主端口：每个 HTTP/2 连接的流数"
+  },
+  "listenerMain.http2MaxConcurrentStreams|description": {
+    "en": "ba8c8cd0302f4417",
+    "text": "仅针对主端口监听器：http.http2MaxConcurrentStreams。-1（默认值）时遵循 http.http2MaxConcurrentStreams；其他任何值只对此监听器作出决定。一个 HTTP/2 连接可同时打开的请求数（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的流会被拒绝，直到有流结束。默认值 100 是 RFC 9113 建议的最小值；node 自身的值没有上限，这会让一个连接承载成千上万个连接的工作量。它限制一个连接上的工作量，正如 http.maxConnections 限制连接数。新连接会立即遵循更改，已打开的连接会收到新值。"
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|label": {
+    "en": "a6a26cb5d1740fb5",
+    "text": "协议调试器：每个 HTTP/2 连接的流数"
+  },
+  "listenerDebugger.http2MaxConcurrentStreams|description": {
+    "en": "94c52205da70930f",
+    "text": "仅针对协议调试器监听器：http.http2MaxConcurrentStreams。-1（默认值）时遵循 http.http2MaxConcurrentStreams；其他任何值只对此监听器作出决定。一个 HTTP/2 连接可同时打开的请求数（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的流会被拒绝，直到有流结束。默认值 100 是 RFC 9113 建议的最小值；node 自身的值没有上限，这会让一个连接承载成千上万个连接的工作量。它限制一个连接上的工作量，正如 http.maxConnections 限制连接数。新连接会立即遵循更改，已打开的连接会收到新值。"
   }
 }

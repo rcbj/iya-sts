@@ -399,6 +399,10 @@
     "en": "bb7f9df5947fbef1",
     "text": "APPLIKATIONENS EGEN STARTSIDA: dit en person går för att nå den, och därför där en inloggning till den börjar. Det är vad /portal/applications länkar varje rad till, och en post utan en ritas där utan länk snarare än med en gissad adress. DEKLARERAD och aldrig härledd — omdirigerings-URI:erna bredvid den är återanrop och inte ytterdörrar, så ingenting beräknar den från dem. Endast http eller https, eftersom den blir en href."
   },
+  "applications.schema.attributes.appLaunchProtocol.what": {
+    "en": "cbbe60c9e914df65",
+    "text": "VILKET PROTOKOLL /launch/{app} använder för den här applikationen när länken inte namnger något och inloggning initierad av identitetsleverantören är påslagen för fler än ett: saml2, saml11, wsfed eller oidc."
+  },
   "applications.schema.attributes.appCorsOrigin.what": {
     "en": "03bcebb131e7b340",
     "text": "DE URSPRUNG SOM EN WEBBSIDA FÅR ANROPA DEN HÄR TJÄNSTEN FRÅN FÖR DEN HÄR APPLIKATIONEN — `https://app.example.com`, ett exakt ursprung per värde, utan sökväg och utan jokertecken. En begäran som namnger den här applikationen som sin klient (ett client_id, en Basic-autentiseringsuppgift, ett klientintygande eller en åtkomsttoken utfärdad till den) besvaras med Access-Control-Allow-Origin bara när dess Origin finns listad här; en begäran som inte namnger någon klient alls — discovery, en JWKS, ett DID-dokument, en CORS-preflight — besvaras för ett ursprung som finns listat på NÅGON applikation i sfären. TOMT TILLÅTER INGET TREDJEPARTSURSPRUNG, i båda lägena. Den här tjänstens egna ursprung (dess lyssnare, global.publicBaseUrl, den inbäddade debuggern och global.corsOrigins) behöver aldrig listas. Normaliseras när det skrivs: schema och värd i gemener, en standardport tas bort."
@@ -472,8 +476,8 @@
     "text": "Det Trust Anchor som dess kedja slutade vid."
   },
   "applications.schema.attributes.oauthClientId.what": {
-    "en": "1e1a912a88773d34",
-    "text": "CLIENT_ID, och identifierarattributet för tre familjer: en förlitande part i OpenID Connect ÄR en OAuth-klient, och en plånbok som hämtar ett intyg hos OpenID4VCI-utfärdaren autentiserar sig som en, så alla tre deklarerar sitt namn här snarare än i tre attribut som skulle vara tre stavningar av ett faktum. Vanligtvis lika med appIdentifier, vilket är vad en protokollobservation skriver; ett ANDRA värde är ett client_id som den här applikationen också svarar på — ett id per miljö — och är varför detta ackumuleras snarare än tilldelas. Saknas på en post för vilken ingen OAuth-familj har deklarerats."
+    "en": "be5cd98b933adf94",
+    "text": "CLIENT_ID, och identifierarattributet för tre familjer: en förlitande part i OpenID Connect ÄR en OAuth-klient, och en plånbok som hämtar ett intyg hos OpenID4VCI-utfärdaren autentiserar sig som en, så alla tre deklarerar sitt namn här snarare än i tre attribut som skulle vara tre stavningar av ett faktum. Vanligtvis lika med appIdentifier, vilket är vad en protokollobservation skriver och vad en skapelse skriver när detta lämnas tomt (#393); ett ANDRA värde är ett client_id som den här applikationen också svarar på — ett id per miljö — och är varför detta ackumuleras snarare än tilldelas. En lista som skrivs vid skapandet är hela listan. Saknas på en post för vilken ingen OAuth-familj har deklarerats."
   },
   "applications.schema.attributes.oauthAudience.what": {
     "en": "85845f64442f584e",
@@ -536,8 +540,8 @@
     "text": "Omfång som den här applikationen har BETT OM, ackumulerade allteftersom den ber. OBSERVERADE, aldrig deklarerade: ingenting tillåts eller avvisas utifrån dem. Vad applikationen får utfärdas är oauthAllowedScope."
   },
   "applications.schema.attributes.oauthAllowedScope.what": {
-    "en": "318365370d864543",
-    "text": "DE OMFÅNG SOM DEN HÄR KLIENTEN FÅR UTFÄRDAS — RFC 7591 avsnitt 2:s `scope`, \"the list that the client can use when requesting access tokens\". En omfångstoken per värde. Tre slags omfång läser det olika.\n\n**Den här tjänstens egna skyddade omfång** — admin:read och admin:write (/admin-api), SCIM-omfången (scim.scopeRead, scim.scopeWrite), Shared Signals-omfången (ssf.authScopeRead, ssf.authScopeWrite) och debuggerbehörigheten — utfärdas ENDAST till en klient som listar dem, I BÅDA LÄGENA, och resursservern bakom var och en frågar igen vid varje anrop, så att ta bort ett värde här skär av redan utfärdade tokens. En RFC 7591-registrering får inte deklarera dem; en administratör gör det, här.\n\n**Varje annat omfång** utfärdas i produktläge bara när det listas här — eller, när ingenting listas, när det ingår i standarduppsättningen: openid, profile, email, address, phone, offline_access och den här sfärens OpenID4VCI-omfång för intyg. I utveckling utfärdas vilket omfång som helst.\n\n**Ett omfång som namnger en applikation eller en delegerad behörighet** behåller sina egna regler (målgruppen, och oauthDelegatedPermission) och behöver inte listas.\n\nEtt omfång utanför listan avvisas med invalid_scope vid auktoriserings- och tokenslutpunkterna (RFC 6749 avsnitt 3.3), och tas bort vid en förnyelse eller ett tokenutbyte. Skilt från oauthScope, som bara är vad klienten har bett om."
+    "en": "f61c0b99f0e3941f",
+    "text": "DE OMFÅNG SOM DEN HÄR KLIENTEN FÅR UTFÄRDAS — RFC 7591 avsnitt 2:s `scope`, \"the list that the client can use when requesting access tokens\". En omfångstoken per värde. Tre slags omfång läser det olika.\n\n**Den här tjänstens egna skyddade omfång** — admin:read och admin:write (/admin-api), SCIM-omfången (scim.scopeRead, scim.scopeWrite), Shared Signals-omfången (ssf.authScopeRead, ssf.authScopeWrite, och alltid ssf.read och ssf.manage) och debuggerbehörigheten — utfärdas ENDAST till en klient som listar dem, I BÅDA LÄGENA. För Shared Signals inkluderar skrivning läsning: att lista ett skrivomfång ger också läsomfånget, och att bara lista ett läsomfång ger inte ett skrivomfång. Resursservern bakom var och en frågar igen vid varje anrop, så att ta bort ett värde här skär av redan utfärdade tokens. En RFC 7591-registrering får inte deklarera dem; en administratör gör det, här.\n\n**Varje annat omfång** utfärdas i produktläge bara när det listas här — eller, när ingenting listas, när det ingår i standarduppsättningen: openid, profile, email, address, phone, offline_access och den här sfärens OpenID4VCI-omfång för intyg. I utveckling utfärdas vilket omfång som helst.\n\n**Ett omfång som namnger en applikation eller en delegerad behörighet** behåller sina egna regler (målgruppen, och oauthDelegatedPermission) och behöver inte listas.\n\nEtt omfång utanför listan avvisas med invalid_scope vid auktoriserings- och tokenslutpunkterna (RFC 6749 avsnitt 3.3), och tas bort vid en förnyelse eller ett tokenutbyte. Skilt från oauthScope, som bara är vad klienten har bett om."
   },
   "applications.schema.attributes.oauthPermissionBaseUri.what": {
     "en": "a2b16552f308a9b4",
@@ -1019,6 +1023,18 @@
     "en": "4a6e20c0380356cf",
     "text": "TRUE eller FALSE: återkallar utloggning den här klientens uppdateringstoken, vilket åsidosätter oauth2.revokeRefreshOnLogout. FALSE är det intressanta fallet och skälet till att detta är värt att ha per klient — en klient som kan uppdatera sig tillbaka efter en utloggning är en verklig brist i verkliga driftsättningar, och detta gör den reproducerbar för EN klient medan resten beter sig som vanligt."
   },
+  "applications.schema.attributes.oauthThirdPartyInitiatedLogin.what": {
+    "en": "fff2d88eaeaf4e44",
+    "text": "TRUE eller FALSE: får /launch/{app} — och användarportalens länk Logga in — skicka en person till den här klientens oauthInitiateLoginUri (OpenID Connect Core avsnitt 4), vilket åsidosätter oauth2.thirdPartyInitiatedLogin."
+  },
+  "applications.schema.attributes.oauthSpInitiatedSso.what": {
+    "en": "50ec3dfde523d275",
+    "text": "TRUE eller FALSE: besvarar /oauth2/authorize den här klienten när den inte just har startats, vilket åsidosätter oauth2.spInitiatedSso. FALSE besvarar bara en auktoriseringsbegäran som följer på en /launch av den här klienten i samma session inom oauth2.launchWindowS, en gång per start, och avvisar alla andra med unauthorized_client."
+  },
+  "applications.schema.attributes.oauthInitiateLoginUri.what": {
+    "en": "bee89c2346a1fa39",
+    "text": "DÄR EN INLOGGNING TILL DEN HÄR KLIENTEN STARTAS AV EN TREDJE PART: initiate_login_uri i OpenID Connect Core avsnitt 4, dit /launch/{app} och användarportalen skickar en person med iss, login_hint och target_link_uri. Endast https, utan fragment."
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "OM ETT TOKENUTBYTE ENLIGT RFC 8693 SOM UTFÖRS AV DEN HÄR KLIENTEN FÅR EN `refresh_token` BREDVID DEN UTBYTTA ÅTKOMSTTOKEN, vilket åsidosätter oauth2.tokenExchangeRefreshToken för enbart den. Ett av tre ord: `never`, `when-requested` (det tjänstevida standardvärdet — klienten ber om en med RFC 8693 avsnitt 2.1:s `requested_token_type` och får en bara om den gjorde det) eller `always`.\n\nDET LÄSES PÅ KLIENTEN SOM UTFÖR UTBYTET och inte på målgruppen, eftersom uppdateringstoken lämnas till klienten: det är den partens inloggningsuppgift att förvara, återkalla och till slut lösa in. Det subjekt som utbytet GÄLLER har ingen post alls i det här registret i det intressanta fallet, eftersom hela poängen med ett utbyte är en subject_token från någon annanstans.\n\n**DET GÄLLER FAMILJERNA OAUTH 2.0 OCH OPENID CONNECT OCH INGEN ANNAN, och till skillnad från varje annat attribut här UPPRÄTTHÅLLS det.** En post som inte är deklarerad för någon av dem avvisas av båda konsolens dörrar och av hanterings-API:t, som anger vilken familj som ska markeras först — eftersom ett värde här är en policy för tokenslutpunkten, och en post som ingen tokenbegäran någonsin kan ange skulle bära den som om den vore i kraft. Blocket ovanför den här raden argumenterar för det. `ldapmodify` når det här attributet som alla andra och kontrolleras inte.\n\nETT VÄRDE SOM INTE ÄR ETT AV DE TRE ORDEN ÄR INTE ETT FEL VID SKRIVNING OCH ÄR INTE TYST: settingFor() varnar med angivande av posten, attributet och vad det innehåller, och den tjänstevida inställningen avgör — samma tretillståndsärlighet som varje annan åsidosättning på den här posten får."
@@ -1143,6 +1159,22 @@
     "en": "1887a455954e9b4f",
     "text": "Hur länge en SAML 1.1-artefakt som skapats för den här förlitande parten kan lösas upp, i sekunder, vilket åsidosätter saml11.artifactTtlS. Browser/Artifact-profilens SOAP-tjänst är det som löser in den, en gång."
   },
+  "applications.schema.attributes.saml2IdpInitiatedSso.what": {
+    "en": "00f7ceacfb9304e7",
+    "text": "TRUE eller FALSE: får den här identitetsleverantören STARTA en inloggning till den här tjänsteleverantören — ett obegärt Response (saml-profiles-2.0-os avsnitt 4.1.5) från /saml2/unsolicited eller /launch/{app} — vilket åsidosätter saml2.idpInitiatedSso. TRUE endast för en tjänsteleverantör som förväntar sig ett: Response bär ingen InResponseTo, så den kan inte skilja ett som skickades till den från ett som trycktes in i dess webbläsare."
+  },
+  "applications.schema.attributes.saml2SpInitiatedSso.what": {
+    "en": "1cab33aadc246c17",
+    "text": "TRUE eller FALSE: besvaras den här tjänsteleverantörens egen <samlp:AuthnRequest>, vilket åsidosätter saml2.spInitiatedSso. FALSE besvarar den med RequestDenied och lämnar inloggning initierad av identitetsleverantören som den enda vägen in."
+  },
+  "applications.schema.attributes.saml11IdpInitiatedSso.what": {
+    "en": "6081871f6aca6a2f",
+    "text": "TRUE eller FALSE: får en SAML 1.1-inloggning till den här förlitande parten STARTA här — /saml11/sso/{rp} med ett TARGET och ingen shire, eller /launch/{app} — vilket åsidosätter saml11.idpInitiatedSso."
+  },
+  "applications.schema.attributes.saml11SpInitiatedSso.what": {
+    "en": "2376052fceb025ab",
+    "text": "TRUE eller FALSE: besvaras en SAML 1.1-inloggning som den här förlitande parten startat — Shibboleth 1.3:s AuthnRequest-profil, en begäran som bär shire — vilket åsidosätter saml11.spInitiatedSso. Begäran är en osignerad URL, så FALSE stänger dörren snarare än bevisar vem som öppnade den."
+  },
   "applications.schema.attributes.samlAuthnRequestSigned.what": {
     "en": "2150507140b66231",
     "text": "TRUE när den senaste AuthnRequest från den här tjänsteleverantören bar en signatur — en inbäddad ds:Signature på POST-bindningen, eller Signature-parametern enligt avsnitt 3.4.4.1 på Redirect-bindningen. TILLDELAT snarare än ackumulerat, eftersom det är ett faktum om den senaste begäran och en historik av booleska värden inte skulle säga någonting."
@@ -1154,6 +1186,14 @@
   "applications.schema.attributes.wsfedReplyUrl.what": {
     "en": "1d6376f1797ef43c",
     "text": "DIT ETT INLOGGNINGSSVAR POSTAS TILLBAKA för den här applikationen: `wreply` enligt avsnitt 13.2.1, WS-Federations omdirigerings-URI. Det skrevs i samlAssertionConsumerService fram till 2026-08-25, vilket lade en wreply i det attribut som SAML-sidorna läser för en assertion consumer service och för reservvägen för Single Logout — ett attribut som höll två protokolls returadresser, så att en WS-Federation-applikation verkade ha en SAML-ACS som den aldrig hade angett. Två fakta, två attribut. Precis som SAML-attributet bredvid KONTROLLERAS detta ENDAST I PRODUKTLÄGE: utvecklingsläget avvisar ingen wreply, eftersom en tjänst som avvisade skulle ta bort ett testfall snarare än lägga till ett; produktläget postar bara till en adress på den här listan och en observation lägger aldrig till någon. En wreply som utvecklingsläget registrerat markeras i appReturnAddressObserved och produktläget avvisar den tills den bekräftas; värden som registrerades innan den markeringen fanns har ingen och behöver fortfarande granskas innan en sfär byts till produktläge."
+  },
+  "applications.schema.attributes.wsfedIdpInitiatedSso.what": {
+    "en": "af8a13f7621cb3a1",
+    "text": "TRUE eller FALSE: får den här identitetsleverantören STARTA en inloggning till den här förlitande parten — /wsfed/initiate/{rp} eller /launch/{app}, med POST till dess registrerade wsfedReplyUrl — vilket åsidosätter wsfed.idpInitiatedSso."
+  },
+  "applications.schema.attributes.wsfedSpInitiatedSso.what": {
+    "en": "d199b15200f6e9de",
+    "text": "TRUE eller FALSE: besvaras den här förlitande partens egen wsignin1.0, vilket åsidosätter wsfed.spInitiatedSso. En wsignin1.0 är en osignerad URL, så FALSE stänger dörren snarare än bevisar vem som öppnade den."
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
     "en": "493ac4121c2076ca",
@@ -1178,6 +1218,14 @@
   "applications.schema.attributes.krb5TrustedForDelegation.what": {
     "en": "3b66e9eeaaad2290",
     "text": "TRUE eller FALSE, standard FALSE: den här Kerberos-tjänsten är BETRODD FÖR DELEGERING — obegränsad (Active Directorys TRUSTED_FOR_DELEGATION). Dess tjänstebiljetter bär ok-as-delegate, vilket säger till en klient att den får vidarebefordra sin TGT hit; den som har en vidarebefordrad TGT kan agera som den personen var som helst. En skyddad persons TGT är aldrig vidarebefordringsbar, så den vidarebefordras aldrig hur detta än är satt. Begränsad delegering (appAllowedToDelegateTo, appAllowedToActOnBehalfOf) är det säkrare alternativet."
+  },
+  "applications.schema.attributes.krb5S4uSelfRealm.what": {
+    "en": "1549deb6e1db2854",
+    "text": "DE KERBEROS-SFÄRER VARS ANVÄNDARE DEN HÄR TJÄNSTEN FÅR HÄMTA S4U2SELF-BILJETTER FÖR, utöver sin egen. TOMT BETYDER ENDAST DESS EGEN SFÄR. Ett värde måste vara en sfär vars biljetter den här sfärens förtroenden accepterar — ett förtroende med en inkommande nyckel, eller en sfär som ett transitivt förtroende dirigerar — och kontrolleras vid skrivningen."
+  },
+  "applications.schema.attributes.krb5ForeignTgtDelegation.what": {
+    "en": "8f20493c35397916",
+    "text": "`inherit` (standard) eller `deny`: vad den här tjänsten säger om en TGT som delegeras till den ÖVER ETT FÖRTROENDE — ok-as-delegate på dess biljetter för en användare i en annan sfär. `inherit` följer förtroendets attribut ([MS-KILE] 3.3.5.7.5); `deny` vägrar den vad de än säger. Den kan bara inskränka: ingenting här aktiverar det som förtroendet inte aktiverar."
   },
   "applications.schema.attributes.krb5ServiceKeys.what": {
     "en": "35f24692c1cc40a5",

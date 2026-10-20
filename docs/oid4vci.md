@@ -67,11 +67,41 @@ one issuer.
 the composites are allowed and are signed in the worker pool). `ldp_vc` is
 signed with the realm's BBS key, which is published at `/bbs/keys/{kid}` and in
 the DID document, and which rotates like any other signing key. A credential
-names the certificate chain of its signing key in `x5u` or `x5c`, as
-`oid4vci.credentialCertificateHeader` says. The `x5c` of a credential and of
-a Status List Token stops short of the service Root, the trust anchor, which
-HAIP 1.0 sections 6.1 and 6.1.1 forbid there; a HAIP deployment sets the
-header to `x5c`, because HAIP's verifier holds only the anchor.
+and the Token Status List Token its status names carry the certificate chain
+of their signing key inline, in `x5c` — `oid4vci.credentialCertificateHeader`,
+`x5c` by default since 2026-10-16. SD-JWT VC finds an issuer's key by `x5c`,
+by JWT VC Issuer Metadata or by a DID, and never by `x5u`; a Status List
+Token carries no `iss` to look metadata up by; and HAIP 1.0 requires `x5c` on
+both. Until then the default was `x5u`, and a wallet that does not follow it
+(eudi-dev's) could check neither the status list nor, without the issuer's
+metadata, the credential. The `x5c` stops short of the service Root, the
+trust anchor, which HAIP 1.0 sections 6.1 and 6.1.1 forbid there: a wallet or
+verifier is given the Root to trust (`/pki`), and the chain in the token
+reaches it.
+
+**The trusted list** (`GET /oid4vci/trusted-list`, 2026-10-17). A wallet in
+the EUDI ecosystem takes its anchors from a signed *List of Trusted Entities*
+(ETSI TS 119 602), not from a bare certificate. This is one, in the
+standard's JSON binding: a compact JWS (`application/jwt`) signed ES256 where
+that key is certified (else RS256), with the signer's chain in `x5c`
+(`oid4vci.trustedListCertificateHeader`, `x5c` by default, Root left off) and
+`x5t#S256`. It names this credential issuer as its one trusted entity, with
+an `…/Issuance` and an `…/Revocation` service each listing the service Root
+— the certificate a credential's `x5c` and its Status List Token's both end
+under. The scheme's URIs (list type, status determination approach,
+community rules, service types) are under the list's own URL, because none
+of the standard's Annexes D to H is a list of credential issuers. It carries
+`ListIssueDateTime`, `NextUpdate` (`oid4vci.trustedListLifetimeH`, 24 h),
+`DistributionPoints`, a pointer to itself and `SchemeTerritory` where
+`oid4vci.trustedListTerritory` is set. It is **kept**, one row per realm
+(`vc_trusted_list.state`), and signed again with the next
+`LoTESequenceNumber` only when what it says changes or `NextUpdate` is near.
+
+A wallet still has to be told once to trust the list's **operator**: the
+service Root, as a list-operator CA. For eudi-dev that is `eudi trust add-ca
+--list trusted-list-ca --ca root.pem` (or `wallet serve --trusted-list-ca`),
+after which `eudi trust add-list https://<host>/oid4vci/trusted-list` (or the
+decoder's trusted-list URL) anchors the credentials and their status lists.
 
 ### What a credential says
 
@@ -119,10 +149,39 @@ means the whole configured set.
   beside it, and a link that opens it in a wallet on the same device. It is
   the [account API](account-api.md)'s two operations, in both modes:
   * `GET /account-api/credentials/offerable`: the configurations this realm's
-    issuer offers, named as its metadata names them, the two modes, and how
-    long an offer lives;
+    issuer offers, named as its metadata names them, the two modes, how
+    long an offer lives, `batchSize` (`oid4vci.batchSize`), and `issued` —
+    the credentials this realm still records as issued to the person, ONE
+    ENTRY PER ISSUANCE, newest first: with batch issuance on, one issuance
+    gives the wallet several copies, each bound to a different key of the
+    wallet's so that verifiers cannot link its presentations by the key, and
+    they are listed together in the entry's `copies` (each with its position,
+    the RFC 7638 thumbprint of the key it is bound to — and for `ldp_vc` the
+    holder's `did:jwk` — and its status-list index). Each entry has its state
+    (`valid`, `suspended`, `revoked`, `removed`, `signed-out`, `expired`, or
+    `mixed` with `counts` when its copies differ) and
+    the last event their wallet sent to the Notification Endpoint with the
+    Credential Response's `notification_id` (`credential_accepted`,
+    `credential_failure`, `credential_deleted`; it changes nothing else),
+    twenty issuances to a page (`page`, and `paging` in the answer);
+  * `POST /account-api/credentials/remove` with `{ "id": "…" }` (the page's
+    **Remove**): an issuance's `id` removes every copy of it, a copy's `id`
+    removes that copy alone. Each copy removed is revoked — its Token
+    Status List entry INVALID, its issued-register row revoked, refused at
+    wallet sign-in — and one CAEP `credential-change` `revoke` is sent. **It is not
+    deleted from the wallet**: OpenID4VP is a verifier asking for a
+    presentation and OpenID4VCI's notification runs from wallet to issuer,
+    so neither lets an issuer delete a credential from a wallet, and the
+    page tells the person to delete it there. An id that is not one of the
+    caller's is refused (`STS-PORTAL-0591`);
   * `POST /account-api/credentials/offers` with `{ "configuration": "…",
-    "mode": "cross-device" | "deferred" }`: a pre-authorized offer **for the
+    "mode": "cross-device" | "deferred", "signingAlg": "…" }` (`signingAlg`
+    optional: one of the configuration's `signingAlgs` from the GET — every
+    algorithm `oid4vci.credentialSigningAlgorithm` allows for `dc+sd-jwt`
+    and `jwt_vc_json`, the post-quantum ML-DSA, SLH-DSA and composite drafts
+    among them; the configured one and RS256 for a DID-named configuration;
+    `bbs-2023` for `ldp_vc` — left out, the configured default; the realm's
+    Status List Token keeps the configured one): a pre-authorized offer **for the
     token's person** (nobody else can be named), answered once — the
     Credential Offer, the offer by value (`openid-credential-offer://?credential_offer=…`)
     and by reference (`credential_offer_uri`), the configured web wallet's
@@ -192,10 +251,11 @@ means the whole configured set.
   mandatory. A request is never decompressed, so the request side
   advertises no `zip`.
 * **Deferred issuance.** A credential request on the access token from a
-  deferred offer is answered with a `transaction_id` instead of a credential.
-  `POST /oid4vci/deferred_credential` answers `issuance_pending` until
-  `oid4vci.deferredReadyMs` have passed, with the `interval` set by
-  `oid4vci.deferredIntervalS`.
+  deferred offer is answered `202` with a `transaction_id` and an
+  `interval` instead of a credential. `POST /oid4vci/deferred_credential`,
+  with the same access token, answers `202` with the same `transaction_id`
+  until `oid4vci.deferredReadyMs` have passed, and then the credential; the
+  `interval` is `oid4vci.deferredIntervalS`.
 * **Notifications.** `POST /oid4vci/notification` takes the wallet's
   `notification_id` events. Two Admin Read operations read them back:
   `GET /admin-api/oid4vci/notifications?id=<notification_id>` answers the
@@ -227,7 +287,8 @@ the credential's own status and from whether an administrator revoked it, so
 every page that shows it agrees. Four things change it: a suspension,
 reinstatement or revocation on the Credential status tab at
 `/admin/vc#vc-tab-status`, a revocation or restore on
-`/admin/tokens`, a global sign-out, and a disabled account.
+`/admin/tokens`, an administrator's global sign-out, and a disabled account.
+The person's own Global logout on `/logout` changes none of them.
 
 `oid4vci.statusListTtlS` is how long a verifier may keep a list (it is also the
 HTTP `max-age`), and `oid4vci.statusListLifetimeS` how long the list says it is
@@ -343,7 +404,7 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.txCodeLength` | `OID4VCI_TX_CODE_LENGTH` | `5` | yes | Digits in the Transaction Code. |
 | `oid4vci.txCodeMaxAttempts` | `OID4VCI_TX_CODE_MAX_ATTEMPTS` | `5` | yes | In product mode, how many wrong Transaction Codes a pre-authorized code survives. |
 | `oid4vci.batchSize` | `OID4VCI_BATCH_SIZE` | `4` | yes | How many proofs, and so credentials, one request may carry. |
-| `oid4vci.deferredReadyMs` | `OID4VCI_DEFERRED_READY_MS` | `4000` | yes | How long a deferred credential stays `issuance_pending`. |
+| `oid4vci.deferredReadyMs` | `OID4VCI_DEFERRED_READY_MS` | `4000` | yes | How long a deferred credential stays pending (answered `202`). |
 | `oid4vci.deferredIntervalS` | `OID4VCI_DEFERRED_INTERVAL_S` | `2` | yes | The `interval` a wallet is asked to wait between deferred polls. |
 | `oid4vci.requestEncryptionRequired` | `OID4VCI_REQUEST_ENCRYPTION_REQUIRED` | `false` | yes | Refuse a credential request that is not a JWE. |
 | `oid4vci.requestEncryptionKeyBits` | `OID4VCI_REQUEST_ENCRYPTION_KEY_BITS` | `2048` | yes | The RSA modulus of the realm's request-encryption key; reaches keys made after the change. |
@@ -351,9 +412,12 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.responseEncryptionEncValues` | `OID4VCI_RESPONSE_ENCRYPTION_ENC_VALUES` | `A128GCM,A256GCM` | yes | Content encryption algorithms offered for responses. |
 | `oid4vci.responseEncryptionRequired` | `OID4VCI_RESPONSE_ENCRYPTION_REQUIRED` | `false` | yes | Refuse a request that does not ask for an encrypted response. |
 | `oid4vci.credentialLifetimeS` | `OID4VCI_CREDENTIAL_LIFETIME_S` | `2592000` | yes | How long every minted credential is valid (thirty days). |
-| `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm for `dc+sd-jwt` and `jwt_vc_json` credentials, the status lists and the Domain Linkage Credential. |
-| `oid4vci.credentialCertificateHeader` | `OID4VCI_CREDENTIAL_CERTIFICATE_HEADER` | `x5u` | yes | Whether a credential names its signing key's chain: `x5u`, `x5c`, `both` or `none`. |
+| `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm for `dc+sd-jwt` and `jwt_vc_json` credentials, the status lists and the Domain Linkage Credential — the default a `/portal/wallet` offer may change for its own credential. |
+| `oid4vci.credentialCertificateHeader` | `OID4VCI_CREDENTIAL_CERTIFICATE_HEADER` | `x5c` | yes | Whether a credential and its Status List Token carry their signing key's chain: `x5c` (inline, without the Root), `x5u`, `both` or `none`. |
 | `oid4vci.signedMetadataCertificateHeader` | `OID4VCI_SIGNED_METADATA_CERTIFICATE_HEADER` | `x5u` | yes | The same for the metadata's `signed_metadata`. |
+| `oid4vci.trustedListCertificateHeader` | `OID4VCI_TRUSTED_LIST_CERTIFICATE_HEADER` | `x5c` | yes | Whether the trusted list carries its signer's chain; `x5c` or `both`, or the list is not served. |
+| `oid4vci.trustedListTerritory` | `OID4VCI_TRUSTED_LIST_TERRITORY` | *(empty)* | yes | The trusted list's `SchemeTerritory` (ISO 3166-1 alpha-2, or `EU`); empty leaves it out. |
+| `oid4vci.trustedListLifetimeH` | `OID4VCI_TRUSTED_LIST_LIFETIME_H` | `24` | yes | Hours from the list's issue to its `NextUpdate`. |
 | `oid4vci.proofIatWindowS` | `OID4VCI_PROOF_IAT_WINDOW_S` | `600` | yes | How far a proof's `iat` may be from now, either way. |
 | `oid4vci.cNonceTtlS` | `OID4VCI_C_NONCE_TTL_S` | `300` | yes | How long a `c_nonce` may be quoted in a proof. |
 | `oid4vci.cNonceCacheSize` | `OID4VCI_C_NONCE_CACHE_SIZE` | `10000` | yes | How many `c_nonce` values a realm holds; past it the oldest is dropped. |
@@ -403,8 +467,9 @@ See [Configuration](configuration.md) for how a value is resolved. Every
 * **One status index per credential, and the bit is computed.** The same index
   in every list, and a status derived from the credential's own entry and its
   revocation mark, means `/admin/tokens`, the Credential status tab at
-  `/admin/vc#vc-tab-status`, a global sign-out
-  and the sign-in door cannot disagree.
+  `/admin/vc#vc-tab-status`, an administrator's global sign-out
+  and the sign-in door cannot disagree. The person's own Global logout
+  on `/logout` leaves the credential's status as it was.
 * **The sign-in register is written at issuance, where the facts are known.**
   In development the credential endpoint accepts tokens it did not issue, so a
   credential's `sub` could name anybody. Only the realm's own record of a
@@ -452,7 +517,6 @@ See [Configuration](configuration.md) for how a value is resolved. Every
   endpoints issue the access token
 * [OAuth security profiles](oauth-security.md), for DPoP
 * [PKI](pki.md), for the certificate chains `x5u` and `x5c` name
-* [Signing out](signing-out.md), for the global sign-out that disowns
-  credentials
+* [Signing out](signing-out.md), for which sign-out disowns a credential
 * [Trust realms](trust-realms.md)
 * [What is not checked](what-is-not-checked.md)

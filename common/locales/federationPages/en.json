@@ -33,5 +33,10 @@
   "index.configure": "Configure relationships in the console",
   "index.signInScreen": "The sign-in screen",
   "index.buttonsOn": "The sign-in screen offers every usable partner as a button.",
-  "index.buttonsOff": "federation.loginButtons is off, so the sign-in screen offers no partner."
+  "index.buttonsOff": "federation.loginButtons is off, so the sign-in screen offers no partner.",
+  "profile.title": "A few details",
+  "profile.heading": "A few details before your account is created",
+  "profile.lead": "{partner} signed you in, but did not send everything this service needs to create your account. Give the details below to finish.",
+  "profile.submit": "Create my account",
+  "profile.note": "These details are kept on your account here. An email address you type is recorded as unverified."
 }

@@ -110,5 +110,9 @@
   "federation.partners.partner": "Partenaire",
   "federation.partners.signOutThere": "Se déconnecter là-bas aussi",
   "federation.partners.signOutAt": "Se déconnecter de {partner}",
-  "federation.partners.note": "Vous vous êtes connecté ici par ces fournisseurs d’identité, et votre session chez eux est toujours active. Chacun est un lien ou un formulaire plutôt qu’une redirection automatique : cette page n’exécute aucun script, et partir vers un partenaire est un clic délibéré."
+  "federation.partners.note": "Vous vous êtes connecté ici par ces fournisseurs d’identité, et votre session chez eux est toujours active. Chacun est un lien ou un formulaire plutôt qu’une redirection automatique : cette page n’exécute aucun script, et partir vers un partenaire est un clic délibéré.",
+  "wsfed.chooseAccount.title": "Quel compte ? — WS-Federation",
+  "wsfed.chooseAccount.heading": "Quel compte faut-il déconnecter ?",
+  "wsfed.chooseAccount.intro": "{count} comptes de ce navigateur sont connectés à <code>{realm}</code>. Choisissez celui à déconnecter ; les autres restent connectés.",
+  "wsfed.chooseAccount.signOut": "Déconnecter <strong>{who}</strong>"
 }

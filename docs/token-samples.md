@@ -1620,7 +1620,7 @@ is a JWT with `typ` `secevent+jwt`, signed with the realm key. The samples
 below were collected over one poll stream
 ([RFC 8936](https://www.rfc-editor.org/rfc/rfc8936)). The receiver was a
 client, `ssf-rx`, holding a `client_credentials` token with
-`ssf:read ssf:write`:
+`ssf.manage` (the write scope, which includes read):
 
 ```bash
 curl -X POST https://127.0.0.1:38081/ssf/stream -H "Authorization: Bearer $SSF_TOKEN" \

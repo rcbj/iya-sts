@@ -94,6 +94,9 @@ import deviceRecognition = require('./device_recognition');
 import claims = require('../cluster/cluster_claims');
 import webauthnVerifier = require('../authn/webauthn');
 import webauthnPolicy = require('../authn/webauthn_policy');
+// THE PASSKEY POLICY (#718): a key it would not let sign its owner in does
+// not link a device either. A leaf below this module.
+import passkeyPolicy = require('./passkey_policy');
 
 type Json = any;
 
@@ -175,6 +178,7 @@ interface DeviceEnrolmentDeps {
   claims: typeof claims;
   webauthnVerifier: typeof webauthnVerifier;
   webauthnPolicy: typeof webauthnPolicy;
+  passkeyPolicy: typeof passkeyPolicy;
   realmId: () => string;
   now: () => number;
 }
@@ -221,6 +225,7 @@ class DeviceEnrolment {
              deviceRecognition: deviceRecognition, claims: claims,
              webauthnVerifier: webauthnVerifier,
              webauthnPolicy: webauthnPolicy,
+             passkeyPolicy: passkeyPolicy,
              realmId: function (): string {
                return realms.currentId();
              },
@@ -565,6 +570,26 @@ class DeviceEnrolment {
     return out;
   }
 
+  // A KEY THE PASSKEY POLICY WOULD NOT LET SIGN ITS OWNER IN (#718): the
+  // link is an assertion with the key — a use of it — and the device it
+  // registers is then recognised at sign-in, so a classical passkey where
+  // the person's profile requires a post-quantum one links nothing. Only
+  // the `algorithm` fact group is asked: the BE and PIN rules have never
+  // been asked here, and this change does not start asking them.
+  private postQuantumProblem(username: string, key: Json): Json | null {
+    const { log, credentials } = this.deps;
+    const policy = this.deps.passkeyPolicy;
+    log.debug("Entering DeviceEnrolment.postQuantumProblem().");
+    if (!policy.hasSelection()) {
+      policy.select(username, '');
+    }
+    const refused = policy.postQuantumRefusal(credentials.keyAlgorithm(key),
+                                              'sign-in');
+    log.debug("Leaving DeviceEnrolment.postQuantumProblem(). " +
+              (refused ? refused.code : 'none'));
+    return refused ? this.refuse(refused.code, refused.why) : null;
+  }
+
   // =========================================================================
   // A WEBAUTHN LINK, begun: the person names one of their credentials, and
   // a `webauthn` challenge carrying it is issued. { ok, challenge, … } or a
@@ -599,6 +624,12 @@ class DeviceEnrolment {
         'roaming authenticator (cross-platform): it is carried between ' +
         'devices and identifies none of them. Link a key built into this ' +
         'device (a platform authenticator).');
+    }
+    // Before the ceremony (#718), so nobody touches a key that cannot link.
+    const notPq = this.postQuantumProblem(username, key);
+    if (notPq) {
+      log.debug("Leaving DeviceEnrolment.beginLink(). Not post-quantum.");
+      return notPq;
     }
     const out = this.issueChallenge({ sessionId: s.sessionId,
       username: username, purpose: 'webauthn',
@@ -702,6 +733,12 @@ class DeviceEnrolment {
                                                   : 'STS-DEVICE-0016',
                          'The assertion could not be accepted: ' +
                          String(spent.detail || spent.reason) + '.');
+    }
+    // And at the finish (#718), for a profile changed since the challenge.
+    const notPq = this.postQuantumProblem(username, key);
+    if (notPq) {
+      log.debug("Leaving DeviceEnrolment.finishLink(). Not post-quantum.");
+      return notPq;
     }
     const att = key.attestation || {};
     const trusted = !!(att.verified && att.trusted);

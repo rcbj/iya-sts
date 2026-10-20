@@ -508,6 +508,7 @@
   "emailFactorBlock.needsWrite": "Establecer la dirección requiere <strong>Admin Write</strong>.",
   "algorithmCell.postQuantum": "poscuántico",
   "algorithmCell.insecure": "inseguro",
+  "algorithmCell.lanePqc": "vía poscuántica, junto a una llave de acceso clásica",
   "attestationCell.claimedTitle": "No se verificó nada sobre el autenticador",
   "attestationCell.formatPolicy": " (formato {format}, política {policy})",
   "attestationCell.claimedTitleAfter": ". El AAGUID, si lo hay, es lo que afirmó el autenticador.",
@@ -836,5 +837,9 @@
   "serviceAccountSection.itselfTip": "Una cuenta de servicio no puede ser su propio propietario.",
   "serviceAccountSection.addTip": "Hace propietario a {value}. Se escribe al guardar el formulario.",
   "serviceAccountSection.findHint": "Escriba en el cuadro para buscar; un cuadro vacío muestra {which, select, groups {todos los grupos} other {todas las personas}}.",
-  "serviceAccountSection.destinationHeading": "Destino de envío"
+  "serviceAccountSection.destinationHeading": "Destino de envío",
+  "personFieldsSection.policyRequired": " La política de atributos del dominio lo exige.",
+  "newUserBody.requiredEnforced": "Toda persona de este dominio debe tener <strong>{list}</strong>, y se rechaza una creación sin alguno de ellos; cada uno de esos campos abajo está marcado como obligatorio, y un <code>cn</code> vacío se forma con el nombre y el apellido. La lista es la de la ",
+  "newUserBody.requiredNotEnforced": "La política de atributos del dominio nombra <strong>{list}</strong>; no se aplica en modo de desarrollo, así que aquí se acepta una creación sin ellos. La lista es la de la ",
+  "newUserBody.requiredPolicy": "política de atributos"
 }

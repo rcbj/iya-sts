@@ -399,6 +399,10 @@
     "en": "bb7f9df5947fbef1",
     "text": "ANG SARILING HOME PAGE NG APPLICATION: kung saan pumupunta ang isang tao para maabot ito, at samakatwid kung saan nagsisimula ang sign-in dito. Ito ang pinagli-link-an ng /portal/applications sa bawat row, at ang entry na wala nito ay iginuguhit doon nang walang link sa halip na may hinulaang address. IDINEKLARA at hindi kailanman dine-derive — ang mga redirect URI sa tabi nito ay mga callback at hindi pintuan sa harap, kaya walang kumukompyut nito mula sa kanila. http o https lang, dahil nagiging href ito."
   },
+  "applications.schema.attributes.appLaunchProtocol.what": {
+    "en": "cbbe60c9e914df65",
+    "text": "KUNG ALING PROTOCOL ang ginagamit ng /launch/{app} para sa application na ito kapag walang pinangangalanan ang link at naka-on ang sign-in na sinimulan ng identity provider para sa higit sa isa: saml2, saml11, wsfed o oidc."
+  },
   "applications.schema.attributes.appCorsOrigin.what": {
     "en": "03bcebb131e7b340",
     "text": "ANG MGA ORIGIN NA PUWEDENG PAGTAWAGAN NG ISANG BROWSER PAGE SA SERBISYONG ITO PARA SA APPLICATION NA ITO — `https://app.example.com`, isang eksaktong origin bawat value, walang path at walang wildcard. Ang request na nagpapangalan sa application na ito bilang client nito (isang client_id, isang Basic credential, isang client assertion, o isang access token na na-issue dito) ay sinasagot ng Access-Control-Allow-Origin kapag nakalista lang dito ang Origin nito; ang request na walang pinangangalanang client — discovery, isang JWKS, isang DID document, isang CORS preflight — ay sinasagot para sa origin na nakalista sa ANUMANG application sa realm. ANG WALANG LAMAN AY WALANG PINAPAYAGANG THIRD-PARTY ORIGIN, sa parehong mode. Hindi kailanman kailangang ilista ang sariling mga origin ng serbisyong ito (ang mga listener nito, global.publicBaseUrl, ang embedded debugger, at global.corsOrigins). Nino-normalize kapag isinulat: ginagawang lowercase ang scheme at host, tinatanggal ang default port."
@@ -472,8 +476,8 @@
     "text": "Ang Trust Anchor kung saan nagtapos ang chain nito."
   },
   "applications.schema.attributes.oauthClientId.what": {
-    "en": "1e1a912a88773d34",
-    "text": "ANG CLIENT_ID, at ang identifier attribute ng tatlong family: ang OpenID Connect relying party AY isang OAuth client, at ang wallet na kumukuha ng credential sa OpenID4VCI issuer ay nag-a-authenticate bilang isa, kaya idinedeklara ng tatlo ang pangalan nila rito sa halip na sa tatlong attribute na magiging tatlong baybay ng iisang katotohanan. Kadalasang katumbas ng appIdentifier, na siyang isinusulat ng isang protocol sighting; ang IKALAWANG value ay client_id na sinasagot din ng application na ito — isang id bawat environment — at iyan ang dahilan kung bakit naiipon ito sa halip na itakda. Wala sa entry na walang OAuth family na idineklara."
+    "en": "be5cd98b933adf94",
+    "text": "ANG CLIENT_ID, at ang identifier attribute ng tatlong family: ang OpenID Connect relying party AY isang OAuth client, at ang wallet na kumukuha ng credential sa OpenID4VCI issuer ay nag-a-authenticate bilang isa, kaya idinedeklara ng tatlo ang pangalan nila rito sa halip na sa tatlong attribute na magiging tatlong baybay ng iisang katotohanan. Kadalasang katumbas ng appIdentifier, na siyang isinusulat ng isang protocol sighting at ng isang create kapag iniwan itong walang laman (#393); ang IKALAWANG value ay client_id na sinasagot din ng application na ito — isang id bawat environment — at iyan ang dahilan kung bakit naiipon ito sa halip na itakda. Ang listahang tina-type sa create ang buong listahan. Wala sa entry na walang OAuth family na idineklara."
   },
   "applications.schema.attributes.oauthAudience.what": {
     "en": "85845f64442f584e",
@@ -536,8 +540,8 @@
     "text": "Mga scope na HININGI ng application na ito, naiipon habang humihingi ito. NAKITA, hindi kailanman idineklara: walang pinapayagan o tinatanggihan batay dito. Ang puwedeng i-issue sa application ay ang oauthAllowedScope."
   },
   "applications.schema.attributes.oauthAllowedScope.what": {
-    "en": "318365370d864543",
-    "text": "ANG MGA SCOPE NA PUWEDENG I-ISSUE SA CLIENT NA ITO — ang `scope` ng RFC 7591 section 2, \"the list that the client can use when requesting access tokens\". Isang scope token bawat value. Tatlong uri ng scope ang magkakaiba ang pagbasa rito.\n\n**Ang sariling mga protected scope ng serbisyong ito** — admin:read at admin:write (/admin-api), ang mga SCIM scope (scim.scopeRead, scim.scopeWrite), ang mga Shared Signals scope (ssf.authScopeRead, ssf.authScopeWrite) at ang debugger permission — ay ini-issue LAMANG sa client na naglilista sa kanila, SA PAREHONG MODE, at muling nagtatanong ang resource server sa likod ng bawat isa sa bawat tawag, kaya ang pag-alis ng value dito ay pumuputol sa mga token na na-issue na. Hindi puwedeng ideklara ng isang RFC 7591 registration ang mga ito; ang administrator ang nagdedeklara, dito.\n\n**Bawat ibang scope**, sa product mode, ay ini-issue lang kapag nakalista rito — o, kapag walang nakalista, kapag nasa default set ito: openid, profile, email, address, phone, offline_access at ang mga OpenID4VCI credential scope ng realm na ito. Sa development, ini-issue ang anumang scope.\n\n**Ang scope na nagpapangalan ng application o ng delegated permission** ay may sariling mga patakaran (ang audience, at ang oauthDelegatedPermission) at hindi kailangang ilista.\n\nAng scope na wala sa listahan ay tinatanggihan ng invalid_scope sa authorization at token endpoint (RFC 6749 section 3.3), at inaalis sa isang refresh o token exchange. Iba sa oauthScope, na ang hiningi lang ng client."
+    "en": "f61c0b99f0e3941f",
+    "text": "ANG MGA SCOPE NA PUWEDENG I-ISSUE SA CLIENT NA ITO — ang `scope` ng RFC 7591 section 2, \"the list that the client can use when requesting access tokens\". Isang scope token bawat value. Tatlong uri ng scope ang magkakaiba ang pagbasa rito.\n\n**Ang sariling mga protected scope ng serbisyong ito** — admin:read at admin:write (/admin-api), ang mga SCIM scope (scim.scopeRead, scim.scopeWrite), ang mga Shared Signals scope (ssf.authScopeRead, ssf.authScopeWrite, at palaging ssf.read at ssf.manage) at ang debugger permission — ay ini-issue LAMANG sa client na naglilista sa kanila, SA PAREHONG MODE. Sa Shared Signals, kasama ng write ang read: ang paglista ng write scope ay nagpapahintulot din ng read scope, at ang paglista ng read scope lamang ay hindi nagpapahintulot ng write scope. Muling nagtatanong ang resource server sa likod ng bawat isa sa bawat tawag, kaya ang pag-alis ng value dito ay pumuputol sa mga token na na-issue na. Hindi puwedeng ideklara ng isang RFC 7591 registration ang mga ito; ang administrator ang nagdedeklara, dito.\n\n**Bawat ibang scope**, sa product mode, ay ini-issue lang kapag nakalista rito — o, kapag walang nakalista, kapag nasa default set ito: openid, profile, email, address, phone, offline_access at ang mga OpenID4VCI credential scope ng realm na ito. Sa development, ini-issue ang anumang scope.\n\n**Ang scope na nagpapangalan ng application o ng delegated permission** ay may sariling mga patakaran (ang audience, at ang oauthDelegatedPermission) at hindi kailangang ilista.\n\nAng scope na wala sa listahan ay tinatanggihan ng invalid_scope sa authorization at token endpoint (RFC 6749 section 3.3), at inaalis sa isang refresh o token exchange. Iba sa oauthScope, na ang hiningi lang ng client."
   },
   "applications.schema.attributes.oauthPermissionBaseUri.what": {
     "en": "a2b16552f308a9b4",
@@ -1019,6 +1023,18 @@
     "en": "4a6e20c0380356cf",
     "text": "TRUE o FALSE: nire-revoke ba ng pag-sign out ang mga refresh token ng client na ito, na nangingibabaw sa oauth2.revokeRefreshOnLogout. Ang FALSE ang kawili-wiling kaso at ito ang dahilan kung bakit sulit itong magkaroon bawat client — ang client na kayang mag-refresh pabalik pagkatapos ng sign-out ay tunay na depekto sa tunay na mga deployment, at ginagawa nitong mareproduce ito para sa ISANG client habang maayos ang iba."
   },
+  "applications.schema.attributes.oauthThirdPartyInitiatedLogin.what": {
+    "en": "fff2d88eaeaf4e44",
+    "text": "TRUE o FALSE: puwede bang ipadala ng /launch/{app} — at ng Sign in link ng user portal — ang isang tao sa oauthInitiateLoginUri ng client na ito (OpenID Connect Core section 4), na nangingibabaw sa oauth2.thirdPartyInitiatedLogin."
+  },
+  "applications.schema.attributes.oauthSpInitiatedSso.what": {
+    "en": "50ec3dfde523d275",
+    "text": "TRUE o FALSE: sinasagot ba ng /oauth2/authorize ang client na ito kapag hindi ito kalalunsad lang, na nangingibabaw sa oauth2.spInitiatedSso. Ang FALSE ay sumasagot lang sa authorization request na sumusunod sa isang /launch ng client na ito sa parehong session sa loob ng oauth2.launchWindowS, isang beses bawat launch, at tinatanggihan ang iba pa ng unauthorized_client."
+  },
+  "applications.schema.attributes.oauthInitiateLoginUri.what": {
+    "en": "bee89c2346a1fa39",
+    "text": "KUNG SAAN SINISIMULAN NG ISANG THIRD PARTY ANG SIGN-IN SA CLIENT NA ITO: ang initiate_login_uri ng OpenID Connect Core section 4, kung saan ipinapadala ng /launch/{app} at ng user portal ang isang tao kasama ang iss, login_hint at target_link_uri. https lang, walang fragment."
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "KUNG ANG RFC 8693 TOKEN EXCHANGE NA GINAWA NG CLIENT NA ITO AY NAKAKAKUHA NG `refresh_token` KATABI NG NA-EXCHANGE NA ACCESS TOKEN, na nangingibabaw sa oauth2.tokenExchangeRefreshToken para dito lang. Isa sa tatlong salita: `never`, `when-requested` (ang default para sa buong serbisyo — humihingi ang client gamit ang `requested_token_type` ng RFC 8693 section 2.1 at nakakakuha lang kung humingi ito) o `always`.\n\nBINABASA ITO SA CLIENT NA GUMAGAWA NG EXCHANGE at hindi sa audience, dahil ibinibigay ang refresh token sa client: credential iyon ng partidong iyon na hahawakan, ire-revoke at kalaunan ay ire-redeem. Ang subject na PINATUTUNGKULAN ng exchange ay walang entry sa registry na ito sa kawili-wiling kaso, dahil ang buong punto ng exchange ay isang subject_token mula sa ibang lugar.\n\n**NAAANGKOP ITO SA MGA PAMILYANG OAUTH 2.0 AT OPENID CONNECT AT HINDI SA IBA, at hindi tulad ng bawat ibang attribute dito, IPINAPATUPAD ITO.** Ang entry na hindi idineklara para sa alinman ay tinatanggihan ng parehong pinto ng console at ng management API, na pinapangalanan ang pamilyang dapat munang i-tsek — dahil ang value dito ay patakaran tungkol sa token endpoint, at ang entry na hindi kailanman mapapangalanan ng anumang token request ay magdadala nito na parang may bisa. Ipinapaliwanag ito ng block sa itaas ng row na ito. Naaabot ng `ldapmodify` ang attribute na ito tulad ng bawat iba at hindi ito sinusuri.\n\nANG VALUE NA HINDI ISA SA TATLONG SALITA AY HINDI ERROR SA ORAS NG PAGSULAT AT HINDI RIN TAHIMIK: nagbababala ang settingFor() na pinapangalanan ang entry, ang attribute at ang hawak nito, at ang setting para sa buong serbisyo ang nagpapasya — ang parehong three-state na katapatan na nakukuha ng bawat ibang override sa entry na ito."
@@ -1143,6 +1159,22 @@
     "en": "1887a455954e9b4f",
     "text": "Gaano katagal mareresolba ang SAML 1.1 artifact na ginawa para sa relying party na ito, sa segundo, na nangingibabaw sa saml11.artifactTtlS. Ang SOAP responder ng Browser/Artifact profile ang nagre-redeem nito, nang isang beses."
   },
+  "applications.schema.attributes.saml2IdpInitiatedSso.what": {
+    "en": "00f7ceacfb9304e7",
+    "text": "TRUE o FALSE: puwede bang SIMULAN ng identity provider na ito ang sign-in sa service provider na ito — isang unsolicited na Response (saml-profiles-2.0-os section 4.1.5) mula sa /saml2/unsolicited o /launch/{app} — na nangingibabaw sa saml2.idpInitiatedSso. TRUE lang para sa service provider na umaasa nito: walang dalang InResponseTo ang Response, kaya hindi nito matutukoy ang ipinadala rito mula sa itinulak sa browser nito."
+  },
+  "applications.schema.attributes.saml2SpInitiatedSso.what": {
+    "en": "1cab33aadc246c17",
+    "text": "TRUE o FALSE: sinasagot ba ang sariling <samlp:AuthnRequest> ng service provider na ito, na nangingibabaw sa saml2.spInitiatedSso. Sinasagot ito ng FALSE ng RequestDenied, kaya ang sign-in na sinimulan ng identity provider na lang ang tanging daan papasok."
+  },
+  "applications.schema.attributes.saml11IdpInitiatedSso.what": {
+    "en": "6081871f6aca6a2f",
+    "text": "TRUE o FALSE: puwede bang MAGSIMULA rito ang isang SAML 1.1 sign-in sa relying party na ito — /saml11/sso/{rp} na may TARGET at walang shire, o /launch/{app} — na nangingibabaw sa saml11.idpInitiatedSso."
+  },
+  "applications.schema.attributes.saml11SpInitiatedSso.what": {
+    "en": "2376052fceb025ab",
+    "text": "TRUE o FALSE: sinasagot ba ang SAML 1.1 sign-in na sinimulan ng relying party na ito — ang Shibboleth 1.3 AuthnRequest profile, isang request na may dalang shire — na nangingibabaw sa saml11.spInitiatedSso. Unsigned URL ang request, kaya isinasara ng FALSE ang pinto sa halip na patunayan kung sino ang nagbukas nito."
+  },
   "applications.schema.attributes.samlAuthnRequestSigned.what": {
     "en": "2150507140b66231",
     "text": "TRUE kapag may dalang signature ang huling AuthnRequest mula sa service provider na ito — isang enveloped ds:Signature sa POST binding, o ang Signature parameter ng section 3.4.4.1 sa Redirect binding. ITINATALAGA sa halip na iniipon, dahil katotohanan ito tungkol sa huling request at walang sasabihin ang kasaysayan ng mga boolean."
@@ -1154,6 +1186,14 @@
   "applications.schema.attributes.wsfedReplyUrl.what": {
     "en": "1d6376f1797ef43c",
     "text": "KUNG SAAN IBINABALIK SA PAMAMAGITAN NG POST ANG SIGN-IN RESPONSE para sa application na ito: ang `wreply` ng section 13.2.1, ang redirect URI ng WS-Federation. Isinusulat ito sa samlAssertionConsumerService hanggang 2026-08-25, na naglagay ng wreply sa attribute na binabasa ng mga SAML page para sa assertion consumer service at para sa Single Logout fallback — isang attribute na may hawak ng mga return address ng dalawang protocol, kaya mukhang may SAML ACS ang isang WS-Federation application na hindi nito kailanman pinangalanan. Dalawang katotohanan, dalawang attribute. Tulad ng SAML sa tabi nito, ito ay SINUSURI SA PRODUCT MODE LANG: walang wreply na tinatanggihan ang development, dahil ang serbisyong tumatanggi ay mag-aalis ng test case sa halip na magdagdag; ang product ay nagpo-post lang sa address na nasa listahang ito at hindi kailanman nagdaragdag ang isang pagkakita. Ang wreply na itinala ng development ay minamarkahan sa appReturnAddressObserved at tinatanggihan ito ng product hanggang makumpirma; ang mga value na naitala bago umiral ang markang iyon ay walang dala nito at kailangan pa ring suriin bago ilipat sa product ang isang realm."
+  },
+  "applications.schema.attributes.wsfedIdpInitiatedSso.what": {
+    "en": "af8a13f7621cb3a1",
+    "text": "TRUE o FALSE: puwede bang SIMULAN ng identity provider na ito ang sign-in sa relying party na ito — /wsfed/initiate/{rp} o /launch/{app}, nagpo-post sa nakarehistrong wsfedReplyUrl nito — na nangingibabaw sa wsfed.idpInitiatedSso."
+  },
+  "applications.schema.attributes.wsfedSpInitiatedSso.what": {
+    "en": "d199b15200f6e9de",
+    "text": "TRUE o FALSE: sinasagot ba ang sariling wsignin1.0 ng relying party na ito, na nangingibabaw sa wsfed.spInitiatedSso. Unsigned URL ang wsignin1.0, kaya isinasara ng FALSE ang pinto sa halip na patunayan kung sino ang nagbukas nito."
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
     "en": "493ac4121c2076ca",
@@ -1178,6 +1218,14 @@
   "applications.schema.attributes.krb5TrustedForDelegation.what": {
     "en": "3b66e9eeaaad2290",
     "text": "TRUE o FALSE, FALSE bilang default: ang Kerberos service na ito ay TRUSTED FOR DELEGATION — unconstrained (ang TRUSTED_FOR_DELEGATION ng Active Directory). May dalang ok-as-delegate ang mga service ticket nito, na nagsasabi sa client na puwede nitong i-forward dito ang TGT nito; ang sinumang may hawak ng na-forward na TGT ay makakakilos bilang taong iyon saanman. Hindi kailanman forwardable ang TGT ng isang protektadong tao, kaya hindi ito kailanman nafo-forward anuman ang pagkakatakda nito. Ang constrained delegation (appAllowedToDelegateTo, appAllowedToActOnBehalfOf) ang mas ligtas na alternatibo."
+  },
+  "applications.schema.attributes.krb5S4uSelfRealm.what": {
+    "en": "1549deb6e1db2854",
+    "text": "ANG MGA KERBEROS REALM NA ANG MGA USER AY MAAARING KUHANAN NG SERBISYONG ITO NG MGA S4U2SELF TICKET, bukod sa sarili nito. ANG WALANG LAMAN AY NANGANGAHULUGANG SARILING REALM LAMANG. Ang isang value ay dapat isang realm na ang mga ticket ay tinatanggap ng mga trust ng realm na ito — isang trust na may incoming key, o isang realm na niruruta ng isang transitive na trust — at sinusuri ito sa pagsulat."
+  },
+  "applications.schema.attributes.krb5ForeignTgtDelegation.what": {
+    "en": "8f20493c35397916",
+    "text": "`inherit` (ang default) o `deny`: ang sinasabi ng serbisyong ito tungkol sa isang TGT na idinelegate dito SA KABILA NG ISANG TRUST — ok-as-delegate sa mga ticket nito para sa user ng ibang realm. Sinusunod ng `inherit` ang mga attribute ng trust ([MS-KILE] 3.3.5.7.5); tinatanggihan ito ng `deny` anuman ang sabihin ng mga iyon. Nagpapakitid lamang ito: walang anuman dito ang nagpapagana ng hindi pinapagana ng trust."
   },
   "applications.schema.attributes.krb5ServiceKeys.what": {
     "en": "35f24692c1cc40a5",

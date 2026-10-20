@@ -45,6 +45,11 @@
       "text": "Napalitan ang email address ng account na {{username}} noong {{when}}, at {{address}} na ito ngayon. Ipinadala ang mensaheng ito sa dating address nito.\n\nKung hindi mo ito inaasahan, makipag-ugnayan ngayon sa namamahala ng iyong account.\n",
       "html": "<p>Napalitan ang email address ng account na <strong>{{username}}</strong> noong {{when}}, at {{address}} na ito ngayon. Ipinadala ang mensaheng ito sa dating address nito.</p><p>Kung hindi mo ito inaasahan, makipag-ugnayan ngayon sa namamahala ng iyong account.</p>"
     },
+    "account-connected": {
+      "subject": "May account na ikinonekta sa iyong {{service}} account",
+      "text": "Isang account sa {{provider}} ang ikinonekta sa account na {{username}} noong {{when}}, at magagamit na ito para mag-sign in doon.\n\nKung hindi ikaw ito, i-disconnect ito sa Mga nakakonektang account at makipag-ugnayan ngayon sa namamahala ng iyong account.\n",
+      "html": "<p>Isang account sa {{provider}} ang ikinonekta sa account na <strong>{{username}}</strong> noong {{when}}, at magagamit na ito para mag-sign in doon.</p><p>Kung hindi ikaw ito, i-disconnect ito sa Mga nakakonektang account at makipag-ugnayan ngayon sa namamahala ng iyong account.</p>"
+    },
     "access-request": {
       "subject": "{{service}}: may application na humihingi ng access",
       "text": "Humihingi ang application na {{client}} ng access para sa account na {{username}}: {{rights}}.\n\nWalang papayagan hangga't hindi mo ito inaaprubahan. Para aprubahan o tanggihan ito, mag-sign in at buksan ang pahinang ito sa loob ng {{expiresMinutes}} minuto:\n\n{{link}}\n\nKung hindi mo kilala ang kahilingan, tanggihan ito roon o balewalain ang mensaheng ito: kusa itong mag-e-expire.\n",

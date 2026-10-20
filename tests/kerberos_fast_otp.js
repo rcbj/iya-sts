@@ -538,8 +538,11 @@ async function productChild() {
 
   // --- the people ---
   const PW = 'Correct-Horse-Battery-9!';
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
   ['kfotp', 'kfreq', 'kfrealm', 'kfnone'].forEach(function (who) {
-    directory.createUser(who, { invent: false });
+    directory.createUser(who, { invent: false, attributes: {
+      givenName: 'Fast', sn: who, mail: who + '@example.test' } });
     credentials.setPassword(who, PW);
   });
   await personKeys.idle();

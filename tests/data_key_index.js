@@ -35,6 +35,7 @@
 
 delete process.env.CONFIG_FILE;
 
+const storeDouble = require('./tools/store_double');
 const postgres = require('../persistence/persistence_postgres');
 const codec = require('../persistence/directory_codec');
 
@@ -77,20 +78,13 @@ function fakePg(statements, answer) {
 
 function driverWith(statements, answer) {
   log.debug("Entering driverWith().");
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: fakePg(statements, answer) };
+  const restore = storeDouble.install(fakePg(statements, answer));
   try {
     log.debug("Leaving driverWith().");
     return postgres.create({ url: 'postgres://sts@localhost:5432/sts',
                              log: QUIET });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
 }
 
@@ -304,9 +298,11 @@ async function realDatabase(t) {
     return;
   }
   t.log.info('=== F. against ' + url.replace(/:[^:@/]*@/, ':***@') + ' ===');
-  const pg = require('pg');
+  // Through the service's one door to PostgreSQL (#326): a connection
+  // Knex makes, outside any pool, where a `pg.Client` was.
+  const knexStore = require('../persistence/knex_store');
   const schema = 'deks_' + process.pid;
-  const admin = new pg.Client({ connectionString: url });
+  const admin = knexStore.openConnection({ connectionString: url });
   await admin.connect();
   try {
     await admin.query('CREATE SCHEMA ' + schema);

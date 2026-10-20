@@ -604,6 +604,31 @@ provides is verified by following a link: on `/portal/email` the new address
 stays pending until they do, and the old one is told when it changes. See
 [Authentication](authentication.md) and [Mail](mail.md).
 
+**The attribute policy** (#396) says what every person in the realm must
+hold. `uid`, `cn` and `sn` are always required; by default `givenName` and
+`mail` are too, and the tab lists every attribute a person may be given with a
+**Required** box, so a realm can require more (an employee number, a custom
+attribute) or less (no address). It is `cn=default,ou=attributePolicies`, and a
+realm with none of its own follows the default realm's. **It is enforced in
+product mode only**: a person created without a required attribute is refused
+at every door — this console, `POST /admin-api/users/create`, SCIM, an LDAP add,
+the bulk import — and a federated newcomer whose partner did not send one is
+not created; an edit may not take a required value away. A `cn` left empty is
+made from the given name and surname. A person created before an attribute was
+required is not refused anything for it; `GET /admin-api/policies?missing=count`
+counts them, and the tab gives the LDAP filter that finds them. A service
+account and the bootstrap administrator are exempt.
+
+**Custom attributes** are defined on the same tab: a name, a label, a syntax
+(`string`, `integer`, `boolean`, `date`, `email`, `uri` or `dn`) and whether it
+holds one value or several. A custom attribute can then be set on a person's
+page and at `/admin/users/new`, is checked against its syntax, and may be
+required. They belong to the realm (`ou=attributeDefinitions`) and are not
+inherited. `POST /admin-api/policies/define-person-attribute` and
+`remove-person-attribute` do the same over the API; a custom attribute cannot be
+removed while anybody holds a value of it or the policy requires it.
+`/admin/users/new` and a person's Attributes tab mark every required field.
+
 ### Groups — `/admin/groups`
 
 `/admin/groups` reports the *directory* rather than what this service has
@@ -1105,7 +1130,7 @@ picture has a form on it.
 
 ### Worker pools — `/admin/worker-pools`
 
-`/admin/worker-pools` shows the two pools of child processes this node runs
+`/admin/worker-pools` shows the two pools of worker threads this node runs
 ([the worker pools](architecture.md#the-request-dispatcher-and-the-worker-pools)):
 the request pool (`workers.requestCount`) and the console and portal's own
 pool (`workers.surfaceCount`). For each it gives:
@@ -1113,9 +1138,9 @@ pool (`workers.surfaceCount`). For each it gives:
 * the workers it has now, how many are **busy** and how many **free**;
 * its **maximum** (the setting) and its **initial** size — what it was started
   with;
-* **restarts and crashes**: every fork, the workers that exited when nobody
-  asked (and how many of those never started) apart from the ones the pool
-  stopped or retired, and how many it replaced;
+* **restarts and crashes**: every thread the pool started, the workers that
+  exited when nobody asked (and how many of those never started) apart from
+  the ones the pool stopped or retired, and how many it replaced;
 * the **average response time**, from dispatch to the end of the answer, with
   a recent average beside the one since start.
 

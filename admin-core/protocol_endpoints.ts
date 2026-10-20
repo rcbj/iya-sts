@@ -341,9 +341,13 @@ class ProtocolEndpoints {
         // A person's own pre-authorized offer, on the portal (#589).
         '/account-api/credentials/offerable',
         '/account-api/credentials/offers',
+        // Their issued credentials' history and Remove (#661).
+        '/account-api/credentials/remove',
         '/bbs/keys/:id', '/.well-known/did.json', '/did.json',
         '/.well-known/did-configuration.json', '/oid4vci/status-lists/1',
         '/oid4vci/status-lists', '/oid4vci/status-lists/bitstring/:purpose',
+        // The trusted list (ETSI TS 119 602), 2026-10-17.
+        '/oid4vci/trusted-list',
         '/oid4vp/request/:id', '/oid4vp/response',
         // The x509 Client Identifiers (#230), whose settings are here.
         '/oid4vp/verifier-certificate',
@@ -411,6 +415,9 @@ class ProtocolEndpoints {
       '/admin/ssf': ['/ssf'].concat(SSF_DELIVERY).map(route),
       '/admin/federation': ['/federation', '/federation/login/:id',
                             '/federation/acs/:id', '/federation/link/:handle',
+                            '/federation/stepup/:handle',
+                            '/federation/profile/:handle',
+                            '/federation/notifications/:id',
                             '/federation/metadata/:id',
                             '/federation/slo/:id',
                             '/federation/backchannel-logout/:id',
@@ -450,7 +457,10 @@ class ProtocolEndpoints {
       '/admin/wstrust': ['/sts', '/sts/cert'].map(route),
       '/admin/wsfed': ['/wsfed',
                        '/FederationMetadata/2007-06/FederationMetadata.xml',
-                       '/wsfed/metadata/:rp'].map(route),
+                       '/wsfed/metadata/:rp',
+                       // Identity-provider-initiated sign-in (#712).
+                       '/wsfed/initiate/:rp',
+                       '/wsfed/initiate'].map(route),
       '/admin/pki': ['/pki/revocation', '/pki/ca/:scope/:ca',
                      '/pki/crl/:scope/:ca', '/pki/ocsp/:scope/:ca',
                      '/pki/chain/:scope/:certificate'].map(route),

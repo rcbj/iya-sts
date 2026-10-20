@@ -70,6 +70,7 @@
   "rowRequestsPer": "Solicitudes por conexión",
   "noLimit": "sin límite",
   "rowMaxConnections": "Conexiones abiertas como máximo",
+  "rowHttp2": "HTTP/2 ofrecido",
   "headInForce": "En vigor en esta escucha",
   "inForceNote": "Cada valor es el propio de esta escucha donde su fila de abajo lo fija, y si no el predeterminado del servicio (<em>inherit</em>, una casilla vacía, o -1 para un número).",
   "tabListeners": "Escuchas",

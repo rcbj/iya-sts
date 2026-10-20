@@ -102,6 +102,8 @@
     "@azure/keyvault-keys": "^4.0.0",
     "dbus-next": "^0.10.2",
     "@aws-sdk/client-sesv2": "^3.0.0",
+    "@aws-sdk/client-elastic-load-balancing-v2": "^3.0.0",
+    "@aws-sdk/client-ecs": "^3.0.0",
     "@azure/communication-email": "^1.0.0",
     "@googleapis/gmail": "^22.0.0",
     "mysql2": "^3.0.0",
@@ -173,6 +175,12 @@
       "optional": true
     },
     "@aws-sdk/client-sesv2": {
+      "optional": true
+    },
+    "@aws-sdk/client-elastic-load-balancing-v2": {
+      "optional": true
+    },
+    "@aws-sdk/client-ecs": {
       "optional": true
     },
     "@azure/communication-email": {

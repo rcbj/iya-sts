@@ -348,10 +348,12 @@ async function test() {
              "created the trust realm " + realm);
     await ok(realmApi(realm) + "/pki/build", { organisation: "ACME Job" },
              "built a certificate authority in " + realm);
+    // The realm's attribute policy (#396) requires givenName, sn and mail
+    // of every person in product mode.
     for (const who of [ALICE, BOB]) {
       await ok(realmApi(realm) + "/users/create",
                { username: who, invent: false, credential: "none",
-                 attributes: { cn: who, sn: who,
+                 attributes: { cn: who, givenName: who, sn: who,
                                mail: who + "@example.test" } },
                "created " + who);
     }

@@ -33,5 +33,10 @@
   "index.configure": "I-configure ang mga relationship sa console",
   "index.signInScreen": "Ang screen ng pag-sign in",
   "index.buttonsOn": "Iniaalok ng screen ng pag-sign in ang bawat magagamit na partner bilang isang button.",
-  "index.buttonsOff": "Naka-off ang federation.loginButtons, kaya walang partner na iniaalok ang screen ng pag-sign in."
+  "index.buttonsOff": "Naka-off ang federation.loginButtons, kaya walang partner na iniaalok ang screen ng pag-sign in.",
+  "profile.title": "Ilang detalye",
+  "profile.heading": "Ilang detalye bago gawin ang iyong account",
+  "profile.lead": "Na-sign in ka ng {partner}, pero hindi nito ipinadala ang lahat ng kailangan ng serbisyong ito para gawin ang iyong account. Ibigay ang mga detalye sa ibaba para matapos.",
+  "profile.submit": "Gawin ang aking account",
+  "profile.note": "Itinatago ang mga detalyeng ito sa iyong account dito. Itinatala bilang hindi verified ang email address na itina-type mo."
 }

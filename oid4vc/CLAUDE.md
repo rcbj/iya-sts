@@ -326,6 +326,19 @@ above is the surface's rule rather than an exception:
   the sign-in first and leave the returning tab to say it was already used.
   The poll pauses while the browser's credential dialog is open, so it never
   races the API's answer to finish one sign-in.
+* **The client callback is the waiting tab's.** The return tab collects the
+  `response_code` and, where a second factor follows, finishes that factor.
+  The authorization response then lands in the return tab. That tab does not
+  hold the portal's or the console's PKCE record (`sts-portal-signin`,
+  `sts-console-signin`, sessionStorage, the tab that called `beginSignIn`).
+  It offers the callback on `sts-spa-callback`
+  (`SpaClient.handCallbackToStarter()`); the waiting tab loads it and
+  redeems the code. A QR poll and the Digital Credentials API finish in the
+  tab that started them, which already holds the record, so they do not
+  offer it. No ack within a second, and the return tab starts the sign-in
+  again. The session the wallet just established accepts that request,
+  which is what the Sign in link under the old refusal did.
+  `tests/spa_callback_handoff.js`.
 * **What a refusal says is JSON** (`{ ok: false, next: 'refused', errors }`,
   English, no code), and the codes are the ones the pages were marked with.
   `STS-VC-0081` is now an answer sent with nothing in it — the form posted
@@ -518,14 +531,19 @@ is accepted as well as the `jwt` proof's `key_attestation` header.
 
 Three acts, all of them read through `vc_issued.disownedReason()`:
 
-* a GLOBAL sign-out — `/logout`, `/admin/logout`, `/admin-api/logout` — ending
-  the `wallet-credential` family (`logout/CLAUDE.md`). It stamps the row, and
-  every credential issued up to that instant stops signing in; one issued
-  AFTER, on a fresh token, signs in again;
+* an administrator's GLOBAL sign-out — `/admin/logout`, `/admin-api/logout` —
+  or the `wallet-credential` row ticked on `/logout` (`logout/CLAUDE.md`). It
+  stamps the row, and every credential issued up to that instant stops
+  signing in; one issued AFTER, on a fresh token, signs in again. The
+  person's own Global logout on `/logout` leaves the credential, and the DID
+  it is bound to, valid;
 * an administrator's revocation of the credential on `/admin/tokens` (the
   issued register's own mark, read by handle, so a restore undoes it);
 * a status-list entry that is not VALID — set by either of those, or by
-  `/admin/vc-status`.
+  `/admin/vc-status`;
+* its holder's Remove on `/portal/wallet` (#661), of one copy or of every
+  copy of one issuance (#670): `removeForSubject()` stamps each copy
+  removed, sets its entry INVALID and revokes its register row.
 
 **An ordinary session sign-out disowns nothing.** `/oauth2/logout`, SAML Single
 Logout, `wsignout1.0` and the console's and portal's Sign out end one session
@@ -560,8 +578,9 @@ sign-out cannot be undone by the token it was meant to cut off.
 draft's linkability guidance) through a cluster claim, and free again when the
 credential expires. **A bit is COMPUTED**, never stored twice: the entry's own
 status, or INVALID because the issued register's mark says an administrator
-revoked it — so `/admin/tokens`, `/admin/vc-status`, a global sign-out and the
-sign-in door cannot disagree.
+revoked it — so `/admin/tokens`, `/admin/vc-status`, an administrator's
+global sign-out and the sign-in door cannot disagree. The person's own
+Global logout on `/logout` sets no bit.
 
 **The Verifier CONSULTS it** for every presentation that otherwise verified
 (section 8.3's order): a credential this realm signed is read from this realm's
@@ -920,6 +939,64 @@ second catalogue. What is more than a number, and what
   Credential uses it (and `/did/generate` did, until #594), and the Verifier's
   `verifyIssuerSignature()` finds the realm's key by `alg` and `kid` — plus
   anything in `oid4vp.trustedIssuerCertificates`, used as keys and nothing more.
+  **A PORTAL OFFER MAY CHOOSE ANOTHER** (rcbj, 2026-10-16): `/portal/wallet`'s
+  `signingAlg`, one of `vc_configs.ts`'s `vciSigningAlgsFor(configId)` — every
+  value the setting allows for a JOSE configuration, the configured one and
+  RS256 for a DID-named one (its DID document publishes only those two keys),
+  bbs-2023 alone for ldp_vc. It rides the pre-authorized code record
+  (`signingAlg`) to the token endpoint, which notes it against the access
+  token's DIGEST (`vc_offers.signingAlgTokens`, `deferredAccessTokens`'
+  arrangement — never a claim in the token, which development mode would
+  take unverified), and the credential endpoint and the deferred record pass
+  it to `buildCredentialFor()`, which checks it against the list again. The
+  metadata's `credential_signing_alg_values_supported` is that list, the
+  default first. **The Status List Token keeps the configured algorithm**,
+  so a credential signed with another names a key its list is not signed
+  with. And `signing_rotation.ts`'s `credentialUnit()` stretches a retired
+  key's grace to the credential lifetime for the CONFIGURED algorithm's key
+  only: a credential signed with another may outlive its key's grace after a
+  rotation.
+* **THE TRUSTED LIST** (rcbj, 2026-10-17, `vc_trusted_list.ts`): ETSI TS
+  119 602's List of Trusted Entities at `/oid4vci/trusted-list`, in the
+  standard's JSON binding and nothing wallet-specific ("reusable across
+  wallets"), naming the service Root as the anchor of both kinds of service.
+  KEPT, not rebuilt per request: the realm's row is answered while its
+  content digest matches and `NextUpdate` is not near. Its signer's `x5c` is
+  the `vci-trusted-list` certificate-header use case.
+* **NO SCANS FOR ONE PERSON** (rcbj, 2026-10-17: "lists are maintained as
+  you go"): `vc_issued.ts` indexes rows by subject and credentials by
+  `notification_id` as they are recorded and drops them where it deletes a
+  row; the reader prunes a key the size bound evicted. Still scanning, and
+  older than the indexes: `sweep()` on every `record()`, `lookupHolder()`
+  (an `ldp_vc` sign-in) and `rowsForSubject(null)` (everyone's, for a global
+  sign-out).
+* **A BATCH IS ONE ISSUANCE, ON SEVERAL ROWS** (#670, rcbj 2026-10-17).
+  With `oid4vci.batchSize` over one, a Credential Response carries one
+  credential per proof, each bound to a different holder key (OpenID4VCI
+  1.0 section 8.2) with its own status-list entry and issued-register row.
+  `rememberIssued()` records each as before, so the register holds them as
+  SEPARATE rows — a JOSE row is keyed by its credential, an `ldp_vc` row by
+  its holder key — and nothing groups them but the response's
+  `notification_id`, minted once per response (and once per deferred
+  response) and kept on every copy since #661. That is the specification's
+  own name for the credentials of one response, so it is the issuance:
+  `issuancesForSubject()` groups a person's copies by it, oldest copy
+  first; a credential recorded before #661 has none and is an issuance of
+  its own. No new field was added for the grouping. Three things followed:
+  * **the notification index names EVERY row** a response reached
+    (`keys`), because it named the first only and a wallet's report reached
+    one copy in four; an entry from before is read as a list of one;
+  * **a DID-bound copy keeps its holder's `did:jwk`** (`holderDid`); the
+    key every copy is bound to was already the row's `jkt`, the RFC 7638
+    thumbprint of the proof's key, since #38 — so every copy's key is known,
+    including those issued before #670 (`keyNotRecorded` is for a row
+    without one, which this issuer does not write);
+  * **CAEP is told once per issuance and once per removal**: `record()`
+    announces only the first copy (`announce: false` for the rest), and
+    `removeForSubject()` sends one signal however many copies it removes.
+  `removeForSubject()` takes a copy's id or an issuance's — digests of
+  different strings — and removes that copy or every copy still good.
+  `portal/CLAUDE.md` has the page.
 * **THE KEY BINDING JWT ACCEPTS WHAT THE ISSUER BINDS TO** — every asymmetric
   non-post-quantum algorithm. It accepted four while the issuer bound credentials
   to keys of eleven, so a wallet with an EdDSA key was issued a credential and
@@ -1034,6 +1111,9 @@ value, is never found under its digest, and expires on its own `expires`.
 | `vc_offers.credentialOffers` | keyed by the offer id's digest; the offer itself WHOLE | the id is looked up; the offer is the exception below |
 | `vc_offers.deferredTransactions` | keyed by the `transaction_id`'s digest; no `accessToken` | the deferred endpoint looks the id up; the token was read only to be copied onto the notification row |
 | `vc_offers.deferredAccessTokens` | keyed by the token's digest (since 2026-09-12) | membership is the only question |
+| `vc_offers.signingAlgTokens` | keyed by the token's digest (2026-10-16) | the algorithm a portal offer chose, looked up by the token |
+| `vc_issued.bySubject`, `vc_issued.byNotification` | keyed by the subject's digest, and by the `notification_id` (2026-10-17) | the issued register's two indexes, so a person's history and Remove and a wallet's notification are lookups, never scans |
+| `vc_trusted_list.state` | one row per realm (2026-10-17) | the signed trusted list, its content digest and sequence number |
 | `vc_issuer.vciNonces` | keyed by `vc_issuer.nonceKey()`, the nonce's digest | a proof's nonce is looked up and spent |
 | `vc_issuer.notificationIds` | the id WHOLE; no `accessToken` | the token was never read; the id is an identifier, like a `jti` |
 | `vc_verifier.vpTransactions` | a verdict's `presentationDigest` and verified claims; never the presentation | the presentation was read only by `?state=` and the log |

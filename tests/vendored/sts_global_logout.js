@@ -107,6 +107,9 @@ const names = require("./random_username.js");
 const krb5 = require("./krb5_drive.js");
 const facts = require("./service_facts.js");
 const anchors = require("../tools/pep-credential.js");
+// The two scenario CAs this job posts. Removed when it finishes, pass or
+// fail (#335). The truststore is service-wide and holds 32. tests/CLAUDE.md.
+const addedAnchors = [];
 const fixtures = require("./oauth_fixtures.js");
 
 var appconfig;
@@ -432,6 +435,13 @@ async function oauth2AuthorizationCode(username, application) {
 // zlib header (raw), then base64, then URL-encode. Getting the deflate wrong
 // is the classic SAML mistake and it fails as "the request does not parse",
 // which names neither the compression nor the binding.
+//
+// A SIGNED message carries its Destination — the endpoint it is sent to, here
+// /saml2/sso — because saml-bindings-2.0-os section 3.4.5.2 requires it, and
+// the service refuses one without it (STS-SAML-0085, a 400 page). Without it
+// this job's SAML 2.0 sign-in was refused from about 2026-10-10 and, being
+// only a warning then, nobody noticed; sts_idp_initiated_saml.js was fixed
+// the same way (#715).
 function authnRequest(application) {
   log.debug("Entering authnRequest().");
   const xml = '<samlp:AuthnRequest ' +
@@ -439,6 +449,7 @@ function authnRequest(application) {
     'xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ' +
     'ID="_gl' + Date.now() + '" Version="2.0" ' +
     'IssueInstant="' + new Date().toISOString() + '" ' +
+    'Destination="' + base + '/saml2/sso" ' +
     'AssertionConsumerServiceURL="' + acsUrlFor(application) + '" ' +
     'ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST">' +
     '<saml:Issuer>' + application + '</saml:Issuer>' +
@@ -517,11 +528,23 @@ async function saml11Sso(username, application) {
   // entered with a TARGET and the relying party is named by `providerId`.
   // That is the single biggest difference from the profile above and is why
   // this service implements the two separately.
+  //
+  // THE RELYING PARTY STARTS IT (the Shibboleth 1.3 AuthnRequest profile:
+  // `providerId`, `shire`, `target`, `time`). `shire` is what makes it a
+  // relying-party-initiated sign-in, answered by default
+  // (saml11.spInitiatedSso); without one it is identity-provider-initiated,
+  // off by default (#426, #711, #714). It also names the address: the
+  // unscoped /saml11/sso reads no registered assertion consumer without one,
+  // so a development service answered "There is nowhere to send it"
+  // (STS-SAML-0028). The shire is the address the entry registers
+  // (createApplication()), which is what a product service compares it with.
   const cookies = jar();
   const started = await follow(cookies, base + "/saml11/sso" +
     "?TARGET=" +
     encodeURIComponent("http://" + application + ".example.com/target") +
-    "&providerId=" + encodeURIComponent(application));
+    "&shire=" + encodeURIComponent(acsUrlFor(application)) +
+    "&providerId=" + encodeURIComponent(application) +
+    "&time=" + Math.floor(Date.now() / 1000));
   const done = await throughTheScreens(cookies, started, username);
   assert.ok(/SAMLResponse/.test(done.r.body || ""),
     "the SAML 1.1 Browser/POST profile should end on the self-submitting " +
@@ -717,6 +740,7 @@ async function x509(username) {
     (installed.status || "") + " " + String(installed.why ||
                                             installed.body || "")
       .slice(0, 200));
+  addedAnchors.push(pki.caPem);
 
   // **THE MAIN PORT, SINCE 2026-09-16.** This dialled `STS_MTLS_PORT` (9443),
   // the listener that required a client certificate at the handshake; it and
@@ -1076,6 +1100,8 @@ async function createApplication(identifier, protocols) {
     fields.samlAssertionConsumerService = [acsUrlFor(identifier)];
     fields.samlSigningCertificate = [samlSpCredential().certificatePem];
   }
+  // No saml11IdpInitiatedSso: saml11Sso() below sends a `shire`, so the
+  // sign-in is the relying party's own and the realm's defaults answer it.
   if (declares("wsfed")) {
     fields.wsfedRealm = [identifier];
     fields.wsfedReplyUrl = [replyUrlFor(identifier)];
@@ -1115,6 +1141,7 @@ async function runScenario(label, username, applicationFor) {
 
   const signIns = [];
   const failures = [];
+  const failedBy = {};
 
   // Each sign-in is attempted independently and a failure is COLLECTED rather
   // than thrown, so one protocol being unavailable in this stack does not hide
@@ -1128,6 +1155,7 @@ async function runScenario(label, username, applicationFor) {
       log.info("  [" + label + "] signed in through " + out.protocol);
     } catch (e) {
       failures.push(what + ": " + (e.message || e));
+      failedBy[what] = String((e && e.message) || e);
       log.warn("  [" + label + "] " + what + " did not sign in: " + e.message);
     }
     log.debug("Leaving attempt().");
@@ -1163,6 +1191,19 @@ async function runScenario(label, username, applicationFor) {
       "sign-out here would be sweeping a world that was never built and the " +
       "result would mean nothing. What failed: " + failures.join(" | "));
   });
+
+  // THE TWO SAML PROFILES ARE NOT PART OF THE FLOOR'S SLACK. From about
+  // 2026-10-10 both were refused (a signed AuthnRequest without a
+  // Destination; a SAML 1.1 start with nowhere to send the answer) and the
+  // run still passed on seven of nine, so a global sign-out was "tested"
+  // without either SAML session in it. Each is required by name.
+  for (const what of ["SAML 2.0 Web Browser SSO", "SAML 1.1 Browser/POST"]) {
+    check(label + ": " + what + " really signed this person in", function () {
+      assert.ok(!(what in failedBy),
+        what + " did not sign this person in, so the sweep below would not " +
+        "be ending a session of that protocol at all: " + failedBy[what]);
+    });
+  }
 
   // WHAT EXISTS NOW, read before the sweep so the after-picture has something
   // to be compared against.
@@ -1407,7 +1448,7 @@ async function test() {
   // A FLOOR ON THE COUNT, for the reason sts_admin_console.js gives: a section
   // that stops being called takes its assertions with it and the run still
   // says "passed".
-  assert.ok(checks >= 20,
+  assert.ok(checks >= 24,
     "only " + checks + " checks ran. This file makes about thirty against a " +
     "healthy service, so a count this low means a SECTION STOPPED BEING " +
     "CALLED rather than that the feature got simpler.");
@@ -1431,7 +1472,14 @@ program
   .parse(process.argv);
 base = String(program.opts().url || base).replace(/\/+$/, "");
 
-test().catch(function (e) {
+test().then(function () {
+  return anchors.settleAnchors(base, addedAnchors, null);
+}, function (e) {
+  // Cleanup still runs, and the original failure is passed through
+  // settleAnchors(), which rethrows it.
+  log.debug("Caught in test(): " + ((e && e.message) || e));
+  return anchors.settleAnchors(base, addedAnchors, e);
+}).catch(function (e) {
   log.error(e.stack || e.message);
   process.exit(1);
 });

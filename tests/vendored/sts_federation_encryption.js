@@ -1050,8 +1050,13 @@ async function publication(world) {
     assert.ok(view.encryption && view.encryption.current &&
               /BEGIN CERTIFICATE/.test(view.encryption.certificatePem),
               JSON.stringify(view.encryption));
-    assert.ok(!/PRIVATE KEY|\$aesgcm\$|privateKey/.test(text),
-              "the view carries private key material");
+    // KEY MATERIAL, not the words: the view carries the schema the page is
+    // drawn from, and since #565 one row's description says Sign in with
+    // Apple's signing key is "THE PRIVATE KEY ... never shown". A PEM
+    // armour, a sealed value or a field named for one is what may not be
+    // here.
+    assert.ok(!/-----BEGIN [A-Z ]*PRIVATE KEY-----|\$aesgcm\$|"privateKey"/
+      .test(text), "the view carries private key material");
     assert.strictEqual(view.fields.fedEncryptionKey,
                        "(set — not returned)");
     assert.strictEqual(view.encryption.required, isProduct);

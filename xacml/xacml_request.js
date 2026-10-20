@@ -175,6 +175,50 @@ const VOCABULARY = Object.freeze({
   // person, `appMayAct` on an application), as the `may_act` claim would
   // name it — the fact the `assign-may-act` question decides on.
   EXCHANGE_SUBJECT_DELEGATE: 'urn:sts:xacml:exchange:subject-delegate',
+  // THE FACTS OF A QUESTION ASKED ACROSS A KERBEROS TRUST (#430 Phase 1,
+  // defined now; the rules that read them are its Phase 3). Gathered from
+  // the trust record (`kerberos/krb5_trusts.ts`) by the Kerberos side of
+  // `delegation_policy.ts`; nothing here decides, and none is sent for a
+  // question that crossed no trust.
+  //
+  // access-subject / intermediary-subject / resource: the KERBEROS REALM the
+  // subject, the actor and the target (R) each belong to — `ALPHA.TEST` —
+  // so a rule can tell a foreign front end (`SPN@OTHER`) from a local one.
+  EXCHANGE_SUBJECT_REALM: 'urn:sts:xacml:exchange:subject-realm',
+  EXCHANGE_ACTOR_REALM: 'urn:sts:xacml:exchange:actor-realm',
+  EXCHANGE_TARGET_REALM: 'urn:sts:xacml:exchange:target-realm',
+  // environment: the partner realm whose trust the question arrived across
+  // (the realm that issued the presented ticket), the trust's type
+  // (`external` or `trust-realm`), its direction as this realm holds it
+  // (`inbound`, `outbound`, `bidirectional`), each of its attributes by name
+  // ([MS-ADTS] 6.1.6.7.9's closed set: `non-transitive`, `quarantined`,
+  // `forest-transitive`, `cross-organization`, `within-forest`,
+  // `treat-as-external`, `no-tgt-delegation`, `enable-tgt-delegation`), the
+  // realms the path crossed in order (the client's realm first, as RFC 4120
+  // section 3.3.3.2's `transited` and the issuing realm make it), and how
+  // many trusts it crossed (an integer).
+  EXCHANGE_TRUST_PARTNER: 'urn:sts:xacml:exchange:trust-partner',
+  EXCHANGE_TRUST_TYPE: 'urn:sts:xacml:exchange:trust-type',
+  EXCHANGE_TRUST_DIRECTION: 'urn:sts:xacml:exchange:trust-direction',
+  EXCHANGE_TRUST_ATTRIBUTE: 'urn:sts:xacml:exchange:trust-attribute',
+  EXCHANGE_TRUST_PATH: 'urn:sts:xacml:exchange:trust-path',
+  EXCHANGE_TRUST_HOPS: 'urn:sts:xacml:exchange:trust-hops',
+  // AND WHAT PHASE 3 OF #430 READS BESIDE THEM, each sent only with a trust:
+  // environment, a boolean — the trust is enabled (a disabled one refers and
+  // accepts nothing, so this is the rule's belt to the KDC's braces); this
+  // KDC's own Kerberos realm, so a rule can tell a foreign party from a
+  // local one; action — the Kerberos mechanism (`S4U2Self`,
+  // `S4U2Proxy-classic`, `S4U2Proxy-rbcd`, `forwarded`); intermediary-
+  // subject — the realms whose users the actor may obtain S4U2Self tickets
+  // for (`krb5S4uSelfRealm`); resource — what the target says of a TGT
+  // forwarded to it across a trust (`krb5ForeignTgtDelegation`: `inherit`,
+  // `deny`).
+  EXCHANGE_TRUST_ENABLED: 'urn:sts:xacml:exchange:trust-enabled',
+  EXCHANGE_LOCAL_REALM: 'urn:sts:xacml:exchange:local-realm',
+  EXCHANGE_MECHANISM: 'urn:sts:xacml:exchange:mechanism',
+  EXCHANGE_ACTOR_SELF_REALM: 'urn:sts:xacml:exchange:actor-self-realm',
+  EXCHANGE_TARGET_FOREIGN_TGT_DELEGATION:
+    'urn:sts:xacml:exchange:target-foreign-tgt-delegation',
   // THE FACTS OF A GNAP ACCESS RIGHT (#432 phase 3): one question per right,
   // action-id `issue-gnap-right`, the right's type (or its reference string)
   // as the resource-id. Gathered by `gnap/gnap_rights.ts`; nothing here
@@ -268,7 +312,8 @@ const VOCABULARY = Object.freeze({
   // policy's passkey rules read these.
   //
   // environment: which groups of facts this question carries —
-  // `backup-eligible`, `pin-length`, `serial`, `attestation`. Each built-in
+  // `backup-eligible`, `pin-length`, `serial`, `attestation`, `algorithm`
+  // (#718). Each built-in
   // rule fires only on a question that carries its group, so a question
   // asked at one door never trips a rule another door asks.
   PASSKEY_FACTS: 'urn:sts:xacml:passkey:facts',
@@ -298,10 +343,42 @@ const VOCABULARY = Object.freeze({
   PASSKEY_CERTIFICATION_RANK: 'urn:sts:xacml:passkey:certification-rank',
   PASSKEY_FIPS: 'urn:sts:xacml:passkey:fips',
   PASSKEY_METADATA_UNCHECKED: 'urn:sts:xacml:passkey:metadata-unchecked',
+  // resource: the key's SIGNATURE ALGORITHM (#718), with the fact group
+  // `algorithm` — its JOSE name as the ceremony recorded it (`ML-DSA-65`,
+  // `ES256`; `credentials.keyAlgorithm()` derives it for a row that
+  // recorded none); a boolean saying whether that algorithm is
+  // post-quantum (RFC 9964's ML-DSA-44, -65 or -87), computed in ONE place,
+  // `passkey_policy.ts`'s `question()`, never by a door; and the LANE the
+  // key was created in (#643, `classical` or `pqc`). The rule is on the
+  // ALGORITHM: with #643's switch off an ML-DSA key is made in the one
+  // lane and its row carries no lane, so a rule on the lane would refuse a
+  // post-quantum key. The lane is here for a realm's own rules.
+  PASSKEY_ALGORITHM: 'urn:sts:xacml:passkey:algorithm',
+  PASSKEY_POST_QUANTUM: 'urn:sts:xacml:passkey:post-quantum',
+  PASSKEY_LANE: 'urn:sts:xacml:passkey:lane',
   // environment: the SELECTED passkey policy profile's rows (#527, #535),
   // each after this prefix under its own name
   // (`urn:sts:xacml:passkey-policy:backupEligibility`).
   PASSKEY_POLICY_PREFIX: 'urn:sts:xacml:passkey-policy:',
+  // THE FACTS OF AN ACCOUNT RECOVERY (#724), carried in the `recovery`
+  // group of a `recover-account` question. resource, strings: the recovery
+  // DOOR (`forgot-password`, `password-reset`, `admin-password`,
+  // `activation`, `recovery-code`, `email-code`, `email-link`; absent at a
+  // session no recovery door led to), WHERE the question is asked (`door`,
+  // before anything is written; `session`, at the start of a session), and
+  // the kind of CREDENTIAL that answered at a session (`password`,
+  // `webauthn`, `backup-code`, ...). Booleans: whether the door is
+  // SELF-SERVICE (the person's own, rather than an operator's), whether the
+  // person holds a passkey the recovery would replace (COVERED), and
+  // whether a recovery is PENDING on their entry (a door was spent and no
+  // passkey has signed them in since).
+  PASSKEY_RECOVERY_DOOR: 'urn:sts:xacml:passkey:recovery-door',
+  PASSKEY_RECOVERY_AT: 'urn:sts:xacml:passkey:recovery-at',
+  PASSKEY_RECOVERY_CREDENTIAL: 'urn:sts:xacml:passkey:recovery-credential',
+  PASSKEY_RECOVERY_SELF_SERVICE:
+    'urn:sts:xacml:passkey:recovery-self-service',
+  PASSKEY_RECOVERY_COVERED: 'urn:sts:xacml:passkey:recovery-covered',
+  PASSKEY_RECOVERY_PENDING: 'urn:sts:xacml:passkey:recovery-pending',
   // environment, an integer: the rank of
   // `webauthn.attestationMinCertificationLevel`, absent when it is `none`.
   PASSKEY_REQUIRED_RANK: 'urn:sts:xacml:passkey:required-certification-rank'
@@ -545,6 +622,11 @@ class AuthorizationRequest {
   //   target  { id, count, registered, requiredRoles, accepts }   (R)
   //   requestedSemantics, semantics, mayActPresent, mayActNamesActor,
   //   protectedGroups
+  //   (#430) subject.realm, actor.realm, target.realm — Kerberos realms —
+  //   and trust { partner, type, direction, attributes, path, hops,
+  //   enabled } for a question asked across a Kerberos trust, with
+  //   localRealm, mechanism, actor.selfRealms and
+  //   target.foreignTgtDelegation beside it; absent, none of them is sent
   // An unknown identifier is left out rather than sent as '', so no absent
   // party can ever compare equal to another. Booleans are always sent.
   exchange(facts) {
@@ -602,6 +684,34 @@ class AuthorizationRequest {
     this.environment(V.EXCHANGE_MAY_ACT_NAMES_ACTOR,
                      [!!given.mayActNamesActor], model.TYPE.BOOLEAN);
     this.environment(V.EXCHANGE_PROTECTED_GROUP, list(given.protectedGroups));
+    // #430: only when known, so a question that names no Kerberos realm is
+    // the request it always was, attribute for attribute.
+    if (subject.realm) {
+      this.subject(V.EXCHANGE_SUBJECT_REALM, one(subject.realm));
+    }
+    if (actor.realm) {
+      this.attribute(I, V.EXCHANGE_ACTOR_REALM, one(actor.realm));
+    }
+    if (target.realm) {
+      this.resource(V.EXCHANGE_TARGET_REALM, one(target.realm));
+    }
+    const trust = given.trust || null;
+    if (trust) {
+      this.environment(V.EXCHANGE_TRUST_PARTNER, one(trust.partner));
+      this.environment(V.EXCHANGE_TRUST_TYPE, one(trust.type));
+      this.environment(V.EXCHANGE_TRUST_DIRECTION, one(trust.direction));
+      this.environment(V.EXCHANGE_TRUST_ATTRIBUTE, list(trust.attributes));
+      this.environment(V.EXCHANGE_TRUST_PATH, list(trust.path));
+      this.environment(V.EXCHANGE_TRUST_HOPS, [Number(trust.hops) || 0],
+                       model.TYPE.INTEGER);
+      this.environment(V.EXCHANGE_TRUST_ENABLED, [trust.enabled !== false],
+                       model.TYPE.BOOLEAN);
+      this.environment(V.EXCHANGE_LOCAL_REALM, one(given.localRealm));
+      this.action(V.EXCHANGE_MECHANISM, one(given.mechanism));
+      this.attribute(I, V.EXCHANGE_ACTOR_SELF_REALM, list(actor.selfRealms));
+      this.resource(V.EXCHANGE_TARGET_FOREIGN_TGT_DELEGATION,
+                    one(target.foreignTgtDelegation));
+    }
     return this;
   }
 
@@ -613,11 +723,15 @@ class AuthorizationRequest {
   //   serial, serialHeld                       with `serial`
   //   attestation { verified, trusted, aaguid, listed, compromised, rank,
   //                 fips, unchecked }          with `attestation`
+  //   algorithm, postQuantum, lane            with `algorithm` (#718)
   //   policy { backupEligibility, enforcePinLength, minPinLength,
   //            pinLengthOnlyIfSupported, enforceAttestationAtSignIn,
-  //            enterpriseSerialAttribute }     always
+  //            enterpriseSerialAttribute, postQuantumRequired }  always
   //   settings { attestationPolicy, allowedAaguids, requiredRank,
   //              requireFips }                 with `attestation`
+  //   recovery { door, at, credential, selfService, covered, pending }
+  //                                            with `recovery` (#724)
+  //   policy.recoveryAssurance                 always (#724)
   // An empty string and an unknown value are left out, never sent as '', so
   // no rule reads an absent fact as a value.
   passkey(facts) {
@@ -677,6 +791,16 @@ class AuthorizationRequest {
       this.resource(V.PASSKEY_METADATA_UNCHECKED, att.unchecked ? [true] : [],
                     T.BOOLEAN);
     }
+    // THE KEY'S ALGORITHM (#718). `postQuantum` is sent as given, a
+    // boolean, and false for anything else: the question computed it, and
+    // a fact the rule reads as "not post-quantum" must never be absent, or
+    // a requirement would let a key through by its silence.
+    if (has('algorithm')) {
+      this.resource(V.PASSKEY_ALGORITHM, one(given.algorithm));
+      this.resource(V.PASSKEY_POST_QUANTUM, [given.postQuantum === true],
+                    T.BOOLEAN);
+      this.resource(V.PASSKEY_LANE, one(given.lane));
+    }
     const policy = given.policy || {};
     const P = V.PASSKEY_POLICY_PREFIX;
     this.environment(P + 'backupEligibility', one(policy.backupEligibility));
@@ -690,6 +814,21 @@ class AuthorizationRequest {
                      [policy.enforceAttestationAtSignIn === true], T.BOOLEAN);
     this.environment(P + 'enterpriseSerialAttribute',
                      one(policy.enterpriseSerialAttribute));
+    this.environment(P + 'postQuantumRequired',
+                     one(policy.postQuantumRequired));
+    this.environment(P + 'recoveryAssurance', one(policy.recoveryAssurance));
+    const recovery = given.recovery || null;
+    if (has('recovery') && recovery) {
+      this.resource(V.PASSKEY_RECOVERY_DOOR, one(recovery.door));
+      this.resource(V.PASSKEY_RECOVERY_AT, one(recovery.at));
+      this.resource(V.PASSKEY_RECOVERY_CREDENTIAL, one(recovery.credential));
+      this.resource(V.PASSKEY_RECOVERY_SELF_SERVICE,
+                    [recovery.selfService === true], T.BOOLEAN);
+      this.resource(V.PASSKEY_RECOVERY_COVERED,
+                    [recovery.covered === true], T.BOOLEAN);
+      this.resource(V.PASSKEY_RECOVERY_PENDING,
+                    [recovery.pending === true], T.BOOLEAN);
+    }
     const settings = given.settings || null;
     if (has('attestation') && settings) {
       this.setting('webauthn.attestationPolicy',

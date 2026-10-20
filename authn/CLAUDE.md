@@ -10,7 +10,10 @@ than living under `oauth-oidc/` where the screen used to be rendered.
 | `authn_api.ts` | **`/authn-api` (#571)**: the sign-in screen's API — the operation table, the CSRF binding, the body schemas and the OpenAPI document. The logic is `authn.ts`'s. See *The sign-in screen is a static surface*, below. |
 | `web_authn.ts`, `web_authn_pages.ts`, `web_authn_login.ts`, `web_authn_select.ts`, `web_authn_password.ts` | **The sign-in surface in the browser (#571)**: the runtime (`authn-spa.js`, served at `/authn/signin.js`) and the renderers of `/authn/login`, `/authn/select-idp` and `/authn/password-change`. `web_` modules (`common/CLAUDE.md` 3cl). **The screen's explanations fold (rcbj, 2026-10-12)**: the federation, Kerberos and wallet blurbs and the notes at its foot go through the console's `WebKit.note()` (`admin-ui/web_kit.ts`), so a paragraph longer than a line is a `<details>` whose summary is its first sentence; the rules are `common/web_card_css.ts`'s `FOLD_CSS`. |
 | `web_authn_mfa.ts`, `web_authn_email.ts` | **The steps after the screen in the browser (#572, #573)**: the renderers of `/authn/totp`, `/authn/webauthn`, `/authn/backup-code`, `/authn/password-factor`, `/authn/mfa-setup`, and of the emailed factor's three pages. See *The steps after the screen*, below. |
+| `account_sets.ts` | **A browser's account set (#561)**: the per-realm stores of which sign-on sessions one browser holds and which accounts signed out there, the `sts_accounts` cookie, and the selection tickets. A library (rule 3). See *Several signed-in accounts in one browser*, below. |
+| `web_authn_accounts.ts` | **The account picker in the browser (#561)**: the renderer of `/authn/accounts`. A `web_` module. |
 | `email_factor.ts` | The emailed code and sign-in link (#64): their views and acts since #573. See *The emailed code and the emailed sign-in link*, below. |
+| `device_bound_sessions.ts` | **Device Bound Session Credentials (#725)**: the registration header, `POST /authn/dbsc/register` and `/authn/dbsc/refresh`, and the bound-cookie check `sessionOf()` asks. See *The session bound to a key the browser holds*, below. |
 | `webauthn.js` | The relying party's half of WebAuthn Level 3. |
 | `webauthn_policy.ts` | The ceremony's options, the four policy settings that refuse, and the attestation policy's settings (#105), kept out of `webauthn.js` so that file stays loadable on its own. |
 | `webauthn_attestation.ts` | **A registration's attestation statement, verified (#105)**: WebAuthn Level 3 section 7.1 steps 21-25 and all eight section 8 formats, the trust anchors (the realm's and the FIDO Metadata Service's), MDS status reports, revocation, and the record a key carries. A library (rule 3). See *The attestation statement*, below. |
@@ -134,6 +137,7 @@ foundation (`common/CLAUDE.md` 3cl), and the sign-in screen is the largest:
 | `GET /authn-api/pending/{id}/partners` | the chooser's view, the list resolved again; `go` to the screen with fewer than two |
 | `POST …/password`, `…/cancel`, `…/anonymous`, `…/email`, `…/passkey/options`, `…/passkey` | the screen's acts, each a closed (`.strict()`) body; `…/passkey/options` (which mints a challenge and names nobody) is counted per address on a `passkey-options` budget of its own since 2026-10-12, 429 with `Retry-After` past it (`STS-AUTHN-0332`, `tests/authn_api.js` 5i-ii) |
 | `GET`/`POST /authn-api/password-change/{id}` | the forced change's view and act |
+| `GET /authn-api/pending/{id}/accounts`, `POST …/accounts/select`, `…/another`, `…/forget`, `GET /authn-api/accounts` | the account picker's view and acts, and a browser's account list (#561): *Several signed-in accounts in one browser*, below |
 
 **UNAUTHENTICATED, KEYED BY THE PENDING ID** — a bearer capability, as
 `authn_id` was. It is never logged here, and `common/audit.js`'s
@@ -172,7 +176,18 @@ leaves the visitorId on `window.stsDeviceFingerprint` too.
 `/authn/webauthn.js` was served for `/authn/webauthn` until #572 converted
 that page; nothing draws a page that loads it now, and it is gone.
 
-**Tests**: `tests/authn_api.js` (the shell, the index, the view, every
+**A page with nowhere to go** gets a way off (`AuthnSurface.put()`). The
+problem page — a sign-in this service no longer has, or any other refusal
+that drew no view — shows the language chooser and the English sentence
+and nothing else, and the same is true of any screen whose body draws
+neither a link nor a button (the chooser redraws the page, so it is not
+one). That page tells the person to close the browser tab or window and
+start over, and links the realm's root page (`stuck.close`, `stuck.home`).
+A screen that already has a link or a button is left as it is: Start over,
+Allow, and Sign in are ways on.
+
+**Tests**: `tests/authn_way_out.js` (the way off, and the pages that keep
+their own); `tests/authn_api.js` (the shell, the index, the view, every
 binding refusal, every act and its next step, the redacted audit row, the
 form POSTs gone); `tests/web_surfaces.js`'s round trip over seven cases in
 `tests/tools/web_surfaces.js`; in process, `tests/tools/authn_screen.js` is
@@ -426,7 +441,9 @@ rule is about the level actually changing.
   event's** (rcbj's choice). So a step-down lowers `acr`, which is OIDC's
   literal reading of those claims.
 * **A re-authentication ADDS an event; a different person REPLACES the
-  session.** A re-authentication is not a sign-out, whichever of the four asked
+  session** — with `authn.multipleAccounts` off. On (#561), a different
+  person ADDS a session to the browser's account set and the first one
+  carries on (*Several signed-in accounts in one browser*, below). A re-authentication is not a sign-out, whichever of the four asked
   for it. The sessions derived from this one, the parties it answered and the
   refresh tokens it issued all carry on.
 * **The cookie handle rotates on every re-authentication, and `sid` never
@@ -483,6 +500,14 @@ contract:
   latest event's. It decides nothing — compliance, risk, policy, CAEP and
   token claims (#164 phases 3–6) read it — and a recogniser that throws
   records null (`STS-DEVICE-0029`) rather than failing a sign-in.
+* **which WebAuthn ceremony, and whether the key's attestation is trusted
+  (#723).** A WebAuthn event's `context.credential` carries `ceremony`
+  (`assertion`, or `registration` for a key enrolled in that act) and
+  `attestationTrusted` (the stored statement's `trusted`) beside
+  `backupEligible`. Both finishers write them, and so does the usernameless
+  door. `common/phishing_resistance.ts` reads them for EAP's `phr` and
+  `phrh` (`common/CLAUDE.md` 3cp). `phishingEvidenceOf()` copies them onto
+  the event the issuance policy is asked about before the session exists.
 * **appending on re-authentication.** `startSession()` recognises the same
   `sub` on a live, chosen, authenticated sign-on session behind the cookie and
   hands off to `reauthenticateSession()`, whose header lists what it does and,
@@ -524,9 +549,11 @@ contract:
 * **SCIM's resource `id` is the `entryUUID`** (`scim/CLAUDE.md`). **Everyone moved** (rcbj's
   choice): every `sub` a relying party had stored changed once, and the four owned jobs
   that built the old form now read `subject` off `GET /admin-api/users`.
-* **Federation's two switches**: `fedAutocreateUsers` off means the entry must already
-  exist, and `fedUpdateUserAttributes` decides whether a returning person's attributes are
-  overwritten (`federation/CLAUDE.md`).
+* **Federation's switches**: `fedAutocreateUsers` off means the entry must already
+  exist (a new relationship is written on in development and off in product), and
+  `fedUpdateUserAttributes` decides whether a returning person's attributes are
+  overwritten. `fedProvisionGroups` is off unless the relationship stores it
+  (`federation/CLAUDE.md`).
 * **`deleteOldRdn` is honoured** on a rename, so the old name stops resolving.
 
 `tests/stable_subject.js` and `tests/federation_provisioning.js` are the contract.
@@ -616,6 +643,351 @@ draw a row for a session that is not the caller's. Neither expires anything:
 expired, because an observer that quietly ended sessions while reporting on them
 would be changing the thing it describes — the same rule `audit.js`'s actor
 resolver follows.
+
+## SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561, 2026-10-19)
+
+**`authn.multipleAccounts`, OFF BY DEFAULT in both modes (the plan's D2)**,
+runtime and so per realm, read where it is used. **Off, nothing below
+exists**: no `sts_accounts` cookie, no picker, `sessionOf()` reads the cookie
+alone, and a different person signing in ends the browser's session through
+`dropSession('a new sign-in in the same browser')` as it always did —
+`tests/multi_account_sessions.js` part 1 holds that. The plan is the comment
+on #561 headed *Implementation plan*, its D1–D12 taken as recommended; what
+this section records is what was built and where the code made the plan
+change. Delivery steps 1 and 2 (the set, resolution, the picker) are here;
+steps 3 and 4 — the protocols' hints, the doors' tickets and the sign-outs —
+are in the directory of each protocol (`saml/`, `ws-federation/`, `gnap/`,
+`federation/`, `oauth-oidc/` 3ax and RP-Initiated Logout, `logout/`), and
+what they asked of this module is in the contract table below. The
+console's and the portal's runtimes are a later step.
+
+### The account set: the server's, per browser (D1, D7)
+
+`authn/account_sets.ts` (`AccountSets`, a static library) holds two
+per-realm stores:
+
+| Store | What |
+|---|---|
+| `authn.accountSets` | one row per browser: `sessions` (sid → `{ sub, username, displayName, addedAt }`), `remembered` (key → `{ sub, username, displayName, signedOutAt }`), `lastActiveSid`, and the merge's memory (`endedSids`, `forgotten`). Tombstoned and merged (`AccountSets.merge()`: sessions a union less what either copy ended, remembered a union less what either forgot). Cell-tier (`persistence/tiers.js`). |
+| `authn.accountTickets` | the selection tickets, `retain: 'age'`, two minutes |
+
+* **THE COOKIE IS `sts_accounts=<setId>.<handle>`**, HttpOnly, SameSite=Lax,
+  Secure under HTTPS, `authn.cookieDomain` as the sign-on cookie carries it;
+  **`sts_accounts_<realm>` outside the default realm**, so one realm's sign-in
+  does not overwrite another's set the way the one `sts_session` slot is
+  shared (*`consoleSession()`*, below). The row keeps the handle's SHA-256.
+* **THE HANDLE ROTATES WHEN A SESSION IS ADDED OR RE-AUTHENTICATED, AND ON
+  EVERY SELECTION AT THE PICKER** (the last since batch 10, rcbj's decision
+  1 on #561: a selection changes who the browser acts as, so a copied
+  `sts_accounts` value goes stale at the next choice the person makes; the
+  cookie keeps the attributes above). **Not on every change** — the plan
+  said every change, and the code says why not: a session that expires on
+  the sweep, is evicted at `authn.maxSessions` or is ended by an
+  administrator changes its set on a request (or a job) with no response to
+  that browser, and a rotation there would lose the browser its set. A
+  hint's silent choice and a ticket's spend do not rotate either: they ride
+  every protocol request, and two tabs' requests in flight would race the
+  way two sign-ins do (*At once, and under failure*, below).
+* **THE SET LISTS SIDS AND DECIDES NOTHING.** Whether a listed session is
+  live is the session store's answer every time (`accountSessionLive()`:
+  held, eligible, neither clock run out), and the one chosen is then held to
+  everything `sessionOf()` holds a session to (`honouredSession()`, which is
+  `sessionOf()`'s old body, split out so the cookie's session and the set's
+  choice meet the same rules). Each session keeps its own lifetime, idle
+  timeout, `maxSessions` eviction, disabled-account check, step-up state and
+  sign-out, unchanged.
+* **ELIGIBLE** is a browser's own authenticated sign-in: not an arrival
+  nobody chose, not the anonymous principal, not a hosted surface's
+  relying-party row, not a keyed API caller (`accountEligible()`).
+* **A SESSION'S SET IS STAMPED ON IT** (`session.accountSetId`), so its end
+  finds the set by key: `dropSession()` and `expireSession()` — a sign-out,
+  an administrator, an expiry, an eviction — call `accountSessionEnded()`,
+  which moves the account to `remembered`. No scan.
+* **D12: A BROWSER WITH A SESSION AND NO SET GETS ONE AROUND IT** at the
+  first request that needs the set (`ensureAccountSet()`, from
+  `sessionOf()` and the picker), its cookie appended to `req.res`; a
+  response already sent makes nothing. Turning the setting on therefore ends
+  nothing and asks nobody to sign in. Turning it off ends nothing either:
+  the cookie's session carries on alone, the others run out or are signed
+  out at `/logout`.
+
+### `startSession()` with the setting on
+
+In `startSessionHere()`, only for a browser's own authenticated sign-in
+(`multiAccount`: a request, no `key`, a cookie, `authenticated` not false):
+
+* **THE SAME PERSON LIVE IN THE SET IS A RE-AUTHENTICATION OF THAT SESSION**
+  (one live session per subject per browser), whichever session the cookie
+  happens to name — `accountSessionFor()` replaces `current` before
+  `reauthenticating` is computed, so everything that function's header says
+  about a re-authentication holds.
+* **A DIFFERENT PERSON ADDS A SESSION**: the `dropSession()` of the session
+  the browser was on is skipped (`!multiAccount`), and only then.
+* **THE FULL-SET RULE (D11)**: a sign-in that would be the
+  `authn.maxBrowserAccounts`-th live account is refused before anything is
+  made (`STS-AUTHN-0340`, a `session.refuse` row, `refusedWhy` for the
+  screen); a remembered account is dropped to make room, oldest sign-out
+  first (`AccountSets.addSession()`).
+* **ENROLMENT IS AFTER THE SESSION COOKIE** (`enrolInAccountSet()`): the
+  browser's previous default joins first where it is live and not there yet
+  (D12 again), dead sessions move to remembered, the handle rotates and the
+  set's cookie is APPENDED — `setCookieHeader()` writes the session cookie
+  by REPLACING every Set-Cookie on the response, so the order is the whole
+  of it. `res.locals.stsAccountSession` and `stsAccountSet` then name what
+  the flow resumes as. An `account.add` row and the `added` counter.
+
+### Which session a request acts as: `sessionOf()`, its signature kept
+
+`resolveAccount(req, create)`, in the plan's order:
+
+1. **A SELECTION TICKET** spent on this request. The middleware
+   `registerRoutes()` installs FIRST (`spendAccountTicket()`) takes
+   `sts_account=` off `req.url`, `req.originalUrl` and `req.query` before any
+   route reads them — so no relying party sees it, and a SAML redirect
+   binding's signed query is the one its sender signed — and spends it. It
+   counts only for THIS browser's set, for THIS path (the realm prefix is
+   already off `req.url`, as `returnTo` never had it) and a session still
+   live there; anything else is ignored (`STS-AUTHN-0346`) — **except a
+   ticket of this browser, for this path, whose session ENDED between the
+   choice and this request (#731)**: that one chooses NOBODY
+   (`hint-unmatched`, the account's name — kept on the ticket when it was
+   minted — as the hint), or the same account's session where it signed in
+   again meanwhile. Ignored, it let the request fall through to *the only
+   live session*, so a flow resumed as alice went on as bob. The chosen sid
+   is left on `req.stsAccountSelection` for every later `sessionOf()` of the
+   request, which is called several times per request — so the ticket is
+   spent once, at the door, and the choice lasts exactly one request.
+2. **A PROTOCOL HINT** (`hintAccount()`), matched by sid, then subject, then
+   login name or e-mail (or the subject that name resolves to). **A hint
+   naming nobody live here answers NOBODY** (`hint-unmatched`), never another
+   account.
+3. **THE ONLY LIVE SESSION**: today's single sign-on.
+4. **NOBODY** (`ambiguous`).
+
+A browser with no set, or no live session in its set, FALLS BACK to the
+cookie, exactly as the setting off. That is what keeps the anonymous
+"Continue without signing in" session working: it is never in a set.
+
+**`auditActorOf()` resolves the same way** with nothing made or swept, and
+`auditActorSessionOf()` names the session for `detail.sessionId` on HTTP
+rows (`common/audit.js`'s `setActorSessionResolver()`), only with the
+setting on, so a row is otherwise unchanged.
+
+### The ticket is minted where a flow resumes
+
+* **`returnToCaller()`** — the one funnel every finished sign-in leaves
+  through — adds a ticket for the session `enrolInAccountSet()` named on
+  `res.locals` (`ticketedReturn()`). Without it a browser holding two
+  accounts that signs a third in would be sent back to a request that names
+  none of them, and to the picker again.
+* **The picker's select** (`resumeAs()`).
+* **The consent screen** (`oauth-oidc/consent_screen.ts`), whose Allow or
+  Deny resumes the authorization request through `accountTicketFor()` for
+  the person it asked; its own check hints that person first.
+* **Every other door that resumes a flow** (delivery step 3, checked one by
+  one): federation's ACS resumes the flow itself and mints
+  `accountTicketFor(req, returnTo, { sid })` (`federation/CLAUDE.md`); the
+  Kerberos door and the wallet door leave through `completeAuthentication()`,
+  which IS `returnToCaller()`, on the same response the session was started
+  on, so they were ticketed already. The certificate sign-in
+  (`GET /tls/sign-in`) resumes nothing — it answers JSON naming who was
+  signed in, and its caller names that account on its next request; its
+  "already signed in" check asks about the CERTIFICATE'S account, not the
+  browser's (`tls/CLAUDE.md`, *Several accounts in one browser*) — and
+  WS-Trust's session is a side effect of a SOAP exchange with no browser
+  flow to resume; neither needed a ticket.
+
+### What later steps call — the contracts
+
+| Export | Contract |
+|---|---|
+| `hintAccount(req, { loginHint, sub, sid, soft })` | Before `sessionOf()`. A hint naming a live account in the set chooses it; one naming none makes `sessionOf()` answer null and `accountChoiceNeeded()` `hint-unmatched` — unless it is **`soft`** (step 3), when it is then no hint at all and the request resolves as if it carried none: GNAP's `user`, whose naming somebody other than the person at the browser has a meaning of its own, a sid a page recorded for its own later calls, and RP-Initiated Logout's `id_token_hint` sid. `username` is read as `loginHint`; empty members ignored; a no-op with the setting off. Callers: the OIDC authorization endpoint, SAML 2.0's `<Subject>`, GNAP, consent, sign-out. |
+| `hintAccountKey(req, key)` | The same, from an account's KEY (a subject, or `name:<username>`), as the pages that ask which account carry it. |
+| `accountSessionsOf(req)` | The live session rows of the browser's set, in the order they joined it, no side effects; [] off. Session Management's browser states, SAML Single Logout by NameID, WS-Federation's sign-outs. |
+| `signedInAccounts(req)` | Those accounts as `{ key, sub, username, displayName, current, sid }` — `sid` for the server's own use (a confirmation value), never drawn. |
+| `endSession(req, res, sid)` | With the setting on, `sid` names a session of THIS browser's set to end instead of the cookie's (the set's cookie proves possession; a sid of anybody else's is ignored); then `afterAccountSignOut()`. Off, `sid` is ignored and the function is what it was. |
+| `afterAccountSignOut(req, res)` | After one or more accounts signed out: the cookie cleared only where the browser's DEFAULT session ended, the most recently added live account then made the default (a fresh handle APPENDED after the clear, its OP browser state kept), and Session Management's state list written again. `logout/logout.ts`'s `endFor()` calls it in place of clearing the cookie. |
+| `accountChoiceNeeded(req)` | `null`, or `{ reason: 'ambiguous' \| 'hint-unmatched', accounts, hint }`. Null with the setting off. `prompt=none`/`IsPassive` callers answer from it. |
+| `beginAuthentication({ …, accountChoice, request })` | `accountChoice` `'always'` (select_account: the picker whenever the browser holds any account), `'never'` (a fresh sign-in, prompt=login / ForceAuthn), absent (the picker when ambiguous). `request` defaults to `audit.currentRequest()`. With one account resolved and no hint, its name is filled in. |
+| `accountTicketFor(req, target, hint)` | `target` with `sts_account=` added for the live account `hint` names in this browser's set; unchanged otherwise or with the setting off. For any door that resumes a flow outside `returnToCaller()`. |
+| `noteAccountAmbiguous(req, via, answer)` | The `account.ambiguous` row and counter, for a protocol that refuses rather than showing the picker (`account_selection_required`, `NoPassive`). |
+| `browserAccounts(req)` | `{ enabled, accounts, max }`; each account `{ key, sub, username, displayName, state: 'signed-in' \| 'signed-out', signedInAt, authTime, signedOutAt, current }` — never a sid or a token. `GET /authn-api/accounts` answers it with `csrf`, and with the setting on `anotherAccount` — the portal's advertised address with `?accounts=another`, where every public page's *Sign in with another account* starts (`helpers.urlOf()`, because a page on another listener cannot work it out). The console's and the portal's account menus and the public pages' control read it (`admin-ui/CLAUDE.md` 8c-iv, `portal/CLAUDE.md`, `common/CLAUDE.md` 3cl `web_accounts.ts`). |
+| `auditActorSessionOf(req)` | The sid the request acted as, '' with the setting off. |
+| `ACCOUNTS_PATH`, `accountSetCookieName()`, `ACCOUNT_TICKET_PARAM`, `multipleAccounts()` | `/authn/accounts`; `sts_accounts[_<realm>]` for the ambient realm; `sts_account`; the setting. |
+
+An account's **key** is its subject (`AccountSets.keyOf()`), or
+`name:<username>` where it has none; the picker's acts take keys, never sids.
+
+### The account picker, `/authn/accounts` (FR-3, FR-4)
+
+A page of the sign-in surface (`web_authn_pages.ts`'s row,
+`web_authn_accounts.ts`'s renderer, the `authn.accounts.*` catalog keys in
+every shipped language), on `ARRIVAL_PATHS`; `hosted_applications.js`'s
+`/authn` prefix and `cell_placement.ts`'s `/authn` (affinity) and
+`/authn-api` rows already cover it.
+
+| Operation | What |
+|---|---|
+| `GET /authn-api/pending/{id}/accounts` | the view: the set's accounts (pruned first), `another.open`, `max`, the protocol's rows; `csrf` |
+| `POST …/accounts/select` `{ account }` | continue as a signed-in account: checked again (`honouredSession()`), a `forceMfa` record with a one-factor session goes to the sign-in as that account, otherwise the account becomes the browser's default (`makeDefaultSession()` mints it a fresh handle — the browser lost the old one when another sign-in wrote the cookie), **the set's handle rotates** (appended after the session cookie) and the flow resumes with a ticket; a signed-out account goes to the sign-in with its name filled in; anything else 409 `STS-AUTHN-0345`; a set cookie that opens nothing — another tab's selection retired it — 409 `STS-AUTHN-0348`, the picker drawn again, never a second set made around the session cookie |
+| `POST …/accounts/another` | the sign-in the picker stood in front of (`record.afterAccounts`), the hint cleared; 409 `STS-AUTHN-0340` when every place is live |
+| `POST …/accounts/forget` `{ account }` | a remembered account only (409 `STS-AUTHN-0347` for a live one); `next: stay` |
+| `GET /authn-api/accounts` | access `session`: `browserAccounts()`, plus `anotherAccount` with the setting on. A GET is not bound (no CSRF token): the cookie alone, from the page's own origin |
+
+Bound as every act here (JSON, Origin, CSRF); a body refused is
+`STS-AUTHN-0342`; a realm with the setting off answers 400 `STS-AUTHN-0343`.
+
+**A SET THAT COULD NOT BE READ IS A 503 AT THE PICKER** (batch 10, rcbj's
+decision 3 on #561), with `Retry-After: 5` and `no-store`, as #350 answers a
+failed session read (`refuseUnread()`): `refuseAccountsUnread()`, asked by
+the view and by every act. `STS-AUTHN-0344` where the set's own row threw,
+`STS-AUTHN-0338` where a session it lists could not be read; recorded,
+never sent. A failed read is not absence, so the request whose set cannot
+be read acts as NOBODY (`resolveAccount()`'s `unread`, never the cookie's
+account in its place), no D12 set is made around the cookie, and
+`beginAuthentication()` sends it to the picker (`pick = 'unread'`, with no
+`account.ambiguous` row) rather than to the sign-in screen, which would add
+a second session for an account the browser may already hold. Nothing is
+written; the cookies stay.
+
+* **`beginAuthentication()` IS A WRAPPER NOW**: the old body is
+  `beginAuthenticationHere()`, and the wrapper sends the browser to the
+  picker where there is a choice, with the record the old body made
+  (`accountChoice`, `afterAccounts`). Where the old body would have LEFT at
+  once — a federation partner chosen by configuration — a record is minted
+  for the picker alone, `accountsOnly`, which `pendingFor()` refuses as it
+  refuses `restartOnly`: it must never be drawn as a sign-in screen the
+  application does not allow. `pendingForAccounts()` reads both kinds.
+* **SELECTING NEVER GOES PAST A DEMAND.** `max_age` and RFC 9470's `acr` are
+  asked again by the protocol on the request the ticket resumes, of the
+  chosen session, as of any session; a demand for two factors the session
+  does not meet is answered at the picker by signing in again as it.
+* **A SIGNED-OUT ACCOUNT IS SIGNED IN TO AGAIN WITH ITS NAME FILLED IN, NOT
+  LOCKED** — the plan said `lockedUsername`, and the code says why not:
+  `lockedUsername` (#109) refuses a passkey and the anonymous session,
+  because federation's linking rests on the password; a hint is the
+  person's convenience, not a proof. The same for a hint naming nobody
+  live: the screen fills the name in (`record.hint`) and the person may type
+  another.
+
+### The clean-up job, the audit rows, the counters
+
+* **MAKING AN ACCOUNT THE DEFAULT KEEPS ITS OP BROWSER STATE**
+  (`makeDefaultSession()`, `appendDefaultSession()`): it is not a sign-in,
+  and a fresh state would tell every relying party of that account
+  `changed` under OpenID Connect Session Management (`oauth-oidc/CLAUDE.md`
+  3ax).
+* **`authn.account-set-expiry`**, a cluster job per realm, hourly
+  (`cluster/CLAUDE.md`'s table): `sweepAccountSets()` prunes every set and
+  deletes an empty one. It walks the realm's sets, as the session expiry
+  walks sessions; nothing on a request path does.
+* **Audit rows**, each with the set, the sid and `sub`: `account.add` (with
+  `adopted: true` for D12), `account.select`, `account.switch` (the default
+  changed), `account.forget`, `account.ambiguous` (the picker shown, or
+  `account_selection_required`).
+* **`admin_stats`**: `recordAccountChoice()` — `selected`, `ambiguous`,
+  `selectFailed`, `added`, `forgotten`, `expired`, `switched` — and
+  `accountChoiceCounts()` adding every process's rows — answered by
+  `GET /admin-api/sessions` as `accountChoices` and drawn as a tab of
+  `/admin/sessions` since #731 (`mgmt-api/CLAUDE.md`).
+* **Codes**: `STS-AUTHN-0340` to `0348` and `STS-OAUTH-0960` — 0340 to 0347
+  and 0960 written as 0337 to 0344 and 0959, renumbered on merge because
+  #350 and #714 held those; 0348 added in batch 10.
+* **With the bounded session window on (#350)** the realm map is a cache,
+  so a set reads its members as `sessionById()` does
+  (`accountSessionRead()`): through the window, never `sessions.get()`. A
+  read that FAILED is not absence: the prune, the expiry job and the
+  full-set count keep the member (`accountSessionKept()`), and
+  `resolveAccount()` answers nobody (`reason: 'unread'`) rather than
+  choosing among the members it could read. `dropSession()` moves the
+  account to remembered only after the session is deleted, because a
+  children read that fails returns with the session still live. An
+  evicted session (#350's subject cap) and a removed credential's
+  sessions (#728's `endFactorSessions()`) reach the set through
+  `expireSession()` and `dropSession()`. `tests/session_window.js`,
+  `accountSetCase()`.
+
+### At once, and under failure (#561's TR-2, #731)
+
+`tests/multi_account_concurrency.js` drives two tabs of one browser acting
+together — each request built from the cookie jar before either answer is
+taken — and what it measured is part of the design:
+
+* **TWO SELECTIONS AT ONCE** are two flows' choices, and since every
+  selection rotates the handle (decision 1) the second one, sent before the
+  first answer arrived, carries the handle the first retired: it is
+  refused (`STS-AUTHN-0348`) and chosen again from the picker drawn afresh,
+  and each flow then resumes as the account its own tab chose. Making a
+  set around the session cookie for it instead (D12) split the browser in
+  two, and the first flow's ticket then named a set the browser no longer
+  presented.
+* **A TICKET FOR THIS PATH FROM A SET THE REQUEST DOES NOT CARRY CHOOSES
+  NOBODY** (batch 10) — with no name filled in, since it may be another
+  browser's. Ignored, it fell through to *the only live session* of the set
+  the browser did present: another account. A request carrying no set at
+  all, or a set with no live session, is answered nobody for such a ticket
+  too, never the cookie's account.
+* **TWO SIGN-INS AT ONCE CAN COST THE BROWSER ONE PLACE IN ITS SET, AND
+  THAT IS THE PRICE OF ROTATING THE HANDLE.** The first answer rotates the
+  set's handle; the second request left with the old one, so its set does
+  not open and the sign-in makes a set of its own around the browser's
+  default session. Whichever answer the browser takes last is its set; the
+  other sign-in's session is live and unreachable from this browser until
+  it is signed in again, which puts it in the set. **Nothing is answered
+  as the wrong account**: a request naming the account the race left out
+  acts as nobody, and the old cookie opens nothing. Accepting the previous
+  handle for a moment would close the gap and reopen session fixation —
+  the stale request is byte for byte what a planted cookie is — so it is
+  not done. The window is two sign-ins' final requests in flight together.
+* **A SESSION REVOKED UNDER A FLOW THAT CHOSE IT** — the ticket above.
+* **TWO NODES' COPIES OF ONE SET** are merged by the store's `mergeRow`
+  (`AccountSets.merge()`), in either flush order to one answer.
+* **ONE ROW THE CLEAN-UP JOB CANNOT PRUNE** costs that row
+  (`STS-AUTHN-0344`); a set gone from under a session does not stop the
+  session ending.
+
+### With device-bound sessions (#725), both on
+
+Each account's session meets its OWN binding gate: the account set's choice
+goes through `honouredSession()` with the cookie's (the `ignoreBinding`
+argument carried into it), so a bound session chosen by ticket, hint or as
+the only live one is honoured only beside its own bound cookie, and without
+it the request is nobody — never the other account. What composing them
+took (`device_bound_sessions.ts`):
+
+* **A BOUND COOKIE PER BINDING.** A binding made while
+  `authn.multipleAccounts` is on names its cookie
+  `sts_session_bound_<DBSC session id>` and records the name on the binding
+  (`dbsc.cookie`); one name for two bound accounts would have each refresh
+  overwrite the other's cookie. Made with the setting off it is
+  `sts_session_bound`, as before.
+* **THE ENDPOINTS FIND THE ACCOUNT BY THE BROWSER'S PROOF**, since no
+  ticket or hint names one there and `sessionOf()` answers nobody with two
+  signed in: `bindingSessionOf(req, pick)` asks `pick` of each live session
+  of the set — registration's challenge MAC is over one session id,
+  refresh's `Sec-Secure-Session-Id` is one binding's — and holds the one
+  picked to `honouredSession()` (the binding gate aside); the others are
+  not touched, so one account's refresh is no use of another. None picked
+  with accounts signed in: registration 400 `STS-AUTHN-0397`, refresh 401
+  `STS-AUTHN-0401`, ending nothing.
+* **A BINDING ENDED FOR A WRONG KEY OR A REPLAY ENDS THAT ACCOUNT ALONE**:
+  `logout.endBoundSession()` ends the session, which `dropSession()` moves
+  to its set's remembered accounts; its own bound cookie is cleared, and
+  `sts_session` only where it names that session (`sessionCookieNames()`),
+  never another account's.
+* **THE SAME PERSON SIGNING IN WHERE THE KEY IS NOT PROVED** replaces the
+  bound session in the set, as with the setting off it replaces the
+  browser's session: one live session per person per browser.
+* `mergeSessionRows()` keeps `accountSetId` from the copy that has it.
+
+Nothing changes with either setting off. `tests/device_bound_sessions.js`
+cases 9–12.
+
+**Tests**: `tests/multi_account_sessions.js` (the contract of steps 1 and 2,
+the setting-off parity among it; the rotation on selection; section 11, the
+unread set's 503); `tests/multi_account_concurrency.js` (the above);
+`tests/session_window.js`'s `accountSetCase()` (an unread member's 503); the
+picker's two drawings in `tests/tools/web_surfaces.js`.
 
 ## THE WALLET DOOR (2026-09-17, #38)
 
@@ -1634,34 +2006,81 @@ refresh; `cluster/CLAUDE.md`, *The scheduler*). What moved and what did not:
   holds sessions nobody else can see would make it a *per-process* job there.
 
 **A REALM HOLDS AT MOST `authn.maxSessions` SESSIONS (#345, 2026-09-29;
-100,000 by default).** Until then only the expiry job bounded the store, so a
-burst of sign-ins — a suite run, credential stuffing, a client that never
-keeps its cookie — grew every process until the job caught up.
+#350, 2026-10-18; 100,000 by default).** Until #345 only the expiry job
+bounded the store. At the cap a new row is now refused. A flood no longer
+ends somebody else's session.
 
-* **Checked at INSERT**, in `makeRoomForSession()`, by the three doors that
-  add a key: `startArrivalSession()`, `startRelyingPartySession()` and
-  `startSessionHere()` (an upgraded arrival keeps its id and is not an
-  insert). The scheduler rule allows it: a bound cannot wait for a timer.
-* **At the cap the LEAST RECENTLY USED session ends, through
-  `expireSession()`** with `why` = `capacity` — the delete, back-channel
-  Logout Tokens planned, and once for the cluster the `session.end` audit row
-  carrying `STS-AUTHN-0292` and CAEP `session-revoked` initiated by `policy`.
-  The log line is at most once a minute per process, with a count.
-* **Least recently used is `lastSeenAt`, falling back to `startedAt`**,
-  because it is what the row tracks. It moves at every sign-in on the
-  session and every API client call, and on every use only while an idle
-  timeout is in force (`noteSessionUsed()`: a browser read is not a write
-  otherwise). Creation order would end an operator's session behind a burst
-  of arrivals.
+* **Checked at INSERT**, in `makeRoomForSession()`, by the doors that add a
+  key: `startArrivalSession()`, `startRelyingPartySession()`,
+  `adoptRelyingPartySession()` and `startSessionHere()`. An upgraded arrival
+  keeps its id and is not an insert, and neither is a restore or a
+  change-log apply. The scheduler rule allows the check: a bound cannot
+  wait for a timer.
+* **At `authn.maxSessions` the new row is refused** (`STS-AUTHN-0337`).
+  Nothing is stored and no cookie is set. A chosen sign-in is audited as
+  `session.refuse` and the screen is drawn again; an arrival continues
+  with no cookie. The log line is at most once a minute per process, with
+  a count. The code is not in the body. No class is admitted over the cap.
+  **THE ACCEPTED TRADE-OFF (rcbj's decision on #350):** a flood that fills
+  the realm — many subjects, or cookie-less arrivals, which need no
+  credential and are not ended for capacity — refuses NEW sign-ins until
+  rows leave by lifetime, sign-out or revoke. Nobody already signed in is
+  signed out by it, and a browser already holding an arrival upgrades it
+  in place, which is not an insert.
+* **A subject already at `authn.maxSessionsPerSubject` (32) loses their own
+  oldest countable row**, one per insert, through `expireSession()` with
+  `why` = `capacity` — `STS-AUTHN-0292`, CAEP `session-revoked` initiated
+  by `policy`. Countable is `chosen === true` (and an old relying-party row
+  that omitted `chosen`). Arrivals stay `chosen: false` and do not count;
+  they share one username, so the cap is `subjectId`, frozen at creation
+  (the `urn:uuid` sub, otherwise the username). The oldest row is
+  `lastSeenAt`, then `startedAt`. The sign-on a relying-party row was just
+  derived from is skipped. Another subject's console row is not a victim;
+  this subject's own oldest, console included, is. An upgrade of an arrival
+  ends one other own row and is not refused.
 * **Only the process doing the insert checks**, against its own view of the
   replicated store. A worker restoring sessions, or applying another's
-  writes from the change log, never evicts, so processes do not each evict
-  differently. The end is a normal tombstoned delete. Two concurrent
-  inserters may overshoot by one each until the next insert.
-* **Lowering the cap** ends every session over it at the next insert, in one
-  sort, rather than one per insert.
+  writes from the change log, never evicts. Two concurrent inserters may
+  overshoot by one each. The client address is not an admission key.
+* **Lowering a cap does not mass-end.** The next insert ends at most one
+  own row, and only when that subject is over their own cap. The
+  `authn.session-expiry` job then ends at most that realm's
+  `authn.sessionShedPerSweep` such rows, oldest first, one subject at a
+  time. The budget is read while that realm is ambient and is spent only
+  on that realm; the rows are part of the job's `{ ended }` count. A
+  subject at or under their cap is not ended because the realm is over
+  `authn.maxSessions`. Rows otherwise leave by lifetime, sign-out or revoke.
+* **A refused sign-in leaves the browser's current session.** Admission is
+  decided before that session is ended. A realm exactly at the cap still
+  admits a different person in the same browser, because the current row
+  counts as leaving; a realm that would still be over the cap after that
+  one row left refuses, and the current session stays.
+* **`backsConsole` is set on the parent** when an admitted child has
+  `rpSurface === 'admin'`, and `mergeSessionRows()` ORs it so a stale copy
+  cannot clear it.
 
 `tests/session_cap.js` holds it.
+
+`authn.sessionWindow` defaults to `auto`. It turns the window on only when
+minted persistence is enabled, the service is one cell, and the minted key
+is a digest. Otherwise it keeps the full map and logs `STS-AUTHN-0339` once
+at start. Explicit `on` in that state is refused at start with the same
+code (logged, never sent). `off` keeps the full map. While the window is
+on, a walk that needs every session reads `sts_sessions` and unseals the
+matches. `sessionsOf` filters `username_key` and, on a miss, pages the
+index. It does not filter `subject_key` and it does not call `holderKeyOf`,
+so a `urn:uuid:` subject is still found by the username. The keyed scan
+finds `credential_key`. A walk that sees only the cache, and treats the
+rest as gone, is the bug this exists to prevent. A failed index read is
+unread (`null`), not an empty list and not the rows still in the cache,
+and a sign-out does not end the parent while its children could not be
+read (`STS-AUTHN-0338`, recorded, never sent). A child whose own read
+fails is the same: that child stays, the sign-on is not revoked or
+deleted, and it gets no `session.end`. The window, the cache
+size and the read timeout are properties of the process. The window is
+fixed at start: turning it off while running is refused, because a start
+that skipped the session bodies would then answer committed sessions as
+absent. `tests/session_window.js` holds it.
 
 **THE EVENT SAYS `policy` AND NOT `user`.** `caep.ts`'s rule for a `revoked` act
 was `admin` when an administrator did it and `user` otherwise, and an expiry is
@@ -2190,6 +2609,121 @@ before a username is read:
 
 `tests/passkey_discoverable.js` holds it with a real ceremony.
 
+## TWO LANES: A CLASSICAL PASSKEY AND A POST-QUANTUM ONE SIDE BY SIDE (#643, 2026-10-19)
+
+**`webauthn.pqcAlongsideClassical`** (per realm, off by default) lets one
+person hold an ES256 passkey and an ML-DSA passkey at once, on one
+authenticator where it can make both. Off, every ceremony is the bytes it
+was. Three things stopped it, and each lane answers all three:
+
+* **One user handle.** Under CTAP 2.x a new discoverable credential for the
+  same RP ID and handle REPLACES the one the authenticator held, and a
+  credential manager does the same — the second registration silently
+  removed the first from the device while its row stayed here. The
+  post-quantum lane has its own handle, `stsWebauthnPqcUserHandle`, minted on
+  first use and kept, and written only BESIDE the classical one
+  (`ldap_server.js` refuses otherwise) so the owner index walks one asked
+  name and the database's asked-names index did not change.
+* **One exclude list.** Each lane excludes only its own keys
+  (`credentials.keyLane()`; a row with no `lane` — every key before #643, and
+  every classical key since — is classical).
+* **One algorithm list, ML-DSA first.** `webauthnPolicy.algorithmsOffered(lane)`:
+  the classical lane is the list less ML-DSA (ES256 and RS256 where that
+  leaves none), the post-quantum lane ML-DSA alone (`pqcOnly`'s narrowing).
+  `checkKeyEnrolment()` and `mfaWebauthnAct()` pass the LANE's list as
+  `expectedAlgorithms`, so a credential in the wrong lane is section 7.1's
+  `STS-AUTHN-0228`.
+
+**The lane is chosen at the start and carried** — the pending enrolment's
+`lane` on `/portal/keys` and at activation, `step.lane` on the sign-in step
+(`POST /authn-api/mfa/{id}/webauthn/options` takes `lane`; the page draws the
+radios only where `lanes()` has two) — never read back off the browser's
+answer, the role's rule. `webauthnPolicy.laneRefusal()` is asked at the door
+and again in `addKey()`: an unknown lane `STS-AUTHN-0350`, the post-quantum
+lane where the realm does not offer it `STS-AUTHN-0351` (so a switch turned
+off refuses a new one, while a post-quantum key already held goes on
+signing in), no ML-DSA the verifier can check `STS-AUTHN-0352` (unreachable
+with today's verifier). The switch beside `webauthn.pqcOnly` is refused at
+every write (`laneWriteRule()`, `STS-AUTHN-0353`); where both reach the
+process another way, `pqcOnly` wins and there is one lane.
+`webauthn.maxKeysPerPerson` is one total across both lanes.
+
+**The post-quantum lane is named by its algorithm** (rcbj on #643): created
+as `<username>+ml-dsa` / `<display> (ML-DSA)` (`credentials.laneUser()`),
+because which ML-DSA the authenticator picks is not known yet; signalled as
+`<username>+ml-dsa-65` / `<display> (ML-DSA-65)` once every post-quantum key
+the person holds uses that one algorithm, and the generic name otherwise
+(`credentials.laneSignalUser()`). **It is never a sign-in name**: nothing
+strips the suffix, and `screenAct()` refuses a typed name ending
+`+ml-dsa`, `+ml-dsa-<n>` or `+pqc` (`credentials.isLaneName()`,
+`STS-AUTHN-0354`) in every mode, so nobody signs in — in development, is
+created — under the name a password manager shows.
+
+**Sign-in needs nothing new**: `allowCredentials` names every key, either
+handle names the same person (`credentials.userHandleHolder()` answers the
+lane too), and step 6 compares with the handle on the KEY's row, so a
+post-quantum key returning the classical handle is `STS-AUTHN-0303`. The
+session event and the `session.start` row record the key's lane beside its
+algorithm (`credentialLane`).
+
+**Tests**: `tests/passkey_dual_lane.js` (in process, real ES256 and ML-DSA
+ceremonies), and `tests/vendored/sts_passkey_dual_lane.js` over
+`/account-api` and the sign-in screen.
+
+## A POST-QUANTUM PASSKEY REQUIRED (#718, 2026-10-19)
+
+The passkey policy's `postQuantumRequired` (`off`, `sign-in`,
+`registration-and-sign-in`; `common/CLAUDE.md` 3ch) is decided by the
+issuance policy like every passkey row (`xacml/CLAUDE.md`). What this
+module does with it:
+
+* **The fact is the ALGORITHM, never the lane.** `passkeySignInRefusal()`
+  hands over the key ROW's algorithm and lane through
+  `credentials.keyAlgorithm()` (which also reads a row that recorded no
+  algorithm), the ceremony's where no row was found; `question()` alone
+  decides whether it is post-quantum. With #643's switch off an ML-DSA key
+  is made in the one lane and its row records no lane — it signs in.
+* **Both roles**, at the one line every passkey door reaches
+  (`startSessionHere()`): the passwordless step, the step after a password
+  and the usernameless sign-in. `refusedSession()` draws 0356's sentence
+  on the screen, as it does 0313's and 0315's.
+* **The passkey step's `allowCredentials` names only the person's
+  post-quantum keys** while the selected profile requires one at sign-in
+  (rcbj's decision 3), each key judged by `postQuantumRefusal()`, the
+  policy's own reading. **A person holding keys of the step's role and none
+  of them post-quantum is told before any ceremony**: `webauthnFacts()`
+  carries the refusal as `problem` (the page's error box) and
+  `postQuantumRefused`, and `mfaWebauthnOptions()` refuses to arm it
+  (STS-AUTHN-0356, a `session.refuse` row). The step's MODE is decided on
+  what they hold, so such a person is never offered an enrolment instead.
+  An assertion posted anyway is refused at the session's start.
+* **The usernameless sign-in cannot be narrowed** — its `allowCredentials`
+  is empty by definition — so it is refused after the ceremony, at the same
+  line.
+* **The refusal changes the key's standing**, so the first time per key and
+  reason `notePasskeyStanding()` marks the row
+  (`credentials.noteKeyPolicyRefused()`, a `policyRefused` map beside #530's
+  `attestationRefused`) and sends one CAEP `credential-change` by `policy`.
+* **Enrolment under `registration-and-sign-in`** offers only ML-DSA
+  (`webauthnPolicy.algorithmsOffered()`, all three where the list names
+  none, for `pqcOnly`'s reason), and with both lanes on `lanes()` is
+  `["pqc"]` and `enrolmentLane()` turns a classical choice or none into the
+  post-quantum lane — at `beginKeyEnrolment()` and on the sign-in step —
+  so no classical-lane credential replaces the person's classical passkey
+  on the device for nothing. A classical credential answering anyway is
+  section 7.1's STS-AUTHN-0228 (not offered); `addKey()`, the one writer,
+  refuses one written by value with STS-AUTHN-0355.
+* **The device link** (`common/device_enrolment.ts`) is an assertion with a
+  key and does not reach `startSessionHere()`, so it asks the same
+  question itself — the `algorithm` group only, at the begin and at the
+  finish (0356). It has never asked the BE or PIN rules, and still does
+  not.
+
+**Tests**: `tests/passkey_post_quantum_required.js` (in process, real ES256
+and ML-DSA ceremonies), `tests/passkey_xacml.js` section E, and
+`tests/vendored/sts_passkey_post_quantum_required.js` over `/admin-api`,
+`/account-api` and the sign-in screen.
+
 ## THE WEBAUTHN ADDRESS RULES (2026-09-12)
 
 Two changes to what a ceremony is held to, both about the address a request
@@ -2629,6 +3163,29 @@ refusal AND the older one beside it (`STS-AUTHN-0024`, product enrolling for
 somebody who does not exist) had always answered 500. It falls back to the
 `why` now.
 
+## AFTER AN ACCOUNT RECOVERY, A PASSKEY FIRST (#724, 2026-10-19)
+
+The design is `common/CLAUDE.md` 3cq; what this module does with it:
+
+* **`startSessionHere()` asks the recovery question** right after the passkey
+  rules, for every door but a keyed or unauthenticated one, and only where a
+  recovery is pending on the entry or the credential is itself a recovery
+  door (`backup-code`, `email-code`, `email-link`). A refusal is a
+  `session.refuse` row carrying `STS-AUTHN-0380` or `0381`, and
+  `detail.recoveryLimited` for the second.
+* **`refusedSession()` turns `recoveryLimited` into the set-up step**
+  (`recoveryEnrolment()`) at the sign-in screen's doors, which pass the
+  pending record: `factor: 'enrol'`, `proved`, `recovery`, `mfaAllowed:
+  ['securityKey']`. `mfaSetupFacts()` says `recovery`, and the page draws
+  `authn.mfaSetup.subRecovery` (seven catalogs). `webauthnFacts()` draws a
+  REGISTRATION for a recovery step whatever keys the person holds, and
+  `finishWebauthn()` starts no session for one: `returnToCaller()`, so the
+  application asks for a sign-in and the new passkey answers it.
+* **That passkey's session clears the recovery** (`recoveryCompleted()`, at
+  both of `startSessionHere()`'s successful exits).
+* **`narrowStep()` closes the self-service links** (recovery code, emailed
+  factor) where the policy refuses them to this person.
+
 ## A DISABLED ACCOUNT IS REFUSED AT `startSession()` AND AT EVERY SESSION IT ALREADY HAS (2026-09-17)
 
 `common/account_state.ts` owns the state (`common/CLAUDE.md`, 3at); this module
@@ -2757,6 +3314,26 @@ email SHALL NOT be used for out-of-band authentication. Where they are on:
 does not accept in the role it answered in gets no session (STS-AUTHN-0268,
 -0269), held second factors excepted by the contract `totp.enabled` kept.
 
+## WHICH FACTOR COMPLETED A SESSION: `sessionNamesFactor()` (#722, 2026-10-19)
+
+When a credential is removed, `logout/logout.ts`'s `endFactorSessions()` ends
+the sessions it signed in (`logout/CLAUDE.md`), and asks THIS module which
+those are, because the authentication event is this module's record. A
+session is named when ANY of its events — the sign-in or a
+re-authentication, never only the latest — has a `context.credential` that
+matches:
+
+| Removed | An event names it when |
+|---|---|
+| a passkey or security key (`webauthn`, with its credential id) | `kind` `webauthn` and `fingerprint` the id's (`credentialFingerprint()`; the id itself is never kept), as the first factor or as a step |
+| the authenticator app (`totp`) | `kind` `totp` |
+| the recovery codes (`backup-code`) | `kind` `backup-code` |
+| the emailed second factor (`email`) | `kind` `email-code` or `email-link` AND an `amr` of more than one method: clearing the second factor leaves a session an emailed link began as the FIRST factor (`amr` `["otp"]`) alone |
+
+`MAX_SESSION_EVENTS` keeps the first event and the latest, so the event that
+BEGAN a session is never dropped; only a middle one can be, and reaching a
+middle event means holding the session already.
+
 ## A REMEMBERED BROWSER, AND THE SECOND FACTOR IT MAY SKIP (#265, 2026-09-26)
 
 The sign-in screen draws a "Remember this browser" checkbox while
@@ -2788,3 +3365,79 @@ factor is waived only when all of these hold:
 A skipped sign-in is ONE factor (`amr ["pwd"]`, acr "1") and is audited as
 `authn.second-factor.skipped`. The cookie is appended AFTER the session
 cookie, because `res.set()` replaces the header.
+
+## THE SESSION BOUND TO A KEY THE BROWSER HOLDS (#725, 2026-10-19; rule 3cr)
+
+`sts_session` is a bearer cookie, and #544 named what that costs: a copied
+cookie is the person until the session ends, and the passkey ceremony that
+made it is never asked again. `device_bound_sessions.ts` is the relying-party
+side of the W3C WebAppSec **Device Bound Session Credentials** draft (Editor's
+Draft, 8 September 2026), per realm, **off by default**
+(`authn.deviceBoundSessions`). The draft's names are used as it writes them,
+and where they differ from #725's wording the draft won; the ticket says
+where.
+
+| Step | What happens |
+|---|---|
+| sign-in | the answer that sets `sts_session` carries `Secure-Session-Registration: (ES256 RS256);path="…/authn/dbsc/register";challenge="…"` — from `startSessionHere()` and `reauthenticateSession()`, only for a chosen, authenticated browser session not yet bound (`deviceBound.offer()`) |
+| registration | the browser posts a `dbsc+jwt` proof of its new key over that challenge (`Secure-Session-Response`, the `jwk` in the header); the key goes on the session as `dbsc: { id, alg, jwk, jkt, boundAt, refreshes, refreshedAt }` (and `cookie` with several accounts on), and the answer is the JSON session instructions, the `sts_session_bound` cookie (`sts_session_bound_<id>` with several accounts on — *With device-bound sessions*, above) and a first `Secure-Session-Challenge` |
+| use | `sessionOf()` honours a bound session only beside a current bound cookie minted for its binding (`deviceBound.honours()`); `sessionOf(req, true)` skips that, and only the two endpoints pass it |
+| refresh | `Sec-Secure-Session-Id`, no proof → **403** with `Secure-Session-Challenge`; a proof of the bound key over a current challenge → a new bound cookie |
+| the cookie elsewhere | a refresh signed by another key (or another alg), or replaying a spent challenge, ENDS the session through `logout.endBoundSession()` |
+
+Five things are load-bearing:
+
+* **NOTHING ABOUT A CHALLENGE OR A COOKIE IS STORED.** Both are HMACs under
+  the cluster secret `dbsc` over the realm, the session, the DBSC session id
+  (the cookie adds the key's thumbprint) and an expiry, so any node accepts
+  what another minted the moment it is minted. A bound cookie written to the
+  session row instead would be refused by every node replication had not
+  reached — a person signed out every ten minutes in cluster mode. The only
+  writes are the binding (once) and the refresh count, through
+  `noteSessionChanged()`; `mergeSessionRows()` keeps a copy that has a
+  binding over one that has none, and the larger count of two copies of one.
+* **A CHALLENGE IS SPENT ONCE FOR THE CLUSTER**, `cluster_claims` scope
+  `authn.dbsc-challenge`, AFTER the signature verifies (so a wrong key is
+  detected whatever it signed) and fail-closed: a store that cannot be asked
+  is a 503, which the draft says a browser backs off from without ending its
+  session.
+* **NO REFUSAL IS A 403.** Section 8.8 reads a 403 as "sign the cached
+  challenge and try again", and every other 4xx as "end the DBSC session". A
+  refusal on 403 would be a loop; a stale or foreign challenge at refresh is
+  therefore the 403 exchange, and a refusal is 400, 401 or 409.
+* **WITHOUT ITS BOUND COOKIE A BOUND SESSION IS NOT SIGNED IN — AND NOT
+  ENDED.** The browser that holds the key renews the cookie before it sends
+  the request (section 10.1), so a request without one is a copied
+  `sts_session` or a skipped refresh, and neither is the person's doing. The
+  same check gates RE-AUTHENTICATION: `startSessionHere()` appends an event
+  to a bound session only for a request that carries its bound cookie, and
+  from anywhere else the sign-in is a session of its own.
+* **AN UNKNOWN DBSC SESSION ID ENDS ONLY THE BROWSER'S** (`STS-AUTHN-0401`, a
+  401). A browser can hold a registration left from a session somebody else's
+  sign-in replaced, and it refreshes it with the NEW session's cookie; ending
+  the cookie's session for that would sign the newer person out. Only a
+  wrong key and a replay end a session.
+
+**Off, nothing is offered and a bound session is an ordinary one again**,
+because the refresh endpoint that keeps its cookie alive answers 404 with it.
+A browser that does not speak DBSC ignores the header and is unaffected
+whatever the setting says. The console's `/admin/sessions` row and the
+portal's Overview say whether a session is bound (`deviceBindingOf()`,
+`signOnFactsFor().deviceBound`).
+
+**What is not built**, and why: federated sessions (`provider_key` and the
+well-known document) and site-scoped sessions, which this service — one
+origin per listener — has no use for yet; reading `Secure-Session-Skipped`;
+and #725's *a policy row can require binding for an application*.
+Registration is asynchronous after the sign-in's answer, so the first
+issuance after a sign-in races it, and "required" needs a deferral or
+re-prompt design of its own (a decision asked of rcbj on #725).
+
+`tests/device_bound_sessions.js` holds it over HTTP in a child process: no
+offer while off, an ES256 registration, the session honoured with its bound
+cookie and not without (and not ended), the 403 challenge and a signed
+refresh renewing the cookie, a replay and another key each ending the
+session, an unknown id leaving it alone, and a browser that never registers
+unchanged. **No test drives a real browser's DBSC** (none in the suite's
+images ships it enabled), and RS256 proofs are covered only by the shared
+verifier.

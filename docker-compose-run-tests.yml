@@ -3,10 +3,11 @@
 #
 # docker-compose-run-tests.yml — THE WHOLE SUITE, IN CONTAINERS.
 #
-# Seven services on a private bridge network: `sts`, this repository built
+# The services on a private bridge network: `sts`, this repository built
 # from its own Dockerfile; `tests`, this repository's suite built from
 # tests/Dockerfile with a Chrome in it; `postgres`, the store the two
-# persisting modes of tests/tools/modes.sh run on; `openbao` and its two
+# persisting modes of tests/tools/modes.sh run on; `mariadb` (#356), the
+# MySQL attribute-source database; `openbao` and its two
 # one-shot helpers, the secret store; `xacml-pep`, the remote enforcement
 # point one job drives the seam to; and `test-peer` (#586), the far party of
 # the protocols the service's own demo endpoints used to play. The tests
@@ -132,6 +133,15 @@ x-mirror-contexts: &mirror-contexts
   "rockylinux/rockylinux:9": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/rockylinux/rockylinux:9
   "quay.io/keycloak/keycloak:26.6.4": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/keycloak/keycloak:26.6.4
 
+# Every service that BUILDS the sts tag passes these. The last build of the
+# tag wins, so one of them omitting STS_CLOUD_SDKS would ship an image the
+# attribute-source job cannot load mysql2 from (#356). BUILD_NUMBER and
+# GIT_COMMIT are optional and empty by default; the `sts` service argues them.
+x-sts-image-args: &sts-image-args
+  BUILD_NUMBER: "${BUILD_NUMBER:-}"
+  GIT_COMMIT: "${GIT_COMMIT:-}"
+  STS_CLOUD_SDKS: "mysql2"
+
 services:
   # ---------------------------------------------------------------------------
   # THE STORE THE TWO PERSISTING MODES RUN ON (2026-09-09).
@@ -247,6 +257,77 @@ services:
       start_period: 5s
 
   # ---------------------------------------------------------------------------
+  # MARIADB FOR THE ATTRIBUTE-SOURCE JOB (#356), IN EVERY MODE.
+  #
+  # The official image has no openssl, so the certificate is minted by
+  # `openbao/generate-tls.js` — the one encoder this stack uses — and this
+  # container only chowns the key to `mysql` before the server starts. A
+  # 0600 key left owned by the minter's uid is one the server cannot read.
+  # No volume for the data: the same rule as `postgres`, so `down --volumes`
+  # between modes leaves nothing. No published port. `sts` waits until this
+  # is healthy, including in `memory`, because the job dials it in every
+  # mode and a database that will not start should fail the suite.
+  # ---------------------------------------------------------------------------
+  mariadb-tls:
+    container_name: ${STS_TEST_MARIADB_TLS_CONTAINER_NAME:-sts-mariadb-tls-docker-tests}
+    image: ${STS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts:${IMAGE_TAG:-latest}}
+    build:
+      context: .
+      additional_contexts: *mirror-contexts
+      args: *sts-image-args
+    restart: "no"
+    # ROOT, ON PURPOSE (#254): the image runs as uid 10001, and this one-shot
+    # writes a key the database's user must own.
+    user: "0"
+    environment:
+      - STS_BAO_TLS_DIR=/mariadb-tls/tls
+      - STS_BAO_RAFT_DIR=/tmp/mariadb-tls-unused
+      - STS_BAO_TLS_NAMES=mariadb,localhost
+      - STS_BAO_TLS_IPS=127.0.0.1
+    volumes:
+      - sts-mariadb-tls:/mariadb-tls
+      - ./openbao/generate-tls.js:/usr/src/sts/openbao/generate-tls.js:ro
+    command: ["node", "openbao/generate-tls.js"]
+
+  mariadb:
+    container_name: ${STS_TEST_MARIADB_CONTAINER_NAME:-sts-mariadb-docker-tests}
+    # The host in STS_TEST_ATTRIBUTE_MYSQL_URL, and a SAN on the certificate
+    # `mariadb-tls` minted. Not the container name.
+    hostname: mariadb
+    image: ${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/mariadb:11.8
+    environment:
+      - MARIADB_ROOT_PASSWORD=sts
+      - MARIADB_ROOT_HOST=%
+      - MARIADB_DATABASE=sts
+    volumes:
+      # Read-write: this container chowns the key to mysql. The key never
+      # leaves the volume; the job reads the certificate off the handshake.
+      - sts-mariadb-tls:/mariadb-tls
+    depends_on:
+      mariadb-tls:
+        condition: service_completed_successfully
+    # `bash` first, so the image entrypoint execs it without initialising;
+    # the inner `docker-entrypoint.sh mariadbd` is what initialises. The
+    # socket healthcheck still counts as a secure transport.
+    command: >
+      bash -c 'set -euo pipefail;
+      chown mysql:mysql /mariadb-tls/tls
+      /mariadb-tls/tls/server.key /mariadb-tls/tls/server.crt;
+      chmod 700 /mariadb-tls/tls;
+      chmod 600 /mariadb-tls/tls/server.key;
+      chmod 644 /mariadb-tls/tls/server.crt;
+      exec docker-entrypoint.sh mariadbd
+      --ssl-cert=/mariadb-tls/tls/server.crt
+      --ssl-key=/mariadb-tls/tls/server.key
+      --require-secure-transport=ON'
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
   # THE SERVICE UNDER TEST, AND THE POINT IS THAT IT IS THE IMAGE.
   #
   # Built from the repository root's Dockerfile with the committed lock, the
@@ -280,6 +361,9 @@ services:
       context: .
       # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
       additional_contexts: *mirror-contexts
+      # The sts tag's args (x-sts-image-args). Omitting them here is how the
+      # tag loses mysql2 (#356).
+      args: *sts-image-args
     restart: "no"
     # ROOT, ON PURPOSE (#254): the image runs as uid 10001, and this one-shot
     # writes files other containers' users must own — docker-compose.yml's
@@ -324,6 +408,9 @@ services:
       context: .
       # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
       additional_contexts: *mirror-contexts
+      # The sts tag's args (x-sts-image-args). Omitting them here is how the
+      # tag loses mysql2 (#356).
+      args: *sts-image-args
     restart: "no"
     # ROOT, ON PURPOSE (#254): the image runs as uid 10001, and this one-shot
     # writes files other containers' users must own — docker-compose.yml's
@@ -385,6 +472,9 @@ services:
       context: .
       # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
       additional_contexts: *mirror-contexts
+      # The sts tag's args (x-sts-image-args). Omitting them here is how the
+      # tag loses mysql2 (#356).
+      args: *sts-image-args
     restart: "no"
     # ROOT, ON PURPOSE (#254): the image runs as uid 10001, and this one-shot
     # writes files other containers' users must own — docker-compose.yml's
@@ -482,9 +572,11 @@ services:
       # environment where "which build produced this report" is asked most and
       # answerable least. Leave them and the build number is the UTC build
       # instant, which is still unique per build.
-      args:
-        BUILD_NUMBER: "${BUILD_NUMBER:-}"
-        GIT_COMMIT: "${GIT_COMMIT:-}"
+      #
+      # AND STS_CLOUD_SDKS, in the anchor every build of this tag uses
+      # (x-sts-image-args, #356). mysql2 is what the attribute-source job's
+      # MariaDB half loads inside this image.
+      args: *sts-image-args
     environment:
       # env/docker-tests.js, which exists for this file and says so in its own
       # header. It is env/local.js with a different comment. It was
@@ -709,6 +801,11 @@ services:
     # store, and in `memory` it opens none.
     depends_on:
       postgres:
+        condition: service_healthy
+      # THE ATTRIBUTE-SOURCE JOB DIALS IT IN EVERY MODE, including memory
+      # (#356). A database that will not start fails the suite here, the way
+      # postgres does, rather than failing one job later.
+      mariadb:
         condition: service_healthy
       # SEEDED, not merely running — docker-compose.yml's line and its reason.
       openbao-seed:
@@ -975,6 +1072,12 @@ services:
   conformance-tls:
     container_name: ${STS_CONFORMANCE_TLS_CONTAINER_NAME:-sts-docker-tests-conformance-tls}
     image: ${STS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts:${IMAGE_TAG:-latest}}
+    # The same tag as `sts`. A conformance-profile build that omitted the
+    # args would replace the tag with one that has no mysql2 (#356).
+    build:
+      context: .
+      additional_contexts: *mirror-contexts
+      args: *sts-image-args
     profiles: ["conformance"]
     restart: "no"
     # ROOT, ON PURPOSE (#254): the image runs as uid 10001, and this one-shot
@@ -1280,6 +1383,11 @@ services:
       # schema. `-` rather than `:-`, so an EMPTY value (./run-coverage.sh,
       # which has no postgres) skips the job instead of dialling nothing.
       - STS_TEST_ATTRIBUTE_DB_URL=${STS_TEST_ATTRIBUTE_DB_URL-postgres://sts:sts@postgres:5432/sts}
+      # THE SAME JOB'S MARIADB (#356). `-` rather than `:-`, so an EMPTY
+      # value (./run-coverage.sh, which starts neither database) skips that
+      # half instead of dialling the default. The stack sets it in every
+      # mode, memory included.
+      - STS_TEST_ATTRIBUTE_MYSQL_URL=${STS_TEST_ATTRIBUTE_MYSQL_URL-mysql://root:sts@mariadb:3306/sts}
       # THE MAIL CATCHER (#63): where `tests/vendored/sts_mail.js` reads what
       # arrived, and where it tells the service to deliver — the host, the
       # port and the catcher's certificate AS THE SERVICE SEES IT.
@@ -1435,6 +1543,9 @@ volumes:
   sts-risk-uploads:
   # The databases' certificates, shared with `sts` without their keys.
   sts-db-ca:
+  # MariaDB's listener key and certificate (#356). Not mounted into `sts`:
+  # the job reads the certificate off the handshake.
+  sts-mariadb-tls:
 
 # One bridge, and nothing published on it. `docker compose` gives the network a
 # name from the project, so two projects cannot share one.

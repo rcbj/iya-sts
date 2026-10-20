@@ -203,11 +203,16 @@ function productInventsNothingAndAuditsTruthfully(t) {
   log.debug("Entering productInventsNothingAndAuditsTruthfully().");
   t.log.info('=== no invented values, and a verified bind is audited as ' +
              'verified ===');
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode, and invents none of them: the create
+  // SUPPLIES the three, and what is checked is that nothing else was made
+  // up (no displayName) and that what was supplied is what was stored.
   const run = inAChild({ STS_MODE: 'product' },
     'const d = require(R + "/ldap/ldap_server.js");const credentials = ' +
     'require(R + "/common/credentials");const audit = require(R + ' +
     '"/common/audit.js");const made = d.createUser("probe-person", { origin: ' +
-    '"test" });const entry = ' +
+    '"test", attributes: { givenName: "Probe", sn: "Person", mail: ' +
+    '"probe-person@example.com" } });const entry = ' +
     'd.entries.get("uid=probe-person,ou=users,dc=example,dc=com");const ' +
     'swept = d.populateVcAttributes();const through = require(R + ' +
     '"/oid4vc/vc_claims").populateDirectory();const pw = ' +
@@ -220,18 +225,26 @@ function productInventsNothingAndAuditsTruthfully(t) {
     'credentials: "Correct-Horse-9-Battery" });const row = ' +
     'audit.list().filter(function (e) { return e.action === ' +
     '"directory.bind"; })[0] || null;return { made: made && made.ok, ' +
-    'attributes: entry ? Object.keys(entry.attributes).sort() : null, swept: ' +
+    'attributes: entry ? Object.keys(entry.attributes).sort() : null, ' +
+    'values: entry ? { cn: entry.attributes.cn, sn: entry.attributes.sn, ' +
+    'givenname: entry.attributes.givenname, mail: entry.attributes.mail } ' +
+    ': null, swept: ' +
     'swept, through: through, pw: pw && pw.ok, pwErrors: pw && pw.errors, bind: bind.ok, row: ' +
     'row };');
   const r = run.report || {};
   t.check(r.made === true, 'a person can be created in a product directory',
           run.output.slice(-400) + JSON.stringify(r));
-  const invented = ['cn', 'sn', 'givenname', 'displayname', 'mail'];
-  t.check(Array.isArray(r.attributes) && invented.every(function (name) {
-    return r.attributes.indexOf(name) === -1;
-  }), 'a SCIM-shaped create (invent defaulted to TRUE) puts NONE of the five ' +
-      'persona attributes on the entry in product mode — no "(mock)" ' +
-      'displayName, no invented mail', JSON.stringify(r.attributes));
+  const v = r.values || {};
+  t.check(Array.isArray(r.attributes) &&
+          r.attributes.indexOf('displayname') === -1 &&
+          JSON.stringify(v.givenname) === '["Probe"]' &&
+          JSON.stringify(v.sn) === '["Person"]' &&
+          JSON.stringify(v.mail) === '["probe-person@example.com"]' &&
+          JSON.stringify(v.cn) === '["Probe Person"]',
+          'a SCIM-shaped create (invent defaulted to TRUE) invents NONE of ' +
+          'the persona attributes in product mode — no "(mock)" ' +
+          'displayName, and the names and mail are the ones supplied (cn ' +
+          'made of the names)', JSON.stringify([r.attributes, v]));
   t.check(r.swept && r.swept.examined === 0 &&
           /product mode/.test(String(r.swept.skipped)),
           'and the credential-attribute sweep does not run, saying why',

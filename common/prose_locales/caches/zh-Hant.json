@@ -79,6 +79,14 @@
     "en": "758990e906bc4fb2",
     "text": "查詢後 {{seconds}} 秒；來源有變更時會捨棄其列。"
   },
+  "caches.store.authn.session-window.title": {
+    "en": "c7d3b3347696bed7",
+    "text": "登入工作階段視窗"
+  },
+  "caches.store.authn.session-window.description": {
+    "en": "7a7d9e762890fe35",
+    "text": "authn.sessionWindow 開啟時一個程序持有的登入工作階段（#350）。未命中時從密封的列讀取。逐出只在其 upsert 已提交後忘記記憶體中的副本，不會結束工作階段。"
+  },
   "caches.store.certificates.parsed-facts.title": {
     "en": "5746d523daca087a",
     "text": "已剖析的憑證資訊"
@@ -418,6 +426,22 @@
   "caches.store.krb5.long-term-keys.lifetime": {
     "en": "ce837804788fa2c5",
     "text": "不會過期：隨主體一併捨棄、在其記錄被取代時（密碼變更或還原）捨棄，或在超過上限時作為最久未使用者被捨棄；從不持久保存。"
+  },
+  "caches.store.krb5.trust-keys.title": {
+    "en": "9e19b75405074ba3",
+    "text": "Kerberos 跨領域信任金鑰"
+  },
+  "caches.store.krb5.trust-keys.description": {
+    "en": "44c86730ace05ee9",
+    "text": "依此領域的信任記錄（ou=kerberosTrusts）建立的跨領域 krbtgt 主體，每個都帶有由其共用密碼衍生或自其封存中開啟的金鑰，於第一次轉介之後的每次轉介中保留使用。"
+  },
+  "caches.store.krb5.trust-keys.bound": {
+    "en": "c9282e1e84dbe9e3",
+    "text": "強制執行：每個領域最多 512 個（最多 256 筆記錄，每筆兩個金鑰）；最舊的會被捨棄，並於下次使用時重新建立。"
+  },
+  "caches.store.krb5.trust-keys.lifetime": {
+    "en": "37ee5778f968cdd3",
+    "text": "不會過期：其記錄一旦變更即被取代（每次使用時都會比較記錄的位元組），並隨記錄一併移除；從不持久保存。"
   },
   "caches.store.ldap.credential-tallies.title": {
     "en": "41d340493639d53a",

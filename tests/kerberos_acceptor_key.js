@@ -173,7 +173,11 @@ async function acceptorChild() {
 
   if (which === 'product-default' || which === 'product-own') {
     const PW = 'Acceptor-Key-Test-Passw0rd#';
-    out.personMade = directory.createUser('akalice', { invent: false }).ok;
+    // The realm's attribute policy (#396) requires givenName, sn and mail of
+    // every person in product mode.
+    out.personMade = directory.createUser('akalice', { invent: false,
+      attributes: { givenName: 'Alice', sn: 'akalice',
+                    mail: 'akalice@example.test' } }).ok;
     out.passwordSet = credentials.setPassword('akalice', PW).ok;
     await personKeys.idle();
     const ticket = await asReq('akalice', PW, spn.split('/'));

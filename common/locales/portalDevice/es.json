@@ -4,6 +4,7 @@
   "request.access": "Acceso: <code>{scope}</code>. Caduca el {when}.",
   "request.noScope": "(ninguno indicado)",
   "request.warning": "<strong>Apruebe solo un dispositivo que tenga delante</strong> y en el que usted mismo haya empezado a iniciar sesión. Quien le haya enviado este código le está pidiendo que inicie sesión como usted en SU dispositivo.",
+  "request.as": "Está aprobando como <strong>{name}</strong>: el dispositivo iniciará sesión con esta cuenta. Para aprobar con otra de las cuentas con sesión iniciada en este navegador, cambie primero de cuenta.",
   "request.approve": "Aprobar",
   "request.deny": "Denegar",
   "find.heading": "Iniciar sesión en un dispositivo",

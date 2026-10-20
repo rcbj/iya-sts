@@ -1004,8 +1004,9 @@ const NAMED_BY_REALM = [
   // (STS-KRB-0123), because nothing here could choose a name that was the
   // operator's rather than an invention. The domain IS the operator's choice
   // — `IYASEC.IO` is what RFC 4120 section 6.1's convention makes of
-  // `iyasec.io` — so it is seeded, and still refused if another realm or
-  // krb5.trustedRealm already answers to it (kerberosOverrideProblem()).
+  // `iyasec.io` — so it is seeded, and still refused if another realm, or the
+  // development partner realm the default realm answers as, already answers
+  // to it (kerberosOverrideProblem()).
   // Clearing it on the realm brings the 0123 refusal back.
   { key: 'krb5.realm', from: function (domain) {
     return domain.toUpperCase();
@@ -1189,6 +1190,28 @@ function seededNames(id, domain) {
   return out;
 }
 
+// The creation cap (#368). `count()` includes the default realm, and the
+// value is read directly: 0 is not a legal setting, and `|| n` would hide a
+// legal 0 if one were ever added. A restore does not call this — a registry
+// that is already over the cap must still come back.
+function refusedForCount() {
+  log.debug("Entering refusedForCount().");
+  const limit = config.value('realms.maxCount');
+  const held = count();
+  if (typeof limit === 'number' && held >= limit) {
+    log.debug("Leaving refusedForCount(). Refused.");
+    return errorCodes.mark({ ok: false, errors: [
+      'This cluster already holds ' + held + ' trust realm(s), which is ' +
+      'realms.maxCount (' + limit + '). The count includes the default ' +
+      'realm. A service administrator raises the limit in the default ' +
+      'realm — /admin/realms, or POST /admin-api/config/set with no realm ' +
+      'prefix — and lowering it does not remove realms that already exist.'
+    ] }, 'STS-CORE-0161');
+  }
+  log.debug("Leaving refusedForCount().");
+  return null;
+}
+
 /**
  * Defines a realm, builds its stores and announces it.
  *
@@ -1238,6 +1261,11 @@ function create(spec) {
     if (kerberos) {
       log.debug("Leaving create(). Refused for its Kerberos settings.");
       return kerberos;
+    }
+    const counted = refusedForCount();
+    if (counted) {
+      log.debug("Leaving create(). Refused for the realm count.");
+      return counted;
     }
   }
   const realm = {
@@ -1381,9 +1409,12 @@ function update(id, changes) {
 // than three copies, for the reason `gateStateFor()` exists: the two that were
 // written separately disagreed within the hour.
 //
-// It matches by PREFIX rather than naming the two settings, so a third
-// `realms.*` setting is refused the day it is added rather than the day
-// somebody remembers this function.
+// It matches by PREFIX rather than naming the settings, so a new `realms.*`
+// setting is refused the day it is added rather than the day somebody
+// remembers this function. `realms.maxCount` (#368) is covered here like the
+// others — it cannot be set ON a realm — and config.js refuses a process-wide
+// write of it unless the default realm is ambient, which this function never
+// sees: realmFor() answers null and the write does not come through here.
 //
 // THE SECOND REFUSAL IS `perProcess`, AND IT IS A DIFFERENT RULE. A setting
 // carrying that flag is a property of the OS PROCESS rather than of the
@@ -1639,8 +1670,11 @@ function checkOverrides(overrides) {
 //      is a request the KDC cannot route. rcbj's decision was that the operator
 //      names it, so nothing is seeded and turning it on without one is refused.
 //   2. **A NAME ANOTHER REALM ALREADY ANSWERS TO** (STS-KRB-0124) — another
-//      realm's own `krb5.realm`, the default realm's, or `krb5.trustedRealm`,
-//      which the default realm answers for in development. Compared without
+//      realm's own `krb5.realm`, the default realm's, or a Kerberos realm the
+//      default realm's KDC answers as besides its own (the development
+//      partner, PARTNER.COM, since #430 retired `krb5.trustedRealm`; asked of
+//      the principal database, LAZILY — it requires this file). Compared
+//      without
 //      regard to case: Kerberos names are case-sensitive on the wire, and two
 //      realms that differ only in case are two realms a person cannot tell
 //      apart in a krb5.conf.
@@ -1715,13 +1749,24 @@ function kerberosOverrideProblem(id, after, before) {
     if (processName.toUpperCase() === wanted) {
       taken.push('the default realm, whose Kerberos realm is ' + processName);
     }
-    const trusted = String(run(DEFAULT_REALM, function () {
-      return config.value('krb5.trustedRealm');
-    }) || '');
-    if (trusted.toUpperCase() === wanted) {
-      taken.push('krb5.trustedRealm, the second realm the default realm ' +
-                 'answers for in development mode');
+    let alsoServed = [];
+    try {
+      alsoServed = require('../kerberos/krb5_principals.js')
+        .servedIn(DEFAULT_ID).filter(function (one) {
+          return String(one).toUpperCase() !== processName.toUpperCase();
+        });
+    } catch (e) {
+      // A process without the KDC answers as no other realm.
+      log.debug('Caught in kerberosOverrideProblem(): ' +
+                ((e && e.message) || e));
+      alsoServed = [];
     }
+    alsoServed.forEach(function (one) {
+      if (String(one).toUpperCase() === wanted) {
+        taken.push(one + ', the second Kerberos realm the default realm ' +
+                   'answers as in development mode');
+      }
+    });
     realms.forEach(function (other) {
       if (other.id !== id &&
           ownKerberosName(other.overrides).toUpperCase() === wanted) {
@@ -2628,6 +2673,11 @@ function declareHandle(options, shape, accessors) {
     // ---------------------------------------------------------------------
     expiresAt: typeof options.expiresAt === 'function' ? options.expiresAt
       : null,
+    // `indexOf(value)` answers the columns of a side table written in the
+    // same transaction as the sealed body (#350). Null when the store has
+    // none. An option the handle does not keep is not how that table is
+    // wired, which is why this is copied the way `expiresAt` is.
+    indexOf: typeof options.indexOf === 'function' ? options.indexOf : null,
     // ---------------------------------------------------------------------
     // `restoreInWorkers: false` (#617, 2026-10-14): a REQUEST WORKER does not
     // read this store's rows back at its start. For a store nothing a worker
@@ -3956,7 +4006,7 @@ function realmSupport() {
             'GET /oauth2/rfc9700 reports which.' },
     { family: 'Authentication service', state: 'full', by: 'path',
       cards: ['WebAuthn / CTAP', 'One-time passwords (TOTP)', 'Recovery codes',
-              'Email codes and links'],
+              'Email codes and links', 'Device Bound Session Credentials'],
       note: 'Its own sessions and second factors — WebAuthn credentials, ' +
             'TOTP secrets and recovery codes — so signing in to one ' +
             'realm signs you in to that realm only. That is the point of a ' +
@@ -4124,8 +4174,9 @@ function realmSupport() {
             'the name; a realm\'s own /realm/<id>/KdcProxy is pinned to that ' +
             'realm and refuses another realm\'s name with ' +
             'KDC_ERR_WRONG_REALM. What is still the PROCESS\'s: the two ' +
-            'sockets, and the development-mode trust with krb5.trustedRealm ' +
-            '— trust realms do not trust each other\'s Kerberos. Before ' +
+            'sockets. A Kerberos trust is a record in the realm\'s own ' +
+            'directory (ou=kerberosTrusts), so two trust realms may trust ' +
+            'each other\'s Kerberos through a record on each side. Before ' +
             '2026-09-15 there was one KDC, one principal database and one ' +
             'realm name for the whole process. SPNEGO carries the same ' +
             'tickets over HTTP, so its routes answer under each realm\'s ' +

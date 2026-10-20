@@ -228,6 +228,15 @@ runs no longer depend on it (`persistence/CLAUDE.md`, *`parent_key`'s
 `n_distinct`*). Checked on a private stack: a version 19 store with 23
 realms, re-scripted as the owner, then the service started on it.
 
+**VERSION 21 (#350) ADDS `sts_sessions`.** Not columns on `sts_minted`:
+a session's expiry is `sts_sessions.expires_at`, and `sts_minted.expires_at`
+stays NULL so the generic purge cannot end a session. The index row is
+written and deleted in the same transaction as the sealed body. A start
+walks until a completion row in that table commits with the last page; a
+non-empty table is not that mark. That page deletes index rows whose body
+is missing or a tombstone, and does not delete the completion row. The full
+in-memory session map stays resident.
+
 **`tests/postgres_schema.js` is what keeps `schema.sql` and the driver from
 drifting**, since the DDL is now written down twice: it fails on a `CREATE`
 either one has and the other does not, on a schema version they disagree about,

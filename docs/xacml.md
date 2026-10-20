@@ -81,9 +81,9 @@ attribute that the seeded people carry: alice and bob are staff, and carol is
 an admin. **A new realm's repository starts empty**, and a PDP with an empty
 repository answers NotApplicable to everything.
 
-New policies come from five templates: **RBAC**, **ABAC**, this service's own
-two (`role-issuance` and `access-control`), and **blank**, an empty `Policy` or
-`PolicySet`. A blank `deny-unless-permit` policy **denies everything**, and
+New policies come from seven templates: **RBAC**, **ABAC**, this service's own
+four (`role-issuance`, `access-control`, `risk-response` and
+`signal-response`), and **blank**, an empty `Policy` or `PolicySet`. A blank `deny-unless-permit` policy **denies everything**, and
 the console says so wherever you meet one. You can also import a policy
 written in ALFA.
 
@@ -401,6 +401,7 @@ modes. See [What is not checked](what-is-not-checked.md).
 | `xacml.accessPolicy` | `STS_XACML_ACCESS_POLICY` | `access-control` | yes | The policy the access PEP evaluates. A repository entry with this name overrides the built-in one. |
 | `xacml.issuancePolicy` | `STS_XACML_ISSUANCE_POLICY` | `role-issuance` | yes | The policy the issuance PEP evaluates. A repository entry with this name overrides the built-in one. |
 | `xacml.riskResponsePolicy` | `STS_XACML_RISK_RESPONSE_POLICY` | `risk-response` | yes | The policy asked what happens when a person's risk level changes. A repository entry with this name overrides the built-in one. |
+| `xacml.signalResponsePolicy` | `STS_XACML_SIGNAL_RESPONSE_POLICY` | `signal-response` | yes | The policy asked what this service's console and portal do with a verified CAEP or RISC event they receive. A repository entry with this name overrides the built-in one; a disabled one ends nothing. |
 | `xacml.maxPolicies` | `STS_XACML_MAX_POLICIES` | `200` | yes | How many entries `ou=policies` may hold. A create past the limit is refused, and nothing is evicted. |
 | `xacml.returnPolicyIdList` | `STS_XACML_RETURN_POLICY_ID_LIST` | `false` | yes | Returns the list of policies that applied, even when the request did not ask for it. |
 | `xacml.remotePeps` | `STS_XACML_REMOTE_PEPS` | `true` | yes | Whether `/xacml/pep/*` and `POST /xacml/pip` answer. When off they answer 501. |
@@ -467,16 +468,20 @@ For how a value is resolved and where it can be changed, see
   refuses an application with one.** The first avoids locking everyone out,
   including the administrator. The second avoids silently skipping a
   restriction someone asked for.
-* **The policy editor has no JavaScript and no draft state.** Every menu is
-  computed on the server by the same code that validates the result, so the
-  editor cannot offer something that will then be refused. Every edit changes
+* **The policy editor has no draft state.** Every menu is computed on the
+  server by the same code that validates the result, and the console draws it
+  from `GET /admin-api/xacml/editor`, so the editor cannot offer something
+  that will then be refused. Every edit changes
   the stored, live policy.
 * **A decision is not an enforcement.** The PEP's bias and any obligation it
   cannot discharge sit between the two, so the monitor counts both.
 
 ## In the running service
 
-The XACML group under **Protocols** has five pages.
+**Protocols → XACML** (`/admin/xacml`) is one page with six tabs:
+**Metadata**, **Global settings**, **Policies**, **Policy editor**, **Remote
+PEPs** and **Try a decision**; the sections below are named by the paths
+those tabs had as pages. The decision counts are under **Monitoring**.
 
 ### `/admin/xacml` — XACML settings
 
@@ -489,7 +494,7 @@ and the two agree on everything else.
 
 The repository, which **is** `ou=policies`. From here you can enable,
 disable, delete and choose the root. **This is the only page that creates a
-policy**, from a template (RBAC, ABAC, the service's own two, blank) or by
+policy**, from a template (RBAC, ABAC, the service's own four, blank) or by
 importing ALFA. Below the table there is a section on the two built-in
 policies that decide this service's issuance and access. Each has a **Create
 an override** button, prefilled with the name the setting uses.

@@ -89,6 +89,14 @@ const FINGERPRINT_SCRIPT = '/authn/fingerprint.js';
 // `/authn`.
 const CONSENT_PATH = '/oauth2/consent';
 
+// The account picker's page (#561), whose three buttons are three
+// operations told apart by `action`, as the screen's are.
+const ACCOUNTS_PATH = '/authn/accounts';
+
+// How long a pressed ceremony waits before asking once more, where it was
+// refused as pending just after it aborted the autofill.
+const PENDING_RETRY_MS = 300;
+
 // THE STEPS' ACTS (#572, #573): for each page, the `action` of each of its
 // buttons, the operation under `/authn-api/mfa/{id}/` it is, and the body
 // it sends from the form's fields (and, for the mailed link, the token off
@@ -147,6 +155,14 @@ class AuthnSurface extends WebSurface {
   private autofill: boolean;
   // The conditional ceremony in flight, to abort for the button's own.
   private pendingAutofill: Json;
+  // ONE WEBAUTHN REQUEST AT A TIME (#660, 2026-10-16): a document has one pending
+  // request, a second is refused with an OperationError ("A request is
+  // already pending" in Chrome), and an aborted one is pending until its
+  // promise settles. `lastCall` settles when the last call did, and
+  // `pressed` is a button's ceremony in flight, so a second press is
+  // ignored rather than refused.
+  private lastCall: Promise<void>;
+  private pressed: boolean;
   // The RP ID of the last ceremony, for a signal.
   private rpId: string;
   // Whether the fingerprint's script is on the page.
@@ -171,6 +187,8 @@ class AuthnSurface extends WebSurface {
     this.actError = '';
     this.autofill = true;
     this.pendingAutofill = null;
+    this.lastCall = Promise.resolve();
+    this.pressed = false;
     this.rpId = '';
     this.fingerprintLoaded = false;
     this.notice = '';
@@ -203,6 +221,22 @@ class AuthnSurface extends WebSurface {
    * @returns nothing
    */
   put(title: string, body: string, ctx: Json): void {
+    // A PAGE WITH NOWHERE TO GO. The language chooser redraws this same
+    // page. A link or a button is a way on. The problem page — a sign-in
+    // this service no longer has, and any other refusal that drew no view —
+    // and every other screen that draws neither, tell the person to close
+    // the browser tab or window and start over, and link the realm's root
+    // page. The problem page draws its own card, and the line goes in it.
+    if (!AuthnSurface.hasWayOn(body)) {
+      const way = AuthnSurface.wayOut(this.t);
+      const close = '</div>';
+      if (body.indexOf('<div class="card">') === 0 &&
+          body.slice(-close.length) === close) {
+        body = body.slice(0, -close.length) + way + close;
+      } else {
+        body += way;
+      }
+    }
     super.put(title, body, ctx);
     this.actError = '';
     this.notice = '';
@@ -231,6 +265,12 @@ class AuthnSurface extends WebSurface {
     // No username field to fill where none is asked for (#608).
     if (view.passkey && !view.usernameless && this.autofill) {
       this.armAutofill();
+    } else {
+      // THE AUTOFILL ENDS WITH ITS PAGE (#660, 2026-10-16): a page drawn in place
+      // keeps the document, so the username screen's autofill was still
+      // pending on the passkey step after a password, and the step's
+      // ceremony was refused as pending at every press.
+      this.stopAutofill();
     }
   }
 
@@ -417,6 +457,36 @@ class AuthnSurface extends WebSurface {
     await this.next(answer);
   }
 
+  // --- the account picker (#561) -------------------------------------------
+
+  /**
+   * Sends the account picker's act — Continue or Sign in again (`select`),
+   * Forget, or Use another account — to the operation the index names for
+   * the button pressed, with the account's key (never a sid).
+   *
+   * @param fields - the form's fields: `action` and `account`
+   * @returns nothing
+   */
+  async accountsAct(fields: Json): Promise<void> {
+    if (!await this.ensureIndex()) {
+      this.refused('The service\'s API could not be reached.');
+      return;
+    }
+    const action = String(fields.action || '');
+    const op = this.operationFor(ACCOUNTS_PATH, action);
+    if (!op) {
+      this.refused('This control has no API operation (' + ACCOUNTS_PATH +
+                   ' ' + action + '), so the page refuses it rather than ' +
+                   'guess.');
+      return;
+    }
+    const body = action === 'another' ? {}
+      : { account: String(fields.account || '') };
+    const answer = await this.send(String(op.path)
+      .replace('{id}', encodeURIComponent(this.idHere())), body);
+    await this.next(answer);
+  }
+
   // --- the act ---------------------------------------------------------------
 
   /**
@@ -461,7 +531,8 @@ class AuthnSurface extends WebSurface {
   operationFor(path: string, action: string): Json {
     const rows = (this.indexRows || []).filter(function (op: Json) {
       return op.method === 'POST' && op.mirrors === 'POST ' + path &&
-        (path !== '/authn/login' || op.action === action);
+        ((path !== '/authn/login' && path !== ACCOUNTS_PATH) ||
+         op.action === action);
     });
     return rows.length ? rows[0] : null;
   }
@@ -519,11 +590,17 @@ class AuthnSurface extends WebSurface {
       return;
     }
     if (path === '/authn/webauthn') {
-      await this.stepPasskey(String(fields.key || ''));
+      // The lane a registration is made in (#643), where the page asked.
+      await this.stepPasskey(String(fields.key || ''),
+                             String(fields.lane || ''));
       return;
     }
     if (path === CONSENT_PATH) {
       await this.consentAct(fields);
+      return;
+    }
+    if (path === ACCOUNTS_PATH) {
+      await this.accountsAct(fields);
       return;
     }
     if (STEP_ACTS[path]) {
@@ -725,7 +802,8 @@ class AuthnSurface extends WebSurface {
   /**
    * A page that could not be drawn: where an act was just refused and the
    * page it was on can no longer be drawn (the step it named is gone), the
-   * act's sentence is the one that says why.
+   * act's sentence is the one that says why. `put()` adds the way off,
+   * since this page draws neither a link nor a button.
    *
    * @param title - what went wrong
    * @param detail - the detail
@@ -733,6 +811,44 @@ class AuthnSurface extends WebSurface {
    */
   drawProblem(title: string, detail: string): void {
     super.drawProblem(title, this.actError || detail);
+  }
+
+  /**
+   * Whether a page's body already offers a way on: a link, or a button.
+   * The language chooser is drawn around the body and is not one.
+   *
+   * @param body - the page's body
+   * @returns true when the body has a link or a button
+   */
+  static hasWayOn(body: string): boolean {
+    const html = String(body || '');
+    return /<a\b[^>]*\bhref\s*=/i.test(html) ||
+      /<button\b/i.test(html) ||
+      /<input\b[^>]*\btype\s*=\s*["']submit["']/i.test(html);
+  }
+
+  /**
+   * The way off a page that has none: close this tab and start over, and
+   * a link to the realm's root page (`href="/"`, prefixed with the realm
+   * when the page is put). In the page's language where the `authn`
+   * catalog is loaded, and in English where it is not — the consent
+   * screen loads none of it, and a refusal's own sentence stays English
+   * either way. The English here is `authn/en.json`'s `stuck.close` and
+   * `stuck.home`.
+   *
+   * @param t - the page's translator
+   * @returns the markup
+   */
+  static wayOut(t: Json): string {
+    const known = t && typeof t.has === 'function';
+    const close = known && t.has('authn.stuck.close')
+      ? t.html('authn.stuck.close')
+      : 'Close this browser tab or window and start over.';
+    const home = known && t.has('authn.stuck.home')
+      ? t.html('authn.stuck.home')
+      : 'Return to the home page';
+    return '<p class="meta" id="authn-way-out">' + close + '</p>' +
+      '<p><a id="authn-home" href="/">' + home + '</a></p>';
   }
 
   // --- the steps after the screen (#572, #573) -------------------------------
@@ -792,39 +908,111 @@ class AuthnSurface extends WebSurface {
    * assertion otherwise (the API's `mode`).
    *
    * @param key - the passkey chosen (#534), or ''
+   * @param lane - the lane a registration is made in (#643), or ''
    * @returns nothing
    */
-  async stepPasskey(key: string): Promise<void> {
-    const base = '/authn-api/mfa/' + encodeURIComponent(this.idHere());
-    const armed = await this.send(base + '/webauthn/options',
-                                  key ? { key: key } : {});
-    if (!armed.json || !armed.json.ok) {
-      await this.next(armed);
+  async stepPasskey(key: string, lane?: string): Promise<void> {
+    if (this.pressed) {
       return;
     }
-    const c = armed.json;
-    this.rpId = String(c.rpId || '');
-    const nav = this.env.navigator;
-    let credential: Json = null;
-    if (!nav || !nav.credentials) {
-      credential = { error: 'NotSupportedError',
-                     message: 'no WebAuthn in this browser' };
-    } else {
-      try {
-        credential = c.mode === 'create'
-          ? WebWebAuthn.created(await nav.credentials.create(
-              { publicKey: AuthnSurface.creationOptions(c) }))
-          : WebWebAuthn.asserted(await nav.credentials.get(
-              { publicKey: AuthnSurface.stepRequestOptions(c) }));
-      } catch (e) {
-        // The browser's error is deliberately ambiguous — no credential,
-        // declined and timed out are one — so it is reported as given.
-        credential = { error: e && e.name, message: e && e.message };
+    this.pressed = true;
+    try {
+      const aborted = this.stopAutofill();
+      const base = '/authn-api/mfa/' + encodeURIComponent(this.idHere());
+      const asked: Json = key ? { key: key } : {};
+      if (lane) {
+        asked.lane = lane;
       }
+      const armed = await this.send(base + '/webauthn/options', asked);
+      if (!armed.json || !armed.json.ok) {
+        await this.next(armed);
+        return;
+      }
+      const c = armed.json;
+      this.rpId = String(c.rpId || '');
+      const nav = this.env.navigator;
+      let credential: Json = null;
+      if (!nav || !nav.credentials) {
+        credential = { error: 'NotSupportedError',
+                       message: 'no WebAuthn in this browser' };
+      } else {
+        try {
+          credential = c.mode === 'create'
+            ? WebWebAuthn.created(await this.webauthn('create',
+                { publicKey: AuthnSurface.creationOptions(c) }, aborted))
+            : WebWebAuthn.asserted(await this.webauthn('get',
+                { publicKey: AuthnSurface.stepRequestOptions(c) }, aborted));
+        } catch (e) {
+          // The browser's error is deliberately ambiguous — no credential,
+          // declined and timed out are one — so it is reported as given.
+          credential = { error: e && e.name, message: e && e.message };
+        }
+      }
+      const answer = await this.send(base + '/webauthn',
+                                     { credential: JSON.stringify(credential) });
+      await this.next(answer);
+    } finally {
+      this.pressed = false;
     }
-    const answer = await this.send(base + '/webauthn',
-                                   { credential: JSON.stringify(credential) });
-    await this.next(answer);
+  }
+
+  /**
+   * Runs one WebAuthn call once the last has settled (`lastCall`).
+   *
+   * @param kind - `get` or `create`
+   * @param ask - the call's options
+   * @param retry - whether this ceremony just aborted the autofill: Chrome
+   *   can refuse the next call as pending for a moment after an abort, so
+   *   an OperationError is asked once more
+   * @returns the credential, or null
+   */
+  async webauthn(kind: string, ask: Json, retry: boolean): Promise<Json> {
+    const nav = this.env.navigator;
+    const settled = function (): void {
+      return undefined;
+    };
+    for (let attempt = 0; ; attempt++) {
+      await this.lastCall;
+      const call = kind === 'create' ? nav.credentials.create(ask)
+                                     : nav.credentials.get(ask);
+      this.lastCall = Promise.resolve(call).then(settled, settled);
+      try {
+        return await call;
+      } catch (e) {
+        if (!retry || attempt > 0 || !e || e.name !== 'OperationError') {
+          throw e;
+        }
+      }
+      await this.pause(PENDING_RETRY_MS);
+    }
+  }
+
+  /**
+   * A promise that resolves after a while.
+   *
+   * @param ms - how long, in milliseconds
+   * @returns the promise
+   */
+  pause(ms: number): Promise<void> {
+    const win = this.env.window;
+    return new Promise(function (resolve: () => void) {
+      win.setTimeout(resolve, ms);
+    });
+  }
+
+  /**
+   * Aborts the autofill's ceremony, where one is in flight.
+   *
+   * @returns whether one was
+   */
+  stopAutofill(): boolean {
+    const pending = this.pendingAutofill;
+    if (!pending) {
+      return false;
+    }
+    this.pendingAutofill = null;
+    pending.abort();
+    return true;
   }
 
   /**
@@ -967,40 +1155,78 @@ class AuthnSurface extends WebSurface {
    * @returns nothing
    */
   async passkey(conditional: boolean): Promise<void> {
-    const nav = this.env.navigator;
-    if (!conditional && this.pendingAutofill) {
-      this.pendingAutofill.abort();
-      this.pendingAutofill = null;
-    }
-    const armed = await this.armPasskey();
-    if (!armed) {
-      return;
-    }
-    if (!nav || !nav.credentials) {
-      await this.sendPasskey({ error: 'NotSupportedError',
-                               message: 'no WebAuthn in this browser' });
-      return;
-    }
-    const ask: Json = { publicKey: AuthnSurface.requestOptions(armed) };
     if (conditional) {
-      this.pendingAutofill = new this.env.window.AbortController();
-      ask.mediation = 'conditional';
-      ask.signal = this.pendingAutofill.signal;
+      await this.autofillCeremony();
+      return;
+    }
+    if (this.pressed) {
+      return;
+    }
+    this.pressed = true;
+    try {
+      const aborted = this.stopAutofill();
+      const nav = this.env.navigator;
+      const armed = await this.armPasskey();
+      if (!armed) {
+        return;
+      }
+      if (!nav || !nav.credentials) {
+        await this.sendPasskey({ error: 'NotSupportedError',
+                                 message: 'no WebAuthn in this browser' });
+        return;
+      }
+      let credential: Json = null;
+      try {
+        const a = await this.webauthn('get',
+          { publicKey: AuthnSurface.requestOptions(armed) }, aborted);
+        credential = a ? WebWebAuthn.asserted(a) : null;
+      } catch (e) {
+        credential = { error: e && e.name, message: e && e.message };
+      }
+      if (credential) {
+        await this.sendPasskey(credential);
+      }
+    } finally {
+      this.pressed = false;
+    }
+  }
+
+  /**
+   * The username field's autofill (conditional mediation). Its controller is
+   * claimed before the first await, so a page drawn twice arms it once, and
+   * a page drawn meanwhile can abort it before it asks.
+   *
+   * @returns nothing
+   */
+  async autofillCeremony(): Promise<void> {
+    const nav = this.env.navigator;
+    const controller = new this.env.window.AbortController();
+    this.pendingAutofill = controller;
+    const self = this;
+    const mine = function (): boolean {
+      return self.pendingAutofill === controller;
+    };
+    const armed = await this.armPasskey();
+    if (!armed || !mine() || !nav || !nav.credentials) {
+      if (mine()) {
+        this.pendingAutofill = null;
+      }
+      return;
     }
     let credential: Json = null;
     try {
-      const a = await nav.credentials.get(ask);
+      const a = await this.webauthn('get', {
+        publicKey: AuthnSurface.requestOptions(armed),
+        mediation: 'conditional', signal: controller.signal }, false);
       credential = a ? WebWebAuthn.asserted(a) : null;
     } catch (e) {
       // An aborted or declined autofill is the page going on as a form.
-      if (conditional) {
-        return;
-      }
-      credential = { error: e && e.name, message: e && e.message };
+      credential = null;
     }
-    if (conditional) {
-      this.pendingAutofill = null;
+    if (!mine()) {
+      return;
     }
+    this.pendingAutofill = null;
     if (credential) {
       await this.sendPasskey(credential);
     }

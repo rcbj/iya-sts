@@ -262,6 +262,9 @@ import errorCodes = require('../common/error_codes');
 // The mode (common/mode.js): which of the two warnings `GET /scim` draws is
 // true in this realm (#543 round 2).
 import mode = require('../common/mode');
+// What every person in the realm must hold (#396): a create is held to it
+// before the entry exists, and an update may not take one of them away.
+import attributePolicy = require('../common/attribute_policy');
 // WHICH CELL ANSWERS (#98): asked by handle() before the caller is
 // authenticated, and by the User ingress before a person is written. A
 // library that registers nothing; `scim_cells.ts` argues every operation.
@@ -983,6 +986,41 @@ class Scim {
   }
 
   // ---------------------------------------------------------------------------
+  // A startIndex PAST THE END IS AN EMPTY PAGE (#354, RFC 7644 3.4.2.4).
+  //
+  // scimmy's ListResponse offsets its array only when
+  // `Resources.length >= startIndex`. A startIndex past totalResults fails
+  // that test, so the page is the FIRST rows again — or the first `count`
+  // of them, when count is smaller than the list — while startIndex and
+  // totalResults say the page is past the end. A client that pages until
+  // an empty page then loops, and one that counts what it received sees
+  // the same people twice. Found on testidp: four names, startIndex 5 and
+  // 100, both answered with those four.
+  //
+  // The page past the end has no results. Resources is empty and
+  // itemsPerPage, the number returned, is 0. The requested startIndex
+  // stays, and totalResults stays the size of the match. An empty match
+  // is the same rule: nothing is at index 1, so itemsPerPage is 0 rather
+  // than the count that was asked. A startIndex on the last result is
+  // that one row, and ListResponse already sliced it. Users, Groups and
+  // every .search leave through forTheWire(), so this is the one place.
+  // ---------------------------------------------------------------------------
+  private emptyPagePastTheEnd(plain: any): void {
+    const { log } = this.deps;
+    log.debug("Entering Scim.emptyPagePastTheEnd().");
+    const start = Number(plain.startIndex);
+    const total = Number(plain.totalResults);
+    if (Number.isInteger(start) && Number.isInteger(total) &&
+        start > total) {
+      plain.Resources = [];
+      plain.itemsPerPage = 0;
+      log.debug("Leaving Scim.emptyPagePastTheEnd(). Past " + total + ".");
+      return;
+    }
+    log.debug("Leaving Scim.emptyPagePastTheEnd().");
+  }
+
+  // ---------------------------------------------------------------------------
   // EVERY USER AND GROUP LEAVES PRUNED (#206).
   //
   // The egress handlers pad every multi-valued and complex member for
@@ -1007,6 +1045,8 @@ class Scim {
       return type === 'User' || type === 'Group';
     };
     if (plain && Array.isArray(plain.Resources)) {
+      // Before the prune: a page past the end is discarded whole (#354).
+      this.emptyPagePastTheEnd(plain);
       plain.Resources = plain.Resources.map(function (one: any) {
         return isResource(one) ? scimMap.prune(one) : one;
       });
@@ -1395,6 +1435,8 @@ class Scim {
   // whatever comes back — so a handler that ignores `.filter` returns everybody
   // for every query, which looks like a working server right up until somebody
   // filters. The sort and the pagination ARE applied for us, by ListResponse.
+  // A startIndex past the end is the exception: that constructor returns
+  // the first rows, and forTheWire() empties the page (#354).
   //
   // **THE DEFECT.** `SCIMMY.Types.Filter#match()` in scimmy 1.3.5 handles a
   // nested attribute by diving into it — `new
@@ -2221,10 +2263,32 @@ class Scim {
               'directory keeps one entry per person at every door.'));
           }
         } else {
+          // THE RESOURCE AS IT WILL BE WRITTEN, HELD TO THE REALM'S
+          // ATTRIBUTE POLICY (#396) BEFORE ANYTHING IS: createUser() below
+          // writes the entry with nothing of the resource on it, and the
+          // resource is merged over it a few lines later, so it is this —
+          // not that create — the policy is asked of (createUser() is told
+          // so with `requiredExempt`). A resource the mapping refuses is
+          // left to that refusal, below.
+          const preview = scimMap.fromScimUser(data, {});
+          if (!preview.errors.length) {
+            const prospective = Object.assign({ uid: [userName] },
+                                              preview.attributes);
+            attributePolicy.deriveCommonName(prospective);
+            const incomplete = attributePolicy.createRefusal(prospective);
+            if (incomplete) {
+              throw coded('STS-LDAP-0162',
+                new SCIMMY.Types.Error(400, 'invalidValue',
+                  incomplete.message + ' Over SCIM: userName is uid, ' +
+                  'name.givenName givenName, name.familyName sn, ' +
+                  'displayName cn and emails mail.'));
+            }
+          }
           const made = directory.createUser(userName, {
             origin: 'scim',
             channel: 'http',
             protocol: 'SCIM',
+            requiredExempt: 'scim',
             // The persona, only where scim.inventOnCreate asks for it — and
             // createUser() invents nothing in product mode either way.
             invent: this.inventOnCreate(),
@@ -2285,6 +2349,18 @@ class Scim {
           throw coded('STS-SCIM-0010',
             new SCIMMY.Types.Error(400, 'invalidValue',
                                    converted.errors.join(' ')));
+        }
+        // A `cn` FROM THE NAMES where the resource gives no displayName
+        // (#396), as every other door does; and on an update, no required
+        // value taken away — a PATCH reaches here as the whole resource too.
+        attributePolicy.deriveCommonName(converted.attributes);
+        if (existing && before) {
+          const taken = attributePolicy.editRefusal(before.attributes || {},
+                                                    converted.attributes);
+          if (taken) {
+            throw coded('STS-LDAP-0164',
+              new SCIMMY.Types.Error(400, 'invalidValue', taken.message));
+          }
         }
 
         // The manager arrives as a SCIM id and is stored as the DN LDAP's

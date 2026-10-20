@@ -93,8 +93,9 @@ who and the group says whether**:
    truststore, which starts empty: add it at runtime on the admin
    console's `/admin/tls/trust` page (Admin Write) or with
    `POST /admin-api/tls/trust/add` (a token carrying `admin:write`), or put it
-   in a PEM file named by `tls.trustAnchorsFile`, read at startup. Only the file
-   survives a restart — the two runtime doors persist nothing.
+   in a PEM file named by `tls.trustAnchorsFile`, read at startup. An anchor
+   added at runtime is written to `ou=trustAnchors` in the default realm's
+   directory, so it survives a restart wherever the directory is persisted.
 2. **A subject DN that resolves to a directory entry.** A certificate resolving
    to no entry is an unauthenticated caller however well it verifies.
 3. **That entry in the group `roles.remotePepGroup` names** — `remote-peps` by
@@ -123,7 +124,10 @@ node tests/tools/pep-credential.js \
 ```
 
 **The flags take `=`**; a space between the flag and its value is reported as an
-unknown option. It writes `pep.crt` (the leaf **followed by** the issuing CA),
+unknown option. The tool posts the root through `POST /admin-api/tls/trust/add`,
+so set `STS_ADMIN_API_TOKEN` to a management API token first, and it verifies
+the service's certificate on that call, so node must trust the service's Root
+(for example through `NODE_EXTRA_CA_CERTS`). It writes `pep.crt` (the leaf **followed by** the issuing CA),
 `pep.key`, `ca.crt` and `chain.txt`, and prints the leaf's DN as its last line.
 
 To hand these to the compose service:
@@ -180,8 +184,8 @@ curl -sk -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -d '{"name":"expense-app-access"}'
 ```
 
-The console does the same thing at `/admin/xacml/policies`, with a guided editor
-that has no JavaScript in it.
+The console does the same thing on the **Policies** tab of **Protocols →
+XACML**, with a guided editor on the **Policy editor** tab.
 
 ### 3. Start the PEP
 

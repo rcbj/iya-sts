@@ -32,6 +32,17 @@
   "grid.notSet": "未设置",
   "grid.example": "例如 ",
   "grid.outside": "（不是允许的值之一）",
+  "grant.authorizationCode": "授权码授权（RFC 6749 第 4.1 节）：从授权端点获得授权码，在令牌端点兑换。",
+  "grant.implicit": "隐式授权（RFC 6749 第 4.2 节）：直接从授权端点获得令牌。RFC 9700 模式拒绝它。",
+  "grant.refreshToken": "刷新令牌授权（RFC 6749 第 6 节）。声明了授权类型但不含它的客户端不会获得刷新令牌。",
+  "grant.clientCredentials": "客户端凭据授权（RFC 6749 第 4.4 节）：为客户端本身签发的令牌，不涉及任何人员。",
+  "grant.password": "资源所有者密码凭据授权（RFC 6749 第 4.3 节）。OAuth 2.1 模式拒绝它。",
+  "grant.tokenExchange": "OAuth 2.0 令牌交换（RFC 8693）：用一个令牌换取另一个，用于委托或模拟。",
+  "grant.preAuthorizedCode": "OpenID4VCI 的预授权码授权：钱包兑换凭证要约中携带的授权码。",
+  "grant.jwtBearer": "将 JWT 用作授权许可（RFC 7523 第 2.1 节）。在 oauth2.jwtBearerGrant 关闭的地方不可用。",
+  "grant.saml2Bearer": "将 SAML 2.0 断言用作授权许可（RFC 7522 第 2.1 节）。在 oauth2.saml2BearerGrant 关闭的地方不可用。",
+  "grant.ciba": "OpenID Connect 客户端发起的反向通道认证（CIBA）：由人员在另一台设备上批准。除非开启 oauth2.ciba，否则不可用。",
+  "grant.deviceCode": "设备授权许可（RFC 8628）：没有浏览器的设备显示一个代码，由人员在别处输入。除非开启 oauth2.deviceAuthorization，否则不可用。",
   "grid.valueN": "{attribute} 的第 {n} 个值",
   "grid.delete": "删除此值",
   "grid.deleteN": "删除 {attribute} 的第 {n} 个值",
@@ -77,5 +88,6 @@
   "mail.none": "此领域没有邮件传输方式（",
   "mail.link": "邮件",
   "mail.noneAfter": "），因此{what}会显示给您，由您转交。",
-  "mail.box": "将{what}发送到其条目上的邮件地址，不要显示给我"
+  "mail.box": "将{what}发送到其条目上的邮件地址，不要显示给我",
+  "grid.required": " &middot; 必填"
 }

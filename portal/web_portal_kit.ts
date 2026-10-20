@@ -69,7 +69,22 @@ const STYLE =
   'justify-content:space-between;flex-wrap:wrap}.pagehead ' +
   'h1{margin:0}.pagehead form{margin:0}.pagehead .acts{display:flex;' +
   'gap:8px;align-items:start}.pagehead ' +
-  'button{margin-top:0}p.sub{color:#666;font-size:.9em;margin:0 0 ' +
+  'button{margin-top:0}' +
+  // THE ACCOUNT MENU (#561), drawn only with several accounts on: a
+  // `<details>` beside Sign out whose panel drops below it, its buttons
+  // reading as links.
+  '.usermenu{position:relative}.usermenu>summary{cursor:pointer;' +
+  'list-style:none;border:1px solid #c9c9d2;border-radius:6px;padding:7px ' +
+  '12px;background:#fff;color:#333;font-size:.9em}.usermenu>summary::-' +
+  'webkit-details-marker{display:none}.usermenupanel{position:absolute;' +
+  'right:0;top:calc(100% + 6px);z-index:30;min-width:14rem;background:' +
+  '#fff;border:1px solid #d5d5dd;border-radius:8px;box-shadow:0 8px 28px ' +
+  'rgba(0,0,0,.14);padding:6px}.usermenupanel button.linklike{display:' +
+  'block;width:100%;margin:0;text-align:left;background:none;color:' +
+  '#2c5cc5;padding:6px 8px}.usermenupanel button.linklike:hover{' +
+  'background:#eef2fb}.usermenupanel button span{color:#777;font-size:' +
+  '.9em}' +
+  'p.sub{color:#666;font-size:.9em;margin:0 0 ' +
   '18px}label{display:block;font-size:.85em;font-weight:600;margin:12px 0 ' +
   '4px}input[type=text],input[type=password]{width:100%;padding:9px ' +
   '10px;border:1px solid #c9c9d2;border-radius:6px;font-size:1em;' +
@@ -224,7 +239,7 @@ const STYLE =
   // `download` is how a file leaves a page with no script on it; and the
   // install steps, one browser per fold.
   'select{padding:8px;border:1px solid #c7c7d1;border-radius:6px;' +
-  'font:inherit;background:#fff}' +
+  'font:inherit;background:#fff;max-width:100%}' +
   'a.dl{display:inline-block;background:#2c5cc5;color:#fff;' +
   'text-decoration:none;border-radius:6px;padding:9px 14px;' +
   'margin:6px 8px 0 0;font-size:.9em}a.dl.secondary{background:#5a5a68}' +
@@ -401,7 +416,12 @@ const NAV = [
       // same reason: a link hands this service a token at another provider
       // that vouches for this person. Drawn by `portal_claim_sources.ts`.
       { path: BASE + '/claim-sources', label: 'Claim sources',
-        heading: 'Connected claim sources' }
+        heading: 'Connected claim sources' },
+      // CONNECTED ACCOUNTS (#565), in this section for the claim sources'
+      // reason: a connection lets a consumer provider vouch for this person
+      // at sign-in. Drawn by `portal_connected_accounts.ts`.
+      { path: BASE + '/connected-accounts', label: 'Connected accounts',
+        heading: 'Connected accounts' }
     ] }
 ];
 

@@ -5,6 +5,5 @@
   "explain": "Den här tjänsten har mer än en förtroendesfär, och var och en har sina egna personer och sina egna administratörer. Välj den sfär du hör till, så ombeds du logga in där.",
   "realm": "Sfär",
   "continue": "Fortsätt till {surface, select, portal {ditt konto} other {administrationskonsolen}}",
-  "defaultRealm": "(standardsfären)",
-  "idNote": "Din administratör kan berätta vilket id din sfär har. Standardsfärens id är <code>{id}</code>."
+  "defaultRealm": "(standardsfären)"
 }

@@ -53,6 +53,7 @@
 
 delete process.env.CONFIG_FILE;
 
+const storeDouble = require('./tools/store_double');
 const config = require('../common/config');
 const realms = require('../common/realms');
 require('../common/app');
@@ -599,8 +600,6 @@ async function totals(t) {
 async function sharedStore(t) {
   log.debug("Entering sharedStore().");
   t.log.info('=== H. the shared store ===');
-  const pgPath = require.resolve(ROOT + '/node_modules/pg');
-  const previous = require.cache[pgPath];
   const statements = [];
   const FakeClient = function () {};
   FakeClient.prototype.query = function (sql, params) {
@@ -618,8 +617,8 @@ async function sharedStore(t) {
     return Promise.resolve(new FakeClient());
   };
   FakePool.prototype.end = function () { return Promise.resolve(); };
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: { Pool: FakePool, Client: FakeClient } };
+  const restore = storeDouble.install({ Pool: FakePool,
+                                        Client: FakeClient });
   const driverPath = require.resolve(ROOT +
                                      '/persistence/persistence_postgres');
   const previousDriver = require.cache[driverPath];
@@ -656,11 +655,7 @@ async function sharedStore(t) {
             'H2. a refund takes back only from its own period, never below ' +
             'zero', refund ? refund.sql : 'no statement');
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
     require.cache[driverPath] = previousDriver;
   }
   const Cls = spendModule.GnapSpend;

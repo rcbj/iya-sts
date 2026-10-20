@@ -107,6 +107,14 @@
     "en": "270607a9609c73d2",
     "text": "scrypt，通过 crypto.hashSecret()，存储在登录步骤上"
   },
+  "crypto.sentences.dbscMac": {
+    "en": "6d623cb602324457",
+    "text": "在集群密钥 dbsc 下计算的 HMAC-SHA-256，覆盖领域、会话和一个到期时间"
+  },
+  "crypto.sentences.dbscKey": {
+    "en": "00612e39f9ee2ec1",
+    "text": "公共 JWK 及其 RFC 7638 指纹，记录在会话上"
+  },
   "crypto.sentences.jweGcmNote": {
     "en": "738d45485f10fb8b",
     "text": "AEAD：一个密钥，一个标签。"
@@ -1350,6 +1358,34 @@
   "crypto.families.email-codes-and-links.algorithms.2.what": {
     "en": "7b4099bae09b5ac9",
     "text": "静态存储"
+  },
+  "crypto.families.device-bound-session-credentials.signs": {
+    "en": "51177dacf9719f29",
+    "text": "不签名。质询和绑定 cookie 是 MAC，而不是签名：只有本服务会检查它们。"
+  },
+  "crypto.families.device-bound-session-credentials.verifies": {
+    "en": "d8ef54ef33b1612f",
+    "text": "浏览器的 dbsc+jwt 证明，通过固定算法的 crypto.verifyCompactJws() 验证：注册时使用其自身头部中的密钥，每次刷新时使用会话所绑定的密钥。"
+  },
+  "crypto.families.device-bound-session-credentials.hashes": {
+    "en": "886bd748da150493",
+    "text": "绑定密钥以其 RFC 7638 指纹形式保存，每个质询以 cluster_claims 消耗它时所用的摘要形式保存。"
+  },
+  "crypto.families.device-bound-session-credentials.whatItDoesNot": {
+    "en": "f8a4e58cdc2ad4fa",
+    "text": "它从不接受 alg none，从不为同一会话接受第二个密钥，也从不接受同一质询两次。"
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.0.what": {
+    "en": "7fbb3ccf9640651f",
+    "text": "证明"
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.1.what": {
+    "en": "d2e757eb4313c2c9",
+    "text": "质询和绑定 cookie"
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.2.what": {
+    "en": "e3a367643d49d35f",
+    "text": "绑定密钥"
   },
   "crypto.families.verifiable-credentials-oid4vci-oid4vp.signs": {
     "en": "30d11da1c63a38f1",

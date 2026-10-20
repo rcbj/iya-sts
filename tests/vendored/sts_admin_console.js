@@ -2168,6 +2168,30 @@ async function everyGetFormSubmits(driver, pages) {
 // THE BOX FOR AN ATTRIBUTE ON THE NEW-USER GRID (9e9647de): a single-valued
 // attribute is `field.<name>` and a multi-valued one `field.<name>.<n>`, its
 // first row `.0`. Answers the drawn name, or null where neither is drawn.
+// THE REALM'S ATTRIBUTE POLICY (#396): in product mode every person must hold
+// givenName, sn and mail, and /admin/users/new invents none of them there, so
+// a form create of a person in product mode types those three as well. Both
+// spellings of each box are named — `field.x` for a single-valued attribute,
+// `field.x.0` for a multi-valued one — and fillAndPress() skips whichever the
+// form does not draw. Development enforces nothing and gets no extra boxes.
+async function policyBoxes(username) {
+  log.debug("Entering policyBoxes().");
+  const out = {};
+  if (!(await facts.isProduct(root("/admin-api")))) {
+    log.debug("Leaving policyBoxes(). Development: none.");
+    return out;
+  }
+  const values = { givenName: "Console", sn: String(username),
+                   mail: String(username) + "@admin-console-job.test" };
+  Object.keys(values).forEach(function (attribute) {
+    out["field." + attribute] = values[attribute];
+    out["field." + attribute + ".0"] = values[attribute];
+  });
+  log.debug("Leaving policyBoxes(). Product: " +
+            Object.keys(values).join(", ") + ".");
+  return out;
+}
+
 function boxFor(drawn, attribute) {
   log.debug("Entering boxFor().");
   const single = "field." + attribute;
@@ -2333,6 +2357,17 @@ async function theNewUserPageDescribesAPerson(driver) {
     "described@example.com";
   secondBoxes[boxFor(boxesNamed(page, "field."), "title") || "field.title"] =
     "Auditor";
+  // THE REALM'S ATTRIBUTE POLICY (#396): in product mode every person must
+  // hold givenName, sn and mail (cn is derived from the first two), so there
+  // the two names are typed as well and only displayName is left to prove
+  // that an empty box records nothing. Development enforces no policy and
+  // keeps the original two boxes.
+  if (productService) {
+    secondBoxes[boxFor(boxesNamed(page, "field."), "givenName") ||
+                "field.givenName"] = "Described";
+    secondBoxes[boxFor(boxesNamed(page, "field."), "sn") || "field.sn"] =
+      described;
+  }
   await fillAndPress(driver, second, secondBoxes,
       { noTyping: true, buttonText: "Create the user" });
 
@@ -2346,8 +2381,11 @@ async function theNewUserPageDescribesAPerson(driver) {
     assert.ok(held.indexOf("mail") >= 0 && held.indexOf("title") >= 0,
       "the two attributes that were TYPED must be on the entry; it holds " +
       JSON.stringify(held));
-    // The five namePlan() invents, and they are the point of this check.
-    ["cn", "sn", "givenname", "displayname"].forEach(function (invented) {
+    // The five namePlan() invents, and they are the point of this check —
+    // less, in product mode, the three the policy (#396) has typed or
+    // derived above.
+    (productService ? ["displayname"]
+      : ["cn", "sn", "givenname", "displayname"]).forEach(function (invented) {
       assert.strictEqual(held.indexOf(invented), -1,
         "`" + invented + "` is on the entry and nobody typed it. This page's " +
         "whole promise is that an empty box records no value, and there are " +
@@ -2374,7 +2412,8 @@ async function theNewUserPageDescribesAPerson(driver) {
   await open(driver, realm("/admin/users/new"));
   const third = await formIndexPosting(driver, "create");
   await fillAndPress(driver, third,
-      { username: withPassword, credential: "generate" }, { noTyping: true,
+      Object.assign({ username: withPassword, credential: "generate" },
+                    await policyBoxes(withPassword)), { noTyping: true,
         buttonText: "Create the user" });
   const shown = await driver.executeScript(
     "const e = document.querySelector('.secret'); return e ? e.textContent : '';");
@@ -2415,7 +2454,8 @@ async function theNewUserPageDescribesAPerson(driver) {
   await open(driver, realm("/admin/users/new"));
   const fourth = await formIndexPosting(driver, "create");
   await fillAndPress(driver, fourth,
-      { username: toActivate, credential: "activation" }, { noTyping: true,
+      Object.assign({ username: toActivate, credential: "activation" },
+                    await policyBoxes(toActivate)), { noTyping: true,
         buttonText: "Create the user" });
   const link = await driver.executeScript(
     "const e = document.querySelector('.secret'); return e ? e.textContent : '';");
@@ -3352,8 +3392,9 @@ async function theDirectoryPagesWork(driver) {
   const createUser = await formIndexPosting(driver, "create");
   assert.ok(createUser >= 0, "/admin/users/new should draw a create form.");
   // The Create button by name: the form's first submit is the view switch.
-  const pressed = await fillAndPress(driver, createUser, { username: person },
-                                     { buttonText: "Create the user" });
+  const pressed = await fillAndPress(driver, createUser,
+      Object.assign({ username: person }, await policyBoxes(person)),
+      { buttonText: "Create the user" });
   const afterCreate = await driver.getCurrentUrl();
   const createdPage = await survey(driver);
 
@@ -5421,7 +5462,8 @@ async function thePersonCredentialsSectionIsPressed(driver) {
   const person = names.usernameFor("console-person-creds");
   const created = await apiPostJson(realm("/admin-api/users/create"),
     { username: person, invent: false, credential: "none",
-      attributes: { cn: "Console Person Credentials", sn: person } });
+      attributes: { cn: "Console Person Credentials", givenName: "Console",
+                    sn: person, mail: person + "@admin-console-job.test" } });
   assert.ok(created.status === 200,
     "creating the person answered " + created.status + " " +
     String(created.raw).slice(0, 300));

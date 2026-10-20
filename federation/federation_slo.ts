@@ -544,12 +544,21 @@ class FederationSlo {
   // THE LIVE FEDERATED SESSIONS OF THIS RELATIONSHIP THAT `match` ACCEPTS.
   // The session store is persisted and replicated, so this is every node's
   // answer, and it is the ONE store: `fedPartnerSession` rides on the session
-  // rather than in an index beside it that could disagree with it.
+  // rather than in an index beside it that could disagree with it. The
+  // partner_relationship column only chooses which sealed bodies to open.
   private sessionsMatching(record, match) {
     const { authn, log } = this.deps;
     log.debug("Entering FederationSlo.sessionsMatching(). " + record.fedId);
+    const held = authn.sessionsForRelationship(record.fedId);
+    // Null is a failed index read, already recorded as STS-AUTHN-0338.
+    // An empty list is a real miss. Ending the empty list, or recording
+    // STS-FED-0122 for it, would say the partner's session was already gone.
+    if (held == null) {
+      log.debug("Leaving FederationSlo.sessionsMatching(). Unread.");
+      return null;
+    }
     const out = [];
-    authn.sessions.forEach(function (session) {
+    held.forEach(function (session) {
       const held = session && session.fedPartnerSession;
       if (!held || held.relationship !== record.fedId) {
         return;
@@ -799,6 +808,11 @@ class FederationSlo {
       }
       const matcher = FederationSlo.matcherOf(body.match);
       const sessions = self.sessionsMatching(record, matcher);
+      // A failed read is not zero ended. The asker counts a throw as a
+      // peer it could not reach, and must not record a no-match.
+      if (sessions == null) {
+        throw new Error('the sessions could not be read');
+      }
       if (!sessions.length) {
         return;
       }
@@ -1190,11 +1204,19 @@ class FederationSlo {
   // here, and in every other cell (#98, endAtPeers()).
   private endNamedSamlSessions(res, record, base, params, requestId, named,
                                indexes) {
-    const { log } = this.deps;
+    const { errorCodes, log } = this.deps;
     log.debug("Entering FederationSlo.endNamedSamlSessions().");
     const match = { protocol: 'saml', nameId: named, indexes: indexes };
     const sessions = this.sessionsMatching(record,
                                            FederationSlo.matcherOf(match));
+    // Marked before the LogoutResponse, whose non-success path records
+    // STS-FED-0122 when nothing is marked yet. This is not that no-match.
+    if (sessions == null) {
+      errorCodes.mark(res, 'STS-AUTHN-0338');
+      log.debug("Leaving FederationSlo.endNamedSamlSessions(). Unread.");
+      return this.answerLogoutRequest(res, record, base, params, requestId,
+        STATUS_RESPONDER, '', 'The sessions could not be read.', null);
+    }
     const ended = sessions.length
       ? this.endSessions(sessions, record, 'SAML 2.0 Single Logout', base,
                          true)
@@ -1463,13 +1485,37 @@ class FederationSlo {
   // WS-FEDERATION: wsignoutcleanup1.0 / wsignout1.0 — CONFIRMED BY THE
   // PERSON (decision 4). WS-Federation 1.2 section 13.2.4.
   // =========================================================================
-  private browserFederatedSession(req, record) {
+  // WHICH OF THE BROWSER'S SESSIONS THE PARTNER SIGNED IN (#561). With
+  // `authn.multipleAccounts` on the browser may hold several accounts, and
+  // `sessionOf()` answers nobody where two are live and nothing names one —
+  // so a partner's sign-out would find "nothing to sign out" while one of
+  // them is exactly its session. The set's live sessions are asked instead:
+  // the browser's own answer first where it is the partner's, otherwise the
+  // most recent of the set's that this relationship signed in. `sid`, on the
+  // confirmed POST, names the one the confirmation was drawn for, which must
+  // still be live in THIS browser's set. Off, the cookie's session, as it
+  // always was.
+  private browserFederatedSession(req, record, sid?) {
     const { authn, log } = this.deps;
     log.debug("Entering FederationSlo.browserFederatedSession().");
+    const partners = function (one) {
+      const held = one && one.fedPartnerSession;
+      return !!(held && held.relationship === record.fedId);
+    };
     const session = authn.sessionOf(req);
-    const held = session && session.fedPartnerSession;
-    log.debug("Leaving FederationSlo.browserFederatedSession().");
-    return held && held.relationship === record.fedId ? session : null;
+    if (!authn.multipleAccounts()) {
+      log.debug("Leaving FederationSlo.browserFederatedSession().");
+      return partners(session) ? session : null;
+    }
+    const theirs = authn.accountSessionsOf(req).filter(partners);
+    const found = sid
+      ? theirs.filter(function (one) {
+        return String(one.id) === String(sid);
+      })[0] || null
+      : (partners(session) ? session : theirs[theirs.length - 1] || null);
+    log.debug("Leaving FederationSlo.browserFederatedSession(). " +
+              theirs.length + " of the set's.");
+    return found;
   }
 
   private wsfedConfirmation(req, res, record, params) {
@@ -1534,7 +1580,8 @@ class FederationSlo {
     const handle = String(params.confirm || '');
     const context = /^fed-[A-Za-z0-9_-]{1,64}$/.test(handle)
       ? fedSp.takeContext(handle) : null;
-    const session = this.browserFederatedSession(req, record);
+    const session = this.browserFederatedSession(req, record,
+      context && context.sessionId);
     if (!context || context.kind !== 'wsfed-signout' ||
         context.id !== record.fedId || !session ||
         session.id !== context.sessionId) {
@@ -1559,7 +1606,14 @@ class FederationSlo {
     const ended = this.endSessions([session], record, 'WS-Federation ' +
                                    'sign-out, confirmed', baseUrlOf(req),
                                    true);
-    this.deps.authn.clearSessionCookie(res);
+    // THE COOKIE (#561): with several accounts on, cleared only where the
+    // session that ended was the browser's default, the next live account
+    // then made the default — `logout/logout.ts`'s `endFor()` does the same.
+    if (this.deps.authn.multipleAccounts()) {
+      this.deps.authn.afterAccountSignOut(req, res);
+    } else {
+      this.deps.authn.clearSessionCookie(res);
+    }
     log.debug("Leaving FederationSlo.wsfedConfirmed(). Ended.");
     // In the person's language (#539). No language chooser: the POST that
     // drew it ended the session and spent its confirmation.
@@ -1803,6 +1857,13 @@ class FederationSlo {
       const base = baseUrlOf(req);
       const sessions = self.sessionsMatching(record,
                                              FederationSlo.matcherOf(match));
+      // An unread index is not a token that named no session. 503 asks
+      // the partner to retry; 200 with STS-FED-0122 would not.
+      if (sessions == null) {
+        errorCodes.mark(res, 'STS-AUTHN-0338');
+        return self.refuseJson(res, record, 503,
+                               'the sessions could not be read');
+      }
       if (sessions.length) {
         self.endSessions(sessions, record, 'Back-Channel Logout', base,
                          false);
@@ -1899,6 +1960,16 @@ class FederationSlo {
     const match = { protocol: 'oidc', sid: sid };
     const sessions = this.sessionsMatching(record,
                                            FederationSlo.matcherOf(match));
+    // Same unread as the back channel. The "nothing to sign out" page
+    // records STS-FED-0122, and this read is not that page.
+    if (sessions == null) {
+      errorCodes.mark(res, 'STS-AUTHN-0338');
+      log.debug("Leaving FederationSlo.frontchannelEndpoint(). Unread.");
+      framed('', {});
+      return this.refuse(res, record, 503, 'The sessions could not be read',
+        'A failed read of the session index is not a sign-out that matched ' +
+        'nothing.');
+    }
     let body;
     let overrides = {};
     // In the person's language (#539) where something was signed out; the

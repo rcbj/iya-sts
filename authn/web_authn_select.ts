@@ -46,7 +46,7 @@ class WebAuthnSelect {
       WebAuthnLogin.partnerButtons(v.partners || [],
         v.application ? t.html('authn.selectIdp.blurbNamed',
                                { application: String(v.application) })
-                      : t.html('authn.selectIdp.blurb')) +
+                      : t.html('authn.selectIdp.blurb'), t) +
       '<div class="meta"><div>' + t.html('authn.selectIdp.meta') +
       '</div><div>' + t.html('authn.selectIdp.signingInFor',
                              { protocol: String(v.protocol) }) + '</div>' +

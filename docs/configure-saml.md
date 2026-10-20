@@ -18,7 +18,7 @@ providers. How each profile *behaves* is covered on
 with every setting and its default. This page covers only what to fill in.
 [Configuring OAuth 2.0 grants → Before you start](configure-oauth2-grants.md#before-you-start)
 explains the shared mechanics: the API token, the `api` shell helper used
-below, and the application attribute editor.
+below, and the application page's forms.
 
 * TOC
 {:toc}
@@ -27,13 +27,21 @@ below, and the application attribute editor.
 
 | Page | Console menu | What you do there |
 |---|---|---|
-| `/admin/saml2` | **Protocols → SAML** | Register SAML 2.0 service providers and configure both profiles, assertion settings and custom attributes in the page's tabs. |
-| `/admin/saml2?sp=<entityID>` | click a service provider's row | Upload its metadata, set its certificates and logout address, and find the IdP metadata URL to give it. |
-| `/admin/applications?application=<id>` | **Directory → Applications** | Set per-SP overrides with **Set** / **Add to** / **Remove from**. |
+| `/admin/saml2` | **Protocols → SAML** | One page with seven tabs: **Metadata**, **Global settings** (the **SAML 2.0** and **SAML 1.1** groups), **Shared profile settings** (the **SAML** group), **SAML 2.0 IdP** (register and list service providers, MDQ), **SAML 1.1 IdP** (register and list relying parties), **SAML assertions** and **Custom SAML attributes**. |
+| `/admin/saml2?sp=<entityID>` | click a service provider's row on **SAML 2.0 IdP** | Upload its metadata, set its certificates and logout address, and find the IdP metadata URL to give it. |
+| `/admin/saml2?rp=<identifier>` | click a relying party's row on **SAML 1.1 IdP** | See its endpoints and what has been recorded about it. |
+| `/admin/applications?application=<id>` | **Directory → Applications** | Per-SP overrides on the **Configuration** tab, sub-tab **SAML 2.0 and SAML 1.1**, which has a **SAML 2.0** and a **SAML 1.1** tab for each family the application is declared for. Each has its own **Save SAML 2.0** / **Save SAML 1.1** button. The **Directory entry** tab's **Change one attribute by name** form (**Set** / **Add to** / **Remove from**) reaches any attribute by name. |
 
 Each settings group is saved with its own **Save <group>** button, for example
-**Save SAML 2.0**. The API equivalents are `POST /admin-api/config/set`,
+**Save SAML 2.0**. The **SAML assertions** tab has one **Save assertion
+settings** button. The API equivalents are `POST /admin-api/config/set`,
 `/config/set-many` and `/config/reset`.
+
+`POST /admin-api/applications/set` writes a single-valued attribute only. A
+list attribute (`samlEntityId`, `samlAssertionConsumerService`,
+`samlSingleLogoutService`, `samlSigningCertificate`) is refused there
+(`STS-REG-0008`): use `applications/add` and `applications/remove`, or the
+SAML actions below.
 
 **What development and product mode change.** Development mode answers any
 SP, registers it the first time it appears (`saml2.autocreateApplications`
@@ -59,9 +67,15 @@ encryption certificates, its NameID formats, and its `AuthnRequestsSigned` /
 `saml_peer_kit.js`.
 
 **Console:**
-1. On **Protocols → SAML**, in **Register a service provider**, enter the SP's **entityID** (for example `https://sp.example.com/saml`) and click **Register**.
+1. On **Protocols → SAML**, tab **SAML 2.0 IdP**, in **Register a service provider**, enter the SP's **entityID** (for example `https://sp.example.com/saml`) and click **Register**.
 2. Click the new row. Under **Its metadata**, paste the SP's metadata into **Upload a document** (or pick it under **or a file**), and click **Consume it**.
 3. In **The endpoints it is configured from**, copy the **Metadata** URL. That is the IdP metadata to load into the SP.
+
+The application's page has the same form: **Configuration → SAML 2.0 and
+SAML 1.1 → SAML 2.0 → Its metadata → Consume it**. A metadata document typed
+into `samlSpMetadata` on **Applications → New application ›** is consumed
+when you click **Create the application**. If it is refused, the application
+is still created and the answer says why.
 
 **API:**
 ```bash
@@ -77,7 +91,10 @@ curl -sk "$BASE/saml2/metadata/$(jq -rn --arg s https://sp.example.com/saml '$s|
 ```
 
 If you declare `saml2` with no `samlEntityId`, the identifier is used as the
-entityID, which is why `"fields": {}` is enough. The interoperability jobs
+entityID, which is why `"fields": {}` is enough. A `samlSpMetadata` document
+given in `fields` on the create is consumed too. Setting it later with
+`applications/set` only stores it; use `upload-metadata` to consume one.
+The interoperability jobs
 first create a realm for the SP; the IdP's entityID there is that realm's
 OAuth 2.0 issuer, which is not a setting (#523):
 
@@ -87,8 +104,8 @@ api realms/create '{"id":"sp1","domain":"sp1.example.net","name":"sp1"}'
 
 **To have the metadata fetched from a URL instead of uploaded:** set
 `samlSpMetadataUrl` on the application, then click **Refresh the metadata**
-on its page (or **Refresh it now** on the SP's SAML 2.0 page). Through the
-API:
+on its **SP metadata** tab (or **Refresh it now** on the SP's page under
+**SAML 2.0 IdP**). Through the API:
 ```bash
 api applications/set '{"application":"https://sp.example.com/saml",
   "attribute":"samlSpMetadataUrl","value":"https://sp.example.com/saml/metadata"}'
@@ -101,8 +118,8 @@ certificate verified in product mode.
 `saml2.spMetadataRefresh` is on (the default). **Metadata that has expired**
 refuses every request from that SP. To require the metadata itself to be
 signed, set a trust anchor. `saml2.metadataTrustAnchors` does it for every
-SP. For one SP, use **Metadata signing certificate → Set** on its page, or
-the API:
+SP. For one SP, use **Metadata signing certificate → Set** on the SP's page
+under **SAML 2.0 IdP**, or the API:
 
 ```bash
 api saml2/set-metadata-signing-certificate '{"sp":"https://sp.example.com/saml","value":"MIIC…"}'
@@ -111,13 +128,19 @@ api saml2/set-metadata-signing-certificate '{"sp":"https://sp.example.com/saml",
 ## Register the SP by hand
 
 Without metadata, register the addresses and certificates yourself. The
-values here are from `sts_xml_schema_validation.js`.
+values here are from `sts_xml_schema_validation.js`, which names its service
+providers `https://sp-<tag>-<stamp>.example.com/saml`; `sp-d` stands in for
+that below.
 
 **Console:**
-1. On **Applications → New application ›**, enter the **Identifier** and tick **SAML 2.0**.
-2. Fill in `samlEntityId`, **Where responses go back to** (the ACS) and **Where a sign-out goes** (the SLO address).
-3. Click **Create the application**.
-4. On `/admin/saml2?sp=…`, under **Its signing certificates**, paste the certificate into **Replace them with** and click **Set**.
+1. On **Applications → New application ›**, under **What it is called**, enter the **Identifier**.
+2. Under **Protocol families it is declared for**, tick **SAML 2.0**.
+3. Under **Its fields**, on the **SAML 2.0 and SAML 1.1** tab, fill in `samlEntityId`, `samlAssertionConsumerService` (the ACS), `samlSingleLogoutService` (the SLO address) and `samlSigningCertificate`.
+4. Click **Create the application**.
+
+To change the certificates later, open the SP's page under **SAML 2.0 IdP**:
+under **Its signing certificates**, paste the certificate into **Replace them
+with** and click **Set**.
 
 **API:**
 ```bash
@@ -129,10 +152,10 @@ api applications/create '{"identifier":"https://sp-d.example.com/saml","name":"s
             "samlSigningCertificate":["<PEM or base64 DER>"]}}'
 ```
 
-Setting `samlSpMetadata` directly only stores the document; nothing in it is
-used. To register from metadata, use **Consume it** or `upload-metadata`.
-Once metadata has been consumed, the ACS must be one of its endpoints, in
-every mode.
+Setting `samlSpMetadata` with `applications/set` only stores the document;
+nothing in it is used. To register from metadata, use **Consume it**,
+`upload-metadata`, or give the document on the create. Once metadata has been
+consumed, the ACS must be one of its endpoints, in every mode.
 
 In development mode, a certificate that a signed request carries is recorded
 as **observed**. It is trusted only once you click **Confirm — trust it** or
@@ -154,12 +177,13 @@ The IdP metadata publishes all three as `SingleSignOnService`. HTTP-Artifact
 is not supported for the request. No setting is needed.
 
 Every request, in every mode, is checked as follows:
-* `Destination` must be the endpoint the request arrived at, and a signed request must carry one.
-* `IssueInstant` may be at most one minute in the future and no older than `saml2.requestTtlMin`.
-* `Version` must be `2.0`.
-* Each request ID is answered once.
+* `Destination` must be the endpoint the request arrived at. **A signed request must carry one**: a signed request with no `Destination` is refused, because what it was signed for cannot be told (SAML bindings sections 3.4.5.2 and 3.5.5.2). The refusal is a page, recorded as `STS-SAML-0085`. If your SP signs its requests, make sure it sets `Destination`.
+* `IssueInstant` may be at most one minute in the future and no older than `saml2.requestTtlMin` (10 minutes) plus a minute (`STS-SAML-0086`).
+* `Version` must be `2.0` (`STS-SAML-0087`).
+* Each request ID is answered once (`STS-SAML-0088`).
+* The SP may start a sign-in at all: `saml2.spInitiatedSso` (see [Who may start a sign-in](#who-may-start-a-sign-in)).
 
-The request the schema job builds is:
+The request the schema job builds (it signs it, so `Destination` is there) is:
 
 ```xml
 <samlp:AuthnRequest ID="_…" Version="2.0" IssueInstant="…"
@@ -204,24 +228,29 @@ The SP receives a `SAMLart` and resolves it over SOAP at `/saml2/ars` (or
 `/saml2/ars/<sp>`). The per-SP IdP metadata publishes that endpoint as
 `ArtifactResolutionService`. Each artifact can be resolved once, across the
 whole cluster. It expires after `saml2.artifactTtlS` (300 s); the per-SP
-override is `saml2ArtifactTtlS`.
+override is `saml2ArtifactTtlS`. At most `saml2.maxArtifacts` (10000)
+unresolved artifacts are kept per realm. When the store is full of live ones,
+the next sign-in on this binding is refused with a 503 page
+(`STS-SAML-0110`) rather than forget an artifact.
 
 **The resolver must authenticate.** It must be the SP the artifact was minted
-for. Where signed requests are required (in product mode by default), it
-must also do one of these:
+for, and the artifact's `SourceID` must be this realm's. An artifact that
+does not resolve, for whatever reason, gets the empty Success response. Where
+signed requests are required (in product mode by default), the resolver must
+also do one of these:
 * sign the `ArtifactResolve` with a key whose certificate is registered in `samlSigningCertificate`; or
 * present one of those certificates as its TLS client certificate.
 
 The schema job signs the request like this:
 
 ```
-POST /saml2/ars
+POST /saml2/ars/<sp entityID, percent-encoded>
 Content-Type: text/xml; charset=utf-8
 SOAPAction: ""
 
 <soap:Envelope><soap:Body>
   <samlp:ArtifactResolve ID="_…" Version="2.0" IssueInstant="…"
-      Destination="https://idp.example.com/saml2/ars">
+      Destination="https://idp.example.com/saml2/ars/<sp>">
     <saml:Issuer>https://sp-d.example.com/saml</saml:Issuer>
     <samlp:Artifact>…</samlp:Artifact>
   </samlp:ArtifactResolve>          <!-- enveloped signature with the SP's key -->
@@ -231,26 +260,104 @@ SOAPAction: ""
 The SP asks for this binding with
 `ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Artifact"`.
 
-## IdP-initiated (unsolicited) SSO
+## Who may start a sign-in
 
-Here the sign-in starts at the IdP, and the SP receives a Response with no
-`InResponseTo`:
+Each SAML profile has two switches. One says whether this identity provider
+may start a sign-in for an SP (IdP-initiated). The other says whether the SP
+may start one with its own request (SP-initiated). Each is a realm setting,
+and an attribute on the application's entry overrides it for that SP.
 
-```
-GET /saml2/unsolicited/<sp entityID or slug>?shire=<ACS URL>&target=<RelayState>[&binding=post|simplesign|artifact]
-GET /saml2/unsolicited?providerId=<sp>&shire=<ACS URL>&target=<RelayState>
-```
+| | IdP-initiated (default off) | SP-initiated (default on) |
+|---|---|---|
+| SAML 2.0 | `saml2.idpInitiatedSso` / `saml2IdpInitiatedSso` | `saml2.spInitiatedSso` / `saml2SpInitiatedSso` |
+| SAML 1.1 | `saml11.idpInitiatedSso` / `saml11IdpInitiatedSso` | `saml11.spInitiatedSso` / `saml11SpInitiatedSso` |
 
-The Shibboleth job uses
-`shire=https://sp.example.com/Shibboleth.sso/SAML2/POST&target=https://sp.example.com/peer/env`.
-The Redirect binding is refused here. In product mode, the SP and the
-`shire` must both be registered. To turn this off, set
-`saml2.unsolicitedSso` (**Identity-provider-initiated sign-in**, on by
-default) to `false`:
+In the console the realm settings are on **Protocols → SAML → Global
+settings** (**Identity-provider-initiated sign-in** and
+**Service-provider-initiated sign-in**, in the **SAML 2.0** and **SAML 1.1**
+groups). The per-SP attributes are on the application's **Configuration →
+SAML 2.0 and SAML 1.1** tab, under **Who may start a sign-in**.
+
+The values below are from `sts_idp_initiated_saml.js`, which runs in
+development and product mode. It creates each SP with the switch already in
+`fields`:
 
 ```bash
-api config/set '{"key":"saml2.unsolicitedSso","value":false}'
+api applications/create '{"identifier":"https://sp-idp-on.idp-initiated.test/sp",
+  "name":"sp-idp-on","protocols":["saml2"],
+  "fields":{"samlEntityId":["https://sp-idp-on.idp-initiated.test/sp"],
+            "samlAssertionConsumerService":["https://sp-idp-on.idp-initiated.test/acs"],
+            "samlSigningCertificate":["<PEM>"],
+            "saml2IdpInitiatedSso":"TRUE"}}'
 ```
+
+(The job adds a run stamp to each host name.) To turn it on for an SP that
+already exists, or for every SP in the realm (an entry's own value still
+wins):
+
+```bash
+api applications/set '{"application":"https://sp.example.com/shibboleth",
+  "attribute":"saml2IdpInitiatedSso","value":"TRUE"}'
+api config/set '{"key":"saml2.idpInitiatedSso","value":true}'
+```
+
+An unsolicited Response carries no `InResponseTo`, so the SP cannot tell it
+from one an attacker pushed into a browser. Turn it on only for SPs that
+expect it.
+
+**The link.** Every application has one IdP-initiated link,
+`/launch/{application}`, with `?protocol=saml2` or `?protocol=saml11` when it
+uses more than one protocol, and `target` for where to land. It is shown at
+the top of the application's SAML tab, and on the user portal's
+**Sign in** link. For SAML 2.0 it goes to `/saml2/unsolicited/{sp}` with
+`target` as the `RelayState`; for SAML 1.1 to `/saml11/sso/{rp}` with
+`providerId` and `TARGET`. [Identity-provider-initiated sign-in](idp-initiated-sso.md)
+describes the link in full. `sts_idp_initiated_launch.js` is the job for it.
+
+### SAML 2.0: the unsolicited Response
+
+The protocol's own endpoint is:
+
+```
+GET /saml2/unsolicited/<sp entityID or slug>?target=<RelayState>[&shire=<ACS URL>][&binding=post|simplesign|artifact]
+GET /saml2/unsolicited?providerId=<sp>&target=<RelayState>[&shire=<ACS URL>]
+```
+
+`shire` picks one of the SP's registered ACS endpoints; without it the
+default one is used. The Shibboleth job uses
+`shire=https://sp.example.com/Shibboleth.sso/SAML2/POST&target=https://sp.example.com/peer/env`.
+The Redirect binding is refused here (`STS-SAML-0093`). In product mode, the
+SP and the ACS must both be registered.
+
+While the switch is off for the SP, the link answers a 403 page
+(`STS-SAML-0091`), with no sign-in screen first. A sign-in started here is
+held to the issuance policy like any other. A step-up on risk, or a sign-in
+mechanism the SP does not allow (`appAuthnMechanism`), sends the person to
+sign in again once and back to the link. If it is still refused after that
+trip, the SP gets a `RequestDenied` Response.
+
+With `saml2SpInitiatedSso` set to `FALSE`, the SP's own AuthnRequest is
+answered with a `RequestDenied` Response and no sign-in screen
+(`STS-SAML-0111`), and the SP can be signed in to only from the link.
+
+### SAML 1.1: a link with no `shire`
+
+SAML 1.1 has no request message, so the `shire` parameter tells the two
+apart. A `/saml11/sso` request that carries a `shire` is the relying party's
+own start (the Shibboleth 1.3 AuthnRequest profile) and answers to
+`saml11.spInitiatedSso`. A request with only a `TARGET` (and `providerId` or
+the path segment) is a sign-in started here, and answers to
+`saml11.idpInitiatedSso`:
+
+```
+GET /saml11/sso/<rp>?TARGET=https://app.example.com/landing
+```
+
+That link is refused with a 403 page by default (`STS-SAML-0113`), and
+answered once `saml11IdpInitiatedSso` is `TRUE` on the relying party. With
+`saml11SpInitiatedSso` set to `FALSE`, a request carrying `shire` is refused
+(`STS-SAML-0114`). Because the request is an unsigned URL, that switch closes
+a door; it does not prove who opened it.
 
 ## Signed AuthnRequests
 
@@ -340,12 +447,19 @@ api users/create '{"username":"alice","invent":false,"credential":"password","pa
                 "displayName":"Alice Example","mail":"alice@example.com"}}'
 ```
 
-**To add an attribute to every assertion**, use **Custom SAML attributes** →
-**Add**, or the API. Values may use `${subject}` and `${audience}`:
+**To add an attribute to every assertion**, use **Protocols → SAML → Custom
+SAML attributes** → **Add**, or the API. Values may use `${subject}` and
+`${audience}`:
 
 ```bash
 api saml-attributes/add '{"set":"saml2","name":"department","value":"engineering"}'
 ```
+
+An application can carry attributes of its own as well: the **Custom SAML
+attributes** section of its **Configuration → SAML 2.0 and SAML 1.1** tab.
+`saml2ClaimsCombine` (and `saml11ClaimsCombine`) says how its rows and the
+realm's are combined: `application`, `union`, `intersection` or `realm`.
+Unset, its rows are added to the realm's and win by name.
 
 **Attribute query.** `POST /saml2/aa` takes a signed `samlp:AttributeQuery`
 in a SOAP envelope. It answers only for a subject that has a live session
@@ -361,8 +475,9 @@ address to send its LogoutResponse to in this order:
 3. `saml2.defaultSingleLogoutService`
 4. the last ACS used (a guess, which is logged)
 
-**Console:** on `/admin/saml2?sp=…`, under **Where its LogoutResponse goes**,
-enter the address in **Add one** and click **Add**.
+**Console:** on the SP's page under **SAML 2.0 IdP** (`/admin/saml2?sp=…`),
+under **Where its LogoutResponse goes**, enter the address in **Add one** and
+click **Add**.
 
 **API:**
 ```bash
@@ -372,6 +487,36 @@ api saml2/set-logout-service '{"sp":"https://sp.example.com/saml","value":"https
 `GET /saml2/slo` with no message shows an IdP-initiated sign-out page with a
 link for each SP. A back-channel (SOAP) LogoutRequest ends the session named
 by its `SessionIndex`; the Keycloak job sends one.
+
+## Several accounts in one browser
+
+With `authn.multipleAccounts` on (off by default), one browser may be signed
+in as several people at once. [Several accounts in one browser](multiple-accounts.md)
+describes the setting. For SAML 2.0 it changes three things:
+
+* **The AuthnRequest's `<saml:Subject>` NameID chooses the account**, if it
+  names a username or e-mail address that is signed in. A NameID naming nobody
+  signed in goes to the sign-in screen with it filled in, never to another
+  account. A `transient` NameID names nobody.
+* **A request that names nobody, while more than one account is signed in,
+  goes to the account picker**, and the account chosen there is the
+  assertion's subject. `ForceAuthn="true"` is a fresh sign-in, never the
+  picker.
+* **`IsPassive="true"` with a choice to make is answered `NoPassive`**, with a
+  generic status message that says nothing about the browser's accounts.
+
+`sts_multi_account.js` turns the setting on in a realm of its own and sends
+signed requests:
+
+```bash
+api realms/create '{"id":"ma1","domain":"ma1.example.net","name":"ma1"}'
+curl -sk -X POST "$BASE/realm/ma1/admin-api/config/set" \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"key":"authn.multipleAccounts","value":true}'
+```
+
+SAML 1.1 can name nobody, so a browser with several accounts always reaches the
+picker there.
 
 ## Metadata Query (MDQ)
 
@@ -383,8 +528,8 @@ api config/set-many '{"saml2.mdqBaseUrl":"https://mdq.example.org/","federation.
 api saml2/mdq-import '{"sp":"https://sp.example.com/saml"}'
 ```
 
-The console equivalent is **Import one from the Metadata Query responder** →
-**entityID** → **Import**. In development mode, a request from an unknown SP
+The console equivalent is **Protocols → SAML → SAML 2.0 IdP → Import one
+from the Metadata Query responder** → **entityID** → **Import**. In development mode, a request from an unknown SP
 triggers a lookup. In product mode a lookup is never triggered by a request,
 and refusals are listed in the **Metadata Query lookups refused** table. An
 operator's import is refused unless `saml2.metadataTrustAnchors` is set, or
@@ -406,16 +551,22 @@ as an attribute authority. Its endpoints are `/saml11/sso`,
 Taken from `sts_saml11.js`.
 
 **Console:**
-1. On **Applications → New application ›**, enter the **Identifier** and tick **SAML 1.1**.
-2. Fill in `samlEntityId` and **Where responses go back to** (the relying party's `shire`, which is `samlAssertionConsumerService`).
-3. Click **Create the application**.
-4. On its page, **Add to** `samlSigningCertificate` the relying party's certificate (base64 DER). That form has no field for the certificate.
+1. On **Applications → New application ›**, under **What it is called**, enter the **Identifier**.
+2. Under **Protocol families it is declared for**, tick **SAML 1.1**.
+3. Under **Its fields**, on the **SAML 2.0 and SAML 1.1** tab, fill in `samlEntityId`, `samlAssertionConsumerService` (the relying party's `shire`) and `samlSigningCertificate` (base64 DER).
+4. Click **Create the application**.
 
-(**SAML 1.1 identity provider → Register a relying party → Register**
-creates the entry with only its identifier. In product mode, you must then
-add `samlAssertionConsumerService` as well.)
+A shorter way is **Protocols → SAML → SAML 1.1 IdP → Register a relying
+party**: fill in **Identifier** and **Assertion consumer (shire)**, then click
+**Register**. Both are required. It registers no certificate, so add
+`samlSigningCertificate` afterwards on the application's page. The API
+equivalent is:
 
-**API:**
+```bash
+api saml11/register '{"rp":"urn:test:saml11:rp1","shire":"https://rp.example.com/saml11/acs"}'
+```
+
+**API** (`sts_saml11.js` names its relying party `urn:test:saml11:<stamp>`):
 ```bash
 api applications/create '{"identifier":"urn:test:saml11:rp1","name":"SAML 1.1 relying party",
   "protocols":["saml11"],
@@ -424,12 +575,14 @@ api applications/create '{"identifier":"urn:test:saml11:rp1","name":"SAML 1.1 re
             "samlSigningCertificate":["<base64 DER>"]}}'
 ```
 
-**Per-relying-party overrides.** Use **Set** on the application page, or the
-**What SAML 1.1 issues for this relying party** section of the new-application
-form. The attributes are `saml11AssertionLifetimeMin`, `saml11SignAssertion`,
+**Per-relying-party overrides.** Use the application's **Configuration → SAML
+2.0 and SAML 1.1 → SAML 1.1** tab and **Save SAML 1.1**, or set them in the
+new-application form's advanced view (**Show every field (advanced view)**).
+The attributes are `saml11AssertionLifetimeMin`, `saml11SignAssertion`,
 `saml11SignResponse`, `saml11NameIdFormat` and `saml11ArtifactTtlS`.
 
-**Settings** (on **SAML 1.1 identity provider** and **SAML assertions**):
+**Settings** (on **Protocols → SAML**, tabs **Global settings** and **SAML
+assertions**):
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -437,6 +590,8 @@ form. The attributes are `saml11AssertionLifetimeMin`, `saml11SignAssertion`,
 | `saml11.signAssertion` / `saml11.signResponse` | `true` | Signs the assertion / the Response. Turning either off is refused in product mode. |
 | `saml11.nameIdFormat` | `…:1.1:nameid-format:unspecified` | The NameIdentifier format. |
 | `saml11.artifactTtlS` | `300` | How long an artifact stays valid. |
+| `saml11.maxArtifacts` | `10000` | Unresolved artifacts kept per realm; a full store refuses the next Browser/Artifact sign-in with a 503 page (`STS-SAML-0110`). |
+| `saml11.idpInitiatedSso` / `saml11.spInitiatedSso` | `false` / `true` | Who may start a sign-in; see [above](#who-may-start-a-sign-in). |
 
 `sts_saml11.js` flips each of these through `config/set-many` and restores
 them with `config/reset`. For example:
@@ -452,8 +607,9 @@ GET /saml11/sso?providerId=urn:test:saml11:rp1&shire=https://rp.example.com/saml
                &TARGET=https://rp.example.com/done?x=1[&profile=post]
 ```
 
-After signing in, the person's browser posts a signed `samlp:Response` to the
-`shire`. The Response has `Recipient` set to the `shire` and uses the
+This request carries a `shire`, so it is the relying party's own start and
+needs no switch turned on. After signing in, the person's browser posts a
+signed `samlp:Response` to the `shire`. The Response has `Recipient` set to the `shire` and uses the
 `cm:bearer` confirmation. `TARGET` is returned unchanged.
 
 The profile is chosen by the `profile` parameter first. If there is none, the
@@ -519,10 +675,31 @@ GET /saml11/sso?providerId=<SP entityID>&shire=<ACS>&target=<relay>&time=<epoch 
 
 The IdP metadata advertises this profile. Register the SP with its
 `samlEntityId` and `samlAssertionConsumerService`, or upload its metadata as
-in [SAML 2.0](#register-the-sp-from-its-metadata-recommended). Metadata is
-consumed only when its `SPSSODescriptor` also names the SAML 2.0 protocol, as
-a dual-protocol Shibboleth SP's does. For a pure SAML 1.1 relying party,
-register the addresses by hand.
+in [SAML 2.0](#register-the-sp-from-its-metadata-recommended).
+
+**SAML 1.1-only metadata is consumed too.** An `SPSSODescriptor` whose
+`protocolSupportEnumeration` names only
+`urn:oasis:names:tc:SAML:1.1:protocol` is read for an application declared
+for `saml11` and not `saml2`. Its ACS endpoints keep their bindings
+(`browser-post`, `artifact-01`), so the `shire` chooses the profile. For an
+application declared for both, upload from the application's **SAML 1.1**
+tab (**Configuration → SAML 2.0 and SAML 1.1 → SAML 1.1 → Its metadata**), or
+pass `"family":"saml11"`; without it a dual-protocol application reads the
+SAML 2.0 descriptor. `sts_saml11.js` does this:
+
+```bash
+api applications/create '{"identifier":"urn:test:saml11:rp1:metadata","name":"SAML 1.1 metadata-only relying party",
+  "protocols":["saml11"],"fields":{"samlEntityId":["urn:test:saml11:rp1:metadata"]}}'
+
+jq -n --arg d "$(cat rp-metadata.xml)" \
+  '{sp:"urn:test:saml11:rp1:metadata",family:"saml11",document:$d}' |
+  curl -sk -X POST "$BASE/admin-api/saml2/upload-metadata" \
+    -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' --data-binary @-
+```
+
+The job sends no `family`, since its relying party is declared for SAML 1.1
+alone. It then signs in with no `profile` and checks that the
+`artifact-01` endpoint selects Browser/Artifact.
 
 ## NameIdentifier formats and attributes
 
@@ -547,5 +724,7 @@ SAML 1.1 tokens are also issued by WS-Federation's `wsignin1.0`; see
 ## Related
 
 * [SAML 2.0 Web Browser SSO](saml2-sso.md) and [SAML 1.1](saml11.md): the behaviour and every setting.
+* [Identity-provider-initiated sign-in](idp-initiated-sso.md): the `/launch/{app}` link.
+* [Several accounts in one browser](multiple-accounts.md).
 * [SAML assertions (RFC 7522)](saml-assertions.md): a SAML assertion exchanged at the OAuth token endpoint.
 * [Configuring OAuth 2.0 grants](configure-oauth2-grants.md) and [Configuring OpenID Connect flows](configure-oidc-flows.md).

@@ -25,8 +25,8 @@
 //   C. IDENTITY-PROVIDER-INITIATED LOGOUT (#192): the LogoutRequest a link
 //      carries is signed on the Redirect binding's QUERY STRING, carries no
 //      enveloped signature, and names the NameID the session was given there.
-//   D. IDENTITY-PROVIDER-INITIATED SSO (#189): /saml2/unsolicited, its
-//      refusals (0091–0093, 0082) and an unsolicited Response with no
+//   D. IDENTITY-PROVIDER-INITIATED SSO (#189, #711): /saml2/unsolicited,
+//      its refusals (0091–0093, 0082) and an unsolicited Response with no
 //      InResponseTo, at the registered ACS, carrying the X.500/LDAP names.
 //   E. THE ATTRIBUTE AUTHORITY (#189): /saml2/aa answers about a subject a
 //      live session gave the asking SP, echoes the NameID's qualifiers, narrows
@@ -331,7 +331,12 @@ async function run(t) {
     t.log.info('D. identity-provider-initiated SSO');
     // -----------------------------------------------------------------------
     const acsD = 'https://unsolicited.test/acs';
+    // Opted in (#711): identity-provider-initiated sign-in is off until a
+    // service provider's entry turns it on. tests/saml_initiation.js holds
+    // the switches themselves.
     const spD = newParty('unsolicited', 'saml2-service-provider', {
+      samlAssertionConsumerService: acsD, saml2IdpInitiatedSso: 'TRUE' });
+    const spOff = newParty('unsolicited-off', 'saml2-service-provider', {
       samlAssertionConsumerService: acsD });
     const ask = function (query, extra) {
       log.debug("Entering ask().");
@@ -342,12 +347,11 @@ async function run(t) {
       log.debug("Leaving ask().");
       return res;
     };
-    const off = kit.withSettings(config, { 'saml2.unsolicitedSso': false },
-      function () {
-        return ask({ providerId: spD });
-      });
-    t.equal(codeOf(off), 'STS-SAML-0091',
-            'turned off for the realm: refused, STS-SAML-0091');
+    const off = ask({ providerId: spOff });
+    t.check(off.statusCode === 403 && codeOf(off) === 'STS-SAML-0091',
+            'a service provider that did not opt in (saml2.idpInitiatedSso ' +
+            'is off by default): refused, 403, STS-SAML-0091',
+            off.statusCode + ' ' + codeOf(off));
     t.equal(codeOf(ask({})), 'STS-SAML-0092',
             'no service provider named: refused, STS-SAML-0092');
     t.equal(codeOf(ask({ providerId: spD, binding: 'redirect' })),

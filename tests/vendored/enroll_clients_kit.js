@@ -149,12 +149,13 @@ async function makeRealm(realm, name) {
 }
 
 // A person with a GENERATED password, answered once — verified in product
-// mode, so the jobs hold for both modes.
+// mode, so the jobs hold for both modes. The realm's attribute policy (#396)
+// requires givenName, sn and mail of every person in product mode.
 async function makePerson(realm, who, mail) {
   log.debug("Entering makePerson(). who=" + who);
   const made = await ok(realmApi(realm) + "/users/create",
     { username: who, invent: false, credential: "generate",
-      attributes: { cn: who, sn: who, mail: mail } },
+      attributes: { cn: who, givenName: who, sn: who, mail: mail } },
     "created " + who);
   assert.ok(made.password, "users/create answered no generated password");
   log.debug("Leaving makePerson().");

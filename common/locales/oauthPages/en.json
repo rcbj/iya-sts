@@ -25,5 +25,9 @@
   "signedOut.frontNone": "There was no session to end. The cookie has been cleared anyway.",
   "signedOut.returnHeading": "Return to the relying party",
   "signedOut.returnAuto": "This page returns there by itself after {seconds, plural, one {# second} other {# seconds}}, once the notifications above have had time to load; the link is for a browser that does not follow a refresh.",
-  "signedOut.returnLink": "A link and not a redirect: the notifications above load with this page, and a 302 would abandon them before they were sent."
+  "signedOut.returnLink": "A link and not a redirect: the notifications above load with this page, and a 302 would abandon them before they were sent.",
+  "logout.askWhichApp": "The application <code>{app}</code> asked to sign you out, and this browser is signed in to {count} accounts. Which one should be signed out? Its session here ends, and every application signed in through it is told.",
+  "logout.askWhich": "An application asked to sign you out, and this browser is signed in to {count} accounts. Which one should be signed out? Its session here ends, and every application signed in through it is told.",
+  "logout.signOutAccount": "Sign out <strong>{who}</strong>",
+  "logout.whyWhich": "Asked because the request did not name one of the accounts signed in to this browser (RP-Initiated Logout 1.0 section 2). The other accounts stay signed in."
 }

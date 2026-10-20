@@ -27,6 +27,7 @@
 // that is not a version-2 envelope does not open, which is the state.
 // ===========================================================================
 
+const storeDouble = require('./tools/store_double');
 const postgres = require('../persistence/persistence_postgres');
 const errorCodes = require('../common/error_codes');
 
@@ -75,20 +76,13 @@ function fakePg(statements) {
 
 function driverWith(statements) {
   log.debug("Entering driverWith().");
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: fakePg(statements) };
+  const restore = storeDouble.install(fakePg(statements));
   try {
     log.debug("Leaving driverWith().");
     return postgres.create({
       url: 'postgres://sts_app@localhost:5432/sts', log: QUIET });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
 }
 

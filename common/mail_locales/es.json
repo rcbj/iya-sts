@@ -45,6 +45,11 @@
       "text": "La dirección de correo electrónico de la cuenta {{username}} se cambió el {{when}} a {{address}}. Este mensaje se envió a la dirección que tenía antes.\n\nSi no lo esperaba, comuníquese ahora con quien administra su cuenta.\n",
       "html": "<p>La dirección de correo electrónico de la cuenta <strong>{{username}}</strong> se cambió el {{when}} a {{address}}. Este mensaje se envió a la dirección que tenía antes.</p><p>Si no lo esperaba, comuníquese ahora con quien administra su cuenta.</p>"
     },
+    "account-connected": {
+      "subject": "Se conectó una cuenta a su cuenta de {{service}}",
+      "text": "Una cuenta de {{provider}} se conectó a la cuenta {{username}} el {{when}}, y ahora puede usarse para iniciar sesión en ella.\n\nSi no fue usted, desconéctela en Cuentas conectadas y contacte ahora con quien gestiona su cuenta.\n",
+      "html": "<p>Una cuenta de {{provider}} se conectó a la cuenta <strong>{{username}}</strong> el {{when}}, y ahora puede usarse para iniciar sesión en ella.</p><p>Si no fue usted, desconéctela en Cuentas conectadas y contacte ahora con quien gestiona su cuenta.</p>"
+    },
     "access-request": {
       "subject": "{{service}}: una aplicación pide acceso",
       "text": "La aplicación {{client}} pide acceso en nombre de la cuenta {{username}}: {{rights}}.\n\nNo se permite nada hasta que usted lo apruebe. Para aprobarlo o rechazarlo, inicie sesión y abra esta página en los próximos {{expiresMinutes}} minutos:\n\n{{link}}\n\nSi no reconoce la solicitud, recházela allí o ignore este mensaje: caduca por sí sola.\n",

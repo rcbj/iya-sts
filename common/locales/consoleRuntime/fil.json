@@ -13,5 +13,7 @@
   "signedInAgain": "Naka-sign in ulit",
   "signedInAgain.text": "Itutuloy ng console kung saan ka huminto. Puwede mo nang isara ang window na ito.",
   "openConsole": "Buksan ang console",
-  "copied": "Nakopya na"
+  "copied": "Nakopya na",
+  "accounts.unsaved": "May mga pagbabago sa pahinang ito na hindi pa nase-save. Lumipat pa rin ng account? Mawawala ang mga ito.",
+  "accounts.otherAccount": "Ibang account ang sign-in na iyon, kaya hindi ito tinanggap ng tab na ito. Mag-sign in muli bilang {user}, o lumipat ng account mula sa account menu."
 }

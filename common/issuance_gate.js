@@ -98,7 +98,15 @@ const ISSUANCE = {
   // `common/cert_enrollment.ts` for an application subject, roles waived and
   // the device deferred: it is the protocol-declaration rule (#380) that
   // decides it, the family the caller names.
-  CERTIFICATE: 'issue-certificate'
+  CERTIFICATE: 'issue-certificate',
+  // AN ACCOUNT A FEDERATED SIGN-IN WOULD CREATE (#565), asked by
+  // `federation/federation_sp.ts` before the session whose funnel creates
+  // it, with the sign-in's risk facts and the partner's category, roles
+  // waived: so an operator's rule can refuse CREATION — a consumer
+  // provider's newcomer at MEDIUM, an unverified address — while existing
+  // people still sign in. The built-in risk rules apply to it as to a
+  // session.
+  ACCOUNT: 'create-account'
 };
 
 /**
@@ -338,6 +346,11 @@ function check(request) {
   // AND THE SECOND FACTORS (#475), the same way and for the same reason:
   // the `mfa-mechanism` rule holds in both modes and is not about roles.
   const mfa = mfaFactsOf(asked);
+  // WHETHER THE AUTHENTICATION WAS PHISHING-RESISTANT (#723), OpenID Connect
+  // EAP ACR Values 1.0's `phr` / `phrh`, or `none`: rides along on the same
+  // four browser kinds whenever the policy is asked, and does not make it
+  // asked — the rules that read it are an operator's choice.
+  const phishing = phishingFactsOf(asked);
   if (!enforceRoles && !risk && !deviceMatters && !protocolMatters &&
       !mechanisms && !mfa) {
     log.debug('Leaving check(). Enforcement is switched off.');
@@ -361,6 +374,8 @@ function check(request) {
     allowedAuthnMechanisms: mechanisms ? mechanisms.allowed : null,
     mfaMechanisms: mfa ? mfa.satisfied : null,
     allowedMfaMechanisms: mfa ? mfa.allowed : null,
+    authority: authorityFactsOf(asked),
+    phishingResistance: phishing,
     rolesWaived: asked.rolesWaived === true || !enforceRoles ||
                  !asked.application
   });
@@ -409,6 +424,36 @@ function check(request) {
 // ---------------------------------------------------------------------------
 const BROWSER_KINDS = [ISSUANCE.SESSION, ISSUANCE.AUTHORIZATION_CODE,
                        ISSUANCE.SAML_ASSERTION, ISSUANCE.WSFED_TOKEN];
+
+// ---------------------------------------------------------------------------
+// WHO VOUCHED FOR THE AUTHENTICATION, WHEN A FEDERATION PARTNER DID (#565):
+// the relationship's category — consumer or enterprise — its provider, and
+// whether the address it sent counts as verified, from the event being
+// recorded or the session's latest one. Null for any other authentication,
+// so a rule about them is inapplicable to a password sign-in.
+// ---------------------------------------------------------------------------
+/**
+ * The federation facts of the authentication an issuance rests on (#565).
+ *
+ * @param asked - the issuance request
+ * @returns `{ category, provider, emailVerified }`, or null
+ */
+function authorityFactsOf(asked) {
+  log.debug('Entering authorityFactsOf().');
+  const events = asked.session && Array.isArray(asked.session.events)
+    ? asked.session.events : [];
+  const event = asked.authenticationEvent || events[events.length - 1] ||
+                null;
+  const authority = event && event.authority;
+  if (!authority || authority.kind !== 'federation') {
+    log.debug('Leaving authorityFactsOf(). Not federated.');
+    return null;
+  }
+  log.debug('Leaving authorityFactsOf(). ' + authority.category);
+  return { category: String(authority.category || 'enterprise'),
+           provider: String(authority.provider || ''),
+           emailVerified: String(authority.emailVerified || 'true') };
+}
 
 /**
  * The sign-in mechanism facts of a browser issuance (#457).
@@ -506,6 +551,48 @@ function mfaFactsOf(asked) {
   log.debug('Leaving mfaFactsOf(). Allowed ' + allowed.join(', ') +
             '; gave ' + satisfied.join(', ') + '.');
   return { allowed: allowed, satisfied: satisfied };
+}
+
+// ---------------------------------------------------------------------------
+// THE PHISHING-RESISTANCE FACT OF A BROWSER ISSUANCE (#723): what OpenID
+// Connect EAP ACR Values 1.0's two classes the authentication earned —
+// `phr`, `phrh` — or `none`, read off the event a session is about to record
+// or the session's latest, by `common/phishing_resistance.ts`, which argues
+// the evidence. Null where there is no browser authentication to describe,
+// for mechanismFactsOf()'s reasons. The leaf is required LAZILY, and only
+// here, for `disabledSubject()`'s reason: no Kerberos issuance reaches this
+// line. Never throws.
+// ---------------------------------------------------------------------------
+/**
+ * The phishing-resistance fact of a browser issuance (#723).
+ *
+ * @param asked - the issuance request
+ * @returns `phr`/`phrh` earned, or [`none`]; null when not a browser one
+ */
+function phishingFactsOf(asked) {
+  log.debug('Entering phishingFactsOf().');
+  const event = asked.authenticationEvent || null;
+  const session = asked.session || null;
+  if (asked.browser === false ||
+      BROWSER_KINDS.indexOf(String(asked.kind)) < 0 ||
+      (!event && !session) ||
+      (String(asked.kind) === ISSUANCE.SESSION && !event)) {
+    log.debug('Leaving phishingFactsOf(). Not a browser sign-in.');
+    return null;
+  }
+  let out = null;
+  try {
+    const classes = require('./phishing_resistance');
+    out = classes.factOf(event ? classes.ofEvent(event)
+                               : classes.ofSession(session));
+  } catch (e) {
+    // A defect in a leaf: no fact, rather than a refused issuance. A rule
+    // that requires the fact then finds an empty bag and does not hold.
+    log.debug('Caught in phishingFactsOf(): ' + ((e && e.message) || e));
+    out = null;
+  }
+  log.debug('Leaving phishingFactsOf(). ' + (out ? out.join(' ') : 'none'));
+  return out;
 }
 
 // ---------------------------------------------------------------------------

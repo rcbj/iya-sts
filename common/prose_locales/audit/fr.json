@@ -191,6 +191,18 @@
     "en": "9f66bf08890386c9",
     "text": "Quelqu’un a configuré un second facteur requis à la connexion"
   },
+  "audit.actions.authn.recovery.refused.label": {
+    "en": "d8ba643a9e0a83b8",
+    "text": "La politique des clés d’accès a refusé une récupération de compte en libre-service"
+  },
+  "audit.actions.authn.recovery.limited.label": {
+    "en": "497fee88cee8044f",
+    "text": "Une connexion après une récupération de compte a été limitée à l’enregistrement d’une clé d’accès"
+  },
+  "audit.actions.authn.recovery.completed.label": {
+    "en": "6c8028e5950a3cd4",
+    "text": "Une clé d’accès a connecté quelqu’un après une récupération de compte"
+  },
   "audit.actions.authn.sign-in.started-over.label": {
     "en": "2773b5e084cf4499",
     "text": "Quelqu’un a quitté une étape de connexion et a recommencé la connexion"
@@ -246,6 +258,14 @@
   "audit.actions.session.renew.label": {
     "en": "0bfd5e67a3f0fdc2",
     "text": "Une surface hébergée a renouvelé ses jetons dans la même session"
+  },
+  "audit.actions.authn.session.bound.label": {
+    "en": "027a6091ae35ff05",
+    "text": "Une session d’authentification unique a été liée à une clé détenue par son navigateur"
+  },
+  "audit.actions.authn.session.refreshed.label": {
+    "en": "bbbad25d367ffcdf",
+    "text": "Le cookie d’une session liée à l’appareil a été renouvelé sur une preuve de sa clé"
   },
   "audit.actions.logout.global.label": {
     "en": "db32c1466e054343",
@@ -691,6 +711,10 @@
     "en": "048452fd758565c6",
     "text": "Les clés Kerberos d’une personne ont été dérivées de son mot de passe"
   },
+  "audit.actions.krb5.trust.sid-filtered.label": {
+    "en": "0cb1d7c8c214f1f1",
+    "text": "Un ticket ayant traversé une approbation Kerberos a été soumis au filtrage des SID"
+  },
   "audit.actions.admin.krb5.keys.cleared.label": {
     "en": "a9405f7ee523fd30",
     "text": "Un opérateur a effacé les clés Kerberos de quelqu’un"
@@ -1127,6 +1151,18 @@
     "en": "a5c85407fff2c148",
     "text": "Un lien de fédération a été retiré d’une personne"
   },
+  "audit.actions.federation.connected.label": {
+    "en": "3466387fa24f3d55",
+    "text": "Une personne a connecté un fournisseur grand public ou social à son compte"
+  },
+  "audit.actions.federation.provider-notification.label": {
+    "en": "bf89c99cd7734f16",
+    "text": "Une notification d’un fournisseur grand public concernant l’une de ses personnes a été acceptée"
+  },
+  "audit.actions.federation.group-ignored.label": {
+    "en": "a64e9612670b278c",
+    "text": "Le nom de groupe d’un partenaire n’a pas été appliqué, car il nomme un groupe que cette relation n’a pas créé ou un groupe qui accorde quelque chose du seul fait d’en être membre (#358)"
+  },
   "audit.actions.group.add-member.label": {
     "en": "37da254923cef1b6",
     "text": "Un membre a été ajouté à un groupe"
@@ -1299,6 +1335,10 @@
     "en": "631dece03539cd4a",
     "text": "Une personne a créé une offre d’attestation pour son propre portefeuille"
   },
+  "audit.actions.portal.vc.remove.label": {
+    "en": "bc144eaf5bf2222e",
+    "text": "Une personne a retiré une attestation que ce domaine lui a émise"
+  },
   "audit.actions.risk.feedback.label": {
     "en": "e244d70b4d5a8c39",
     "text": "Un retour sur une évaluation du risque a été enregistré"
@@ -1394,6 +1434,26 @@
   "audit.actions.saml2.metadata.refresh.label": {
     "en": "775ac5b1f475f76f",
     "text": "Les métadonnées SAML d’un fournisseur de services ont été actualisées"
+  },
+  "audit.actions.account.add.label": {
+    "en": "0fc7d9b61dee994d",
+    "text": "Une session a rejoint l’ensemble de comptes d’un navigateur"
+  },
+  "audit.actions.account.select.label": {
+    "en": "1fcc762640b7ba22",
+    "text": "Un compte a été choisi dans le sélecteur de comptes"
+  },
+  "audit.actions.account.switch.label": {
+    "en": "0b9681ea51a0edfa",
+    "text": "Le compte par défaut d’un navigateur a changé"
+  },
+  "audit.actions.account.forget.label": {
+    "en": "17a75cbf0a350b17",
+    "text": "Un navigateur a oublié un compte déconnecté"
+  },
+  "audit.actions.account.ambiguous.label": {
+    "en": "cc103c68ea2f6ef9",
+    "text": "Une requête n’a pas indiqué à quel compte du navigateur elle était destinée"
   },
   "audit.actions.session.reauthenticate.label": {
     "en": "f6867c3c6a1d35bd",

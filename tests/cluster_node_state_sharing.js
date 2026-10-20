@@ -30,7 +30,13 @@
 //      session object, which the store does not journal, so identity-provider
 //      initiated SAML logout on the other node offered no LogoutRequest
 //      (`sts_saml_encryption`). Now `authn.noteSessionChanged()` re-sets the
-//      row.
+//      row. Held with authn.sessionWindow OFF and ON (#350): `auto`, the
+//      default, is on wherever minted persistence is, and then B reads A's
+//      session through the window from the store rather than from a full
+//      map — this file answers the window's bridge from the JSON file
+//      (`windowQuery()`). It was asserted with the window on by accident from
+//      the day #350 merged, B read the map the window no longer fills, and
+//      the three checks failed.
 //
 // TWO REAL PROCESSES AND ONE STORE. Each "node" is a child process of this
 // file, and the store they share is a JSON file behind a stub driver with the
@@ -120,7 +126,46 @@ function fileStore(file) {
     },
     raw: function () {
       return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+    },
+    // The row a key column names, synchronously: what the session window's
+    // bridge answers `session.read` with from postgres. The column is the
+    // keyed digest, which already binds the realm.
+    rowByKey: function (handle, key) {
+      const rows = Object.values(read().minted);
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i].handle === handle && rows[i].key === key) {
+          return rows[i];
+        }
+      }
+      return null;
     }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// THE SESSION WINDOW'S READS, FROM THE SHARED STORE (#350). With
+// authn.sessionWindow on — and `auto` is on wherever minted persistence is,
+// which is every arrangement this file builds — a node holds a bounded
+// window of sessions rather than the full map, and a miss is read from the
+// store through a bridge to postgres. The stub store has no postgres, so
+// this answers the bridge's named queries from the JSON file instead: the
+// same rows, the same sealed bodies, opened by the window itself.
+// ---------------------------------------------------------------------------
+function windowQuery(store) {
+  log.debug("Entering windowQuery().");
+  log.debug("Leaving windowQuery().");
+  return function (name, args) {
+    const row = store.rowByKey('authn.sessions', String((args || [])[1]));
+    if (name === 'session.read') {
+      return row ? { body: row.body } : null;
+    }
+    if (name === 'session.exists') {
+      return { hit: !!row };
+    }
+    if (name === 'session.count') {
+      return { n: 0 };
+    }
+    return [];
   };
 }
 
@@ -248,6 +293,22 @@ async function node(role, storeFile, kekFile) {
   credentials.setDirectory(directory);
   const authn = require('../authn/authn');
   const totp = require('../common/totp');
+  const realms = require('../common/realms');
+  const sessionWindow = require('../authn/session_window');
+  out.windowActive = sessionWindow.active();
+  if (out.windowActive) {
+    sessionWindow.setQuery(windowQuery(store));
+  }
+  // A session as a request on this node reads it: through the window while
+  // it is on, from the map otherwise — which is the branch every reader in
+  // authn.ts takes (`windowOn()`).
+  const readSession = function (id) {
+    if (!out.windowActive) {
+      return authn.sessions.get(id);
+    }
+    const read = sessionWindow.get(realms.currentId(), id);
+    return read.ok ? read.session : undefined;
+  };
 
   if (role === 'a') {
     const began = credentials.beginTotpEnrolment('alice');
@@ -275,7 +336,8 @@ async function node(role, storeFile, kekFile) {
     out.untoldDirty = minted.dirty();
     out.told = authn.noteSessionChanged(authn.sessions.get('sid-told'));
     out.goneRefused = authn.noteSessionChanged({ id: 'sid-never' }) ===
-                      false && !authn.sessions.has('sid-never');
+                      false && !authn.sessions.has('sid-never') &&
+                      !readSession('sid-never');
     await minted.flush();
     out.rawHoldsSecret = store.raw().indexOf(out.totpSecret) >= 0 ||
                          (out.firstCode &&
@@ -308,8 +370,8 @@ async function node(role, storeFile, kekFile) {
     }
     const pendingKey = credentials.pendingKeyEnrolmentFor('alice');
     out.challenge = pendingKey ? pendingKey.challenge : '';
-    const told = authn.sessions.get('sid-told');
-    const untold = authn.sessions.get('sid-untold');
+    const told = readSession('sid-told');
+    const untold = readSession('sid-untold');
     out.toldHasSp = !!(told && told.saml2ServiceProviders &&
                        told.saml2ServiceProviders['urn:sp:probe']);
     out.untoldHasSp = !!(untold && untold.saml2ServiceProviders &&
@@ -368,87 +430,117 @@ function runNode(t, role, dir, extra) {
   }
 }
 
-function run(t) {
-  log.debug("Entering run().");
+// Section 3, for one state of authn.sessionWindow (#350). The full map and
+// the window are two different ways for B to hold A's session, and the
+// window — `auto`, the default — is the one a node on postgres runs, so both
+// are held to the same three claims.
+function checkSessions(t, a, b, window) {
+  log.debug("Entering checkSessions(). window=" + window);
+  const state = ' (authn.sessionWindow ' + window + ')';
+  t.check(a.windowActive === (window === 'on') &&
+          b.windowActive === (window === 'on'),
+          'the session window is ' + window + ' on both nodes, as asked',
+          JSON.stringify([a.windowActive, b.windowActive]));
+  t.check(a.untoldDirty === false,
+          'CONTROL: an in-place edit of a session journals nothing — the ' +
+          'bug, observed before the fix is applied to it' + state);
+  t.check(a.told === true && b.toldHasSp === true,
+          'A SERVICE PROVIDER RECORDED ON A AND TOLD TO THE STORE IS ON ' +
+          'B\'S COPY — so B\'s /saml2/slo offers its LogoutRequest' + state);
+  t.check(b.untoldPresent === true && b.untoldHasSp === false,
+          'CONTROL: the same edit NOT told to the store is absent on B, ' +
+          'which is what identity-provider-initiated logout saw' + state);
+  t.check(a.goneRefused === true,
+          'and noteSessionChanged() never creates a session that is not ' +
+          'there — a session ended meanwhile stays ended' + state);
+  log.debug("Leaving checkSessions().");
+}
+
+// One pair of nodes, A then B, over a store of their own.
+function runPair(t, window) {
+  log.debug("Entering runPair(). window=" + window);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-node-state-'));
   try {
     fs.writeFileSync(path.join(dir, 'kek'),
                      nodeCrypto.randomBytes(32).toString('base64'),
                      { encoding: 'utf8', mode: 0o600 });
-    const a = runNode(t, 'a', dir);
-    const b = runNode(t, 'b', dir, { PROBE_HANDLE: a.codesHandle || '' });
-
-    t.log.info('=== 1. the BBS key is a member of the realm\'s key set ===');
-    t.check(a.sealed && b.sealed && a.mintedEnabled && b.mintedEnabled,
-            'both nodes hold the one real key-encryption key and write ' +
-            'minted state — the arrangement a cluster node has',
-            JSON.stringify({ a: [a.sealed, a.mintedEnabled],
-                             b: [b.sealed, b.mintedEnabled] }));
-    t.check(a.bbsOnSet && b.bbsOnSet && a.bbsInBlob && b.bbsInBlob,
-            'THE BBS PAIR IS ON THE REALM\'S KEY SET AND IN THE BLOB EVERY ' +
-            'NODE AND WORKER READS (#49 P5) — so it is agreed the way every ' +
-            'member is, and rotates with the set',
-            JSON.stringify({ a: [a.bbsOnSet, a.bbsInBlob],
-                             b: [b.bbsOnSet, b.bbsInBlob] }));
-    t.check(a.bbsUnit && b.bbsUnit,
-            'and it is the signing unit bbs:BBS, with generations');
-    t.check(a.bbsSecretGone && b.bbsSecretGone,
-            'and the cluster secret bbs-keypair that carried it is gone');
-
-    t.log.info('=== 2. an enrolment begun on A is finished on B ===');
-    t.check((a.began || []).every(Boolean),
-            'node A began a TOTP enrolment, a recovery-code set and a ' +
-            'security-key enrolment', JSON.stringify(a.began));
-    t.check(b.applied > 0, 'node B applied node A\'s rows',
-            String(b.applied));
-    t.check(!!a.totpSecret && a.totpSecret === b.totpSecret,
-            'THE PENDING TOTP SECRET A SHOWED IS THE ONE B HOLDS — ' +
-            '/portal/mfa draws the QR code on whichever node answers');
-    t.check(b.totpConfirmed === true,
-            'and a code from it CONFIRMS the enrolment on B');
-    t.check(b.totpGoneAfter === true && b.deletesReachStore === true,
-            'and the confirmation removed the pending row from the store too');
-    t.check(b.codesPending === true && b.codesConfirmed === true,
-            'THE PENDING RECOVERY-CODE SET A GENERATED IS CONFIRMED ON B');
-    t.check(!!a.challenge && a.challenge === b.challenge,
-            'THE SECURITY-KEY CHALLENGE A MINTED IS THE ONE B EXPECTS — ' +
-            '/portal/keys arms the ceremony on whichever node answers');
-    t.check(a.rawHoldsSecret === false,
-            'and none of it reached the store in the clear: the TOTP secret ' +
-            'and the codes are inside sealed rows');
-
-    t.log.info('=== 3. a party a session signed into reaches every node ===');
-    t.check(a.untoldDirty === false,
-            'CONTROL: an in-place edit of a session journals nothing — the ' +
-            'bug, observed before the fix is applied to it');
-    t.check(a.told === true && b.toldHasSp === true,
-            'A SERVICE PROVIDER RECORDED ON A AND TOLD TO THE STORE IS ON ' +
-            'B\'S COPY — so B\'s /saml2/slo offers its LogoutRequest');
-    t.check(b.untoldPresent === true && b.untoldHasSp === false,
-            'CONTROL: the same edit NOT told to the store is absent on B, ' +
-            'which is what identity-provider-initiated logout saw');
-    t.check(a.goneRefused === true,
-            'and noteSessionChanged() never creates a session that is not ' +
-            'there — a session ended meanwhile stays ended');
-    const sites = [
-      ['saml/saml2_sso.ts', 'session.saml2ServiceProviders[ctx.spEntityId]'],
-      ['saml/saml11_sso.ts', 'session.saml11RelyingParties[ctx.rpId]'],
-      ['ws-federation/wsfed.ts', 'session.wsfedRealms[realm] = wreply;'],
-      ['oauth-oidc/frontchannel_logout.ts', 'session.oidcClients[clientId]']
-    ];
-    const missing = sites.filter(function (site) {
-      const text = fs.readFileSync(path.join(ROOT, site[0]), 'utf8');
-      const at = text.indexOf(site[1]);
-      return at < 0 ||
-             text.slice(at, at + 1200).indexOf('noteSessionChanged(') < 0;
-    }).map(function (site) { return site[0]; });
-    t.equal(missing.join(', '), '',
-            'EVERY PROTOCOL THAT RECORDS A PARTY ON THE SESSION TELLS THE ' +
-            'STORE right after it — SAML 2.0, SAML 1.1, WS-Federation and ' +
-            'Front-Channel Logout');
+    const env = { STS_AUTHN_SESSION_WINDOW: window };
+    const a = runNode(t, 'a', dir, env);
+    const b = runNode(t, 'b', dir,
+                      Object.assign({ PROBE_HANDLE: a.codesHandle || '' },
+                                    env));
+    log.debug("Leaving runPair().");
+    return { a: a, b: b };
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+function run(t) {
+  log.debug("Entering run().");
+  const off = runPair(t, 'off');
+  const on = runPair(t, 'on');
+  const a = off.a;
+  const b = off.b;
+
+  t.log.info('=== 1. the BBS key is a member of the realm\'s key set ===');
+  t.check(a.sealed && b.sealed && a.mintedEnabled && b.mintedEnabled,
+          'both nodes hold the one real key-encryption key and write ' +
+          'minted state — the arrangement a cluster node has',
+          JSON.stringify({ a: [a.sealed, a.mintedEnabled],
+                           b: [b.sealed, b.mintedEnabled] }));
+  t.check(a.bbsOnSet && b.bbsOnSet && a.bbsInBlob && b.bbsInBlob,
+          'THE BBS PAIR IS ON THE REALM\'S KEY SET AND IN THE BLOB EVERY ' +
+          'NODE AND WORKER READS (#49 P5) — so it is agreed the way every ' +
+          'member is, and rotates with the set',
+          JSON.stringify({ a: [a.bbsOnSet, a.bbsInBlob],
+                           b: [b.bbsOnSet, b.bbsInBlob] }));
+  t.check(a.bbsUnit && b.bbsUnit,
+          'and it is the signing unit bbs:BBS, with generations');
+  t.check(a.bbsSecretGone && b.bbsSecretGone,
+          'and the cluster secret bbs-keypair that carried it is gone');
+
+  t.log.info('=== 2. an enrolment begun on A is finished on B ===');
+  t.check((a.began || []).every(Boolean),
+          'node A began a TOTP enrolment, a recovery-code set and a ' +
+          'security-key enrolment', JSON.stringify(a.began));
+  t.check(b.applied > 0, 'node B applied node A\'s rows',
+          String(b.applied));
+  t.check(!!a.totpSecret && a.totpSecret === b.totpSecret,
+          'THE PENDING TOTP SECRET A SHOWED IS THE ONE B HOLDS — ' +
+          '/portal/mfa draws the QR code on whichever node answers');
+  t.check(b.totpConfirmed === true,
+          'and a code from it CONFIRMS the enrolment on B');
+  t.check(b.totpGoneAfter === true && b.deletesReachStore === true,
+          'and the confirmation removed the pending row from the store too');
+  t.check(b.codesPending === true && b.codesConfirmed === true,
+          'THE PENDING RECOVERY-CODE SET A GENERATED IS CONFIRMED ON B');
+  t.check(!!a.challenge && a.challenge === b.challenge,
+          'THE SECURITY-KEY CHALLENGE A MINTED IS THE ONE B EXPECTS — ' +
+          '/portal/keys arms the ceremony on whichever node answers');
+  t.check(a.rawHoldsSecret === false,
+          'and none of it reached the store in the clear: the TOTP secret ' +
+          'and the codes are inside sealed rows');
+
+  t.log.info('=== 3. a party a session signed into reaches every node ===');
+  checkSessions(t, off.a, off.b, 'off');
+  checkSessions(t, on.a, on.b, 'on');
+  const sites = [
+    ['saml/saml2_sso.ts', 'session.saml2ServiceProviders[ctx.spEntityId]'],
+    ['saml/saml11_sso.ts', 'session.saml11RelyingParties[ctx.rpId]'],
+    ['ws-federation/wsfed.ts', 'session.wsfedRealms[realm] = wreply;'],
+    ['oauth-oidc/frontchannel_logout.ts', 'session.oidcClients[clientId]']
+  ];
+  const missing = sites.filter(function (site) {
+    const text = fs.readFileSync(path.join(ROOT, site[0]), 'utf8');
+    const at = text.indexOf(site[1]);
+    return at < 0 ||
+           text.slice(at, at + 1200).indexOf('noteSessionChanged(') < 0;
+  }).map(function (site) { return site[0]; });
+  t.equal(missing.join(', '), '',
+          'EVERY PROTOCOL THAT RECORDS A PARTY ON THE SESSION TELLS THE ' +
+          'STORE right after it — SAML 2.0, SAML 1.1, WS-Federation and ' +
+          'Front-Channel Logout');
   log.debug("Leaving run().");
 }
 

@@ -96,5 +96,9 @@
   "detail.ended": "結束時間",
   "detail.params": "參數",
   "detail.result": "結果",
-  "detail.abandonedOf": "放棄的嘗試來自"
+  "detail.abandonedOf": "放棄的嘗試來自",
+  "detail.ranIn": "執行於",
+  "detail.ranIn.worker": "請求工作執行緒",
+  "detail.ranIn.front": "前端程序",
+  "detail.deferred": "因工作執行緒繁忙而暫緩"
 }

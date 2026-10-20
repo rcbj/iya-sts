@@ -275,6 +275,22 @@ const PASSIVE_PATH = '/wsfed';
 // turns the re-prompt into the refusal: it can skip the trip, never the rule.
 const MECHANISM_MARKER = 'sts_mechanism_retry';
 
+// IDENTITY-PROVIDER-INITIATED SIGN-IN (#426, #712): `/wsfed/initiate/{rp}`,
+// or `/wsfed/initiate?wtrealm=` for an identifier a path segment carries
+// badly (a URL whose %2F a proxy refuses). WS-Federation 1.2 defines no such
+// request — section 13.2.1's wsignin1.0 is the relying party's — so this is
+// this service's own link, gated per relying party by wsfed.idpInitiatedSso.
+const INITIATE_PATH = '/wsfed/initiate';
+// THE ONE-TRIP MARKER OF A STEP-UP ON RISK at that link (#712), as
+// `MECHANISM_MARKER` is of a mechanism re-prompt and for the same reason:
+// a browser that sets it itself only turns the step-up into the refusal.
+const RISK_MARKER = 'sts_risk_retry';
+// What the link reads, and nothing else: wctx goes back to the relying party
+// byte for byte, and tokenType / trust are the two non-spec switches
+// `/wsfed` reads too, with the same meaning. The markers are this service's.
+const INITIATE_PARAMETERS = ['wctx', 'tokenType', 'trust', MECHANISM_MARKER,
+                             RISK_MARKER];
+
 // ONE RELYING PARTY'S OWN METADATA (#494), as `/saml2/metadata/{sp}` is one
 // service provider's: `/wsfed/metadata/{rp}`, the segment the application's
 // identifier (its wtrealm) or its slug (`saml2_sso.slugOf()`, the one handle
@@ -896,6 +912,27 @@ class WsFederation {
         'ou=applications); one that was only seen is not registered.');
     }
 
+    // WHO MAY START A SIGN-IN (#426, #712): a relying party's own wsignin1.0
+    // is answered only while wsfed.spInitiatedSso is on for it — the realm
+    // setting, or wsfedSpInitiatedSso on its entry. Asked here, beside the
+    // registration, before the wreply is resolved or anybody is sent to sign
+    // in. A wsignin1.0 is an unsigned URL anybody can build, so turning this
+    // off CLOSES THE DOOR (identity-provider-initiated sign-in,
+    // /wsfed/initiate, stays the only way in) rather than proving who
+    // knocked.
+    if (!this.switchOn(realm, 'wsfed.spInitiatedSso')) {
+      log.info('wsfed: refused a wsignin1.0 for "' + realm + '" — a sign-in ' +
+               'this relying party starts is turned off for it.');
+      errorCodes.mark(res, 'STS-WSFED-0028');
+      log.debug("Leaving WsFederation.signIn(). wsfed.spInitiatedSso is off.");
+      return this.wsfedError(res, 403, 'This relying party may not start a ' +
+                                       'sign-in',
+        'wtrealm is "' + realm + '". A sign-in this relying party starts ' +
+        '(wa=wsignin1.0) is turned off for it — wsfed.spInitiatedSso, or ' +
+        'wsfedSpInitiatedSso on its application entry. A sign-in to it can ' +
+        'start only at this identity provider, if that is turned on.');
+    }
+
     // wreply is optional (13.2.1). With none, the response goes to the
     // wsfedReplyUrl registered for wtrealm, and with none registered the
     // request is refused: until #592 it went to this service's own mock
@@ -1218,6 +1255,17 @@ class WsFederation {
     const where = beginAuthentication({
       returnTo: returnTo,
       protocol: 'WS-Federation',
+      // WHETHER THE ACCOUNT PICKER COMES FIRST (#561), where the browser
+      // holds several accounts: never when `wfresh` was given. The return
+      // address drops `wfresh` (above), so an account chosen at the picker
+      // would be answered on the way back however old its authentication
+      // was; a fresh sign-in is what section 13.2.1 asks for, and signing in
+      // as an account already in the set re-authenticates its session. Read
+      // only with `authn.multipleAccounts` on; this protocol carries no hint
+      // about WHICH account (`whr` names a home realm, not a person).
+      accountChoice: params.wfresh !== undefined && params.wfresh !== null &&
+                     params.wfresh !== '' ? 'never' : '',
+      request: req,
       forceMfa: !!screen.forceMfa,
       forceKey: !!screen.forceKey,
       // WHICH RELYING PARTY, so that an entry naming a federation relationship
@@ -1267,12 +1315,246 @@ class WsFederation {
               returnTo + ".");
   }
 
+  // WHETHER ONE OF THE TWO WHO-MAY-START SWITCHES (#426, #710) IS ON FOR A
+  // RELYING PARTY: its entry's override, else the realm's setting —
+  // `applications.settingFor()`'s answer. Read as text so a boolean and the
+  // directory's TRUE / FALSE agree.
+  private switchOn(realm: string, settingKey: string): boolean {
+    const { applications, config, log } = this.deps;
+    log.debug("Entering WsFederation.switchOn(). " + settingKey + " for " +
+              (realm || '(none)'));
+    const value = applications.settingFor(realm || '', settingKey, config);
+    const on = String(value).toLowerCase() === 'true';
+    log.debug("Leaving WsFederation.switchOn(). " + on);
+    return on;
+  }
+
+  // THE ONE ADDRESS AN IDENTITY-PROVIDER-INITIATED RESPONSE GOES TO (#712):
+  // the first `wsfedReplyUrl` REGISTERED on the relying party's entry, or ''.
+  // Registered means `applications.returnAddressesOf()`'s registered half
+  // AND not marked observed — in EVERY mode, where `/wsfed` believes an
+  // observed address in development. The difference is the request: a
+  // wsignin1.0 names its wreply, which is the relying party asking, while
+  // this link is followed by whoever was handed it, so the only address it
+  // may post a person's token to is one an operator put there.
+  private registeredReplyOf(realm: string): string {
+    const { applications, log } = this.deps;
+    log.debug("Entering WsFederation.registeredReplyOf(). " + realm);
+    const entry = applications.get(realm) || {};
+    const known = applications.returnAddressesOf(entry, 'wsfedReplyUrl');
+    const observed = applications.observedReturnAddresses(entry)
+      .filter(function (row) {
+        return row.attribute === 'wsfedReplyUrl';
+      })
+      .map(function (row) {
+        return row.value;
+      });
+    const first = (known.registered || []).filter(function (one) {
+      return observed.indexOf(one) < 0;
+    })[0];
+    log.debug("Leaving WsFederation.registeredReplyOf(). " +
+              (first || 'None registered.'));
+    return first ? String(first) : '';
+  }
+
+  // --- identity-provider-initiated sign-in (#426, #712) ----------------------
+  // `GET /wsfed/initiate/{rp}[?wctx=…]`, or `GET /wsfed/initiate?wtrealm=…`:
+  // this identity provider starts a sign-in to a relying party that did not
+  // ask, and posts the section 13.2.2 response to its REGISTERED reply
+  // address. WS-Federation 1.2 has no request for it — AD FS's
+  // `/adfs/ls/idpinitiatedsignon` is the same idea under its own name — so
+  // the link is this service's, and every rule on it is a choice:
+  //
+  //   * the segment (or wtrealm) names a REGISTERED relying party, by its
+  //     identifier or slug, in BOTH modes (STS-WSFED-0024): an entry that
+  //     only turned up has no registered reply address to post to;
+  //   * wsfed.idpInitiatedSso is on for it — OFF by default (#426's decision
+  //     1), wsfedIdpInitiatedSso on the entry overriding (STS-WSFED-0025);
+  //   * a `wreply` is REFUSED (STS-WSFED-0026), not ignored: the link is
+  //     followed by whoever was handed it, and an address it could name is
+  //     an open redirect carrying a signed token. A caller who sent one
+  //     learns it was not used;
+  //   * the response goes to the first registered `wsfedReplyUrl`, never an
+  //     observed one, in every mode (`registeredReplyOf()`); none is
+  //     STS-WSFED-0027;
+  //   * `wctx` is passed through byte for byte, as at `/wsfed`;
+  //   * then it is EXACTLY a wsignin1.0's issuance (#426's decision 4): the
+  //     session or the sign-in screen, `notePresented()`, and
+  //     `issueSignInResponse()` — the gate, the mechanism re-prompt, the
+  //     sighting, `session.wsfedRealms` for `/logout` — with a step-up on risk
+  //     that `/wsfed` does not take.
+  //
+  // Nothing about this proves the person meant to go: a relying party
+  // receives a response it did not ask for, which is why it is off until an
+  // application opts in.
+  private initiate(req, res) {
+    // wsfedError() escapes the sentence it is handed, so nothing here does.
+    const { beginAuthentication, errorCodes, log, notePresented,
+            sessionOf } = this.deps;
+    log.debug("Entering WsFederation.initiate().");
+    const query = req.query || {};
+    const segment = req.params && req.params.rp !== undefined
+      ? String(req.params.rp) : '';
+    const named = segment || String(query.wtrealm || '');
+    if (!named) {
+      errorCodes.mark(res, 'STS-WSFED-0002');
+      log.debug("Leaving WsFederation.initiate(). No relying party named.");
+      return this.wsfedError(res, 400, 'wtrealm is required',
+        'An identity-provider-initiated sign-in names the relying party it ' +
+        'is for: ' + INITIATE_PATH + '/{rp}, or ' + INITIATE_PATH +
+        '?wtrealm=…, with the relying party\'s identifier or slug.');
+    }
+    const realm = this.relyingPartyOfSegment(named);
+    if (!realm) {
+      log.info('wsfed: refused an identity-provider-initiated sign-in — "' +
+               named + '" is not a registered relying party.');
+      errorCodes.mark(res, 'STS-WSFED-0024');
+      log.debug("Leaving WsFederation.initiate(). Not registered.");
+      return this.wsfedError(res, 404, 'That relying party is not registered',
+        '"' + named + '" names no relying party registered in this realm. ' +
+        'This identity provider starts a sign-in only to a registered ' +
+        'relying party, in every mode, because the response goes only to ' +
+        'an address an operator registered for it.');
+    }
+    if (!this.switchOn(realm, 'wsfed.idpInitiatedSso')) {
+      log.info('wsfed: refused an identity-provider-initiated sign-in to "' +
+               realm + '" — it is turned off for that relying party.');
+      errorCodes.mark(res, 'STS-WSFED-0025');
+      log.debug("Leaving WsFederation.initiate(). wsfed.idpInitiatedSso is " +
+                "off.");
+      return this.wsfedError(res, 403, 'This identity provider may not start ' +
+                                       'a sign-in here',
+        'A sign-in to "' + realm + '" that starts at this identity provider ' +
+        'is turned off — wsfed.idpInitiatedSso, or wsfedIdpInitiatedSso on ' +
+        'its application entry. It is off until an application opts in: the ' +
+        'relying party would receive a response it did not ask for.');
+    }
+    if (Object.prototype.hasOwnProperty.call(query, 'wreply')) {
+      log.info('wsfed: refused an identity-provider-initiated sign-in to "' +
+               realm + '" that named a wreply.');
+      errorCodes.mark(res, 'STS-WSFED-0026');
+      log.debug("Leaving WsFederation.initiate(). A wreply was sent.");
+      return this.wsfedError(res, 400, 'wreply is not accepted here',
+        'An identity-provider-initiated sign-in posts only to the reply ' +
+        'address registered for "' + realm + '" (wsfedReplyUrl). It is ' +
+        'refused rather than ignored, so that whoever built this link learns ' +
+        'the address it named was not used. Remove wreply from the link.');
+    }
+    const wreply = this.registeredReplyOf(realm);
+    if (!/^https?:\/\//i.test(wreply)) {
+      log.info('wsfed: refused an identity-provider-initiated sign-in to "' +
+               realm + '" — no usable reply address is registered.');
+      errorCodes.mark(res, 'STS-WSFED-0027');
+      log.debug("Leaving WsFederation.initiate(). No registered reply " +
+                "address.");
+      return this.wsfedError(res, 400, 'No reply address is registered',
+        (wreply ? 'The first wsfedReplyUrl registered for "' + realm +
+                  '" is "' + wreply + '", which is not an absolute http(s) ' +
+                  'URL.'
+                : 'No wsfedReplyUrl is registered for "' + realm + '" — ' +
+                  'one only observed from a request does not count here.') +
+        ' An identity-provider-initiated response goes only to a ' +
+        'registered reply address, so there is nowhere to send it.');
+    }
+
+    // THE PARAMETERS THE LINK CARRIES, and nothing else: a `wreq`, `wauth`,
+    // `wfresh` or `whr` is the relying party's vocabulary and this request
+    // is not the relying party's. `wtrealm` rides along only in the query
+    // form, because there it is how the link names the relying party.
+    const params: Record<string, any> = {};
+    if (!segment) {
+      params.wtrealm = named;
+    }
+    INITIATE_PARAMETERS.forEach(function (key) {
+      if (query[key] !== undefined) {
+        params[key] = String(query[key]);
+      }
+    });
+    const linkPath = segment
+      ? INITIATE_PATH + '/' + encodeURIComponent(segment) : INITIATE_PATH;
+    const asked = this.tokenTypeFor(params);
+    if (asked.error) {
+      errorCodes.mark(res, 'STS-WSFED-0005');
+      log.debug("Leaving WsFederation.initiate(). An unsupported token " +
+                "type was asked for.");
+      return this.wsfedError(res, 400, 'That token type is not offered',
+        'This link asked for "' + asked.error + '" (from ' + asked.from +
+        '). This identity provider issues SAML 1.1 (' + SAML11_TOKEN_TYPE +
+        ') and SAML 2.0 (' + SAML2_TOKEN_TYPE + ') assertions.');
+    }
+
+    // The sign-in failed or was cancelled: nothing goes to the relying
+    // party, for `signIn()`'s reason, and before the session check for its
+    // other one — a request back carrying `authn_error` would otherwise go
+    // to the screen again, forever.
+    if (query.authn_error) {
+      errorCodes.mark(res, 'STS-WSFED-0007');
+      log.debug("Leaving WsFederation.initiate(). The sign-in did not " +
+                "complete: " + query.authn_error);
+      return this.wsfedError(res, 200, 'Sign-in cancelled',
+        'The sign-in did not complete — the authentication service ' +
+        'reported "' + String(query.authn_error_description ||
+                              query.authn_error) +
+        '" — so ' + realm + ' is never posted to.');
+    }
+
+    const session = sessionOf(req);
+    if (!session) {
+      // TO THE SIGN-IN SCREEN AND BACK TO THIS LINK, which runs again from
+      // the top with a session — the switch and the reply address are asked
+      // again on the way back, so turning either off in between is honoured.
+      const back = this.requeryString(params, [MECHANISM_MARKER,
+                                               RISK_MARKER]);
+      const returnTo = linkPath + (back ? '?' + back : '');
+      const where = beginAuthentication({
+        returnTo: returnTo,
+        protocol: 'WS-Federation',
+        // The relying party, so an entry naming a federation relationship
+        // sends the person to that partner, as at `/wsfed`.
+        application: realm,
+        details: [
+          { label: 'wtrealm', value: realm,
+            note: 'the relying party this identity provider is signing you ' +
+                  'in to; it did not ask.' },
+          { label: 'wreply', value: wreply,
+            note: 'the reply address registered for it, where the sign-in ' +
+                  'response is POSTed.' },
+          { label: 'wctx', value: String(params.wctx || '(none)'),
+            note: 'echoed back byte for byte and never interpreted.' }
+        ]
+      });
+      res.set('Cache-Control', 'no-store').redirect(303, where);
+      log.debug("Leaving WsFederation.initiate(). To the authentication " +
+                "service, returning to " + returnTo + ".");
+      return;
+    }
+
+    // SINGLE SIGN-ON, for `signIn()`'s reason: CAEP's `session-presented`
+    // is about the session, whichever door presented it.
+    notePresented(session, 'WS-Federation', req);
+    log.debug("Leaving WsFederation.initiate(). Issuing.");
+    return this.issueSignInResponse(req, res, params, session, realm, wreply,
+                                    asked.tokenType,
+                                    { path: linkPath, riskStepUp: true });
+  }
+
+  // ONE ISSUING PATH FOR BOTH WAYS IN (#712). `entry` says which door the
+  // request came through: `path` is where a sign-in trip returns to — `/wsfed`
+  // for a wsignin1.0, the `/wsfed/initiate` link for one this identity
+  // provider started — and `riskStepUp` turns a policy denial on risk into a
+  // step-up rather than a refusal. Everything else — the gate, the sighting,
+  // the assertion, the record of the realm on the session that `/logout`
+  // reads — is the same code for both, which is the point of #426's
+  // decision 4: an identity-provider-initiated issuance runs what a
+  // relying-party-initiated one runs.
   private issueSignInResponse(req, res, params, session, realm, wreply,
-                             tokenType) {
+                             tokenType,
+                             entry?: { path: string; riskStepUp: boolean }) {
     const { applications, buildSaml11Assertion, buildSamlAssertion, config,
             errorCodes, gate, log, noteSessionChanged } = this.deps;
     log.debug("Entering WsFederation.issueSignInResponse(). tokenType=" +
               tokenType);
+    const returnPath = (entry && entry.path) || PASSIVE_PATH;
 
     // THE ROLE GATE, first thing in the one funnel every sign-in response goes
     // through — before the registry sighting below, because that call records a
@@ -1317,7 +1599,7 @@ class WsFederation {
                'of "' + String((session.user || {}).username) + '" used ' +
                'none of them; sent to sign in again.');
       const where = this.deps.beginAuthentication({
-        returnTo: PASSIVE_PATH + '?' + back + (back ? '&' : '') +
+        returnTo: returnPath + '?' + back + (back ? '&' : '') +
                   encodeURIComponent(MECHANISM_MARKER) + '=1',
         hint: String((session.user || {}).username || ''),
         protocol: 'WS-Federation',
@@ -1332,6 +1614,50 @@ class WsFederation {
                 "for an allowed sign-in mechanism.");
       return res.set('Cache-Control', 'no-store').redirect(303, where);
     }
+    // A STEP-UP ON RISK IS A SIGN-IN, NOT AN ERROR (#62 P3), at the
+    // identity-provider-initiated link (#712) — the authorization endpoint's
+    // road (`oauth-oidc/oauth2.ts`, `issueAuthorizationResponse()`): the
+    // policy denied on the risk of the session and named a factor, the
+    // person is here in a browser, so they are sent to re-authenticate with
+    // that factor demanded and come back to the same link. ONCE: the return
+    // carries `RISK_MARKER`, and a request back from that trip still denied
+    // gets the refusal below (STS-WSFED-0029) rather than another trip —
+    // a screen that cannot meet the demand would otherwise loop. A forged
+    // marker on a first request only makes the person get the refusal
+    // sooner; it can skip the trip, never the rule.
+    //
+    // NOT AT `/wsfed` (`riskStepUp` false there): a wsignin1.0 denied on risk
+    // is refused 403 STS-WSFED-0011 as it always was. #712 is the
+    // identity-provider-initiated door; the relying party's own is unchanged.
+    const riskStepUp = !!(entry && entry.riskStepUp) && !roleAnswer.allowed &&
+      !!roleAnswer.risk && roleAnswer.risk.action === 'step-up' &&
+      !roleAnswer.risk.observed && session.authenticated !== false;
+    const riskRetried = String(params[RISK_MARKER] || '') === '1';
+    if (riskStepUp && !riskRetried) {
+      const back = this.requeryString(params, ['wfresh', RISK_MARKER]);
+      errorCodes.mark(res, 'STS-RISK-0017');
+      log.info('wsfed: the issuance policy asks for a ' +
+               roleAnswer.risk.factor + ' on the risk of the session of "' +
+               String((session.user || {}).username || '') + '" for "' +
+               realm + '"; sent to re-authenticate.');
+      const where = this.deps.beginAuthentication({
+        returnTo: returnPath + '?' + back + (back ? '&' : '') +
+                  encodeURIComponent(RISK_MARKER) + '=1',
+        hint: String((session.user || {}).username || ''),
+        forceMfa: roleAnswer.risk.factor === 'second-factor',
+        forceKey: roleAnswer.risk.factor === 'security-key',
+        protocol: 'WS-Federation',
+        application: realm,
+        details: [
+          { label: 'wtrealm', value: realm,
+            note: 'signing in to it asks for a ' + roleAnswer.risk.factor +
+                  ' this time.' }
+        ]
+      });
+      log.debug("Leaving WsFederation.issueSignInResponse(). A step-up on " +
+                "risk.");
+      return res.set('Cache-Control', 'no-store').redirect(303, where);
+    }
     if (!roleAnswer.allowed) {
       log.info('wsfed: the issuance policy refused a token for "' +
                String((session.user || {}).username) + '" to "' + realm +
@@ -1342,11 +1668,12 @@ class WsFederation {
       // A realm being removed (#262) is its own code.
       // A sign-in mechanism still not allowed after the one trip (#457) is
       // its own.
+      // A step-up on risk still denied after its one trip (#712) is its own.
       errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
         : (roleAnswer.mechanism
           ? (roleAnswer.mechanism.secondFactor ? 'STS-WSFED-0023'
                                                : 'STS-WSFED-0018')
-          : 'STS-WSFED-0011'));
+          : (riskStepUp ? 'STS-WSFED-0029' : 'STS-WSFED-0011')));
       log.debug("Leaving WsFederation.issueSignInResponse().");
       return this.wsfedError(res, 403, 'Refused by policy', roleAnswer.why,
         '<p>The person is signed in. The XACML issuance policy would not let ' +
@@ -1527,10 +1854,106 @@ class WsFederation {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // WHICH ACCOUNT A SIGN-OUT ENDS, IN A BROWSER HOLDING SEVERAL (#561, the
+  // plan's section 5). Only with `authn.multipleAccounts` on; off, both
+  // messages end the session the cookie names, as they always did.
+  //
+  //   * `wsignoutcleanup1.0` stays NON-INTERACTIVE, as section 13.2.4 needs
+  //     it to be (it arrives as an image): it ends EVERY session of this
+  //     browser's set that signed in to `wtrealm`.
+  //   * `wsignout1.0` ends the one session of the set that signed in to
+  //     `wtrealm`; with more than one, it ASKS which — a page of links, each
+  //     this same GET with the account's key (`sts_signout_account`), which
+  //     names only this browser's own accounts. A sign-out naming no realm,
+  //     or a realm none of them signed in to, ends the default session.
+  //
+  // Answers the sessions to end ([] for the default, as always), or null
+  // where the page that asks was drawn.
+  // ---------------------------------------------------------------------------
+  private signOutAccounts(req, res, params, cleanupOnly): any[] {
+    const { log } = this.deps;
+    log.debug("Entering WsFederation.signOutAccounts().");
+    if (!authn.multipleAccounts()) {
+      log.debug("Leaving WsFederation.signOutAccounts(). Off.");
+      return [];
+    }
+    const realm = String(params.wtrealm || '');
+    const there = realm ? authn.accountSessionsOf(req).filter((one) => {
+      return !!(one.wsfedRealms &&
+                Object.prototype.hasOwnProperty.call(one.wsfedRealms, realm));
+    }) : [];
+    if (cleanupOnly) {
+      log.debug("Leaving WsFederation.signOutAccounts(). Cleanup: " +
+                there.length + ".");
+      return there.map((one) => { return String(one.id); });
+    }
+    const picked = String(params.sts_signout_account || '');
+    const chosen = picked ? authn.signedInAccounts(req).filter((one) => {
+      return one.key === picked;
+    })[0] : null;
+    if (chosen) {
+      log.debug("Leaving WsFederation.signOutAccounts(). The one chosen.");
+      return [String(chosen.sid)];
+    }
+    if (there.length > 1) {
+      this.askWhichAccount(req, res, params, there);
+      log.debug("Leaving WsFederation.signOutAccounts(). Asked.");
+      return null;
+    }
+    log.debug("Leaving WsFederation.signOutAccounts(). " + there.length);
+    return there.map((one) => { return String(one.id); });
+  }
+
+  // The page `wsignout1.0` asks with (#561): one link per account that
+  // signed in to the relying party, each the same sign-out with the
+  // account's key. Links, because the message is a GET that signs out on
+  // arrival already; no script.
+  private askWhichAccount(req, res, params, sessions): void {
+    const { log, xmlEscape } = this.deps;
+    log.debug("Entering WsFederation.askWhichAccount().");
+    const t = PageLocale.forPage({
+      application: params.wtrealm ? String(params.wtrealm) : '' });
+    const back = this.requeryString(params, ['sts_signout_account']);
+    const accounts = authn.signedInAccounts(req);
+    const links = sessions.map((one) => {
+      const account = accounts.filter((a) => {
+        return a.sid === String(one.id);
+      })[0];
+      const href = realms.currentPrefix() + PASSIVE_PATH + '?' + back +
+        (back ? '&' : '') + 'sts_signout_account=' +
+        encodeURIComponent(account ? account.key : '');
+      return '<li><a href="' + xmlEscape(href) + '">' +
+        t.html('handoff.wsfed.chooseAccount.signOut',
+               { who: String((one.user && one.user.username) || '') }) +
+        '</a></li>';
+    }).join('');
+    const inner = '<h1>' + t.html('handoff.wsfed.chooseAccount.heading') +
+      '</h1><p class="sub">' + t.html('handoff.wsfed.signOut.sub') +
+      '</p><p>' + t.html('handoff.wsfed.chooseAccount.intro',
+                         { realm: String(params.wtrealm || ''),
+                           count: sessions.length }) + '</p><ul>' + links +
+      '</ul>';
+    res.status(200).type('text/html').set('Cache-Control', 'no-store')
+       .send(this.page(t.text('handoff.wsfed.chooseAccount.title'), inner,
+                       t));
+    log.debug("Leaving WsFederation.askWhichAccount().");
+  }
+
   private signOut(req, res, params, cleanupOnly) {
     const { app, endSession, log, xmlEscape } = this.deps;
     log.debug("Entering WsFederation.signOut(). cleanupOnly=" + !!cleanupOnly);
-    const session = endSession(req, res);
+    const named = this.signOutAccounts(req, res, params, cleanupOnly);
+    if (named === null) {
+      log.debug("Leaving WsFederation.signOut(). Asked which account.");
+      return;
+    }
+    // Every session the sign-out names (#561), or the cookie's, as always.
+    const endedAll = named.length
+      ? named.map((sid) => { return endSession(req, res, sid); })
+          .filter(Boolean)
+      : [endSession(req, res)].filter(Boolean);
+    const session = endedAll[0] || null;
     const targets = this.cleanupTargetsFor(session);
     const names = targets.map((one) => { return one.realm; });
     const realms = {};
@@ -1558,7 +1981,12 @@ class WsFederation {
         ? t.html('handoff.wsfed.sessionEnded',
                  { username: session.user.username })
         : t.html('handoff.common.noSession')) +
-      '</div>';
+      '</div>' +
+      // The other sessions a cleanup ended (#561), one sentence each.
+      endedAll.slice(1).map((one) => {
+        return '<div class="ok">' + t.html('handoff.wsfed.sessionEnded',
+          { username: one.user.username }) + '</div>';
+      }).join('');
     if (cleanupOnly) {
       // A cleanup request arriving HERE (rather than at a relying party) ends
       // the session and stops. It deliberately does not fan out further
@@ -2038,7 +2466,8 @@ class WsFederation {
   // (rule 1). Called once, by `common/protocol_stack.ts` through the
   // module's `registerRoutes(app)` (#50, R1).
   /**
-   * Registers `/wsfed`, `/wsfed/autopost.js`, the federation metadata (the
+   * Registers `/wsfed`, `/wsfed/autopost.js`, `/wsfed/initiate[/{rp}]`
+   * (#712), the federation metadata (the
    * shared document and one per registered relying party); called by the
    * composition root at this module's place in the route order.
    *
@@ -2069,6 +2498,13 @@ class WsFederation {
     // cannot promise (`global.https` can be off). See authn.js's
     // startSession(), which owns the cookie.
     app.post(PASSIVE_PATH, this.passiveRequestor.bind(this));
+
+    // IDENTITY-PROVIDER-INITIATED SIGN-IN (#426, #712): the relying party in
+    // the path, or as `?wtrealm=` for an identifier a segment carries badly.
+    // GET only — it is a link a person follows, and `initiate()` argues the
+    // rest.
+    app.get(INITIATE_PATH, this.initiate.bind(this));
+    app.get(INITIATE_PATH + '/:rp', this.initiate.bind(this));
 
     app.get('/FederationMetadata/2007-06/FederationMetadata.xml',
             (req, res) => {

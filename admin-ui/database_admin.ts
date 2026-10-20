@@ -32,9 +32,9 @@
 // Three separations, and each is load-bearing:
 //
 //   * **THE STATEMENTS ARE `persistence_postgres.js`'s `METRIC_PROBES`.** That
-//     module owns the pool; this one must never require `pg` or see a
-//     connection string, which is a credential. It asks
-//     `persistence.databaseMetrics()` and renders what comes back.
+//     module owns the pool (Knex's since #326); this one must never require
+//     `pg` or `knex` or see a connection string, which is a credential. It
+//     asks `persistence.databaseMetrics()` and renders what comes back.
 //   * **THE COLUMNS ARE THE SERVER'S.** Every probe is a `SELECT *` and this
 //     renderer draws the keys it was handed, in the order it was handed them.
 //     A page naming columns would be wrong on every PostgreSQL but the one it

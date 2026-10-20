@@ -169,10 +169,12 @@ function refusal(code, message) {
  *
  * @param record - `ldif_stream`'s record
  * @param usersKey - the realm's `ou=users` DN, normalised
+ * @param required - the attributes the realm's attribute policy requires,
+ *   lower-cased, where it is enforced (#396); empty where it is not
  * @returns `{ ok: true, dn, dnKey, names, attributes }` or
  *   `{ ok: false, code, reason }`
  */
-function candidateOf(record, usersKey) {
+function candidateOf(record, usersKey, required) {
   const entry = record.entry || {};
   // A refusal's shape. A hot path's helper, so no Entering/Leaving pair.
   const no = function (code, reason) {
@@ -248,6 +250,18 @@ function candidateOf(record, usersKey) {
   if (uids.indexOf(wanted) < 0) {
     return no('STS-LDAP-0155', 'the uid values do not include the RDN ' +
               'value ' + rdnValue);
+  }
+  // WHAT THE REALM'S ATTRIBUTE POLICY REQUIRES (#396), in product mode, as
+  // an LDAP add is held to it: nothing is derived, the record says what it
+  // says. The names are the realm's, read once by `requirementFor()`.
+  const missing = (required || []).filter(function (name) {
+    return !(attributes[name] || []).some(function (one) {
+      return String(one).trim() !== '';
+    });
+  });
+  if (missing.length) {
+    return no('STS-LDAP-0163', 'the realm\'s attribute policy requires ' +
+              missing.join(', ') + ', which the record does not carry');
   }
   return { ok: true, dn: dn, dnKey: normalizeDn(dn),
            names: Array.from(new Set([wanted].concat(uids))),
@@ -917,7 +931,7 @@ async function importFile(options) {
       continue;
     }
     report.records += 1;
-    const c = candidateOf(record, usersKey);
+    const c = candidateOf(record, usersKey, o.required || []);
     if (!c.ok) {
       report.refused += 1;
       example(record, c.code, c.reason);
@@ -1210,6 +1224,88 @@ async function languageFor(db, codec, realm, base) {
   return tag;
 }
 
+// What a NEW person in the realm must carry (#396): the realm's attribute
+// policy, from its `ou=attributePolicies` and `ou=attributeDefinitions` rows
+// in the store and the default realm's profile it inherits — empty where the
+// realm is in development mode and the policy is not enforced. Lower-cased.
+async function requirementFor(db, codec, realm, base) {
+  log.debug("Entering requirementFor().");
+  const realms = require('../common/realms');
+  const attributePolicy = require('../common/attribute_policy');
+  const held = new Map();
+  const read = async function (id, baseDn, ou) {
+    log.debug("Entering read(). " + id + " " + ou);
+    const parent = normalizeDn('ou=' + ou + ',' + baseDn);
+    const r = await db.query('SELECT dn_key, dn, attrs FROM ' +
+                             'sts_ldap_entries WHERE realm = $1 AND ' +
+                             'parent_key = $2', [id, parent]);
+    held.set(id + '|' + ou, (r.rows || []).map(function (row) {
+      const attrs = codec.openAttributes(row.dn_key, row.attrs) || {};
+      return { dn: row.dn, attributes: attrs,
+               name: (attrs.cn || [])[0] ||
+                     String(row.dn).split(',')[0].replace(/^cn=/i, '') };
+    }));
+    log.debug("Leaving read().");
+  };
+  await read(realm.id, base, 'attributePolicies');
+  await read(realm.id, base, 'attributeDefinitions');
+  if (realm.id !== realms.DEFAULT_ID) {
+    await read(realms.DEFAULT_ID, realms.baseDnOf(realms.DEFAULT_ID),
+               'attributePolicies');
+  }
+  const rowsOf = function (ou) {
+    log.debug("Entering rowsOf(). " + ou);
+    log.debug("Leaving rowsOf().");
+    return held.get(realms.currentId() + '|' + ou) || [];
+  };
+  // READ-ONLY: this process writes no policy and counts nobody.
+  const nothing = function () {
+    log.debug("Entering nothing().");
+    log.debug("Leaving nothing().");
+    return false;
+  };
+  attributePolicy.setDirectory({
+    allAttributePolicies: function () {
+      log.debug("Entering allAttributePolicies().");
+      log.debug("Leaving allAttributePolicies().");
+      return rowsOf('attributePolicies');
+    },
+    writeAttributePolicy: nothing,
+    deleteAttributePolicy: nothing,
+    allAttributeDefinitions: function () {
+      log.debug("Entering allAttributeDefinitions().");
+      log.debug("Leaving allAttributeDefinitions().");
+      return rowsOf('attributeDefinitions');
+    },
+    writeAttributeDefinition: nothing,
+    deleteAttributeDefinition: nothing,
+    knownName: function () {
+      log.debug("Entering knownName().");
+      log.debug("Leaving knownName().");
+      return '';
+    },
+    holders: function () {
+      log.debug("Entering holders().");
+      log.debug("Leaving holders().");
+      return 0;
+    },
+    missing: function () {
+      log.debug("Entering missing().");
+      log.debug("Leaving missing().");
+      return null;
+    }
+  });
+  const out = realms.run(realm, function () {
+    return attributePolicy.enforced()
+      ? attributePolicy.required().map(function (one) {
+        return one.toLowerCase();
+      })
+      : [];
+  });
+  log.debug("Leaving requirementFor(). " + (out.join(', ') || 'none'));
+  return out;
+}
+
 /**
  * Runs the command line.
  *
@@ -1251,10 +1347,12 @@ async function main(argv) {
       throw refusal('STS-LDAP-0152', 'the connection string is not ' +
                     'dialled: ' + dial.refused + ' (#273).');
     }
-    const Pool = /** @type {any} */ (require('pg')).Pool;
-    pool = new Pool({ connectionString: dial.connectionString,
-                      ssl: dial.ssl, max: 4,
-                      connectionTimeoutMillis: 10000 });
+    // Through the service's one door to PostgreSQL (#326): a Knex pool of
+    // the tool's own, dialled with the options the driver's would be.
+    pool = require('./knex_store').openPool(
+      { connectionString: dial.connectionString, ssl: dial.ssl,
+        connectionTimeoutMillis: 10000 },
+      { max: 4 });
     pool.on('error', function (err) {
       log.warn('bulk_import: an idle connection errored: ' +
                ((err && err.message) || err));
@@ -1302,6 +1400,8 @@ async function main(argv) {
     // report). The people's parent is the container every process holds.
     const codec = require('./directory_codec').create('cell');
     const language = await languageFor(pool, codec, realm.record, realm.base);
+    const required = await requirementFor(pool, codec, realm.record,
+                                          realm.base);
     const inRealm = function (fn) {
       log.debug("Entering inRealm().");
       log.debug("Leaving inRealm().");
@@ -1317,6 +1417,7 @@ async function main(argv) {
       db: pool, realmId: realm.record.id, usersDn: usersDn,
       file: options.file, batch: options.batch, skip: options.skip,
       codec: codec, sealing: sealing, language: language,
+      required: required,
       // `digest` and `uuid` are asked once a record: a hot path, so no
       // Entering/Leaving pair.
       digest: function (name) {

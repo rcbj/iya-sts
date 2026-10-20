@@ -3845,7 +3845,8 @@ const httpListeners = [];
  * @param kind - `main`, `debugger`, `revocation` or `custom`
  * @param realmId - for `custom`, the listener's id
  * @returns `{ keepAliveTimeoutS, headersTimeoutS, maxRequestsPerSocket,
- *   maxConnections }`, the header timeout resolved
+ *   maxConnections, http2, http2MaxConcurrentStreams }`, the header timeout
+ *   resolved
  */
 function httpPolicyFor(kind, realmId) {
   log.debug('Entering httpPolicyFor(). ' + kind);
@@ -3857,6 +3858,20 @@ function httpPolicyFor(kind, realmId) {
                                      'http.keepAliveTimeoutS') || 60);
   const asked = Math.max(0, pick('headersTimeoutS', 'http.headersTimeoutS') ||
                             0);
+  // A boolean, so not through `pick()`'s Number(): the listener's own on or
+  // off (`ownValue()` turns those into true and false; a custom listener's
+  // definition may also say `"true"` or `"false"`), else the service's. A
+  // value that is none of those follows the service's, as `inherit` does.
+  const ownHttp2 = kind ? ownValue(kind, realmId, 'http2') : undefined;
+  const ownSays = ownHttp2 === true || ownHttp2 === 'true' ? true
+    : ownHttp2 === false || ownHttp2 === 'false' ? false : undefined;
+  const http2 = ownSays !== undefined ? ownSays
+                                      : config.value('http.http2') !== false;
+  // THE STREAMS ONE HTTP/2 CONNECTION MAY HAVE OPEN AT ONCE (#407). 0 is not
+  // a legal value (the row's `min` is 1), so the `||` only catches a value
+  // that is not a number.
+  const streams = Math.max(1, pick('http2MaxConcurrentStreams',
+                                   'http.http2MaxConcurrentStreams') || 100);
   log.debug('Leaving httpPolicyFor().');
   return {
     keepAliveTimeoutS: keepAlive,
@@ -3866,8 +3881,26 @@ function httpPolicyFor(kind, realmId) {
     maxRequestsPerSocket: Math.max(0, pick('maxRequestsPerSocket',
                                            'http.maxRequestsPerSocket') || 0),
     maxConnections: Math.max(0, pick('maxConnections',
-                                     'http.maxConnections') || 0)
+                                     'http.maxConnections') || 0),
+    http2: http2,
+    http2MaxConcurrentStreams: streams
   };
+}
+
+// WHAT ALPN OFFERS, as the TLS layer wants it: length-prefixed protocol
+// names, most preferred first (RFC 7301 section 3.1). `http/1.1` is in both,
+// so a client that asks only for it is answered either way.
+const ALPN_HTTP2 = Buffer.from('\x02h2\x08http/1.1', 'latin1');
+const ALPN_HTTP1 = Buffer.from('\x08http/1.1', 'latin1');
+
+// Whether a registered server is node's http2 secure server, which has no
+// exported class to test against.
+function isHttp2Server(server) {
+  log.debug('Entering isHttp2Server().');
+  const yes = !!(server && server.constructor &&
+                 server.constructor.name === 'Http2SecureServer');
+  log.debug('Leaving isHttp2Server(). ' + yes);
+  return yes;
 }
 
 // The pooling values onto the server object.
@@ -3881,8 +3914,97 @@ function applyHttpPolicy(entry) {
   // at a maxConnections of 0.
   entry.server.maxConnections = p.maxConnections > 0 ? p.maxConnections
                                                      : Infinity;
+  // HTTP/2 OFFERED OR NOT (#407). Only node's http2 secure server — built
+  // with `allowHTTP1` for every TLS HTTP listener — speaks both, and it reads
+  // `ALPNProtocols` at each new connection, so the offer changes here, in
+  // place, for the next handshake; an open connection keeps its protocol. A
+  // plain-HTTP server (the revocation listener, or the main port with
+  // global.https off) has no handshake to offer it in.
+  if (isHttp2Server(entry.server)) {
+    entry.server.ALPNProtocols = p.http2 ? ALPN_HTTP2 : ALPN_HTTP1;
+    // THE SAME BOUNDS ON AN HTTP/2 CONNECTION (#407). Node applies the
+    // pooling values above to HTTP/1.1 only, so without these one HTTP/2
+    // connection held open every stream a client asked for (node's own
+    // SETTINGS_MAX_CONCURRENT_STREAMS is 2^32-1) for as long as it liked:
+    // `maxConnections` bounded connections and nothing bounded the work on
+    // each. `updateSettings()` is what a new session announces; an open one
+    // is sent the new SETTINGS too, and given the new idle timeout.
+    entry.server.updateSettings({
+      maxConcurrentStreams: p.http2MaxConcurrentStreams });
+    entry.policy = p;
+    entry.sessions.forEach(function (session) {
+      holdHttp2Session(entry, session);
+    });
+  }
   entry.applied = JSON.stringify(p);
   log.debug('Leaving applyHttpPolicy().');
+}
+
+/**
+ * Holds one HTTP/2 session to its listener's policy as it now stands: the
+ * stream cap, and the idle timeout. Called when the session opens and again
+ * when the policy changes.
+ *
+ * - **Idle**: `keepAliveTimeoutS` with no frame either way, and the session
+ *   is closed GRACEFULLY — a GOAWAY, then whatever stream is still open
+ *   finishes — which is what the keep-alive timeout does to an idle HTTP/1.1
+ *   connection.
+ * - **Streams**: the SETTINGS the session announces.
+ *
+ * @param entry - the listener's registration
+ * @param session - the server's `Http2Session`
+ */
+function holdHttp2Session(entry, session) {
+  log.debug('Entering holdHttp2Session(). ' + entry.kind);
+  const p = entry.policy;
+  if (!p || session.destroyed || session.closed) {
+    log.debug('Leaving holdHttp2Session(). Nothing to hold.');
+    return;
+  }
+  try {
+    session.settings({ maxConcurrentStreams: p.http2MaxConcurrentStreams });
+  } catch (e) {
+    // A session part-way through closing refuses new SETTINGS; it is
+    // about to go, and the next one announces the new value.
+    log.debug('Caught in holdHttp2Session(): ' + ((e && e.message) || e));
+  }
+  session.setTimeout(p.keepAliveTimeoutS * 1000, function () {
+    log.debug('tls: an idle HTTP/2 session on the ' + entry.kind +
+              ' listener is closed after ' + p.keepAliveTimeoutS + ' s.');
+    session.close();
+  });
+  log.debug('Leaving holdHttp2Session().');
+}
+
+/**
+ * Follows the HTTP/2 sessions of one registered listener: each is held to
+ * the policy when it opens (holdHttp2Session()), counted against
+ * `maxRequestsPerSocket` — an HTTP/2 connection carries requests as
+ * streams, and one that has carried its share is sent a GOAWAY after the
+ * last, so the client opens a new one exactly as it would over HTTP/1.1 —
+ * and forgotten when it closes.
+ *
+ * @param entry - the listener's registration
+ */
+function followHttp2Sessions(entry) {
+  log.debug('Entering followHttp2Sessions(). ' + entry.kind);
+  entry.server.on('session', function (session) {
+    entry.sessions.add(session);
+    holdHttp2Session(entry, session);
+    let carried = 0;
+    // Once per stream; no Entering/Leaving pair (a hot path).
+    session.on('stream', function () {
+      carried += 1;
+      const most = entry.policy ? entry.policy.maxRequestsPerSocket : 0;
+      if (most > 0 && carried >= most && !session.closed) {
+        session.close();
+      }
+    });
+    session.once('close', function () {
+      entry.sessions.delete(session);
+    });
+  });
+  log.debug('Leaving followHttp2Sessions().');
 }
 
 /**
@@ -3897,8 +4019,11 @@ function applyHttpPolicy(entry) {
 function registerHttpListener(server, kind, realmId) {
   log.debug('Entering registerHttpListener(). ' + kind);
   const entry = { server: server, kind: String(kind), realm: realmId || null,
-                  applied: '' };
+                  applied: '', policy: null, sessions: new Set() };
   httpListeners.push(entry);
+  if (isHttp2Server(server)) {
+    followHttp2Sessions(entry);
+  }
   applyHttpPolicy(entry);
   log.debug('Leaving registerHttpListener().');
   return function unregister() {
@@ -4614,7 +4739,20 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   // second fetch of /tls/sign-in does not mint a second session for somebody
   // who already has one — which would leave a global sign-out reporting two
   // where the person experienced one.
-  const existing = authn.sessionOf(req);
+  //
+  // NOT WITH SEVERAL ACCOUNTS IN ONE BROWSER (#561): there "the browser's
+  // session" is not one thing. `sessionOf()` answers nobody for a browser
+  // holding two accounts and naming neither, and answered the cookie's
+  // default — perhaps somebody else entirely — for one holding one; either
+  // way the certificate's holder would be told they were "already" signed in
+  // as whoever that was. So the question is asked of the CERTIFICATE'S
+  // account, below, once its name is known: `startSession()` re-authenticates
+  // that account's session where the browser's set holds it live (one live
+  // session per person per browser, `authn/CLAUDE.md`) and adds one where it
+  // does not. Still one session per person per browser, however many
+  // fetches. Unchanged with `authn.multipleAccounts` off.
+  const several = authn.multipleAccounts();
+  const existing = several ? null : authn.sessionOf(req);
   if (existing) {
     log.debug('Leaving startCertificateSessionIn(). One was already open.');
     return { started: false, id: existing.id, username: existing.user &&
@@ -4662,6 +4800,10 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
              why: 'the certificate names nobody: it has neither a common ' +
                   'name nor a subject' };
   }
+  // WHICH OF THE BROWSER'S ACCOUNTS THIS IS (#561), for the answer: the
+  // certificate's account live in the set is re-authenticated, any other
+  // added.
+  const held = several ? certificateAccountHeld(req, username) : null;
   let session = null;
   try {
     session = authn.startSession(res, username, ['swk'], '1',
@@ -4719,7 +4861,7 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
            'certificate ' +
            '(' + mode + ' listener). The chain verified and ' + revocationSaid);
   log.debug('Leaving startCertificateSessionIn(). Started ' + session.id + '.');
-  return { started: true, id: session.id, username: username,
+  const answer = { started: true, id: session.id, username: username,
            subject: subject,
            // The realm the session is in: the certificate's issuing authority's
            // for one this service issued, the default realm's otherwise.
@@ -4728,6 +4870,30 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
                  'truststore and ' + revocationSaid + '. The session is this ' +
                  'service tracking that the holder got in, which is what ' +
                  'lets a global sign-out end it.' };
+  // With several accounts on (#561), what became of the browser's set: the
+  // certificate's account `reauthenticated` where it was already signed in
+  // here, `added` beside the others where it was not. Absent off, so the
+  // answer is then the one it always was.
+  if (several) {
+    answer.account = held ? 'reauthenticated' : 'added';
+  }
+  return answer;
+}
+
+// THE CERTIFICATE'S ACCOUNT, LIVE IN THIS BROWSER'S SET (#561): the session
+// the set holds for that person, or null. By name, as `startSession()`
+// matches a re-authentication — the certificate names a login name, not a
+// subject. [] — so null — with `authn.multipleAccounts` off.
+function certificateAccountHeld(req, username) {
+  log.debug('Entering certificateAccountHeld().');
+  const wanted = String(username || '').toLowerCase();
+  const found = authn.accountSessionsOf(req).filter(function (one) {
+    return !!(one && one.user && wanted &&
+              String(one.user.username || '').toLowerCase() === wanted);
+  })[0] || null;
+  log.debug('Leaving certificateAccountHeld(). ' +
+            (found ? 'Held.' : 'Not held.'));
+  return found;
 }
 
 // ---------------------------------------------------------------------------
@@ -5308,8 +5474,13 @@ function placeCertificateSignIn(req, res) {
       : '';
     name = (identity && identity.accepted && identity.username) || common ||
            (cert && cert.subject ? dnRfc4514(cert.subject) : '');
+    // With several accounts on (#561) "held" is the CERTIFICATE'S account
+    // live in this browser's set, for `startCertificateSessionIn()`'s
+    // reason: the browser's other accounts are not this person, and one
+    // signed in here does not make this one a sign-in nobody needs.
     held = !!inCertificateRealm(identity, function () {
-      return authn.sessionOf(req);
+      return authn.multipleAccounts()
+        ? certificateAccountHeld(req, name) : authn.sessionOf(req);
     });
   } catch (e) {
     log.debug('Caught in placeCertificateSignIn(): ' +

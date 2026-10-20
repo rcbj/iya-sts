@@ -177,6 +177,13 @@ const ROWS: Row[] = [
     why: 'a wallet sign-in\'s acts (#574): its transaction, the pending ' +
          'sign-in it is bound to and the binding cookie\'s hash are where ' +
          'the browser that started it is pinned; no login name is typed' },
+  // THE IDENTITY-PROVIDER-INITIATED DOOR (#426): it reads the sign-on
+  // session, or begins one, and records an OpenID Connect launch on it, so
+  // it is served where the browser is pinned, as /logout is; a browser with
+  // no session starts the sign-in that D9 restarts at home.
+  { prefix: '/launch', strategy: 'affinity', browser: true,
+    why: 'a launch starts a sign-in on the session where the browser is ' +
+         'pinned, and records an OpenID Connect launch on that session' },
   { prefix: '/authn/fingerprint.js', strategy: 'local',
     why: 'a static script' },
   { prefix: '/logout', strategy: 'affinity', browser: true,
@@ -306,6 +313,19 @@ const ROWS: Row[] = [
     why: 'the federation pages\' script, the same file in every cell (#580)' },
   { prefix: '/federation/link', strategy: 'artifact', browser: true,
     segment: 3, why: 'a link handle is found where it was minted (D10)' },
+  { prefix: '/federation/stepup', strategy: 'artifact', browser: true,
+    segment: 3, why: 'a step-up handle is found where it was minted (#565)' },
+  { prefix: '/federation/profile', strategy: 'artifact', browser: true,
+    segment: 3, why: 'a consumer newcomer\'s details handle is found where ' +
+                     'it was minted (#729)' },
+  // A PROVIDER'S NOTIFICATION (#565) has no browser and names a subject, not
+  // a cell: verified and spent where it arrives, and fanned out to every
+  // peer (#727, `federation-provider-notification`), as a partner's sign-out
+  // is.
+  { prefix: '/federation/notifications', strategy: 'local',
+    why: 'a provider\'s server-to-server notification: verified where it ' +
+         'arrives and fanned out to every peer ' +
+         '(federation-provider-notification, #727)' },
   { prefix: '/federation/backchannel-logout', strategy: 'handler',
     handler: 'federation/federation_slo.ts',
     why: 'a partner\'s sign-out may end sessions in every cell: served ' +

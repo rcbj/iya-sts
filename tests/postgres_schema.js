@@ -436,6 +436,48 @@ function checkTheVersionAgrees(t, sql) {
   log.debug("Leaving checkTheVersionAgrees().");
 }
 
+// Schema 21 (#350): `sts_sessions` beside `sts_minted`, six partial indexes,
+// a nullable `expires_at`, and the primary key `(realm, key)`.
+function checkTheSessionIndex(t, sql) {
+  log.debug("Entering checkTheSessionIndex().");
+  t.equal(driver.SCHEMA_VERSION, 21,
+          'the driver\'s schema version is 21 (#350)');
+  const names = ['sts_sessions_subject', 'sts_sessions_username',
+                 'sts_sessions_expires', 'sts_sessions_parent',
+                 'sts_sessions_credential', 'sts_sessions_partner'];
+  const predicates = [
+    'WHERE chosen AND subject_key <> \'\'',
+    'WHERE username_key <> \'\'',
+    'WHERE expires_at IS NOT NULL',
+    'WHERE parent_key <> \'\'',
+    'WHERE credential_key <> \'\'',
+    'WHERE partner_relationship <> \'\''
+  ];
+  const script = statementsIn(sql);
+  names.forEach(function (name, i) {
+    const fromDriver = (driver.SCHEMA_OBJECTS || []).filter(function (one) {
+      return one.name === name;
+    })[0];
+    t.check(!!fromDriver &&
+            fromDriver.statement.indexOf(predicates[i]) >= 0,
+            name + ' is partial: ' + predicates[i],
+            fromDriver && fromDriver.statement);
+    t.check(script.some(function (statement) {
+      return statement.indexOf(name) >= 0 &&
+             statement.indexOf(predicates[i]) >= 0;
+    }), 'postgres/schema.sql carries ' + name);
+  });
+  const table = (driver.SCHEMA_OBJECTS || []).filter(function (one) {
+    return one.name === 'sts_sessions';
+  })[0];
+  t.check(!!table && /expires_at\s+bigint,/.test(table.statement) &&
+          !/expires_at\s+bigint\s+NOT NULL/.test(table.statement) &&
+          /PRIMARY KEY \(realm, key\)/.test(table.statement),
+          'sts_sessions.expires_at is nullable and the primary key is ' +
+          '(realm, key)', table && table.statement);
+  log.debug("Leaving checkTheSessionIndex().");
+}
+
 function checkThePrivilegeIsNarrow(t, sql) {
   log.debug("Entering checkThePrivilegeIsNarrow().");
   // ---------------------------------------------------------------------
@@ -626,6 +668,7 @@ function run(t) {
   checkTheRetiredAgree(t, sql);
   checkTheReloptionsAgree(t, sql);
   checkTheVersionAgrees(t, sql);
+  checkTheSessionIndex(t, sql);
   checkThePrivilegeIsNarrow(t, sql);
   checkTheRoleNameAgrees(t);
   checkTheServerSettingsAgree(t);

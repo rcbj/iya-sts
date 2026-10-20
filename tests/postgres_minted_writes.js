@@ -24,11 +24,13 @@
 //
 // This file holds the first two. Neither can be seen without a database or a
 // driver double: both are about the ORDER and the SHAPE of SQL statements, and
-// `tests/postgres_schema.js` reads only the DDL. `pg` is required lazily inside
-// the driver's `create()`, so a module placed in the require cache for the
-// length of one `create()` call is the whole of the double.
+// `tests/postgres_schema.js` reads only the DDL. The door to the store
+// (`persistence/knex_store.js`, #326) is required lazily inside the driver's
+// `create()`, so a module placed in the require cache for the length of one
+// `create()` call is the whole of the double (`tests/tools/store_double.js`).
 // ===========================================================================
 
+const storeDouble = require('./tools/store_double');
 const path = require('path');
 
 const postgres = require('../persistence/persistence_postgres');
@@ -56,15 +58,11 @@ function fakePg(statements) {
   return { Pool: FakePool, Client: FakeClient };
 }
 
-// Build a driver with the fake in place of `pg`, and take the fake out again
-// before anything else in this process can require the real one.
+// Build a driver with the fake in the place of its door to the store
+// (`knex_store.js`, #326), and take the fake out again before anything else
+// in this process can require the real one.
 function driverWith(statements) {
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = {
-    id: pgPath, filename: pgPath, loaded: true,
-    exports: fakePg(statements)
-  };
+  const restore = storeDouble.install(fakePg(statements));
   try {
     return postgres.create({
       url: 'postgres://sts_app@localhost:5432/sts',
@@ -72,11 +70,7 @@ function driverWith(statements) {
              warn: function () {}, error: function () {} }
     });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
 }
 

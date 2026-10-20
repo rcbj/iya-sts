@@ -10,7 +10,7 @@ Dockerfile removes this directory from the image.
 | `foundation/` | long-lived | the deployer IAM user, the role it assumes, the two permissions boundaries (the workload one, and the ECS infrastructure role's since #214), the KMS key, the KEY-ENCRYPTION KEY — a multi-region KMS key of its own, `alias/iya-sts-kek` (#391) — the ECR repository, the container log group, the test report bucket `iya-sts-test-reports-<account>` — and since #98, for every region in `permitted_regions`, a single-region CELL key, a replica of the multi-region GLOBAL key and of the KEK, a log group and a replica of the repository (`modules/region`), with ECR replication to them (*Cells*, below) | an administrator |
 | `environment/` | per run | VPC, NLB (443, 389, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a CNAME (`dns.tf`) — and the public certificate's ARN, READ from `certificate/`'s state, since 2026-10-01, RDS primary + replica, secrets, ECS cluster, task and execution roles, the ECS infrastructure role, with `mail_ses_domain` an SES identity and its DKIM records (`mail.tf`, #311), three services — each task with an EBS volume for risk dataset uploads (#214) | the deployer role |
 | `certificate/` | **kept across destroys** | **the public ACM certificate (2026-10-01, rcbj)**: the exportable certificate the nodes present, its DNS validation records — one state per environment (`environment/<env>/certificate.tfstate`) and per cell (`environment/<env>/<cell>/certificate.tfstate`). Applied before every environment apply, NEVER destroyed with the environment, and its first apply ADOPTS an existing certificate rather than requesting one (*The public certificate is kept*, below) | the deployer role, through `entrypoint.sh` |
-| `spiffe-realm/` | per realm | one trust realm's two SPIFFE ports (Workload API, SPIRE Server API) on an existing environment's NLB: two listeners, two target groups with the nodes registered BY ADDRESS, and the security-group rules — state at `environment/<env>/spiffe-realm/<realm>.tfstate` (*A realm's SPIFFE ports*, below) | the deployer role |
+| `spiffe-realm/` | per realm | one additional realm's SPIRE Server API on an existing environment's NLB: one listener, one target group with the nodes registered BY ADDRESS, and the security-group rules. The Workload API is not published (#324). State at `environment/<env>/spiffe-realm/<realm>.tfstate` (*A realm's SPIFFE ports*, below) | the deployer role |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `entrypoint.sh` passes it when it exists. `dev` and `ci` have none | the deployer role |
 | `environment/envs/<env>.cells.tfvars.json` | per environment | **a multi-cell environment's cells (#98)**: each cell's region, jurisdiction and VPC CIDR, which cell holds the global database's writer, and (since #367) each jurisdiction's pinned countries. Its presence is what makes an environment multi-cell; `testidpna` (two cells) and `globalidp` (six, the target test case) are the two there are | the deployer role |
 | `environment/envs/<env>.conversion.tfvars.json` | per conversion | **a single-region environment converted into this one's cells (#98)**: which old environment, each converted cell's source snapshot and the copy it restores from, and the carry-over secret. Laid over the cells file by `entrypoint.sh` ONLY with `TF_CONVERT=1` (*Converting a single-region environment into cells*, below); `testidpna`'s converts `testidp` | the deployer role |
@@ -22,7 +22,7 @@ Dockerfile removes this directory from the image.
 | `runner/` | per image | the suite runner image (the tests image plus the S3 client) and the two scripts its task runs | built by CI |
 | `Dockerfile`, `entrypoint.sh` | per run | the Terraform image (AWS CLI v2, Terraform 1.16.2, node): one stack, one environment, one action — `init`, `validate`, `plan`, `apply`, `destroy`, `output`, `output-json`, `ecr-password` (`suite` was removed on 2026-09-21) — the parent project's `infra/` arrangement | the workflow, and `terraform-local.sh` |
 | `terraform-local.sh` | per run | runs that image on a developer machine, with the credentials in the environment or the AWS CLI's session | a person |
-| `reset-environment.js` | per run | removes every realm but the default one and clears the default realm's runtime overrides before a run, so an environment can be reused | both runners |
+| `reset-environment.js` | per run | removes every realm but the default one, clears the default realm's runtime overrides, and removes runtime client-certificate trust anchors a suite job added (#335), before a run, so an environment can be reused | both runners |
 | `run-suite.sh` | per run | **the whole suite against any environment, from this machine** (2026-09-18): every job runs here against the load balancer except the two the nodes must call back to, which run in an ephemeral `suite-callbacks/` task; one merged report (*Running the suite from this machine*, below). **Not a launcher since 2026-09-21, and the ONE AWS suite**: `../../run-tests.sh --target=aws:<env>` and `--target=aws-ephemeral` both run it, and so does `aws-cluster.yml` | `./run-tests.sh` |
 | `suite-callbacks/` | per run | the callback task for one `run-suite.sh` run — a subnet, a NAT gateway the load balancer admits, a task role and a task definition (credential step, remote PEP, the two callback jobs) — applied at the start of the run and DESTROYED at its end, pass, fail or interrupt; state at `environment/<env>/suite-callbacks.tfstate` | `run-suite.sh` |
 | `../../.github/workflows/aws-cluster.yml` | per run | ordered jobs — images, terraform, suite, teardown — in the Terraform image, the suite through `./run-tests.sh --target=aws:<env>` after re-applying `allowed_cidrs` with the suite runner's own address; actions `apply-and-test`, `apply`, `test`, `plan`, `destroy` | GitHub Actions (dispatch only) |
@@ -93,6 +93,12 @@ in this order:
    loads raise and leave raised, resets to the nodes' `LDAP_MAX_ENTRIES =
    ldap_max_entries` — 50,000 since 2026-09-29, one run's bulk loads beside the
    seeded population. It was 200,000 while nothing was deleted between runs.
+5. **runtime client-certificate trust anchors a suite job added (#335)**.
+   The truststore is service-wide and holds 32 (`tls/CLAUDE.md`); removing a
+   realm does not take an anchor with it. `isSuiteTrustAnchor()` names the
+   subjects. The remote PEP's anchor this run posted is kept when
+   `XACML_PEP_CA_PEM` is set, because `pep-credential.sh` adds it before this
+   script runs.
 
 Only the suite's own names go; `node deploy/aws/reset-environment.js --dry-run
 <url>` lists what would. Until #344 nothing in the default realm was deleted, so
@@ -104,7 +110,10 @@ left; they are a few hundred a run. The registry's ceiling stays at
 `STS_APPLICATIONS_MAX = applications_max` (10,000): the second reuse of the dev
 cluster found the service default of 500 full, and every registration was
 refused `STS-REG-0020`, which `sts_userinfo_protected` reported as an
-unencrypted UserInfo response. `STS_SUITE_KEEP_REALMS=1` skips the reset.
+unencrypted UserInfo response. **The realm cap is `STS_REALMS_MAX_COUNT =
+realms_max_count` (100,000, #368)** for the same reason: the service default
+of 10, which a deployment keeps, would refuse the eleventh realm a run makes
+(`STS-CORE-0161`). `STS_SUITE_KEEP_REALMS=1` skips the reset.
 
 **Four published ports.** 443 → 8081; 389 (the directory in the clear) and
 **636 (the same directory behind TLS, since 2026-09-17)** on the same numbers
@@ -172,6 +181,26 @@ turns that recorded failure into a deployment that stops. The two ways it can
 fail are the two 389 already had — not root, or the port taken — plus one of
 its own: no server certificate at startup (`STS-LDAP-0029`), which cannot
 happen while `global.https` is on.
+
+**A STARTING TASK IS LEFT ALONE FOR TEN MINUTES (#330).**
+`health_check_grace_period_seconds` is 600, and the container probe's
+`startPeriod` is 300 (as long as ECS allows that one to be). The listener
+binds only after the front has restored its state and, where a pool is
+configured, the first worker of each pool has settled — `workers.startTimeoutMs`
+is 300000 on globalidp and testidpna, with the front's restore in front of
+that fork. The load balancer marks a silent port unhealthy in about 30
+seconds; the scheduler ignores that, and the container probe, until the grace
+ends. A port that is still down then fails steady state, which is the
+load-bearing property above. The grace does not cover `workers.startTimeoutMs`
+at its setting maximum (900000); a deployment that raises the timeout past
+what 600 holds has to raise the grace too (`ecs.tf` says how the 600 was
+reached). A task that has already been up is outside the grace: three
+consecutive failures of any target group replace it, about 30 seconds at
+the load balancer's interval of 10 (`unhealthy_threshold` 3). Two successes
+mark a group healthy again. GCP and Azure use the same failure count. The
+container probe is a second way ECS can replace a task, and it is not that
+count: its `retries` stay 4, and it watches only `/healthcheck` on the main
+port.
 
 **THE TWO SIDES OF THE PKI PORT NEED NOT MATCH, and since 2026-09-17 they do
 not** (`var.pki_listener_port`). They were one number because that is the
@@ -1317,70 +1346,100 @@ STS_SUITE_IN_AWS=1 ./run-tests.sh --target=aws:testidp
 whose peer is a container the local stack brings up beside the service and
 shares a volume with — the mail catcher (`sts_mail`), the outbound test CA
 (#171), the OpenID conformance suite and the four SAML peers — and SPIFFE
-unless its realm stack is applied and named (`STS_SPIFFE_WORKLOAD_URL`). Each
-reads its variable as empty and reports itself skipped with the reason.
+on an environment applied before `spiffe_default_ports` existed, unless
+`STS_SPIFFE_WORKLOAD_URL` names a socket. Each reads its variable as empty
+and reports itself skipped with the reason. An environment applied since
+#311 publishes the Server API, so SPIFFE is not skipped; the Workload API
+is not one of those ports (#324, below).
 
-## A realm's SPIFFE ports: the default realm's in `environment/`, any other realm's in `spiffe-realm/`
+## A realm's SPIFFE port
 
-**THE DEFAULT REALM'S TWO PORTS ARE PART OF EVERY ENVIRONMENT (#311,
+**THE DEFAULT REALM'S SPIRE SERVER API IS PART OF EVERY ENVIRONMENT (#311,
 2026-09-28, rcbj): not optional and not a separate stack.**
-`environment/spiffe_default.tf` publishes 8092 (Workload API) and 8181 (SPIRE
-Server API) — `spiffe_workload_port` / `spiffe_server_port` — with the same
-address registration, rules and caveats as below, and outputs
-`spiffe_default_ports`, which `run-suite.sh` reads to count SPIFFE as
-published. Until that date it was `spiffe-realm/` with `REALM=default`, and a
-build nobody applied it to skipped both SPIFFE jobs. **`spiffe-realm/` is for
-ADDITIONAL realms only and refuses `default`** (a resource precondition, so an
-old `REALM=default` state still destroys).
+`environment/spiffe_default.tf` publishes 8181 (the SPIRE Server API, mutual
+TLS) — `spiffe_server_port` — with the same address registration, rules and
+caveats as below, and outputs `spiffe_default_ports` as `{ server: 8181 }`.
+`run-suite.sh` counts SPIFFE as published while that output is non-empty, so
+an environment applied since #311 does not skip the SPIFFE jobs. Until that
+date it was `spiffe-realm/` with `REALM=default`, and a build nobody applied
+it to skipped both. **`spiffe-realm/` is for ADDITIONAL realms only and
+refuses `default`** (a resource precondition, so an old `REALM=default` state
+still destroys).
 
-`spiffe-realm/` publishes ONE additional realm's two gRPC ports, the same
+**THE WORKLOAD API IS NOT PUBLISHED (#324).** It was, as 8092, and its target
+group stayed unhealthy. The nodes run in product mode, where the Workload API
+is bound over TCP only when `spiffe.workloadTcpSourceAuthenticated` declares
+that the network authenticates source addresses (SPIFFE Workload Endpoint
+section 3), and even then never on a wildcard `spiffe.grpcHost`. A Fargate
+realm binds `0.0.0.0`, and these listeners do not read PROXY protocol, so the
+node would see the load balancer as every caller's `peer:`. Neither condition
+can be met honestly on this network. Declaring the setting, or matching
+`peer:` by a prefix, would weaken #166 (`spiffe/CLAUDE.md`). Neither is done.
+A workload runs `spiffe/workload_agent.ts` in its own task: one join token
+over this Server API, then the Workload API on a Unix socket beside the
+workload. `var.spiffe_workload_port` stays, default 8092, so a plan that still
+passes it, and a destroy of state that published 8092, still succeed. The next
+apply removes that target group, listener, attachment and security-group
+rules, because the `for_each` key is gone. `proxy_protocol_v2` stays false.
+`suite-callbacks` opens the suite task to every key of `spiffe_default_ports`,
+which is 8181 only. `sts_spiffe_grpc.js` still asserts the TCP refusal
+(`GET /spiffe`'s `workloadAttestation.tcp` says `not served`), and then fetches
+SVIDs through an agent the suite task starts. The realm's `spiffe.workloadPort`
+stays 8092, so the job does not take the port-0 skip.
+
+`spiffe-realm/` publishes ONE additional realm's SPIRE Server API, the same
 number outside and inside, and is applied once per realm, after the realm
-exists and after `environment/`:
+exists and after `environment/`. `WORKLOAD_PORT` is accepted and not
+published. A destroy that does not name the ports uses the placeholders
+`65001` and `65002`, so state that still has the old listener can be removed:
 
 ```bash
-TF_STACK=spiffe-realm REALM=acme WORKLOAD_PORT=9092 SERVER_PORT=9181 \
+TF_STACK=spiffe-realm REALM=acme SERVER_PORT=9181 \
   deploy/aws/terraform-local.sh testidp apply
 TF_STACK=spiffe-realm REALM=acme deploy/aws/terraform-local.sh testidp destroy
 ```
 
-**A REALM GETS PORTS OF ITS OWN HERE, NOT AN ADDRESS.** `spiffe/CLAUDE.md`
-tells realms apart by address and keeps 8092 / 8181; a Fargate task has one
-address, so every realm binds `0.0.0.0` on ports of its own, which the
-service allows (`claimedBy()` compares host and port). **Terraform does not
-configure the realm**: it must be given `spiffe.enabled` on and
-`spiffe.workloadPort` / `spiffe.serverPort` set to the SAME two numbers, in
-the console or through `/admin-api` — a realm is created with SPIFFE off and
-both ports 0 (`common/realms.js`). The `realm_settings` output repeats them.
-Until the realm has them, its target groups show every node unhealthy. The
-stack refuses a port the environment already uses (80, 88, 389, 443, 636,
-8081, 8082, the debugger's 8444) and, for any realm but `default`, 8092 and
-8181.
+**A REALM GETS A SERVER PORT OF ITS OWN HERE, NOT AN ADDRESS.**
+`spiffe/CLAUDE.md` tells realms apart by address and keeps 8181; a Fargate
+task has one address, so every realm binds `0.0.0.0` on a Server API port of
+its own, which the service allows (`claimedBy()` compares host and port).
+**Terraform does not configure the realm**: it must be given `spiffe.enabled`
+on and `spiffe.serverPort` set to the SAME number, in the console or through
+`/admin-api`. Leave `spiffe.workloadPort` at its seed, 0 — product mode will
+not bind a TCP Workload API here, and setting it would only publish a port
+this stack does not. A realm is created with SPIFFE off and both ports 0
+(`common/realms.js`). The `realm_settings` output repeats `spiffe.enabled` and
+`spiffe.serverPort`. `workload_api_endpoint` names the Unix socket a workload
+agent serves, and records the accepted `workload_port` as not published.
+Until the Server API port is set, its target group shows every node
+unhealthy. The stack refuses a port the environment already uses (80, 88,
+389, 443, 636, 8081, 8082, the debugger's 8444) and, for any realm but
+`default`, 8092 and 8181. 8092 is no longer published; it stays reserved so a
+server port cannot land on a listener an environment applied before #324
+still has.
 
-**THE NODES ARE REGISTERED BY ADDRESS, AND A RESTARTED TASK FALLS OUT.** ECS
-keeps a target group's members current only for the target groups on a
-service's `load_balancer` blocks, and **ECS allows five per service — which
-`testidp` already uses** (https, ldap, ldaps, pki, kerberos). So this stack
-looks up the nodes' current private addresses (the in-use interfaces
-carrying `<prefix>-nodes`) and registers them itself. **Re-apply every
-realm's stack after any deploy or task restart**; until then the restarted
-node is missing from these ports, and its old address fails health checks.
-rcbj chose this over a Lambda following ECS task events, which the deployer
-role cannot create.
+**THE NODES ARE REGISTERED BY ADDRESS, AND THE NODE KEEPS THEM CURRENT
+(#323).** ECS keeps a target group's members current only for the target
+groups on a service's `load_balancer` blocks, and **ECS allows five per
+service — which these environments already use** (https, ldap, ldaps, pki,
+kerberos). So this stack looks up the nodes' current private addresses (the
+in-use interfaces carrying `<prefix>-nodes`) and registers them itself.
+That attachment is the membership at apply time. It does not remove a
+target registered any other way, and a task restarted since the apply comes
+back on a new address. `cluster/spiffe_targets.js` reconciles the groups
+after that — the algorithm is that file's. The task role may do it only
+once an administrator has re-applied `foundation/`, because the workload
+boundary is the ceiling and a role policy cannot rise above it. An image
+built without `@aws-sdk/client-elastic-load-balancing-v2` and
+`@aws-sdk/client-ecs` records `STS-CLUSTER-0027` and leaves the groups as
+they were. rcbj chose address registration over a Lambda following ECS task
+events, which the deployer role cannot create. `environment/realm_listeners.tf`
+is the same apply-time registration and is not reconciled here.
 
 **No PROXY protocol on these target groups**, unlike every other port:
 SPIFFE's gRPC listeners do not read the header, and a header in front of gRPC
 or TLS breaks the connection. The node sees the load balancer as the caller.
 
-**THE WORKLOAD API PORT IS NOT SERVED HERE, AND THAT IS #166 WORKING.** The
-nodes run in product mode, where the Workload API is bound over TCP only when
-`spiffe.workloadTcpSourceAuthenticated` declares that the network
-authenticates source addresses (SPIFFE Workload Endpoint section 3), and even
-then never on a wildcard `spiffe.grpcHost` — and a Fargate realm binds
-`0.0.0.0`, behind a load balancer whose address is every caller's `peer:`.
-Neither condition can be met honestly on this network, so the workload
-target group stays unhealthy and `sts_spiffe_grpc.js` asserts the refusal
-instead (`GET /spiffe`'s `workloadAttestation.tcp` says `not served`). The
-SPIRE Server API port, which is mutual TLS, is unaffected.
 **Who may connect is copied from the environment's 443 rules**, so these
 ports are exactly as open as the main port; a new `allowed_ip` on the
 environment reaches them at this stack's next apply. Target groups are named
@@ -1490,7 +1549,7 @@ terraform -chdir=deploy/aws/foundation init -backend-config=bucket=iya-sts-terra
 terraform -chdir=deploy/aws/foundation apply          # once, administrator
 
 # as the deployer role, from here on
-docker build -t <repo>:<tag> --build-arg STS_CLOUD_SDKS="@aws-sdk/client-secrets-manager @aws-sdk/client-kms @aws-sdk/client-sesv2" \
+docker build -t <repo>:<tag> --build-arg STS_CLOUD_SDKS="@aws-sdk/client-secrets-manager @aws-sdk/client-kms @aws-sdk/client-sesv2 @aws-sdk/client-elastic-load-balancing-v2 @aws-sdk/client-ecs" \
   --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem .
 docker build -t <repo>:schema-<tag> -f deploy/aws/schema-init/Dockerfile .
 docker build -t <repo>:cert-<tag> -f deploy/aws/cert-init/Dockerfile .   # only with a public name

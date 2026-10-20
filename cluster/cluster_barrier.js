@@ -64,6 +64,7 @@
 // #4a.
 // ===========================================================================
 
+const http2 = require('http2');
 const bunyan = require('bunyan');
 const config = require('../common/config');
 const errorCodes = require('../common/error_codes');
@@ -211,7 +212,11 @@ function refuseForCommit(res, end) {
     }
   });
   res.statusCode = 503;
-  res.statusMessage = 'Service Unavailable';
+  // HTTP/2 has no reason phrase (RFC 9113 section 8.3.2), and node warns on
+  // every response that sets one (#407); HTTP/1.1 gets it as before.
+  if (!(res instanceof http2.Http2ServerResponse)) {
+    res.statusMessage = 'Service Unavailable';
+  }
   res.setHeader('Retry-After', String(RETRY_AFTER_S));
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');

@@ -39,12 +39,14 @@ more than one family needs it, not because it felt general.
 | `jose_kid.js` | **WHICH `kid` A SIGNED TOKEN CARRIES (2026-09-13)** — `keys.kidFormat`, per realm: `internal` (the default, `sts-…`) or `jwk-thumbprint-uri`, the signing key's RFC 9278 JWK Thumbprint URI. A TRANSLATION at the edges — the header a signer writes, the JWKS, a lookup of one of this service's own tokens — while the key set, the keystore, the certificate register and `certificateHeaderFor()` go on naming a key by its internal kid. A LIBRARY over `config`, `crypto` and `error_codes`. See *3af, continued* below. |
 | `tls_client_certificates.js` | **A PERSON'S — AND SINCE 2026-09-13 AN APPLICATION'S — TLS CLIENT CERTIFICATE, AND THE GATE THAT MAKES TRUSTING THE SERVICE ROOT SAFE (2026-09-13).** Issues a `clientAuth` leaf from the realm's `tls-client` Issuing CA through `pki.certify()` (so OCSP, the CRL and `/admin/pki`'s revocation pane know it), packages it as a password-protected PKCS#12 and PEM files through the vendored exporter, and revokes one only among the holder's own. **And `identityOf()`**, which every door that turns a verified client certificate into an identity asks — see *3ag* below. A LIBRARY: it registers nothing. |
 | `certificate_subject.js` | **RFC 8705 SECTION 2.1.2's FIVE CERTIFICATE SUBJECT PARAMETERS, READ AND COMPARED (2026-09-13)** — an RFC 4514 DN compared as a name (types, OIDs, escapes, caseIgnoreMatch, a multi-valued RDN in any order), the four subjectAltName kinds off node's `X509Certificate` (a host name without case, an IP by value, an email's domain without case, a URI exactly), and the grammar a registration may hold. `applications.js` asks it what may be written and `oauth-oidc/client_auth.js` whether a certificate matches. A LEAF over `helpers.js`. |
-| `realm_chooser.ts` | **WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32).** A GET of exactly `/admin` or `/portal`, in the default realm, with no session and realms defined, asks which realm first — a list in development and a text box in product (`mode.listsRealmsBeforeSignIn()`) — and `?realm=<id>` redirects to that realm's surface, BUILT from the registry and never echoed. A LIBRARY both surfaces call from their own gate, so they cannot ask differently; `admin-ui/CLAUDE.md` 8d. |
+| `realm_chooser.ts` | **WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32).** A GET of exactly `/admin` or `/portal`, in the default realm, with no session and realms defined, asks which realm first — a list of every realm, in both modes (2026-10-18), remembered on the `sts_realm` cookie — and `?realm=<id>` redirects to that realm's surface, BUILT from the registry and never echoed. A LIBRARY both surfaces call from their own gate, so they cannot ask differently; `admin-ui/CLAUDE.md` 8d. |
 | `access_limits.ts` | **WHAT A RIGHT'S LIMITS MEAN (#432 phase 5, 2026-10-03).** A catalogue type's `limits` schema says a limit's shape; this static utility class says what its six meaningful members mean — `amount` with its `currency`, `count`, `receiver`, an ISO 8601 repeating `interval`, a `window` — to the three parties that must agree: `authorization_details.conformance()` (RFC 9396 and GNAP alike), the GNAP approval page that lets a person LOWER a limit (`raised()`, member by member; a shorter period is a raise), and the resource server counting against it (`periodAt()`, amounts in millionths as BigInt). A leaf: no route, no store. `gnap/CLAUDE.md`, *Ownership and limits*. |
 | `limits_form.ts` | **A LIMIT AS A FORM A PERSON CAN LOWER (#432 phase 5).** The controls under each right or detail carrying `limits`, and the reading back that accepts only lower values and values still meeting the type: one static utility class for GNAP's approval page, `/portal/ciba`'s absent-owner approvals and OAuth's consent screen, so the three cannot draw or judge a limit differently. In `common/` because two protocol directories read it. |
 | `account_state.ts` | **A DISABLED ACCOUNT — THE ONE PLACE ONE IS DISABLED, ENABLED AND ASKED ABOUT (2026-09-17).** `pwdAccountLockedTime` on the person's entry, written by the console's Disable button, `POST /admin-api/users/disable` and SCIM's `active: false` alike; a disable ENDS everything the person holds through the same global logout. A LIBRARY (rule 3at) that finds `logout/logout.ts` in `require.cache` and never requires it. |
 | `outbound_tls.ts` | **WHETHER AN OUTBOUND REQUEST MAY BE PLAIN HTTP, AND WHETHER THE CERTIFICATE OF WHOEVER ANSWERS IS VERIFIED (#171, 2026-09-23)** — one policy for GNAP's push finish, SSF push, federation's back channels (and every requester that borrows them) and the XACML nudge, each handing in its three settings and two codes. A static utility class. See *`outbound_tls.ts`* below. |
 | `lingering_close.js` | **AN ANSWER SENT BEFORE AN UPLOAD HAS ALL ARRIVED, CLOSED WITHOUT A RESET (2026-09-26).** `arm(req, res)` in place of `res.set('Connection', 'close')`: after the answer is flushed the socket half-closes and discards what the client is still sending (until it closes, 5 s idle or 30 s), instead of node's immediate destroy — which, with unread data in the buffer, sends a TCP RESET that throws away the answer the peer had not read. The risk upload routes and `request_pool.js`'s early-answer path use it, and **since 2026-09-27 `request_worker.ts` arms it for every dispatched request**: the front asks each for `Connection: close` (#77), so any early answer — a refusal, a 404, a sign-out with no session — closed a socket the front was still writing, and the answer was lost to `write EPIPE` and a 502 (`STS-WORKER-0030`; 17 in 2000 races measured, none armed). A LEAF over `config`. |
+| `http2_express.ts` | **EXPRESS 4 ON AN HTTP/2 REQUEST, FOR THE TWO APPS THIS SERVICE BUILDS AND NO OTHER (#407, 2026-10-19).** `adapt(app)` gives one app an own `lazyrouter` — express 4's: the router, the query parser, then an `init` that is express's six lines with the request's and response's prototypes chosen by protocol (express's methods over `Http2ServerRequest`/`Http2ServerResponse` for HTTP/2; express's own for HTTP/1.1). `common/app.js` adapts the shared app and `debugger/debugger_server.ts` its own; **nothing on the express module changes**, which is why it replaced the `http2-express` package #703 first used: that replaced `express.application.lazyrouter` for every app in the process. The same `init` writes `host` from `:authority` and refuses 400, `STS-HTTP-0024`, a request whose two name different hosts (RFC 9113 section 8.3.1; default port and case are not a difference); `hostProblem()` is asked again by `request_pool.proxy()` and the debugger's API proxy. A static utility class over node, express and the error-code table, so the pool may require it. |
+| `http2_framing.ts` | **AN HTTP/2 BODY WITH NO `content-length` IS STILL A BODY (#407).** `markFramedBody()`, on each TLS HTTP listener's `request` event ahead of the app, adds `transfer-encoding: chunked` to an HTTP/2 request whose HEADERS did not end the stream and that sent no length, so body-parser's `hasBody()` reads it. **The header is SYNTHETIC and exists only on this service's side**: HTTP/2 forbids `transfer-encoding` (RFC 9113 section 8.2.2) and no client sent it — it is what the request pool forwards to a worker as the chunked body node's client sends there anyway, so it is real on that HTTP/1.1 hop and nowhere else. **It also appears in anything that captures `req.headers`** (the call log, the debugger's capture, a test echo) as though the client had sent it; read it there as "framed by HTTP/2", never as a client's request header. |
 | `secret_destinations.ts` | **WHERE A SERVICE ACCOUNT'S ROTATED PASSWORD IS PUSHED (#221 P3, 2026-10-06) — rule 3ce.** The register of secret push destinations, which is the realm's application entries declared for `secret-destination` and not a store of its own; `list()`, `get()`, `push()`, `testPush()`, `isDestination()`, the console's and the API's `act()`. The write path itself is `secrets.js`'s `pushSecret()`. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
 | `vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** — see `common/vendored/CLAUDE.md`. |
@@ -814,11 +816,20 @@ JWS and JWE tables, `GNAP_MTLS_TRUSTS`, the GNAP settings' own enums and
 checkboxes. Seven of them had no check at a console or API write until this
 change (`CHOICES_CHECKED_HERE`), so `choiceProblem()` refuses a value outside
 them at update and create (`STS-REG-0203`). The rest already have a validator
-that says more. `oauthGrantType` and `oauthResponseType` are not on the list:
-they are declared and enforced since #289, but an extension grant is a URI
-nobody lists in advance (RFC 6749 section 4.5), so they stay open text and the
-endpoints refuse what a client did not declare (`oauth-oidc/CLAUDE.md`,
-*OpenID Connect Registration*).
+that says more. **`oauthGrantType` and `oauthResponseType` joined the list
+with #706** (rcbj: checkboxes, no free text). Until then they were open text,
+because an extension grant is a URI nobody lists in advance (RFC 6749 section
+4.5). That argument did not hold: the token endpoint refuses a grant it does
+not implement, so declaring one declared nothing usable. Their choices are
+`FLOW_GRANT_TYPES` and `FLOW_RESPONSE_TYPES`, which are every grant and response
+type implemented, not only the ones the realm advertises.
+`tests/flow_type_choices.js` holds them to the metadata with every switch on.
+A response type is stored with its words sorted (`canonicalResponseType()`),
+the order the console ticks. **Dynamic registration is unchanged**: it still
+records what a client registers, and the grid draws a value outside the set as
+a marked box, so a Save does not drop it. The endpoints still refuse what a
+client did not declare (`oauth-oidc/CLAUDE.md`, *OpenID Connect
+Registration*).
 
 **A GENERATED SECRET SETS ITS METHOD.** `regenerateClientSecret()` (and so
 Regenerate and Rotate) writes `client_secret_basic`, RFC 7591's default, where
@@ -1375,6 +1386,14 @@ it.)
 **The goal is one sentence: the front process should be doing
 request/response I/O and nothing else.**
 
+**AND SINCE #408 A PROTOCOL WORKER ALSO RUNS THE BODY OF A CLUSTER
+SCHEDULER JOB** that the leader (a front process) hands it over the channel
+(`schedulerRunner()`: `{ schedulerRun }` out, `{ schedulerRunDone }` back,
+`{ schedulerFence }` to stop it). It also reports its event-loop delay
+(`{ loopLag }`), and sends a directory sign-out with no response to ride on
+as `{ ldapDrop }`. A worker that ends fails its runs with `STS-SCHED-0019`.
+`cluster/CLAUDE.md`, *Where a cluster run's body runs*, has the design.
+
 **ROUTING IS THE PART TO GET RIGHT AND THE CUT IS NOT THE OBVIOUS ONE.** It is
 **sessionless versus session-bearing**, not stateless versus stateful.
 `workers.fanout` names the exceptions and everything else dispatched holds
@@ -1533,16 +1552,23 @@ on the front process's one thread. rcbj met it more than once. `reap()` now asks
 `replacementFor()` and forks one worker into the dead one's POOL AND SLOT — the
 slot names the persistence origin, which the replacement adopts once the dead
 worker's claim lapses (`adoptOrigin()`, inside the worker's start timeout) —
-**not while `stop()` is draining, not once the pool has given up, and never
-past `size()`**. A worker that reports it could not start (`ready: false`) is
-ENDED, where it used to stay alive and never ready, holding its place; so it
-goes through the same path, and a failed start is now any worker that never
-became ready as well as one gone within `QUICK_EXIT_MS` having served nothing.
-`QUICK_EXIT_LIMIT` (3) failed starts in a row still give the pool up, so a
-worker that can never start is tried three times rather than forked for ever.
-`STS-WORKER-0043` names each replacement and `stats().pools[].replaced` counts
-them. `tests/request_worker_replacement.js` drives the real `fork()` and
-`reap()` with a stub worker.
+**not while `stop()` is draining, not once the pool has given up (except the
+one worker its cool-down tries), and never past `size()`**. A worker that
+reports it could not start (`ready: false`) is ENDED, where it used to stay
+alive and never ready, holding its place; so it goes through the same path,
+and a failed start is now any worker that never became ready as well as one
+gone within `QUICK_EXIT_MS` having served nothing. `QUICK_EXIT_LIMIT` (3)
+failed starts in a row still give the pool up, so a worker that can never
+start is tried three times rather than forked for ever. Since #333 that
+give-up is not for the life of the process. `workers.giveUpRetryMs` (five
+minutes; `0` is the old behaviour) later tries ONE worker while routing stays
+where the give-up put it — the front process, or the protocol pool for the
+surfaces. A worker that reports ready clears the give-up and the rest of the
+pool is forked through the start gate. Another three failures doubles the
+wait, up to an hour (`STS-WORKER-0050` names each wait). `STS-WORKER-0043`
+names each replacement and `stats().pools[].replaced` counts them.
+`tests/request_worker_replacement.js` drives the real `fork()` and `reap()`
+with a stub worker.
 
 **WORKERS START ONE AT A TIME (#342, 2026-09-29).** Each worker's start
 restores the whole store into its own heap, and `start()` forked every worker
@@ -1568,7 +1594,8 @@ false`, a failed channel, or an exit). Four decisions:
   set, when it has settled.
 * **The start timeout is each worker's own.** It is armed in the child after
   `begin`, so a worker waiting in the queue uses none of its time.
-* **A queued fork is dropped** when the pool is stopping or has given up. A
+* **A queued fork is dropped** when the pool is stopping or has given up,
+  except the one worker a give-up's cool-down try forks (`probing`, #333). A
   fork that throws is `STS-WORKER-0045`, and the gate moves on to the next.
 
 `stats().starts` reports the width of the gate, the number starting and the
@@ -2475,7 +2502,7 @@ two mutants caught.
 ### Rule 3m: the realm's overrides are an inverted hook into `config.js`
 
 `realms.js` requires `config.js` in the ordinary direction — it validates a
-realm's settings through `checkOverride()` and reads its own two settings
+realm's settings through `checkOverride()` and reads its own settings
 through `value()`. `config.js` needs the current realm's overrides and cannot
 require this module back, so it offers `setRealmContext()` and this fills it at
 require time. That is rule 3e's shape and it passes rule 3e's test in the one
@@ -2490,12 +2517,14 @@ since 2026-08-27.
 Setting a value while `acme` is ambient means setting it for `acme`; anything
 else would be a console page that reads one realm and writes another.
 
-**TWO SETTINGS ARE EXEMPT IN BOTH DIRECTIONS** and it is not caution:
-`realms.enabled` and `realms.pathSegment` are read below the realm layer,
-always. A realm that could switch realms off would be doing it from inside the
-request that found it, and a realm that could move its own prefix would change
-the prefix that had already been used to find it. They are refused at the writing
-end as well, but the reading end is the lock that cannot be got around.
+**EVERY `realms.*` KEY IS EXEMPT IN BOTH DIRECTIONS** and it is not caution:
+`realms.enabled`, `realms.pathSegment`, `realms.removalDeliveryTimeoutS` and
+`realms.maxCount` are read below the realm layer, always. A realm that could
+switch realms off would be doing it from inside the request that found it, and
+a realm that could move its own prefix would change the prefix that had already
+been used to find it. They are refused at the writing end as well, but the
+reading end is the lock that cannot be got around. The prefix match is what
+makes a new `realms.*` key exempt the day it is added.
 
 **THE WRITING-END LOCK WAS MISSING UNTIL 2026-08-25, AND THE SENTENCE ABOVE
 DESCRIBED IT ANYWAY** — which is the whole lesson. `realms.setOverride()` went
@@ -2511,14 +2540,16 @@ look at. **A dead write is not harmless when something publishes what was
 written.**
 
 The lock is `checkRealmOverride()` in `realms.js`, and two things about it are
-deliberate. It matches by PREFIX rather than naming the two settings, so a third
+deliberate. It matches by PREFIX rather than naming the settings, so a new
 `realms.*` setting is refused the day it is added rather than the day somebody
-remembers this function. And **every writing path goes through it** —
-`setOverride()`, and `checkOverrides()`, which is what `create()` and `update()`
-validate a whole object with — because the two were written separately at first
-and that is exactly how one of them came to be missing.
+remembers this function. And **every writing path into a realm's overrides
+goes through it** — `setOverride()`, and `checkOverrides()`, which is what
+`create()` and `update()` validate a whole object with — because the two were
+written separately at first and that is exactly how one of them came to be
+missing.
 
-**One door still accepts those two keys and must**: `POST
+**One door still accepts `realms.enabled`, `realms.pathSegment` and
+`realms.removalDeliveryTimeoutS`, and must**: `POST
 /realm/acme/admin-api/config/set` goes through `config.setOverride()`, where
 `realmFor()` answers null and the write lands PROCESS-WIDE. That is the
 documented behaviour rather than a hole — it is the same exemption read from
@@ -2526,6 +2557,51 @@ the other side — and the reply names no realm, which is what tells the caller
 where it went. Do not "fix" that one to match: refusing it would leave
 `realms.enabled` unsettable from inside any realm, which is every request in a
 process where realms are switched on.
+
+**`realms.maxCount` is the exception to that door (#368).** It is still
+process-wide and still refused ON a realm (`STS-CORE-0014`), and a write or a
+clear of it while a non-default realm is ambient is refused as well
+(`STS-CORE-0162`), in `checkOverride()` and `clearOverride()`. The console
+describes the row with `editRefusal` and `editable: false` from inside that
+realm, so a section's all-or-nothing Save does not post the key. A service
+administrator changes it on `/admin/realms` in the default realm, or with
+`POST /admin-api/config/set` and no realm prefix. A realm administrator is
+already refused by the `realms.` prefix (`admin-ui/admin_scope.ts`).
+
+### How many realms one cluster may hold (#368)
+
+Each realm costs memory in every node process, so `realms.maxCount` caps how
+many this cluster may hold. The default is **10, and the count includes the
+built-in default realm**, so that is the default plus nine others. The minimum
+is 1, because the default realm always exists; the maximum a write may name is
+100000. It is on `AGREEMENT_SETTINGS`, so two nodes that disagree about it
+refuse to join (`STS-CLUSTER-0002`).
+
+**Adding the key changed the must-agree digest itself**, so a node built
+before #368 and one built after it disagree whatever their settings say. **A
+rolling upgrade across this change therefore restarts every node together**
+— stop them all, start them all on the new image. There is no migration shim
+that lets the old and new digest agree for a while: this repository keeps no
+backwards compatibility.
+
+`create()` refuses a new realm once `count()` is at the cap (`STS-CORE-0161`).
+**A restore skips the check** — `spec.restored`, the same skip the mode and
+Kerberos checks already make — because a restart or a replicated create of a
+registry that is already over the cap must still come up. Lowering the cap
+below the live count removes nothing; creates stay refused until the count is
+back under it. The chooser, OpenID Federation and the metadata keep listing
+every realm that exists.
+
+Two nodes can both pass a local count check and both persist, because the
+realm-registry save merges rather than claims. That race is accepted: the cap
+is a memory bound, and it does not grow a new cluster claim.
+
+The image default (`env/local.js`) does not raise it. `env/test.js` and
+`env/docker-tests.js` set it to 100000, because the protocol suite leaves its
+realms standing and a product default of 10 would refuse the next create on a
+stack that already holds more. The in-process suite sets
+`STS_REALMS_MAX_COUNT` the same way, in `tests/run.js`, under any override a
+test makes itself.
 
 ### A realm has a DNS DOMAIN, and it is the root of every NAME the realm invents (2026-09-18)
 
@@ -3370,6 +3446,13 @@ with `Cannot find module` naming a file the operator never mentioned.
    deliberately NOT `sessionOf()`: that function deletes an expired session as
    it finds it, and an observer that quietly ended sessions while reporting on
    them would be changing the thing it describes.
+   **Its sibling `setActorSessionResolver()` (#561)** names the SESSION the
+   actor acted as, which `recordHttp()` puts in `detail.sessionId` — only
+   where it names one, which is where a browser holds several signed-in
+   accounts (`authn/CLAUDE.md`), so a row is otherwise unchanged. The same
+   contract: no side effects, never throws. `admin_stats.js`'s
+   `recordAccountChoice()` and `accountChoiceCounts()` are those account
+   sets' counters (`merge: 'own'`, `scimCounts`' reason).
 
    **EVERY ROW CARRIES THE CLIENT'S ADDRESS (2026-09-18), which reverses what
    this file decided when it was written** — a row named the CHANNEL and never
@@ -4713,10 +4796,13 @@ reads.
 **THREE KINDS OF SCOPE, READ THREE WAYS.**
 
 * **This service's own protected scopes**, in BOTH modes: `admin:read`,
-  `admin:write`, the SCIM pair and the Shared Signals pair BY THEIR SETTINGS
-  (`scim.scopeRead`/`scopeWrite`, `ssf.authScopeRead`/`authScopeWrite` — a list
-  written out would go stale the day one was renamed, and the renamed scope
-  would be issued to anybody), and the debugger permission. Development already
+  `admin:write`, the SCIM pair BY ITS SETTINGS (`scim.scopeRead` /
+  `scopeWrite` — a list written out would go stale the day one was renamed,
+  and the renamed scope would be issued to anybody), the Shared Signals
+  scopes by their settings PLUS the fixed names `ssf.read` and `ssf.manage`
+  (`common/ssf_scopes.ts`, #334; renaming a setting adds a name and
+  unprotects neither — `ssf/CLAUDE.md`), and the
+  debugger permission. Development already
   gates the resource servers behind them; a gate any client can mint the key to
   is not one. The debugger permission keeps its own role rule on top
   (`debugger_access.ts`).
@@ -4733,8 +4819,10 @@ reads.
 **`declares()` IS THE RESOURCE SERVERS' QUESTION.** `/admin-api`
 (`declaredAdminScopes()`, `STS-API-0123`), SCIM (`STS-SCIM-0079`) and Shared
 Signals (`STS-SSF-0107`, OAuth and GNAP) ask it of every token, in the realm
-that issued it, so an allowance removed from a client stops the tokens it
-already holds. That is what replaced the realm gate's "only
+that issued it. Shared Signals asks the permission the call needs, and write
+includes read (`ssf/CLAUDE.md`). An allowance removed
+from a client stops the tokens it already holds. That is what replaced the
+realm gate's "only
 `sts-management-api`" (`STS-API-0111`, retired): one rule for both realms.
 
 **A LIBRARY, built by the composition root** beside `account_state`. It
@@ -4968,15 +5056,28 @@ the estate this service issues into, decided once, and a per-application answer
 would be a question two applications could not meaningfully answer differently.
 And not a socket, a port, a key or a limit anywhere.
 
-**AN APPLICATION DECLARED FOR SAML GETS AN ENTITYID.** `createApplication()`
-fills `samlEntityId` from the identifier when `saml2` or `saml11` is ticked and
-no entityID was given — because that is what the same application would have got
-by ARRIVING on its own, where the registry files a service provider under its
-entityID. Without it the declaration was a note and nothing more: `samlEntityId`
-is what both SAML modules file an application under and what their
-per-service-provider metadata is published for. It is a default and not a rule —
-an explicit value wins, and nothing is refused, because this service accepts any
-entityID on sight everywhere else.
+**AN APPLICATION DECLARED FOR A FAMILY GETS THAT FAMILY'S PRIMARY NAME (#393;
+SAML only, from 2026-08-27).** `createApplication()` calls
+`fillPrimaryNames()`, which writes the identifier into each ticked family's
+identifier attribute that was left empty — `oauthClientId`, `samlEntityId`,
+`wsfedRealm` and the rest — because that is what the same application would have
+got by ARRIVING on its own, where a sighting files it under the string it
+presented. Without it a SAML declaration was a note and nothing more, and an
+OAuth client's creator typed one string three times (identifier, name,
+client_id). It is a default and not a rule: an explicit value wins, and a list
+typed on the create is the WHOLE list (the identifier is not forced in beside
+it), so an application that answers to several client ids keeps working. The
+attributes stay `multi`. `updateApplicationFields()` fills a family NEWLY
+declared by a save, once, and only when the body did not name the attribute; a
+re-save of the same families writes nothing, so a deliberately cleared
+client_id stays cleared. **Three identifier attributes are never filled**
+(`NOT_THE_REGISTRY_IDENTIFIER`): `oauthTlsClientAuthSubjectDn`, because RFC 8705
+would then match a subject nobody has; `ldapBindDn`, a DN rather than the key;
+and `spiffeWorkloadId`, a `spiffe://` URI filed under `ou=spiffe`. The field
+grid marks the filled kind `primaryName`: the create form's simplified view
+leaves it out, and the application page folds it into the advanced view while
+its only value is the identifier. Existing entries are not rewritten (no
+migration).
 
 ---
 
@@ -5420,6 +5521,12 @@ looking in that container for the reason somebody was refused is one container
 across from the answer.
 
 ### `EVERYBODY` is what makes this off by default without being absent
+
+**Except for a principal that arrived through a Kerberos trust** (#430, rcbj
+2026-10-19): `rolesOf()` with `crossRealm: true` answers no built-in role at
+all, and a configured one only by the whole name or a filtered SID
+(`sids`). `kerberos/CLAUDE.md` (*A principal that arrived through a trust
+holds only its grants*) argues it and its consequence.
 
 Six roles are BUILT IN, computed from the context of the decision, and in no
 container: `EVERYBODY`, `ALL_AUTHENTICATED_USERS`,
@@ -11076,10 +11183,23 @@ event loop for one round trip**, which is why only a miss pays it, and it is
 bounded by `ldap.workerDirectoryTimeoutMs` (also the thread's statement
 timeout): past it `STS-LDAP-0130`, a database error `STS-LDAP-0131`, and the
 request is refused rather than answered out of a window that cannot say what
-it is missing. A thread that dies is seen as a timeout, because its `exit`
-event is delivered by the loop the question holds; the next question starts a
-new one (`STS-LDAP-0132` is logged when the event arrives). The thread has no
-logger and so no Entering/Leaving pairs — the style's child-process exemption,
+it is missing. **A console request also has a budget on the sum (#359).**
+`app.js` enters `SyncQuery.runWithBudget()` for `/admin` and `/admin-api`
+only (`ldap.workerDirectoryBudgetMs`, 5,000). Each `query()` waits only for
+the room that is left and, once the budget is spent, throws `STS-LDAP-0175`
+without posting another question. No slot means no budget — SCIM, an LDAP
+operation, startup and the scheduler keep the per-question bound alone.
+**The budget ends with its request** (the review of #692): an
+`AsyncLocalStorage` store follows every timer and job a request starts, and
+a lazily armed job once carried a spent budget for the life of the process.
+So the slot closes on the response's `finish` or `close`, and the
+scheduler's `setTimer` and `persistence.js`'s flush and retry arm their
+timers through `SyncQuery.outsideBudget()`. The
+API stays synchronous. A thread that dies is seen as a timeout, because its
+`exit` event is delivered by the loop the question holds; the next question
+starts a new one (`STS-LDAP-0132` is logged when the event arrives). The
+thread has no logger and so no Entering/Leaving pairs — the style's
+child-process exemption,
 stated in its header. `tests/sync_query.js`.
 
 
@@ -12052,6 +12172,56 @@ issuance policy DECIDES:
 * **#535's selection of which profile applies stays code.** It chooses the
   settings and decides nothing.
 
+**#718 ADDED `postQuantumRequired` (2026-10-19)**: `off`, `sign-in` or
+`registration-and-sign-in`, on the default and named profiles
+(`stsPasskeyPostQuantumRequired`), the policy's first row decided from its
+first day by the issuance policy. rcbj's decisions on the ticket: three
+values, both roles, and the passkey step's `allowCredentials` narrowed to
+post-quantum keys while required.
+
+* **The fact is the key's ALGORITHM.** A door hands over the algorithm it
+  holds and never its own reading; `question()` computes `postQuantum` from
+  it in ONE place (`isPostQuantum()`, `POST_QUANTUM_ALGORITHMS` — RFC
+  9964's ML-DSA-44, -65, -87, and the one copy: `webauthn_policy.ts`'s
+  `PQC_ALGS` is this list, since that module requires this one) and carries
+  the algorithm and the lane beside it as the `algorithm` fact group. The
+  lane is not the fact because a key made with #643's switch off has none.
+* **`requiresPostQuantum(at)`** says whether the selected profile requires
+  it at a stage; **`postQuantumRefusal(keyAlgorithm, at)`** asks the policy
+  about the one fact group, `backupEligibleRefusal()`'s pattern, and is what
+  the passkey step's filter, the portal's and the console's key rows and
+  the device link ask.
+* **A save requiring it while the realm offers no ML-DSA is refused**
+  (`STS-AUTHN-0357`): `webauthn_policy.ts`'s `offersPostQuantum()`, reached
+  through a lazy dependency, answers whether `webauthn.algorithms` names one,
+  `webauthn.pqcOnly` is on, or the post-quantum lane is offered — read
+  before the requirement's own narrowing, which would answer yes always.
+* `STS-AUTHN-0355` (registration) and `0356` (sign-in); the
+  `credentials.ts` half is `noteKeyPolicyRefused()`, #530's mark
+  generalised to a map by reason. `authn/CLAUDE.md` (*A post-quantum
+  passkey required*) argues the doors.
+
+### `credentials.ts`'s half of the passkey lanes (#643, 2026-10-19)
+
+The lanes are argued in `authn/CLAUDE.md` (*Two lanes*); what this file
+keeps is the person's half. **`userHandleOf(name, { mint, lane })`** answers
+the post-quantum lane's handle (`stsWebauthnPqcUserHandle`) for `lane:
+'pqc'`, minting the classical one first, because the directory writes the
+second only beside the first. **`beginKeyEnrolment()` takes `lane`** and
+carries it on the pending record with the lane's handle and an exclude list
+of the lane's keys only; `checkKeyEnrolment()` holds the credential to the
+lane's algorithms; **`addKey()` asks `webauthnPolicy.laneRefusal()` again**
+(the enforcement at the one writer, as for the role), writes `lane: 'pqc'`
+on a post-quantum row and nothing on a classical one — so a row written
+with the switch off is the row it always was, and `keyLane()` reads no lane
+as classical — and adopts a lane's handle the entry lacks.
+`keyAlgorithm()` answers the `lane` beside the algorithm, which is how the
+console's and the API's key rows carry it. `laneUser()` and
+`laneSignalUser()` are the names a credential manager shows
+(`<username>+ml-dsa`, then `<username>+ml-dsa-65`), `isLaneName()` the
+shape the sign-in screen refuses, and `userHandleHolder()` the owner AND
+lane of either handle. `maxKeysPerPerson` stays one total.
+
 ## 3ci. `i18n.ts`, `page_locale.ts`, `locale_policy.ts`: THE LANGUAGE A PAGE IS DRAWN IN (#539, 2026-10-09)
 
 rcbj: "multi-lingual support to the admin portal, authentication service,
@@ -12458,11 +12628,12 @@ specification's endpoint is never converted**.
 | Module | What it is |
 |---|---|
 | `web_page.ts` (`WebPage`) | The base of every runtime, client or not: `basesOf()`/`attribute()` read the shell's `data-sts-*`; `prefixAt(pathname, base)` the realm prefix; `queryOf()`; `url(path)` — this origin and prefix, or the base of the listener that answers the path (#472); `publicJson(method, path, body)` → `{ status, json, res }` with `json` null for a body that is not JSON; `realmLinks(html, prefix)`, `app.js`'s `withRealmLinks()` in the browser; `formFields(form, submitter)` — a form as an operation's JSON, the pressed button included and `csrf_token` left out; `targetFragment()`; `saveBase64()`. The console's and the portal's copies of each were deleted and both inherit these. |
-| `web_spa_client.ts` (`SpaClient extends WebPage`) | The OAuth client half the console and the portal share (#568), moved from `admin-ui/` unchanged: PKCE, the non-extractable DPoP key and proofs, the token endpoint, PAR where the realm requires it — **the push carries no DPoP proof**, since one would bind the code to a key the callback's page load does not hold — and a JARM answer opened and checked **first** in both runtimes' `finishSignIn()`. A public surface does not use it. |
+| `web_spa_client.ts` (`SpaClient extends WebPage`) | The OAuth client half the console and the portal share (#568), moved from `admin-ui/` unchanged: PKCE, the non-extractable DPoP key and proofs, the token endpoint, PAR where the realm requires it — **the push carries no DPoP proof**, since one would bind the code to a key the callback's page load does not hold — and a JARM answer opened and checked **first** in both runtimes' `finishSignIn()`. A public surface does not use it. **Since #561** it also holds what one account per tab needs in both runtimes: the tab's `{ sub, username }` in sessionStorage under the runtime's `accountKey` (`storedAccount()`, `keepAccount()`, `readAccounts()`, which removes it when the list is off) and the `login_hint` a sign-in sends from it (`hintFor()`); the IDENTITY requests are sent for — `identitySignal()`, one AbortController per identity, passed to `tokenRequest()`'s fetch, and `endIdentity()`, which aborts it and moves `identity` on so an answer under the old one is not kept; `discardClient()` (tokens, subject, DPoP key, nonce, metadata); `answerIsFor()`, the one subject check the console's popup made and every switch makes; and the change signal (`listenForAccounts()`, `announceAccounts()`; a read on a message that answers off keeps the list in hand, since off is also what a dropped request reads as — #731). All inert with `authn.multipleAccounts` off: nothing is kept, so nothing is hinted. `admin-ui/CLAUDE.md` 8c-iv argues it. |
 | `web_messages.ts` | The formatter and translator (#539 phase 5), moved from `admin-ui/`. |
 | `web_locale.ts` (`WebLocale`) | Pure language code: `canonical()`, `partsOf()`, `acceptLanguage()`, `uiLocales()`, `preferences(inputs)` (#539's order from `{ uiLocales, own, chooser, acceptLanguage }`), `chainFor()`/`negotiate(prefs, lastResort, parts)` against a list of catalog parts, `catalogParts(index.catalogs)`, `safeReturn()`, and `chooserHtml(t, offered, parts, returnTo)`. **`i18n.ts` and `page_locale.ts` hand their work to it** (keeping their names and log lines), so the server and a browser negotiate with one copy; `tests/web_foundation.js` B holds the browser's negotiation over the SERVED index to the server's, and the chooser to the one drawn by hand before. |
-| `web_i18n.ts` (`WebI18n`) | The browser's translator: `load({ uiLocales, own })` fetches `/web/locales/catalogs.json`, negotiates (the chooser's choice from `data-sts-lang` — the cookie is HttpOnly — the browser's from `navigator.languages`, the policy's default from `data-sts-locale-default`), fetches each namespace's catalog along the chain, builds a `WebTranslator`, sets it as the default, and marks `<html lang dir>`. `chooser(t, returnTo)` draws the chooser; `choose(lang, returnTo)` and `onSubmit(event, then)` SEND it to `POST /authn/language` (unchanged; it sets the cookie and a signed-in person's `preferredLanguage`) with `redirect: 'manual'`, and the page is drawn again. |
-| `web_surface.ts` (`WebSurface extends WebPage`) | A public surface's runtime: the portal's with the sign-in taken out. Its page table `{ path, operation, render(json, ctx), title? }`; routing on real paths under its `base` (a link to another of its pages is followed in place, the history kept); each page drawn from its operation's GET answer (`view` or the whole JSON) in the browser's language with the chooser; a POST form sent as JSON to the operation the API's index says `mirrors` it (`GET <api>` → `operations: [{ method, path, mirrors }]`, `/account-api`'s convention) and REFUSED where none does; an answer's `location`, `view`, `go`, `message` and `errors` drawn by `answered()`; refusals English. The `frame(body, ctx)` is handed the page's `view` in its context as well (#579, for the front door's band), the renderer never. Since #571 a page's `operation` may be a FUNCTION of the location's query answering the whole path (the sign-in screen's `/authn-api/pending/{id}`), a view answered with `go` replaces the address and routes again, a refused GET with no `view` is a problem page, an API-held `uiLocales` beside the view is honoured as `ui_locales`, and `lastAnswer` keeps the whole answer (the screen's `csrf`) for a subclass. The realm prefix is the shell's `data-sts-prefix`, since a surface at `/` cannot find it in its own path. |
+| `web_i18n.ts` (`WebI18n`) | The browser's translator: `load({ uiLocales, own })` fetches `/web/locales/catalogs.json`, negotiates (the chooser's choice from `data-sts-lang` — the cookie is HttpOnly — the browser's from `navigator.languages`, the policy's default from `data-sts-locale-default`), fetches each namespace's catalog along the chain, builds a `WebTranslator`, sets it as the default, and marks `<html lang dir>`. `include(ns)` (#561) adds a namespace for the next `load()`, so the words of a control the service turns on are fetched only then. `chooser(t, returnTo)` draws the chooser; `choose(lang, returnTo)` and `onSubmit(event, then)` SEND it to `POST /authn/language` (unchanged; it sets the cookie and a signed-in person's `preferredLanguage`) with `redirect: 'manual'`, and the page is drawn again. |
+| `web_surface.ts` (`WebSurface extends WebPage`) | A public surface's runtime: the portal's with the sign-in taken out. Its page table `{ path, operation, render(json, ctx), title? }`; routing on real paths under its `base` (a link to another of its pages is followed in place, the history kept); each page drawn from its operation's GET answer (`view` or the whole JSON) in the browser's language with the chooser; a POST form sent as JSON to the operation the API's index says `mirrors` it (`GET <api>` → `operations: [{ method, path, mirrors }]`, `/account-api`'s convention) and REFUSED where none does; an answer's `location`, `view`, `go`, `message` and `errors` drawn by `answered()`; refusals English. The `frame(body, ctx)` is handed the page's `view` in its context as well (#579, for the front door's band), the renderer never. Since #571 a page's `operation` may be a FUNCTION of the location's query answering the whole path (the sign-in screen's `/authn-api/pending/{id}`), a view answered with `go` replaces the address and routes again, a refused GET with no `view` is a problem page, an API-held `uiLocales` beside the view is honoured as `ui_locales`, and `lastAnswer` keeps the whole answer (the screen's `csrf`) for a subclass. The realm prefix is the shell's `data-sts-prefix`, since a surface at `/` cannot find it in its own path. **Since #561** `start()` reads the browser's account list first (`loadAccounts()`) and, with it on, `put()` draws the account control beside the chooser (`accountControl()`, in `#sts-accounts-slot`) — below. |
+| `web_accounts.ts` (`WebAccounts`) | **A browser's accounts as every static page reads them (#561, delivery steps 5 and 6).** `fetchList(env, prefix)`: `GET /authn-api/accounts` of THIS page's own origin with the cookie, **asked only where the shell carries `data-sts-accounts="on"`** (`announced()`) — `ShellDocument.document()` draws that attribute itself, for every static surface, where `authn.multipleAccounts` is on in the ambient realm (`accountsOn()`) and draws nothing where it is off, so with the setting off a shell is to the byte what it was and no page makes the extra request on each load it made before review (`tests/multi_account_protocols.js` 3b–3c, `tests/multi_account_tabs.js` 6 and 8) — never another listener's, since `common/cors.js` sends no `Access-Control-Allow-Credentials` to anybody — and anything but a 200 with `enabled: true` is OFF (`off()`). `live()`, `bySubject()`, `byKey()`, `fingerprint()` and `changed()`; `openChannel(env, onChange)` over `BroadcastChannel('sts-accounts')`, whose message is `{ type: 'accounts-changed', change }` and nothing about whose; `anotherHref()` (the list's `anotherAccount`, the portal's advertised address, else `/portal?accounts=another`); `controlHtml(list, t)`, the public surfaces' control; `actionOf()`, the console's and the portal's menu buttons (`data-account-action`, `data-account-key`). |
 | `web_webauthn.ts` (`WebWebAuthn`) | Base64url and a WebAuthn credential's JSON form (#571), shared by the portal's ceremonies (`portal/web_portal_webauthn.ts`) and the sign-in surface's — the screen's passkey and, since #572, the passkey step (`authn/web_authn.ts`). |
 | `web_limits_form.ts` (`WebLimitsForm`) | A right's limits as controls a person may lower (#576): the markup `limits_form.ts`'s `controls()` drew for GNAP's approval page, the portal's absent-owner approvals and the consent screen, moved here so the consent screen's renderer draws it in the browser from the rows its view carries. `LimitsForm.controls()` hands its work to it with `AccessLimits.rows()`; `lowered()`, which reads the controls back, stays on the server. English, as it always was. |
 | `web_outcome.ts` (`WebOutcome`) | The one renderer of an error or outcome page (#580): a heading, what was refused (`.bad`), why (a paragraph, or the steps' `.err` box), notes (`.meta`, markup the caller built) and the ways on, the ids the caller's. Words are the caller's — a refusal's English (#539's decision 6), escaped here. The federation pages' refusals and 404s draw through it, and the emailed factor's `end` page (#573) does to the bytes it drew before. |
@@ -12608,3 +12779,166 @@ owning to holding this service's permissions are closed as a FACT:
 anything: not knowing is not permission, in both directions.
 
 `tests/owner_administration.js` holds the rule, the protections and the roles.
+
+## 3co. `attribute_policy.ts`: WHAT EVERY PERSON MUST HOLD, AND A REALM'S CUSTOM ATTRIBUTES (#396, 2026-10-19)
+
+rcbj's ticket: "Minimum user attributes that must be populated for a new user
+object. Default: first name, sn, email. Add a policy that defines what the
+required fields must be for a realm." On the ticket, the same day: the page
+"should display a list of all attributes, custom attributes, ability to add a
+new attribute, and require each individual attribute as needed." The design
+comment on #396 is the decision of record; rcbj chose cn and sn LOCKED and the
+suite SWEPT rather than the policy weakened for it.
+
+* **The sixth kind on Directory → Policies** (`admin-core/policy_kinds.ts`),
+  `locale_policy.ts`'s pattern: `cn=default,ou=attributePolicies`, inherited
+  from the default realm while a realm has none, else the built-in default.
+  One field, `requiredAttributes` (`stsAttributeRequired`, multi-valued),
+  default `givenName, sn, mail`.
+* **`uid`, `cn` and `sn` are always required** and are not in the field: the
+  username, and `person`'s MUST list (RFC 4519 3.12). A create that names no
+  `cn` is given `givenName sn` (`deriveCommonName()`), at the console, the
+  API, SCIM and a federated first sign-in — never at an LDAP add, which writes
+  what the client sent.
+* **What may be required is the person editor's universe** plus `uid` and
+  `mail` (`catalogue()`): never `userPassword`, a binary attribute, `memberOf`
+  or an `sts` attribute. `ldap/person_editor.ts` is required LAZILY here,
+  because it requires this module at load for its custom rows. Where it cannot
+  be asked (the bulk import's process), a read keeps every stored name rather
+  than dropping what it cannot check — `offeredNames()` answers null, never an
+  empty table.
+* **Enforced in product mode only** (`mode.createsIncompletePeople()`,
+  requirement `required-attributes`), the password policy's arrangement:
+  development creates a subject from a username and the page says the policy
+  is not enforced. `createRefusal()` and `editRefusal()` are the two questions
+  every door asks; the doors are the directory's and SCIM's (`ldap/CLAUDE.md`,
+  `scim/CLAUDE.md`, `federation/CLAUDE.md`, `persistence/CLAUDE.md`). An edit
+  is refused only for a value TAKEN AWAY, so a person created before the
+  policy said so keeps every other door, and nobody's sign-in is refused for
+  it.
+* **Custom attributes** are a register of the realm's own,
+  `cn=<name>,ou=attributeDefinitions` (`stsAttributeDefinition`: a label, a
+  syntax of seven — string, integer, boolean, date, email, uri, dn — and
+  whether it holds one value or several), defined and removed by this kind's
+  two acts (`define-person-attribute`, `remove-person-attribute`, the first
+  kind with acts beside save and reset: `PolicyKind.extraActions` and the
+  module's `act()`). NOT inherited. The name is an RFC 4512 descr of at most
+  64, and may not be one the directory's name table knows (`learnName()`'s),
+  `memberOf`, or begin `sts`; a custom name is never learnt into that table,
+  because the table is the process's and the name one realm's. Never secret
+  and never binary: `inetorgperson.ts` keeps a fixed list so nothing appears
+  on a page by accident, and a custom attribute is an administrator's act only
+  while a credential cannot be stored as one. Removal is refused while anybody
+  holds a value (0172) or the realm's own profile requires it (0173).
+* **The count of people who lack one is a walk**, so it is asked only on
+  request (`GET /admin-api/policies?missing=count`), and not at all where the
+  directory is in the store; the view always gives the LDAP filter that finds
+  them (`missingFilter`).
+* **Left for follow-up tickets**, as the design comment says: SCIM `/Schemas`
+  publishing `required` and the custom attributes as a per-realm extension;
+  custom attributes as token, UserInfo and SAML claims and on the portal; and
+  a sign-in step that collects a missing value instead of refusing a
+  federated newcomer.
+
+`tests/attribute_policy.js` holds it in process.
+
+## 3cp. `phishing_resistance.ts`: WHAT EARNS OPENID CONNECT EAP's `phr` AND `phrh` (#723, 2026-10-19)
+
+**OpenID Connect EAP ACR Values 1.0 (Final, 2025) defines two `acr` values**
+for exactly the property a passkey has and a password lacks: `phr`,
+phishing-resistant, and `phrh`, the same with the key hardware-protected. This
+leaf is the ONE place that says what this service's evidence earns of them.
+It answers from an authentication EVENT, and it claims nothing the event does
+not record. That is the same rule that keeps a passwordless key at `acr "1"`.
+The header quotes section 2 and argues each row:
+
+| The event | Earns |
+|---|---|
+| a WebAuthn ASSERTION (`context.credential.kind` `webauthn`, `ceremony` `assertion`), first factor or the step after a password | `phr` |
+| the same, the key's stored attestation TRUSTED and BE clear | `phr`, `phrh` |
+| a key REGISTERED in the same act (`ceremony` `registration`) | nothing: EAP section 4, provisioned on a phishable secret |
+| a TLS client certificate | `phr`, never `phrh` |
+| a federation partner's `acr` `phr` / `phrh` | what the partner said |
+| a password, any one-time code, an emailed link, a recovery code, a wallet, a Kerberos ticket, an anonymous session | nothing; `amr` `hwk` is not read |
+
+* **A SESSION IS ITS LATEST AUTHENTICATED EVENT**, as its `acr`, `amr` and
+  `auth_time` already are (`authn/CLAUDE.md`). A `prompt=login` answered with
+  a password after a passkey leaves nothing.
+* **The evidence is on the event**: `authn.ts` records `ceremony` and
+  `attestationTrusted` beside `backupEligible` (`authn/CLAUDE.md`, the event's
+  credential).
+* **`factOf()` is never empty**: `none` when nothing was earned. That is the
+  issuance policy's `urn:sts:xacml:phishing-resistance`, so a rule can tell
+  "not phishing-resistant" from "not asked" (`xacml/CLAUDE.md`).
+* **It decides nothing.** `oauth-oidc/step_up.ts` decides whether a request
+  for either is met (`oauth-oidc/CLAUDE.md` 3cp), and the issuance policy
+  decides whether an application may be issued to.
+* A LEAF: bunyan only. `issuance_gate.js`, which is in the parent's Kerberos
+  COPY closure, requires it LAZILY and only on a browser issuance.
+
+`tests/eap_acr_values.js` holds it, in process and over HTTP.
+
+## 3cq. `recoveryAssurance`: ACCOUNT RECOVERY NO WEAKER THAN THE PASSKEY IT REPLACES (#724, 2026-10-19)
+
+A follow-up of #544. The passkey policy's rows (3ch) hold only a PASSKEY
+sign-in: `passkeySignInRefusal()` answers early for any other credential.
+Step 1 of the ticket (its comment of 2026-10-19) established that every way
+back into an account that asks for no passkey led past them:
+
+* a reset link (the forgot-password form's or an administrator's), an
+  administrator's generated password, or an activation link sent to somebody
+  who already had an account — none signs anybody in, but the password it
+  leaves signs a passkey-only person in on ONE factor at the next sign-in;
+* a recovery code, in place of an `mfa` passkey at the second-factor step;
+* an emailed code or link (#64), as a first or a second factor.
+
+**The row**: `recoveryAssurance` — `any`, `not-weaker` or `operator-only`.
+**`any` in development, `not-weaker` in product: rcbj's decision on #724,
+2026-10-19** ("not-weaker in product is fine for now. We will change that if
+it starts creating problems."). The default is `mode.recoversWeakerThanPasskeys()`,
+read through a GETTER on `DEFAULTS`, because the mode is a setting. It is the
+ONLY row a save may leave out (`optional`): callers that sent the whole
+profile before it existed — the console's older form, a vendored job — are
+not refused, and the default stays.
+
+* **"Covered" is a person who holds a passkey of either role**
+  (`credentials.holdsPasskey()`). Nobody else is affected by any value.
+* **A pending recovery is on the ENTRY** (`stsRecoveryPending`, `<door>
+  <instant>`), so every node and a restart agree. `credentials.noteRecovery()`
+  writes it, only for a covered person and only while the selected profile is
+  not `any` — so switching the row later does not reach back to recoveries
+  made while it allowed them. The doors that write it: the reset link's
+  spend (`portal/account_reset.ts`, `password-reset` or `admin-reset` by the
+  link's `stsPasswordResetSource`), the administrator's `reset-password`
+  (`admin-password`), and the activation link's finish (`activation`, only
+  where a passkey enrolled BEFORE the link was issued is held:
+  `noteActivationRecovery()`). The first passkey sign-in clears it
+  (`authn.ts`'s `recoveryCompleted()`, audit `authn.recovery.completed`).
+* **The question is the issuance policy's** (`recover-account`, xacml/
+  CLAUDE.md), asked through `passkeyPolicy.recoveryRefusal()` with the facts
+  the caller holds, because this leaf reads no credential. It is asked
+  BEFORE a door writes (`at: 'door'`) and at every session's start (`at:
+  'session'`), the latter only where there is a recovery to ask about.
+* **`not-weaker` limits, it does not lock out.** `startSessionHere()` refuses
+  (`STS-AUTHN-0381`) a session a passkey did not answer; at the sign-in
+  screen `refusedSession()` turns that into the set-up step instead
+  (`recoveryEnrolment()`): only a passkey offered, `proved` and `recovery`,
+  the ceremony a REGISTRATION whatever keys the person holds, the key in the
+  `mfa` role through `credentials.addKey()` (so the profile's registration
+  rules hold it), and NO session at the end — the browser goes back to the
+  caller and signs in with the new passkey. Where no passkey can be
+  registered here (`STS-AUTHN-0383`) the refusal is drawn. Every other door
+  (federation, a certificate, SPNEGO) simply gets the refusal.
+* **`operator-only` adds refusals of the self-service doors**
+  (`STS-AUTHN-0380`): the forgot-password request mails nothing
+  (`mail_uses.ts`, before a recovery code is spent; the form's one sentence
+  either way), a self-issued link is refused at its spend (403, its own
+  sentence — the holder has proved the mailbox already), the second-factor
+  step offers no recovery code or emailed factor (`narrowStep()`), and one
+  used anyway is refused at the session. **The session an operator's door
+  leads to is limited as under `not-weaker`** — a choice made in building
+  it, put to rcbj on the ticket.
+* **CAEP**: the reset already sends `credential-change` (password); the
+  passkey registered at the step sends `credential-change` (create) where it
+  is written, so the portal's Security activity shows both.
+* Codes `STS-AUTHN-0380` to `0383`. `tests/recovery_assurance.js` holds it.

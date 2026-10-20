@@ -16,6 +16,8 @@ relationship (#373); see *A PARTNER'S SHARED SIGNALS* below.
 | `federation_links.ts` | **The link between a partner's subject and a person** (#109): the `federationLink` format, the stable subject a verified response carries, the one check a requested link goes through (console, `/admin-api`, SCIM), and what removing one ends. A static utility class. |
 | `federation_blocks.ts` | **A partner's stop on one person** (#373): the (relationship, person) pairs a verified `account-disabled` from the partner's own Shared Signals put there, which `federation_sp.ts`'s `subjectDecision()` refuses (`STS-FED-0156`). A leaf store; `ssf/ssf_transmitters.ts` writes it. |
 | `federation_encryption.ts` | **What a partner encrypts to** (#168): each relationship's encryption key — issued under the realm's Intermediate, sealed, rotated with a grace period, retired by the scheduler job `federation.encryption-key-retire`, published — and the policy a partner's `EncryptedAssertion`, `EncryptedID`, `EncryptedAttribute`, WS-Federation token and JWE ID Token or Logout Token is decrypted under. A static utility class. See *A PARTNER'S ENCRYPTED ASSERTION* below. |
+| `consumer_providers.ts` | **Consumer and social providers as profiles** (#565): the catalogue (Google, Discord, GitHub, `generic-oidc`, `generic-oauth2`), `apply()` (the defaults written onto an entry at creation), `extract()` (the `source:path` rules read at sign-in) and `issuersFor()`. A leaf static utility class. See *CONSUMER AND SOCIAL PROVIDERS* below. |
+| `federation_provision.ts` | **The idle sweep of a relationship's created people** (#358): the cluster job `federation.provision-idle`. A static utility class. It registers the job at load and `federation_sp.ts` calls `registerIdleJob()` again, which finds the job already there. See *DYNAMIC PROVISIONING* below. |
 
 ---
 
@@ -362,8 +364,20 @@ else's; `consume()` already returned the OAuth branch's promise. Pinning still
 decides WHICH key is believed; revocation decides whether its issuer still
 stands behind it. A partner key with no certificate is a bare key with nothing
 to look up, and the opaque-token OAuth 2.0 path verifies no signature at all.
-`tests/revocation_status.js` section 18 asserts the helper and reads the five
+`tests/revocation_status.js` section 18 asserts the helper and reads the
 `completeSignIn()` call sites out of the source.
+
+**A HELD ANSWER IS ASKED AGAIN WHEN ITS STEP RETURNS (2026-10-20).** Three
+steps hold a verified answer while the person does something here — the
+linking step's local sign-in, #729's step-up on risk and its newcomer's
+profile form — and finish it minutes later. Until then they finished on the
+check made before the person left, so a key revoked in between still signed
+somebody in. Every answer now carries `signer` where its signature was
+verified (`certificate`, `jwk` with the key, or `none` for the opaque token's
+profile answer), the three returns ask `signerStillAccepted()` again with it
+(`heldSigner()`), and a held answer with no `signer` is refused
+(`STS-FED-0194`) rather than finished unchecked. Seven `completeSignIn()`
+sites, six wrapped; the seventh is the opaque token's.
 
 ---
 
@@ -968,13 +982,15 @@ Everything else on the entry is decoration; the username decides WHICH ENTRY.
 Getting it wrong means either a second entry for somebody who already has one
 or — far worse — a foreign partner's `alice` landing on the local `alice`.
 
-That second case is not a bug to be fixed later. It is the whole question of
-whether federated identities share a namespace with local ones, and this service
-answers it with **`federation.usernamePrefix`**: empty by default, because a
-mock exists to be pointed at things and a prefixed name makes every downstream
-token and assertion look unfamiliar. Set it the moment the question is being
-asked. It is applied AFTER the username is chosen, so changing it cannot change
-WHICH incoming value was used.
+That second case is the confirm lookup and `any-existing`, and this service
+answers it with **`federation.usernamePrefix`**: empty by default, so those
+two share the local namespace, because a mock exists to be pointed at things
+and a prefixed confirm-name misses the local person. Set it the moment that
+lookup must not meet a local account. It is applied AFTER the username is
+chosen and reduced, so changing it cannot change WHICH incoming value was
+used. It is not the name an entry is created under. Since #358 that uid is
+`<relationship>~<subject>` (`provisionedName()`), prefix or not; the paragraph
+*Creating anybody* below is that rule.
 
 ---
 
@@ -1475,7 +1491,9 @@ sign-out that matches nothing is recorded (`STS-FED-0122`) — a partner looping
 on a sign-out for a session that already ended looks exactly like one that
 works — and answered `Requester`/`UnknownPrincipal` (SAML) or 200 (the two
 OpenID Connect channels: there is nothing left to end, and a 400 would make
-the partner retry forever).
+the partner retry forever). A failed read of the session index is not that
+no-match (`STS-AUTHN-0338`): nothing is ended and `STS-FED-0122` is not
+recorded.
 
 **HOW IT ENDS: `logout/logout.ts`'s `endPartnerSession()`**, a selective
 `terminate()` of the session and the relying parties riding on it, so the
@@ -1734,9 +1752,11 @@ the mapping and before the session:
    second factor wherever one is held or required — `authn.ts` asks exactly as
    it asks anybody — and only when that comes back to `/federation/link/{handle}`
    (`linkEndpoint()`) is the link recorded, the partner's attributes written and
-   the federated session started; one naming nobody gets a namespaced entry.
+   the federated session started; one naming nobody gets
+   `<relationship>~<subject>` when `fedAutocreateUsers` is on, and is refused
+   `STS-FED-0090` when it is off.
    `pre-linked`: refused (`STS-FED-0091`). `jit-namespaced`: a NEW entry
-   `<relationship>~<name>`, never an existing person (a namespaced name already
+   `<relationship>~<subject>`, never an existing person (a namespaced name already
    taken without the link is `STS-FED-0098`). `any-existing`: the old name
    match, development only — `mode.matchesFederatedNames()`; product refuses
    the value at `update()` (`STS-FED-0095`) and a relationship carrying it
@@ -1780,14 +1800,37 @@ went in between. Every entry a sign-in creates is namespaced — rcbj's
 since 2026-09-29 (#325, rcbj)**, for a relationship whose `fedAutocreateUsers`
 is on: that switch is the operator's own, per partner, and until then
 `autoCreateUser()`'s `mode.autoCreates()` gate made product refuse every
-federated newcomer `STS-FED-0090` whatever the switch said. Nothing else
+federated newcomer `STS-FED-0090` whatever the switch said. **A NEW
+relationship is written ON in development and OFF in product** (#358,
+`mode.defaultsFederatedAutocreate()`): `create()` stores `TRUE` or `FALSE`,
+a stored value always wins, and a relationship that already stores `TRUE`
+keeps creating. The created uid is `FederationLinks.provisionedName()` —
+`<relationship>~<subject>`, with a `urn:uuid:` subject becoming
+`sub-<uuid>` — and `fedUsernameSource` is only the confirm-link and
+`any-existing` name, so two partners' `alice@a.example` and
+`alice@b.example` no longer collapse through `identityKeyOf()`.
+The authentication funnel keeps that name whole:
+`recordAuthentication()` files a namespaced federated uid that still
+contains `@` under the name as presented, and `subjectForName()` looks
+that name up before it folds, so the session and the directory name the
+same entry. `identityKeyOf()` itself is unchanged, so a confirm-link and
+a Kerberos principal still fold.
+`federation.usernamePrefix` is not part of that name. A subject that cannot
+be a DN (empty, or `/[,=+<>#;"\\]/`) is refused `STS-FED-0090` rule
+`namespace` rather than escaped. Nothing else
 creates in product mode, and an entry created there carries only the
 identity and what the partner sent — no invented value
 (`mode.inventsClaimValues()`). **It overrides `ldap.autocreateUsers` as
 well (rcbj, 2026-09-30)**: a relationship with the switch on creates its
 newcomers even in a realm whose `ldap.autocreateUsers` is off, in either
 mode; with the switch off it creates nobody, and every other door still
-reads the realm setting (`tests/federation_provisioning.js` 7c).
+reads the realm setting (`tests/federation_provisioning.js` 7c). The name
+the testidp run refused is this shape with the username taken from the
+subject: a partner `urn:uuid:` subject is filed as `sub-<uuid>` and then
+namespaced to `<relationship>~sub-<uuid>`. A sign-in whose
+`fedUsernameSource` is `preferred_username` never makes that name.
+`tests/federation_subject_policy.js` 1n does, in both modes, with
+`ldap.autocreateUsers` off.
 
 **UNLINKING** — the console's *Federation links* panel, `POST /admin-api/users/
 federation-unlink`, SCIM, `ldapmodify` — goes through the directory's write
@@ -1805,10 +1848,13 @@ lock, and for its reason: the consequence must not depend on the door.
 rcbj wants both shapes on the service-provider side of every relationship, each a switch
 on the relationship's page (the same list of switches every protocol's relationship draws):
 
-| Switch | On (default) | Off |
+| Switch | On | Off |
 |---|---|---|
-| `fedAutocreateUsers` | the first sign-in CREATES the person's entry — `<relationship>~<name>` and linked, since #109 — no SCIM needed | the entry must ALREADY exist (SCIM, `/admin/users/new`, `/admin-api`) and be linked, or be linked at first sign-in; a sign-in for somebody who has none is refused 403 *has not been provisioned* (`STS-FED-0090`, with `STS-AUTHN-0180` on the session refusal) |
-| `fedUpdateUserAttributes` | a returning person's attributes are overwritten from the latest assertion or token — what this service always did | the partner's values are written only when the sign-in CREATES the entry; a pre-provisioned or since-edited person keeps what the directory says |
+| `fedAutocreateUsers` | the first sign-in CREATES the person's entry — `<relationship>~<subject>` and linked, since #358 (it was `<relationship>~<name>` until then) — no SCIM needed. A new relationship is written on in development and off in product (`mode.defaultsFederatedAutocreate()`); a stored `TRUE` or `FALSE` always wins | the entry must ALREADY exist (SCIM, `/admin/users/new`, `/admin-api`) and be linked, or be linked at first sign-in; a sign-in for somebody who has none is refused 403 *has not been provisioned* (`STS-FED-0090`, with `STS-AUTHN-0180` on the session refusal) |
+| `fedUpdateUserAttributes` | a returning person's attributes are overwritten from the latest assertion or token — what this service always did. On by default | the partner's values are written only when the sign-in CREATES the entry; a pre-provisioned or since-edited person keeps what the directory says |
+| `fedProvisionGroups` | on every successful federated sign-in, a group name in the partner's token becomes a membership, written through the group object. A group this relationship creates is marked `federationrelationship = [<fedId>]`, and a later sign-in may add people only to groups carrying that mark. A name that collides with a group this relationship did not create is ignored, the sign-in continues, and the audit records `federation.group-ignored` (`STS-FED-0161`). **A name that grants something by being held is refused before either path, existing or not** — `STS-FED-0164` on the same audit action; see *A partner's token never buys a group that grants something*, below. `fedSubjectGroup` is an admission rule and is not satisfied by this flag. Off unless the relationship stores it | the token's group names change no membership |
+| `fedProvisionCap` | empty or `0` means unlimited (the default). A positive count is how many distinct people this relationship may have created; the next newcomer is `STS-FED-0090` rule `cap`. A person already linked still signs in. Junk on `update()` is `STS-FED-0163` | — |
+| `fedProvisionIdleMinutes` | empty or `0` means off (the default). A positive count is how long `federationLastSeen` may sit before the cluster job `federation.provision-idle` disables a person whose only sign-in path is this relationship (`account_state.setDisabled`, the link and the entry kept). A missing or unparsable `federationLastSeen`, a person already disabled, a local `userPassword`, or a link through another relationship is left alone. A passkey with no password is not seen as another path. A disable that fails is `STS-FED-0162` and the sweep continues. Junk on `update()` is `STS-FED-0163`. The job is per cell and is not in `persistence/tiers.js`'s `GLOBAL_JOBS` | — |
 
 **Off used to mean "a session and no entry", and a stable subject is why it cannot.** A
 person's `sub` is their entry's `entryUUID` now (`authn/CLAUDE.md`, *What an authenticated
@@ -1816,13 +1862,56 @@ identity is here*), so a session with no entry has no subject. And the old check
 the entry was looked up, so a person SCIM had already provisioned was never folded onto —
 the pre-provisioned shape did not work at all. `ldap/CLAUDE.md` carries the directory half.
 
-**The username a pre-provisioned person must be created under is whatever the relationship
+**The username a pre-provisioned person is confirmed under is whatever the relationship
 maps them to** — `fedUsernameSource` (a `preferred_username` or an `email`), or the
-subject. **A partner's `urn:uuid:` subject becomes `sub-<uuid>`** and is never looked up in
-this directory: it names an entry in the PARTNER's namespace, and resolving it here would
-file the person under a raw URN or, worse, find a local person holding that value
-(`federation_map.ts`'s `usernameFor()`). Another instance of this service issues exactly
-that form, so a relationship to one wants `fedUsernameSource` set.
+subject. That mapped name is the confirm-link lookup and the `any-existing` name.
+**An entry a sign-in CREATES is `<relationship>~<subject>`**
+(`FederationLinks.provisionedName()`), and `fedUsernameSource` does not choose it:
+`identityKeyOf()` strips everything after the last `@`, so two partners' subjects
+that share a local-part used to become one `rel~alice` (`STS-FED-0098`).
+**A partner's `urn:uuid:` subject becomes `sub-<uuid>`** on both names and is never
+looked up as a raw URN: it names an entry in the PARTNER's namespace, and resolving
+it here would file the person under a raw URN or, worse, find a local person holding
+that value (`federation_map.ts`'s `usernameFor()`). Another instance of this service
+issues exactly that form, so a relationship to one wants `fedUsernameSource` set
+when the operator means to confirm-link onto a local uid.
+
+**A PARTNER'S TOKEN NEVER BUYS A GROUP THAT GRANTS SOMETHING (#358's review).** The
+first cut of `fedProvisionGroups` refused only a name that already EXISTED unmarked, so a
+token naming a group that did not exist yet — but whose NAME already stood for something
+here — had it created, marked and joined. `admin-ui/CLAUDE.md` holds that a group grants
+nothing by being a group; the exceptions are exactly what `ldap_server.js`'s
+`federatedGroupAuthority()` asks about, before the existing-or-create split:
+
+* a group a SETTING names — `admin.readGroup`, `admin.writeGroup` (in a realm, its own
+  roster), `roles.remotePepGroup`, `roles.xacmlUserGroup` — from
+  `common/ownership.ts`'s `GRANTING_GROUP_SETTINGS`, the one list ownership's own
+  protection reads;
+* a group an entry names, by cn or DN, in `roleMemberGroup`, `owner`, `appOwner`,
+  `stsServiceAccountOwner`, `appDelegationSubjectGroup` or `fedSubjectGroup` — a dangling
+  value included, since re-creating a deleted group would restore what it named;
+* a group an XACML policy names as an attribute value.
+
+A register that cannot be read answers "it grants". `STS-FED-0164`, audited
+`federation.group-ignored` with the reason; the sign-in stands.
+`tests/federation_group_authority.js` holds it, and `tests/federation_provisioning.js` 8
+holds the console's `admin-write` refused through a real sign-in.
+
+**AND IN PRODUCT, A NEWCOMER THE ATTRIBUTE POLICY REFUSES IS `STS-FED-0158` ON THE PAGE
+(#396 with #358).** `ldap_server.js`'s `autoCreateUser()` writes `refusedWith` and the
+missing attributes on the sign-in's own `federation` object, and `startFederatedSession()`
+answers that before the generic `STS-FED-0090` *the directory declined*. A directory
+reached in another process cannot write there; that sign-in gets the generic answer.
+`tests/federation_subject_policy.js` 1m-0.
+
+**Known limits of #358's provisioning, recorded rather than fixed:**
+
+* `provisionedCount` counts people linked by confirm-at-first-sign-in too, not only people the relationship created, so `fedProvisionCap` fills sooner than its name says.
+* The cap check is not atomic across nodes or cells: two first sign-ins at once can each see room and both create.
+* `groupByFederatedName()` walks every group on each sign-in that names a group not at its DN; so does `federatedGroupAuthority()`'s walk over resident entries.
+* Groups are only ever added: a name the partner stops sending leaves the membership in place.
+* The idle sweep ignores passkeys: a person whose other path is a passkey alone is still disabled.
+* `federatedGroupAuthority()` reads resident entries only, so in a windowed directory a person-side owner value (`stsServiceAccountOwner`) that is not resident is not seen.
 
 `tests/federation_provisioning.js` drives a real OIDC federated sign-in between two realms
 of one process — the default realm's OpenID Provider and a service-provider realm of its
@@ -1950,3 +2039,244 @@ SHARED SIGNALS*) argues it. What lives here:
   act is `federationAction()`'s `signals-*`, handed to the receiver; a
   delete forgets the relationship's stream there first. The map marks a
   relationship receiving signals on its consuming arrow.
+
+## THE ACS RESUMES WITH A SELECTION TICKET (#561, 2026-10-19)
+
+`finishSignIn()` sends the browser on to `returnTo` itself rather than
+through `authn.returnToCaller()`, so it mints what that function mints: with
+`authn.multipleAccounts` on, `authn.accountTicketFor(req, returnTo,
+{ sid })` for the session just started. Without it a browser holding several
+accounts would land on the account picker after signing in through a
+partner. Unchanged with the setting off. Federation's own Single Logout and
+`endPartnerSession()` are already per session and did not change.
+
+**Two doors that asked `sessionOf()` alone were made to name their person**
+(review of #561, with the setting on; off, each is what it was):
+
+* **The linking step** (`/federation/link/{handle}`) hands the name it is
+  linking to `authn.hintAccount()` before asking for the session, so the fresh
+  local sign-in it checks is THAT person's whatever else the browser holds —
+  never the default, who may be somebody else, and never nobody because two
+  accounts are live. The sign-in also returns with a selection ticket
+  (`returnToCaller()`), which comes first; the hint is what holds where a
+  ticket is not spent.
+* **WS-Federation's confirmed sign-out** (`browserFederatedSession()`) looks
+  through the browser's live sessions (`authn.accountSessionsOf()`) for the
+  one this relationship signed in — the browser's own answer first, otherwise
+  the most recent of the set's — and the confirmed POST must name the session
+  the confirmation was drawn for, still live in this browser's set. The
+  cookie is then handled by `authn.afterAccountSignOut()`: cleared only where
+  the default ended.
+
+## A NEWCOMER THE ATTRIBUTE POLICY WOULD REFUSE (#396, 2026-10-19)
+
+Where `fedAutocreateUsers` lets a first sign-in create the person, product mode
+holds the entry it would write — the plan's attributes and the partner's
+mapped ones, a `cn` made of the names — to the realm's attribute policy
+(`common/CLAUDE.md` 3co, `ldap/CLAUDE.md`). One missing a required attribute
+creates nobody (STS-FED-0158, logged), and `authn.startSession()` refuses the
+sign-in as it refuses an unprovisioned person. rcbj's choice on #396 was this
+refusal over exempting the door; a sign-in step that asks the person for what
+the partner did not send is a follow-up ticket.
+
+## CONSUMER AND SOCIAL PROVIDERS (#565, 2026-10-19)
+
+**A consumer provider is a relationship, not a subsystem.** It is an `oidc`
+or `oauth2` service-provider relationship carrying `fedProvider`, which names
+a profile in `consumer_providers.ts`, and the CATEGORY is derived from it
+(`categoryOf()`): naming a provider is consumer, naming none is enterprise.
+There is no `fedCategory` to disagree with it. Being a relationship is what
+makes it usable wherever an enterprise partner is (the sign-in screen, an
+application's `appFederationRelationship` list, a broker's
+`fedAuthnRelationship`, links, `subjectDecision()`, cells, Shared Signals)
+without a second copy of any of them. rcbj's ten decisions are on the ticket.
+The ones a reader of this directory needs:
+
+* **A PROFILE IS USED AT TWO TIMES.** Its `defaults` (endpoints, `fedPeer`,
+  scope, `fedTokenAuth`) are WRITTEN ONTO THE ENTRY at `create()` and are
+  ordinary attributes from then on. Every URL dialled is still an attribute an
+  administrator owns, so `federation_http.ts`'s argument does not move. Its
+  extraction rules (where the subject, the named claims and `email_verified`
+  come from, as `source:path`) are READ LIVE at sign-in by
+  `FederationSp.consumerReading()`, never copied: a provider's departures
+  from OpenID Connect are a fact about the provider, fixed in one place.
+* **THE PROFILE BUILDS A CLAIM BAG AND NOTHING ELSE.** The bag then goes
+  through `federation_map.ts` exactly as a partner's does (`fedAttributeMap`,
+  the default table, #94's reserved targets), into the entry, and from there
+  through the release rules into what this service issues. A NAMED claim is
+  authoritative even when it finds nothing. GitHub's `/user` `email` is the
+  public address, and the profile reads `email` from `/user/emails`. When that
+  call fails, the raw `email` is removed rather than left to arrive under a
+  name the profile said not to read.
+* **AN OPENID CONNECT SUBJECT IS ALWAYS THE ID TOKEN'S `sub`** (Core 5.7),
+  whatever a profile says. A plain OAuth 2.0 profile names its subject, and a
+  rule that finds nothing is nobody (`STS-FED-0177`), never the old guess. An
+  ENTERPRISE `oauth2` relationship keeps the guess (`sub`, `id`, `user_id`)
+  unless `fedSubjectClaim` names a path. rcbj withdrew the plan's "replace
+  the guess": no existing relationship changes behaviour.
+* **THE REALM SWITCH IS A READINESS QUESTION.** `federation.consumerProviders`
+  (off) appears in `readinessOf()`'s `missing`, so every door that asks
+  readiness refuses through the answer it already asks for. The login
+  endpoint and the ACS name it by its own code (`STS-FED-0175`), and
+  `create()` and enabling refuse (`STS-FED-0171`). Enterprise relationships
+  are untouched in either position.
+* **THE CONSUMER DEFAULTS** are written at creation: `jit-namespaced`,
+  auto-create on, `fedUsernameSource` empty, and `fedProvisionCap` from
+  `federation.consumerProvisionCap` (10000; rcbj's decision 1 on #729: a
+  consumer relationship keeps creating people, but never without limit by
+  default). `provisionCapOf()` reads a consumer relationship's EMPTY cap as
+  that setting, so one written by `ldapmodify` is bounded too; `0` is an
+  administrator saying unlimited, and an enterprise partner's empty cap is
+  still unlimited. So a newcomer is
+  `<relationship>~<subject>` and an address is never a matching key.
+  `any-existing` is refused on a consumer relationship in EVERY mode
+  (`STS-FED-0172`). A consumer relationship encrypts nothing
+  (`encrypts()`), so it is issued no key.
+* **THE ADDRESS IS UNVERIFIED UNLESS THE PROVIDER'S OWN STATEMENT SAYS TRUE**,
+  which is the reverse of an enterprise partner, whose address counts as
+  verified unless it says `email_verified: false`.
+* **A PROVIDER'S `amr`/`acr` SATISFY NOTHING** unless its profile's `mfa`
+  rule trusts them (none of the first three does). The session is
+  `['federated']` with no `acr`, and what was claimed is kept on the bag as
+  `provider_amr`/`provider_acr`. Every federated sign-in now hands the risk
+  engine `credential: { kind: 'federation', id: fedId, relationship: fedId }`.
+  The `id` is fingerprinted into the history as every credential's is, so
+  each partner is a credential of its own (`new-federated-provider`), and the
+  plain `relationship` is what an operator's `federation:<id>=<factor>` in
+  `risk.signalFactors` names. **A sign-in that would CREATE the person is
+  assessed under a provisional subject**, `urn:sts:federation-newcomer:<digest
+  of the relationship and the partner subject>`, because there is no entry
+  yet. Without it, the newcomer, the sign-in the evidence signals matter most
+  for, was never assessed at all (`authn.assessSignIn()` answered null for a
+  name with no `sub`). Before the session, a newcomer's sign-in is also the
+  issuance policy's `create-account` question (`STS-FED-0179`).
+* **A STEP-UP ON RISK IS ANSWERED HERE** (`/federation/stepup/{handle}`). The
+  policy may answer a federated sign-in of an EXISTING person with a step-up.
+  The partner's verified answer is then held under a single-use handle,
+  bound to the browser by `LINK_COOKIE` as the linking step's is, and
+  `authn.beginSecondFactorAfterFederation()` asks for an authenticator app or
+  a security key the person holds here. It is never a password and never an
+  enrolment, and holding neither is `STS-RISK-0018`. The step returns to the
+  handle. A session whose latest event is that second factor, as that
+  person, just now, finishes the sign-in with `amr` `['federated', <factor>]`
+  and `acr` `mfa`; otherwise it is `STS-FED-0178`. A newcomer is not offered
+  one, since they hold nothing.
+* **A NEWCOMER IS ASKED FOR WHAT THE ATTRIBUTE POLICY NEEDS AND THE PROVIDER
+  DID NOT SEND** (rcbj's decision 2 on #729). In product mode the attribute
+  policy (#396) refuses a create missing a required value (`STS-FED-0158`),
+  which a consumer provider that sends no surname — or Apple, which sends
+  the name on the FIRST authorization only — would hit at the door. Nothing
+  in the policy is relaxed: `startFederatedSession()` asks the policy of the
+  entry this sign-in would write (`profileMissing()`, `cn` never asked since
+  it is made of the names) BEFORE the session, and a consumer newcomer is
+  sent (303, `STS-FED-0188`) to `/federation/profile/{handle}`, a page of
+  the federation surface (common/CLAUDE.md 3cl, script required, the shell's
+  CSP) asking for exactly those values. The partner's answer is held under a
+  single-use handle, bound by LINK_COOKIE, and the form carries a token held
+  with it (`STS-FED-0189`). The POST spends the handle; each value is held
+  to `ldap/person_editor.ts`'s `checkCreateValues()` (an address to its
+  shape), and a bad one draws the form again under a new handle
+  (`STS-FED-0190`), five times at most (`STS-FED-0191`). The values then ride
+  `profileSupplied` back through `completeSignIn()`, so the subject decision,
+  the creation question and the policy are asked again, and only onto an
+  entry this sign-in CREATES (`withProfileValues()`). A typed address is
+  unverified. An enterprise partner keeps the refusal: its mapping is where
+  a missing attribute is supplied.
+* **NO SESSION OUTLIVES A REFUSED SIGN-IN** (rcbj's decision 3 on #729). The
+  step-up's second factor starts a local session before the browser returns
+  to `/federation/stepup/{handle}`; `holdStepUpSession()` holds it on the
+  response when the STEP started it (latest event the step's, first event no
+  older than the step), and any refusal of the federated finish — the
+  endpoint's own, or one `completeSignIn()` reaches through `refuse()` —
+  ends it through `authn.endSessionById()` (the sign-out's cascade) and
+  clears the cookie (`STS-FED-0192`). A refusal drawn elsewhere is caught on
+  the response's `finish`, server-side. A person already signed in keeps the
+  session they had.
+* **THE PORTAL'S DISCONNECT NEVER REMOVES THE ONLY WAY IN** (rcbj's decision 4
+  on #729, `portal/portal_connected_accounts.ts`): refused (409,
+  `STS-PORTAL-0614`) unless the person keeps a password or a passkey that
+  signs in (`credentials.mechanismsFor().usable`) or a link through another
+  enabled relationship, with a sentence telling them to add another way
+  first.
+* **ISSUER ALIASES** (Google's bare `accounts.google.com`) are accepted only
+  while `fedPeer` is still the profile's: a relationship pointed elsewhere has
+  no business accepting Google's spelling. `common/crypto.js`'s
+  `checkJwtClaims()` takes a list of issuers for it.
+* **`fedEmailsUrl` IS THE FOURTH DIALLABLE NAME**, argued in
+  `federation_http.ts`'s header (the same provenance as `fedUserinfoUrl`). It
+  is asked only for a profile that reads the `emails` source. Its failure is
+  `STS-FED-0176` and costs the address, never the sign-in.
+* **NO PROVIDER'S OWN LIBRARY IS USED.** rcbj's order is: an existing
+  TypeScript module, then JavaScript, the provider's own first, and our own
+  code last. The first three were evaluated and rejected, each for bypassing
+  the outbound policy or the one-crypto rule, and the table is in
+  `consumer_providers.ts`'s header. The next profile asks the question again.
+
+The adapters (what a source and a path cannot say) are a CLOSED set named in
+the profile. `github-verified-email` is the first. Apple's client-secret JWT
+and `user` field, the Microsoft tenant issuer and TikTok's `client_key` are
+the next. Which platforms can be supported is
+`../docs/federation-consumer-providers.md`.
+
+### Tests
+
+`tests/federation_consumer_providers.js` drives a Discord, a GitHub and a
+Google sign-in in one process against provider-shaped servers. It covers the
+client authentication each takes, PKCE, `/user/emails` failing, the Google
+issuer rules, the collision case (a provider's person named and addressed as
+a local one lands on an entry of their own), the realm switch at every door,
+`fedSubjectClaim`, the provider's MFA claim and the credential fingerprint.
+`tests/vendored/sts_federation_consumer.js` (`local: true`) drives the
+category over HTTP between two realms of one service through the
+`generic-oidc` profile. It covers the realm switch at creation and at the
+login endpoint, creation from the profile, the list's category, a newcomer's
+own entry with a namesake left alone, and any-existing refused. The first
+file's section N holds rcbj's #729 decisions 2-4, and its A11 decision 1.
+**Not covered yet:** a consumer provider on an application's chooser beside
+an enterprise partner, the details form after Apple's second authorization
+(the mechanism is the generic one N drives), and any profile against its
+live provider.
+
+### Sign in with Apple (#565)
+
+Three adapters, each in `federation_sp.ts` where its flow is:
+
+* **`apple-client-secret`.** `appleClientSecret()` mints an ES256 JWT per
+  token request (`iss` the team id, `sub` the Services ID, `aud` Apple, five
+  minutes), signed through `common/crypto.js` with `fedClientSigningKey`.
+  That key is sealed with label `federation-client-signing-key` (the same
+  durable-key rule as `fedClientSecret`) and is read through
+  `clientSigningKeyOf()`. It is redacted from every view by `sensitive`.
+  A key that is missing or will not sign is `STS-FED-0185`.
+* **`apple-user-form-field`.** The `user` field posted beside the code on the
+  FIRST authorization is kept on the context (bounded) and read through the
+  profile's `form` source. It is unsigned, so it is a display value through
+  the mapping and never identity.
+* **`apple-notifications`.** `POST /federation/notifications/{id}` takes
+  Apple's `{ payload }` JWT, verified against the relationship's keys only
+  and spent once ever by `jti` (use `provider-notification`). Apple's
+  carries `iat` and no `exp`, so one with no `exp` must have an `iat`
+  within a day (`NOTIFICATION_MAX_AGE_S`) and its history row lives that
+  long: an end invented from the moment of acceptance let a captured
+  notification be accepted again once its row was purged.
+  `consent-revoked` and `account-delete` REMOVE that subject's link through
+  this relationship, and the write hook ends its sessions. The entry is
+  never removed. `email-*` is recorded.
+  **In a service deployed as cells (#727)**, the cell the notification
+  arrives at verifies and spends it, removes the links it holds
+  (`unlinkHere()`), and asks every peer to do the same:
+  `federation-provider-notification`, carrying `{ realm, relationship,
+  type, sub }` as data, which is the partner sign-out's shape
+  (`endAtPeers()`). The once-ever claim is BOUND TO THE RESPONSE. A peer
+  that cannot be reached makes the answer 503 with `Retry-After`
+  (`STS-CELL-0211`), so the claim is released and the provider's retry is
+  accepted and fanned out again. Removing a link is idempotent, so the cells
+  that acted the first time change nothing the second. Whether Apple retries
+  on a 5xx is its own behaviour and has not been verified here.
+
+**`fedResponseMode` `form_post`** (OAuth 2.0 Form Post Response Mode) is what
+Apple requires with a name or address scope, and it is any `oidc`
+relationship's to set. Its answer is a cross-site POST, so a connect's
+binding cookie is `SameSite=None; Secure` there, over https only. Over http
+it fails closed.
+

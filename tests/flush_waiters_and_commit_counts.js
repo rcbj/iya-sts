@@ -47,6 +47,7 @@
 // file releases by hand, which is the only way to look inside the window.
 // ===========================================================================
 
+const storeDouble = require('./tools/store_double');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -221,10 +222,7 @@ function gatedPg(state) {
 
 function driverOver(state) {
   log.debug("Entering driverOver().");
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: gatedPg(state) };
+  const restore = storeDouble.install(gatedPg(state));
   try {
     log.debug("Leaving driverOver().");
     return require('../persistence/persistence_postgres').create({
@@ -233,11 +231,7 @@ function driverOver(state) {
              warn: function () {}, error: function () {} }
     });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
 }
 

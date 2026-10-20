@@ -252,5 +252,22 @@
   "through": "through ",
   "brokerNotUsable": "that relationship is not usable, so the sign-in screen is drawn instead",
   "notAMechanism": "not a mechanism this service has",
-  "authAtPartnerTitle": "The authentication happens at the PARTNER on a service-provider-side relationship, so there is nothing here to configure."
+  "authAtPartnerTitle": "The authentication happens at the PARTNER on a service-provider-side relationship, so there is nothing here to configure.",
+  "labelCategory": "Category",
+  "anyCategory": "any category",
+  "categoryEnterprise": "enterprise",
+  "categoryConsumer": "consumer and social",
+  "headingConsumer": "Consumer and social providers",
+  "consumerOn": "Consumer and social providers are <strong>on</strong> in this realm (<code>federation.consumerProviders</code>).",
+  "consumerOff": "Consumer and social providers are <strong>off</strong> in this realm. Turn on <code>federation.consumerProviders</code> under Settings to add one; enterprise partners are not affected.",
+  "consumerWhat": "Each provider is a federation relationship of its own, added disabled. Its endpoints are written onto the relationship when it is added and can be changed on its page. A newcomer gets an entry of their own, and an address is never used to match an existing person. Register the assertion consumer service shown on its page as the redirect URI at the provider, then enable it.",
+  "consumerListLink": "List the consumer and social providers only",
+  "thProvider": "Provider",
+  "thAddOne": "Add one",
+  "thDocumentation": "Documentation",
+  "labelClientId": "Client ID",
+  "labelClientSecret": "Client secret",
+  "buttonAddProvider": "Add",
+  "providerDocs": "the provider's documentation",
+  "providerRealmOff": "This realm has consumer and social providers off, so this relationship refuses every sign-in until <code>federation.consumerProviders</code> is on."
 }

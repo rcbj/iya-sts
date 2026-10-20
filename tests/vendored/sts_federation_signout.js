@@ -496,8 +496,11 @@ async function ensureRealm(id) {
 
 async function createPerson(realm, withPassword) {
   log.debug("Entering createPerson(). " + realm);
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
   const payload = { username: PERSON, invent: false,
-                    attributes: { cn: "Signout " + PERSON, sn: PERSON,
+                    attributes: { cn: "Signout " + PERSON,
+                                  givenName: "Signout", sn: PERSON,
                                   mail: PERSON + "@" + IDP_MAIL },
                     credential: withPassword ? "password" : "none" };
   if (withPassword) {

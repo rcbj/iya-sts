@@ -251,7 +251,10 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // set by hand (SCHEMA_UPGRADES' `sts_ldap_entries_parent_ndistinct`), which
 // ANALYZE's sample cannot estimate once one container holds nearly every
 // row.
-const SCHEMA_VERSION = 20;
+// 21 SINCE 2026-10-18 (#350): `sts_sessions`, the index of a live session,
+// written in the same transaction as the sealed body. Not a column of
+// `sts_minted` — `expires_at` there stays NULL for a session.
+const SCHEMA_VERSION = 21;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -350,6 +353,89 @@ const JOIN_LOCK = 460046;
 const SEALED_VALUE = /\$aes(?:gcm|siv)\$2\$[A-Za-z0-9_.-]+\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*/g;
 
 const TOMBSTONE = '$tombstone$1';
+
+// `sts_sessions` (#350), written in the same transaction as the sealed body.
+// One row of a minted flush. Entering/Leaving on sessionIndexParams() would
+// drown the log.
+const SESSION_INDEX_UPSERT =
+  'INSERT INTO sts_sessions (realm, key, expires_at, last_seen_at, ' +
+  'started_at, subject_key, username_key, chosen, authenticated, kind, ' +
+  'rp_surface, parent_key, backs_console, credential_key, ' +
+  'partner_relationship) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ' +
+  '$10, $11, $12, $13, $14, $15) ON CONFLICT (realm, key) DO UPDATE SET ' +
+  'expires_at = EXCLUDED.expires_at, ' +
+  'last_seen_at = EXCLUDED.last_seen_at, ' +
+  'started_at = EXCLUDED.started_at, ' +
+  'subject_key = EXCLUDED.subject_key, ' +
+  'username_key = EXCLUDED.username_key, ' +
+  'chosen = EXCLUDED.chosen, ' +
+  'authenticated = EXCLUDED.authenticated, ' +
+  'kind = EXCLUDED.kind, ' +
+  'rp_surface = EXCLUDED.rp_surface, ' +
+  'parent_key = EXCLUDED.parent_key, ' +
+  'backs_console = EXCLUDED.backs_console, ' +
+  'credential_key = EXCLUDED.credential_key, ' +
+  'partner_relationship = EXCLUDED.partner_relationship';
+
+const SESSION_INDEX_DELETE =
+  'DELETE FROM sts_sessions WHERE realm = $1 AND key = $2';
+
+// Not a session. `$` is not in a keyed digest, and '' is not a realm id, so
+// the partial indexes do not see it. It commits with the last backfill page;
+// until that row exists the next start walks again (#350).
+const SESSION_INDEX_MARK_REALM = '';
+const SESSION_INDEX_MARK_KEY = '$session-index-complete$';
+const SESSION_INDEX_MARK = {
+  expiresAt: null, lastSeenAt: 0, startedAt: 0,
+  subjectKey: '', usernameKey: '', chosen: false, authenticated: false,
+  kind: '', rpSurface: '', parentKey: '', backsConsole: false,
+  credentialKey: '', partnerRelationship: ''
+};
+
+// `expiresAt` null stays SQL NULL. `Number(null)` is 0, which would publish
+// a session as already expired.
+function sessionIndexParams(realm, key, index) {
+  const expires = index ? index.expiresAt : null;
+  let expiresAt = null;
+  if (expires !== null && expires !== undefined) {
+    const ms = Number(expires);
+    if (Number.isFinite(ms) && ms > 0) {
+      expiresAt = Math.floor(ms);
+    }
+  }
+  const lastSeen = Number(index && index.lastSeenAt);
+  const started = Number(index && index.startedAt);
+  return [
+    String(realm),
+    String(key),
+    expiresAt,
+    Number.isFinite(lastSeen) ? Math.max(0, Math.floor(lastSeen)) : 0,
+    Number.isFinite(started) ? Math.max(0, Math.floor(started)) : 0,
+    String((index && index.subjectKey) || ''),
+    String((index && index.usernameKey) || ''),
+    !index || index.chosen !== false,
+    !index || index.authenticated !== false,
+    String((index && index.kind) || ''),
+    String((index && index.rpSurface) || ''),
+    String((index && index.parentKey) || ''),
+    !!(index && index.backsConsole === true),
+    String((index && index.credentialKey) || ''),
+    String((index && index.partnerRelationship) || '')
+  ];
+}
+
+// One row of a minted flush. Entering/Leaving on upsertSessionIndex() would
+// drown the log.
+function upsertSessionIndex(client, realm, key, index) {
+  return client.query(SESSION_INDEX_UPSERT,
+                      sessionIndexParams(realm, key, index));
+}
+
+// One row of a minted flush. Entering/Leaving on deleteSessionIndexRow()
+// would drown the log.
+function deleteSessionIndexRow(client, realm, key) {
+  return client.query(SESSION_INDEX_DELETE, [realm, key]);
+}
 
 // How long a node row is kept after it expired, for `/admin/cluster` to show a
 // node that went away. A join purges older ones.
@@ -763,6 +849,50 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_minted_expires', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_minted_expires ON sts_minted ' +
   '(expires_at) WHERE expires_at IS NOT NULL' },
+  // -------------------------------------------------------------------------
+  // THE SESSION INDEX (#350, schema version 21). Columns of a live
+  // `authn.sessions` row, written in the same transaction as the sealed
+  // body. Not columns of `sts_minted`: `expires_at` there stays NULL for a
+  // session, so the generic expiry purge cannot end one. `key` is the same
+  // digest `sts_minted.key` already uses. A null digest writes no row.
+  // -------------------------------------------------------------------------
+  { name: 'sts_sessions', statement:
+  'CREATE TABLE IF NOT EXISTS sts_sessions (' +
+  '  realm                text    NOT NULL,' +
+  '  key                  text    NOT NULL,' +
+  '  expires_at           bigint,' +
+  '  last_seen_at         bigint  NOT NULL,' +
+  '  started_at           bigint  NOT NULL,' +
+  '  subject_key          text    NOT NULL DEFAULT \'\',' +
+  '  username_key         text    NOT NULL DEFAULT \'\',' +
+  '  chosen               boolean NOT NULL,' +
+  '  authenticated        boolean NOT NULL,' +
+  '  kind                 text    NOT NULL,' +
+  '  rp_surface           text    NOT NULL DEFAULT \'\',' +
+  '  parent_key           text    NOT NULL DEFAULT \'\',' +
+  '  backs_console        boolean NOT NULL DEFAULT false,' +
+  '  credential_key       text    NOT NULL DEFAULT \'\',' +
+  '  partner_relationship text    NOT NULL DEFAULT \'\',' +
+  '  PRIMARY KEY (realm, key))' },
+  { name: 'sts_sessions_subject', statement:
+  'CREATE INDEX IF NOT EXISTS sts_sessions_subject ON sts_sessions ' +
+  '(realm, subject_key, last_seen_at) WHERE chosen AND ' +
+  'subject_key <> \'\'' },
+  { name: 'sts_sessions_username', statement:
+  'CREATE INDEX IF NOT EXISTS sts_sessions_username ON sts_sessions ' +
+  '(realm, username_key) WHERE username_key <> \'\'' },
+  { name: 'sts_sessions_expires', statement:
+  'CREATE INDEX IF NOT EXISTS sts_sessions_expires ON sts_sessions ' +
+  '(realm, expires_at) WHERE expires_at IS NOT NULL' },
+  { name: 'sts_sessions_parent', statement:
+  'CREATE INDEX IF NOT EXISTS sts_sessions_parent ON sts_sessions ' +
+  '(realm, parent_key) WHERE parent_key <> \'\'' },
+  { name: 'sts_sessions_credential', statement:
+  'CREATE INDEX IF NOT EXISTS sts_sessions_credential ON sts_sessions ' +
+  '(realm, credential_key) WHERE credential_key <> \'\'' },
+  { name: 'sts_sessions_partner', statement:
+  'CREATE INDEX IF NOT EXISTS sts_sessions_partner ON sts_sessions ' +
+  '(realm, partner_relationship) WHERE partner_relationship <> \'\'' },
   // -------------------------------------------------------------------------
   // THE CHANGE LOG (2026-09-06), which is what makes several processes against
   // one store agree rather than merely coexist.
@@ -2598,6 +2728,9 @@ function create(options) {
   // when trying to connect" (sts_data_keys, locally and in CI run
   // 36967212793). A connect timeout is retried here, four times, one, two,
   // three and four seconds apart; any other error is the caller's at once.
+  // Since #326 the pool is Knex's and the wait that ran out is its
+  // `KnexTimeoutError` ("Timeout acquiring a connection"); `knex_store.js`'s
+  // `timedOutWaiting()` is the one place that knows its spelling.
   // Safe to repeat: every write these passes make is a compare-and-swap on
   // the value it read. A bounded loop inside one operation, not a timer that
   // re-arms (tests/no_periodic_timers.js).
@@ -2628,8 +2761,7 @@ function create(options) {
   function connectTimedOut(e) {
     log.debug("Entering connectTimedOut().");
     log.debug("Leaving connectTimedOut().");
-    return /timeout exceeded when trying to connect/i.test(
-      String((e && e.message) || e));
+    return knexStore.timedOutWaiting(e);
   }
 
   async function maintenance(what, fn) {
@@ -2931,28 +3063,15 @@ function create(options) {
                     'it to fall back to the local development default.');
   }
 
-  let Pool;
-  let Client;
-  try {
-    // REQUIRED LAZILY, and that is the point: `pg` is a dependency only this
-    // mode needs, and a person running `persistence.mode=ldif` — or the default
-    // memory mode, which is everybody who has not asked for any of this —
-    // must not be stopped by its absence. The message names the package,
-    // because "Cannot find module 'pg'" arriving out of a mock identity
-    // service is a sentence with no obvious cause.
-    Pool = require('pg').Pool;
-    // AND THE BARE CLIENT, for the `LISTEN` connection. A pooled client cannot
-    // hold a subscription — the pool hands it to the next caller — so the
-    // change listener needs a connection outside the pool. Same lazy require
-    // and the same reason.
-    Client = require('pg').Client;
-  } catch (err) {
-    throw new Error(errorCodes.tag('STS-STORE-0028') +
-                    'persistence.mode is "postgres" but the "pg" package is ' +
-                    'not installed (' + err.message + '). Run `npm install` ' +
-                    'in this package, or use persistence.mode=ldif, which ' +
-                    'needs nothing but a directory to write in.');
-  }
+  // THE ONE DOOR (#326): every connection below is made by Knex, in
+  // `knex_store.js`, which is the only module that loads `knex` and the only
+  // way `pg` (Knex's driver) is reached. REQUIRED HERE, in create(), and
+  // `knex_store.js` loads Knex lazily in its turn: a person running
+  // `persistence.mode=ldif` — or the default memory mode, which is everybody
+  // who has not asked for any of this — must not be stopped by the absence of
+  // either package. A missing one is STS-STORE-0028, thrown by the first
+  // `openPool()` below, inside create(), where it always was.
+  const knexStore = require('./knex_store');
 
   // ---------------------------------------------------------------------
   // TLS, AND THE TWO HALVES OF IT THAT LIVE IN DIFFERENT PLACES.
@@ -3032,7 +3151,10 @@ function create(options) {
   // ONE PLACE THE CONNECTION IS DESCRIBED, because the pool and the change
   // listener have to dial the same database the same way — and a listener that
   // quietly used different TLS settings from the pool would be a second,
-  // weaker connection to the same store that nothing would ever report.
+  // weaker connection to the same store that nothing would ever report. Since
+  // #326 it is said once more structurally: the pool's Knex instance is built
+  // from these options, and the LISTEN and liveness connections are that
+  // instance's (`pool.dedicated()`), so they cannot be dialled any other way.
   function clientOptions() {
     log.debug("Entering clientOptions().");
     log.debug("Leaving clientOptions().");
@@ -3043,18 +3165,17 @@ function create(options) {
     };
   }
 
-  const pool = new Pool({
-    connectionString: dialled,
-    ssl: dial.ssl,
+  // Knex's pool over the writer (#326; `knex_store.js` argues the shape).
+  // A mock must not hang waiting for a database that is not there: the
+  // failure has to arrive as a logged error and a service that keeps
+  // answering, which needs the connection attempt to give up — the 5 s in
+  // `clientOptions()` bounds both the dial and the wait for a free slot.
+  const pool = knexStore.openPool(clientOptions(), {
     // Small on purpose. Every query this driver makes is on the flush path,
     // there is one flush at a time by construction (persistence.js serialises
     // them), and a mock does not need a connection per core.
     max: Number(options.poolMax) > 0 ? Number(options.poolMax)
       : POOL_FLOOR,
-    // A mock must not hang waiting for a database that is not there: the
-    // failure has to arrive as a logged error and a service that keeps
-    // answering, which needs the connection attempt to give up.
-    connectionTimeoutMillis: 5000,
     idleTimeoutMillis: 30000
   });
 
@@ -3096,12 +3217,9 @@ function create(options) {
       ssl: readDial.ssl,
       connectionTimeoutMillis: 5000
     };
-    const made = new Pool({
-      connectionString: readDial.connectionString,
-      ssl: readDial.ssl,
+    const made = knexStore.openPool(readOptions, {
       max: Number(options.poolMax) > 0 ? Number(options.poolMax)
         : POOL_FLOOR,
-      connectionTimeoutMillis: 5000,
       idleTimeoutMillis: 30000
     });
     made.on('error', function (err) {
@@ -3125,8 +3243,11 @@ function create(options) {
 
   pool.on('error', function (err) {
     // A pooled client that died while idle. Logged rather than thrown — an
-    // unhandled 'error' on a Pool is a process exit, and a mock identity
-    // service must not exit because a database restarted.
+    // unhandled 'error' on a Pool was a process exit, and a mock identity
+    // service must not exit because a database restarted. Knex's dialect
+    // listens on every connection it makes, so since #326 it cannot be one;
+    // the report is kept, and Knex discards the connection at the next
+    // acquire.
     log.error(errorCodes.tag('STS-STORE-0030') +
               'persistence: an idle postgres client errored: ' + err.message +
               '. The pool will make a new one on the next write.');
@@ -3172,10 +3293,12 @@ function create(options) {
       log.debug("Leaving liveConnection(). Connecting.");
       return liveConnecting;
     }
-    const client = new Client(clientOptions());
+    // The pool's own Knex instance dials it, outside the pool (#326).
+    const client = pool.dedicated();
     client.on('error', function (err) {
       // A dropped connection: the next statement opens another. An 'error'
-      // with no listener on a Client is a process exit.
+      // with no listener on a Client was a process exit (Knex's dialect
+      // listens too since #326).
       liveStats.drops += 1;
       log.warn(errorCodes.tag('STS-STORE-0070') + 'persistence: the ' +
                'liveness connection dropped (' + err.message + '); the ' +
@@ -3762,6 +3885,15 @@ function create(options) {
   // per checkout onto a client the pool reuses — node warns at eleven — and
   // would sit alongside the idle listener pg puts back, so one dead connection
   // would be reported twice.
+  //
+  // **SINCE #326 THE POOL IS KNEX'S, AND IT MUST NOT BRING THE EXIT BACK.**
+  // It does not: Knex's dialect gives every connection it makes a permanent
+  // `'error'` listener (it marks the connection disposed, and Knex destroys
+  // it at the next acquire), so an error on a borrowed connection always has
+  // a listener. What this guard still does is SAY it, under STS-STORE-0031,
+  // naming who held the connection — Knex's own note of it is a debug line
+  // (`knex_store.js`). The rule below it stands: whoever checks a connection
+  // out reports its errors until it gives it back.
   // ---------------------------------------------------------------------------
   function guardClient(client, what) {
     log.debug("Entering guardClient().");
@@ -4349,8 +4481,9 @@ function create(options) {
       const out = { ok: true, probes: {}, pool: null, tookMs: 0 };
 
       // THE POOL'S OWN NUMBERS, which are this PROCESS's and are not in any
-      // catalog view: postgres can say how many backends exist and only `pg`
-      // can say how many of them this process is holding, how many are idle
+      // catalog view: postgres can say how many backends exist and only the
+      // pool (Knex's since #326, `stats()`) can say how many of them this
+      // process is holding, how many are idle
       // in its pool, and how many callers are queued for one. A page drawing
       // only the server's side would answer "how contended is this service's
       // database handle" with a number about somebody else.
@@ -4361,12 +4494,7 @@ function create(options) {
       // this page's own connection and report a pool one busier than it is —
       // which on a `max` of 4 is a quarter of it, invented by the act of
       // looking.
-      out.pool = {
-        total: pool.totalCount,
-        idle: pool.idleCount,
-        waiting: pool.waitingCount,
-        max: pool.options && pool.options.max
-      };
+      out.pool = pool.stats();
 
       log.debug("Leaving metrics().");
       return pool.connect().then(function (client) {
@@ -5297,6 +5425,35 @@ function create(options) {
             return r;
           });
         };
+        // One statement per minted row of a flush. Entering/Leaving on
+        // sessionSide() or afterBody() would drown the log. The index is
+        // written only after the body statement succeeded: a refused upsert
+        // does not put the body back and does not insert an index row.
+        const sessionSide = function (row, removing) {
+          if (row.handle !== 'authn.sessions') {
+            return null;
+          }
+          if (removing) {
+            return deleteSessionIndexRow(client, row.realm, row.key);
+          }
+          if (!row.index || typeof row.index !== 'object') {
+            return null;
+          }
+          return upsertSessionIndex(client, row.realm, row.key,
+                                    row.index);
+        };
+        const afterBody = function (row, removing, result) {
+          if (!removing && skip.has(row)) {
+            return result;
+          }
+          const side = sessionSide(row, removing);
+          if (!side) {
+            return result;
+          }
+          return side.then(function () {
+            return result;
+          });
+        };
         statements.forEach(function (one) {
           const row = one.row;
           chain = chain.then(function () {
@@ -5322,11 +5479,16 @@ function create(options) {
                                   body: answer });
                   }
                 }
-                return upsert(row, body, true);
+                return upsert(row, body, true).then(function (written) {
+                  return afterBody(row, false, written);
+                });
               });
             }
             if (one.upsert) {
-              return upsert(row, row.body, !!row.tombstone);
+              return upsert(row, row.body, !!row.tombstone)
+                .then(function (written) {
+                  return afterBody(row, false, written);
+                });
             }
             if (row.tombstone) {
               // A TOMBSTONE HAS NO EXPIRY OF ITS OWN (#333): it lives for
@@ -5340,13 +5502,17 @@ function create(options) {
                 'expires_at = NULL, key_sealed = EXCLUDED.key_sealed',
                 [row.handle, row.realm, row.key, TOMBSTONE,
                  String(row.keySealed || '')]
-              );
+              ).then(function (written) {
+                return afterBody(row, true, written);
+              });
             }
             return client.query(
               'DELETE FROM sts_minted WHERE handle = $1 AND realm = $2 ' +
               'AND key = $3',
               [row.handle, row.realm, row.key]
-            );
+            ).then(function (written) {
+              return afterBody(row, true, written);
+            });
           });
         });
         return chain.then(function () {
@@ -5921,6 +6087,111 @@ function create(options) {
       });
     },
 
+    // One `sts_sessions` row, in its own transaction. Apply repairs through
+    // this; the flush writes the index inside `saveMinted` instead.
+    writeSessionIndex: function (realmId, key, index) {
+      log.debug("Entering writeSessionIndex().");
+      log.debug("Leaving writeSessionIndex().");
+      return withTransaction(function (client) {
+        return upsertSessionIndex(client, realmId, key, index);
+      });
+    },
+
+    // The index row for a session that is gone. Same key as `sts_minted`.
+    deleteSessionIndex: function (realmId, key) {
+      log.debug("Entering deleteSessionIndex().");
+      log.debug("Leaving deleteSessionIndex().");
+      return withTransaction(function (client) {
+        return deleteSessionIndexRow(client, realmId, key);
+      });
+    },
+
+    // True when the completion row has committed. A live index row is not
+    // that: another node may have written one before this walk finished.
+    sessionIndexDone: function () {
+      log.debug("Entering sessionIndexDone().");
+      log.debug("Leaving sessionIndexDone().");
+      return readPool.query(
+        'SELECT EXISTS (SELECT 1 FROM sts_sessions WHERE realm = $1 AND ' +
+        'key = $2) AS done',
+        [SESSION_INDEX_MARK_REALM, SESSION_INDEX_MARK_KEY]
+      ).then(function (r) {
+        const row = (r.rows || [])[0];
+        // node-pg answers a boolean; a text 't' is the same fact. 'f' is
+        // truthy as a string, so it is not a truthiness check.
+        return !!(row && (row.done === true || row.done === 't'));
+      });
+    },
+
+    // One page of sealed session bodies, keyset on (realm, key). Tombstones
+    // are absent. Expired rows are included: the index still names them.
+    loadSessionBodies: function (afterRealm, afterKey, limit) {
+      log.debug("Entering loadSessionBodies().");
+      log.debug("Leaving loadSessionBodies().");
+      return readPool.query(
+        'SELECT realm, key, body FROM sts_minted WHERE handle = $1 AND ' +
+        'body <> $2 AND (realm, key) > ($3, $4) ORDER BY realm, key ' +
+        'LIMIT $5',
+        ['authn.sessions', TOMBSTONE, afterRealm, afterKey, limit]
+      ).then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return { realm: row.realm, key: row.key, body: row.body };
+        });
+      });
+    },
+
+    // One backfill page, one transaction. The body is read again under the
+    // lock: a commit since the page was opened is not indexed from the
+    // ciphertext that was opened. `complete` writes the mark in this same
+    // transaction, and only the last page passes it. Before the mark, index
+    // rows whose session body is missing or a tombstone are deleted. The
+    // mark has no body, so it is excluded. A resumed walk's new head would
+    // otherwise hide an older build's delete, and a purged tombstone is
+    // not in the change log to replay (#350).
+    writeSessionIndexes: function (rows, complete) {
+      log.debug("Entering writeSessionIndexes().");
+      log.debug("Leaving writeSessionIndexes().");
+      const list = Array.isArray(rows) ? rows : [];
+      return withTransaction(function (client) {
+        let chain = Promise.resolve();
+        list.forEach(function (row) {
+          chain = chain.then(function () {
+            return client.query(
+              'SELECT body FROM sts_minted WHERE handle = $1 AND ' +
+              'realm = $2 AND key = $3 FOR UPDATE',
+              ['authn.sessions', row.realm, row.key]
+            ).then(function (r) {
+              const found = (r.rows || [])[0];
+              if (!found || found.body === TOMBSTONE ||
+                  found.body !== row.body) {
+                return null;
+              }
+              return upsertSessionIndex(client, row.realm, row.key,
+                                        row.index);
+            });
+          });
+        });
+        if (complete) {
+          chain = chain.then(function () {
+            return client.query(
+              'DELETE FROM sts_sessions AS s WHERE NOT ' +
+              '(s.realm = $1 AND s.key = $2) AND NOT EXISTS ' +
+              '(SELECT 1 FROM sts_minted AS m WHERE m.handle = $3 AND ' +
+              'm.realm = s.realm AND m.key = s.key AND m.body <> $4)',
+              [SESSION_INDEX_MARK_REALM, SESSION_INDEX_MARK_KEY,
+               'authn.sessions', TOMBSTONE]
+            );
+          });
+          chain = chain.then(function () {
+            return upsertSessionIndex(client, SESSION_INDEX_MARK_REALM,
+                                      SESSION_INDEX_MARK_KEY,
+                                      SESSION_INDEX_MARK);
+          });
+        }
+        return chain;
+      });
+    },
+
     // -----------------------------------------------------------------------
     // THE NUDGE, ON A CONNECTION OF ITS OWN.
     //
@@ -5947,7 +6218,8 @@ function create(options) {
           log.debug("Leaving connect().");
           return;
         }
-        client = new Client(clientOptions());
+        // Outside the pool, dialled by the pool's Knex instance (#326).
+        client = pool.dedicated();
         client.on('notification', function (msg) {
           let payload = null;
           try {
@@ -7453,11 +7725,13 @@ function create(options) {
         'AND ($5 = \'\' OR address_prefix = $5::cidr) ' +
         'AND ($6 = \'\' OR door = $6) ' +
         // `excludeDoor` (#231): the password signals leave a replayed
-        // one-time code out (`risk/risk_engine.ts`, TOTP_REPLAY_DOOR).
-        'AND ($7 = \'\' OR door <> $7)';
+        // one-time code out (`risk/risk_engine.ts`, TOTP_REPLAY_DOOR) — and,
+        // since #565, an account a federated sign-in created. One door or a
+        // list of them, so it is an array here.
+        'AND (cardinality($7::text[]) = 0 OR door <> ALL($7::text[]))';
       const params = [realm || '', Number(o.since) || 0, o.subject || '',
                       o.nameHmac || '', o.prefix || '', o.door || '',
-                      o.excludeDoor || ''];
+                      [].concat(o.excludeDoor || []).map(String)];
       log.debug("Leaving riskListFailures().");
       return Promise.all([
         pool.query(
@@ -8648,6 +8922,14 @@ function create(options) {
       if (kind === 'expired') {
         where = 'expires_at IS NOT NULL AND expires_at <= $1';
         binds = [Number(o.nowMs)];
+      } else if (kind === 'orphan' && Array.isArray(o.realms)) {
+        // The realms named by the caller: the tiered driver's, read from
+        // the GLOBAL registry, because this database's own `sts_realms` is
+        // not the registry when it is a cell's (#360).
+        where = 'realm <> \'\' AND realm <> $1 AND written_at < ' +
+                'to_timestamp($2 / 1000.0) AND NOT (realm = ANY($3::text[]))';
+        binds = [String(o.defaultRealm || 'default'),
+                 Number(o.orphanBeforeMs), o.realms.map(String)];
       } else if (kind === 'orphan') {
         where = 'realm <> \'\' AND realm <> $1 AND written_at < ' +
                 'to_timestamp($2 / 1000.0) AND NOT EXISTS (SELECT 1 FROM ' +

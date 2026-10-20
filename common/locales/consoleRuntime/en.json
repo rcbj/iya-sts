@@ -13,5 +13,7 @@
   "signedInAgain": "Signed in again",
   "signedInAgain.text": "The console carries on where you were. This window can be closed.",
   "openConsole": "Open the console",
-  "copied": "Copied"
+  "copied": "Copied",
+  "accounts.unsaved": "This page has changes that have not been saved. Switch account anyway? They will be lost.",
+  "accounts.otherAccount": "That sign-in was another account, so this tab did not take it. Sign in again as {user}, or switch account from the account menu."
 }

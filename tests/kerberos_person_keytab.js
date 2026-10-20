@@ -244,7 +244,13 @@ async function keytabChild() {
   };
 
   const PW = 'Keytab-Owner-Passw0rd!-1';
-  directory.createUser('ktowner', { invent: false });
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
+  const person = function (name) {
+    return { invent: false, attributes: { givenName: 'Kt', sn: name,
+                                          mail: name + '@example.test' } };
+  };
+  directory.createUser('ktowner', person('ktowner'));
   out.steps.set = credentials.setPassword('ktowner', PW).ok;
   await personKeys.idle();
   out.kvnoStart = kvnoOf('ktowner');
@@ -268,7 +274,7 @@ async function keytabChild() {
   // --- C. refused before anything is derived ---
   out.nobody = brief(await personKeys.personKeytab('ktnobody', PW, {}));
   out.badName = brief(await personKeys.personKeytab('a/b', PW, {}));
-  directory.createUser('ktlocked', { invent: false });
+  directory.createUser('ktlocked', person('ktlocked'));
   credentials.setPassword('ktlocked', PW);
   await personKeys.idle();
   out.disableOk = credentials.setAccountDisabled('ktlocked', true).ok;

@@ -274,9 +274,15 @@ function checkThePolicy(t, who) {
 
     // ---------------------------------------------------------------------
     t.log.info('=== 1e. the LDAP door, in product mode ===');
-    const probe = ldap.createUser('password-policy-ldap-probe', {});
+    // The realm's attribute policy (#396) requires givenName, sn and mail of
+    // every person in product mode, and nothing is invented there.
+    const probe = ldap.createUser('password-policy-ldap-probe', {
+      attributes: { givenName: 'Probe', sn: 'password-policy-ldap-probe',
+                    mail: 'password-policy-ldap-probe@example.test' } });
     const operatorName = 'password-policy-ldap-operator';
-    ldap.createUser(operatorName, { invent: false });
+    ldap.createUser(operatorName, { invent: false,
+      attributes: { givenName: 'Operator', sn: operatorName,
+                    mail: operatorName + '@example.test' } });
     const operator = ldap.objectFor(operatorName).entry.dn;
     const granted = adminRbac.grant(operatorName, 'write', { via: 'test' });
     const asOperator = function (dn, changes) {

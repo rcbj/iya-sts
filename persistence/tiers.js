@@ -348,6 +348,9 @@ const CELL_MINTED = [
   // somebody's sign-in. Each cell's console shows what that cell saw.
   'acme.accountKeys', 'acme.accounts', 'acme.authorizations',
   'acme.certificates', 'acme.orders', 'acme.renewalInfo', 'acme.usedNonces',
+  // A browser's account set and its selection tickets (#561), and their
+  // counters: a browser and its sessions are pinned to one cell.
+  'admin_stats.accountCounts', 'authn.accountSets', 'authn.accountTickets',
   'admin_stats.artifacts', 'admin_stats.calls', 'admin_stats.claimSets',
   'admin_stats.nums', 'admin_stats.scimCounts', 'admin_stats.tokens',
   'admin_stats.users', 'attribute_sources.status', 'audit.events',
@@ -394,11 +397,13 @@ const CELL_MINTED = [
   // Each node's own listener key (2026-10-08), sealed: a node is a member of
   // one cell, and its key never leaves that cell's store.
   'tls.listenerKeys', 'tls.presentedChains',
-  'tls.sessionTicketKey', 'vc_issued.credentials',
+  'tls.sessionTicketKey', 'vc_issued.byNotification', 'vc_issued.bySubject',
+  'vc_issued.credentials',
   'vc_issuer.lastCredentialRequest', 'vc_issuer.notificationIds',
   'vc_issuer.vciNonces', 'vc_offers.credentialOffers',
   'vc_offers.deferredAccessTokens', 'vc_offers.deferredTransactions',
   'vc_offers.issuerStates', 'vc_offers.preAuthorizedCodes',
+  'vc_offers.signingAlgTokens', 'vc_trusted_list.state',
   'vc_verifier.vpRequests', 'vc_verifier.vpTransactions',
   'xacml_monitor.counters'
 ];

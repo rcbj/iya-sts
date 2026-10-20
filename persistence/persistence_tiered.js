@@ -21,7 +21,8 @@
 // certificate authorities, the shared cluster secrets, the used-assertion
 // history and the routing index are GLOBAL. The directory is split entry by
 // entry (`tiers.directoryTierOf()`), a group into two halves. A minted row
-// goes where its store's handle says (`tiers.mintedTierOf()`). Everything
+// goes where its store's handle says (`tiers.mintedTierOf()`), and the
+// expiry purge deletes it from that same database. Everything
 // else — the cluster's membership, leases, claims and counters, risk
 // scoring, the change log this process's barrier waits on — is the CELL's,
 // because a cell is the cluster (#46) and the global tier is not.
@@ -78,7 +79,8 @@ const GLOBAL_METHODS = [
 // The methods that go to BOTH databases, whose answers are combined below.
 const BOTH_METHODS = ['open', 'close', 'loadDirectory', 'saveDirectory',
                       'readEntry', 'loadMinted', 'saveMinted', 'readMinted',
-                      'readMintedMany', 'purgeMinted', 'purgeTombstones',
+                      'readMintedMany', 'purgeMinted', 'purgeExpiredMinted',
+                      'purgeTombstones',
                       'changeRowsWritten', 'adoptOrigin', 'renewOrigin',
                       'releaseOrigin', 'setOriginLost',
                       // What is sealed under a data encryption key (#391):
@@ -779,6 +781,68 @@ function create(options) {
       .then(function (both) {
         return (Number(both[0]) || 0) + (Number(both[1]) || 0);
       });
+  };
+
+  // THE EXPIRY PURGE RUNS IN BOTH DATABASES (#360). An unlisted method is
+  // the cell driver's, so this one deleted only this cell's rows: a global
+  // store's expired rows (dpop.seenJtis, the status lists) stayed in the
+  // global table, refused wherever they were read and never deleted.
+  // 'expired' names no handle — each database deletes its own rows — and
+  // 'stale' names the short-lived stores, handed to the tier that holds
+  // each one.
+  //
+  // 'ORPHAN' ASKS THE GLOBAL REGISTRY, NOT EACH DATABASE'S OWN. The realms
+  // are a global table (`loadRealms` is a GLOBAL method and the conversion
+  // moves `sts_realms` there), so a cell's `sts_realms` is empty or the
+  // snapshot the conversion left. Judged against it, every cell row of a
+  // realm made since then was an orphan, and a session or token of that
+  // realm was deleted an hour after it was written. The global list is read
+  // first and handed to both tiers; when it cannot be read nothing is
+  // purged, because deleting on a guess is the failure this guards.
+  driver.purgeExpiredMinted = function (kind, options) {
+    log.debug("Entering tiered purgeExpiredMinted().");
+    const o = options || {};
+    let forGlobal = o;
+    let forCell = o;
+    if (kind === 'orphan') {
+      log.debug("Leaving tiered purgeExpiredMinted(). Orphans, against " +
+                "the global realms.");
+      return globalDriver.loadRealms().then(function (rows) {
+        const realms = (rows || []).map(function (row) {
+          return String(row.id);
+        });
+        const withRealms = Object.assign({}, o, { realms: realms });
+        return Promise.all([
+          globalDriver.purgeExpiredMinted(kind, withRealms),
+          cellDriver.purgeExpiredMinted(kind, withRealms)
+        ]);
+      }).then(function (both) {
+        return (Number(both[0]) || 0) + (Number(both[1]) || 0);
+      });
+    }
+    if (kind === 'stale') {
+      const listed = Array.isArray(o.handles) ? o.handles : [];
+      const split = byHandleTier(listed.map(function (handle) {
+        return { handle: handle };
+      }));
+      forGlobal = Object.assign({}, o, {
+        handles: split.global.map(function (one) {
+          return one.handle;
+        })
+      });
+      forCell = Object.assign({}, o, {
+        handles: split.cell.map(function (one) {
+          return one.handle;
+        })
+      });
+    }
+    log.debug("Leaving tiered purgeExpiredMinted().");
+    return Promise.all([
+      globalDriver.purgeExpiredMinted(kind, forGlobal),
+      cellDriver.purgeExpiredMinted(kind, forCell)
+    ]).then(function (both) {
+      return (Number(both[0]) || 0) + (Number(both[1]) || 0);
+    });
   };
 
   driver.purgeTombstones = function (beforeMs) {

@@ -41,11 +41,13 @@
 //   7. a verification an administrator starts (POST /admin-api/
 //      verifications/start's function) still signs nobody in, and the
 //      Response Endpoint names the starter's page, or none (#594);
-//   8. a DISOWNED credential signs nobody in (STS-VC-0071): a global sign-out
-//      through `logout.terminate()` and through POST /logout, an
-//      administrator's revocation on the issued register, and a suspended
-//      status list entry — each undone where it can be undone, and a
-//      credential issued AFTER a sign-out signing in again;
+//   8. a DISOWNED credential signs nobody in (STS-VC-0071): ending the
+//      wallet-credential rows, an administrator's global sign-out through
+//      `logout.terminate()` with an empty selection, an administrator's
+//      revocation on the issued register, and a suspended status list
+//      entry — each undone where it can be undone, and a credential issued
+//      AFTER a sign-out signing in again. The logout screen's Global
+//      logout leaves the credential valid;
 //   9. an ORDINARY session sign-out disowns nothing: the same credential
 //      signs in again straight afterwards.
 //
@@ -1147,8 +1149,9 @@ function childMain() {
          'credential signs in again straight afterwards',
          afterSignOut.page.status + ' ' + afterSignOut.code);
 
-    // A GLOBAL SIGN-OUT, through the one function /logout, /admin/logout and
-    // /admin-api/logout all go through.
+    // ENDING THE WALLET-CREDENTIAL ROWS, which a ticked row and an
+    // administrator's global sign-out both do. The person's own Global
+    // logout does not (8m).
     const aliceKey8 = await realms.run(DEFAULT, function () {
       return stats8.holderKeyOf('wsi-alice', aliceSub);
     });
@@ -1181,8 +1184,9 @@ function childMain() {
     const afterGlobal = await signInWith(dCred.credential, d1);
     note(!afterGlobal.ok && afterGlobal.code === 'STS-VC-0071' &&
          afterGlobal.page.text.indexOf('disowned') > 0,
-         '8d. after a global sign-out that credential VERIFIES and signs ' +
-         'nobody in, STS-VC-0071, and the page says why',
+         '8d. after those wallet-credential rows are ended that ' +
+         'credential VERIFIES and signs nobody in, STS-VC-0071, and the ' +
+         'page says why',
          afterGlobal.page.status + ' ' + afterGlobal.code);
     note(await realms.run(DEFAULT, function () {
       return vcStatus.statusOf(statusKey) === vcStatus.INVALID;
@@ -1256,10 +1260,10 @@ function childMain() {
          '8l. INVALID is final: the revoked entry above refuses to be ' +
          'reinstated', JSON.stringify(cannotReinstate));
 
-    // AND THROUGH THE ENDPOINT, not only the function: the sign-out page
-    // with the browser's own cookie, its act selecting nothing and
-    // therefore ending everything — over /authn-api/logout since #577,
-    // as the page sends it (`authn_screen.signOut()`).
+    // THE LOGOUT SCREEN'S GLOBAL LOGOUT. authnScreen.signOut() with an
+    // empty body is that button: POST /authn-api/logout with nothing
+    // selected, which endFor() treats as global and spares the credential
+    // and the DID it is bound to.
     const g1 = holderKey();
     const gCred = await issue('wsi-alice', g1);
     const globalIn = await signInWith(gCred.credential, g1, { keep: true });
@@ -1267,10 +1271,27 @@ function childMain() {
                                               jar: globalIn.who.cookies,
                                               fields: {} });
     const afterPost = await signInWith(gCred.credential, g1);
-    note(posted.status < 400 && !afterPost.ok &&
-         afterPost.code === 'STS-VC-0071',
-         '8m. POST /logout — a person signing themselves out of everything ' +
-         '— disowns them too', posted.status + ' ' + afterPost.code);
+    note(posted.status < 400 && afterPost.ok,
+         '8m. the logout screen\'s global logout leaves the credential ' +
+         'able to sign in', posted.status + ' ' + afterPost.code);
+    const postedRow = await realms.run(DEFAULT, function () {
+      return issuedRegister8.lookup(gCred.credential);
+    });
+    const postedStatus = postedRow && postedRow.credentials[0].statusKey;
+    note(!!postedStatus && await realms.run(DEFAULT, function () {
+      return vcStatus.statusOf(postedStatus) === vcStatus.VALID;
+    }), '8m-ii. and its status-list entry stays VALID');
+
+    // AN ADMINISTRATOR'S GLOBAL SIGN-OUT still disowns. terminate() with
+    // an empty selection and no spareCredentials is what /admin/logout
+    // and /admin-api/logout call.
+    await realms.run(DEFAULT, function () {
+      return logout.terminate(aliceKey8, []);
+    });
+    const afterAdmin = await signInWith(gCred.credential, g1);
+    note(!afterAdmin.ok && afterAdmin.code === 'STS-VC-0071',
+         '8n. an administrator\'s global sign-out still disowns it, ' +
+         'STS-VC-0071', afterAdmin.page.status + ' ' + afterAdmin.code);
 
     // ====================================================================
     // 7. THE BAR DOOR STILL SIGNS NOBODY IN

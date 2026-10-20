@@ -9,7 +9,7 @@
   "sso": "單一登入。<code>{scoped}</code> 是限定於單一服務提供者的相同服務。",
   "ars": "構件解析，透過 HTTP 傳送 SOAP。瀏覽器從不接觸它——由服務提供者直接呼叫，這正是構件設定檔的全部意義。",
   "slo": "單一登出，雙向。",
-  "unsolicited": "由身分識別提供者發起的登入：向 <code>providerId</code> 所指名的服務提供者傳送未經要求的 Response（<code>saml2.unsolicitedSso</code>）。",
+  "unsolicited": "由身分識別提供者發起的登入：向 <code>providerId</code> 所指名的服務提供者傳送未經要求的 Response，前提是已對其開啟 <code>saml2.idpInitiatedSso</code>（預設關閉）。",
   "aa": "屬性授權單位：SOAP <code>{element}</code>，即 Assertion Query and Request 設定檔。",
   "metadata": "已簽署的身分識別提供者中繼資料。<code>{scoped}</code> 是該服務提供者「專屬」的文件——不同的 entityID 與不同的端點——並會為所要求的任何 {sp} 即時產生。",
   "perSp": "各服務提供者的中繼資料",

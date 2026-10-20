@@ -35,26 +35,31 @@
 //     touching `spiffe.adminIds`: the Workload API hands it out, and
 //     `spiffe_auth.ts`'s `classify()` reads the flag off the registry on
 //     every call;
-//   * N, selecting `transport:uds` only, which a TCP caller must NOT be given
-//     — selector matching DECIDES the answer (`spiffe.attestWorkloads`);
+//   * N, selecting `transport:uds` only on the TCP path (which a TCP caller
+//     must NOT be given), or another uid on the agent path. Selector
+//     matching DECIDES the answer (`spiffe.attestWorkloads`);
 //   * C, created once an agent has attested, with that agent as its parent,
 //     which is what `GetAuthorizedEntries` must hand the agent back.
 //
 // **IN PRODUCT THE ENTRIES SELECT THIS JOB'S OWN SOURCE ADDRESS AS WELL
-// (#166, 2026-09-23).** A product realm refuses an entry that selects nothing
-// but `transport:` and `endpoint:` — every caller of the port carries those —
-// so W, A and N there also carry `peer:<the address this job connects
-// from>`, read off a TCP connection to the Workload API port (or
-// STS_SPIFFE_WORKLOAD_PEER, where a NAT between here and the service makes
-// the local address the wrong one). And a product realm serves the Workload
-// API over TCP only where `spiffe.workloadTcpSourceAuthenticated` declares
-// the network authenticates source addresses, on a named address: where it
-// does not (`GET /admin-api/spiffe`'s `workloadAttestation.tcp`), this job
-// asserts that the port refuses a Workload API call and that /admin-api
-// refuses a transport-only entry, and stops there — everything after needs
-// an SVID from that port. Section 0 asserts the /admin-api refusal and
-// section 10 the SPIRE Server API's (INVALID_ARGUMENT per item) wherever the
-// realm is in product.
+// (#166, 2026-09-23), WHEN THE TCP PORT IS SERVED.** A product realm refuses
+// an entry that selects nothing but `transport:` and `endpoint:` — every
+// caller of the port carries those — so W, A and N there also carry
+// `peer:<the address this job connects from>`, read off a TCP connection to
+// the Workload API port (or STS_SPIFFE_WORKLOAD_PEER, where a NAT between
+// here and the service makes the local address the wrong one). A product
+// realm serves that port only where `spiffe.workloadTcpSourceAuthenticated`
+// declares the network authenticates source addresses, on a named address.
+// Where it does not (`GET /admin-api/spiffe`'s `workloadAttestation.tcp`) —
+// which is every AWS deployment, because the load balancer is not such a
+// network (#324) — section T still asserts the refusal, and this job then
+// starts a workload agent (`spiffe/workload_agent.ts`) in this process. The
+// agent attests with a join token from
+// `/admin-api/spiffe/agents/join-token` and serves the Workload API on a
+// Unix socket. W and A are parented on that agent and select the unix uid
+// and gid this process is seen as. Section 0 asserts the /admin-api refusal
+// and section 10 the SPIRE Server API's (INVALID_ARGUMENT per item)
+// wherever the realm is in product.
 //
 // **THE WORKLOAD API AUTHENTICATES NOBODY AND ATTESTS NOTHING, BY DESIGN**
 // (`spiffe/CLAUDE.md`): any TCP caller of the port matches W and A while they
@@ -138,9 +143,12 @@
 
 const assert = require("assert");
 const nodeCrypto = require("crypto");
+const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { Command, Option } = require("commander");
 const net = require("net");
+const WorkloadAgent = require("../../spiffe/workload_agent");
 const grpc = require("@grpc/grpc-js");
 const protoLoader = require("@grpc/proto-loader");
 const forge = require("node-forge");
@@ -335,6 +343,16 @@ function pemOf(certs) {
   return certs.map(function (c) { return c.toString(); }).join("\n");
 }
 
+// One trust anchor from a JWK Set's `x5c`, as PEM the agent can pin.
+function pemFromX5c(b64) {
+  log.debug("Entering pemFromX5c().");
+  const body = String(b64 || "").replace(/\s+/g, "");
+  const lines = body.match(/.{1,64}/g) || [];
+  log.debug("Leaving pemFromX5c().");
+  return "-----BEGIN CERTIFICATE-----\n" + lines.join("\n") +
+         "\n-----END CERTIFICATE-----\n";
+}
+
 // A fresh RSA key pair and a PKCS#10 request for it, DER. The CSR only
 // conveys a public key (agent.proto says so), and forge is what this suite
 // already builds CSRs and certificates with; the service reads the key out
@@ -476,11 +494,12 @@ function workloadMetadata(withHeader) {
 
 // One unary call, resolved with `{ error, value }` and never rejected, so each
 // check reads the status it expects. The client is closed either way.
-function unary(client, method, request, metadata) {
+function unary(client, method, request, metadata, deadlineMs) {
   log.debug("Entering unary(). " + method);
+  const wait = deadlineMs > 0 ? deadlineMs : DEADLINE_MS;
   return new Promise(function (resolve) {
     client[method](request, metadata || new grpc.Metadata(),
-                   { deadline: Date.now() + DEADLINE_MS },
+                   { deadline: Date.now() + wait },
                    function (error, value) {
       client.close();
       if (error) {
@@ -602,10 +621,11 @@ async function test() {
            grpcHost + " (Workload API " + workloadPort + ", SPIRE Server " +
            "API " + serverPort + ").");
   assert.ok(trustDomain, "spiffe.trustDomain is set");
-  // NOT PUBLISHED HERE (2026-09-21): an AWS environment publishes SPIFFE's
-  // ports only through the spiffe-realm stack, and a runner that knows it
-  // does not says so (deploy/aws/run-suite.sh) rather than letting this job
-  // wait out a port nobody listens on.
+  // NOT PUBLISHED HERE (2026-09-21): a runner that knows this environment
+  // publishes no SPIFFE port says so (deploy/aws/run-suite.sh) rather than
+  // letting this job wait out a port nobody listens on. Since #311 the
+  // default realm's Server API is published with the environment; since
+  // #324 the Workload API is not, and this job reaches it through an agent.
   if (String(process.env.STS_TEST_UNPUBLISHED || "").split(",")
         .indexOf("spiffe") >= 0) {
     declineToRun(log, "this environment does not publish the SPIFFE " +
@@ -636,8 +656,8 @@ async function test() {
     log.debug("Leaving test(). Skipped.");
     return;
   }
-  const workloadTarget = parseAddress(process.env.STS_SPIFFE_WORKLOAD_URL) ||
-                         serviceHost + ":" + workloadPort;
+  let workloadTarget = parseAddress(process.env.STS_SPIFFE_WORKLOAD_URL) ||
+                       serviceHost + ":" + workloadPort;
   const serverTarget = parseAddress(process.env.STS_SPIFFE_SERVER_URL) ||
                        serviceHost + ":" + serverPort;
   log.info("Workload API at " + workloadTarget + ", SPIRE Server API at " +
@@ -669,23 +689,37 @@ async function test() {
   const tcpPosture = (attestation && attestation.tcp) || null;
   log.info("The Workload API TCP port is " +
            (tcpPosture ? tcpPosture.state : "(not reported)") + ".");
+  // Where TCP is not served, section T asserts the refusal and the job
+  // continues through a local agent (#324). The TCP address stays in
+  // workloadTarget until that agent is up, so the probe below still dials
+  // the port.
+  let viaAgent = false;
+  let identitySelectors = describedTcpSelectors;
+  let entryParent = "";
+  let workloadAgent = null;
+  let workloadAgentId = "";
+  let agentDir = "";
   if (tcpPosture && !tcpPosture.served) {
     await tcpNotServed();
-    log.debug("Leaving test(). The TCP port is not served here.");
-    return;
+    viaAgent = true;
+    log.info("The Workload API TCP port is not served. The rest of this " +
+             "job fetches SVIDs from a local workload agent (#324).");
   }
-  // AND WHICH ADDRESS THIS JOB IS SEEN FROM, which a product entry selects.
-  const peerAddress = process.env.STS_SPIFFE_WORKLOAD_PEER ||
-                      (product ? await localAddressToward(workloadTarget)
-                               : "");
-  if (product) {
+  // AND WHICH ADDRESS THIS JOB IS SEEN FROM, which a product entry selects
+  // when the TCP port is the Workload API this job calls.
+  const peerAddress = viaAgent ? ""
+    : (process.env.STS_SPIFFE_WORKLOAD_PEER ||
+       (product ? await localAddressToward(workloadTarget) : ""));
+  if (product && !viaAgent) {
     assert.ok(peerAddress, "the address this job connects to " +
               workloadTarget + " from could be read (or name it in " +
               "STS_SPIFFE_WORKLOAD_PEER)");
     log.info("This job reaches the Workload API from " + peerAddress + ".");
   }
-  const tcpSelectors = describedTcpSelectors +
-                       (product ? ", peer:" + peerAddress : "");
+  if (!viaAgent) {
+    identitySelectors = describedTcpSelectors +
+                        (product ? ", peer:" + peerAddress : "");
+  }
   const W = tdId + "/sts-test/spiffe-grpc/" + RUN + "/workload";
   const A = tdId + "/sts-test/spiffe-grpc/" + RUN + "/admin";
   const N = tdId + "/sts-test/spiffe-grpc/" + RUN + "/unix-only";
@@ -803,10 +837,12 @@ async function test() {
                 JSON.stringify(binding || null));
     });
     const a = await unary(workload(), "FetchJWTSVID",
-                          { audience: [AUDIENCE] }, workloadMetadata(true));
+                          { audience: [AUDIENCE] }, workloadMetadata(true),
+                          3000);
     check("a Workload API call to " + workloadTarget + " is refused " +
-          "UNAVAILABLE: nothing answers there", function () {
-      assert.ok(codeIs(grpc.status.UNAVAILABLE)(a), describe(a));
+          "UNAVAILABLE, or times out: nothing answers there", function () {
+      assert.ok(codeIs(grpc.status.UNAVAILABLE)(a) ||
+                codeIs(grpc.status.DEADLINE_EXCEEDED)(a), describe(a));
     });
     const r = await call("POST", API + "/spiffe/entries/create",
                          { spiffeId: tdId + "/sts-test/spiffe-grpc/" + RUN +
@@ -833,50 +869,103 @@ async function test() {
       });
     }
     assert.ok(checks >= 6, "only " + checks + " checks ran");
-    log.info(checks + " check(s) passed. The rest of this job needs an SVID " +
-             "from the Workload API's TCP port, which this deployment does " +
-             "not serve.");
-    log.info("Test completed successfully.");
+    log.info(checks + " check(s) passed in section T. Where this deployment " +
+             "does not serve the TCP port, the job continues through a " +
+             "local workload agent.");
     log.debug("Leaving tcpNotServed().");
   }
 
   try {
+    if (viaAgent) {
+      const minted = await call("POST", API + "/spiffe/agents/join-token",
+                                {});
+      assert.ok(minted.status === 200 && minted.json && minted.json.token,
+                "a join token could not be minted: HTTP " + minted.status +
+                (minted.json && minted.json.token ? ""
+                  : " " + String(minted.text || "").slice(0, 300)));
+      const bundlePath = String(settings["spiffe.bundlePath"] ||
+                                "/spiffe/bundle");
+      const bundle = await call("GET", base + bundlePath);
+      assert.ok(bundle.status === 200 && bundle.json &&
+                Array.isArray(bundle.json.keys),
+                "the HTTPS bundle could not be read: HTTP " + bundle.status +
+                " " + String(bundle.text || "").slice(0, 300));
+      const pem = bundle.json.keys.filter(function (key) {
+        return key.use === "x509-svid" && key.x5c && key.x5c[0];
+      }).map(function (key) {
+        return pemFromX5c(key.x5c[0]);
+      }).join("");
+      assert.ok(pem, "the HTTPS bundle has no x509-svid certificate");
+      agentDir = fs.mkdtempSync(path.join(os.tmpdir(),
+                                          "sts-spiffe-agent-"));
+      const socketPath = path.join(agentDir, "api.sock");
+      workloadAgent = new WorkloadAgent({
+        server: serverTarget,
+        socketPath: socketPath,
+        trustDomain: trustDomain,
+        joinToken: minted.json.token,
+        trustBundlePem: pem,
+        requireSecurityHeader: requireHeader,
+        attestWorkloads: narrowing,
+        attestAttempts: ATTEMPTS,
+        attestPauseMs: PAUSE_MS,
+        log: log
+      });
+      await workloadAgent.start();
+      workloadAgentId = String(workloadAgent.agentSpiffeId || "");
+      assert.ok(workloadAgentId.indexOf("spiffe://") === 0,
+                "the workload agent attested no SPIFFE ID");
+      entryParent = workloadAgentId;
+      workloadTarget = "unix://" + socketPath;
+      identitySelectors = WorkloadAgent.selectorsText(process.getuid(),
+                                                      process.getgid());
+      log.info("Workload API through the local agent " + workloadAgentId +
+               " at " + workloadTarget + ".");
+    }
+    const parent = viaAgent ? { parentId: entryParent } : {};
     // =======================================================================
     // 0. THE REGISTRY, THROUGH /admin-api — including its two refusals.
     // =======================================================================
     log.info("=== 0. registration entries created through /admin-api ===");
     let r = await call("POST", API + "/spiffe/entries/create",
                        { spiffeId: "spiffe://other-domain.invalid/x/" + RUN,
-                         selectors: tcpSelectors });
+                         selectors: identitySelectors });
     check("an entry in ANOTHER trust domain is refused", function () {
       assert.strictEqual(r.status, 400, r.text.slice(0, 300));
     });
     r = await call("POST", API + "/spiffe/entries/create",
                    { spiffeId: tdId + "/spire/sts-test-" + RUN,
-                     selectors: tcpSelectors });
+                     selectors: identitySelectors });
     check("an entry under the reserved /spire path is refused", function () {
       assert.strictEqual(r.status, 400, r.text.slice(0, 300));
     });
-    created.W = await createEntry({ spiffeId: W, selectors: tcpSelectors,
-                                    dnsNames: W_DNS, hint: "sts-test-" + RUN,
-                                    x509SvidTtl: W_X509_TTL,
-                                    jwtSvidTtl: W_JWT_TTL }, "W");
-    created.A = await createEntry({ spiffeId: A, selectors: tcpSelectors,
-                                    x509SvidTtl: 300, jwtSvidTtl: 60 }, "A");
+    created.W = await createEntry(Object.assign({
+      spiffeId: W, selectors: identitySelectors,
+      dnsNames: W_DNS, hint: "sts-test-" + RUN,
+      x509SvidTtl: W_X509_TTL, jwtSvidTtl: W_JWT_TTL
+    }, parent), "W");
+    created.A = await createEntry(Object.assign({
+      spiffeId: A, selectors: identitySelectors,
+      x509SvidTtl: 300, jwtSvidTtl: 60
+    }, parent), "A");
     r = await call("POST", API + "/spiffe/entries/update",
                    { entry: created.A, field: "admin", value: "true" });
     check("A is marked admin through /admin-api", function () {
       assert.ok(r.status === 200 && r.json && r.json.entry &&
                 r.json.entry.admin === true, r.text.slice(0, 400));
     });
-    // N selects the Unix socket, which a TCP caller never is. In product it
-    // must select something that identifies a workload as well (#166), so it
-    // carries this job's peer: — and a TCP caller from that address still
-    // does not match it, which is the subset rule doing the work.
-    created.N = await createEntry({ spiffeId: N,
-                                    selectors: "transport:uds" +
-                                      (product ? ", peer:" + peerAddress
-                                               : "") }, "N");
+    // N selects something this caller is not. On TCP that is the Unix
+    // socket; in product it also carries this job's peer: so the entry
+    // identifies a workload (#166), and the subset rule still excludes the
+    // TCP caller. On the agent path it is another uid, and the entry is
+    // parented on the agent so that, with narrowing off, it is handed out.
+    const otherUid = process.getuid() === 0 ? 1 : 0;
+    const nSelectors = viaAgent
+      ? ("unix:uid:" + otherUid)
+      : ("transport:uds" + (product ? ", peer:" + peerAddress : ""));
+    created.N = await createEntry(Object.assign({
+      spiffeId: N, selectors: nSelectors
+    }, parent), "N");
     if (product) {
       r = await call("POST", API + "/spiffe/entries/create",
                      { spiffeId: tdId + "/sts-test/spiffe-grpc/" + RUN +
@@ -923,8 +1012,9 @@ async function test() {
       return firstMessage(workload(), "FetchX509SVID", {},
                           workloadMetadata(true), 2000);
     }, hasBoth, 0);
-    check("FetchX509SVID answers W and A, the two entries whose selectors a " +
-          "TCP caller matches", function () {
+    const callerKind = viaAgent ? "workload" : "TCP caller";
+    check("FetchX509SVID answers W and A, the two entries whose selectors " +
+          "a " + callerKind + " matches", function () {
       assert.ok(hasBoth(a), describe(a));
     });
     const wSvid = svidsOf(a).filter(function (s) {
@@ -937,9 +1027,10 @@ async function test() {
           function () {
       assert.strictEqual(a.endedEarly, false);
     });
-    check("N (transport:uds) is " + (narrowing ? "NOT " : "") + "handed to " +
-          "a TCP caller" + (narrowing ? "" : " (spiffe.attestWorkloads is " +
-                                              "off, so nothing narrows)"),
+    const nKind = viaAgent ? "another uid" : "transport:uds";
+    check("N (" + nKind + ") is " + (narrowing ? "NOT " : "") + "handed to " +
+          "a " + callerKind + (narrowing ? "" : " (spiffe.attestWorkloads " +
+                                                "is off, so nothing narrows)"),
           function () {
       const ids = svidsOf(a).map(function (s) { return s.spiffe_id; });
       assert.strictEqual(ids.indexOf(N) >= 0, !narrowing, ids.join(" "));
@@ -1519,13 +1610,35 @@ async function test() {
         log.warn("Entry " + names[i] + " could not be deleted: " + e.message);
       }
     }
+    if (workloadAgent) {
+      try {
+        workloadAgent.stop();
+      } catch (e) {
+        log.debug("Caught in test(): " + ((e && e.message) || e));
+        log.warn("The workload agent could not be stopped: " + e.message);
+      }
+    }
+    if (agentDir) {
+      try {
+        fs.rmSync(agentDir, { recursive: true, force: true });
+      } catch (e) {
+        log.debug("Caught in test(): " + ((e && e.message) || e));
+      }
+    }
+    const agents = [];
     if (agentId) {
+      agents.push(agentId);
+    }
+    if (workloadAgentId && workloadAgentId !== agentId) {
+      agents.push(workloadAgentId);
+    }
+    for (let i = 0; i < agents.length; i++) {
       try {
         const d = await call("POST", API + "/spiffe/agents/delete",
-                             { agent: agentId });
+                             { agent: agents[i] });
         if (d.status !== 200) {
-          log.warn("The agent " + agentId + " was not deleted: " + d.status +
-                   " " + d.text.slice(0, 200));
+          log.warn("The agent " + agents[i] + " was not deleted: " +
+                   d.status + " " + d.text.slice(0, 200));
         }
       } catch (e) {
         log.debug("Caught in test(): " + ((e && e.message) || e));
@@ -1545,7 +1658,8 @@ const program = new Command();
 program
   .name("sts_spiffe_grpc")
   .description("The SPIFFE Workload API and SPIRE Server API over the " +
-    "network: X509-SVIDs, bundles, JWT-SVIDs and their validation; the " +
+    "network: X509-SVIDs, bundles, JWT-SVIDs and their validation; where " +
+    "TCP is not served, the same calls through a local workload agent; the " +
     "Server API's anonymous, ordinary, forged, admin and agent callers; a " +
     "join token spent once; a ban and an admin entry's deletion taking " +
     "effect.")

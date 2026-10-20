@@ -458,11 +458,20 @@ const TRANSFER_ATTRIBUTE = {
 //
 //   * REGISTER_ACTION when `credentials.addKey()` is about to write a key;
 //   * USE_ACTION when a passkey has answered a sign-in (at the session's
-//     start, and at the two assertion doors for the attestation rules).
+//     start, and at the two assertion doors for the attestation rules);
+//   * RECOVER_ACTION (#724) when a way back into an account that does not
+//     ask for a passkey — a password reset link, an activation link, a
+//     recovery code, an emailed code or link — is about to be used, or a
+//     session is starting for somebody who used one: whether the person's
+//     passkey policy (`recoveryAssurance`) lets that recovery restore
+//     access, and whether the session may reach an application before a
+//     passkey has signed them in.
 //
 // The answer's passkey obligation carries VERDICT (`allow` / `refuse`), CODE
 // (the error code the door records — STS-AUTHN-0312 to 0317, 0320, 0321, the
-// codes those refusals had as code) and REASON (which rule, so the door
+// codes those refusals had as code, and 0355 and 0356 for #718's
+// post-quantum requirement, which was a rule from its first day) and REASON
+// (which rule, so the door
 // says the sentence it always said). A question carries only the facts one
 // door has, named in `urn:sts:xacml:passkey:facts`, and each rule fires only
 // on a question carrying its group. A document that answers without the
@@ -477,6 +486,13 @@ const TRANSFER_ATTRIBUTE = {
 const PASSKEY_ATTRIBUTE = {
   REGISTER_ACTION: 'register-passkey',
   USE_ACTION: 'use-passkey',
+  RECOVER_ACTION: 'recover-account',
+  RECOVERY_DOOR: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_DOOR,
+  RECOVERY_AT: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_AT,
+  RECOVERY_CREDENTIAL: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_CREDENTIAL,
+  RECOVERY_SELF_SERVICE: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_SELF_SERVICE,
+  RECOVERY_COVERED: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_COVERED,
+  RECOVERY_PENDING: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_PENDING,
   FACTS: xacmlRequest.VOCABULARY.PASSKEY_FACTS,
   BACKUP_ELIGIBLE: xacmlRequest.VOCABULARY.PASSKEY_BACKUP_ELIGIBLE,
   MIN_PIN_LENGTH: xacmlRequest.VOCABULARY.PASSKEY_MIN_PIN_LENGTH,
@@ -491,6 +507,11 @@ const PASSKEY_ATTRIBUTE = {
   METADATA_UNCHECKED: xacmlRequest.VOCABULARY.PASSKEY_METADATA_UNCHECKED,
   REQUIRED_RANK: xacmlRequest.VOCABULARY.PASSKEY_REQUIRED_RANK,
   POLICY_PREFIX: xacmlRequest.VOCABULARY.PASSKEY_POLICY_PREFIX,
+  // The key's signature algorithm, whether it is post-quantum, and its lane
+  // (#718). The built-in rule reads POST_QUANTUM alone.
+  ALGORITHM: xacmlRequest.VOCABULARY.PASSKEY_ALGORITHM,
+  POST_QUANTUM: xacmlRequest.VOCABULARY.PASSKEY_POST_QUANTUM,
+  LANE: xacmlRequest.VOCABULARY.PASSKEY_LANE,
   ATTESTATION_POLICY: xacmlRequest.VOCABULARY.SETTING_PREFIX +
                       'webauthn.attestationPolicy',
   ALLOWED_AAGUIDS: xacmlRequest.VOCABULARY.SETTING_PREFIX +
@@ -503,7 +524,8 @@ const PASSKEY_ATTRIBUTE = {
   REASON: 'urn:sts:xacml:passkey-reason',
   VERDICTS: ['allow', 'refuse'],
   // The fact groups a question may carry.
-  GROUPS: ['backup-eligible', 'pin-length', 'serial', 'attestation'],
+  GROUPS: ['backup-eligible', 'pin-length', 'serial', 'attestation',
+           'algorithm', 'recovery'],
   // The reasons the built-in rules give, and the code each records, per
   // action. A door words its refusal by the reason.
   REASONS: {
@@ -517,7 +539,11 @@ const PASSKEY_ATTRIBUTE = {
     'attestation-aaguid': { register: '', use: 'STS-AUTHN-0316' },
     'attestation-unlisted': { register: '', use: 'STS-AUTHN-0316' },
     'attestation-level': { register: '', use: 'STS-AUTHN-0316' },
-    'attestation-fips': { register: '', use: 'STS-AUTHN-0316' }
+    'attestation-fips': { register: '', use: 'STS-AUTHN-0316' },
+    'post-quantum': { register: 'STS-AUTHN-0355', use: 'STS-AUTHN-0356' },
+    // #724: a RECOVER_ACTION question records the `use` column.
+    'recovery-self-service': { register: '', use: 'STS-AUTHN-0380' },
+    'recovery-enrol-first': { register: '', use: 'STS-AUTHN-0381' }
   } as Record<string, { register: string; use: string }>,
   // The certification levels in rank order, `none` first.
   LEVELS: ['none', 'L1', 'L1plus', 'L2', 'L2plus', 'L3', 'L3plus']
@@ -578,6 +604,26 @@ const EXCHANGE_ATTRIBUTE = {
   MAY_ACT_PRESENT: xacmlRequest.VOCABULARY.EXCHANGE_MAY_ACT_PRESENT,
   MAY_ACT_NAMES_ACTOR: xacmlRequest.VOCABULARY.EXCHANGE_MAY_ACT_NAMES_ACTOR,
   PROTECTED_GROUP: xacmlRequest.VOCABULARY.EXCHANGE_PROTECTED_GROUP,
+  // ACROSS A KERBEROS TRUST (#430 Phase 3): the facts the cross-realm rules
+  // read, each sent only for a question that crossed a trust.
+  SUBJECT_REALM: xacmlRequest.VOCABULARY.EXCHANGE_SUBJECT_REALM,
+  ACTOR_REALM: xacmlRequest.VOCABULARY.EXCHANGE_ACTOR_REALM,
+  TARGET_REALM: xacmlRequest.VOCABULARY.EXCHANGE_TARGET_REALM,
+  LOCAL_REALM: xacmlRequest.VOCABULARY.EXCHANGE_LOCAL_REALM,
+  MECHANISM: xacmlRequest.VOCABULARY.EXCHANGE_MECHANISM,
+  TRUST_PARTNER: xacmlRequest.VOCABULARY.EXCHANGE_TRUST_PARTNER,
+  TRUST_DIRECTION: xacmlRequest.VOCABULARY.EXCHANGE_TRUST_DIRECTION,
+  TRUST_ATTRIBUTE: xacmlRequest.VOCABULARY.EXCHANGE_TRUST_ATTRIBUTE,
+  TRUST_ENABLED: xacmlRequest.VOCABULARY.EXCHANGE_TRUST_ENABLED,
+  ACTOR_SELF_REALM: xacmlRequest.VOCABULARY.EXCHANGE_ACTOR_SELF_REALM,
+  TARGET_FOREIGN_TGT_DELEGATION:
+    xacmlRequest.VOCABULARY.EXCHANGE_TARGET_FOREIGN_TGT_DELEGATION,
+  CLASSIC_ACROSS_SETTING: xacmlRequest.VOCABULARY.SETTING_PREFIX +
+                          'krb5.crossRealmClassicDelegation',
+  // The refusal kinds the cross-realm rules give, which the KDC turns into
+  // its own codes (`kerberos/krb5_kdc.js`).
+  TRUST_REFUSALS: ['trust-disabled', 'trust-direction', 'self-realm',
+                   'classic-across-realms', 'tgt-delegation'],
   // The realm's settings, as setting facts.
   DEFAULT_SETTING: xacmlRequest.VOCABULARY.SETTING_PREFIX +
                    'delegation.defaultSemantics',
@@ -636,7 +682,26 @@ const AUTHN_ATTRIBUTE = {
   ALLOWED_MFA_MECHANISM: 'urn:sts:xacml:allowed-mfa-mechanism',
   // The obligation the `mfa-mechanism` rule's Deny carries (#475): the PEP
   // reads it as "sign in again with one of the allowed second factors".
-  MFA_MECHANISM_OBLIGATION: 'urn:sts:xacml:obligation:mfa-mechanism'
+  MFA_MECHANISM_OBLIGATION: 'urn:sts:xacml:obligation:mfa-mechanism',
+  // A FEDERATED AUTHENTICATION (#565), sent only when a federation partner
+  // vouched for it: `consumer` for a consumer or social provider (a
+  // relationship naming `fedProvider`) and `enterprise` otherwise …
+  CATEGORY: 'urn:sts:xacml:authn-category',
+  // … the provider — `google`, `discord`, `github`… — empty for an
+  // enterprise partner …
+  PROVIDER: 'urn:sts:xacml:authn-provider',
+  // … and whether the address the partner sent counts as verified, `true` or
+  // `false`: a consumer provider's is unverified unless the provider said so.
+  EMAIL_VERIFIED: 'urn:sts:xacml:email-verified',
+  // A BAG (#723): OpenID Connect EAP ACR Values 1.0's `phr` and `phrh` as
+  // the authentication earned them (`common/phishing_resistance.ts`), or
+  // `none` — never empty when sent, so a rule on `none` speaks only to an
+  // issuance the gate described: the four browser kinds.
+  PHISHING_RESISTANCE: 'urn:sts:xacml:phishing-resistance',
+  // An assignment on the authentication obligation (#723) naming WHAT the
+  // authentication lacked — `phishing-resistant` or `hardware-protected` —
+  // so the refusal the PEP writes says that, and not the role sentence.
+  REFUSAL: 'urn:sts:xacml:authentication-refusal'
 };
 
 // ---------------------------------------------------------------------------
@@ -1144,7 +1209,15 @@ const TEMPLATES: TemplateRow[] = [
               'Metadata Service reports compromised, an untrusted ' +
               'statement where trust is demanded, an AAGUID off the list, ' +
               'a certification level or FIPS certification not met, or ' +
-              'metadata that could not be read). No leaves the rules out — ' +
+              'metadata that could not be read); and, at both, a passkey ' +
+              'whose signature algorithm is not post-quantum (ML-DSA) where ' +
+              'the policy\'s postQuantumRequired requires one at that stage ' +
+              '(#718); and recover-account ' +
+              '(#724: under the passkey policy\'s recoveryAssurance, a ' +
+              'self-service recovery refused for a person holding a ' +
+              'passkey under operator-only, and a session after any ' +
+              'recovery limited to registering a passkey under not-weaker ' +
+              'and operator-only). No leaves the rules out — ' +
               'and the passkey doors then ask the BUILT-IN policy instead, ' +
               'so the rules are never switched off by rebuilding this ' +
               'document.' },
@@ -1212,6 +1285,28 @@ const TEMPLATES: TemplateRow[] = [
               '3.1.3.1 does not count email as an authenticator; this is ' +
               'the policy an operator writes when an application must not ' +
               'rest on one.' },
+      { name: 'requirePhishingResistant',
+        label: 'Applications that require a phishing-resistant sign-in ' +
+               '(phr, #723)',
+        dflt: '', type: 'string',
+        help: 'Application handles, comma separated. A browser issuance to ' +
+              'one of these is refused unless the authentication behind it ' +
+              'was phishing-resistant in the sense of OpenID Connect EAP ' +
+              'ACR Values 1.0 — a passkey or security key already ' +
+              'registered, or a TLS client certificate — whatever the ' +
+              'client asked for. Empty adds no rule. Set the application\'s ' +
+              'default acr values (oauthDefaultAcrValues) to phr as well, so ' +
+              'the sign-in screen asks for the key rather than refusing a ' +
+              'password afterwards.' },
+      { name: 'requireHardwareProtected',
+        label: 'Applications that require a hardware-protected key (phrh, ' +
+               '#723)',
+        dflt: '', type: 'string',
+        help: 'Application handles, comma separated. As the row above, and ' +
+              'the key must also be hardware-protected: a passkey whose ' +
+              'attestation this realm trusts and whose backup-eligible flag ' +
+              'is clear. A synced passkey, an unattested key and a client ' +
+              'certificate are refused. Empty adds no rule.' },
       { name: 'decideDevices',
         label: 'Decide on the registered device (#164)',
         dflt: 'yes', type: 'string',
@@ -1283,6 +1378,8 @@ const TEMPLATES: TemplateRow[] = [
       const permitEmpty = B.yes(given.permitWhenNothingRequired, true);
       const decideRisk = B.yes(given.decideRisk, true);
       const refuseEmail = B.yes(given.refuseEmailFactor, false);
+      const phrApps = B.listOf(given.requirePhishingResistant || '');
+      const phrhApps = B.listOf(given.requireHardwareProtected || '');
       const decideDevices = B.yes(given.decideDevices, true);
       const decideProtocols = B.yes(given.decideProtocols, true);
       const decideMechanisms = B.yes(given.decideAuthnMechanisms, true);
@@ -1510,6 +1607,81 @@ const TEMPLATES: TemplateRow[] = [
               B.value(TYPE.STRING, 'email-link')])]),
           obligations: [{ id: AUTHN_ATTRIBUTE.OBLIGATION,
                           on: model.EFFECT.DENY, assignments: [] }],
+          advice: []
+        });
+      }
+
+      // -------------------------------------------------------------------
+      // A PHISHING-RESISTANT AUTHENTICATION, REQUIRED BY AN APPLICATION
+      // (#723). Two Deny rules, each only for the applications listed (the
+      // resource-id the PEP sends is the application handle), each reading
+      // `PHISHING_RESISTANCE`, which the gate sends on a browser issuance
+      // and which always holds a value there — `none` when neither class
+      // was earned — so neither rule speaks to an issuance the gate did not
+      // describe. The authentication obligation, `refuseEmail`'s: a refusal
+      // about the authentication, which the PEP enforces where the role
+      // question was waived too. A step-up is the client's to ask for —
+      // `acr_values=phr`, or the application's default acr values — and
+      // this is the operator's floor under it.
+      // -------------------------------------------------------------------
+      const appIn = function appIn(handles: string[]): any {
+        log.debug("Entering appIn().");
+        log.debug("Leaving appIn().");
+        return B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(model.CATEGORY.RESOURCE, model.ATTRIBUTE.RESOURCE_ID,
+                       TYPE.STRING),
+          B.apply(F1 + 'string-bag', handles.map(function (one) {
+            return B.value(TYPE.STRING, one);
+          }))]);
+      };
+      const earned = function earned(value: string): any {
+        log.debug("Entering earned().");
+        log.debug("Leaving earned().");
+        return B.apply(F1 + 'string-is-in', [
+          B.value(TYPE.STRING, value),
+          B.designator(env, AUTHN_ATTRIBUTE.PHISHING_RESISTANCE,
+                       TYPE.STRING)]);
+      };
+      const lacked = function lacked(what: string): any[] {
+        log.debug("Entering lacked().");
+        log.debug("Leaving lacked().");
+        return [{ id: AUTHN_ATTRIBUTE.OBLIGATION, on: model.EFFECT.DENY,
+                  assignments: [{ attributeId: AUTHN_ATTRIBUTE.REFUSAL,
+                    category: null, issuer: null,
+                    expression: B.value(TYPE.STRING, what) }] }];
+      };
+      if (phrApps.length) {
+        riskRules.push({
+          id: options.idBase + ':rule:phishing-resistant',
+          effect: model.EFFECT.DENY,
+          description: 'Refuse ' + phrApps.join(', ') + ' an issuance on ' +
+                       'an authentication that was not phishing-resistant ' +
+                       '(OpenID Connect EAP ACR Values 1.0, phr).',
+          target: null,
+          condition: B.apply(F1 + 'and', [appIn(phrApps), earned('none')]),
+          obligations: lacked('phishing-resistant'),
+          advice: []
+        });
+      }
+      if (phrhApps.length) {
+        riskRules.push({
+          id: options.idBase + ':rule:hardware-protected',
+          effect: model.EFFECT.DENY,
+          description: 'Refuse ' + phrhApps.join(', ') + ' an issuance on ' +
+                       'an authentication whose key was not shown to be ' +
+                       'hardware-protected (OpenID Connect EAP ACR Values ' +
+                       '1.0, phrh).',
+          target: null,
+          condition: B.apply(F1 + 'and', [
+            appIn(phrhApps),
+            B.apply(F1 + 'integer-greater-than', [
+              B.apply(F1 + 'string-bag-size', [
+                B.designator(env, AUTHN_ATTRIBUTE.PHISHING_RESISTANCE,
+                             TYPE.STRING)]),
+              B.value(TYPE.INTEGER, '0')]),
+            B.apply(F1 + 'not', [earned('phrh')])]),
+          obligations: lacked('hardware-protected'),
           advice: []
         });
       }
@@ -2324,8 +2496,10 @@ const TEMPLATES: TemplateRow[] = [
       // passkey policy's refusals were asked as code — backup eligibility,
       // the PIN length, the serial; and at sign-in the attestation rules in
       // signInVerdict()'s order — so the first Deny is the refusal a person
-      // was always shown. Every Deny carries the code and the reason; one
-      // Permit per action carries `allow`.
+      // was always shown. THE POST-QUANTUM RULE (#718) comes after all of
+      // them at each action, so a key refused today for its BE flag or its
+      // PIN is refused for that still. Every Deny carries the code and the
+      // reason; one Permit per action carries `allow`.
       // -------------------------------------------------------------------
       const PK = PASSKEY_ATTRIBUTE;
       const pkVerdict = function (on: string, value: string, code: string,
@@ -2457,6 +2631,33 @@ const TEMPLATES: TemplateRow[] = [
                  below(reportedPin,
                        intBag(env, pkSetting('minPinLength')))])]));
       };
+      // A PASSKEY WHOSE ALGORITHM IS NOT POST-QUANTUM (#718), where the
+      // selected profile's postQuantumRequired names this stage: `sign-in`
+      // and `registration-and-sign-in` at use-passkey, the second alone at
+      // register-passkey. On the ALGORITHM's fact, never the lane's: an
+      // ML-DSA key made with #643's switch off carries no lane and is
+      // post-quantum. The fact is always sent with its group, so its
+      // absence is not read as "classical"; a question without the group
+      // never trips the rule.
+      const postQuantumRule = function (action: string): any {
+        log.debug("Entering postQuantumRule().");
+        const stages = action === PK.REGISTER_ACTION
+          ? [stringIs(env, pkSetting('postQuantumRequired'),
+                      'registration-and-sign-in')]
+          : [stringIs(env, pkSetting('postQuantumRequired'), 'sign-in'),
+             stringIs(env, pkSetting('postQuantumRequired'),
+                      'registration-and-sign-in')];
+        log.debug("Leaving postQuantumRule().");
+        return pkRule(action, 'post-quantum',
+          'Refuse a passkey whose signature algorithm is not post-quantum ' +
+          '(RFC 9964\'s ML-DSA) where the passkey policy requires one ' +
+          (action === PK.REGISTER_ACTION ? 'at registration'
+                                         : 'at sign-in') +
+          ' (postQuantumRequired, #718).',
+          and([carries('algorithm'),
+               not(fact(R2, PK.POST_QUANTUM, true)),
+               stages.length > 1 ? anyOf(stages) : stages[0]]));
+      };
       const passkeyRules: any[] = decidePasskeys ? [
         backupRule(PK.REGISTER_ACTION),
         pinRule(PK.REGISTER_ACTION),
@@ -2473,6 +2674,7 @@ const TEMPLATES: TemplateRow[] = [
                sizeIs('string-bag-size', strBag(R2, PK.SERIAL),
                       'integer-greater-than'),
                not(fact(R2, PK.SERIAL_HELD, true))])),
+        postQuantumRule(PK.REGISTER_ACTION),
         { id: options.idBase + ':rule:passkey-register-allowed',
           effect: model.EFFECT.PERMIT,
           description: 'Register every other passkey.',
@@ -2519,10 +2721,54 @@ const TEMPLATES: TemplateRow[] = [
           and([attestationHeld, fact(env, PK.REQUIRE_FIPS, true),
                fact(R2, PK.MODEL_LISTED, true),
                not(fact(R2, PK.FIPS, true))])),
+        postQuantumRule(PK.USE_ACTION),
         { id: options.idBase + ':rule:passkey-use-allowed',
           effect: model.EFFECT.PERMIT,
           description: 'Let every other passkey sign somebody in.',
           target: actionIs(PK.USE_ACTION), condition: null,
+          obligations: pkVerdict(model.EFFECT.PERMIT, 'allow', '', ''),
+          advice: [] },
+        // -----------------------------------------------------------------
+        // ACCOUNT RECOVERY NO WEAKER THAN THE PASSKEY IT REPLACES (#724).
+        // Both rules need a person who HOLDS a passkey (`covered`): with
+        // none there is nothing for a recovery to be weaker than. The
+        // self-service rule is first, so under operator-only a recovery
+        // code at sign-in is refused rather than limited.
+        // -----------------------------------------------------------------
+        pkRule(PK.RECOVER_ACTION, 'recovery-self-service',
+          'Under recoveryAssurance operator-only, refuse a SELF-SERVICE ' +
+          'recovery — the forgot-password request and its link, a ' +
+          'recovery code or an emailed code or link at sign-in — for a ' +
+          'person who holds a passkey. An operator\'s reset or ' +
+          'activation link remains.',
+          and([carries('recovery'),
+               fact(R2, PK.RECOVERY_COVERED, true),
+               fact(R2, PK.RECOVERY_SELF_SERVICE, true),
+               stringIs(env, pkSetting('recoveryAssurance'),
+                        'operator-only')])),
+        pkRule(PK.RECOVER_ACTION, 'recovery-enrol-first',
+          'Under recoveryAssurance not-weaker or operator-only, a session ' +
+          'for a person who holds a passkey, started after a recovery ' +
+          '(one is pending on their entry, or this sign-in is itself a ' +
+          'recovery code or an emailed code or link) by anything but a ' +
+          'passkey, reaches no application: it is limited to registering ' +
+          'a passkey that satisfies the policy.',
+          and([carries('recovery'),
+               stringIs(R2, PK.RECOVERY_AT, 'session'),
+               fact(R2, PK.RECOVERY_COVERED, true),
+               anyOf([fact(R2, PK.RECOVERY_PENDING, true),
+                      sizeIs('string-bag-size',
+                             strBag(R2, PK.RECOVERY_DOOR),
+                             'integer-greater-than')]),
+               not(stringIs(R2, PK.RECOVERY_CREDENTIAL, 'webauthn')),
+               anyOf([stringIs(env, pkSetting('recoveryAssurance'),
+                               'not-weaker'),
+                      stringIs(env, pkSetting('recoveryAssurance'),
+                               'operator-only')])])),
+        { id: options.idBase + ':rule:passkey-recover-allowed',
+          effect: model.EFFECT.PERMIT,
+          description: 'Let every other recovery restore access.',
+          target: actionIs(PK.RECOVER_ACTION), condition: null,
           obligations: pkVerdict(model.EFFECT.PERMIT, 'allow', '', ''),
           advice: [] }] : [];
 
@@ -2676,6 +2922,60 @@ const TEMPLATES: TemplateRow[] = [
                                  assignments: [assignment(EX.CHOSEN, from)] }],
                  advice: [] };
       };
+      // ACROSS A KERBEROS TRUST (#430 Phase 3). Every one of these is false
+      // on a question that crossed no trust — the trust facts are sent only
+      // with one — so the rules below are the rules they were for every
+      // other question.
+      const acrossTrust = present(bagOf(env, EX.TRUST_PARTNER));
+      const mechanismIs = function (value: string): any {
+        log.debug("Entering mechanismIs().");
+        log.debug("Leaving mechanismIs().");
+        return B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, value),
+                                             bagOf(A, EX.MECHANISM)]);
+      };
+      const localRealm = bagOf(env, EX.LOCAL_REALM);
+      const foreign = function (category: string, id: string): any {
+        log.debug("Entering foreign().");
+        log.debug("Leaving foreign().");
+        return and([present(bagOf(category, id)), present(localRealm),
+                    not(shares(bagOf(category, id), localRealm))]);
+      };
+      const trustHas = function (name: string): any {
+        log.debug("Entering trustHas().");
+        log.debug("Leaving trustHas().");
+        return B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, name),
+                                             bagOf(env, EX.TRUST_ATTRIBUTE)]);
+      };
+      const forwardedAcross = and([acrossTrust, mechanismIs('forwarded')]);
+      const notForwarded = not(forwardedAcross);
+      // CLASSIC DELEGATION ACROSS REALMS, VOUCHED FOR (decision 5): with the
+      // realm's krb5.crossRealmClassicDelegation on, a classic S4U2Proxy
+      // whose evidence arrived as the front end's realm's cross-realm TGT —
+      // which that realm issues only after its own check of the front end's
+      // appAllowedToDelegateTo — is taken as that realm checked it.
+      const classicVouched = and([acrossTrust,
+        mechanismIs('S4U2Proxy-classic'), foreign(I, EX.ACTOR_REALM),
+        settingOn('krb5.crossRealmClassicDelegation')]);
+      // RESOURCE-BASED DELEGATION TO A FOREIGN TARGET is the target realm's
+      // to decide ([MS-SFU] 3.2.5.2.3): the front end's realm refers it.
+      const rbcdDeferred = and([acrossTrust, mechanismIs('S4U2Proxy-rbcd'),
+                                foreign(R, EX.TARGET_REALM)]);
+      // A FOREIGN ACTOR the target accepts by name has no entry here, and
+      // needs none: R's appAllowedToActOnBehalfOf names it `SPN@REALM`.
+      const foreignActorAccepted = and([acrossTrust,
+        foreign(I, EX.ACTOR_REALM),
+        shares(actorId, bagOf(R, EX.TARGET_ACCEPTS))]);
+      // [MS-KILE] 3.3.5.7.5's two conditions on the trust's attributes.
+      const tgtDelegationEnabled = and([
+        or([trustHas('within-forest'), trustHas('enable-tgt-delegation')]),
+        not(or([trustHas('no-tgt-delegation'), trustHas('quarantined')]))]);
+      const trustDeny = function (name: string, kind: string,
+                                  description: string, condition: any): any {
+        log.debug("Entering trustDeny().");
+        log.debug("Leaving trustDeny().");
+        return exchangeDeny(name, kind, description,
+                            and([acrossTrust, condition]));
+      };
       const requested = bagOf(A, EX.REQUESTED_SEMANTICS);
       const actorDefault = bagOf(I, EX.DEFAULT_SEMANTICS);
       const subjectDefault = bagOf(S, EX.DEFAULT_SEMANTICS);
@@ -2705,9 +3005,11 @@ const TEMPLATES: TemplateRow[] = [
           countIs('integer-less-than', '1')),
         exchangeDeny('unregistered-target', 'unregistered-target', 'Refuse a ' +
           'target no application registers: there is no entry to read ' +
-          'roles or relationships from.',
+          'roles or relationships from — unless it is in another Kerberos ' +
+          'realm across a trust (#430), whose own KDC holds its entry.',
           and([countIs('integer-equal', '1'),
-               not(fact(R, EX.TARGET_REGISTERED, true))])),
+               not(fact(R, EX.TARGET_REGISTERED, true)),
+               not(foreign(R, EX.TARGET_REALM)), notForwarded])),
         exchangeDeny('no-target', 'no-target', 'Refuse a delegation or ' +
           'impersonation that names no target; only a self exchange ' +
           'defaults to the subject token\'s own audience.',
@@ -2719,13 +3021,54 @@ const TEMPLATES: TemplateRow[] = [
           and([notSelf, or([fact(S, EX.SUBJECT_NOT_DELEGATED, true),
                             shares(bagOf(S, EX.SUBJECT_GROUP),
                                    bagOf(env, EX.PROTECTED_GROUP))])])),
+        // ACROSS A KERBEROS TRUST (#430 Phase 3), before the rest.
+        trustDeny('trust-disabled', 'trust-disabled', 'Refuse anything ' +
+          'across a trust that is disabled.',
+          not(fact(env, EX.TRUST_ENABLED, true))),
+        trustDeny('trust-direction', 'trust-direction', 'Refuse S4U2Self ' +
+          'for a user of another realm unless this realm\'s trust ACCEPTS ' +
+          'that realm\'s tickets (an incoming key: inbound or ' +
+          'bidirectional).',
+          and([mechanismIs('S4U2Self'), foreign(S, EX.SUBJECT_REALM),
+               not(or([B.apply(F1 + 'string-is-in', [
+                         B.value(TYPE.STRING, 'inbound'),
+                         bagOf(env, EX.TRUST_DIRECTION)]),
+                       B.apply(F1 + 'string-is-in', [
+                         B.value(TYPE.STRING, 'bidirectional'),
+                         bagOf(env, EX.TRUST_DIRECTION)])]))])),
+        trustDeny('self-realm', 'self-realm', 'Refuse S4U2Self for a user ' +
+          'of another realm unless the service lists that realm ' +
+          '(krb5S4uSelfRealm): empty means its own realm only.',
+          and([mechanismIs('S4U2Self'), foreign(S, EX.SUBJECT_REALM),
+               not(shares(bagOf(S, EX.SUBJECT_REALM),
+                          bagOf(I, EX.ACTOR_SELF_REALM)))])),
+        trustDeny('classic-across-realms', 'classic-across-realms',
+          'Refuse CLASSIC constrained delegation across a trust unless the ' +
+          'realm allows it (krb5.crossRealmClassicDelegation): ' +
+          'msDS-AllowedToDelegateTo is defined within one realm, and ' +
+          'resource-based delegation is the one that crosses.',
+          and([mechanismIs('S4U2Proxy-classic'),
+               not(settingOn('krb5.crossRealmClassicDelegation'))])),
+        trustDeny('tgt-delegation', 'tgt-delegation', 'Refuse a TGT ' +
+          'delegated across a trust (ok-as-delegate, a forwarded TGT) ' +
+          'unless [MS-KILE] 3.3.5.7.5\'s conditions hold — the trust is ' +
+          'within the forest or enables TGT delegation, and neither forbids ' +
+          'it nor is quarantined — and the service does not refuse it ' +
+          '(krb5ForeignTgtDelegation deny narrows; it never widens).',
+          and([mechanismIs('forwarded'), or([not(tgtDelegationEnabled),
+            B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, 'deny'),
+              bagOf(R, EX.TARGET_FOREIGN_TGT_DELEGATION)])])])),
         exchangeDeny('unknown-actor', 'intermediary', 'Refuse an actor with ' +
           'no entry in this realm: its entry is where the permission to act ' +
-          'lives.',
-          and([notSelf, not(fact(I, EX.ACTOR_REGISTERED, true))])),
+          'lives — unless it is in another Kerberos realm and the target ' +
+          'accepts it by name, or its realm vouched for a classic ' +
+          'delegation the realm allows across trusts (#430).',
+          and([notSelf, not(fact(I, EX.ACTOR_REGISTERED, true)),
+               not(foreignActorAccepted), not(classicVouched),
+               notForwarded])),
         exchangeDeny('user-actor-role', 'intermediary', 'Refuse a PERSON as ' +
           'the actor unless they hold the role delegation.actorRole names.',
-          and([notSelf, B.apply(F1 + 'string-is-in', [
+          and([notSelf, notForwarded, B.apply(F1 + 'string-is-in', [
             B.value(TYPE.STRING, 'user'), bagOf(I, EX.ACTOR_KIND)]),
                not(shares(bagOf(I, ISSUANCE_ATTRIBUTE.ROLE),
                           bagOf(env, EX.ACTOR_ROLE_SETTING)))])),
@@ -2733,7 +3076,7 @@ const TEMPLATES: TemplateRow[] = [
           'or the subject does not allow: an actor allows delegation only ' +
           'unless its entry says otherwise; a subject allows both unless ' +
           'its entry says otherwise.',
-          and([notSelf, or([
+          and([notSelf, notForwarded, or([
             not(or([semanticsIs('delegation'), semanticsIs('impersonation')])),
             and([semanticsIs('delegation'),
                  not(and([actorAllows('delegation'),
@@ -2744,7 +3087,8 @@ const TEMPLATES: TemplateRow[] = [
         exchangeDeny('subject-group', 'subject', 'Refuse a subject outside ' +
           'the groups the actor may act for (appDelegationSubjectGroup), ' +
           'unless the subject named this actor in may_act.',
-          and([notSelf, present(bagOf(I, EX.ACTOR_SUBJECT_GROUP)),
+          and([notSelf, notForwarded,
+               present(bagOf(I, EX.ACTOR_SUBJECT_GROUP)),
                not(fact(env, EX.MAY_ACT_NAMES_ACTOR, true)),
                not(shares(bagOf(S, EX.SUBJECT_GROUP),
                           bagOf(I, EX.ACTOR_SUBJECT_GROUP)))])),
@@ -2761,8 +3105,13 @@ const TEMPLATES: TemplateRow[] = [
           'delegates to R (appAllowedToDelegateTo on S, or ' +
           'appAllowedToActOnBehalfOf on R) and the actor is S, is R, or is ' +
           'one R accepts by name (appAllowedToActOnBehalfOf) — the last is ' +
-          'how a person or a third application acts.',
-          and([notSelf, semanticsIs('delegation'),
+          'how a person or a third application acts. Across a Kerberos ' +
+          'trust (#430), resource-based delegation to a foreign target is ' +
+          'the target realm\'s to decide, a classic one its realm vouched ' +
+          'for is allowed where the realm allows it, and a forwarded TGT ' +
+          'has no S to delegate from.',
+          and([notSelf, semanticsIs('delegation'), notForwarded,
+               not(rbcdDeferred), not(classicVouched),
                not(and([or([shares(actorId, sourceId),
                             shares(actorId, targetId),
                             shares(actorId, bagOf(R, EX.TARGET_ACCEPTS))]),
@@ -2771,7 +3120,7 @@ const TEMPLATES: TemplateRow[] = [
           'unless the actor may reach R: R is the actor itself, or on the ' +
           'actor\'s appAllowedToDelegateTo, or R accepts the actor ' +
           '(appAllowedToActOnBehalfOf).',
-          and([notSelf, semanticsIs('impersonation'),
+          and([notSelf, notForwarded, semanticsIs('impersonation'),
                not(or([shares(actorId, targetId),
                        shares(targetId, bagOf(I, EX.ACTOR_DELEGATES_TO)),
                        shares(actorId, bagOf(R, EX.TARGET_ACCEPTS))]))])),

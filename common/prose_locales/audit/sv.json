@@ -191,6 +191,18 @@
     "en": "9f66bf08890386c9",
     "text": "Någon konfigurerade en obligatorisk andra faktor vid inloggningen"
   },
+  "audit.actions.authn.recovery.refused.label": {
+    "en": "d8ba643a9e0a83b8",
+    "text": "Nyckelpolicyn nekade en kontoåterställning via självbetjäning"
+  },
+  "audit.actions.authn.recovery.limited.label": {
+    "en": "497fee88cee8044f",
+    "text": "En inloggning efter en kontoåterställning begränsades till att registrera en nyckel"
+  },
+  "audit.actions.authn.recovery.completed.label": {
+    "en": "6c8028e5950a3cd4",
+    "text": "En nyckel loggade in någon efter en kontoåterställning"
+  },
   "audit.actions.authn.sign-in.started-over.label": {
     "en": "2773b5e084cf4499",
     "text": "Någon lämnade ett inloggningssteg och började om inloggningen"
@@ -246,6 +258,14 @@
   "audit.actions.session.renew.label": {
     "en": "0bfd5e67a3f0fdc2",
     "text": "En värdbaserad yta förnyade sina tokens inom samma session"
+  },
+  "audit.actions.authn.session.bound.label": {
+    "en": "027a6091ae35ff05",
+    "text": "En sessionen för enkel inloggning bands till en nyckel som dess webbläsare har"
+  },
+  "audit.actions.authn.session.refreshed.label": {
+    "en": "bbbad25d367ffcdf",
+    "text": "Kakan för en enhetsbunden session förnyades med ett bevis på dess nyckel"
   },
   "audit.actions.logout.global.label": {
     "en": "db32c1466e054343",
@@ -691,6 +711,10 @@
     "en": "048452fd758565c6",
     "text": "En persons Kerberos-nycklar härleddes från deras lösenord"
   },
+  "audit.actions.krb5.trust.sid-filtered.label": {
+    "en": "0cb1d7c8c214f1f1",
+    "text": "SID-filtrering tillämpades på en biljett som korsade ett Kerberos-förtroende"
+  },
   "audit.actions.admin.krb5.keys.cleared.label": {
     "en": "a9405f7ee523fd30",
     "text": "En operatör rensade någons Kerberos-nycklar"
@@ -1127,6 +1151,18 @@
     "en": "a5c85407fff2c148",
     "text": "En federationslänk togs bort från en person"
   },
+  "audit.actions.federation.connected.label": {
+    "en": "3466387fa24f3d55",
+    "text": "En person anslöt en konsument- eller social leverantör till sitt konto"
+  },
+  "audit.actions.federation.provider-notification.label": {
+    "en": "bf89c99cd7734f16",
+    "text": "En konsumentleverantörs avisering om en av dess personer godtogs"
+  },
+  "audit.actions.federation.group-ignored.label": {
+    "en": "a64e9612670b278c",
+    "text": "En partners gruppnamn tillämpades inte, eftersom det namnger en grupp som relationen inte skapade eller en grupp som ger något bara genom medlemskapet (#358)"
+  },
   "audit.actions.group.add-member.label": {
     "en": "37da254923cef1b6",
     "text": "En medlem lades till i en grupp"
@@ -1299,6 +1335,10 @@
     "en": "631dece03539cd4a",
     "text": "En person skapade ett erbjudande om en legitimation till sin egen plånbok"
   },
+  "audit.actions.portal.vc.remove.label": {
+    "en": "bc144eaf5bf2222e",
+    "text": "En person tog bort ett intyg som den här sfären utfärdat till personen"
+  },
   "audit.actions.risk.feedback.label": {
     "en": "e244d70b4d5a8c39",
     "text": "Återkoppling på en riskbedömning registrerades"
@@ -1394,6 +1434,26 @@
   "audit.actions.saml2.metadata.refresh.label": {
     "en": "775ac5b1f475f76f",
     "text": "En tjänsteleverantörs SAML-metadata uppdaterades"
+  },
+  "audit.actions.account.add.label": {
+    "en": "0fc7d9b61dee994d",
+    "text": "En session lades till i en webbläsares kontouppsättning"
+  },
+  "audit.actions.account.select.label": {
+    "en": "1fcc762640b7ba22",
+    "text": "Ett konto valdes i kontoväljaren"
+  },
+  "audit.actions.account.switch.label": {
+    "en": "0b9681ea51a0edfa",
+    "text": "En webbläsares standardkonto ändrades"
+  },
+  "audit.actions.account.forget.label": {
+    "en": "17a75cbf0a350b17",
+    "text": "En webbläsare glömde ett utloggat konto"
+  },
+  "audit.actions.account.ambiguous.label": {
+    "en": "cc103c68ea2f6ef9",
+    "text": "En begäran sade inte vilket av webbläsarens konton den gällde"
   },
   "audit.actions.session.reauthenticate.label": {
     "en": "f6867c3c6a1d35bd",

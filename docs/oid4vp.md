@@ -38,7 +38,7 @@ The Verifier's endpoints:
 |---|---|
 | `GET /oid4vp/request/{id}` | the signed Request Object, fetched by reference (`request_uri`) |
 | `GET /oid4vp/verifier-certificate` | the Verifier's `x509_san_dns` and `x509_hash` Client Identifiers, its certificate chain and the trust anchor (see *The x509 prefixes*) |
-| `POST /oid4vp/response` | the Response URI (`response_mode` `direct_post`, or `direct_post.jwt` when the start asks for it: the request then carries an ephemeral ECDH-ES key in `client_metadata.jwks` and the wallet posts one encrypted `response`), where the `vp_token` arrives and is verified. The request's `client_metadata` carries only what OpenID4VP 1.0 section 5.1 lists (`vp_formats_supported`, and `jwks` with `encrypted_response_enc_values_supported` for an encrypted response) |
+| `POST /oid4vp/response` | the Response URI (`response_mode` `direct_post`, or `direct_post.jwt` when the start asks for it: the request then carries one ephemeral key per algorithm in `oid4vp.responseEncryptionKeyAlgs` in `client_metadata.jwks`, and the wallet posts one `response` encrypted to one of them), where the `vp_token` arrives and is verified. The request's `client_metadata` carries only what OpenID4VP 1.0 section 5.1 lists (`vp_formats_supported`, and `jwks` with `encrypted_response_enc_values_supported` for an encrypted response) |
 
 **A verification is started through the management API** (#587), in every
 mode: `POST /admin-api/verifications/start` (Admin Write) takes `format`,
@@ -285,8 +285,10 @@ wallet that knows this Verifier out of band can use
 for a credential with a signed `openid4vp-v1-signed` request (OpenID4VP
 Appendix A) whose `expected_origins` names this service. A wallet refuses such
 a request if it is handed over by a page on another origin. The answer comes
-back through the page, encrypted by default (`dc_api.jwt`, ECDH-ES to a P-256
-key made for this one sign-in; `oid4vp.signInDcApiResponseMode` can ask for
+back through the page, encrypted by default (`dc_api.jwt`, to one of the keys
+made for this one sign-in, one per algorithm in
+`oid4vp.responseEncryptionKeyAlgs`: the X-Wing hybrid `HPKE-10-KE` first and
+ECDH-ES on P-256 second; `oid4vp.signInDcApiResponseMode` can ask for
 `dc_api` in the clear). For this path the audience is `origin:<origin>`, so a
 presentation made for another path does not sign in here.
 The answer's `Origin` header must be this service's own (`STS-VC-0074`). A wallet on another device is reached by the platform over
@@ -349,8 +351,10 @@ See [Authentication](authentication.md) for the second factors.
 
 A credential stops signing anybody in after any of these:
 
-* a **global** sign-out (`/logout`, `/admin/logout`, `/admin-api/logout`),
-  which disowns every credential issued up to that moment;
+* an administrator's **global** sign-out (`/admin/logout`,
+  `/admin-api/logout`), or ending the wallet-credential row, which disowns
+  every credential issued up to that moment. The person's own Global logout
+  on `/logout` leaves the credential, and the DID it is bound to, valid;
 * an administrator's revocation on `/admin/tokens`;
 * a status that is not VALID, set on the Credential status tab at
   `/admin/vc#vc-tab-status` or by either of the
@@ -509,6 +513,7 @@ check are the same in both modes. See
 | `oid4vp.signInCrossDevice` | `OID4VP_SIGN_IN_CROSS_DEVICE` | `false` | yes | Offer a plain, relayable QR code for a wallet on another device. |
 | `oid4vp.signInFormats` | `OID4VP_SIGN_IN_FORMATS` | `dc+sd-jwt,jwt_vc_json,ldp_vc` | yes | The formats a sign-in asks for, in order of preference. |
 | `oid4vp.signInDcApiResponseMode` | `OID4VP_SIGN_IN_DC_API_RESPONSE_MODE` | `dc_api.jwt` | yes | Whether a Digital Credentials API answer is encrypted (`dc_api.jwt`) or in the clear (`dc_api`). |
+| `oid4vp.responseEncryptionKeyAlgs` | `OID4VP_RESPONSE_ENCRYPTION_KEY_ALGS` | `HPKE-10-KE,ECDH-ES` | yes | The ephemeral keys a `direct_post.jwt` or `dc_api.jwt` request offers, one per algorithm, in order. Leaving out `ECDH-ES` refuses every wallet that has only it; empty is read as `ECDH-ES` alone. |
 | `oid4vp.signInClientIdPrefix` | `OID4VP_SIGN_IN_CLIENT_ID_PREFIX` | `x509_hash` | yes | The Client Identifier prefix of a sign-in's signed request (HAIP 1.0 requires `x509_hash`). |
 | `oid4vp.signInResponseMode` | `OID4VP_SIGN_IN_RESPONSE_MODE` | `direct_post.jwt` | yes | `direct_post.jwt` (encrypted, HAIP 1.0) or `direct_post` for a sign-in answered by link or QR code. |
 | `oid4vp.signInSelfIssued` | `OID4VP_SIGN_IN_SELF_ISSUED` | `false` | yes | Offer *Sign in with a self-issued ID* (SIOPv2) and the enrolment on `/portal/self-issued`. |

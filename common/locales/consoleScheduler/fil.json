@@ -96,5 +96,9 @@
   "detail.ended": "Natapos",
   "detail.params": "Mga parameter",
   "detail.result": "Resulta",
-  "detail.abandonedOf": "Iniwang pagtatangka ng"
+  "detail.abandonedOf": "Iniwang pagtatangka ng",
+  "detail.ranIn": "Tumakbo sa",
+  "detail.ranIn.worker": "Isang request worker",
+  "detail.ranIn.front": "Ang front process",
+  "detail.deferred": "Pinigil dahil sa abalang worker"
 }

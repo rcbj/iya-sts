@@ -193,6 +193,12 @@ const USES = {
   // spends it the moment it is accepted, whatever it then matched.
   'federated-logout': 'a federation partner\'s sign-out (Back-Channel ' +
                       'Logout 1.0 Logout Token, SAML 2.0 LogoutRequest)',
+  // A PROVIDER'S SERVER-TO-SERVER NOTIFICATION (#565: Sign in with Apple's),
+  // keyed by its `jti` under the provider's issuer. A captured
+  // `consent-revoked` replayed later would remove a link the person made
+  // again since; `federation/federation_sp.ts` spends it when it is accepted.
+  'provider-notification': 'a consumer provider\'s server-to-server ' +
+                           'notification (Sign in with Apple)',
   // A CLIENT ATTESTATION PoP (#229, draft-ietf-oauth-attestation-based-
   // client-auth section 12.1), keyed by its `jti` under the client
   // instance key's JWK Thumbprint URI — the instance signs it, so the

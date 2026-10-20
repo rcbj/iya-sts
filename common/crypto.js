@@ -3661,9 +3661,17 @@ function checkJwtClaims(claims, options) {
     log.debug('Leaving checkJwtClaims(). Not yet valid.');
     throw e;
   }
-  if (options.issuer !== undefined && claims.iss !== options.issuer) {
+  // The expected issuer may be a LIST (#565): a provider that publishes more
+  // than one spelling of itself — Google's ID Tokens name
+  // `https://accounts.google.com` or `accounts.google.com` — and a match on
+  // any member is a match, which is jsonwebtoken's rule for an array.
+  if (options.issuer !== undefined &&
+      (Array.isArray(options.issuer)
+        ? options.issuer.indexOf(claims.iss) < 0
+        : claims.iss !== options.issuer)) {
     log.debug('Leaving checkJwtClaims(). Wrong issuer.');
-    throw new Error('jwt issuer invalid. expected: ' + options.issuer);
+    throw new Error('jwt issuer invalid. expected: ' +
+                    [].concat(options.issuer).join(' or '));
   }
   if (options.audience !== undefined) {
     // `aud` may be a string or an array, and the expectation may be either

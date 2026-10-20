@@ -1497,7 +1497,24 @@ function conferredBy(clientId) {
 //     authenticated: whether this party proved anything,
 //     groups: the group names a person is in (a user only),
 //     scopes: an access token's scopes, where there is one — no role is read
-//             off them since #309; kept for a caller's context }
+//             off them since #309; kept for a caller's context,
+//     crossRealm: true for a principal that ARRIVED THROUGH A KERBEROS TRUST
+//             (#430) — a cross-realm ticket or a referral — named
+//             `name@REALM`,
+//     sids:   with `crossRealm`, the SIDs its PAC still carries after SID
+//             filtering }
+//
+// **A PRINCIPAL THAT ARRIVED THROUGH A TRUST HOLDS ONLY WHAT IS GRANTED TO IT
+// BY NAME** (rcbj, 2026-10-19, #430). The built-in roles — EVERYBODY and
+// ALL_AUTHENTICATED_USERS above all — mean "authenticated in THIS realm", and
+// a person whose authentication another realm vouched for is not that: they
+// hold no built-in role, have no directory entry and so no groups here, and
+// hold a configured role only where its `roleMemberUser` names them whole
+// (`alice@PARTNER.TEST`) or its `roleMemberGroup` names one of their
+// FILTERED SIDs. So an application that requires only EVERYBODY — the
+// default — admits nobody from another realm until somebody narrows it and
+// grants a role: what Active Directory calls selective authentication, made
+// the only kind.
 //
 // THE GROUPS ARE PASSED IN RATHER THAN LOOKED UP HERE where the caller already
 // has them, and looked up through the directory slot where it does not. Both,
@@ -1531,7 +1548,8 @@ function rolesOf(who) {
   // so this is the same directory walk that was already happening, moved
   // earlier and shared, rather than a second one.
   context.groups = groupsFor(context);
-  const held = BUILT_IN.filter(function (one) {
+  // ACROSS A TRUST (#430): no built-in role at all — see the header.
+  const held = context.crossRealm ? [] : BUILT_IN.filter(function (one) {
     return one.holds(context);
   }).map(function (one) {
     return one.name;
@@ -1587,12 +1605,22 @@ function normalizeContext(who) {
     // WHETHER THE PERSON OWNS ANYTHING (#607), for OWNER_READ and
     // OWNER_WRITE: only `common/ownership.ts` can answer it, so a caller
     // that has asked says so here, and one that has not owns nothing.
-    owns: given.owns === true
+    owns: given.owns === true,
+    // ARRIVED THROUGH A KERBEROS TRUST (#430), and the SIDs its PAC carried
+    // after SID filtering: explicit grants only (see THE RESOLVER).
+    crossRealm: given.crossRealm === true,
+    sids: Array.isArray(given.sids) ? given.sids.map(String).filter(Boolean)
+                                    : []
   };
 }
 
 function groupsFor(context) {
   log.debug("Entering groupsFor().");
+  if (context.crossRealm) {
+    // No entry here, so no group here (#430): its SIDs are what it carries.
+    log.debug("Leaving groupsFor(). Across a trust.");
+    return [];
+  }
   if (context.groups) {
     log.debug("Leaving groupsFor().");
     return context.groups;
@@ -1615,7 +1643,10 @@ function configuredRolesOf(context) {
     // it is the whole reason that role exists.
     return [];
   }
-  const groups = context.kind === 'user' ? groupsFor(context) : [];
+  // Across a trust (#430) the "groups" a role's roleMemberGroup can name are
+  // the principal's filtered SIDs, and nothing else.
+  const groups = context.kind !== 'user' ? []
+    : (context.crossRealm ? context.sids : groupsFor(context));
   const lowerGroups = groups.map(function (one) {
     return String(one).toLowerCase();
   });

@@ -101,6 +101,7 @@ require('./common/process_memory').reexecWithHeapLimit();
 require('./common/delivered_secrets').load();
 
 const http = require('http');
+const http2 = require('http2');
 const https = require('https');
 const app = require('./common/app');
 // `warmPqKeys` joins the three destructured names for one call in announce()
@@ -502,6 +503,12 @@ function announce() {
     log.error(errorCodes.tag('STS-CORE-0031') +
               'spiffe: the SPIFFE listeners could not start: ' + err.message);
   });
+  // THE SPIFFE TARGET GROUPS (#323). ECS allows five target groups on a
+  // service and the node services use them, so these groups are registered
+  // by address. This process's own address is registered now; the
+  // scheduler's leader keeps the groups equal to the running tasks. A
+  // failure is recorded and these listeners are unaffected.
+  require('./cluster/spiffe_targets').onStart();
   // THE PLAIN-HTTP REVOCATION LISTENER (2026-09-13): `/pki/` and nothing else,
   // because RFC 5280 section 8 and RFC 5019 section 5 put CRL and OCSP
   // addresses on http:// — see pki/pki_service.ts. Recorded rather than
@@ -641,6 +648,11 @@ function shutdown(signal) {
   // ---------------------------------------------------------------------
   // The debugger's api child first: it is not a worker of either pool and
   // holds nothing worth draining, and an orphan would keep its socket.
+  // The SPIFFE target groups (#323), before the scheduler stops: an
+  // in-flight reconcile sees the flag before its next register, and this
+  // task's own address is deregistered below, before the store closes. A
+  // load balancer that does not answer does not hold the process.
+  require('./cluster/spiffe_targets').beginStop();
   // The scheduler first of all: no job may start while the process drains.
   // A run in progress is left to finish or be fenced out; its claim lapses
   // and the next leader takes it over.
@@ -650,8 +662,12 @@ function shutdown(signal) {
   require('./common/cell_channel').close().catch(function (e) {
     log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
   });
-  debuggerServer.close().catch(function (e) {
-    log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
+  require('./cluster/spiffe_targets').onStop().catch(function (e) {
+    log.debug("Caught in shutdown(): " + ((e && e.message) || e));
+  }).then(function () {
+    return debuggerServer.close();
+  }).catch(function (e) {
+    log.debug("Caught in shutdown(): " + ((e && e.message) || e));
   }).then(function () {
     return requestPool.stop();
   }).then(function (drained) {
@@ -1025,8 +1041,9 @@ serviceState.start().then(function (both) {
   // A CLUSTER REFUSAL (2026-09-14, #46) carries its whole explanation — which
   // mode, which setting, which node differs — and neither paragraph below is
   // about it: the store opened and the keys are fine. See cluster/cluster.js.
-  if (/STS-CLUSTER-\d{4}/.test(err.message || '')) {
-    // error-code: none — the refusal's own STS-CLUSTER code leads err.message
+  if (/STS-CLUSTER-\d{4}|STS-AUTHN-0339/.test(err.message || '')) {
+    // error-code: none — the refusal's own STS-CLUSTER or STS-AUTHN-0339
+    // code leads err.message
     log.fatal(err.message + ' The service is NOT STARTING.');
     process.exit(1);
   }
@@ -1076,7 +1093,10 @@ function customListener(label, certificate, certificateOf, listenerId) {
   // inheriting the process's TLS settings where it is silent, and its own
   // client authentication (`clientAuth`).
   const policy = tlsServer.policyFor('custom', listenerId);
-  const server = https.createServer(Object.assign({
+  // HTTP/2 beside HTTP/1.1, as on the main port (#407): offered unless its
+  // `tls.http2` or http.http2 says not (tls_server.js applies the offer).
+  const server = http2.createSecureServer(Object.assign({
+    allowHTTP1: true,
     cert: certificate.cert,
     key: certificate.key,
     // Its own truststore (#429): its tls.trustAnchorsFile and
@@ -1089,6 +1109,8 @@ function customListener(label, certificate, certificateOf, listenerId) {
   // ITS OWN CONNECTION POOLING (#429): its tls.keepAliveTimeoutS and the
   // rest, inheriting the service's http.* rows; re-applied when they change.
   tlsServer.registerHttpListener(server, 'custom', listenerId);
+  server.prependListener('request',
+    require('./common/http2_framing').markFramedBody);
   tlsServer.trustClientCertificatesOn(server, label, certificateOf,
                                       { kind: 'custom', realm: listenerId });
   tlsServer.observeConnectionsOn(server, label);
@@ -1116,7 +1138,15 @@ if (listenerProblem) {
 }
 if (useHttps) {
   const serverCert = tlsServer.serverCertificate();
-  const mainServer = https.createServer(Object.assign({
+  // HTTP/2 AND HTTP/1.1 ON ONE PORT (#407), chosen per connection by ALPN:
+  // node's `http2` secure server is a `tls.Server` like `https.Server`, so
+  // every option and registration below applies to it unchanged, and
+  // `allowHTTP1` hands a client that offers only `http/1.1` to node's own
+  // HTTP/1.1 parser with the server's timeouts. One TLS connection then
+  // carries every request a browser makes in parallel. The application is
+  // adapted for it (`common/http2_express.ts`, from `common/app.js`).
+  const mainServer = http2.createSecureServer(Object.assign({
+    allowHTTP1: true,
     cert: serverCert.certPem,
     key: serverCert.privateKeyPem,
     // THE CLIENT TRUSTSTORE, THE ONE /admin-api/tls/trust FILLS (2026-09-06; it
@@ -1176,6 +1206,11 @@ if (useHttps) {
   // listener and editable since #429: listenerMain.keepAliveTimeoutS and the
   // rest, inheriting http.*, re-applied by tls_server.js when they change.
   tlsServer.registerHttpListener(mainServer, 'main');
+  // AN HTTP/2 BODY WITH NO LENGTH IS STILL A BODY (#407): marked before the
+  // application's own `request` listener reads it, since nothing may sit
+  // above the realm middleware — common/http2_framing.ts.
+  mainServer.prependListener('request',
+    require('./common/http2_framing').markFramedBody);
   // REGISTERED SO THAT A LATER TRUSTSTORE CHANGE REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It

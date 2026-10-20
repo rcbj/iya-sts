@@ -32,6 +32,17 @@
   "grid.notSet": "not set",
   "grid.example": "e.g. ",
   "grid.outside": "(not one of the allowed values)",
+  "grant.authorizationCode": "The authorization code grant (RFC 6749 section 4.1): a code from the authorization endpoint, exchanged at the token endpoint.",
+  "grant.implicit": "The implicit grant (RFC 6749 section 4.2): tokens straight from the authorization endpoint. RFC 9700 mode refuses it.",
+  "grant.refreshToken": "The refresh token grant (RFC 6749 section 6). A client that declares grants without it is issued no refresh token.",
+  "grant.clientCredentials": "The client credentials grant (RFC 6749 section 4.4): a token for the client itself, with no person.",
+  "grant.password": "The resource owner password credentials grant (RFC 6749 section 4.3). OAuth 2.1 mode refuses it.",
+  "grant.tokenExchange": "OAuth 2.0 Token Exchange (RFC 8693): a token exchanged for another, for delegation or impersonation.",
+  "grant.preAuthorizedCode": "OpenID4VCI's pre-authorized code grant: a wallet redeems the code a Credential Offer carried.",
+  "grant.jwtBearer": "A JWT as an authorization grant (RFC 7523 section 2.1). Off where oauth2.jwtBearerGrant is off.",
+  "grant.saml2Bearer": "A SAML 2.0 assertion as an authorization grant (RFC 7522 section 2.1). Off where oauth2.saml2BearerGrant is off.",
+  "grant.ciba": "OpenID Connect Client-Initiated Backchannel Authentication (CIBA): the person approves on another device. Off unless oauth2.ciba is on.",
+  "grant.deviceCode": "The device authorization grant (RFC 8628): a device with no browser shows a code the person enters elsewhere. Off unless oauth2.deviceAuthorization is on.",
   "grid.valueN": "{attribute} value {n}",
   "grid.delete": "Delete this value",
   "grid.deleteN": "Delete value {n} of {attribute}",
@@ -77,5 +88,6 @@
   "mail.none": "This realm has no mail transport (",
   "mail.link": "Mail",
   "mail.noneAfter": "), so {what} is shown to you to pass on.",
-  "mail.box": "mail {what} to the address on their entry, and do not show it to me"
+  "mail.box": "mail {what} to the address on their entry, and do not show it to me",
+  "grid.required": " &middot; required"
 }

@@ -33,6 +33,26 @@
 // (rcbj: a worker whose miss finds the database down refuses; nothing is
 // answered out of a window that cannot say what it is missing).
 //
+// **A CONSOLE REQUEST ALSO HAS A BUDGET (#359).** One question under its
+// own bound still summed, across a page, to 17 s on a surface worker.
+// `runWithBudget()` enters an `AsyncLocalStorage` slot; each `query()`
+// waits only for the room that is left and, once the budget is spent,
+// throws `STS-LDAP-0175` without posting another question. No slot means
+// no budget. The API stays synchronous.
+//
+// **THE BUDGET IS THE REQUEST'S, AND ENDS WITH IT.** An `AsyncLocalStorage`
+// store follows everything started inside it — a timer, a debounced flush,
+// a scheduler job armed lazily by the first request that needed it — and is
+// never cleared there. Left at that, a job armed from a console request
+// carried that request's spent budget for the life of the process and every
+// synchronous read it made failed as `STS-LDAP-0175` (the review of #692).
+// So the slot is CLOSED when the request's response finishes or its
+// connection closes, and a closed slot is no budget; and the background
+// entry points that arm a timer (`cluster/scheduler.ts`'s `setTimer`,
+// `persistence.js`'s flush and retry) arm it through `outsideBudget()`, so
+// what they run never sees a request's slot even while that request is
+// still open.
+//
 // **THE COUNTER, NOT A FLAG.** A flag set to 0 before each question and to 1
 // by the thread loses a wake when a LATE answer to a question that already
 // timed out lands between the reset and the wait. The thread adds one per
@@ -49,28 +69,57 @@
 // A CLASS WHOSE DEPENDENCIES ARRIVE THROUGH ITS CONSTRUCTOR (#50): the
 // connection options (the driver's `bridgeConnection()`), the bound, and —
 // for `tests/sync_query.js` — the module the thread runs its questions
-// through instead of `pg`, so the whole mechanism is exercised in process
+// through instead of the database, so the whole mechanism is exercised in process
 // with no database.
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
 import path = require('path');
 import workerThreads = require('worker_threads');
+import asyncHooks = require('async_hooks');
 import errorCodes = require('./error_codes');
 
 const log = bunyan.createLogger({ name: 'sts-sync-query' });
 
+// One console request's remaining synchronous wait (#359). Module-level,
+// so a question asked from any bridge in the request shares it. No store
+// means no budget: startup, the scheduler, SCIM and an LDAP operation.
+interface BudgetSlot {
+  ms: number;
+  waited: number;
+  // false once the request the budget belongs to has finished or closed.
+  open: boolean;
+}
+
+// What `runWithBudget()` may be handed to end the budget with: the
+// request's response (an `http.ServerResponse` is one).
+interface BudgetLifetime {
+  once(event: string, listener: () => void): unknown;
+}
+
+const directoryBudget = new asyncHooks.AsyncLocalStorage<BudgetSlot>();
+
 // What the constructor takes.
 interface SyncQueryOptions {
-  // `pg` client options: the driver's `bridgeConnection()`.
+  // The connection options (`knex_store.js`'s, #326): the driver's
+  // `bridgeConnection()`.
   connection?: Record<string, unknown> | null;
   // The bound on one question, in milliseconds, asked per question.
   timeoutMs: () => number;
-  // A module path the thread runs questions through instead of `pg`: it
-  // exports `run(name, args)`, which answers or rejects. For tests.
+  // A module path the thread runs questions through instead of the
+  // database: it exports `run(name, args)`, which answers or rejects. For
+  // tests.
   backend?: string | null;
   // The thread's script; the compiled `sync_query_thread.js` beside this.
   threadFile?: string | null;
+  // Named statements the thread builds instead of directory_queries.js.
+  // Absent on the directory bridge, whose workerData stays what it was.
+  queries?: string | null;
+  // Codes for a bridge that is not the directory's. Absent, the three
+  // directory sentences and STS-LDAP-0130/0131/0132 stay byte for byte.
+  timeoutCode?: string | null;
+  refusedCode?: string | null;
+  threadErrorCode?: string | null;
 }
 
 // One answer from the thread.
@@ -89,6 +138,7 @@ interface SyncQueryStats {
   failed: number;
   waitedMs: number;
   longestMs: number;
+  budgetRefused: number;
 }
 
 /**
@@ -100,9 +150,13 @@ class SyncQuery {
   private port: workerThreads.MessagePort | null = null;
   private counter: Int32Array | null = null;
   private nextId = 1;
+  // The statement_timeout the running thread was started with. A session
+  // bridge replaces the thread when the configured wait changes; the
+  // directory bridge keeps the thread it started.
+  private startedBound: number | null = null;
   private readonly figures: SyncQueryStats = {
     started: 0, questions: 0, timedOut: 0, failed: 0, waitedMs: 0,
-    longestMs: 0
+    longestMs: 0, budgetRefused: 0
   };
 
   /**
@@ -120,7 +174,11 @@ class SyncQuery {
     log.debug("Leaving SyncQuery.constructor().");
   }
 
-  // The bound as a usable number: at least 10 ms, at most a minute.
+  // The bound as a usable number, at most a minute. The directory bridge
+  // floors anything below 10 ms, including an unusable number, at 2000,
+  // which is what ldap.workerDirectoryTimeoutMs's minimum matches. A
+  // session bridge honors the configured wait, including 0: that wait
+  // does not block, and it is not replaced with 2000.
   private bound(): number {
     log.debug("Entering SyncQuery.bound().");
     let n = NaN;
@@ -131,31 +189,64 @@ class SyncQuery {
                 ((e && (e as Error).message) || e));
       n = NaN;
     }
+    let out = 2000;
+    if (isFinite(n)) {
+      const floor = this.options.timeoutCode ? 0 : 10;
+      if (n >= floor) {
+        out = Math.min(n, 60000);
+      }
+    }
     log.debug("Leaving SyncQuery.bound().");
-    return isFinite(n) && n >= 10 ? Math.min(n, 60000) : 2000;
+    return out;
   }
 
   // STARTS THE THREAD when there is none. Unref'd both ways, so a process
   // with nothing else to do can still exit.
   private ensureThread(): void {
     log.debug("Entering SyncQuery.ensureThread().");
-    if (this.worker && this.port && this.counter) {
+    const bound = this.bound();
+    // A session bridge's statement_timeout is copied into the thread once.
+    // When the configured wait changes, that copy would keep cancelling at
+    // the old bound, so the thread is replaced. The directory bridge does
+    // not: its tests change the bound on a live thread and still read the
+    // late answer from it.
+    if (this.worker && this.port && this.counter &&
+        (!this.options.timeoutCode || this.startedBound === bound)) {
       log.debug("Leaving SyncQuery.ensureThread(). Running.");
       return;
+    }
+    if (this.worker) {
+      const old = this.worker;
+      this.forget(old);
+      const gone = old.terminate();
+      Promise.resolve(gone).catch(function (e: any) {
+        log.debug("Caught in SyncQuery.ensureThread(): " +
+                  ((e && e.message) || e));
+      });
     }
     const shared = new SharedArrayBuffer(4);
     const channel = new workerThreads.MessageChannel();
     const file = this.options.threadFile ||
       path.join(__dirname, 'sync_query_thread.js');
+    // `queries` is added only when this bridge names its own module. The
+    // directory bridge's workerData is the four fields it has always posted.
+    // statement_timeout matches this call's bound, including 0. PostgreSQL
+    // treats 0 as no server cancel; the client has already returned.
+    const workerData: Record<string, unknown> = {
+      counter: shared, port: channel.port2,
+      connection: this.options.connection
+        ? Object.assign({}, this.options.connection,
+                        { statement_timeout: bound })
+        : null,
+      backend: this.options.backend || null
+    };
+    if (this.options.queries) {
+      workerData.queries = this.options.queries;
+    }
     const worker = new workerThreads.Worker(file, {
       // THE STATEMENT TIMEOUT IS THE BOUND, so a query this side has given
       // up on does not go on running in the database.
-      workerData: { counter: shared, port: channel.port2,
-                    connection: this.options.connection
-                      ? Object.assign({}, this.options.connection,
-                                      { statement_timeout: this.bound() })
-                      : null,
-                    backend: this.options.backend || null },
+      workerData: workerData,
       transferList: [channel.port2]
     });
     worker.unref();
@@ -163,8 +254,11 @@ class SyncQuery {
     worker.on('error', (err: Error) => {
       // Delivered by the event loop, so after the question it broke has
       // already timed out; the next question starts a new thread.
-      log.error(errorCodes.tag('STS-LDAP-0132') + 'sync_query: the ' +
-                'directory bridge\'s thread failed: ' + err.message +
+      const threadCode = this.options.threadErrorCode || 'STS-LDAP-0132';
+      const bridgeName = this.options.threadErrorCode
+        ? 'session bridge\'s' : 'directory bridge\'s';
+      log.error(errorCodes.tag(threadCode) + 'sync_query: the ' +
+                bridgeName + ' thread failed: ' + err.message +
                 '. The next question starts a new one.');
       this.forget(worker);
     });
@@ -175,6 +269,7 @@ class SyncQuery {
     this.worker = worker;
     this.port = channel.port1;
     this.counter = new Int32Array(shared);
+    this.startedBound = bound;
     this.figures.started += 1;
     log.debug("Leaving SyncQuery.ensureThread(). Started.");
   }
@@ -201,15 +296,44 @@ class SyncQuery {
    * @param args - its arguments
    * @returns the answer
    * @throws an Error marked `STS-LDAP-0130` when no answer came within the
-   *   bound, or `STS-LDAP-0131` when the store refused the question
+   *   bound, `STS-LDAP-0131` when the store refused the question, or
+   *   `STS-LDAP-0175` when this request's budget is already spent
    */
   query(name: string, args: unknown[]): unknown {
     log.debug("Entering SyncQuery.query(). " + name);
+    // A SESSION BRIDGE (#350) IS OUTSIDE THE DIRECTORY BUDGET. The budget
+    // is a console request's wait on the DIRECTORY (#359); a session read
+    // is the cookie middleware's, ahead of every page, and a spent
+    // directory budget refusing it would turn a slow console page into
+    // STS-LDAP-0175 on the sign-on itself. Its own bound is
+    // authn.sessionWindowTimeoutMs, and it neither reads nor adds to the
+    // slot.
+    const held = this.options.timeoutCode
+      ? undefined : directoryBudget.getStore();
+    // A closed slot belongs to a request that has finished: whatever is
+    // asking now was started by it and outlived it, and has no budget.
+    const slot = held && held.open ? held : undefined;
+    if (slot && slot.waited >= slot.ms) {
+      this.figures.budgetRefused += 1;
+      log.debug("Leaving SyncQuery.query(). The request's budget is spent.");
+      throw errorCodes.mark(new Error(errorCodes.tag('STS-LDAP-0175') +
+        'The directory could not be read: this request has already ' +
+        'waited ' + slot.waited + ' ms for the store, and its budget ' +
+        'is ' + slot.ms + ' ms.'), 'STS-LDAP-0175');
+    }
     this.ensureThread();
     const port = this.port as workerThreads.MessagePort;
     const counter = this.counter as Int32Array;
     const id = this.nextId++;
-    const bound = this.bound();
+    // THE QUESTION'S OWN BOUND, cut by whatever of the request's budget
+    // is left. The cut is not raised back to 10 ms: a few milliseconds
+    // of room is a few milliseconds of waiting, and the question that
+    // does not finish in them is the same timeout as one that used its
+    // whole bound.
+    const questionBound = this.bound();
+    const bound = slot
+      ? Math.min(questionBound, Math.max(0, slot.ms - slot.waited))
+      : questionBound;
     const started = Date.now();
     this.figures.questions += 1;
     port.postMessage({ id: id, name: String(name),
@@ -230,20 +354,26 @@ class SyncQuery {
     const waited = Date.now() - started;
     this.figures.waitedMs += waited;
     this.figures.longestMs = Math.max(this.figures.longestMs, waited);
+    if (slot) {
+      slot.waited += waited;
+    }
+    const timeoutCode = this.options.timeoutCode || 'STS-LDAP-0130';
+    const refusedCode = this.options.refusedCode || 'STS-LDAP-0131';
+    const kind = this.options.timeoutCode ? 'session store' : 'directory';
     if (!answer) {
       this.figures.timedOut += 1;
       log.debug("Leaving SyncQuery.query(). Timed out.");
-      throw errorCodes.mark(new Error(errorCodes.tag('STS-LDAP-0130') +
-        'The directory could not be read: the store did not answer "' +
-        name + '" within ' + bound + ' ms.'), 'STS-LDAP-0130');
+      throw errorCodes.mark(new Error(errorCodes.tag(timeoutCode) +
+        'The ' + kind + ' could not be read: the store did not answer "' +
+        name + '" within ' + bound + ' ms.'), timeoutCode);
     }
     if (!answer.ok) {
       this.figures.failed += 1;
       const why = (answer.error && answer.error.message) || 'no reason given';
       log.debug("Leaving SyncQuery.query(). Refused.");
-      throw errorCodes.mark(new Error(errorCodes.tag('STS-LDAP-0131') +
-        'The directory could not be read: the store refused "' + name +
-        '": ' + why), 'STS-LDAP-0131');
+      throw errorCodes.mark(new Error(errorCodes.tag(refusedCode) +
+        'The ' + kind + ' could not be read: the store refused "' + name +
+        '": ' + why), refusedCode);
     }
     log.debug("Leaving SyncQuery.query().");
     return answer.value;
@@ -297,6 +427,89 @@ class SyncQuery {
     log.debug("Entering SyncQuery.stats().");
     log.debug("Leaving SyncQuery.stats().");
     return Object.assign({}, this.figures);
+  }
+
+  /**
+   * Runs `fn` with a budget on the synchronous waits `query()` does
+   * inside it (#359). A non-positive or non-finite budget runs `fn`
+   * with none. The wait is cumulative across every question in the
+   * call, including one a timeout cut short. When `lifetime` is given
+   * (the request's response), the budget ends at its `finish` or
+   * `close`: anything `fn` started that is still running afterwards
+   * asks with no budget.
+   *
+   * @param ms - the budget, in milliseconds
+   * @param fn - the work
+   * @param lifetime - what ends the budget, or none
+   * @returns whatever `fn` returns
+   */
+  static runWithBudget(ms: number, fn: () => unknown,
+                       lifetime?: BudgetLifetime): unknown {
+    log.debug("Entering SyncQuery.runWithBudget().");
+    const n = Number(ms);
+    let answer: unknown;
+    if (!isFinite(n) || n <= 0) {
+      try {
+        answer = fn();
+      } catch (e) {
+        // `fn` refused. The code is the caller's to map, so it propagates
+        // after this function has recorded it and left out loud.
+        log.debug("Caught in SyncQuery.runWithBudget(): " +
+                  ((e && (e as Error).message) || e));
+        log.debug("Leaving SyncQuery.runWithBudget(). No budget.");
+        throw e;
+      }
+      log.debug("Leaving SyncQuery.runWithBudget(). No budget.");
+      return answer;
+    }
+    const slot: BudgetSlot = { ms: n, waited: 0, open: true };
+    if (lifetime && typeof lifetime.once === 'function') {
+      const close = function (): void {
+        slot.open = false;
+      };
+      lifetime.once('finish', close);
+      lifetime.once('close', close);
+    }
+    try {
+      answer = directoryBudget.run(slot, fn);
+    } catch (e) {
+      // The same refusal, now from a question that ran under the budget.
+      log.debug("Caught in SyncQuery.runWithBudget(): " +
+                ((e && (e as Error).message) || e));
+      log.debug("Leaving SyncQuery.runWithBudget().");
+      throw e;
+    }
+    log.debug("Leaving SyncQuery.runWithBudget().");
+    return answer;
+  }
+
+  /**
+   * Runs `fn` with no request's budget, whatever context it was called
+   * from: a background entry point arms its timer through this, so the
+   * work the timer runs never inherits a console request's slot.
+   *
+   * @param fn - the work
+   * @returns whatever `fn` returns
+   */
+  static outsideBudget<T>(fn: () => T): T {
+    log.debug("Entering SyncQuery.outsideBudget().");
+    const answer = directoryBudget.exit(fn);
+    log.debug("Leaving SyncQuery.outsideBudget().");
+    return answer;
+  }
+
+  /**
+   * Whether a budget is in force here: an open slot (for tests and for
+   * a reader of the logs).
+   *
+   * @returns true inside a request's open budget
+   */
+  static budgetInForce(): boolean {
+    log.debug("Entering SyncQuery.budgetInForce().");
+    const held = directoryBudget.getStore();
+    const inForce = Boolean(held && held.open);
+    log.debug("Leaving SyncQuery.budgetInForce().");
+    return inForce;
   }
 }
 

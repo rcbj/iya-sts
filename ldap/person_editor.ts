@@ -78,6 +78,25 @@
 // MUST list (RFC 4519 3.12), so clearing either, or removing its last value,
 // is refused — the same rule a schema-checking directory would apply.
 //
+// **NOR, IN PRODUCT MODE, CAN AN ATTRIBUTE THE REALM'S ATTRIBUTE POLICY
+// REQUIRES (#396)** — `common/attribute_policy.ts`, `givenName` and `mail`
+// by default. Only taking a value AWAY is refused: a person created before
+// the policy said so, who never held one, may still be edited in every other
+// attribute, and is given one here like anybody else.
+//
+// ---------------------------------------------------------------------------
+// A REALM'S CUSTOM ATTRIBUTES ARE IN THE UNIVERSE TOO (#396).
+//
+// `common/attribute_policy.ts` keeps a register of attributes an
+// administrator defined for the realm (`ou=attributeDefinitions`), each with
+// a syntax and whether it holds one value or several. They are a THIRD list
+// beside the schema and the catalogue, read per call like the other two, so
+// a definition is editable here, settable at a create and checked against its
+// syntax the moment it exists. They are drawn under a group of their own,
+// Custom. The register refuses a name either of the other lists knows, a
+// name beginning `sts` and `memberOf`, so the allowlist's reason above still
+// holds: nothing becomes editable that an administrator did not name.
+//
 // ---------------------------------------------------------------------------
 // THE VALUES ARE CHECKED WHERE THE SCHEMA GIVES THEM A SHAPE, and nowhere
 // else. Every value is trimmed, is at most `MAX_VALUE_LENGTH` characters and
@@ -136,6 +155,9 @@ import InstanceSlot = require('../common/instance_slot');
 import inetOrgPerson = require('../common/inetorgperson');
 import vcClaims = require('../oid4vc/vc_claims');
 import countryCodes = require('../common/country_codes');
+// The realm's custom attributes and its required ones (#396). A library that
+// requires this module only lazily, so the require here closes no cycle.
+import attributePolicy = require('../common/attribute_policy');
 
 // One editable attribute, as the page draws it and the API publishes it.
 interface EditableRow {
@@ -151,6 +173,8 @@ interface EditableRow {
   group: string;
   example: string;
   simple: boolean;
+  // A realm's own attribute, from the attribute policy's register (#396).
+  custom: boolean;
 }
 
 // One attribute of the universe that is NOT editable, with the door to use.
@@ -197,6 +221,14 @@ interface PersonEditorDeps {
                             binary?: boolean }>;
   catalogueRows: () => Array<{ ldap: string; label: string;
                                schema: string }>;
+  // The realm's custom attributes (#396), and what the attribute policy
+  // makes of an edit.
+  customRows: () => Array<{ name: string; label: string; syntax: string;
+                            multi: boolean; description: string }>;
+  editRefusal: (before: Record<string, unknown>,
+                after: Record<string, unknown>) =>
+    { removed: string[]; message: string } | null;
+  requiredNames: () => string[];
   alpha3: (code: string) => string;
   audit: (row: Record<string, unknown>) => void;
 }
@@ -226,14 +258,38 @@ const FORMATS: Record<string, string> = {
   seealso: 'dn', manager: 'dn', secretary: 'dn'
 };
 
-// What each format asks for, in the words a refusal and the page use.
+// What each format asks for, in the words a refusal and the page use. The
+// last three are a custom attribute's syntaxes (#396); `date`, `uri` and
+// `dn` serve both.
 const FORMAT_HINTS: Record<string, string> = {
   country: 'an ISO 3166-1 alpha-2 country code, such as SE',
   date: 'a date, YYYYMMDD or YYYY-MM-DD',
   language: 'a language range, such as en-GB or "da, en-gb;q=0.8"',
   uri: 'an http or https URL, optionally followed by a space and a label',
-  dn: 'a distinguished name, such as uid=bob,ou=users,dc=example,dc=com'
+  dn: 'a distinguished name, such as uid=bob,ou=users,dc=example,dc=com',
+  integer: 'a whole number, such as 42 or -7',
+  boolean: 'TRUE or FALSE',
+  email: 'an email address, such as alice@example.com'
 };
+
+// A custom attribute's syntax (#396) as the format its values are checked
+// against; `string` has none.
+const SYNTAX_FORMATS: Record<string, string> = {
+  string: '', integer: 'integer', boolean: 'boolean', date: 'date',
+  email: 'email', uri: 'uri', dn: 'dn'
+};
+
+// An example of a valid value for a custom attribute, by its syntax.
+const SYNTAX_EXAMPLES: Record<string, string> = {
+  string: 'Some text', integer: '42', boolean: 'TRUE', date: '20260131',
+  email: 'alice@example.com', uri: 'https://example.com/',
+  dn: 'uid=bob,ou=users,dc=example,dc=com'
+};
+
+// RFC 5322 section 3.4.1's addr-spec in the dot-atom form every address
+// this service sends to has: a local part and a domain, no whitespace. The
+// SHAPE of one; whether it delivers is the mail channel's question.
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // MANAGED: in the universe, and written by a door of its own.
 const MANAGED: Record<string, string> = {
@@ -284,6 +340,13 @@ const FIELD_GROUPS = [
     attributes: ['schacDateOfBirth', 'placeOfBirthCountry',
                  'placeOfBirthRegion', 'placeOfBirthLocality',
                  'schacCountryOfCitizenship', 'x500UniqueIdentifier'] },
+  // A REALM'S OWN ATTRIBUTES (#396), drawn after the schema's groups.
+  // `groupOf()` never answers it: a custom row is put here by name when the
+  // universe is built.
+  { id: 'custom', label: 'Custom',
+    what: 'This realm\'s own attributes, defined on Directory > Policies > ' +
+          'Attribute policy.',
+    attributes: [] as string[] },
   { id: 'other', label: 'Other',
     what: 'Everything else the schema gives a person.',
     attributes: [] as string[] }
@@ -438,6 +501,21 @@ class PersonEditor {
         return vcClaims.personFields();
       },
       alpha3: countryCodes.alpha3,
+      customRows: function customRows() {
+        helpers.log.debug("Entering customRows().");
+        helpers.log.debug("Leaving customRows().");
+        return attributePolicy.definitions();
+      },
+      editRefusal: function editRefusal(before, after) {
+        helpers.log.debug("Entering editRefusal().");
+        helpers.log.debug("Leaving editRefusal().");
+        return attributePolicy.editRefusal(before, after);
+      },
+      requiredNames: function requiredNames() {
+        helpers.log.debug("Entering requiredNames().");
+        helpers.log.debug("Leaving requiredNames().");
+        return attributePolicy.required();
+      },
       // LAZILY: `common/audit.js` is a leaf, but it is the audit log's to be
       // loaded where the service loads it.
       audit: function audit(row) {
@@ -454,14 +532,16 @@ class PersonEditor {
   // appears here with nothing else to change.
   // -------------------------------------------------------------------------
   private universe(): { editable: EditableRow[]; withheld: Withheld[] } {
-    const { log, schemaRows, catalogueRows } = this.deps;
+    const { log, schemaRows, catalogueRows, customRows } = this.deps;
     log.debug("Entering PersonEditor.universe().");
     const editable: EditableRow[] = [];
     const withheld: Withheld[] = [];
     const seen = new Set<string>();
     const consider = function (name: string, label: string, schema: string,
                                flags: { must?: boolean; secret?: boolean;
-                                        binary?: boolean }) {
+                                        binary?: boolean;
+                                        custom?: { syntax: string;
+                                                   multi: boolean } }) {
       log.debug("Entering consider(). " + name);
       const key = name.toLowerCase();
       if (seen.has(key)) {
@@ -491,13 +571,20 @@ class PersonEditor {
         log.debug("Leaving consider(). Managed.");
         return;
       }
-      const format = FORMATS[key] || '';
+      const custom = flags.custom;
+      const format = custom ? (SYNTAX_FORMATS[custom.syntax] || '')
+                            : (FORMATS[key] || '');
       editable.push({ name: name, label: label, schema: schema,
-                      multi: SINGLE_VALUED.indexOf(key) < 0,
+                      multi: custom ? custom.multi
+                                    : SINGLE_VALUED.indexOf(key) < 0,
                       must: !!flags.must, format: format,
                       note: format ? FORMAT_HINTS[format] : '',
-                      group: groupOf(name), example: FIELD_EXAMPLES[key] || '',
-                      simple: SIMPLE_FIELDS.indexOf(key) >= 0 });
+                      group: custom ? 'custom' : groupOf(name),
+                      example: custom
+                        ? (SYNTAX_EXAMPLES[custom.syntax] || '')
+                        : (FIELD_EXAMPLES[key] || ''),
+                      simple: SIMPLE_FIELDS.indexOf(key) >= 0,
+                      custom: !!custom });
       log.debug("Leaving consider(). Editable.");
     };
     schemaRows().forEach(function (row) {
@@ -505,6 +592,25 @@ class PersonEditor {
     });
     catalogueRows().forEach(function (row) {
       consider(row.ldap, row.label, row.schema, {});
+    });
+    // THE REALM'S OWN, LAST (#396): a name the two lists above already hold
+    // is never one, since the register refuses it, and `seen` would keep
+    // the schema's row if one ever were.
+    let custom: Array<{ name: string; label: string; syntax: string;
+                        multi: boolean }> = [];
+    try {
+      custom = customRows();
+    } catch (e) {
+      log.debug("Caught in PersonEditor.universe(): " +
+                ((e && e.message) || e));
+      // A register that cannot be read adds nothing: the schema's and the
+      // catalogue's attributes are still every person's.
+      custom = [];
+    }
+    custom.forEach(function (row) {
+      consider(row.name, row.label,
+               'custom attribute (' + row.syntax + ')',
+               { custom: { syntax: row.syntax, multi: !!row.multi } });
     });
     log.debug("Leaving PersonEditor.universe(). " + editable.length +
               " editable, " + withheld.length + " withheld.");
@@ -578,11 +684,25 @@ class PersonEditor {
       return null;
     }
     const universe = this.universe();
+    // WHAT THE REALM'S ATTRIBUTE POLICY REQUIRES (#396), marked per row so
+    // the page can say which boxes an edit may not empty.
+    let required: string[] = [];
+    try {
+      required = this.deps.requiredNames().map(function (one) {
+        return one.toLowerCase();
+      });
+    } catch (e) {
+      log.debug("Caught in PersonEditor.editorFor(): " +
+                ((e && e.message) || e));
+      // Unmarked rather than undrawn: the edit itself still asks.
+      required = [];
+    }
     const attributes = universe.editable.map(function (row) {
       const held = person.attributes[row.name.toLowerCase()] || [];
       const naming = person.naming.indexOf(row.name.toLowerCase()) >= 0;
       return Object.assign({}, row, {
         values: held.map(String),
+        required: required.indexOf(row.name.toLowerCase()) >= 0,
         editable: !naming,
         why: naming
           ? 'The entry is named by it (' + person.dn + '), so an edit would ' +
@@ -671,6 +791,23 @@ class PersonEditor {
         // Not a URL at all: refused below with the same words as a URL of
         // the wrong scheme.
       }
+      log.debug("Leaving PersonEditor.shaped(). " + ok);
+      return ok ? { value: value } : { error: hint };
+    }
+    // A CUSTOM ATTRIBUTE'S THREE (#396).
+    if (format === 'integer') {
+      const ok = /^-?(0|[1-9][0-9]{0,17})$/.test(value);
+      log.debug("Leaving PersonEditor.shaped(). " + ok);
+      return ok ? { value: value } : { error: hint };
+    }
+    if (format === 'boolean') {
+      const upper = value.toUpperCase();
+      const ok = upper === 'TRUE' || upper === 'FALSE';
+      log.debug("Leaving PersonEditor.shaped(). " + ok);
+      return ok ? { value: upper } : { error: hint };
+    }
+    if (format === 'email') {
+      const ok = EMAIL_SHAPE.test(value);
       log.debug("Leaving PersonEditor.shaped(). " + ok);
       return ok ? { value: value } : { error: hint };
     }
@@ -858,6 +995,14 @@ class PersonEditor {
                           'every person by the schema (RFC 4519 3.12), so ' +
                           'it cannot be left empty. Set another value ' +
                           'instead.');
+    }
+    // AND WHAT THE REALM'S ATTRIBUTE POLICY REQUIRES (#396), in product
+    // mode: only a value taken AWAY, never one the person already lacked.
+    const policy = this.deps.editRefusal({ [lower]: before },
+                                         { [lower]: after });
+    if (policy) {
+      log.debug("Leaving PersonEditor.update(). Required by the policy.");
+      return this.refused('STS-LDAP-0164', policy.message);
     }
     const written = directory.write(person.dn, lower, after);
     audit({ category: 'admin', action: 'admin.user.attribute',

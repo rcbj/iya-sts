@@ -25,6 +25,16 @@
 //   E. the `pg` path's own front half, with no database: an unknown query is
 //      refused before anything is dialled, and an address nobody listens on
 //      is a refusal (`STS-LDAP-0131`) inside the bound.
+//   F. a console request's budget (#359): `runWithBudget()` cuts a question
+//      to the room that is left (`STS-LDAP-0130`) and, once that room is
+//      gone, refuses the next question (`STS-LDAP-0175`) without posting it.
+//      The kit's thread is one thread, so a question the budget cut short is
+//      still running there: the next case waits for it. No slot means no
+//      budget.
+//   G. the budget ends with its request (the review of #692): a timer the
+//      request started that fires after its response finished sees no
+//      budget and is answered, and a timer armed through `outsideBudget()`
+//      sees none even while the request is open.
 //
 // WHAT NEEDS A REAL POSTGRES (on #349): an answer through `pg` itself, the
 // statement timeout taking effect, and a database restarted under a waiting
@@ -32,6 +42,7 @@
 // ===========================================================================
 
 const path = require('path');
+const EventEmitter = require('events');
 const SyncQuery = require('../common/sync_query');
 const errorCodes = require('../common/error_codes');
 
@@ -171,13 +182,164 @@ async function run(t) {
   } finally {
     await nowhere.stop();
   }
+
+  t.log.info('=== F. a request\'s budget (#359) ===');
+  bound = 300;
+  const budgetBridge = new SyncQuery({ backend: KIT,
+    timeoutMs: function () { return bound; } });
+  try {
+    const free = attempt(function () {
+      return SyncQuery.runWithBudget(0, function () {
+        return budgetBridge.query('echo', ['free']);
+      });
+    });
+    t.check(free.value === 'free' && free.code === '',
+            'F1. a non-positive budget runs the question with none',
+            JSON.stringify(free));
+    const cut = SyncQuery.runWithBudget(40, function () {
+      const slow = attempt(function () {
+        return budgetBridge.query('slow', [500, 'late']);
+      });
+      const asked = budgetBridge.stats().questions;
+      const refused = attempt(function () {
+        return budgetBridge.query('echo', ['no']);
+      });
+      return { slow: slow, refused: refused, asked: asked,
+               questions: budgetBridge.stats().questions,
+               budgetRefused: budgetBridge.stats().budgetRefused };
+    });
+    t.check(cut.slow.code === 'STS-LDAP-0130' && cut.slow.ms >= 20 &&
+            cut.slow.ms < 200,
+            'F2. a question is cut to the budget that is left, and times ' +
+            'out as STS-LDAP-0130', JSON.stringify(cut.slow));
+    t.check(cut.refused.code === 'STS-LDAP-0175' && cut.refused.ms < 50 &&
+            cut.questions === cut.asked && cut.budgetRefused >= 1,
+            'F3. once the budget is spent the next question is ' +
+            'STS-LDAP-0175 and is not asked', JSON.stringify(cut));
+    // The thread is still inside slow(500). The next case waits it out.
+    await pause(600);
+    const summed = SyncQuery.runWithBudget(200, function () {
+      const one = attempt(function () {
+        return budgetBridge.query('slow', [25, 'one']);
+      });
+      const two = attempt(function () {
+        return budgetBridge.query('slow', [25, 'two']);
+      });
+      const third = attempt(function () {
+        return budgetBridge.query('slow', [500, 'three']);
+      });
+      const asked = budgetBridge.stats().questions;
+      const fourth = attempt(function () {
+        return budgetBridge.query('echo', ['four']);
+      });
+      return { one: one, two: two, third: third, fourth: fourth,
+               asked: asked, questions: budgetBridge.stats().questions };
+    });
+    t.check(summed.one.value === 'one' && summed.two.value === 'two',
+            'F4. two short questions inside the budget both answer',
+            JSON.stringify({ one: summed.one, two: summed.two }));
+    t.check(summed.third.code === 'STS-LDAP-0130' && summed.third.ms < 250,
+            'F5. a later question is cut to the room that remains',
+            JSON.stringify(summed.third));
+    t.check(summed.fourth.code === 'STS-LDAP-0175' &&
+            summed.questions === summed.asked && summed.fourth.ms < 50,
+            'F6. and the question after that is refused without being asked',
+            JSON.stringify(summed.fourth));
+    await pause(600);
+    const open = attempt(function () {
+      return budgetBridge.query('slow', [400, 'open']);
+    });
+    t.check(open.code === 'STS-LDAP-0130' && open.ms >= 250 && open.ms < 700,
+            'F7. with no budget a question uses its own bound',
+            JSON.stringify(open));
+    await pause(450);
+    const again = attempt(function () {
+      return budgetBridge.query('echo', ['again']);
+    });
+    t.equal(again.value, 'again',
+            'F8. and the next question, still with no budget, is answered');
+
+    t.log.info('=== G. the budget ends with its request (#359 review) ===');
+    // A response stand-in: `runWithBudget()` listens for its `finish`.
+    const response = new EventEmitter();
+    let afterFinish = null;
+    let armedOutside = null;
+    let inheritedWhileOpen = null;
+    const background = [];
+    SyncQuery.runWithBudget(40, function () {
+      // Spend the whole budget, as a slow console page does.
+      attempt(function () {
+        return budgetBridge.query('slow', [500, 'spent']);
+      });
+      // A timer the request starts and that outlives it: a debounced
+      // flush, a lazily armed job.
+      background.push(new Promise(function (resolve) {
+        setTimeout(function () {
+          afterFinish = { inForce: SyncQuery.budgetInForce(),
+            asked: attempt(function () {
+              return budgetBridge.query('echo', ['later']);
+            }) };
+          resolve();
+        }, 650);
+      }));
+      // A timer armed through the background door while the request is
+      // still open (it fires before `finish`).
+      background.push(new Promise(function (resolve) {
+        SyncQuery.outsideBudget(function () {
+          return setTimeout(function () {
+            armedOutside = SyncQuery.budgetInForce();
+            resolve();
+          }, 5);
+        });
+      }));
+      // And a plain timer firing while the request is open: it shares the
+      // request's budget, which is the request's own work.
+      background.push(new Promise(function (resolve) {
+        setTimeout(function () {
+          inheritedWhileOpen = SyncQuery.budgetInForce();
+          resolve();
+        }, 5);
+      }));
+      return null;
+    }, response);
+    await pause(50);
+    response.emit('finish');
+    await Promise.all(background);
+    t.check(armedOutside === false,
+            'G1. a timer armed through outsideBudget() inside an open ' +
+            'budget sees no budget', String(armedOutside));
+    t.check(inheritedWhileOpen === true,
+            'G2. a plain timer firing while its request is open shares ' +
+            'that request\'s budget', String(inheritedWhileOpen));
+    t.check(afterFinish && afterFinish.inForce === false &&
+            afterFinish.asked.value === 'later' &&
+            afterFinish.asked.code === '',
+            'G3. a timer a budgeted request started, firing after the ' +
+            'request finished, sees no budget and its question is ' +
+            'answered rather than refused as STS-LDAP-0175',
+            JSON.stringify(afterFinish));
+    // The background entry points arm their timers through that door. A
+    // statement, not a line: each is read whole from its file.
+    const fs = require('fs');
+    const scheduler = fs.readFileSync(path.join(__dirname, '..', 'cluster',
+                                                'scheduler.ts'), 'utf8');
+    const store = fs.readFileSync(path.join(__dirname, '..', 'persistence',
+                                            'persistence.js'), 'utf8');
+    t.check(/setTimer:[\s\S]{0,400}outsideBudget\(/.test(scheduler) &&
+            /\btimer = outsideBudget\(/.test(store) &&
+            /retryTimer = outsideBudget\(/.test(store),
+            'G4. the scheduler\'s timers and the persistence flush and ' +
+            'retry are armed outside any request\'s budget');
+  } finally {
+    await budgetBridge.stop();
+  }
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'sync_query',
   describe: 'the directory bridge (#349): a synchronous answer through a ' +
-            'worker thread, the bound, a refusal, a thread that dies, and ' +
-            'the pg path with no database',
+            'worker thread, the bound, a refusal, a thread that dies, the ' +
+            'pg path with no database, and a request\'s budget (#359)',
   run: run
 };

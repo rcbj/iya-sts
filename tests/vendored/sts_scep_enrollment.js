@@ -396,16 +396,18 @@ async function test() {
   // by every realm; it is raised for this job and put back at the end.
   await setting(realmApi, "scep.attemptsPerAddress", 100000);
   await setting(realmBApi, "scep.attemptsPerAddress", 100000);
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode, and realm B is in product mode.
   for (const person of [ALICE, BOB]) {
     await ok(realmApi + "/users/create",
              { username: person, invent: false, credential: "none",
-               attributes: { cn: person, sn: person,
+               attributes: { cn: person, givenName: "SCEP", sn: person,
                              mail: person + "@scep.example" } },
              "created " + person);
   }
   await ok(realmBApi + "/users/create",
            { username: CAROL, invent: false, credential: "none",
-             attributes: { cn: CAROL, sn: CAROL,
+             attributes: { cn: CAROL, givenName: "SCEP", sn: CAROL,
                            mail: CAROL + "@scep.example" } },
            "created " + CAROL + " in realm B");
   await ok(realmApi + "/applications/create",

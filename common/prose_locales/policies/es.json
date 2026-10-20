@@ -1023,6 +1023,14 @@
     "en": "dcf08d219b55b2ed",
     "text": "DESACTIVADO DE FORMA PREDETERMINADA. Las reglas de atestación (la configuración webauthn.attestation*: la política, la lista de AAGUID, el nivel de certificación y FIPS) se comprueban cuando se registra una llave de acceso. Activado, se vuelven a comprobar en cada inicio de sesión contra lo que se registró entonces y contra el FIDO Metadata Service tal como está ahora, así que una llave registrada antes de que se endureciera una regla, o cuyo modelo se haya informado después como comprometido, deja de iniciar sesión de nadie. Una llave sin atestación de confianza no cumple ninguna regla que la exija."
   },
+  "passkey.FIELDS.postQuantumRequired.label": {
+    "en": "011c5d09e4f351f3",
+    "text": "Exigir una llave de acceso poscuántica"
+  },
+  "passkey.FIELDS.postQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off` (el valor predeterminado) acepta una llave de acceso sea cual sea su algoritmo de firma. `sign-in` solo acepta una llave de acceso POSCUÁNTICA, cuyo algoritmo es ML-DSA-44, ML-DSA-65 o ML-DSA-87 (RFC 9964), cuando inicia la sesión de alguien, como primera credencial o como segundo factor; una clásica aún puede registrarse. `registration-and-sign-in` también rechaza una clásica en el registro, y el registro entonces solo ofrece ML-DSA. Decide el algoritmo, no el carril en que se creó una llave. Se rechaza mientras el dominio no ofrezca ningún ML-DSA (webauthn.algorithms no nombra ninguno, y ni webauthn.pqcOnly ni webauthn.pqcAlongsideClassical está activado)."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Sugerencias que envía \"Crear una llave de acceso\""
@@ -1087,6 +1095,14 @@
     "en": "128deae048d6edbf",
     "text": "ACTIVADO DE FORMA PREDETERMINADA: un solo paso \"Usar llave de acceso\" cuya solicitud enumera todas las llaves de acceso de la persona, y el navegador ofrece la que esté presente. Desactivado, a una persona con más de una se le muestra una opción por llave de acceso, por su nombre, y la solicitud indica solo esa."
   },
+  "passkey.FIELDS.recoveryAssurance.label": {
+    "en": "f1e6580ee3b2ee9c",
+    "text": "Recuperación de cuenta para una persona que tiene una llave de acceso"
+  },
+  "passkey.FIELDS.recoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "`any` DE FORMA PREDETERMINADA EN DESARROLLO, `not-weaker` EN PRODUCTO. Si una forma de volver a la cuenta que no pide ninguna llave de acceso — un enlace de restablecimiento de contraseña, un enlace de activación, un código de recuperación, un código o enlace enviado por correo — restablece el acceso de una persona que tiene una. `any`: de inmediato. `not-weaker`: el primer inicio de sesión posterior que no sea con llave de acceso no llega a ninguna aplicación; la persona registra una llave de acceso que cumpla esta política e inicia sesión con ella. `operator-only`: como not-weaker, y se rechazan las puertas de autoservicio (el formulario de contraseña olvidada, un código de recuperación o un código o enlace enviado por correo al iniciar sesión); solo queda el enlace de restablecimiento, la contraseña generada o el enlace de activación de un administrador. Si se omite al guardar, se mantiene el valor predeterminado integrado."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "La clase de este servicio para una política de llaves de acceso: cómo se comportan las llaves de acceso en este dominio. La entrada lleva el nombre del PERFIL (`cn=default`)."
@@ -1123,6 +1139,10 @@
     "en": "dcf08d219b55b2ed",
     "text": "DESACTIVADO DE FORMA PREDETERMINADA. Las reglas de atestación (la configuración webauthn.attestation*: la política, la lista de AAGUID, el nivel de certificación y FIPS) se comprueban cuando se registra una llave de acceso. Activado, se vuelven a comprobar en cada inicio de sesión contra lo que se registró entonces y contra el FIDO Metadata Service tal como está ahora, así que una llave registrada antes de que se endureciera una regla, o cuyo modelo se haya informado después como comprometido, deja de iniciar sesión de nadie. Una llave sin atestación de confianza no cumple ninguna regla que la exija."
   },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off` (el valor predeterminado) acepta una llave de acceso sea cual sea su algoritmo de firma. `sign-in` solo acepta una llave de acceso POSCUÁNTICA, cuyo algoritmo es ML-DSA-44, ML-DSA-65 o ML-DSA-87 (RFC 9964), cuando inicia la sesión de alguien, como primera credencial o como segundo factor; una clásica aún puede registrarse. `registration-and-sign-in` también rechaza una clásica en el registro, y el registro entonces solo ofrece ML-DSA. Decide el algoritmo, no el carril en que se creó una llave. Se rechaza mientras el dominio no ofrezca ningún ML-DSA (webauthn.algorithms no nombra ninguno, y ni webauthn.pqcOnly ni webauthn.pqcAlongsideClassical está activado)."
+  },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
     "text": "Las sugerencias (hints) de WebAuthn (Level 3 sección 5.4.8) que envía *Crear una llave de acceso* del portal, en orden, de entre security-key, client-device y hybrid, o ninguna. Indican al navegador qué forma de crear la llave de acceso ofrecer primero. Una sugerencia no puede contradecir webauthn.authenticatorAttachment: client-device implica platform, y security-key y hybrid implican cross-platform."
@@ -1155,6 +1175,10 @@
     "en": "128deae048d6edbf",
     "text": "ACTIVADO DE FORMA PREDETERMINADA: un solo paso \"Usar llave de acceso\" cuya solicitud enumera todas las llaves de acceso de la persona, y el navegador ofrece la que esté presente. Desactivado, a una persona con más de una se le muestra una opción por llave de acceso, por su nombre, y la solicitud indica solo esa."
   },
+  "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "`any` DE FORMA PREDETERMINADA EN DESARROLLO, `not-weaker` EN PRODUCTO. Si una forma de volver a la cuenta que no pide ninguna llave de acceso — un enlace de restablecimiento de contraseña, un enlace de activación, un código de recuperación, un código o enlace enviado por correo — restablece el acceso de una persona que tiene una. `any`: de inmediato. `not-weaker`: el primer inicio de sesión posterior que no sea con llave de acceso no llega a ninguna aplicación; la persona registra una llave de acceso que cumpla esta política e inicia sesión con ella. `operator-only`: como not-weaker, y se rechazan las puertas de autoservicio (el formulario de contraseña olvidada, un código de recuperación o un código o enlace enviado por correo al iniciar sesión); solo queda el enlace de restablecimiento, la contraseña generada o el enlace de activación de un administrador. Si se omite al guardar, se mantiene el valor predeterminado integrado."
+  },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
     "text": "Las aplicaciones (identificador o client_id) a las que se aplica una política de llaves de acceso con nombre, en un inicio de sesión para una de ellas."
@@ -1170,6 +1194,14 @@
   "passkey.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "Para qué sirve el perfil, para la próxima persona que lo lea."
+  },
+  "passkey.SCHEMA.personAttributes.stsRecoveryPending.what": {
+    "en": "bb82df307a8e5b9a",
+    "text": "Una recuperación restableció el acceso de esta persona, que tiene una llave de acceso, y ninguna llave de acceso ha iniciado su sesión desde entonces: la puerta y el momento, como `<door> <ISO 8601 instant>`. Mientras el recoveryAssurance de la política de llaves de acceso sea not-weaker u operator-only, un inicio de sesión que no sea con llave de acceso no llega a ninguna aplicación. Lo mantiene este servicio."
+  },
+  "passkey.SCHEMA.personAttributes.stsPasswordResetSource.what": {
+    "en": "110d1231fc9be5f4",
+    "text": "Quién emitió el enlace de restablecimiento de contraseña de esta entrada: `self` (el formulario de contraseña olvidada) u `operator` (un administrador). Se escribe y se borra con el enlace. Lo mantiene este servicio."
   },
   "passkey.SELECTORS.selectApplications.what": {
     "en": "03ba679923c40b45",
@@ -1275,6 +1307,30 @@
     "en": "fa8fc40822659fe4",
     "text": "las llaves de acceso de una persona se ofrecen como una sola opción de inicio de sesión"
   },
+  "passkey.sentences.postQuantumOff": {
+    "en": "a8e0e01781dab9b0",
+    "text": "una llave de acceso inicia sesión y se registra sea cual sea su algoritmo de firma"
+  },
+  "passkey.sentences.postQuantumSignIn": {
+    "en": "2282f9fa1ff20b26",
+    "text": "solo una llave de acceso poscuántica (ML-DSA) inicia la sesión de una persona; una clásica aún puede registrarse"
+  },
+  "passkey.sentences.postQuantumEverywhere": {
+    "en": "79742dacfba54ede",
+    "text": "solo una llave de acceso poscuántica (ML-DSA) se registra o inicia la sesión de una persona"
+  },
+  "passkey.sentences.recoveryAny": {
+    "en": "7383156c8eb1e363",
+    "text": "una recuperación de cuenta restablece el acceso de inmediato, sea cual sea la llave de acceso que tenga la persona"
+  },
+  "passkey.sentences.recoveryNotWeaker": {
+    "en": "37557fd6d60301ce",
+    "text": "tras una recuperación de cuenta, una persona que tiene una llave de acceso no llega a ninguna aplicación hasta que una llave de acceso que cumpla esta política haya iniciado su sesión"
+  },
+  "passkey.sentences.recoveryOperatorOnly": {
+    "en": "1a8f0b4a3319a435",
+    "text": "una persona que tiene una llave de acceso solo recupera su cuenta a través de un administrador, y después no llega a ninguna aplicación hasta que una llave de acceso que cumpla esta política haya iniciado su sesión"
+  },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",
     "text": "Política de configuración regional"
@@ -1366,6 +1422,118 @@
   "locale.sentences.param.noApplication": {
     "en": "cb8bd4fa96dda063",
     "text": "ninguna aplicación"
+  },
+  "kinds.attributes.label": {
+    "en": "6619889d4a9f485d",
+    "text": "Política de atributos"
+  },
+  "kinds.attributes.governs": {
+    "en": "20a9273a811994df",
+    "text": "los atributos que toda persona de este dominio debe tener, y los atributos personalizados que puede recibir una persona aquí"
+  },
+  "kinds.attributes.appliesTo": {
+    "en": "c68abf6d2b5ec2a2",
+    "text": "a la PRÓXIMA persona creada y a la PRÓXIMA modificación en este dominio; una persona a la que ya le falta un atributo exigido conserva todas las demás puertas"
+  },
+  "kinds.attributes.fallsBackTo": {
+    "en": "c352143b534bf909",
+    "text": "el perfil del dominio predeterminado si tiene uno, y el valor predeterminado integrado (givenName, sn y mail) si no"
+  },
+  "kinds.attributes.param.noun": {
+    "en": "58bb93afc775aa81",
+    "text": "perfil de política de atributos"
+  },
+  "attributes.FIELDS.requiredAttributes.label": {
+    "en": "59a6e795223fdea0",
+    "text": "Atributos obligatorios"
+  },
+  "attributes.FIELDS.requiredAttributes.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "Los atributos de los que toda persona de este dominio debe tener un valor, además de uid, cn y sn, que son siempre obligatorios. Una lista, o separados por comas. Cualquier atributo que pueda recibir una persona: el esquema inetOrgPerson, el catálogo de credenciales, mail y los atributos personalizados de este dominio. Se aplica en modo de producto: una creación sin alguno se rechaza en todas las puertas, y una modificación no puede quitar uno. Predeterminado: givenName, sn y mail."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
+    "en": "12630f210e385441",
+    "text": "La clase de este servicio para una política de atributos: los atributos que toda persona de un dominio debe tener. Nombrada por el PERFIL (`cn=default`)."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
+    "en": "a1a975c54d05126f",
+    "text": "La clase de este servicio para un atributo personalizado de un dominio, en ou=attributeDefinitions, nombrada por el atributo (`cn=<name>`)."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeRequired.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "Los atributos de los que toda persona de este dominio debe tener un valor, además de uid, cn y sn, que son siempre obligatorios. Una lista, o separados por comas. Cualquier atributo que pueda recibir una persona: el esquema inetOrgPerson, el catálogo de credenciales, mail y los atributos personalizados de este dominio. Se aplica en modo de producto: una creación sin alguno se rechaza en todas las puertas, y una modificación no puede quitar uno. Predeterminado: givenName, sn y mail."
+  },
+  "attributes.SCHEMA.attributes.description.what": {
+    "en": "8e8f462fddce3d22",
+    "text": "Para qué sirve el perfil o el atributo personalizado, para la próxima persona."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeLabel.what": {
+    "en": "8d93b7c14ddfd1af",
+    "text": "La etiqueta de un atributo personalizado, que se muestra junto a su nombre."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSyntax.what": {
+    "en": "b5ccce4927fccd38",
+    "text": "La sintaxis de un atributo personalizado: string, integer, boolean, date, email, uri o dn. Sus valores se comprueban según ella."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
+    "en": "b6a0dfd5be9d81fd",
+    "text": "TRUE si un atributo personalizado tiene un solo valor, FALSE si tiene varios."
+  },
+  "attributes.SYNTAXES.string.what": {
+    "en": "6f2c36f9a836b2f4",
+    "text": "Texto, como máximo 1024 caracteres, sin caracteres de control."
+  },
+  "attributes.SYNTAXES.integer.what": {
+    "en": "258ac79871ab42ad",
+    "text": "Un número entero (RFC 4517, sección 3.3.16)."
+  },
+  "attributes.SYNTAXES.boolean.what": {
+    "en": "5ab7cfb21a4d669d",
+    "text": "TRUE o FALSE (RFC 4517, sección 3.3.3)."
+  },
+  "attributes.SYNTAXES.date.what": {
+    "en": "70f2250e9d5c193d",
+    "text": "Una fecha, guardada como AAAAMMDD y aceptada también como AAAA-MM-DD."
+  },
+  "attributes.SYNTAXES.email.what": {
+    "en": "daebff95f510f8db",
+    "text": "Una dirección de correo electrónico (addr-spec de la RFC 5322, local@dominio)."
+  },
+  "attributes.SYNTAXES.uri.what": {
+    "en": "16bf68a2b162f491",
+    "text": "Una URL http o https."
+  },
+  "attributes.SYNTAXES.dn.what": {
+    "en": "3feab9c94c12f33d",
+    "text": "Un nombre distintivo (RFC 4514)."
+  },
+  "attributes.sentences.required": {
+    "en": "a35b08811463b6be",
+    "text": "una persona de este dominio debe tener {{list}} para ser creada, y una modificación no puede quitar el valor de ninguno de ellos"
+  },
+  "attributes.sentences.enforced": {
+    "en": "babafe534682a510",
+    "text": "aplicada: este dominio está en modo de producto, así que toda puerta que crea o modifica una persona la rechaza sin ellos"
+  },
+  "attributes.sentences.notEnforced": {
+    "en": "9e7b85236de9223c",
+    "text": "no aplicada: este dominio está en modo de desarrollo, donde una persona puede crearse con solo un nombre de usuario"
+  },
+  "attributes.sentences.custom": {
+    "en": "2296301f35c39ed9",
+    "text": "este dominio define {{n}} atributo(s) personalizado(s): {{list}}"
+  },
+  "attributes.sentences.noCustom": {
+    "en": "f9d920b6ce8d9d03",
+    "text": "este dominio no define ningún atributo personalizado"
+  },
+  "attributes.sentences.defined": {
+    "en": "3867ffa1e351efa2",
+    "text": "El atributo personalizado {{name}} está definido en este dominio en {{dn}}. Ahora puede darse a una persona y exigirse en esta política."
+  },
+  "attributes.sentences.undefined": {
+    "en": "36e7b5eba26472f2",
+    "text": "El atributo personalizado {{name}} ya no está definido en este dominio."
   },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",

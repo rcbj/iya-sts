@@ -27,6 +27,15 @@
 //   * **IT SIGNS NOBODY IN.** The last step is the ordinary sign-in screen,
 //     reached through `/portal`, which is where a second factor they hold is
 //     asked for.
+//   * **A RECOVERY, FOR A PERSON WHO HOLDS A PASSKEY (#724).** The POST asks
+//     the recovery question before it claims the link (`recoveryCheck()`):
+//     under the passkey policy's `recoveryAssurance: operator-only` a link
+//     the person asked for themselves (`source: self`) is refused
+//     (STS-AUTHN-0380, its own sentence — whoever holds the link has proved
+//     the mailbox already, so there is nothing to hide from them), and an
+//     administrator's is not. A password stored is then a PENDING RECOVERY
+//     on the entry (`credentials.noteRecovery()`), which holds the next
+//     sign-in that is not a passkey (`authn.ts`, STS-AUTHN-0381).
 //
 // It does ONE thing, where the activation form offers a key and an
 // authenticator as well: the person already has their second factors — an
@@ -57,6 +66,8 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import credentials = require('../common/credentials');
 import realms = require('../common/realms');
+// THE RECOVERY QUESTION (#724).
+import passkeyPolicy = require('../common/passkey_policy');
 import validation = require('../common/validation');
 
 type Json = any;
@@ -97,6 +108,7 @@ interface AccountResetDeps {
   log: typeof helpers.log;
   credentials: typeof credentials;
   realms: typeof realms;
+  passkeyPolicy: typeof passkeyPolicy;
   breachedPasswords(): Json;
   accountSignals(): Json;
 }
@@ -125,6 +137,7 @@ class AccountReset {
     helpers.log.debug("Leaving AccountReset.defaultDeps().");
     return {
       log: helpers.log, credentials: credentials, realms: realms,
+      passkeyPolicy: passkeyPolicy,
       breachedPasswords: function breachedPasswords(): Json {
         helpers.log.debug("Entering breachedPasswords().");
         helpers.log.debug("Leaving breachedPasswords().");
@@ -310,6 +323,14 @@ class AccountReset {
       return this.refuseLink(ctx, res, 400, errorCodes.codeOf(checked) ||
                              'STS-PORTAL-0071', RESET_REFUSAL);
     }
+    // THE RECOVERY QUESTION (#724), before the link is claimed.
+    const door = checked.source === 'self' ? 'password-reset' : 'admin-reset';
+    const recovery = this.recoveryCheck(ctx, req, username, door);
+    if (recovery) {
+      log.debug("Leaving AccountReset.spend(). The recovery was refused.");
+      return this.refuseLink(ctx, res, 403,
+                             recovery.code || 'STS-AUTHN-0380', recovery.why);
+    }
     const view = this.formView(ctx, req, username, token);
     const password = String(body.password || '');
     if (!password) {
@@ -358,6 +379,9 @@ class AccountReset {
     res[LINK_SPENT] = true;
     credentials.consumePasswordReset(username);
     credentials.setPasswordResetRequired(username, false);
+    // A PENDING RECOVERY (#724), where the person holds a passkey and the
+    // passkey policy holds a recovery to it.
+    credentials.noteRecovery(username, door);
     await websecurity.succeededShared('password-reset', req, username);
     audit.record({
       category: 'authentication', action: 'portal.password-reset',
@@ -380,6 +404,43 @@ class AccountReset {
     // draws a form for a pending record, and `/portal` is what mints one.
     return ctx.json(res, 200, { ok: true,
       view: { done: true, signIn: this.signInHref(ctx) } });
+  }
+
+  /**
+   * Asks the recovery question for a link about to be spent (#724), and
+   * records a refusal.
+   *
+   * @param ctx - the account API's helpers
+   * @param req - the request
+   * @param username - the link's person
+   * @param door - `password-reset` (the person's own) or `admin-reset`
+   * @returns `{ code, why }` when refused, else null
+   */
+  recoveryCheck(ctx: AccountContext, req: Json, username: string,
+                door: string): { code: string; why: string } | null {
+    const { log, credentials, passkeyPolicy } = this.deps;
+    const { audit, websecurity } = ctx;
+    log.debug("Entering AccountReset.recoveryCheck(). " + door);
+    passkeyPolicy.select(username, '');
+    const refused = passkeyPolicy.recoveryRefusal({ username: username,
+      door: door, at: 'door', covered: credentials.holdsPasskey(username) });
+    if (!refused) {
+      log.debug("Leaving AccountReset.recoveryCheck(). Allowed.");
+      return null;
+    }
+    audit.record({
+      category: 'authentication', action: 'authn.recovery.refused',
+      errorCode: refused.code, actor: username, target: username,
+      outcome: 'failure',
+      summary: 'a password reset link of ' + username + ' was refused: the ' +
+               'passkey policy does not let it recover this account',
+      detail: { door: door, reason: refused.reason,
+                address: websecurity.addressOf(req) }
+    });
+    log.info('portal: a password reset link of "' + username + '" was ' +
+             'refused by the recovery question (' + refused.code + ').');
+    log.debug("Leaving AccountReset.recoveryCheck(). Refused.");
+    return { code: refused.code, why: refused.why };
   }
 
   /**
