@@ -2408,10 +2408,10 @@ class FederationSp {
     }
     // The signer, asked again: the answer was verified before the local
     // sign-in this step waited for (heldSigner()).
-    const held = this.heldSigner(res, record, context.result);
-    if (held.refused !== undefined) {
+    const heldBy = this.heldSigner(res, record, context.result);
+    if (heldBy.refused !== undefined) {
       log.debug("Leaving the federation linking endpoint. No signer held.");
-      return held.refused;
+      return heldBy.refused;
     }
     log.debug("Leaving the federation linking endpoint. Linking " +
               context.username + ".");
@@ -2420,7 +2420,7 @@ class FederationSp {
                                Object.assign({}, decision, {
                                  how: 'confirmed', create: false,
                                  link: context.link || decision.link }));
-    }, held.jwk, held.unsigned);
+    }, heldBy.jwk, heldBy.unsigned);
   }
 
   // ---------------------------------------------------------------------------
@@ -3113,10 +3113,10 @@ class FederationSp {
     });
     // The signer, asked again: the answer was verified before the second
     // factor this step waited for (heldSigner()).
-    const held = this.heldSigner(res, record, context.result);
-    if (held.refused !== undefined) {
+    const heldBy = this.heldSigner(res, record, context.result);
+    if (heldBy.refused !== undefined) {
       log.debug("Leaving the federation step-up endpoint. No signer held.");
-      return held.refused;
+      return heldBy.refused;
     }
     log.debug("Leaving the federation step-up endpoint. Finishing " +
               context.username + ".");
@@ -3124,7 +3124,7 @@ class FederationSp {
       return this.completeSignIn(req, res, record,
         Object.assign({}, context.result, {
           amr: this.federatedAmr(proved), acr: 'mfa', steppedUp: true }));
-    }, held.jwk, held.unsigned);
+    }, heldBy.jwk, heldBy.unsigned);
   }
 
   // ---------------------------------------------------------------------------
@@ -3568,16 +3568,16 @@ class FederationSp {
              '; finishing the sign-in.');
     // The signer, asked again: the answer was verified before the form this
     // step waited for (heldSigner()).
-    const held = this.heldSigner(res, record, context.result);
-    if (held.refused !== undefined) {
+    const heldBy = this.heldSigner(res, record, context.result);
+    if (heldBy.refused !== undefined) {
       log.debug("Leaving the federation profile submission. No signer held.");
-      return held.refused;
+      return heldBy.refused;
     }
     log.debug("Leaving the federation profile submission. Finishing.");
     return this.signerStillAccepted(req, res, record, () => {
       return this.completeSignIn(req, res, record,
         Object.assign({}, context.result, { profileSupplied: values }));
-    }, held.jwk, held.unsigned);
+    }, heldBy.jwk, heldBy.unsigned);
   }
 
   // The values a newcomer gave, on the mapped attributes this sign-in
