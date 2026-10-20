@@ -273,7 +273,7 @@ const NAV = [
       { path: BASE + '/applications', label: 'Applications',
         heading: 'Applications you can sign in to' },
       // SECURITY ACTIVITY (2026-09-10). Under *Your account* rather than under
-      // *How you sign in*, and the two headings are the argument: that section
+      // *How I sign in*, and the two headings are the argument: that section
       // holds the CREDENTIALS on this person's entry, one page each, and every
       // page in it is a control. This is not a control and not about a
       // credential — it is what this identity provider has SAID about them,
@@ -325,7 +325,7 @@ const NAV = [
       { path: BASE + '/owned/applications', label: 'Applications',
         heading: 'Applications you own' }
     ] },
-  { key: 'signIn', title: 'How you sign in',
+  { key: 'signIn', title: 'How I sign in',
     what: 'The credentials on your own entry, one page each.',
     items: [
       { path: BASE + '/password', label: 'Password',
