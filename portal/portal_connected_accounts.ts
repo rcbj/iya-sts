@@ -239,9 +239,21 @@ class PortalConnectedAccounts {
     const t = ctx.translatorFor(who);
     if (body.action === 'disconnect') {
       const federation = this.deps.federation();
-      const gone = this.linksOf(who).filter(function (l: Json): boolean {
-        return l.relationship === String(body.id);
-      });
+      // ONLY A CONSUMER PROVIDER'S LINK IS THE PERSON'S TO REMOVE: an
+      // enterprise partner's links are an administrator's (the console,
+      // `/admin-api`, SCIM), as beginConnect() says of making one, so a
+      // link through any other relationship is "not connected" here. A
+      // consumer relationship since disabled or half-configured is still
+      // disconnectable, which is why the record is asked and not the page's
+      // list of usable providers.
+      const record = federation.get(String(body.id || ''));
+      const consumer = !!record &&
+        federation.categoryOf(record) === 'consumer';
+      const gone = consumer
+        ? this.linksOf(who).filter(function (l: Json): boolean {
+          return l.relationship === String(body.id);
+        })
+        : [];
       if (!gone.length) {
         log.debug("Leaving PortalConnectedAccounts.act(). Not connected.");
         return ctx.refuse(res, 400, 'STS-PORTAL-0613',
