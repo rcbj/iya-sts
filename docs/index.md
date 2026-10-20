@@ -51,11 +51,30 @@ and service provider ·
 [Management API](management-api.md): `/admin-api`, every console control
 reachable by a machine with an OAuth 2.0 access token ·
 [Delegation and impersonation](delegation.md): who may obtain a token about
-somebody else, the same controls for RFC 8693, WS-Trust and Kerberos ·
-configuration recipes, in the console and through the API, for each
-[OAuth 2.0 grant](configure-oauth2-grants.md),
-[OpenID Connect flow](configure-oidc-flows.md) and
-[SAML 2.0 and SAML 1.1 profile](configure-saml.md).
+somebody else, the same controls for RFC 8693, WS-Trust and Kerberos.
+
+**Configuration recipes** — what to register, which settings to change and
+what the client sends, each given as admin console steps and as Management
+API calls, with values from this repository's test jobs. Each sits in its
+protocol's section of the sidebar:
+[OAuth 2.0 grants](configure-oauth2-grants.md) ·
+[OpenID Connect flows](configure-oidc-flows.md) ·
+[SAML 2.0 and SAML 1.1](configure-saml.md) ·
+[WS-Trust](configure-ws-trust.md) ·
+[WS-Federation](configure-ws-federation.md) ·
+[Federation](configure-federation.md) ·
+[OpenID Federation](configure-oidfed.md) ·
+[Kerberos and SPNEGO](configure-kerberos.md) ·
+[TLS and mutual TLS](configure-tls.md) ·
+[OpenID4VCI](configure-oid4vci.md) ·
+[OpenID4VP and wallet sign-in](configure-oid4vp.md) ·
+[LDAP](configure-ldap.md) ·
+[SCIM 2.0](configure-scim.md) ·
+[XACML and ALFA](configure-xacml.md) ·
+[GNAP](configure-gnap.md) ·
+[Shared Signals](configure-shared-signals.md) ·
+[Certificate enrollment: ACME, EST, SCEP](configure-enrollment.md) ·
+[SPIFFE](configure-spiffe.md).
 
 **Sessions and signals** —
 [Sessions](sessions.md) ·
@@ -90,26 +109,26 @@ configuration recipes, in the console and through the API, for each
 Every page under **Protocols** in the admin console, and the page here that
 documents it.
 
-| Console group | Console pages | Documentation |
-|---|---|---|
-| OAuth2 / OIDC | `/admin/oauth2`, `/admin/authorization-servers`, `/admin/token-lifetimes`, `/admin/claims`, `/admin/userinfo-claims` | [OAuth 2.0 and OpenID Connect](oauth-oidc.md), [Security profiles: RFC 9700, OAuth 2.1, DPoP, mTLS](oauth-security.md), [JWT assertions](jwt-assertions.md) |
-| SAML | `/admin/saml2`, `/admin/saml11`, `/admin/saml-assertions`, `/admin/saml-attributes` | [SAML 2.0 Web Browser SSO](saml2-sso.md), [SAML 1.1](saml11.md), [SAML assertions as grants (RFC 7522)](saml-assertions.md) |
-| Verifiable Credentials | `/admin/vc` — Metadata, OpenID4VCI settings, Credential claims, Credential status, OpenID4VP settings and Verifier request tabs | [OpenID4VCI and status lists](oid4vci.md), [OpenID4VP and wallet sign-in](oid4vp.md) |
-| XACML | `/admin/xacml`, `/admin/xacml/policies`, `/admin/xacml/editor`, `/admin/xacml/peps`, `/admin/xacml/decide` | [XACML 3.0 and ALFA](xacml.md), [Remote PEP](remote-pep.md) |
-| SCIM | `/admin/scim` | [SCIM 2.0](scim.md) |
-| Shared Signals, CAEP, RISC | `/admin/ssf`, `/admin/caep`, `/admin/risc` | [Shared Signals](shared-signals.md), [CAEP events](caep-events.md), [Signals received](signals-received.md) |
-| Federation | `/admin/federation` | [Federation](federation.md), [Consumer and social providers](federation-consumer-providers.md) |
-| OpenID Federation | `/admin/oidfed` | [OpenID Federation](oidfed.md) |
-| GNAP | `/admin/gnap` | [GNAP](gnap.md) |
-| TOTP MFA, Recovery codes, WebAuthn | `/admin/totp`, `/admin/backup-codes`, `/admin/webauthn` | [Authentication](authentication.md) |
-| Device registration | `/admin/device-registration` | [Devices](devices.md) |
-| Kerberos | `/admin/kerberos`, `/admin/kerberos/principals` | [Kerberos and SPNEGO](kerberos.md) |
-| LDAP / LDAPS | `/admin/ldap` | [LDAP](ldap.md) |
-| WS-Trust | `/admin/wstrust` | [WS-Trust](ws-trust.md) |
-| WS-Federation | `/admin/wsfed` | [WS-Federation](ws-federation.md) |
-| PKI | `/admin/pki` | [PKI](pki.md) |
-| Cert issuance (ACME, EST, SCEP and SPIFFE tabs) | `/admin/cert-issuance` | [ACME](acme.md), [EST](est.md), [SCEP](scep.md), [SPIFFE](spiffe.md) |
-| TLS / mutual TLS | `/admin/tls`, `/admin/tls/trust` | [TLS and mutual TLS](tls.md) |
+| Console group | Console pages | Documentation | Configuration recipes |
+|---|---|---|---|
+| OAuth2 / OIDC | `/admin/oauth2`, `/admin/authorization-servers`, `/admin/token-lifetimes`, `/admin/claims`, `/admin/userinfo-claims` | [OAuth 2.0 and OpenID Connect](oauth-oidc.md), [Security profiles: RFC 9700, OAuth 2.1, DPoP, mTLS](oauth-security.md), [JWT assertions](jwt-assertions.md) | [OAuth 2.0 grants](configure-oauth2-grants.md), [OpenID Connect flows](configure-oidc-flows.md) |
+| SAML | `/admin/saml2`, `/admin/saml11`, `/admin/saml-assertions`, `/admin/saml-attributes` | [SAML 2.0 Web Browser SSO](saml2-sso.md), [SAML 1.1](saml11.md), [SAML assertions as grants (RFC 7522)](saml-assertions.md) | [SAML 2.0 and SAML 1.1](configure-saml.md) |
+| Verifiable Credentials | `/admin/vc` — Metadata, OpenID4VCI settings, Credential claims, Credential status, OpenID4VP settings and Verifier request tabs | [OpenID4VCI and status lists](oid4vci.md), [OpenID4VP and wallet sign-in](oid4vp.md) | [OpenID4VCI](configure-oid4vci.md), [OpenID4VP](configure-oid4vp.md) |
+| XACML | `/admin/xacml`, `/admin/xacml/policies`, `/admin/xacml/editor`, `/admin/xacml/peps`, `/admin/xacml/decide` | [XACML 3.0 and ALFA](xacml.md), [Remote PEP](remote-pep.md) | [XACML and ALFA](configure-xacml.md) |
+| SCIM | `/admin/scim` | [SCIM 2.0](scim.md) | [SCIM 2.0](configure-scim.md) |
+| Shared Signals, CAEP, RISC | `/admin/ssf`, `/admin/caep`, `/admin/risc` | [Shared Signals](shared-signals.md), [CAEP events](caep-events.md), [Signals received](signals-received.md) | [Shared Signals](configure-shared-signals.md) |
+| Federation | `/admin/federation` | [Federation](federation.md), [Consumer and social providers](federation-consumer-providers.md) | [Federation](configure-federation.md) |
+| OpenID Federation | `/admin/oidfed` | [OpenID Federation](oidfed.md) | [OpenID Federation](configure-oidfed.md) |
+| GNAP | `/admin/gnap` | [GNAP](gnap.md) | [GNAP](configure-gnap.md) |
+| TOTP MFA, Recovery codes, WebAuthn | `/admin/totp`, `/admin/backup-codes`, `/admin/webauthn` | [Authentication](authentication.md) | |
+| Device registration | `/admin/device-registration` | [Devices](devices.md) | |
+| Kerberos | `/admin/kerberos`, `/admin/kerberos/principals` | [Kerberos and SPNEGO](kerberos.md) | [Kerberos and SPNEGO](configure-kerberos.md) |
+| LDAP / LDAPS | `/admin/ldap` | [LDAP](ldap.md) | [LDAP](configure-ldap.md) |
+| WS-Trust | `/admin/wstrust` | [WS-Trust](ws-trust.md) | [WS-Trust](configure-ws-trust.md) |
+| WS-Federation | `/admin/wsfed` | [WS-Federation](ws-federation.md) | [WS-Federation](configure-ws-federation.md) |
+| PKI | `/admin/pki` | [PKI](pki.md) | |
+| Cert issuance (ACME, EST, SCEP and SPIFFE tabs) | `/admin/cert-issuance` | [ACME](acme.md), [EST](est.md), [SCEP](scep.md), [SPIFFE](spiffe.md) | [ACME, EST, SCEP](configure-enrollment.md), [SPIFFE](configure-spiffe.md) |
+| TLS / mutual TLS | `/admin/tls`, `/admin/tls/trust` | [TLS and mutual TLS](tls.md) | [TLS and mutual TLS](configure-tls.md) |
 
 ## Start here
 

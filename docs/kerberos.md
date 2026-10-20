@@ -168,7 +168,7 @@ Until #595 the service also ran a demonstration: `/spnego` and
 `/spnego/protected` (a page protected with Negotiate, with three knobs that
 made the negotiation fail on purpose), `/krb5/service` and a raw TCP acceptor
 on `krb5.servicePort` (8888). They are the **development companion's** now
-([docker-compose](docker-compose.md#the-companion)), and the companion is a
+([docker-compose](docker-compose.md#the-companion-development-only)), and the companion is a
 Kerberos service the way a customer's web application is:
 
 * **Its own principal and keytab.** It asks the KDC for `HTTP/<its host>`

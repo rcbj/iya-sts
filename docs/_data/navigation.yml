@@ -30,27 +30,37 @@
 - section: OAuth 2.0 and OpenID Connect
   items:
     - { title: OAuth 2.0 and OpenID Connect, url: /oauth-oidc.html }
+    - { title: "Configuring OAuth 2.0 grants", url: /configure-oauth2-grants.html }
+    - { title: "Configuring OpenID Connect flows", url: /configure-oidc-flows.html }
     - { title: "Security profiles: RFC 9700, OAuth 2.1, DPoP, mTLS", url: /oauth-security.html }
     - { title: Post-quantum key establishment, url: /post-quantum-encryption.html }
     - { title: JWT assertions (RFC 7523), url: /jwt-assertions.html }
     - { title: SAML assertions (RFC 7522), url: /saml-assertions.html }
     - { title: GNAP, url: /gnap.html }
+    - { title: "Configuring GNAP", url: /configure-gnap.html }
     - { title: OpenID Federation, url: /oidfed.html }
+    - { title: "Configuring OpenID Federation", url: /configure-oidfed.html }
 
 - section: SAML and WS-*
   items:
     - { title: SAML 2.0 Web Browser SSO, url: /saml2-sso.html }
     - { title: SAML 1.1, url: /saml11.html }
+    - { title: "Configuring SAML 2.0 and 1.1", url: /configure-saml.html }
     - { title: WS-Trust, url: /ws-trust.html }
+    - { title: "Configuring WS-Trust", url: /configure-ws-trust.html }
     - { title: WS-Federation, url: /ws-federation.html }
+    - { title: "Configuring WS-Federation", url: /configure-ws-federation.html }
     - { title: Federation, url: /federation.html }
     - { title: Consumer and social providers, url: /federation-consumer-providers.html }
+    - { title: "Configuring federation", url: /configure-federation.html }
 
 - section: Sign-in and sessions
   items:
     - { title: "Authentication: WebAuthn, TOTP, recovery codes", url: /authentication.html }
     - { title: Kerberos and SPNEGO, url: /kerberos.html }
+    - { title: "Configuring Kerberos and SPNEGO", url: /configure-kerberos.html }
     - { title: TLS and mutual TLS, url: /tls.html }
+    - { title: "Configuring TLS and mutual TLS", url: /configure-tls.html }
     - { title: Sessions, url: /sessions.html }
     - { title: Identity-provider-initiated sign-in, url: /idp-initiated-sso.html }
     - { title: Several accounts in one browser, url: /multiple-accounts.html }
@@ -65,26 +75,32 @@
 - section: Verifiable credentials
   items:
     - { title: OpenID4VCI and status lists, url: /oid4vci.html }
+    - { title: "Configuring OpenID4VCI", url: /configure-oid4vci.html }
     - { title: OpenID4VP and wallet sign-in, url: /oid4vp.html }
+    - { title: "Configuring OpenID4VP and wallet sign-in", url: /configure-oid4vp.html }
     - { title: W3C VC-API test endpoints, url: /vc-api.html }
 
 - section: Directory and provisioning
   items:
     - { title: LDAP, url: /ldap.html }
     - { title: LDAP schema, url: /ldap-schema.html }
+    - { title: "Configuring LDAP", url: /configure-ldap.html }
     - { title: SCIM 2.0, url: /scim.html }
+    - { title: "Configuring SCIM 2.0", url: /configure-scim.html }
 
 - section: Authorization policy
   items:
     - { title: XACML 3.0 and ALFA, url: /xacml.html }
     - { title: Delegation and impersonation, url: /delegation.html }
     - { title: Remote PEP, url: /remote-pep.html }
+    - { title: "Configuring XACML and ALFA", url: /configure-xacml.html }
 
 - section: Shared Signals
   items:
     - { title: "Shared Signals: SSF, CAEP, RISC", url: /shared-signals.html }
     - { title: CAEP events, url: /caep-events.html }
     - { title: Signals received, url: /signals-received.html }
+    - { title: "Configuring Shared Signals", url: /configure-shared-signals.html }
 
 - section: Certificates and workloads
   items:
@@ -92,7 +108,9 @@
     - { title: ACME, url: /acme.html }
     - { title: EST, url: /est.html }
     - { title: SCEP, url: /scep.html }
+    - { title: "Configuring ACME, EST and SCEP", url: /configure-enrollment.html }
     - { title: SPIFFE, url: /spiffe.html }
+    - { title: "Configuring SPIFFE", url: /configure-spiffe.html }
 
 - section: Administration
   items:
@@ -100,9 +118,6 @@
     - { title: Applications, url: /applications.html }
     - { title: Management API, url: /management-api.html }
     - { title: Account API, url: /account-api.html }
-    - { title: "Configuring OAuth 2.0 grants", url: /configure-oauth2-grants.html }
-    - { title: "Configuring OpenID Connect flows", url: /configure-oidc-flows.html }
-    - { title: "Configuring SAML 2.0 and 1.1", url: /configure-saml.html }
 
 - section: Operating it
   items:

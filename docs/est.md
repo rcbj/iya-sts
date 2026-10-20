@@ -404,7 +404,7 @@ value resolves and where it is changed — the console page, or
   one 403.
 * **Authentication uses credentials the service already has.** A person's
   password, an application's client secret or a certificate this realm issued —
-  EST gets no credential of its own. See [above](#authenticating).
+  EST gets no credential of its own. See [above](#authenticating-the-caller).
 * **A Basic username is a person first.** Then an application's `client_id`,
   so a person and an application sharing a name authenticate as the person.
 * **Nothing is parsed for an unauthenticated client.** The query string,
