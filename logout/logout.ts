@@ -354,8 +354,8 @@ const LOGOUT_CSS = 'body{font-family:system-ui,-apple-system,"Segoe UI",' +
 // other card surface styles it from `WebCardCss.CARD_CSS`, which this page
 // does not carry. The rules are scoped to the control's own classes, so with
 // the setting off, when no control is drawn, they style nothing. The
-// server-drawn document (`page()`) draws no control and keeps `LOGOUT_CSS`
-// exactly as it was.
+// server-drawn document (`page()`) inlines the same text, so the two still
+// cannot drift (`tests/logout_api.js` 6d holds them to the byte).
 const SIGNOUT_CSS = LOGOUT_CSS + WebCardCss.ACCOUNTS_CSS;
 
 // A FAMILIES row, a live-session row, an inventory: open records, as the
@@ -3201,7 +3201,7 @@ class Logout {
       '><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
       '<title>' + xmlEscape(title) +
-      '</title><style>' + LOGOUT_CSS + '</style></head>' +
+      '</title><style>' + SIGNOUT_CSS + '</style></head>' +
       '<body>' + PageLocale.chooser(t, realms.currentPrefix(), returnTo) +
       inner + '</body></html>' };
   }

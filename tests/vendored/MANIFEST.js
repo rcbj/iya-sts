@@ -1474,6 +1474,20 @@ const JOBS = [
   // peer's private address (STS-OAUTH-0534). Needs the peer (`testPeer`).
   { file: 'sts_backchannel_logout.js',   browser: false, local: true,
     testPeer: true },
+  // SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561), over HTTP in a
+  // throwaway realm that inherits the stack's mode, one cookie jar and two
+  // people: both kept live and the picker, login_hint, prompt=select_account
+  // and prompt=none (account_selection_required), SAML 2.0 IsPassive and a
+  // <Subject> hint, WS-Federation, the sign-out's account step, RP-Initiated
+  // Logout by id_token_hint's sid, one account signed out while the other
+  // stays, and forget. `local: true`: the sign-in surface, the picker and
+  // the sign-out are this repository's.
+  { file: 'sts_multi_account.js',        browser: false, local: true },
+  // ONE ACCOUNT PER TAB IN THE PORTAL, IN A REAL BROWSER (#561): two Chrome
+  // tabs sharing one cookie jar, a different account in each, a reload
+  // keeping each, and one signed out from its tab leaving the other tab's
+  // working. One browser, serially.
+  { file: 'sts_multi_account_tabs.js',   browser: true,  local: true },
   // The mail channel (#63): delivery to the Mailpit the stack runs, a
   // product realm of its own, verification, a self-service reset, a dead
   // letter. Skips its delivery sections where there is no catcher.

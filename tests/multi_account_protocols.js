@@ -277,8 +277,9 @@ function childMain() {
 
     // THE SHELLS SAY NOTHING with the setting off, so no runtime asks for
     // the account list (`WebAccounts.announced()`): the front door, the
-    // sign-out, the portal and the console, as `ShellDocument` draws them.
-    const SHELLS = ['/', '/logout', '/portal', '/admin'];
+    // portal, the console and a description page, as `ShellDocument` draws
+    // them (`/logout` sends a browser with no session to sign in).
+    const SHELLS = ['/', '/portal', '/admin', '/saml2'];
     const shells = async function () {
       const out = [];
       for (const one of SHELLS) {

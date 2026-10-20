@@ -337,7 +337,8 @@ is `LOGOUT_CSS` and `WebCardCss.ACCOUNTS_CSS` after it): every other card
 surface styles the control from `WebCardCss.CARD_CSS`, which this page does
 not load, so the control `WebSurface` draws beside the chooser was unstyled
 here. The rules are scoped to the control's classes and style nothing with the
-setting off; the server-drawn document keeps `LOGOUT_CSS` as it was. The
+setting off; the server-drawn document inlines the same text, so the two
+cannot drift. The
 protocols' own sign-outs choose their session in their directories:
 RP-Initiated Logout (`oauth-oidc/CLAUDE.md`), SAML 2.0 front-channel Single
 Logout (`saml/CLAUDE.md`), WS-Federation's two messages
