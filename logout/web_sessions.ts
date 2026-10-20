@@ -341,8 +341,17 @@ class SessionsPage {
    */
   static accountChoicesSection(t, choices) {
     const c = (choices && choices.counts) || {};
-    const kinds = ['selected', 'ambiguous', 'selectFailed', 'added',
-                   'switched', 'forgotten', 'expired'];
+    // Each kind's label by its whole key, so the catalog check can find it.
+    const labels = {
+      selected: t.text('consoleSessions.accounts.selected'),
+      ambiguous: t.text('consoleSessions.accounts.ambiguous'),
+      selectFailed: t.text('consoleSessions.accounts.selectFailed'),
+      added: t.text('consoleSessions.accounts.added'),
+      switched: t.text('consoleSessions.accounts.switched'),
+      forgotten: t.text('consoleSessions.accounts.forgotten'),
+      expired: t.text('consoleSessions.accounts.expired')
+    };
+    const kinds = Object.keys(labels);
     const any = kinds.some(function (kind) {
       return Number(c[kind]) > 0;
     });
@@ -355,8 +364,7 @@ class SessionsPage {
       (choices.enabled ? ''
                        : kit.warn(t.html('consoleSessions.accountsOff'))) +
       '<div class="tiles">' + kinds.map(function (kind) {
-        return kit.tile(Number(c[kind]) || 0,
-                        t.text('consoleSessions.accounts.' + kind));
+        return kit.tile(Number(c[kind]) || 0, labels[kind]);
       }).join('') + '</div>' +
       kit.note(t.html('consoleSessions.accountsNote'));
   }
