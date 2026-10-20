@@ -197,12 +197,18 @@ function browser(name) {
 }
 
 // An authorization request; follows a sign-in when there is no session.
+// THE PKCE VERIFIER IS FRESH PER REQUEST and rides on the answer for
+// redeem(): RFC 9700 section 2.1.1 makes a code_challenge
+// transaction-specific, and product mode refuses one an earlier redeemed
+// code used (invalid_request) — which a fixed verifier did on the second
+// database's sign-in.
 async function authorize(b, state) {
   log.debug("Entering authorize(). state=" + state);
+  const verifier = nodeCrypto.randomBytes(32).toString("base64url");
   const params = { response_type: "code", client_id: CLIENT,
     redirect_uri: REDIRECT, scope: "openid profile", state: state,
     nonce: "n-" + state,
-    code_challenge: nodeCrypto.createHash("sha256").update("v".repeat(43))
+    code_challenge: nodeCrypto.createHash("sha256").update(verifier)
       .digest("base64url"), code_challenge_method: "S256" };
   let r = await b.go("GET", R + "/oauth2/authorize?" + form(params));
   if ((r.status === 302 || r.status === 303) &&
@@ -216,6 +222,7 @@ async function authorize(b, state) {
               posted.answer.status + " " + JSON.stringify(posted.answer.json));
     r = await b.go("GET", posted.location);
   }
+  r.verifier = verifier;
   log.debug("Leaving authorize(). " + r.status);
   return r;
 }
@@ -238,7 +245,7 @@ async function redeem(r) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form({ grant_type: "authorization_code", code: code,
                  redirect_uri: REDIRECT, client_id: CLIENT,
-                 client_secret: SECRET, code_verifier: "v".repeat(43) }) });
+                 client_secret: SECRET, code_verifier: r.verifier }) });
   assert.strictEqual(token.status, 200, token.raw.slice(0, 300));
   log.debug("Leaving redeem().");
   return decode(token.body.access_token);
