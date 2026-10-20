@@ -243,6 +243,26 @@
     "en": "627419de92206a62",
     "text": "EL SECRETO DE ESTE SERVICIO ANTE EL SOCIO, en claro, en un directorio donde todo bind tiene éxito. Es una credencial REAL en un servicio externo REAL, lo cual es una afirmación más fuerte que cualquier otra cosa de este directorio — vea el encabezado. Nunca se escribe en el registro de auditoría ni se imprime en una página."
   },
+  "fed.schema.attributes.fedResponseMode.what": {
+    "en": "07cfe6e4177873df",
+    "text": "CÓMO VUELVE EL CÓDIGO DE AUTORIZACIÓN: query (el predeterminado, el código en la redirección) o form_post (OAuth 2.0 Form Post Response Mode), que Sign in with Apple exige siempre que se pide un nombre o una dirección. form_post llega como un POST entre sitios, así que un navegador no le envía ninguna cookie SameSite=Lax."
+  },
+  "fed.schema.attributes.fedAllowedTenants.what": {
+    "en": "1436122fe8c92048",
+    "text": "SOLO MICROSOFT, CUALQUIER INQUILINO: los identificadores de los inquilinos cuyas personas pueden iniciar sesión, uno por valor. fedPeer contiene entonces {tenantid}, que se rellena con el tid de cada token, y se rechaza un token de un inquilino no incluido. Vacío rechaza todos los inquilinos."
+  },
+  "fed.schema.attributes.fedTeamId.what": {
+    "en": "959f29403a917b46",
+    "text": "SOLO APPLE: el identificador del equipo de Apple Developer, el iss del secreto de cliente que este servicio firma en cada solicitud de token."
+  },
+  "fed.schema.attributes.fedKeyId.what": {
+    "en": "557cedae99afdf0f",
+    "text": "SOLO APPLE: el identificador de la clave de Sign in with Apple, el kid del secreto de cliente que este servicio firma."
+  },
+  "fed.schema.attributes.fedClientSigningKey.what": {
+    "en": "411c7d1d5df63859",
+    "text": "SOLO APPLE: LA CLAVE PRIVADA con la que este servicio firma su secreto de cliente (el archivo .p8 que emitió Apple, una clave P-256 en PEM PKCS #8). Es una credencial en Apple. Se sella bajo la clave de cifrado de claves dondequiera que las claves persisten, nunca se muestra y nunca se escribe en el registro de auditoría. Un secreto de cliente firmado con ella dura cinco minutos y se emite en cada solicitud de token."
+  },
   "fed.schema.attributes.fedAuthorizeParams.what": {
     "en": "4cf26c17034bb859",
     "text": "PARÁMETROS ADICIONALES DE LA SOLICITUD DE AUTORIZACIÓN, uno por valor, escritos `<name>=<value>`, para un proveedor que los necesite (el `claims` de Twitch, para que se le envíe una dirección). Solo OpenID Connect y OAuth 2.0. Los parámetros que este servicio fija por sí mismo —response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request y request_uri— se rechazan aquí, porque cambiar uno de ellos aquí desharía una comprobación que hace este servicio."

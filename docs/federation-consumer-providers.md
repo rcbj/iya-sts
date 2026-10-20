@@ -41,6 +41,31 @@ address and its verification come from is the provider's profile**, read at
 every sign-in, so a correction to a profile reaches every relationship of that
 provider.
 
+## Sign in with Apple
+
+Apple needs three things more than a client id. Enter them on the
+relationship's page:
+
+* **`fedTeamId`**: your Apple Developer team id.
+* **`fedKeyId`**: the id of your Sign in with Apple key.
+* **`fedClientSigningKey`**: that key's `.p8` file, pasted whole. It is sealed
+  wherever keys persist and is never shown again.
+
+The client id is the Services ID. iya-sts signs a fresh, five-minute client
+secret for every token request. The code comes back by `form_post`.
+
+Register `<base>/federation/notifications/<id>` as the relationship's
+server-to-server notification endpoint at Apple:
+
+* **`consent-revoked` and `account-delete`** remove the person's connection
+  through Apple, and end the sessions it started. The person's account here
+  stays.
+* **`email-disabled` and `email-enabled`** are recorded.
+
+**Connecting Apple from the portal needs HTTPS.** Apple's `form_post` is a
+cross-site POST, so the browser binding has to be a `SameSite=None; Secure`
+cookie.
+
 ## Who a person becomes
 
 * **A newcomer gets an entry of their own**, named after the relationship and
@@ -114,6 +139,7 @@ and an operator's weight on one relationship (`federation:<id>=<factor>` in
 | `discord` | OAuth 2.0 | `/users/@me`'s `id` | `email`, verified where `verified` is true |
 | `github` | OAuth 2.0 | `/user`'s numeric `id` (never `login`, which can be renamed) | the primary address on `/user/emails`, verified where GitHub says so. `/user`'s own `email` is the public one and is not used. |
 | `microsoft` | OpenID Connect, `consumers` authority | the ID Token's `sub` | `email`, never verified (Microsoft makes no statement) |
+| `microsoft-any` | OpenID Connect, `common` authority | the ID Token's `sub` | `email`, never verified. Only tenants listed in `fedAllowedTenants` (the personal-account tenant by default) |
 | `linkedin`, `yahoo`, `slack`, `salesforce` | OpenID Connect | the ID Token's `sub` | `email`, verified where `email_verified` is true |
 | `twitch` | OpenID Connect | the ID Token's `sub` | `email`, asked for by the `claims` parameter (`fedAuthorizeParams`), verified where `email_verified` is true |
 | `facebook` | OAuth 2.0, Graph API `/me` | the app-scoped `id` | `email`, never verified |
@@ -121,6 +147,7 @@ and an operator's weight on one relationship (`federation:<id>=<factor>` in
 | `spotify` | OAuth 2.0, `/v1/me` | `id` | `email`, never verified |
 | `x` | OAuth 2.0, `/2/users/me` | `data.id` | none |
 | `tiktok` | OAuth 2.0 (Login Kit), `client_key` | the token response's `open_id` | none |
+| `apple` | OpenID Connect, `form_post`, a client secret this service signs | the ID Token's `sub` (per team) | `email`, possibly a private relay address, verified where `email_verified` is true; the name from the one-time `user` field |
 | `generic-oidc` | OpenID Connect | the ID Token's `sub` | `email`, verified where `email_verified` is true |
 | `generic-oauth2` | OAuth 2.0 | `sub`, `id` or `user_id` | `email`, verified where `email_verified` is true |
 
@@ -141,12 +168,12 @@ endpoints and review requirements. **Built** means a profile exists today.
 | Discord | OAuth 2.0, no ID Token | `id` (a snowflake) | `email` with `verified`, scope `email` | `mfa_enabled` describes the account, not this sign-in. | **Built** |
 | GitHub | OAuth 2.0, no ID Token | numeric `id` | the primary address on `/user/emails` (scope `user:email`) | The token endpoint answers JSON only when asked to. The secret is sent in the request body. | **Built** |
 | LinkedIn | OpenID Connect ("Sign In with LinkedIn using OpenID Connect") | `sub` | `email` with `email_verified` | The product must be added to the app in LinkedIn's developer portal. The token endpoint takes the secret in the body. | **Built** (profile; not yet run against the live provider) |
-| Microsoft (personal accounts) | OpenID Connect, `consumers` authority | `sub` (per application) | `email`, which Microsoft does not guarantee is verified | The issuer names the personal-account tenant. Organizational tenants are enterprise relationships, or the planned `microsoft-any` profile with an allow-list of tenants. | **Built** for personal accounts (`microsoft`); `microsoft-any` with an allow-list of tenants planned |
+| Microsoft (personal accounts) | OpenID Connect, `consumers` authority | `sub` (per application) | `email`, which Microsoft does not guarantee is verified | The issuer names the personal-account tenant. Organizational tenants are enterprise relationships, or the planned `microsoft-any` profile with an allow-list of tenants. | **Built**: `microsoft` (personal accounts) and `microsoft-any` (the `common` authority, for the tenants `fedAllowedTenants` lists; not yet run against the live provider) |
 | Yahoo | OpenID Connect | `sub` | `email` with `email_verified` | | **Built** (profile; not yet run against the live provider) |
 | Slack | OpenID Connect ("Sign in with Slack") | `sub` / `https://slack.com/user_id` | `email` with `email_verified` | A Slack identity belongs to a workspace (`https://slack.com/team_id`). | **Built** (profile; not yet run against the live provider) |
 | Twitch | OpenID Connect | `sub` | `email` with `email_verified`, only when requested with the `claims` parameter | Needs extra authorization parameters. | **Built** (profile, with its `claims` request in `fedAuthorizeParams`; not yet run against the live provider) |
 | Salesforce | OpenID Connect | `sub` (a URL naming the org and user) | `email` with `email_verified` | Login and test domains. A My Domain is an enterprise relationship. | **Built** (profile; not yet run against the live provider) |
-| Apple | OpenID Connect with Apple-specific parts | `sub` (per team) | `email`, possibly a private relay address | The client secret is a short-lived ES256 JWT signed with the developer's key. `form_post` is required when name or email is asked for, and the name arrives once, unsigned. Apple sends server-to-server notifications. Needs an Apple Developer Program membership. | Planned: adapters |
+| Apple | OpenID Connect with Apple-specific parts | `sub` (per team) | `email`, possibly a private relay address | The client secret is a short-lived ES256 JWT signed with the developer's key. `form_post` is required when name or email is asked for, and the name arrives once, unsigned. Apple sends server-to-server notifications. Needs an Apple Developer Program membership. | **Built** (profile and three adapters: the client-secret JWT, the one-time `user` field, the server-to-server notifications; not yet run against the live provider) |
 | Facebook | OAuth 2.0 on the web, Graph API `/me` | app-scoped `id` | `email` with no verification statement, so treated as unverified | The OpenID Connect form (Limited Login) is for mobile apps. Some permissions need app review. | **Built** (profile; not yet run against the live provider) |
 | Amazon (Login with Amazon) | OAuth 2.0, `/user/profile` | `user_id` | `email` with no verification statement | | **Built** (profile; not yet run against the live provider) |
 | X / Twitter | OAuth 2.0 with PKCE, `/2/users/me` | `data.id` | Only with an elevated access tier and its email scope | The profile is nested under `data`. Access tiers and pricing apply. | **Built** (profile; not yet run against the live provider) |

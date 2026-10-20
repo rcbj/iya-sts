@@ -11241,6 +11241,23 @@ const CODES = [
     summary: 'A connect could not be started (#565): the relationship is not ' +
       'a usable consumer provider in OpenID Connect or OAuth 2.0.',
     spec: 'HTTP 400 (account API)' },
+  { code: 'STS-FED-0185',
+    summary: 'Sign in with Apple\'s client secret could not be signed for a ' +
+      'token request (#565): fedTeamId, fedKeyId, fedClientId or ' +
+      'fedClientSigningKey is missing, the key will not open, or it is not ' +
+      'a P-256 key.',
+    spec: 'HTTP 500 (the federation surface)' },
+  { code: 'STS-FED-0186',
+    summary: 'A provider\'s server-to-server notification was refused ' +
+      '(#565): it did not verify against the relationship\'s keys, named ' +
+      'another issuer or audience, carried no event or no jti, or had ' +
+      'already been accepted once.',
+    spec: 'HTTP 400' },
+  { code: 'STS-FED-0187',
+    summary: 'A provider\'s server-to-server notification arrived for a ' +
+      'relationship that takes none: unknown, not usable, or not a provider ' +
+      'whose profile receives notifications (#565).',
+    spec: 'HTTP 404' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +

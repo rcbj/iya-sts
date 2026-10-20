@@ -2275,6 +2275,14 @@
     "en": "ea2b1532d05c3e5f",
     "text": "DÉMARRE la session fédérée pour laquelle la réponse vérifiée du partenaire était conservée — seulement après un second facteur détenu ICI, en tant que cette personne"
   },
+  "stsmetadata.endpoints./federation/notifications/:id.what": {
+    "en": "898b7c35c721538f",
+    "text": "Les notifications de serveur à serveur de Sign in with Apple, pour une relation dont le profil de fournisseur les accepte. Apple envoie en POST { payload }, un JWT vérifié avec les clés de la relation et rien d’autre — émetteur Apple, audience l’identifiant client — et accepté une seule fois par son jti (sinon STS-FED-0186). Ses événements nomment un type et le sujet de la personne : consent-revoked et account-delete suppriment le lien de ce sujet via cette relation, jamais l’entrée, et email-disabled et email-enabled sont consignés. 404 (STS-FED-0187) pour une relation qui n’en accepte aucune."
+  },
+  "stsmetadata.endpoints./federation/notifications/:id.effect": {
+    "en": "93fc79fda0ba3e2a",
+    "text": "supprime le lien de la personne via la relation lorsqu’un consentement est révoqué ou un compte supprimé chez le fournisseur, ce qui met fin aux sessions qu’il a ouvertes ; consigne une adresse qui a cessé ou recommencé de transférer"
+  },
   "stsmetadata.endpoints./federation/slo/:id.what": {
     "en": "84d79b5134fbe867",
     "text": "UN SEUL CHEMIN pour chaque déconnexion qu’un partenaire envoie par un navigateur, pour la même raison que l’ACS : une <LogoutRequest> SAML 2.0 (le partenaire déconnectant quelqu’un) et une <LogoutResponse> (sa réponse à la nôtre), en liaison Redirect ou POST ; un wsignoutcleanup1.0 ou wsignout1.0 WS-Federation ; et le navigateur revenant de l’end_session_endpoint d’un fournisseur OpenID. Un message SAML est authentifié exactement comme une assertion — signé (saml-profiles-2.0-os section 4.4.4.1 ; fedRequireSignedLogout, désactivé en mode développement uniquement), vérifié au regard de fedSigningCertificate et de rien d’autre, émis par fedPeer, adressé ici, récent, et accepté une seule fois à jamais (l’historique des assertions utilisées) — et ne met fin qu’aux sessions portant ce NameID et ce SessionIndex via cette relation, en répondant par une LogoutResponse signée (UnknownPrincipal lorsque rien ne correspond). Un nettoyage WS-Federation n’est pas signé selon sa spécification ; il affiche donc une page avec un vrai bouton et ne met fin à la session dans CE navigateur que lorsque celui-ci est actionné. SAML 1.1 et OAuth 2.0 ne définissent pas de déconnexion et sont refusés en le précisant."

@@ -46,6 +46,8 @@
 //   | `token`        | the token endpoint's JSON response itself               |
 //   | `userinfo`     | what `fedUserinfoUrl` answered                         |
 //   | `emails`       | what `fedEmailsUrl` answered (GitHub's `/user/emails`)  |
+//   | `form`         | a JSON form field the provider posted beside the code   |
+//   |                | (Apple's `user`, the name, sent once and unsigned)      |
 //
 // and the path is dotted (`data.id`), a number indexes an array, and
 // `@primary` selects the first element of an array whose `primary` is true.
@@ -102,6 +104,7 @@
 //   | Google   | `google-auth-library` (Google, TypeScript) | it dials Google's certificate and token endpoints itself, over its own HTTP stack (gaxios), and verifies ID Tokens with its own crypto — so neither `federation_http.ts`'s outbound policy (the kill switch, https with the CA file, no redirect, the body cap, product's internal-address refusal) nor `common/crypto.js`, the one place this service verifies, would govern a Google sign-in; and it carries `gcp-metadata`, its application-default-credentials probe, into a process that holds no Google credential |
 //   | GitHub   | `@octokit/oauth-methods`, `@octokit/request` (GitHub, TypeScript) | built for an app holding its own token: requests go to URLs it composes, through its own fetch, outside the outbound policy; its code exchange (6.0.5's `exchangeWebFlowCode()`) takes no PKCE verifier, which this service always sends |
 //   | Discord  | none published by Discord; `discord-oauth2`, `discord.js` (community) | a community wrapper around the same three requests, for a bot or an app storing the person's tokens, which decision 7 refuses |
+//   | Apple    | Apple publishes "Sign in with Apple JS", a BROWSER script for a page embedding the button, and no Node module; `apple-signin-auth` (community) | the browser script is the embedding case exactly, and the community module verifies ID Tokens with its own JWKS fetch and crypto — the client secret it would mint is fifteen lines through `common/crypto.js` |
 //
 // What each would have contributed is the request shapes, and those are a
 // profile's dozen lines. The flow itself — state, PKCE, the code exchange,
@@ -121,7 +124,8 @@ import helpers = require('../common/helpers');
 type Json = any;
 
 /** Where a value is read from at sign-in. */
-type Source = 'id_token' | 'access_token' | 'token' | 'userinfo' | 'emails';
+type Source = 'id_token' | 'access_token' | 'token' | 'userinfo' | 'emails' |
+              'form';
 
 /** One extraction rule: a source and a dotted path within it. */
 interface Rule {
@@ -164,7 +168,12 @@ interface Profile {
 }
 
 /** The named adapters, a closed set (rcbj, #565). */
-const ADAPTERS = ['github-verified-email', 'tiktok-client-key'];
+const ADAPTERS = ['github-verified-email', 'tiktok-client-key',
+                  'apple-client-secret', 'apple-user-form-field',
+                  'apple-notifications', 'microsoft-tenant-issuer'];
+
+// The tenant Microsoft signs personal accounts' tokens as (#565).
+const MICROSOFT_CONSUMERS_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad';
 
 // ---------------------------------------------------------------------------
 // THE CATALOGUE. The first three are rcbj's (Discord among them, 2026-10-19)
@@ -304,6 +313,41 @@ const PROFILES: Profile[] = [
     note: 'OpenID Connect against the consumers authority: personal ' +
           'Microsoft accounts only. An organisational tenant is an ' +
           'enterprise relationship. The address is never verified.' },
+  // MICROSOFT, ANY TENANT (#565, the plan's decision 10): the `common`
+  // authority, whose tokens each name THEIR tenant in `iss` — so `fedPeer`
+  // holds `{tenantid}` and the `microsoft-tenant-issuer` adapter fills it
+  // from the token's `tid`, ONLY for a tenant `fedAllowedTenants` lists.
+  // Empty refuses every organisational tenant; the personal-account tenant
+  // is listed by default.
+  { id: 'microsoft-any', label: 'Microsoft (allowed tenants)',
+    protocol: 'oidc', generic: false,
+    docs: 'https://learn.microsoft.com/en-us/entra/identity-platform/' +
+          'howto-convert-app-to-be-multi-tenant',
+    defaults: {
+      fedSsoUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/' +
+                 'authorize',
+      fedTokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/' +
+                   'token',
+      fedJwksUri: 'https://login.microsoftonline.com/common/discovery/v2.0/' +
+                  'keys',
+      fedPeer: 'https://login.microsoftonline.com/{tenantid}/v2.0',
+      fedAllowedTenants: MICROSOFT_CONSUMERS_TENANT,
+      fedScope: 'openid profile email',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedClientSecret'],
+    primary: 'id_token', subject: 'id_token:sub',
+    claims: {
+      email: 'id_token:email',
+      name: 'id_token:name',
+      preferred_username: 'id_token:preferred_username'
+    },
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: ['microsoft-tenant-issuer'],
+    note: 'OpenID Connect against the common authority, for the tenants ' +
+          'fedAllowedTenants lists (the personal-account tenant by ' +
+          'default). Each token\'s issuer names its tenant. The address is ' +
+          'never verified.' },
   { id: 'linkedin', label: 'LinkedIn', protocol: 'oidc', generic: false,
     docs: 'https://learn.microsoft.com/en-us/linkedin/consumer/' +
           'integrations/self-serve/sign-in-with-linkedin-v2',
@@ -529,6 +573,46 @@ const PROFILES: Profile[] = [
     note: 'OAuth 2.0 (Login Kit). It calls the client id client_key; the ' +
           'person is the token response\'s open_id, per app, and no ' +
           'address is offered.' },
+  // SIGN IN WITH APPLE (#565): OpenID Connect with three departures, each
+  // a named adapter. The client secret is an ES256 JWT this service signs
+  // with the developer's key (`apple-client-secret`); the code comes back by
+  // form_post, which Apple requires when a name or an address is asked for,
+  // with the person's name in a `user` form field on the FIRST
+  // authorization only and unsigned (`apple-user-form-field`: a display
+  // value, read through the `form` source and the mapping like any claim,
+  // never identity); and Apple tells a relying party of a revoked consent
+  // or a deleted account by a signed server-to-server notification
+  // (`apple-notifications`).
+  { id: 'apple', label: 'Apple', protocol: 'oidc', generic: false,
+    docs: 'https://developer.apple.com/documentation/' +
+          'sign_in_with_apple/sign_in_with_apple_rest_api',
+    defaults: {
+      fedSsoUrl: 'https://appleid.apple.com/auth/authorize',
+      fedTokenUrl: 'https://appleid.apple.com/auth/token',
+      fedJwksUri: 'https://appleid.apple.com/auth/keys',
+      fedPeer: 'https://appleid.apple.com',
+      fedScope: 'name email',
+      fedResponseMode: 'form_post',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedTeamId', 'fedKeyId', 'fedClientSigningKey'],
+    primary: 'id_token', subject: 'id_token:sub',
+    claims: {
+      email: 'id_token:email',
+      given_name: 'form:name.firstName',
+      family_name: 'form:name.lastName'
+    },
+    // `email_verified` is a string "true" in Apple's ID Token, which the
+    // reading takes as true; a private relay address is verified too.
+    emailVerified: 'id_token:email_verified',
+    mfa: null, issuerAliases: [],
+    adapters: ['apple-client-secret', 'apple-user-form-field',
+               'apple-notifications'],
+    note: 'OpenID Connect with a client secret this service signs (the ' +
+          'team id, the key id and the .p8 key), form_post, and the name ' +
+          'once and unsigned. The address may be a private relay one. ' +
+          'Register /federation/notifications/<id> as the server-to-server ' +
+          'notification endpoint.' },
   { id: 'generic-oidc', label: 'Another OpenID Connect provider',
     protocol: 'oidc', generic: true, docs: '',
     defaults: { fedScope: 'openid profile email' },
@@ -692,13 +776,30 @@ export = class ConsumerProviders {
    * @param record - the relationship
    * @returns the list, or the one value where there are no aliases
    */
-  static issuersFor(record: Json): string | string[] | undefined {
+  static issuersFor(record: Json, token?: string): string | string[] |
+                                                 undefined {
     helpers.log.debug("Entering ConsumerProviders.issuersFor().");
     const peer = String((record && record.fedPeer) || '');
     const profile = ConsumerProviders.profileFor(record && record.fedProvider);
     if (!peer) {
       helpers.log.debug("Leaving ConsumerProviders.issuersFor(). No peer.");
       return undefined;
+    }
+    // THE TENANT ISSUER (#565, `microsoft-tenant-issuer`): the token's own
+    // `tid`, read before the signature is checked only to SELECT the issuer
+    // the signature check then demands — an unverified value may select,
+    // never establish — and only a tenant `fedAllowedTenants` lists. Any
+    // other gets an issuer no token can carry, so the check refuses it.
+    if (peer.indexOf('{tenantid}') >= 0) {
+      const tid = ConsumerProviders.tenantOf(token);
+      const allowed = [].concat(record.fedAllowedTenants || [])
+        .map(function (one: unknown) {
+          return String(one || '').trim().toLowerCase();
+        });
+      helpers.log.debug("Leaving ConsumerProviders.issuersFor(). Tenant.");
+      return tid && allowed.indexOf(tid) >= 0
+        ? peer.replace('{tenantid}', tid)
+        : 'urn:sts:federation:tenant-not-allowed';
     }
     // An alias is a spelling of the PROVIDER's own issuer, so it is
     // accepted only while `fedPeer` is still the profile's: a relationship
@@ -724,6 +825,30 @@ export = class ConsumerProviders {
     helpers.log.debug("Leaving ConsumerProviders.ruleOf().");
     return { source: String(text).slice(0, at) as Source,
              path: String(text).slice(at + 1) };
+  }
+
+  /**
+   * The `tid` a JWT's payload names, unverified, lower-cased; '' for none
+   * or for anything that is not a tenant id's shape.
+   *
+   * @param token - the compact JWT
+   * @returns the tenant id
+   */
+  static tenantOf(token?: string): string {
+    helpers.log.debug("Entering ConsumerProviders.tenantOf().");
+    const parts = String(token || '').split('.');
+    let tid = '';
+    try {
+      const payload = JSON.parse(Buffer.from(parts[1] || '', 'base64url')
+        .toString('utf8'));
+      tid = String((payload && payload.tid) || '').toLowerCase();
+    } catch (e) {
+      helpers.log.debug("Caught in ConsumerProviders.tenantOf(): " +
+                        ((e && e.message) || e));
+      tid = '';
+    }
+    helpers.log.debug("Leaving ConsumerProviders.tenantOf().");
+    return /^[0-9a-f-]{36}$/.test(tid) ? tid : '';
   }
 
   /**

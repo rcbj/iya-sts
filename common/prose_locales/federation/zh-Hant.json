@@ -243,6 +243,26 @@
     "en": "627419de92206a62",
     "text": "「本服務在夥伴處的秘密」，以明文存放在每次繫結都會成功的目錄中。它是「真正的」外部服務上「真正的」憑證，這比此目錄中其他任何東西都更具分量——請參閱標頭。絕不會寫入稽核記錄，也絕不會印在頁面上。"
   },
+  "fed.schema.attributes.fedResponseMode.what": {
+    "en": "07cfe6e4177873df",
+    "text": "授權碼的返回方式：query（預設值，代碼在重新導向中）或 form_post（OAuth 2.0 Form Post Response Mode）；只要要求姓名或地址，Sign in with Apple 就要求使用後者。form_post 以跨網站 POST 的方式抵達，因此瀏覽器不會隨之傳送任何 SameSite=Lax Cookie。"
+  },
+  "fed.schema.attributes.fedAllowedTenants.what": {
+    "en": "1436122fe8c92048",
+    "text": "僅限 MICROSOFT 任何租用戶：其人員可以登入的租用戶 ID，每個值一個。此時 fedPeer 包含 {tenantid}，由每個權杖的 tid 填入；來自未列出租用戶的權杖會被拒絕。留空則拒絕所有租用戶。"
+  },
+  "fed.schema.attributes.fedTeamId.what": {
+    "en": "959f29403a917b46",
+    "text": "僅限 APPLE：Apple Developer 團隊 ID，即此服務為每次權杖請求簽署的用戶端密鑰的 iss。"
+  },
+  "fed.schema.attributes.fedKeyId.what": {
+    "en": "557cedae99afdf0f",
+    "text": "僅限 APPLE：Sign in with Apple 金鑰的 ID，即此服務簽署的用戶端密鑰的 kid。"
+  },
+  "fed.schema.attributes.fedClientSigningKey.what": {
+    "en": "411c7d1d5df63859",
+    "text": "僅限 APPLE：此服務用來簽署其用戶端密鑰的私密金鑰（Apple 核發的 .p8 檔案，PKCS #8 PEM 格式的 P-256 金鑰）。它是在 Apple 處的認證。凡是金鑰會持久保存的地方，它都以金鑰加密金鑰密封，從不顯示，也從不寫入稽核記錄。用它簽署的用戶端密鑰有效期為五分鐘，並且每次權杖請求時產生。"
+  },
   "fed.schema.attributes.fedAuthorizeParams.what": {
     "en": "4cf26c17034bb859",
     "text": "額外的授權請求參數，每個值一個，寫作 `<name>=<value>`，供需要它的提供者使用（Twitch 的 `claims`，以便取得地址）。僅限 OpenID Connect 和 OAuth 2.0。此服務自行設定的參數——response_type、client_id、redirect_uri、state、scope、nonce、code_challenge、code_challenge_method、response_mode、request 與 request_uri——在此處會被拒絕，因為在此變更其中任何一個都會破壞此服務所做的一項檢查。"

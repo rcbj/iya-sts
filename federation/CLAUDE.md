@@ -2144,3 +2144,33 @@ a local one lands on an entry of their own), the realm switch at every door,
 **Not covered yet:** an over-HTTP job (`tests/vendored/`, `local: true`), and
 a consumer provider on an application's chooser beside an enterprise partner.
 
+### Sign in with Apple (#565)
+
+Three adapters, each in `federation_sp.ts` where its flow is:
+
+* **`apple-client-secret`.** `appleClientSecret()` mints an ES256 JWT per
+  token request (`iss` the team id, `sub` the Services ID, `aud` Apple, five
+  minutes), signed through `common/crypto.js` with `fedClientSigningKey`.
+  That key is sealed with label `federation-client-signing-key` (the same
+  durable-key rule as `fedClientSecret`) and is read through
+  `clientSigningKeyOf()`. It is redacted from every view by `sensitive`.
+  A key that is missing or will not sign is `STS-FED-0185`.
+* **`apple-user-form-field`.** The `user` field posted beside the code on the
+  FIRST authorization is kept on the context (bounded) and read through the
+  profile's `form` source. It is unsigned, so it is a display value through
+  the mapping and never identity.
+* **`apple-notifications`.** `POST /federation/notifications/{id}` takes
+  Apple's `{ payload }` JWT, verified against the relationship's keys only
+  and spent once ever by `jti` (use `provider-notification`).
+  `consent-revoked` and `account-delete` REMOVE that subject's link through
+  this relationship, and the write hook ends its sessions. The entry is
+  never removed. `email-*` is recorded. In a service deployed as cells, a
+  link held in another cell is not reached yet: the partner sign-out's
+  fan-out is the shape #727 takes.
+
+**`fedResponseMode` `form_post`** (OAuth 2.0 Form Post Response Mode) is what
+Apple requires with a name or address scope, and it is any `oidc`
+relationship's to set. Its answer is a cross-site POST, so a connect's
+binding cookie is `SameSite=None; Secure` there, over https only. Over http
+it fails closed.
+

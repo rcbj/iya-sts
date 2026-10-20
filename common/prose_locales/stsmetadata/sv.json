@@ -2275,6 +2275,14 @@
     "en": "ea2b1532d05c3e5f",
     "text": "STARTAR den federerade sessionen som partnerns verifierade svar hölls för — först efter en andra faktor som hålls HÄR, som den personen"
   },
+  "stsmetadata.endpoints./federation/notifications/:id.what": {
+    "en": "898b7c35c721538f",
+    "text": "Meddelanden från server till server från Sign in with Apple, för en relation vars leverantörsprofil tar emot dem. Apple skickar med POST { payload }, en JWT verifierad mot relationens nycklar och inget annat — utfärdare Apple, målgrupp klient-id:t — och godtagen en enda gång efter sitt jti (annars STS-FED-0186). Dess händelser anger en typ och personens subjekt: consent-revoked och account-delete tar bort det subjektets länk genom denna relation, aldrig posten, och email-disabled och email-enabled registreras. 404 (STS-FED-0187) för en relation som inte tar emot några."
+  },
+  "stsmetadata.endpoints./federation/notifications/:id.effect": {
+    "en": "93fc79fda0ba3e2a",
+    "text": "tar bort personens länk genom relationen när ett samtycke återkallas eller ett konto raderas hos leverantören, vilket avslutar de sessioner den startade; registrerar en adress som slutade eller började vidarebefordra igen"
+  },
   "stsmetadata.endpoints./federation/slo/:id.what": {
     "en": "84d79b5134fbe867",
     "text": "EN SÖKVÄG för varje utloggning som en partner skickar via en webbläsare, av samma skäl som ACS: en SAML 2.0 <LogoutRequest> (partnern loggar ut någon) och <LogoutResponse> (dess svar på vår), på Redirect- eller POST-bindningen; en WS-Federation wsignoutcleanup1.0 eller wsignout1.0; och webbläsaren som kommer tillbaka från en OpenID-leverantörs end_session_endpoint. Ett SAML-meddelande autentiseras exakt som ett intyg — signerat (saml-profiles-2.0-os avsnitt 4.4.4.1; fedRequireSignedLogout, av endast i utvecklingsläge), verifierat mot fedSigningCertificate och inget annat, utfärdat av fedPeer, adresserat hit, färskt och godtaget en enda gång någonsin (historiken över använda intyg) — och avslutar endast de sessioner som bär det NameID och SessionIndex via den här relationen, med ett signerat LogoutResponse som svar (UnknownPrincipal där inget matchade). En WS-Federation-rensning är osignerad enligt sin specifikation, så den ritar en sida med en riktig knapp och avslutar sessionen i DEN HÄR webbläsaren först när knappen trycks. SAML 1.1 och OAuth 2.0 definierar ingen utloggning och vägras med det angivet."

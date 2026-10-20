@@ -243,6 +243,26 @@
     "en": "627419de92206a62",
     "text": "LE SECRET DE CE SERVICE CHEZ LE PARTENAIRE, en clair, dans un annuaire où chaque bind réussit. C’est un VÉRITABLE identifiant auprès d’un VÉRITABLE service étranger, ce qui est une affirmation plus forte que tout le reste de cet annuaire — voir l’en-tête. Jamais écrit dans le journal d’audit et jamais affiché sur une page."
   },
+  "fed.schema.attributes.fedResponseMode.what": {
+    "en": "07cfe6e4177873df",
+    "text": "COMMENT LE CODE D’AUTORISATION REVIENT : query (la valeur par défaut, le code dans la redirection) ou form_post (OAuth 2.0 Form Post Response Mode), qu’exige Sign in with Apple dès qu’un nom ou une adresse est demandé. form_post arrive sous forme de POST intersite, si bien qu’un navigateur ne lui envoie aucun cookie SameSite=Lax."
+  },
+  "fed.schema.attributes.fedAllowedTenants.what": {
+    "en": "1436122fe8c92048",
+    "text": "MICROSOFT, TOUT LOCATAIRE SEULEMENT : les identifiants des locataires dont les personnes peuvent se connecter, un par valeur. fedPeer contient alors {tenantid}, rempli à partir du tid de chaque jeton, et un jeton d’un locataire non listé est refusé. Vide refuse tous les locataires."
+  },
+  "fed.schema.attributes.fedTeamId.what": {
+    "en": "959f29403a917b46",
+    "text": "APPLE SEULEMENT : l’identifiant d’équipe Apple Developer, l’iss du secret client que ce service signe pour chaque demande de jeton."
+  },
+  "fed.schema.attributes.fedKeyId.what": {
+    "en": "557cedae99afdf0f",
+    "text": "APPLE SEULEMENT : l’identifiant de la clé Sign in with Apple, le kid du secret client que ce service signe."
+  },
+  "fed.schema.attributes.fedClientSigningKey.what": {
+    "en": "411c7d1d5df63859",
+    "text": "APPLE SEULEMENT : LA CLÉ PRIVÉE avec laquelle ce service signe son secret client (le fichier .p8 délivré par Apple, une clé P-256 en PEM PKCS #8). C’est un identifiant chez Apple. Elle est scellée sous la clé de chiffrement de clés partout où les clés persistent, jamais affichée et jamais écrite dans le journal d’audit. Un secret client signé avec elle vit cinq minutes et est émis à chaque demande de jeton."
+  },
   "fed.schema.attributes.fedAuthorizeParams.what": {
     "en": "4cf26c17034bb859",
     "text": "PARAMÈTRES SUPPLÉMENTAIRES DE LA DEMANDE D’AUTORISATION, un par valeur, écrits `<name>=<value>`, pour un fournisseur qui en a besoin (le `claims` de Twitch, pour recevoir une adresse). OpenID Connect et OAuth 2.0 seulement. Les paramètres que ce service fixe lui-même — response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request et request_uri — sont refusés ici, car modifier l’un d’eux ici déferait une vérification que fait ce service."

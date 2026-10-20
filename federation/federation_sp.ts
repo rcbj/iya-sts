@@ -170,6 +170,8 @@ import fedMap = require('./federation_map');
 import fedHttp = require('./federation_http');
 // The consumer provider profiles (#565): a leaf.
 import consumerProviders = require('./consumer_providers');
+// The once-ever history (rule 3ae), for a provider's notification (#565).
+import usedAssertions = require('./../common/used_assertions');
 // THE ERROR CODES. Every refusal here is a SECURITY refusal, so each check has
 // a code of its own, marked on the response before refuse() draws the page —
 // the code is never on the page. And the audit log, for the one failure that
@@ -532,6 +534,11 @@ class FederationSp {
     // risk after a partner's answer returns (#565).
     app.get(STEPUP_PATH + '/:handle', (req, res) => {
       return this.stepUpEndpoint(req, res);
+    });
+    // POST /federation/notifications/{id} — a provider's signed
+    // server-to-server notification (#565: Sign in with Apple).
+    app.post(federation.PATHS.notifications + '/:id', (req, res) => {
+      return this.notificationsEndpoint(req, res);
     });
     // GET /federation/metadata/{id}
     app.get(METADATA_PATH + '/:id', (req, res) => {
@@ -2273,6 +2280,186 @@ class FederationSp {
   }
 
   // ---------------------------------------------------------------------------
+  // SIGN IN WITH APPLE'S CLIENT SECRET (#565, `apple-client-secret`): an ES256
+  // JWT — `iss` the team id, `sub` the client id (the Services ID), `aud`
+  // Apple's issuer, `kid` the key id — signed through `common/crypto.js` with
+  // the relationship's sealed key, minted per token request and living five
+  // minutes. Answers '' where anything it needs is missing or will not sign.
+  // ---------------------------------------------------------------------------
+  appleClientSecret(record) {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSp.appleClientSecret().");
+    const key = federation.clientSigningKeyOf(record);
+    const team = String(record.fedTeamId || '').trim();
+    const kid = String(record.fedKeyId || '').trim();
+    const client = String(record.fedClientId || '').trim();
+    if (!key || !team || !kid || !client) {
+      log.debug("Leaving FederationSp.appleClientSecret(). Incomplete.");
+      return '';
+    }
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const jws = stsCrypto.signJws({ iss: team, sub: client,
+        aud: 'https://appleid.apple.com', iat: now, exp: now + 300 },
+        key, { algorithm: 'ES256', keyid: kid });
+      log.debug("Leaving FederationSp.appleClientSecret(). Signed.");
+      return String(jws);
+    } catch (e) {
+      log.debug("Caught in FederationSp.appleClientSecret(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-FED-0185') + 'federation: the Apple ' +
+               'client secret of ' + record.fedId + ' could not be signed: ' +
+               ((e && e.message) || e));
+      return '';
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST /federation/notifications/{id} — SIGN IN WITH APPLE'S SERVER-TO-SERVER
+  // NOTIFICATIONS (#565, `apple-notifications`). Apple POSTs `{ payload }`, a
+  // JWT it signs with the keys at fedJwksUri, `iss` its issuer, `aud` this
+  // relationship's client id, carrying `events` — a JSON string naming the
+  // `type` and the person's `sub`.
+  //
+  // It is verified exactly as an ID Token from this relationship is, by
+  // verifyForeignJwt() against the relationship's keys and nothing else,
+  // and it is accepted once ever (the used-assertion history). What it MEANS
+  // is the partner's own statement about its sign-ins, so it is answered the
+  // way a partner's `account-disabled` is (#373) — about this relationship,
+  // never about the person's other ways in:
+  //   * `consent-revoked` and `account-delete`: the person stopped using
+  //     Sign in with Apple with this service, or deleted their Apple account.
+  //     Their link through this relationship is REMOVED, which the directory's
+  //     write hook answers by ending every session it started
+  //     (`linksRemoved()`). Their entry stays: it is this service's.
+  //   * `email-disabled` and `email-enabled`: the private relay address
+  //     stopped or started forwarding. Recorded, and nothing changes: the
+  //     address is still the person's.
+  // Answers 200 for a verified notification whatever it led to, 400 for one
+  // that does not verify (STS-FED-0186), and 404 for a relationship that
+  // takes none (STS-FED-0187).
+  // ---------------------------------------------------------------------------
+  private notificationsEndpoint(req, res) {
+    const { federation, audit, errorCodes, parseBody, log } = this.deps;
+    log.debug("Entering the federation notifications endpoint.");
+    const record = federation.get(String(req.params.id || ''));
+    if (!this.enabled() || !record || record.fedRole !== 'service-provider' ||
+        !consumerProviders.adapts(record, 'apple-notifications') ||
+        !federation.isUsable(record)) {
+      errorCodes.mark(res, 'STS-FED-0187');
+      log.debug("Leaving the federation notifications endpoint. Not here.");
+      return res.status(404).json({ error: 'not_found' });
+    }
+    const body = parseBody(req) || {};
+    const token = String(body.payload || '');
+    log.debug("Leaving the federation notifications endpoint. Verifying.");
+    return this.keysFor(record).then((keySet) => {
+      log.debug("Entering the notification's verification.");
+      const verified: any = keySet.ok && token
+        ? this.verifyForeignJwt(token, record, keySet.keys, {
+          issuer: consumerProviders.issuersFor(record),
+          audience: String(record.fedClientId || '') || undefined })
+        : { ok: false, why: keySet.ok ? 'no payload' : keySet.why };
+      let event: any = null;
+      try {
+        event = verified.ok
+          ? JSON.parse(String(verified.payload.events || '{}')) : null;
+      } catch (e) {
+        log.debug("Caught in the notification's verification: " +
+                  ((e && e.message) || e));
+        event = null;
+      }
+      const refused = (why: string) => {
+        log.debug("Entering refused().");
+        errorCodes.mark(res, 'STS-FED-0186');
+        audit.failure('STS-FED-0186', {
+          protocol: 'Federation', channel: 'http', target: record.fedId,
+          summary: 'a notification for ' + record.fedId + ' was refused: ' +
+                   why, outcome: 'refused' });
+        log.debug("Leaving refused().");
+        return res.status(400).json({ error: 'invalid_request' });
+      };
+      const jti = String((verified.payload || {}).jti || '');
+      if (!verified.ok || !event || !event.type || !event.sub || !jti) {
+        log.debug("Leaving the notification's verification. Refused.");
+        return refused(verified.ok ? 'it carries no event or no jti'
+                                   : String(verified.why ||
+                                            'it did not verify'));
+      }
+      // ONCE EVER (rule 3ae): a replayed `consent-revoked` would undo a
+      // connection the person made again since.
+      return usedAssertions.claim({ format: 'jwt',
+        use: 'provider-notification', issuer: String(record.fedPeer),
+        identifier: jti,
+        expiresAt: (Number(verified.payload.exp) ||
+                    Math.floor(Date.now() / 1000) + 86400) * 1000
+      }).then((claimed: any) => {
+        log.debug("Entering the notification's claim.");
+        if (!claimed.ok) {
+          log.debug("Leaving the notification's claim. Refused.");
+          return refused(claimed.reason === 'replay'
+            ? 'it was already accepted once' : 'the replay history could ' +
+              'not prove it unused (' + claimed.reason + ')');
+        }
+        log.debug("Leaving the notification's claim.");
+        return this.applyNotification(res, record, event);
+      });
+    });
+  }
+
+  // What a verified provider notification leads to (#565): see
+  // notificationsEndpoint().
+  private applyNotification(res, record, event) {
+    const { federation, links, audit, log } = this.deps;
+    log.debug("Entering FederationSp.applyNotification().");
+    const type = String(event.type);
+    const value = links.linkValue(record.fedId, record.fedPeer,
+                                  String(event.sub));
+    const holders = federation.peopleLinkedBy(value) || [];
+    let unlinked = 0;
+    if (type === 'consent-revoked' || type === 'account-delete') {
+      holders.forEach(function (one: any): void {
+        const written = federation.writeFederationLink(
+          String(one.username || one.uid || ''), value, false, {});
+        if (written && written.ok !== false) {
+          unlinked += 1;
+        }
+      });
+    }
+    audit.record({ category: 'federation',
+      action: 'federation.provider-notification', target: record.fedId,
+      outcome: 'success',
+      summary: record.fedId + ' notified ' + type + ' for a subject held ' +
+               'by ' + holders.length + ' person(s); ' + unlinked +
+               ' link(s) removed (#565)',
+      detail: { relationship: record.fedId, type: type,
+                people: holders.length, unlinked: unlinked } });
+    log.debug("Leaving FederationSp.applyNotification(). " + type + ".");
+    return res.status(200).json({ ok: true });
+  }
+
+  // The `form` source (#565): Apple's `user` field, parsed, or undefined.
+  private formSourceOf(record, context) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.formSourceOf().");
+    const text = String((context && context.formUser) || '');
+    if (!text || !consumerProviders.adapts(record, 'apple-user-form-field')) {
+      log.debug("Leaving FederationSp.formSourceOf(). None.");
+      return undefined;
+    }
+    try {
+      const parsed = JSON.parse(text);
+      log.debug("Leaving FederationSp.formSourceOf().");
+      return parsed && typeof parsed === 'object' ? parsed : undefined;
+    } catch (e) {
+      log.debug("Caught in FederationSp.formSourceOf(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving FederationSp.formSourceOf(). Not JSON.");
+      return undefined;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // CONNECTING A PROVIDER TO AN ACCOUNT, FROM THE PORTAL (#565, the plan's
   // decision 6). The person is signed in, and asks `/account-api` to connect
   // a consumer provider: this mints the flow — the context of an ordinary
@@ -2316,9 +2503,17 @@ class FederationSp {
     const location = this.authorizationRequestUrl(baseUrlOf(req), record,
                                                   this.heldContext(handle));
     log.debug("Leaving FederationSp.beginConnect(). To the provider.");
+    // A PROVIDER THAT ANSWERS BY FORM POST (#565: Apple) posts across sites,
+    // and a browser sends no SameSite=Lax cookie with that POST, so the
+    // binding is SameSite=None there — which a browser takes only with
+    // Secure, so over https alone. Over http such a connect cannot be bound,
+    // and fails closed (STS-FED-0111).
+    const crossSite = String(record.fedResponseMode || '') === 'form_post' &&
+      !!this.deps.config.value('global.https');
     return { ok: true, location: location, binding: binding,
              cookie: LINK_COOKIE + '=' + binding + '; Path=/; HttpOnly; ' +
-                     'SameSite=Lax; Max-Age=' +
+                     'SameSite=' + (crossSite ? 'None' : 'Lax') +
+                     '; Max-Age=' +
                      Math.max(60, Math.floor(this.contextTtlMs() / 1000)) +
                      (this.deps.config.value('global.https') ? '; Secure'
                                                              : '') };
@@ -3451,6 +3646,12 @@ class FederationSp {
     if (responseType === 'code') {
       params.set('code_challenge', context.pkceChallenge);
       params.set('code_challenge_method', 'S256');
+      // THE CODE BY FORM POST (#565, OAuth 2.0 Form Post Response Mode),
+      // which Sign in with Apple requires when a name or an address is
+      // asked for.
+      if (String(record.fedResponseMode || '') === 'form_post') {
+        params.set('response_mode', 'form_post');
+      }
     }
     // THE TIKTOK ADAPTER (#565): its authorization endpoint calls the client
     // id `client_key`, and reads nothing else.
@@ -4715,6 +4916,12 @@ class FederationSp {
     }
 
     const responseType = String(record.fedResponseType || 'code');
+    // APPLE'S `user` FORM FIELD (#565), posted beside the code on the first
+    // authorization only: kept on the context, bounded, for the profile's
+    // `form` source. Unsigned, so it is a display value and never identity.
+    if (consumerProviders.adapts(record, 'apple-user-form-field')) {
+      context.formUser = String(params.user || '').slice(0, 4096);
+    }
 
     // The front-channel shape: an ID Token straight back, no back channel at
     // all.
@@ -4765,6 +4972,22 @@ class FederationSp {
         .then(function (assertion) {
           form.client_assertion = assertion;
         });
+    } else if (consumerProviders.adapts(record, 'apple-client-secret')) {
+      // SIGN IN WITH APPLE (#565): the client secret is a JWT this service
+      // signs for this request, in the body with the client id.
+      const minted = this.appleClientSecret(record);
+      if (!minted) {
+        errorCodes.mark(res, 'STS-FED-0185');
+        log.debug("Leaving FederationSp.consumeOauthResponse(). No Apple " +
+                  "client secret.");
+        return this.refuse(res, record, 500, 'The client secret could not ' +
+                                             'be signed',
+          'This relationship signs its client secret with fedClientSigningKey ' +
+          '(the .p8 key), naming fedTeamId and fedKeyId, and one of them is ' +
+          'missing, will not open, or is not a P-256 key.');
+      }
+      form.client_id = String(record.fedClientId || '');
+      form.client_secret = minted;
     } else if (consumerProviders.adapts(record, 'tiktok-client-key')) {
       // TIKTOK (#565): the client id is `client_key`, in the body with the
       // secret, and there is no Basic form.
@@ -4937,7 +5160,7 @@ class FederationSp {
         // verifyForeignJwt() is never reached without it. A consumer
         // provider's profile may name other spellings of the same issuer
         // beside it (#565: Google's bare host).
-        issuer: consumerProviders.issuersFor(record)
+        issuer: consumerProviders.issuersFor(record, idToken)
       });
       if (!verified.ok) {
         log.debug("Leaving FederationSp.finishOidc(). The ID Token did not " +
@@ -5035,7 +5258,8 @@ class FederationSp {
         // The subject stays the ID Token's `sub`, which OpenID Connect Core
         // section 5.7 makes the only stable one, whatever a profile says.
         const reading = this.consumerReading(record,
-          { id_token: payload, userinfo: userinfo }, bag,
+          { id_token: payload, userinfo: userinfo,
+            form: this.formSourceOf(record, context) }, bag,
           String(payload.sub || ''), amr, String(payload.acr || ''));
         // The key that verified the ID Token is checked for revocation here,
         // on the one path into the sign-in, whether or not UserInfo was asked.

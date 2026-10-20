@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4417** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4420** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
-* [Federation (`STS-FED`)](#sts-fed) — 161
+* [Federation (`STS-FED`)](#sts-fed) — 164
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 130
@@ -2557,6 +2557,9 @@ Raised from: federation/.
 | `STS-FED-0182` | A provider was not connected to an account (#565): the provider's account is already connected to somebody else here, so the directory would not write the link. | HTTP 303 back to /portal/connected-accounts with a problem |
 | `STS-FED-0183` | A provider was not connected to an account (#565): the account is a console administrator's or holds REMOTE_PEPS, and the relationship does not set fedMayAssertAdministrators. | HTTP 303 back to /portal/connected-accounts with a problem |
 | `STS-FED-0184` | A connect could not be started (#565): the relationship is not a usable consumer provider in OpenID Connect or OAuth 2.0. | HTTP 400 (account API) |
+| `STS-FED-0185` | Sign in with Apple's client secret could not be signed for a token request (#565): fedTeamId, fedKeyId, fedClientId or fedClientSigningKey is missing, the key will not open, or it is not a P-256 key. | HTTP 500 (the federation surface) |
+| `STS-FED-0186` | A provider's server-to-server notification was refused (#565): it did not verify against the relationship's keys, named another issuer or audience, carried no event or no jti, or had already been accepted once. | HTTP 400 |
+| `STS-FED-0187` | A provider's server-to-server notification arrived for a relationship that takes none: unknown, not usable, or not a provider whose profile receives notifications (#565). | HTTP 404 |
 
 ## STS-OIDFED
 

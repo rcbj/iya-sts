@@ -243,6 +243,26 @@
     "en": "627419de92206a62",
     "text": "ANG SECRET NG SERBISYONG ITO SA PARTNER, nasa clear, sa isang directory kung saan nagtatagumpay ang bawat bind. TOTOONG credential ito sa isang TOTOONG dayuhang serbisyo, na mas malakas na pahayag kaysa sa anupaman sa directory na ito — tingnan ang header. Hindi kailanman isinusulat sa audit log at hindi kailanman ipini-print sa isang pahina."
   },
+  "fed.schema.attributes.fedResponseMode.what": {
+    "en": "07cfe6e4177873df",
+    "text": "KUNG PAANO BUMABALIK ANG AUTHORIZATION CODE: query (ang default, ang code sa redirect) o form_post (OAuth 2.0 Form Post Response Mode), na hinihingi ng Sign in with Apple tuwing may hinihinging pangalan o address. Dumarating ang form_post bilang cross-site na POST, kaya walang ipinapadalang SameSite=Lax na cookie ang browser kasama nito."
+  },
+  "fed.schema.attributes.fedAllowedTenants.what": {
+    "en": "1436122fe8c92048",
+    "text": "MICROSOFT, ANUMANG TENANT LAMANG: ang mga tenant id na ang mga tao ay maaaring mag-sign in, isa bawat value. Hawak noon ng fedPeer ang {tenantid}, pinupunan mula sa tid ng bawat token, at tinatanggihan ang token mula sa tenant na hindi nakalista. Kapag walang laman, tinatanggihan ang bawat tenant."
+  },
+  "fed.schema.attributes.fedTeamId.what": {
+    "en": "959f29403a917b46",
+    "text": "APPLE LAMANG: ang team id ng Apple Developer, ang iss ng client secret na pinipirmahan ng serbisyong ito sa bawat token request."
+  },
+  "fed.schema.attributes.fedKeyId.what": {
+    "en": "557cedae99afdf0f",
+    "text": "APPLE LAMANG: ang id ng Sign in with Apple na key, ang kid ng client secret na pinipirmahan ng serbisyong ito."
+  },
+  "fed.schema.attributes.fedClientSigningKey.what": {
+    "en": "411c7d1d5df63859",
+    "text": "APPLE LAMANG: ANG PRIVATE KEY na ipinapanlagda ng serbisyong ito sa kanyang client secret (ang .p8 file na inilabas ng Apple, isang P-256 key sa PKCS #8 PEM). Ito ay isang credential sa Apple. Sinesely ito sa ilalim ng key-encryption key saanman nananatili ang mga key, hindi kailanman ipinapakita at hindi kailanman isinusulat sa audit log. Ang client secret na pinirmahan nito ay tumatagal nang limang minuto at nililikha sa bawat token request."
+  },
   "fed.schema.attributes.fedAuthorizeParams.what": {
     "en": "4cf26c17034bb859",
     "text": "MGA DAGDAG NA PARAMETER NG AUTHORIZATION REQUEST, isa bawat value, isinusulat na `<name>=<value>`, para sa provider na nangangailangan nito (ang `claims` ng Twitch, para mapadalhan ng address). OpenID Connect at OAuth 2.0 lamang. Ang mga parameter na itinatakda mismo ng serbisyong ito — response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request at request_uri — ay tinatanggihan dito, dahil ang pagbago ng isa sa mga ito rito ay sisira sa isang pagsusuring ginagawa ng serbisyong ito."

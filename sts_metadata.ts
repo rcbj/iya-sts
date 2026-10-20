@@ -7278,6 +7278,23 @@ const ENDPOINTS: EndpointEntry[] = [
           'any browser whose latest authentication is not that second ' +
           'factor, as that person, just now (STS-FED-0178). The session\'s ' +
           'amr is federated and the factor proved; its acr is mfa.' },
+  { path: '/federation/notifications/:id', group: 'Federation',
+    name: 'A provider\'s server-to-server notification (#565)',
+    specs: ['rfc7519'],
+    effect: 'removes the person\'s link through the relationship on a ' +
+            'consent revoked or an account deleted at the provider, which ' +
+            'ends the sessions it started; records an address that stopped ' +
+            'or started forwarding',
+    what: 'Sign in with Apple\'s server-to-server notifications, for a ' +
+          'relationship whose provider profile takes them. Apple POSTs ' +
+          '{ payload }, a JWT verified against the relationship\'s keys and ' +
+          'nothing else — issuer Apple, audience the client id — and ' +
+          'accepted once ever by its jti (STS-FED-0186 otherwise). Its ' +
+          'events name a type and the person\'s subject: consent-revoked ' +
+          'and account-delete remove that subject\'s link through this ' +
+          'relationship, never the entry, and email-disabled and ' +
+          'email-enabled are recorded. 404 (STS-FED-0187) for a ' +
+          'relationship that takes none.' },
   { path: '/federation/slo/:id', group: 'Federation',
     name: 'A partner\'s sign-out, in a browser (#167)',
     specs: ['saml2-profiles', 'saml2-bindings', 'saml2', 'ws-federation',

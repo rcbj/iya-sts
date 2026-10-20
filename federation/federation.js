@@ -243,6 +243,9 @@ const PATHS = {
   metadata: '/federation/metadata',
   // Where the local sign-in of `link-at-first-sign-in` returns to (#109).
   link: '/federation/link',
+  // Where a provider tells this service of a revoked consent or a deleted
+  // account (#565: Sign in with Apple's server-to-server notifications).
+  notifications: '/federation/notifications',
   // Where a second factor asked for on risk, after a partner, returns to
   // (#565): the federated sign-in is finished there.
   stepup: '/federation/stepup',
@@ -1065,6 +1068,37 @@ const SCHEMA = {
             'a REAL foreign service, which is a stronger statement than ' +
             'anything else in this directory — see the header. Never written ' +
             'to the audit log and never printed on a page.' },
+    // SIGN IN WITH APPLE (#565): a client secret that is a JWT this service
+    // signs, and an authorization code returned by form_post.
+    { name: 'fedResponseMode', kind: 'single', role: 'service-provider',
+      from: 'this register', enum: ['query', 'form_post'],
+      what: 'HOW THE AUTHORIZATION CODE COMES BACK: query (the default, the ' +
+            'code on the redirect) or form_post (OAuth 2.0 Form Post ' +
+            'Response Mode), which Sign in with Apple requires whenever a ' +
+            'name or an address is asked for. form_post arrives as a ' +
+            'cross-site POST, so a browser sends it no SameSite=Lax cookie.' },
+    { name: 'fedAllowedTenants', kind: 'multi', role: 'service-provider',
+      from: 'this register',
+      what: 'MICROSOFT, ANY TENANT ONLY: the tenant ids whose people may sign ' +
+            'in, one per value. fedPeer then holds {tenantid}, filled from ' +
+            'each token\'s tid, and a token from a tenant not listed is ' +
+            'refused. Empty refuses every tenant.' },
+    { name: 'fedTeamId', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'APPLE ONLY: the Apple Developer team id, the iss of the client ' +
+            'secret this service signs for every token request.' },
+    { name: 'fedKeyId', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'APPLE ONLY: the id of the Sign in with Apple key, the kid of ' +
+            'the client secret this service signs.' },
+    { name: 'fedClientSigningKey', kind: 'single', role: 'service-provider',
+      sensitive: true, from: 'this register',
+      what: 'APPLE ONLY: THE PRIVATE KEY this service signs its client ' +
+            'secret with (the .p8 file Apple issued, a P-256 key in PKCS ' +
+            '#8 PEM). It is a credential at Apple. It is sealed under the ' +
+            'key-encryption key wherever keys persist, never shown and ' +
+            'never written to the audit log. A client secret signed with it ' +
+            'lives five minutes and is minted per token request.' },
     { name: 'fedAuthorizeParams', kind: 'multi', role: 'service-provider',
       from: 'this register',
       what: 'EXTRA AUTHORIZATION REQUEST PARAMETERS, one per value, written ' +
@@ -1595,6 +1629,11 @@ const EDITABLE = {
   fedClientSecret: 'set',
   fedTokenAuth: 'set',
   fedAuthorizeParams: 'multi',
+  fedResponseMode: 'set',
+  fedAllowedTenants: 'multi',
+  fedTeamId: 'set',
+  fedKeyId: 'set',
+  fedClientSigningKey: 'set',
   fedScope: 'set',
   fedResponseType: 'set',
   fedBinding: 'set',
@@ -2927,6 +2966,8 @@ function openSignalsSecret(stored) {
 // otherwise refuse every secret or seal one under a key that dies with the
 // process. `applications.js`'s sealsClientSecrets() makes the same choice.
 const CLIENT_SECRET_SEAL_LABEL = 'federation-client-secret';
+// Apple's signing key (#565), sealed as the client secret is.
+const SIGNING_KEY_SEAL_LABEL = 'federation-client-signing-key';
 
 /**
  * Seals a relationship's client secret where the process holds a durable
@@ -2935,7 +2976,7 @@ const CLIENT_SECRET_SEAL_LABEL = 'federation-client-secret';
  * @param value - the secret
  * @returns `{ ok, value }`, `ok` false when it should be sealed and cannot be
  */
-function sealClientSecret(value) {
+function sealClientSecret(value, label) {
   log.debug("Entering sealClientSecret().");
   const keystore = require('../common/keystore');
   if (!keystore.persists() || !keystore.sealed() ||
@@ -2943,11 +2984,41 @@ function sealClientSecret(value) {
     log.debug("Leaving sealClientSecret(). No durable key.");
     return { ok: true, value: String(value) };
   }
-  const closed = keystore.seal(String(value), CLIENT_SECRET_SEAL_LABEL);
+  const closed = keystore.seal(String(value),
+                               label || CLIENT_SECRET_SEAL_LABEL);
   log.debug("Leaving sealClientSecret(). " + (closed ? 'Sealed.' :
                                                       'Not sealed.'));
   return closed ? { ok: true, value: SEALED_PREFIX + closed }
                 : { ok: false, value: '' };
+}
+
+/**
+ * Returns a relationship's client signing key (Apple's, #565), opened, as a
+ * PEM: a value pasted without its PEM armour is given it.
+ *
+ * @param record - the relationship
+ * @returns the PEM, or empty when there is none or it will not open
+ */
+function clientSigningKeyOf(record) {
+  log.debug("Entering clientSigningKeyOf().");
+  const text = String((record && record.fedClientSigningKey) || '');
+  let opened = text;
+  if (text.indexOf(SEALED_PREFIX) === 0) {
+    const keystore = require('../common/keystore');
+    opened = String(keystore.open(text.slice(SEALED_PREFIX.length),
+                                  SIGNING_KEY_SEAL_LABEL) || '');
+    if (!opened) {
+      log.warn(errorCodes.tag('STS-FED-0157') + 'federation: the client ' +
+               'signing key of relationship "' + String(record.fedId || '') +
+               '" is sealed and will not open under this process\'s ' +
+               'key-encryption key; set it again.');
+    }
+  }
+  const body = opened.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+  log.debug("Leaving clientSigningKeyOf().");
+  return body ? '-----BEGIN PRIVATE KEY-----\n' +
+    (body.match(/.{1,64}/g) || []).join('\n') +
+    '\n-----END PRIVATE KEY-----\n' : '';
 }
 
 /**
@@ -4389,9 +4460,11 @@ function update(id, change) {
   // refused rather than written in clear where they should be sealed and
   // cannot be. `fedClientSecret` is sealed since 2026-10-01, under a
   // durable key only — see sealClientSecret().
-  if (row.name === 'fedClientSecret' && value !== '' &&
+  if ((row.name === 'fedClientSecret' ||
+       row.name === 'fedClientSigningKey') && value !== '' &&
       String(value).indexOf(SEALED_PREFIX) !== 0) {
-    const sealed = sealClientSecret(value);
+    const sealed = sealClientSecret(value, row.name === 'fedClientSigningKey'
+      ? SIGNING_KEY_SEAL_LABEL : CLIENT_SECRET_SEAL_LABEL);
     if (!sealed.ok) {
       log.debug('Leaving update(). The client secret could not be sealed.');
       actionRefused('STS-FED-0157', id, field + ' could not be sealed');
@@ -5068,6 +5141,7 @@ module.exports = {
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose,
   clientSecretOf: clientSecretOf,
+  clientSigningKeyOf: clientSigningKeyOf,
   PATHS: PATHS,
   ROLES: ROLES,
   ROLE_IDS: ROLE_IDS,

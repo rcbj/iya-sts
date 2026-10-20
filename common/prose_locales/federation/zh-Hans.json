@@ -243,6 +243,26 @@
     "en": "627419de92206a62",
     "text": "本服务在伙伴处的密钥，以明文存放在一个任何绑定都会成功的目录中。它是真实外部服务上的真实凭据，这比此目录中的任何其他内容都更值得重视——参见标题。从不写入审计日志，也从不在页面上打印。"
   },
+  "fed.schema.attributes.fedResponseMode.what": {
+    "en": "07cfe6e4177873df",
+    "text": "授权码的返回方式：query（默认值，代码在重定向中）或 form_post（OAuth 2.0 Form Post Response Mode）；只要请求姓名或地址，Sign in with Apple 就要求使用后者。form_post 以跨站 POST 的方式到达，因此浏览器不会随之发送任何 SameSite=Lax Cookie。"
+  },
+  "fed.schema.attributes.fedAllowedTenants.what": {
+    "en": "1436122fe8c92048",
+    "text": "仅限 MICROSOFT 任意租户：其人员可以登录的租户 ID，每个值一个。此时 fedPeer 包含 {tenantid}，由每个令牌的 tid 填入；来自未列出租户的令牌会被拒绝。为空则拒绝所有租户。"
+  },
+  "fed.schema.attributes.fedTeamId.what": {
+    "en": "959f29403a917b46",
+    "text": "仅限 APPLE：Apple Developer 团队 ID，即此服务为每次令牌请求签名的客户端密钥的 iss。"
+  },
+  "fed.schema.attributes.fedKeyId.what": {
+    "en": "557cedae99afdf0f",
+    "text": "仅限 APPLE：Sign in with Apple 密钥的 ID，即此服务签名的客户端密钥的 kid。"
+  },
+  "fed.schema.attributes.fedClientSigningKey.what": {
+    "en": "411c7d1d5df63859",
+    "text": "仅限 APPLE：此服务用来签名其客户端密钥的私钥（Apple 颁发的 .p8 文件，PKCS #8 PEM 格式的 P-256 密钥）。它是在 Apple 处的凭据。凡是密钥会持久保存的地方，它都以密钥加密密钥密封，从不显示，也从不写入审计日志。用它签名的客户端密钥有效期为五分钟，并且每次令牌请求时生成。"
+  },
   "fed.schema.attributes.fedAuthorizeParams.what": {
     "en": "4cf26c17034bb859",
     "text": "额外的授权请求参数，每个值一个，写作 `<name>=<value>`，供需要它的提供方使用（Twitch 的 `claims`，以便获得地址）。仅限 OpenID Connect 和 OAuth 2.0。此服务自己设置的参数——response_type、client_id、redirect_uri、state、scope、nonce、code_challenge、code_challenge_method、response_mode、request 和 request_uri——在此处会被拒绝，因为在此更改其中任何一个都会破坏此服务所做的一项检查。"

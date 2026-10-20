@@ -243,6 +243,26 @@
     "en": "627419de92206a62",
     "text": "DEN HÄR TJÄNSTENS HEMLIGHET HOS PARTNERN, i klartext, i en katalog där varje bind lyckas. Det är en VERKLIG autentiseringsuppgift hos en VERKLIG extern tjänst, vilket är ett starkare påstående än något annat i den här katalogen — se rubriken. Skrivs aldrig till granskningsloggen och skrivs aldrig ut på en sida."
   },
+  "fed.schema.attributes.fedResponseMode.what": {
+    "en": "07cfe6e4177873df",
+    "text": "HUR AUKTORISERINGSKODEN KOMMER TILLBAKA: query (standard, koden i omdirigeringen) eller form_post (OAuth 2.0 Form Post Response Mode), som Sign in with Apple kräver när ett namn eller en adress efterfrågas. form_post kommer som en POST mellan webbplatser, så en webbläsare skickar ingen SameSite=Lax-cookie med den."
+  },
+  "fed.schema.attributes.fedAllowedTenants.what": {
+    "en": "1436122fe8c92048",
+    "text": "ENDAST MICROSOFT, VALFRI KLIENTORGANISATION: id:n för de klientorganisationer vars personer får logga in, ett per värde. fedPeer innehåller då {tenantid}, ifyllt från varje tokens tid, och en token från en organisation som inte finns i listan vägras. Tomt vägrar alla."
+  },
+  "fed.schema.attributes.fedTeamId.what": {
+    "en": "959f29403a917b46",
+    "text": "ENDAST APPLE: team-id:t för Apple Developer, iss i den klienthemlighet denna tjänst signerar för varje tokenbegäran."
+  },
+  "fed.schema.attributes.fedKeyId.what": {
+    "en": "557cedae99afdf0f",
+    "text": "ENDAST APPLE: id:t för nyckeln för Sign in with Apple, kid i den klienthemlighet denna tjänst signerar."
+  },
+  "fed.schema.attributes.fedClientSigningKey.what": {
+    "en": "411c7d1d5df63859",
+    "text": "ENDAST APPLE: DEN PRIVATA NYCKEL denna tjänst signerar sin klienthemlighet med (.p8-filen Apple utfärdade, en P-256-nyckel i PKCS #8 PEM). Den är en autentiseringsuppgift hos Apple. Den förseglas under nyckelkrypteringsnyckeln överallt där nycklar sparas, visas aldrig och skrivs aldrig till granskningsloggen. En klienthemlighet signerad med den lever i fem minuter och skapas för varje tokenbegäran."
+  },
   "fed.schema.attributes.fedAuthorizeParams.what": {
     "en": "4cf26c17034bb859",
     "text": "EXTRA PARAMETRAR I AUKTORISERINGSBEGÄRAN, en per värde, skrivna `<name>=<value>`, för en leverantör som behöver en (Twitchs `claims`, för att få en adress). Endast OpenID Connect och OAuth 2.0. De parametrar denna tjänst själv sätter — response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request och request_uri — vägras här, eftersom en av dem ändrad här skulle göra en kontroll denna tjänst gör ogjord."

@@ -2275,6 +2275,14 @@
     "en": "ea2b1532d05c3e5f",
     "text": "INICIA la sesión federada para la que se guardó la respuesta verificada del socio — solo después de un segundo factor que se tiene AQUÍ, como esa persona"
   },
+  "stsmetadata.endpoints./federation/notifications/:id.what": {
+    "en": "898b7c35c721538f",
+    "text": "Las notificaciones de servidor a servidor de Sign in with Apple, para una relación cuyo perfil de proveedor las acepta. Apple envía por POST { payload }, un JWT verificado con las claves de la relación y nada más —emisor Apple, audiencia el identificador de cliente— y aceptado una sola vez por su jti (STS-FED-0186 si no). Sus eventos nombran un tipo y el sujeto de la persona: consent-revoked y account-delete eliminan el vínculo de ese sujeto a través de esta relación, nunca la entrada, y email-disabled y email-enabled se registran. 404 (STS-FED-0187) para una relación que no acepta ninguna."
+  },
+  "stsmetadata.endpoints./federation/notifications/:id.effect": {
+    "en": "93fc79fda0ba3e2a",
+    "text": "elimina el vínculo de la persona a través de la relación cuando se revoca un consentimiento o se elimina una cuenta en el proveedor, lo que termina las sesiones que inició; registra una dirección que dejó o volvió a reenviar"
+  },
   "stsmetadata.endpoints./federation/slo/:id.what": {
     "en": "84d79b5134fbe867",
     "text": "UNA SOLA RUTA para cada cierre de sesión que un socio envía a través de un navegador, por la razón del ACS: una <LogoutRequest> de SAML 2.0 (el socio cerrando la sesión de alguien) y una <LogoutResponse> (su respuesta a la nuestra), por el binding Redirect o POST; un wsignoutcleanup1.0 o wsignout1.0 de WS-Federation; y el navegador que vuelve del end_session_endpoint de un OpenID Provider. Un mensaje SAML se autentica exactamente como una aserción: firmado (saml-profiles-2.0-os sección 4.4.4.1; fedRequireSignedLogout, desactivado solo en desarrollo), verificado contra fedSigningCertificate y nada más, emitido por fedPeer, dirigido aquí, reciente y aceptado una sola vez en total (el historial de aserciones usadas), y termina solo las sesiones que llevan ese NameID y SessionIndex a través de esta relación, respondiendo con una LogoutResponse firmada (UnknownPrincipal cuando nada coincidió). Una limpieza de WS-Federation no va firmada según su especificación, así que dibuja una página con un botón real y termina la sesión en ESTE navegador solo cuando se pulsa. SAML 1.1 y OAuth 2.0 no definen cierre de sesión y se rechazan indicándolo."

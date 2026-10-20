@@ -2275,6 +2275,14 @@
     "en": "ea2b1532d05c3e5f",
     "text": "啟動為其保留了合作夥伴已驗證回應的聯合工作階段——僅在此人於此處出示其持有的第二因素之後"
   },
+  "stsmetadata.endpoints./federation/notifications/:id.what": {
+    "en": "898b7c35c721538f",
+    "text": "Sign in with Apple 的伺服器對伺服器通知，適用於其提供者設定檔接收此類通知的關係。Apple 以 POST 傳送 { payload }，這是一個只用該關係的金鑰驗證的 JWT——簽發者為 Apple，對象為用戶端 ID——並依其 jti 只接受一次（否則為 STS-FED-0186）。其事件指明類型與此人的主體：consent-revoked 與 account-delete 會移除該主體透過此關係的連結，但絕不刪除項目；email-disabled 與 email-enabled 會被記錄。對於不接收通知的關係，回傳 404（STS-FED-0187）。"
+  },
+  "stsmetadata.endpoints./federation/notifications/:id.effect": {
+    "en": "93fc79fda0ba3e2a",
+    "text": "當提供者處撤銷同意或刪除帳戶時，移除此人透過該關係的連結，並結束由它開始的工作階段；記錄停止或恢復轉寄的地址"
+  },
   "stsmetadata.endpoints./federation/slo/:id.what": {
     "en": "84d79b5134fbe867",
     "text": "合作夥伴透過瀏覽器送出的每一種登出都走「一個路徑」，理由與 ACS 相同：SAML 2.0 <LogoutRequest>（合作夥伴讓某人登出）與 <LogoutResponse>（它對我們的回答），以 Redirect 或 POST 繫結；WS-Federation wsignoutcleanup1.0 或 wsignout1.0；以及從 OpenID 提供者的 end_session_endpoint 返回的瀏覽器。SAML 訊息的驗證方式與判斷提示完全相同——已簽署（saml-profiles-2.0-os section 4.4.4.1；fedRequireSignedLogout，僅在開發模式下關閉）、僅依 fedSigningCertificate 驗證、由 fedPeer 簽發、以此處為收件位址、夠新，且永遠只接受一次（已使用判斷提示歷程）——並只結束透過此關係帶有該 NameID 與 SessionIndex 的工作階段，回應一個已簽署的 LogoutResponse（無相符者時為 UnknownPrincipal）。WS-Federation 清除依其規格不簽署，因此它會繪製一個帶有真正按鈕的頁面，只有在按下時才結束「此」瀏覽器中的工作階段。SAML 1.1 與 OAuth 2.0 沒有定義登出，會被拒絕並指明這一點。"

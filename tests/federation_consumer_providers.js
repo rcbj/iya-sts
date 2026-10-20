@@ -106,7 +106,10 @@ function childMain() {
     // endpoint was sent, for the client-authentication checks.
     const people = {};
     const seen = { discord: [], github: [], google: [], x: [], tiktok: [],
-                   twitch: [] };
+                   twitch: [], apple: [] };
+    // Sign in with Apple's developer key (the .p8), which signs the client
+    // secret this service mints.
+    const appleKey = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
     const authorizeSeen = { tiktok: [], twitch: [] };
     const failEmails = { on: false };
     const codes = {};
@@ -127,6 +130,23 @@ function childMain() {
           res.writeHead(status, { 'content-type': 'application/json' });
           res.end(JSON.stringify(value));
         };
+        if (what === 'authorize' && who === 'apple') {
+          // FORM POST (Apple requires it for a name or an address): what
+          // the browser would POST back, answered as data for the test.
+          const code = 'apple-' + crypto.randomBytes(8).toString('hex');
+          codes[code] = { who: who,
+            challenge: url.searchParams.get('code_challenge'),
+            nonce: url.searchParams.get('nonce') || '',
+            clientId: url.searchParams.get('client_id'),
+            mode: url.searchParams.get('response_mode'),
+            person: people[who] };
+          json(200, { action: url.searchParams.get('redirect_uri'),
+                      mode: url.searchParams.get('response_mode'),
+                      fields: { code: code,
+                                state: url.searchParams.get('state'),
+                                user: people[who].user || '' } });
+          return;
+        }
         if (what === 'authorize') {
           if (authorizeSeen[who]) {
             authorizeSeen[who].push(Object.fromEntries(
@@ -164,6 +184,28 @@ function childMain() {
           const answer = { access_token: token, token_type: 'Bearer' };
           if (who === 'tiktok') {
             answer.open_id = grant.person.openId;
+          }
+          if (who === 'apple') {
+            let verified = null;
+            try {
+              verified = jwt.verify(form.get('client_secret') || '',
+                                    appleKey.publicKey,
+                                    { algorithms: ['ES256'] });
+            } catch (e) {
+              verified = null;
+            }
+            grant.appleSecret = verified;
+            if (!verified || verified.iss !== 'TEAM123456' ||
+                verified.sub !== grant.clientId ||
+                verified.aud !== 'https://appleid.apple.com') {
+              json(400, { error: 'invalid_client' });
+              return;
+            }
+            answer.id_token = jwt.sign(Object.assign({
+              iss: pbase + '/apple', aud: grant.clientId,
+              nonce: grant.nonce }, grant.person.claims),
+            signing.privateKey, { algorithm: 'RS256', expiresIn: 300,
+                                  keyid: 'fake-google-1' });
           }
           if (who === 'google') {
             answer.id_token = jwt.sign(Object.assign({
@@ -383,6 +425,27 @@ function childMain() {
          !!consumer.pathProblem('a..b') &&
          !!consumer.pathProblem('constructor'),
          'C4. pathProblem() takes a dotted path and refuses prototype names');
+
+    // C5. MICROSOFT, ANY TENANT: the token's tid SELECTS the issuer the
+    // signature check demands, only for a tenant the relationship lists.
+    const tokenFor = function (tid) {
+      return 'e30.' + Buffer.from(JSON.stringify({ tid: tid }))
+        .toString('base64url') + '.sig';
+    };
+    const multi = { fedProvider: 'microsoft-any',
+      fedPeer: 'https://login.microsoftonline.com/{tenantid}/v2.0',
+      fedAllowedTenants: ['9188040d-6c67-4c5b-b112-36a304b66dad'] };
+    note(consumer.issuersFor(multi,
+           tokenFor('9188040d-6c67-4c5b-b112-36a304b66dad')) ===
+         'https://login.microsoftonline.com/' +
+         '9188040d-6c67-4c5b-b112-36a304b66dad/v2.0' &&
+         consumer.issuersFor(multi,
+           tokenFor('72f988bf-86f1-41af-91ab-2d7cd011db47')) ===
+         'urn:sts:federation:tenant-not-allowed' &&
+         consumer.issuersFor(multi, 'not.a.token') ===
+         'urn:sts:federation:tenant-not-allowed',
+         'C5. microsoft-any: the issuer of an allowed tenant, and one no ' +
+         'token can carry for any other');
 
     // Fill in the three relationships against the fake providers.
     const point = function (id, who, extra) {
@@ -923,6 +986,121 @@ function childMain() {
       .some(function (v) { return /^cp-discord /.test(v); }),
          'K8. Disconnect removes the connection', dropped.status + ' ' +
          JSON.stringify(attr(entryOf(RAE), 'federationLink')));
+
+    // ===== L. SIGN IN WITH APPLE ============================================
+    const appleMade = inSp(function () {
+      const out = [federation.create({ fedId: 'cp-apple',
+                                       fedProvider: 'apple' })];
+      const set = function (field, value) {
+        out.push(federation.update('cp-apple', { field: field,
+                                                 value: value }));
+      };
+      set('fedSsoUrl', pbase + '/apple/authorize');
+      set('fedTokenUrl', pbase + '/apple/token');
+      set('fedJwksUri', pbase + '/apple/jwks');
+      set('fedPeer', pbase + '/apple');
+      set('fedClientId', 'com.example.web');
+      set('fedTeamId', 'TEAM123456');
+      set('fedKeyId', 'KEY1234567');
+      set('fedClientSigningKey', appleKey.privateKey.export(
+        { format: 'pem', type: 'pkcs8' }).toString());
+      set('fedEnabled', 'TRUE');
+      return { out: out, record: federation.get('cp-apple') };
+    });
+    note(appleMade.out.every(function (one) { return one.ok; }) &&
+         appleMade.record.fedResponseMode === 'form_post',
+         'L1. an Apple relationship: form_post, its team id, key id and key',
+         JSON.stringify(appleMade.out.filter(function (one) {
+           return !one.ok;
+         }).map(function (one) { return one.errors; })));
+    // The browser's part of form_post: the provider's answer POSTed to the
+    // assertion consumer service.
+    async function appleSignIn() {
+      jar = {};
+      let r = await request('GET', '/realm/' + SP +
+                                   '/federation/login/cp-apple');
+      const at = String(r.headers.location || '');
+      const answered = await request('GET', at);
+      let posted = null;
+      try {
+        posted = JSON.parse(answered.text);
+      } catch (e) {
+        posted = null;
+      }
+      if (!posted || !posted.action) {
+        return { r: answered, posted: posted };
+      }
+      r = await request('POST', posted.action, { form: posted.fields });
+      for (let hop = 0; hop < 6; hop += 1) {
+        const next = String(r.headers.location || '');
+        if (r.status >= 300 && r.status < 400 && next) {
+          r = await request('GET', new URL(next, base).toString());
+          continue;
+        }
+        break;
+      }
+      return { r: r, posted: posted };
+    }
+    people.apple = { claims: { sub: '001234.abcdef0123456789.0123',
+      email: 'x7q2@privaterelay.appleid.com', email_verified: 'true',
+      is_private_email: 'true' },
+      user: JSON.stringify({ name: { firstName: 'Ada', lastName: 'Byron' },
+                             email: 'x7q2@privaterelay.appleid.com' }) };
+    const ar = await appleSignIn();
+    const aName = inSp(function () {
+      return links.provisionedName('cp-apple',
+                                   '001234.abcdef0123456789.0123');
+    });
+    const aEntry = entryOf(aName);
+    note(ar.posted && ar.posted.mode === 'form_post' &&
+         ar.r.status === 200 && !!aEntry,
+         'L2. Apple: the code by form_post, redeemed with a client secret ' +
+         'this service signed', ar.r.status + ' ' +
+         JSON.stringify(ar.posted && ar.posted.mode) + ' ' +
+         String(ar.r.text || '').slice(0, 200));
+    note(attr(aEntry, 'givenName')[0] === 'Ada' &&
+         attr(aEntry, 'sn')[0] === 'Byron' &&
+         attr(aEntry, 'mail')[0] === 'x7q2@privaterelay.appleid.com',
+         'L3. the name from the one-time user field, the relay address from ' +
+         'the ID Token', JSON.stringify(aEntry && aEntry.attributes));
+    const view = inSp(function () {
+      const views = require(ROOT + '/admin-core/admin_views');
+      return views.federationJson({ query: { relationship: 'cp-apple' } });
+    });
+    note(view && view.fields && view.fields.fedClientSigningKey ===
+         '(set — not returned)',
+         'L4. the signing key is never returned by the console\'s view',
+         JSON.stringify(view && view.fields &&
+                        view.fields.fedClientSigningKey));
+    // The server-to-server notification: consent revoked, then replayed.
+    const notice = function (jti, type) {
+      return jwt.sign({ iss: pbase + '/apple', aud: 'com.example.web',
+        jti: jti, events: JSON.stringify({ type: type,
+          sub: '001234.abcdef0123456789.0123',
+          event_time: Date.now() }) },
+      signing.privateKey, { algorithm: 'RS256', expiresIn: 300,
+                            keyid: 'fake-google-1' });
+    };
+    const revoked = await request('POST', '/realm/' + SP +
+      '/federation/notifications/cp-apple',
+      { form: { payload: notice('n-1', 'consent-revoked') } });
+    note(revoked.status === 200 && !attr(entryOf(aName),
+                                         'federationLink').length,
+         'L5. consent-revoked removes the subject\'s link, and the entry ' +
+         'stays', revoked.status + ' ' + JSON.stringify(entryOf(aName) &&
+           entryOf(aName).attributes.federationlink));
+    const replayed = await request('POST', '/realm/' + SP +
+      '/federation/notifications/cp-apple',
+      { form: { payload: notice('n-1', 'consent-revoked') } });
+    const forged = await request('POST', '/realm/' + SP +
+      '/federation/notifications/cp-apple',
+      { form: { payload: jwt.sign({ iss: pbase + '/apple',
+        aud: 'com.example.web', jti: 'n-2',
+        events: JSON.stringify({ type: 'account-delete', sub: 'x' }) },
+      'not-the-key', { algorithm: 'HS256' }) } });
+    note(replayed.status === 400 && forged.status === 400,
+         'L6. a replayed notification and one not signed by the provider ' +
+         'are refused', replayed.status + ' ' + forged.status);
 
     // ===== B. THE REALM SWITCH ==============================================
     inSp(function () {
