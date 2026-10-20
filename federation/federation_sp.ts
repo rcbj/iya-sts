@@ -168,6 +168,8 @@ import authn = require('./../authn/authn');
 import federation = require('./federation');
 import fedMap = require('./federation_map');
 import fedHttp = require('./federation_http');
+// The consumer provider profiles (#565): a leaf.
+import consumerProviders = require('./consumer_providers');
 // THE ERROR CODES. Every refusal here is a SECURITY refusal, so each check has
 // a code of its own, marked on the response before refuse() draws the page —
 // the code is never on the page. And the audit log, for the one failure that
@@ -2337,6 +2339,10 @@ class FederationSp {
         id: record.fedId,
         peer: record.fedPeer || '',
         protocol: record.fedProtocol,
+        // THE CATEGORY AND THE PROVIDER (#565), carried on the event so the
+        // issuance policy can tell a social sign-in from an enterprise one.
+        category: consumerProviders.categoryOf(record),
+        provider: String(record.fedProvider || ''),
         protocolLabel: protocolLabel,
         subject: result.subject,
         // THE LINK AND WHETHER THIS SIGN-IN MAY CREATE ANYBODY (#109), as
@@ -2413,7 +2419,10 @@ class FederationSp {
     const self = this;
     const assessing = authn.assessSignIn(req, username, via,
       { application: record.fedApplication || '',
-        credential: { kind: 'federation' } });
+        // WHICH RELATIONSHIP (#565): each partner is a credential of its
+        // own to the risk history, so a provider this person never signed
+        // in through before is visible to it.
+        credential: { kind: 'federation', fingerprint: record.fedId } });
     log.debug("Leaving FederationSp.finishSignIn(). Assessing.");
     return assessing.then(function (assessed: any): any {
       return self.startFederatedSession(req, res, record, result, mapped,
@@ -2443,7 +2452,7 @@ class FederationSp {
     const said: any = Object.assign({
       request: req,
       // Which credential answered (#62): a partner's assertion.
-      credential: { kind: 'federation' },
+      credential: { kind: 'federation', fingerprint: record.fedId },
       application: record.fedApplication || '',
       risk: assessed || undefined
     }, detail);
@@ -3085,6 +3094,15 @@ class FederationSp {
         'half-exists and silently accepts assertions is the failure this ' +
         'whole register is arranged to prevent. Enable it on ' +
         '/admin/federation.');
+    }
+    // A CONSUMER PROVIDER IN A REALM THAT HAS THEM OFF (#565), named by its
+    // own code rather than as a missing field.
+    if (federation.categoryOf(record) === 'consumer' &&
+        !federation.consumerProvidersOn()) {
+      errorCodes.mark(res, 'STS-FED-0175');
+      return this.refuse(res, record, 403, 'Consumer providers are off here',
+        'This relationship is a consumer or social provider, and this ' +
+        'realm has federation.consumerProviders off.');
     }
     const readiness = federation.readinessOf(record);
     if (!readiness.ready) {
@@ -4301,6 +4319,12 @@ class FederationSp {
         .then(function (assertion) {
           form.client_assertion = assertion;
         });
+    } else if (federation.clientSecretOf(record) &&
+               record.fedTokenAuth === 'client_secret_post') {
+      // RFC 6749 section 2.3.1's body form (#565), for a partner that reads
+      // the secret nowhere else — GitHub's documented exchange among them.
+      form.client_id = String(record.fedClientId || '');
+      form.client_secret = federation.clientSecretOf(record);
     } else if (federation.clientSecretOf(record)) {
       options.basic = { user: record.fedClientId,
                         pass: federation.clientSecretOf(record) };
@@ -4459,8 +4483,10 @@ class FederationSp {
         // so this is never undefined for a usable relationship — the `||
         // undefined` that let an empty one skip the issuer check is kept only
         // as the defence in depth readinessOf() already gives, and
-        // verifyForeignJwt() is never reached without it.
-        issuer: String(record.fedPeer || '') || undefined
+        // verifyForeignJwt() is never reached without it. A consumer
+        // provider's profile may name other spellings of the same issuer
+        // beside it (#565: Google's bare host).
+        issuer: consumerProviders.issuersFor(record)
       });
       if (!verified.ok) {
         log.debug("Leaving FederationSp.finishOidc(). The ID Token did not " +
@@ -4511,6 +4537,9 @@ class FederationSp {
       // The partner's amr BEHIND `federated`, not instead of it — see
       // federatedAmr().
       const amr = this.federatedAmr(payload.amr);
+      // What UserInfo answered, whole, for a consumer provider's profile
+      // (#565), whose rules name the source a value comes from.
+      let userinfo: any = undefined;
       const finish = (extra) => {
         log.debug("Entering finish().");
         // AGGREGATED AND DISTRIBUTED CLAIMS (#147, OIDC Core 5.6.2) from the
@@ -4549,11 +4578,20 @@ class FederationSp {
           });
         }
         log.debug("Leaving finish().");
+        // A CONSUMER PROVIDER'S READING (#565): the profile's claims over
+        // the bag, the address unverified unless it says otherwise, and the
+        // provider's MFA claim believed only where the profile trusts it.
+        // The subject stays the ID Token's `sub`, which OpenID Connect Core
+        // section 5.7 makes the only stable one, whatever a profile says.
+        const reading = this.consumerReading(record,
+          { id_token: payload, userinfo: userinfo }, bag,
+          String(payload.sub || ''), amr, String(payload.acr || ''));
         // The key that verified the ID Token is checked for revocation here,
         // on the one path into the sign-in, whether or not UserInfo was asked.
         return this.signerStillAccepted(req, res, record, () => {
           return this.completeSignIn(req, res, record, {
-            subject: String(payload.sub || ''), bag: bag, amr: amr,
+            subject: String(payload.sub || ''), bag: reading.bag,
+            amr: reading.amr,
             // `iss` + `sub` — OpenID Connect Core section 5.7's stable
             // identifier (#109). `iss` has been checked against fedPeer.
             issuer: String(payload.iss || record.fedPeer || ''),
@@ -4565,7 +4603,7 @@ class FederationSp {
             sid: String(payload.sid || ''),
             idToken: String(record.fedEndSessionUrl || '').trim()
               ? String(idToken) : '',
-            acr: String(payload.acr || ''),
+            acr: reading.acr,
             returnTo: this.fromContext(context).returnTo,
             application: this.fromContext(context).application,
             authnPending: this.fromContext(context).authnPending
@@ -4610,6 +4648,7 @@ class FederationSp {
         }
         log.debug("Leaving FederationSp.finishOidc(). UserInfo added " +
                   Object.keys(answer.json).length + ' member(s).');
+        userinfo = answer.json;
         const extra = {};
         Object.keys(answer.json).forEach((name) => {
           if (name === 'sub') return;
@@ -4643,7 +4682,7 @@ class FederationSp {
   // it silently would be this repository teaching the mistake.
   // ---------------------------------------------------------------------------
   private finishOauth2(req, res, record, context, tokens) {
-    const { fedHttp, errorCodes, log } = this.deps;
+    const { fedHttp, errorCodes, log, xmlEscape } = this.deps;
     log.debug("Entering FederationSp.finishOauth2().");
     const accessToken = String(tokens.access_token || '');
     if (!accessToken) {
@@ -4704,14 +4743,25 @@ class FederationSp {
                'token_type', 'cnf'].indexOf(name) !== -1) return;
           bag[name] = payload[name];
         });
+        // A consumer provider's profile reads the token and its response
+        // (#565); an enterprise relationship keeps the token's `sub`.
+        const reading = this.consumerReading(record,
+          { access_token: payload, token: tokens }, bag,
+          String(payload.sub || ''), this.federatedAmr([]), '');
+        if (!reading.subject) {
+          errorCodes.mark(res, 'STS-FED-0177');
+          return this.refuse(res, record, 502, 'The partner named nobody',
+            'The access token verified, and the rule that names the person ' +
+            'in it found nothing.');
+        }
         log.debug("Leaving FederationSp.finishOauth2(). A verified JWT " +
                   'access token.');
         return this.signerStillAccepted(req, res, record, () => {
           return this.completeSignIn(req, res, record, {
-            subject: String(payload.sub || ''), bag: bag,
+            subject: reading.subject, bag: reading.bag,
             issuer: String(payload.iss || record.fedPeer || ''),
-            amr: this.federatedAmr([]),
-            acr: '',
+            amr: reading.amr,
+            acr: reading.acr,
             returnTo: this.fromContext(context).returnTo,
             application: this.fromContext(context).application,
             authnPending: this.fromContext(context).authnPending
@@ -4757,17 +4807,133 @@ class FederationSp {
       });
       log.debug("Leaving FederationSp.finishOauth2(). " +
                 'The profile endpoint answered.');
-      return this.completeSignIn(req, res, record, {
-        subject: String(profile.sub || profile.id || profile.user_id || ''),
-        // No token names an issuer here: the relationship's partner is the
-        // one whose profile endpoint answered.
-        issuer: String(record.fedPeer || ''),
-        bag: bag, amr: this.federatedAmr([]), acr: '',
-        returnTo: this.fromContext(context).returnTo,
-        application: this.fromContext(context).application,
-        authnPending: this.fromContext(context).authnPending
+      return this.emailsFor(record, accessToken).then((emails) => {
+        log.debug("Entering the profile answer's continuation.");
+        // THE SUBJECT. A consumer provider's profile names it (#565); an
+        // enterprise relationship takes `fedSubjectClaim` where one is set,
+        // and otherwise what this service has always taken: `sub`, then
+        // `id`, then `user_id`.
+        const claim = String(record.fedSubjectClaim || '').trim();
+        const named = claim
+          ? consumerProviders.readPath(profile, claim) : undefined;
+        const fallback = claim
+          ? ((typeof named === 'string' || typeof named === 'number')
+              ? String(named) : '')
+          : String(profile.sub || profile.id || profile.user_id || '');
+        const reading = this.consumerReading(record,
+          { userinfo: profile, emails: emails, token: tokens }, bag,
+          fallback, this.federatedAmr([]), '');
+        if (!reading.subject) {
+          errorCodes.mark(res, 'STS-FED-0177');
+          log.debug("Leaving the profile answer's continuation. No subject.");
+          return this.refuse(res, record, 502, 'The partner named nobody',
+            'The profile endpoint answered, and ' +
+            (claim ? 'fedSubjectClaim (' + xmlEscape(claim) + ')'
+                   : record.fedProvider
+                     ? 'the ' + xmlEscape(String(record.fedProvider)) +
+                       ' profile\'s subject rule'
+                     : 'none of sub, id and user_id') +
+            ' found a value in it. A sign-in with no stable subject could ' +
+            'not be linked to anybody.',
+            this.bagTable(bag));
+        }
+        log.debug("Leaving the profile answer's continuation.");
+        return this.completeSignIn(req, res, record, {
+          subject: reading.subject,
+          // No token names an issuer here: the relationship's partner is the
+          // one whose profile endpoint answered.
+          issuer: String(record.fedPeer || ''),
+          bag: reading.bag, amr: reading.amr, acr: reading.acr,
+          returnTo: this.fromContext(context).returnTo,
+          application: this.fromContext(context).application,
+          authnPending: this.fromContext(context).authnPending
+        });
       });
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SECOND PROFILE ENDPOINT (#565): GitHub's `/user/emails`, the one place
+  // that provider says which of a person's addresses is theirs and verified.
+  // Asked only for a relationship whose provider profile reads the `emails`
+  // source, with the same access token, through `fedEmailsUrl` — the fourth
+  // diallable attribute, argued in federation_http.ts. A failure costs the
+  // address and never the sign-in: the person is already named by the profile
+  // endpoint, and the profile's `email` rule then finds nothing, so no
+  // address is written rather than an unverified one.
+  // Answers the parsed answer, or undefined.
+  // ---------------------------------------------------------------------------
+  private emailsFor(record, accessToken): Promise<any> {
+    const { fedHttp, audit, log } = this.deps;
+    log.debug("Entering FederationSp.emailsFor().");
+    const profile = consumerProviders.profileFor(record.fedProvider);
+    if (!consumerProviders.reads(profile, 'emails') ||
+        !String(record.fedEmailsUrl || '').trim()) {
+      log.debug("Leaving FederationSp.emailsFor(). Not asked.");
+      return Promise.resolve(undefined);
+    }
+    log.debug("Leaving FederationSp.emailsFor(). Asking.");
+    return fedHttp.fetchJson(record, 'fedEmailsUrl',
+                             { method: 'GET', bearer: accessToken })
+      .then(function (answer: any): any {
+        if (!answer.ok || answer.json == null) {
+          log.warn('federation: the address endpoint ' + answer.url + ' did ' +
+                   'not answer for ' + record.fedId + ' (' + answer.why +
+                   '). The sign-in goes on without an address.');
+          audit.failure('STS-FED-0176', {
+            protocol: 'Federation', channel: 'http', target: record.fedId,
+            summary: 'the address request for the federation relationship ' +
+                     record.fedId + ' failed (' + answer.why + '); the ' +
+                     'sign-in continued without an address',
+            outcome: 'error',
+            detail: { cause: answer.errorCode || 'STS-FED-0056' }
+          });
+          return undefined;
+        }
+        return answer.json;
+      });
+  }
+
+  // ---------------------------------------------------------------------------
+  // A CONSUMER PROVIDER'S READING OF A SIGN-IN (#565), and nothing at all for
+  // an enterprise relationship, whose subject, bag and authentication context
+  // pass through exactly as before.
+  //
+  // For a consumer one, `consumer_providers.ts` reads the profile's rules
+  // against the sources in hand: the subject (where the protocol lets a
+  // profile name it — never an ID Token's), the named claims over the raw
+  // bag, and `email_verified`, false unless the provider's own statement says
+  // true. THE PROVIDER'S AUTHENTICATION CONTEXT IS BELIEVED ONLY WHERE THE
+  // PROFILE TRUSTS IT (the risk design's decision 2): otherwise the session
+  // claims `federated` and nothing more, so a provider asserting `mfa` or
+  // `hwk` satisfies no step-up here, and what it claimed is kept on the bag
+  // as `provider_amr` / `provider_acr` for the record.
+  // ---------------------------------------------------------------------------
+  private consumerReading(record, sources, bag, subject, amr, acr) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.consumerReading().");
+    const profile = consumerProviders.profileFor(record.fedProvider);
+    if (!profile) {
+      log.debug("Leaving FederationSp.consumerReading(). Enterprise.");
+      return { subject: subject, bag: bag, amr: amr, acr: acr };
+    }
+    const read = consumerProviders.extract(profile, sources, bag);
+    const out = read.bag;
+    const claimed = (amr || []).filter(function (one) {
+      return one !== 'federated';
+    });
+    if (claimed.length) out.provider_amr = claimed.join(' ');
+    if (acr) out.provider_acr = acr;
+    log.debug("Leaving FederationSp.consumerReading(). " + profile.id);
+    return {
+      // A profile that names the subject is authoritative: nothing found is
+      // nobody, never a guess (STS-FED-0177 at the caller).
+      subject: record.fedProtocol === 'oidc' ? subject
+        : (read.subject || (profile.subject ? '' : subject)),
+      bag: out,
+      amr: this.federatedAmr(read.mfa),
+      acr: read.mfa.length ? 'mfa' : ''
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -4801,6 +4967,15 @@ class FederationSp {
       log.debug("Leaving the assertion consumer service. No such " +
                 'relationship.');
       return;
+    }
+    if (federation.categoryOf(record) === 'consumer' &&
+        !federation.consumerProvidersOn()) {
+      errorCodes.mark(res, 'STS-FED-0175');
+      log.debug("Leaving FederationSp.consume(). Consumer providers are off.");
+      return this.refuse(res, record, 403, 'Consumer providers are off here',
+        'This relationship is a consumer or social provider, and this ' +
+        'realm has federation.consumerProviders off. A response for it is ' +
+        'refused without being looked at.');
     }
     if (!federation.isUsable(record)) {
       errorCodes.mark(res,

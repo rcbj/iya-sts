@@ -647,6 +647,7 @@ var config = {
     max: 50,                                                                 // Relationships remembered
     usernamePrefix: "",                                                      // Prefix for federated usernames
     loginButtons: true,                                                      // Offer partners at the sign-in screen
+    consumerProviders: false,                                                // Consumer and social identity providers
     outbound: true,                                                          // Make back-channel requests to partners
     outboundTimeoutMs: 15000,                                                // Back-channel timeout (ms)
     outboundAllowHttp: false,                                                // Allow http:// to a partner (development only)

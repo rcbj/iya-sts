@@ -11162,6 +11162,47 @@ const CODES = [
       'Provisioning never creates such a group and never adds anybody to ' +
       'one; the sign-in stands (#358).',
     spec: 'none (audited; the sign-in proceeds)' },
+  { code: 'STS-FED-0170',
+    summary: 'A federation relationship was not created: the consumer ' +
+      'provider named is not one this service has a profile for, or the ' +
+      'role or protocol given beside it is not the profile\'s (a consumer ' +
+      'provider is consumed from, in its own protocol) (#565).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0171',
+    summary: 'A consumer or social provider relationship was not created, ' +
+      'or not enabled, because federation.consumerProviders is off in this ' +
+      'realm (#565).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0172',
+    summary: 'fedSubjectPolicy any-existing was refused on a consumer ' +
+      'relationship, in every mode: it would sign anybody with an account at ' +
+      'the provider in as the local person their name matches (#565).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0173',
+    summary: 'fedSubjectClaim was refused on a relationship that is not a ' +
+      'plain OAuth 2.0 enterprise one: an OpenID Connect subject is the ID ' +
+      'Token\'s sub, and a consumer provider\'s is its profile\'s (#565).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0174',
+    summary: 'fedSubjectClaim was refused because it is not a dotted path of ' +
+      'member names, or names __proto__, constructor or prototype (#565).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0175',
+    summary: 'A sign-in through a consumer or social provider was refused at ' +
+      '/federation/login/{id} or the assertion consumer service because ' +
+      'federation.consumerProviders is off in this realm (#565).',
+    spec: 'HTTP 403' },
+  { code: 'STS-FED-0176',
+    summary: 'A consumer provider\'s address endpoint (fedEmailsUrl, ' +
+      'GitHub\'s /user/emails) did not answer; the sign-in continued with ' +
+      'no address written (#565).',
+    spec: 'none (audited; the sign-in proceeds)' },
+  { code: 'STS-FED-0177',
+    summary: 'A plain OAuth 2.0 sign-in named nobody: the profile endpoint ' +
+      'or access token answered, and the rule that names the subject — the ' +
+      'consumer provider profile\'s, fedSubjectClaim, or sub / id / user_id ' +
+      '— found no value (#565).',
+    spec: 'HTTP 502' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +

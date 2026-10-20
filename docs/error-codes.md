@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4398** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4406** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
-* [Federation (`STS-FED`)](#sts-fed) — 146
+* [Federation (`STS-FED`)](#sts-fed) — 154
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 130
@@ -2542,6 +2542,14 @@ Raised from: federation/.
 | `STS-FED-0162` | The scheduler job federation.provision-idle could not disable a person whose only sign-in path is one relationship and whose federationLastSeen is past fedProvisionIdleMinutes. The next run tries again (#358). | none — logged |
 | `STS-FED-0163` | fedProvisionCap or fedProvisionIdleMinutes was set to something that is not empty and not a non-negative integer (#358). | HTTP 400 (console and API) |
 | `STS-FED-0164` | A group name in a partner's assertion was refused because the group grants something by being held: a group a setting names (admin.readGroup, admin.writeGroup, roles.remotePepGroup, roles.xacmlUserGroup), a group a role, an owner value, an application's delegation subject group or a relationship's fedSubjectGroup names, or a group an XACML policy names. Provisioning never creates such a group and never adds anybody to one; the sign-in stands (#358). | none (audited; the sign-in proceeds) |
+| `STS-FED-0170` | A federation relationship was not created: the consumer provider named is not one this service has a profile for, or the role or protocol given beside it is not the profile's (a consumer provider is consumed from, in its own protocol) (#565). | HTTP 400 (console and API) |
+| `STS-FED-0171` | A consumer or social provider relationship was not created, or not enabled, because federation.consumerProviders is off in this realm (#565). | HTTP 400 (console and API) |
+| `STS-FED-0172` | fedSubjectPolicy any-existing was refused on a consumer relationship, in every mode: it would sign anybody with an account at the provider in as the local person their name matches (#565). | HTTP 400 (console and API) |
+| `STS-FED-0173` | fedSubjectClaim was refused on a relationship that is not a plain OAuth 2.0 enterprise one: an OpenID Connect subject is the ID Token's sub, and a consumer provider's is its profile's (#565). | HTTP 400 (console and API) |
+| `STS-FED-0174` | fedSubjectClaim was refused because it is not a dotted path of member names, or names __proto__, constructor or prototype (#565). | HTTP 400 (console and API) |
+| `STS-FED-0175` | A sign-in through a consumer or social provider was refused at /federation/login/{id} or the assertion consumer service because federation.consumerProviders is off in this realm (#565). | HTTP 403 |
+| `STS-FED-0176` | A consumer provider's address endpoint (fedEmailsUrl, GitHub's /user/emails) did not answer; the sign-in continued with no address written (#565). | none (audited; the sign-in proceeds) |
+| `STS-FED-0177` | A plain OAuth 2.0 sign-in named nobody: the profile endpoint or access token answered, and the rule that names the subject — the consumer provider profile's, fedSubjectClaim, or sub / id / user_id — found no value (#565). | HTTP 502 |
 
 ## STS-OIDFED
 

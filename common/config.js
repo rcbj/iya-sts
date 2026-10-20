@@ -8228,6 +8228,21 @@ const SETTINGS = [
                  'actually work are offered — a button leading to a refusal ' +
                  'would be worse than no button.' },
 
+  { key: 'federation.consumerProviders', group: 'Federation',
+    label: 'Consumer and social identity providers',
+    env: 'STS_FEDERATION_CONSUMER_PROVIDERS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Let this realm federate with consumer and social ' +
+                 'providers — Google, Discord, GitHub and the rest of the ' +
+                 'catalogue — as relationships of their own category ' +
+                 '(#565). OFF by default: a realm with it off cannot be ' +
+                 'given one, cannot enable one, and refuses a sign-in ' +
+                 'through one at every door, including a relationship ' +
+                 'written by ldapmodify. Enterprise partners are not ' +
+                 'affected by it in either position. A newcomer through a ' +
+                 'consumer provider gets an entry of their own, and an ' +
+                 'address is never used to match an existing person.' },
+
   { key: 'federation.outbound', group: 'Federation',
     label: 'Make back-channel requests to partners',
     env: 'STS_FEDERATION_OUTBOUND', type: 'bool', dflt: true, runtime: true,
