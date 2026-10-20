@@ -6067,6 +6067,14 @@
     "en": "f95686ad2d2053e6",
     "text": "Om KLASSISK begränsad delegering (appAllowedToDelegateTo på frontänden) får korsa ett Kerberos-förtroende. Av som standard: den är definierad inom en sfär, och resursbaserad delegering (appAllowedToActOnBehalfOf på målet, som namnger SPN@REALM) är den som korsar. På kontrollerar frontändens sfär sin egen lista innan den hänvisar beviset, och målets sfär tar det som kontrollerat; båda sfärerna måste slå på den."
   },
+  "krb5.s4uRoleSubject|label": {
+    "en": "01c225dc88b80527",
+    "text": "Vems roll en tjänst kräver under S4U"
+  },
+  "krb5.s4uRoleSubject|description": {
+    "en": "9db10e5f8d4eb37d",
+    "text": "Under S4U2Self och S4U2Proxy (klassisk eller resursbaserad), vems roller KDC:n jämför med den roll som en tjänsts post kräver (appRequiredRole). service (standardvärdet, och beteendet tills den här inställningen fanns): tjänsten som frågar, TGT:ns klient. user: personen som biljetten är till för — användaren som namnges i PA-FOR-USER, eller bevisbiljettens klient — tillfrågad i den här sfären med sitt fullständiga namn, och med sina filtrerade SID:er, när hen kom över ett förtroende. Ett avslag är KDC_ERR_POLICY i båda fallen. En vanlig TGS-begäran har ett enda subjekt och påverkas inte. Specifikationerna lämnar detta öppet: [MS-SFU] avgör bara om tjänsten får delegera."
+  },
   "krb5.requireSidFilteringInProduct|label": {
     "en": "f4bc0b8bb8e18123",
     "text": "Kräv SID-filtrering på förtroenden"
