@@ -28,6 +28,19 @@
 //      behind the cookie is left as it was.
 //   8. A session nobody bound is honoured without any bound cookie: a
 //      browser that does not speak DBSC keeps today's behaviour.
+//   9. WITH SEVERAL ACCOUNTS IN ONE BROWSER (#561): two people sign in in
+//      one cookie jar and each registers; each binding is its own session's
+//      (chosen by the challenge), with a bound cookie named for it, and
+//      each account chosen through the set is honoured beside ITS cookie
+//      only — never the other account in its place.
+//  10. A refresh names its binding by Sec-Secure-Session-Id among the
+//      browser's accounts, and one naming none of them ends nothing.
+//  11. A refresh signed by another key ends THAT account's session only:
+//      it leaves the browser's set for its remembered accounts, and the
+//      default cookie, which names the other account, is not cleared.
+//  12. The same person signing in again from a browser that cannot prove
+//      the bound key replaces that session in the set, as with the setting
+//      off: one live session per person per browser.
 //
 // In process, because it chooses how the process starts (the setting is
 // flipped on a live stack) and asserts on the session store beside each
@@ -99,9 +112,9 @@ function childMain() {
     });
     const port = server.address().port;
     let n = 0;
-    const signIn = async function (username) {
+    const signIn = async function (username, given) {
       n += 1;
-      const jar = {};
+      const jar = given || {};
       const at = authn.beginAuthentication({ returnTo: '/db/after?n=' + n,
         protocol: 'db-probe', application: '' });
       const r = await screen.submit({ port: port, jar: jar, at: at,
@@ -273,6 +286,138 @@ function childMain() {
          '8. a browser that never registers keeps an ordinary session: ' +
          'honoured with no bound cookie');
 
+    // --- 9. several accounts in one browser (#561) -----------------------
+    config.setOverride('authn.multipleAccounts', true);
+    const AccountSets = require(ROOT_DIR + '/authn/account_sets');
+    const hinted = function (jar, who) {
+      const req = reqOf(jar);
+      authn.hintAccount(req, { loginHint: who });
+      return authn.sessionOf(req);
+    };
+    const jar = {};
+    const aliceKey = keyPair();
+    const bobbyKey = keyPair();
+    const alice = await signIn('db-alice', jar);
+    const aliceOffer = offerOf(alice.r);
+    const bobby = await signIn('db-bobby', jar);
+    const bobOffer = offerOf(bobby.r);
+    note(!!jar.sts_accounts && alice.sid && bobby.sid && alice.sid !== bobby.sid &&
+         !!authn.sessionById(alice.sid) && !!authn.sessionById(bobby.sid),
+         '9a. two people sign in in one browser and both stay signed in',
+         JSON.stringify(Object.keys(jar)));
+    // Bob registers first, with bobby's challenge: the binding is bobby's.
+    r = await post(jar, bobOffer.path, {
+      'secure-session-response': quoted(proof(bobbyKey, bobOffer.challenge,
+                                              true)) });
+    const bobInstr = r.json || {};
+    const bobCookie = ((bobInstr.credentials || [])[0] || {}).name;
+    note(r.status === 200 && (authn.sessionById(bobby.sid).dbsc || {}).id ===
+         bobInstr.session_identifier &&
+         !(authn.sessionById(alice.sid) || {}).dbsc &&
+         bobCookie === 'sts_session_bound_' + bobInstr.session_identifier &&
+         !!jar[bobCookie] && !jar.sts_session_bound,
+         '9b. a registration with one account\'s challenge binds that ' +
+         'account, under a bound cookie named for its binding',
+         r.status + ' ' + r.text.slice(0, 300));
+    r = await post(jar, aliceOffer.path, {
+      'secure-session-response': quoted(proof(aliceKey, aliceOffer.challenge,
+                                              true)) });
+    const aliceInstr = r.json || {};
+    const aliceCookie = ((aliceInstr.credentials || [])[0] || {}).name;
+    note(r.status === 200 && (authn.sessionById(alice.sid).dbsc || {}).id ===
+         aliceInstr.session_identifier && aliceCookie !== bobCookie &&
+         !!jar[aliceCookie] && !!jar[bobCookie],
+         '9c. and the other account\'s challenge binds the other account, ' +
+         'under a cookie of its own, both held at once',
+         r.status + ' ' + r.text.slice(0, 300));
+    const a1 = hinted(jar, 'db-alice');
+    const b1 = hinted(jar, 'db-bobby');
+    note(a1 && a1.id === alice.sid && b1 && b1.id === bobby.sid,
+         '9d. each account chosen through the set is honoured beside its own ' +
+         'bound cookie', (a1 && a1.id) + ' ' + (b1 && b1.id));
+    const noAlice = Object.assign({}, jar);
+    delete noAlice[aliceCookie];
+    const a2 = hinted(noAlice, 'db-alice');
+    const b2 = hinted(noAlice, 'db-bobby');
+    const n2 = authn.sessionOf(reqOf(noAlice));
+    note(a2 === null && b2 && b2.id === bobby.sid && n2 === null &&
+         !!authn.sessionById(alice.sid),
+         '9e. without its bound cookie the chosen account is not honoured ' +
+         'and NOT replaced by the other; the other is still honoured',
+         String(a2 && a2.id) + ' ' + String(n2 && n2.id));
+    const crossed = Object.assign({}, noAlice);
+    crossed[aliceCookie] = jar[bobCookie];
+    note(hinted(crossed, 'db-alice') === null,
+         '9f. another binding\'s cookie under its name does not stand in');
+
+    // --- 10. refresh among several accounts ------------------------------
+    delete jar[aliceCookie];
+    r = await post(jar, '/authn/dbsc/refresh',
+                   { 'sec-secure-session-id':
+                       quoted(aliceInstr.session_identifier) });
+    next = challengeOf(r);
+    r = await post(jar, '/authn/dbsc/refresh', {
+      'sec-secure-session-id': quoted(aliceInstr.session_identifier),
+      'secure-session-response': quoted(proof(aliceKey, next.challenge,
+                                              false)) });
+    note(r.status === 200 && !!jar[aliceCookie] &&
+         (authn.sessionById(alice.sid).dbsc || {}).refreshes === 1 &&
+         ((authn.sessionById(bobby.sid).dbsc || {}).refreshes || 0) === 0,
+         '10a. a refresh naming one account\'s binding renews that ' +
+         'account\'s cookie only', r.status + ' ' + r.text.slice(0, 300));
+    r = await post(jar, '/authn/dbsc/refresh',
+                   { 'sec-secure-session-id': quoted('none-of-these') });
+    note(r.status === 401 && !!authn.sessionById(alice.sid) &&
+         !!authn.sessionById(bobby.sid) &&
+         !/STS-[A-Z]+-\d{4}/.test(r.text),
+         '10b. a refresh naming no account\'s binding is refused (401) and ' +
+         'ends nothing', r.status + ' ' + r.text);
+
+    // --- 11. another key ends that account only ----------------------------
+    const setId = authn.sessionById(alice.sid).accountSetId;
+    const defaultBefore = jar.sts_session;
+    r = await post(jar, '/authn/dbsc/refresh',
+                   { 'sec-secure-session-id':
+                       quoted(aliceInstr.session_identifier) });
+    next = challengeOf(r);
+    r = await post(jar, '/authn/dbsc/refresh', {
+      'sec-secure-session-id': quoted(aliceInstr.session_identifier),
+      'secure-session-response': quoted(proof(keyPair(), next.challenge,
+                                              false)) });
+    const setAfter = AccountSets.byId(setId) || {};
+    const remembered = Object.keys(setAfter.remembered || {}).map(
+      function (k) {
+        return setAfter.remembered[k].username;
+      });
+    note(r.status === 401 && !authn.sessionById(alice.sid) &&
+         !!authn.sessionById(bobby.sid) &&
+         !(setAfter.sessions || {})[alice.sid] &&
+         remembered.indexOf('db-alice') >= 0 &&
+         jar.sts_session === defaultBefore &&
+         String(defaultBefore).split('.')[0] === bobby.sid &&
+         !jar[aliceCookie] && !!jar[bobCookie],
+         '11. a refresh of one account signed by another key ends that ' +
+         'account alone: out of the set to its remembered accounts, its ' +
+         'bound cookie cleared, the default cookie (the other account\'s) ' +
+         'kept', r.status + ' ' + JSON.stringify(setAfter.sessions || {}) +
+         ' ' + JSON.stringify(remembered));
+    const b3 = authn.sessionOf(reqOf(jar));
+    note(b3 && b3.id === bobby.sid,
+         '11b. and the other account is the browser\'s only one, honoured');
+
+    // --- 12. the same person again, without the key -----------------------
+    const thief = { sts_accounts: jar.sts_accounts, sts_session:
+                    jar.sts_session };
+    const again = await signIn('db-bobby', thief);
+    const setNow = AccountSets.byId(authn.sessionById(again.sid)
+      .accountSetId) || {};
+    note(again.sid && again.sid !== bobby.sid && !authn.sessionById(bobby.sid) &&
+         Object.keys(setNow.sessions || {}).indexOf(bobby.sid) < 0,
+         '12. the same person signing in where the bound key is not proved ' +
+         'replaces the bound session, never two of one person in the set',
+         again.sid + ' ' + JSON.stringify(Object.keys(setNow.sessions || {})));
+    config.clearOverride('authn.multipleAccounts');
+
     config.clearOverride('authn.deviceBoundSessions');
     server.close();
     fs.writeFileSync(OUT, JSON.stringify(findings));
@@ -338,7 +483,8 @@ module.exports = {
             'registration with an ES256 key, the bound cookie honoured and ' +
             'its absence not, a refresh with a signed challenge renewing ' +
             'it, a replayed challenge and another key each ending the ' +
-            'session, an unknown DBSC id leaving it alone, and a browser ' +
-            'without DBSC unchanged',
+            'session, an unknown DBSC id leaving it alone, a browser ' +
+            'without DBSC unchanged, and several accounts in one browser ' +
+            'each bound and honoured on its own (#561)',
   run: run
 };

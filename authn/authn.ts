@@ -1607,6 +1607,14 @@ class Authn {
     } else {
       out.subjectId = baseSub || otherSub;
     }
+    // THE ACCOUNT SET A SESSION JOINED (#561) is stamped once, like the
+    // binding above, so a copy that has it is ahead of one that does not:
+    // lost in a merge, the session's end could not find its set, and its
+    // account would never move to remembered. Absent on both copies — every
+    // row while `authn.multipleAccounts` is off — nothing is written.
+    if (!out.accountSetId && other.accountSetId) {
+      out.accountSetId = other.accountSetId;
+    }
     log.debug("Leaving Authn.mergeSessionRows(). " +
               (mineAhead ? "Mine is ahead." : "The stored copy is ahead."));
     return out;
@@ -1863,9 +1871,14 @@ class Authn {
                     "nothing chooses one (" + resolved.reason + ").");
           return null;
         }
+        // The account set's choice meets the binding gate (#725) as the
+        // cookie's session does: a bound session chosen here is honoured
+        // only beside ITS OWN bound cookie, so a set whose handle was
+        // copied cannot reach past a key it does not hold.
         const chosen = this.honouredSession(req, resolved.sid,
                                             this.accountSessionRead(
-                                              resolved.sid).session);
+                                              resolved.sid).session,
+                                            ignoreBinding);
         log.debug("Leaving Authn.sessionOf(). The account set's choice (" +
                   resolved.how + ").");
         return chosen;
@@ -1877,7 +1890,8 @@ class Authn {
                 "session this server holds, with its current handle.");
       return null;
     }
-    const session = this.honouredSession(req, found.id, found.session);
+    const session = this.honouredSession(req, found.id, found.session,
+                                         ignoreBinding);
     log.debug("Leaving Authn.sessionOf().");
     return session;
   }
@@ -1886,8 +1900,10 @@ class Authn {
   // or idle, an arrival nobody chose, a disabled or deleted account — each
   // swept on the way past — and otherwise the session, its use noted. Split
   // out for #561 so that the cookie's session and the account set's choice
-  // meet exactly the same rules; the body is `sessionOf()`'s as it was.
-  private honouredSession(req, id, session) {
+  // meet exactly the same rules; the body is `sessionOf()`'s as it was —
+  // `ignoreBinding` included (#725), which the merge with #561 has to carry
+  // into here, because the binding gate is one of those rules.
+  private honouredSession(req, id, session, ignoreBinding?) {
     const { log } = this.deps;
     log.debug("Entering Authn.honouredSession(). sid=" + id);
     if (!session) {
@@ -1979,8 +1995,8 @@ class Authn {
     // session stays theirs. An unbound session, and every session while
     // `authn.deviceBoundSessions` is off, passes as it always did.
     if (ignoreBinding !== true && !deviceBound.honours(session, req)) {
-      log.debug("Leaving Authn.sessionOf(). A device-bound session without " +
-                "its bound cookie.");
+      log.debug("Leaving Authn.honouredSession(). A device-bound session " +
+                "without its bound cookie.");
       return null;
     }
     this.noteSessionUsed(sessions.realmMap(), id, session);
@@ -2780,6 +2796,79 @@ class Authn {
     }) : [];
     log.debug("Leaving Authn.accountSessionsOf(). " + out.length);
     return out;
+  }
+
+  /**
+   * The signed-in session a device-binding request is about (#725 with
+   * #561), chosen from every live session this browser's account set holds
+   * — and its default cookie's, where that is not in the set yet — by what
+   * the browser's own proof names (`pick`). The one picked is then held to
+   * `honouredSession()`'s rules but the binding gate, which is what the
+   * binding endpoints decide for themselves; the others are not touched, so
+   * a refresh of one account is never a use of another. Null with
+   * `authn.multipleAccounts` off, or for a browser with no set, where the
+   * caller reads `sessionOf(req, true)` exactly as before.
+   *
+   * WHY NOT `sessionOf()`: a registration or a refresh names no account the
+   * way a flow does — no ticket, no hint — so with two accounts signed in
+   * `sessionOf()` answers nobody, and every second account's binding would
+   * be refused. The challenge minted for one session at registration, and
+   * the DBSC session identifier at refresh, name it instead.
+   *
+   * @param req - the request
+   * @param pick - asked of each live session; the first it accepts is it
+   * @returns `{ session, others }` — `others` true where the browser holds
+   *   signed-in sessions and `pick` took none — or null
+   */
+  bindingSessionOf(req, pick) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.bindingSessionOf().");
+    if (!AccountSets.enabled() || !req || typeof pick !== 'function') {
+      log.debug("Leaving Authn.bindingSessionOf(). Off.");
+      return null;
+    }
+    const row = this.accountSetOf(req);
+    if (!row) {
+      log.debug("Leaving Authn.bindingSessionOf(). No set.");
+      return null;
+    }
+    const sids = Object.keys(row.sessions || {});
+    const own = this.cookieSession(req, SESSION_COOKIE);
+    if (own && !own.error && sids.indexOf(String(own.id)) < 0) {
+      sids.push(String(own.id));
+    }
+    const live = sids.filter(function (sid) {
+      return self.accountSessionLive(sid);
+    });
+    const sid = live.filter(function (one) {
+      return !!pick(self.accountSessionRead(one).session);
+    })[0];
+    const session = sid
+      ? this.honouredSession(req, sid, this.accountSessionRead(sid).session,
+                             true)
+      : null;
+    log.debug("Leaving Authn.bindingSessionOf(). " +
+              (session ? session.id : 'None of ' + live.length + '.'));
+    return { session: session, others: !session && live.length > 0 };
+  }
+
+  /**
+   * Says whether a request's `sts_session` cookie names a session (#725
+   * with #561): a binding that ended clears the browser's default cookie
+   * only where the cookie is that session's, never another account's.
+   *
+   * @param req - the request
+   * @param sid - the session id
+   * @returns true when the cookie names it
+   */
+  sessionCookieNames(req, sid) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.sessionCookieNames().");
+    const own = req ? this.cookieSession(req, SESSION_COOKIE) : null;
+    const names = !!(own && !own.error && String(own.id) === String(sid));
+    log.debug("Leaving Authn.sessionCookieNames(). " + names);
+    return names;
   }
 
   /**
@@ -7241,6 +7330,21 @@ class Authn {
       // person is re-authenticating on. NOR, with several accounts on (#561),
       // a different person's: their session stays in the browser's set.
       if (previous && !reauthenticating && !multiAccount &&
+          !(arrived && arrived.id === previous)) {
+        replaceId = previous;
+      }
+      // A DEVICE-BOUND SESSION OF THE SAME PERSON, FROM A BROWSER THAT DOES
+      // NOT PROVE ITS KEY (#725 with #561). With the setting off it is the
+      // previous session above, replaced. With several accounts on it would
+      // stay in the set beside the new one — two live sessions of one
+      // subject in one browser, which the set never holds, and a hint for
+      // that person could choose the one this browser cannot use. So it is
+      // replaced here too, exactly as with the setting off.
+      if (multiAccount && previous && !reauthenticating &&
+          current && current.session.user &&
+          this.sameIdentity(current.session.user, username) &&
+          !this.sessionEnded(current.session) &&
+          !deviceBound.honours(current.session, extra.request) &&
           !(arrived && arrived.id === previous)) {
         replaceId = previous;
       }
@@ -17495,6 +17599,8 @@ export = {
   // signed-in accounts in one browser*, has each one's contract.
   hintAccount: slot.forward('hintAccount'),
   accountSessionsOf: slot.forward('accountSessionsOf'),
+  bindingSessionOf: slot.forward('bindingSessionOf'),
+  sessionCookieNames: slot.forward('sessionCookieNames'),
   afterAccountSignOut: slot.forward('afterAccountSignOut'),
   hintAccountKey: slot.forward('hintAccountKey'),
   signedInAccounts: slot.forward('signedInAccounts'),

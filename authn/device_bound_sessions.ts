@@ -86,6 +86,7 @@ import audit = require('../common/audit');
 import structuredFields = require('../common/structured_fields');
 import clusterClaims = require('../cluster/cluster_claims');
 import clusterSecrets = require('../cluster/cluster_secrets');
+import AccountSets = require('./account_sets');
 
 const { log } = helpers;
 
@@ -148,6 +149,9 @@ interface DeviceBoundDeps {
   // LAZY: `authn` requires this module, and `logout` is required 23rd.
   authn(): any;
   logout(): any;
+  // Whether `authn.multipleAccounts` is on (#561), which names the bound
+  // cookie per binding.
+  multipleAccounts(): boolean;
 }
 
 type RouteApp = { post: Function };
@@ -203,6 +207,9 @@ class DeviceBoundSessions {
       },
       authn: function (): any {
         return require('./authn');
+      },
+      multipleAccounts: function (): boolean {
+        return AccountSets.enabled();
       },
       logout: function (): any {
         return require('../logout/logout');
@@ -335,14 +342,38 @@ class DeviceBoundSessions {
     return !!(session && session.dbsc && session.dbsc.jkt && session.dbsc.id);
   }
 
-  private presentedCookie(req: Json): string {
+  // ---------------------------------------------------------------------------
+  // ONE BOUND COOKIE PER BINDING WHERE A BROWSER HOLDS SEVERAL ACCOUNTS
+  // (#561 with #725). The draft's session instructions name the cookie a
+  // DBSC session refreshes (section 9.6), and one browser holding two bound
+  // sign-on sessions under ONE name would have each refresh overwrite the
+  // other's cookie — every second account refused on every request, and its
+  // refreshes fighting for ever. So a binding made while
+  // `authn.multipleAccounts` is on names its cookie after its own DBSC
+  // session identifier (base64url, a valid cookie-name token), and records
+  // the name on the binding, so the name stays the binding's whatever the
+  // setting does later. A binding made with the setting off is
+  // `sts_session_bound`, exactly as before — and it is the only binding such
+  // a browser can hold.
+  // ---------------------------------------------------------------------------
+  private cookieNameOf(session: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering DeviceBoundSessions.cookieNameOf().");
+    const named = session && session.dbsc && session.dbsc.cookie;
+    log.debug("Leaving DeviceBoundSessions.cookieNameOf().");
+    return typeof named === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(named)
+      ? named : BOUND_COOKIE;
+  }
+
+  private presentedCookie(req: Json, name?: string): string {
     const { log } = this.deps;
     log.debug("Entering DeviceBoundSessions.presentedCookie().");
+    const wanted = name || BOUND_COOKIE;
     let found = '';
     String((req && req.headers && req.headers.cookie) || '').split(';')
       .forEach(function (part) {
         const at = part.indexOf('=');
-        if (at > 0 && part.slice(0, at).trim() === BOUND_COOKIE) {
+        if (at > 0 && part.slice(0, at).trim() === wanted) {
           found = part.slice(at + 1).trim();
         }
       });
@@ -372,7 +403,7 @@ class DeviceBoundSessions {
     if (!this.isBound(session) || !this.enabled()) {
       return true;
     }
-    const value = this.presentedCookie(req);
+    const value = this.presentedCookie(req, this.cookieNameOf(session));
     const dot = value.indexOf('.');
     const expiresS = dot > 0 ? value.slice(0, dot) : '';
     const ok = /^\d{1,12}$/.test(expiresS) &&
@@ -434,7 +465,7 @@ class DeviceBoundSessions {
     const expiresS = Math.max(nowS + 1,
                               Math.min(nowS + this.cookieLifetimeS(),
                                        endS || Infinity));
-    this.appendHeader(res, 'Set-Cookie', BOUND_COOKIE + '=' +
+    this.appendHeader(res, 'Set-Cookie', this.cookieNameOf(session) + '=' +
                       this.cookieValueFor(session, expiresS) +
                       '; Max-Age=' + (expiresS - nowS) + '; ' +
                       this.cookieAttributes());
@@ -510,7 +541,7 @@ class DeviceBoundSessions {
       refresh_url: realms.currentPrefix() + REFRESH_PATH,
       continue: true,
       scope: { include_site: false, scope_specification: [] },
-      credentials: [{ type: 'cookie', name: BOUND_COOKIE,
+      credentials: [{ type: 'cookie', name: this.cookieNameOf(session),
                       attributes: this.cookieAttributes() }],
       allowed_refresh_initiators: []
     };
@@ -662,7 +693,7 @@ class DeviceBoundSessions {
   // ends the browser's DBSC session too (section 8.8), and clears both
   // cookies.
   private endSession(res: Json, session: Json, code: string,
-                     why: string): void {
+                     why: string, req?: Json): void {
     const { log, errorCodes } = this.deps;
     log.debug("Entering DeviceBoundSessions.endSession(). " + code);
     const by = 'a device-bound session refresh that ' + why;
@@ -675,9 +706,16 @@ class DeviceBoundSessions {
                 ' (' + ((e && e.message) || e) + '); it is ended here.');
       this.deps.authn().endSessionById(session.id, by, 'policy');
     }
-    this.deps.authn().clearSessionCookie(res);
-    this.appendHeader(res, 'Set-Cookie', BOUND_COOKIE + '=; Max-Age=0; ' +
-                      this.cookieAttributes());
+    // The default cookie only where it is THIS session's (#561): with
+    // several accounts in the browser it can name another account, whose
+    // session the evidence says nothing about. With the setting off it is
+    // always this session's, as before.
+    if (!this.deps.multipleAccounts() || !req ||
+        this.deps.authn().sessionCookieNames(req, session.id)) {
+      this.deps.authn().clearSessionCookie(res);
+    }
+    this.appendHeader(res, 'Set-Cookie', this.cookieNameOf(session) +
+                      '=; Max-Age=0; ' + this.cookieAttributes());
     // error-code: none — `code` is the caller's literal (STS-AUTHN-0403, -0404)
     this.refuse(res, 401, code, 'the refresh ' + why + '; the session was ' +
                 'ended', session, 'refresh');
@@ -687,12 +725,33 @@ class DeviceBoundSessions {
   // The signed-in session the request's `sts_session` names, read WITHOUT
   // the bound-cookie gate — at refresh the bound cookie is exactly what is
   // missing.
-  private sessionFor(req: Json): Json {
+  //
+  // WITH SEVERAL ACCOUNTS IN THE BROWSER (#561) no ticket or hint names one
+  // here, so `sessionOf()` would answer nobody whenever two are signed in.
+  // The browser's proof names the session instead: `pick` is asked of each
+  // live session the account set holds (`authn.bindingSessionOf()`) — the
+  // registration challenge's MAC is over one session id, the refresh's
+  // `Sec-Secure-Session-Id` is one binding's — and the first it accepts is
+  // the session. A browser with no set, and every request with the setting
+  // off, reads `sessionOf()` as before. `{ session, others }`: `others`
+  // says the browser holds signed-in sessions none of which is the one.
+  private sessionFor(req: Json, pick?: (session: Json) => boolean): Json {
     const { log } = this.deps;
     log.debug("Entering DeviceBoundSessions.sessionFor().");
-    const session = this.deps.authn().sessionOf(req, true);
+    const authn = this.deps.authn();
+    const many = pick && typeof authn.bindingSessionOf === 'function'
+      ? authn.bindingSessionOf(req, function (one: Json) {
+        return !!one && one.authenticated !== false && pick(one);
+      }) : null;
+    if (many) {
+      log.debug("Leaving DeviceBoundSessions.sessionFor(). From the " +
+                "account set.");
+      return many;
+    }
+    const session = authn.sessionOf(req, true);
     log.debug("Leaving DeviceBoundSessions.sessionFor().");
-    return session && session.authenticated !== false ? session : null;
+    return { session: session && session.authenticated !== false
+      ? session : null, others: false };
   }
 
   // Spends a challenge once for the cluster. `used`, `store` or `ok`.
@@ -730,7 +789,31 @@ class DeviceBoundSessions {
       log.debug("Leaving DeviceBoundSessions.register(). Off.");
       return;
     }
-    const session = this.sessionFor(req);
+    const self = this;
+    // The challenge the proof carries, read before which session it is for
+    // is known, only to choose among a browser's several accounts (#561);
+    // the proof is read again and checked in full below.
+    const early = this.readProof(req);
+    const jti = early.claims ? early.claims.jti : '';
+    const found = this.sessionFor(req, function (one: Json) {
+      return self.checkChallenge(jti, 'register', one.id, '') !== 'foreign';
+    });
+    const session = found.session;
+    if (!session && found.others && early.code) {
+      // error-code: none — readProof()'s literal (STS-AUTHN-0393, -0394)
+      this.refuse(res, 400, early.code, early.why, null, 'registration');
+      log.debug("Leaving DeviceBoundSessions.register(). Unreadable proof, " +
+                "several accounts.");
+      return;
+    }
+    if (!session && found.others) {
+      this.refuse(res, 400, 'STS-AUTHN-0397', 'the registration proof\'s ' +
+                  'challenge is not one this service offered any of this ' +
+                  'browser\'s signed-in accounts', null, 'registration');
+      log.debug("Leaving DeviceBoundSessions.register(). No account's " +
+                "challenge.");
+      return;
+    }
     if (!session) {
       this.refuse(res, 401, 'STS-AUTHN-0391', 'no signed-in session is ' +
                   'behind this request', null, 'registration');
@@ -800,12 +883,17 @@ class DeviceBoundSessions {
     }).forEach(function (m) {
       publicJwk[m] = jwk[m];
     });
+    const dbscId = stsCrypto.randomBytes(16).toString('base64url');
     session.dbsc = {
-      id: stsCrypto.randomBytes(16).toString('base64url'),
+      id: dbscId,
       alg: proof.header.alg, jwk: publicJwk,
       jkt: stsCrypto.jwkThumbprint(publicJwk),
       boundAt: this.deps.now(), refreshes: 0, refreshedAt: 0
     };
+    if (this.deps.multipleAccounts()) {
+      // A cookie of this binding's own (`cookieNameOf()`).
+      session.dbsc.cookie = BOUND_COOKIE + '_' + dbscId;
+    }
     const authn = this.deps.authn();
     authn.noteSessionChanged(session);
     const who = (session.user && session.user.username) || '';
@@ -850,7 +938,21 @@ class DeviceBoundSessions {
       log.debug("Leaving DeviceBoundSessions.refresh(). No id.");
       return;
     }
-    const session = this.sessionFor(req);
+    const self = this;
+    const found = this.sessionFor(req, function (one: Json) {
+      return self.isBound(one) && one.dbsc.id === dbscId;
+    });
+    if (!found.session && found.others) {
+      // Signed-in accounts, none of them this binding: the 401 below that
+      // ends only the browser's stale registration (STS-AUTHN-0401).
+      this.refuse(res, 401, 'STS-AUTHN-0401', 'the refresh names a ' +
+                  'device-bound session none of this browser\'s signed-in ' +
+                  'accounts is', null, 'refresh');
+      log.debug("Leaving DeviceBoundSessions.refresh(). Unknown id, " +
+                "several accounts.");
+      return;
+    }
+    const session = found.session;
     if (!session) {
       this.refuse(res, 401, 'STS-AUTHN-0391', 'no signed-in session is ' +
                   'behind this request', null, 'refresh');
@@ -902,7 +1004,7 @@ class DeviceBoundSessions {
     }
     if (!verified) {
       this.endSession(res, session, 'STS-AUTHN-0403', 'was not signed by ' +
-                      'the key the session is bound to');
+                      'the key the session is bound to', req);
       log.debug("Leaving DeviceBoundSessions.refresh(). Wrong key.");
       return;
     }
@@ -931,7 +1033,7 @@ class DeviceBoundSessions {
     const spent = await this.spend(proof.claims.jti);
     if (spent === 'used') {
       this.endSession(res, session, 'STS-AUTHN-0404', 'replayed a ' +
-                      'challenge already spent');
+                      'challenge already spent', req);
       log.debug("Leaving DeviceBoundSessions.refresh(). Replayed.");
       return;
     }
