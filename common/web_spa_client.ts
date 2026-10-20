@@ -331,6 +331,17 @@ class SpaClient extends WebPage {
     const self = this;
     this.accountChannel = WebAccounts.openChannel(this.env, function () {
       WebAccounts.fetchList(self.env, self.prefix).then(function (list) {
+        // A READ THAT ANSWERS OFF KEEPS THE LIST IN HAND (#731).
+        // `fetchList()` answers off for a network failure as well as for
+        // the setting turned off, and taking it here turned a tab's list
+        // off on one dropped request: its menu emptied and its sign-out
+        // stopped naming its account. The static surfaces' control already
+        // kept its list (`WebSurface.refreshAccounts()`); the setting
+        // turned off reaches this tab at its next page load, whose shell
+        // says so.
+        if (!list.enabled) {
+          return self.accounts;
+        }
         // A LIST READ ON A MESSAGE IS NEVER ANNOUNCED: only a change this
         // tab made is (`WebAccounts`).
         self.accounts = list;
