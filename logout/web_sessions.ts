@@ -217,6 +217,8 @@ class SessionsPage {
             n: json.unauthenticatedHeld, held: json.held }))
         : kit.note(t.html('consoleSessions.unauthNone'))) +
 
+      SessionsPage.accountChoicesSection(t, json.accountChoices) +
+
       '<div data-metadata>' + kit.note('<a href="/admin/logout">' +
       t.html('consoleSessions.linkLogout') + '</a>' +
       t.html('consoleSessions.linkLogoutAfter') + ' &middot; <a ' +
@@ -285,6 +287,7 @@ class SessionsPage {
       (row.sub ? '<div class="sub"><code>' + kit.esc(row.sub) +
        '</code></div>' :
        '') +
+      SessionsPage.accountSetLine(t, row) +
       '</td>' +
       '<td class="sub">' +
       (row.startedAt ? kit.esc(kit.whenText(row.startedAt))
@@ -299,6 +302,80 @@ class SessionsPage {
       '<td>' + revoke + '</td>' +
       '</tr>';
     return out;
+  }
+
+  // WHICH BROWSER THIS SESSION IS IN (#561, #731). With several signed-in
+  // accounts in one browser, each account is a session of its own and the
+  // rows of one browser looked like rows of strangers. A session in an
+  // account set says which, as the set id's first eight characters (the
+  // whole id on hover), linked to this list narrowed to that set — every
+  // session sharing the browser. The set's id names the row and opens
+  // nothing; the cookie's handle is the secret, and no view carries it.
+  // Nothing is drawn for a session in no set, so a row is the one it was
+  // with `authn.multipleAccounts` off.
+  /**
+   * Draws the browser a session shares with others, where it is in an
+   * account set.
+   *
+   * @param t - the page's translator (#539)
+   * @param row - a live-session row from logout.ts
+   * @returns a line as HTML, or ''
+   */
+  static accountSetLine(t, row) {
+    const id = String((row && row.accountSet) || '');
+    if (!id) {
+      return '';
+    }
+    return '<div class="sub">' + t.html('consoleSessions.accountSet') +
+      ' <a href="' + kit.esc('/admin/sessions' +
+        kit.queryWith({ q: id }, {})) +
+      '" title="' + kit.esc(t.text('consoleSessions.accountSetTitle',
+                                   { id: id })) + '"><code>' +
+      kit.esc(id.slice(0, 8)) + '</code></a></div>';
+  }
+
+  // WHAT THE BROWSERS' ACCOUNT SETS DID (#561's TR-3, #731): the counters
+  // `admin_stats.recordAccountChoice()` keeps, every process's added up.
+  // The figure an operator reads is `ambiguous` beside `selected` — is the
+  // picker shown more than it should be — so the two come first. Drawn
+  // whenever the setting is on, or anything was counted while it was: a
+  // realm that turned it off keeps what it counted, and a section that
+  // vanished with the setting would hide exactly that.
+  /**
+   * Draws the account-choice counters as a tab.
+   *
+   * @param t - the page's translator (#539)
+   * @param choices - the view's `accountChoices`
+   * @returns the section as HTML, or '' where there is nothing to say
+   */
+  static accountChoicesSection(t, choices) {
+    const c = (choices && choices.counts) || {};
+    // Each kind's label by its whole key, so the catalog check can find it.
+    const labels = {
+      selected: t.text('consoleSessions.accounts.selected'),
+      ambiguous: t.text('consoleSessions.accounts.ambiguous'),
+      selectFailed: t.text('consoleSessions.accounts.selectFailed'),
+      added: t.text('consoleSessions.accounts.added'),
+      switched: t.text('consoleSessions.accounts.switched'),
+      forgotten: t.text('consoleSessions.accounts.forgotten'),
+      expired: t.text('consoleSessions.accounts.expired')
+    };
+    const kinds = Object.keys(labels);
+    const any = kinds.some(function (kind) {
+      return Number(c[kind]) > 0;
+    });
+    if (!choices || (!choices.enabled && !any)) {
+      return '';
+    }
+    return '<h2 data-tab="accounts">' + t.html('consoleSessions.hAccounts') +
+      '</h2>' +
+      kit.note(t.html('consoleSessions.accountsLead')) +
+      (choices.enabled ? ''
+                       : kit.warn(t.html('consoleSessions.accountsOff'))) +
+      '<div class="tiles">' + kinds.map(function (kind) {
+        return kit.tile(Number(c[kind]) || 0, labels[kind]);
+      }).join('') + '</div>' +
+      kit.note(t.html('consoleSessions.accountsNote'));
   }
 
   // WHAT CAME OUT OF THIS SESSION, as a link into /admin/tokens.

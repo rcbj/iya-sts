@@ -1709,7 +1709,17 @@ const SCHEMAS = {
                      '`anonymousPage` (#313).',
         items: { $ref: '#/components/schemas/SessionRow' } },
       unauthenticatedPaging: openObject(
-        'Where in the unauthenticated sessions that page is.', {})
+        'Where in the unauthenticated sessions that page is.', {}),
+      accountChoices: openObject(
+        'What the browsers\' account sets did in this realm (#561, ' +
+        '#731): `enabled` is `authn.multipleAccounts` as the realm has it ' +
+        'now, and `counts` the seven counters every process keeps, added ' +
+        'up — `selected`, `ambiguous` (a request that could not tell which ' +
+        'account it was for), `selectFailed`, `added`, `switched`, ' +
+        '`forgotten` and `expired`. Answered whatever the setting is, ' +
+        'because what was counted while it was on is still true.',
+        { enabled: { type: 'boolean' },
+          counts: openObject('Kind → count.', {}) })
     }, PAGING_PROPERTIES)),
 
   SessionRow: openObject(
@@ -1781,6 +1791,15 @@ const SCHEMAS = {
                               '2.0 service providers — which is what makes ' +
                               'ending one reach further than it looks.' },
       detail: { type: 'string' },
+      accountSet: { type: 'string',
+                    description: 'The browser\'s account set this session ' +
+                                 'is in (#561), so the sessions that share ' +
+                                 'one browser can be told apart; empty where ' +
+                                 'it is in none, which is every row with ' +
+                                 '`authn.multipleAccounts` off. The id is ' +
+                                 'not a secret: the cookie\'s handle is, ' +
+                                 'and no answer carries it. `?q=` with it ' +
+                                 'lists that browser\'s sessions.' },
       terminable: { type: 'boolean',
                     description: 'Whether this service can end it. FALSE ' +
                                  'where a setting says otherwise ' +

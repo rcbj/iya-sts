@@ -331,6 +331,25 @@ cleared exactly where it was (`tests/multi_account_logout.js` 1).
   session's end does that, as for any ending). Signing alice out of a
   browser whose default is bob leaves bob's cookie alone.
 
+* **A SIGN-OUT THE NETWORK DROPPED SAYS SO (#731).** The sign-out
+  surface's act that cannot reach the service (`SignoutSurface.send()`,
+  a rejected fetch) answers a refusal drawn over the page — *nothing was
+  signed out* — where its rejection used to go unhandled and the page said
+  nothing, leaving the person to assume it had worked. Nothing changed, so
+  nothing is announced to the other tabs
+  (`tests/multi_account_concurrency_tabs.js` 4).
+* **TWO SIGN-OUTS AT ONCE** in two tabs of one browser both end, the third
+  account is untouched and is then the browser's only account, whichever
+  answer wrote the cookie last (`tests/multi_account_concurrency.js` 3).
+* **`/admin/sessions` DRAWS THE SET (#731)**: a browser session in an
+  account set shows the set's first eight characters under *Who*, linked
+  to the list narrowed to it (`?q=<set id>`), so the sessions of one
+  browser can be told apart; and the account sets' counters are a tab of
+  their own, *Several accounts in one browser*, drawn while the setting is
+  on or anything was counted (`web_sessions.ts`, `accountSetLine()` and
+  `accountChoicesSection()`; the row's `accountSet` is `liveSessions()`'s,
+  `''` on every other row). The API half is `mgmt-api/CLAUDE.md`.
+
 The words are the `logout.accounts.*` keys, in every shipped catalog. **The
 page's stylesheet carries the account control's rules** (`SIGNOUT_CSS`, which
 is `LOGOUT_CSS` and `WebCardCss.ACCOUNTS_CSS` after it): every other card

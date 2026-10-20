@@ -2405,6 +2405,15 @@ class Logout {
         // `!== false` for the usual reason: a session made before the field
         // existed is one somebody signed into.
         authenticated: session.authenticated !== false,
+        // THE BROWSER'S ACCOUNT SET (#561, #731), where the session is in
+        // one: several signed-in accounts in one browser
+        // (`authn/CLAUDE.md`). Rows that share it are sessions of ONE
+        // browser, which is what an operator reading this list could not
+        // tell until it was drawn. The set's id is not a secret — the
+        // cookie's HANDLE is, and it is never on a row — and '' where the
+        // session is in no set, so a row is otherwise what it was with
+        // `authn.multipleAccounts` off.
+        accountSet: String(session.accountSetId || ''),
         terminable: true,
         why: ''
       });
@@ -2490,6 +2499,7 @@ class Logout {
         // AS-REQ decrypted under a real long-term key. There is no
         // unauthenticated Kerberos session; see the note on the browser rows.
         authenticated: true,
+        accountSet: '',
         terminable: !!signOutOn,
         why: signOutOn
           ? 'Ending this stamps a sign-out instant on ' + key + '@' + realm +
@@ -2535,6 +2545,7 @@ class Logout {
           (grant.derivedFrom ? ', derived by a resource server' : ''),
         // A resource owner approved it: there is no unauthenticated grant.
         authenticated: true,
+        accountSet: '',
         terminable: true,
         why: 'Ending this revokes every access token the grant issued and ' +
              'finalizes it, as the client\'s own revocation does (RFC 9635 ' +
@@ -2582,6 +2593,7 @@ class Logout {
         // An ANONYMOUS bind never reaches here: it has no key and is left off
         // the list entirely, a few lines above.
         authenticated: true,
+        accountSet: '',
         terminable: !!ldapOn,
         why: ldapOn
           ? 'Ending this closes the socket, which is the only sign-out LDAP ' +

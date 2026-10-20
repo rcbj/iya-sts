@@ -75,5 +75,18 @@
   "noExpiry": "<strong>walang expiry</strong>",
   "noExpiryNote": "natatapos ito kapag may tumapos dito",
   "expired": "expired",
-  "inDuration": "sa loob ng {duration}"
+  "inDuration": "sa loob ng {duration}",
+  "accountSet": "browser",
+  "accountSetTitle": "Hanay ng account {id}: kapareho ng session na ito ang browser ng bawat iba pang session dito. Sundan ang link para ilista sila.",
+  "hAccounts": "Ilang account sa iisang browser",
+  "accountsLead": "Ang ginawa ng mga hanay ng account ng mga browser sa realm na ito, binilang mula nang magsimula ang serbisyong ito at pinagsama ang bawat proseso. Basahin ang <strong>tinanong kung aling account</strong> katabi ng <strong>account na pinili</strong>: ang kahilingang hindi matukoy kung para saang account ito ay nagpapakita ng pumipili ng account, at kung mas madalas itong mangyari kaysa pumili ang mga tao, may relying party na hindi nagpapadala ng hint.",
+  "accountsOff": "<strong>Naka-off sa realm na ito ang ilang naka-sign in na account sa iisang browser</strong> (<code>authn.multipleAccounts</code>). Binilang ang mga numerong ito habang naka-on pa.",
+  "accountsNote": "Ang account na <strong>inilipat</strong> ay naging default ng browser nang piliin ito; binibilang ng <strong>nag-expire</strong> ang mga naka-sign out na account na inalis pagkalipas ng <code>authn.rememberedAccountDays</code>. Walang numerong nagpapangalan ng tao o browser.",
+  "accounts.selected": "account na pinili",
+  "accounts.ambiguous": "tinanong kung aling account",
+  "accounts.selectFailed": "pagpiling tinanggihan",
+  "accounts.added": "mga account na idinagdag",
+  "accounts.switched": "default na inilipat",
+  "accounts.forgotten": "mga account na kinalimutan",
+  "accounts.expired": "mga naaalalang account na nag-expire"
 }

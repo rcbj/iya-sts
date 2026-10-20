@@ -75,5 +75,18 @@
   "noExpiry": "<strong>sin vencimiento</strong>",
   "noExpiryNote": "termina cuando algo la termina",
   "expired": "vencida",
-  "inDuration": "en {duration}"
+  "inDuration": "en {duration}",
+  "accountSet": "navegador",
+  "accountSetTitle": "Conjunto de cuentas {id}: esta sesión comparte un navegador con todas las demás sesiones del conjunto. Siga el enlace para listarlas.",
+  "hAccounts": "Varias cuentas en un mismo navegador",
+  "accountsLead": "Lo que hicieron los conjuntos de cuentas de los navegadores en este dominio, contado desde que se inició este servicio y sumados todos los procesos. Lea <strong>cuenta preguntada</strong> junto a <strong>cuenta elegida</strong>: una solicitud que no podía saber para qué cuenta era muestra el selector de cuentas, y si eso ocurre más a menudo de lo que las personas eligen, una parte que confía no envía ninguna indicación.",
+  "accountsOff": "<strong>Varias cuentas con sesión iniciada en un mismo navegador están desactivadas en este dominio</strong> (<code>authn.multipleAccounts</code>). Estas cifras se contaron mientras estaban activadas.",
+  "accountsNote": "Una cuenta <strong>cambiada</strong> pasó a ser, al elegirla, la predeterminada del navegador; <strong>caducadas</strong> cuenta las cuentas con sesión cerrada que se descartaron tras <code>authn.rememberedAccountDays</code>. Ninguna cifra nombra a una persona ni a un navegador.",
+  "accounts.selected": "cuenta elegida",
+  "accounts.ambiguous": "cuenta preguntada",
+  "accounts.selectFailed": "elección rechazada",
+  "accounts.added": "cuentas añadidas",
+  "accounts.switched": "predeterminada cambiada",
+  "accounts.forgotten": "cuentas olvidadas",
+  "accounts.expired": "cuentas recordadas caducadas"
 }

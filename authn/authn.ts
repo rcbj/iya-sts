@@ -2230,6 +2230,25 @@ class Authn {
       log.debug("Leaving Authn.resolveAccount(). The ticket's.");
       return { sid: selected, how: 'ticket', row: row, live: live.length };
     }
+    // THE TICKET'S SESSION ENDED IN FLIGHT (#731, `spendAccountTicket()`):
+    // nobody, never another account in its place — before the hint and the
+    // only-live rule, either of which would otherwise answer somebody else.
+    // The same account signed in again meanwhile is that account's
+    // session, and is what was chosen.
+    const ended = req && req.stsAccountSelectionEnded;
+    const again = ended && ended.username
+      ? this.matchAccountHint(live, { loginHint: ended.username }) : '';
+    if (again) {
+      log.debug("Leaving Authn.resolveAccount(). The ticket's account, " +
+                "signed in again.");
+      return { sid: again, how: 'ticket', row: row, live: live.length };
+    }
+    if (ended) {
+      log.debug("Leaving Authn.resolveAccount(). The ticket's session " +
+                "ended.");
+      return { sid: '', reason: 'hint-unmatched', row: row,
+               live: live.length, hint: String(ended.username || '') };
+    }
     const hint = req && req.stsAccountHint;
     const match = hint ? this.matchAccountHint(live, hint) : '';
     if (hint && (match || !hint.soft)) {
@@ -2405,8 +2424,27 @@ class Authn {
         ? 'the session it names is no longer live in this browser'
         : '';
     if (why) {
+      // A CHOICE WHOSE SESSION ENDED IN FLIGHT CHOOSES NOBODY (#731). The
+      // ticket is this browser's, for this address, and names a session
+      // that was signed out, expired or revoked between the choice and this
+      // request. Ignoring it, as every other ticket here is ignored, let the
+      // request resolve as if nothing had been chosen — and with one other
+      // account live that is "the only live session", so a flow the person
+      // resumed as alice went on as bob without a word
+      // (`tests/multi_account_concurrency.js` 4). It is a hint naming
+      // nobody here instead (`hint-unmatched`): the flow goes to sign in as
+      // that account, its name filled in, as a `login_hint` for a signed-out
+      // account does.
+      const ended = !!(row && set && set.id === row.setId &&
+                       row.path === path);
+      if (ended) {
+        req.stsAccountSelectionEnded = {
+          username: String(row.username || ''), sid: String(row.sid) };
+      }
       log.info(errorCodes.tag('STS-AUTHN-0346') + 'authn: an account ' +
-               'selection ticket on ' + path + ' was ignored: ' + why + '.');
+               'selection ticket on ' + path + ' was ignored: ' + why +
+               (ended ? '; the request acts as nobody, and the flow signs ' +
+                        'in again as that account' : '') + '.');
       log.debug("Leaving Authn.spendAccountTicket(). Ignored.");
       return;
     }
@@ -9662,6 +9700,7 @@ class Authn {
     const req = opts.request || audit.currentRequest();
     const choice = String(opts.accountChoice || '');
     let pick = '';
+    let unmatched = '';
     if (req && choice !== 'never') {
       if (choice === 'always') {
         const row = this.freshAccountSet(req);
@@ -9671,6 +9710,7 @@ class Authn {
         if (need && need.reason === 'ambiguous') {
           pick = 'ambiguous';
         } else if (need && need.reason === 'hint-unmatched') {
+          unmatched = String(need.hint || '');
           log.info(errorCodes.tag('STS-AUTHN-0341') + 'authn: a hint named ' +
                    'an account with no live session in this browser; the ' +
                    'person is sent to sign in rather than given another ' +
@@ -9685,6 +9725,12 @@ class Authn {
         ? this.accountSessionRead(resolved.sid).session : null;
       if (chosen && chosen.user && chosen.user.username) {
         given = Object.assign({}, opts, { hint: chosen.user.username });
+      } else if (unmatched) {
+        // THE ACCOUNT A HINT OR A SPENT TICKET NAMED and that is not live
+        // here (#731): the screen fills its name in. A protocol's own
+        // `login_hint` arrives as `opts.hint` already; a ticket whose
+        // session ended in flight has nowhere else to say whom it chose.
+        given = Object.assign({}, opts, { hint: unmatched });
       }
     }
     const target = this.beginAuthenticationHere(given);

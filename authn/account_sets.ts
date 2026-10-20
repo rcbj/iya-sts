@@ -622,9 +622,16 @@ class AccountSets {
                     pendingId: string): string {
     helpers.log.debug("Entering AccountSets.mintTicket().");
     const ticket = helpers.randomId(24);
+    // WHO THE TICKET CHOSE, by name (#731): a session that ends between the
+    // choice and the request the ticket is spent on still names an account,
+    // and the flow it resumes is sent to sign in as that one
+    // (`authn.ts`, `spendAccountTicket()`) rather than on as another.
+    const row = sets.get(String(setId));
+    const entry = row && row.sessions ? row.sessions[String(sid)] : null;
     tickets.set(ticket, { setId: String(setId), sid: String(sid),
                           path: String(path || ''),
                           pendingId: String(pendingId || ''),
+                          username: String((entry && entry.username) || ''),
                           expires: Date.now() + TICKET_TTL_MS });
     helpers.log.debug("Leaving AccountSets.mintTicket().");
     return ticket;
@@ -649,7 +656,7 @@ class AccountSets {
    * answered only while it has not expired.
    *
    * @param ticket - the ticket
-   * @returns `{ setId, sid, path, pendingId }`, or null
+   * @returns `{ setId, sid, path, pendingId, username }`, or null
    */
   static spendTicket(ticket: string): Json {
     helpers.log.debug("Entering AccountSets.spendTicket().");

@@ -821,7 +821,11 @@ authorization request and the sign-out's address are the bytes they were.
   token requests — and discards `me`, the page for nobody's locale
   (`nobody`), the form table, the view, the flash, the owner token and
   its scopes, and the client's tokens and key; an answer for another
-  subject than the one switched to is refused.
+  subject than the one switched to is refused. **A switch whose sign-in
+  cannot be started** (a pushed request the network refused) draws
+  *Switching accounts failed* and keeps the tab's account, as the
+  console's does (#731, `admin-ui/CLAUDE.md` 8c-iv,
+  `tests/multi_account_concurrency_tabs.js` 2).
 * **`/portal?accounts=another` IS HOW EVERY OTHER PAGE SIGNS IN AS ANOTHER
   ACCOUNT** (delivery step 6, `common/CLAUDE.md` 3cl). `/authn/login` is
   not a destination — it needs a pending sign-in — so the public pages'

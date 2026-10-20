@@ -1134,6 +1134,18 @@ MORE than the row names, because that protocol has no per-ticket revocation.
 join between the two resources: every browser-session row carries the
 `sessionId` a token issued under it records.
 
+**SEVERAL ACCOUNTS IN ONE BROWSER (#561, drawn since #731)**: every row
+carries `accountSet`, the browser's account set a browser session is in
+(`''` on every other row, and on every row with `authn.multipleAccounts`
+off), and `?q=` with it lists that browser's sessions — the page links each
+row's short id there. The set's id is not a secret; the cookie's handle is,
+and no answer carries it. Beside the rows, `accountChoices` is `{ enabled,
+counts }`: `admin_stats.accountChoiceCounts()`, the seven counters every
+process keeps, which the page draws as its *Several accounts in one
+browser* tab. Both are answered by `AdminViews.sessionsView()`, the one
+function behind the page and the operation, so rule 7 holds by
+construction (`tests/multi_account_concurrency.js` 7).
+
 ## `/admin-api/caep/sessions`, AND THE GAP THE PARITY CHECK FOUND
 
 `/admin/caep-sessions` is a page of the console and had no operation naming it:

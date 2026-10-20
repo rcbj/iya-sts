@@ -2659,9 +2659,21 @@ class ConsoleRuntime extends SpaClient {
     const back = this.hereWithFragment();
     this.endIdentity();
     this.discardViews();
-    await this.beginSignIn(back, {
-      login_hint: String(account.username || account.sub || ''),
-      expect: String(account.sub || '') });
+    try {
+      await this.beginSignIn(back, {
+        login_hint: String(account.username || account.sub || ''),
+        expect: String(account.sub || '') });
+    } catch (e) {
+      // THE SIGN-IN COULD NOT BE STARTED (#731): a pushed authorization
+      // request the network refused. The views are already gone, so the
+      // tab says so rather than staying blank with the rejection unhandled;
+      // the account it keeps is still the one it was, so a reload resumes
+      // that one, by its hint.
+      this.drawProblem('Switching accounts failed',
+        'The sign-in as the other account could not be started: ' +
+        String((e && e.message) || e) + '. Reload the page to carry on as ' +
+        'the account this tab was.');
+    }
   }
 
   /**

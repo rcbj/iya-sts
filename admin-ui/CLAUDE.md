@@ -3777,7 +3777,21 @@ they were (`tests/multi_account_tabs.js` 6).
   added an account to the browser (Sign in with another account, or a
   subject other than the one kept) announces `added`. Out of order or
   missed, a message costs a stale menu until the next read
-  (`tests/multi_account_tabs.js` 5).
+  (`tests/multi_account_tabs.js` 5). **A read that answers off keeps the
+  list in hand (#731)**: `fetchList()` answers off for a dropped request as
+  well as for the setting turned off, and taking it emptied the menu and
+  stopped the sign-out naming the tab's account on one network blip; the
+  setting turned off reaches the tab at its next page load, whose shell
+  says so (`tests/multi_account_concurrency_tabs.js` 5).
+* **A SWITCH WHOSE SIGN-IN CANNOT BE STARTED (#731)** — a pushed
+  authorization request the network refused — draws *Switching accounts
+  failed* rather than leaving the tab blank with the rejection unhandled:
+  the views are already gone, and the account kept is still the tab's, so
+  a reload resumes it. A renewal the network failed keeps the refresh
+  token, the subject and the account (it throws to its caller and signs
+  nobody in), and one answered after a switch is not kept
+  (`tests/multi_account_concurrency_tabs.js` 2, 3). The portal's runtime
+  is the same (`portal/CLAUDE.md`).
 * **NONE OF IT IS A BOUNDARY.** `/admin-api` decides from the token's own
   subject and session; a tab that kept a stale view would still be refused
   what its account may not do.
