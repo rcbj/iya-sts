@@ -216,10 +216,17 @@ function run(t) {
       refusedAt = i;
     }
   }
+  // THE SETTINGS IT READ, in the detail: this assertion has failed in a
+  // whole-suite run with "refused at attempt 0", which is a ceiling or a
+  // window some earlier test left changed, and the detail is what says which.
+  const limits = require('../common/config');
   t.check(refusedAt > 0 && refusedAt <= 6,
           'with no ceiling named, the sign-in limit still applies — five ' +
           'attempts and the sixth is refused',
-          'refused at attempt ' + refusedAt);
+          'refused at attempt ' + refusedAt + '; perIdentity=' +
+          limits.value('security.rateLimitPerIdentity') + ' perAddress=' +
+          limits.value('security.rateLimitPerAddress') + ' windowS=' +
+          limits.value('security.rateLimitWindowS'));
 
   websecurity.reset();
   let stillOk = 0;
