@@ -1166,6 +1166,52 @@ function carriedPacs(ticketPart) {
   return pacsOfTicket.get(ticketPart);
 }
 
+// THE SIDS A PAC CARRIES (#430): the user's and its groups' (LogonDomainId-
+// RID), the extra SIDs and the resource groups — read as they stand, for a
+// PAC already SID-filtered on its way here (S4U2Self evidence this realm
+// issued for a user of another realm), which is what a role may be granted
+// to across a trust (`common/roles.js`).
+function pacSids(pacBytes) {
+  log.debug("Entering pacSids().");
+  const out = [];
+  try {
+    const buffer = kpac.bufferOfType(kpac.parsePac(pacBytes),
+                                     kpac.TYPE.LOGON_INFO);
+    const info = buffer ? buffer.parsed : null;
+    const text = function (sid) {
+      return sid ? String(sid.text || sid) : '';
+    };
+    const add = function (one) {
+      if (one && out.indexOf(one) === -1) {
+        out.push(one);
+      }
+    };
+    if (info) {
+      const domain = text(info.logonDomainId);
+      if (domain) {
+        add(domain + '-' + info.userId);
+        add(domain + '-' + info.primaryGroupId);
+        (info.groups || []).forEach(function (g) {
+          add(domain + '-' + g.relativeId);
+        });
+      }
+      (info.extraSids || []).forEach(function (one) {
+        add(text(one.sid));
+      });
+      const resourceDomain = text(info.resourceGroupDomainSid);
+      if (resourceDomain) {
+        (info.resourceGroups || []).forEach(function (g) {
+          add(resourceDomain + '-' + g.relativeId);
+        });
+      }
+    }
+  } catch (e) {
+    log.debug('Caught in pacSids(): ' + ((e && e.message) || e));
+  }
+  log.debug("Leaving pacSids(). " + out.length);
+  return out;
+}
+
 // WHO A PAC NAMES (#430 Phase 2): PAC_CLIENT_INFO's name and UPN_DNS_INFO's
 // DNS domain name. In an S4U2Self referral TGT that is the USER, while the
 // ticket's own cname is the service that asked ([MS-SFU] 3.2.5.1.1) — the
@@ -2221,7 +2267,9 @@ async function resolveS4u(ctx) {
     targetRealm: targetAcross ? targetRoute : ctx.answeringRealm,
     // A user of another realm holds what was granted to their name or to
     // the SIDs the evidence's PAC carries once filtered (#430).
-    subjectSids: evidencePac ? (evidencePac.sids || []) : []
+    subjectSids: evidencePac ? (evidencePac.sids || [])
+      : (evidencePart.crealm !== ctx.answeringRealm
+        ? pacSids((carriedPacs(evidencePart)[0] || {}).bytes) : [])
   } : {}));
   if (!proxyDecision.allowed) {
     log.info('krb5: REFUSING S4U2Proxy — the issuance policy refused it: ' +

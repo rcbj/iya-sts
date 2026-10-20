@@ -691,6 +691,10 @@
     "en": "048452fd758565c6",
     "text": "En persons Kerberos-nycklar härleddes från deras lösenord"
   },
+  "audit.actions.krb5.trust.sid-filtered.label": {
+    "en": "0cb1d7c8c214f1f1",
+    "text": "SID-filtrering tillämpades på en biljett som korsade ett Kerberos-förtroende"
+  },
   "audit.actions.admin.krb5.keys.cleared.label": {
     "en": "a9405f7ee523fd30",
     "text": "En operatör rensade någons Kerberos-nycklar"

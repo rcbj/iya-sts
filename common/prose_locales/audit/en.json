@@ -172,6 +172,7 @@
   "audit.actions.authn.mail-factor.refused.label": "An emailed sign-in code or link was refused",
   "audit.actions.admin.truststore.change.label": "A client-certificate trust anchor was added or removed",
   "audit.actions.krb5.keys.derived.label": "A person's Kerberos keys were derived from their password",
+  "audit.actions.krb5.trust.sid-filtered.label": "A ticket that crossed a Kerberos trust was SID-filtered",
   "audit.actions.admin.krb5.keys.cleared.label": "An operator cleared somebody's Kerberos keys",
   "audit.actions.admin.krb5.service.created.label": "A Kerberos service principal was created with a random key",
   "audit.actions.admin.krb5.service.rotated.label": "A Kerberos service principal's key was rotated",
