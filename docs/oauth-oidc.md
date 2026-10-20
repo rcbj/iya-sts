@@ -305,14 +305,17 @@ again for an unknown `kid` at most every `oauth2.clientJwksRefetchS`. The mutual
 described in [OAuth security](oauth-security.md#mutual-tls-rfc-8705).
 
 **An application may hold several client secrets, each with its own expiry.**
-The Credentials tab lists them with an Expires column; **Add a secret** mints
-one (with an optional lifetime in days and a description), **Remove** takes one away at
-once, and up to `oauth2.clientSecretsMax` (5 by default) are held. Any
+The Credentials tab lists them with an Expires column; **Add a client secret**
+mints one (with an optional lifetime in days and a description), **Remove**
+takes one away at once, and up to `oauth2.clientSecretsMax` (5 by default) are held. Any
 unexpired secret authenticates at the token endpoint; the newest unexpired one
 is what this service signs and encrypts with where a client secret is the key
 (HS256 ID Tokens, JARM). A secret past its expiry is refused in product mode.
-**Rotate secret** adds a new one and keeps the old ones working for
-`oauth2.clientSecretOverlapS`; **Regenerate secret** replaces them all at once.
+**Rotate the client secret** adds a new one and keeps the old ones working for
+`oauth2.clientSecretOverlapS`; **Regenerate: replace every secret** replaces
+them all at once. The first secret's lifetime can be given when the
+application is created (#394): **Lifetime (days)** beside **Generate Secret**
+on the create form, or `lifetimeDays` on `POST /admin-api/applications/create`.
 A daily scheduler job warns about secrets close to expiry and removes expired
 ones an application holds a live secret beside.
 
