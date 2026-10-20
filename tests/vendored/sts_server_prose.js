@@ -145,9 +145,20 @@ function shapeOf(value, path, out) {
 // `/audit`'s `knownActors` and `byAction` are maps KEYED BY DATA — who has
 // acted, which actions ran — so a key appears between the reads whenever a
 // new actor or action does (cluster, ccf5741a: knownActors.sts-management-api
-// in one read only).
+// in one read only). `/ldap/service`'s
+// `persistence.replication.retention.lastTrim` is the record of the change
+// log's last trim (persistence/persistence_replication.js), held by the
+// process that answers: null in one that has not trimmed — every process
+// but the scheduler's leader, and the leader until the job first runs —
+// and `{ at, error, … }` after, whose members differ between a trim that
+// worked and one that failed. On a cluster the two reads are answered by
+// whichever node the load balancer picks, so one read had it and the other
+// did not (2026-10-20, batch 10); a single node changes only if the first
+// trim lands between them.
 const DATA = { "/audit": ["events", "knownActors", "byAction"],
-               "/node-health": ["nodes[].view.processes.unanswered"] };
+               "/node-health": ["nodes[].view.processes.unanswered"],
+               "/ldap/service":
+                 ["persistence.replication.retention.lastTrim"] };
 
 // Deletes `path` (dotted, `name[]` descending into every item) from `value`.
 function dropPath(value, path) {
