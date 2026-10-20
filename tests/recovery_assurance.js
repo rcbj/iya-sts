@@ -44,6 +44,9 @@
 //   F. UNDER `operator-only`: a reset link the person asked for is refused
 //      at its spend (403, STS-AUTHN-0380) and an administrator's is not;
 //      the forgot-password request mails nothing to a passkey holder.
+//   G. /admin-api's save-passkey-policy takes the row (rule 7's parity), a
+//      value outside the three is refused, and a body that leaves it out —
+//      every caller written before it existed — is accepted.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -456,6 +459,42 @@ function childMain() {
            'F3. the forgot-password request mails nothing to a passkey ' +
            'holder, answers its one sentence, and still mails somebody ' +
            'holding none', refused.outcome + ' / ' + allowed.outcome);
+
+      // ==================================================================
+      // G. THE MANAGEMENT API TAKES THE ROW
+      // ==================================================================
+      const adminApi = require(ROOT + '/mgmt-api/admin_api');
+      let target = null;
+      adminApi.ROUTES.forEach(function (entry) {
+        (entry.actions || []).forEach(function (one) {
+          if (one.action === 'save-passkey-policy' && entry.route) {
+            target = { route: entry.route, action: one.action,
+                       schema: one.requestBody || {} };
+          }
+        });
+      });
+      const askApi = function (body) {
+        return adminApi.checkRequestBody({
+          __adminApiRoute: target.route,
+          params: { action: target.action },
+          body: JSON.stringify(body),
+          headers: { 'content-type': 'application/json' } });
+      };
+      const whole = Object.assign({ profile: 'default' },
+                                  passkeyPolicy.DEFAULTS);
+      const without = Object.assign({}, whole);
+      delete without.recoveryAssurance;
+      const taken = target && askApi(Object.assign({}, whole,
+        { recoveryAssurance: 'operator-only' }));
+      const odd = target && askApi(Object.assign({}, whole,
+        { recoveryAssurance: 'sometimes' }));
+      const old = target && askApi(without);
+      note(!!target && !!(target.schema.properties || {}).recoveryAssurance &&
+           (target.schema.required || []).indexOf('recoveryAssurance') < 0 &&
+           taken.ok && !odd.ok && old.ok,
+           'G1. save-passkey-policy takes recoveryAssurance, refuses a value ' +
+           'outside the three, and accepts a body without it',
+           JSON.stringify([taken, odd, old]).slice(0, 300));
 
       passkeyPolicy.reset('default');
       server.close();

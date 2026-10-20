@@ -1624,7 +1624,11 @@ class AdminApi {
         requestBody: {
           type: 'object',
           properties: properties,
-          required: module.FIELDS.map(function (field) {
+          // A row marked `optional` (the passkey policy's
+          // recoveryAssurance, #724) may be left out and keeps its default.
+          required: module.FIELDS.filter(function (field) {
+            return !field.optional;
+          }).map(function (field) {
             return field.key;
           }),
           examples: [Object.assign({ profile: module.DEFAULT_PROFILE },
