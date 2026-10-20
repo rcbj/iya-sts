@@ -4171,6 +4171,14 @@
     "en": "f0edd885053c8b09",
     "text": "Hur nyligen en person måste ha autentiserat sig för att ansluta en konsument- eller social leverantör till sitt konto på portalens sida Anslutna konton (#565). Äldre än så, och de ombeds logga in igen först: en anslutning låter leverantören logga in dem från och med då."
   },
+  "federation.consumerProvisionCap|label": {
+    "en": "c93ac16ed967542f",
+    "text": "Konsumentleverantörer: konton som var och en får skapa"
+  },
+  "federation.consumerProvisionCap|description": {
+    "en": "3e7e50d4c4690e0e",
+    "text": "Hur många personer en konsument- eller social leverantörs relation får skapa, om inte relationens eget fedProvisionCap säger annat. Skrivs på en konsumentrelation när den skapas, och används för en vars fedProvisionCap är tomt. Vid taket nekas en nykomling (STS-FED-0090) och en person som redan är ansluten loggar fortfarande in. En företagspartner påverkas inte: dess tomma fedProvisionCap är obegränsat."
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "Gör bakkanalsbegäranden till partner"

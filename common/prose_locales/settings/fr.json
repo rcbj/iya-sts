@@ -4171,6 +4171,14 @@
     "en": "f0edd885053c8b09",
     "text": "Depuis combien de temps au plus une personne doit s’être authentifiée pour connecter un fournisseur grand public ou social à son compte sur la page Comptes connectés du portail (#565). Au-delà, il lui est demandé de se reconnecter d’abord : une connexion permet au fournisseur de la connecter à partir de ce moment."
   },
+  "federation.consumerProvisionCap|label": {
+    "en": "c93ac16ed967542f",
+    "text": "Fournisseurs grand public : comptes que chacun peut créer"
+  },
+  "federation.consumerProvisionCap|description": {
+    "en": "3e7e50d4c4690e0e",
+    "text": "Combien de personnes la relation d’un fournisseur grand public ou social peut créer, sauf si le fedProvisionCap de la relation en dispose autrement. Inscrit sur une relation grand public lors de sa création, et utilisé pour une relation dont le fedProvisionCap est vide. Au plafond, un nouveau venu est refusé (STS-FED-0090) et une personne déjà connectée se connecte toujours. Un partenaire d’entreprise n’est pas concerné : son fedProvisionCap vide est illimité."
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "Effectuer des requêtes par canal de retour vers les partenaires"

@@ -259,6 +259,14 @@
     "en": "0bfd5e67a3f0fdc2",
     "text": "Una superficie alojada renovó sus tokens dentro de la misma sesión"
   },
+  "audit.actions.authn.session.bound.label": {
+    "en": "027a6091ae35ff05",
+    "text": "Una sesión de inicio de sesión único se vinculó a una clave que guarda su navegador"
+  },
+  "audit.actions.authn.session.refreshed.label": {
+    "en": "bbbad25d367ffcdf",
+    "text": "La cookie de una sesión vinculada al dispositivo se renovó con una prueba de su clave"
+  },
   "audit.actions.logout.global.label": {
     "en": "db32c1466e054343",
     "text": "Se terminó todo lo que se tenía para una identidad, en todos los protocolos"
@@ -1142,6 +1150,14 @@
   "audit.actions.federation.unlink.label": {
     "en": "a5c85407fff2c148",
     "text": "Se quitó un vínculo de federación de una persona"
+  },
+  "audit.actions.federation.connected.label": {
+    "en": "3466387fa24f3d55",
+    "text": "Una persona conectó un proveedor de consumo o social a su cuenta"
+  },
+  "audit.actions.federation.provider-notification.label": {
+    "en": "bf89c99cd7734f16",
+    "text": "Se aceptó una notificación de un proveedor de consumo sobre una de sus personas"
   },
   "audit.actions.federation.group-ignored.label": {
     "en": "a64e9612670b278c",

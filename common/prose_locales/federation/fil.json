@@ -312,8 +312,8 @@
     "text": "BUMUO NG MGA GROUP MEMBERSHIP MULA SA TOKEN NG PARTNER (#358). NAKA-OFF bilang default, at off ang ibig sabihin ng walang value. Kapag naka-on, bawat pangalan ng group na dala ng assertion ay nagiging membership ng taong na-provision ng sign-in na ito, sa bawat matagumpay na sign-in. Minamarkahan ng relationship na ito ang group na ginawa sa ganitong paraan. Ang pangalang umiiral na at hindi minarkahan bilang sa relationship na ito ay hindi pinapansin, ina-audit (STS-FED-0161) at nagpapatuloy ang sign-in. Ang group na nagbibigay ng isang bagay dahil lang sa pagiging miyembro nito — isang group ng console, ang member group ng isang role, isang owner group, isang group na pinapangalanan ng isang policy — ay hindi kailanman ginagawa o sinasalihan (STS-FED-0164). Hindi nito natutugunan ang fedSubjectGroup: tumatakbo ang patakarang iyon bago may maidagdag."
   },
   "fed.schema.attributes.fedProvisionCap.what": {
-    "en": "4137e80dd72991e2",
-    "text": "ILANG TAO ANG MAAARING GAWIN NG RELATIONSHIP NA ITO. Walang limitasyon kapag walang laman o 0. Sa cap, tinatanggihan ang bagong subject ng STS-FED-0090; nakakapag-sign in pa rin ang taong naka-link na. Ang ldap.maxEntries pa rin ang kisame ng realm. Hindi ito bilang ng mga sign-in — fedUsers iyon."
+    "en": "6807b5eb2cff8e4f",
+    "text": "ILANG TAO ANG PUWEDENG GAWIN NG RELATIONSHIP NA ITO. Walang limitasyon ang 0. Walang limitasyon ang walang laman para sa isang enterprise partner; ang relationship ng isang CONSUMER o social provider ay hindi kailanman walang limitasyon bilang default: ginagawa ito na may federation.consumerProvisionCap (10000 maliban kung iba ang sabi ng realm) na nakasulat dito, at ang walang lamang value ay nangangahulugan ng setting na iyon. Sa cap, tinatanggihan ang bagong subject STS-FED-0090; nakakapag-sign in pa rin ang taong naka-link na. Ang ldap.maxEntries pa rin ang kisame ng realm. Hindi ito bilang ng mga sign-in — iyon ang fedUsers."
   },
   "fed.schema.attributes.fedProvisionIdleMinutes.what": {
     "en": "29c243b9d96fac47",

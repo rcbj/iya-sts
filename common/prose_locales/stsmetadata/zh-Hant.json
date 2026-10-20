@@ -2303,6 +2303,14 @@
     "en": "ea2b1532d05c3e5f",
     "text": "啟動為其保留了合作夥伴已驗證回應的聯合工作階段——僅在此人於此處出示其持有的第二因素之後"
   },
+  "stsmetadata.endpoints./federation/profile/:handle.what": {
+    "en": "6e737993e1d08300",
+    "text": "當此領域的屬性原則要求一個提供者未傳送的值時（STS-FED-0188，產品模式），消費者或社群提供者的新來者會被傳送到這裡：GET 顯示一個只詢問所缺值的表單，POST 接收這些值。提供者經過驗證的回答以一次性控制代碼保存在伺服器端，並由 Cookie 繫結到它抵達的瀏覽器（STS-FED-0111），表單帶有與之一同保存的權杖（STS-FED-0189）。其屬性不接受的值會再次顯示表單（STS-FED-0190），最多五次（STS-FED-0191）。隨後登入依其開始的方式完成：重新詢問主體決定、建立問題與簽發原則。輸入的位址未經驗證。原則中的任何內容都不會放寬。"
+  },
+  "stsmetadata.endpoints./federation/profile/:handle.effect": {
+    "en": "1924cb8d61d0bb51",
+    "text": "在消費者提供者的新來者提供了領域所需的資訊後，建立其登入的帳戶"
+  },
   "stsmetadata.endpoints./federation/notifications/:id.what": {
     "en": "898b7c35c721538f",
     "text": "Sign in with Apple 的伺服器對伺服器通知，適用於其提供者設定檔接收此類通知的關係。Apple 以 POST 傳送 { payload }，這是一個只用該關係的金鑰驗證的 JWT——簽發者為 Apple，對象為用戶端 ID——並依其 jti 只接受一次（否則為 STS-FED-0186）。其事件指明類型與此人的主體：consent-revoked 與 account-delete 會移除該主體透過此關係的連結，但絕不刪除項目；email-disabled 與 email-enabled 會被記錄。對於不接收通知的關係，回傳 404（STS-FED-0187）。"
@@ -3451,10 +3459,6 @@
     "en": "874b55535d57222c",
     "text": "此處每個協定都會將人送往的登入畫面上的第二要素：以真實安全金鑰進行的註冊與判斷提示儀式，證明與驗證器資料都會經過檢查，而不只是剖析。"
   },
-  "stsmetadata.protocols.Device Bound Session Credentials.what": {
-    "en": "83d1f60fe8862d70",
-    "text": "綁定到瀏覽器所持金鑰的登入工作階段，可行時由 TPM 保護。複製的工作階段 cookie 會在其旁邊的短期綁定 cookie 過期時失效，因為只有該金鑰的證明才能更新它；任何其他金鑰的證明都會結束工作階段。預設關閉，依領域設定；不支援它的瀏覽器保留一般工作階段。"
-  },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "20b73dffc821e4a2",
     "text": "此處每個協定都會將人送往的登入畫面上的另一種第二要素，也是除 Kerberos 票證外，本服務唯一真正「檢查」的認證：代碼由共用密鑰與時鐘計算並比較，在兩種模式下皆然，並強制執行 RFC 6238 section 5.2 的只接受一次規則。註冊是本伺服器繪製的 QR code，於 /portal/mfa 或使用啟用連結時進行；營運者在 /admin/users 上該人自己的列中清除註冊，而 /admin/totp 是設定此機制的地方。"
@@ -3466,6 +3470,10 @@
   "stsmetadata.protocols.Email codes and links.what": {
     "en": "735e17b751640f86",
     "text": "「不是協定」。寄送至一個人「已驗證」地址的六位數代碼或一次性連結，在 /admin/policies 上的驗證原則允許時作為第一或第二要素——預設「關閉」，因為 NIST SP 800-63B-4 section 3.1.3.1 規定電子郵件「不得」用於頻外驗證。每個密鑰都是登入步驟上的 scrypt 雜湊，最多有效十分鐘，在叢集中只能用掉一次；連結只會在開始登入的瀏覽器中完成；一個人在 /portal/mfa 上選擇加入第二要素，並在連續失敗 100 次後失去它（section 3.2.2）。amr \"otp\"（RFC 8176 沒有電子郵件的值）；它永遠不會滿足風險升級驗證，而簽發原則可以拒絕建立在其上的工作階段（refuseEmailFactor）。"
+  },
+  "stsmetadata.protocols.Device Bound Session Credentials.what": {
+    "en": "83d1f60fe8862d70",
+    "text": "綁定到瀏覽器所持金鑰的登入工作階段，可行時由 TPM 保護。複製的工作階段 cookie 會在其旁邊的短期綁定 cookie 過期時失效，因為只有該金鑰的證明才能更新它；任何其他金鑰的證明都會結束工作階段。預設關閉，依領域設定；不支援它的瀏覽器保留一般工作階段。"
   },
   "stsmetadata.protocols.Verifiable Credentials (OID4VCI / OID4VP).what": {
     "en": "6ea91ae6b9e69fde",

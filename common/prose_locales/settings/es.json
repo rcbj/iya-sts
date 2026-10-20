@@ -4171,6 +4171,14 @@
     "en": "f0edd885053c8b09",
     "text": "Hace cuánto tiempo como máximo debe haberse autenticado una persona para conectar un proveedor de consumo o social a su cuenta en la página Cuentas conectadas del portal (#565). Si hace más, se le pide que inicie sesión de nuevo primero: una conexión permite al proveedor iniciar su sesión a partir de entonces."
   },
+  "federation.consumerProvisionCap|label": {
+    "en": "c93ac16ed967542f",
+    "text": "Proveedores de consumo: cuentas que cada uno puede crear"
+  },
+  "federation.consumerProvisionCap|description": {
+    "en": "3e7e50d4c4690e0e",
+    "text": "Cuántas personas puede crear la relación de un proveedor de consumo o social, salvo que el fedProvisionCap de la relación diga otra cosa. Se escribe en una relación de consumo al crearla, y se usa para una cuyo fedProvisionCap esté vacío. En el límite se rechaza a un recién llegado (STS-FED-0090) y una persona ya conectada sigue iniciando sesión. Un socio empresarial no se ve afectado: su fedProvisionCap vacío es ilimitado."
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "Hacer solicitudes por canal secundario a los socios"

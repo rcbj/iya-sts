@@ -259,6 +259,14 @@
     "en": "0bfd5e67a3f0fdc2",
     "text": "En värdbaserad yta förnyade sina tokens inom samma session"
   },
+  "audit.actions.authn.session.bound.label": {
+    "en": "027a6091ae35ff05",
+    "text": "En sessionen för enkel inloggning bands till en nyckel som dess webbläsare har"
+  },
+  "audit.actions.authn.session.refreshed.label": {
+    "en": "bbbad25d367ffcdf",
+    "text": "Kakan för en enhetsbunden session förnyades med ett bevis på dess nyckel"
+  },
   "audit.actions.logout.global.label": {
     "en": "db32c1466e054343",
     "text": "Allt som hölls för en identitet avslutades, i varje protokoll"
@@ -1142,6 +1150,14 @@
   "audit.actions.federation.unlink.label": {
     "en": "a5c85407fff2c148",
     "text": "En federationslänk togs bort från en person"
+  },
+  "audit.actions.federation.connected.label": {
+    "en": "3466387fa24f3d55",
+    "text": "En person anslöt en konsument- eller social leverantör till sitt konto"
+  },
+  "audit.actions.federation.provider-notification.label": {
+    "en": "bf89c99cd7734f16",
+    "text": "En konsumentleverantörs avisering om en av dess personer godtogs"
   },
   "audit.actions.federation.group-ignored.label": {
     "en": "a64e9612670b278c",

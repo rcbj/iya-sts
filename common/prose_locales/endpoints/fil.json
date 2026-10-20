@@ -1295,6 +1295,10 @@
     "en": "1b454ff71565d1ab",
     "text": "Tapusin ang isang federated na pag-sign in pagkatapos ng step-up dahil sa risk"
   },
+  "endpoints.route./federation/profile/:handle.name": {
+    "en": "6f866f6622379301",
+    "text": "Ibigay ang mga detalyeng hindi ipinadala ng isang consumer provider (#729)"
+  },
   "endpoints.route./federation/notifications/:id.name": {
     "en": "4111365a4c05f259",
     "text": "Server-to-server na notification ng isang provider (#565)"

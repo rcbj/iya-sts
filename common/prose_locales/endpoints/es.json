@@ -1295,6 +1295,10 @@
     "en": "1b454ff71565d1ab",
     "text": "Terminar un inicio de sesión federado tras una autenticación reforzada por riesgo"
   },
+  "endpoints.route./federation/profile/:handle.name": {
+    "en": "6f866f6622379301",
+    "text": "Indicar los datos que un proveedor de consumo no envió (#729)"
+  },
   "endpoints.route./federation/notifications/:id.name": {
     "en": "4111365a4c05f259",
     "text": "Notificación de servidor a servidor de un proveedor (#565)"

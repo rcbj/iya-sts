@@ -4171,6 +4171,14 @@
     "en": "f0edd885053c8b09",
     "text": "在入口網站的「已連結的帳戶」頁面上將消費者或社群提供者連結到自己的帳戶時，此人最近一次驗證須在多少分鐘之內（#565）。超過這個時間，會先要求其重新登入：連結之後，該提供者即可讓此人登入。"
   },
+  "federation.consumerProvisionCap|label": {
+    "en": "c93ac16ed967542f",
+    "text": "消費者提供者：每個可建立的帳戶數"
+  },
+  "federation.consumerProvisionCap|description": {
+    "en": "3e7e50d4c4690e0e",
+    "text": "消費者或社群提供者的關係可以建立多少人，除非該關係自己的 fedProvisionCap 另有設定。建立消費者關係時寫入其中，並用於 fedProvisionCap 為空的關係。達到上限時，新來者會被拒絕（STS-FED-0090），已連結的人仍可登入。企業合作夥伴不受影響：其為空的 fedProvisionCap 表示不限。"
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "向夥伴發出後端通道要求"

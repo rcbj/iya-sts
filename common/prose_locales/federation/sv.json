@@ -312,8 +312,8 @@
     "text": "BYGG GRUPPMEDLEMSKAP FRÅN PARTNERNS TOKEN (#358). AV som standard, och ett saknat värde betyder av. På blir varje gruppnamn som intyget bär ett medlemskap för personen som den här inloggningen etablerade, vid varje lyckad inloggning. En grupp som skapas så markeras med den här relationen. Ett namn som redan finns och inte är markerat som den här relationens ignoreras, granskningsloggas (STS-FED-0161) och inloggningen fortsätter. En grupp som ger något bara genom medlemskapet — en konsolgrupp, en rolls medlemsgrupp, en ägargrupp, en grupp som en policy namnger — skapas eller ansluts aldrig (STS-FED-0164). Det uppfyller inte fedSubjectGroup: den regeln körs innan någon läggs till."
   },
   "fed.schema.attributes.fedProvisionCap.what": {
-    "en": "4137e80dd72991e2",
-    "text": "HUR MÅNGA PERSONER DEN HÄR RELATIONEN FÅR SKAPA. Tomt eller 0 är obegränsat. Vid taket avvisas ett nytt subjekt med STS-FED-0090; en person som redan är länkad loggar fortfarande in. ldap.maxEntries är fortfarande sfärens tak. Inte ett antal inloggningar — det är fedUsers."
+    "en": "6807b5eb2cff8e4f",
+    "text": "HUR MÅNGA PERSONER DEN HÄR RELATIONEN FÅR SKAPA. 0 är obegränsat. Tomt är obegränsat för en företagspartner; relationen för en KONSUMENT- eller social leverantör är aldrig obegränsad som standard: den skapas med federation.consumerProvisionCap (10000 om sfären inte säger annat) skrivet här, och ett tomt värde betyder den inställningen. Vid taket nekas ett nytt subjekt STS-FED-0090; en person som redan är länkad loggar fortfarande in. ldap.maxEntries är fortfarande sfärens tak. Inte ett antal inloggningar – det är fedUsers."
   },
   "fed.schema.attributes.fedProvisionIdleMinutes.what": {
     "en": "29c243b9d96fac47",

@@ -259,6 +259,14 @@
     "en": "0bfd5e67a3f0fdc2",
     "text": "托管界面在同一会话内续订了其令牌"
   },
+  "audit.actions.authn.session.bound.label": {
+    "en": "027a6091ae35ff05",
+    "text": "一个单点登录会话已绑定到其浏览器持有的密钥"
+  },
+  "audit.actions.authn.session.refreshed.label": {
+    "en": "bbbad25d367ffcdf",
+    "text": "一个绑定设备的会话的 Cookie 已凭其密钥的证明续期"
+  },
   "audit.actions.logout.global.label": {
     "en": "db32c1466e054343",
     "text": "一个身份持有的一切在所有协议中均被结束"
@@ -1142,6 +1150,14 @@
   "audit.actions.federation.unlink.label": {
     "en": "a5c85407fff2c148",
     "text": "从某人身上移除了联合链接"
+  },
+  "audit.actions.federation.connected.label": {
+    "en": "3466387fa24f3d55",
+    "text": "有人将一个消费者或社交提供方连接到了自己的账户"
+  },
+  "audit.actions.federation.provider-notification.label": {
+    "en": "bf89c99cd7734f16",
+    "text": "已接受消费者提供方关于其某个用户的通知"
   },
   "audit.actions.federation.group-ignored.label": {
     "en": "a64e9612670b278c",

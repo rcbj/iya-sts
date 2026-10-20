@@ -1295,6 +1295,10 @@
     "en": "1b454ff71565d1ab",
     "text": "在因風險而加強驗證後完成聯合登入"
   },
+  "endpoints.route./federation/profile/:handle.name": {
+    "en": "6f866f6622379301",
+    "text": "提供消費者提供者未傳送的資訊（#729）"
+  },
   "endpoints.route./federation/notifications/:id.name": {
     "en": "4111365a4c05f259",
     "text": "提供者的伺服器對伺服器通知（#565）"

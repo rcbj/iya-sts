@@ -323,6 +323,7 @@
   "endpoints.route./federation/acs/:id.name": "Assertion consumer service / wreply / redirect_uri",
   "endpoints.route./federation/link/:handle.name": "Link a partner's subject at first sign-in",
   "endpoints.route./federation/stepup/:handle.name": "Finish a federated sign-in after a step-up on risk",
+  "endpoints.route./federation/profile/:handle.name": "Give the details a consumer provider did not send (#729)",
   "endpoints.route./federation/notifications/:id.name": "A provider's server-to-server notification (#565)",
   "endpoints.route./federation/slo/:id.name": "A partner's sign-out, in a browser (#167)",
   "endpoints.route./federation/backchannel-logout/:id.name": "OpenID Connect Back-Channel Logout, as a relying party (#167)",

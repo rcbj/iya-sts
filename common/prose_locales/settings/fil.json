@@ -4171,6 +4171,14 @@
     "en": "f0edd885053c8b09",
     "text": "Gaano kabago dapat nagpatunay ang isang tao para maikonekta ang isang consumer o social na provider sa kanyang account sa pahinang Mga nakakonektang account ng portal (#565). Kung mas luma, hihilingin muna sa kanila na mag-sign in muli: pinapayagan ng koneksyon ang provider na i-sign in sila mula noon."
   },
+  "federation.consumerProvisionCap|label": {
+    "en": "c93ac16ed967542f",
+    "text": "Mga consumer provider: mga account na puwedeng gawin ng bawat isa"
+  },
+  "federation.consumerProvisionCap|description": {
+    "en": "3e7e50d4c4690e0e",
+    "text": "Ilang tao ang puwedeng gawin ng relationship ng isang consumer o social provider, maliban kung iba ang sabi ng sariling fedProvisionCap ng relationship. Isinusulat sa isang consumer relationship kapag ginawa ito, at ginagamit para sa isang walang laman ang fedProvisionCap. Sa cap, tinatanggihan ang bagong dating (STS-FED-0090) at nakakapag-sign in pa rin ang taong nakakonekta na. Hindi apektado ang isang enterprise partner: walang limitasyon ang walang laman nitong fedProvisionCap."
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "Gumawa ng mga back-channel request sa mga partner"

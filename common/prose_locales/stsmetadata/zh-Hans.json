@@ -2303,6 +2303,14 @@
     "en": "ea2b1532d05c3e5f",
     "text": "启动为其保留了合作方已验证响应的联合会话——仅在此人于此处出示其持有的第二因素之后"
   },
+  "stsmetadata.endpoints./federation/profile/:handle.what": {
+    "en": "6e737993e1d08300",
+    "text": "当此领域的属性策略要求一个提供方未发送的值时（STS-FED-0188，产品模式），消费者或社交提供方的新来者会被发送到这里：GET 显示一个只询问所缺值的表单，POST 接收这些值。提供方经过验证的回答以一次性句柄保存在服务器端，并由 Cookie 绑定到它到达的浏览器（STS-FED-0111），表单带有与之一同保存的令牌（STS-FED-0189）。其属性不接受的值会再次显示表单（STS-FED-0190），最多五次（STS-FED-0191）。随后登录按其开始的方式完成：重新询问主体决定、创建问题和签发策略。输入的地址未经验证。策略中的任何内容都不会放宽。"
+  },
+  "stsmetadata.endpoints./federation/profile/:handle.effect": {
+    "en": "1924cb8d61d0bb51",
+    "text": "在消费者提供方的新来者提供了领域所需的信息后，创建其登录的账户"
+  },
   "stsmetadata.endpoints./federation/notifications/:id.what": {
     "en": "898b7c35c721538f",
     "text": "Sign in with Apple 的服务器到服务器通知，适用于其提供方配置文件接收此类通知的关系。Apple 以 POST 发送 { payload }，这是一个只用该关系的密钥验证的 JWT——签发者为 Apple，受众为客户端 ID——并按其 jti 只接受一次（否则为 STS-FED-0186）。其事件指明类型和此人的主体：consent-revoked 和 account-delete 会移除该主体通过此关系的链接，但绝不删除条目；email-disabled 和 email-enabled 会被记录。对于不接收通知的关系，返回 404（STS-FED-0187）。"
@@ -3451,10 +3459,6 @@
     "en": "874b55535d57222c",
     "text": "此处每个协议都会将人送往的登录界面上的第二因素：针对真实安全密钥的注册和断言仪式，证明和身份验证器数据都会被检查，而不仅仅是解析。"
   },
-  "stsmetadata.protocols.Device Bound Session Credentials.what": {
-    "en": "83d1f60fe8862d70",
-    "text": "绑定到浏览器所持密钥的单点登录会话，在可能时由 TPM 保护。复制的会话 cookie 会在其旁边的短期绑定 cookie 过期时失效，因为只有该密钥的证明才能续订它；任何其他密钥的证明都会结束会话。默认关闭，按领域设置；不支持它的浏览器保留普通会话。"
-  },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "20b73dffc821e4a2",
     "text": "此处每个协议都会将人送往的登录界面上的另一种第二因素，也是本服务中除 Kerberos 票据外唯一真正检查的凭据：代码根据共享密钥和时钟计算并比较，在两种模式下都是如此，并强制执行 RFC 6238 section 5.2 的只接受一次规则。注册方式是本服务器绘制的二维码，在 /portal/mfa 上或使用激活链接时进行；运营人员在 /admin/users 上此人自己的行中清除它，/admin/totp 是配置该机制的地方。"
@@ -3466,6 +3470,10 @@
   "stsmetadata.protocols.Email codes and links.what": {
     "en": "735e17b751640f86",
     "text": "它不是协议。一个邮寄到此人已验证地址的六位代码或一次性链接，在 /admin/policies 上的认证策略允许时作为第一或第二因素——默认关闭，因为 NIST SP 800-63B-4 section 3.1.3.1 规定电子邮件不得用于带外认证。每个秘密都以 scrypt 哈希形式保存在登录步骤上，有效期最长十分钟，在集群中只能用掉一次；链接只在发起登录的浏览器中完成；此人在 /portal/mfa 上选择启用第二因素，连续失败 100 次后会失去它（section 3.2.2）。amr 为 \"otp\"（RFC 8176 没有电子邮件的值）；它永远满足不了风险升级认证，颁发策略可以拒绝建立在它之上的会话（refuseEmailFactor）。"
+  },
+  "stsmetadata.protocols.Device Bound Session Credentials.what": {
+    "en": "83d1f60fe8862d70",
+    "text": "绑定到浏览器所持密钥的单点登录会话，在可能时由 TPM 保护。复制的会话 cookie 会在其旁边的短期绑定 cookie 过期时失效，因为只有该密钥的证明才能续订它；任何其他密钥的证明都会结束会话。默认关闭，按领域设置；不支持它的浏览器保留普通会话。"
   },
   "stsmetadata.protocols.Verifiable Credentials (OID4VCI / OID4VP).what": {
     "en": "6ea91ae6b9e69fde",

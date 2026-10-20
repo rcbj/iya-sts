@@ -2303,6 +2303,14 @@
     "en": "ea2b1532d05c3e5f",
     "text": "STARTAR den federerade sessionen som partnerns verifierade svar hölls för — först efter en andra faktor som hålls HÄR, som den personen"
   },
+  "stsmetadata.endpoints./federation/profile/:handle.what": {
+    "en": "6e737993e1d08300",
+    "text": "Dit en konsument- eller social leverantörs nykomling skickas när sfärens attributpolicy kräver ett värde som leverantören inte skickade (STS-FED-0188), i produktläge: GET visar ett formulär som frågar efter exakt de saknade värdena, POST tar emot dem. Leverantörens verifierade svar hålls på servern under ett engångshandtag som en kaka binder till webbläsaren det kom till (STS-FED-0111), och formuläret bär en token som hålls med det (STS-FED-0189). Ett värde som dess attribut inte godtar visar formuläret igen (STS-FED-0190), högst fem gånger (STS-FED-0191). Sedan avslutas inloggningen som den började: subjektsbeslutet, frågan om att skapa kontot och utfärdandepolicyn ställs igen. En inskriven adress är overifierad. Ingenting i policyn mildras."
+  },
+  "stsmetadata.endpoints./federation/profile/:handle.effect": {
+    "en": "1924cb8d61d0bb51",
+    "text": "SKAPAR kontot som en konsumentleverantörs nykomling loggar in på, när de har angett det sfären kräver"
+  },
   "stsmetadata.endpoints./federation/notifications/:id.what": {
     "en": "898b7c35c721538f",
     "text": "Meddelanden från server till server från Sign in with Apple, för en relation vars leverantörsprofil tar emot dem. Apple skickar med POST { payload }, en JWT verifierad mot relationens nycklar och inget annat — utfärdare Apple, målgrupp klient-id:t — och godtagen en enda gång efter sitt jti (annars STS-FED-0186). Dess händelser anger en typ och personens subjekt: consent-revoked och account-delete tar bort det subjektets länk genom denna relation, aldrig posten, och email-disabled och email-enabled registreras. 404 (STS-FED-0187) för en relation som inte tar emot några."
@@ -3451,10 +3459,6 @@
     "en": "874b55535d57222c",
     "text": "En andra faktor på den inloggningsskärm som varje protokoll här skickar en person till: registrerings- och intygsceremonier mot en verklig säkerhetsnyckel, där intyget och autentiserardata kontrolleras snarare än bara tolkas."
   },
-  "stsmetadata.protocols.Device Bound Session Credentials.what": {
-    "en": "83d1f60fe8862d70",
-    "text": "Inloggningssessionen bunden till en nyckel som webbläsaren innehar, TPM-skyddad där det går. En kopierad sessionscookie slutar fungera när den kortlivade bundna cookien bredvid den går ut, eftersom bara ett bevis för den nyckeln förnyar den; ett bevis från någon annan nyckel avslutar sessionen. Av som standard och per sfär; en webbläsare utan stöd behåller en vanlig session."
-  },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "20b73dffc821e4a2",
     "text": "Den andra andra faktorn på den inloggningsskärm som varje protokoll här skickar en person till, och den enda autentiseringsuppgiften förutom en Kerberos-biljett som den här tjänsten verkligen KONTROLLERAR: koden beräknas från den delade hemligheten och klockan och jämförs, i båda lägena, med regeln om godkännande en gång i RFC 6238 avsnitt 5.2 upprätthållen. Registrering sker med en QR-kod som den här servern ritat, på /portal/mfa eller medan en aktiveringslänk förbrukas; personens egen rad på /admin/users är där en operatör rensar en, och /admin/totp är där mekanismen konfigureras."
@@ -3466,6 +3470,10 @@
   "stsmetadata.protocols.Email codes and links.what": {
     "en": "735e17b751640f86",
     "text": "INTE ETT PROTOKOLL. En sexsiffrig kod eller en engångslänk som skickas med e-post till en persons VERIFIERADE adress, som första eller andra faktor där autentiseringspolicyn på /admin/policies tillåter det — AV som standard, eftersom NIST SP 800-63B-4 avsnitt 3.1.3.1 säger att e-post SKA INTE användas för out-of-band-autentisering. Varje hemlighet är en scrypt-hash på inloggningssteget, giltig i högst tio minuter, förbrukad en gång för klustret; en länk slutförs endast i webbläsaren som startade inloggningen; en person väljer den andra faktorn på /portal/mfa och förlorar den efter 100 misslyckanden i följd (avsnitt 3.2.2). amr \"otp\" (RFC 8176 har inget värde för e-post); den möter aldrig en riskbaserad step-up, och utfärdandepolicyn kan vägra en session som vilar på en sådan (refuseEmailFactor)."
+  },
+  "stsmetadata.protocols.Device Bound Session Credentials.what": {
+    "en": "83d1f60fe8862d70",
+    "text": "Inloggningssessionen bunden till en nyckel som webbläsaren innehar, TPM-skyddad där det går. En kopierad sessionscookie slutar fungera när den kortlivade bundna cookien bredvid den går ut, eftersom bara ett bevis för den nyckeln förnyar den; ett bevis från någon annan nyckel avslutar sessionen. Av som standard och per sfär; en webbläsare utan stöd behåller en vanlig session."
   },
   "stsmetadata.protocols.Verifiable Credentials (OID4VCI / OID4VP).what": {
     "en": "6ea91ae6b9e69fde",

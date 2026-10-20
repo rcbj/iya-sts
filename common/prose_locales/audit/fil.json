@@ -259,6 +259,14 @@
     "en": "0bfd5e67a3f0fdc2",
     "text": "May hosted surface na nag-renew ng mga token nito sa loob ng parehong session"
   },
+  "audit.actions.authn.session.bound.label": {
+    "en": "027a6091ae35ff05",
+    "text": "Naitali ang isang sign-on session sa key na hawak ng browser nito"
+  },
+  "audit.actions.authn.session.refreshed.label": {
+    "en": "bbbad25d367ffcdf",
+    "text": "Na-renew ang cookie ng isang device-bound session sa patunay ng key nito"
+  },
   "audit.actions.logout.global.label": {
     "en": "db32c1466e054343",
     "text": "Tinapos ang lahat ng hawak para sa isang identity, sa bawat protocol"
@@ -1142,6 +1150,14 @@
   "audit.actions.federation.unlink.label": {
     "en": "a5c85407fff2c148",
     "text": "May federation link na inalis sa isang tao"
+  },
+  "audit.actions.federation.connected.label": {
+    "en": "3466387fa24f3d55",
+    "text": "Ikinonekta ng isang tao ang isang consumer o social provider sa kanyang account"
+  },
+  "audit.actions.federation.provider-notification.label": {
+    "en": "bf89c99cd7734f16",
+    "text": "Tinanggap ang abiso ng isang consumer provider tungkol sa isa sa mga tao nito"
   },
   "audit.actions.federation.group-ignored.label": {
     "en": "a64e9612670b278c",

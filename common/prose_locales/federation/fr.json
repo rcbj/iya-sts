@@ -312,8 +312,8 @@
     "text": "CONSTRUIRE LES APPARTENANCES AUX GROUPES À PARTIR DU JETON DU PARTENAIRE (#358). DÉSACTIVÉ par défaut, et une valeur absente vaut désactivé. Activé, chaque nom de groupe que porte l’assertion devient une appartenance de la personne que cette connexion a provisionnée, à chaque connexion réussie. Un groupe créé de cette façon est marqué avec cette relation. Un nom qui existe déjà et n’est pas marqué comme appartenant à cette relation est ignoré, audité (STS-FED-0161), et la connexion se poursuit. Un groupe qui accorde quelque chose du seul fait d’en être membre — un groupe de la console, le groupe membre d’un rôle, un groupe propriétaire, un groupe qu’une politique nomme — n’est jamais créé ni rejoint (STS-FED-0164). Cela ne satisfait pas fedSubjectGroup : cette règle s’applique avant que quiconque soit ajouté."
   },
   "fed.schema.attributes.fedProvisionCap.what": {
-    "en": "4137e80dd72991e2",
-    "text": "COMBIEN DE PERSONNES CETTE RELATION PEUT CRÉER. Vide ou 0 signifie illimité. Au plafond, un nouveau sujet est refusé STS-FED-0090 ; une personne déjà liée se connecte toujours. ldap.maxEntries reste le plafond du domaine. Ce n’est pas un nombre de connexions — c’est fedUsers."
+    "en": "6807b5eb2cff8e4f",
+    "text": "COMBIEN DE PERSONNES CETTE RELATION PEUT CRÉER. 0 signifie illimité. Vide signifie illimité pour un partenaire d’entreprise ; la relation d’un fournisseur GRAND PUBLIC ou social n’est jamais illimitée par défaut : elle est créée avec federation.consumerProvisionCap (10000 sauf si le domaine en dispose autrement) inscrit ici, et une valeur vide signifie ce paramètre. Au plafond, un nouveau sujet est refusé STS-FED-0090 ; une personne déjà liée se connecte toujours. ldap.maxEntries reste le plafond du domaine. Ce n’est pas un nombre de connexions — c’est fedUsers."
   },
   "fed.schema.attributes.fedProvisionIdleMinutes.what": {
     "en": "29c243b9d96fac47",

@@ -2303,6 +2303,14 @@
     "en": "ea2b1532d05c3e5f",
     "text": "DÉMARRE la session fédérée pour laquelle la réponse vérifiée du partenaire était conservée — seulement après un second facteur détenu ICI, en tant que cette personne"
   },
+  "stsmetadata.endpoints./federation/profile/:handle.what": {
+    "en": "6e737993e1d08300",
+    "text": "Là où le nouveau venu d’un fournisseur grand public ou social est envoyé lorsque la politique d’attributs de ce domaine exige une valeur que le fournisseur n’a pas envoyée (STS-FED-0188), en mode produit : GET affiche un formulaire demandant exactement les valeurs manquantes, POST les reçoit. La réponse vérifiée du fournisseur est conservée côté serveur sous un identifiant à usage unique, lié par un cookie au navigateur dans lequel elle est arrivée (STS-FED-0111), et le formulaire porte un jeton conservé avec lui (STS-FED-0189). Une valeur que son attribut n’accepte pas affiche à nouveau le formulaire (STS-FED-0190), cinq fois au plus (STS-FED-0191). La connexion se termine alors comme elle a commencé : la décision sur le sujet, la question de création et la politique d’émission sont posées à nouveau. Une adresse saisie n’est pas vérifiée. Rien dans la politique n’est assoupli."
+  },
+  "stsmetadata.endpoints./federation/profile/:handle.effect": {
+    "en": "1924cb8d61d0bb51",
+    "text": "CRÉE le compte auquel se connecte le nouveau venu d’un fournisseur grand public, une fois qu’il a fourni ce que le domaine exige"
+  },
   "stsmetadata.endpoints./federation/notifications/:id.what": {
     "en": "898b7c35c721538f",
     "text": "Les notifications de serveur à serveur de Sign in with Apple, pour une relation dont le profil de fournisseur les accepte. Apple envoie en POST { payload }, un JWT vérifié avec les clés de la relation et rien d’autre — émetteur Apple, audience l’identifiant client — et accepté une seule fois par son jti (sinon STS-FED-0186). Ses événements nomment un type et le sujet de la personne : consent-revoked et account-delete suppriment le lien de ce sujet via cette relation, jamais l’entrée, et email-disabled et email-enabled sont consignés. 404 (STS-FED-0187) pour une relation qui n’en accepte aucune."
@@ -3451,10 +3459,6 @@
     "en": "874b55535d57222c",
     "text": "Un second facteur sur l’écran de connexion vers lequel chaque protocole ici envoie une personne : des cérémonies d’enregistrement et d’assertion avec une véritable clé de sécurité, l’attestation et les données de l’authentificateur étant vérifiées et pas seulement analysées."
   },
-  "stsmetadata.protocols.Device Bound Session Credentials.what": {
-    "en": "83d1f60fe8862d70",
-    "text": "La session d’authentification unique liée à une clé que détient le navigateur, adossée à un TPM quand il le peut. Un cookie de session copié cesse de fonctionner quand le cookie lié de courte durée qui l’accompagne expire, car seule une preuve de cette clé le renouvelle ; une preuve par toute autre clé met fin à la session. Désactivé par défaut et par domaine ; un navigateur qui ne le prend pas en charge garde une session ordinaire."
-  },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "20b73dffc821e4a2",
     "text": "L’autre second facteur sur l’écran de connexion vers lequel chaque protocole ici envoie une personne, et le seul identifiant, à part un ticket Kerberos, que ce service VÉRIFIE réellement : le code est calculé à partir du secret partagé et de l’horloge puis comparé, dans les deux modes, avec application de la règle d’acceptation unique de la section 5.2 de la RFC 6238. L’enrôlement passe par un code QR dessiné par ce serveur, sur /portal/mfa ou lors de l’utilisation d’un lien d’activation ; la ligne de la personne sur /admin/users est l’endroit où un opérateur en efface un, et /admin/totp celui où le mécanisme se configure."
@@ -3466,6 +3470,10 @@
   "stsmetadata.protocols.Email codes and links.what": {
     "en": "735e17b751640f86",
     "text": "CE N’EST PAS UN PROTOCOLE. Un code à six chiffres ou un lien à usage unique envoyé à l’adresse VÉRIFIÉE d’une personne, comme premier ou second facteur lorsque la politique d’authentification de /admin/policies le permet — DÉSACTIVÉ par défaut, car la section 3.1.3.1 du NIST SP 800-63B-4 dispose que l’e-mail NE DOIT PAS être utilisé pour l’authentification hors bande. Chaque secret est une empreinte scrypt sur l’étape de connexion, valide au plus dix minutes, consommée une seule fois pour le cluster ; un lien n’aboutit que dans le navigateur qui a démarré la connexion ; une personne active le second facteur sur /portal/mfa et le perd après 100 échecs consécutifs (section 3.2.2). amr \"otp\" (la RFC 8176 n’a pas de valeur pour l’e-mail) ; il ne satisfait jamais une authentification renforcée liée au risque, et la politique d’émission peut refuser une session qui repose sur lui (refuseEmailFactor)."
+  },
+  "stsmetadata.protocols.Device Bound Session Credentials.what": {
+    "en": "83d1f60fe8862d70",
+    "text": "La session d’authentification unique liée à une clé que détient le navigateur, adossée à un TPM quand il le peut. Un cookie de session copié cesse de fonctionner quand le cookie lié de courte durée qui l’accompagne expire, car seule une preuve de cette clé le renouvelle ; une preuve par toute autre clé met fin à la session. Désactivé par défaut et par domaine ; un navigateur qui ne le prend pas en charge garde une session ordinaire."
   },
   "stsmetadata.protocols.Verifiable Credentials (OID4VCI / OID4VP).what": {
     "en": "6ea91ae6b9e69fde",

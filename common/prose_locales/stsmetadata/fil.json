@@ -2303,6 +2303,14 @@
     "en": "ea2b1532d05c3e5f",
     "text": "SINISIMULAN ang federated na session na pinag-ingatan ng napatunayang sagot ng partner — pagkatapos lamang ng ikalawang factor na hawak DITO, bilang ang taong iyon"
   },
+  "stsmetadata.endpoints./federation/profile/:handle.what": {
+    "en": "6e737993e1d08300",
+    "text": "Kung saan ipinapadala ang bagong dating ng isang consumer o social provider kapag nangangailangan ang attribute policy ng realm na ito ng value na hindi ipinadala ng provider (STS-FED-0188), sa product mode: nagpapakita ang GET ng form na humihingi ng eksaktong mga nawawalang value, tinatanggap ng POST ang mga ito. Hawak sa server ang na-verify na sagot ng provider sa ilalim ng single-use na handle na itinatali ng cookie sa browser kung saan ito dumating (STS-FED-0111), at may dalang token ang form na hawak kasama nito (STS-FED-0189). Ang value na hindi tinatanggap ng attribute nito ay nagpapakita muli ng form (STS-FED-0190), hanggang limang beses (STS-FED-0191). Pagkatapos, natatapos ang sign-in gaya ng pagsisimula nito: muling itinatanong ang desisyon sa subject, ang tanong sa paggawa at ang issuance policy. Hindi verified ang address na itina-type. Walang niluluwagan sa policy."
+  },
+  "stsmetadata.endpoints./federation/profile/:handle.effect": {
+    "en": "1924cb8d61d0bb51",
+    "text": "GINAGAWA ang account na pinagsa-sign in-an ng bagong dating ng isang consumer provider, kapag naibigay na nila ang hinihingi ng realm"
+  },
   "stsmetadata.endpoints./federation/notifications/:id.what": {
     "en": "898b7c35c721538f",
     "text": "Ang mga server-to-server na notification ng Sign in with Apple, para sa isang relasyong tinatanggap ang mga ito ng profile ng provider nito. Nagpapadala ang Apple ng POST na { payload }, isang JWT na pinapatunayan laban sa mga key ng relasyon at wala nang iba — issuer ang Apple, audience ang client id — at tinatanggap nang isang beses lamang ayon sa jti nito (STS-FED-0186 kung hindi). Pinapangalanan ng mga event nito ang isang uri at ang subject ng tao: inaalis ng consent-revoked at account-delete ang link ng subject na iyon sa pamamagitan ng relasyong ito, hindi kailanman ang entry, at itinatala ang email-disabled at email-enabled. 404 (STS-FED-0187) para sa relasyong hindi tumatanggap ng anuman."
@@ -3451,10 +3459,6 @@
     "en": "874b55535d57222c",
     "text": "Isang second factor sa sign-in screen na pinagpapadalhan ng bawat protocol dito ng tao: mga registration at assertion ceremony laban sa tunay na security key, na sinusuri ang attestation at ang authenticator data sa halip na i-parse lamang."
   },
-  "stsmetadata.protocols.Device Bound Session Credentials.what": {
-    "en": "83d1f60fe8862d70",
-    "text": "Ang sign-on session na naka-bind sa isang key na hawak ng browser, na nakasandig sa TPM kung kaya nito. Humihinto sa paggana ang kinopyang session cookie kapag nag-expire ang panandaliang bound cookie sa tabi nito, dahil proof lamang ng key na iyon ang nagre-renew dito; ang proof ng anumang ibang key ay nagtatapos sa session. Naka-off bilang default at bawat realm; ang browser na walang suporta ay nananatili sa karaniwang session."
-  },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "20b73dffc821e4a2",
     "text": "Ang isa pang second factor sa sign-in screen na pinagpapadalhan ng bawat protocol dito ng tao, at ang tanging credential bukod sa Kerberos ticket na tunay na SINUSURI ng serbisyong ito: kinukuwenta ang code mula sa shared secret at sa orasan at ikinukumpara, sa parehong mode, na ipinapatupad ang accept-once rule ng RFC 6238 section 5.2. Ang enrolment ay isang QR code na iginuhit ng server na ito, sa /portal/mfa o habang ginagamit ang activation link; ang sariling row ng tao sa /admin/users ang lugar kung saan nili-clear ito ng operator, at ang /admin/totp ang lugar kung saan kino-configure ang mekanismo."
@@ -3466,6 +3470,10 @@
   "stsmetadata.protocols.Email codes and links.what": {
     "en": "735e17b751640f86",
     "text": "HINDI ITO PROTOCOL. Isang anim na digit na code o single-use link na ipinapadala sa VERIFIED na address ng tao, bilang first o second factor kung pinapayagan ito ng authentication policy sa /admin/policies — NAKA-OFF bilang default, dahil sinasabi ng NIST SP 800-63B-4 section 3.1.3.1 na HINDI DAPAT gamitin ang email para sa out-of-band authentication. Bawat secret ay isang scrypt hash sa sign-in step, valid nang hanggang sampung minuto, ginagamit nang minsan para sa cluster; natatapos lamang ang link sa browser na nagsimula ng sign-in; nag-o-opt in ang tao sa second factor sa /portal/mfa at nawawala ito pagkatapos ng 100 sunod-sunod na pagkabigo (section 3.2.2). amr \"otp\" (walang value ang RFC 8176 para sa email); hindi nito kailanman natutugunan ang risk step-up, at maaaring tanggihan ng issuance policy ang session na nakatayo sa isa (refuseEmailFactor)."
+  },
+  "stsmetadata.protocols.Device Bound Session Credentials.what": {
+    "en": "83d1f60fe8862d70",
+    "text": "Ang sign-on session na naka-bind sa isang key na hawak ng browser, na nakasandig sa TPM kung kaya nito. Humihinto sa paggana ang kinopyang session cookie kapag nag-expire ang panandaliang bound cookie sa tabi nito, dahil proof lamang ng key na iyon ang nagre-renew dito; ang proof ng anumang ibang key ay nagtatapos sa session. Naka-off bilang default at bawat realm; ang browser na walang suporta ay nananatili sa karaniwang session."
   },
   "stsmetadata.protocols.Verifiable Credentials (OID4VCI / OID4VP).what": {
     "en": "6ea91ae6b9e69fde",

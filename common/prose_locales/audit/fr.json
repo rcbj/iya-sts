@@ -259,6 +259,14 @@
     "en": "0bfd5e67a3f0fdc2",
     "text": "Une surface hébergée a renouvelé ses jetons dans la même session"
   },
+  "audit.actions.authn.session.bound.label": {
+    "en": "027a6091ae35ff05",
+    "text": "Une session d’authentification unique a été liée à une clé détenue par son navigateur"
+  },
+  "audit.actions.authn.session.refreshed.label": {
+    "en": "bbbad25d367ffcdf",
+    "text": "Le cookie d’une session liée à l’appareil a été renouvelé sur une preuve de sa clé"
+  },
   "audit.actions.logout.global.label": {
     "en": "db32c1466e054343",
     "text": "Tout ce qui était détenu pour une identité a été terminé, dans tous les protocoles"
@@ -1142,6 +1150,14 @@
   "audit.actions.federation.unlink.label": {
     "en": "a5c85407fff2c148",
     "text": "Un lien de fédération a été retiré d’une personne"
+  },
+  "audit.actions.federation.connected.label": {
+    "en": "3466387fa24f3d55",
+    "text": "Une personne a connecté un fournisseur grand public ou social à son compte"
+  },
+  "audit.actions.federation.provider-notification.label": {
+    "en": "bf89c99cd7734f16",
+    "text": "Une notification d’un fournisseur grand public concernant l’une de ses personnes a été acceptée"
   },
   "audit.actions.federation.group-ignored.label": {
     "en": "a64e9612670b278c",

@@ -312,8 +312,8 @@
     "text": "根据伙伴的令牌建立组成员关系（#358）。默认关闭，缺少值即为关闭。开启时，断言携带的每个组名在每次成功登录时都会成为此次登录所预配人员的成员关系。以这种方式创建的组会标记为此关系。已存在且未标记为此关系的名称会被忽略、审计（STS-FED-0161），登录继续。仅凭成员身份就授予某种权限的组——控制台组、角色的成员组、所有者组、策略指明的组——绝不会被创建或加入（STS-FED-0164）。它不满足 fedSubjectGroup：该规则在添加任何人之前运行。"
   },
   "fed.schema.attributes.fedProvisionCap.what": {
-    "en": "4137e80dd72991e2",
-    "text": "此关系最多可以创建多少人。留空或 0 表示不限。达到上限时，新主体会以 STS-FED-0090 被拒绝；已关联的人员仍可登录。ldap.maxEntries 仍是领域的上限。这不是登录次数——那是 fedUsers。"
+    "en": "6807b5eb2cff8e4f",
+    "text": "此关系可以创建多少人。0 表示不限。对企业合作方而言，留空表示不限；消费者或社交提供方的关系默认从不不限：创建时会在此写入 federation.consumerProvisionCap（除非领域另有设置，否则为 10000），留空的值即表示该设置。达到上限时，新主体会被拒绝 STS-FED-0090；已关联的人仍可登录。ldap.maxEntries 仍是领域的上限。这不是登录次数——那是 fedUsers。"
   },
   "fed.schema.attributes.fedProvisionIdleMinutes.what": {
     "en": "29c243b9d96fac47",

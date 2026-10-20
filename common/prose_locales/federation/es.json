@@ -312,8 +312,8 @@
     "text": "CREAR PERTENENCIAS A GRUPOS A PARTIR DEL TOKEN DEL SOCIO (#358). DESACTIVADO de forma predeterminada, y un valor ausente equivale a desactivado. Activado, cada nombre de grupo que lleva la aserción se convierte en una pertenencia de la persona que este inicio de sesión aprovisionó, en cada inicio de sesión correcto. Un grupo creado así queda marcado con esta relación. Un nombre que ya existe y no está marcado como de esta relación se ignora, se audita (STS-FED-0161) y el inicio de sesión continúa. Un grupo que concede algo por el mero hecho de pertenecer a él — un grupo de la consola, el grupo miembro de un rol, un grupo propietario, un grupo que nombra una política — nunca se crea ni se une (STS-FED-0164). No satisface fedSubjectGroup: esa regla se aplica antes de que se añada a nadie."
   },
   "fed.schema.attributes.fedProvisionCap.what": {
-    "en": "4137e80dd72991e2",
-    "text": "CUÁNTAS PERSONAS PUEDE CREAR ESTA RELACIÓN. Vacío o 0 es ilimitado. En el límite, un sujeto nuevo se rechaza con STS-FED-0090; una persona ya vinculada sigue iniciando sesión. ldap.maxEntries sigue siendo el techo del reino. No es un recuento de inicios de sesión — eso es fedUsers."
+    "en": "6807b5eb2cff8e4f",
+    "text": "CUÁNTAS PERSONAS PUEDE CREAR ESTA RELACIÓN. 0 es ilimitado. Vacío es ilimitado para un socio empresarial; la relación de un proveedor de CONSUMO o social nunca es ilimitada por defecto: se crea con federation.consumerProvisionCap (10000 salvo que el dominio diga otra cosa) escrito aquí, y un valor vacío significa ese ajuste. En el límite se rechaza un sujeto nuevo STS-FED-0090; una persona ya vinculada sigue iniciando sesión. ldap.maxEntries sigue siendo el techo del dominio. No es un recuento de inicios de sesión: eso es fedUsers."
   },
   "fed.schema.attributes.fedProvisionIdleMinutes.what": {
     "en": "29c243b9d96fac47",

@@ -1295,6 +1295,10 @@
     "en": "1b454ff71565d1ab",
     "text": "Slutför en federerad inloggning efter en stegvis höjd autentisering på grund av risk"
   },
+  "endpoints.route./federation/profile/:handle.name": {
+    "en": "6f866f6622379301",
+    "text": "Ange de uppgifter som en konsumentleverantör inte skickade (#729)"
+  },
   "endpoints.route./federation/notifications/:id.name": {
     "en": "4111365a4c05f259",
     "text": "En leverantörs meddelande från server till server (#565)"

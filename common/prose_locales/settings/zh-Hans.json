@@ -4171,6 +4171,14 @@
     "en": "f0edd885053c8b09",
     "text": "在门户的“已连接的账户”页面上将消费者或社交提供方连接到自己的账户时，此人最近一次身份验证须在多少分钟之内（#565）。超过这个时间，会先要求其重新登录：连接之后，该提供方即可让此人登录。"
   },
+  "federation.consumerProvisionCap|label": {
+    "en": "c93ac16ed967542f",
+    "text": "消费者提供方：每个可创建的账户数"
+  },
+  "federation.consumerProvisionCap|description": {
+    "en": "3e7e50d4c4690e0e",
+    "text": "消费者或社交提供方的关系可以创建多少人，除非该关系自己的 fedProvisionCap 另有设置。创建消费者关系时写入其中，并用于 fedProvisionCap 为空的关系。达到上限时，新来者会被拒绝（STS-FED-0090），已连接的人仍可登录。企业合作方不受影响：其为空的 fedProvisionCap 表示不限。"
+  },
   "federation.outbound|label": {
     "en": "cc2dd4c18cf2a52a",
     "text": "向合作方发出反向通道请求"

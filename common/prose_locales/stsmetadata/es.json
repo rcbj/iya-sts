@@ -2303,6 +2303,14 @@
     "en": "ea2b1532d05c3e5f",
     "text": "INICIA la sesión federada para la que se guardó la respuesta verificada del socio — solo después de un segundo factor que se tiene AQUÍ, como esa persona"
   },
+  "stsmetadata.endpoints./federation/profile/:handle.what": {
+    "en": "6e737993e1d08300",
+    "text": "Adonde se envía al recién llegado de un proveedor de consumo o social cuando la política de atributos de este dominio exige un valor que el proveedor no envió (STS-FED-0188), en modo producto: GET muestra un formulario que pide exactamente los valores que faltan, POST los recibe. La respuesta verificada del proveedor se guarda en el servidor bajo un identificador de un solo uso, vinculado mediante una cookie al navegador en el que llegó (STS-FED-0111), y el formulario lleva un token guardado con él (STS-FED-0189). Un valor que su atributo no acepta vuelve a mostrar el formulario (STS-FED-0190), cinco veces como máximo (STS-FED-0191). Después el inicio de sesión termina como empezó: se vuelven a plantear la decisión sobre el sujeto, la pregunta de creación y la política de emisión. Una dirección escrita no está verificada. Nada de la política se relaja."
+  },
+  "stsmetadata.endpoints./federation/profile/:handle.effect": {
+    "en": "1924cb8d61d0bb51",
+    "text": "CREA la cuenta en la que inicia sesión el recién llegado de un proveedor de consumo, una vez que ha dado lo que el dominio exige"
+  },
   "stsmetadata.endpoints./federation/notifications/:id.what": {
     "en": "898b7c35c721538f",
     "text": "Las notificaciones de servidor a servidor de Sign in with Apple, para una relación cuyo perfil de proveedor las acepta. Apple envía por POST { payload }, un JWT verificado con las claves de la relación y nada más —emisor Apple, audiencia el identificador de cliente— y aceptado una sola vez por su jti (STS-FED-0186 si no). Sus eventos nombran un tipo y el sujeto de la persona: consent-revoked y account-delete eliminan el vínculo de ese sujeto a través de esta relación, nunca la entrada, y email-disabled y email-enabled se registran. 404 (STS-FED-0187) para una relación que no acepta ninguna."
@@ -3451,10 +3459,6 @@
     "en": "874b55535d57222c",
     "text": "Un segundo factor en la pantalla de inicio de sesión a la que todo protocolo de aquí envía a una persona: ceremonias de registro y de afirmación contra una llave de seguridad real, con la atestación y los datos del autenticador comprobados y no solo analizados."
   },
-  "stsmetadata.protocols.Device Bound Session Credentials.what": {
-    "en": "83d1f60fe8862d70",
-    "text": "La sesión de inicio de sesión único vinculada a una clave que posee el navegador, respaldada por un TPM cuando puede. Una cookie de sesión copiada deja de funcionar cuando caduca la cookie vinculada de corta duración que la acompaña, porque solo una prueba de esa clave la renueva; una prueba con cualquier otra clave termina la sesión. Desactivado por defecto y por dominio; un navegador que no lo admite conserva una sesión normal."
-  },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "20b73dffc821e4a2",
     "text": "El otro segundo factor en la pantalla de inicio de sesión a la que todo protocolo de aquí envía a una persona, y la única credencial, además de un ticket Kerberos, que este servicio COMPRUEBA de verdad: el código se calcula a partir del secreto compartido y el reloj y se compara, en ambos modos, aplicando la regla de aceptar una sola vez de la sección 5.2 de RFC 6238. El registro es un código QR que dibujó este servidor, en /portal/mfa o mientras se gasta un enlace de activación; la fila propia de la persona en /admin/users es donde un operador borra uno, y /admin/totp es donde se configura el mecanismo."
@@ -3466,6 +3470,10 @@
   "stsmetadata.protocols.Email codes and links.what": {
     "en": "735e17b751640f86",
     "text": "NO ES UN PROTOCOLO. Un código de seis dígitos o un enlace de un solo uso enviado por correo a la dirección VERIFICADA de una persona, como primer o segundo factor donde lo permite la política de autenticación de /admin/policies; DESACTIVADO por defecto, porque la sección 3.1.3.1 de NIST SP 800-63B-4 dice que el correo electrónico SHALL NOT usarse para la autenticación fuera de banda. Cada secreto es un hash scrypt en el paso de inicio de sesión, válido como máximo diez minutos, gastado una sola vez en el clúster; un enlace solo termina en el navegador que inició el inicio de sesión; una persona activa por elección propia el segundo factor en /portal/mfa y lo pierde tras 100 fallos consecutivos (sección 3.2.2). amr \"otp\" (RFC 8176 no tiene valor para el correo electrónico); nunca satisface una elevación por riesgo, y la política de emisión puede rechazar una sesión que se apoye en él (refuseEmailFactor)."
+  },
+  "stsmetadata.protocols.Device Bound Session Credentials.what": {
+    "en": "83d1f60fe8862d70",
+    "text": "La sesión de inicio de sesión único vinculada a una clave que posee el navegador, respaldada por un TPM cuando puede. Una cookie de sesión copiada deja de funcionar cuando caduca la cookie vinculada de corta duración que la acompaña, porque solo una prueba de esa clave la renueva; una prueba con cualquier otra clave termina la sesión. Desactivado por defecto y por dominio; un navegador que no lo admite conserva una sesión normal."
   },
   "stsmetadata.protocols.Verifiable Credentials (OID4VCI / OID4VP).what": {
     "en": "6ea91ae6b9e69fde",

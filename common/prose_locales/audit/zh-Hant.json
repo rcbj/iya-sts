@@ -259,6 +259,14 @@
     "en": "0bfd5e67a3f0fdc2",
     "text": "代管介面在同一工作階段內更新了其權杖"
   },
+  "audit.actions.authn.session.bound.label": {
+    "en": "027a6091ae35ff05",
+    "text": "一個單一登入工作階段已繫結到其瀏覽器持有的金鑰"
+  },
+  "audit.actions.authn.session.refreshed.label": {
+    "en": "bbbad25d367ffcdf",
+    "text": "一個繫結裝置的工作階段的 Cookie 已憑其金鑰的證明續期"
+  },
   "audit.actions.logout.global.label": {
     "en": "db32c1466e054343",
     "text": "為某個身分持有的一切都已結束，涵蓋每個協定"
@@ -1142,6 +1150,14 @@
   "audit.actions.federation.unlink.label": {
     "en": "a5c85407fff2c148",
     "text": "從某人身上移除了聯盟連結"
+  },
+  "audit.actions.federation.connected.label": {
+    "en": "3466387fa24f3d55",
+    "text": "有人將一個消費者或社群提供者連結到自己的帳戶"
+  },
+  "audit.actions.federation.provider-notification.label": {
+    "en": "bf89c99cd7734f16",
+    "text": "已接受消費者提供者關於其某位使用者的通知"
   },
   "audit.actions.federation.group-ignored.label": {
     "en": "a64e9612670b278c",
