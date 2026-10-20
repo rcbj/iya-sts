@@ -133,6 +133,35 @@ const FALLBACK_ALGS = ['ES256', 'RS256'];
  */
 const PQC_ALGS = ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87'];
 
+// ---------------------------------------------------------------------------
+// THE TWO LANES (#643, 2026-10-19): a classical passkey and a post-quantum
+// one held side by side by one person, on one authenticator if it can make
+// both.
+//
+// **WHY A LANE IS MORE THAN A NAME.** Under CTAP 2.x a new discoverable
+// credential for the same RP ID and the same user handle REPLACES the one the
+// authenticator held, and a credential manager does the same; the default
+// list asks for ML-DSA first and an authenticator takes the first algorithm it
+// supports; and `excludeCredentials` names every key the person holds. So a
+// second registration on one authenticator was refused, or silently removed
+// the first from the device while its row stayed here. Each lane therefore has
+// its own user handle (`credentials.userHandleOf(name, { lane })`), its own
+// algorithm list (`algorithmsOffered(lane)`) and its own exclude list
+// (`credentials.beginKeyEnrolment()`).
+//
+// **OFF BY DEFAULT** (`webauthn.pqcAlongsideClassical`, per realm), and off
+// is every ceremony exactly as it was: `lanes()` is `['classical']`, and the
+// classical lane's list is the configured one, ML-DSA included.
+// **`webauthn.pqcOnly` WINS** where both reach the process (a write of the
+// pair is refused, `laneWriteRule()`, but an environment variable or a file
+// is not a write): the realm then requests ML-DSA only, so there is one lane.
+// ---------------------------------------------------------------------------
+/**
+ * The passkey lanes (#643): `classical` (the configured list without ML-DSA,
+ * under the person's handle) and `pqc` (ML-DSA only, under a second handle).
+ */
+const LANES = ['classical', 'pqc'];
+
 // THE INSECURE ONES (2026-10-01), by name: the verifier's
 // `INSECURE_COSE_ALGS` read through its own table, so the two cannot list
 // different algorithms. Offered and accepted only where
@@ -327,6 +356,9 @@ class WebauthnPolicy {
       // The two algorithm flags (2026-10-01).
       insecureAlgorithms: this.insecureAlgorithmsAllowed(),
       pqcOnly: this.pqcOnly(),
+      // THE TWO LANES (#643): whether a person may hold a classical and a
+      // post-quantum passkey side by side, as `lanes()` reads it.
+      pqcAlongsideClassical: this.alongsideClassical(),
       maxKeysPerPerson: this.clamp(config.value('webauthn.maxKeysPerPerson'), 1,
                                    50,
                                    10)
@@ -441,12 +473,58 @@ class WebauthnPolicy {
    * verifier can check.
    *
    * A name it cannot verify is dropped with a warning; when nothing usable
-   * is left it falls back to ES256 and RS256.
+   * is left it falls back to ES256 and RS256. A `lane` (#643) narrows the
+   * list while `webauthn.pqcAlongsideClassical` is on: `classical` to the
+   * names that are not ML-DSA (ES256 and RS256 where that leaves none),
+   * `pqc` to ML-DSA (all three where the list names none). With the switch
+   * off a lane changes nothing.
+   * @param lane - `classical` or `pqc`, or nothing for the configured list
    * @returns the algorithm names
    */
-  algorithmsOffered() {
+  algorithmsOffered(lane?: string) {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.algorithmsOffered(). lane=' +
+              String(lane || ''));
+    const all = this.configuredAlgorithms();
+    const wanted = String(lane || '');
+    // OFF, OR NO LANE NAMED: the list as it always was, ML-DSA and all, so a
+    // realm that never turned the switch on sends exactly what it sent.
+    if (!wanted || !this.alongsideClassical()) {
+      log.debug('Leaving WebauthnPolicy.algorithmsOffered(). ' + all.length +
+                ' offered, no lane.');
+      return all;
+    }
+    if (wanted === 'pqc') {
+      // THE POST-QUANTUM LANE: `webauthn.pqcOnly`'s narrowing, and all three
+      // the verifier knows where the list names none. Empty only where the
+      // verifier knows no ML-DSA, which `laneRefusal()` refuses by name.
+      const named = all.filter(function (name) {
+        return PQC_ALGS.indexOf(name) >= 0;
+      });
+      const out = named.length ? named : PQC_ALGS.filter(function (name) {
+        return ALG_IDS[name] !== undefined;
+      });
+      log.debug('Leaving WebauthnPolicy.algorithmsOffered(). ' + out.length +
+                ' post-quantum.');
+      return out;
+    }
+    // THE CLASSICAL LANE: everything but ML-DSA, so an authenticator that
+    // supports ML-DSA cannot answer this lane with a post-quantum key — the
+    // first algorithm it supports would otherwise be ML-DSA both times.
+    const classical = all.filter(function (name) {
+      return PQC_ALGS.indexOf(name) < 0;
+    });
+    log.debug('Leaving WebauthnPolicy.algorithmsOffered(). ' +
+              classical.length + ' classical.');
+    return classical.length ? classical : FALLBACK_ALGS.slice();
+  }
+
+  // THE CONFIGURED LIST, as `algorithmsOffered()` answered it before the
+  // lanes (#643): `webauthn.algorithms` filtered against the verifier, the
+  // two algorithm flags applied, and the fallback where nothing is left.
+  private configuredAlgorithms() {
     const { config, log } = this.deps;
-    log.debug('Entering WebauthnPolicy.algorithmsOffered().');
+    log.debug('Entering WebauthnPolicy.configuredAlgorithms().');
     const asked = config.value('webauthn.algorithms');
     const list = (Array.isArray(asked) ? asked : String(asked || '').split(','))
       .map(function (name) { return String(name || '').trim(); })
@@ -496,8 +574,8 @@ class WebauthnPolicy {
         return PQC_ALGS.indexOf(name) >= 0;
       });
       if (!kept.length) {
-        log.debug('Leaving WebauthnPolicy.algorithmsOffered(). PQC only, ' +
-                  'and the list names no ML-DSA: all three.');
+        log.debug('Leaving WebauthnPolicy.configuredAlgorithms(). PQC ' +
+                  'only, and the list names no ML-DSA: all three.');
         return PQC_ALGS.slice();
       }
     }
@@ -512,10 +590,10 @@ class WebauthnPolicy {
                FALLBACK_ALGS.join(' and ') +
                ' instead. An empty pubKeyCredParams is refused by the ' +
                'browser and would look like a hardware failure.');
-      log.debug('Leaving WebauthnPolicy.algorithmsOffered(). Fell back.');
+      log.debug('Leaving WebauthnPolicy.configuredAlgorithms(). Fell back.');
       return FALLBACK_ALGS.slice();
     }
-    log.debug('Leaving WebauthnPolicy.algorithmsOffered(). ' + kept.length +
+    log.debug('Leaving WebauthnPolicy.configuredAlgorithms(). ' + kept.length +
               ' offered.');
     return kept;
   }
@@ -563,6 +641,117 @@ class WebauthnPolicy {
     return only;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE LANES (#643): see the header beside `LANES`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Tells whether this realm lets a person hold a classical and a
+   * post-quantum passkey side by side: `webauthn.pqcAlongsideClassical`,
+   * and never while `webauthn.pqcOnly` is on.
+   *
+   * @returns true when both lanes are offered
+   */
+  alongsideClassical(): boolean {
+    const { config, log } = this.deps;
+    log.debug('Entering WebauthnPolicy.alongsideClassical().');
+    const on = config.value('webauthn.pqcAlongsideClassical') === true &&
+               !this.pqcOnly();
+    log.debug('Leaving WebauthnPolicy.alongsideClassical(). ' + on);
+    return on;
+  }
+
+  /**
+   * The lanes a new passkey may be created in here: `classical` alone while
+   * the switch is off, `classical` and `pqc` while it is on.
+   *
+   * @returns the lanes, in the order a page offers them
+   */
+  lanes(): string[] {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.lanes().');
+    const out = this.alongsideClassical() ? LANES.slice() : ['classical'];
+    log.debug('Leaving WebauthnPolicy.lanes(). ' + out.join(','));
+    return out;
+  }
+
+  // ASKED AT THE START OF AN ENROLMENT AND AGAIN AT THE WRITE, like
+  // `roleAllowed()`: a page is markup, and a lane posted by hand, or a switch
+  // turned off while somebody was touching their key, must not put a key in
+  // a lane the realm does not offer. **IT REFUSES AN ENROLMENT AND NEVER A
+  // SIGN-IN**: a post-quantum key enrolled while the switch was on goes on
+  // signing in after it is turned off, for `webauthn.enabled`'s reason.
+  /**
+   * Decides whether a new passkey may be created in a lane.
+   *
+   * @param lane - `classical` or `pqc`
+   * @returns `{ ok: true }`, or `{ ok: false, why }` carrying an error code
+   */
+  laneRefusal(lane: string) {
+    const { log, errorCodes } = this.deps;
+    const wanted = String(lane || '');
+    log.debug('Entering WebauthnPolicy.laneRefusal(). lane=' + wanted);
+    if (LANES.indexOf(wanted) < 0) {
+      log.debug('Leaving WebauthnPolicy.laneRefusal(). Not a lane.');
+      return errorCodes.mark({ ok: false,
+               why: 'A passkey is created in the "classical" lane or the ' +
+                    '"pqc" lane. "' + wanted + '" is neither.' },
+               'STS-AUTHN-0350');
+    }
+    if (wanted === 'pqc' && !this.alongsideClassical()) {
+      log.debug('Leaving WebauthnPolicy.laneRefusal(). The post-quantum ' +
+                'lane is not offered here.');
+      return errorCodes.mark({ ok: false,
+               why: 'A post-quantum passkey beside a classical one is not ' +
+                    'offered in this realm (webauthn.pqcAlongsideClassical' +
+                    (this.pqcOnly() ? ', and webauthn.pqcOnly is on' : '') +
+                    '). A post-quantum passkey already registered goes on ' +
+                    'working.' }, 'STS-AUTHN-0351');
+    }
+    if (wanted === 'pqc' && !this.algorithmsOffered('pqc').length) {
+      log.debug('Leaving WebauthnPolicy.laneRefusal(). No ML-DSA can be ' +
+                'offered.');
+      return errorCodes.mark({ ok: false,
+               why: 'This service can verify no ML-DSA algorithm, so a ' +
+                    'post-quantum passkey cannot be created.' },
+               'STS-AUTHN-0352');
+    }
+    log.debug('Leaving WebauthnPolicy.laneRefusal(). Allowed.');
+    return { ok: true };
+  }
+
+  // THE RULE BETWEEN THE TWO SWITCHES (#643), handed to `config.js`'s
+  // `addWriteRule()` below and so asked of every door that writes an
+  // override — the console's, the API's and a restored value's. Both on is a
+  // contradiction rather than a combination: `pqcOnly` says request ML-DSA
+  // and nothing else, the lanes say offer a classical lane beside it. Refused
+  // at the write rather than resolved quietly; a value that reaches the
+  // process another way (the environment, a file) is read with `pqcOnly`
+  // winning (`alongsideClassical()`).
+  /**
+   * Refuses a write that would turn on `webauthn.pqcAlongsideClassical`
+   * and `webauthn.pqcOnly` together.
+   *
+   * @param key - the setting being written
+   * @param parsed - its parsed value
+   * @returns `{ problem, code }`, or null
+   */
+  static laneWriteRule(key: string, parsed: unknown) {
+    helpers.log.debug('Entering WebauthnPolicy.laneWriteRule(). ' + key);
+    const other = key === 'webauthn.pqcAlongsideClassical' ? 'webauthn.pqcOnly'
+      : (key === 'webauthn.pqcOnly' ? 'webauthn.pqcAlongsideClassical' : '');
+    if (!other || parsed !== true || config.value(other) !== true) {
+      helpers.log.debug('Leaving WebauthnPolicy.laneWriteRule().');
+      return null;
+    }
+    helpers.log.debug('Leaving WebauthnPolicy.laneWriteRule(). Refused.');
+    return { code: 'STS-AUTHN-0353',
+             problem: '"' + key + '" cannot be on while "' + other + '" is: ' +
+                      'post-quantum only requests ML-DSA and nothing else, ' +
+                      'and a post-quantum passkey beside a classical one ' +
+                      'needs a classical lane. Turn "' + other + '" off ' +
+                      'first.' };
+  }
+
   // The COSE identifiers for `pubKeyCredParams`, in the order the names were
   // given. Separate from `algorithms` above because the page wants the names
   // and the ceremony wants the numbers, and computing either from the other at
@@ -571,13 +760,14 @@ class WebauthnPolicy {
    * Returns the offered algorithms as COSE identifiers for
    * `pubKeyCredParams`, in the same order.
    *
+   * @param lane - `classical` or `pqc` (#643), as `algorithmsOffered()`
    * @returns the COSE algorithm identifiers
    */
-  algorithmIds() {
+  algorithmIds(lane?: string) {
     const { log } = this.deps;
     log.debug("Entering WebauthnPolicy.algorithmIds().");
     log.debug("Leaving WebauthnPolicy.algorithmIds().");
-    return this.algorithmsOffered()
+    return this.algorithmsOffered(lane)
       .map(function (name) { return ALG_IDS[name]; });
   }
 
@@ -757,10 +947,12 @@ class WebauthnPolicy {
    * asks for `direct` attestation.
    * @param rpId - the relying party id
    * @param kind - `passkey` or `security-key`, as the person chose, if any
+   * @param lane - `classical` or `pqc` (#643), the lane the enrolment was
+   *   begun in; it decides the algorithms and nothing else
    * @returns the options: RP, algorithms, attestation, timeout,
    * authenticator selection, hints and credProps
    */
-  creationOptions(rpId, kind?) {
+  creationOptions(rpId, kind?, lane?: string) {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.creationOptions(). rpId=' + rpId);
     const live = this.settings();
@@ -782,7 +974,9 @@ class WebauthnPolicy {
       ? 'direct' : live.attestation;
     const out = {
       rp: { name: live.rpName, id: rpId },
-      algorithms: this.algorithmIds(),
+      // THE LANE'S ALGORITHMS (#643); with no lane, or the switch off, the
+      // configured list as it always was.
+      algorithms: this.algorithmIds(lane),
       attestation: attestation,
       timeout: live.timeoutMs,
       authenticatorSelection: <AuthenticatorSelection>{
@@ -985,6 +1179,11 @@ class WebauthnPolicy {
       }),
       insecureAlgorithms: live.insecureAlgorithms,
       pqcOnly: live.pqcOnly,
+      // THE LANES (#643): the switch, and each lane's algorithms while on.
+      pqcAlongsideClassical: live.pqcAlongsideClassical,
+      lanes: this.lanes().map((lane) => {
+        return { lane: lane, algorithms: this.algorithmsOffered(lane) };
+      }),
       curves: Object.keys(webauthn.COSE_CURVES).map(function (id) {
         return { name: webauthn.COSE_CURVES[id], coseCurve: Number(id) };
       }),
@@ -1047,6 +1246,13 @@ const slot = new InstanceSlot<WebauthnPolicy>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+// THE RULE BETWEEN THE TWO SWITCHES (#643), asked at every write of an
+// override. Registered once, at load, by the module that reads both — as
+// `tls/tls_server.js` registers its own.
+if (typeof config.addWriteRule === 'function') {
+  config.addWriteRule(WebauthnPolicy.laneWriteRule);
+}
+
 /**
  * The WebAuthn ceremony options and the service's policy on security keys.
  *
@@ -1065,6 +1271,12 @@ export = {
   algorithmIds: slot.forward('algorithmIds'),
   insecureAlgorithmsAllowed: slot.forward('insecureAlgorithmsAllowed'),
   pqcOnly: slot.forward('pqcOnly'),
+  // The lanes (#643).
+  alongsideClassical: slot.forward('alongsideClassical'),
+  lanes: slot.forward('lanes'),
+  laneRefusal: slot.forward('laneRefusal'),
+  laneWriteRule: WebauthnPolicy.laneWriteRule,
+  LANES: LANES,
   PQC_ALGS: PQC_ALGS,
   INSECURE_ALGS: INSECURE_ALGS,
   creationOptions: slot.forward('creationOptions'),

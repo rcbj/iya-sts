@@ -6323,6 +6323,32 @@ const CODES = [
       'key is not a digest. The process does not start. auto in that ' +
       'state is logged once and the full map stays.',
     spec: 'none — the process does not start. Logged, never sent' },
+  // THE TWO PASSKEY LANES (#643). 0337-0349 are left for the branches in
+  // flight when these were numbered, so that no two changes claim one code.
+  { code: 'STS-AUTHN-0350',
+    summary: 'A passkey enrolment was refused: the lane it named is neither ' +
+      '"classical" nor "pqc" (#643).',
+    spec: '' },
+  { code: 'STS-AUTHN-0351',
+    summary: 'A post-quantum passkey enrolment was refused: this realm does ' +
+      'not offer a post-quantum passkey beside a classical one ' +
+      '(webauthn.pqcAlongsideClassical is off, or webauthn.pqcOnly is on). ' +
+      'One already enrolled goes on signing in (#643).',
+    spec: '' },
+  { code: 'STS-AUTHN-0352',
+    summary: 'A post-quantum passkey enrolment was refused: the verifier ' +
+      'knows no ML-DSA algorithm, so the post-quantum lane would offer ' +
+      'nothing (#643).',
+    spec: 'RFC 9964' },
+  { code: 'STS-AUTHN-0353',
+    summary: 'A settings write was refused: webauthn.pqcAlongsideClassical ' +
+      'and webauthn.pqcOnly cannot both be on (#643).',
+    spec: '' },
+  { code: 'STS-AUTHN-0354',
+    summary: 'A sign-in was refused at the screen: the typed name ends in ' +
+      'a post-quantum passkey\'s suffix (+ml-dsa, +ml-dsa-<n>, +pqc), which ' +
+      'is the name a credential manager shows and never a username (#643).',
+    spec: '' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

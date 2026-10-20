@@ -4610,6 +4610,10 @@ class Authn {
     if (typeof given.coseAlg === 'number') {
       credential.coseAlg = given.coseAlg;
     }
+    // And the passkey's lane (#643).
+    if (given.lane === 'classical' || given.lane === 'pqc') {
+      credential.lane = String(given.lane);
+    }
     // THE BROWSER FINGERPRINT (#62 P6), where the realm asked for one and
     // the sign-in form carried it — as a digest, like the User-Agent: the
     // value itself is personal data and is never kept.
@@ -6487,6 +6491,9 @@ class Authn {
             (extra.credential.coseAlg ? ' (' + extra.credential.coseAlg + ')'
                                       : '')
           : undefined,
+        // AND ITS LANE (#643): `classical` or `pqc`.
+        credentialLane: extra.credential && extra.credential.lane
+          ? String(extra.credential.lane) : undefined,
         // The caller's own sentence where it has one. A federated sign-in's
         // "No password was checked" is true and useless — nothing was typed
         // here at all — and the row is the only place that distinction will
@@ -11936,10 +11943,12 @@ class Authn {
    * @param mfaId - the step's id
    * @param step - the step
    * @param chosenKey - the passkey chosen (#534), if any
+   * @param lane - the lane a registration is to be made in (#643), as the
+   *   person chose it when the ceremony was armed; kept on the step
    * @returns the facts
    */
   webauthnFacts(base: string, mfaId: string, step: any,
-                chosenKey?: string): any {
+                chosenKey?: string, lane?: string): any {
     const { log, credentials, webauthnPolicy } = this.deps;
     const username = String(step.username);
     log.debug("Entering Authn.webauthnFacts(). username=" + username);
@@ -11971,10 +11980,25 @@ class Authn {
     })[0] || null : null;
     const choosing = separate && !chosen;
     const allowed = chosen ? [chosen] : known;
+    // THE LANE A REGISTRATION IS MADE IN (#643), ON THE STEP like the role:
+    // chosen when the ceremony is armed (`mfaWebauthnOptions()` has asked
+    // `laneRefusal()` of it), and read back from the step — never from the
+    // browser's answer — by the registration branch. A new choice before
+    // the ceremony ran takes a new handle, the lane's own.
+    const chosenLane = mode === 'create' && lane ? String(lane) : '';
+    if (chosenLane && chosenLane !== String(step.lane || 'classical')) {
+      step.lane = chosenLane;
+      step.userHandle = '';
+      pendingMfa.set(mfaId, step);
+    }
+    const stepLane = String(step.lane || 'classical');
     // THE USER HANDLE THE CREDENTIAL IS CREATED UNDER (#474), on the step
-    // so the registration branch records the one the browser was given.
+    // so the registration branch records the one the browser was given —
+    // the lane's (#643).
     if (mode === 'create' && !step.userHandle) {
-      step.userHandle = credentials.userHandleOf(username, { mint: true }) ||
+      step.userHandle = credentials.userHandleOf(username,
+                                                 { mint: true,
+                                                   lane: stepLane }) ||
                         credentials.newUserHandle();
       pendingMfa.set(mfaId, step);
     }
@@ -11999,7 +12023,15 @@ class Authn {
       rpId: rpId, widened: !!options.rpId,
       challenge: String(step.challenge || ''),
       attestation: String(options.attestation || ''),
-      algorithms: (options.algorithms || []).map(String),
+      // The lane's algorithms where a registration is drawn (#643); the
+      // configured list otherwise, and with the switch off.
+      algorithms: (mode === 'create'
+        ? webauthnPolicy.algorithmsOffered(stepLane)
+        : (options.algorithms || [])).map(String),
+      // THE LANES A REGISTRATION MAY BE MADE IN (#643): both while the
+      // switch is on, which is when the page asks which; the one chosen.
+      lanes: mode === 'create' ? webauthnPolicy.lanes() : [],
+      lane: mode === 'create' ? stepLane : '',
       userVerification: String(options.userVerification || ''),
       residentKey: String(options.residentKey || ''),
       attachment: String(options.authenticatorAttachment || ''),
@@ -12008,22 +12040,29 @@ class Authn {
         // THE NAME THE PROMPT SHOWS (#533): the passkey policy's
         // userDisplayName, else the username. The handle (#474): 64 random
         // bytes, never the username.
-        user: { name: username,
-                displayName: String(this.deps.passkeyPolicy.displayNameFor(
-                  username, username)),
-                id: String(step.userHandle || '') },
+        // THE POST-QUANTUM LANE'S NAME (#643): `<username>+ml-dsa`, which a
+        // credential manager shows and nobody signs in with.
+        user: Object.assign(credentials.laneUser(username,
+          String(this.deps.passkeyPolicy.displayNameFor(username, username)),
+          mode === 'create' ? stepLane : 'classical'),
+          { id: String(step.userHandle || '') }),
         // EVERY key of this role, because a person may hold several and the
         // authenticator picks; empty on the enrolment path.
         allow: allowed.map(function (one) {
           return String(one.credentialId);
         }),
-        // EVERY key they hold, of EITHER role, so an authenticator already
-        // registered here cannot be registered again on the enrolment path.
-        exclude: credentials.keysOf(username).map(function (one) {
+        // EVERY key they hold IN THIS LANE (#643), of EITHER role, so an
+        // authenticator already registered here cannot be registered again
+        // on the enrolment path — and one holding their classical passkey
+        // can take the post-quantum one. Every key while the switch is off.
+        exclude: credentials.keysOf(username).filter(function (one) {
+          return credentials.keyLane(one) === stepLane;
+        }).map(function (one) {
           return String(one.credentialId);
         }),
-        options: mode === 'create' ? webauthnPolicy.creationOptions(rpId)
-                                   : webauthnPolicy.requestOptions(rpId) } };
+        options: mode === 'create'
+          ? webauthnPolicy.creationOptions(rpId, undefined, stepLane)
+          : webauthnPolicy.requestOptions(rpId) } };
     log.debug("Leaving Authn.webauthnFacts(). mode=" + mode);
     return out;
   }
@@ -12680,7 +12719,9 @@ class Authn {
         backupEligible: typeof flags.be === 'boolean' ? flags.be : undefined,
         backupState: typeof flags.bs === 'boolean' ? flags.bs : undefined,
         algorithm: String(verdict.algorithm || ''),
-        coseAlg: Number(verdict.coseAlg) || undefined } };
+        coseAlg: Number(verdict.coseAlg) || undefined,
+        // Its lane (#643).
+        lane: credentials.keyLane(known) } };
     pending.delete(record.id);
     // `hwk` the key and `user` the authenticator's verification of the
     // person (RFC 8176), and acr `mfa`, because those are two factors.
@@ -12778,7 +12819,10 @@ class Authn {
         // (2026-10-01): the registration's or the assertion's, which is
         // the key's. On the event and the session.start row.
         algorithm: String(verdict.algorithm || ''),
-        coseAlg: Number(verdict.coseAlg) || undefined } };
+        coseAlg: Number(verdict.coseAlg) || undefined,
+        // AND ITS LANE (#643): the stored key's, or the step's for a key
+        // just registered.
+        lane: String(answered.lane || step.lane || 'classical') } };
     const started = this.startSession(res, step.username, amr, acr,
                                       step.authn.protocol, said);
     if (this.refusedSession(res, base, step.authn, step.username, started,
@@ -13236,6 +13280,25 @@ class Authn {
       return this.screenRefused(res, record,
         'Enter a username. It does not have to exist — it is the identity ' +
         'the issued tokens will describe.');
+    }
+    // A POST-QUANTUM PASSKEY'S NAME IS NOT A SIGN-IN NAME (#643, rcbj): a
+    // credential manager lists a person's post-quantum passkey as
+    // `alice+ml-dsa` or `alice+ml-dsa-65`, and somebody who types what it
+    // shows is told so rather than signed in — in development as somebody
+    // new — under a name that is not theirs. Refused in every mode and
+    // whether or not the realm offers the lanes; a locked record's name is
+    // the record's and is not typed.
+    if (!record.lockedUsername &&
+        credentials.Credentials.isLaneName(username)) {
+      log.info('authn: a sign-in naming "' + username + '" was refused: ' +
+               'that is a passkey\'s name in a credential manager, not a ' +
+               'username.');
+      log.debug("Leaving Authn.screenAct(). A passkey lane's name.");
+      errorCodes.mark(res, 'STS-AUTHN-0354');
+      return this.screenRefused(res, record,
+        'That is the name your password manager shows for a post-quantum ' +
+        'passkey, not a username. Type your username without the part ' +
+        'after the "+".');
     }
     // A PERSON HOMED IN ANOTHER CELL (#98 D9), before anything is verified,
     // counted or spent here: see restartAtHome(). A name nobody knows is
@@ -13929,10 +13992,12 @@ class Authn {
    * @param res - the response
    * @param mfaId - the step's id
    * @param key - the passkey chosen (#534), or ''
+   * @param lane - the lane a registration is to be made in (#643), or ''
    * @returns nothing; the answer is sent
    */
-  mfaWebauthnOptions(req: any, res: any, mfaId: string, key: string): void {
-    const { log, baseUrlOf, errorCodes } = this.deps;
+  mfaWebauthnOptions(req: any, res: any, mfaId: string, key: string,
+                     lane?: string): void {
+    const { log, baseUrlOf, errorCodes, webauthnPolicy } = this.deps;
     log.debug('Entering Authn.mfaWebauthnOptions().');
     const found = this.stepProblem('webauthn', mfaId);
     if (found.problem) {
@@ -13941,7 +14006,22 @@ class Authn {
       log.debug('Leaving Authn.mfaWebauthnOptions(). No step.');
       return;
     }
-    const facts = this.webauthnFacts(baseUrlOf(req), mfaId, found.step, key);
+    // A LANE THE REALM DOES NOT OFFER (#643) is refused before the ceremony
+    // is armed, as `beginKeyEnrolment()` refuses it on the portal; the write
+    // asks again (`credentials.addKey()`).
+    if (lane) {
+      const laneAllowed = webauthnPolicy.laneRefusal(String(lane));
+      if (!laneAllowed.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(laneAllowed) ||
+                             'STS-AUTHN-0351');
+        this.stepRefused(res, laneAllowed.why);
+        log.debug('Leaving Authn.mfaWebauthnOptions(). The lane is not ' +
+                  'offered.');
+        return;
+      }
+    }
+    const facts = this.webauthnFacts(baseUrlOf(req), mfaId, found.step, key,
+                                     String(lane || ''));
     if (facts.choices.length) {
       errorCodes.mark(res, 'STS-AUTHN-0329');
       this.stepRefused(res, 'Choose one of your passkeys first.');
@@ -14306,8 +14386,10 @@ class Authn {
           // a browser could decline with nothing here noticing.
           requireUserVerification: webauthnPolicy.requireUserVerification(),
           // WebAuthn Level 3 section 7.1: the credential's alg must be one
-          // of the pubKeyCredParams this realm offered (#105).
-          expectedAlgorithms: webauthnPolicy.algorithmIds()
+          // of the pubKeyCredParams this realm offered (#105), in the lane
+          // the ceremony was armed in (#643).
+          expectedAlgorithms: webauthnPolicy.algorithmIds(step.lane ||
+                                                          'classical')
         });
         if (verdict.ok) {
           // ---------------------------------------------------------------
@@ -14418,8 +14500,10 @@ class Authn {
               // CTAP 2.1's minPinLength, as the key reported it (#529).
               minPinLength: credentials.Credentials.reportedMinPinLength(
                 verdict),
-              // The handle the page created it under (#474).
+              // The handle the page created it under (#474), and the lane
+              // the step was armed in (#643).
               userHandle: step.userHandle || undefined,
+              lane: String(step.lane || 'classical'),
               userVerified: !!(verdict.flags && verdict.flags.uv),
               aaguid: verdict.aaguid || null,
               algorithm: verdict.algorithm || null,
@@ -14499,7 +14583,8 @@ class Authn {
           // WHICH KEY ANSWERED, for the authentication event (#62 P0): the
           // stored record, since the assertion names itself only by id.
           verdict.answeredBy = { id: known.credentialId,
-                                 aaguid: known.aaguid || null };
+                                 aaguid: known.aaguid || null,
+                                 lane: credentials.keyLane(known) };
           // THROUGH `credentials.spendAssertion()` AND NOT A WRITE OF ITS
           // OWN, which is the same argument `removeKey()` carries: that file
           // is the one place the signature counter is recorded, and a second

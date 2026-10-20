@@ -555,7 +555,9 @@ class AuthnSurface extends WebSurface {
       return;
     }
     if (path === '/authn/webauthn') {
-      await this.stepPasskey(String(fields.key || ''));
+      // The lane a registration is made in (#643), where the page asked.
+      await this.stepPasskey(String(fields.key || ''),
+                             String(fields.lane || ''));
       return;
     }
     if (path === CONSENT_PATH) {
@@ -867,9 +869,10 @@ class AuthnSurface extends WebSurface {
    * assertion otherwise (the API's `mode`).
    *
    * @param key - the passkey chosen (#534), or ''
+   * @param lane - the lane a registration is made in (#643), or ''
    * @returns nothing
    */
-  async stepPasskey(key: string): Promise<void> {
+  async stepPasskey(key: string, lane?: string): Promise<void> {
     if (this.pressed) {
       return;
     }
@@ -877,8 +880,11 @@ class AuthnSurface extends WebSurface {
     try {
       const aborted = this.stopAutofill();
       const base = '/authn-api/mfa/' + encodeURIComponent(this.idHere());
-      const armed = await this.send(base + '/webauthn/options',
-                                    key ? { key: key } : {});
+      const asked: Json = key ? { key: key } : {};
+      if (lane) {
+        asked.lane = lane;
+      }
+      const armed = await this.send(base + '/webauthn/options', asked);
       if (!armed.json || !armed.json.ok) {
         await this.next(armed);
         return;

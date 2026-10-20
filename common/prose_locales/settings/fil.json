@@ -1055,6 +1055,14 @@
     "en": "fb33eabeb83379da",
     "text": "Kapag naka-on, hinihiling LAMANG ang mga post-quantum passkey algorithm — ang `ML-DSA-44` (-48), `ML-DSA-65` (-49) at `ML-DSA-87` (-50) ng RFC 9964 — alinman sa mga ito ang pinangangalanan ng `webauthn.algorithms`, at lahat ng tatlo kung wala itong pinangangalanan. Kailangang ML-DSA na ang bagong passkey: ang ginawa gamit ang ibang algorithm ay tinatanggihan sa registration (WebAuthn section 7.1). Pinapakitid nito ang HINIHILING: ang classical na key na na-enrol na ay patuloy na nakakapag-sign in. Karamihan ng authenticator ay wala pang suporta sa ML-DSA at hindi makakapag-register habang naka-on ito."
   },
+  "webauthn.pqcAlongsideClassical|label": {
+    "en": "664b4753cc8439b0",
+    "text": "Post-quantum na passkey katabi ng isang classical"
+  },
+  "webauthn.pqcAlongsideClassical|description": {
+    "en": "e35e276b9d933828",
+    "text": "Kapag naka-on, maaaring sabay na hawakan ng isang tao ang isang classical na passkey at isang post-quantum (ML-DSA) na passkey, sa iisang authenticator kung kaya nitong gawin ang dalawa. Bawat passkey ay ginagawa sa isang LANE na pinipili ng tao: humihiling ang classical na lane ng `webauthn.algorithms` nang walang ML-DSA (`ES256` at `RS256` kung wala nang matitira), at ML-DSA lamang ang hinihiling ng post-quantum na lane. May sariling user handle ang bawat lane, kaya hindi pinapalitan ng pangalawang passkey ang una sa authenticator, at may sariling exclude list; ipinapakita ng credential manager ang post-quantum sa isang pangalang nagsasabi ng algorithm nito — `<username>+ml-dsa` kapag ginawa, `<username>+ml-dsa-65` (halimbawa) kapag iisang algorithm na ang gamit ng lahat ng post-quantum na passkey ng tao — na hindi kailanman pangalang ginagamit sa pag-sign in. Binibilang ng `webauthn.maxKeysPerPerson` ang dalawang lane. Hindi maaaring naka-on habang naka-on ang `webauthn.pqcOnly`. Kapag naka-off, gaya ng dati ang bawat ceremony, at patuloy na nakakapag-sign in ang post-quantum na passkey na naka-register na; hindi na makakagawa ng bago."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "User verification"

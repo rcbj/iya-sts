@@ -2945,6 +2945,11 @@ const OWN_NAMES = [
   // an authenticator stores it in the clear — and not the username, which
   // it was until #474. `common/credentials.ts` argues it.
   'stsWebauthnUserHandle',
+  // AND A SECOND ONE FOR THE POST-QUANTUM LANE (#643): the handle every
+  // ML-DSA passkey of the post-quantum lane is created under, so it does not
+  // replace the classical one on an authenticator that holds both. Minted
+  // only beside the first (`writeWebauthnUserHandle()` refuses otherwise).
+  'stsWebauthnPqcUserHandle',
 
   // THE BOOTSTRAP ADMINISTRATOR'S FLAGS (2026-09-13) — see readPersonFlags().
   // `pwdReset` is draft-behera-ldap-password-policy's name, spelt as that draft
@@ -10743,6 +10748,9 @@ const CREDENTIAL_ATTRIBUTE_DOORS = {
   // would sign the person in as nobody, or as somebody else.
   stswebauthnuserhandle: 'the first passkey registered at /portal/keys or ' +
     'the sign-in screen, which mints it',
+  // The post-quantum lane's handle (#643), the same argument.
+  stswebauthnpqcuserhandle: 'the first post-quantum passkey registered at ' +
+    '/portal/keys or the sign-in screen, which mints it',
   ststotpcredential: '/portal/mfa, or /admin/users (clear)',
   stsbackupcodes: '/portal/mfa, or /admin/users (clear)',
   stsapppassword: '/portal/app-passwords, or /admin/users',
@@ -11042,63 +11050,111 @@ function replaceWebauthnValues(key, values) {
 // been written since it was built, so an unknown handle presented twice costs
 // one walk. A walk is over the holders of the attribute (`eachHolderOfAny()`),
 // which in #349's window is the store's answer rather than a resident scan.
+//
+// **TWO HANDLES SINCE #643, ONE PER LANE**: `stsWebauthnUserHandle` for the
+// classical lane and `stsWebauthnPqcUserHandle` for the post-quantum one,
+// each indexed to the person AND the lane. The second is written only where
+// the first is already held, so the holders of the first are every holder of
+// either and the walk asks about one name — which keeps
+// `persistence/directory_queries.js`'s ASKED_ATTRIBUTES, and the database
+// index built from it, as they are (a new asked name is a new index
+// expression and so a schema version).
 // ---------------------------------------------------------------------------
 const userHandleIndexes = realms.keyed(function () {
   return { index: null, version: -1 };
 });
 
-function readWebauthnUserHandle(key) {
+// The attribute a lane's handle is stored in: the post-quantum lane's for
+// `pqc`, the classical one's for anything else (no lane is classical).
+function userHandleAttribute(lane) {
+  log.debug('Entering userHandleAttribute(). lane=' + lane);
+  log.debug('Leaving userHandleAttribute().');
+  return String(lane || '') === 'pqc' ? 'stswebauthnpqcuserhandle'
+                                      : 'stswebauthnuserhandle';
+}
+
+function readWebauthnUserHandle(key, lane) {
   log.debug('Entering readWebauthnUserHandle(). key=' + key);
   const stored = locateEntry(String(key || '')).stored;
   const value = stored
-    ? String((stored.attributes.stswebauthnuserhandle || [])[0] || '') : '';
+    ? String((stored.attributes[userHandleAttribute(lane)] || [])[0] || '')
+    : '';
   log.debug('Leaving readWebauthnUserHandle(). ' + (value ? 'Held.' : 'None.'));
   return value;
 }
 
-function writeWebauthnUserHandle(key, value) {
+function writeWebauthnUserHandle(key, value, lane) {
   log.debug('Entering writeWebauthnUserHandle(). key=' + key);
   const stored = locateEntry(String(key || '')).stored;
   if (!stored || !isPersonEntry(stored)) {
     log.debug('Leaving writeWebauthnUserHandle(). No person entry.');
     return false;
   }
-  stored.attributes.stswebauthnuserhandle = [String(value)];
+  const attribute = userHandleAttribute(lane);
+  // THE POST-QUANTUM HANDLE ONLY BESIDE THE CLASSICAL ONE (#643): the owner
+  // index walks the holders of the classical handle, so a second handle on
+  // an entry without the first would be one nobody could sign in with.
+  // `credentials.userHandleOf()` mints the first before the second.
+  if (attribute !== 'stswebauthnuserhandle' &&
+      !String((stored.attributes.stswebauthnuserhandle || [])[0] || '')) {
+    log.debug('Leaving writeWebauthnUserHandle(). No classical handle is ' +
+              'held beside it.');
+    return false;
+  }
+  stored.attributes[attribute] = [String(value)];
   touchDirectory(stored.dn);
   log.debug('Leaving writeWebauthnUserHandle(). Written to ' + stored.dn +
             '.');
   return true;
 }
 
-// The username of the PERSON whose entry holds `handle`, or ''.
-function webauthnUserHandleOwner(handle) {
-  log.debug('Entering webauthnUserHandleOwner().');
+// The PERSON whose entry holds `handle`, and the lane it is the handle of:
+// `{ owner, lane }`, or null.
+function webauthnUserHandleHolder(handle) {
+  log.debug('Entering webauthnUserHandleHolder().');
   const wanted = String(handle || '');
   const cache = userHandleIndexes();
-  const ownerAt = function (key) {
-    const stored = key ? getEntry(key) : null;
+  const holderAt = function (hit) {
+    const stored = hit ? getEntry(hit.dn) : null;
     return stored && isPersonEntry(stored) &&
-      String((stored.attributes.stswebauthnuserhandle || [])[0] || '') ===
-        wanted
-      ? String((stored.attributes.uid || [])[0] || usernameOfEntry(stored))
-      : '';
+      String((stored.attributes[userHandleAttribute(hit.lane)] ||
+              [])[0] || '') === wanted
+      ? { owner: String((stored.attributes.uid || [])[0] ||
+                        usernameOfEntry(stored)),
+          lane: hit.lane }
+      : null;
   };
-  let owner = wanted && cache.index ? ownerAt(cache.index.get(wanted)) : '';
-  if (!owner && wanted && cache.version !== directoryVersion) {
+  let found = wanted && cache.index ? holderAt(cache.index.get(wanted)) : null;
+  if (!found && wanted && cache.version !== directoryVersion) {
     const index = new Map();
     eachHolderOfAny(['stswebauthnuserhandle'], function (stored) {
-      const value = String((stored.attributes.stswebauthnuserhandle ||
-                            [])[0] || '');
-      if (value && isPersonEntry(stored) && !index.has(value)) {
-        index.set(value, stored.dn);
+      if (!isPersonEntry(stored)) {
+        return;
       }
+      ['classical', 'pqc'].forEach(function (lane) {
+        const value = String((stored.attributes[userHandleAttribute(lane)] ||
+                              [])[0] || '');
+        if (value && !index.has(value)) {
+          index.set(value, { dn: stored.dn, lane: lane });
+        }
+      });
     });
     cache.index = index;
     cache.version = directoryVersion;
-    owner = ownerAt(index.get(wanted));
+    found = holderAt(index.get(wanted));
   }
-  log.debug('Leaving webauthnUserHandleOwner(). ' + (owner || 'nobody'));
-  return owner;
+  log.debug('Leaving webauthnUserHandleHolder(). ' +
+            (found ? found.owner + ' (' + found.lane + ')' : 'nobody'));
+  return found;
+}
+
+// The username of the PERSON whose entry holds `handle`, in either lane, or
+// ''.
+function webauthnUserHandleOwner(handle) {
+  log.debug('Entering webauthnUserHandleOwner().');
+  const found = webauthnUserHandleHolder(handle);
+  log.debug('Leaving webauthnUserHandleOwner().');
+  return found ? found.owner : '';
 }
 
 // ---------------------------------------------------------------------------
@@ -12291,6 +12347,7 @@ if (typeof credentials.setDirectory === 'function') {
     readWebauthnUserHandle: readWebauthnUserHandle,
     writeWebauthnUserHandle: writeWebauthnUserHandle,
     webauthnUserHandleOwner: webauthnUserHandleOwner,
+    webauthnUserHandleHolder: webauthnUserHandleHolder,
     readActivation: readActivation,
     writeActivation: writeActivation,
     // The authenticator app (2026-09-10). Checked WHERE THEY ARE USED rather

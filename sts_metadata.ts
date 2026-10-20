@@ -2555,7 +2555,12 @@ const SPECS: Spec[] = [
               'verify-if-present in product and off in development — its ' +
               'chain against configured anchors and the FIDO Metadata ' +
               'Service\'s roots, its revocation consulted, and a model MDS ' +
-              'reports compromised refused. Missing: enterprise attestation ' +
+              'reports compromised refused. Since #643 a classical and a ' +
+              'post-quantum (ML-DSA) passkey may be held side by side ' +
+              '(webauthn.pqcAlongsideClassical): each lane has its own user ' +
+              'handle (section 5.4.3), algorithm list and ' +
+              'excludeCredentials, and the Signal API (section 5.1.10) is ' +
+              'sent once per lane. Missing: enterprise attestation ' +
               '(section 5.4.7) has no RP ID allow-list, and the ' +
               'authentication extensions are not processed. Written ' +
               'independently of the debugger\'s own decoder so the two can ' +

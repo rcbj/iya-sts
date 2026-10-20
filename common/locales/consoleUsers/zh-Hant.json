@@ -508,6 +508,7 @@
   "emailFactorBlock.needsWrite": "設定地址需要 <strong>Admin Write</strong>。",
   "algorithmCell.postQuantum": "後量子",
   "algorithmCell.insecure": "不安全",
+  "algorithmCell.lanePqc": "後量子通道，與傳統密碼金鑰並存",
   "attestationCell.claimedTitle": "關於驗證器的任何內容都未經驗證",
   "attestationCell.formatPolicy": "（格式 {format}，原則 {policy}）",
   "attestationCell.claimedTitleAfter": "。AAGUID（如有）只是驗證器所宣稱的。",

@@ -1055,6 +1055,14 @@
     "en": "fb33eabeb83379da",
     "text": "開啟時「只」要求後量子密碼金鑰演算法——RFC 9964 的 `ML-DSA-44`（-48）、`ML-DSA-65`（-49）與 `ML-DSA-87`（-50）——取 `webauthn.algorithms` 所指名者，若都未指名則三者皆要求。此時新的密碼金鑰必須是 ML-DSA：以其他演算法建立的會在註冊時被拒絕（WebAuthn 第 7.1 節）。它縮小的是「要求」的範圍：已註冊的傳統金鑰仍可繼續登入。大多數驗證器目前尚不支援 ML-DSA，在此設定開啟時無法註冊。"
   },
+  "webauthn.pqcAlongsideClassical|label": {
+    "en": "664b4753cc8439b0",
+    "text": "傳統密碼金鑰旁的後量子密碼金鑰"
+  },
+  "webauthn.pqcAlongsideClassical|description": {
+    "en": "e35e276b9d933828",
+    "text": "開啟後，一個人可以同時持有傳統密碼金鑰與後量子（ML-DSA）密碼金鑰，在能同時建立兩者的驗證器上可放在同一裝置。每個密碼金鑰都在此人選擇的「通道」中建立：傳統通道要求去掉 ML-DSA 的 `webauthn.algorithms`（若一個不剩則為 `ES256` 與 `RS256`），後量子通道只要求 ML-DSA。每個通道都有自己的使用者識別碼，因此第二個密碼金鑰不會在驗證器上取代第一個，並有自己的排除清單；憑證管理工具以表明其演算法的名稱顯示後量子密碼金鑰——建立時為 `<username>+ml-dsa`，當此人的所有後量子密碼金鑰都使用同一演算法時為 `<username>+ml-dsa-65`（例如）——這個名稱從不用於登入。`webauthn.maxKeysPerPerson` 計入兩個通道。`webauthn.pqcOnly` 開啟時不能開啟。關閉時，每個儀式都與以前相同，已註冊的後量子密碼金鑰仍可登入；不能再建立新的。"
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "使用者驗證"

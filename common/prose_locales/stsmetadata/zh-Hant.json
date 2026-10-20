@@ -488,8 +488,8 @@
     "text": "full，在每種模式下（#143，於 #139 中建置）：response_mode query.jwt、fragment.jwt、form_post.jwt 與 jwt（code 使用 query，其他使用 fragment）；回應參數附 iss、aud 與 exp（oauth2.jarmResponseLifetimeS），以用戶端的 authorization_signed_response_alg 簽署（RS256，或 FAPI 1.0 Advanced 下的 PS256），並在其註冊了 authorization_encrypted_response_alg 時加密；錯誤以相同方式回應；含明文權杖的 query.jwt 會被拒絕（2.3.1）；第 3 與 4 節的中繼資料與註冊成員。"
   },
   "stsmetadata.specs.webauthn.coverage": {
-    "en": "ad2559da570e5a62",
-    "text": "partial，依賴方端：註冊（第 7.1 節）與斷言（第 7.2 節）都會驗證——挑戰、來源、RP ID 雜湊、使用者在場與使用者驗證旗標、BE/BS、認證的 alg 是否符合 pubKeyCredParams、1023 位元組的認證 id、簽章計數器，以及對 authenticatorData || SHA-256(clientDataJSON) 的簽章，支援 ES256/384/512、RS256/384/512、PS256/384/512、EdDSA 與 ML-DSA-44/65/87（RFC 9964）金鑰。自 #105 起，「證明陳述」會以第 8 節全部八種格式（packed、tpm、android-key、android-safetynet、fido-u2f、none、apple、compound）在 webauthn.attestationPolicy 下驗證——by-mode 在產品模式下為 verify-if-present，在開發模式下為 off——其憑證鏈依已設定的錨點與 FIDO Metadata Service 的根憑證驗證，查詢其撤銷狀態，並拒絕 MDS 回報為遭入侵的型號。尚缺：企業證明（第 5.4.7 節）沒有 RP ID 允許清單，且不處理驗證延伸。與偵錯工具自己的解碼器獨立撰寫，讓兩者可以相互核對（tests/webauthn_cross_impl.js）。"
+    "en": "84ea7cdfbe803962",
+    "text": "partial，依賴方端：註冊（第 7.1 節）與斷言（第 7.2 節）都會驗證——挑戰、來源、RP ID 雜湊、使用者在場與使用者驗證旗標、BE/BS、認證的 alg 是否符合 pubKeyCredParams、1023 位元組的認證 id、簽章計數器，以及對 authenticatorData || SHA-256(clientDataJSON) 的簽章，支援 ES256/384/512、RS256/384/512、PS256/384/512、EdDSA 與 ML-DSA-44/65/87（RFC 9964）金鑰。自 #105 起，「證明陳述」會以第 8 節全部八種格式（packed、tpm、android-key、android-safetynet、fido-u2f、none、apple、compound）在 webauthn.attestationPolicy 下驗證——by-mode 在產品模式下為 verify-if-present，在開發模式下為 off——其憑證鏈依已設定的錨點與 FIDO Metadata Service 的根憑證驗證，查詢其撤銷狀態，並拒絕 MDS 回報為遭入侵的型號。自 #643 起，可同時持有傳統密碼金鑰與後量子（ML-DSA）密碼金鑰（webauthn.pqcAlongsideClassical）：每個通道都有自己的使用者識別碼（第 5.4.3 節）、演算法清單與 excludeCredentials，Signal API（第 5.1.10 節）依通道各傳送一次。尚缺：企業證明（第 5.4.7 節）沒有 RP ID 允許清單，且不處理驗證延伸。與偵錯工具自己的解碼器獨立撰寫，讓兩者可以相互核對（tests/webauthn_cross_impl.js）。"
   },
   "stsmetadata.specs.rfc4226.coverage": {
     "en": "ffd9d22cf4ecfd57",
