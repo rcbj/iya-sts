@@ -403,10 +403,15 @@ async function run(t) {
       clean[key] = process.env[key];
     }
   });
+  // THE OLD DEFAULT, SET EXPLICITLY (#751): `authn.multipleAccounts` is on
+  // by default since 2026-10-20, and what this file holds is a browser
+  // with ONE session — a sign-in's answer with no account ticket on it, a
+  // change of person ending the session it replaced.
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
       env: Object.assign(clean, { LOG_LEVEL: 'fatal', STS_LOG_LEVEL: 'fatal',
-                                  AA_ROOT: ROOT, AA_OUT: out }),
+                                  AA_ROOT: ROOT, AA_OUT: out,
+                                  STS_AUTHN_MULTIPLE_ACCOUNTS: 'false' }),
       encoding: 'utf8', timeout: 180000, cwd: ROOT
     });
   let findings = null;

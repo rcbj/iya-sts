@@ -317,7 +317,10 @@ function childMain() {
 
 async function run(t) {
   log.debug("Entering run().");
-  kit.inAChild(t, childMain, 'authn-api-wallet');
+  // THE OLD DEFAULT, SET EXPLICITLY (#751): the poll's answer is held to a
+  // redirect with no account ticket on it, a browser with one session.
+  kit.inAChild(t, childMain, 'authn-api-wallet',
+               { STS_AUTHN_MULTIPLE_ACCOUNTS: 'false' });
   log.debug("Leaving run().");
 }
 

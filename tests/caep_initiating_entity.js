@@ -63,6 +63,7 @@
 delete process.env.CONFIG_FILE;
 
 const authn = require('../authn/authn');
+const config = require('../common/config');
 const caep = require('../ssf/caep');
 const logout = require('../logout/logout');
 
@@ -343,9 +344,23 @@ function run(t) {
   log.debug("Leaving run().");
 }
 
+// THE OLD DEFAULT, SET EXPLICITLY (#751): `authn.multipleAccounts` is on by
+// default since 2026-10-20 (rcbj), and a sign-in as another person here
+// is meant to REPLACE the browser's session, as it did when it was off.
+async function runWithOneSessionPerBrowser(t) {
+  log.debug("Entering runWithOneSessionPerBrowser().");
+  config.setOverride('authn.multipleAccounts', 'false');
+  try {
+    await run(t);
+  } finally {
+    config.clearOverride('authn.multipleAccounts');
+  }
+  log.debug("Leaving runWithOneSessionPerBrowser().");
+}
+
 module.exports = {
   name: 'caep_initiating_entity',
   describe: 'who ended a session, as the event reports it: the admin branch ' +
             'that was unreachable, and the expiry that is a policy',
-  run: run
+  run: runWithOneSessionPerBrowser
 };
