@@ -11273,6 +11273,32 @@ const SETTINGS = [
                  'Kerberos ticket says who you are; a Windows service ' +
                  'authorizes on the SIDs in the PAC.' },
 
+  // DELEGATION ACROSS A TRUST (#430 Phases 2 and 3): two words a realm says
+  // about its trusts, read where they are used.
+  { key: 'krb5.crossRealmClassicDelegation', group: 'Kerberos',
+    label: 'Classic delegation across trusts',
+    env: 'KRB5_CROSS_REALM_CLASSIC_DELEGATION', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether CLASSIC constrained delegation ' +
+                 '(appAllowedToDelegateTo on the front end) may cross a ' +
+                 'Kerberos trust. Off by default: it is defined within one ' +
+                 'realm, and resource-based delegation ' +
+                 '(appAllowedToActOnBehalfOf on the target, naming ' +
+                 'SPN@REALM) is the one that crosses. On, the front end\'s ' +
+                 'realm checks its own list before it refers the evidence, ' +
+                 'and the target\'s realm takes that as checked; both realms ' +
+                 'must turn it on.' },
+
+  { key: 'krb5.requireSidFilteringInProduct', group: 'Kerberos',
+    label: 'Require SID filtering on trusts',
+    env: 'KRB5_REQUIRE_SID_FILTERING_IN_PRODUCT', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'In product mode, a Kerberos trust is used only while it ' +
+                 'filters SIDs (its quarantined attribute, on by ' +
+                 'default). Turning this off on a realm is the operator ' +
+                 'accepting a partner\'s SIDs unfiltered. Development uses ' +
+                 'every trust whatever this says.' },
+
   // A REFERRAL'S LIMIT (#430): how many trusts one path may cross. A path
   // through transitive trusts is built from the records, and a loop between
   // two misconfigured records would otherwise refer a client for ever.

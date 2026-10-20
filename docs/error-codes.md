@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4415** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4426** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
 * [Federation (`STS-FED`)](#sts-fed) — 146
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 229
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 239
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 130
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
@@ -93,7 +93,7 @@ is an ordinary outcome.
 * [User portal (`STS-PORTAL`)](#sts-portal) — 94
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
-* [Registries (`STS-REG`)](#sts-reg) — 178
+* [Registries (`STS-REG`)](#sts-reg) — 179
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -2856,6 +2856,16 @@ Raised from: kerberos/.
 | `STS-KRB-0227` | A cross-realm ticket was refused: it came through a non-transitive trust for somebody not of the partner's own realm, or would be referred onward through one. | KDC_ERR_PATH_NOT_ACCEPTED (28); [MS-ADTS] 6.1.6.7.9 |
 | `STS-KRB-0228` | A cross-realm ticket's path failed the transited-policy check: a realm on it is outside the trust's routed namespace, is this realm, is elided, or no enabled trust accepts its issuer. | KDC_ERR_PATH_NOT_ACCEPTED (28); RFC 4120 sections 2.7, 3.3.3.2 |
 | `STS-KRB-0229` | A cross-realm ticket-granting ticket was refused: the trust it came through is disabled, or holds no incoming key. | KDC_ERR_S_PRINCIPAL_UNKNOWN (7) |
+| `STS-KRB-0230` | An S4U request or a forwarded TGT across a Kerberos trust was refused by the issuance policy: the trust is disabled, or does not accept the user's realm (no incoming key). | KDC_ERR_POLICY (12) |
+| `STS-KRB-0231` | S4U2Self for a user of another Kerberos realm was refused: the service does not list that realm in krb5S4uSelfRealm. | KDC_ERR_POLICY (12); [MS-SFU] 3.1.5.1.1.2 |
+| `STS-KRB-0232` | Classic constrained delegation across a Kerberos trust was refused: krb5.crossRealmClassicDelegation is off. | KDC_ERR_POLICY (12) or KDC_ERR_BADOPTION (13); [MS-SFU] 3.2.5.2 |
+| `STS-KRB-0233` | A TGT was not delegated across a Kerberos trust: [MS-KILE] 3.3.5.7.5's conditions on the trust's attributes do not hold, or the service refuses it (krb5ForeignTgtDelegation deny). | KDC_ERR_BADOPTION (13); [MS-KILE] 3.3.5.7.5 |
+| `STS-KRB-0234` | S4U2Self across Kerberos realms could not be referred: no enabled trust routes the user's or the requester's realm. | KDC_ERR_WRONG_REALM (68) |
+| `STS-KRB-0235` | An S4U request would be referred across a Kerberos trust whose outgoing key this realm cannot use. | KDC_ERR_S_PRINCIPAL_UNKNOWN (7) |
+| `STS-KRB-0236` | A cross-realm S4U2Proxy evidence ticket came through a Kerberos trust this realm cannot use (disabled, not honoured, or no incoming key). | KDC_ERR_S_PRINCIPAL_UNKNOWN (7) |
+| `STS-KRB-0237` | A Kerberos trust record was refused: its forest trust information is malformed, or given to a trust that is not cross-forest (#430 SID filtering). | none (a refused administrative change); [MS-ADTS] 6.1.6.9.3 |
+| `STS-KRB-0238` | A Kerberos trust record was refused: its claims transformation is not one this service implements (drop-all, allow-all). | none (a refused administrative change); [MS-ADTS] 3.1.1.11.2.11 |
+| `STS-KRB-0239` | A PAC arriving across a Kerberos trust may not cross it: its logon domain is in this realm's forest across a cross-forest or external boundary, or is not a domain the trust passes. | KDC_ERR_POLICY (12); [MS-PAC] 4.1.2.2 |
 
 ## STS-LDAP
 
@@ -5068,6 +5078,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0358` | An application's owners could not be written to the directory (#604). | HTTP 400 (API) or a refusal on the application page |
 | `STS-REG-0359` | An application was not created: the lifetime given for its first client secret is not a whole number of days from 0 to 730 (#394). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0360` | An application was not created: a client secret lifetime was given with no new client secret for it to apply to — oauthClientSecret empty, or a whole record carrying its own expiry (#394). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0361` | An application's krb5S4uSelfRealm was given a Kerberos realm none of this realm's trusts accepts tickets from (#430). | none (a refused administrative change) |
 
 ## STS-DBG
 

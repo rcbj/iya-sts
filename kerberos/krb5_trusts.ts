@@ -83,6 +83,9 @@ import stsCrypto = require('../common/crypto');
 import cacheRegistry = require('../common/cache_registry');
 import InstanceSlot = require('../common/instance_slot');
 import kcrypto = require('./krb5_crypto');
+// The vendored PAC codec (#430 Phase 2), for SID filtering: it requires only
+// the rest of the codec, which is already in the parent project's closure.
+import kpac = require('./krb5_pac');
 
 // A stored record, a directory row, a view: JSON this file wrote.
 type Json = any;
@@ -104,6 +107,7 @@ interface Krb5TrustsDeps {
   errorCodes: typeof errorCodes;
   stsCrypto: typeof stsCrypto;
   kcrypto: Json;
+  kpac: Json;
   // LAZILY, both: the keystore (the seal), and the principal database (which
   // Kerberos realm a trust realm answers as). The principal database
   // requires THIS file lazily, so a require at load would be a cycle.
@@ -133,6 +137,10 @@ const ATTRIBUTE_BITS: Record<string, number> = {
   'within-forest': 0x00000020,
   'treat-as-external': 0x00000040,
   'no-tgt-delegation': 0x00000200,
+  // [MS-ADTS] 6.1.6.7.9 TAPT: with treat-as-external on a forest trust, the
+  // PrivilegedIdentityManagement boundary of [MS-PAC] 4.1.2.2 (#430's SID
+  // filtering, R14).
+  'pim-trust': 0x00000400,
   'enable-tgt-delegation': 0x00000800
 };
 
@@ -141,8 +149,31 @@ const CONTRADICTIONS: Array<[string, string, string]> = [
   ['no-tgt-delegation', 'enable-tgt-delegation',
    'a trust cannot both forbid and enable TGT delegation'],
   ['non-transitive', 'forest-transitive',
-   'a forest trust is transitive by definition']
+   'a forest trust is transitive by definition'],
+  ['within-forest', 'forest-transitive',
+   'a trust within the forest is not a cross-forest trust'],
+  ['within-forest', 'cross-organization',
+   'a trust within the forest is to the same organization']
 ];
+
+// Attributes evaluated only beside another ([MS-ADTS] 6.1.6.7.9): each is
+// refused without what it needs, so a record never says something it does
+// not do.
+const REQUIRES: Array<[string, string, string]> = [
+  ['treat-as-external', 'forest-transitive',
+   'TREAT_AS_EXTERNAL is evaluated only on a cross-forest trust'],
+  ['pim-trust', 'forest-transitive',
+   'PIM_TRUST is evaluated only on a cross-forest trust'],
+  ['pim-trust', 'treat-as-external',
+   'PIM_TRUST takes effect only with TREAT_AS_EXTERNAL']
+];
+
+// What a trust does with the claims of a PAC arriving across it ([MS-ADTS]
+// 3.1.1.11.2.11): `drop-all`, the specification's answer when the trust
+// has no transformation policy, or `allow-all`, [MS-CTA]'s rule that issues
+// every input claim. The rest of [MS-CTA]'s rule language is not
+// implemented (kerberos/CLAUDE.md, R19).
+const CLAIMS_TRANSFORMATIONS = ['drop-all', 'allow-all'];
 
 // SID filtering is ON by default (rcbj's decision 4 on #430): a record that
 // names no attributes is quarantined.
@@ -289,6 +320,7 @@ class Krb5Trusts {
     return {
       log: log, config: config, realms: realms, mode: mode,
       errorCodes: errorCodes, stsCrypto: stsCrypto, kcrypto: kcrypto,
+      kpac: kpac,
       keystore: function (): Json {
         return require('../common/keystore');
       },
@@ -619,6 +651,9 @@ class Krb5Trusts {
       attributes: (r.attributes || []).slice(),
       suffixes: (r.suffixes || []).slice(),
       enctypes: (r.enctypes || []).slice(),
+      forestTrustInfo: r.forestTrustInfo || null,
+      claimsTransformation: r.claimsTransformation || 'drop-all',
+      boundary: this.boundaryOf(r),
       incoming: Object.assign(this.keyView(r.incoming), {
         principal: 'krbtgt/' + ourRealm + '@' + r.partnerRealm }),
       outgoing: Object.assign(this.keyView(r.outgoing), {
@@ -873,6 +908,82 @@ class Krb5Trusts {
           pair[1] + ' cannot both be set: ' + pair[2] });
       }
     });
+    REQUIRES.forEach(function (pair: [string, string, string]): void {
+      if (attributes.indexOf(pair[0]) !== -1 &&
+          attributes.indexOf(pair[1]) === -1) {
+        errors.push({ code: 'STS-KRB-0217', message: pair[0] + ' needs ' +
+          pair[1] + ': ' + pair[2] });
+      }
+    });
+    // THE FOREST TRUST INFORMATION ([MS-ADTS] 6.1.6.9.3, #430's SID
+    // filtering R12): the trusted forest's domains, each a domain SID with
+    // its DNS and NetBIOS names and whether SID matching is enabled
+    // (LSA_SID_DISABLED_ADMIN off), and its top-level names. Only a
+    // cross-forest trust has one.
+    const ftGiven = pick('forestTrustInfo');
+    let forestTrustInfo: Json = null;
+    if (ftGiven !== undefined && ftGiven !== null && ftGiven !== '') {
+      const ft = typeof ftGiven === 'string' ? (function (): Json {
+        try {
+          return JSON.parse(ftGiven as string);
+        } catch (e: any) {
+          log.debug("Caught in Krb5Trusts.validate(): " +
+                    ((e && e.message) || e));
+          return { invalid: true };
+        }
+      })() : ftGiven as Json;
+      const domains = Array.isArray(ft && ft.domains) ? ft.domains : null;
+      const names = Array.isArray(ft && ft.topLevelNames) ?
+        ft.topLevelNames : [];
+      if (!ft || ft.invalid || !domains) {
+        errors.push({ code: 'STS-KRB-0237', message: 'forestTrustInfo is ' +
+          '{ domains: [{ sid, dnsName, netbiosName, sidEnabled }], ' +
+          'topLevelNames: [{ name, enabled }] }' });
+      } else if (attributes.indexOf('forest-transitive') === -1) {
+        errors.push({ code: 'STS-KRB-0237', message: 'forestTrustInfo ' +
+          'belongs to a cross-forest trust (forest-transitive)' });
+      } else {
+        const badDomain = domains.filter(function (d: Json): boolean {
+          return !d || !DOMAIN_SID_PATTERN.test(String(d.sid || '')) ||
+            (d.dnsName && !SUFFIX_PATTERN.test(String(d.dnsName)
+              .toLowerCase())) ||
+            (d.netbiosName && !NETBIOS_PATTERN.test(String(d.netbiosName)));
+        });
+        const badName = names.filter(function (n: Json): boolean {
+          return !n || !SUFFIX_PATTERN.test(String(n.name || '')
+            .toLowerCase());
+        });
+        if (badDomain.length || badName.length) {
+          errors.push({ code: 'STS-KRB-0237', message: 'forestTrustInfo ' +
+            'holds ' + (badDomain.length ? badDomain.length + ' domain(s) ' +
+            'without a domain SID, a DNS name or a NetBIOS name' : '') +
+            (badDomain.length && badName.length ? ' and ' : '') +
+            (badName.length ? badName.length + ' top-level name(s) that ' +
+              'are not DNS names' : '') });
+        } else {
+          forestTrustInfo = {
+            domains: domains.map(function (d: Json): Json {
+              return { sid: String(d.sid),
+                       dnsName: String(d.dnsName || '').toLowerCase(),
+                       netbiosName: String(d.netbiosName || ''),
+                       sidEnabled: d.sidEnabled !== false };
+            }),
+            topLevelNames: names.map(function (n: Json): Json {
+              return { name: String(n.name).toLowerCase(),
+                       enabled: n.enabled !== false };
+            })
+          };
+        }
+      }
+    }
+    // THE CLAIMS POLICY ([MS-ADTS] 3.1.1.11.2.11, R19).
+    const claimsTransformation = String(pick('claimsTransformation') ||
+                                        'drop-all');
+    if (CLAIMS_TRANSFORMATIONS.indexOf(claimsTransformation) === -1) {
+      errors.push({ code: 'STS-KRB-0238', message: 'claimsTransformation ' +
+        'is one of ' + CLAIMS_TRANSFORMATIONS.join(', ') + '; the rest of ' +
+        '[MS-CTA]\'s rule language is not implemented here' });
+    }
     const ownDomain = ourRealm.toLowerCase();
     const suffixes = this.normaliseList(pick('suffixes') === undefined ?
       [partnerRealm.toLowerCase()] : pick('suffixes'))
@@ -977,6 +1088,8 @@ class Krb5Trusts {
       }),
       incoming: incoming.side,
       outgoing: outgoing.side,
+      forestTrustInfo: forestTrustInfo,
+      claimsTransformation: claimsTransformation,
       enabled: enabled,
       createdAt: before && before.createdAt ? before.createdAt : now,
       updatedAt: now
@@ -1260,6 +1373,495 @@ class Krb5Trusts {
   }
 
   // =========================================================================
+  // A TRUST WITHOUT SID FILTERING IS NOT HONOURED IN PRODUCT (#430, rcbj's
+  // decision 4): `quarantined` is on by default, and a record with it off is
+  // used only where the mode does not ask for it
+  // (`mode.requiresSidFilteringOnTrusts()`) or the realm turned
+  // krb5.requireSidFilteringInProduct off. Asked at every use, not at the
+  // write, so a realm switched to product stops using such a record at once.
+  // =========================================================================
+  /**
+   * Says whether a trust record is honoured: SID filtering on, or not
+   * required here.
+   *
+   * @param record - the record
+   * @returns true when it may be used
+   */
+  honoured(record: Json): boolean {
+    const { log, mode, config } = this.deps;
+    log.debug("Entering Krb5Trusts.honoured().");
+    const filtered = (record && record.attributes || [])
+      .indexOf('quarantined') !== -1;
+    const out = filtered || !mode.requiresSidFilteringOnTrusts() ||
+      !config.value('krb5.requireSidFilteringInProduct');
+    log.debug("Leaving Krb5Trusts.honoured(). " + out);
+    return out;
+  }
+
+  // A record that may be used at all: enabled and honoured.
+  private usable(record: Json): boolean {
+    this.deps.log.debug("Entering Krb5Trusts.usable().");
+    this.deps.log.debug("Leaving Krb5Trusts.usable().");
+    return !!record && record.enabled !== false && this.honoured(record);
+  }
+
+  /**
+   * Says whether this realm's trusts accept tickets from a Kerberos realm:
+   * an enabled, honoured record holding an incoming key from it, or a
+   * transitive one whose namespace routes it. What krb5S4uSelfRealm may
+   * name (#430 Phase 3).
+   *
+   * @param realmName - the Kerberos realm
+   * @returns true when accepted
+   */
+  acceptsRealm(realmName: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Krb5Trusts.acceptsRealm(). " + realmName);
+    const self = this;
+    const name = String(realmName || '');
+    const out = !!name && this.allRead().some(function (read: Json): boolean {
+      const r = read.record;
+      if (!self.usable(r) || !r.incoming) {
+        return false;
+      }
+      return r.partnerRealm === name ||
+        ((r.attributes || []).indexOf('non-transitive') === -1 &&
+         self.inNamespace(r, name));
+    });
+    log.debug("Leaving Krb5Trusts.acceptsRealm(). " + out);
+    return out;
+  }
+
+  /**
+   * The partner a request for a Kerberos REALM is referred to — S4U2Self
+   * naming a user of another realm ([MS-SFU] 3.1.5.1.1.2): the enabled,
+   * honoured record with an outgoing key for that realm, else a transitive
+   * one whose namespace routes it, the most specific suffix winning.
+   *
+   * @param realmName - the realm the request is for
+   * @returns the partner realm, or ''
+   */
+  nextHopForRealm(realmName: string): string {
+    const { log } = this.deps;
+    log.debug("Entering Krb5Trusts.nextHopForRealm(). " + realmName);
+    const self = this;
+    const name = String(realmName || '');
+    const domain = name.toLowerCase();
+    let best = '';
+    let bestLength = -1;
+    this.allRead().forEach(function (read: Json): void {
+      const r = read.record;
+      if (!self.usable(r) || !r.outgoing) {
+        return;
+      }
+      if (r.partnerRealm === name) {
+        best = r.partnerRealm;
+        bestLength = Number.MAX_SAFE_INTEGER;
+        return;
+      }
+      if ((r.attributes || []).indexOf('non-transitive') !== -1) {
+        return;
+      }
+      (r.suffixes || []).forEach(function (suffix: string): void {
+        if ((domain === suffix || domain.endsWith('.' + suffix)) &&
+            suffix.length > bestLength) {
+          best = r.partnerRealm;
+          bestLength = suffix.length;
+        }
+      });
+    });
+    log.debug("Leaving Krb5Trusts.nextHopForRealm(). " + (best || 'none'));
+    return best;
+  }
+
+  /**
+   * The facts the issuance policy reads of the trust a question arrived
+   * across (#430 Phase 3): `{ partner, type, direction, attributes,
+   * enabled }`, or null when this realm holds no record for the partner.
+   *
+   * @param partner - the partner Kerberos realm
+   * @returns the facts, or null
+   */
+  policyFacts(partner: string): Json | null {
+    const { log } = this.deps;
+    log.debug("Entering Krb5Trusts.policyFacts(). " + partner);
+    const read = this.readOne(partner);
+    if (!read) {
+      log.debug("Leaving Krb5Trusts.policyFacts(). None.");
+      return null;
+    }
+    const view = this.viewOf(read);
+    log.debug("Leaving Krb5Trusts.policyFacts().");
+    return { partner: view.partnerRealm, type: view.type,
+             direction: view.direction, attributes: view.attributes,
+             enabled: this.usable(read.record) };
+  }
+
+  /**
+   * Whether a referral across the trust with a partner may carry
+   * ok-as-delegate: [MS-KILE] 3.3.5.7.5's EnableConditions (within-forest,
+   * enable-tgt-delegation) and none of its DisableConditions on the trust
+   * (no-tgt-delegation, quarantined). The source ticket's own flag is the
+   * caller's half.
+   *
+   * @param partner - the partner Kerberos realm
+   * @returns true when the trust's attributes allow it
+   */
+  tgtDelegationAllowed(partner: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Krb5Trusts.tgtDelegationAllowed(). " + partner);
+    const read = this.readOne(partner);
+    const a: string[] = read ? (read.record.attributes || []) : [];
+    const out = !!read &&
+      (a.indexOf('within-forest') !== -1 ||
+       a.indexOf('enable-tgt-delegation') !== -1) &&
+      a.indexOf('no-tgt-delegation') === -1 &&
+      a.indexOf('quarantined') === -1;
+    log.debug("Leaving Krb5Trusts.tgtDelegationAllowed(). " + out);
+    return out;
+  }
+
+  // =========================================================================
+  // SID FILTERING ON ARRIVAL, ALL OF IT (#430 Phase 2; [MS-PAC] 4.1.2.2,
+  // [MS-ADTS] 6.1.6.7 and 6.1.6.9.3, [MS-ADTS] 3.1.1.11.2.11, [MS-KILE]
+  // 3.3.5.7.5). kerberos/CLAUDE.md, *SID FILTERING: THE RULES*, is the
+  // numbered table; each `R<n>` below is a row of it, and
+  // tests/kerberos_cross_realm_delegation.js tests each row by its number.
+  //
+  // The TRUST BOUNDARY a record is ([MS-PAC] 4.1.2.2's first table) comes
+  // from its attribute bits ([MS-ADTS] 6.1.6.7.9): see boundaryOf(). Each SID
+  // a PAC asserts is classed by the pattern table — AlwaysFilter,
+  // NeverFilter, EDC, ForestSpecific, a domain SID — and the class and the
+  // boundary decide whether it crosses.
+  // =========================================================================
+  /**
+   * The [MS-PAC] 4.1.2.2 trust boundary a record is.
+   *
+   * @param record - the trust record
+   * @returns `WithinForest`, `QuarantinedWithinForest`, `CrossForest`,
+   *   `External`, `QuarantinedExternal` or `PrivilegedIdentityManagement`
+   */
+  boundaryOf(record: Json): string {
+    this.deps.log.debug("Entering Krb5Trusts.boundaryOf().");
+    const a: string[] = (record && record.attributes) || [];
+    const has = function (name: string): boolean {
+      return a.indexOf(name) !== -1;
+    };
+    let out = has('quarantined') ? 'QuarantinedExternal' : 'External';
+    if (has('within-forest')) {
+      out = has('quarantined') ? 'QuarantinedWithinForest' : 'WithinForest';
+    } else if (has('forest-transitive')) {
+      // R13, R14: TREAT_AS_EXTERNAL relaxes a cross-forest trust to an
+      // external one, and with PIM_TRUST beside it, to PIM.
+      out = has('treat-as-external')
+        ? (has('pim-trust') ? 'PrivilegedIdentityManagement' : 'External')
+        : 'CrossForest';
+    }
+    this.deps.log.debug("Leaving Krb5Trusts.boundaryOf(). " + out);
+    return out;
+  }
+
+  // [MS-PAC] 4.1.2.2's SID pattern table, as a class: `always` (R1, R4,
+  // R23), `never` (R2), `edc` (R3), `forest` (ForestSpecific: a domain SID
+  // with R below 1000, R5 to R7), `account` (a domain SID with R of 1000 or
+  // more), with the SID's domain part for the last two. A HOT PATH — once
+  // per SID per crossing PAC — so no Entering/Leaving pair here.
+  private sidClass(text: string): Json {
+    const parts = String(text || '').split('-');
+    if (parts.length < 3 || parts[0] !== 'S' || parts[1] !== '1' ||
+        !parts.slice(2).every(function (one: string): boolean {
+          return /^\d+$/.test(one);
+        })) {
+      return { kind: 'always', why: 'invalid' };
+    }
+    const authority = Number(parts[2]);
+    const subs = parts.slice(3).map(Number);
+    if (authority === 0 || authority === 1 || authority === 2 ||
+        authority === 3 || (authority >= 6 && authority <= 9)) {
+      return { kind: 'always', why: 'well-known' };
+    }
+    if (authority === 4 || authority === 10) {
+      return { kind: 'never' };
+    }
+    // UNCERTAIN (kerberos/CLAUDE.md, R2): S-1-18 (the authentication
+    // authority asserted identities, [MS-DTYP] 2.4.2.4) is in no row of the
+    // table, which predates it; it says how an identity was established and
+    // is kept.
+    if (authority === 18) {
+      return { kind: 'never' };
+    }
+    if (authority !== 5) {
+      return { kind: 'always', why: 'unlisted authority' };
+    }
+    if (!subs.length) {
+      return { kind: 'always', why: 'NT Authority' };
+    }
+    const first = subs[0];
+    if (first === 9 && subs.length === 1) {
+      return { kind: 'edc' };
+    }
+    if (first === 15 && subs.length === 1) {
+      return { kind: 'never' };
+    }
+    if (first === 21) {
+      if (subs.length === 5 && subs[1] === 0 && subs[2] === 0 &&
+          subs[3] === 0 && (subs[4] === 496 || subs[4] === 497)) {
+        return { kind: 'never' };
+      }
+      if (subs.length !== 5) {
+        // R4: S-1-5-21, partially formed, a domain itself, or too many RIDs.
+        return { kind: 'always', why: 'not a principal of a domain' };
+      }
+      const domain = 'S-1-5-21-' + subs.slice(1, 4).join('-');
+      return { kind: subs[4] < 1000 ? 'forest' : 'account', domain: domain,
+               rid: subs[4] };
+    }
+    if (first === 1000) {
+      return { kind: 'never' };
+    }
+    if (first > 1000) {
+      return { kind: 'never' };
+    }
+    return { kind: 'always', why: 'reserved' };
+  }
+
+  /**
+   * Filters a PAC that arrived through the trust with a partner: every row
+   * of kerberos/CLAUDE.md's *SID FILTERING: THE RULES*.
+   *
+   * @param pacBytes - the PAC
+   * @param partner - the partner the ticket arrived from
+   * @param localSid - this realm's own domain SID
+   * @returns `{ bytes, removed, refused, boundary }` — `refused` a sentence
+   *   when the PAC may not cross at all (R8, R17), else ''
+   */
+  sidFilter(pacBytes: Uint8Array, partner: string,
+            localSid: string): Json {
+    const { log, kpac } = this.deps;
+    log.debug("Entering Krb5Trusts.sidFilter(). " + partner);
+    const self = this;
+    const read = this.readOne(partner);
+    const record = read ? read.record : { attributes: ['quarantined'] };
+    const boundary = this.boundaryOf(record);
+    const partnerSid = String(record.partnerSid || '');
+    // THIS REALM'S FOREST (R9): its own domain and the domains it trusts
+    // WITHIN the forest.
+    const localForest = [String(localSid || '')].concat(this.allRead()
+      .filter(function (one: Json): boolean {
+        return (one.record.attributes || []).indexOf('within-forest') !== -1 &&
+               !!one.record.partnerSid;
+      }).map(function (one: Json): string {
+        return String(one.record.partnerSid);
+      })).filter(Boolean);
+    // THE TRUSTED FOREST'S DOMAINS (R12): the forest trust information's
+    // domains whose SID matching is not disabled ([MS-ADTS] 6.1.6.9.3.1,
+    // LSA_SID_DISABLED_ADMIN and _CONFLICT), else the partner's own domain.
+    const ftDomains = ((record.forestTrustInfo || {}).domains || [])
+      .filter(function (one: Json): boolean {
+        return one.sidEnabled !== false;
+      }).map(function (one: Json): string {
+        return String(one.sid);
+      });
+    const trustedForestDomains = ftDomains.length ? ftDomains :
+      (partnerSid ? [partnerSid] : []);
+    const pac = kpac.parsePac(pacBytes);
+    const buffer = kpac.bufferOfType(pac, kpac.TYPE.LOGON_INFO);
+    const info = buffer ? buffer.parsed : null;
+    if (!info) {
+      log.debug("Leaving Krb5Trusts.sidFilter(). No logon information.");
+      return { bytes: pacBytes, removed: [], refused: '',
+               boundary: boundary };
+    }
+    const sidText = function (sid: Json): string {
+      return sid ? String(sid.text || sid) : '';
+    };
+    const logonDomain = sidText(info.logonDomainId);
+    // R8: across a CrossForest or External boundary, a PAC whose logon
+    // domain is in this realm's forest is invalid authorization data.
+    if ((boundary === 'CrossForest' || boundary === 'External' ||
+         boundary === 'QuarantinedExternal') &&
+        localForest.indexOf(logonDomain) !== -1) {
+      log.debug("Leaving Krb5Trusts.sidFilter(). R8.");
+      return { bytes: pacBytes, removed: [], boundary: boundary,
+               refused: 'R8: the PAC\'s logon domain ' + logonDomain +
+                 ' is in this realm\'s forest, and it arrived across the ' +
+                 boundary + ' trust with ' + partner +
+                 ' ([MS-PAC] 4.1.2.2, DomainSpecific)' };
+    }
+    // R17: a quarantined boundary passes only its trusted domain's
+    // principals; a USER of another domain cannot have their own SID
+    // filtered without the PAC naming nobody, so the PAC does not cross.
+    // UNCERTAIN: the specification filters SIDs and says nothing of the
+    // user's own.
+    if ((boundary === 'QuarantinedExternal' ||
+         boundary === 'QuarantinedWithinForest') && partnerSid &&
+        logonDomain !== partnerSid) {
+      log.debug("Leaving Krb5Trusts.sidFilter(). R17.");
+      return { bytes: pacBytes, removed: [], boundary: boundary,
+               refused: 'R17: the user\'s domain ' + logonDomain + ' is not ' +
+                 'the trusted domain ' + partnerSid + ' of the quarantined ' +
+                 'trust with ' + partner };
+    }
+    if (boundary === 'CrossForest' && logonDomain &&
+        trustedForestDomains.indexOf(logonDomain) === -1) {
+      log.debug("Leaving Krb5Trusts.sidFilter(). R17 (forest).");
+      return { bytes: pacBytes, removed: [], boundary: boundary,
+               refused: 'R17: the user\'s domain ' + logonDomain + ' is not ' +
+                 'among the trusted forest\'s domains (forest trust ' +
+                 'information) of the trust with ' + partner };
+    }
+    // ONE SID: kept or not, at this boundary. R1-R16.
+    const keeps = function (text: string): boolean {
+      const c = self.sidClass(text);
+      if (c.kind === 'always') {
+        return false;                                         // R1, R4, R23
+      }
+      if (c.kind === 'never') {
+        return true;                                          // R2
+      }
+      if (c.kind === 'edc') {                                 // R3, R11, R14
+        return boundary === 'WithinForest' ||
+               boundary === 'QuarantinedWithinForest';
+      }
+      if (c.domain === localSid && c.kind === 'forest') {
+        return false;                                         // R6
+      }
+      if (c.kind === 'forest' && c.domain !== logonDomain) {
+        return false;                                         // R7
+      }
+      if (c.kind === 'forest' && boundary !== 'WithinForest' &&
+          boundary !== 'PrivilegedIdentityManagement' &&
+          c.domain !== partnerSid &&
+          !(boundary === 'CrossForest' &&
+            trustedForestDomains.indexOf(c.domain) !== -1)) {
+        return false;                                         // R5
+      }
+      if (localForest.indexOf(c.domain) !== -1 &&             // R9, R14
+          boundary !== 'WithinForest' &&
+          boundary !== 'PrivilegedIdentityManagement') {
+        return false;
+      }
+      if (boundary === 'QuarantinedExternal' ||               // R10, R11
+          boundary === 'QuarantinedWithinForest') {
+        return c.domain === partnerSid;
+      }
+      if (boundary === 'CrossForest') {                       // R12
+        return trustedForestDomains.indexOf(c.domain) !== -1;
+      }
+      return true;                                            // R13, R15
+    };
+    const removed: string[] = [];
+    let keptSids = (info.extraSids || []).filter(function (one: Json):
+      boolean {
+      const text = sidText(one.sid);
+      const kept = keeps(text);
+      if (!kept) {
+        removed.push(text);
+      }
+      return kept;
+    }).map(function (one: Json): Json {
+      return { sid: one.sid, attributes: one.attributes };
+    });
+    // R24: CROSS_ORGANIZATION adds OTHER_ORGANIZATION ([MS-KILE] 3.3.5.7.5).
+    const added: string[] = [];
+    if ((record.attributes || []).indexOf('cross-organization') !== -1 &&
+        !keptSids.some(function (one: Json): boolean {
+          return sidText(one.sid) === 'S-1-5-1000';
+        })) {
+      keptSids = keptSids.concat([{ sid: 'S-1-5-1000',
+                                    attributes: 0x00000007 }]);
+      added.push('S-1-5-1000');
+    }
+    // R16: each resource group is the SID ResourceGroupDomainSid-RID, and
+    // crosses as that SID would.
+    const resourceDomain = sidText(info.resourceGroupDomainSid);
+    const keptResources = (info.resourceGroups || []).filter(function (g:
+      Json): boolean {
+      const text = resourceDomain + '-' + g.relativeId;
+      const kept = !!resourceDomain && keeps(text);
+      if (!kept) {
+        removed.push(text);
+      }
+      return kept;
+    });
+    // R18, R19: device information, and claims ([MS-ADTS] 3.1.1.11.2.11 —
+    // an incoming direction with no transformation policy carries none).
+    const claimsPolicy = String(record.claimsTransformation || 'drop-all');
+    const droppedBuffers: number[] = [];
+    pac.buffers.forEach(function (b: Json): void {
+      if (b.type === kpac.TYPE.DEVICE_INFO) {
+        droppedBuffers.push(b.type);
+      }
+      if ((b.type === kpac.TYPE.CLIENT_CLAIMS ||
+           b.type === kpac.TYPE.DEVICE_CLAIMS) &&
+          claimsPolicy !== 'allow-all') {
+        droppedBuffers.push(b.type);
+      }
+    });
+    if (!removed.length && !added.length && !droppedBuffers.length) {
+      log.debug("Leaving Krb5Trusts.sidFilter(). Nothing to change.");
+      return { bytes: pacBytes, removed: [], refused: '',
+               boundary: boundary };
+    }
+    const time = function (ft: Json): Json {
+      return !ft ? null : (ft.never ? 'never' : (ft.unset ? null : ft.date));
+    };
+    const extraFlag = kpac.USER_FLAG_EXTRA_SIDS;
+    const resourceFlag = kpac.USER_FLAG_RESOURCE_GROUPS;
+    const logonBytes = kpac.encodeLogonInfo({
+      logonTime: time(info.logonTime), logoffTime: time(info.logoffTime),
+      kickOffTime: time(info.kickOffTime),
+      passwordLastSet: time(info.passwordLastSet),
+      passwordCanChange: time(info.passwordCanChange),
+      passwordMustChange: time(info.passwordMustChange),
+      effectiveName: info.effectiveName, fullName: info.fullName,
+      logonScript: info.logonScript, profilePath: info.profilePath,
+      homeDirectory: info.homeDirectory,
+      homeDirectoryDrive: info.homeDirectoryDrive,
+      logonCount: info.logonCount, badPasswordCount: info.badPasswordCount,
+      userId: info.userId, primaryGroupId: info.primaryGroupId,
+      groups: (info.groups || []).map(function (g: Json): Json {
+        return { relativeId: g.relativeId, attributes: g.attributes };
+      }),
+      userFlags: (info.userFlags & ~(extraFlag | resourceFlag)) |
+        (keptSids.length ? extraFlag : 0) |
+        (keptResources.length ? resourceFlag : 0),
+      userSessionKey: info.userSessionKey,
+      logonServer: info.logonServer, logonDomainName: info.logonDomainName,
+      logonDomainId: info.logonDomainId,
+      userAccountControl: info.userAccountControl,
+      subAuthStatus: info.subAuthStatus,
+      lastSuccessfulILogon: time(info.lastSuccessfulILogon),
+      lastFailedILogon: time(info.lastFailedILogon),
+      failedILogonCount: info.failedILogonCount,
+      extraSids: keptSids,
+      resourceGroupDomainSid: keptResources.length ?
+        info.resourceGroupDomainSid : null,
+      resourceGroups: keptResources.map(function (g: Json): Json {
+        return { relativeId: g.relativeId, attributes: g.attributes };
+      })
+    });
+    const entries = pac.buffers.filter(function (b: Json): boolean {
+      return !!b.bytes && droppedBuffers.indexOf(b.type) === -1;
+    }).map(function (b: Json): Json {
+      return { type: b.type, bytes: b.type === kpac.TYPE.LOGON_INFO ?
+        logonBytes : b.bytes };
+    });
+    const bytes = kpac.assemblePac(entries).bytes;
+    log.info('krb5: SID filtering on arrival from ' + partner + ' (' +
+             boundary + ' boundary)' +
+             (removed.length ? ' removed ' + removed.join(', ') : '') +
+             (added.length ? '; added ' + added.join(', ') : '') +
+             (droppedBuffers.length ? '; dropped PAC buffer(s) of type ' +
+               droppedBuffers.join(', ') : '') + '.');
+    log.debug("Leaving Krb5Trusts.sidFilter(). " + removed.length +
+              " removed.");
+    return { bytes: bytes, removed: removed, added: added,
+             droppedBuffers: droppedBuffers, refused: '',
+             boundary: boundary };
+  }
+
+  // =========================================================================
   // THE KDC'S QUESTIONS.
   // =========================================================================
   /**
@@ -1281,9 +1883,10 @@ class Krb5Trusts {
       return !!suffix && (name === suffix || name.endsWith('.' + suffix));
     };
     let best: Json = null;
+    const self = this;
     this.allRead().forEach(function (read: Json): void {
       const r = read.record;
-      if (r.enabled === false || !r.outgoing) {
+      if (!self.usable(r) || !r.outgoing) {
         return;
       }
       (r.suffixes || []).forEach(function (suffix: string): void {
@@ -1325,6 +1928,12 @@ class Krb5Trusts {
     if (read.record.enabled === false) {
       log.debug("Leaving Krb5Trusts.unavailableReason(). Disabled.");
       return 'the trust with ' + which.partner + ' is disabled';
+    }
+    if (!this.honoured(read.record)) {
+      log.debug("Leaving Krb5Trusts.unavailableReason(). Not honoured.");
+      return 'the trust with ' + which.partner + ' has SID filtering off ' +
+             '(quarantined is not set), which product mode does not honour ' +
+             'while krb5.requireSidFilteringInProduct is on';
     }
     if (!read.record[which.direction]) {
       log.debug("Leaving Krb5Trusts.unavailableReason(). No such key.");
@@ -1386,7 +1995,7 @@ class Krb5Trusts {
     const read = this.readOne(which.partner);
     const side = read ? read.record[which.direction] : null;
     const secret = read ? (read.secrets || {})[which.direction] : null;
-    if (!read || read.record.enabled === false || !side || !secret) {
+    if (!read || !this.usable(read.record) || !side || !secret) {
       return null;
     }
     const cacheKey = which.direction + '|krbtgt/' + nameComponents[1] + '@' +
@@ -1540,7 +2149,7 @@ class Krb5Trusts {
     }
     const read = this.readOne(issuer);
     const record = read ? read.record : null;
-    if (!record || record.enabled === false || !record.incoming) {
+    if (!record || !this.usable(record) || !record.incoming) {
       log.debug("Leaving Krb5Trusts.pathProblem(). No incoming trust.");
       return { code: 'STS-KRB-0228', message: 'this realm holds no enabled ' +
         'trust accepting tickets from ' + issuer };
@@ -1721,5 +2330,12 @@ export = {
   unavailableReason: slot.forward('unavailableReason'),
   trustPrincipal: slot.forward('trustPrincipal'),
   recordFor: slot.forward('recordFor'),
-  pathProblem: slot.forward('pathProblem')
+  pathProblem: slot.forward('pathProblem'),
+  honoured: slot.forward('honoured'),
+  acceptsRealm: slot.forward('acceptsRealm'),
+  nextHopForRealm: slot.forward('nextHopForRealm'),
+  policyFacts: slot.forward('policyFacts'),
+  tgtDelegationAllowed: slot.forward('tgtDelegationAllowed'),
+  sidFilter: slot.forward('sidFilter'),
+  boundaryOf: slot.forward('boundaryOf')
 };

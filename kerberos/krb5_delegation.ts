@@ -218,13 +218,16 @@ class Krb5Delegation {
    *
    * @param front - the front end's name components
    * @param back - the back end's name components
-   * @param realm - their realm
+   * @param realm - their realm (the back end's)
+   * @param frontRealm - the front end's realm, where it is another (#430):
+   *   a foreign front end is accepted by name, `SPN@REALM`
    * @returns `{ classic, rbcd, delegatesTo, accepts }`
    */
-  relationship(front: string[], back: string[], realm: string): Json {
+  relationship(front: string[], back: string[], realm: string,
+               frontRealm?: string): Json {
     log.debug("Entering Krb5Delegation.relationship().");
     this.ensureSeeded();
-    const frontId = Krb5Delegation.identifierOf(front, realm);
+    const frontId = Krb5Delegation.identifierOf(front, frontRealm || realm);
     const backId = Krb5Delegation.identifierOf(back, realm);
     const frontFacts = delegationPolicy.partyFacts(frontId) || {};
     const backFacts = delegationPolicy.partyFacts(backId) || {};
@@ -248,32 +251,57 @@ class Krb5Delegation {
    * impersonation by the service of itself, S4U2Proxy as a delegation by
    * the front end to the back end.
    *
-   * @param question - `{ mechanism: 'self' | 'proxy', requester, subject,
-   *   subjectRealm, target, realm, rbcd? }`, names as components; `rbcd`
-   *   says resource-based delegation permitted a proxy request
+   * @param question - `{ mechanism: 'self' | 'proxy' | 'forwarded',
+   *   requester, subject, subjectRealm, target, realm, rbcd? }`, names as
+   *   components; `rbcd` says resource-based delegation permitted a proxy
+   *   request. ACROSS A TRUST (#430): `trustPartner`, the realm the ticket
+   *   arrived from or is referred to, whose record's facts the policy reads,
+   *   and `requesterRealm` / `targetRealm` where those parties are of
+   *   another realm
    * @returns `delegation_policy.decide()`'s decision
    */
   decide(question: Json): Json {
     log.debug("Entering Krb5Delegation.decide(). " + question.mechanism);
     this.ensureSeeded();
+    const requesterRealm = question.requesterRealm || question.realm;
+    const targetRealm = question.targetRealm || question.realm;
     const requesterId = Krb5Delegation.identifierOf(question.requester,
-                                                    question.realm);
+                                                    requesterRealm);
     const targetId = Krb5Delegation.identifierOf(question.target,
-                                                 question.realm);
-    const decision = delegationPolicy.decide({
+                                                 targetRealm);
+    // THE TRUST'S FACTS (#430 Phase 3), from its record, and only for a
+    // question that crossed one.
+    let trust: Json = null;
+    if (question.trustPartner) {
+      const register = principals.trustRegister();
+      trust = register ? register.policyFacts(question.trustPartner) : null;
+      trust = trust || { partner: question.trustPartner, type: '',
+                         direction: '', attributes: [], enabled: false };
+    }
+    const across: Json = trust ? {
+      trust: trust, localRealm: question.realm,
+      subjectRealm: question.subjectRealm || question.realm,
+      actorRealm: requesterRealm, targetRealm: targetRealm,
+      foreignSource: requesterRealm !== question.realm
+    } : {};
+    const decision = delegationPolicy.decide(Object.assign({
       protocol: 'Kerberos',
       requested: question.mechanism === 'self' ? 'impersonation'
                                                : 'delegation',
+      // A TGT forwarded across a trust (#430) is acted on by the service
+      // it is forwarded to, for the person whose TGT it is.
       actor: requesterId,
       subject: this.partyName(question.subject,
                               question.subjectRealm || question.realm),
-      source: question.mechanism === 'self' ? [] : [requesterId],
+      source: question.mechanism === 'self' ||
+        question.mechanism === 'forwarded' ? [] : [requesterId],
       targets: [targetId],
       targetKind: 'audience',
       // #490: the row in Kerberos's words.
-      mechanism: question.mechanism === 'self' ? 'S4U2Self' : 'S4U2Proxy',
+      mechanism: question.mechanism === 'self' ? 'S4U2Self' :
+        (question.mechanism === 'forwarded' ? 'forwarded' : 'S4U2Proxy'),
       rbcd: !!question.rbcd
-    });
+    }, across));
     log.debug("Leaving Krb5Delegation.decide(). " + decision.allowed);
     return decision;
   }
@@ -497,8 +525,9 @@ export = {
     instance.isProtected(name, realm),
   trustedForDelegation: (name: string[], realm: string): boolean =>
     instance.trustedForDelegation(name, realm),
-  relationship: (front: string[], back: string[], realm: string): Json =>
-    instance.relationship(front, back, realm),
+  relationship: (front: string[], back: string[], realm: string,
+                 frontRealm?: string): Json =>
+    instance.relationship(front, back, realm, frontRealm),
   decide: (question: Json): Json => instance.decide(question),
   verifyEvidence: (evidencePart: Json, kdcKey: Json): Promise<Json> =>
     instance.verifyEvidence(evidencePart, kdcKey)

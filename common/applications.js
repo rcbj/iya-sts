@@ -3394,6 +3394,26 @@ const SCHEMA = {
             'is never forwarded however this is set. Constrained delegation ' +
             '(appAllowedToDelegateTo, appAllowedToActOnBehalfOf) is the ' +
             'safer alternative.' },
+    // #430 Phase 3: DELEGATION ACROSS A KERBEROS TRUST, the service's two
+    // words on it. Read by the issuance policy as facts; the trusts
+    // themselves are records under ou=kerberosTrusts.
+    { name: 'krb5S4uSelfRealm', kind: 'multi', from: 'by hand',
+      families: ['krb5'],
+      familyWhy: 'S4U2Self is a Kerberos request ([MS-SFU]).',
+      what: 'THE KERBEROS REALMS WHOSE USERS THIS SERVICE MAY OBTAIN ' +
+            'S4U2SELF TICKETS FOR, beside its own. EMPTY MEANS ITS OWN ' +
+            'REALM ONLY. A value must be a realm this realm\'s trusts accept ' +
+            'tickets from — a trust holding an incoming key, or a realm a ' +
+            'transitive one routes — and is checked at the write.' },
+    { name: 'krb5ForeignTgtDelegation', kind: 'single', from: 'by hand',
+      families: ['krb5'],
+      familyWhy: 'ok-as-delegate and forwarded TGTs are Kerberos\'s.',
+      what: '`inherit` (the default) or `deny`: what this service says of ' +
+            'a TGT delegated to it ACROSS A TRUST — ok-as-delegate on its ' +
+            'tickets for a user of another realm. `inherit` follows the ' +
+            'trust\'s attributes ([MS-KILE] 3.3.5.7.5); `deny` refuses it ' +
+            'whatever they say. It only narrows: nothing here enables what ' +
+            'the trust does not.' },
     // THE STORED SERVICE KEY (2026-09-12). Two rows, and the split between
     // them is the design: one is SECRET and one is not, so that every page
     // listing service principals can say what is held without opening a key.
@@ -4640,6 +4660,9 @@ const EDITABLE = {
   wstrustJwtScope: 'multi',
   krb5ServicePrincipalName: 'multi',
   krb5TrustedForDelegation: 'set',
+  // #430: across a Kerberos trust.
+  krb5S4uSelfRealm: 'multi',
+  krb5ForeignTgtDelegation: 'set',
   // #493: one JSON array, like the five claim sets below.
   krb5ClaimsPac: 'set',
   oid4vpClientId: 'multi',
@@ -5771,6 +5794,10 @@ const ATTRIBUTE_CHOICES = {
   appDefaultDelegationSemantics: function () {
     return DELEGATION_SEMANTICS.slice(0);
   },
+  // #430: what a service says of a TGT delegated to it across a trust.
+  krb5ForeignTgtDelegation: function () {
+    return ['inherit', 'deny'];
+  },
   oauthTokenEndpointAuthMethod: function () {
     return require('../oauth-oidc/client_auth').METHODS.slice(0);
   },
@@ -5956,7 +5983,9 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'oauthAccessTokenClaim', 'oauthAccessTokenClaimsCombine',
   // #706: a grant or response type this service does not implement is one
   // no request could ever be allowed by.
-  'oauthGrantType', 'oauthResponseType'];
+  'oauthGrantType', 'oauthResponseType',
+  // #430: a misspelt word would be `inherit`, which widens.
+  'krb5ForeignTgtDelegation'];
 
 /**
  * The values a setting's own closed set allows (enumValues or csvValues),
@@ -6248,6 +6277,7 @@ const FIELD_EXAMPLES = {
   appDelegationSemantics: 'delegation',
   appDefaultDelegationSemantics: 'delegation',
   appMayAct: 'uid=alice,ou=users,dc=example,dc=com',
+  krb5S4uSelfRealm: 'PARTNER.EXAMPLE',
   oauthClientId: 'my-web-app',
   oauthAudience: 'https://api.example.com',
   oauthClientSecret: 'press Generate Secret, or 32+ random characters',
@@ -9698,6 +9728,45 @@ function pushedAuthorizationAttributeProblem(attribute, value) {
  * @param value - the value written
  * @returns the refusal sentence, or ''
  */
+// ---------------------------------------------------------------------------
+// A REALM A SERVICE MAY OBTAIN S4U2SELF TICKETS FOR MUST BE ONE THIS REALM'S
+// TRUSTS ACCEPT (#430 Phase 3), checked at the write: a trust holding an
+// incoming key from it, or a transitive one whose namespace routes it
+// (`kerberos/krb5_trusts.ts`'s acceptsRealm()). The register is required
+// LAZILY — it is reached through the KDC, and a process with no Kerberos has
+// no trusts, which refuses every value. STS-REG-0361. A clear is never
+// refused.
+// ---------------------------------------------------------------------------
+/**
+ * Checks a value of krb5S4uSelfRealm against the realm's trusts.
+ *
+ * @param attribute - the attribute's name
+ * @param value - the value written
+ * @returns the refusal sentence, or ''
+ */
+function kerberosTrustAttributeProblem(attribute, value) {
+  log.debug("Entering kerberosTrustAttributeProblem(). " + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (attribute !== 'krb5S4uSelfRealm' || !text) {
+    log.debug("Leaving kerberosTrustAttributeProblem(). Not checked here.");
+    return '';
+  }
+  let accepted = false;
+  try {
+    accepted = !!require('../kerberos/krb5_trusts').acceptsRealm(text);
+  } catch (e) {
+    log.debug("Caught in kerberosTrustAttributeProblem(): " +
+              ((e && e.message) || e));
+    accepted = false;
+  }
+  log.debug("Leaving kerberosTrustAttributeProblem(). " + accepted);
+  return accepted ? '' : attribute + ': "' + text + '" is not a Kerberos ' +
+    'realm this realm\'s trusts accept tickets from. Add a trust holding an ' +
+    'incoming key from it (ou=kerberosTrusts), or one a transitive trust ' +
+    'routes, first.';
+}
+
 function delegationAttributeProblem(attribute, value) {
   log.debug("Entering delegationAttributeProblem(). attribute=" + attribute);
   const text = String(value === undefined || value === null ? '' : value)
@@ -11120,6 +11189,18 @@ function normaliseFields(value) {
     if (delegationProblems.length) {
       delegationProblems.forEach(function (one) { errors.push(one); });
       code = code || 'STS-REG-0194';
+      return;
+    }
+    // The realms a service may obtain S4U2Self tickets for (#430), every
+    // value, against this realm's trusts.
+    const trustProblems = values.map(function (one) {
+      return kerberosTrustAttributeProblem(name, one);
+    }).filter(function (one) {
+      return !!one;
+    });
+    if (trustProblems.length) {
+      trustProblems.forEach(function (one) { errors.push(one); });
+      code = code || 'STS-REG-0361';
       return;
     }
     // RFC 9126's one.
@@ -14422,6 +14503,14 @@ function updateApplication(identifier, change) {
       log.debug("Leaving updateApplication(). Not a usable delegation " +
                 "policy value.");
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0194');
+    }
+  }
+  // A realm S4U2Self may name must be one this realm's trusts accept (#430).
+  if ((mode === 'set' || mode === 'add') && value) {
+    const problem = kerberosTrustAttributeProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a realm a trust accepts.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0361');
     }
   }
   // Nor may the two delegation lists name the application itself (#459).

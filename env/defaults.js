@@ -915,6 +915,8 @@ var config = {
     autoServicePassword: "auto-service-password",          // Auto-created service password; restart to apply
     krbtgtPassword: "krbtgt-mock-password",                // krbtgt password; restart to apply
     domainSid: "S-1-5-21-1004336348-1177238915-682003330", // Domain SID; restart to apply
+    crossRealmClassicDelegation: false,                    // Classic delegation across trusts
+    requireSidFilteringInProduct: true,                    // Require SID filtering on trusts
     maxReferralHops: 5,                                    // Most trusts a referral path crosses
     spnegoAuthentication: true,                            // Sign in with a Kerberos ticket
     personKeys: true,                                      // Kerberos keys for directory people

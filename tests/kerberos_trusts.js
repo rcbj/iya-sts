@@ -89,12 +89,21 @@ function codesOf(answer) {
   });
 }
 
+// Each realm its own domain SID (#430 Phase 2): SID filtering refuses a PAC
+// whose logon domain is the receiving realm's own across an external
+// boundary (R8), and three realms inheriting one SID would be one domain.
+const DOMAIN_SIDS = { 'ALPHA.TEST': 'S-1-5-21-1001-1002-1003',
+                      'BETA.TEST': 'S-1-5-21-2001-2002-2003',
+                      'GAMMA.TEST': 'S-1-5-21-3001-3002-3003' };
+
 function makeRealm(id, krbRealm) {
   log.debug("Entering makeRealm(). " + id);
   realms.remove(id);
   const made = realms.create({ id: id, name: id,
                                description: 'Created by ' + __filename,
                                overrides: { 'krb5.realm': krbRealm,
+                                            'krb5.domainSid':
+                                              DOMAIN_SIDS[krbRealm],
                                             'krb5.enabled': 'true' } });
   log.debug("Leaving makeRealm().");
   return made.ok ? made.realm : null;
@@ -466,6 +475,17 @@ async function multiHopSection(t) {
           'D1. ' + BETA + ' and ' + GAMMA + ' paired with a GENERATED key ' +
           'set, the same keys written to both records',
           JSON.stringify(bc.errors || []));
+  // GAMMA's cross-forest trust with BETA names the trusted forest's domains
+  // (forest trust information, [MS-ADTS] 6.1.6.9.3), ALPHA's among them, or
+  // SID filtering would refuse ALPHA's people arriving through it.
+  const ftInfo = inRealm('kt-c', function () {
+    return trusts.update(BETA, { forestTrustInfo: { domains: [
+      { sid: DOMAIN_SIDS[BETA], dnsName: 'beta.test', netbiosName: 'BETA' },
+      { sid: DOMAIN_SIDS[ALPHA], dnsName: 'alpha.test',
+        netbiosName: 'ALPHA' }] } });
+  });
+  t.check(ftInfo.ok, 'D1b. ' + GAMMA + '\'s record for ' + BETA + ' names ' +
+          'the trusted forest\'s domains', JSON.stringify(ftInfo.errors || []));
   const widened = inRealm('kt-a', function () {
     return trusts.update(BETA, { suffixes: ['beta.test', 'gamma.test'] });
   });
