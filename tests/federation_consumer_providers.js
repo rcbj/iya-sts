@@ -451,21 +451,33 @@ function childMain() {
          JSON.stringify(Object.keys(gForm)));
     note(!!gForm.code_verifier,
          'E3. PKCE is sent to a plain OAuth 2.0 provider too');
-    people.github = { profile: { id: 99, login: 'nomail' },
+    people.github = { profile: { id: 99, login: 'nomail',
+                                 email: 'public-nomail@example.com' },
                       emails: [] };
     failEmails.on = true;
-    const before = audit.list().length;
     const gr2 = await signIn('cp-github');
     failEmails.on = false;
     const g2 = entryOf(inSp(function () {
       return links.provisionedName('cp-github', '99');
     }));
-    note(gr2.status === 200 && !!g2 && !attr(g2, 'mail').length,
-         'E4. /user/emails failing costs the address, never the sign-in',
+    // Development mode invents a persona's address for a person who
+    // arrives with none (`mode.inventsClaimValues()`), so what is held is
+    // that the PUBLIC address /user carried is never the one written.
+    note(gr2.status === 200 && !!g2 &&
+         attr(g2, 'mail').indexOf('public-nomail@example.com') < 0,
+         'E4. /user/emails failing costs the address, never the sign-in, ' +
+         'and /user\'s public address is not used instead',
          gr2.status + ' ' + JSON.stringify(g2 && g2.attributes.mail));
-    note(audit.list().slice(before).some(function (row) {
+    // The service provider's audit log: a realm's rows are its own.
+    const spRows = inSp(function () {
+      return audit.list();
+    });
+    note(spRows.some(function (row) {
       return row.errorCode === 'STS-FED-0176';
-    }), 'E5. and the failure is audited STS-FED-0176');
+    }), 'E5. and the failure is audited STS-FED-0176 in the realm',
+         JSON.stringify(spRows.filter(function (row) {
+           return String(row.target || '') === 'cp-github';
+         }).slice(0, 3)));
 
     // ===== F. GOOGLE ========================================================
     people.google = { claims: { sub: '110169484474386276334',

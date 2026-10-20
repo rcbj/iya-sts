@@ -3780,10 +3780,14 @@ function create(spec) {
   }
   if (errors.length) {
     log.debug('Leaving create(). Refused: ' + errors.join(' '));
-    actionRefused(providerId && (!profile || role !== 'service-provider' ||
-                                 protocol !== profile.protocol)
-                    ? 'STS-FED-0170' : 'STS-FED-0061', id,
-                  'the id, role, protocol or provider is not valid');
+    if (providerId && (!profile || role !== 'service-provider' ||
+                       protocol !== profile.protocol)) {
+      actionRefused('STS-FED-0170', id, 'the provider, or the role or ' +
+                                        'protocol beside it, is not valid');
+    } else {
+      actionRefused('STS-FED-0061', id, 'the id, role or protocol is not ' +
+                                        'valid');
+    }
     log.debug("Leaving create().");
     return { ok: false, errors: errors };
   }
