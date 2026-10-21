@@ -671,6 +671,31 @@ function childMain() {
            'H4. under the limit a verified credential is answered and its ' +
            'buckets cleared (a limit of 1 no longer blocks)',
            JSON.stringify([cleared, afterClear]));
+      // H6 (2026-10-21, #820): a bucket the check just read EMPTY is not
+      // cleared — a round trip that changes nothing, twice per token request.
+      const realClear = atomic.clearWindow;
+      let clears = 0;
+      atomic.clearWindow = function () {
+        clears++;
+        return realClear.apply(atomic, arguments);
+      };
+      try {
+        const clean = fromAddress('203.0.113.11');
+        const quiet = await websecurity.succeededShared('cfu-bind3', clean,
+          'uid=svc3', { unlessBlocked: true, limit: 3 });
+        const emptyClears = clears;
+        await websecurity.failedShared('cfu-bind3', clean, 'uid=svc3', 3);
+        await websecurity.succeededShared('cfu-bind3', clean, 'uid=svc3',
+          { unlessBlocked: true, limit: 3 });
+        // A failure counts in both buckets (the identity's and the
+        // address's), so the success after it clears both.
+        note(quiet === null && emptyClears === 0 && clears === 2,
+             'H6. a verified credential whose buckets are empty clears ' +
+             'nothing; one with failures clears the buckets that hold them',
+             JSON.stringify({ emptyClears: emptyClears, clears: clears }));
+      } finally {
+        atomic.clearWindow = realClear;
+      }
       const oauthSource = fs.readFileSync(ROOT + '/oauth-oidc/oauth2.ts',
                                           'utf8');
       // Methods of `OAuth2Server` since #50, so each call is `self.`.
