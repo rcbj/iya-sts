@@ -6351,6 +6351,28 @@ function create(options) {
         });
     },
 
+    // THE SESSION INDEX'S QUESTIONS ON THE READ POOL (2026-10-21):
+    // `directoryQuery()`'s arrangement for `session_queries.js`, so a caller
+    // that can wait asks without standing its event loop still. The
+    // index's columns are digests and numbers, so nothing is opened.
+    sessionIndexQuery: function (name, args) {
+      log.debug("Entering sessionIndexQuery(). " + name);
+      const sessionQueries = require('./session_queries');
+      let statement;
+      try {
+        statement = sessionQueries.build(name, args);
+      } catch (e) {
+        log.debug("Caught in sessionIndexQuery(): " + ((e && e.message) || e));
+        log.debug("Leaving sessionIndexQuery(). Unknown query.");
+        return Promise.reject(e);
+      }
+      log.debug("Leaving sessionIndexQuery().");
+      return readPool.query(statement.text, statement.values)
+        .then(function (r) {
+          return sessionQueries.answerOf(name, r.rows || []);
+        });
+    },
+
     // WHAT THE BRIDGE'S THREAD DIALS (#349 phase 3): the read pool's own
     // connection options — the same database, the same TLS decision — so
     // the thread is one more client of this store and never a second,

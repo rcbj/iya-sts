@@ -12605,14 +12605,16 @@ class AdminViews {
     // WHO HOLDS A LIVE SIGN-ON SESSION, counted for the page's tile (#446):
     // one person with three browsers is one, by the same identity key the
     // rows are filed under.
-    const liveByUser: Record<string, number> = {};
-    this.signOnSessionRows().forEach(function (session) {
-      if (session.expired) {
-        return;
-      }
-      const key = stats.identityKeyOf(session.username || session.sub);
-      liveByUser[key] = (liveByUser[key] || 0) + 1;
-    });
+    //
+    // **NOT HERE FOR A CALLER THAT CAN WAIT (2026-10-21)**: `deferTiles`
+    // leaves this and the directory's tiles below to
+    // `usersListTilesAsync()`, which asks the store for both on its read
+    // pool. Counted here they read every live session's sealed body and
+    // every credential holder synchronously — on 8081 a request worker
+    // stood still for nine seconds and sign-ins fell to a fifth a second.
+    const deferTiles = !!(opts && opts.deferTiles);
+    const liveByUser: Record<string, number> = deferTiles ? {}
+      : this.liveSessionsByUser();
     // -----------------------------------------------------------------------
     // THE TILES, OVER THE WHOLE DIRECTORY (#610, 2026-10-13).
     //
@@ -12635,23 +12637,9 @@ class AdminViews {
     // the page then draws the list's counts, as it always did.
     // -----------------------------------------------------------------------
     const { credentials } = this.deps;
-    let directoryCounts = null;
-    const tallied = credentials.directoryFactorCounts();
-    if (tallied) {
-      const named = credentials.directoryPeopleNamed(
-        all.filter(function (row) {
-          return row.authenticated;
-        }).map(function (row) {
-          return row.key;
-        }));
-      const signedIn = named === null ? null
-        : Math.min(named, tallied.people);
-      directoryCounts = Object.assign({}, tallied, {
-        signedInHere: signedIn,
-        neverSignedInHere: signedIn === null ? null
-          : tallied.people - signedIn
-      });
-    }
+    const directoryCounts = deferTiles ? null
+      : this.directoryTilesOf(all, credentials.directoryFactorCounts(),
+                              credentials.directoryPeopleNamed);
     const pagingJson = this.pagingJson(paging);
     log.debug("Leaving AdminViews.usersListJson().");
     return {
@@ -12722,6 +12710,107 @@ class AdminViews {
       };
       }())
     };
+  }
+
+  // Who holds a live sign-on session, by identity key: every session walked.
+  // The synchronous door, for a process whose sessions are in memory.
+  private liveSessionsByUser(): Record<string, number> {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.liveSessionsByUser().");
+    const liveByUser: Record<string, number> = {};
+    this.signOnSessionRows().forEach(function (session) {
+      if (session.expired) {
+        return;
+      }
+      const key = stats.identityKeyOf(session.username || session.sub);
+      liveByUser[key] = (liveByUser[key] || 0) + 1;
+    });
+    log.debug("Leaving AdminViews.liveSessionsByUser().");
+    return liveByUser;
+  }
+
+  // The directory's tiles from its tallies and the count of the list's
+  // signed-in names that are people there; null where it offers no tally.
+  private directoryTilesOf(all, tallied, named) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.directoryTilesOf().");
+    if (!tallied) {
+      log.debug("Leaving AdminViews.directoryTilesOf(). No tally.");
+      return null;
+    }
+    const n = typeof named === 'function' ? named(this.signedInKeys(all))
+      : named;
+    const signedIn = n === null || n === undefined ? null
+      : Math.min(n, tallied.people);
+    log.debug("Leaving AdminViews.directoryTilesOf().");
+    return Object.assign({}, tallied, {
+      signedInHere: signedIn,
+      neverSignedInHere: signedIn === null ? null
+        : tallied.people - signedIn
+    });
+  }
+
+  // The keys of the list's rows the register has seen authenticate.
+  private signedInKeys(all) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.signedInKeys().");
+    log.debug("Leaving AdminViews.signedInKeys().");
+    return all.filter(function (row) {
+      return row.authenticated;
+    }).map(function (row) {
+      return row.key;
+    });
+  }
+
+  // THE USERS LIST'S TILES, ASKED ASYNCHRONOUSLY (2026-10-21), into a view
+  // `usersListJson()` built with `deferTiles`: the directory's tallies and
+  // its count of the signed-in names on the driver's read pool, and the live
+  // sign-on sessions from the session index — how many people hold one, and
+  // each shown row's own — so nothing the page asks stands the worker still.
+  // A process whose sessions are in memory walks them, as before.
+  /**
+   * Fills a deferred users list's tiles, the store asked asynchronously.
+   *
+   * @param view - what `usersListJson()` answered with `deferTiles`
+   * @returns a promise of the same view
+   */
+  async usersListTilesAsync(view) {
+    const { log, credentials } = this.deps;
+    log.debug("Entering AdminViews.usersListTilesAsync().");
+    const json = view.json;
+    const tallied = await credentials.directoryFactorCountsAsync();
+    const named = tallied
+      ? await credentials.directoryPeopleNamedAsync(
+        this.signedInKeys(view.all))
+      : null;
+    const directoryCounts = this.directoryTilesOf(view.all, tallied, named);
+    json.directoryCounts = directoryCounts;
+    json.directoryPeople = directoryCounts ? directoryCounts.people
+      : view.population.directoryPeople;
+    const users = json.users || [];
+    const names = [];
+    users.forEach(function (row) {
+      names.push(row.key);
+      if (row.name && row.name !== row.key) {
+        names.push(row.name);
+      }
+    });
+    const live = await authn.liveSessionCountsAsync(names);
+    if (live) {
+      json.withActiveSession = live.people;
+      users.forEach(function (row) {
+        row.liveSessions = live.byUsername.get(row.key) ||
+          (row.name ? live.byUsername.get(row.name) : 0) || 0;
+      });
+    } else {
+      const liveByUser = this.liveSessionsByUser();
+      json.withActiveSession = Object.keys(liveByUser).length;
+      users.forEach(function (row) {
+        row.liveSessions = liveByUser[row.key] || 0;
+      });
+    }
+    log.debug("Leaving AdminViews.usersListTilesAsync().");
+    return view;
   }
 
   /**
@@ -13050,10 +13139,21 @@ class AdminViews {
     // The register's subjects resolved asynchronously (#790): on 8081 they
     // were ~228,000, asked synchronously, and the request spent its
     // directory budget and answered 503.
-    const seen = typeof this.deps.stats.userRowsAsync === 'function'
-      ? await this.deps.stats.userRowsAsync() : null;
-    const population = this.peopleRows({ directoryFirst: first,
-                                         seen: seen });
+    //
+    // **AND THE POPULATION BUILT INSIDE THE SAME ANSWER (2026-10-21).** It
+    // was built after it, so `peopleRows()`'s `identityKeyOf()` of every
+    // population row — a `urn:uuid:` name the register never resolved among
+    // them — asked the directory synchronously, one subject at a time: 900
+    // questions for 900 subjects in tests/users_population_async.js P4, and
+    // 66,976 on 8081, on the worker that serves sign-ins.
+    const stats = this.deps.stats;
+    const build = () => {
+      return this.peopleRows({ directoryFirst: first,
+                               seen: stats.userRows() });
+    };
+    const population = typeof stats.withSubjectsResolvedAsync === 'function'
+      ? await stats.withSubjectsResolvedAsync(build)
+      : this.peopleRows({ directoryFirst: first });
     const census = await this.peopleCensusAsync(population, population.rows);
     log.debug("Leaving AdminViews.peopleAndCensusAsync().");
     return { population: population, census: census };
@@ -13837,8 +13937,11 @@ class AdminViews {
     // The population AND its census (#621): the census was 5,000
     // synchronous store questions here in a windowed process.
     const asked = await this.peopleAndCensusAsync();
+    // The tiles too (2026-10-21), for `usersJsonAsync()`'s reason.
+    const list = await this.usersListTilesAsync(this.usersListJson(req,
+      Object.assign({}, asked, { deferTiles: true })));
     log.debug("Leaving AdminViews.mfaRosterJsonAsync().");
-    return this.mfaRosterJson(req, asked);
+    return this.mfaRosterJson(req, Object.assign({}, asked, { list: list }));
   }
 
   // `usersJson()` FOR A CALLER THAT CAN WAIT (#616): the list's directory
@@ -13857,9 +13960,15 @@ class AdminViews {
     log.debug("Entering AdminViews.usersJsonAsync().");
     const wanted = String((req.query || {}).user || '').trim();
     // The population AND its census (#621), asked asynchronously.
-    const asked = wanted ? null : await this.peopleAndCensusAsync();
+    if (wanted) {
+      log.debug("Leaving AdminViews.usersJsonAsync(). One person.");
+      return this.usersJson(req, risk, null);
+    }
+    const asked = await this.peopleAndCensusAsync();
+    const view = await this.usersListTilesAsync(this.usersListJson(req,
+      Object.assign({}, asked, { deferTiles: true })));
     log.debug("Leaving AdminViews.usersJsonAsync().");
-    return this.usersJson(req, risk, asked);
+    return view.json;
   }
 
   /**
@@ -14356,7 +14465,7 @@ class AdminViews {
   mfaRosterJson(req, opts?) {
     const { log, totp, webauthnPolicy } = this.deps;
     log.debug("Entering AdminViews.mfaRosterJson().");
-    const list = this.usersListJson(req, opts);
+    const list = (opts && opts.list) || this.usersListJson(req, opts);
     const people = (list.json.users || []).map(function (row) {
       const f = row.factors || {};
       return {

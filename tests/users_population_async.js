@@ -20,6 +20,10 @@
 //       a subject naming nobody as itself;
 //   P3. the Users page's population (`peopleAndCensusAsync()`) is built from
 //       it: building it asks `withUuids` synchronously not at all.
+//   P4. its tiles too (2026-10-21): the directory's tallies and signed-in
+//       count on the read pool, none synchronously, the register's subjects
+//       never asked one at a time, and the live sign-on sessions from the
+//       session index — no session body walked.
 //
 // In a child holding the directory as a windowed request worker over a
 // stand-in bridge that counts synchronous and asynchronous questions.
@@ -72,6 +76,8 @@ async function inTheWorker(t) {
   });
   const base = shared.fakeBridge(rows);
   const asked = { sync: 0, async: 0 };
+  // Every question by name, for P4.
+  const byName = { sync: {}, async: {} };
   const withUuids = function (args) {
     const wanted = new Set(args[1]);
     return Array.from(rows.values()).filter(function (r) {
@@ -85,6 +91,7 @@ async function inTheWorker(t) {
   };
   w.attach({
     query: function (name, args) {
+      byName.sync[name] = (byName.sync[name] || 0) + 1;
       if (name === 'withUuids') {
         asked.sync++;
         return withUuids(args);
@@ -92,6 +99,7 @@ async function inTheWorker(t) {
       return base.query(name, args);
     },
     queryAsync: function (name, args) {
+      byName.async[name] = (byName.async[name] || 0) + 1;
       if (name === 'withUuids') {
         asked.async++;
         return Promise.resolve(withUuids(args));
@@ -152,6 +160,60 @@ async function inTheWorker(t) {
   t.check(asked.sync === 0 && asked.async >= batches,
           'P3. the Users page\'s population is built from it, asking ' +
           'withUuids synchronously not at all', JSON.stringify(asked));
+
+  // P4 (2026-10-21): the page's TILES are asked asynchronously too — the
+  // directory's credential tallies and its count of the signed-in names on
+  // the read pool, and the live sign-on sessions from the session index
+  // (`liveSessionCountsAsync()`, stood in for here) — and no session body
+  // is walked.
+  const authnModule = require('../authn/authn');
+  const realLive = authnModule.liveSessionCountsAsync;
+  const realMatching = authnModule.sessionsMatching;
+  let liveAsked = 0;
+  let walked = 0;
+  authnModule.liveSessionCountsAsync = function () {
+    liveAsked++;
+    return Promise.resolve({ people: 7,
+                             byUsername: new Map([[people[0].uid, 3]]) });
+  };
+  authnModule.sessionsMatching = function () {
+    walked++;
+    return [];
+  };
+  byName.sync = {};
+  byName.async = {};
+  let listed = null;
+  try {
+    listed = await inRealm(function () {
+      return views.usersJsonAsync({ query: {} });
+    });
+  } finally {
+    authnModule.liveSessionCountsAsync = realLive;
+    authnModule.sessionsMatching = realMatching;
+  }
+  // The questions that grow with the realm: the tallies, and the register's
+  // subjects (`byUuid` once per subject when the population was built after
+  // their answer). A shown row's own flags are bounded by the page and are
+  // not counted here.
+  const tiled = ['countHolding', 'withUuids', 'byUuid', 'withNames'];
+  const syncTiles = tiled.filter(function (name) {
+    return byName.sync[name];
+  });
+  t.check(listed && syncTiles.length === 0 &&
+          (byName.async.countHolding || 0) >= 1,
+          'P4. the directory\'s tiles and the register\'s subjects are ' +
+          'asked on the read pool, none synchronously',
+          JSON.stringify(byName));
+  const first = ((listed && listed.users) || []).filter(function (row) {
+    return row.key === people[0].uid;
+  })[0];
+  t.check(liveAsked === 1 && walked === 0 && listed &&
+          listed.withActiveSession === 7 &&
+          (!first || first.liveSessions === 3),
+          'P4. and the live sign-on sessions are the index\'s counts: no ' +
+          'session is walked', JSON.stringify({ liveAsked: liveAsked,
+            walked: walked, tile: listed && listed.withActiveSession,
+            first: first && first.liveSessions }));
   log.debug('Leaving inTheWorker().');
 }
 

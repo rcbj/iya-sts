@@ -1971,6 +1971,59 @@ class DirectoryWindow {
   countHolding(realmId: string, base: string, attribute: string):
       { n: number; holding: number } {
     log.debug("Entering DirectoryWindow.countHolding(). " + attribute);
+    const reaches = this.holdingReaches(realmId, base);
+    const stored = reaches && this.bridge
+      ? this.bridge.query('countHolding', [realmId, base, attribute]) as
+          { n: number; holding: number }
+      : null;
+    const out = this.holdingWith(realmId, base, attribute, reaches, stored);
+    log.debug("Leaving DirectoryWindow.countHolding().");
+    return out;
+  }
+
+  // `countHolding()` FOR A CALLER THAT CAN WAIT (2026-10-21): the store's
+  // two counts asked on the driver's read pool, so the event loop runs while
+  // a realm of a million people is counted. `/admin/users`' tiles asked it
+  // synchronously, on the worker that serves sign-ins.
+  /**
+   * `countHolding()`, the store asked asynchronously.
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN
+   * @param attribute - the attribute name, lower-cased as stored
+   * @returns a promise of `{ n, holding }`
+   */
+  async countHoldingAsync(realmId: string, base: string, attribute: string):
+      Promise<{ n: number; holding: number }> {
+    log.debug("Entering DirectoryWindow.countHoldingAsync(). " + attribute);
+    const reaches = this.holdingReaches(realmId, base);
+    const stored = reaches && this.bridge
+      ? await this.askAsync('countHolding', [realmId, base, attribute]) as
+          { n: number; holding: number }
+      : null;
+    const out = this.holdingWith(realmId, base, attribute, reaches, stored);
+    log.debug("Leaving DirectoryWindow.countHoldingAsync().");
+    return out;
+  }
+
+  // Whether the base reaches a windowed container: only then is the store
+  // asked.
+  private holdingReaches(realmId: string, base: string): boolean {
+    log.debug("Entering DirectoryWindow.holdingReaches().");
+    log.debug("Leaving DirectoryWindow.holdingReaches().");
+    return this.deps.windowedContainers(realmId).some(function (c) {
+      return DirectoryWindow.within(c, base) || base.endsWith(',' + c);
+    });
+  }
+
+  // The resident entries' counts, the store's, and this process's unwritten
+  // changes, added up: `countHolding()`'s arithmetic, whichever way the
+  // store was asked.
+  private holdingWith(realmId: string, base: string, attribute: string,
+                      reaches: boolean,
+                      stored: { n: number; holding: number } | null):
+      { n: number; holding: number } {
+    log.debug("Entering DirectoryWindow.holdingWith(). " + attribute);
     const has = function (entry: Entry | null | undefined): number {
       const values = entry ? (entry.attributes || {})[attribute] : null;
       return Array.isArray(values) && values.length > 0 ? 1 : 0;
@@ -1983,12 +2036,7 @@ class DirectoryWindow {
         holding += has(entry);
       }
     });
-    const reaches = this.deps.windowedContainers(realmId).some(function (c) {
-      return DirectoryWindow.within(c, base) || base.endsWith(',' + c);
-    });
     if (reaches && this.bridge) {
-      const stored = this.bridge.query('countHolding',
-        [realmId, base, attribute]) as { n: number; holding: number };
       n += Number(stored && stored.n) || 0;
       holding += Number(stored && stored.holding) || 0;
       // `countUnder()`'s net, and the attribute's beside it: the entry as
@@ -2006,7 +2054,7 @@ class DirectoryWindow {
           try {
             before = JSON.parse(slot.base) as Entry;
           } catch (e) {
-            log.debug("Caught in DirectoryWindow.countHolding(): " +
+            log.debug("Caught in DirectoryWindow.holdingWith(): " +
                       ((e && e.message) || e));
             // A base that does not parse is one this window wrote itself
             // and cannot be; counted as an entry holding nothing.
@@ -2017,7 +2065,7 @@ class DirectoryWindow {
         holding += has(slot.entry) - has(before);
       });
     }
-    log.debug("Leaving DirectoryWindow.countHolding().");
+    log.debug("Leaving DirectoryWindow.holdingWith().");
     return { n: Math.max(0, n), holding: Math.max(0, holding) };
   }
 
