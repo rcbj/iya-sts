@@ -5314,10 +5314,13 @@ class AdminConsole {
    * @returns the issuer, uptime, counts of calls, tokens, artifacts,
    *   sessions and users, and the path of every page
    */
-  consoleJson() {
+  consoleJson(opts?) {
     const { log, stats, config, sessions, credentials } = this.deps;
     log.debug("Entering AdminConsole.consoleJson().");
-    const snap = stats.snapshot();
+    // `opts` (2026-10-21): the snapshot's user rows and the directory's tally
+    // asked asynchronously, by `consoleJsonAsync()`.
+    const snap = stats.snapshot(opts && opts.knownUsers
+      ? { knownUsers: opts.knownUsers } : undefined);
     // USERS KNOWN IS THE DIRECTORY'S COUNT (rcbj, 2026-10-20), the number
     // Directory → Users draws as "In the directory": every person under
     // `ou=users`, counted without listing them. It was the statistics
@@ -5327,7 +5330,8 @@ class AdminConsole {
     // bulk-loaded one. Where the directory offers no tally (no store, a
     // test's stub) the register's count stands, as the Users page's tiles
     // fall back to the list's.
-    const tally = credentials.directoryFactorCounts();
+    const tally = opts && opts.knownUsers ? opts.tally
+      : credentials.directoryFactorCounts();
     // sessions.size is who this process has cached. While the window is
     // on, the index count is who holds a session. A failed count stays
     // null: the cache size would report a partial map as the whole store.
@@ -5343,11 +5347,45 @@ class AdminConsole {
       artifactsHeld: snap.artifacts.held, signOnSessions: signOnSessions,
       usersKnown: tally ? tally.people : snap.users.known,
       usersAuthenticatedHere: snap.users.authenticatedHere,
-      pages: NAV.filter(function (n) { return !n.hidden; })
-        .map(function (n) { return n.path; })
+      pages: this.consolePages()
     };
     log.debug("Leaving AdminConsole.consoleJson().");
     return json;
+  }
+
+  // THE CONSOLE'S PAGES ALONE (2026-10-21), for `GET /admin-api/me`, which
+  // every console page asks and which wanted nothing else of
+  // `consoleJson()` — yet built its whole snapshot to get it: every register
+  // subject resolved and the directory's credential tally, synchronously.
+  // On 8081 each console page stood a request worker still for ten seconds.
+  /**
+   * Lists the console's visible pages, from `NAV`.
+   *
+   * @returns the paths
+   */
+  consolePages() {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.consolePages().");
+    log.debug("Leaving AdminConsole.consolePages().");
+    return NAV.filter(function (n) { return !n.hidden; })
+      .map(function (n) { return n.path; });
+  }
+
+  // `consoleJson()` FOR A CALLER THAT CAN WAIT (2026-10-21): the register's
+  // rows built by `userRowsAsync()` and the directory's tally by
+  // `directoryFactorCountsAsync()`, so the store is asked on its read pool.
+  /**
+   * `consoleJson()`, the store asked asynchronously.
+   *
+   * @returns a promise of the JSON
+   */
+  async consoleJsonAsync() {
+    const { log, stats, credentials } = this.deps;
+    log.debug("Entering AdminConsole.consoleJsonAsync().");
+    const knownUsers = await stats.userRowsAsync();
+    const tally = await credentials.directoryFactorCountsAsync();
+    log.debug("Leaving AdminConsole.consoleJsonAsync().");
+    return this.consoleJson({ knownUsers: knownUsers, tally: tally });
   }
   // THE DASHBOARD'S ANSWER (#446): `consoleJson()`'s totals, and what the
   // page draws beside them — the sections this reader may see (the guide is
@@ -5361,11 +5399,11 @@ class AdminConsole {
    * @param req - the express request, for the gate and the base URL
    * @returns the answer
    */
-  dashboardJson(req) {
+  dashboardJson(req, totals?) {
     const { log, gateStateFor, baseUrlOf } = this.deps;
     log.debug("Entering AdminConsole.dashboardJson().");
     const stored = persistence.status();
-    const json = Object.assign({}, this.consoleJson(), {
+    const json = Object.assign({}, totals || this.consoleJson(), {
       base: baseUrlOf(req),
       persistence: { enabled: !!stored.enabled,
                      mode: stored.enabled ? String(stored.mode || '') : '' },
@@ -5381,6 +5419,21 @@ class AdminConsole {
     });
     log.debug("Leaving AdminConsole.dashboardJson().");
     return json;
+  }
+
+  /**
+   * `dashboardJson()`, its totals asked asynchronously
+   * (`consoleJsonAsync()`).
+   *
+   * @param req - the express request
+   * @returns a promise of the answer
+   */
+  async dashboardJsonAsync(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.dashboardJsonAsync().");
+    const totals = await this.consoleJsonAsync();
+    log.debug("Leaving AdminConsole.dashboardJsonAsync().");
+    return this.dashboardJson(req, totals);
   }
 
 
@@ -10776,6 +10829,8 @@ const consoleExports = {
   // above consoleJson().
   consoleJson: slot.forward('consoleJson'),
   dashboardJson: slot.forward('dashboardJson'),
+  dashboardJsonAsync: slot.forward('dashboardJsonAsync'),
+  consolePages: slot.forward('consolePages'),
   shellJson: slot.forward('shellJson'),
   stylesheet: slot.forward('stylesheet'),
   // The audit log's view is the whole function rather than a JSON builder, for

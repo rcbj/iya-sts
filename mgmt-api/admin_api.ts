@@ -6211,8 +6211,25 @@ class AdminApi {
           // which since #454 only its console twin,
           // `GET /admin-api/console/dashboard`, answers: this operation names
           // them in `consoleMembers` and `sendJson()` takes them off.
-          self.sendJson(res, 200, admin.dashboardJson(req));
-          log.debug("Leaving the management API status endpoint.");
+          // Its totals asked asynchronously (2026-10-21): the snapshot's
+          // register rows and the directory's tally stood a request worker
+          // still for ten seconds on 8081.
+          log.debug("Leaving the management API status endpoint. Asking.");
+          return admin.dashboardJsonAsync(req).then(function (json) {
+            self.sendJson(res, 200, json);
+          }, function (e) {
+            log.debug("Caught in the management API status endpoint: " +
+                      ((e && e.message) || e));
+            log.error(errorCodes.tag(errorCodes.codeOf(e) ||
+                                     'STS-LDAP-0139') +
+                      'admin-api: the console\'s totals could not be read ' +
+                      'from the store: ' + ((e && e.message) || e));
+            res.setHeader('Retry-After', '5');
+            errorCodes.mark(res, errorCodes.codeOf(e) || 'STS-LDAP-0139');
+            self.sendJson(res, 503, { error: 'temporarily_unavailable',
+              error_description: 'The directory could not be read; try ' +
+                'again shortly.' });
+          });
         } },
 
       // ---------------------------------------------------------------------
@@ -25390,7 +25407,9 @@ class AdminApi {
         bootstrapPasswordRequired: !!(roster && roster.claimPending),
         bootstrap: (roster && roster.bootstrap) || null
       },
-      pages: admin.consoleJson().pages.filter(function (path) {
+      // The pages alone (2026-10-21): `consoleJson()` built the whole
+      // snapshot for them, on every console page.
+      pages: admin.consolePages().filter(function (path) {
         return adminScope.pageVisible(scopeState, path);
       })
     };
