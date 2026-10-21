@@ -27,6 +27,38 @@
     "en": "87a572725d5885db",
     "text": "en nonce som redan förbrukats, så begäran nekades"
   },
+  "caches.store.admin.console-totals.title": {
+    "en": "148cb7460d633eb9",
+    "text": "Konsolindexets summor, sparade"
+  },
+  "caches.store.admin.console-totals.description": {
+    "en": "21f463f4c0d3aa21",
+    "text": "Konsolindexets summor — anrop, token, artefakter, sessioner, kända användare och användare som loggat in här — som /admin-api/status svarar med. Att räkna användarna innebär att varje identitet i registret löses upp, så summorna sparas några sekunder."
+  },
+  "caches.store.admin.console-totals.bound": {
+    "en": "00ddf9958d051363",
+    "text": "Strukturellt: en uppsättning summor per sfär, byggd högst en gång åt gången."
+  },
+  "caches.store.admin.console-totals.lifetime": {
+    "en": "1fd142ea1eba6ca9",
+    "text": "Femton sekunder."
+  },
+  "caches.store.admin.users-population.title": {
+    "en": "187dfb82048a5dde",
+    "text": "Användarsidans population, sparad"
+  },
+  "caches.store.admin.users-population.description": {
+    "en": "19ff0e331d0cabdb",
+    "text": "Varje identitet som registret har och varje person i katalogen, med var och ens inventering av inloggningsuppgifter: det som /admin/users och /admin-api/users bläddrar, filtrerar och räknar över. Att bygga den innebär att varje subjekt i registret löses upp och varje persons post läses, så bläddring sparar den i stället för att bygga den för varje sida."
+  },
+  "caches.store.admin.users-population.bound": {
+    "en": "63612b99f35238a3",
+    "text": "Strukturellt: en population per sfär, byggd högst en gång åt gången."
+  },
+  "caches.store.admin.users-population.lifetime": {
+    "en": "39fc3b3cca7a059f",
+    "text": "Femton sekunder, och genast när något skrivs under sfärens ou=users, här eller tillämpat från en annan process."
+  },
   "caches.store.applications.listing.title": {
     "en": "eee968e6707b5423",
     "text": "Listning av applikationsregistret"

@@ -467,6 +467,7 @@ import keystore = require('../common/keystore');
 // no route, and is already loaded by helpers.js — so its position is not a
 // position at all.
 import realms = require('../common/realms');
+import cacheRegistry = require('../common/cache_registry');
 // A CREATE CLAIMS ITS NAME ACROSS NODES (2026-09-14, #46 follow-up) — the
 // console's own user and group forms, as `/admin-api` already did. A LIBRARY
 // (rule 3): it registers no route, and reaches the directory module through
@@ -2829,6 +2830,11 @@ const CERT_SUB_TAB_IDS = ['cert-spiffe-overview', 'cert-spiffe-entries',
   'cert-scep-profiles', 'cert-scep-challenges', 'cert-scep-host-names',
   'cert-scep-certificates', 'cert-scep-exceptions', 'cert-scep-settings'];
 
+// realm -> `{ at, value, building }`: the console's totals kept, or their
+// build in flight (`AdminConsole.consoleJsonAsync()`). One per process, and
+// described to /admin/caches below the class (rule 3ap).
+const totalsHeld = new Map<string, any>();
+
 class AdminConsole {
   // What the Cluster page's `prepare` step last read from the other cells
   // (#361): `{ at, rows, error? }`, or null in single-cell mode.
@@ -2839,10 +2845,6 @@ class AdminConsole {
    * `consoleJsonAsync()`).
    */
   static readonly TOTALS_HOLD_MS = 15000;
-
-  // realm -> `{ at, value, building }`: the totals kept, or their build in
-  // flight (`consoleJsonAsync()`).
-  private readonly totalsHeld = new Map<string, any>();
 
   /**
    * Builds the console over the given modules.
@@ -5400,7 +5402,7 @@ class AdminConsole {
     const { log, realms } = this.deps;
     log.debug("Entering AdminConsole.consoleJsonAsync().");
     const realmId = String(realms.currentId());
-    const held = this.totalsHeld.get(realmId);
+    const held = totalsHeld.get(realmId);
     if (held && (held.building ||
                  Date.now() - held.at <= AdminConsole.TOTALS_HOLD_MS)) {
       log.debug("Leaving AdminConsole.consoleJsonAsync(). Kept.");
@@ -5415,12 +5417,12 @@ class AdminConsole {
     }, (e) => {
       log.debug("Caught in AdminConsole.consoleJsonAsync(): " +
                 ((e && e.message) || e));
-      if (this.totalsHeld.get(realmId) === entry) {
-        this.totalsHeld.delete(realmId);
+      if (totalsHeld.get(realmId) === entry) {
+        totalsHeld.delete(realmId);
       }
       throw e;
     });
-    this.totalsHeld.set(realmId, entry);
+    totalsHeld.set(realmId, entry);
     log.debug("Leaving AdminConsole.consoleJsonAsync(). Built.");
     return entry.building;
   }
@@ -8616,6 +8618,42 @@ class AdminConsole {
 // whichever instance is installed.
 // ---------------------------------------------------------------------------
 const WIRE_STEPS: Array<(instance: AdminConsole) => void> = [];
+
+// THE KEPT TOTALS, DESCRIBED (rule 3ap, 2026-10-21).
+cacheRegistry.register({
+  name: 'admin.console-totals',
+  title: 'Console index totals, kept',
+  description: 'The console index\'s totals — calls, tokens, artifacts, ' +
+    'sessions, users known and users signed in here — that ' +
+    '/admin-api/status answers. Counting the users is every register ' +
+    'identity resolved, so the totals are kept for a few seconds.',
+  owner: 'admin-ui/admin.ts',
+  scope: 'realm',
+  maxEntries: function (): number {
+    return 1;
+  },
+  bound: 'Structural: one set of totals per realm, built at most once at ' +
+    'a time.',
+  lifetime: function (): string {
+    return 'Fifteen seconds.';
+  },
+  entries: function (): any[] {
+    const out = [];
+    totalsHeld.forEach(function (held: any, realmId: string) {
+      if (!held.value) {
+        return;
+      }
+      out.push({
+        realm: realmId,
+        key: 'totals (' + held.value.usersKnown + ' users known)',
+        validUntil: held.at + AdminConsole.TOTALS_HOLD_MS,
+        valid: Date.now() - held.at <= AdminConsole.TOTALS_HOLD_MS,
+        basis: 'age'
+      });
+    });
+    return out;
+  }
+});
 
 const slot = new InstanceSlot<AdminConsole>(
   'admin-ui/admin',

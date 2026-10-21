@@ -28,6 +28,8 @@
 //       the keys it is handed.
 //   P6. the population is kept for the hold, shared by concurrent asks, and
 //       built again as soon as the directory's people move.
+//   P7. an unfiltered page is answered from a kept population that is no
+//       longer current while one rebuild runs behind it.
 //
 // In a child holding the directory as a windowed request worker over a
 // stand-in bridge that counts synchronous and asynchronous questions.
@@ -261,6 +263,34 @@ async function inTheWorker(t) {
   t.check(asked.async >= 1 && after !== again[0],
           'P6. a person written under ou=users is seen at once: the ' +
           'population is built again', JSON.stringify(asked));
+
+  // P7 (2026-10-21): a page asked WITHOUT a filter is answered from the
+  // kept population at once when it is no longer current — under a sign-in
+  // load it never is — and one rebuild runs behind it; a filtered ask
+  // waits for the current one.
+  await inRealm(function () {
+    return ldap.createUser('upa-after-2', { invent: false });
+  });
+  asked.async = 0;
+  const stale = await inRealm(function () {
+    return Promise.all([
+      views.peopleAndCensusAsync({ mayBeStale: true }),
+      views.peopleAndCensusAsync({ mayBeStale: true })]);
+  });
+  const servedStale = stale[0] === after && stale[1] === after;
+  const fresh = await inRealm(function () {
+    return views.peopleAndCensusAsync();
+  });
+  t.check(servedStale && fresh !== after && asked.async >= 1 &&
+          asked.async <= batches + 1,
+          'P7. an unfiltered page is answered from the kept population at ' +
+          'once while ONE rebuild runs; a filtered ask gets the rebuilt one',
+          JSON.stringify({ servedStale: servedStale, asked: asked.async }));
+  t.check(require('../admin-core/admin_views').AdminViews.unfiltered(
+            { query: { page: '3', per: '50' } }) === true &&
+          require('../admin-core/admin_views').AdminViews.unfiltered(
+            { query: { q: 'ann' } }) === false,
+          'P7. a page or a page size is unfiltered; a search is not');
   log.debug('Leaving inTheWorker().');
 }
 

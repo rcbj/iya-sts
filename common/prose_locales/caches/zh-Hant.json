@@ -27,6 +27,38 @@
     "en": "87a572725d5885db",
     "text": "已使用過的 nonce，因此請求被拒絕"
   },
+  "caches.store.admin.console-totals.title": {
+    "en": "148cb7460d633eb9",
+    "text": "主控台首頁統計（保留）"
+  },
+  "caches.store.admin.console-totals.description": {
+    "en": "21f463f4c0d3aa21",
+    "text": "主控台首頁的統計——呼叫、權杖、工件、工作階段、已知使用者以及在此登入過的使用者——即 /admin-api/status 的回答。統計使用者需要解析登記冊中的每個身分，因此這些統計會保留幾秒鐘。"
+  },
+  "caches.store.admin.console-totals.bound": {
+    "en": "00ddf9958d051363",
+    "text": "結構性：每個領域一組統計，同一時間最多建置一次。"
+  },
+  "caches.store.admin.console-totals.lifetime": {
+    "en": "1fd142ea1eba6ca9",
+    "text": "十五秒。"
+  },
+  "caches.store.admin.users-population.title": {
+    "en": "187dfb82048a5dde",
+    "text": "使用者頁面人群（保留）"
+  },
+  "caches.store.admin.users-population.description": {
+    "en": "19ff0e331d0cabdb",
+    "text": "登記冊中的每個身分和目錄中的每個人員，以及各自的憑證普查：即 /admin/users 和 /admin-api/users 分頁、篩選和計數的對象。建置它需要解析登記冊中的每個主體並讀取每個人員的項目，因此翻頁時會保留它，而不是為每一頁重新建置。"
+  },
+  "caches.store.admin.users-population.bound": {
+    "en": "63612b99f35238a3",
+    "text": "結構性：每個領域一份人群，同一時間最多建置一次。"
+  },
+  "caches.store.admin.users-population.lifetime": {
+    "en": "39fc3b3cca7a059f",
+    "text": "十五秒；當本領域的 ou=users 下有任何寫入（在此程序或從其他程序套用）時立即失效。"
+  },
   "caches.store.applications.listing.title": {
     "en": "eee968e6707b5423",
     "text": "應用程式登錄庫清單"

@@ -27,6 +27,38 @@
     "en": "87a572725d5885db",
     "text": "un nonce ya gastado, por lo que la solicitud se rechazó"
   },
+  "caches.store.admin.console-totals.title": {
+    "en": "148cb7460d633eb9",
+    "text": "Totales del índice de la consola, conservados"
+  },
+  "caches.store.admin.console-totals.description": {
+    "en": "21f463f4c0d3aa21",
+    "text": "Los totales del índice de la consola —llamadas, tokens, artefactos, sesiones, usuarios conocidos y usuarios que iniciaron sesión aquí— que responde /admin-api/status. Contar los usuarios supone resolver cada identidad del registro, por lo que los totales se conservan unos segundos."
+  },
+  "caches.store.admin.console-totals.bound": {
+    "en": "00ddf9958d051363",
+    "text": "Estructural: un conjunto de totales por dominio, construido como mucho una vez a la vez."
+  },
+  "caches.store.admin.console-totals.lifetime": {
+    "en": "1fd142ea1eba6ca9",
+    "text": "Quince segundos."
+  },
+  "caches.store.admin.users-population.title": {
+    "en": "187dfb82048a5dde",
+    "text": "Población de la página Usuarios, conservada"
+  },
+  "caches.store.admin.users-population.description": {
+    "en": "19ff0e331d0cabdb",
+    "text": "Cada identidad que guarda el registro y cada persona del directorio, con el censo de sus credenciales: aquello sobre lo que /admin/users y /admin-api/users paginan, filtran y cuentan. Construirla supone resolver cada sujeto del registro y leer la entrada de cada persona, así que la paginación la conserva en lugar de construirla para cada página."
+  },
+  "caches.store.admin.users-population.bound": {
+    "en": "63612b99f35238a3",
+    "text": "Estructural: una población por dominio, construida como mucho una vez a la vez."
+  },
+  "caches.store.admin.users-population.lifetime": {
+    "en": "39fc3b3cca7a059f",
+    "text": "Quince segundos, y de inmediato cuando se escribe algo bajo el ou=users del dominio, aquí o aplicado desde otro proceso."
+  },
   "caches.store.applications.listing.title": {
     "en": "eee968e6707b5423",
     "text": "Listado del registro de aplicaciones"
