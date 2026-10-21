@@ -1620,7 +1620,9 @@ class AdminActions {
       }
       const count = stats.revokeWhere(function (record) {
         return record.sub === subject || record.username === subject;
-      }, 'the admin console (everything for ' + subject + ')', ADMIN_ACT);
+      }, 'the admin console (everything for ' + subject + ')', ADMIN_ACT,
+      // Exactly where those are filed (#820 part 3).
+      ['s:' + subject, 'u:' + subject]);
       log.debug("Leaving AdminActions.tokenAction(). Revoked " + count +
                 " for a subject.");
       return { ok: true, revoked: count,

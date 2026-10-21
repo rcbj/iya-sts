@@ -51,7 +51,11 @@ class DashboardPage {
     const inner = '<div class="tiles">' +
         kit.tile(json.calls, t.text('consoleDashboard.tile.calls')) +
         kit.tile(json.tokensHeld,
-                 t.text('consoleDashboard.tile.tokensIssued')) +
+                 t.text(json.tokensHeldOnly
+                   // The register on demand (#820 part 3): these are the
+                   // recent ones a process holds, not every token issued.
+                   ? 'consoleDashboard.tile.tokensHeldRecent'
+                   : 'consoleDashboard.tile.tokensIssued')) +
         kit.tile(json.tokensRevoked,
                  t.text('consoleDashboard.tile.tokensRevoked')) +
         kit.tile(json.artifactsHeld,

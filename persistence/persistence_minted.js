@@ -710,6 +710,7 @@ function setDriver(theDriver, activeMode) {
   realms.setOnDemandReader({ active: demandLiveFor, read: onDemandRead,
                              byIndex: onDemandByIndex,
                              digestOf: residentDigestOf,
+                             page: onDemandPage,
                              journalled: pendingWrite });
   log.debug('Leaving setDriver(). ' + realms.handles().length +
             ' declared store(s).');
@@ -2363,6 +2364,61 @@ function onDemandByIndex(handle, realmId, value) {
   });
   log.debug("Leaving onDemandByIndex(). " + out.length + " row(s).");
   return out;
+}
+
+/**
+ * One page of an on-demand store's live rows in one realm, in key-column
+ * order after `after` (#820 part 3): what `scan()` walks the store by. A
+ * page that cannot be read THROWS (STS-STORE-0084): a walk that stopped
+ * quietly would answer "everything" with part of it — a revoke-all that
+ * missed tokens.
+ *
+ * @param handle - the store
+ * @param realmId - the realm partition
+ * @param after - the cursor: the last row's key column, or ''
+ * @returns `{ rows: [{ key, value }], next }`, `next` '' at the end
+ */
+function onDemandPage(handle, realmId, after) {
+  log.debug("Entering onDemandPage(). " + handle);
+  const bridge = onDemandBridge();
+  if (!bridge) {
+    log.debug("Leaving onDemandPage(). No bridge.");
+    throw new Error(errorCodes.tag('STS-STORE-0084') + 'persistence: the ' +
+                    'on-demand store "' + handle + '" cannot be walked: no ' +
+                    'bridge to the store');
+  }
+  let rows = [];
+  try {
+    rows = bridge.query('minted.page', [handle, realmId, String(after || ''),
+                                        Date.now()]) || [];
+  } catch (e) {
+    log.error(errorCodes.tag('STS-STORE-0084') + 'persistence: a page of the ' +
+              'on-demand store "' + handle + '" could not be read: ' +
+              ((e && e.message) || e));
+    log.debug("Leaving onDemandPage(). Failed.");
+    throw e;
+  }
+  const declared = realms.handleFor(handle);
+  const out = [];
+  rows.forEach(function (row) {
+    const name = nameOfRow({ key: row.key, keySealed: row.keySealed });
+    const opened = name === null ? undefined : openedBody(handle, row.body);
+    if (opened !== undefined) {
+      out.push({ key: declared ? splitKey(declared, name).key : name,
+                 value: opened });
+    }
+  });
+  log.debug("Leaving onDemandPage(). " + out.length + " row(s).");
+  return { rows: out,
+           next: rows.length >= pageLimit()
+             ? String(rows[rows.length - 1].key) : '' };
+}
+
+// The page size `minted_queries.js` answers, read where it is defined.
+function pageLimit() {
+  log.debug("Entering pageLimit().");
+  log.debug("Leaving pageLimit().");
+  return require('./minted_queries').PAGE_LIMIT;
 }
 
 // An on-demand store's index keys for one row, or null for a store with

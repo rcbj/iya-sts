@@ -1332,6 +1332,12 @@ const SCHEMAS = {
       uptimeMs: { type: 'integer' },
       calls: { type: 'integer', description: 'Endpoint calls served.' },
       tokensHeld: { type: 'integer' },
+      tokensHeldOnly: {
+        type: 'boolean',
+        description: 'True when the token register is read on demand ' +
+                     '(#820): tokensHeld counts the recent tokens this ' +
+                     'process holds, not every token issued.'
+      },
       tokensRevoked: { type: 'integer' },
       artifactsHeld: {
         type: 'integer',

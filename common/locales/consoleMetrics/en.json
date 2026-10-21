@@ -6,6 +6,7 @@
   "tile.routes": "routes called",
   "tile.healthProbes": "successful health probes, not counted as calls",
   "tile.tokensIssued": "tokens issued",
+  "tile.tokensHeldRecent": "recent tokens held",
   "tile.tokensRevoked": "tokens revoked",
   "tile.artifacts": "assertions, tickets, credentials",
   "tile.sessions": "sign-on sessions",
