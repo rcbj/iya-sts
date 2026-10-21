@@ -19,7 +19,9 @@
 //   W2. an entry the window has dropped is asked of the store again;
 //   W3. an entry at that key that no longer carries the UUID is a miss, and
 //       the store's answer wins;
-//   W4. a UUID held only as an ALIAS is asked of the store every time.
+//   W4. a UUID held only as an ALIAS is asked of the store every time;
+//   W5. a person read BY DN is then found by UUID without asking the store
+//       (2026-10-21: a refresh reads both ways round).
 //
 // In a child holding the directory as a windowed request worker over a
 // stand-in bridge that counts what it is asked.
@@ -132,6 +134,20 @@ function inTheWorker(t) {
   t.check(asked() === a1 + 2,
           'W4. a UUID held only as an alias is asked of the store every ' +
           'time', String(asked() - a1));
+
+  const r = people[9];
+  const byDn = inRealm(function () {
+    // What the consent check reads a person by (`consentValuesOf()`).
+    return ldap.locateEntry(r.uid);
+  });
+  const b1 = asked();
+  const byUuid = inRealm(function () {
+    return ldap.entryByUuid('urn:uuid:' + r.uuid);
+  });
+  t.check(byDn && byUuid && byUuid.dn === byDn.dn && asked() === b1,
+          'W5. a person read by DN is then found by UUID without asking the ' +
+          'store', JSON.stringify({ asked: asked() - b1,
+            dn: byUuid && byUuid.dn }));
   log.debug('Leaving inTheWorker().');
 }
 

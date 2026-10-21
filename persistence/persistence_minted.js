@@ -993,6 +993,7 @@ function prefetchedRow(handle, realmId, name) {
 function endPrefetch() {
   log.debug("Entering endPrefetch().");
   prefetched = null;
+  openedNames.clear();
   log.debug("Leaving endPrefetch().");
 }
 
@@ -1080,6 +1081,9 @@ function applyChange(change) {
     return Promise.resolve(false);
   }
   const split = splitKey(store, storedName);
+  // Another process changed the row: what this one committed for it may no
+  // longer be what is filed (see `committedLookups`).
+  committedLookups.delete(demandId(handle, change.realm, split.key));
   // AN ON-DEMAND ROW THIS PROCESS DOES NOT HOLD IS NOT READ (#820): it would
   // only be skipped once read — `applyLocally()` admits nothing — and
   // whoever asks for it next reads it from the store as it then is. Only a
@@ -1513,9 +1517,12 @@ function flush() {
                        // Side-table columns, or null when there is no index.
                        // The merge path replaces these from the merged row.
                        index: indexed,
-                       // An on-demand store's index keys (#820), or null.
-                       lookups: lookupsFor(row, handle, realmId, key,
-                                           present.value),
+                       // An on-demand store's index keys (#820), or null —
+                       // and null too when they are what this process last
+                       // committed for the key (`unchangedLookups()`).
+                       lookups: unchangedLookups(row, handle, realmId, key,
+                         lookupsFor(row, handle, realmId, key,
+                                    present.value)),
                        // WHETHER A READER HAS TO WAIT FOR THIS ROW. An `own`
                        // store is per-process fan-in — every process keeps its
                        // own contribution and the console SUMS them when
@@ -1569,6 +1576,7 @@ function flush() {
   }).then(function (result) {
     committedAt = Math.max(committedAt, takenAt);
     settleDecided(result);
+    noteCommittedLookups(upserts, deletes, result);
     try {
       const sessionWindow = sessionWindowIfOn();
       if (sessionWindow) {
@@ -1862,6 +1870,64 @@ const inFlightDemand = new Map();
 let demandBridge = null;
 
 // Hot path: every on-demand flush row. No Entering/Leaving pair.
+// ---------------------------------------------------------------------------
+// THE INDEX KEYS THIS PROCESS LAST COMMITTED FOR A ROW (2026-10-21). A row of
+// an indexed store is rewritten far more often than its index keys change —
+// a refresh rewrites the token it rotated and the register record it revoked,
+// neither filed anywhere new — and every rewrite deleted and re-inserted all
+// of its index rows: up to seven for a token. Remembered after a commit, a
+// row whose keys are unchanged writes none. Forgotten when this process
+// deletes the row, when another process's change to it is applied (it may
+// have deleted it, and its index rows with it), and wholesale past a bound;
+// a forgotten key is simply written in full again. Not for a store that
+// merges, whose keys are recomputed from the merged row in the transaction.
+// ---------------------------------------------------------------------------
+const committedLookups = new Map();
+const COMMITTED_LOOKUPS_MAX = 100000;
+
+// The lookups to write, or null when they are the committed ones. Hot path
+// (every indexed row a flush writes): no Entering/Leaving pair.
+function unchangedLookups(row, handle, realmId, key, lookups) {
+  if (!lookups || row.mergeRow) {
+    return lookups;
+  }
+  const committed = committedLookups.get(demandId(handle, realmId, key));
+  if (committed !== undefined && committed === lookups.join('\n')) {
+    return null;
+  }
+  return lookups;
+}
+
+// After a commit: what each written row is now filed under. Hot path (once
+// per settled flush): no Entering/Leaving pair.
+function noteCommittedLookups(upserts, deletes, result) {
+  const refused = new Set(((result && result.refused) || []).map(
+    function (one) {
+      return demandId(one.handle, one.realm, one.journalKey);
+    }));
+  upserts.forEach(function (one) {
+    const declared = realms.handleFor(one.handle);
+    if (!declared || typeof declared.lookupsOf !== 'function' ||
+        declared.mergeRow) {
+      return;
+    }
+    const id = demandId(one.handle, one.realm, one.journalKey);
+    if (refused.has(id)) {
+      committedLookups.delete(id);
+      return;
+    }
+    if (Array.isArray(one.lookups)) {
+      if (committedLookups.size >= COMMITTED_LOOKUPS_MAX) {
+        committedLookups.clear();
+      }
+      committedLookups.set(id, one.lookups.join('\n'));
+    }
+  });
+  deletes.forEach(function (one) {
+    committedLookups.delete(demandId(one.handle, one.realm, one.journalKey));
+  });
+}
+
 function demandId(handle, realmId, key) {
   return String(handle) + '\u0000' + String(realmId) + '\u0000' + String(key);
 }
@@ -2474,13 +2540,30 @@ function nameOfRow(row) {
 
 // The name half of a change-log key: sealed (it holds '$', which base64url
 // does not), or base64url of the name. Null when a sealed one does not open.
+// THE NAMES OPENED FOR THE PAGE BEING APPLIED (2026-10-21). A change's
+// sealed name was opened twice — by `prefetch()` and again by
+// `applyChange()` — in every process, for every change: a tenth of a request
+// worker's busy time on 8081 went to applying other processes' changes.
+// Held for the page only (`endPrefetch()` drops it) and bounded.
+const openedNames = new Map();
+const OPENED_NAMES_MAX = 20000;
+
 function nameOfChangeHalf(text) {
   log.debug("Entering nameOfChangeHalf().");
   const half = String(text || '');
   if (half.indexOf('$') >= 0) {
+    if (openedNames.has(half)) {
+      log.debug("Leaving nameOfChangeHalf(). Opened already.");
+      return openedNames.get(half);
+    }
     const opened = keystore.open(half, NAME_LABEL);
+    const name = opened === undefined ? null : opened;
+    if (openedNames.size >= OPENED_NAMES_MAX) {
+      openedNames.clear();
+    }
+    openedNames.set(half, name);
     log.debug("Leaving nameOfChangeHalf(). Sealed.");
-    return opened === undefined ? null : opened;
+    return name;
   }
   log.debug("Leaving nameOfChangeHalf().");
   return Buffer.from(half, 'base64url').toString('utf8');
