@@ -2719,6 +2719,126 @@ function create(options) {
             JSON.stringify(entryCodec.dekKeys(attrs, sealed))];
   }
 
+  // ---------------------------------------------------------------------------
+  // THE DIRECTORY FLUSH'S SET-BASED WRITES (2026-10-21): `saveDirectory()`'s
+  // entries as fourteen parallel arrays, `entryParams()`'s columns, so one
+  // statement carries a whole chunk. Every column is text, the jsonb ones
+  // cast in the statement.
+  // ---------------------------------------------------------------------------
+  const ENTRY_UNNEST =
+    'unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], ' +
+    '$6::text[], $7::text[], $8::text[], $9::text[], $10::text[], ' +
+    '$11::text[], $12::text[], $13::text[], $14::text[]) ' +
+    'AS u(r, k, dn, attrs, origin, created, modified, nk, mk, uk, ck, vk, ' +
+    'an, dk)';
+
+  function entryColumns(items) {
+    log.debug("Entering entryColumns().");
+    const columns = [];
+    for (let c = 0; c < 14; c++) {
+      columns.push([]);
+    }
+    items.forEach(function (item) {
+      const one = entryParams(item.row.realm, item.row.key, item.entry);
+      for (let c = 0; c < 14; c++) {
+        columns[c].push(one[c] === undefined ? null : one[c]);
+      }
+    });
+    log.debug("Leaving entryColumns().");
+    return columns;
+  }
+
+  // Merged entries another node already holds, every row of them locked by
+  // the flush: one UPDATE per chunk, so order cannot matter.
+  function updateEntries(client, items, moved) {
+    log.debug("Entering updateEntries(). " + items.length);
+    let chain = Promise.resolve();
+    for (let at = 0; at < items.length; at += CHANGE_ROWS_PER_STATEMENT) {
+      const chunk = items.slice(at, at + CHANGE_ROWS_PER_STATEMENT);
+      chain = chain.then(function () {
+        chunk.forEach(function (item) {
+          moved.push({ realm: item.row.realm, dn: item.row.key, op: 'put' });
+        });
+        return client.query(
+          'UPDATE sts_ldap_entries AS t SET dn = u.dn, ' +
+          'attrs = u.attrs::jsonb, origin = u.origin, ' +
+          'created_at = u.created, modified_at = u.modified, ' +
+          'name_keys = u.nk::jsonb, mail_keys = u.mk::jsonb, ' +
+          'uuid_keys = u.uk::jsonb, class_keys = u.ck::jsonb, ' +
+          'value_keys = u.vk::jsonb, attr_names = u.an::jsonb, ' +
+          'dek_keys = u.dk::jsonb FROM ' + ENTRY_UNNEST + ' ' +
+          'WHERE t.realm = u.r AND t.dn_key = u.k', entryColumns(chunk));
+      });
+    }
+    log.debug("Leaving updateEntries().");
+    return chain;
+  }
+
+  // New entries and blind ones in ONE INSERT per chunk, ordered by key, so
+  // the rows nobody has locked yet are locked in one order. A blind row
+  // that meets a stored one replaces it; a merged one that does is not
+  // written, and is answered in the promise's list for a second look.
+  function insertEntries(client, items, moved) {
+    log.debug("Entering insertEntries(). " + items.length);
+    const lost = [];
+    let chain = Promise.resolve();
+    for (let at = 0; at < items.length; at += CHANGE_ROWS_PER_STATEMENT) {
+      const chunk = items.slice(at, at + CHANGE_ROWS_PER_STATEMENT);
+      chain = chain.then(function () {
+        const params = entryColumns(chunk);
+        params.push(chunk.filter(function (item) {
+          return item.blind;
+        }).map(function (item) {
+          return String(item.row.realm) + '\n' + String(item.row.key);
+        }));
+        return client.query(
+          'INSERT INTO sts_ldap_entries ' +
+          '  (realm, dn_key, dn, attrs, origin, created_at, modified_at, ' +
+          '   name_keys, mail_keys, uuid_keys, class_keys, value_keys, ' +
+          '   attr_names, dek_keys) ' +
+          'SELECT u.r, u.k, u.dn, u.attrs::jsonb, u.origin, u.created, ' +
+          'u.modified, u.nk::jsonb, u.mk::jsonb, u.uk::jsonb, u.ck::jsonb, ' +
+          'u.vk::jsonb, u.an::jsonb, u.dk::jsonb FROM ' + ENTRY_UNNEST + ' ' +
+          'ORDER BY u.r, u.k ' +
+          'ON CONFLICT (realm, dn_key) DO UPDATE SET ' +
+          '  dn = EXCLUDED.dn, attrs = EXCLUDED.attrs, ' +
+          '  origin = EXCLUDED.origin, created_at = EXCLUDED.created_at, ' +
+          '  modified_at = EXCLUDED.modified_at, ' +
+          '  name_keys = EXCLUDED.name_keys, ' +
+          '  mail_keys = EXCLUDED.mail_keys, ' +
+          '  uuid_keys = EXCLUDED.uuid_keys, ' +
+          '  class_keys = EXCLUDED.class_keys, ' +
+          '  value_keys = EXCLUDED.value_keys, ' +
+          '  attr_names = EXCLUDED.attr_names, ' +
+          '  dek_keys = EXCLUDED.dek_keys ' +
+          'WHERE sts_ldap_entries.realm || E\'\\n\' || ' +
+          'sts_ldap_entries.dn_key = ANY($15::text[]) ' +
+          'RETURNING realm, dn_key', params
+        ).then(function (r) {
+          const written = new Set((r && r.rows || []).map(function (one) {
+            return String(one.realm) + '\n' + String(one.dn_key);
+          }));
+          chunk.forEach(function (item) {
+            const id = String(item.row.realm) + '\n' + String(item.row.key);
+            // **`row.key` AND NOT `row.entry.dn` (2026-09-07)**: a change
+            // row is a pointer the receiver dereferences by the NORMALISED
+            // dn, which is the key.
+            if (item.blind || written.has(id)) {
+              moved.push({ realm: item.row.realm, dn: item.row.key,
+                           op: 'put' });
+            } else {
+              lost.push(item.row);
+            }
+          });
+        });
+      });
+    }
+    log.debug("Leaving insertEntries().");
+    return chain.then(function () {
+      return lost;
+    });
+  }
+
   // A stored row's entry, its attributes opened. THROWS where the blob does
   // not open: an entry this process cannot read must not be taken for one
   // that is absent — the applier would remove it, and a merge would write
@@ -4931,8 +5051,12 @@ function create(options) {
           });
         };
 
-        // THE LOCKS, in one statement per chunk and in primary-key order.
-        const locking = merging.concat(change.deletes.slice(0).sort(byKey));
+        // THE LOCKS, in one statement per chunk and in primary-key order —
+        // EVERY row this flush touches, blind ones included (2026-10-21):
+        // the writes below are one statement per kind rather than one per
+        // row, so the only locks taken after this point are on rows that
+        // did not exist yet, and those are taken by ONE ordered INSERT.
+        const locking = merging.concat(blind, change.deletes).sort(byKey);
         for (let at = 0; at < locking.length;
              at += CHANGE_ROWS_PER_STATEMENT) {
           const chunk = locking.slice(at, at + CHANGE_ROWS_PER_STATEMENT);
@@ -4962,77 +5086,114 @@ function create(options) {
           });
         }
 
-        // **EVERY ROW WRITTEN IN ONE PRIMARY-KEY ORDER, MERGED AND BLIND
-        // TOGETHER (2026-09-30).** The locks above are in key order, but the
-        // writes that followed were every merged row and then every blind
-        // one, the blind ones in journal order. An INSERT of a row that does
-        // not exist yet locks nothing until it runs, so two nodes writing the
-        // same new entries — a new realm's `ou=crl` and its CRL entries,
-        // published by both nodes at once — took those locks in two different
-        // orders and PostgreSQL killed one with `deadlock detected`
-        // (STS-STORE-0002). Since #351 the request whose change was in that
-        // flush is answered 503 (STS-STORE-0066): CI run 36762417779's
-        // cluster job, sts_ldap_read_authorization. saveMinted() gave its
-        // table one order on 2026-09-12 for the same reason.
-        const writes = merging.map(function (row) {
-          return { row: row, merge: true };
-        }).concat(blind.map(function (row) {
-          return { row: row, merge: false };
-        })).sort(function (a, b) {
+        // **ONE STATEMENT PER KIND OF WRITE, NOT ONE PER ROW (2026-10-21).**
+        // A flush sent an UPDATE or an INSERT for every entry and a DELETE
+        // for every removal, each a round trip inside the transaction the
+        // request's answer waits for (#351) — the cost #789 measured for
+        // `saveMinted()` at 36 ms for seventeen rows, and a password write
+        // touches several entries. Now: the merged rows another node holds
+        // in one UPDATE, every row that is new or blind in one INSERT, the
+        // removals in one DELETE.
+        //
+        // **THE ORDER IS STILL ONE PRIMARY-KEY ORDER (2026-09-30).** An
+        // INSERT of a row that does not exist yet locks nothing until it
+        // runs, so two nodes writing the same new entries in two orders
+        // deadlocked (STS-STORE-0002; CI run 36762417779's cluster job).
+        // Every EXISTING row is locked above, in key order, before anything
+        // is written; the new ones are inserted by one statement ordered by
+        // key. A merged insert and a blind upsert are therefore the SAME
+        // statement — two would take the new rows' locks in two runs — and
+        // the conflict clause updates only the blind ones.
+        //
+        // A key that appears more than once is written once, as its last
+        // blind row or else its last merged row: what the per-row writes
+        // left behind, one statement after another.
+        const chosen = new Map();
+        merging.forEach(function (row) {
+          chosen.set(idOf(row.realm, row.key), { row: row, merge: true });
+        });
+        blind.forEach(function (row) {
+          chosen.set(idOf(row.realm, row.key), { row: row, merge: false });
+        });
+        const writes = Array.from(chosen.values()).sort(function (a, b) {
           return byKey(a.row, b.row);
         });
 
-        writes.forEach(function (one) {
-          const row = one.row;
-          if (one.merge) {
-            chain = chain.then(function () {
-              return settle(row, stored.get(idOf(row.realm, row.key)) || null,
-                            true);
+        chain = chain.then(function () {
+          const updates = [];
+          const inserts = [];
+          writes.forEach(function (one) {
+            const row = one.row;
+            if (!one.merge) {
+              inserts.push({ row: row, entry: row.entry, blind: true });
+              return;
+            }
+            const theirs = stored.get(idOf(row.realm, row.key)) || null;
+            const base = row.base ? JSON.parse(row.base) : null;
+            const verdict = directoryMerge.mergeEntry(base, row.entry, theirs);
+            if (verdict.outcome === 'theirs' ||
+                verdict.outcome === 'deleted') {
+              outcomes.push({ realm: row.realm, key: row.key,
+                              outcome: verdict.outcome,
+                              entry: verdict.entry });
+              return;
+            }
+            if (verdict.outcome === 'merged') {
+              outcomes.push({ realm: row.realm, key: row.key,
+                              outcome: 'merged', entry: verdict.entry });
+            }
+            if (theirs) {
+              updates.push({ row: row, entry: verdict.entry });
+            } else {
+              inserts.push({ row: row, entry: verdict.entry, blind: false });
+            }
+          });
+          return updateEntries(client, updates, moved).then(function () {
+            return insertEntries(client, inserts, moved);
+          }).then(function (lost) {
+            // A MERGED INSERT THAT MET A ROW: another node committed it
+            // between the lock and the insert. Looked at again, alone, as
+            // the per-row path always did — the second look writes it as it
+            // is rather than looping.
+            let again = Promise.resolve();
+            lost.forEach(function (row) {
+              again = again.then(function () {
+                return client.query(
+                  'SELECT realm, dn_key, dn, attrs, origin, created_at, ' +
+                  'modified_at FROM sts_ldap_entries ' +
+                  'WHERE realm = $1 AND dn_key = $2 FOR UPDATE',
+                  [row.realm, row.key]
+                ).then(function (found) {
+                  const now = (found.rows || [])[0];
+                  for (let i = outcomes.length - 1; i >= 0; i--) {
+                    if (outcomes[i].realm === row.realm &&
+                        outcomes[i].key === row.key) {
+                      outcomes.splice(i, 1);
+                    }
+                  }
+                  return settle(row, now ? entryOf(now) : null, false);
+                });
+              });
             });
-            return;
-          }
-          chain = chain.then(function () {
-            // **`row.key` AND NOT `row.entry.dn` (2026-09-07).** A change row
-            // is a POINTER, and the receiver dereferences it with
-            // `readEntry(realm, key)` — which is `WHERE dn_key = $2`, the
-            // NORMALISED dn. `row.entry.dn` is the DN as written, so every
-            // upsert pointed at a key that column never holds: the receiver
-            // looked it up, MISSED, concluded the entry had been deleted, and
-            // called `removeEntry()` — actively removing the entry it had just
-            // been told to add. (The merging path above records `row.key` for
-            // the same reason.)
-            moved.push({ realm: row.realm, dn: row.key, op: 'put' });
-            return client.query(
-              'INSERT INTO sts_ldap_entries ' +
-              '  (realm, dn_key, dn, attrs, origin, created_at, modified_at, ' +
-              '   name_keys, mail_keys, uuid_keys, class_keys, value_keys, ' +
-              '   attr_names, dek_keys) ' +
-              'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, ' +
-              '$9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, ' +
-              '$14::jsonb) ' +
-              'ON CONFLICT (realm, dn_key) DO UPDATE SET ' +
-              '  dn = EXCLUDED.dn, attrs = EXCLUDED.attrs, ' +
-              '  origin = EXCLUDED.origin, created_at = EXCLUDED.created_at, ' +
-              '  modified_at = EXCLUDED.modified_at, ' +
-              '  name_keys = EXCLUDED.name_keys, ' +
-              '  mail_keys = EXCLUDED.mail_keys, ' +
-              '  uuid_keys = EXCLUDED.uuid_keys, ' +
-              '  class_keys = EXCLUDED.class_keys, ' +
-              '  value_keys = EXCLUDED.value_keys, ' +
-              '  attr_names = EXCLUDED.attr_names, ' +
-              '  dek_keys = EXCLUDED.dek_keys',
-              params(row, row.entry));
+            return again;
           });
         });
 
-        change.deletes.forEach(function (row) {
+        for (let at = 0; at < change.deletes.length;
+             at += CHANGE_ROWS_PER_STATEMENT) {
+          const chunk = change.deletes.slice(at,
+                                             at + CHANGE_ROWS_PER_STATEMENT);
           chain = chain.then(function () {
-            moved.push({ realm: row.realm, dn: row.key, op: 'delete' });
+            chunk.forEach(function (row) {
+              moved.push({ realm: row.realm, dn: row.key, op: 'delete' });
+            });
             return client.query(
-              'DELETE FROM sts_ldap_entries WHERE realm = $1 AND dn_key = $2',
-              [row.realm, row.key]);
+              'DELETE FROM sts_ldap_entries WHERE (realm, dn_key) IN ' +
+              '(SELECT r, k FROM unnest($1::text[], $2::text[]) AS u(r, k))',
+              [chunk.map(function (row) { return String(row.realm); }),
+               chunk.map(function (row) { return String(row.key); })]);
           });
-        });
+        }
 
         // A REALM THAT WENT AWAY takes its rows with it. The per-row deletes
         // above already cover every row this process knew about; this catches

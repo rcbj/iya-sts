@@ -110,7 +110,8 @@ async function run(t) {
   }
   t.check(!failure, 'A1. the flush commits although the locked row does ' +
           'not open', failure && failure.message);
-  t.check(count(deleting, /DELETE FROM sts_ldap_entries WHERE realm = \$1 AND dn_key/) === 1,
+  t.check(count(deleting,
+                /DELETE FROM sts_ldap_entries WHERE \(realm, dn_key\) IN/) === 1,
           'A2. the DELETE is issued',
           deleting.map(function (one) {
             return one.sql.slice(0, 60);
