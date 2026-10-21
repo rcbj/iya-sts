@@ -114,6 +114,33 @@ function fakeDatabase() {
       }));
     }
     // ---- the directory ----------------------------------------------------
+    // THE FLUSH'S SET-BASED WRITES (2026-10-21): fourteen parallel arrays,
+    // the INSERT's fifteenth the ids of the blind rows it may update.
+    if (/^DELETE FROM sts_ldap_entries WHERE \(realm, dn_key\) IN/
+          .test(text)) {
+      p[0].forEach(function (r, i) {
+        db.entries.delete(eid(r, p[1][i]));
+      });
+      return rows([]);
+    }
+    if (/^(INSERT INTO|UPDATE) sts_ldap_entries/.test(text) &&
+        Array.isArray(p[0])) {
+      const inserting = /^INSERT/.test(text);
+      const blind = new Set(p[14] || []);
+      const written = [];
+      p[0].forEach(function (r, i) {
+        const k = eid(r, p[1][i]);
+        if (inserting ? db.entries.has(k) && !blind.has(r + '\n' + p[1][i])
+                      : !db.entries.has(k)) {
+          return;
+        }
+        db.entries.set(k, { realm: r, dn_key: p[1][i], dn: p[2][i],
+                            attrs: json(p[3][i]), origin: p[4][i],
+                            created_at: p[5][i], modified_at: p[6][i] });
+        written.push({ realm: r, dn_key: p[1][i] });
+      });
+      return Promise.resolve({ rows: written, rowCount: written.length });
+    }
     if (/FROM sts_ldap_entries ORDER BY realm, dn_key$/.test(text)) {
       return rows(Array.from(db.entries.values()));
     }
