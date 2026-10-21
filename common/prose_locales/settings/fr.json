@@ -9564,8 +9564,8 @@
     "text": "Durée de conservation des exécutions (heures)"
   },
   "scheduler.runHistoryHours|description": {
-    "en": "0f3e63d5914e2685",
-    "text": "Chaque exécution terminée dans ce nombre d’heures est conservée — y compris une exécution en échec — en plus des scheduler.runHistoryCount dernières exécutions de chaque tâche, selon ce qui en conserve le plus. Une tâche qui s’exécute chaque minute conserve donc une journée d’exécutions dans chaque domaine où elle s’exécute. 0 ne conserve que le nombre."
+    "en": "5c283870d0319ed7",
+    "text": "Toute exécution terminée depuis moins de ce nombre d'heures est conservée — y compris une exécution en échec — en plus des scheduler.runHistoryCount dernières exécutions de chaque tâche, selon ce qui en conserve le plus. Une tâche qui s'exécute chaque minute conserve donc une heure d'exécutions dans chaque domaine où elle s'exécute, ou ses scheduler.runHistoryCount dernières si c'est davantage. 0 ne conserve que le nombre."
   },
   "scheduler.disabledJobs|label": {
     "en": "a33937a2bd564b6d",
