@@ -3531,6 +3531,28 @@ function revokeFamily(familyId, clientId) {
  * @returns a promise of `{ ok: true, handle }`, or a refusal in
  *   `checkRefreshRequest()`'s shape with `revoke`
  */
+/**
+ * Reads the presented refresh token's record and its family together,
+ * off the event loop, before the checks that ask for them (2026-10-21,
+ * #820): see `warm()` in common/realms.js.
+ *
+ * @param claims - the opened refresh token's claims
+ * @returns a promise settled when both are held, absent or not read
+ */
+function warmRefresh(claims) {
+  log.debug("Entering warmRefresh().");
+  const c = claims || {};
+  const jti = String(c.jti || '');
+  const family = String(c[FAMILY_CLAIM] || '');
+  log.debug("Leaving warmRefresh().");
+  return Promise.all([
+    jti ? refreshTokens.warm([jti]) : null,
+    family ? refreshFamilies.warm([family]) : null
+  ]).then(function () {
+    return undefined;
+  });
+}
+
 async function spendRefreshToken(opts) {
   log.debug("Entering spendRefreshToken().");
   if (!senderConstraints.rotationRequired()) {
@@ -4531,6 +4553,7 @@ module.exports = {
   // which this file may require and which may never require this file back.
   rotationRequired: senderConstraints.rotationRequired,
   spendRefreshToken: spendRefreshToken,
+  warmRefresh: warmRefresh,
   revokeFamily: revokeFamily,
   revokeRefreshOnLogout: revokeRefreshOnLogout,
   noteTokenBinding: noteTokenBinding,

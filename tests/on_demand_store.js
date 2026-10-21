@@ -29,7 +29,11 @@
 //       read, and `get()` reads only a digest it holds;
 //   D9. its `size` is the count of digests; `set()` adds one, `delete()`
 //       removes one and says it was there;
-//   D10. a `get()` that finds a held digest's row gone takes the digest out.
+//   D10. a `get()` that finds a held digest's row gone takes the digest out;
+//   D11. `warm()` reads the keys it does not hold in ONE batch, holds what
+//        is there, remembers what is not, and skips a key already held;
+//   D12. a key another process changed while the batch was reading is not
+//        held from it (its answer may be the older one).
 //
 // In a child process: it installs a stand-in reader in `common/realms.js`.
 // ===========================================================================
@@ -52,7 +56,7 @@ function child() {
   };
   const OUT = process.env.ODS_OUT;
   const ROOT = process.env.ODS_ROOT;
-  try {
+  (async function () {
     const realms = require(ROOT + '/common/realms');
     const stored = new Map([['far-1', { family: 'f', n: 1 }],
                             ['far-2', { family: 'f', n: 2 }],
@@ -61,6 +65,7 @@ function child() {
     const asked = [];
     let active = true;
     let failing = false;
+    let duringRead = null;
     realms.setOnDemandReader({
       active: function () {
         return active;
@@ -79,6 +84,23 @@ function child() {
           return e[1].family === indexKey;
         }).map(function (e) {
           return { key: e[0], value: e[1] };
+        });
+      },
+      readMany: function (handle, realmId, keys) {
+        asked.push('many:' + keys.slice().sort().join('+'));
+        const out = new Map();
+        keys.forEach(function (k) {
+          if (stored.has(k)) {
+            out.set(k, stored.get(k));
+          }
+        });
+        return new Promise(function (resolve) {
+          setImmediate(function () {
+            if (duringRead) {
+              duringRead();
+            }
+            resolve(out);
+          });
         });
       },
       digestOf: function (handle, realmId, key) {
@@ -204,11 +226,44 @@ function child() {
          store.onDemandLive() === false,
          'D5. with no active reader it is the plain Map it always was',
          JSON.stringify({ asked: asked, size: plain.size }));
-  } catch (e) {
+
+    active = true;
+    const warmed = realms.map({ persist: 'ods.warm',
+                                onDemand: { maxEntries: 10 } });
+    stored.set('w-1', { n: 1 });
+    stored.set('w-2', { n: 2 });
+    warmed.set('w-held', { n: 0 });
+    asked.length = 0;
+    await warmed.warm(['w-1', 'w-2', 'w-none', 'w-held']);
+    const batch = asked.slice();
+    asked.length = 0;
+    const got1 = warmed.get('w-1');
+    const gotNone = warmed.get('w-none');
+    note(batch.join(',') === 'many:w-1+w-2+w-none' && got1 && got1.n === 1 &&
+         gotNone === undefined && !asked.length,
+         'D11. warm() reads the keys not held in one batch, holds what is ' +
+         'there and remembers what is not', JSON.stringify({ batch: batch,
+           after: asked }));
+
+    stored.set('w-3', { n: 3, old: true });
+    duringRead = function () {
+      stored.set('w-3', { n: 33 });
+      realms.handleFor('ods.warm').forgetAbsent('default', 'w-3');
+    };
+    await warmed.warm(['w-3']);
+    duringRead = null;
+    asked.length = 0;
+    const got3 = warmed.get('w-3');
+    note(got3 && got3.n === 33 && asked.indexOf('read:w-3') >= 0,
+         'D12. a key changed by another process while the batch read is not ' +
+         'held from it, and is read again', JSON.stringify({ got3: got3,
+           asked: asked }));
+  })().catch(function (e) {
     note(false, 'the child threw', (e && e.stack) || e);
-  }
-  require('fs').writeFileSync(OUT, JSON.stringify(findings));
-  process.exit(0);
+  }).then(function () {
+    require('fs').writeFileSync(OUT, JSON.stringify(findings));
+    process.exit(0);
+  });
 }
 
 function run(t) {
