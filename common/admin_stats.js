@@ -387,8 +387,17 @@ const HOLDER_REFRESH_S = 3600;
  * @param record - the token record
  */
 function noteTokenHolder(record) {
-  const key = record.username ? identityKeyOf(record.username)
-    : holderKeyOf(record.username, record.sub);
+  // BY NAME ONLY. A record with only a `sub` is keyed through the directory
+  // (`holderKeyOf()` resolves the entry), two synchronous reads of the store
+  // each: the first run of the backfill on 8081 did that for every refresh
+  // token of 546,000 and held the front process for its whole walk, every
+  // request waiting behind it. A person's access and ID tokens carry the
+  // name, so their row comes from those, and nothing here asks the
+  // directory.
+  if (!record.username) {
+    return;
+  }
+  const key = identityKeyOf(record.username);
   if (!key) {
     return;
   }
