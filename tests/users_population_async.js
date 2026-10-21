@@ -29,7 +29,9 @@
 //   P6. the population is kept for the hold, shared by concurrent asks, and
 //       built again as soon as the directory's people move.
 //   P7. an unfiltered page is answered from a kept population that is no
-//       longer current while one rebuild runs behind it.
+//       longer current while one rebuild runs behind it;
+//   P8. a long list's name batches and census pages are asked a few at a
+//       time, at most four.
 //
 // In a child holding the directory as a windowed request worker over a
 // stand-in bridge that counts synchronous and asynchronous questions.
@@ -95,7 +97,7 @@ async function inTheWorker(t) {
       return queries.rowOf(JSON.parse(JSON.stringify(r)));
     });
   };
-  w.attach({
+  const bridgeObj = {
     query: function (name, args) {
       byName.sync[name] = (byName.sync[name] || 0) + 1;
       if (name === 'withUuids') {
@@ -120,7 +122,8 @@ async function inTheWorker(t) {
         return Promise.resolve([]);
       }
     }
-  });
+  };
+  w.attach(bridgeObj);
   const inRealm = function (fn) {
     return realms.run(realms.get(realms.DEFAULT_ID), fn);
   };
@@ -291,6 +294,46 @@ async function inTheWorker(t) {
           require('../admin-core/admin_views').AdminViews.unfiltered(
             { query: { q: 'ann' } }) === false,
           'P7. a page or a page size is unfiltered; a search is not');
+
+  // P8 (2026-10-21): a long list's store questions are asked a few at a
+  // time, not one after another — the first build after a start waited on
+  // 241 name batches and 311 census pages in turn on 8081. Each question
+  // here takes 10 ms, and how many are out at once is counted.
+  let inFlight = 0;
+  let mostInFlight = { withUuids: 0, byKeys: 0 };
+  const slowAsync = bridgeObj.queryAsync;
+  w.attach(Object.assign({}, bridgeObj, {
+    queryAsync: function (name, args) {
+      inFlight++;
+      if (mostInFlight[name] !== undefined) {
+        mostInFlight[name] = Math.max(mostInFlight[name], inFlight);
+      }
+      return new Promise(function (resolve) {
+        setTimeout(resolve, 10);
+      }).then(function () {
+        return slowAsync.call(bridgeObj, name, args);
+      }).then(function (answer) {
+        inFlight--;
+        return answer;
+      }, function (e) {
+        inFlight--;
+        throw e;
+      });
+    }
+  }));
+  await inRealm(function () {
+    return stats.userRowsAsync();
+  });
+  const keys = [];
+  for (let i = 0; i < 1600; i++) {
+    keys.push(('uid=upa-par-' + i + ',' + users).toLowerCase());
+  }
+  await w.entriesAtAsync('default', keys);
+  w.attach(bridgeObj);
+  t.check(mostInFlight.withUuids >= 2 && mostInFlight.withUuids <= 4 &&
+          mostInFlight.byKeys >= 2 && mostInFlight.byKeys <= 4,
+          'P8. a long list\'s name batches and census pages are asked a few ' +
+          'at a time, at most four', JSON.stringify(mostInFlight));
   log.debug('Leaving inTheWorker().');
 }
 

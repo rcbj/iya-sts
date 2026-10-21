@@ -124,6 +124,8 @@ interface WindowDeps {
 
 // Rows per page of a scan.
 const PAGE = 500;
+// How many of a long list's pages are asked at once (2026-10-21).
+const PAGES_AT_ONCE = 4;
 
 // The composite key the window holds a realm's entry under.
 function slotKey(realmId: string, key: string): string {
@@ -1181,6 +1183,39 @@ class DirectoryWindow {
     return answer;
   }
 
+  // `fn` over every item with at most `limit` running at once; resolves when
+  // all are done, rejects with the first failure once the running ones have
+  // finished. A store question each, overlapped and still bounded.
+  private static async inParallel<T>(items: T[], limit: number,
+                                     fn: (item: T) => Promise<void>):
+      Promise<void> {
+    log.debug("Entering DirectoryWindow.inParallel(). " + items.length);
+    let next = 0;
+    let failure: unknown = null;
+    const runner = async function (): Promise<void> {
+      while (next < items.length && !failure) {
+        const item = items[next];
+        next += 1;
+        try {
+          await fn(item);
+        } catch (e) {
+          log.debug("Caught in DirectoryWindow.inParallel(): " +
+                    ((e && (e as Error).message) || e));
+          failure = failure || e;
+        }
+      }
+    };
+    const runners: Promise<void>[] = [];
+    for (let i = 0; i < Math.max(1, Math.min(limit, items.length)); i++) {
+      runners.push(runner());
+    }
+    await Promise.all(runners);
+    log.debug("Leaving DirectoryWindow.inParallel().");
+    if (failure) {
+      throw failure;
+    }
+  }
+
   // The event loop given back: what runs between two pages.
   private static yieldToLoop(): Promise<void> {
     log.debug("Entering DirectoryWindow.yieldToLoop().");
@@ -1457,11 +1492,15 @@ class DirectoryWindow {
         asking.add(key);
       }
     });
+    // A FEW PAGES AT A TIME (2026-10-21), not one after another: the Users
+    // page's census asked 311 of them in turn on 8081, 4 s of waiting on the
+    // store. Each page asks its own keys and fills only them.
+    const pages: string[][] = [];
     for (let from = 0; from < ask.length && this.bridge; from += PAGE) {
-      if (from > 0) {
-        await DirectoryWindow.yieldToLoop();
-      }
-      const page = ask.slice(from, from + PAGE);
+      pages.push(ask.slice(from, from + PAGE));
+    }
+    await DirectoryWindow.inParallel(pages, PAGES_AT_ONCE, async (page) => {
+      await DirectoryWindow.yieldToLoop();
       const rows = (await this.askAsync('byKeys', [realmId, page]) as Row[]) ||
         [];
       if (counter) {
@@ -1479,7 +1518,7 @@ class DirectoryWindow {
           out.set(key, held ? held.entry : null);
         }
       });
-    }
+    });
     ask.forEach(function (key) {
       if (!out.has(key)) {
         // No store yet (before `attach()`): nothing can be known about it.

@@ -496,6 +496,51 @@ function namesForSubjects(subjects) {
 // page that names the holders of a large register: where the resolver offers
 // `namesForAsync()` the batches are awaited and hold no event loop; where it
 // does not, or it fails for any reason, this is `namesForSubjects()`.
+// ---------------------------------------------------------------------------
+// A LIST'S WORK, A FEW AT A TIME (2026-10-21): `fn` over every item, at most
+// `limit` running at once, for store questions that each wait on a round
+// trip — overlapped, and still bounded so they do not take the whole pool
+// from the requests beside them. Resolves once every item is done; rejects
+// with the first failure, after the ones running have finished.
+// ---------------------------------------------------------------------------
+/**
+ * Runs `fn` over `items` with at most `limit` running at once.
+ *
+ * @param items - the items
+ * @param limit - the most at once (at least 1)
+ * @param fn - an async function of one item
+ * @returns a promise that resolves when every item is done
+ */
+async function inParallel(items, limit, fn) {
+  log.debug("Entering inParallel(). " + (items || []).length + " item(s).");
+  const list = Array.isArray(items) ? items : [];
+  const width = Math.max(1, Math.min(Math.floor(Number(limit)) || 1,
+                                     list.length || 1));
+  let next = 0;
+  let failure = null;
+  const runner = async function () {
+    while (next < list.length && !failure) {
+      const item = list[next];
+      next += 1;
+      try {
+        await fn(item);
+      } catch (e) {
+        log.debug("Caught in inParallel(): " + ((e && e.message) || e));
+        failure = failure || e;
+      }
+    }
+  };
+  const runners = [];
+  for (let i = 0; i < width; i++) {
+    runners.push(runner());
+  }
+  await Promise.all(runners);
+  log.debug("Leaving inParallel().");
+  if (failure) {
+    throw failure;
+  }
+}
+
 /**
  * `namesForSubjects()`, asking the directory asynchronously where it can.
  *
@@ -8047,6 +8092,7 @@ function capturedDescription(captured) {
  * @namespace
  */
 module.exports = {
+  inParallel: inParallel,
   // THE KEY GENERATIONS (2026-09-22, #42): the one lookup every "is this ours"
   // check asks, the RSA keys that may decrypt, and the three acts a rotation
   // is made of — see the KEY GENERATIONS block.
