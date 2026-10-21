@@ -10399,12 +10399,18 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API token action endpoint.");
           const body = parseBody(req);
-          const result = adminActions.tokenAction(self.withAction(req, body));
-          if (!result.ok) {
-            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0036');
-          }
-          self.sendJson(res, result.ok ? 200 : 400, result);
-          log.debug("Leaving the management API token action endpoint.");
+          // A revoke-all, by kind or by user answers with a promise while
+          // the register is on demand (#820): a walk of the store that
+          // gives the event loop back between its pages.
+          return Promise.resolve(adminActions.tokenAction(
+            self.withAction(req, body))).then(function (result) {
+            if (!result.ok) {
+              errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                   'STS-API-0036');
+            }
+            self.sendJson(res, result.ok ? 200 : 400, result);
+            log.debug("Leaving the management API token action endpoint.");
+          });
         },
         actions: [
           { action: 'revoke', operationId: 'revokeToken',

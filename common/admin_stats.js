@@ -6853,6 +6853,71 @@ function revokeWhere(predicate, via, how, candidates) {
   return count;
 }
 
+// How many revocations `revokeWhereAsync()` makes between yields.
+const REVOKE_BATCH = 500;
+
+/**
+ * `revokeWhere()` with no candidates, for a request that may wait (#820):
+ * on demand the store is walked a page at a time and the revocations made
+ * a batch at a time, the event loop given back between, so a revoke-all
+ * through /admin-api does not hold the process for the whole walk. Held
+ * whole, it is `revokeWhere()`.
+ *
+ * @param predicate - which records to revoke
+ * @param via - what the revocation is recorded as coming through
+ * @param how - the door's own statement (`initiatingEntity`, …)
+ * @returns a promise of how many tokens were newly revoked
+ */
+async function revokeWhereAsync(predicate, via, how) {
+  log.debug("Entering revokeWhereAsync().");
+  if (!tokens.onDemandLive()) {
+    log.debug("Leaving revokeWhereAsync(). Held whole.");
+    return revokeWhere(predicate, via, how);
+  }
+  const realm = realms.current();
+  const found = [];
+  await tokens.scanAsync(function (record, key) {
+    if (record && record.revocable && !record.revoked &&
+        predicate(record)) {
+      found.push([key, record]);
+    }
+  });
+  const declared = realms.handleFor('admin_stats.tokens');
+  let count = 0;
+  for (let i = 0; i < found.length; i += REVOKE_BATCH) {
+    realms.run(realm, function () {
+      found.slice(i, i + REVOKE_BATCH).forEach(function (pair) {
+        if (declared && !tokens.realmMap().has(pair[0])) {
+          declared.restore(realm.id, pair[0], pair[1]);
+        }
+        const record = pair[1];
+        if (record && record.revocable && !record.revoked &&
+            predicate(record) && revoke(record.jti, via, how)) {
+          count++;
+        }
+      });
+    });
+    await new Promise(function (resolve) {
+      setImmediate(resolve);
+    });
+  }
+  log.debug("Leaving revokeWhereAsync(). Revoked " + count + " token(s).");
+  return count;
+}
+
+/**
+ * Whether the token register is read on demand here (#820), so a walk of
+ * it is a walk of the store: what decides whether a revoke-all answers now
+ * or with a promise.
+ *
+ * @returns true when on demand
+ */
+function tokensOnDemand() {
+  log.debug("Entering tokensOnDemand().");
+  log.debug("Leaving tokensOnDemand().");
+  return tokens.onDemandLive();
+}
+
 // ---------------------------------------------------------------------------
 // Sessions derived from what was issued.
 //
@@ -7317,5 +7382,7 @@ module.exports = {
   issuedSetByKey: issuedSetByKey,
   issuedById: issuedById,
   snapshot: snapshot,
-  setStatusMarker: setStatusMarker
+  setStatusMarker: setStatusMarker,
+  revokeWhereAsync: revokeWhereAsync,
+  tokensOnDemand: tokensOnDemand
 };
