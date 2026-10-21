@@ -6,6 +6,7 @@
   "tile.routes": "routes appelées",
   "tile.healthProbes": "sondes de santé réussies, non comptées comme appels",
   "tile.tokensIssued": "jetons émis",
+  "tile.tokensHeldRecent": "jetons récents détenus",
   "tile.tokensRevoked": "jetons révoqués",
   "tile.artifacts": "assertions, tickets, justificatifs",
   "tile.sessions": "sessions d’authentification unique",

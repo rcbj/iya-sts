@@ -3073,7 +3073,8 @@ class IndexedMap extends Map {
  *
  * @param {any} [options]
  * @returns {Map<any, any> & { realmMap: (id?: any) => Map<any, any>,
- *   lookup: (indexKey: string) => any[], onDemandLive: () => boolean }}
+ *   lookup: (indexKey: string) => any[], onDemandLive: () => boolean,
+ *   scan: (fn: (value: any, key: any) => void) => void }}
  */
 function map(options) {
   log.debug("Entering map().");
@@ -3438,6 +3439,48 @@ function map(options) {
       demandTrim(realmId, target);
       log.debug("Leaving lookup(). " + out.size + " key(s).");
       return Array.from(out);
+    },
+    // EVERY ROW OF THE AMBIENT REALM, held or not (#820 part 3): for the
+    // few walks that must see the whole store — an administrator's
+    // revoke-all — where `forEach` sees only what is held. On demand, the
+    // held rows first (they are the newest, and a pending write is only
+    // here), then the store a page at a time, skipping what was seen and a
+    // key with a write not yet committed. Synchronous, through the bridge:
+    // a walk of the whole store, for the rare caller that has to. A page
+    // that cannot be read throws. Not on demand, `forEach`.
+    scan: function (fn) {
+      log.debug("Entering scan().");
+      const target = per();
+      if (!demandOn() || typeof onDemandReader.page !== 'function') {
+        target.forEach(function (value, key) {
+          fn(value, key);
+        });
+        log.debug("Leaving scan(). Held whole.");
+        return;
+      }
+      const realmId = partitionId(currentId());
+      const seen = new Set();
+      Array.from(target.entries()).forEach(function (entry) {
+        seen.add(entry[0]);
+        fn(entry[1], entry[0]);
+      });
+      let after = '';
+      let pages = 0;
+      do {
+        const page = onDemandReader.page(handleName, realmId, after);
+        pages++;
+        (page.rows || []).forEach(function (row) {
+          if (seen.has(row.key) ||
+              onDemandReader.journalled(handleName, realmId, row.key)) {
+            return;
+          }
+          seen.add(row.key);
+          fn(row.value, row.key);
+        });
+        after = page.next || '';
+      } while (after);
+      log.debug("Leaving scan(). " + seen.size + " row(s) in " + pages +
+                " page(s).");
     },
     // The realm's own Map, for the callers that genuinely want the whole thing
     // (a purge, a sweep across realms, a console page counting them). It is a

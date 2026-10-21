@@ -1714,7 +1714,12 @@ class Consent {
         refreshes.push(String(record.jti));
       }
       return true;
-    }, via, how);
+    }, via, how,
+    // Where one person's tokens are filed (#820 part 3); a withdrawal for
+    // every person of a client walks the register, which a client's index
+    // key — every token it was ever issued — would be no narrower than.
+    person ? ['u:' + String(asked.username), 'u:' + person, 's:' + person]
+           : undefined);
     if (refreshes.length) {
       let grants: GrantBookkeeping | null = null;
       try {
