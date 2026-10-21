@@ -357,6 +357,11 @@ function subjectForName(name) {
     log.debug("Leaving subjectForName().");
     return sub;
   } catch (e) {
+    if (budgetSpent(e)) {
+      log.debug("Leaving subjectForName(). The request's directory budget " +
+                "is spent.");
+      return '';
+    }
     log.error(errorCodes.tag('STS-CORE-0091') +
               'helpers: the subject resolver threw for "' + name + '" and ' +
               'the person was given no subject: ' + ((e && e.message) || e));
@@ -391,12 +396,34 @@ function nameForSubject(sub) {
     log.debug("Leaving nameForSubject().");
     return name;
   } catch (e) {
+    if (budgetSpent(e)) {
+      log.debug("Leaving nameForSubject(). The request's directory budget " +
+                "is spent.");
+      return '';
+    }
     log.error(errorCodes.tag('STS-CORE-0091') +
               'helpers: the subject resolver threw looking up a subject and ' +
               'it was treated as naming nobody: ' + ((e && e.message) || e));
     log.debug("Leaving nameForSubject(). The resolver threw.");
     return '';
   }
+}
+
+// ---------------------------------------------------------------------------
+// A REQUEST WHOSE DIRECTORY BUDGET IS SPENT IS NOT LOGGED ONCE PER SUBJECT
+// (2026-10-21). `ldap.workerDirectoryBudgetMs` bounds how long one request
+// may wait on synchronous directory reads; past it every read throws
+// STS-LDAP-0175 at once, without asking the store, and the request itself
+// answers with that code (`common/sync_query.ts`). A console page that
+// resolves the subjects of a large register then met it once per subject
+// and logged each at error: 360,000 lines in six minutes on 8081, and the
+// page took minutes to draw. The request's own refusal is the record; the
+// subjects it could not resolve name nobody, as before, said at debug.
+// ---------------------------------------------------------------------------
+// Hot path (once per refused subject): no Entering/Leaving pair, the
+// exception the code style allows, stated as it requires.
+function budgetSpent(e) {
+  return errorCodes.codeOf(e) === 'STS-LDAP-0175';
 }
 
 // MANY SUBJECTS AT ONCE (2026-10-14): `nameForSubject()` for each, asked of
@@ -441,6 +468,16 @@ function namesForSubjects(subjects) {
                 " asked together.");
       return out;
     } catch (e) {
+      if (budgetSpent(e)) {
+        // Asking each alone would meet the same spent budget once per
+        // subject: they name nobody, as nameForSubject() would answer.
+        uuids.forEach(function (key) {
+          out.set(key, '');
+        });
+        log.debug("Leaving namesForSubjects(). The request's directory " +
+                  "budget is spent.");
+        return out;
+      }
       log.error(errorCodes.tag('STS-CORE-0091') +
                 'helpers: the subject resolver threw looking up ' +
                 uuids.length + ' subjects together, and each was asked ' +
