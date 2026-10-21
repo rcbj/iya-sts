@@ -3048,6 +3048,21 @@ function fork(pool, slot) {
         resolve(entry);
         return;
       }
+      // SLOW, NOT FAILED (#820): past `workers.startTimeoutMs` a worker
+      // says it is still starting. It is neither ended nor replaced — a
+      // `terminate()` mid-restore and a second restore beside it are what
+      // ran 8081 out of heap — and the pool stops waiting for it: it joins
+      // when it reports ready, through the branch above. A worker that does
+      // not come up at all says so later, as a failure, below.
+      if (message && message.ready === false && message.slow) {
+        entry.slow = true;
+        log.warn(errorCodes.tag('STS-WORKER-0051') +
+                 'request_pool: ' + entry.pool + ' worker ' + entry.pid +
+                 ' is slow to start: ' + message.error + '. It is left to ' +
+                 'finish, not replaced, and joins the pool when it is ready.');
+        resolve(null);
+        return;
+      }
       if (message && message.ready === false) {
         log.error(errorCodes.tag('STS-WORKER-0017') +
                   'request_pool: worker ' + entry.pid + ' could not start: ' +

@@ -50,7 +50,8 @@ const SURFACES = pool.SURFACE_POOL;
 // thread has the process's pid. STUB_MODE=fail answers `ready: false`, as a
 // worker whose state could not be brought up does; anything else listens and
 // says ready, after STUB_DELAY_MS when that is set (a slow start, for the
-// start gate). GET /die makes it exit on its own, as a crash does:
+// start gate). STUB_MODE=slow first says it is slow to start, as a worker
+// past workers.startTimeoutMs does (#820), and then comes up. GET /die makes it exit on its own, as a crash does:
 // `process.exit()` in a thread ends the thread and nothing else. `stop` is
 // what a drain sends.
 const STUB = [
@@ -64,6 +65,10 @@ const STUB = [
   "    wt.parentPort.postMessage({ ready: false,",
   "                                error: 'the stub cannot start' });",
   "    return;",
+  "  }",
+  "  if (process.env.STUB_MODE === 'slow') {",
+  "    wt.parentPort.postMessage({ ready: false, slow: true,",
+  "                                error: 'the stub is slow' });",
   "  }",
   "  const server = http.createServer(function (req, res) {",
   "    if (req.url === '/die') { process.exit(3); }",
@@ -591,6 +596,29 @@ async function checkWorkersStartAsMemoryAllows(t, stubPath) {
   log.debug("Leaving checkWorkersStartAsMemoryAllows().");
 }
 
+// ---------------------------------------------------------------------------
+// A SLOW START IS LEFT TO FINISH (#820). Past workers.startTimeoutMs a worker
+// says it is still starting: it is not ended — a terminate() mid-restore,
+// and a second restore beside it, ran 8081 out of heap — and it joins the
+// pool when it reports ready.
+// ---------------------------------------------------------------------------
+async function checkASlowStartIsKept(t, stubPath) {
+  log.debug("Entering checkASlowStartIsKept().");
+  t.log.info('=== a worker slow to start is kept, not replaced ===');
+  await withStubPool(stubPath, 1, 'slow', async function () {
+    const entry = pool.fork(PROTO, 0);
+    const settled = await entry.settled;
+    t.equal(settled, null, 'the pool stops waiting for a slow worker');
+    t.check(await waitFor(function () {
+      return ready(PROTO).length === 1;
+    }, 10000), 'and it joins the pool when it reports ready', '');
+    t.equal(ready(PROTO)[0].pid, entry.pid,
+            'as the same worker: it was not ended');
+    t.equal(statsOf(PROTO).replaced, 0, 'and nothing was replaced');
+  }, { STUB_DELAY_MS: '500' });
+  log.debug("Leaving checkASlowStartIsKept().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   checkTheDecision(t);
@@ -602,6 +630,7 @@ async function run(t) {
     await checkADeadWorkerIsReplaced(t, stubPath);
     await checkStoppingReplacesNothing(t, stubPath);
     await checkAFailedStartIsBounded(t, stubPath);
+    await checkASlowStartIsKept(t, stubPath);
     await checkAPoolRetriesAfterGivingUp(t, stubPath);
     await checkWorkersStartOneAtATime(t, stubPath);
     await checkWorkersStartAsMemoryAllows(t, stubPath);

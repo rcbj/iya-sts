@@ -1620,8 +1620,8 @@
     "text": "Limit sa pag-start ng request worker (ms)"
   },
   "workers.startTimeoutMs|description": {
-    "en": "81d7608fc4c1da1f",
-    "text": "Gaano katagal puwedeng ihanda ng isang request o surface worker ang estado nito (ang store, ang mga key, ang mga minted row at ang coordination) bago nito iulat na hindi ito makapag-start. Tatlong sunod-sunod na pagkabigo at ititigil ng pool ang pag-fork hanggang workers.giveUpRetryMs, saka susubukan ang isa; hanggang handa ito, nananatili ang mga request sa front process. Taasan ito kung saan mabagal ang pag-start ng isang worker — isang malaking realm key set na muling sinesertipikahan sa bawat pag-start, isang malamig na database (#311)."
+    "en": "5d23a7adb4e81ee3",
+    "text": "Gaano katagal maaaring itayo ng isang request o surface worker ang estado nito (ang store, ang mga key, ang mga minted na row at ang koordinasyon) bago tumigil ang pool sa paghihintay dito. Ang worker na lumampas dito ay MABAGAL, hindi bigo: hinahayaan itong matapos at sumasali sa pool kapag handa na (#820). Sa apat na ulit lamang nito nag-uulat itong hindi makapagsimula; tatlong ganoong pagkabigo nang sunud-sunod at hihinto ang pool sa paggawa ng worker hanggang workers.giveUpRetryMs, saka susubukan ang isa; hangga't hindi pa ito handa, nananatili ang mga request sa front process. Taasan ito kung saan mabagal ang pagsisimula ng worker — isang malaking set ng realm key na nire-recertify ng bawat pagsisimula, isang malamig na database (#311)."
   },
   "workers.startTimeoutMs|restartReason": {
     "en": "7ac1de67a7c566c0",

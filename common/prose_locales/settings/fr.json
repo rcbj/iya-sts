@@ -1620,8 +1620,8 @@
     "text": "Délai de démarrage d’un worker de requêtes (ms)"
   },
   "workers.startTimeoutMs|description": {
-    "en": "81d7608fc4c1da1f",
-    "text": "Combien de temps un worker de requêtes ou de surface peut mettre à initialiser son état (le stockage, les clés, les lignes émises et la coordination) avant de signaler qu’il n’a pas pu démarrer. Après trois échecs consécutifs, le pool cesse de créer des workers jusqu’à workers.giveUpRetryMs, puis en essaie un ; tant qu’il n’est pas prêt, les requêtes restent dans le processus frontal. Augmentez-le là où le démarrage d’un worker est lent — un jeu de clés de domaine volumineux que chaque démarrage recertifie, une base de données froide (#311)."
+    "en": "5d23a7adb4e81ee3",
+    "text": "Durée pendant laquelle un worker de requêtes ou de surfaces peut mettre en place son état (le stockage, les clés, les lignes émises et la coordination) avant que le pool cesse de l'attendre. Un worker qui la dépasse est LENT, pas en échec : on le laisse terminer et il rejoint le pool lorsqu'il est prêt (#820). Ce n'est qu'au quadruple de cette durée qu'il signale qu'il n'a pas pu démarrer ; trois échecs de ce type d'affilée et le pool cesse de créer des workers jusqu'à workers.giveUpRetryMs, puis en essaie un ; tant qu'il n'est pas prêt, les requêtes restent dans le processus frontal. Augmentez-la là où le démarrage d'un worker est lent — un grand jeu de clés de domaine que chaque démarrage recertifie, une base de données froide (#311)."
   },
   "workers.startTimeoutMs|restartReason": {
     "en": "7ac1de67a7c566c0",
