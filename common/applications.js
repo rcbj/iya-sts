@@ -11740,8 +11740,13 @@ function attributesFor(record) {
     appFirstSeen: [generalizedTime(record.firstAt)],
     appLastSeen: [generalizedTime(record.lastAt)],
     appAuthentications: [String(record.authentications)],
-    appSessions: [String(record.sessions.length)],
-    appUsers: [String(record.users.length)],
+    // THE COUNTS, NOT THE LENGTH OF A LIST (2026-10-21): `seen()` sized
+    // `sessions` and `users` to the counts as sparse arrays so this read
+    // their length — on 8081, two arrays of 345,000 holes allocated at every
+    // sign-in for the load test's one client, and copied by every
+    // `copyRecord()`. The counts are the numbers; the lists stay empty.
+    appSessions: [String(countOf(record, 'sessionCount', 'sessions'))],
+    appUsers: [String(countOf(record, 'userCount', 'users'))],
     appRegistered: [record.registered ? 'TRUE' : 'FALSE'],
     description: record.description ? [record.description] : []
   };
@@ -12004,6 +12009,18 @@ const loadCount = cacheRegistry.register({
     return out;
   }
 });
+
+// A record's count of sessions or users: the counter where it has one, the
+// length of an older record's list otherwise.
+function countOf(record, counter, list) {
+  log.debug("Entering countOf().");
+  const n = Number(record && record[counter]);
+  log.debug("Leaving countOf().");
+  if (Number.isFinite(n) && n >= 0) {
+    return n;
+  }
+  return Array.isArray(record && record[list]) ? record[list].length : 0;
+}
 
 // A record that shares nothing with the one kept: the lists copied, each
 // field's values copied, and the credential snapshot carried, as
@@ -12946,8 +12963,6 @@ function seen(detail) {
     setField(record, 'appLastUser', info.user);
     changed = true;
   }
-  record.sessions = new Array(record.sessionCount);
-  record.users = new Array(record.userCount);
 
   if (!changed) {
     log.debug("Leaving seen(). It was already known and said nothing new.");
