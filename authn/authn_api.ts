@@ -220,7 +220,10 @@ const WALLET_IDS = {
 
 const WALLET_START_BODY = vz.object(Object.assign({}, WALLET_IDS, {
   siop: vt.opt(vt.oneOf(['1'])),
-  wallet: vt.opt(vt.uri)
+  wallet: vt.opt(vt.uri),
+  // An enrolment's account among this browser's (2026-10-20): the portal's
+  // Enrol link names it, and `oid4vc/vc_signin.ts`'s startable() hints it.
+  login_hint: vt.opt(vt.opaque)
 })).strict();
 
 const WALLET_STATUS_BODY = vz.object(Object.assign({}, WALLET_IDS, {
@@ -601,7 +604,8 @@ const WALLET_OPERATIONS: Operation[] = [
     summary: 'What a wallet sign-in\'s start page needs',
     description: 'Takes the start page\'s query — `authn` (a pending ' +
       'sign-in) or `mfa` (a second-factor step), `siop=1` for a ' +
-      'self-issued ID Token, `enrol=1` to enrol one from a session — and ' +
+      'self-issued ID Token, `enrol=1` to enrol one from a session (with ' +
+      '`login_hint` naming which of the browser\'s accounts) — and ' +
       'answers what is being started and `csrf`, after the refusals a ' +
       'start would meet. It creates nothing.' },
   { method: 'POST', path: API + '/wallet', operationId: 'startWalletSignIn',
