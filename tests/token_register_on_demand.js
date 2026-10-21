@@ -190,6 +190,14 @@ function child() {
     note(once === before + 1 && writes === 0,
          'R6. a recorded JWT notes its holder once, not once per token',
          JSON.stringify({ before: before, once: once, writes: writes }));
+    // A record with only a subject is not noted: keying it would resolve
+    // the subject through the directory, a synchronous read per token.
+    stats.recordJwt({ jti: 'g-1', sub: 'urn:uuid:00000000-0000-4000-8000-' +
+                      '000000000001', iat: 1, exp: Math.floor(future / 1000),
+                      typ: 'Refresh' }, 'x.y.z', { kind: 'refresh_token' });
+    note(writes === 0,
+         'R6. a token with only a subject notes no holder, and asks no ' +
+         'directory', JSON.stringify({ writes: writes }));
 
     // R7: the backfill notes the holders of tokens already issued — carol's
     // and dave's are in the store, not held — and marks the realm done.
