@@ -543,6 +543,22 @@
     "en": "1c2c57f79cea4fb0",
     "text": "Jusqu’à ce que quoi que ce soit soit écrit sous ou=users du domaine."
   },
+  "caches.store.ldap.service-accounts.title": {
+    "en": "cf6e6b4822e4f795",
+    "text": "Comptes de service de l’annuaire"
+  },
+  "caches.store.ldap.service-accounts.description": {
+    "en": "c438b52f56cdcb94",
+    "text": "Les noms des comptes de service d’un domaine, afin qu’une décision de portée qui demande si une personne en possède un n’interroge pas l’annuaire sur tous."
+  },
+  "caches.store.ldap.service-accounts.bound": {
+    "en": "3fab118dee48ec80",
+    "text": "Structurelle : une liste par domaine, de la taille de ses comptes de service."
+  },
+  "caches.store.ldap.service-accounts.lifetime": {
+    "en": "6d41d8c344106c1b",
+    "text": "Jusqu’à ce qu’une écriture touche une entrée qui est, ou était, un compte de service ; la lecture suivante interroge alors à nouveau l’annuaire."
+  },
   "caches.store.ldap.subtree-listings.title": {
     "en": "89d5ba5e5411f55d",
     "text": "Listes des conteneurs de l’annuaire"

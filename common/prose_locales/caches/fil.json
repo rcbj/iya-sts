@@ -543,6 +543,22 @@
     "en": "1c2c57f79cea4fb0",
     "text": "Hanggang may maisulat sa ilalim ng ou=users ng realm."
   },
+  "caches.store.ldap.service-accounts.title": {
+    "en": "cf6e6b4822e4f795",
+    "text": "Mga service account sa directory"
+  },
+  "caches.store.ldap.service-accounts.description": {
+    "en": "c438b52f56cdcb94",
+    "text": "Ang mga pangalan ng mga service account ng isang realm, para hindi tanungin ng isang scope decision na nagtatanong kung may-ari ng isa ang isang tao ang directory tungkol sa lahat ng mga ito."
+  },
+  "caches.store.ldap.service-accounts.bound": {
+    "en": "3fab118dee48ec80",
+    "text": "Istruktural: isang listahan bawat realm, kasinlaki ng mga service account nito."
+  },
+  "caches.store.ldap.service-accounts.lifetime": {
+    "en": "6d41d8c344106c1b",
+    "text": "Hanggang may write na tumama sa isang entry na service account, o dati nang service account; pagkatapos ay muling tatanungin ng susunod na read ang directory."
+  },
   "caches.store.ldap.subtree-listings.title": {
     "en": "89d5ba5e5411f55d",
     "text": "Mga listahan ng container sa directory"

@@ -336,8 +336,17 @@ class Ownership {
       },
       function applications(): boolean {
         log.debug("Entering applications().");
+        // The owners off the kept listing, with no view of every
+        // application built per decision (#759).
+        const apps = self.deps.applications();
+        if (typeof apps.ownerValues === 'function') {
+          log.debug("Leaving applications(). From the listing.");
+          return apps.ownerValues().some(function (owners: string[]) {
+            return self.names(owners, who.keys);
+          });
+        }
         log.debug("Leaving applications().");
-        return self.deps.applications().list().some(function (app: Json) {
+        return apps.list().some(function (app: Json) {
           return self.names([].concat((app.fields || {}).appOwner || [])
             .map(String), who.keys);
         });

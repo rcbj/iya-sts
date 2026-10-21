@@ -172,6 +172,7 @@ The embedded directory keeps indexes so that a lookup does not walk every entry.
 | Groups | member → groups | per realm | rebuilt after a change that affects groups |
 | entryUUIDs | UUID → entry | per realm | rebuilt when a lookup finds it stale |
 | Container listings | the entries under each container | per realm | rebuilt after a write under that container; 64 containers, oldest first |
+| Service accounts | the names of the realm's service accounts | per realm | rebuilt after a write to an entry that is, or was, a service account |
 
 These are exact. A write is visible to the next read whichever door made it: the
 console, `/admin-api`, SCIM or LDAP on port 389. Each index is one per realm and

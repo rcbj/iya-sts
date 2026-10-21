@@ -543,6 +543,22 @@
     "en": "1c2c57f79cea4fb0",
     "text": "直到该领域 ou=users 下的任何内容被写入。"
   },
+  "caches.store.ldap.service-accounts.title": {
+    "en": "cf6e6b4822e4f795",
+    "text": "目录服务账户"
+  },
+  "caches.store.ldap.service-accounts.description": {
+    "en": "c438b52f56cdcb94",
+    "text": "某个领域的服务账户名称，使询问某人是否拥有服务账户的作用域决策不必向目录查询全部服务账户。"
+  },
+  "caches.store.ldap.service-accounts.bound": {
+    "en": "3fab118dee48ec80",
+    "text": "结构性：每个领域一个列表，大小等于其服务账户数。"
+  },
+  "caches.store.ldap.service-accounts.lifetime": {
+    "en": "6d41d8c344106c1b",
+    "text": "直到某次写入涉及一个现在是或曾经是服务账户的条目；之后的下一次读取会重新查询目录。"
+  },
   "caches.store.ldap.subtree-listings.title": {
     "en": "89d5ba5e5411f55d",
     "text": "目录容器列表"

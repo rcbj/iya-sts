@@ -1494,6 +1494,18 @@ group changes, local group writes and overwrites, in both modes, and checks
 after each step that the index held equals a fresh build — and, in a window,
 that an add asks the store nothing a rebuild asks.
 
+**THE SERVICE ACCOUNTS HAVE A CLOCK ON THE SAME RULE (#759, 2026-10-20).**
+`serviceAccountNames()` walked the holders of `stsServiceAccount` through
+the store, and the XACML scope decision asks it on every sign-in
+(`ownership.ownsAnything()`). It is kept per realm
+(`serviceAccountListings`, with the DNs it found) until
+`serviceAccountsVersion` moves, and `noteServiceAccountsTouched()`, beside
+`noteGroupsTouched()` in `touchDirectory()`, moves it for a write naming no
+DN, a DN the kept answer holds (it WAS one), an entry that IS one where this
+process holds it, and a windowed key it does not hold. Every other write —
+a sign-in's consent, a password — leaves it. `ldap.service-accounts` on
+`/admin/caches`; `tests/sign_in_owner_reads.js`.
+
 ### AND A FOURTH, WHICH IS THE SAME DOOR AND THE SAME LESSON A THIRD TIME
 
 With the create flat and the group index kept, the SCIM door was STILL growing

@@ -543,6 +543,22 @@
     "en": "1c2c57f79cea4fb0",
     "text": "Hasta que se escribe cualquier cosa bajo ou=users del dominio."
   },
+  "caches.store.ldap.service-accounts.title": {
+    "en": "cf6e6b4822e4f795",
+    "text": "Cuentas de servicio del directorio"
+  },
+  "caches.store.ldap.service-accounts.description": {
+    "en": "c438b52f56cdcb94",
+    "text": "Los nombres de las cuentas de servicio de un dominio, para que una decisión de ámbito que pregunta si una persona posee una no consulte al directorio por todas."
+  },
+  "caches.store.ldap.service-accounts.bound": {
+    "en": "3fab118dee48ec80",
+    "text": "Estructural: una lista por dominio, del tamaño de sus cuentas de servicio."
+  },
+  "caches.store.ldap.service-accounts.lifetime": {
+    "en": "6d41d8c344106c1b",
+    "text": "Hasta que una escritura toca una entrada que es, o era, una cuenta de servicio; la siguiente lectura vuelve a consultar el directorio."
+  },
   "caches.store.ldap.subtree-listings.title": {
     "en": "89d5ba5e5411f55d",
     "text": "Listados de contenedores del directorio"
