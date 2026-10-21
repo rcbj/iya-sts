@@ -891,6 +891,11 @@ function createReplication(label) {
       }
       byKindRows.get(row.kind).push(row);
     });
+    // A CLEAN SLATE FIRST (2026-10-21): the kinds' prepares now add to one
+    // page's working set (`persistence_minted.js`'s prefetch()), so what a
+    // page that failed part-way left — its `done()` not reached — must not
+    // stand in for this page's rows.
+    clearPageState(appliers);
     let chain = Promise.resolve();
     byKindRows.forEach(function (rowsOfKind, kind) {
       const applier = appliers[kind];
@@ -982,19 +987,27 @@ function createReplication(label) {
     // it was read for would be this process believing a row is still there
     // because it was there a page ago; see persistence_minted.js's prefetch().
     return chain.then(function () {
-      Object.keys(appliers || {}).forEach(function (kind) {
-        const applier = appliers[kind];
-        if (applier && typeof applier.done === 'function') {
-          try {
-            applier.done();
-          } catch (e) {
-            log.warn(errorCodes.tag('STS-STORE-0043') +
-                     'replication: clearing the "' + kind + '" page state ' +
-                     'failed: ' + e.message);
-          }
-        }
-      });
+      clearPageState(appliers);
     });
+  }
+
+  // Every applier's page state dropped (`done()`), at a page's start and at
+  // its end.
+  function clearPageState(appliers) {
+    log.debug("Entering clearPageState().");
+    Object.keys(appliers || {}).forEach(function (kind) {
+      const applier = appliers[kind];
+      if (applier && typeof applier.done === 'function') {
+        try {
+          applier.done();
+        } catch (e) {
+          log.warn(errorCodes.tag('STS-STORE-0043') +
+                   'replication: clearing the "' + kind + '" page state ' +
+                   'failed: ' + e.message);
+        }
+      }
+    });
+    log.debug("Leaving clearPageState().");
   }
 
   // ---------------------------------------------------------------------------
