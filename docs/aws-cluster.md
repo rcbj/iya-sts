@@ -133,6 +133,19 @@ admits the runner's own address to the load balancer. The `keep` input leaves
 an `apply-and-test` environment running; the report is uploaded as an
 artifact either way.
 
+### Upgrading a cluster: every node at once across the October 2026 release
+
+**A build from 2026-10-21 on (#820) hands out access-token status-list
+indexes from blocks each process leases; an older build claims each index on
+its own.** The two do not see each other's claims, so while old and new
+nodes run side by side one can hand out an index the other has given to a
+live token — and revoking either token would then mark the other INVALID in
+the published status list. Introspection is not affected. **Replace every
+node in one go, not one at a time**, the first time a cluster moves to a
+build with the change; after that, rolling upgrades are as safe as before.
+This deployment's ECS services already do: they stop the old tasks before
+starting new ones (`deployment_minimum_healthy_percent = 0`).
+
 ## Several regions: cells
 
 An environment can also be built in several AWS regions at once, as
