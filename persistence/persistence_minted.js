@@ -709,6 +709,7 @@ function setDriver(theDriver, activeMode) {
   // And the on-demand stores their reader (#820).
   realms.setOnDemandReader({ active: demandLiveFor, read: onDemandRead,
                              byIndex: onDemandByIndex,
+                             digestOf: residentDigestOf,
                              journalled: pendingWrite });
   log.debug('Leaving setDriver(). ' + realms.handles().length +
             ' declared store(s).');
@@ -900,10 +901,13 @@ function prefetch(changes) {
     // Not an on-demand row this process does not hold (#820): applyChange()
     // reads none of those.
     const declared = realms.handleFor(parsed.handle);
-    if (declared && declared.onDemand && demandLiveFor(parsed.handle)) {
-      const local = declared.read(change.realm,
-                                  splitKey(declared, parsed.storedName).key);
+    if (declared && declared.onDemand && !declared.keysResident &&
+        demandLiveFor(parsed.handle)) {
+      const name = splitKey(declared, parsed.storedName).key;
+      const local = declared.read(change.realm, name);
       if (!local || !local.present) {
+        // Not read; and no longer known to be absent (#820 part 2).
+        forgetAbsentIn(declared, change.realm, name);
         return;
       }
     }
@@ -1079,9 +1083,13 @@ function applyChange(change) {
   // only be skipped once read — `applyLocally()` admits nothing — and
   // whoever asks for it next reads it from the store as it then is. Only a
   // held row is read, to be replaced, or found gone.
-  if (store.onDemand && demandLiveFor(handle)) {
+  // A KEY-RESIDENT store's row IS read, held or not (#820 part 2): its
+  // digests are kept exact, and only the row says whether this was a write
+  // or a delete. `applyLocally()` files the digest and holds nothing new.
+  if (store.onDemand && !store.keysResident && demandLiveFor(handle)) {
     const local = store.read(change.realm, split.key);
     if (!local || !local.present) {
+      forgetAbsentIn(store, change.realm, split.key);
       log.debug("Leaving applyChange(). On demand, not held.");
       return Promise.resolve(true);
     }
@@ -1201,7 +1209,11 @@ function applyLocally(store, realmId, key, value, remove) {
     // AN ON-DEMAND STORE ADMITS NOTHING (#820): another process's row
     // replaces one this process holds, and is not taken otherwise — it is
     // read from the store when somebody asks for it.
+    if (store && store.keysResident && demandLiveFor(store.handle)) {
+      residentIn(store, realmId, key, !remove);
+    }
     if (store && store.onDemand && !remove && demandLiveFor(store.handle)) {
+      forgetAbsentIn(store, realmId, key);
       const held = store.read(realmId, key);
       decision = held && held.present ? 'restore' : 'skip';
     }
@@ -1902,6 +1914,29 @@ function onDemandActive() {
 // every row written before schema version 24.
 const indexComplete = new Set();
 
+// A row another process wrote or deleted (#820 part 2): its key column
+// joins or leaves a key-resident store's keys.
+function residentIn(declared, realmId, key, present) {
+  log.debug("Entering residentIn().");
+  const digest = residentDigestOf(declared.handle, realmId, key);
+  if (present) {
+    declared.residentAdd(realmId, digest);
+  } else {
+    declared.residentRemove(realmId, digest);
+  }
+  log.debug("Leaving residentIn().");
+}
+
+// A key another process wrote is no longer known to be absent here (#820
+// part 2): `forgetAbsent()` on the store's handle, where it has one.
+function forgetAbsentIn(declared, realmId, key) {
+  log.debug("Entering forgetAbsentIn().");
+  if (declared && typeof declared.forgetAbsent === 'function') {
+    declared.forgetAbsent(realmId, key);
+  }
+  log.debug("Leaving forgetAbsentIn().");
+}
+
 /**
  * Whether one on-demand store reads on demand: the reader is active and,
  * for an indexed store, its index is complete.
@@ -1914,7 +1949,56 @@ function demandLiveFor(handle) {
   const declared = realms.handleFor(handle);
   log.debug("Leaving demandLiveFor().");
   return !!declared && declared.onDemand && onDemandActive() &&
-    (typeof declared.lookupsOf !== 'function' || indexComplete.has(handle));
+    (typeof declared.lookupsOf !== 'function' || indexComplete.has(handle)) &&
+    // A key-resident store needs its keys loaded at a start (#820 part 2).
+    (!declared.keysResident || typeof driver.loadMintedKeys === 'function');
+}
+
+// The key column a key-resident store's key is filed under (#820 part 2):
+// what `loadMintedKeys()` answers, so the two can be compared.
+// Hot path: every key-resident question. No Entering/Leaving pair.
+function residentDigestOf(handle, realmId, key) {
+  const declared = realms.handleFor(handle);
+  return declared ? keyColumnOf(handle, realmId, storedKey(declared, key))
+    : null;
+}
+
+/**
+ * Loads the key column of every live row of each live key-resident store
+ * into its handle (#820 part 2), beside the restore.
+ *
+ * @param filter - the restore's filter: its realms and instant
+ * @returns a promise of the number of keys loaded
+ */
+function loadResidentKeys(filter) {
+  log.debug("Entering loadResidentKeys().");
+  const resident = realms.handles().filter(function (declared) {
+    return declared.keysResident && demandLiveFor(declared.handle);
+  });
+  if (!resident.length) {
+    log.debug("Leaving loadResidentKeys(). None.");
+    return Promise.resolve(0);
+  }
+  resident.forEach(function (declared) {
+    declared.residentClear();
+  });
+  log.debug("Leaving loadResidentKeys().");
+  return driver.loadMintedKeys(resident.map(function (declared) {
+    return declared.handle;
+  }), filter.realms, filter.nowMs).then(function (rows) {
+    (rows || []).forEach(function (row) {
+      const declared = realms.handleFor(row.handle);
+      if (declared) {
+        declared.residentAdd(row.realm, row.key);
+      }
+    });
+    log.info('persistence: ' + (rows || []).length + ' key(s) of ' +
+             resident.length + ' key-resident store(s) loaded (' +
+             resident.map(function (declared) {
+               return declared.handle;
+             }).join(', ') + '), and none of their rows (#820).');
+    return (rows || []).length;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -2898,8 +2982,10 @@ function restore() {
         filter.skipHandles.push(declared.handle);
       }
     });
-    return driver.loadMinted(filter);
-  }).then(function (rows) {
+    return Promise.all([driver.loadMinted(filter),
+                        loadResidentKeys(filter)]);
+  }).then(function (loaded) {
+    const rows = loaded[0];
     pending = takePendingJournal();
     let restored = 0;
     droppedUnreadable = 0;

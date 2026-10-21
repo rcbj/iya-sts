@@ -2051,8 +2051,27 @@ memory mode, development, and every in-process test.
   start tries again. The integrator found the gap on #823, before it ran
   anywhere.
 
+* **A key the store said is absent is remembered** (part 2), for 60 s and at
+  most `maxEntries` of them, so a usually-"no" question is not a read per
+  request. Everything that could make it present forgets it: a `set()`
+  here, and the appliers' `forgetAbsent()` for another process's change to
+  a row this process does not hold. A read that FAILED is not remembered.
+* **A KEY-RESIDENT store holds its keys, not its rows** (part 2,
+  `onDemand: { keysResident: true }`): the key column of every live row,
+  loaded at a start by `loadMintedKeys()` without reading a body, so
+  `has()` is answered from the digests with no read and `size` counts them.
+  For membership on a hot path: `admin_stats.revokedJtis`, asked "is this
+  token revoked?" on every token check, almost always of a token that is
+  not. The digests are kept exact — the appliers READ another process's
+  change to such a store (prefetched with the page) and add or remove the
+  digest by whether it is a tombstone — except for what the expiry purge
+  deletes, which is a row past its own expiry: a revocation of a token no
+  verifier accepts anyway. Its cap and the hourly purge's walk are off on
+  demand; its rows carry their token's `exp` as `expiresAt`.
+
 The stores on demand: `oauth2_bcp.refreshTokens` and `oauth2_bcp.grantTokens`
-(filed by family), `oauth2_bcp.refreshFamilies`. `tests/on_demand_store.js`
+(filed by family), `oauth2_bcp.refreshFamilies`, and key-resident
+`admin_stats.revokedJtis`. `tests/on_demand_store.js`
 holds the map's rules; `tests/session_index.js` the index rows' writes.
 
 ## WHAT ONE ADD WRITES TO THE CHANGE LOG (#618 phase 2, 2026-10-14)

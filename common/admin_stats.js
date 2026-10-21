@@ -639,6 +639,11 @@ function purgeExpiredTokens(nowMs) {
                      1000;
       const map = tokens.realmMap(r.id);
       const revoked = revokedJtis.realmMap(r.id);
+      // ON DEMAND (#820 part 2) the revocations are the store's: each row
+      // carries its expiry, and the minted expiry purge deletes it. A walk
+      // here would see only what is held, and a `has()` per record would be
+      // a read of the store for every revoked one.
+      const revokedHere = !revokedJtis.onDemandLive();
       const deadJtis = [];
       const gone = [];
       map.forEach(function (record, key) {
@@ -646,7 +651,8 @@ function purgeExpiredTokens(nowMs) {
           return;
         }
         const deadAt = record.exp * 1000 + skewMs;
-        if (deadAt <= now && record.jti && revoked.has(record.jti)) {
+        if (revokedHere && deadAt <= now && record.jti &&
+            revoked.has(record.jti)) {
           deadJtis.push(record.jti);
         }
         if (deadAt + keepMs <= now) {
@@ -655,13 +661,15 @@ function purgeExpiredTokens(nowMs) {
       });
       // AND THE REVOCATIONS THAT DATE THEMSELVES (#345), whether or not the
       // register still holds their record.
-      revoked.forEach(function (value, jti) {
-        const exp = revokedExpOf(value);
-        if (exp && exp * 1000 + skewMs <= now &&
-            deadJtis.indexOf(jti) < 0) {
-          deadJtis.push(jti);
-        }
-      });
+      if (revokedHere) {
+        revoked.forEach(function (value, jti) {
+          const exp = revokedExpOf(value);
+          if (exp && exp * 1000 + skewMs <= now &&
+              deadJtis.indexOf(jti) < 0) {
+            deadJtis.push(jti);
+          }
+        });
+      }
       deadJtis.forEach(function (jti) {
         revoked.delete(jti);
       });
@@ -777,11 +785,31 @@ setJwtRecorder(recordJwt);
 // A row written before #345 holds `true`, which `revokedExpOf()` reads as
 // "not stated", the same as a token with no `exp`: kept until the cap.
 //
-// (feature/333 adds an `expiresAt` hook to the minted-store declaration, so
-// a start need not restore a row past its expiry. It is not on develop yet;
-// once it is, this declaration's hook is `revokedExpOf()` plus the clock
-// skew, in milliseconds.)
-const revokedJtis = realms.map({ persist: 'admin_stats.revokedJtis' });
+// **ITS EXPIRY IS ITS TOKEN'S** (`expiresAt`, #333's hook, #820 part 2):
+// `revokedExpOf()` plus the clock skew, so a start does not read a
+// revocation past it and the store's expiry purge deletes it. One with no
+// stated `exp` has none, and is kept.
+//
+// **KEY-RESIDENT ON DEMAND (#820 part 2)**: 331,000 live revocations on 8081
+// — refresh tokens ended at sign-out — read back by every process at every
+// start. The question asked of it on every token check is membership, for a
+// token that is almost never revoked, so a read of the store per question
+// would be a read per request. A process holds the key column of every live
+// revocation (a keyed digest, loaded without opening a body) and answers
+// "not revoked" from it; only a digest it holds is read. See `keysResident`
+// in `realms.map()`. The cap and the purge's walk below are the store's
+// business then, as the refresh tokens' cap is (`onDemandLive()`).
+const revokedJtis = realms.map({
+  persist: 'admin_stats.revokedJtis',
+  onDemand: { maxEntries: 20000, keysResident: true },
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (value) {
+    const exp = revokedExpOf(value);
+    const skewS = Number(config.value('oauth2.clockSkewS'));
+    return exp > 0 && isFinite(skewS)
+      ? (exp + Math.max(0, skewS)) * 1000 : null;
+  }
+});
 
 /**
  * Reads the token expiry a revocation carries.
@@ -821,6 +849,14 @@ function makeRoomForRevocation() {
   const cap = Number(config.value('oauth2.maxRevokedJtis'));
   if (!(cap > 0) || revokedJtis.size < cap) {
     log.debug("Leaving makeRoomForRevocation(). Room.");
+    return 0;
+  }
+  // ON DEMAND (#820 part 2) THERE IS NOTHING TO MAKE ROOM IN: a process
+  // holds a digest per revocation and a bounded cache of rows, and every
+  // revocation stays in the store until its token's expiry. Forgetting one
+  // here would re-open a revoked token for nothing.
+  if (revokedJtis.onDemandLive()) {
+    log.debug("Leaving makeRoomForRevocation(). On demand.");
     return 0;
   }
   const skewMs = Number(config.value('oauth2.clockSkewS')) * 1000;
