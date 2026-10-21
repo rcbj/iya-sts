@@ -1788,6 +1788,12 @@ const CODES = [
       'completion mark failed. Nothing is lost — the store stays read back ' +
       'whole at the next start, which tries again.',
     spec: 'none' },
+  { code: 'STS-STORE-0087',
+    summary: 'Another process\'s rows of a store read when its page is drawn ' +
+      '(`contributionsOnRead`, #820) could not be read. Nothing is lost: ' +
+      'they stay noted and are read at the next refresh, and the page draws ' +
+      'what this process already holds.',
+    spec: 'none' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

@@ -21371,10 +21371,18 @@ class AdminApi {
         responseDescription: 'The matching events, with the paging that ' +
                              'found them and the vocabulary the filters take.',
         responseSchema: { $ref: '#/components/schemas/AuditList' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API audit endpoint.");
-          self.sendJson(res, 200, adminViews.auditView(req.query).json);
-          log.debug("Leaving the management API audit endpoint.");
+          // Every other process's events, read now (#820): they are noted,
+          // not replicated, until a page asks.
+          audit.fresh().then(function () {
+            self.sendJson(res, 200, adminViews.auditView(req.query).json);
+            log.debug("Leaving the management API audit endpoint.");
+          }).catch(function (e) {
+            log.debug("Caught in the management API audit endpoint: " +
+                      ((e && e.message) || e));
+            next(e);
+          });
         } },
 
       // THE ERROR CODES (2026-09-12). A read with no write beside it, which is
@@ -21433,10 +21441,18 @@ class AdminApi {
                        '`retired`, `auditRowsHeld`, `auditRowsWithCode`, ' +
                        '`distinctCodesSeen`, `filter` and the paging ' +
                        'members.' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API error codes endpoint.");
-          self.sendJson(res, 200, adminViews.errorCodesView(req.query).json);
-          log.debug("Leaving the management API error codes endpoint.");
+          // The codes seen are counted over every process's events (#820).
+          audit.fresh().then(function () {
+            self.sendJson(res, 200,
+                          adminViews.errorCodesView(req.query).json);
+            log.debug("Leaving the management API error codes endpoint.");
+          }).catch(function (e) {
+            log.debug("Caught in the management API error codes endpoint: " +
+                      ((e && e.message) || e));
+            next(e);
+          });
         } },
 
       // THE USED-ASSERTION HISTORY (2026-09-13). A read with no write beside

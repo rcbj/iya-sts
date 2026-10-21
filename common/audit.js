@@ -1485,8 +1485,13 @@ const OUTCOMES = ['success', 'refused', 'error'];
 // once a cluster barrier held responses for their commit. realms.js's
 // segmentedArr() argues it, including the one segment of already-dropped
 // events a stored copy can carry — which merged() below trims.
+// OTHER PROCESSES' SEGMENTS ARE READ WHEN THE PAGE IS DRAWN (2026-10-21,
+// #820): `contributionsOnRead`, and `fresh()` below. Every event rewrote a
+// sealed segment every other process read, opened and parsed — about 5,000
+// rows a minute in each of 8081's nine processes under a password load —
+// and the only reader of what they held is the audit page.
 const events = realms.arr({ persist: 'audit.events', merge: 'own',
-                            segment: 32 });
+                            segment: 32, contributionsOnRead: true });
 
 // ---------------------------------------------------------------------
 // PER TRUST REALM, like the ring above it. A sequence number shared between
@@ -1503,7 +1508,7 @@ const events = realms.arr({ persist: 'audit.events', merge: 'own',
 // afterwards on top of ones already read.
 const nums = realms.obj(function () {
   return { seq: 0, recorded: 0 };
-}, { persist: 'audit.nums', merge: 'own' });
+}, { persist: 'audit.nums', merge: 'own', contributionsOnRead: true });
 
 
 let dropped = 0;
@@ -2415,6 +2420,27 @@ function list() {
 //     another process's contribution here would throw away rows that process
 //     still holds and would report.
 // ---------------------------------------------------------------------------
+/**
+ * Reads what the other processes changed in the audit log since it was last
+ * asked (#820, `contributionsOnRead`), so `list()` and `summary()` answer
+ * every process's events. Never rejects; with one process, or with nothing
+ * noted, it resolves at once.
+ *
+ * @returns a promise, resolved when the rows are held
+ */
+function fresh() {
+  log.debug("Entering fresh().");
+  if (typeof replication.refreshContributions !== 'function') {
+    log.debug("Leaving fresh(). No fan-in.");
+    return Promise.resolve();
+  }
+  log.debug("Leaving fresh().");
+  return replication.refreshContributions(['audit.events', 'audit.nums'])
+    .then(function () {
+      return undefined;
+    });
+}
+
 function merged() {
   log.debug("Entering merged().");
   const mine = events.slice(0);
@@ -2596,6 +2622,7 @@ module.exports = {
   currentRequest: ambientRequest,
   list: list,
   summary: summary,
+  fresh: fresh,
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose
 };

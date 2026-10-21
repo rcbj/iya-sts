@@ -1097,6 +1097,163 @@ function createReplication(label) {
     log.debug("Leaving contribute().");
   }
 
+  // ---------------------------------------------------------------------------
+  // CONTRIBUTIONS READ WHEN ASKED FOR (2026-10-21, #820). A store declared
+  // `contributionsOnRead` (`common/realms.js`) has another process's change
+  // NOTED here by the applier rather than read and opened, and the page that
+  // reports the store calls `refreshContributions()` before it draws: the
+  // noted rows are read in one batch, through the reader
+  // `persistence_minted.js` installs, and contributed as the applier would
+  // have. A row rewritten many times between two pages is read once.
+  //
+  // **BOUNDED.** Past STALE_CONTRIBUTIONS_MAX noted rows for one handle the
+  // refresh runs on its own, so a process whose page is never drawn holds
+  // at most that many notes and still never reads a row per change.
+  //
+  // **ONE REFRESH AT A TIME**, chained: two overlapping refreshes could each
+  // read one row, and the older answer could land second.
+  // ---------------------------------------------------------------------------
+  // handle -> 'realm\0key\0origin' -> { realm, key, origin, name }
+  const staleContributions = new Map();
+  const STALE_CONTRIBUTIONS_MAX = 5000;
+  // (refs) -> a promise of a Map from each ref's `name` + '\0' + realm to its
+  // value, or null where the row is gone; a row that will not open is left
+  // out. Installed by `persistence_minted.js`.
+  let contributionReader = null;
+  let refreshChain = Promise.resolve();
+  // The handles with a refresh the bound queued and that has not run yet:
+  // one is enough, however many notes arrive while it waits.
+  const boundRefreshQueued = new Set();
+
+  /**
+   * Installs what reads noted contributions (`persistence_minted.js`).
+   * @param reader - (refs) -> a promise of a Map, or null to remove it
+   */
+  function setContributionReader(reader) {
+    log.debug("Entering setContributionReader().");
+    contributionReader = typeof reader === 'function' ? reader : null;
+    log.debug("Leaving setContributionReader().");
+  }
+
+  /**
+   * Whether a noted contribution can be read later: a reader is installed.
+   * @returns true when `contributionStale()` may be used instead of a read
+   */
+  function contributionsReadable() {
+    log.debug("Entering contributionsReadable().");
+    log.debug("Leaving contributionsReadable().");
+    return contributionReader !== null;
+  }
+
+  /**
+   * Notes that another process changed its row of a `contributionsOnRead`
+   * store, to be read by the next refresh.
+   * @param handle - the store's handle
+   * @param realmId - the realm the row belongs to
+   * @param key - the key within the store
+   * @param origin - the process that wrote the row
+   * @param name - the row's stored name, which the reader reads it by
+   */
+  function contributionStale(handle, realmId, key, origin, name) {
+    log.debug("Entering contributionStale().");
+    let noted = staleContributions.get(handle);
+    if (!noted) {
+      noted = new Map();
+      staleContributions.set(handle, noted);
+    }
+    const realm = String(realmId || '');
+    noted.set(realm + '\u0000' + key + '\u0000' + origin,
+              { realm: realm, key: key, origin: origin, name: name });
+    if (noted.size > STALE_CONTRIBUTIONS_MAX &&
+        !boundRefreshQueued.has(handle)) {
+      // Read now, in the background: the bound, not a page.
+      boundRefreshQueued.add(handle);
+      refreshContributions([handle]);
+    }
+    log.debug("Leaving contributionStale().");
+  }
+
+  /**
+   * Reads every noted contribution of the handles given, in one batch, and
+   * contributes what it finds. Never rejects: a failed read notes the rows
+   * again, and the page draws what is held.
+   * @param handles - the stores' handles
+   * @returns a promise of the number of rows read
+   */
+  function refreshContributions(handles) {
+    log.debug("Entering refreshContributions().");
+    const run = function () {
+      const taken = [];
+      (handles || []).forEach(function (handle) {
+        boundRefreshQueued.delete(handle);
+        const noted = staleContributions.get(handle);
+        if (!noted) {
+          return;
+        }
+        staleContributions.delete(handle);
+        noted.forEach(function (one) {
+          taken.push({ handle: handle, realm: one.realm, key: one.key,
+                       origin: one.origin, name: one.name });
+        });
+      });
+      if (!taken.length || !contributionReader) {
+        return 0;
+      }
+      return Promise.resolve(contributionReader(taken)).then(function (read) {
+        taken.forEach(function (one) {
+          const id = one.handle + '\u0000' + one.realm + '\u0000' + one.name;
+          if (read && read.has(id)) {
+            contribute(one.handle, one.realm, one.key, one.origin,
+                       read.get(id));
+          }
+        });
+        return taken.length;
+      }, function (e) {
+        log.debug("Caught in refreshContributions(): " +
+                  ((e && e.message) || e));
+        log.warn(errorCodes.tag('STS-STORE-0087') +
+                 'persistence: ' + taken.length + ' noted row(s) of another ' +
+                 'process could not be read; they are read at the next ' +
+                 'refresh.');
+        taken.forEach(function (one) {
+          const noted = staleContributions.get(one.handle) || new Map();
+          staleContributions.set(one.handle, noted);
+          const id = one.realm + '\u0000' + one.key + '\u0000' + one.origin;
+          if (!noted.has(id)) {
+            noted.set(id, { realm: one.realm, key: one.key,
+                            origin: one.origin, name: one.name });
+          }
+        });
+        return 0;
+      });
+    };
+    const mine = refreshChain.then(run);
+    refreshChain = mine.then(function () {
+      return undefined;
+    }, function (e) {
+      log.debug("Caught in refreshContributions(): " +
+                ((e && e.message) || e));
+    });
+    log.debug("Leaving refreshContributions().");
+    return mine.catch(function (e) {
+      log.debug("Caught in refreshContributions(): " +
+                ((e && e.message) || e));
+      return 0;
+    });
+  }
+
+  /**
+   * How many contributions are noted and not yet read, for the tests.
+   * @param handle - the store's handle
+   * @returns the count
+   */
+  function staleContributionCount(handle) {
+    log.debug("Entering staleContributionCount().");
+    const noted = staleContributions.get(handle);
+    log.debug("Leaving staleContributionCount().");
+    return noted ? noted.size : 0;
+  }
+
   // How much the fan-in holds: handles, realms, keys and values. For the
   // tests (#618), which count ENTRIES rather than trusting the heap: a
   // removal that leaves an empty level behind holds no value and still costs
@@ -1823,6 +1980,8 @@ function createReplication(label) {
     runningPull = null;
     pendingWake = false;
     contributions.clear();
+    staleContributions.clear();
+    boundRefreshQueued.clear();
     absentSince.clear();
     lastPruneAt = 0;
     pruning = false;
@@ -1861,6 +2020,11 @@ function createReplication(label) {
     reportPosition: reportPosition,
     purgeOnce: purgeOnce,
     contribute: contribute,
+    setContributionReader: setContributionReader,
+    contributionsReadable: contributionsReadable,
+    contributionStale: contributionStale,
+    refreshContributions: refreshContributions,
+    staleContributionCount: staleContributionCount,
     contributionCounts: contributionCounts,
     pruneFanIn: pruneFanIn,
     remoteRows: remoteRows,
