@@ -27,6 +27,38 @@
     "en": "87a572725d5885db",
     "text": "一个已使用过的 nonce，因此请求被拒绝"
   },
+  "caches.store.admin.console-totals.title": {
+    "en": "148cb7460d633eb9",
+    "text": "控制台首页统计（保留）"
+  },
+  "caches.store.admin.console-totals.description": {
+    "en": "21f463f4c0d3aa21",
+    "text": "控制台首页的统计——调用、令牌、工件、会话、已知用户以及在此登录过的用户——即 /admin-api/status 的回答。统计用户需要解析登记册中的每个身份，因此这些统计会保留几秒钟。"
+  },
+  "caches.store.admin.console-totals.bound": {
+    "en": "00ddf9958d051363",
+    "text": "结构性：每个领域一组统计，同一时间最多构建一次。"
+  },
+  "caches.store.admin.console-totals.lifetime": {
+    "en": "1fd142ea1eba6ca9",
+    "text": "十五秒。"
+  },
+  "caches.store.admin.users-population.title": {
+    "en": "187dfb82048a5dde",
+    "text": "用户页面人群（保留）"
+  },
+  "caches.store.admin.users-population.description": {
+    "en": "19ff0e331d0cabdb",
+    "text": "登记册中的每个身份和目录中的每个人员，以及各自的凭据普查：即 /admin/users 和 /admin-api/users 分页、筛选和计数的对象。构建它需要解析登记册中的每个主体并读取每个人员的条目，因此翻页时会保留它，而不是为每一页重新构建。"
+  },
+  "caches.store.admin.users-population.bound": {
+    "en": "63612b99f35238a3",
+    "text": "结构性：每个领域一份人群，同一时间最多构建一次。"
+  },
+  "caches.store.admin.users-population.lifetime": {
+    "en": "39fc3b3cca7a059f",
+    "text": "十五秒；当本领域的 ou=users 下有任何写入（在此进程或从其他进程应用）时立即失效。"
+  },
   "caches.store.applications.listing.title": {
     "en": "eee968e6707b5423",
     "text": "应用注册表列表"

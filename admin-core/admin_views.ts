@@ -132,6 +132,7 @@ import listenerMap = require('../common/listener_map');
 import persistence = require('../persistence/persistence');
 import mode = require('../common/mode');
 import realms = require('../common/realms');
+import cacheRegistry = require('../common/cache_registry');
 import stats = require('../common/admin_stats');
 import oidcRp = require('../common/oidc_rp');
 import rbac = require('../admin-ui/admin_rbac');
@@ -967,6 +968,12 @@ interface AdminViewsDeps {
  * Each view computes the machine answer and reaches no markup, so a page and
  * its operation cannot disagree.
  */
+// realm -> `{ version, at, value, building }`: `/admin/users`' kept
+// population and census, or the build of it in flight
+// (`AdminViews.peopleAndCensusAsync()`). One per process, as every cache
+// here is, and described to /admin/caches below the class (rule 3ap).
+const populationHeld = new Map<string, any>();
+
 class AdminViews {
   /**
    * Builds the views over their dependencies.
@@ -992,10 +999,28 @@ class AdminViews {
    * directory's people do not move (2026-10-21; `peopleAndCensusAsync()`).
    */
   static readonly USERS_POPULATION_HOLD_MS = 15000;
+  /**
+   * How old a kept population may be and still answer a page asked without
+   * a filter while it is rebuilt (2026-10-21; `peopleAndCensusAsync()`).
+   */
+  static readonly USERS_POPULATION_STALE_MS = 120000;
 
-  // realm -> `{ version, at, value, building }`: the kept population, or the
-  // build of it in flight (`peopleAndCensusAsync()`).
-  private readonly populationHeld = new Map<string, any>();
+  /**
+   * Whether a users-list request pages without a search or a filter, so a
+   * kept population may answer it while it is rebuilt.
+   *
+   * @param req - the request
+   * @returns true when it names none of q, factor, protocol and kind
+   */
+  static unfiltered(req): boolean {
+    helpers.log.debug("Entering AdminViews.unfiltered().");
+    const query = (req && req.query) || {};
+    const filtered = ['q', 'factor', 'protocol', 'kind'].some(function (name) {
+      return String(query[name] || '').trim() !== '';
+    });
+    helpers.log.debug("Leaving AdminViews.unfiltered().");
+    return !filtered;
+  }
 
   /**
    * Extracts the kerberos namespace (#543): `/admin-api/kerberos/principals`'
@@ -13141,7 +13166,15 @@ class AdminViews {
    * @returns a promise of `{ population, census }`, as `usersListJson()`
    *   takes them in its options
    */
-  async peopleAndCensusAsync() {
+  // `opts.mayBeStale` (2026-10-21): the caller pages without a filter, and
+  // a population up to USERS_POPULATION_STALE_MS old serves it AT ONCE while
+  // one rebuild runs behind it. Under a sign-in load the directory's version
+  // moves with every sign-in and the two request workers each keep their
+  // own, so a population that must be current was never current: every page
+  // of /admin/users waited 21–25 s for a build on 8081. A search or a filter
+  // (`q`, `factor`, `protocol`, `kind`) still waits for one that is, so a
+  // person just written is found by name.
+  async peopleAndCensusAsync(opts?: { mayBeStale?: boolean }) {
     const { log, realms, credentials } = this.deps;
     log.debug("Entering AdminViews.peopleAndCensusAsync().");
     // KEPT FOR A FEW SECONDS, ONE BUILD AT A TIME (2026-10-21). Building it
@@ -13149,36 +13182,59 @@ class AdminViews {
     // a page on 8081 at 67,000 identities under a sign-in load — and paging
     // asked it again for every page. It is kept per realm for
     // USERS_POPULATION_HOLD_MS (the directory tallies' ten-second reading,
-    // `credentialTallies()`, is the precedent) and dropped at once when the
-    // directory's people move, here or by a change applied from elsewhere;
-    // a sign-in, which moves only the register, shows within that time.
-    // Concurrent askers share one build.
+    // `credentialTallies()`, is the precedent) and is current only while
+    // the directory's people have not moved, here or by a change applied
+    // from elsewhere; a sign-in, which moves only the register, shows within
+    // that time. Concurrent askers share one build.
     const realmId = String(realms.currentId());
     const version = credentials.directoryPeopleVersion();
-    const held = this.populationHeld.get(realmId);
-    if (held && held.version === version &&
-        (held.building || Date.now() - held.at <=
-                          AdminViews.USERS_POPULATION_HOLD_MS)) {
-      log.debug("Leaving AdminViews.peopleAndCensusAsync(). Kept.");
-      return held.building || held.value;
+    let entry = populationHeld.get(realmId);
+    if (!entry) {
+      entry = { version: null, at: 0, value: null, building: null };
+      populationHeld.set(realmId, entry);
     }
-    const entry: any = { version: version, at: 0, value: null,
-                         building: null };
+    const age = Date.now() - entry.at;
+    const current = entry.value !== null && entry.version === version &&
+      age <= AdminViews.USERS_POPULATION_HOLD_MS;
+    if (current) {
+      log.debug("Leaving AdminViews.peopleAndCensusAsync(). Kept.");
+      return entry.value;
+    }
+    const building = entry.building || this.rebuildPopulation(realmId, entry,
+                                                              version);
+    if (opts && opts.mayBeStale && entry.value !== null &&
+        age <= AdminViews.USERS_POPULATION_STALE_MS) {
+      // Served as it is; the rebuild's refusal is logged where it is caught.
+      building.catch(function (e) {
+        log.debug("Caught in AdminViews.peopleAndCensusAsync(), behind a " +
+                  "kept population: " + ((e && e.message) || e));
+      });
+      log.debug("Leaving AdminViews.peopleAndCensusAsync(). Kept, " +
+                "rebuilding.");
+      return entry.value;
+    }
+    log.debug("Leaving AdminViews.peopleAndCensusAsync(). Building.");
+    return building;
+  }
+
+  // One build of a realm's population into its entry; the entry keeps what
+  // it held until the build answers, and a failed build changes nothing.
+  private rebuildPopulation(realmId, entry, version) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.rebuildPopulation().");
     entry.building = this.buildPeopleAndCensusAsync().then((value) => {
       entry.value = value;
+      entry.version = version;
       entry.at = Date.now();
       entry.building = null;
       return value;
     }, (e) => {
-      log.debug("Caught in AdminViews.peopleAndCensusAsync(): " +
+      log.debug("Caught in AdminViews.rebuildPopulation(): " +
                 ((e && e.message) || e));
-      if (this.populationHeld.get(realmId) === entry) {
-        this.populationHeld.delete(realmId);
-      }
+      entry.building = null;
       throw e;
     });
-    this.populationHeld.set(realmId, entry);
-    log.debug("Leaving AdminViews.peopleAndCensusAsync(). Built.");
+    log.debug("Leaving AdminViews.rebuildPopulation().");
     return entry.building;
   }
 
@@ -13987,7 +14043,8 @@ class AdminViews {
     log.debug("Entering AdminViews.mfaRosterJsonAsync().");
     // The population AND its census (#621): the census was 5,000
     // synchronous store questions here in a windowed process.
-    const asked = await this.peopleAndCensusAsync();
+    const asked = await this.peopleAndCensusAsync({
+      mayBeStale: AdminViews.unfiltered(req) });
     // The tiles too (2026-10-21), for `usersJsonAsync()`'s reason.
     const list = await this.usersListTilesAsync(this.usersListJson(req,
       Object.assign({}, asked, { deferTiles: true })));
@@ -14015,7 +14072,8 @@ class AdminViews {
       log.debug("Leaving AdminViews.usersJsonAsync(). One person.");
       return this.usersJson(req, risk, null);
     }
-    const asked = await this.peopleAndCensusAsync();
+    const asked = await this.peopleAndCensusAsync({
+      mayBeStale: AdminViews.unfiltered(req) });
     const view = await this.usersListTilesAsync(this.usersListJson(req,
       Object.assign({}, asked, { deferTiles: true })));
     log.debug("Leaving AdminViews.usersJsonAsync().");
@@ -14747,6 +14805,45 @@ class AdminViews {
 // built from `defaultDeps()` when the module loads (see
 // `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
+// THE KEPT POPULATION, DESCRIBED (rule 3ap, 2026-10-21).
+cacheRegistry.register({
+  name: 'admin.users-population',
+  title: 'Users page population, kept',
+  description: 'Every identity the register holds and every directory ' +
+    'person, with each one\'s census of credentials: what /admin/users ' +
+    'and /admin-api/users page, filter and count over. Building it is ' +
+    'every register subject resolved and every person\'s entry read, so ' +
+    'paging keeps it rather than building it for each page.',
+  owner: 'admin-core/admin_views.ts',
+  scope: 'realm',
+  maxEntries: function (): number {
+    return 1;
+  },
+  bound: 'Structural: one population per realm, built at most once at a ' +
+    'time.',
+  lifetime: function (): string {
+    return 'Fifteen seconds, and at once when anything under the ' +
+      'realm\'s ou=users is written, here or applied from another process.';
+  },
+  entries: function (): any[] {
+    const out = [];
+    populationHeld.forEach(function (held: any, realmId: string) {
+      if (!held.value) {
+        return;
+      }
+      out.push({
+        realm: realmId,
+        key: 'ou=users and the register (' +
+          held.value.population.rows.length + ' rows)',
+        validUntil: held.at + AdminViews.USERS_POPULATION_HOLD_MS,
+        valid: Date.now() - held.at <= AdminViews.USERS_POPULATION_HOLD_MS,
+        basis: 'subtree version'
+      });
+    });
+    return out;
+  }
+});
+
 const slot = new InstanceSlot<AdminViews>(
   'admin-core/admin_views',
   () => new AdminViews(AdminViews.defaultDeps()),

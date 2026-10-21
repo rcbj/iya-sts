@@ -27,6 +27,38 @@
     "en": "87a572725d5885db",
     "text": "un nonce déjà consommé, si bien que la requête a été refusée"
   },
+  "caches.store.admin.console-totals.title": {
+    "en": "148cb7460d633eb9",
+    "text": "Totaux de l'index de la console, conservés"
+  },
+  "caches.store.admin.console-totals.description": {
+    "en": "21f463f4c0d3aa21",
+    "text": "Les totaux de l'index de la console — appels, jetons, artefacts, sessions, utilisateurs connus et utilisateurs connectés ici — que répond /admin-api/status. Compter les utilisateurs revient à résoudre chaque identité du registre, c'est pourquoi les totaux sont conservés quelques secondes."
+  },
+  "caches.store.admin.console-totals.bound": {
+    "en": "00ddf9958d051363",
+    "text": "Structurel : un jeu de totaux par domaine, construit au plus une fois à la fois."
+  },
+  "caches.store.admin.console-totals.lifetime": {
+    "en": "1fd142ea1eba6ca9",
+    "text": "Quinze secondes."
+  },
+  "caches.store.admin.users-population.title": {
+    "en": "187dfb82048a5dde",
+    "text": "Population de la page Utilisateurs, conservée"
+  },
+  "caches.store.admin.users-population.description": {
+    "en": "19ff0e331d0cabdb",
+    "text": "Chaque identité que le registre détient et chaque personne de l'annuaire, avec le recensement de ses identifiants : ce sur quoi /admin/users et /admin-api/users paginent, filtrent et comptent. La construire revient à résoudre chaque sujet du registre et à lire l'entrée de chaque personne ; la pagination la conserve donc au lieu de la reconstruire pour chaque page."
+  },
+  "caches.store.admin.users-population.bound": {
+    "en": "63612b99f35238a3",
+    "text": "Structurel : une population par domaine, construite au plus une fois à la fois."
+  },
+  "caches.store.admin.users-population.lifetime": {
+    "en": "39fc3b3cca7a059f",
+    "text": "Quinze secondes, et immédiatement dès qu'une écriture a lieu sous l'ou=users du domaine, ici ou appliquée depuis un autre processus."
+  },
   "caches.store.applications.listing.title": {
     "en": "eee968e6707b5423",
     "text": "Liste du registre des applications"

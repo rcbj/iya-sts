@@ -27,6 +27,38 @@
     "en": "87a572725d5885db",
     "text": "isang nonce na nagamit na, kaya tinanggihan ang request"
   },
+  "caches.store.admin.console-totals.title": {
+    "en": "148cb7460d633eb9",
+    "text": "Mga kabuuan ng index ng console, itinatabi"
+  },
+  "caches.store.admin.console-totals.description": {
+    "en": "21f463f4c0d3aa21",
+    "text": "Ang mga kabuuan ng index ng console — mga tawag, token, artifact, session, mga kilalang user at mga user na nag-sign in dito — na sinasagot ng /admin-api/status. Ang pagbilang ng mga user ay ang pag-resolve sa bawat pagkakakilanlan sa rehistro, kaya itinatabi ang mga kabuuan nang ilang segundo."
+  },
+  "caches.store.admin.console-totals.bound": {
+    "en": "00ddf9958d051363",
+    "text": "Istruktural: isang hanay ng mga kabuuan bawat realm, binubuo nang hindi hihigit sa isang beses sa isang pagkakataon."
+  },
+  "caches.store.admin.console-totals.lifetime": {
+    "en": "1fd142ea1eba6ca9",
+    "text": "Labinlimang segundo."
+  },
+  "caches.store.admin.users-population.title": {
+    "en": "187dfb82048a5dde",
+    "text": "Populasyon ng pahina ng Mga User, itinatabi"
+  },
+  "caches.store.admin.users-population.description": {
+    "en": "19ff0e331d0cabdb",
+    "text": "Bawat pagkakakilanlang hawak ng rehistro at bawat tao sa direktoryo, kasama ang sensus ng kanilang mga kredensyal: ang pinapahina, sinasala at binibilang ng /admin/users at /admin-api/users. Ang pagbuo nito ay ang pag-resolve sa bawat subject ng rehistro at pagbasa sa entry ng bawat tao, kaya itinatabi ito ng paghahati sa pahina sa halip na buuin para sa bawat pahina."
+  },
+  "caches.store.admin.users-population.bound": {
+    "en": "63612b99f35238a3",
+    "text": "Istruktural: isang populasyon bawat realm, binubuo nang hindi hihigit sa isang beses sa isang pagkakataon."
+  },
+  "caches.store.admin.users-population.lifetime": {
+    "en": "39fc3b3cca7a059f",
+    "text": "Labinlimang segundo, at agad kapag may isinulat sa ilalim ng ou=users ng realm, dito man o inilapat mula sa ibang proseso."
+  },
   "caches.store.applications.listing.title": {
     "en": "eee968e6707b5423",
     "text": "Listahan ng application registry"
