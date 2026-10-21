@@ -415,7 +415,9 @@ function noteTokenHolder(record) {
 // every holder there.
 // ---------------------------------------------------------------------------
 const HOLDERS_DONE = '$backfilled$';
-const HOLDERS_JOB = 'admin_stats.token-holders-backfill';
+// The id is the scheduler's (dot- or hyphen-separated lower-case words, so
+// not the store's `admin_stats.` prefix), beside `oauth2.expired-token-purge`.
+const HOLDERS_JOB = 'oauth2.token-holders-backfill';
 let holdersJobRegistered = false;
 
 // The realms whose holders are not yet all noted.
