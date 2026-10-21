@@ -27,6 +27,36 @@ before `sts_metadata.ts`, which is last for everybody.
 
 ---
 
+
+## Internal delivery is not applied in every process (2026-10-21, #820)
+
+**rcbj's decision: keep RFC 8936 internal delivery, stop replicating it.**
+Each credential change is a SET the service delivers to its own receivers by
+polling itself, and each delivery queued, recorded, acknowledged and deleted
+rows of `ssf_streams.queued` and `ssf_receivers.inbox` and rewrote the
+stream's record — about 35,000 change-log rows a minute on 8081 under a
+password load, every one applied by all nine processes, which made eight
+workers cost twice four. Now:
+
+* **`ssf_streams.queued` is on demand, filed by stream** (`queuedOn()`):
+  a stream's queue is a lookup, oldest first by `order`, and a row lives at
+  most seven days. On demand, `enqueue()` reads no queue; the cap
+  (`ssf.maxQueuedEvents`) is kept by `poll()`, which reads it anyway.
+* **`poll()` writes the record once, and only when it changed something**
+  (an acknowledgement, a refusal, a first delivery, a cap drop); on demand
+  the first-delivery re-set of a SET's row is not written at all — the same
+  rule shared stores already had.
+* **`ssf_receivers.inbox` is on demand, filed by surface** (`keysFor()`),
+  trimmed to `ssf.maxReceivedEvents` every fifty records rather than at
+  each, and gone after thirty days whatever the cap.
+* **A burst of events writes its stream's record once** (`touchSoon()`, two
+  seconds after the first): the counters, the totals per type and the
+  `queued` log lines, which are numbers on a page (see the header on
+  `queued` in `ssf_streams.ts`). Held whole, every write is immediate, as
+  before.
+
+`tests/ssf_on_demand.js` holds it.
+
 ## ONE STREAM PER SURFACE, HOWEVER MANY PROCESSES SEED IT (2026-09-12)
 
 **This is the second half of the fix the receiver TOKEN got on 2026-09-11, and

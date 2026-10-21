@@ -220,7 +220,30 @@ SURFACES.forEach(function (one) {
 // transmitter logged. A row from before #614 still carries `token` until the
 // inbox cap pushes it out; nothing reads it.
 // ---------------------------------------------------------------------------
-const inbox = realms.map({ persist: 'ssf_receivers.inbox' });
+//
+// **ON DEMAND, FILED BY SURFACE (2026-10-21, #820, rcbj's decision).** Every
+// SET an internal receiver took was a row applied in every process — about
+// 14,000 a minute on 8081 under a password load — and the cap deleted one
+// for each. A process now holds what it recorded or read; a surface's rows
+// are read through the index (`keysFor()`), trimmed to the cap every
+// INBOX_TRIM_EVERY records rather than at each, and gone after
+// INBOX_KEEP_MS whatever the cap.
+const INBOX_KEEP_MS = 30 * 24 * 3600 * 1000;
+const INBOX_TRIM_EVERY = 50;
+const inbox = realms.map({
+  persist: 'ssf_receivers.inbox',
+  onDemand: { maxEntries: 20000 },
+  indexBy: function (entry) {
+    return entry && entry.surface ? [String(entry.surface)] : [];
+  },
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (entry) {
+    const at = Date.parse(String((entry && entry.at) || ''));
+    return isFinite(at) ? at + INBOX_KEEP_MS : null;
+  }
+});
+// Records since this process last trimmed each realm's surface (#820).
+const recordedSinceTrim = new Map<string, number>();
 
 // The internal poll's last failure per `<realm>|<surface>`, so that a poll
 // failing every second is logged when it starts failing and when it stops,
@@ -1509,6 +1532,19 @@ class SsfReceivers {
     const { log } = this.deps;
     log.debug("Entering SsfReceivers.record_(). " + surfaceId);
     inbox.set(surfaceId + '|' + entry.jti, entry);
+    // ON DEMAND (#820) the cap is applied every INBOX_TRIM_EVERY records: the
+    // whole of a surface's inbox is a read of the store, and a delete per SET
+    // is a row in every process. Between trims it may hold that many more.
+    if (inbox.onDemandLive()) {
+      const trimKey = String(this.deps.realms.currentId()) + '|' + surfaceId;
+      const tally = (recordedSinceTrim.get(trimKey) || 0) + 1;
+      if (tally < INBOX_TRIM_EVERY) {
+        recordedSinceTrim.set(trimKey, tally);
+        log.debug("Leaving SsfReceivers.record_(). Not trimmed yet.");
+        return entry;
+      }
+      recordedSinceTrim.set(trimKey, 0);
+    }
     // THE CAP, applied per surface and by age. `inbox` holds both surfaces'
     // rows, so the oldest row overall is not necessarily this surface's — a
     // portal nobody has opened must not lose its signals because the console is
@@ -1534,11 +1570,21 @@ class SsfReceivers {
     log.debug("Entering SsfReceivers.keysFor(). " + surfaceId);
     const prefix = surfaceId + '|';
     const rows = [];
-    inbox.forEach((entry, key) => {
-      if (String(key).indexOf(prefix) === 0) {
-        rows.push({ key: key, at: String((entry || {}).at || '') });
-      }
-    });
+    // Through the index where the inbox is on demand (#820).
+    if (inbox.onDemandLive()) {
+      inbox.lookup(String(surfaceId)).forEach((key) => {
+        const entry = inbox.get(key);
+        if (entry && String(key).indexOf(prefix) === 0) {
+          rows.push({ key: key, at: String(entry.at || '') });
+        }
+      });
+    } else {
+      inbox.forEach((entry, key) => {
+        if (String(key).indexOf(prefix) === 0) {
+          rows.push({ key: key, at: String((entry || {}).at || '') });
+        }
+      });
+    }
     rows.sort((a, b) => {
       if (a.at === b.at) {
         return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
