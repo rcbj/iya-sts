@@ -869,7 +869,13 @@ let prefetched = null;
  */
 function prefetch(changes) {
   log.debug("Entering prefetch().");
-  prefetched = null;
+  // **THE PAGE'S ROWS ACCUMULATE (2026-10-21).** `minted` and `minted-own`
+  // are two kinds, each with its own `prepare`, and replication prepares
+  // every kind of a page before it applies any — so this began by dropping
+  // what the kind before had read, and every `minted` row of the page was
+  // then read alone: on 8081 the front process alone asked 750 single-row
+  // reads a second. Each prepare adds its rows to the page's map now;
+  // `endPrefetch()`, once the page is applied, still drops it.
   if (!driver || typeof driver.readMintedMany !== 'function') {
     log.debug("Leaving prefetch().");
     return Promise.resolve(0);
@@ -924,7 +930,13 @@ function prefetch(changes) {
         map.set(id, null);
       }
     });
-    prefetched = map;
+    if (prefetched) {
+      map.forEach(function (row, id) {
+        prefetched.set(id, row);
+      });
+    } else {
+      prefetched = map;
+    }
     log.debug('prefetch(): ' + (rows || []).length + ' row(s) for ' +
               refs.length + ' reference(s), in one query.');
     return refs.length;
@@ -938,6 +950,22 @@ function prefetch(changes) {
              '); this page falls back to one query per row.');
     return 0;
   });
+}
+
+/**
+ * What the page's prefetch holds for one row (2026-10-21): the row, null
+ * where it was asked for and is absent, or undefined where it was not asked.
+ *
+ * @param handle - the store's handle
+ * @param realmId - the realm
+ * @param name - the row's stored name
+ * @returns the row, null, or undefined
+ */
+function prefetchedRow(handle, realmId, name) {
+  log.debug("Entering prefetchedRow().");
+  log.debug("Leaving prefetchedRow().");
+  return prefetched ? prefetched.get(handle + '\u0000' + realmId + '\u0000' +
+                                     name) : undefined;
 }
 
 /**
@@ -2753,6 +2781,7 @@ module.exports = {
   applyChange: applyChange,
   prefetch: prefetch,
   endPrefetch: endPrefetch,
+  prefetchedRow: prefetchedRow,
   supports: supports,
   enabled: enabled,
   dirty: dirty,
