@@ -392,6 +392,7 @@ else
     "STS_NETWORK_SUBNET=${subnet}"
     "STS_TESTS_CONTAINER_NAME=iya-sts-coverage-runner"
     "STS_CONTAINER_NAME=sts-coverage-unused"
+    "STS_RESTART=no"
     "CONFIG_FILE=${STS_TEST_CONFIG_FILE}"
     "STS_TEST_ARGS="
   )
