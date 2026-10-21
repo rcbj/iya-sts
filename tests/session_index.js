@@ -1373,6 +1373,58 @@ async function expiryBackfillCases(t) {
   log.debug("Leaving expiryBackfillCases().");
 }
 
+// A row rewritten with the index keys it was last committed under writes no
+// index rows (2026-10-21): a refresh rewrote two such rows, each deleting and
+// re-inserting up to seven.
+async function unchangedLookupCases(t, realm) {
+  log.debug("Entering unchangedLookupCases().");
+  t.log.info('=== an unchanged index is not rewritten ===');
+  const handle = 'session-index.lookups';
+  // On demand: only such a store files its index in `sts_minted_index`.
+  const store = realms.map({ persist: handle, onDemand: { maxEntries: 10 },
+    indexBy: function (value) {
+      return value && value.family ? ['f:' + value.family] : [];
+    } });
+  const seen = [];
+  install({
+    loadMinted: emptyLoad,
+    readMinted: noRead,
+    origin: testOrigin,
+    saveMinted: function (upserts) {
+      upserts.forEach(function (one) {
+        if (one.handle === handle) {
+          seen.push(one.lookups === null ? 'none'
+            : JSON.stringify(one.lookups).length > 2 ? 'written' : 'empty');
+        }
+      });
+      return Promise.resolve({ refused: [], merged: [] });
+    }
+  });
+  store.set('row-1', { family: 'a', n: 1 });
+  await minted.flush();
+  store.set('row-1', { family: 'a', n: 2 });
+  await minted.flush();
+  store.set('row-1', { family: 'a', n: 3 });
+  await minted.flush();
+  store.set('row-1', { family: 'b', n: 4 });
+  await minted.flush();
+  t.equal(seen.join(','), 'written,none,none,written',
+          'a rewrite under the same index keys writes no index rows; a ' +
+          'change of keys writes them');
+  seen.length = 0;
+  await minted.applyChange({ key: Buffer.from(handle).toString('base64url') +
+                                  '.' + Buffer.from('row-1')
+                                    .toString('base64url'),
+                             realm: realm.id });
+  store.set('row-1', { family: 'b', n: 5 });
+  await minted.flush();
+  t.equal(seen.join(','), 'written',
+          'after another process\'s change to the row they are written in ' +
+          'full again');
+  store.realmMap().clear();
+  log.debug("Leaving unchangedLookupCases().");
+}
+
 async function residentCases(t, realm) {
   log.debug("Entering residentCases().");
   t.log.info('=== a key-resident store loads its keys, not its rows ===');
@@ -1443,6 +1495,7 @@ async function liveHalf(t, realm) {
   await indexBackfillCases(t, realm);
   await residentCases(t, realm);
   await expiryBackfillCases(t);
+  await unchangedLookupCases(t, realm);
   await applyCases(t, handle, realm);
   log.debug("Leaving liveHalf().");
 }

@@ -18,7 +18,9 @@
 //   K1. two kinds' prefetches of one page leave both kinds' rows in the
 //       page's working set, each asked once, in its batch;
 //   K2. a row asked for and absent is held as absent (null), not unknown;
-//   K3. `endPrefetch()` drops the working set.
+//   K3. `endPrefetch()` drops the working set;
+//   K4. a change's SEALED name is opened once for the page — by prefetch()
+//       — and not again by applyChange(); endPrefetch() forgets it.
 //
 // In a child process: it installs a stand-in driver.
 // ===========================================================================
@@ -50,6 +52,9 @@ function child() {
       },
       saveMinted: function () {
         return Promise.resolve({});
+      },
+      readMinted: function () {
+        return Promise.resolve(null);
       },
       readMintedMany: function (refs) {
         asked.push(refs.map(function (ref) {
@@ -85,6 +90,33 @@ function child() {
     minted.endPrefetch();
     note(minted.prefetchedRow('authn.sessions', 'default', 's1') === undefined,
          'K3. endPrefetch() drops the working set');
+
+    const keystore = require(ROOT + '/common/keystore');
+    const realOpen = keystore.open;
+    const opened = [];
+    keystore.open = function (text, label) {
+      if (label !== 'minted-rows') {
+        opened.push(text);
+        return 'n1';
+      }
+      return null;
+    };
+    try {
+      const sealed = { kind: 'x', realm: 'default',
+                       key: b64('oauth2.authzCodes') + '.v1$sealed-n1' };
+      await minted.prefetch([sealed]);
+      await minted.applyChange(sealed);
+      const once = opened.length;
+      minted.endPrefetch();
+      await minted.prefetch([sealed]);
+      note(once === 1 && opened.length === 2,
+           'K4. a sealed change name is opened once per page, and again ' +
+           'after endPrefetch()', JSON.stringify({ once: once,
+                                                    total: opened.length }));
+    } finally {
+      keystore.open = realOpen;
+      minted.endPrefetch();
+    }
   })().catch(function (e) {
     note(false, 'the child threw', (e && e.stack) || e);
   }).then(function () {

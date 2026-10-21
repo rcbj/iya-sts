@@ -3597,8 +3597,32 @@ function generalizedTime(when) {
 
 function getEntry(dn) {
   log.debug("Entering getEntry().");
+  const found = entries.get(normalizeDn(dn)) || null;
+  // THE UUID OF AN ENTRY READ BY ITS DN, KEPT (2026-10-21). A refresh reads
+  // the person by DN for the consent check and then by UUID for "does the
+  // subject still name somebody", and the second was a synchronous `byUuid`
+  // read of the store although the window had just loaded the entry —
+  // `noteWindowedUuid()` was filled only by a lookup BY UUID. Now any entry
+  // the window answers is noted, so the UUID finds it held.
+  if (found && directoryWindow) {
+    noteHeldEntryUuid(found);
+  }
   log.debug("Leaving getEntry().");
-  return entries.get(normalizeDn(dn)) || null;
+  return found;
+}
+
+// `noteWindowedUuid()` for an entry the window just answered by DN, skipped
+// when the memo already names it there. Hot path (every windowed getEntry):
+// no Entering/Leaving pair.
+function noteHeldEntryUuid(found) {
+  const uuid = entryUuidOf(found);
+  if (!uuid) {
+    return;
+  }
+  if (windowedUuids().get(uuid) === normalizeDn(found.dn)) {
+    return;
+  }
+  noteWindowedUuid(uuid, found);
 }
 
 function hasChildren(dn) {
