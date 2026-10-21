@@ -206,6 +206,12 @@ function fakePg(statements, answer) {
   FakeClient.prototype.query = function (sql, params) {
     const text = String(sql);
     statements.push({ sql: text, params: params || [] });
+    // A repair's read of the index row first (2026-10-21): the row in
+    // `answer.heldIndex`, or none.
+    if (/^SELECT expires_at, last_seen_at, started_at/.test(text)) {
+      const held = answer.heldIndex ? [answer.heldIndex] : [];
+      return Promise.resolve({ rows: held, rowCount: held.length });
+    }
     // A flush's set-based statements (2026-10-21): each parameter an array
     // over the rows. The lock-and-read answers every key with selectBody;
     // a guarded INSERT … RETURNING returns every row when rowCount says it
@@ -441,10 +447,36 @@ async function sqlHalf(t) {
   const writeTx = txOf(statements);
   t.equal(matching(writeTx, sessionInsert).length, 1,
           'writeSessionIndex upserts inside a transaction');
+  // 2026-10-21: a repair writes only where the held row differs. The row
+  // as postgres hands it back: bigints as strings, NULL as null.
+  const asHeld = { expires_at: null, last_seen_at: '5000',
+                   started_at: '1000', subject_key: 'subject-digest',
+                   username_key: 'username-digest', chosen: true,
+                   authenticated: true, kind: 'sign-on', rp_surface: '',
+                   parent_key: '', backs_console: false, credential_key: '',
+                   partner_relationship: '' };
+  answer.heldIndex = asHeld;
+  statements.length = 0;
+  await driver.writeSessionIndex(REALM, 'digest-one', index);
+  t.equal(matching(statements, sessionInsert).length +
+          matching(statements, /^BEGIN/).length, 0,
+          'a repair whose row already says what the body implies writes ' +
+          'nothing and opens no transaction');
+  answer.heldIndex = Object.assign({}, asHeld, { last_seen_at: '4000' });
+  statements.length = 0;
+  await driver.writeSessionIndex(REALM, 'digest-one', index);
+  t.equal(matching(txOf(statements), sessionInsert).length, 1,
+          'a repair whose row differs is written');
+  answer.heldIndex = asHeld;
   statements.length = 0;
   await driver.deleteSessionIndex(REALM, 'digest-one');
   t.equal(matching(txOf(statements), sessionDelete).length, 1,
           'deleteSessionIndex deletes inside a transaction');
+  answer.heldIndex = null;
+  statements.length = 0;
+  await driver.deleteSessionIndex(REALM, 'digest-one');
+  t.equal(matching(statements, sessionDelete).length, 0,
+          'and deletes nothing where there is no row');
 
   statements.length = 0;
   answer.selectBody = 'cipher-a';
