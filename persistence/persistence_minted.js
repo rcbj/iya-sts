@@ -1920,13 +1920,49 @@ function demandLiveFor(handle) {
 // ---------------------------------------------------------------------------
 // THE BACKFILL (#820): every row of an indexed on-demand store that is not
 // yet complete, filed under its index values from what the front process
-// restored — the store is held whole until then — in batches that give the
-// event loop back between them, then the mark. A row written meanwhile files
-// itself in the flush; a row deleted meanwhile leaves an index row that the
-// lookup's join with `sts_minted` does not answer. Once, after a start, in
-// the front process only; the next start reads the store on demand.
+// restored — the store is held whole until then — and then the mark. A row
+// written meanwhile files itself in the flush; a row deleted meanwhile leaves
+// an index row that the lookup's join with `sts_minted` does not answer.
+//
+// **A SCHEDULER JOB, NOT A STEP OF THE START.** Run from the restore, the
+// first start of #823 on 8081 ran out of heap: it copied two million rows
+// into an array (`dump()`) on a front process restoring beside four workers,
+// and a worker that overran its start was terminated mid-restore. As a
+// cluster job it runs on the leading front process, at its first slot after
+// the scheduler starts — after the pool is up and the listener bound — walks
+// each partition IN PLACE, a batch at a time with a pause between, and stops
+// for this run when the heap is past `BACKFILL_HEAP_SHARE` of its limit. A
+// stopped run is resumed whole at the next slot (index rows are written ON
+// CONFLICT DO NOTHING), and the mark is written only after a complete walk.
 // ---------------------------------------------------------------------------
-const BACKFILL_BATCH = 2000;
+const BACKFILL_JOB = 'persistence.minted-index-backfill';
+const BACKFILL_EVERY_MS = 5 * 60 * 1000;
+const BACKFILL_BATCH = 1000;
+const BACKFILL_PAUSE_MS = 10;
+const BACKFILL_HEAP_SHARE = 0.85;
+// The handles this process filed and marked: nothing is left to do for them.
+const indexBackfilled = new Set();
+let backfillJobRegistered = false;
+
+// The indexed on-demand stores still owed a complete index here.
+function backfillOwed() {
+  log.debug("Entering backfillOwed().");
+  log.debug("Leaving backfillOwed().");
+  return realms.handles().filter(function (declared) {
+    return declared.onDemand && typeof declared.lookupsOf === 'function' &&
+      !indexComplete.has(declared.handle) &&
+      !indexBackfilled.has(declared.handle);
+  });
+}
+
+// True when the heap is too full to go on this run.
+function heapTooFull() {
+  log.debug("Entering heapTooFull().");
+  const limit = require('v8').getHeapStatistics().heap_size_limit;
+  log.debug("Leaving heapTooFull().");
+  return limit > 0 && process.memoryUsage().heapUsed > limit *
+    BACKFILL_HEAP_SHARE;
+}
 
 async function backfillMintedIndexes() {
   log.debug("Entering backfillMintedIndexes().");
@@ -1934,53 +1970,122 @@ async function backfillMintedIndexes() {
       typeof driver.writeMintedIndex !== 'function' ||
       typeof driver.markMintedIndexed !== 'function') {
     log.debug("Leaving backfillMintedIndexes(). Not here.");
-    return 0;
+    return { filed: 0, marked: 0, stopped: false };
   }
   let filed = 0;
-  for (const declared of realms.handles()) {
-    if (!declared.onDemand || typeof declared.lookupsOf !== 'function' ||
-        indexComplete.has(declared.handle)) {
-      continue;
-    }
+  let marked = 0;
+  // The ids a write is journalled under (`realms.currentId()`): '' is the
+  // default realm's partition too, and is not filed twice.
+  const realmIds = restoreFilter(Date.now()).realms.filter(function (id) {
+    return id !== '';
+  });
+  for (const declared of backfillOwed()) {
     let batch = [];
+    let inBatch = 0;
     const flushBatch = async function () {
       if (batch.length) {
         filed += await driver.writeMintedIndex(batch);
         batch = [];
-        await new Promise(function (resolve) {
-          setImmediate(resolve);
-        });
       }
+      inBatch = 0;
+      await new Promise(function (resolve) {
+        setTimeout(resolve, BACKFILL_PAUSE_MS);
+      });
     };
-    // The ids a write is journalled under (`realms.currentId()`): '' is the
-    // default realm's partition too, and is not filed twice.
-    const realmIds = restoreFilter(Date.now()).realms.filter(function (id) {
-      return id !== '';
-    });
     for (const realmId of realmIds) {
-      const rows = declared.dump(realmId) || [];
-      for (const row of rows) {
-        const lookups = lookupsFor(declared, declared.handle, realmId, row.key,
-                                   row.value) || [];
-        const key = keyColumnOf(declared.handle, realmId,
-                                storedKey(declared, row.key));
-        lookups.forEach(function (indexKey) {
-          batch.push({ handle: declared.handle, realm: realmId,
-                       indexKey: indexKey, key: key });
-        });
-        if (batch.length >= BACKFILL_BATCH) {
+      // The partition itself, walked by its own iterator: no copy. A row
+      // added during a pause is visited or not, and files itself either way.
+      const partition = declared.partition(realmId);
+      if (!partition) {
+        continue;
+      }
+      for (const entry of partition.entries()) {
+        const lookups = lookupsFor(declared, declared.handle, realmId,
+                                   entry[0], entry[1]) || [];
+        if (lookups.length) {
+          const key = keyColumnOf(declared.handle, realmId,
+                                  storedKey(declared, entry[0]));
+          lookups.forEach(function (indexKey) {
+            batch.push({ handle: declared.handle, realm: realmId,
+                         indexKey: indexKey, key: key });
+          });
+        }
+        if (++inBatch >= BACKFILL_BATCH) {
           await flushBatch();
+          if (heapTooFull()) {
+            log.warn(errorCodes.tag('STS-STORE-0086') + 'persistence: the ' +
+                     'index of "' + declared.handle + '" was not completed ' +
+                     'this run (#820): the heap is past ' +
+                     Math.round(BACKFILL_HEAP_SHARE * 100) + '% of its ' +
+                     'limit. The store stays read back whole, and the next ' +
+                     'run of ' + BACKFILL_JOB + ' tries again.');
+            log.debug("Leaving backfillMintedIndexes(). Heap.");
+            return { filed: filed, marked: marked, stopped: true };
+          }
         }
       }
     }
     await flushBatch();
     await driver.markMintedIndexed(declared.handle);
+    indexBackfilled.add(declared.handle);
+    marked++;
     log.info('persistence: the on-demand store "' + declared.handle +
              '" has its index complete (#820): from the next start it is ' +
              'read on demand rather than restored whole.');
   }
   log.debug("Leaving backfillMintedIndexes(). " + filed + " row(s) filed.");
-  return filed;
+  return { filed: filed, marked: marked, stopped: false };
+}
+
+/**
+ * Registers the backfill's scheduler job, once.
+ *
+ * @param schedulerInstance - the scheduler, for the tests
+ */
+function ensureIndexBackfillJob(schedulerInstance) {
+  log.debug("Entering ensureIndexBackfillJob().");
+  if (backfillJobRegistered) {
+    log.debug("Leaving ensureIndexBackfillJob(). Registered.");
+    return;
+  }
+  const scheduler = schedulerInstance || require('../cluster/scheduler');
+  if (!scheduler || typeof scheduler.register !== 'function') {
+    log.debug("Leaving ensureIndexBackfillJob(). No scheduler yet.");
+    return;
+  }
+  backfillJobRegistered = true;
+  if (scheduler.job(BACKFILL_JOB)) {
+    log.debug("Leaving ensureIndexBackfillJob(). Registered elsewhere.");
+    return;
+  }
+  scheduler.register({
+    id: BACKFILL_JOB,
+    title: 'On-demand store index backfill',
+    describe: 'Files the rows stored before schema version 24 of each ' +
+              'indexed on-demand minted store in sts_minted_index, then ' +
+              'marks the index complete, so the next start reads the store ' +
+              'on demand (#820).',
+    owner: 'persistence/persistence_minted.js',
+    everyMs: function () {
+      return BACKFILL_EVERY_MS;
+    },
+    off: function () {
+      if (!onDemandActive()) {
+        return 'no store is read on demand here';
+      }
+      return backfillOwed().length ? '' : 'every index is complete';
+    },
+    run: function () {
+      return backfillMintedIndexes().catch(function (e) {
+        log.warn(errorCodes.tag('STS-STORE-0086') +
+                 'persistence: an on-demand store\'s index could not be ' +
+                 'completed (#820): ' + ((e && e.message) || e) + '. The ' +
+                 'store stays read back whole, and the next run tries again.');
+        return { failed: true };
+      });
+    }
+  });
+  log.debug("Leaving ensureIndexBackfillJob().");
 }
 
 /**
@@ -2913,15 +3018,11 @@ function restore() {
                'caches and the audit log are as they were before the ' +
                'restart.');
 
-      // The index of every indexed on-demand store still read back whole,
-      // filed in the background: the start does not wait for it.
-      backfillMintedIndexes().catch(function (e) {
-        log.warn(errorCodes.tag('STS-STORE-0086') +
-                 'persistence: an on-demand store\'s index could not be ' +
-                 'completed (#820): ' + ((e && e.message) || e) + '. The ' +
-                 'store is read back whole at the next start as well, and ' +
-                 'that start tries again.');
-      });
+      // The index of every indexed on-demand store still read back whole is
+      // filed by a scheduler job, after the start (see the backfill above).
+      if (!process.env.STS_REQUEST_WORKER && backfillOwed().length) {
+        ensureIndexBackfillJob();
+      }
       log.debug('Leaving restore(). ' + restored + ' row(s).');
       return { restored: restored };
     });
@@ -3023,6 +3124,7 @@ function reset() {
   // first flush wait on a driver that is no longer installed.
   flushInFlight = null;
   indexComplete.clear();
+  indexBackfilled.clear();
   generation = 0;
   observedGeneration = 0;
   observational.clear();
@@ -3187,6 +3289,7 @@ module.exports = {
   nameOfRow: nameOfRow,
   backfillSessionIndex: backfillSessionIndex,
   backfillMintedIndexes: backfillMintedIndexes,
+  ensureIndexBackfillJob: ensureIndexBackfillJob,
   sessionIndexChangeFloor: sessionIndexChangeFloor,
   ensureTombstoneJob: ensureTombstoneJob,
   ensureExpiryPurgeJob: ensureExpiryPurgeJob,

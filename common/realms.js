@@ -2737,6 +2737,9 @@ function declareHandle(options, shape, accessors) {
     // `Object.keys()` and a spread all answer what they always did.
     // ---------------------------------------------------------------------
     dump: accessors.dump,
+    // The partition's own Map, uncopied, where the store has one: for a walk
+    // of a store too large to copy (#820's backfill). Read it, never write.
+    partition: accessors.partition,
     read: accessors.read,
     restore: accessors.restore,
     remove: accessors.remove
@@ -3059,8 +3062,14 @@ function map(options) {
   log.debug("Entering map().");
   const indexBy = options && typeof options.indexBy === 'function'
     ? options.indexBy : null;
+  // AN ON-DEMAND STORE KEEPS NO INDEX IN MEMORY (#820): its index is
+  // `sts_minted_index`, and `lookup()` walks only what is held. Until its
+  // index is complete it is held WHOLE — two million refresh and grant
+  // tokens on 8081 — and a family-to-keys Map over all of them cost every
+  // process hundreds of MB: the first start of #823 ran out of heap.
   const per = keyed(function () {
-    return indexBy ? new IndexedMap(indexBy) : new Map();
+    return indexBy && !(options && options.onDemand)
+      ? new IndexedMap(indexBy) : new Map();
   });
   // `reconcile`, for a per-realm store partly built from code — see the
   // contract above sharedMap(). The two accessors below ask it exactly as
@@ -3081,6 +3090,11 @@ function map(options) {
       });
       log.debug("Leaving dump().");
       return out;
+    },
+    partition: function (realmId) {
+      log.debug("Entering partition().");
+      log.debug("Leaving partition().");
+      return per.of(partitionId(realmId));
     },
     read: function (realmId, k) {
       log.debug("Entering read().");
@@ -3251,8 +3265,26 @@ function map(options) {
     lookup: function (indexKey) {
       log.debug("Entering lookup().");
       const target = per();
-      const held = typeof target.lookup === 'function'
-        ? target.lookup(indexKey) : [];
+      let held = [];
+      if (typeof target.lookup === 'function') {
+        held = target.lookup(indexKey);
+      } else if (indexBy) {
+        // An on-demand store: a walk of what is held — the bounded cache
+        // when live, the whole store until then, which is what the callers
+        // did before #820 (`membersOf()` walked every token at a revoke).
+        target.forEach(function (value, key) {
+          let keys = [];
+          try {
+            keys = indexBy(value, key) || [];
+          } catch (e) {
+            log.debug("Caught in lookup(): " + ((e && e.message) || e));
+            keys = [];
+          }
+          if (keys.indexOf(indexKey) >= 0) {
+            held.push(key);
+          }
+        });
+      }
       if (!demandOn() || typeof onDemandReader.byIndex !== 'function') {
         log.debug("Leaving lookup().");
         return held;

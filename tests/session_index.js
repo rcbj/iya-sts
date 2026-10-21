@@ -1269,12 +1269,22 @@ async function indexBackfillCases(t, realm) {
   let filters = [];
   install(indexDriver([], filed, marked, filters));
   await minted.restore();
-  for (let i = 0; i < 200 &&
-       marked.indexOf('session-index.on-demand') < 0; i++) {
+  for (let i = 0; i < 20; i++) {
     await new Promise(function (resolve) {
       setImmediate(resolve);
     });
   }
+  t.equal(filed.length + marked.length, 0,
+          'the restore files nothing: the backfill is not a step of the ' +
+          'start (the first start of #823 ran out of heap)');
+  t.check(!!scheduler.job('persistence.minted-index-backfill'),
+          'it is a scheduler job, registered by the front process\'s restore');
+  t.equal(JSON.stringify(store.lookup('fam-a')), JSON.stringify(['old-1']),
+          'a store held whole answers lookup() by walking what it holds, ' +
+          'with no index in memory');
+  const ran = await minted.backfillMintedIndexes();
+  t.check(ran && !ran.stopped, 'the job\'s run completes',
+          JSON.stringify(ran));
   t.check(filters.length && filters[0].indexOf('session-index.on-demand') < 0,
           'an indexed on-demand store with no mark is read back whole',
           JSON.stringify(filters));
@@ -1303,12 +1313,7 @@ async function indexBackfillCases(t, realm) {
   filters = [];
   install(indexDriver(['session-index.on-demand'], filed, marked, filters));
   await minted.restore();
-  // The other indexed stores have no mark here and are filed; this one is.
-  for (let i = 0; i < 200 && marked.length < 2; i++) {
-    await new Promise(function (resolve) {
-      setImmediate(resolve);
-    });
-  }
+  await minted.backfillMintedIndexes();
   t.check(filters.length &&
           filters[0].indexOf('session-index.on-demand') >= 0,
           'with the mark, the store is not read back at a start',
