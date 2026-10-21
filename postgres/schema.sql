@@ -650,6 +650,19 @@ CREATE INDEX IF NOT EXISTS sts_sessions_partner ON sts_sessions (realm, partner_
 -- Schema version 22 (#754): a hosted surface's relying-party sessions.
 CREATE INDEX IF NOT EXISTS sts_sessions_surface ON sts_sessions (realm, rp_surface) WHERE rp_surface <> '';
 
+-- Schema version 24 (#820): an on-demand minted store's index. A store
+-- declared `onDemand` with `indexBy` is not held whole by a process, so what
+-- it was walked for — a refresh token family's members, a person's tokens —
+-- is filed here, the keyed digest of the index value beside the row's key,
+-- written in the same transaction as the body.
+CREATE TABLE IF NOT EXISTS sts_minted_index (
+  handle    text NOT NULL,
+  realm     text NOT NULL,
+  index_key text NOT NULL,
+  key       text NOT NULL,
+  PRIMARY KEY (handle, realm, index_key, key));
+CREATE INDEX IF NOT EXISTS sts_minted_index_key ON sts_minted_index (handle, realm, key);
+
 -- ---------------------------------------------------------------------------
 -- THE CHANGE LOG (2026-09-06), which is what makes several processes against
 -- one store AGREE rather than merely coexist. Until this, two processes each
@@ -1115,7 +1128,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (23) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (24) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

@@ -261,7 +261,7 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // 23 SINCE 2026-10-20 (`/portal/delegate`'s search): the `pg_trgm`
 // extension and `sts_ldap_entries_uid_trgm`, a trigram GIN over the
 // `rdn_value` of the children of each realm's `ou=users`.
-const SCHEMA_VERSION = 23;
+const SCHEMA_VERSION = 24;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -386,6 +386,18 @@ const SESSION_INDEX_UPSERT =
 
 const SESSION_INDEX_DELETE =
   'DELETE FROM sts_sessions WHERE realm = $1 AND key = $2';
+
+// AN ON-DEMAND STORE'S INDEX ROWS (#820): every index row of the named
+// minted rows, and a set of them filed. Ordered by the primary key, so two
+// flushes take the rows' locks in one order.
+const MINTED_INDEX_DELETE =
+  'DELETE FROM sts_minted_index WHERE (handle, realm, key) IN (SELECT h, r, ' +
+  'k FROM unnest($1::text[], $2::text[], $3::text[]) AS u(h, r, k))';
+const MINTED_INDEX_INSERT =
+  'INSERT INTO sts_minted_index (handle, realm, index_key, key) SELECT ' +
+  'u.h, u.r, u.i, u.k FROM unnest($1::text[], $2::text[], $3::text[], ' +
+  '$4::text[]) AS u(h, r, i, k) ORDER BY u.h, u.r, u.i, u.k ' +
+  'ON CONFLICT DO NOTHING';
 
 // Not a session. `$` is not in a keyed digest, and '' is not a realm id, so
 // the partial indexes do not see it. It commits with the last backfill page;
@@ -986,6 +998,25 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_sessions_surface', statement:
   'CREATE INDEX IF NOT EXISTS sts_sessions_surface ON sts_sessions ' +
   '(realm, rp_surface) WHERE rp_surface <> \'\'' },
+  // -------------------------------------------------------------------------
+  // AN ON-DEMAND STORE'S INDEX (#820, schema version 24). A store declared
+  // `onDemand` with `indexBy` (`common/realms.js`) is not held whole, so
+  // what it was walked for — every refresh token of one family, every token
+  // of one person — is filed here: the keyed digest of the index value
+  // beside the row's own key, written in the same transaction as the body.
+  // The bodies are sealed, so nothing else could answer it.
+  // -------------------------------------------------------------------------
+  { name: 'sts_minted_index', statement:
+  'CREATE TABLE IF NOT EXISTS sts_minted_index (' +
+  '  handle    text NOT NULL,' +
+  '  realm     text NOT NULL,' +
+  '  index_key text NOT NULL,' +
+  '  key       text NOT NULL,' +
+  '  PRIMARY KEY (handle, realm, index_key, key))' },
+  // A row's own index rows, for the flush's replace and a delete.
+  { name: 'sts_minted_index_key', statement:
+  'CREATE INDEX IF NOT EXISTS sts_minted_index_key ON sts_minted_index ' +
+  '(handle, realm, key)' },
   // -------------------------------------------------------------------------
   // THE CHANGE LOG (2026-09-06), which is what makes several processes against
   // one store agree rather than merely coexist.
@@ -5858,6 +5889,46 @@ function create(options) {
                 'k FROM unnest($1::text[], $2::text[]) AS u(r, k))',
                 [gone.map(function (row) { return String(row.realm); }),
                  gone.map(function (row) { return String(row.key); })]);
+            });
+          }
+          // AN ON-DEMAND STORE'S INDEX (#820, schema version 24), in the
+          // same transaction as the bodies and on the session index's rule:
+          // a body the tombstone guard refused writes none. A row carrying
+          // `lookups` (an array, possibly empty) has its index rows
+          // replaced; a deleted row of an indexed store loses them.
+          const looked = guarded.concat(plain).map(function (w) {
+            return w.row;
+          }).filter(function (row) {
+            return !skip.has(row) && Array.isArray(row.lookups);
+          });
+          const unindexed = looked.concat(tombs.concat(dels).filter(
+            function (row) {
+              return row.indexed === true;
+            }));
+          if (unindexed.length) {
+            side = side.then(function () {
+              return client.query(MINTED_INDEX_DELETE,
+                [unindexed.map(function (row) { return String(row.handle); }),
+                 unindexed.map(function (row) { return String(row.realm); }),
+                 unindexed.map(function (row) { return String(row.key); })]);
+            });
+          }
+          const filed = [];
+          looked.forEach(function (row) {
+            Array.from(new Set(row.lookups.map(String))).forEach(
+              function (indexKey) {
+                filed.push({ handle: String(row.handle),
+                             realm: String(row.realm), indexKey: indexKey,
+                             key: String(row.key) });
+              });
+          });
+          if (filed.length) {
+            side = side.then(function () {
+              return client.query(MINTED_INDEX_INSERT,
+                [filed.map(function (one) { return one.handle; }),
+                 filed.map(function (one) { return one.realm; }),
+                 filed.map(function (one) { return one.indexKey; }),
+                 filed.map(function (one) { return one.key; })]);
             });
           }
           return side;

@@ -336,6 +336,44 @@ async function sqlHalf(t) {
           tombTx.indexOf(tombDelete[0]) < tombTx.length - 1,
           'the index delete follows the marker and precedes COMMIT');
 
+  // #820: an on-demand store's index rows (`sts_minted_index`) are replaced
+  // in the transaction that writes the body, and go with a deleted row.
+  statements.length = 0;
+  answer.selectBody = null;
+  answer.rowCount = 1;
+  await driver.saveMinted([{
+    handle: 'oauth2_bcp.refreshTokens', realm: REALM, key: 'digest-tok',
+    body: 'sealed', tombstone: true, lookups: ['family-digest']
+  }], [{ handle: 'oauth2_bcp.refreshTokens', realm: REALM,
+         key: 'digest-old', tombstone: true, indexed: true, keySealed: '' }]);
+  const indexTx = txOf(statements);
+  const indexDeletes = matching(indexTx, /DELETE FROM sts_minted_index/i);
+  const indexInserts = matching(indexTx, /INSERT INTO sts_minted_index/i);
+  t.check(indexDeletes.length === 1 &&
+          indexDeletes[0].params[2].indexOf('digest-tok') >= 0 &&
+          indexDeletes[0].params[2].indexOf('digest-old') >= 0,
+          'an indexed row\'s old index rows are deleted, and a deleted ' +
+          'row\'s with it (#820)', JSON.stringify(indexDeletes.map(
+            function (one) { return one.params; })));
+  t.check(indexInserts.length === 1 &&
+          indexInserts[0].params[2][0] === 'family-digest' &&
+          indexInserts[0].params[3][0] === 'digest-tok' &&
+          indexTx.indexOf(indexInserts[0]) < indexTx.length - 1,
+          'and its new index rows are written before COMMIT (#820)',
+          JSON.stringify(indexInserts.map(function (one) {
+            return one.params;
+          })));
+  statements.length = 0;
+  answer.rowCount = 0;
+  await driver.saveMinted([{
+    handle: 'oauth2_bcp.refreshTokens', realm: REALM, key: 'digest-refused',
+    body: 'sealed', tombstone: true, lookups: ['family-digest']
+  }], []);
+  t.check(!matching(txOf(statements), /INSERT INTO sts_minted_index/i)
+            .length,
+          'a refused body files no index row (#820)');
+  answer.rowCount = 1;
+
   statements.length = 0;
   answer.selectBody = TOMBSTONE;
   let merged = false;

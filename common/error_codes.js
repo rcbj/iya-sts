@@ -1764,6 +1764,17 @@ const CODES = [
       'not own the table to make it. Nothing is wrong without it, only ' +
       'slower: run postgres/schema.sql as the owner.',
     spec: 'none — the store opens without it' },
+  { code: 'STS-STORE-0084',
+    summary: 'An on-demand minted store (#820) could not read a row or an ' +
+      'index from the store through its bridge — a timeout, a refused ' +
+      'connection, a thread that failed. The row is answered as absent, ' +
+      'which every reader of these stores refuses: a refresh token not ' +
+      'found is not honoured.',
+    spec: 'none' },
+  { code: 'STS-STORE-0085',
+    summary: 'An on-demand minted store (#820) read a row whose sealed body ' +
+      'will not open under this process\'s keys. It is answered as absent.',
+    spec: 'none' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
