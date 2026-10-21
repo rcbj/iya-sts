@@ -1065,7 +1065,32 @@ async function throughPersistence(t) {
           'F0b. a windowed worker reads back the RESIDENT entries at start ' +
           'and none of the people');
   w.attach(fakeBridge(db.entries));
-  await persistence.coordinate();
+  // F0c (2026-10-21): coordination follows from the change log's head as it
+  // was when the store was OPENED, not when coordination began — a change
+  // another process commits during the restore is applied, not marked as
+  // seen. One is committed here, after the restore, and must be above the
+  // mark coordination starts from.
+  const headAtOpen = db.log.length;
+  db.log.push({ seq: db.log.length + 1, origin: 'another-process',
+                kind: 'appconfig', realm: '', key: 'during-restore' });
+  const replicationModule = require('../persistence/persistence_replication');
+  const realStart = replicationModule.start;
+  let fromSeq;
+  replicationModule.start = function (driver, appliers, from) {
+    fromSeq = from;
+    return realStart.apply(this, arguments);
+  };
+  try {
+    await persistence.coordinate();
+  } finally {
+    replicationModule.start = realStart;
+  }
+  t.check(typeof fromSeq === 'number' && fromSeq <= headAtOpen &&
+          fromSeq < db.log.length,
+          'F0c. coordination starts from the change log\'s head when the ' +
+          'store was opened, below a change committed during the restore',
+          JSON.stringify({ fromSeq: fromSeq, headAtOpen: headAtOpen,
+                           head: db.log.length }));
 
   f.set('uid=jan,' + USERS, { dn: 'uid=jan,' + USERS,
                               attributes: person('jan') });

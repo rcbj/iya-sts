@@ -440,6 +440,12 @@ const inFlightDirectory = new Map();
 // exactly what it just read.
 let restoring = false;
 
+// THE CHANGE LOG'S HEAD WHEN THIS PROCESS OPENED THE STORE, before it read a
+// row back (2026-10-21): where `coordinate()` starts following from, so that
+// a change another process commits WHILE this one restores is applied
+// rather than marked as seen. Null where the driver has no change log.
+let restoreFloorSeq = null;
+
 // True once stop() has run. A flush scheduled by a late timer after the pool is
 // closed would log an error about a closed client on every shutdown.
 let stopped = false;
@@ -2849,6 +2855,28 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // ---------------------------------------------------------------------
     return cluster.gate(driver);
   }).then(function () {
+    // THE FLOOR, ONCE THIS NODE HAS JOINED AND BEFORE ANYTHING IS READ BACK
+    // (2026-10-21). Coordination used to start at the log's head as it was
+    // when coordination began — after the whole restore — so a change
+    // another process committed in between, after this one had read that
+    // table, was below the mark and never applied. On 8081 a worker's
+    // restore runs for 30 s while the front process writes (its keys
+    // settled, the realms reseeded, scheduler jobs), and since the workers
+    // start beside the front's own restore (`server.js`) it writes more of
+    // it then. Changes from here on are applied again; an applier re-reads
+    // the row, so one already restored is applied as it is.
+    if (typeof driver.latestChangeSeq !== 'function') {
+      return null;
+    }
+    return driver.latestChangeSeq().then(function (seq) {
+      restoreFloorSeq = Number.isFinite(Number(seq)) ? Number(seq) : null;
+    }, function (e) {
+      log.debug("Caught in openStore() reading the change log's head: " +
+                ((e && e.message) || e));
+      // Coordination then starts at the head, as it always did.
+      restoreFloorSeq = null;
+    });
+  }).then(function () {
     // ---------------------------------------------------------------------
     // HAND THE KEYSTORE ITS STORE, THE MOMENT THERE IS ONE (2026-09-06).
     //
@@ -4283,8 +4311,15 @@ function coordinate() {
   // When a session-index walk ran, this is the seq from before its first
   // page (#350). Commits during the walk stay above it, so
   // repairSessionIndex still sees them. Null starts at the head.
+  // And since 2026-10-21 never above the head as it was when the store was
+  // opened (`restoreFloorSeq`): the lower of the two.
+  const floors = [minted.sessionIndexChangeFloor(), restoreFloorSeq]
+    .filter(function (one) {
+      return one !== null && one !== undefined && Number.isFinite(Number(one));
+    }).map(Number);
   const started = replication.start(driver, appliers,
-                                   minted.sessionIndexChangeFloor());
+                                   floors.length ? Math.min.apply(null, floors)
+                                     : null);
   if (!driver || !driver.tiered) {
     return started;
   }
