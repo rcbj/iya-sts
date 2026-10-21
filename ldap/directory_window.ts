@@ -1436,8 +1436,13 @@ class DirectoryWindow {
     log.debug("Entering DirectoryWindow.entriesAtAsync(). " + keys.length);
     const out = new Map<string, Entry | null>();
     const ask: string[] = [];
+    // A SET BESIDE THE LIST (2026-10-21): `ask.indexOf()` for every key made
+    // this quadratic, and the Users page's census hands it every register
+    // name — on 8081, 67,000 of them held a request worker's event loop for
+    // twelve seconds before a single question went to the store.
+    const asking = new Set<string>();
     keys.forEach((key) => {
-      if (out.has(key) || ask.indexOf(key) >= 0) {
+      if (out.has(key) || asking.has(key)) {
         return;
       }
       if (!this.isWindowed(realmId, key)) {
@@ -1449,6 +1454,7 @@ class DirectoryWindow {
         out.set(key, held.entry);
       } else {
         ask.push(key);
+        asking.add(key);
       }
     });
     for (let from = 0; from < ask.length && this.bridge; from += PAGE) {
@@ -1561,9 +1567,15 @@ class DirectoryWindow {
    */
   async warmAsync(realmId: string, keys: string[]): Promise<number> {
     log.debug("Entering DirectoryWindow.warmAsync(). " + keys.length);
-    const ask = keys.filter((key, at) => {
-      return keys.indexOf(key) === at && this.isWindowed(realmId, key) &&
-        !this.heldSlot(realmId, key);
+    // Each key once, by a Set and not `keys.indexOf()` (2026-10-21), for
+    // `entriesAtAsync()`'s reason: that made it quadratic in the keys.
+    const once = new Set<string>();
+    const ask = keys.filter((key) => {
+      if (once.has(key)) {
+        return false;
+      }
+      once.add(key);
+      return this.isWindowed(realmId, key) && !this.heldSlot(realmId, key);
     }).slice(0, PAGE);
     if (!ask.length || !this.bridge) {
       log.debug("Leaving DirectoryWindow.warmAsync(). Nothing to ask.");

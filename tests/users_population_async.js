@@ -24,6 +24,8 @@
 //       count on the read pool, none synchronously, the register's subjects
 //       never asked one at a time, and the live sign-on sessions from the
 //       session index — no session body walked.
+//   P5. entriesAtAsync(), which the census asks every name of, is linear in
+//       the keys it is handed.
 //
 // In a child holding the directory as a windowed request worker over a
 // stand-in bridge that counts synchronous and asynchronous questions.
@@ -214,6 +216,23 @@ async function inTheWorker(t) {
           'session is walked', JSON.stringify({ liveAsked: liveAsked,
             walked: walked, tile: listed && listed.withActiveSession,
             first: first && first.liveSessions }));
+
+  // P5 (2026-10-21): `entriesAtAsync()` is linear in the keys it is handed.
+  // It checked each against the list of keys to ask with `indexOf()`, and
+  // the Users page's census hands it every register name: 67,000 on 8081
+  // held a request worker for twelve seconds before any question went out.
+  // Sixty thousand distinct keys took seconds that way; linearly, tens of
+  // milliseconds.
+  const many = [];
+  for (let i = 0; i < 60000; i++) {
+    many.push(('uid=upa-many-' + i + ',' + users).toLowerCase());
+  }
+  const started = Date.now();
+  const atMany = await w.entriesAtAsync('default', many.concat(many));
+  const tookMs = Date.now() - started;
+  t.check(atMany.size === 60000 && tookMs < 3000,
+          'P5. entriesAtAsync() answers 120,000 keys (60,000 distinct) in ' +
+          'linear time', tookMs + ' ms, ' + atMany.size + ' answered');
   log.debug('Leaving inTheWorker().');
 }
 

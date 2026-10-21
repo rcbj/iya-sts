@@ -6706,7 +6706,7 @@ function sessionsFromArtifacts() {
  *
  * @returns the snapshot
  */
-function snapshot() {
+function snapshot(opts) {
   log.debug("Entering snapshot().");
   const nowMs = Date.now();
 
@@ -6746,7 +6746,11 @@ function snapshot() {
     else row.expired++;
   });
 
-  const knownUsers = userRows();
+  // THE ROWS MAY BE HANDED IN (2026-10-21): built by `userRowsAsync()`, whose
+  // subjects are asked of the directory without holding the event loop. Built
+  // here they are every register subject asked synchronously — on 8081 the
+  // console's dashboard stood a request worker still for ten seconds.
+  const knownUsers = (opts && opts.knownUsers) || userRows();
 
   const callRows = Array.from(calls.values())
                         .sort(function (a, b) { return b.count - a.count; });

@@ -28,7 +28,10 @@
 //   5. a realm's own token, under that realm's prefix: the `realm`
 //      authority, that realm, and NO service page among its pages;
 //   6. the control, development with `adminApi.authRequired` off and no
-//      token: no caller, and both read and write.
+//      token: no caller, and both read and write;
+//   7. what it costs (2026-10-21): /me builds no statistics snapshot and asks
+//      no directory tally; /status asks the register's rows and the tally
+//      asynchronously.
 // ===========================================================================
 
 const fs = require('fs');
@@ -255,6 +258,70 @@ function childMain() {
     note(has(j.pages, REALM_PAGE) && !has(j.pages, SERVICE_PAGE),
          '5b. and no service page is among its pages', brief(r) + ' ' +
          has(j.pages, SERVICE_PAGE));
+
+    // --- 7. what it costs (2026-10-21) ---------------------------------------
+    // Every console page asks /me, and it built the whole statistics
+    // snapshot — every register subject resolved — and the directory's
+    // credential tally to answer its page list: ten seconds of a request
+    // worker on 8081. /me asks neither; /status asks both asynchronously.
+    const statsModule = require(ROOT_DIR + '/common/admin_stats');
+    const credentialsModule = require(ROOT_DIR + '/common/credentials');
+    const counted = { snapshot: 0, userRows: 0, userRowsAsync: 0,
+                      tally: 0, tallyAsync: 0 };
+    const realStats = { snapshot: statsModule.snapshot,
+                        userRows: statsModule.userRows,
+                        userRowsAsync: statsModule.userRowsAsync };
+    const realTally = credentialsModule.directoryFactorCounts;
+    const realTallyAsync = credentialsModule.directoryFactorCountsAsync;
+    statsModule.snapshot = function (opts) {
+      counted.snapshot++;
+      return realStats.snapshot.call(this, opts);
+    };
+    statsModule.userRows = function () {
+      counted.userRows++;
+      return realStats.userRows.apply(this, arguments);
+    };
+    statsModule.userRowsAsync = function () {
+      counted.userRowsAsync++;
+      return realStats.userRowsAsync.apply(this, arguments);
+    };
+    credentialsModule.directoryFactorCounts = function () {
+      counted.tally++;
+      return realTally.apply(this, arguments);
+    };
+    credentialsModule.directoryFactorCountsAsync = function () {
+      counted.tallyAsync++;
+      return realTallyAsync.apply(this, arguments);
+    };
+    let meCost = null;
+    let statusCost = null;
+    let status = null;
+    try {
+      r = await call(port, 'GET', '/admin-api/me', writer);
+      meCost = Object.assign({ status: r.status }, counted);
+      Object.keys(counted).forEach(function (k) {
+        counted[k] = 0;
+      });
+      status = await call(port, 'GET', '/admin-api/status', writer);
+      statusCost = Object.assign({ status: status.status }, counted);
+    } finally {
+      statsModule.snapshot = realStats.snapshot;
+      statsModule.userRows = realStats.userRows;
+      statsModule.userRowsAsync = realStats.userRowsAsync;
+      credentialsModule.directoryFactorCounts = realTally;
+      credentialsModule.directoryFactorCountsAsync = realTallyAsync;
+    }
+    note(meCost.status === 200 && meCost.snapshot === 0 &&
+         meCost.userRows === 0 && meCost.tally === 0 &&
+         meCost.tallyAsync === 0,
+         '7a. /admin-api/me builds no statistics snapshot and asks no ' +
+         'directory tally for its page list', JSON.stringify(meCost));
+    note(statusCost.status === 200 && statusCost.userRowsAsync === 1 &&
+         statusCost.tallyAsync === 1 && statusCost.userRows === 0 &&
+         statusCost.tally === 0 && status.json &&
+         typeof status.json.usersKnown === 'number',
+         '7b. /admin-api/status asks the register\'s rows and the tally ' +
+         'asynchronously, neither synchronously', JSON.stringify(statusCost));
 
     // --- 6. the control ------------------------------------------------------
     config.setOverride('adminApi.authRequired', false);
