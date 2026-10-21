@@ -230,7 +230,8 @@ both fit on one device. The post-quantum one is listed as
 `<username>+ml-dsa` when it is created, and as `<username>+ml-dsa-65` (for
 example) once every post-quantum passkey the person holds uses that one
 algorithm; that name is never typed to sign in, and the sign-in screen
-refuses it (`STS-AUTHN-0354`). Either passkey signs the person in, with or
+refuses any typed name ending in `+ml-dsa`, `+ml-dsa-<n>` or `+pqc` (in
+any letter case, in every mode; `STS-AUTHN-0354`). Either passkey signs the person in, with or
 without the username. `webauthn.maxKeysPerPerson` counts both kinds. The
 setting cannot be on together with `webauthn.pqcOnly` (`STS-AUTHN-0353`).
 Turned off, a post-quantum passkey already held goes on signing in and no
@@ -987,9 +988,18 @@ See [What is not checked](what-is-not-checked.md).
 | `webauthn.rpId` | `STS_WEBAUTHN_RP_ID` | *(empty: the host)* | yes | Widen the RP ID to a registrable domain suffix of the host. |
 | `webauthn.allowedOrigins` | `STS_WEBAUTHN_ALLOWED_ORIGINS` | *(empty: derived)* | yes | The origins a ceremony is accepted from; empty derives one from the address. |
 | `webauthn.algorithms` | `STS_WEBAUTHN_ALGORITHMS` | every algorithm the verifier checks, ML-DSA-44/65/87 (-48/-49/-50) first | yes | `pubKeyCredParams`, in preference order. On **Protocols → WebAuthn** each algorithm has a checkbox (requested or not) and a number (1 is the most preferred). See [Configuration](configuration.md) for the list. |
+| `webauthn.insecureAlgorithms` | `STS_WEBAUTHN_INSECURE_ALGORITHMS` | `false` | yes | Development mode only: also request and accept SHA-1's `RS1` (-65535), offered last. Off, `RS1` is neither requested nor accepted even where `webauthn.algorithms` names it, and a key enrolled with it is refused at sign-in (`STS-AUTHN-0294`). Cannot be set in product mode. |
+| `webauthn.pqcOnly` | `STS_WEBAUTHN_PQC_ONLY` | `false` | yes | Request only ML-DSA-44/65/87 (whichever `webauthn.algorithms` names, all three where it names none); a new passkey made with another algorithm is refused at registration. A classical key already enrolled goes on signing in. |
 | `webauthn.pqcAlongsideClassical` | `STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL` | `false` | yes | Let a person hold a classical and a post-quantum (ML-DSA) passkey at once, choosing the kind when creating one (see above). Refused beside `webauthn.pqcOnly`. |
 | `webauthn.userVerification` | `STS_WEBAUTHN_USER_VERIFICATION` | `required` | yes | Whether the authenticator must verify the person; `required` is enforced. |
 | `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` | yes | The attestation conveyance asked for at registration. Whether a statement is verified is `webauthn.attestationPolicy`'s decision, not this setting's ([WebAuthn](#webauthn), above). |
+| `webauthn.attestationPolicy` | `STS_WEBAUTHN_ATTESTATION_POLICY` | `by-mode` | yes | What a registration's attestation statement must be: `verify-if-present` verifies every statement and refuses one that does not verify (`none`, self attestation and an unknown chain are accepted and recorded); `require-trusted` refuses anything that does not chain to an anchor, so no synced passkey; `off` verifies nothing (development only; product reads it as `by-mode`). `by-mode` is `verify-if-present` in product mode and `off` in development. |
+| `webauthn.attestationTrustAnchors` | `STS_WEBAUTHN_ATTESTATION_TRUST_ANCHORS` | *(empty)* | yes | Root certificates (a PEM bundle) an attestation certificate may chain to, beside those the FIDO Metadata Service lists; empty trusts only what the active MDS BLOB lists. |
+| `webauthn.attestationAllowedAaguids` | `STS_WEBAUTHN_ATTESTATION_ALLOWED_AAGUIDS` | *(empty: any model)* | yes | The authenticator models (AAGUIDs, comma-separated) a key may be registered from. Set, it requires a trusted attestation whatever the policy says. |
+| `webauthn.attestationMinCertificationLevel` | `STS_WEBAUTHN_ATTESTATION_MIN_CERTIFICATION` | `none` | yes | The least FIDO certification level (`L1` to `L3plus`) a model must hold, from MDS status reports; anything but `none` requires a trusted attestation from a model MDS lists. |
+| `webauthn.attestationRequireFips` | `STS_WEBAUTHN_ATTESTATION_REQUIRE_FIPS` | `false` | yes | Refuse a model MDS does not report as FIPS 140 certified; on, it requires a trusted attestation from a model MDS lists. |
+| `webauthn.attestationAllowSafetynet` | `STS_WEBAUTHN_ATTESTATION_ALLOW_SAFETYNET` | `false` | yes | Whether a (deprecated) `android-safetynet` statement may count as trusted. It is verified either way; off records it as untrusted and `require-trusted` refuses it. |
+| `webauthn.attestationAndroidSoftwareKeys` | `STS_WEBAUTHN_ATTESTATION_ANDROID_SOFTWARE` | `false` | yes | Off, an `android-key` statement's `origin` and `purpose` are read from the hardware-enforced (TEE or StrongBox) list only; on, from the union of the software- and hardware-enforced lists. |
 | `webauthn.timeoutMs` | `STS_WEBAUTHN_TIMEOUT_MS` | `60000` | yes | The `timeout` hint handed to the browser. |
 | `webauthn.authenticatorAttachment` | `STS_WEBAUTHN_ATTACHMENT` | `any` | yes | `platform`, `cross-platform` or `any`; a filter in the browser. |
 | `webauthn.credProps` | `STS_WEBAUTHN_CRED_PROPS` | `true` | yes | Ask the browser to report whether the credential is discoverable. |
@@ -1098,8 +1108,8 @@ be changed with `POST /admin-api/config/set`.
 
 ## In the running service
 
-* **Protocols → WebAuthn** (`/admin/webauthn`): the thirteen ceremony, CTAP2
-  and policy settings, and the authentication policy (Directory → Policies). API: `GET /admin-api/webauthn`.
+* **Protocols → WebAuthn** (`/admin/webauthn`): every `webauthn.*` setting —
+  the ceremony, CTAP2, algorithm and attestation settings — and the authentication policy (Directory → Policies). API: `GET /admin-api/webauthn`.
 * **Protocols → TOTP MFA** (`/admin/totp`): the eight RFC 6238 parameters, and
   the authentication policy (Directory → Policies). API: `GET /admin-api/totp`.
 * **Protocols → Recovery codes** (`/admin/backup-codes`): the four settings and

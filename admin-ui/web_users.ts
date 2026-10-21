@@ -472,7 +472,9 @@ class UsersPage {
   // `primary` key cannot sign in at all however much is enrolled on them. That
   // state is the ordinary one for somebody provisioned and not yet activated,
   // and saying "none" plainly is what sends the reader to the activation link
-  // on their row.
+  // — offered when a person is created, and issued for an existing person by
+  // `POST /admin-api/users/issue-activation` alone (their row has no button
+  // for it).
   /**
    * Draws what a person can sign in with (a password and primary security
    * keys), or "nothing yet" when they hold neither.

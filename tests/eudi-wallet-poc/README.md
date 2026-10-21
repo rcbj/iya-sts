@@ -39,7 +39,7 @@ google-chrome --headless=new --disable-gpu --no-sandbox --ignore-certificate-err
 ```bash
 WUSER=walletuser2 ./login.sh            # realm chooser, then password
 ./issue.sh                              # /portal/wallet offer -> web wallet -> tx code -> approve
-./endsession.sh                         # ends the session only: a global logout revokes the VCs (#659)
+./endsession.sh                         # ends the session only (a global logout leaves the VCs valid too)
 ./walletsignin.sh wallet-signin         # prints the wallet's consent dialog
 node cdp.js eval "document.querySelector('#consent-approve').click()"
 #   Remove each copy on /portal/wallet, then:
@@ -55,7 +55,7 @@ python3 -I statuscheck.py https://localhost:8081/oid4vci/status-lists/1 <idx>...
 | `issue.sh` | makes an offer on `/portal/wallet` and accepts it in the web wallet, typing the transaction code |
 | `walletsignin.sh` | starts a wallet (`wallet-signin`) or SIOPv2 (`siop-signin`) sign-in and opens it in the web wallet |
 | `endsession.sh` | ends only the sign-on session and its RP sessions at `/logout` |
-| `logout.sh` | global logout, which also revokes the session's credentials |
+| `logout.sh` | global logout: ends every session, token, code and connection, and leaves the person's verifiable credentials valid (ticking their rows on `/logout` ends them) |
 | `statuscheck.py` | decodes a Token Status List and prints each index's status |
 | `create-wallet-user.sh` | creates a regular user through `/admin-api` |
 

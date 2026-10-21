@@ -5704,8 +5704,8 @@
     "text": "Uppdatering av sidan för plånboksinloggning (s)"
   },
   "oid4vp.signInPollS|description": {
-    "en": "439aa4f77625ebb1",
-    "text": "Hur ofta QR-kodsidan (oid4vp.signInCrossDevice) laddar om sig själv medan en plånbok på en annan enhet svarar. Det är en <meta>-uppdatering och inte ett skript, så varje omladdning är en hel sida. Sidan för Digital Credentials API laddas inte om: en omladdning skulle stänga webbläsarens plånboksdialog."
+    "en": "b248261723e71249",
+    "text": "Hur ofta QR-kodsidan (oid4vp.signInCrossDevice) frågar om en plånbok på en annan enhet har svarat: dess skript pollar POST /authn-api/wallet/{state}/status var så många sekunder, utan att ladda om sidan (#574; fram till dess var det en <meta>-uppdatering). Digital Credentials API-sidan pollar inte enligt den här klockan: den väntar på att webbläsarens plånboksdialog svarar."
   },
   "oid4vp.signInCrossDevice|label": {
     "en": "20ef4bd658348a2f",
