@@ -618,10 +618,16 @@ function withUuids(realm, uuids) {
     return JSON.stringify([keyed(one, 'uuid', true)]);
   });
   log.debug("Leaving withUuids().");
+  // **PLANNED WITHOUT JIT (2026-10-21)**, `residentOnly()`'s reason: the
+  // planner estimates `@> ANY` of 500 keys at 4.8 million rows on 8081's
+  // 1M-entry table — the GIN index answers 500 — so it compiled the
+  // statement every time: 89 ms of JIT for 150 ms of work, measured, and
+  // the Users page asks it once per 500 register subjects (134 times).
   return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
                  'realm = $1 AND uuid_keys @> ANY($2::jsonb[]) ORDER BY ' +
                  'dn_key',
-           values: [String(realm), keys] };
+           values: [String(realm), keys],
+           jitOff: true };
 }
 
 /**

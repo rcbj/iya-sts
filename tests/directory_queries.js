@@ -159,6 +159,13 @@ function builders(t) {
             [['default', 'acme'], [users, 'ou=devices,x']]),
           'A13. residentOnly leaves out what is strictly under each windowed ' +
           'container, per realm', JSON.stringify(r.values));
+  // A13b (2026-10-21): `withUuids` is planned without JIT. Its estimate of
+  // `@> ANY` is thousands of times the rows the GIN index answers, so it
+  // was compiled at every call: 106 ms against 17 ms without, on 8081.
+  const uu = queries.withUuids('default', ['a', 'b']);
+  t.check(uu.jitOff === true && /uuid_keys @> ANY/.test(uu.text),
+          'A13b. withUuids asks the driver to plan it without JIT',
+          JSON.stringify({ jitOff: uu.jitOff }));
   const cls = queries.classesUnder('r', users, ['groupOfNames', 'posixGroup']);
   t.check(/class_keys \?\| \$3::text\[\] AND class_keys <> '\[\]'::jsonb/
     .test(cls.text) &&
