@@ -2126,7 +2126,7 @@ on [OAuth security](oauth-security.md#configuration).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `oauth2.refreshTokenEncryptionAlg` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_ALG` | `RSA-OAEP-256` | yes | The JWE key management algorithm every refresh token is sealed under, to this realm's own keys. |
+| `oauth2.refreshTokenEncryptionAlg` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_ALG` | `A256KW` (`RSA-OAEP-256` until 2026-10-21; a token sealed under it still opens) | yes | The JWE key management algorithm every refresh token is sealed under, to this realm's own keys. |
 | `oauth2.refreshTokenEncryptionEnc` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_ENC` | `A256GCM` | yes | The JWE content encryption algorithm for refresh tokens. |
 | `oauth2.refreshTokenEncryptionKeyBits` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_KEY_BITS` | `2048` | yes | The size of each realm's RSA refresh-token encryption key; reaches keys made after the change. |
 | `oauth2.refreshTokenEncryptionCurve` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_CURVE` | `P-256` | yes | The curve of each realm's EC refresh-token encryption key; reaches keys made after the change. |

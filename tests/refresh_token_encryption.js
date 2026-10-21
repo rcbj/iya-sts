@@ -343,6 +343,17 @@ function run(t) {
   t.equal(codeThrown(function () { rt.open(parts.join('.')); }),
           'STS-OAUTH-0238',
           'a tampered refresh token is refused');
+  // A256KW BY DEFAULT (2026-10-21, #820), and a token sealed under the old
+  // default, RSA-OAEP-256, still opens: open() reads each token's own alg.
+  const byDefault = rt.seal(INNER);
+  const defaultAlg = JSON.parse(Buffer.from(byDefault.split('.')[0],
+                                            'base64url').toString('utf8')).alg;
+  t.equal(defaultAlg, 'A256KW', 'a refresh token is sealed under A256KW by ' +
+          'default');
+  const underRsa = rt.seal(INNER, undefined, { alg: 'RSA-OAEP-256',
+                                               enc: 'A256GCM' });
+  t.check(rt.open(underRsa) === INNER,
+          'and one sealed under RSA-OAEP-256 before the change still opens');
   const notJwt = stsCrypto.encryptJweCompact('just some text', {
     alg: 'RSA-OAEP-256', enc: 'A256GCM', cty: 'JWT', jwk: keys.rsa.publicJwk });
   t.equal(codeThrown(function () { rt.open(notJwt); }), 'STS-OAUTH-0239',

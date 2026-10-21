@@ -97,7 +97,8 @@ interface RefreshTokenCryptoDeps {
   errorCodes: typeof errorCodes;
 }
 
-const DEFAULT_ALG = 'RSA-OAEP-256';
+// A256KW since 2026-10-21 (#820): see oauth2.refreshTokenEncryptionAlg.
+const DEFAULT_ALG = 'A256KW';
 const DEFAULT_ENC = 'A256GCM';
 
 // A PBES2 "password" has no required size; this is what the secret is

@@ -247,6 +247,14 @@
     "en": "46dabea2677465d2",
     "text": "移除最后一个令牌已过期的每个 OAuth 授予，以及授予下铸造的每个令牌在其过期后的记录（#142）。"
   },
+  "sched.jobs.oauth2.token-holders-backfill.title": {
+    "en": "98c516f1cf99620a",
+    "text": "令牌持有者回填"
+  },
+  "sched.jobs.oauth2.token-holders-backfill.describe": {
+    "en": "868b926daccee16f",
+    "text": "现在令牌登记表按需读取（#820），因此每个领域执行一次，将每个已签发令牌的持有者记入用户列表。"
+  },
   "sched.jobs.oauth2.used-assertion-purge.title": {
     "en": "1b76c505917f3b58",
     "text": "过期的已用断言清理"
