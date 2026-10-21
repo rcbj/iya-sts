@@ -1620,8 +1620,8 @@
     "text": "Startgräns för begärandearbetare (ms)"
   },
   "workers.startTimeoutMs|description": {
-    "en": "81d7608fc4c1da1f",
-    "text": "Hur lång tid en begärande- eller ytarbetare får ta på sig att få upp sitt tillstånd (lagret, nycklarna, de skapade raderna och koordineringen) innan den rapporterar att den inte kunde starta. Tre misslyckanden i rad och poolen slutar starta arbetare tills workers.giveUpRetryMs och prövar sedan en; tills den är uppe stannar begärandena i frontprocessen. Höj värdet där en arbetares start är långsam — en stor uppsättning sfärnycklar som varje start certifierar om, en kall databas (#311)."
+    "en": "5d23a7adb4e81ee3",
+    "text": "Hur länge en begäran- eller ytarbetare får ta på sig att bygga upp sitt tillstånd (lagret, nycklarna, de utfärdade raderna och samordningen) innan poolen slutar vänta på den. En arbetare som överskrider den är LÅNGSAM, inte misslyckad: den får bli klar och ansluter till poolen när den är redo (#820). Först vid fyra gånger detta rapporterar den att den inte kunde starta; tre sådana misslyckanden i rad och poolen slutar starta arbetare tills workers.giveUpRetryMs, och provar sedan en; tills den är redo stannar begärandena i frontprocessen. Höj den där en arbetares start är långsam — en stor uppsättning realm-nycklar som varje start certifierar om, en kall databas (#311)."
   },
   "workers.startTimeoutMs|restartReason": {
     "en": "7ac1de67a7c566c0",
