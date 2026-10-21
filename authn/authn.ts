@@ -2991,6 +2991,27 @@ class Authn {
     return done;
   }
 
+  /**
+   * `sweepAccountSets()`, a slice at a time, yielding the event loop between
+   * slices (#780): the scheduler job's body.
+   *
+   * @returns a promise of `{ sets, ended, expired, deleted, slices }`
+   */
+  sweepAccountSetsInSlices(): Promise<any> {
+    const { log, stats } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.sweepAccountSetsInSlices().");
+    log.debug("Leaving Authn.sweepAccountSetsInSlices().");
+    return AccountSets.sweepInSlices(function (sid) {
+      return self.accountSessionKept(sid);
+    }).then(function (done) {
+      if (done.expired) {
+        stats.recordAccountChoice('expired', done.expired);
+      }
+      return done;
+    });
+  }
+
   // Whether a signed-in session's person is disabled. The anonymous principal
   // and an unauthenticated session are nobody's account.
   /**
@@ -17764,8 +17785,9 @@ scheduler.register({
   everyMs: function (): number {
     return 60 * 60 * 1000;
   },
+  // A slice at a time (#780): see AccountSets.sweepInSlices().
   run: function (): any {
-    return slot.get().sweepAccountSets();
+    return slot.get().sweepAccountSetsInSlices();
   }
 });
 
@@ -17903,6 +17925,7 @@ export = {
   accountsView: slot.forward('accountsView'),
   accountsAct: slot.forward('accountsAct'),
   sweepAccountSets: slot.forward('sweepAccountSets'),
+  sweepAccountSetsInSlices: slot.forward('sweepAccountSetsInSlices'),
   auditActorSessionOf: slot.forward('auditActorSessionOf'),
   ACCOUNTS_PATH: ACCOUNTS_PATH,
   multipleAccounts: AccountSets.enabled,
