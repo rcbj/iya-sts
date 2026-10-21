@@ -5670,6 +5670,15 @@ class Credentials {
       try {
         raws = census(list);
       } catch (e) {
+        if (Credentials.storeRefused(errorCodes, e)) {
+          log.error(errorCodes.tag('STS-AUTHN-0293') +
+                    'credentials: the directory\'s credential census could ' +
+                    'not read the store, so ' + list.length + ' name(s) are ' +
+                    'answered unknown rather than one at a time: ' +
+                    e.message);
+          log.debug('Leaving Credentials.factorCensus(). Store refused.');
+          return new Map();
+        }
         log.error(errorCodes.tag('STS-AUTHN-0293') +
                   'credentials: the directory\'s credential census threw, so ' +
                   'each person is asked on their own: ' + e.message);
@@ -5719,6 +5728,14 @@ class Credentials {
     try {
       raws = await census(list);
     } catch (e) {
+      if (Credentials.storeRefused(errorCodes, e)) {
+        log.error(errorCodes.tag('STS-AUTHN-0293') +
+                  'credentials: the directory\'s credential census could not ' +
+                  'read the store, so ' + list.length + ' name(s) are ' +
+                  'answered unknown rather than one at a time: ' + e.message);
+        log.debug('Leaving Credentials.factorCensusAsync(). Store refused.');
+        return new Map();
+      }
       log.error(errorCodes.tag('STS-AUTHN-0293') +
                 'credentials: the directory\'s credential census threw, so ' +
                 'each person is asked on their own: ' + e.message);
@@ -5728,6 +5745,25 @@ class Credentials {
     log.debug('Leaving Credentials.factorCensusAsync(). ' + out.size +
               ' name(s).');
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A CENSUS THE STORE REFUSED IS NOT ASKED AGAIN ONE PERSON AT A TIME (#786).
+  // The census failing because the store could not be read — the directory
+  // unavailable (STS-LDAP-0130, -0131) or this request's directory budget
+  // spent (STS-LDAP-0175) — is a failure every one-person read would meet
+  // too: on 8081 the users list fell back to three reads per person for
+  // ~165,000 names, every one refused and logged, and a request worker was
+  // held for minutes. Those names are answered unknown instead (an empty
+  // Map: the list draws them with no factors, counted in no tile), and the
+  // census is logged once. Any other throw is still answered one at a time.
+  // ---------------------------------------------------------------------------
+  private static storeRefused(errorCodes, e) {
+    helpers.log.debug("Entering Credentials.storeRefused().");
+    const code = errorCodes.codeOf(e);
+    helpers.log.debug("Leaving Credentials.storeRefused(). " + code);
+    return code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131' ||
+           code === 'STS-LDAP-0175';
   }
 
   // The names a census is asked about, as both doors trim them.
@@ -5749,7 +5785,8 @@ class Credentials {
     const out = new Map();
     if (!Array.isArray(raws) || raws.length !== list.length) {
       list.forEach((name) => {
-        out.set(name, this.factsOf(this.mechanismsFor(name)));
+        out.set(name, this.factsOf(this.mechanismsFor(name,
+          { withoutRecoveryCodes: true })));
       });
       log.debug('Leaving Credentials.censusFacts(). ' + out.size +
                 ' name(s), one at a time.');
@@ -8076,7 +8113,7 @@ class Credentials {
    * @param username - the person
    * @returns `{ username, password, primaryKeys, mfaKeys, keys, totp, … }`
    */
-  mechanismsFor(username) {
+  mechanismsFor(username, opts?) {
     const { log, totp, backupCodes } = this.deps;
     log.debug("Entering Credentials.mechanismsFor().");
     const name = String(username || '').trim();
@@ -8142,7 +8179,11 @@ class Credentials {
       // is generated when the person asks to see one and stored — hashed — only
       // once they confirm they have kept it. `recoveryAdvised` below is what
       // replaced the automatic issue.
-      backupCodes: this.backupCodeStatus(name),
+      // Not read for a caller that counts and filters a list (#786): no tile
+      // and no filter reads it, and on a large directory it was a third
+      // store read per person.
+      backupCodes: opts && opts.withoutRecoveryCodes ? null
+                                                     : this.backupCodeStatus(name),
       // Is a second factor required of them? A person holding an `mfa` key or
       // an enrolled authenticator is saying their password alone is not enough,
       // so the sign-in screen demands it as well — which is what makes the flag

@@ -13015,8 +13015,13 @@ class AdminViews {
     rows.forEach(function (row) {
       let merged = null;
       (spellings.get(row.key) || []).forEach(function (holder) {
-        merged = self.mergeFactors(merged,
-          facts.get(String(holder.username).trim()) || {});
+        const held = facts.get(String(holder.username).trim());
+        // A name the census could not answer (#786: the store refused it)
+        // adds nothing, so a row none of whose names was answered has no
+        // factors — unknown, counted in no tile — and not "no credential".
+        if (held) {
+          merged = self.mergeFactors(merged, held);
+        }
       });
       out.set(row.key, merged);
     });
