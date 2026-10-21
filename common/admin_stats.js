@@ -352,6 +352,21 @@ function recordCall(call) {
 // with no `exp` (0) never expires.
 const tokens = realms.map({
   persist: 'admin_stats.tokens',
+  // FILED BY PERSON (#766): `holdsLiveIssuance()` asks, before every CAEP
+  // token-claims-change, whether a person holds a live token, and walked the
+  // whole register to answer — 9% of a request worker under a password-write
+  // load. Both names a record can be found by, and neither changes on a
+  // record once written (`realms.map()`'s rule for an index).
+  indexBy: function (record) {
+    const out = [];
+    if (record && record.username) {
+      out.push('u:' + String(record.username));
+    }
+    if (record && record.sub) {
+      out.push('s:' + String(record.sub));
+    }
+    return out;
+  },
   // A hot path (every row a flush writes): no Entering/Leaving pair.
   expiresAt: function (record) {
     const exp = Number(record && record.exp);
@@ -4768,8 +4783,14 @@ function holdsLiveIssuance(username, sub) {
   }
   const nowMs = Date.now();
   let live = false;
-  tokens.forEach(function (record) {
-    if (live || CLAIM_BEARING_KINDS.indexOf(record.kind) < 0) {
+  // THE RECORDS FILED UNDER THE PERSON (#766), not the whole register: the
+  // index `tokens` declares holds every record by `username` and by `sub`,
+  // and the test below is the walk's, unchanged.
+  const candidates = new Set((name ? tokens.lookup('u:' + name) : [])
+    .concat(subject ? tokens.lookup('s:' + subject) : []));
+  candidates.forEach(function (key) {
+    const record = tokens.get(key);
+    if (!record || live || CLAIM_BEARING_KINDS.indexOf(record.kind) < 0) {
       return;
     }
     // An application's own token (#221 P5) is filed under its client_id,
