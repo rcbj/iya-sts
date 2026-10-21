@@ -1601,14 +1601,26 @@ class AdminActions {
             'is not a kind that can be revoked. The three are: ' +
                                      stats.REVOCABLE_KINDS.join(', ') + '.'] });
       }
-      const count =
-          stats.revokeWhere(function (record) { return record.kind === kind; },
+      const byKind = function (record) {
+        return record.kind === kind;
+      };
+      const kindAnswer = function (count: number) {
+        return { ok: true, revoked: count,
+                 message: 'Revoked ' + count + ' ' + kind + '(s).' };
+      };
+      // ON DEMAND (#820) a walk of the whole register, answered with a
+      // promise so the process serves others between its pages.
+      if (stats.tokensOnDemand()) {
+        log.debug("Leaving AdminActions.tokenAction(). By kind, walking.");
+        return stats.revokeWhereAsync(byKind, 'the admin console (every ' +
+                                      kind + ')', ADMIN_ACT).then(kindAnswer);
+      }
+      const count = stats.revokeWhere(byKind,
                                       'the admin console (every ' + kind + ')',
-                            ADMIN_ACT);
+                                      ADMIN_ACT);
       log.debug("Leaving AdminActions.tokenAction(). Revoked " + count +
                 " by kind.");
-      return { ok: true, revoked: count,
-               message: 'Revoked ' + count + ' ' + kind + '(s).' };
+      return kindAnswer(count);
     }
 
     if (action === 'revoke-subject') {
@@ -1644,27 +1656,49 @@ class AdminActions {
         return this.refused('STS-ADMIN-0509', { ok: false, errors: ['Give a ' +
             'user, as the users page names them.'] });
       }
-      const count = stats.revokeWhere(function (record) {
+      const byUser = function (record) {
         return stats.holderKeyOf(record.username, record.sub) === key;
-      }, 'the admin console (everything for the user ' + key + ')',
-      ADMIN_ACT);
+      };
+      const userAnswer = function (count: number) {
+        return { ok: true, revoked: count, user: key,
+                 message: 'Revoked ' + count + ' token(s) for ' + key + ' — ' +
+                          'every spelling of that identity, not just the ' +
+                          'one the row showed.' };
+      };
+      if (stats.tokensOnDemand()) {
+        log.debug("Leaving AdminActions.tokenAction(). For a user, walking.");
+        return stats.revokeWhereAsync(byUser, 'the admin console (everything ' +
+                                      'for the user ' + key + ')', ADMIN_ACT)
+          .then(userAnswer);
+      }
+      const count = stats.revokeWhere(byUser, 'the admin console (everything ' +
+                                      'for the user ' + key + ')', ADMIN_ACT);
       log.debug("Leaving AdminActions.tokenAction(). Revoked " + count +
                 " for a user.");
-      return { ok: true, revoked: count, user: key,
-               message: 'Revoked ' + count + ' token(s) for ' + key + ' — ' +
-                        'every spelling of that identity, not just the one ' +
-                        'the row showed.' };
+      return userAnswer(count);
     }
 
     if (action === 'revoke-all') {
-      const count = stats.revokeWhere(function () { return true; }, 'the ' +
-          'admin console (everything)', ADMIN_ACT);
+      const everything = function () {
+        return true;
+      };
+      const allAnswer = function (count: number) {
+        return { ok: true, revoked: count,
+                 message: 'Revoked ' + count + ' token(s) — every access ' +
+                          'token, ID Token and refresh token this service ' +
+                          'has issued and still remembers.' };
+      };
+      if (stats.tokensOnDemand()) {
+        log.debug("Leaving AdminActions.tokenAction(). Everything, walking.");
+        return stats.revokeWhereAsync(everything, 'the admin console ' +
+                                      '(everything)', ADMIN_ACT)
+          .then(allAnswer);
+      }
+      const count = stats.revokeWhere(everything, 'the admin console ' +
+                                      '(everything)', ADMIN_ACT);
       log.debug("Leaving AdminActions.tokenAction(). Revoked everything: " +
                 count + ".");
-      return { ok: true, revoked: count,
-               message: 'Revoked ' + count + ' token(s) — every access ' +
-                        'token, ID Token and refresh token this service has ' +
-                        'issued and still remembers.' };
+      return allAnswer(count);
     }
 
     log.debug("Leaving AdminActions.tokenAction(). Unknown action.");

@@ -3082,7 +3082,8 @@ class IndexedMap extends Map {
  * @param {any} [options]
  * @returns {Map<any, any> & { realmMap: (id?: any) => Map<any, any>,
  *   lookup: (indexKey: string) => any[], onDemandLive: () => boolean,
- *   scan: (fn: (value: any, key: any) => void) => void }}
+ *   scan: (fn: (value: any, key: any) => void) => void,
+ *   scanAsync: (fn: (value: any, key: any) => void) => Promise<void> }}
  */
 function map(options) {
   log.debug("Entering map().");
@@ -3488,6 +3489,49 @@ function map(options) {
         after = page.next || '';
       } while (after);
       log.debug("Leaving scan(). " + seen.size + " row(s) in " + pages +
+                " page(s).");
+    },
+    // `scan()` that gives the event loop back between pages (#820): for a
+    // walk of the whole store a request is waiting on — an administrator's
+    // revoke-all through /admin-api — so the other requests the process is
+    // serving are answered between pages instead of after the whole walk.
+    // The realm is fixed when it is called. A promise; not on demand, the
+    // held rows and then resolved.
+    scanAsync: async function (fn) {
+      log.debug("Entering scanAsync().");
+      const target = per();
+      if (!demandOn() || typeof onDemandReader.page !== 'function') {
+        target.forEach(function (value, key) {
+          fn(value, key);
+        });
+        log.debug("Leaving scanAsync(). Held whole.");
+        return;
+      }
+      const realmId = partitionId(currentId());
+      const seen = new Set();
+      Array.from(target.entries()).forEach(function (entry) {
+        seen.add(entry[0]);
+        fn(entry[1], entry[0]);
+      });
+      let after = '';
+      let pages = 0;
+      do {
+        await new Promise(function (resolve) {
+          setImmediate(resolve);
+        });
+        const page = onDemandReader.page(handleName, realmId, after);
+        pages++;
+        (page.rows || []).forEach(function (row) {
+          if (seen.has(row.key) ||
+              onDemandReader.journalled(handleName, realmId, row.key)) {
+            return;
+          }
+          seen.add(row.key);
+          fn(row.value, row.key);
+        });
+        after = page.next || '';
+      } while (after);
+      log.debug("Leaving scanAsync(). " + seen.size + " row(s) in " + pages +
                 " page(s).");
     },
     // The realm's own Map, for the callers that genuinely want the whole thing

@@ -21,7 +21,10 @@
 //       page at a time and revokes what is not held;
 //   R3. tokenList(person) answers that person's records through the index,
 //       and nobody else's;
-//   R4. the snapshot says its count is of what is held (`heldOnly`).
+//   R4. the snapshot says its count is of what is held (`heldOnly`);
+//   R5. revokeWhereAsync() — /admin-api's revoke-all — walks the store a
+//       page at a time with the event loop given back between, and
+//       revokes what is not held.
 //
 // In a child process: it installs a stand-in reader in `common/realms.js`.
 // ===========================================================================
@@ -44,7 +47,7 @@ function child() {
   };
   const OUT = process.env.TRD_OUT;
   const ROOT = process.env.TRD_ROOT;
-  try {
+  (async function () {
     const realms = require(ROOT + '/common/realms');
     const stats = require(ROOT + '/common/admin_stats');
     const HANDLE = 'admin_stats.tokens';
@@ -134,11 +137,28 @@ function child() {
          asked.indexOf('page:') >= 0,
          'R2. a revoke-all with no candidates walks the store a page at a ' +
          'time', JSON.stringify({ all: all, asked: asked }));
-  } catch (e) {
+
+    stored.set('t-d1', record('t-d1', { sessionId: 'sid-d',
+                                        username: 'dave' }));
+    asked.length = 0;
+    let turned = false;
+    setImmediate(function () {
+      turned = true;
+    });
+    const later = await stats.revokeWhereAsync(function () {
+      return true;
+    }, 'the admin console (everything)', {});
+    note(later === 1 && stats.isRevoked('t-d1') && turned &&
+         asked.indexOf('page:') >= 0,
+         'R5. revokeWhereAsync() walks the store a page at a time, giving ' +
+         'the event loop back, and revokes what is not held',
+         JSON.stringify({ later: later, turned: turned, asked: asked }));
+  })().catch(function (e) {
     note(false, 'the child threw', (e && e.stack) || e);
-  }
-  require('fs').writeFileSync(OUT, JSON.stringify(findings));
-  process.exit(0);
+  }).then(function () {
+    require('fs').writeFileSync(OUT, JSON.stringify(findings));
+    process.exit(0);
+  });
 }
 
 function run(t) {
