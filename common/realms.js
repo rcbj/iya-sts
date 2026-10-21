@@ -2738,6 +2738,14 @@ function declareHandle(options, shape, accessors) {
     expiryFromWrittenMs: options.onDemand &&
       typeof options.onDemand.expiryFromWrittenMs === 'function'
       ? options.onDemand.expiryFromWrittenMs : null,
+    // Run by the backfill job in the front process, in each realm, while the
+    // store is still held whole and just before its completion mark is
+    // written (#820 part 3): for an owner that derives a second store from
+    // this one and has to fill it once, from everything, before nothing is
+    // held whole again. Synchronous; a throw keeps the store whole.
+    beforeLive: options.onDemand &&
+      typeof options.onDemand.beforeLive === 'function'
+      ? options.onDemand.beforeLive : null,
     // ---------------------------------------------------------------------
     // THE ACCESSORS LIVE ON THE REGISTRY ROW AND NOT ON THE STORE, and that is
     // the whole reason this is a registry at all. Two of the three shapes are

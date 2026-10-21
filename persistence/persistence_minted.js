@@ -2140,6 +2140,16 @@ async function backfillMintedIndexes() {
       }
     }
     await flushBatch();
+    // The owner's last word while the store is whole (`beforeLive`, #820
+    // part 3), in every realm, before the mark makes the next start read it
+    // on demand.
+    if (typeof declared.beforeLive === 'function') {
+      realmIds.forEach(function (realmId) {
+        realms.run(realms.get(realmId), function () {
+          declared.beforeLive(realmId);
+        });
+      });
+    }
     await driver.markMintedIndexed(declared.handle);
     indexBackfilled.add(declared.handle);
     marked++;

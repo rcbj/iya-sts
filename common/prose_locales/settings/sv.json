@@ -9564,8 +9564,8 @@
     "text": "Körningar behålls i (timmar)"
   },
   "scheduler.runHistoryHours|description": {
-    "en": "0f3e63d5914e2685",
-    "text": "Varje körning som avslutades inom så här många timmar behålls — även en misslyckad — utöver varje jobbs senaste scheduler.runHistoryCount körningar, den som behåller flest. Ett jobb som körs varje minut behåller därför ett dygns körningar i varje sfär det körs i. 0 behåller bara antalet."
+    "en": "5c283870d0319ed7",
+    "text": "Varje körning som avslutades inom så här många timmar behålls — även en misslyckad — utöver varje jobbs senaste scheduler.runHistoryCount körningar, det som behåller flest. Ett jobb som körs varje minut behåller därför en timmes körningar i varje realm det körs i, eller sina senaste scheduler.runHistoryCount om det är fler. 0 behåller bara antalet."
   },
   "scheduler.disabledJobs|label": {
     "en": "a33937a2bd564b6d",

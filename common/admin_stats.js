@@ -998,6 +998,39 @@ function setRevocationObserver(fn) {
             (revocationObserver ? "Installed." : "Cleared."));
 }
 
+// ---------------------------------------------------------------------------
+// THE STATUS MARKER (#820 part 3), a slot (rule 3e) filled by
+// `oauth-oidc/access_token_status.ts`. Its access-token status list is built,
+// on demand, from a small store of the bits that are revoked, so it has to
+// hear of every revocation and every un-revocation — `revoke()` and
+// `restore()` below. It cannot be required from here: that module requires
+// this one (`isRevoked()`), and the require would close a cycle. Called with
+// `(jti, revoked, kind)`; a throw is logged and never undoes the revocation.
+// ---------------------------------------------------------------------------
+let statusMarker = null;
+
+function setStatusMarker(fn) {
+  log.debug("Entering setStatusMarker().");
+  statusMarker = typeof fn === 'function' ? fn : null;
+  log.debug("Leaving setStatusMarker(). " +
+            (statusMarker ? "Installed." : "Cleared."));
+}
+
+function tellStatusMarker(jti, revoked, record) {
+  log.debug("Entering tellStatusMarker().");
+  if (statusMarker) {
+    try {
+      statusMarker(String(jti), !!revoked, record ? record.kind : '');
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-OAUTH-0978') + 'admin: the access-token ' +
+               'status list could not be told that jti ' + jti + ' is ' +
+               (revoked ? 'revoked' : 'no longer revoked') + ': ' +
+               ((e && e.message) || e));
+    }
+  }
+  log.debug("Leaving tellStatusMarker().");
+}
+
 function tellRevocationObserver(jti, record, via, how) {
   log.debug("Entering tellRevocationObserver().");
   if (!revocationObserver) {
@@ -1066,6 +1099,7 @@ function revoke(jti, via, how, expSec) {
            (via || 'unstated') + '). ' +
            revokedJtis.size + ' revoked in total.');
   if (first) {
+    tellStatusMarker(jti, true, record);
     tellRevocationObserver(jti, record, via, how);
   }
   log.debug("Leaving revoke(). " + (first ? "It is newly revoked." : "It was " +
@@ -1089,6 +1123,9 @@ function restore(jti) {
   log.debug("Entering restore(). jti=" + jti);
   const was = revokedJtis.delete(jti);
   const record = tokens.get(jti);
+  if (was) {
+    tellStatusMarker(jti, false, record);
+  }
   if (record) {
     record.revoked = false;
     record.revokedAt = 0;
@@ -7279,5 +7316,6 @@ module.exports = {
   issuedSets: issuedSets,
   issuedSetByKey: issuedSetByKey,
   issuedById: issuedById,
-  snapshot: snapshot
+  snapshot: snapshot,
+  setStatusMarker: setStatusMarker
 };

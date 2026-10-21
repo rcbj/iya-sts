@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4578** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4579** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 341
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 723
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 724
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 29
@@ -2255,6 +2255,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0975` | The did claim was left out: the person has no preferred DID that they proved with their wallet (none is marked, or the only DIDs are an administrator's by-value entries) (#693). | none: the claim is absent (logged) |
 | `STS-OAUTH-0976` | The did claim was left out: the person's account is disabled (#693). | none: the claim is absent (logged) |
 | `STS-OAUTH-0977` | A claim named did from another layer — a configured or typed claim, a claims request (OIDC Core 5.5) or a Claims Provider — was removed from an ID Token or UserInfo response: the name is the DID claim's, released only by its own rules (#693). | none: the claim is absent (logged) |
+| `STS-OAUTH-0978` | The access-token status list could not be told that a token was revoked or un-revoked (#820): its bit in the store of revoked bits was not written. The revocation itself stands, and introspection refuses the token; only the published list is behind until the token is revoked again or expires. | none — the revocation is not undone |
 
 ## STS-SAML
 

@@ -9967,6 +9967,13 @@ const CODES = [
       '— was removed from an ID Token or UserInfo response: the name is ' +
       'the DID claim\'s, released only by its own rules (#693).',
     spec: 'none: the claim is absent (logged)' },
+  { code: 'STS-OAUTH-0978',
+    summary: 'The access-token status list could not be told that a token ' +
+      'was revoked or un-revoked (#820): its bit in the store of revoked ' +
+      'bits was not written. The revocation itself stands, and introspection ' +
+      'refuses the token; only the published list is behind until the ' +
+      'token is revoked again or expires.',
+    spec: 'none — the revocation is not undone' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

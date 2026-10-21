@@ -2091,7 +2091,11 @@ The stores on demand: `oauth2_bcp.refreshTokens` and `oauth2_bcp.grantTokens`
 expiries; `authn/account_sets.ts` argues the expiry), and
 `admin_stats.tokens` (part 3, filed by name, subject, session, client and
 bound key; the console's lists and counts are of what a process holds —
-rcbj's hybrid — and `snapshot().tokens.heldOnly` says so).
+rcbj's hybrid — and `snapshot().tokens.heldOnly` says so), and key-resident
+`access_token_status.entries` (part 3, filed by jti; the list is built from
+`access_token_status.invalid`, the revoked bits `admin_stats`'
+`setStatusMarker()` keeps, filled once from every entry by the store's
+`onDemand.beforeLive` before it goes on demand).
 
 **Measured on 8081 (2026-10-21, part 1 only)**: rows restored per worker
 3.56M → 1.71M, front 3.76M → 1.91M; heap at ready 4.2–4.3 GB → 2.6–3.1 GB
