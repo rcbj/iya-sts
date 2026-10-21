@@ -10,5 +10,17 @@
   "name": "Name them",
   "clear": "Name nobody",
   "doneSet": "Your delegate is set.",
-  "doneCleared": "You have named nobody."
+  "doneCleared": "You have named nobody.",
+  "searchHeading": "Find a person by username",
+  "searchSub": "Type at least three characters of their username (uid). The search runs when you stop typing for three seconds, or at once when you press Enter. It finds only people of this realm whose accounts were created here — not ones a federation partner or a social sign-in created — and never you or a disabled account.",
+  "searchLabel": "Username contains",
+  "searchButton": "Search",
+  "searchTooShort": "Type at least {min} characters of a username to search.",
+  "searchFailed": "The directory could not be searched just now. Try again, or type their DN below.",
+  "searchNone": "Nobody here has a username containing <code>{q}</code>.",
+  "searchMore": "More people matched than are shown here. Type more of the username to narrow the search.",
+  "colUid": "Username",
+  "colCn": "Name",
+  "colDn": "Directory name (DN)",
+  "choose": "Name this person"
 }

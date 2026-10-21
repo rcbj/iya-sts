@@ -9767,6 +9767,42 @@ class Credentials {
     return { ok: true, username: name, mayAct: dn };
   }
 
+  // THE PEOPLE A PERSON MAY FIND AS THEIR DELEGATE (2026-10-20,
+  // `/portal/delegate`): native people of this realm whose `uid` contains
+  // what they typed, the person themselves left out — `ldap_server.js`'s
+  // `delegateCandidates()` decides who, and this only says who is asking.
+  // What is chosen from the answer is still named through `setMayAct()`
+  // above, which checks the DN again.
+  /**
+   * Finds the native people of this realm a person may name as their
+   * delegate, by part of their `uid`.
+   *
+   * @param username - the person asking
+   * @param query - the text they typed
+   * @returns a promise of `{ ok: true, people, more }`, or a refusal where
+   *   no directory can answer
+   */
+  async findDelegateCandidates(username, query) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.findDelegateCandidates().");
+    const name = String(username || '').trim();
+    if (!name || !directory ||
+        typeof directory.delegateCandidates !== 'function') {
+      log.debug("Leaving Credentials.findDelegateCandidates(). No store.");
+      return coded('STS-AUTHN-0226', { ok: false, errors: ['No credential ' +
+                                   'store is installed.'] });
+    }
+    const self = this.delegationFactsFor(name) || {};
+    const found = await directory.delegateCandidates(String(query || ''),
+      { selfDn: String(self.dn || '') });
+    log.debug("Leaving Credentials.findDelegateCandidates(). " +
+              ((found && found.people) || []).length);
+    return { ok: true, people: (found && found.people) || [],
+             more: !!(found && found.more) };
+  }
+
   // #186: the semantics a person allows — `delegation`, `impersonation`, both,
   // or none (an empty set, which the exchange policy reads as both for a
   // subject and as delegation only for an actor) — and their default.
@@ -10325,6 +10361,7 @@ export = {
   delegationFlaggedPersons: slot.forward('delegationFlaggedPersons'),
   setNotDelegated: slot.forward('setNotDelegated'),
   setMayAct: slot.forward('setMayAct'),
+  findDelegateCandidates: slot.forward('findDelegateCandidates'),
   setDelegationSemantics: slot.forward('setDelegationSemantics'),
   removePrimaryKeys: slot.forward('removePrimaryKeys'),
   removeSecondFactors: slot.forward('removeSecondFactors'),

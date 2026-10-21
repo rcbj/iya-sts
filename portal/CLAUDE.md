@@ -1512,6 +1512,34 @@ nobody and the person themselves (`STS-AUTHN-0227`); the page answers 400 with
 the person names moot. An administrator sets the same attribute from the
 person's `/admin/users` page and `POST /admin-api/users/set-may-act`.
 
+**A SEARCH FINDS A PERSON BY PART OF THEIR USERNAME (2026-10-20, rcbj).**
+Above the DN form, which stays because an application is named by its DN,
+a box asks `GET /account-api/delegate/candidates?q=` and lists at most ten
+people, each with a button that POSTs their DN to the same operation the DN
+form uses. That keeps `setMayAct()`'s checks the only checks. The rules:
+
+* **The match is a contains on the `uid`**, which is the entry's RDN value.
+  No other attribute is matched. A result is the uid, the `cn` (for display)
+  and the DN, and nothing else. rcbj first said cn and corrected it to uid:
+  the RDN value is the one name the store holds in the clear, so it can be
+  indexed while every attribute stays sealed.
+* **Only native people of this realm**: never an entry `stsProvisionedBy`
+  marks, never the person themselves, a disabled account, a service
+  account, a group or an application. `ldap/CLAUDE.md` (*Who created an
+  entry*) argues the stamp. A native person who LINKED a partner is still
+  native. `stsNotDelegated` on a CANDIDATE is not a reason to leave them
+  out: it says nobody may act for THEM, and the page already says when the
+  caller's own account carries it.
+* **The page asks after three seconds without a keystroke**, and only for
+  three characters or more (rcbj: "to avoid unnecessary searching"). Enter
+  asks at once, and the operation refuses a short text (`STS-PORTAL-0620`).
+  Every keystroke makes an answer still in flight stale, so it is never
+  drawn over a newer one (`web_delegate.ts`'s `DelegateSearch`). The timer
+  is the browser's own; the no-periodic-timers rule is about the server.
+* **The search form is the page's own**: it is wired by `DelegatePages.wire()`
+  from the runtime's `wire()`, and its submit is stopped at the form, so the
+  portal's form handling never sends it to a portal path.
+
 ## `/portal/self-issued`: THE WALLET KEYS THAT SIGN YOU IN (2026-09-23, #129)
 
 The SIOPv2 subjects enrolled on the person's own entry, each with a Remove,

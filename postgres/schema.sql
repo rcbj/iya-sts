@@ -236,6 +236,20 @@ ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS dek_keys jsonb;
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_parent ON sts_ldap_entries (realm, parent_key, dn_key);
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_rdn ON sts_ldap_entries (realm, parent_key, rdn_value);
 
+-- A PERSON FOUND BY PART OF THEIR `uid` (schema version 23, 2026-10-20,
+-- `/portal/delegate`): a trigram GIN over `rdn_value` — generated, in the
+-- clear and lower-cased, so nothing sealed is indexed — partial on the
+-- children of a realm's `ou=users`. The driver argues it. `pg_trgm` is a
+-- trusted extension (PostgreSQL 13+) and contrib ships in the official
+-- image. THIS SCRIPT RUNS IN ONE TRANSACTION, so the index is built here
+-- without CONCURRENTLY, which holds every write to the table for the build.
+-- ON A LARGE EXISTING STORE, RUN THIS FIRST, as the owner, outside a
+-- transaction — after which the CREATE below finds it built:
+--   CREATE EXTENSION IF NOT EXISTS pg_trgm;
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS sts_ldap_entries_uid_trgm ON sts_ldap_entries USING gin (rdn_value gin_trgm_ops) WITH (fastupdate = off) WHERE parent_key LIKE 'ou=users,%';
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_uid_trgm ON sts_ldap_entries USING gin (rdn_value gin_trgm_ops) WITH (fastupdate = off) WHERE parent_key LIKE 'ou=users,%';
+
 -- HOW MANY PARENTS THE DIRECTORY HAS, SAID RATHER THAN SAMPLED (#639, schema
 -- version 20). ANALYZE reads about 30,000 rows, and with 50M of 50.2M entries
 -- under one `ou=users` its sample held one `parent_key`: `n_distinct` was 1,
@@ -1101,7 +1115,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (22) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (23) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

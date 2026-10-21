@@ -258,7 +258,10 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // `session.surface` reads. It was a scan of the realm's sessions, asked
 // twice per password change (each hosted surface answering the CAEP
 // `credential-change` it receives).
-const SCHEMA_VERSION = 22;
+// 23 SINCE 2026-10-20 (`/portal/delegate`'s search): the `pg_trgm`
+// extension and `sts_ldap_entries_uid_trgm`, a trigram GIN over the
+// `rdn_value` of the children of each realm's `ou=users`.
+const SCHEMA_VERSION = 23;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -610,6 +613,32 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_ldap_entries_rdn', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_rdn ON sts_ldap_entries ' +
   '(realm, parent_key, rdn_value)' },
+  // -------------------------------------------------------------------------
+  // A PERSON FOUND BY PART OF THEIR `uid` (schema version 23, 2026-10-20,
+  // `/portal/delegate`): a `pg_trgm` GIN over `rdn_value`, PARTIAL on the
+  // children of a realm's `ou=users` (`directory_queries.js`'s
+  // USERS_PARENT, which `uidContains` repeats so the planner can use it).
+  // `rdn_value` is generated from the key, lower-cased and in the clear —
+  // the one name of a person the database could already read — so this
+  // indexes nothing the store did not already show; every attribute stays
+  // sealed. Without it a contains match is a walk of the container, 50M
+  // rows on 8081 for a string nobody has. `extension`: the trigram operator
+  // class is `pg_trgm`'s, which is created first (`CREATE EXTENSION IF NOT
+  // EXISTS`, trusted since PostgreSQL 13, so a database owner may) — and,
+  // like every object here, only when the index is missing.
+  //
+  // **ON A LARGE EXISTING STORE THE OWNER BUILDS IT CONCURRENTLY FIRST.**
+  // `postgres/schema.sql` runs in one transaction, which CONCURRENTLY
+  // cannot, so it builds the index with a plain CREATE — a SHARE lock on
+  // the table for the build, which is every write held for minutes at 50M.
+  // `postgres/CLAUDE.md` gives the statement to run beforehand, after
+  // which the script's and this driver's `IF NOT EXISTS` find it built.
+  // -------------------------------------------------------------------------
+  { name: 'sts_ldap_entries_uid_trgm', afterColumns: true,
+    extension: 'pg_trgm', statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_uid_trgm ON sts_ldap_entries ' +
+  'USING gin (rdn_value gin_trgm_ops) ' + GIN_DIRECT + ' WHERE ' +
+  directoryQueries.USERS_PARENT },
   { name: 'sts_ldap_entries_names', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries ' +
   'USING gin (name_keys jsonb_path_ops) ' + GIN_DIRECT },
@@ -4238,6 +4267,16 @@ function create(options) {
         }).then(function () {
           let chain = Promise.resolve();
           late.forEach(function (object) {
+            // AN INDEX WHOSE OPERATOR CLASS AN EXTENSION SUPPLIES (the
+            // trigram index, schema version 23) has the extension created
+            // first, and only then: a store built by postgres/schema.sql
+            // has both, and this role is never asked for either.
+            if (object.extension) {
+              chain = chain.then(function () {
+                return client.query('CREATE EXTENSION IF NOT EXISTS ' +
+                                    object.extension);
+              });
+            }
             chain = chain.then(function () {
               return client.query(object.statement).then(function () {
                 created.push(object.name);

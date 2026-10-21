@@ -10,5 +10,17 @@
   "name": "Designar",
   "clear": "No designar a nadie",
   "doneSet": "Su delegado está configurado.",
-  "doneCleared": "No ha designado a nadie."
+  "doneCleared": "No ha designado a nadie.",
+  "searchHeading": "Buscar a una persona por su nombre de usuario",
+  "searchSub": "Escriba al menos tres caracteres de su nombre de usuario (uid). La búsqueda se hace cuando deja de escribir durante tres segundos, o de inmediato al pulsar Intro. Solo encuentra a personas de este dominio cuyas cuentas se crearon aquí — no las que creó un socio de federación o un inicio de sesión social — y nunca a usted ni a una cuenta desactivada.",
+  "searchLabel": "El nombre de usuario contiene",
+  "searchButton": "Buscar",
+  "searchTooShort": "Escriba al menos {min} caracteres de un nombre de usuario para buscar.",
+  "searchFailed": "No se pudo buscar en el directorio en este momento. Vuelva a intentarlo o escriba su DN más abajo.",
+  "searchNone": "Nadie aquí tiene un nombre de usuario que contenga <code>{q}</code>.",
+  "searchMore": "Coinciden más personas de las que se muestran aquí. Escriba más del nombre de usuario para acotar la búsqueda.",
+  "colUid": "Nombre de usuario",
+  "colCn": "Nombre",
+  "colDn": "Nombre en el directorio (DN)",
+  "choose": "Designar a esta persona"
 }

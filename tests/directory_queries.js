@@ -270,10 +270,11 @@ async function driverDoor(t) {
 
 async function schema(t) {
   log.debug("Entering schema().");
-  t.log.info('=== C. schema version 22 ===');
-  t.equal(postgres.SCHEMA_VERSION, 22,
-          'C1. the driver writes schema version 22 (#222, #391 phase 6, ' +
-          '#432 phase 5, #618, #623, #630, #639, #350, #754)');
+  t.log.info('=== C. schema version 23 ===');
+  t.equal(postgres.SCHEMA_VERSION, 23,
+          'C1. the driver writes schema version 23 (#222, #391 phase 6, ' +
+          '#432 phase 5, #618, #623, #630, #639, #350, #754, the uid ' +
+          'trigram index)');
   const table = postgres.SCHEMA_OBJECTS.filter(function (o) {
     return o.name === 'sts_ldap_entries';
   })[0];
@@ -312,13 +313,13 @@ async function schema(t) {
               ? 'GENERATED … STORED' : 'written jsonb') + ' definition, in ' +
             'the CREATE TABLE and the ALTER alike', definition);
   });
-  const INDEXES = /^sts_ldap_entries_(parent|rdn|names|mails|uuids|values|asked_names|group_classes)$/;
+  const INDEXES = /^sts_ldap_entries_(parent|rdn|names|mails|uuids|values|asked_names|group_classes|uid_trgm)$/;
   const indexes = postgres.SCHEMA_OBJECTS.filter(function (o) {
     return INDEXES.test(o.name);
   });
-  t.check(indexes.length === 8 && indexes.every(function (o) {
+  t.check(indexes.length === 9 && indexes.every(function (o) {
     return o.afterColumns === true;
-  }), 'C4. the eight lookup indexes wait for the column step',
+  }), 'C4. the nine lookup indexes wait for the column step',
           indexes.map(function (o) { return o.name; }).join(', '));
   t.check(!postgres.SCHEMA_OBJECTS.some(function (o) {
     return o.name === 'sts_ldap_entries_attrs';
@@ -358,14 +359,26 @@ async function schema(t) {
   const firstIndex = ddl.findIndex(function (sql) {
     return /^CREATE INDEX/.test(sql);
   });
-  t.check(ddl.length === 17 && lastAlter === 8 && firstIndex === 9,
+  // The ninth index is the uid trigram index (schema version 23), whose
+  // extension is created just before it.
+  const extensionAt = statements.findIndex(function (s) {
+    return /^CREATE EXTENSION IF NOT EXISTS pg_trgm$/.test(s.sql);
+  });
+  const trigramAt = statements.findIndex(function (s) {
+    return /^CREATE INDEX IF NOT EXISTS sts_ldap_entries_uid_trgm /
+      .test(s.sql);
+  });
+  t.check(extensionAt >= 0 && trigramAt === extensionAt + 1,
+          'C5-ii. and creates pg_trgm just before the trigram index',
+          extensionAt + ' ' + trigramAt);
+  t.check(ddl.length === 18 && lastAlter === 8 && firstIndex === 9,
           'C5. against an old table open() adds the nine columns, THEN ' +
-          'builds the eight indexes', ddl.map(function (sql) {
+          'builds the nine indexes', ddl.map(function (sql) {
             return sql.slice(0, 60);
           }).join(' | '));
   t.check(statements.some(function (s) {
-    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 22;
-  }), 'C6. and records version 22');
+    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 23;
+  }), 'C6. and records version 23');
   // THE TWO INDEXES VERSION 18 REPLACED (#618) are dropped where the
   // catalogue still lists them, after the indexes that replace them.
   const retired = [];

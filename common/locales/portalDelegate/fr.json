@@ -10,5 +10,17 @@
   "name": "Le désigner",
   "clear": "Ne désigner personne",
   "doneSet": "Votre délégué est enregistré.",
-  "doneCleared": "Vous n’avez désigné personne."
+  "doneCleared": "Vous n’avez désigné personne.",
+  "searchHeading": "Trouver une personne par son nom d’utilisateur",
+  "searchSub": "Saisissez au moins trois caractères de son nom d’utilisateur (uid). La recherche se lance quand vous cessez de taper pendant trois secondes, ou aussitôt que vous appuyez sur Entrée. Elle ne trouve que les personnes de ce domaine dont le compte a été créé ici — pas celles créées par un partenaire de fédération ou une connexion sociale — et jamais vous-même ni un compte désactivé.",
+  "searchLabel": "Le nom d’utilisateur contient",
+  "searchButton": "Rechercher",
+  "searchTooShort": "Saisissez au moins {min} caractères d’un nom d’utilisateur pour rechercher.",
+  "searchFailed": "L’annuaire n’a pas pu être interrogé pour le moment. Réessayez, ou saisissez son DN ci-dessous.",
+  "searchNone": "Personne ici n’a de nom d’utilisateur contenant <code>{q}</code>.",
+  "searchMore": "Plus de personnes correspondent que celles affichées ici. Saisissez davantage du nom d’utilisateur pour affiner la recherche.",
+  "colUid": "Nom d’utilisateur",
+  "colCn": "Nom",
+  "colDn": "Nom dans l’annuaire (DN)",
+  "choose": "Désigner cette personne"
 }
