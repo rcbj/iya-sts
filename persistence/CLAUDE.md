@@ -2083,7 +2083,10 @@ memory mode, development, and every in-process test.
   rather than ending the walk early. For the rare caller that has to —
   an administrator's revoke-all, a reshaped claim's bearers — and never a
   request's path. A caller that knows where its rows are filed asks the
-  index instead (`revokeWhere()`'s `candidates`).
+  index instead (`revokeWhere()`'s `candidates`). A walk a request waits on is
+  `scanAsync()`, which gives the event loop back between pages: /admin-api's
+  revoke-all, by kind and by user (`revokeWhereAsync()`, which also yields
+  every 500 revocations), so the process answers others meanwhile.
 
 The stores on demand: `oauth2_bcp.refreshTokens` and `oauth2_bcp.grantTokens`
 (filed by family), `oauth2_bcp.refreshFamilies`, key-resident
