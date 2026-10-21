@@ -39,6 +39,21 @@ const SUBJECT_ROWS = 'SELECT key, subject_key, last_seen_at, started_at ' +
   'FROM sts_sessions WHERE realm = $1 AND chosen AND subject_key <> \'\' ' +
   'AND (subject_key, key) > ($2, $3) ORDER BY subject_key, key LIMIT 500';
 
+// ONLY THE SUBJECTS OVER THE CAP (2026-10-21), for the session sweep's shed:
+// `session.subjectRows` paged every chosen session of the realm, 500 at a
+// time and each page a synchronous question — 634 of them a sweep on
+// 8081's 317,000 sessions, on a request worker — to find the handful of
+// people holding more than `authn.maxSessionsPerSubject`. The store groups
+// them now, through the `sts_sessions_subject` index, and answers every row
+// of at most $3 such subjects, so each subject's oldest is chosen from all
+// of its rows. The predicate is `session.subjectRows`' own.
+const OVER_CAP_ROWS = 'SELECT key, subject_key, last_seen_at, started_at ' +
+  'FROM sts_sessions WHERE realm = $1 AND chosen AND subject_key <> \'\' ' +
+  'AND subject_key IN (SELECT subject_key FROM sts_sessions WHERE ' +
+  'realm = $1 AND chosen AND subject_key <> \'\' GROUP BY subject_key ' +
+  'HAVING count(*) > $2 ORDER BY subject_key LIMIT $3) ' +
+  'ORDER BY subject_key, key';
+
 const CHILDREN = 'SELECT key FROM sts_sessions WHERE realm = $1 AND ' +
   'parent_key = $2';
 
@@ -108,6 +123,9 @@ function build(name, args) {
     values = [a[0], a[1], a[2]];
   } else if (name === 'session.subjectRows') {
     text = SUBJECT_ROWS;
+    values = [a[0], a[1], a[2]];
+  } else if (name === 'session.overCapRows') {
+    text = OVER_CAP_ROWS;
     values = [a[0], a[1], a[2]];
   } else if (name === 'session.children') {
     text = CHILDREN;
@@ -198,7 +216,7 @@ function answerOf(name, rows) {
     log.debug("Leaving answerOf().");
     return out;
   }
-  if (name === 'session.subjectRows') {
+  if (name === 'session.subjectRows' || name === 'session.overCapRows') {
     const out = list.map(function (row) {
       return {
         key: String(row.key),

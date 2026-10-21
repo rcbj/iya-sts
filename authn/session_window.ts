@@ -32,7 +32,6 @@ const TOMBSTONE = '$tombstone$1';
 const NEGATIVE_CAP = 1024;
 const NEGATIVE_MS = 60000;
 const PAGE = 200;
-const SUBJECT_PAGE = 500;
 // How long a realm's count may answer an admission that is far from the cap
 // (#754), and how far "far" is: the larger of these two.
 const COUNT_FRESH_MS = 10000;
@@ -684,43 +683,26 @@ class SessionWindow {
   }
 
   /**
-   * Chosen rows grouped by subject, oldest within each group left to the
-   * caller. Null when any page failed.
+   * The chosen sessions of the subjects holding more than `per` of them,
+   * grouped by subject — every row of at most `maxSubjects` such subjects,
+   * in one question (2026-10-21; `session.overCapRows`).
    *
    * @param realmId - the realm
-   * @returns the groups, or null
+   * @param per - the per-subject cap
+   * @param maxSubjects - the most subjects answered
+   * @returns the groups, or null when the index could not be read
    */
-  chosenBySubject(realmId: string): Array<{ subjectKey: string;
-      rows: any[] }> | null {
-    log.debug("Entering SessionWindow.chosenBySubject().");
-    const all: any[] = [];
-    let subject = '';
-    let key = '';
-    for (;;) {
-      const page = this.indexAnswer('session.subjectRows',
-        [String(realmId), subject, key]);
-      if (page === null) {
-        log.debug("Leaving SessionWindow.chosenBySubject(). Unread.");
-        return null;
-      }
-      const rows = Array.isArray(page) ? page : [];
-      rows.forEach(function (row) {
-        all.push(row);
-      });
-      if (rows.length < SUBJECT_PAGE) {
-        break;
-      }
-      const last = rows[rows.length - 1] || {};
-      const nextSubject = String(last.subjectKey || '');
-      const nextKey = String(last.key || '');
-      if (nextSubject === subject && nextKey === key) {
-        break;
-      }
-      subject = nextSubject;
-      key = nextKey;
+  overCapBySubject(realmId: string, per: number, maxSubjects: number):
+      Array<{ subjectKey: string; rows: any[] }> | null {
+    log.debug("Entering SessionWindow.overCapBySubject().");
+    const page = this.indexAnswer('session.overCapRows',
+      [String(realmId), Math.floor(per), Math.floor(maxSubjects)]);
+    if (page === null) {
+      log.debug("Leaving SessionWindow.overCapBySubject(). Unread.");
+      return null;
     }
     const groups = new Map<string, any[]>();
-    all.forEach(function (row) {
+    (Array.isArray(page) ? page : []).forEach(function (row) {
       const sk = String(row.subjectKey || '');
       let list = groups.get(sk);
       if (!list) {
@@ -733,7 +715,7 @@ class SessionWindow {
     groups.forEach(function (rows, subjectKey) {
       out.push({ subjectKey: subjectKey, rows: rows });
     });
-    log.debug("Leaving SessionWindow.chosenBySubject().");
+    log.debug("Leaving SessionWindow.overCapBySubject(). " + out.length);
     return out;
   }
 
