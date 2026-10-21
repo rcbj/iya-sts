@@ -90,6 +90,8 @@ class SessionWindow {
   private cooldownUntil = 0;
   private queryFn: QueryFn | null = null;
   private connectionOf: (() => any) | null = null;
+  private asyncQueryOf: ((name: string, args: unknown[]) =>
+    Promise<unknown>) | null = null;
   private bridge: SyncQuery | null = null;
   private touchFlusher: TouchFlusher | null = null;
 
@@ -187,6 +189,53 @@ class SessionWindow {
     log.debug("Entering SessionWindow.offerConnection().");
     this.connectionOf = typeof fn === 'function' ? fn : null;
     log.debug("Leaving SessionWindow.offerConnection().");
+  }
+
+  /**
+   * Keeps the driver's asynchronous form of the index's questions, which
+   * runs on its read pool (2026-10-21). `askAsync()` uses it.
+   *
+   * @param fn - answers a named query with a promise, or null
+   */
+  offerAsyncQuery(fn: ((name: string, args: unknown[]) =>
+                      Promise<unknown>) | null): void {
+    log.debug("Entering SessionWindow.offerAsyncQuery().");
+    this.asyncQueryOf = typeof fn === 'function' ? fn : null;
+    log.debug("Leaving SessionWindow.offerAsyncQuery().");
+  }
+
+  // ONE OF THE INDEX'S QUESTIONS, FOR A CALLER THAT CAN WAIT (2026-10-21):
+  // on the driver's read pool, so the event loop runs while the store
+  // answers — `/admin/users` counted every live session by opening every
+  // sealed body, synchronously, on the worker that serves sign-ins. A test's
+  // answer wins, as it does for the synchronous door; with neither, the
+  // synchronous door answers.
+  /**
+   * Asks the session index one of `session_queries.js`'s questions
+   * asynchronously.
+   *
+   * @param name - the query's name
+   * @param args - its arguments
+   * @returns a promise of the answer, null where it could not be asked
+   */
+  async askAsync(name: string, args: unknown[]): Promise<unknown> {
+    log.debug("Entering SessionWindow.askAsync(). " + name);
+    if (this.queryFn || !this.asyncQueryOf) {
+      const answer = this.indexAnswer(name, args);
+      log.debug("Leaving SessionWindow.askAsync(). Synchronously.");
+      return answer;
+    }
+    try {
+      const answer = await this.asyncQueryOf(name, args);
+      log.debug("Leaving SessionWindow.askAsync().");
+      return answer;
+    } catch (e) {
+      log.debug("Caught in SessionWindow.askAsync(): " +
+                ((e && (e as Error).message) || e));
+      this.noteReadFailure(e);
+      log.debug("Leaving SessionWindow.askAsync(). Failed.");
+      return null;
+    }
   }
 
   /**

@@ -8965,6 +8965,58 @@ class Authn {
     log.debug("Leaving Authn.forEachSession().");
   }
 
+  // WHO HOLDS A LIVE SIGN-ON SESSION, ASKED OF THE INDEX (2026-10-21), for
+  // `/admin/users`: how many people hold one, and how many each of the named
+  // people hold. The page counted them with `sessionsMatching()`, which while
+  // the window is on reads and opens every session's sealed body — 67,000 on
+  // 8081, synchronously, on the worker that serves sign-ins. The index holds
+  // a digest of each session's username and subject, so the store counts
+  // without anything being opened, on the driver's read pool. Null while the
+  // window is off: the sessions are in memory, and the caller walks them.
+  /**
+   * Counts the ambient realm's live sign-on sessions in the index.
+   *
+   * @param usernames - the people whose own counts are wanted
+   * @returns a promise of `{ people, byUsername }` (a Map), or of null
+   */
+  async liveSessionCountsAsync(usernames) {
+    const { log, realms } = this.deps;
+    log.debug("Entering Authn.liveSessionCountsAsync().");
+    if (!this.windowOn()) {
+      log.debug("Leaving Authn.liveSessionCountsAsync(). Window off.");
+      return null;
+    }
+    const realmId = realms.currentId();
+    const nowMs = Date.now();
+    const people = await sessionWindow.askAsync('session.liveSubjects',
+                                                [realmId, nowMs]) as any;
+    if (!people) {
+      log.debug("Leaving Authn.liveSessionCountsAsync(). Unread.");
+      return null;
+    }
+    const byKey = new Map();
+    (usernames || []).forEach(function (username) {
+      const digest = keystore.keyedDigest('session-username',
+                                          String(username));
+      if (digest) {
+        byKey.set(digest, String(username));
+      }
+    });
+    const byUsername = new Map();
+    if (byKey.size) {
+      const counted = await sessionWindow.askAsync('session.liveByUsername',
+        [realmId, Array.from(byKey.keys()), nowMs]) as any;
+      Object.keys(counted || {}).forEach(function (digest) {
+        if (byKey.has(digest)) {
+          byUsername.set(byKey.get(digest), Number(counted[digest]) || 0);
+        }
+      });
+    }
+    log.debug("Leaving Authn.liveSessionCountsAsync(). " + people.n +
+              " people.");
+    return { people: Number(people.n) || 0, byUsername: byUsername };
+  }
+
   // THE SESSIONS OF THIS REALM THAT `test` ACCEPTS (#189), without the cookie
   // and without expiring them. For a SAML attribute authority, which is asked
   // about a subject by the NameID a service provider was GIVEN — a transient
@@ -18000,6 +18052,7 @@ export = {
   // The SAML 2.0 attribute authority's question (#189): which live session
   // gave a service provider a NameID.
   sessionsMatching: slot.forward('sessionsMatching'),
+  liveSessionCountsAsync: slot.forward('liveSessionCountsAsync'),
   sessionsHeldUnder: slot.forward('sessionsHeldUnder'),
   sessionById: slot.forward('sessionById'),
   // Who vouched for a session's latest sign-in — asked by the authorization

@@ -3051,6 +3051,15 @@ function openStore(chosen, resolvedUrl, globalUrls) {
       return typeof driver.bridgeConnection === 'function'
         ? driver.bridgeConnection() : null;
     });
+    // And the index's questions asked asynchronously, on the driver's read
+    // pool, for a caller that can wait (2026-10-21, `/admin/users`).
+    require('../authn/session_window').offerAsyncQuery(
+      typeof driver.sessionIndexQuery === 'function'
+        ? function (name, args) {
+          log.debug("Entering the asynchronous session query(). " + name);
+          log.debug("Leaving the asynchronous session query().");
+          return driver.sessionIndexQuery(name, args);
+        } : null);
     // -------------------------------------------------------------------
     // AND THE USED-ASSERTION HISTORY ITS STORE, BEFORE ANYTHING IS SERVED.
     // A file store is READ here: a token request answered from an empty copy

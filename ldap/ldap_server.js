@@ -13664,6 +13664,76 @@ function credentialTallies(spec) {
   return value;
 }
 
+// `credentialTallies()` FOR A CALLER THAT CAN WAIT (2026-10-21). In a
+// windowed process the tallies are a count over every person the realm
+// defines and a read of everybody holding a credential attribute, and
+// `/admin/users` asked both SYNCHRONOUSLY on the request worker that also
+// serves sign-ins: on 8081, with 280,000 people, the worker stood still for
+// up to nine seconds, a flush transaction it had open held its rows the
+// whole time, and sign-ins fell to a fifth of a request a second. Here the
+// same two questions go to the driver's read pool and the event loop runs
+// while the store answers. The same memo as the synchronous door, so a
+// tally either door made serves the other.
+/**
+ * `credentialTallies()`, the store asked asynchronously.
+ *
+ * @param spec - `{ password, holding }`, as `credentialTallies()` takes it
+ * @returns a promise of `{ people, withPassword, holders: [{ name, raw }] }`
+ */
+async function credentialTalliesAsync(spec) {
+  log.debug('Entering credentialTalliesAsync().');
+  if (!directoryWindow) {
+    log.debug('Leaving credentialTalliesAsync(). No window: in memory.');
+    return credentialTallies(spec);
+  }
+  const passwordAttribute = String((spec && spec.password) || 'userPassword')
+    .toLowerCase();
+  const holding = ((spec && spec.holding) || []).map(function (one) {
+    return String(one).toLowerCase();
+  });
+  const signature = passwordAttribute + '|' + holding.join(',');
+  const version = subtreeVersion(usersDn());
+  const held = credentialTalliesMemo();
+  if (held.value && held.version === version && held.spec === signature &&
+      Date.now() - held.at <= 10000) {
+    credentialTalliesCount.hit();
+    log.debug('Leaving credentialTalliesAsync(). Kept.');
+    return held.value;
+  }
+  credentialTalliesCount.miss();
+  const realmId = realms.currentId();
+  const base = normalizeDn(usersDn());
+  const suffix = ',' + base;
+  const value = { people: 0, withPassword: 0, holders: [] };
+  const counted = await directoryWindow.countHoldingAsync(realmId, base,
+                                                          passwordAttribute);
+  value.people = counted.n;
+  value.withPassword = counted.holding;
+  const seen = new Set();
+  for (const attribute of holding) {
+    const hits = await directoryWindow.holdersAsync(realmId, base, attribute,
+      function (entry) {
+        const values = entry.attributes[attribute];
+        return Array.isArray(values) && values.length > 0;
+      });
+    hits.forEach(function (hit) {
+      if (hit.key !== base && hit.key.endsWith(suffix) &&
+          !seen.has(hit.key)) {
+        seen.add(hit.key);
+        value.holders.push({ name: usernameOfEntry(hit.entry),
+                             raw: censusOfEntry(hit.entry) });
+      }
+    });
+  }
+  held.version = version;
+  held.at = Date.now();
+  held.spec = signature;
+  held.value = value;
+  log.debug('Leaving credentialTalliesAsync(). ' + value.people +
+            ' people, ' + value.holders.length + ' holding a credential.');
+  return value;
+}
+
 // ---------------------------------------------------------------------------
 // HOW MANY OF A LIST OF NAMES ARE PEOPLE IN THIS DIRECTORY (#610).
 //
@@ -13758,6 +13828,71 @@ function countPeopleNamed(names) {
   return people.size;
 }
 
+// `countPeopleNamed()` FOR A CALLER THAT CAN WAIT (2026-10-21), for
+// `credentialTalliesAsync()`'s reason: the same two batched questions on the
+// driver's read pool, and the same memo.
+/**
+ * `countPeopleNamed()`, the store asked asynchronously.
+ *
+ * @param names - the names
+ * @returns a promise of the count
+ */
+async function countPeopleNamedAsync(names) {
+  log.debug('Entering countPeopleNamedAsync(). ' + (names || []).length +
+            ' name(s).');
+  if (!directoryWindow) {
+    log.debug('Leaving countPeopleNamedAsync(). No window: the index.');
+    return countPeopleNamed(names);
+  }
+  const wanted = Array.from(new Set((names || []).map(function (one) {
+    return String(one == null ? '' : one).trim().toLowerCase();
+  }).filter(function (one) {
+    return !!one;
+  }))).sort();
+  const joined = wanted.join('\n');
+  const version = subtreeVersion(usersDn());
+  const held = peopleNamedMemo();
+  if (held.names === joined && held.version === version &&
+      Date.now() - held.at <= 10000) {
+    log.debug('Leaving countPeopleNamedAsync(). ' + held.value + ', kept.');
+    return held.value;
+  }
+  const realmId = realms.currentId();
+  const base = normalizeDn(usersDn());
+  const found = new Set();
+  const people = new Set();
+  const asked = new Set(wanted);
+  const note = function (hit) {
+    usernameKeysOf(hit.entry).forEach(function (name) {
+      if (asked.has(name)) {
+        found.add(name);
+        people.add(normalizeDn(hit.entry.dn));
+      }
+    });
+  };
+  const isPerson = function (entry, key) {
+    return normalizeDn(parentDn(entry.dn)) === base && !!key;
+  };
+  const dnKeys = wanted.map(function (name) {
+    return normalizeDn('uid=' + escapeDnValue(name) + ',' + usersDn());
+  });
+  (await directoryWindow.findWindowedAsync(realmId, 'byKeys',
+    [realmId, dnKeys], isPerson) || []).forEach(note);
+  const missed = wanted.filter(function (name) {
+    return !found.has(name);
+  });
+  if (missed.length) {
+    (await directoryWindow.findWindowedAsync(realmId, 'withNames',
+      [realmId, base, missed], isPerson) || []).forEach(note);
+  }
+  held.names = joined;
+  held.version = version;
+  held.at = Date.now();
+  held.value = people.size;
+  log.debug('Leaving countPeopleNamedAsync(). ' + people.size + ', asked.');
+  return people.size;
+}
+
 // ---------------------------------------------------------------------------
 // WHICH KEYS NAME A REGISTERED APPLICATION, AS ONE FUNCTION (#352).
 //
@@ -13815,7 +13950,10 @@ if (typeof credentials.addDirectoryHooks === 'function') {
     // The whole directory's credential tiles, and how many names are
     // people here (#610).
     credentialTallies: credentialTallies,
-    countPeopleNamed: countPeopleNamed
+    countPeopleNamed: countPeopleNamed,
+    // The same two, asked asynchronously, for `/admin/users` (2026-10-21).
+    credentialTalliesAsync: credentialTalliesAsync,
+    countPeopleNamedAsync: countPeopleNamedAsync
   });
 }
 

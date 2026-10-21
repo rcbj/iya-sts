@@ -62,6 +62,23 @@ const SURFACE = 'SELECT key FROM sts_sessions WHERE realm = $1 AND ' +
 const PARTNER = 'SELECT key FROM sts_sessions WHERE realm = $1 AND ' +
   'partner_relationship = $2';
 
+// WHO HOLDS A LIVE SIGN-ON SESSION, COUNTED BY THE STORE (2026-10-21), for
+// `/admin/users`' tile and its rows' column — which read and opened every
+// session's sealed body to count them, synchronously: 67,000 of them on
+// 8081. A sign-on session is a `sign-on` or `keyed` row (not an arrival
+// nobody chose, not a relying party's session derived from one); live is
+// not past `expires_at`. One person is one subject, however many browsers.
+const LIVE_KINDS = '(kind = \'sign-on\' OR kind = \'keyed\')';
+
+const LIVE_SUBJECTS = 'SELECT count(DISTINCT subject_key)::bigint AS n ' +
+  'FROM sts_sessions WHERE realm = $1 AND ' + LIVE_KINDS + ' AND ' +
+  '(expires_at IS NULL OR expires_at > $2)';
+
+const LIVE_BY_USERNAME = 'SELECT username_key, count(*)::bigint AS n ' +
+  'FROM sts_sessions WHERE realm = $1 AND username_key = ANY($2::text[]) ' +
+  'AND ' + LIVE_KINDS + ' AND (expires_at IS NULL OR expires_at > $3) ' +
+  'GROUP BY username_key';
+
 /**
  * Builds one named statement.
  *
@@ -113,6 +130,12 @@ function build(name, args) {
   } else if (name === 'session.partner') {
     text = PARTNER;
     values = [a[0], a[1]];
+  } else if (name === 'session.liveSubjects') {
+    text = LIVE_SUBJECTS;
+    values = [a[0], a[1]];
+  } else if (name === 'session.liveByUsername') {
+    text = LIVE_BY_USERNAME;
+    values = [a[0], a[1], a[2]];
   } else {
     log.debug("Leaving build().");
     throw new Error('session_queries: unknown query "' + name + '"');
@@ -146,6 +169,19 @@ function answerOf(name, rows) {
     const row = list[0] || {};
     log.debug("Leaving answerOf().");
     return { n: Number(row.n || 0) };
+  }
+  if (name === 'session.liveSubjects') {
+    const row = list[0] || {};
+    log.debug("Leaving answerOf().");
+    return { n: Number(row.n || 0) };
+  }
+  if (name === 'session.liveByUsername') {
+    const out = {};
+    list.forEach(function (row) {
+      out[String(row.username_key)] = Number(row.n || 0);
+    });
+    log.debug("Leaving answerOf().");
+    return out;
   }
   if (name === 'session.exists') {
     log.debug("Leaving answerOf().");

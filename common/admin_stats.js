@@ -6993,6 +6993,7 @@ module.exports = {
   renameIdentity: renameIdentity,
   userRows: userRows,
   userRowsAsync: userRowsAsync,
+  withSubjectsResolvedAsync: withSubjectsResolvedAsync,
   // #352: one row, and the keys alone, without building every row.
   userRow: userRow,
   userKeys: userKeys,

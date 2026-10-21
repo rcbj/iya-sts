@@ -5846,38 +5846,101 @@ class Credentials {
    */
   directoryFactorCounts() {
     const { log, errorCodes } = this.deps;
-    const { PASSWORD_ATTRIBUTE, WEBAUTHN_ATTRIBUTE, TOTP_ATTRIBUTE } =
-      Credentials;
+    const { PASSWORD_ATTRIBUTE } = Credentials;
     log.debug('Entering Credentials.directoryFactorCounts().');
     const tallies = this.directoryHook('credentialTallies');
     if (!tallies) {
       log.debug('Leaving Credentials.directoryFactorCounts(). No tally.');
       return null;
     }
-    let mailFactor = null;
-    try {
-      mailFactor = require('./mail_factor');
-    } catch (e) {
-      log.debug('Caught in Credentials.directoryFactorCounts(): ' +
-                ((e && e.message) || e));
-      // Not held, for `mailFactorOf()`'s reason.
-      mailFactor = null;
-    }
-    const holding = [WEBAUTHN_ATTRIBUTE, TOTP_ATTRIBUTE];
-    if (mailFactor && mailFactor.OPT_IN_ATTRIBUTE) {
-      holding.push(mailFactor.OPT_IN_ATTRIBUTE);
-    }
+    const mailFactor = this.mailFactorModule();
     let tally = null;
     try {
-      tally = tallies({ password: PASSWORD_ATTRIBUTE, holding: holding });
+      tally = tallies({ password: PASSWORD_ATTRIBUTE,
+                        holding: this.holdingAttributes(mailFactor) });
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0335') +
                 'credentials: counting this realm\'s credential holders ' +
                 'threw: ' + ((e && e.message) || e));
       tally = null;
     }
+    const out = this.factorCountsOf(tally, mailFactor);
+    log.debug('Leaving Credentials.directoryFactorCounts().');
+    return out;
+  }
+
+  // `directoryFactorCounts()` FOR A CALLER THAT CAN WAIT (2026-10-21): the
+  // directory's tallies asked on the driver's read pool where it offers that
+  // (`credentialTalliesAsync`), and the same arithmetic over them. The
+  // synchronous door stood a request worker still for up to nine seconds on
+  // a realm of 280,000 people (8081), sign-ins and all.
+  /**
+   * `directoryFactorCounts()`, the directory asked asynchronously.
+   *
+   * @returns a promise of the counts, or of null
+   */
+  async directoryFactorCountsAsync() {
+    const { log, errorCodes } = this.deps;
+    const { PASSWORD_ATTRIBUTE } = Credentials;
+    log.debug('Entering Credentials.directoryFactorCountsAsync().');
+    const tallies = this.directoryHook('credentialTalliesAsync');
+    if (!tallies) {
+      log.debug('Leaving Credentials.directoryFactorCountsAsync(). No ' +
+                'asynchronous tally: the synchronous one.');
+      return this.directoryFactorCounts();
+    }
+    const mailFactor = this.mailFactorModule();
+    let tally = null;
+    try {
+      tally = await tallies({ password: PASSWORD_ATTRIBUTE,
+                              holding: this.holdingAttributes(mailFactor) });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0335') +
+                'credentials: counting this realm\'s credential holders ' +
+                'threw: ' + ((e && e.message) || e));
+      tally = null;
+    }
+    const out = this.factorCountsOf(tally, mailFactor);
+    log.debug('Leaving Credentials.directoryFactorCountsAsync().');
+    return out;
+  }
+
+  // The census's module for emailed codes, or null where it is not held.
+  private mailFactorModule() {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.mailFactorModule().');
+    let mailFactor = null;
+    try {
+      mailFactor = require('./mail_factor');
+    } catch (e) {
+      log.debug('Caught in Credentials.mailFactorModule(): ' +
+                ((e && e.message) || e));
+      // Not held, for `mailFactorOf()`'s reason.
+      mailFactor = null;
+    }
+    log.debug('Leaving Credentials.mailFactorModule().');
+    return mailFactor;
+  }
+
+  // The credential attributes whose holders the tallies read.
+  private holdingAttributes(mailFactor) {
+    const { log } = this.deps;
+    const { WEBAUTHN_ATTRIBUTE, TOTP_ATTRIBUTE } = Credentials;
+    log.debug('Entering Credentials.holdingAttributes().');
+    const holding = [WEBAUTHN_ATTRIBUTE, TOTP_ATTRIBUTE];
+    if (mailFactor && mailFactor.OPT_IN_ATTRIBUTE) {
+      holding.push(mailFactor.OPT_IN_ATTRIBUTE);
+    }
+    log.debug('Leaving Credentials.holdingAttributes().');
+    return holding;
+  }
+
+  // The tiles' counts from the directory's tallies; null for no answer.
+  private factorCountsOf(tally, mailFactor) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.factorCountsOf().');
     if (!tally) {
-      log.debug('Leaving Credentials.directoryFactorCounts(). No answer.');
+      log.debug('Leaving Credentials.factorCountsOf(). No answer.');
       return null;
     }
     const out = { people: Number(tally.people) || 0,
@@ -5902,7 +5965,7 @@ class Credentials {
     out.passwordOnly = Math.max(0, out.withPassword - passwordAndSecond);
     out.noWayIn = Math.max(0, out.people - out.withPassword -
                            keyWithoutPassword);
-    log.debug('Leaving Credentials.directoryFactorCounts(). ' + out.people +
+    log.debug('Leaving Credentials.factorCountsOf(). ' + out.people +
               ' people, ' + (tally.holders || []).length + ' read.');
     return out;
   }
@@ -5930,6 +5993,36 @@ class Credentials {
       }
     }
     log.debug('Leaving Credentials.directoryPeopleNamed(). ' + n);
+    return n;
+  }
+
+  // `directoryPeopleNamed()` FOR A CALLER THAT CAN WAIT (2026-10-21), for
+  // `directoryFactorCountsAsync()`'s reason.
+  /**
+   * `directoryPeopleNamed()`, the directory asked asynchronously.
+   *
+   * @param names - the names
+   * @returns a promise of the count, or of null
+   */
+  async directoryPeopleNamedAsync(names) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.directoryPeopleNamedAsync().');
+    const hook = this.directoryHook('countPeopleNamedAsync');
+    if (!hook) {
+      log.debug('Leaving Credentials.directoryPeopleNamedAsync(). The ' +
+                'synchronous one.');
+      return this.directoryPeopleNamed(names);
+    }
+    let n = null;
+    try {
+      n = Number(await hook(names || [])) || 0;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0335') +
+                'credentials: counting which names are people here ' +
+                'threw: ' + ((e && e.message) || e));
+      n = null;
+    }
+    log.debug('Leaving Credentials.directoryPeopleNamedAsync(). ' + n);
     return n;
   }
 
@@ -10291,6 +10384,8 @@ export = {
   factorHolderRow: slot.forward('factorHolderRow'),
   factorCensus: slot.forward('factorCensus'),
   factorCensusAsync: slot.forward('factorCensusAsync'),
+  directoryFactorCountsAsync: slot.forward('directoryFactorCountsAsync'),
+  directoryPeopleNamedAsync: slot.forward('directoryPeopleNamedAsync'),
   directoryFactorCounts: slot.forward('directoryFactorCounts'),
   directoryPeopleNamed: slot.forward('directoryPeopleNamed'),
   issueActivation: slot.forward('issueActivation'),
