@@ -282,6 +282,19 @@ function renderSections(t) {
           '3. handed a refusal, both pages draw their heading and no list ' +
           '(no "none" that would read as an answer)',
           selfHtml + ' | ' + walletHtml);
+  // 3b. A LONG SUBJECT STAYS IN ITS CARD (2026-10-20, rcbj on 8081): a
+  // did:jwk is two hundred characters with no space, and the table pushed
+  // far past the card. The table is a heading-row `grid`, and a value in a
+  // cell may break anywhere.
+  const listed = SelfIssuedPages.render({ enabled: true, subjects: [
+    { subject: 'did:jwk:' + 'eyJ'.repeat(70), proof: 'wallet' }] },
+    { t: tr, query: {} });
+  const style = require('../portal/web_portal_kit').STYLE;
+  t.check(/<table class="grid">/.test(listed) &&
+          style.indexOf('td code{overflow-wrap:anywhere}') >= 0,
+          '3b. the self-issued list is a grid table and a long value in a ' +
+          'cell wraps instead of widening the table',
+          listed.slice(0, 300));
   log.debug("Leaving renderSections().");
 }
 
@@ -291,7 +304,7 @@ async function run(t) {
   selfIssuedSections(t);
   t.log.info('=== 2. /portal/wallet ===');
   walletSections(t);
-  t.log.info('=== 3. the pages, refused ===');
+  t.log.info('=== 3. the pages, refused, and a long subject ===');
   renderSections(t);
   log.debug("Leaving run().");
 }

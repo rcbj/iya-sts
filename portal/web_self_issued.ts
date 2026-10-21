@@ -67,7 +67,10 @@ class SelfIssuedPages {
       '<div class="card"><h2>' + t.html('portalSelfIssued.heading') +
       '</h2><p class="sub">' + t.html('portalSelfIssued.sub') + '</p>' +
       (held.length
-        ? '<table><tr><th>' + t.html('portalSelfIssued.subject') +
+        // `grid`: a heading ROW over six columns, not the portal's
+        // name-and-value table whose first `th` takes a third of the width.
+        ? '<table class="grid"><tr><th>' +
+          t.html('portalSelfIssued.subject') +
           '</th><th>' + t.html('portalSelfIssued.label') + '</th><th>' +
           t.html('portalSelfIssued.enrolled') + '</th><th>' +
           t.html('portalSelfIssued.how') + '</th><th>' +
