@@ -1112,6 +1112,7 @@ var config = {
     mediumScorePercent: 300,                               // MEDIUM from (percent of a score of 1)
     highScorePercent: 1000,                                // HIGH from (percent of a score of 1)
     minimumHistory: 5,                                     // Earlier sign-ins before a person is scored
+    populationUsersCacheS: 60,                             // Seconds the realm's user count is kept
     geoMinimumCount: 3,                                    // Fewest people a place is numbered with on the map
     listsMatchSpecialPurpose: true,                        // Lists match private and reserved addresses
     accountFailureThreshold: 5,                            // Refused passwords for one person that are a signal
