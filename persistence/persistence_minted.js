@@ -711,6 +711,7 @@ function setDriver(theDriver, activeMode) {
                              byIndex: onDemandByIndex,
                              digestOf: residentDigestOf,
                              page: onDemandPage,
+                             readMany: onDemandReadMany,
                              journalled: pendingWrite });
   log.debug('Leaving setDriver(). ' + realms.handles().length +
             ' declared store(s).');
@@ -2440,6 +2441,43 @@ function onDemandByIndex(handle, realmId, value) {
   });
   log.debug("Leaving onDemandByIndex(). " + out.length + " row(s).");
   return out;
+}
+
+/**
+ * Several rows of one on-demand store in one realm, asked together and off
+ * the event loop (`warm()`, 2026-10-21), from the primary.
+ *
+ * @param handle - the store
+ * @param realmId - the realm partition
+ * @param keys - the keys, as the store holds them
+ * @returns a promise of a Map from each key present to its value
+ */
+function onDemandReadMany(handle, realmId, keys) {
+  log.debug("Entering onDemandReadMany(). " + handle);
+  const declared = realms.handleFor(handle);
+  if (!declared || !driver || typeof driver.readMintedMany !== 'function') {
+    log.debug("Leaving onDemandReadMany(). No batched read.");
+    return Promise.reject(new Error('no batched read'));
+  }
+  const byColumn = new Map();
+  const refs = (keys || []).map(function (k) {
+    const column = keyColumnOf(handle, realmId, storedKey(declared, k));
+    byColumn.set(column, k);
+    return { handle: handle, realm: realmId, key: column };
+  });
+  log.debug("Leaving onDemandReadMany().");
+  return driver.readMintedMany(refs, { primary: true }).then(function (rows) {
+    const out = new Map();
+    (rows || []).forEach(function (row) {
+      const k = byColumn.get(String(row.key));
+      const opened = k === undefined ? undefined
+        : openedBody(handle, row.body);
+      if (opened !== undefined) {
+        out.set(k, opened);
+      }
+    });
+    return out;
+  });
 }
 
 /**

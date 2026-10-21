@@ -6123,9 +6123,13 @@ function create(options) {
     // one bind per column per row instead of building a composite string that
     // both ends would have to agree how to escape.
     // -----------------------------------------------------------------------
-    readMintedMany: function (refs) {
+    // `opts.primary` (#820): from the primary even where reads go to a
+    // replica — an on-demand store's warm-up must not hold a row older than
+    // the one its synchronous read would have answered.
+    readMintedMany: function (refs, opts) {
       log.debug('Entering the postgres driver readMintedMany(). ' +
                 (refs || []).length + ' ref(s).');
+      const asking = opts && opts.primary ? pool : readPool;
       const list = (refs || []);
       if (!list.length) {
         log.debug("Leaving readMintedMany().");
@@ -6139,7 +6143,7 @@ function create(options) {
         binds.push(String(ref.handle), String(ref.realm), String(ref.key));
       });
       log.debug("Leaving readMintedMany().");
-      return readPool.query(
+      return asking.query(
         'SELECT m.handle, m.realm, m.key, m.body, ' +
         '(extract(epoch from m.written_at) * 1000)::bigint AS written_ms ' +
         'FROM sts_minted m JOIN (VALUES ' + values.join(', ') +

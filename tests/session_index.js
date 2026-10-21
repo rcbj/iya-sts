@@ -1425,6 +1425,38 @@ async function unchangedLookupCases(t, realm) {
   log.debug("Leaving unchangedLookupCases().");
 }
 
+// `warm()` (2026-10-21): an on-demand store's keys read together, off the
+// event loop, from the PRIMARY, under their key columns, and held opened.
+async function warmCases(t, realm) {
+  log.debug("Entering warmCases().");
+  t.log.info('=== warm() reads its keys in one batch from the primary ===');
+  const handle = 'session-index.warm';
+  const store = realms.map({ persist: handle, onDemand: { maxEntries: 10 } });
+  const column = minted.keyColumnOf(handle, realm.id, 'warm-1');
+  const calls = [];
+  const driver = indexDriver([], [], [], []);
+  driver.readMintedMany = function (refs, opts) {
+    calls.push({ keys: refs.map(function (one) {
+      return one.key;
+    }), primary: !!(opts && opts.primary) });
+    return Promise.resolve([{ handle: handle, realm: realm.id, key: column,
+      body: keystore.seal(JSON.stringify({ n: 7 }), 'minted-rows',
+                          tiers.mintedTierOf('authn.sessions'),
+                          { realm: realm.id }) }]);
+  };
+  install(driver);
+  await minted.restore();
+  await store.warm(['warm-1', 'warm-2']);
+  t.check(calls.length === 1 && calls[0].primary &&
+          calls[0].keys.indexOf(column) >= 0 && calls[0].keys.length === 2,
+          'warm() asks once, from the primary, by key column',
+          JSON.stringify(calls));
+  t.equal(JSON.stringify(store.realmMap().get('warm-1')),
+          JSON.stringify({ n: 7 }), 'and holds the row it read, opened');
+  store.realmMap().clear();
+  log.debug("Leaving warmCases().");
+}
+
 async function residentCases(t, realm) {
   log.debug("Entering residentCases().");
   t.log.info('=== a key-resident store loads its keys, not its rows ===');
@@ -1496,6 +1528,7 @@ async function liveHalf(t, realm) {
   await residentCases(t, realm);
   await expiryBackfillCases(t);
   await unchangedLookupCases(t, realm);
+  await warmCases(t, realm);
   await applyCases(t, handle, realm);
   log.debug("Leaving liveHalf().");
 }

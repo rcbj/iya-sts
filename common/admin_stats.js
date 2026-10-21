@@ -7486,6 +7486,13 @@ module.exports = {
   // What signing a JWT reports through `helpers.setJwtRecorder()`, for the
   // tests that record one without signing it.
   recordJwt: recordJwt,
+  // The register records of these jtis, read together off the event loop
+  // before a request asks for them (#820; `warm()` in common/realms.js).
+  warmTokens: function (jtis) {
+    log.debug("Entering warmTokens().");
+    log.debug("Leaving warmTokens().");
+    return tokens.warm(jtis);
+  },
   backfillTokenHolders: backfillTokenHolders,
   ensureHoldersBackfillJob: ensureHoldersBackfillJob,
   userKeys: userKeys,

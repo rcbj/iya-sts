@@ -3083,7 +3083,8 @@ class IndexedMap extends Map {
  * @returns {Map<any, any> & { realmMap: (id?: any) => Map<any, any>,
  *   lookup: (indexKey: string) => any[], onDemandLive: () => boolean,
  *   scan: (fn: (value: any, key: any) => void) => void,
- *   scanAsync: (fn: (value: any, key: any) => void) => Promise<void> }}
+ *   scanAsync: (fn: (value: any, key: any) => void) => Promise<void>,
+ *   warm: (keys: any[]) => Promise<void> }}
  */
 function map(options) {
   log.debug("Entering map().");
@@ -3131,6 +3132,9 @@ function map(options) {
       if (absentPer) {
         absentPer.of(partitionId(realmId)).delete(k);
       }
+      warming.forEach(function (touched) {
+        touched.add(partitionId(realmId) + '\u0000' + k);
+      });
       log.debug("Leaving forgetAbsent().");
     },
     // A key-resident store's digests (#820 part 2): `add` for a row read
@@ -3326,6 +3330,11 @@ function map(options) {
     return typeof onDemandReader.digestOf === 'function'
       ? onDemandReader.digestOf(handleName, realmId, k) : null;
   }
+  // THE KEYS A CHANGE TOUCHED WHILE A WARM-UP WAS READING (`warm()`), one
+  // Set per warm-up in flight: its answer for such a key may predate the
+  // change, so it is not held. Filled by `forgetAbsent()`, which the
+  // appliers call for every change to a row this process does not hold.
+  const warming = new Set();
   // Hot path: every on-demand miss. No Entering/Leaving pair.
   function absentKnown(k) {
     const absent = absentPer();
@@ -3448,6 +3457,64 @@ function map(options) {
       demandTrim(realmId, target);
       log.debug("Leaving lookup(). " + out.size + " key(s).");
       return Array.from(out);
+    },
+    // THE ROWS A REQUEST IS ABOUT TO ASK FOR, READ IN ONE ASYNCHRONOUS BATCH
+    // (2026-10-21): a refresh knows its token's jti, family and register
+    // record the moment the token is opened, and asked each one with a
+    // synchronous read of the store that held the worker's event loop.
+    // Here each key not held, not pending and not known absent is read
+    // together with the others, off the event loop, and then held — unless
+    // a change to it arrived meanwhile (`warming`), or it is held or
+    // pending by then, when the read's answer may be the older one and is
+    // dropped. A key the store answers absent is remembered as such. A
+    // failed read holds nothing, and the request's own reads ask as they
+    // always did. Not for a key-resident store, whose `has()` is free.
+    warm: async function (keys) {
+      log.debug("Entering warm().");
+      if (!demandOn() || keysResident ||
+          typeof onDemandReader.readMany !== 'function') {
+        log.debug("Leaving warm(). Not here.");
+        return;
+      }
+      const realmId = partitionId(currentId());
+      const target = per();
+      const wanted = Array.from(new Set((keys || []).filter(function (k) {
+        return k !== undefined && k !== null && k !== '' && !target.has(k) &&
+          !onDemandReader.journalled(handleName, realmId, k) &&
+          !absentKnown(k);
+      })));
+      if (!wanted.length) {
+        log.debug("Leaving warm(). Nothing to read.");
+        return;
+      }
+      const touched = new Set();
+      warming.add(touched);
+      let found = null;
+      try {
+        found = await onDemandReader.readMany(handleName, realmId, wanted);
+      } catch (e) {
+        log.debug("Caught in warm(): " + ((e && e.message) || e));
+        found = null;
+      } finally {
+        warming.delete(touched);
+      }
+      if (!found) {
+        log.debug("Leaving warm(). The read failed.");
+        return;
+      }
+      wanted.forEach(function (k) {
+        if (touched.has(realmId + '\u0000' + k) || target.has(k) ||
+            onDemandReader.journalled(handleName, realmId, k)) {
+          return;
+        }
+        if (found.has(k)) {
+          target.set(k, found.get(k));
+        } else {
+          absentNote(k);
+        }
+      });
+      demandTrim(realmId, target);
+      log.debug("Leaving warm(). " + wanted.length + " key(s) asked.");
     },
     // EVERY ROW OF THE AMBIENT REALM, held or not (#820 part 3): for the
     // few walks that must see the whole store — an administrator's

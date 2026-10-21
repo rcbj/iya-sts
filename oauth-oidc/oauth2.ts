@@ -15318,6 +15318,17 @@ class OAuth2Server {
                                'The refresh token is not ' +
                                'valid: ' + e.message);
       }
+      // THE ROWS THIS GRANT IS ABOUT TO ASK FOR, READ TOGETHER (2026-10-21,
+      // #820): the token's record, its family and its register record, each
+      // a synchronous read of the store otherwise. Started here, beside the
+      // home cell's answer, and awaited before the replay check.
+      const warming = Promise.all([
+        bcp.warmRefresh(claims),
+        stats.warmTokens([String(claims.jti || '')])
+      ]).catch(function (e) {
+        log.debug("Caught in OAuth2Server.tokenGrant(): " +
+                  ((e && e.message) || e));
+      });
       // A PERSON HOMED IN ANOTHER CELL IS CONFIRMED THERE FIRST (#98 D6):
       // their session was exported here, and a refresh is one of the acts
       // home is always asked about — a disable or a password change made
@@ -15338,6 +15349,7 @@ class OAuth2Server {
       // It also covers the two things this grant never checked: that the client
       // presenting the token is the client it was issued to, and that the scope
       // asked for is not wider than the scope granted.
+      await warming;
       const refreshCheck = bcp.checkRefreshRequest({
         claims: claims, body: body, clientId: String(client.client_id || '')
       });
