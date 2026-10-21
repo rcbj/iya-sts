@@ -3798,8 +3798,11 @@ const SETTINGS = [
     restartReason: 'a worker reads it once, when it starts',
     description: 'How long a request or surface worker may take to bring its ' +
                  'state up (the store, the keys, the minted rows and ' +
-                 'coordination) before it reports that it could not start. ' +
-                 'Three failures in a row and the pool stops forking until ' +
+                 'coordination) before the pool stops waiting for it. A ' +
+                 'worker past it is SLOW, not failed: it is left to finish ' +
+                 'and joins the pool when it is ready (#820). Only at four ' +
+                 'times this does it report that it could not start; three ' +
+                 'such failures in a row and the pool stops forking until ' +
                  'workers.giveUpRetryMs, then tries one worker; until it ' +
                  'is up, requests stay in the front process. Raise it ' +
                  'where a worker\'s start is slow — a large realm key set ' +

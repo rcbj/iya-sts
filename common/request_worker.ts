@@ -261,6 +261,20 @@ const START_TIMEOUT_MS = Math.max(5000,
   Number(config.value('workers.startTimeoutMs')));
 
 // ---------------------------------------------------------------------------
+// **PAST THE LIMIT A WORKER IS SLOW, NOT FAILED (2026-10-21, #820).** It used
+// to report that it could not start, and the front process ended it — a
+// `terminate()` of a thread in the middle of restoring a million rows — and
+// forked a replacement that restored the same rows beside it. On 8081 that
+// doubled the start's memory at its worst moment and the process ran out of
+// heap twice. Now the limit says the worker is SLOW: the front process stops
+// waiting for it and lets it finish, and it joins the pool when it reports
+// ready. A worker still not up after `START_GIVE_UP_FACTOR` times the limit
+// is one that will not come up, and is reported as failed — ended and
+// replaced, as before.
+// ---------------------------------------------------------------------------
+const START_GIVE_UP_FACTOR = 4;
+
+// ---------------------------------------------------------------------------
 // THE RESPONSE THIS WORKER IS CURRENTLY WRITING (2026-09-09), AND THE ONE
 // THING THAT NEEDS IT.
 //
@@ -391,6 +405,7 @@ class RequestWorker {
   // `listening` handler — AFTER reporting that its state was up, which is why
   // the log read as three healthy workers and the pool counted none.
   private startTimer: NodeJS.Timeout | null = null;
+  private giveUpTimer: NodeJS.Timeout | null = null;
   private socketPath = '';
   private inFlight = 0;
   private served = 0;
@@ -896,15 +911,24 @@ class RequestWorker {
     });
 
     this.startTimer = setTimeout(() => {
-      this.report({ ready: false, error: 'the worker did not finish ' +
-                    'starting within ' + START_TIMEOUT_MS + 'ms — it brings ' +
-                    'its whole state up (the store, the keys, the minted ' +
-                    'rows and coordination) before it listens' });
+      this.report({ ready: false, slow: true, error: 'the worker did not ' +
+                    'finish starting within ' + START_TIMEOUT_MS + 'ms — it ' +
+                    'brings its whole state up (the store, the keys, the ' +
+                    'minted rows and coordination) before it listens — and ' +
+                    'is still starting' });
     }, START_TIMEOUT_MS);
     this.startTimer.unref();
+    this.giveUpTimer = setTimeout(() => {
+      this.report({ ready: false, error: 'the worker did not finish ' +
+                    'starting within ' +
+                    START_GIVE_UP_FACTOR * START_TIMEOUT_MS + 'ms, ' +
+                    START_GIVE_UP_FACTOR + ' times workers.startTimeoutMs' });
+    }, START_GIVE_UP_FACTOR * START_TIMEOUT_MS);
+    this.giveUpTimer.unref();
 
     server.on('error', (err) => {
       clearTimeout(this.startTimer);
+      clearTimeout(this.giveUpTimer);
       log.error(errorCodes.tag('STS-WORKER-0018') +
                 'request_worker: the socket ' + this.socketPath + ' failed: ' +
                 err.message);
@@ -991,6 +1015,7 @@ class RequestWorker {
     // ---------------------------------------------------------------------
     this.server.listen({ path: this.socketPath, backlog: 1024 }, () => {
       clearTimeout(this.startTimer);
+      clearTimeout(this.giveUpTimer);
       // The socket is created with the process umask, which on a shared
       // machine could be world-writable. Narrowed to the owner: anything that
       // can write to this socket can make a request AS THE FRONT PROCESS,
