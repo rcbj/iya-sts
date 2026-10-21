@@ -125,6 +125,10 @@ config.registerLogger(log);
  * The id of the default realm, which has an empty path prefix.
  */
 const DEFAULT_ID = 'default';
+// How long an on-demand store remembers a key the store said is absent
+// (#820 part 2; see map()). Every write that could make it present forgets
+// it sooner; this is the backstop.
+const ABSENT_MS = 60 * 1000;
 
 /**
  * The default realm's record: built in, never stored, and never removed or
@@ -2726,6 +2730,14 @@ function declareHandle(options, shape, accessors) {
     onDemand: !!options.onDemand,
     lookupsOf: options.onDemand && typeof options.indexBy === 'function'
       ? options.indexBy : null,
+    // A store whose rows written before it declared an `expiresAt` have
+    // none (#820 part 2): how long after its write such a row lives, in
+    // ms. The store is read back whole until those rows are given one
+    // (`persistence_minted.js`'s backfill job), since on demand only the
+    // store's expiry purge deletes a dead row.
+    expiryFromWrittenMs: options.onDemand &&
+      typeof options.onDemand.expiryFromWrittenMs === 'function'
+      ? options.onDemand.expiryFromWrittenMs : null,
     // ---------------------------------------------------------------------
     // THE ACCESSORS LIVE ON THE REGISTRY ROW AND NOT ON THE STORE, and that is
     // the whole reason this is a registry at all. Two of the three shapes are
@@ -2740,6 +2752,11 @@ function declareHandle(options, shape, accessors) {
     // The partition's own Map, uncopied, where the store has one: for a walk
     // of a store too large to copy (#820's backfill). Read it, never write.
     partition: accessors.partition,
+    forgetAbsent: accessors.forgetAbsent,
+    residentAdd: accessors.residentAdd,
+    residentRemove: accessors.residentRemove,
+    residentClear: accessors.residentClear,
+    keysResident: !!(options.onDemand && options.onDemand.keysResident),
     read: accessors.read,
     restore: accessors.restore,
     remove: accessors.remove
@@ -3096,6 +3113,42 @@ function map(options) {
       log.debug("Leaving partition().");
       return per.of(partitionId(realmId));
     },
+    // A key another process wrote, or this one restored: forgotten as
+    // absent (#820 part 2). Called by the appliers whether or not the row is
+    // held. A no-op for a store that is not on demand.
+    forgetAbsent: function (realmId, k) {
+      log.debug("Entering forgetAbsent().");
+      if (absentPer) {
+        absentPer.of(partitionId(realmId)).delete(k);
+      }
+      log.debug("Leaving forgetAbsent().");
+    },
+    // A key-resident store's digests (#820 part 2): `add` for a row read
+    // at a start or changed by another process, `clear` before a start's
+    // load. A no-op for any other store.
+    residentAdd: function (realmId, digest) {
+      log.debug("Entering residentAdd().");
+      if (residentPer && digest) {
+        residentPer.of(partitionId(realmId)).add(String(digest));
+      }
+      log.debug("Leaving residentAdd().");
+    },
+    residentRemove: function (realmId, digest) {
+      log.debug("Entering residentRemove().");
+      if (residentPer && digest) {
+        residentPer.of(partitionId(realmId)).delete(String(digest));
+      }
+      log.debug("Leaving residentRemove().");
+    },
+    residentClear: function () {
+      log.debug("Entering residentClear().");
+      if (residentPer) {
+        list().concat([DEFAULT_REALM]).forEach(function (one) {
+          residentPer.of(partitionId(one.id)).clear();
+        });
+      }
+      log.debug("Leaving residentClear().");
+    },
     read: function (realmId, k) {
       log.debug("Entering read().");
       const m = per.of(partitionId(realmId));
@@ -3224,6 +3277,67 @@ function map(options) {
   function demandOn() {
     return onDemand && !!onDemandReader && onDemandReader.active(handleName);
   }
+  // -------------------------------------------------------------------------
+  // WHAT THE STORE SAID IS NOT THERE (#820 part 2): a key read and found
+  // absent is remembered for `ABSENT_MS`, at most `demandBound` of them, so a
+  // question that is usually "no" — is this token revoked? — is not a read
+  // of the store per request. A stale "no" would be a wrong answer, so
+  // everything that can make a remembered key present forgets it: a write
+  // here (`set()`), and another process's change, which the appliers in
+  // `persistence_minted.js` report through the handle's `forgetAbsent()`
+  // even when they skip the row. The bound in time is the backstop.
+  // -------------------------------------------------------------------------
+  const absentPer = onDemand ? keyed(function () {
+    return new Map();
+  }) : null;
+  // -------------------------------------------------------------------------
+  // KEY-RESIDENT (#820 part 2): `onDemand: { keysResident: true }`. The
+  // process holds the KEY COLUMN of every live row — the keyed digest the
+  // store files a row under, loaded at a start without reading one body —
+  // and no records beyond the bounded cache. A key whose digest is not held
+  // is absent, answered without the store; one that is is read. For a store
+  // whose question is membership on a hot path with keys that are usually
+  // absent — `admin_stats.revokedJtis`: is this token revoked? — where a
+  // read per question would be a read per request. `has()` is answered from
+  // the digests alone, with no read; `get()` reads a held digest's row.
+  // `size` is the count of digests. They are kept EXACT by every change: a
+  // write or delete here, and another process's, which the appliers read to
+  // learn whether it was a write or a delete (`residentAdd`/`residentRemove`
+  // in `persistence_minted.js`). What only the store's expiry purge removes
+  // stays until a read finds it gone — a row past its own expiry, which a
+  // store declares only where an expired row answers like an absent one.
+  // -------------------------------------------------------------------------
+  const keysResident = onDemand && options.onDemand.keysResident === true;
+  const residentPer = keysResident ? keyed(function () {
+    return new Set();
+  }) : null;
+  // Hot path: every key-resident question. No Entering/Leaving pair.
+  function digestOf(realmId, k) {
+    return typeof onDemandReader.digestOf === 'function'
+      ? onDemandReader.digestOf(handleName, realmId, k) : null;
+  }
+  // Hot path: every on-demand miss. No Entering/Leaving pair.
+  function absentKnown(k) {
+    const absent = absentPer();
+    const until = absent.get(k);
+    if (until === undefined) {
+      return false;
+    }
+    if (until > Date.now()) {
+      return true;
+    }
+    absent.delete(k);
+    return false;
+  }
+  // Hot path: every on-demand miss. No Entering/Leaving pair.
+  function absentNote(k) {
+    const absent = absentPer();
+    absent.delete(k);
+    absent.set(k, Date.now() + ABSENT_MS);
+    if (absent.size > demandBound) {
+      absent.delete(absent.keys().next().value);
+    }
+  }
   // Hot path: every on-demand write and read. No Entering/Leaving pair.
   function demandTrim(realmId, target) {
     if (target.size <= demandBound) {
@@ -3248,8 +3362,25 @@ function map(options) {
     if (onDemandReader.journalled(handleName, realmId, k)) {
       return undefined;
     }
+    let digest = null;
+    if (keysResident) {
+      digest = digestOf(realmId, k);
+      if (digest && !residentPer().has(digest)) {
+        return undefined;
+      }
+    } else if (absentKnown(k)) {
+      return undefined;
+    }
     const found = onDemandReader.read(handleName, realmId, k);
     if (!found || !found.present) {
+      // A FAILED read is not remembered: only the store's own "absent".
+      if (found && found.present === false) {
+        if (digest) {
+          residentPer().delete(digest);
+        } else {
+          absentNote(k);
+        }
+      }
       return undefined;
     }
     target.set(k, found.value);
@@ -3337,6 +3468,15 @@ function map(options) {
       const target = per();
       target.set(k, v);
       noteWrite(handle, k);
+      if (absentPer) {
+        absentPer().delete(k);
+      }
+      if (keysResident && demandOn()) {
+        const digest = digestOf(partitionId(currentId()), k);
+        if (digest) {
+          residentPer().add(digest);
+        }
+      }
       if (demandOn()) {
         demandTrim(partitionId(currentId()), target);
       }
@@ -3345,12 +3485,26 @@ function map(options) {
     },
     has: function (k) {
       log.debug("Entering has().");
+      if (keysResident && demandOn() && !per().has(k)) {
+        // From the digests alone (see `keysResident`): a key with a write
+        // not committed and not held is a delete not yet written.
+        const realmId = partitionId(currentId());
+        const digest = digestOf(realmId, k);
+        if (digest && !onDemandReader.journalled(handleName, realmId, k)) {
+          log.debug("Leaving has(). Resident.");
+          return residentPer().has(digest);
+        }
+      }
       log.debug("Leaving has().");
       return onDemand ? demandGet(k) !== undefined : per().has(k);
     },
     delete: function (k) {
       log.debug("Entering delete().");
-      const gone = per().delete(k);
+      let gone = per().delete(k);
+      if (keysResident && demandOn()) {
+        const digest = digestOf(partitionId(currentId()), k);
+        gone = (!!digest && residentPer().delete(digest)) || gone;
+      }
       // Reported whether or not the key was there. A delete of a key this
       // process never held may still have a ROW — restored from the store and
       // swept before anything read it — and reporting only the hits would
@@ -3394,7 +3548,9 @@ function map(options) {
     get size() {
       log.debug("Entering size().");
       log.debug("Leaving size().");
-      return per().size;
+      // Key-resident and live: every live row's digest is held, so the count
+      // is the store's, not the cache's (see `keysResident` above).
+      return keysResident && demandOn() ? residentPer().size : per().size;
     }
   };
   facade[Symbol.iterator] = function () { return per()[Symbol.iterator](); };

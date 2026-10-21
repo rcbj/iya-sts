@@ -95,7 +95,27 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // is never written again once deleted, and two nodes can each edit one row
 // (a sign-in on one, an expiry on another) — `merge()` is what the two
 // copies become. Kept until the expiry job deletes an empty row.
+//
+// **ON DEMAND (#820 part 2)**: 387,000 sets on 8081 — a load signs in with a
+// fresh cookie jar each time — read back by every process at every start,
+// for a read that is always by the id in a browser's cookie. A process holds
+// the sets it was asked for, and the expiry job prunes those; a set nobody
+// asks for is pruned when its browser next draws the picker, or never, and
+// the store's expiry purge deletes it: its `expiresAt` is its last write
+// plus the time a signed-out account is remembered plus twice the session
+// lifetime, after which nothing in it can still be live or remembered.
+// Rows written before that hook are given the same from `written_at`
+// before the store goes on demand (`expiryFromWrittenMs`).
 const sets = realms.map({ persist: 'authn.accountSets', tombstone: true,
+                          onDemand: { maxEntries: 20000,
+                                      expiryFromWrittenMs: function () {
+                                        return AccountSets.keepMs();
+                                      } },
+                          // A hot path (every row a flush writes).
+                          expiresAt: function (row: Json): number | null {
+                            const at = Number(row && row.updatedAt);
+                            return at > 0 ? at + AccountSets.keepMs() : null;
+                          },
                           mergeRow: function (mine: Json, theirs: Json) {
                             return AccountSets.merge(mine, theirs);
                           } });
@@ -162,6 +182,28 @@ class AccountSets {
     const n = Math.floor(Number(config.value('authn.maxBrowserAccounts')));
     helpers.log.debug("Leaving AccountSets.maxAccounts().");
     return n > 0 ? n : 10;
+  }
+
+  /**
+   * How long after its last write a set can still matter (#820 part 2): a
+   * signed-out account's remembering, and twice the session lifetime for
+   * a session listed in it. A hot path (every row a flush writes): no
+   * Entering/Leaving pair.
+   *
+   * @returns milliseconds
+   */
+  static keepMs(): number {
+    const lifetimeS = Math.floor(Number(
+      config.value('authn.sessionLifetimeS')));
+    return AccountSets.rememberMsQuietly() +
+      2 * (lifetimeS > 0 ? lifetimeS : 3600) * 1000;
+  }
+
+  // `rememberMs()` without its log lines, for `keepMs()`'s hot path.
+  private static rememberMsQuietly(): number {
+    const days = Math.floor(Number(
+      config.value('authn.rememberedAccountDays')));
+    return (days > 0 ? days : 30) * DAY_MS;
   }
 
   /**
