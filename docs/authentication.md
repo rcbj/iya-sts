@@ -215,6 +215,7 @@ trusted statement. What each key's statement proved is shown beside it on
 whose statement nothing verified is shown as *claimed*: a client that believed
 this service's word on an unverified statement would have learned something
 false about a real device.
+
 **A classical passkey and a post-quantum one, side by side**
 (`webauthn.pqcAlongsideClassical`, off by default, per realm). An
 authenticator replaces a passkey it already holds for this service when it
