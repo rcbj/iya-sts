@@ -1108,8 +1108,8 @@
     "text": "Användarverifiering"
   },
   "webauthn.userVerification|description": {
-    "en": "e0f3bd0371bd63c6",
-    "text": "`required` som standard i alla lägen (rcbj, 2026-10-09; det var `preferred`). Om autentiseraren måste verifiera PERSONEN — en PIN-kod, ett fingeravtryck, ett ansikte — utöver att bevisa innehav av nyckeln. **DETTA ÄR DEN ENDA CEREMONIINSTÄLLNING SOM TJÄNSTEN ÄVEN UPPRÄTTHÅLLER**: `required` skickas till webbläsaren och UV-flaggan i autentiseringsdata KONTROLLERAS sedan när ceremonin kommer tillbaka, så en autentiserare som inte verifierade vägras i stället för att tyst godtas. **En höjning ändrar inte vad en session PÅSTÅR.** En lösenordslös inloggning registrerar fortfarande `amr [\"hwk\"]` och `acr \"1\"` — en faktor — även med `required`, eftersom RFC 8176 inte har något värde för *autentiseraren verifierade användaren* som tjänsten ärligt skulle kunna intyga, och att hitta på det starkare anspråket är exakt den förfalskning som den här profilen vägrar överallt annars. `/admin/webauthn` säger det på sidan."
+    "en": "eb2931954812147c",
+    "text": "`required` som standard i alla lägen (rcbj, 2026-10-09; det var `preferred`). Om autentiseraren måste verifiera PERSONEN — en PIN-kod, ett fingeravtryck, ett ansikte — utöver att bevisa innehav av nyckeln. **TJÄNSTEN UPPRÄTTHÅLLER DEN ÄVEN**, liksom de erbjudna algoritmerna och RP-ID:t: `required` skickas till webbläsaren och UV-flaggan i autentiseringsdata KONTROLLERAS sedan när ceremonin kommer tillbaka, så en autentiserare som inte verifierade vägras i stället för att tyst godtas. **En höjning ändrar inte vad en session PÅSTÅR.** En lösenordslös inloggning registrerar fortfarande `amr [\"hwk\"]` och `acr \"1\"` — en faktor — även med `required`, eftersom RFC 8176 inte har något värde för *autentiseraren verifierade användaren* som tjänsten ärligt skulle kunna intyga, och att hitta på det starkare anspråket är exakt den förfalskning som den här profilen vägrar överallt annars. `/admin/webauthn` säger det på sidan."
   },
   "webauthn.attestation|label": {
     "en": "13af8631fdb53757",

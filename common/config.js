@@ -2851,8 +2851,9 @@ const SETTINGS = [
                  'was `preferred`). ' +
                  'Whether the authenticator must verify the PERSON — a PIN, ' +
                  'a fingerprint, a face — as well as prove possession of the ' +
-                 'key. **THIS IS THE ONE CEREMONY SETTING THIS SERVICE ALSO ' +
-                 'ENFORCES**: `required` is sent to the browser and the UV ' +
+                 'key. **THIS SERVICE ALSO ENFORCES IT**, as it does the ' +
+                 'algorithms offered and the RP ID: `required` is sent to ' +
+                 'the browser and the UV ' +
                  'flag in the authenticator data is then CHECKED when the ' +
                  'ceremony comes back, so an authenticator that did not ' +
                  'verify is refused rather than quietly accepted. **Raising ' +

@@ -881,9 +881,13 @@ description of each is in [Configuration → WebAuthn](configuration.md#webauthn
 | `webauthn.mfaAllowed` | `STS_WEBAUTHN_MFA_ALLOWED` | `true` |
 | `webauthn.maxKeysPerPerson` | `STS_WEBAUTHN_MAX_KEYS` | `10` |
 
-**`webauthn.userVerification` is the one ceremony setting the service
-enforces**: with `required`, an authenticator that did not verify the person
-is refused. The others are requests to the browser.
+**Three ceremony settings are enforced, not just requested**:
+`webauthn.userVerification` (with `required`, an authenticator that did not
+verify the person is refused), `webauthn.algorithms` with `webauthn.pqcOnly`
+and `webauthn.insecureAlgorithms` (a credential whose algorithm was not
+offered is refused), and `webauthn.rpId` (checked through the RP ID hash).
+The others are requests to the browser
+([why](configuration.md#the-webauthn-settings-and-the-ceremony-settings-this-service-checks)).
 
 **Turning a setting off never removes passkeys people already hold.**
 `webauthn.enabled`, `webauthn.primaryAllowed` and `webauthn.mfaAllowed` stop

@@ -933,7 +933,7 @@ service already makes about enrolling an authenticator app from the console.
 where a code is typed, what the session records, and why a spend that cannot be
 written refuses the sign-in.
 
-### The WebAuthn settings, and the one ceremony setting this service enforces
+### The WebAuthn settings, and the ceremony settings this service checks
 
 The `webauthn.*` rows, drawn on `/admin/webauthn` under Protocols.
 The specification and the browser decide the cryptography, not the ceremony:
@@ -962,14 +962,28 @@ decides what it means:
   `attestation*` rows beside it, below. Unlike the ceremony rows these do
   refuse a registration.
 
-**`webauthn.userVerification` IS THE ONE THIS SERVICE CHECKS.** `required` is
-sent to the browser AND the UV flag in the signed authenticator data is verified
-when the ceremony comes back, so an authenticator that did not verify the person
-is refused rather than quietly accepted. The other ceremony rows cannot be
-checked at all: nothing signed says what the browser was asked for, so a check
-would be a comparison against a value this service itself supplied. What it does
-instead is RECORD what came back — the attachment the browser reported, and the
-`credProps` answer about whether the credential is really discoverable.
+**Three ceremony rows are CHECKED when the ceremony comes back**, because the
+answer carries something signed or hashed to check them against:
+
+* **`webauthn.userVerification`.** `required` is sent to the browser AND the UV
+  flag in the signed authenticator data is verified, so an authenticator that
+  did not verify the person is refused rather than quietly accepted
+  (`STS-AUTHN-0033`).
+* **`webauthn.algorithms`**, as `webauthn.pqcOnly` and
+  `webauthn.insecureAlgorithms` narrow or widen it. A new credential whose
+  algorithm was not offered is refused (WebAuthn Level 3 section 7.1,
+  `STS-AUTHN-0228`), which is how `pqcOnly` refuses a key that is not ML-DSA;
+  and an assertion by a key whose algorithm is insecure is refused while
+  `insecureAlgorithms` is off (`STS-AUTHN-0294`).
+* **`webauthn.rpId`.** The `rpIdHash` in the authenticator data must be the
+  SHA-256 of the RP ID (`STS-AUTHN-0031`).
+
+The other ceremony rows (`rpName`, `attestation`, `timeoutMs`) and the CTAP2
+rows cannot be checked: nothing signed says what the browser was asked for, so
+a check would be a comparison against a value this service itself supplied.
+What it does instead is RECORD what came back: the attachment the browser
+reported, and the `credProps` answer about whether the credential is really
+discoverable.
 
 **Raising it does not change what a session claims.** A passwordless sign-in
 still records `amr ["hwk"]` and `acr "1"` under `required`. RFC 8176 has no
@@ -2272,7 +2286,7 @@ client author asks this service for a ceremony of a particular shape — with
 | `webauthn.insecureAlgorithms` | `STS_WEBAUTHN_INSECURE_ALGORITHMS` | `false` | yes | **Development mode only.** On, the broken passkey algorithms — SHA-1's `RS1` (-65535) — are requested (last) and accepted at registration and sign-in. Off, `RS1` is neither requested nor accepted, even where `webauthn.algorithms` names it, and a key enrolled with it is refused at sign-in (`STS-AUTHN-0294`). Product mode refuses to set it and ignores a stored value. Per realm. |
 | `webauthn.pqcAlongsideClassical` | `STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL` | `false` | yes | On, a person may hold a classical passkey and a post-quantum (ML-DSA) passkey at once, on one authenticator where it can make both: each passkey is created in a lane the person chooses — classical (`webauthn.algorithms` without ML-DSA, `ES256` and `RS256` where that leaves none) or post-quantum (ML-DSA only) — with its own user handle and exclude list. The post-quantum one is shown as `<username>+ml-dsa`, later `<username>+ml-dsa-65`, which is never a sign-in name. `webauthn.maxKeysPerPerson` counts both. Refused while `webauthn.pqcOnly` is on (`STS-AUTHN-0353`). Off, every ceremony is as it was; a post-quantum passkey already held still signs in and no new one can be created. Per realm. |
 | `webauthn.pqcOnly` | `STS_WEBAUTHN_PQC_ONLY` | `false` | yes | On, only the post-quantum passkey algorithms are requested — RFC 9964's `ML-DSA-44`, `ML-DSA-65` and `ML-DSA-87` that `webauthn.algorithms` names, or all three where it names none — so a new passkey must be ML-DSA. Keys already enrolled with another algorithm go on signing in. Most authenticators support no ML-DSA yet. Per realm. |
-| `webauthn.userVerification` | `STS_WEBAUTHN_USER_VERIFICATION` | `required` | yes | Whether the authenticator must verify the PERSON — a PIN, a fingerprint, a face — as well as prove possession. **THIS IS THE ONE CEREMONY SETTING THIS SERVICE ALSO ENFORCES**: `required` is sent to the browser and the UV flag in the signed authenticator data is then checked. **It does not change what a session CLAIMS** — a passwordless sign-in still records `amr ["hwk"]` and `acr "1"`, because RFC 8176 has no value for *the authenticator verified the user* this service could honestly assert. |
+| `webauthn.userVerification` | `STS_WEBAUTHN_USER_VERIFICATION` | `required` | yes | Whether the authenticator must verify the PERSON — a PIN, a fingerprint, a face — as well as prove possession. **THIS SERVICE ALSO ENFORCES IT**, as it does the algorithms offered and the RP ID: `required` is sent to the browser and the UV flag in the signed authenticator data is then checked. **It does not change what a session CLAIMS** — a passwordless sign-in still records `amr ["hwk"]` and `acr "1"`, because RFC 8176 has no value for *the authenticator verified the user* this service could honestly assert. |
 | `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` | yes | How much the browser is asked to say about the authenticator. `direct` is the default because this is a debugging service and the attestation object is worth looking at; a deployment with no use for the model should send `none`. What is DONE with the statement is `webauthn.attestationPolicy`; a realm that demands a trusted statement asks for `direct` whatever this says. |
 | `webauthn.attestationPolicy` | `STS_WEBAUTHN_ATTESTATION_POLICY` | `by-mode` | yes | What a registration's attestation statement must be (#105). `verify-if-present` verifies every statement in all eight WebAuthn Level 3 section 8 formats and refuses one that does not verify; its chain is checked against the anchors below and the FIDO Metadata Service's roots, a model MDS lists must chain to its roots, a model MDS reports compromised is refused, and revocation is consulted; `none`, self attestation and an unanchored chain are accepted as untrusted. `require-trusted` refuses anything that does not chain to an anchor — and so every synced passkey. `by-mode` is `verify-if-present` in product and `off` in development. **`off` verifies nothing — WARNING: a forged statement is recorded as the authenticator's — and is development only.** |
 | `webauthn.attestationTrustAnchors` | `STS_WEBAUTHN_ATTESTATION_TRUST_ANCHORS` | *(empty)* | yes | Root certificates, as PEM, an attestation certificate may chain to beside the roots MDS lists for each model — a corporate TPM CA, a vendor's root, a test root. Nothing is shipped. |
@@ -2291,7 +2305,7 @@ client author asks this service for a ceremony of a particular shape — with
 Which of these is enforced and which are only requests to the browser, why the
 four policy rows refuse an enrolment and never an authentication, and how far
 the RP ID may be widened are under
-[The WebAuthn settings](#the-webauthn-settings-and-the-one-ceremony-setting-this-service-enforces)
+[The WebAuthn settings](#the-webauthn-settings-and-the-ceremony-settings-this-service-checks)
 above.
 
 ### Group claim
