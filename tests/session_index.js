@@ -1331,6 +1331,48 @@ async function indexBackfillCases(t, realm) {
 // A KEY-RESIDENT on-demand store (#820 part 2) is not read back: a start
 // loads the key column of its live rows (`loadMintedKeys()`), and a change
 // from another process files or removes the digest by what the row says.
+// An on-demand store that declared its expiry after rows were written
+// (#820 part 2, `expiryFromWrittenMs`) is read back whole until those rows
+// are given one: on demand only the store's expiry purge deletes a dead row.
+async function expiryBackfillCases(t) {
+  log.debug("Entering expiryBackfillCases().");
+  t.log.info('=== a store waits for its legacy rows\' expiries (#820) ===');
+  const handle = 'session-index.expiring';
+  const store = realms.map({ persist: handle,
+    onDemand: { maxEntries: 10, expiryFromWrittenMs: function () {
+      return 1234;
+    } },
+    expiresAt: function () {
+      return null;
+    } });
+  const filters = [];
+  const marked = [];
+  const given = [];
+  const driver = indexDriver([], [], marked, filters);
+  driver.backfillMintedExpiry = function (name, addMs) {
+    given.push({ handle: name, addMs: addMs });
+    return Promise.resolve(7);
+  };
+  install(driver);
+  await minted.restore();
+  t.check(filters.length && filters[0].indexOf(handle) < 0,
+          'with no mark it is read back whole', JSON.stringify(filters));
+  t.equal(store.onDemandLive(), false, 'and is not on demand');
+  await minted.backfillMintedIndexes();
+  t.equal(JSON.stringify(given.filter(function (one) {
+    return one.handle === handle;
+  })), JSON.stringify([{ handle: handle, addMs: 1234 }]),
+          'the job gives its legacy rows written_at plus the store\'s rule');
+  t.check(marked.indexOf(handle) >= 0, 'and then writes the mark',
+          JSON.stringify(marked));
+  filters.length = 0;
+  install(indexDriver([handle], [], [], filters));
+  await minted.restore();
+  t.check(filters.length && filters[0].indexOf(handle) >= 0,
+          'with the mark it is not read back', JSON.stringify(filters));
+  log.debug("Leaving expiryBackfillCases().");
+}
+
 async function residentCases(t, realm) {
   log.debug("Entering residentCases().");
   t.log.info('=== a key-resident store loads its keys, not its rows ===');
@@ -1400,6 +1442,7 @@ async function liveHalf(t, realm) {
   await floorCase(t);
   await indexBackfillCases(t, realm);
   await residentCases(t, realm);
+  await expiryBackfillCases(t);
   await applyCases(t, handle, realm);
   log.debug("Leaving liveHalf().");
 }

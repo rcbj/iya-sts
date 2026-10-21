@@ -2730,6 +2730,14 @@ function declareHandle(options, shape, accessors) {
     onDemand: !!options.onDemand,
     lookupsOf: options.onDemand && typeof options.indexBy === 'function'
       ? options.indexBy : null,
+    // A store whose rows written before it declared an `expiresAt` have
+    // none (#820 part 2): how long after its write such a row lives, in
+    // ms. The store is read back whole until those rows are given one
+    // (`persistence_minted.js`'s backfill job), since on demand only the
+    // store's expiry purge deletes a dead row.
+    expiryFromWrittenMs: options.onDemand &&
+      typeof options.onDemand.expiryFromWrittenMs === 'function'
+      ? options.onDemand.expiryFromWrittenMs : null,
     // ---------------------------------------------------------------------
     // THE ACCESSORS LIVE ON THE REGISTRY ROW AND NOT ON THE STORE, and that is
     // the whole reason this is a registry at all. Two of the three shapes are
