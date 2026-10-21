@@ -80,7 +80,7 @@
     - { title: "Configuring OpenID4VCI", url: /configure-oid4vci.html }
     - { title: OpenID4VP and wallet sign-in, url: /oid4vp.html }
     - { title: "Configuring OpenID4VP and wallet sign-in", url: /configure-oid4vp.html }
-    - { title: W3C VC-API test endpoints, url: /vc-api.html }
+    - { title: W3C VC API, url: /vc-api.html }
 
 - section: Directory and provisioning
   items:

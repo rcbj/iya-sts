@@ -5704,8 +5704,8 @@
     "text": "Pag-refresh ng wallet sign-in page (s)"
   },
   "oid4vp.signInPollS|description": {
-    "en": "439aa4f77625ebb1",
-    "text": "Gaano kadalas nire-reload ng QR-code page (oid4vp.signInCrossDevice) ang sarili nito habang sumasagot ang wallet sa ibang device. Isa itong <meta> refresh at hindi script, kaya buong page ang bawat reload. Hindi nagre-reload ang Digital Credentials API page: isasara ng reload ang wallet dialog ng browser."
+    "en": "b248261723e71249",
+    "text": "Kung gaano kadalas nagtatanong ang pahina ng QR code (oid4vp.signInCrossDevice) kung sumagot na ang wallet sa ibang device: pina-poll ng script nito ang POST /authn-api/wallet/{state}/status tuwing ganitong dami ng segundo, nang hindi nire-reload ang pahina (#574; isang <meta> refresh ito hanggang noon). Hindi nagpo-poll sa orasang ito ang pahina ng Digital Credentials API: hinihintay nito ang sagot ng wallet dialog ng browser."
   },
   "oid4vp.signInCrossDevice|label": {
     "en": "20ef4bd658348a2f",

@@ -760,8 +760,8 @@
     "text": "作用於內嵌目錄的非規格路徑，於 2026-09-06 新增——在此之前，此 API 能將「人」放入目錄，卻無法將其放入「群組」，因此此處通往群組的入口只有原始通訊端上的 ldapadd 與 POST /scim/v2/Groups。此模式背後有「兩個」URL。create 在 cn=<name>,ou=groups 放置一個 groupOfNames，因此依 /admin/groups 所套用的「兩種」規則都會被算作群組；名稱同時成為 cn「與」RDN，因此含有 RFC 4514 第 2.4 節在 DN 中保留之字元的名稱會被「拒絕」而非跳脫，與用戶名稱完全相同。可提供成員，每個成員可以是用戶名稱或任何 DN，因為群組可以包含另一個群組。add-member 在既有群組上寫入「一個」值，且具「冪等性」——已列出的人會回應 ok 並附 changed:false 而非錯誤——而且它不會順帶建立群組，否則名稱打錯就會變成一個新群組。未指向任何對象的成員會被寫入而不被拒絕：此目錄在兩個方向都不做參照完整性，若在此拒絕，就無法從這個入口產生 /admin/groups 存在的目的所要回報的懸空狀態。不會在「人」的項目上寫入任何東西：memberOf 在這裡沒有任何東西維護，寫入其中的值是其他任何入口都無法移除的。「移除」成員不在這裡——那是 ldapmodify、SCIM PATCH，或針對授予主控台權限的兩個群組使用 POST /admin-api/rbac。對應 POST /admin/groups。"
   },
   "stsmetadata.endpoints./admin-api/webauthn.what": {
-    "en": "c0a4d8af96e060e0",
-    "text": "非規格端點。二十一個 `webauthn.*` 設定，分為四類——「儀式」（RP 名稱、RP ID 覆寫、演算法、用戶驗證、證明傳遞、逾時）、CTAP2（驗證器附接方式、常駐金鑰、credProps）以及「原則」（金鑰是否可作為主要因素、是否可作為第二因素、每人可有幾把）——旁邊附上 COSE 演算法表，從 authn/webauthn.js（檢查簽章的模組）讀出。**只有一項會被強制執行，其餘都是請求**：userVerification 會依驗證器所簽署位元組中的 UV 旗標檢查。證明原則（#105）與目前生效的 FIDO 元數據一併回報。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/webauthn。"
+    "en": "b48aa4041763958e",
+    "text": "非規格端點。各項 `webauthn.*` 設定，分為四類——「儀式」（RP 名稱、RP ID 覆寫、演算法、用戶驗證、證明傳遞、逾時）、CTAP2（驗證器附接方式、credProps）以及「原則」（金鑰是否可作為主要因素、是否可作為第二因素、每人可有幾把）——旁邊附上 COSE 演算法表，從 authn/webauthn.js（檢查簽章的模組）讀出。**只有一項會被強制執行，其餘都是請求**：userVerification 會依驗證器所簽署位元組中的 UV 旗標檢查。證明原則（#105）與目前生效的 FIDO 元數據一併回報。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/webauthn。"
   },
   "stsmetadata.endpoints./admin-api/mfa/:action.what": {
     "en": "dfb23c5530e44da8",

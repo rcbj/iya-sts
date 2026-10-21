@@ -5351,10 +5351,10 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/webauthn', group: 'Management API',
     name: 'WebAuthn settings',
     specs: ['webauthn'],
-    what: 'NON-SPEC. The twenty-one `webauthn.*` settings in four kinds — the ' +
+    what: 'NON-SPEC. The `webauthn.*` settings in four kinds — the ' +
           'CEREMONY (RP name, RP ID override, algorithms, user verification, ' +
           'attestation conveyance, timeout), CTAP2 (authenticator ' +
-          'attachment, resident key, credProps) and POLICY (whether a key ' +
+          'attachment, credProps) and POLICY (whether a key ' +
           'may be primary, whether it may be a second factor, how many per ' +
           'person) — with the COSE algorithm table beside them, read from ' +
           'authn/webauthn.js, the module that checks the signature. **ONE IS ' +
