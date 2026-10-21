@@ -7495,6 +7495,14 @@
     "en": "8febb2273519b4ee",
     "text": "Hur många tidigare inloggningar en person behöver innan modellen poängsätter personen. Färre är OPOÄNGSATTA, som en första inloggning är, och signalerna new-device och new-tls-stack väntar på samma historik: med en eller två inloggningar är modellen mest populationens a priori-fördelning, och en ny persons andra inloggning skulle läsas som MEDIUM. Bevissignalerna (listor, automatiserade klienter, avvisade lösenord, en komprometterad säkerhetsnyckel) gäller hur ny personen än är. 1 poängsätter från den andra inloggningen och framåt."
   },
+  "risk.populationUsersCacheS|label": {
+    "en": "e30547f35344a4d6",
+    "text": "Sekunder som sfärens antal personer sparas"
+  },
+  "risk.populationUsersCacheS|description": {
+    "en": "5e0a6cc869a4bab0",
+    "text": "Hur länge riskbedömningen sparar antalet personer som har loggat in i en sfär — nämnaren i modellens utjämningsterm — innan de räknas igen. Att räkna är en genomsökning av en rad per person, så att fråga vid varje inloggning kostar mer ju större sfären blir; ett antal som är en minut gammalt ändrar ett värde mindre än en person till i sfären skulle göra. En sfär med färre än 1 000 personer räknas vid varje inloggning oavsett vad detta säger. 0 räknar vid varje inloggning."
+  },
   "risk.geoMinimumCount|label": {
     "en": "e636b2310a4df74f",
     "text": "Minsta antal personer som en plats numreras med på kartan"

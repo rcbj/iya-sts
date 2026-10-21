@@ -1171,6 +1171,18 @@
     "en": "cabefdef4e47cbf3",
     "text": "Jusqu’à ce qu’une version de jeu de données soit activée, ou que la limite la supprime."
   },
+  "caches.store.risk.population-users.title": {
+    "en": "ee5f57710fdd1b70",
+    "text": "Évaluation des risques : nombre de personnes par domaine"
+  },
+  "caches.store.risk.population-users.description": {
+    "en": "cb24f916eda472c0",
+    "text": "Le nombre de personnes qui se sont connectées à chaque domaine, dénominateur du terme de lissage du modèle de risque, conservé pour qu’une connexion ne compte pas chaque personne qui s’est jamais connectée."
+  },
+  "caches.store.risk.population-users.bound": {
+    "en": "8154bb7a629a4263",
+    "text": "Structurel : un compte par domaine d’au moins 1000 personnes (scellé ou non), et il y a au plus realms.maxCount domaines en plus du domaine par défaut."
+  },
   "caches.store.risk.standings.title": {
     "en": "492e058d1adf8354",
     "text": "Situations de risque"

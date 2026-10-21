@@ -1171,6 +1171,18 @@
     "en": "cabefdef4e47cbf3",
     "text": "直到資料集版本被啟用，或因上限而被捨棄。"
   },
+  "caches.store.risk.population-users.title": {
+    "en": "ee5f57710fdd1b70",
+    "text": "風險評分：每個領域的人數"
+  },
+  "caches.store.risk.population-users.description": {
+    "en": "cb24f916eda472c0",
+    "text": "每個領域中曾經登入過的人數，即風險模型平滑項的分母；保留下來，使一次登入不必計算每個曾經登入過的人。"
+  },
+  "caches.store.risk.population-users.bound": {
+    "en": "8154bb7a629a4263",
+    "text": "結構性：每個至少有 1000 人的領域一個計數（已密封或未密封），且除預設領域外最多有 realms.maxCount 個領域。"
+  },
   "caches.store.risk.standings.title": {
     "en": "492e058d1adf8354",
     "text": "風險狀況"

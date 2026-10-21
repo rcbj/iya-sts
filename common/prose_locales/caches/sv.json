@@ -1171,6 +1171,18 @@
     "en": "cabefdef4e47cbf3",
     "text": "Tills en version av en datamängd aktiveras, eller gränsen släpper den."
   },
+  "caches.store.risk.population-users.title": {
+    "en": "ee5f57710fdd1b70",
+    "text": "Riskbedömning: antalet personer i varje sfär"
+  },
+  "caches.store.risk.population-users.description": {
+    "en": "cb24f916eda472c0",
+    "text": "Hur många personer som har loggat in i varje sfär, nämnaren i riskmodellens utjämningsterm, sparat så att en inloggning inte räknar varje person som någonsin har loggat in."
+  },
+  "caches.store.risk.population-users.bound": {
+    "en": "8154bb7a629a4263",
+    "text": "Strukturell: ett antal per sfär med minst 1000 personer (förseglat eller inte), och det finns högst realms.maxCount sfärer utöver standardsfären."
+  },
   "caches.store.risk.standings.title": {
     "en": "492e058d1adf8354",
     "text": "Riskställningar"

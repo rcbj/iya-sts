@@ -7495,6 +7495,14 @@
     "en": "8febb2273519b4ee",
     "text": "Cuántos inicios de sesión previos necesita una persona antes de que el modelo la puntúe. Con menos queda SIN PUNTUAR, como un primer inicio de sesión, y las señales new-device y new-tls-stack esperan al mismo historial: con uno o dos inicios de sesión el modelo es sobre todo la probabilidad previa de la población, y el segundo inicio de sesión de una persona nueva se leería como MEDIUM. Las señales de evidencia (listas, clientes automatizados, contraseñas rechazadas, una llave de seguridad comprometida) se aplican por nueva que sea la persona. 1 puntúa a partir del segundo inicio de sesión."
   },
+  "risk.populationUsersCacheS|label": {
+    "en": "e30547f35344a4d6",
+    "text": "Segundos que se guarda el número de personas del dominio"
+  },
+  "risk.populationUsersCacheS|description": {
+    "en": "5e0a6cc869a4bab0",
+    "text": "Cuánto tiempo guarda la evaluación de riesgo el número de personas que han iniciado sesión en un dominio (el denominador del término de suavizado del modelo) antes de volver a contarlas. Contar recorre una fila por persona, así que preguntarlo en cada inicio de sesión cuesta más a medida que crece el dominio; un recuento de hace un minuto cambia una puntuación menos de lo que lo haría una persona más en el dominio. Un dominio de menos de 1000 personas se cuenta en cada inicio de sesión diga lo que diga este ajuste. 0 cuenta en cada inicio de sesión."
+  },
   "risk.geoMinimumCount|label": {
     "en": "e636b2310a4df74f",
     "text": "Mínimo de personas para numerar un lugar en el mapa"
