@@ -15326,7 +15326,9 @@ class OAuth2Server {
         bcp.warmRefresh(claims),
         stats.warmTokens([String(claims.jti || '')]),
         // And the person, at the place the consent check reads them.
-        helpers.warmPeopleAsync([String(claims.username || '')])
+        helpers.warmPeopleAsync([String(claims.username || '')]),
+        // And the sign-on session an online token is bound to.
+        authn.warmSessionAsync(String(claims.sid || ''))
       ]).catch(function (e) {
         log.debug("Caught in OAuth2Server.tokenGrant(): " +
                   ((e && e.message) || e));
