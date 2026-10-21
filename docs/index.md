@@ -145,11 +145,13 @@ It runs from an image: part of the service is TypeScript, compiled while the
 image is built, and a checkout does not run on its own.
 
 **https, and your browser will warn you once.** Every appconfig file here sets
-`global.https`, so the main port is TLS on the same self-signed certificate the
-LDAPS 636 listener uses — one pair, regenerated on every start,
-so nothing can have trusted it in advance. Accept it, or fetch it with
-`curl -k https://localhost:8081/tls/server-certificate`; `STS_HTTPS=false` runs
-the plain port this used to be.
+`global.https`, so the main port is TLS on the same certificate the LDAPS 636
+listener uses, issued under this service's own Root CA — which, in development
+mode, is rebuilt on every start, so nothing can have trusted it in advance.
+Accept it, or fetch the certificate, its chain and the Root with
+`curl -k https://localhost:8081/tls/server-certificate` and trust the Root
+([TLS](tls.md#the-server-certificate)); `STS_HTTPS=false` runs the plain port
+this used to be.
 
 Then open <https://localhost:8081/> — a front page with the five things worth
 having on one: this repository, its issues, this site, and the two surfaces on

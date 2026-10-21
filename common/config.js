@@ -3040,10 +3040,11 @@ const SETTINGS = [
   // `webauthn.residentKey` and `webauthn.usernameless` WERE HERE until #527
   // (2026-10-08). The passkey policy decides both now, per realm and
   // inherited from the default realm (`common/passkey_policy.ts`, Directory
-  // → Policies): `allowUsernameless`, off by default, and
-  // `securityKeyResidentKey`, which a security key is asked for — `required`
-  // while usernameless sign-in is off. No shim; REPLACED_SETTINGS refuses a
-  // start that still names either.
+  // → Policies): `allowUsernameless`, on by default since 2026-10-10 (it
+  // was off on #527's answer), and `securityKeyResidentKey`, which a
+  // security key is asked for — `required` by default, and always
+  // `required` while usernameless sign-in is off. No shim;
+  // REPLACED_SETTINGS refuses a start that still names either.
   // ---------------------------------------------------------------------
 
   { key: 'webauthn.credProps', group: 'WebAuthn',
@@ -11101,11 +11102,12 @@ const SETTINGS = [
     env: 'OID4VP_SIGN_IN_POLL_S', type: 'int', dflt: 3, min: 1, max: 60,
     runtime: true,
     description: 'How often the QR-code page (oid4vp.signInCrossDevice) ' +
-                 'reloads itself while a wallet on another device answers. ' +
-                 'It is a <meta> refresh and not a script, so every reload ' +
-                 'is a whole page. The Digital Credentials API page does ' +
-                 'not reload: a reload would close the browser\'s wallet ' +
-                 'dialog.' },
+                 'asks whether a wallet on another device has answered: ' +
+                 'its script polls POST /authn-api/wallet/{state}/status ' +
+                 'every this many seconds, without reloading the page ' +
+                 '(#574; it was a <meta> refresh until then). The Digital ' +
+                 'Credentials API page does not poll on this clock: it ' +
+                 'waits for the browser\'s wallet dialog to answer.' },
 
   // OFF BY DEFAULT IN EVERY MODE SINCE #38's FOLLOW-UPS (rcbj): the plain QR
   // code is the one wallet sign-in path a relay works on, and the Digital

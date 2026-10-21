@@ -5704,8 +5704,8 @@
     "text": "錢包登入頁面重新整理間隔（秒）"
   },
   "oid4vp.signInPollS|description": {
-    "en": "439aa4f77625ebb1",
-    "text": "在另一裝置上的錢包回應期間，QR 碼頁面（oid4vp.signInCrossDevice）多久重新載入一次。它是 <meta> 重新整理而非指令碼，因此每次重新載入都是整個頁面。Digital Credentials API 頁面不會重新載入：重新載入會關閉瀏覽器的錢包對話方塊。"
+    "en": "b248261723e71249",
+    "text": "QR 碼頁面（oid4vp.signInCrossDevice）多久詢問一次另一裝置上的錢包是否已回應：其指令碼每隔這麼多秒輪詢一次 POST /authn-api/wallet/{state}/status，不重新載入頁面（#574；在此之前它是 <meta> 重新整理）。Digital Credentials API 頁面不按此時鐘輪詢：它等待瀏覽器的錢包對話方塊回應。"
   },
   "oid4vp.signInCrossDevice|label": {
     "en": "20ef4bd658348a2f",

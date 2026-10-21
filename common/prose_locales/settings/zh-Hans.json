@@ -5704,8 +5704,8 @@
     "text": "钱包登录页面刷新间隔（秒）"
   },
   "oid4vp.signInPollS|description": {
-    "en": "439aa4f77625ebb1",
-    "text": "在另一设备上的钱包应答期间，二维码页面（oid4vp.signInCrossDevice）自行重新加载的频率。它是 <meta> 刷新而不是脚本，因此每次重新加载都是整个页面。Digital Credentials API 页面不会重新加载：重新加载会关闭浏览器的钱包对话框。"
+    "en": "b248261723e71249",
+    "text": "二维码页面（oid4vp.signInCrossDevice）多久询问一次另一设备上的钱包是否已应答：其脚本每隔这么多秒轮询一次 POST /authn-api/wallet/{state}/status，不重新加载页面（#574；在此之前它是 <meta> 刷新）。Digital Credentials API 页面不按此时钟轮询：它等待浏览器的钱包对话框应答。"
   },
   "oid4vp.signInCrossDevice|label": {
     "en": "20ef4bd658348a2f",
