@@ -3285,7 +3285,15 @@ class Devices {
                  (!!record.x5t && certThumbprints.indexOf(record.x5t) >= 0) ||
                  (!!record.x5tSpki &&
                   spkiThumbprints.indexOf(record.x5tSpki) >= 0);
-        }, why, { initiatingEntity: entity });
+        }, why, { initiatingEntity: entity },
+        // Where tokens bound to those keys are filed (#820 part 3).
+        jwkThumbprints.map(function (one: string): string {
+          return 'jkt:' + one;
+        }).concat(certThumbprints.map(function (one: string): string {
+          return 'x5t:' + one;
+        }), spkiThumbprints.map(function (one: string): string {
+          return 'spki:' + one;
+        })));
       }
     } catch (e) {
       log.error(errorCodes.tag('STS-DEVICE-0046') + 'devices: what the keys ' +

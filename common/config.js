@@ -17284,13 +17284,18 @@ const SETTINGS = [
 
   { key: 'scheduler.runHistoryHours', group: 'Scheduler',
     label: 'Runs kept for (hours)',
-    env: 'STS_SCHEDULER_RUN_HISTORY_HOURS', type: 'int', dflt: 24, min: 0,
+    // ONE HOUR SINCE #820 part 3 (2026-10-21, rcbj's decision; it was 24):
+    // a day of every per-minute job in every realm was 199,000 rows on 8081,
+    // every one read back by the front process at every start.
+    env: 'STS_SCHEDULER_RUN_HISTORY_HOURS', type: 'int', dflt: 1, min: 0,
     max: 8760, runtime: true, perProcess: true,
     description: 'Every run that ended within this many hours is kept — a ' +
                  'failed one included — beside each job\'s last ' +
                  'scheduler.runHistoryCount runs, whichever keeps more. A ' +
-                 'job that runs every minute therefore keeps a day of runs ' +
-                 'in each realm it runs in. 0 keeps the count alone.' },
+                 'job that runs every minute therefore keeps an hour of runs ' +
+                 'in each realm it runs in, or its last ' +
+                 'scheduler.runHistoryCount if that is more. 0 keeps the ' +
+                 'count alone.' },
 
   { key: 'scheduler.disabledJobs', group: 'Scheduler',
     label: 'Jobs switched off',

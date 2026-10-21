@@ -1,6 +1,7 @@
 {
   "tile.calls": "endpoint calls",
   "tile.tokensIssued": "tokens issued",
+  "tile.tokensHeldRecent": "recent tokens held",
   "tile.tokensRevoked": "tokens revoked",
   "tile.artifacts": "other artifacts",
   "tile.users": "users known",

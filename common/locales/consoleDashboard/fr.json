@@ -1,6 +1,7 @@
 {
   "tile.calls": "appels de points de terminaison",
   "tile.tokensIssued": "jetons émis",
+  "tile.tokensHeldRecent": "jetons récents détenus",
   "tile.tokensRevoked": "jetons révoqués",
   "tile.artifacts": "autres artefacts",
   "tile.users": "utilisateurs connus",

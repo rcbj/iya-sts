@@ -9564,8 +9564,8 @@
     "text": "Ejecuciones conservadas durante (horas)"
   },
   "scheduler.runHistoryHours|description": {
-    "en": "0f3e63d5914e2685",
-    "text": "Cada ejecución que terminó dentro de esta cantidad de horas se conserva —incluidas las fallidas— junto con las últimas scheduler.runHistoryCount ejecuciones de cada trabajo, lo que conserve más. Un trabajo que se ejecuta cada minuto conserva, por tanto, un día de ejecuciones en cada dominio en el que se ejecuta. 0 conserva solo el número."
+    "en": "5c283870d0319ed7",
+    "text": "Se conserva toda ejecución que terminó dentro de este número de horas —incluida una fallida— además de las últimas scheduler.runHistoryCount ejecuciones de cada tarea, lo que conserve más. Una tarea que se ejecuta cada minuto conserva por tanto una hora de ejecuciones en cada dominio en el que se ejecuta, o sus últimas scheduler.runHistoryCount si son más. 0 conserva solo el número."
   },
   "scheduler.disabledJobs|label": {
     "en": "a33937a2bd564b6d",

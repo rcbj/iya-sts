@@ -9564,8 +9564,8 @@
     "text": "執行記錄保留時間（小時）"
   },
   "scheduler.runHistoryHours|description": {
-    "en": "0f3e63d5914e2685",
-    "text": "在這麼多小時內結束的每次執行都會被保留——包括失敗的——外加每個工作最後 scheduler.runHistoryCount 次執行，以保留較多者為準。因此每分鐘執行一次的工作，會在其執行的每個領域中保留一天的執行記錄。0 則只依數量保留。"
+    "en": "5c283870d0319ed7",
+    "text": "在此小時數內結束的每次執行都會保留（包括失敗的執行），另外還保留每個作業最近的 scheduler.runHistoryCount 次執行，以保留較多者為準。因此，每分鐘執行一次的作業會在其執行的每個領域中保留一小時的執行紀錄；如果 scheduler.runHistoryCount 更多，則保留其最近的 scheduler.runHistoryCount 次。0 表示只按數量保留。"
   },
   "scheduler.disabledJobs|label": {
     "en": "a33937a2bd564b6d",

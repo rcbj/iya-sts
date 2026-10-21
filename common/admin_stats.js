@@ -351,13 +351,27 @@ function recordCall(call) {
 // `oauth2.expiredTokenRetentionS` past its `exp` (epoch seconds, plus the
 // clock skew) so /admin/tokens can show it expired, and then goes. A token
 // with no `exp` (0) never expires.
+// **ON DEMAND (#820 part 3)**: 546,000 records on 8081, read back by every
+// process at every start. A process holds the recent ones it was asked
+// about; a token is read by its jti when it is asked for; what has to find
+// every token of a session, a client, a person or a key asks the index
+// (`revokeWhere()`'s `candidates`, `lookup()`). THE CONSOLE'S LISTS AND
+// COUNTS ARE OF WHAT THIS PROCESS HOLDS — the recent issuances, which is
+// what `MAX_TOKENS` always made this register — and say so (rcbj's
+// decision on #820: the hybrid). The cap is the cache's business on demand.
 const tokens = realms.map({
   persist: 'admin_stats.tokens',
+  onDemand: { maxEntries: 20000 },
   // FILED BY PERSON (#766): `holdsLiveIssuance()` asks, before every CAEP
   // token-claims-change, whether a person holds a live token, and walked the
   // whole register to answer — 9% of a request worker under a password-write
   // load. Both names a record can be found by, and neither changes on a
   // record once written (`realms.map()`'s rule for an index).
+  //
+  // And since #820 part 3, where `revokeWhere()`'s callers find their
+  // tokens: the session (`sid:`, every sign-out), the client (`c:`, consent
+  // withdrawn), and the key it is bound to (`jkt:`, `x5t:`, `spki:`, a
+  // device marked compromised). None changes on a record once written.
   indexBy: function (record) {
     const out = [];
     if (record && record.username) {
@@ -365,6 +379,21 @@ const tokens = realms.map({
     }
     if (record && record.sub) {
       out.push('s:' + String(record.sub));
+    }
+    if (record && record.sessionId) {
+      out.push('sid:' + String(record.sessionId));
+    }
+    if (record && record.client_id) {
+      out.push('c:' + String(record.client_id));
+    }
+    if (record && record.jkt) {
+      out.push('jkt:' + String(record.jkt));
+    }
+    if (record && record.x5t) {
+      out.push('x5t:' + String(record.x5t));
+    }
+    if (record && record.x5tSpki) {
+      out.push('spki:' + String(record.x5tSpki));
     }
     return out;
   },
@@ -573,7 +602,9 @@ function recordJwt(payload, signed, context) {
     // sessionsFromArtifacts().
     length: String(signed || '').length
   };
-  if (tokens.size >= MAX_TOKENS) {
+  // On demand (#820 part 3) the bound is the cache's: every record stays in
+  // the store until its own expiry, and `revokeWhere()` must still find it.
+  if (!tokens.onDemandLive() && tokens.size >= MAX_TOKENS) {
     // Map iterates in insertion order, so the first key is the oldest.
     const oldest = tokens.keys().next().value;
     tokens.delete(oldest);
@@ -646,8 +677,12 @@ function purgeExpiredTokens(nowMs) {
       const revokedHere = !revokedJtis.onDemandLive();
       const deadJtis = [];
       const gone = [];
+      // On demand (#820 part 3) the register's expired records are the
+      // store's expiry purge's: each carries its `expiresAt`. A walk here
+      // would see only what is held.
+      const recordsHere = !tokens.onDemandLive();
       map.forEach(function (record, key) {
-        if (!record || !record.exp) {
+        if (!recordsHere || !record || !record.exp) {
           return;
         }
         const deadAt = record.exp * 1000 + skewMs;
@@ -963,6 +998,39 @@ function setRevocationObserver(fn) {
             (revocationObserver ? "Installed." : "Cleared."));
 }
 
+// ---------------------------------------------------------------------------
+// THE STATUS MARKER (#820 part 3), a slot (rule 3e) filled by
+// `oauth-oidc/access_token_status.ts`. Its access-token status list is built,
+// on demand, from a small store of the bits that are revoked, so it has to
+// hear of every revocation and every un-revocation — `revoke()` and
+// `restore()` below. It cannot be required from here: that module requires
+// this one (`isRevoked()`), and the require would close a cycle. Called with
+// `(jti, revoked, kind)`; a throw is logged and never undoes the revocation.
+// ---------------------------------------------------------------------------
+let statusMarker = null;
+
+function setStatusMarker(fn) {
+  log.debug("Entering setStatusMarker().");
+  statusMarker = typeof fn === 'function' ? fn : null;
+  log.debug("Leaving setStatusMarker(). " +
+            (statusMarker ? "Installed." : "Cleared."));
+}
+
+function tellStatusMarker(jti, revoked, record) {
+  log.debug("Entering tellStatusMarker().");
+  if (statusMarker) {
+    try {
+      statusMarker(String(jti), !!revoked, record ? record.kind : '');
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-OAUTH-0978') + 'admin: the access-token ' +
+               'status list could not be told that jti ' + jti + ' is ' +
+               (revoked ? 'revoked' : 'no longer revoked') + ': ' +
+               ((e && e.message) || e));
+    }
+  }
+  log.debug("Leaving tellStatusMarker().");
+}
+
 function tellRevocationObserver(jti, record, via, how) {
   log.debug("Entering tellRevocationObserver().");
   if (!revocationObserver) {
@@ -1031,6 +1099,7 @@ function revoke(jti, via, how, expSec) {
            (via || 'unstated') + '). ' +
            revokedJtis.size + ' revoked in total.');
   if (first) {
+    tellStatusMarker(jti, true, record);
     tellRevocationObserver(jti, record, via, how);
   }
   log.debug("Leaving revoke(). " + (first ? "It is newly revoked." : "It was " +
@@ -1054,6 +1123,9 @@ function restore(jti) {
   log.debug("Entering restore(). jti=" + jti);
   const was = revokedJtis.delete(jti);
   const record = tokens.get(jti);
+  if (was) {
+    tellStatusMarker(jti, false, record);
+  }
   if (record) {
     record.revoked = false;
     record.revokedAt = 0;
@@ -4840,13 +4912,64 @@ function tokenStateOf(record, nowMs) {
  *
  * @returns the token rows
  */
-function tokenList() {
+// The token records filed under a person (#820 part 3): by every name they
+// were given and by their subject, through the register's index — on demand
+// the register is not held whole. Each record once, and only records whose
+// holder IS that person (`holderKeyOf()`), so a lookup may be wide.
+function recordsHeldBy(name) {
+  log.debug("Entering recordsHeldBy().");
+  const wanted = String(name || '');
+  const key = identityKeyOf(wanted);
+  const names = Array.from(new Set([wanted, key].filter(Boolean)));
+  let subject = '';
+  try {
+    subject = String(subjectForName(key) || '');
+  } catch (e) {
+    log.debug("Caught in recordsHeldBy(): " + ((e && e.message) || e));
+    subject = '';
+  }
+  const keys = new Set();
+  names.forEach(function (one) {
+    tokens.lookup('u:' + one).forEach(function (k) {
+      keys.add(k);
+    });
+  });
+  if (subject) {
+    tokens.lookup('s:' + subject).forEach(function (k) {
+      keys.add(k);
+    });
+  }
+  const out = [];
+  keys.forEach(function (k) {
+    const record = tokens.get(k);
+    if (record && holderKeyOf(record.username, record.sub) === key) {
+      out.push(record);
+    }
+  });
+  log.debug("Leaving recordsHeldBy(). " + out.length);
+  return out;
+}
+
+/**
+ * Every token record, newest first, with its state; or, given a person,
+ * theirs alone — which, on demand (#820 part 3), is the only complete
+ * answer: the whole list is what this process holds.
+ *
+ * @param holder - a person's name, or nothing for every record held
+ * @returns the records
+ */
+function tokenList(holder) {
   log.debug("Entering tokenList().");
   const nowMs = Date.now();
   const out = [];
-  tokens.forEach(function (record) {
+  const shape = function (record) {
     out.push(Object.assign({ state: tokenStateOf(record, nowMs) }, record));
-  });
+  };
+  if (holder) {
+    recordsHeldBy(holder).forEach(shape);
+  } else {
+    tokens.forEach(shape);
+  }
   // Newest first: the token somebody is debugging is the one they just got.
   out.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
   log.debug("Leaving tokenList(). " + out.length + " token(s).");
@@ -5315,7 +5438,10 @@ function liveClaimBearers(match) {
     }
     log.debug("Leaving keepApplication().");
   };
-  tokens.forEach(function (record) {
+  // EVERY RECORD, held or not (#820 part 3): a claim reshaped reaches every
+  // live bearer, and on demand `forEach` would see only the recent ones.
+  // A walk of the store, for a configuration change, which is rare.
+  tokens.scan(function (record) {
     const fromSet = SET_OF_KIND[record.kind];
     if (!fromSet || !record.username) {
       return;
@@ -5851,11 +5977,13 @@ ISSUED_FAMILIES.forEach(function (entry) {
  *
  * @returns the rows
  */
-function issuedList() {
+function issuedList(onlyTokens) {
   log.debug("Entering issuedList().");
   const nowMs = Date.now();
   const out = [];
-  tokens.forEach(function (record) {
+  // `onlyTokens`: these token records alone, as rows, and no artifacts —
+  // `issuedById()`'s one jti (#820 part 3).
+  (onlyTokens || tokens).forEach(function (record) {
     out.push(Object.assign({}, record, {
       family: 'token',
       state: tokenStateOf(record, nowMs),
@@ -5868,7 +5996,7 @@ function issuedList() {
       revocationReach: 'protocol'
     }));
   });
-  allArtifacts().forEach(function (one) {
+  (onlyTokens ? [] : allArtifacts()).forEach(function (one) {
     const record = withRevocation(one);
     const family = FAMILY_BY_ARTIFACT_KIND[record.kind];
     // A credential, or a kind added to the registry and not to the structure
@@ -6209,6 +6337,18 @@ function issuedById(identifier) {
     log.debug("Leaving issuedById(). Nothing was asked for.");
     return null;
   }
+  // A token by its jti first (#820 part 3): on demand the list is what
+  // this process holds, and the register reads any jti from the store.
+  const direct = tokens.get(wanted);
+  if (direct && tokens.onDemandLive()) {
+    const one = issuedList([direct]).filter(function (row) {
+      return String(row.identifier || '') === wanted;
+    });
+    if (one.length) {
+      log.debug("Leaving issuedById(). Read by its jti.");
+      return one[0];
+    }
+  }
   const found = issuedList().filter(function (row) {
     return String(row.identifier || '') === wanted;
   });
@@ -6416,7 +6556,12 @@ function buildUserRowsResolved(onlyKey) {
     rows.set(record.key, row);
   });
 
-  tokens.forEach(function (record) {
+  // ONE PERSON'S ROW, ON DEMAND (#820 part 3), is counted from their records
+  // through the index, so their page is complete; the whole list counts
+  // what this process holds.
+  const tokenRecords = wanted !== null && tokens.onDemandLive()
+    ? recordsHeldBy(wanted) : tokens;
+  tokenRecords.forEach(function (record) {
     // `username` first: it is the local name, and falling back to `sub` costs
     // nothing because identityOf() strips the prefix off it anyway.
     const row = rowFor(holderKeyOf(record.username, record.sub));
@@ -6559,12 +6704,21 @@ function holdingsOf(keys) {
 function fileHoldings(out) {
   log.debug("Entering fileHoldings().");
   const nowMs = Date.now();
-  tokens.forEach(function (record) {
+  const file = function (record) {
     const held = out.get(holderKeyOf(record.username, record.sub));
     if (!held) return;
     held.tokens.push(Object.assign({ state: tokenStateOf(record, nowMs) },
                                    record));
-  });
+  };
+  // ON DEMAND (#820 part 3), each person's records through the index: what
+  // a sign-out ends and the person's page lists has to be everything.
+  if (tokens.onDemandLive()) {
+    out.forEach(function (held, key) {
+      recordsHeldBy(key).forEach(file);
+    });
+  } else {
+    tokens.forEach(file);
+  }
   // ACROSS EVERY PROCESS'S ROWS — see allArtifacts(). This was the LAST reader
   // still walking the bare array, and it was the one that mattered most: this
   // is what `logout.js`'s `issued` family collects, so a credential another
@@ -6646,14 +6800,55 @@ function sessionAuthenticatedOfJti(jti) {
  * @param how - the door's statement of the act, passed to `revoke()`
  * @returns how many were newly revoked
  */
-function revokeWhere(predicate, via, how) {
+// ---------------------------------------------------------------------------
+// ON DEMAND (#820 part 3) THE REGISTER IS NOT HELD WHOLE, so a predicate
+// walked over `forEach` would revoke only what this process holds. A caller
+// that knows where its tokens are filed passes `candidates` — index keys of
+// the register (`indexBy` below: 'sid:', 'c:', 'u:', 's:', 'jkt:', 'x5t:',
+// 'spki:') — and only those rows are read and tested; every predicate is
+// still applied, so a candidate list may be wider than the predicate. One
+// that does not (an administrator's revoke-all, by kind, by user) walks the
+// whole store through `scan()`: rare, and it has to see everything.
+// ---------------------------------------------------------------------------
+function revokeWhere(predicate, via, how, candidates) {
   log.debug("Entering revokeWhere().");
   let count = 0;
-  tokens.forEach(function (record) {
-    if (!record.revocable || record.revoked) return;
+  const visit = function (record) {
+    if (!record || !record.revocable || record.revoked) return;
     if (!predicate(record)) return;
     if (revoke(record.jti, via, how)) count++;
-  });
+  };
+  if (!tokens.onDemandLive()) {
+    tokens.forEach(visit);
+  } else if (Array.isArray(candidates)) {
+    const keys = new Set();
+    candidates.forEach(function (indexKey) {
+      tokens.lookup(String(indexKey)).forEach(function (key) {
+        keys.add(key);
+      });
+    });
+    keys.forEach(function (key) {
+      visit(tokens.get(key));
+    });
+  } else {
+    // Collected first: revoking writes the register a walk is reading. Each
+    // is then held, so `revoke()` does not read it from the store again.
+    const found = [];
+    tokens.scan(function (record, key) {
+      if (record && record.revocable && !record.revoked &&
+          predicate(record)) {
+        found.push([key, record]);
+      }
+    });
+    const declared = realms.handleFor('admin_stats.tokens');
+    const realmId = realms.currentId();
+    found.forEach(function (pair) {
+      if (declared && !tokens.realmMap().has(pair[0])) {
+        declared.restore(realmId, pair[0], pair[1]);
+      }
+      visit(pair[1]);
+    });
+  }
   log.debug("Leaving revokeWhere(). Revoked " + count + " token(s).");
   return count;
 }
@@ -6919,7 +7114,9 @@ function snapshot(opts) {
     // the value and coordination has already put every process's tokens in
     // this map. That is also why a revocation in another process reaches this
     // one: it is a write to the same row rather than a tally of its own.
-    tokens: { held: tokens.size,
+    // `heldOnly` (#820 part 3): the register is on demand, and `held` is
+    // what this process holds — the recent issuances — not every token.
+    tokens: { held: tokens.size, heldOnly: tokens.onDemandLive(),
               forgotten: nums.tokensForgotten +
                          alsoElsewhere('tokensForgotten'),
               cap: MAX_TOKENS,
@@ -7119,5 +7316,6 @@ module.exports = {
   issuedSets: issuedSets,
   issuedSetByKey: issuedSetByKey,
   issuedById: issuedById,
-  snapshot: snapshot
+  snapshot: snapshot,
+  setStatusMarker: setStatusMarker
 };

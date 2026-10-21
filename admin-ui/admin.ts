@@ -5360,6 +5360,9 @@ class AdminConsole {
       startedAt: new Date(snap.startedAt).toISOString(),
       uptimeMs: snap.uptimeMs,
       calls: snap.calls.total, tokensHeld: snap.tokens.held,
+      // The register on demand (#820 part 3): `tokensHeld` is the recent
+      // ones this process holds.
+      tokensHeldOnly: !!snap.tokens.heldOnly,
       tokensRevoked: snap.tokens.revoked,
       artifactsHeld: snap.artifacts.held, signOnSessions: signOnSessions,
       usersKnown: tally ? tally.people : snap.users.known,

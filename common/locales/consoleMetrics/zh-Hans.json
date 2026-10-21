@@ -6,6 +6,7 @@
   "tile.routes": "被调用的路由",
   "tile.healthProbes": "成功的健康检查探测，不计入调用",
   "tile.tokensIssued": "已签发令牌",
+  "tile.tokensHeldRecent": "持有的近期令牌",
   "tile.tokensRevoked": "已吊销令牌",
   "tile.artifacts": "断言、票据、凭据",
   "tile.sessions": "登录会话",

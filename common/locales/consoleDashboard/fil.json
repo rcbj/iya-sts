@@ -1,6 +1,7 @@
 {
   "tile.calls": "mga tawag sa endpoint",
   "tile.tokensIssued": "mga token na inisyu",
+  "tile.tokensHeldRecent": "mga kamakailang token na hawak",
   "tile.tokensRevoked": "mga token na binawi",
   "tile.artifacts": "iba pang artifact",
   "tile.users": "mga kilalang user",

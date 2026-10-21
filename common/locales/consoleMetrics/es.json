@@ -6,6 +6,7 @@
   "tile.routes": "rutas llamadas",
   "tile.healthProbes": "sondeos de estado correctos, no contados como llamadas",
   "tile.tokensIssued": "tokens emitidos",
+  "tile.tokensHeldRecent": "tokens recientes retenidos",
   "tile.tokensRevoked": "tokens revocados",
   "tile.artifacts": "aserciones, tickets, credenciales",
   "tile.sessions": "sesiones de inicio de sesión",
