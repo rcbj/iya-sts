@@ -2992,8 +2992,29 @@ class Authn {
   }
 
   /**
+   * One run of the account-set sweep: at most about a second of work, from
+   * where the last run stopped (#784). The scheduler job's body.
+   *
+   * @returns a promise of the run's counts and how far through the pass
+   */
+  sweepAccountSetsBudgeted(): Promise<any> {
+    const { log, stats } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.sweepAccountSetsBudgeted().");
+    log.debug("Leaving Authn.sweepAccountSetsBudgeted().");
+    return AccountSets.sweepBudgeted(function (sid) {
+      return self.accountSessionKept(sid);
+    }).then(function (done) {
+      if (done.expired) {
+        stats.recordAccountChoice('expired', done.expired);
+      }
+      return done;
+    });
+  }
+
+  /**
    * `sweepAccountSets()`, a slice at a time, yielding the event loop between
-   * slices (#780): the scheduler job's body.
+   * slices (#780).
    *
    * @returns a promise of `{ sets, ended, expired, deleted, slices }`
    */
@@ -17769,9 +17790,10 @@ scheduler.register({
 // a session that ended moves to remembered, a remembered account older than
 // `authn.rememberedAccountDays` is dropped — and a set left empty is
 // deleted. A CLUSTER job run per realm, so the store it walks is the
-// realm's; hourly, because nothing waits on it: a set is pruned again
-// whenever its browser draws the picker, and a remembered account past its
-// days is only an extra row there until the next run.
+// realm's; a pass about hourly, spread over the hour since #784 (a run a
+// minute, a second's work each), because nothing waits on it: a set is
+// pruned again whenever its browser draws the picker, and a remembered
+// account past its days is only an extra row there until the next pass.
 // ---------------------------------------------------------------------------
 scheduler.register({
   id: ACCOUNT_SET_EXPIRY_JOB,
@@ -17782,12 +17804,13 @@ scheduler.register({
             'and an empty set is deleted.',
   owner: 'authn/authn.ts',
   scope: 'realm',
+  // EVERY MINUTE, A SECOND'S WORK EACH (#784): a pass over every set still
+  // takes about an hour, spread over it. See AccountSets.sweepBudgeted().
   everyMs: function (): number {
-    return 60 * 60 * 1000;
+    return 60 * 1000;
   },
-  // A slice at a time (#780): see AccountSets.sweepInSlices().
   run: function (): any {
-    return slot.get().sweepAccountSetsInSlices();
+    return slot.get().sweepAccountSetsBudgeted();
   }
 });
 
@@ -17926,6 +17949,7 @@ export = {
   accountsAct: slot.forward('accountsAct'),
   sweepAccountSets: slot.forward('sweepAccountSets'),
   sweepAccountSetsInSlices: slot.forward('sweepAccountSetsInSlices'),
+  sweepAccountSetsBudgeted: slot.forward('sweepAccountSetsBudgeted'),
   auditActorSessionOf: slot.forward('auditActorSessionOf'),
   ACCOUNTS_PATH: ACCOUNTS_PATH,
   multipleAccounts: AccountSets.enabled,
