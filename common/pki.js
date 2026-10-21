@@ -8399,14 +8399,58 @@ async function certifyPqKeys(realmId, pqKeys, keepKids) {
  * A slot already over the same keys from the current Issuing CA is left
  * alone.
  * @param realmId - the realm
- * @param members - the signer group members
+ * @param members - the signer group members, or a function answering the
+ *   realm's members NOW, read once the branch exists and again before each
+ *   certificate (see THE MEMBERS AT CERTIFICATION TIME, below)
+ * @param attempt - how many times this call has started over; internal
  * @returns a promise of `{ ok, certified, unchanged, failed }`
  */
-async function certifySignerGroups(realmId, members) {
+async function certifySignerGroups(realmId, members, attempt) {
   log.debug('Entering certifySignerGroups(). realm=' + realmId);
   const signerGroups = require('./signer_groups');
   const id = realmIdOf(realmId);
-  const list = Array.isArray(members) ? members : [];
+  // ---------------------------------------------------------------------
+  // THE MEMBERS AT CERTIFICATION TIME, NOT AT GENERATION TIME (2026-10-20,
+  // CI run 39464473145, `sts_signer_groups` in the `cluster` mode).
+  //
+  // Both nodes made a new realm's 42 group keys at once. Node B lost the
+  // store's arbitration and ADOPTED node A's members at 18:37:45, and then
+  // — at 18:37:52, once ensureScope() below had waited out the branch —
+  // certified the members it had GENERATED, which nobody signs with. Its
+  // certificates committed first, and the CA row's merge keeps the first
+  // certificate in a slot (STS-KEYS-0057), so node A's certificates over the
+  // keys every node now signs with were displaced, and the JWKS carried no
+  // `x5c` for them for the three minutes the job waited. The generation is
+  // the wrong moment to decide WHICH keys to certify, because the await below
+  // and each `certify()` in the loop are where another node's set arrives. So
+  // a caller that can say what the realm holds now passes that question, and
+  // it is asked after the branch and before every certificate; members that
+  // were replaced meanwhile stop the loop, and it starts over (twice at most)
+  // on the members the realm holds.
+  // ---------------------------------------------------------------------
+  const resolve = typeof members === 'function' ? members : null;
+  const tries = Number(attempt) || 0;
+  const membersNow = function () {
+    log.debug("Entering membersNow().");
+    let answer = null;
+    try {
+      answer = resolve ? resolve() : members;
+    } catch (e) {
+      log.debug("Caught in membersNow(): " + ((e && e.message) || e));
+      // A realm whose set cannot be read now: nothing to certify.
+      answer = null;
+    }
+    log.debug("Leaving membersNow().");
+    return Array.isArray(answer) ? answer : [];
+  };
+  const kidsOf = function (rows) {
+    log.debug("Entering kidsOf().");
+    log.debug("Leaving kidsOf().");
+    return rows.map(function (one) {
+      return String((one && one.publicJwk && one.publicJwk.kid) || '');
+    }).sort().join(',');
+  };
+  let list = membersNow();
   // THE BRANCH FIRST. Group keys are made on a realm's first group signature,
   // which can come before its branch exists — a realm created at runtime and
   // switched at once — and a certification refused for want of an Issuing CA
@@ -8421,16 +8465,25 @@ async function certifySignerGroups(realmId, members) {
       log.debug('Caught in certifySignerGroups(): ' + ((e && e.message) || e));
       // The per-certificate refusals below say what is missing.
     }
+    // The branch took a while to arrive, and another node's members may
+    // have arrived with it.
+    list = membersNow();
   }
+  const listKids = kidsOf(list);
   const bySlot = {};
   list.forEach(function (one) {
     bySlot[one.slot] = one;
   });
   let certified = 0;
   let unchanged = 0;
+  let replaced = false;
   const failed = [];
   for (let i = 0; i < list.length; i++) {
     const one = list[i] || {};
+    if (resolve && kidsOf(membersNow()) !== listKids) {
+      replaced = true;
+      break;
+    }
     // A partnered ML-DSA key's certificate is its partner's — EXCEPT in the
     // XML group, where an XML signature's KeyInfo and the SAML metadata carry
     // an X.509 certificate whose subjectPublicKeyInfo must be the signing key,
@@ -8506,6 +8559,19 @@ async function certifySignerGroups(realmId, members) {
     log.debug("Entering partner().");
     log.debug("Leaving partner().");
     return one.pairedSlot ? bySlot[one.pairedSlot] : null;
+  }
+  if (replaced) {
+    if (tries < 2) {
+      log.info('pki: the "' + id + '" realm\'s signer-group keys were ' +
+               'replaced by another process\'s while they were being ' +
+               'certified (' + certified + ' certificate(s) issued over the ' +
+               'old ones); certifying the members it holds now instead.');
+      log.debug('Leaving certifySignerGroups(). Starting over.');
+      return certifySignerGroups(realmId, members, tries + 1);
+    }
+    failed.push('the realm\'s signer-group keys kept being replaced while ' +
+                'they were certified; the next certification of its key ' +
+                'set certifies the ones it holds then');
   }
   if (failed.length) {
     log.warn(errorCodes.tag('STS-PKI-0031') + 'pki: the "' + id + '" realm ' +

@@ -852,13 +852,35 @@ async function signIn(driver, username) {
       (await driver.findElements(By.id("mfa-setup-ignore"))).length > 0;
   }, 15000, "signing in as " + username + " showed neither the console nor " +
             "the offer of a second factor.");
-  const ignore = await driver.findElements(By.id("mfa-setup-ignore"));
-  if (ignore.length) {
-    await ignore[0].click();
-  }
+  // THE OFFER IS WAITED FOR AS WELL AS LOOKED FOR (2026-10-20, CI run
+  // 39464473145). The wait above is also satisfied by the URL leaving
+  // /authn/login, and the offer can be its own step page, /authn/mfa-setup,
+  // drawn by its script a moment AFTER the navigation: looked for once, at
+  // that moment, the button was not there yet, nothing was clicked, and the
+  // wait below spent its fifteen seconds on a page that was waiting for a
+  // click (the service logged the offer at 19:22:37 and was asked nothing
+  // more). So the button is clicked when it is drawn, until the browser
+  // leaves both pages; a second click only after five seconds with the
+  // offer still showing, since a click that worked navigates and two quick
+  // ones would answer a step that has already gone.
+  let clicked = 0;
+  let clickedAt = 0;
   await driver.wait(async function () {
-    return (await driver.getCurrentUrl()).indexOf("/authn/login") < 0 &&
-      (await driver.getCurrentUrl()).indexOf("/authn/mfa-setup") < 0;
+    const at = await driver.getCurrentUrl();
+    if (at.indexOf("/authn/login") < 0 && at.indexOf("/authn/mfa-setup") < 0) {
+      return true;
+    }
+    const ignore = await driver.findElements(By.id("mfa-setup-ignore"));
+    if (ignore.length && clicked < 3 && Date.now() - clickedAt > 5000) {
+      clicked += 1;
+      clickedAt = Date.now();
+      await ignore[0].click().catch(function (e) {
+        // A button the page redrew between the find and the click: the next
+        // turn finds the new one.
+        log.debug("Caught in signIn(): " + ((e && e.message) || e));
+      });
+    }
+    return false;
   }, 15000, "signing in as " + username + " left the browser on the sign-in " +
             "screen. In development mode the mock checks no password, so " +
             "this is a name that was typed and a button that was pressed; " +

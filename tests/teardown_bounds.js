@@ -486,7 +486,13 @@ function checkTheJobTimeoutIsAboveOurs(t) {
               Math.ceil(clusterWorst / 60) + 'm)',
             'the tests job\'s argument for one mode: the bound that fires ' +
             'must be the one that can explain itself');
-    t.check(clusterMinutes <= 180,
+    // 300 RATHER THAN THE `tests` JOB'S 180 SINCE 2026-10-20: one mode of
+    // two production nodes outgrew a 130-minute bound on a GitHub runner
+    // (run 39464473145, job 841 of 871), so its own bound is 200 minutes and
+    // this job's number sits above that and the build. It is still an outer
+    // bound — the `openid-conformance` job's 280 is the precedent — and
+    // still an hour inside the six GitHub allows any job.
+    t.check(clusterMinutes <= 300,
             'and the `cluster` job\'s is still an outer bound (' +
               clusterMinutes + 'm)',
             'the six-hour argument again, for the second job running this ' +

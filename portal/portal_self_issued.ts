@@ -103,7 +103,7 @@ class PortalSelfIssued {
    * @param username - the signed-in person
    * @param listed - what `siop.list()` already answered for them, if it was
    *   asked; read here otherwise
-   * @returns `{ enabled, subjects }`
+   * @returns `{ enabled, loginHint, didClaim, subjects }`
    */
   view(username: string, listed?: Json[] | null): Json {
     const { log, siop, config } = this.deps;
@@ -112,6 +112,10 @@ class PortalSelfIssued {
                                                : listed) || [];
     log.debug("Leaving PortalSelfIssued.view(). " + held.length);
     return { enabled: !!config.value('oid4vp.signInSelfIssued'),
+             // The account the Enrol link names (2026-10-20): which of the
+             // browser's sessions the enrolment is for, when Switch user has
+             // left several live (`oid4vc/vc_signin.ts`, startable()).
+             loginHint: String(username || ''),
              // Whether the preferred DID is released as the `did` claim in
              // this realm (#693): the page says so beside the mark.
              didClaim: config.value('oauth2.didClaim') === true,

@@ -146,11 +146,13 @@ const PAGES = [
       return WebAuthnPassword.title(view, ctx);
     } },
   // THE WALLET SIGN-IN (#574): the start, asked with the location's
-  // `authn`/`mfa`, `siop` and `enrol`; and the wait page, whose view is the
-  // transaction's (its `state`) for the browser that started it.
+  // `authn`/`mfa`, `siop`, `enrol` and an enrolment's `login_hint`; and the
+  // wait page, whose view is the transaction's (its `state`) for the browser
+  // that started it.
   { path: '/authn/wallet',
     operation: function (query: Json): string {
-      const asked = ['authn', 'mfa', 'siop', 'enrol'].filter(function (name) {
+      const asked = ['authn', 'mfa', 'siop', 'enrol',
+                     'login_hint'].filter(function (name) {
         return query[name] !== undefined && query[name] !== '';
       }).map(function (name) {
         return name + '=' + encodeURIComponent(String(query[name]));
