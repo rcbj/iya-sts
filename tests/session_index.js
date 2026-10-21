@@ -206,6 +206,26 @@ function fakePg(statements, answer) {
   FakeClient.prototype.query = function (sql, params) {
     const text = String(sql);
     statements.push({ sql: text, params: params || [] });
+    // A flush's set-based statements (2026-10-21): each parameter an array
+    // over the rows. The lock-and-read answers every key with selectBody;
+    // a guarded INSERT … RETURNING returns every row when rowCount says it
+    // landed and none when it did not.
+    if (/^SELECT handle, realm, key, body FROM sts_minted/i.test(text)) {
+      const p = params || [];
+      const found = answer.selectBody == null ? [] : (p[0] || []).map(
+        function (h, i) {
+          return { handle: h, realm: p[1][i], key: p[2][i],
+                   body: answer.selectBody };
+        });
+      return Promise.resolve({ rows: found, rowCount: found.length });
+    }
+    if (/RETURNING handle, realm, key/.test(text)) {
+      const p = params || [];
+      const back = answer.rowCount ? (p[0] || []).map(function (h, i) {
+        return { handle: h, realm: p[1][i], key: p[2][i] };
+      }) : [];
+      return Promise.resolve({ rows: back, rowCount: back.length });
+    }
     if (/SELECT body FROM sts_minted/i.test(text)) {
       if (answer.selectBody == null) {
         return Promise.resolve({ rows: [], rowCount: 0 });
@@ -300,12 +320,12 @@ async function sqlHalf(t) {
   const tombInsert = matching(tombTx, /INSERT INTO sts_minted/i);
   const tombDelete = matching(tombTx, sessionDelete);
   t.equal(tombInsert.length, 1, 'a tombstone writes the marker');
-  t.equal(tombInsert[0].params[3], TOMBSTONE,
+  t.equal(tombInsert[0].params[3][0], TOMBSTONE,
           'and the marker is the tombstone body');
   t.equal(tombDelete.length, 1,
           'and deletes the index row in that same transaction');
-  t.equal(tombDelete[0].params[0], REALM, 'the delete names the realm');
-  t.equal(tombDelete[0].params[1], 'digest-gone', 'and the minted key');
+  t.equal(tombDelete[0].params[0][0], REALM, 'the delete names the realm');
+  t.equal(tombDelete[0].params[1][0], 'digest-gone', 'and the minted key');
   t.check(tombTx.indexOf(tombInsert[0]) < tombTx.indexOf(tombDelete[0]) &&
           tombTx.indexOf(tombDelete[0]) < tombTx.length - 1,
           'the index delete follows the marker and precedes COMMIT');
@@ -357,11 +377,12 @@ async function sqlHalf(t) {
   t.equal(accepted.refused.length, 0, 'a guarded upsert that lands is kept');
   t.equal(liveIndex.length, 1, 'and the index is written with it');
   t.equal(liveIndex[0].params.length, 15, 'fifteen columns');
-  t.equal(liveIndex[0].params[0], REALM, 'the index realm');
-  t.equal(liveIndex[0].params[1], 'digest-live', 'the minted key');
-  t.equal(liveIndex[0].params[2], null,
+  t.equal(liveIndex[0].params[0][0], REALM, 'the index realm');
+  t.equal(liveIndex[0].params[1][0], 'digest-live', 'the minted key');
+  t.equal(liveIndex[0].params[2][0], null,
           'a null expiresAt stays SQL NULL, not zero');
-  t.equal(liveIndex[0].params[3], 5000, 'last_seen_at is the millisecond');
+  t.equal(liveIndex[0].params[3][0], 5000,
+          'last_seen_at is the millisecond');
   t.check(liveTx.indexOf(liveBody[0]) < liveTx.indexOf(liveIndex[0]),
           'the index insert follows the body insert');
 
