@@ -144,6 +144,38 @@ const KINDS = ['oauth', 'gnap'];
 const CLAIM_SKEW_MS = 60 * 1000;
 const ALLOCATION_ATTEMPTS = 32;
 
+// ---------------------------------------------------------------------------
+// INDEXES ARE HANDED OUT FROM A LEASED BLOCK (2026-10-21, #820). Every access
+// token claimed its own index in the shared claims table — a round trip to
+// the store per sign-in and per refresh, and a row written and purged for
+// each. A process now leases a BLOCK of BLOCK_SIZE indexes with one claim and
+// hands them out itself, skipping an index whose entry is still live (the
+// key-resident digests say so without a read) or that it handed out in this
+// lease. Two rules keep an index from naming two live tokens:
+//
+//   * a block is handed out from for BLOCK_USE_MS only, and its lease runs
+//     past that by the longest life of a token handed out from it, plus the
+//     claim skew — so by the time the lease lapses and another process can
+//     take the block, every token from it has expired; a token that would
+//     outlive the lease gets a fresh block leased for it;
+//   * EVERY allocation goes through a block: there is no index claimed on its
+//     own beside them for a block's owner not to know about.
+//
+// `allocateInProcess()`, a process with no shared claims table, is unchanged.
+// ---------------------------------------------------------------------------
+const BLOCK_SIZE = 1024;
+const BLOCK_USE_MS = 5 * 60 * 1000;
+const BLOCK_ATTEMPTS = 32;
+
+// A block this process leased, per realm.
+interface StatusLease {
+  block: number;
+  untilMs: number;
+  useUntilMs: number;
+  cursor: number;
+  taken: Set<number>;
+}
+
 // idx -> { jti, kind, expiresAt (ms), allocatedAt (ms) }
 // PER TRUST REALM, persisted, and GLOBAL across cells
 // (`persistence/tiers.js`): one list per realm, which every cell publishes,
@@ -526,24 +558,119 @@ class AccessTokenStatus {
    */
   async allocate(opts: { jti: string; kind: string; expiresAt: number;
                          base: string }): Promise<StatusReference> {
-    const { log, clusterClaims, errorCodes, now } = this.deps;
+    const { log, realms } = this.deps;
     log.debug("Entering AccessTokenStatus.allocate(). kind=" + opts.kind);
     const { expiresAt } = this.wanted(opts);
-    for (let attempt = 0; attempt < ALLOCATION_ATTEMPTS; attempt++) {
-      const idx = stsCrypto.randomInt(0, LIST_SIZE);
-      if (!this.freeLocally(idx)) {
-        continue;
+    const realmId = String(realms.currentId());
+    // Two tries: the block held, then a fresh one when that one is full or
+    // ends too soon for this token.
+    for (let round = 0; round < 2; round++) {
+      let lease = this.leases.get(realmId) || null;
+      if (!this.leaseServes(lease, expiresAt)) {
+        lease = await this.leaseBlock(realmId, expiresAt);
       }
+      const idx = this.pickInLease(lease as StatusLease);
+      if (idx !== null) {
+        const ref = this.take(idx, opts, expiresAt);
+        log.debug("Leaving AccessTokenStatus.allocate(). idx=" + idx + ".");
+        return ref;
+      }
+      // Full: let it go, and lease another.
+      this.leases.delete(realmId);
+    }
+    log.debug("Leaving AccessTokenStatus.allocate(). Full.");
+    throw this.full();
+  }
+
+  // The blocks this process holds, per realm, and the leases being taken.
+  private leases = new Map<string, StatusLease>();
+  private leasing = new Map<string, Promise<StatusLease>>();
+
+  // Whether a lease may hand out an index to a token living until
+  // `expiresAt`: still within its use window, and lasting past the token.
+  // Hot path (every access token): no Entering/Leaving pair.
+  private leaseServes(lease: StatusLease | null, expiresAt: number): boolean {
+    const t = this.deps.now();
+    return !!lease && t < lease.useUntilMs &&
+      expiresAt + CLAIM_SKEW_MS <= lease.untilMs;
+  }
+
+  // A free index of the lease, or null when it has none. Synchronous, so two
+  // allocations in this process never pick the same one. Hot path (every
+  // access token): no Entering/Leaving pair.
+  private pickInLease(lease: StatusLease): number | null {
+    const first = lease.block * BLOCK_SIZE;
+    for (let i = 0; i < BLOCK_SIZE; i++) {
+      const offset = (lease.cursor + i) % BLOCK_SIZE;
+      const idx = first + offset;
+      if (!lease.taken.has(idx) && this.freeLocally(idx)) {
+        lease.cursor = (offset + 1) % BLOCK_SIZE;
+        lease.taken.add(idx);
+        return idx;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Leases a block of indexes for this realm, long enough for a token living
+   * until `expiresAt` and for any token of the configured lifetimes, with one
+   * claim. Concurrent callers in a realm share one lease being taken.
+   *
+   * @param realmId - the realm
+   * @param expiresAt - the token's expiry, in epoch milliseconds
+   * @returns a promise of the lease
+   * @throws Error marked STS-OAUTH-0816 when the claim store cannot be asked,
+   *   or STS-OAUTH-0817 when no block is free
+   */
+  private leaseBlock(realmId: string, expiresAt: number): Promise<StatusLease> {
+    const { log } = this.deps;
+    log.debug("Entering AccessTokenStatus.leaseBlock().");
+    const pending = this.leasing.get(realmId);
+    if (pending) {
+      log.debug("Leaving AccessTokenStatus.leaseBlock(). Being leased.");
+      return pending.then((lease) => {
+        return this.leaseServes(lease, expiresAt) ? lease
+          : this.leaseBlock(realmId, expiresAt);
+      });
+    }
+    const leasing = this.leaseBlockNow(realmId, expiresAt);
+    this.leasing.set(realmId, leasing);
+    const done = () => {
+      if (this.leasing.get(realmId) === leasing) {
+        this.leasing.delete(realmId);
+      }
+    };
+    leasing.then(done, done);
+    log.debug("Leaving AccessTokenStatus.leaseBlock().");
+    return leasing;
+  }
+
+  private async leaseBlockNow(realmId: string,
+                              expiresAt: number): Promise<StatusLease> {
+    const { log, clusterClaims, errorCodes, config, now } = this.deps;
+    log.debug("Entering AccessTokenStatus.leaseBlockNow().");
+    const t = now();
+    // The longest a token handed out from it may live: this one, and the
+    // configured lifetimes of both kinds, whichever is longest.
+    const lifeMs = Math.max(expiresAt - t,
+      Number(config.value('oauth2.accessTokenTtlS')) * 1000 || 0,
+      Number(config.value('gnap.accessTokenLifetimeS')) * 1000 || 0);
+    const ttlMs = BLOCK_USE_MS + lifeMs + CLAIM_SKEW_MS;
+    const blocks = LIST_SIZE / BLOCK_SIZE;
+    for (let attempt = 0; attempt < BLOCK_ATTEMPTS; attempt++) {
+      const block = stsCrypto.randomInt(0, blocks);
       const claimed = await clusterClaims.claim({
-        scope: 'oauth2.access-token-status-index', value: String(idx),
-        ttlMs: Math.max(0, expiresAt - now()) + CLAIM_SKEW_MS });
+        scope: 'oauth2.access-token-status-block', value: String(block),
+        ttlMs: ttlMs });
       if (!claimed.ok) {
         if (claimed.reason !== 'used') {
           log.error(errorCodes.tag('STS-OAUTH-0816') + 'access_token_status: ' +
-                    'the claim store could not be asked for an index (' +
-                    (claimed.why || 'no reason given') + '), so the access ' +
-                    'token is not minted.');
-          log.debug("Leaving AccessTokenStatus.allocate(). The store failed.");
+                    'the claim store could not be asked for a block of ' +
+                    'indexes (' + (claimed.why || 'no reason given') + '), ' +
+                    'so the access token is not minted.');
+          log.debug("Leaving AccessTokenStatus.leaseBlockNow(). The store " +
+                    "failed.");
           const e: any = new Error('no access-token status index could be ' +
                                    'allocated: the claim store could not be ' +
                                    'asked');
@@ -551,11 +678,16 @@ class AccessTokenStatus {
         }
         continue;
       }
-      const ref = this.take(idx, opts, expiresAt);
-      log.debug("Leaving AccessTokenStatus.allocate(). idx=" + idx + ".");
-      return ref;
+      const lease: StatusLease = {
+        block: block, untilMs: t + ttlMs, useUntilMs: t + BLOCK_USE_MS,
+        cursor: stsCrypto.randomInt(0, BLOCK_SIZE), taken: new Set<number>()
+      };
+      this.leases.set(realmId, lease);
+      log.debug("Leaving AccessTokenStatus.leaseBlockNow(). block=" + block +
+                ".");
+      return lease;
     }
-    log.debug("Leaving AccessTokenStatus.allocate(). Full.");
+    log.debug("Leaving AccessTokenStatus.leaseBlockNow(). No block free.");
     throw this.full();
   }
 
