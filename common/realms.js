@@ -2498,11 +2498,12 @@ function remove(id) {
 // ---------------------------------------------------------------------------
 let persistObserver = null;
 
-// THE ON-DEMAND READER (#820): `{ active(), read(handle, realmId, key),
+// THE ON-DEMAND READER (#820): `{ active(handle), read(handle, realmId, key),
 // byIndex(handle, realmId, indexKey), journalled(handle, realmId, key) }`,
 // installed by `persistence_minted.js` once a driver that can answer is
-// open. Absent, or not `active()`, an `onDemand` store is an ordinary Map
-// read back whole — memory mode, development, every test with no store.
+// open. Absent, or not `active()` for the store — an indexed store is not
+// until its index is complete — an `onDemand` store is an ordinary Map read
+// back whole: memory mode, development, every test with no store.
 let onDemandReader = null;
 
 /**
@@ -3207,7 +3208,7 @@ function map(options) {
   const demandBound = onDemand && Number(options.onDemand.maxEntries) > 0
     ? Math.floor(Number(options.onDemand.maxEntries)) : 20000;
   function demandOn() {
-    return onDemand && !!onDemandReader && onDemandReader.active();
+    return onDemand && !!onDemandReader && onDemandReader.active(handleName);
   }
   // Hot path: every on-demand write and read. No Entering/Leaving pair.
   function demandTrim(realmId, target) {
