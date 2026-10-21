@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4575** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4577** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 94
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 50
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 83
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 85
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
@@ -396,6 +396,8 @@ Raised from: persistence/.
 | `STS-STORE-0081` | A request worker could not read, by key, the directory rows another worker had written that a dispatched LDAP write was handed in place of the read barrier's change-log pull (#626), so it pulled the whole change log instead, as every write did before. | none — the write waits for the pull and is answered as before |
 | `STS-STORE-0082` | The live readers of the change log could not be read, so no dead process was dropped from the fan-in of merge-own stores this time; nothing is dropped on a failed read, and the next change-log pull tries again a minute later (#618). | none — the fan-in keeps what it held |
 | `STS-STORE-0083` | The store is owed a tuning of schema version 19 (#630) — a table's storage parameters, or the retired btree on sts_minted.written_at — and the role this service dials with does not own the table to make it. Nothing is wrong without it, only slower: run postgres/schema.sql as the owner. | none — the store opens without it |
+| `STS-STORE-0084` | An on-demand minted store (#820) could not read a row or an index from the store through its bridge — a timeout, a refused connection, a thread that failed. The row is answered as absent, which every reader of these stores refuses: a refresh token not found is not honoured. | none |
+| `STS-STORE-0085` | An on-demand minted store (#820) read a row whose sealed body will not open under this process's keys. It is answered as absent. | none |
 
 ## STS-CLUSTER
 

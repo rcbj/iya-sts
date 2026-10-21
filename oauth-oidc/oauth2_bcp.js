@@ -2977,8 +2977,17 @@ function maxRefreshTokens() {
 // tombstone so an older copy cannot be written back, and `rotated` only moves
 // forward — a node that had not yet heard of a rotation must not write the
 // record back as unrotated, which would make the replay it marks undetectable.
+// ON DEMAND (#820, 2026-10-21): not read back whole at a start — 715,000
+// records on 8081, and as many again in every process — but held as a
+// bounded cache over the store and read by jti when one is presented. Filed
+// by FAMILY (`indexBy`), in memory and in `sts_minted_index`, so a family's
+// members are found by asking rather than by walking every record.
 const refreshTokens = realms.map({
   persist: 'oauth2_bcp.refreshTokens', tombstone: true,
+  onDemand: { maxEntries: 50000 },
+  indexBy: function (record) {
+    return record && record.family ? [String(record.family)] : [];
+  },
   // #333: the sweep's `forget`, ms.
   expiresAt: realms.expiryField('forget', 1),
   mergeRow: function (mine, theirs) {
@@ -3002,6 +3011,8 @@ const refreshTokens = realms.map({
 // every issuance — the idle rule refuses earlier but deletes nothing.
 const refreshFamilies = realms.map({
   persist: 'oauth2_bcp.refreshFamilies',
+  // On demand (#820), for `refreshTokens`' reason: read by family id.
+  onDemand: { maxEntries: 50000 },
   expiresAt: realms.expiryField('forget', 1)
 });
 
@@ -3018,6 +3029,14 @@ function forgetStaleRefreshTokens() {
       refreshFamilies.delete(id);
     }
   });
+  // THE CAP IS A BOUND ON WHAT IS HELD, and an on-demand store holds a
+  // bounded cache whatever the population (#820): there every record stays
+  // in the store until its `forget`, and the expiry purge takes it then.
+  // Dropping the oldest held record here would forget a live token.
+  if (refreshTokens.onDemandLive()) {
+    log.debug("Leaving forgetStaleRefreshTokens(). On demand: no cap.");
+    return;
+  }
   const cap = maxRefreshTokens();
   if (refreshTokens.size > cap) {
     // Step 2: retired tokens, oldest first (a Map iterates in insertion order).
@@ -3118,7 +3137,11 @@ function membersOf(familyId, alsoJti) {
     out.add(String(alsoJti));
   }
   if (wanted) {
-    refreshTokens.forEach(function (record, jti) {
+    // BY THE FAMILY INDEX (#820), not a walk of every record: the store is
+    // not held whole on demand, and the walk was O(every token) at every
+    // revocation and rotation check either way.
+    refreshTokens.lookup(wanted).forEach(function (jti) {
+      const record = refreshTokens.get(jti);
       if (record && record.family === wanted) {
         out.add(String(jti));
       }
@@ -3187,7 +3210,8 @@ function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
   // the cap is a million). Expired records go in `caches.eject-expired`,
   // every minute in every process (`refreshBookkeeping`, below); the cap is
   // still kept here, by the same sweep, once the realm is past it.
-  if (refreshTokens.size > maxRefreshTokens()) {
+  if (!refreshTokens.onDemandLive() &&
+      refreshTokens.size > maxRefreshTokens()) {
     forgetStaleRefreshTokens();
   }
   log.debug("Leaving noteRefreshIssued(). Family " + familyId + ".");
@@ -3220,8 +3244,14 @@ function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
 // safe direction — it still expires — and is logged.
 // ---------------------------------------------------------------------------
 // refresh jti -> { family, access, clientId, forget }
+// On demand and filed by family (#820), for `refreshTokens`' reason.
 const grantTokens = realms.map({ persist: 'oauth2_bcp.grantTokens',
                                  tombstone: true,
+                                 onDemand: { maxEntries: 50000 },
+                                 indexBy: function (record) {
+                                   return record && record.family
+                                     ? [String(record.family)] : [];
+                                 },
                                  // #333: the sweep's `forget`, ms.
                                  expiresAt: realms.expiryField('forget', 1) });
 
@@ -3233,7 +3263,8 @@ function forgetStaleGrantTokens() {
       grantTokens.delete(jti);
     }
   });
-  const cap = 2 * maxRefreshTokens();
+  // No cap on demand (#820), for `forgetStaleRefreshTokens()`' reason.
+  const cap = grantTokens.onDemandLive() ? Infinity : 2 * maxRefreshTokens();
   let dropped = 0;
   while (grantTokens.size > cap) {
     const oldest = grantTokens.keys().next();
@@ -3283,7 +3314,8 @@ function noteGrantTokens(familyId, refreshJti, accessJti, clientId, expSec) {
              refreshFamilyWindowMs()) + (isFinite(skew) ? skew * 1000 : 0)
   });
   // The bound here, the expiry in the job (#761), as `noteRefreshIssued()`.
-  if (grantTokens.size > 2 * maxRefreshTokens()) {
+  if (!grantTokens.onDemandLive() &&
+      grantTokens.size > 2 * maxRefreshTokens()) {
     forgetStaleGrantTokens();
   }
   log.debug("Leaving noteGrantTokens().");
@@ -3397,7 +3429,9 @@ function grantMembersOf(familyId, alsoJti) {
   const wanted = String(familyId || '');
   const out = new Set(membersOf(wanted, alsoJti));
   if (wanted) {
-    grantTokens.forEach(function (record, jti) {
+    // By the family index (#820), as `membersOf()`.
+    grantTokens.lookup(wanted).forEach(function (jti) {
+      const record = grantTokens.get(jti);
       if (record && record.family === wanted) {
         out.add(String(jti));
         if (record.access) {

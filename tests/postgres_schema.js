@@ -441,9 +441,17 @@ function checkTheVersionAgrees(t, sql) {
 // (#754) adds the seventh, `sts_sessions_surface`.
 function checkTheSessionIndex(t, sql) {
   log.debug("Entering checkTheSessionIndex().");
-  t.equal(driver.SCHEMA_VERSION, 23,
-          'the driver\'s schema version is 23 (#350, #754, the uid ' +
-          'trigram index)');
+  t.equal(driver.SCHEMA_VERSION, 24,
+          'the driver\'s schema version is 24 (#350, #754, the uid ' +
+          'trigram index, #820\'s on-demand index)');
+  // #820: the on-demand stores' index, in the driver and in the script.
+  ['sts_minted_index', 'sts_minted_index_key'].forEach(function (name) {
+    t.check((driver.SCHEMA_OBJECTS || []).some(function (one) {
+      return one.name === name;
+    }) && statementsIn(sql).some(function (statement) {
+      return statement.indexOf(name) >= 0;
+    }), name + ' is in the driver\'s schema and in the script');
+  });
   const names = ['sts_sessions_subject', 'sts_sessions_username',
                  'sts_sessions_expires', 'sts_sessions_parent',
                  'sts_sessions_credential', 'sts_sessions_partner',
