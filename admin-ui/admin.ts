@@ -2845,6 +2845,11 @@ class AdminConsole {
    * `consoleJsonAsync()`).
    */
   static readonly TOTALS_HOLD_MS = 15000;
+  /**
+   * How old the kept totals may be and still answer while they are rebuilt
+   * (2026-10-21; `consoleJsonAsync()`).
+   */
+  static readonly TOTALS_STALE_MS = 120000;
 
   /**
    * Builds the console over the given modules.
@@ -5402,28 +5407,43 @@ class AdminConsole {
     const { log, realms } = this.deps;
     log.debug("Entering AdminConsole.consoleJsonAsync().");
     const realmId = String(realms.currentId());
-    const held = totalsHeld.get(realmId);
-    if (held && (held.building ||
-                 Date.now() - held.at <= AdminConsole.TOTALS_HOLD_MS)) {
-      log.debug("Leaving AdminConsole.consoleJsonAsync(). Kept.");
-      return held.building || held.value;
+    let entry = totalsHeld.get(realmId);
+    if (!entry) {
+      entry = { at: 0, value: null, building: null };
+      totalsHeld.set(realmId, entry);
     }
-    const entry: any = { at: 0, value: null, building: null };
-    entry.building = this.buildConsoleTotalsAsync().then((value) => {
-      entry.value = value;
-      entry.at = Date.now();
-      entry.building = null;
-      return value;
-    }, (e) => {
-      log.debug("Caught in AdminConsole.consoleJsonAsync(): " +
-                ((e && e.message) || e));
-      if (totalsHeld.get(realmId) === entry) {
-        totalsHeld.delete(realmId);
-      }
-      throw e;
-    });
-    totalsHeld.set(realmId, entry);
-    log.debug("Leaving AdminConsole.consoleJsonAsync(). Built.");
+    const age = Date.now() - entry.at;
+    if (entry.value !== null && age <= AdminConsole.TOTALS_HOLD_MS) {
+      log.debug("Leaving AdminConsole.consoleJsonAsync(). Kept.");
+      return entry.value;
+    }
+    if (!entry.building) {
+      entry.building = this.buildConsoleTotalsAsync().then((value) => {
+        entry.value = value;
+        entry.at = Date.now();
+        entry.building = null;
+        return value;
+      }, (e) => {
+        log.debug("Caught in AdminConsole.consoleJsonAsync(): " +
+                  ((e && e.message) || e));
+        entry.building = null;
+        throw e;
+      });
+    }
+    // TOTALS UP TO TOTALS_STALE_MS OLD ANSWER AT ONCE while one rebuild runs
+    // behind them (2026-10-21): a build is 15–20 s on 8081 under the load,
+    // longer than the hold, so the index waited for one at almost every
+    // visit. A rebuild's refusal is logged where it is caught.
+    if (entry.value !== null && age <= AdminConsole.TOTALS_STALE_MS) {
+      entry.building.catch(function (e) {
+        log.debug("Caught in AdminConsole.consoleJsonAsync(), behind kept " +
+                  "totals: " + ((e && e.message) || e));
+      });
+      log.debug("Leaving AdminConsole.consoleJsonAsync(). Kept, " +
+                "rebuilding.");
+      return entry.value;
+    }
+    log.debug("Leaving AdminConsole.consoleJsonAsync(). Building.");
     return entry.building;
   }
 
