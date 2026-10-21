@@ -764,8 +764,8 @@
     "text": "Varias cuentas con la sesión iniciada en un navegador"
   },
   "authn.multipleAccounts|description": {
-    "en": "d0b4899bdae1c43d",
-    "text": "Permite que un navegador mantenga sesiones de inicio de sesión único de varias personas a la vez y elegir entre ellas. Activado, el inicio de sesión de otra persona AÑADE una sesión al conjunto de cuentas del navegador (la cookie `sts_accounts`) en lugar de cerrar la que tenía; una solicitud que no dice para qué cuenta es — ninguna cuenta elegida en este flujo, ningún login_hint, id_token_hint ni Subject de SAML que nombre una — mientras hay más de una con la sesión iniciada se envía al selector de cuentas en /authn/accounts, y prompt=select_account lo muestra. Cada sesión conserva su propia duración, su tiempo de inactividad, su estado de autenticación reforzada y su cierre de sesión. Desactivado, el valor predeterminado, el navegador tiene una sola sesión y el inicio de sesión de otra persona la cierra. Surte efecto en la siguiente solicitud en ambos sentidos y no cierra nada: al activarlo, la sesión existente de un navegador pasa a ser la primera cuenta de su conjunto; al desactivarlo, la sesión predeterminada del navegador continúa sola y las demás caducan como de costumbre."
+    "en": "e0455f389b3cfb47",
+    "text": "Permite que un navegador mantenga sesiones de inicio de sesión único de varias personas a la vez y elegir entre ellas. Activado, el inicio de sesión de otra persona AÑADE una sesión al conjunto de cuentas del navegador (la cookie `sts_accounts`) en lugar de cerrar la que tenía; una solicitud que no dice para qué cuenta es — ninguna cuenta elegida en este flujo, ningún login_hint, id_token_hint ni Subject de SAML que nombre una — mientras hay más de una con la sesión iniciada se envía al selector de cuentas en /authn/accounts, y prompt=select_account lo muestra. Cada sesión conserva su propia duración, su tiempo de inactividad, su estado de autenticación reforzada y su cierre de sesión. Activado es el valor predeterminado. Desactivado, el navegador tiene una sola sesión y el inicio de sesión de otra persona la cierra. Surte efecto en la siguiente solicitud en ambos sentidos y no cierra nada: al activarlo, la sesión existente de un navegador pasa a ser la primera cuenta de su conjunto; al desactivarlo, la sesión predeterminada del navegador continúa sola y las demás caducan como de costumbre."
   },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
@@ -3843,6 +3843,14 @@
     "en": "2394ee67a689920d",
     "text": "Aplica OpenID Connect Key Binding 1.0 (#150). Activado: el documento de descubrimiento incluye el ámbito `bound_key`, un cliente que no declara ámbitos puede pedirlo, y una solicitud que lo pida debe indicar `dpop_jkt` y usar el flujo de código (si no, se rechaza, STS-OAUTH-0704 y 0705); el ID Token nombra entonces la clave DPoP (`cnf.jwk`, `typ: dpop+id_token`), la solicitud de token debe probarla con `c_s256`, y cada actualización debe venir de la misma clave. **Desactivado, no existe, y el servicio es solo OpenID Connect Core**: `bound_key` no se anuncia, una solicitud que lo incluya no se rechaza — el ámbito se ignora y no se concede, como Core trata un ámbito sobre el que un OP no actúa — y ningún ID Token queda vinculado. Desactívelo donde las partes de confianza pidan todos los ámbitos anunciados y no sepan nada de Key Binding (#315). Una concesión ya vinculada antes de desactivarlo conserva la comprobación de su clave al actualizarse."
   },
+  "oauth2.didClaim|label": {
+    "en": "d0b89f9c74f06728",
+    "text": "La afirmación did"
+  },
+  "oauth2.didClaim|description": {
+    "en": "473d9916a85b21bb",
+    "text": "Comunica el DID preferido de una persona como la afirmación `did`, en el ID Token y en la respuesta de UserInfo, tras el ámbito `did` (#693). Activado, la afirmación se comunica solo cuando el cliente declara `did` en su oauthAllowedScope (en ambos modos; no está en ningún conjunto predeterminado), la solicitud pidió el ámbito, la persona consintió en él para ese cliente ella misma (un consentimiento global no cuenta), la persona marcó como preferido un DID que DEMOSTRÓ con su cartera (nunca uno que escribió un administrador) y la cuenta no está deshabilitada. A un cliente que usa identificadores de sujeto por pares o efímeros nunca se le comunica salvo que su oauthDidClaimWithPairwise sea TRUE, porque un DID estable anula la imposibilidad de vincular para la que existen. Una afirmación llamada `did` procedente de cualquier otra capa se elimina. Desactivado: el ámbito no se anuncia y la afirmación nunca se comunica."
+  },
   "oauth2.sessionManagement|label": {
     "en": "9b2a882aa3250c63",
     "text": "OpenID Connect Session Management"
@@ -5787,6 +5795,14 @@
     "en": "7f75db9b5f30bc72",
     "text": "Certificados PEM, concatenados, de los Wallet Providers y componentes de almacenamiento de claves cuyas atestaciones de clave cree este emisor: una atestación debe verificarse contra una de estas claves, o estar firmada por un certificado (su x5c) que una de ellas emitió. Vacío no confía en ninguno, y entonces se rechaza toda atestación de clave."
   },
+  "oid4vci.didHolderBinding|label": {
+    "en": "03baba1fe888a560",
+    "text": "Vincular al DID de la persona"
+  },
+  "oid4vci.didHolderBinding|description": {
+    "en": "89f8d541b4738289",
+    "text": "Las configuraciones de credencial cuyas credenciales se vinculan al DID de la persona en lugar de a una clave. Para cada una de ellas, la prueba de la cartera debe nombrar su clave mediante un kid que sea una URL did:jwk o did:key que la persona haya demostrado en su página Self-issued IDs (no basta con una entrada de un administrador), y la credencial lleva ese DID: cnf.kid en un dc+sd-jwt, credentialSubject.id, sub y cnf.kid en un jwt_vc_json, credentialSubject.id en un ldp_vc. Los metadatos indican did:jwk y did:key para ella. Cada copia de un lote lleva el mismo DID, por lo que se pueden correlacionar: ese es el precio. Vacío, todas las configuraciones se vinculan a una clave, como antes. No se ofrece did:web."
+  },
   "vcApi.enabled|label": {
     "en": "5c2f9e8aabdd4d3b",
     "text": "Servir la W3C VC API"
@@ -6066,6 +6082,14 @@
   "krb5.crossRealmClassicDelegation|description": {
     "en": "f95686ad2d2053e6",
     "text": "Si la delegación restringida CLÁSICA (appAllowedToDelegateTo en el front end) puede cruzar una confianza Kerberos. Desactivada por defecto: se define dentro de un dominio, y la delegación basada en recursos (appAllowedToActOnBehalfOf en el destino, nombrando SPN@REALM) es la que cruza. Activada, el dominio del front end comprueba su propia lista antes de referir la evidencia, y el dominio del destino la da por comprobada; ambos dominios deben activarla."
+  },
+  "krb5.s4uRoleSubject|label": {
+    "en": "01c225dc88b80527",
+    "text": "De quién es el rol que un servicio exige bajo S4U"
+  },
+  "krb5.s4uRoleSubject|description": {
+    "en": "497e1cff316db4ba",
+    "text": "Bajo S4U2Self y S4U2Proxy (clásica o basada en recursos), de quién son los roles que el KDC compara con el rol que exige la entrada de un servicio (appRequiredRole). user (el valor predeterminado): la persona para quien es el ticket — el usuario nombrado en PA-FOR-USER, o el cliente del ticket de evidencia — consultada en este dominio por su nombre completo, y por sus SID filtrados, cuando llegó a través de una confianza. service: el servicio que pide, el cliente del TGT, que es lo que el KDC comprobaba antes de que existiera este ajuste. Un rechazo es KDC_ERR_POLICY en ambos casos. Una solicitud TGS ordinaria tiene un solo sujeto y no se ve afectada. Las especificaciones dejan esto abierto: [MS-SFU] solo decide si el servicio puede delegar."
   },
   "krb5.requireSidFilteringInProduct|label": {
     "en": "f4bc0b8bb8e18123",
@@ -6968,12 +6992,20 @@
     "text": "Registrar la consola y el portal como receptores"
   },
   "ssf.internalReceivers|description": {
-    "en": "29e7cb1d4e0c30f3",
-    "text": "Si este servicio siembra un flujo de Shared Signals para su PROPIA consola de administración y su portal de usuario, de modo que cada uno reciba todos los eventos CAEP y RISC mediante push de RFC 8935 en un endpoint propio y dibuje lo que llegó en /admin/signals y /portal/signals. Son flujos NORMALES — pause uno, redúzcalo o elimínelo en /admin/ssf y quedará así hasta un reinicio. Tenga en cuenta que ssf.pushDelivery rige esta entrega como cualquier otra: con él desactivado, los eventos se encolan en los dos flujos y no llegan a ninguna de las dos páginas."
+    "en": "1a148e2b3a63a17d",
+    "text": "Si este servicio siembra un flujo de Shared Signals para su PROPIA consola de administración y su portal de usuario, de modo que cada uno reciba todos los eventos CAEP y RISC (recogiéndolos mediante sondeo de RFC 8936 del /ssf/poll de este servicio cada ssf.internalPollMs, #771) y dibuje lo que llegó en /admin/signals y /portal/signals. Son flujos NORMALES — pause uno, redúzcalo o elimínelo en /admin/ssf y quedará así hasta un reinicio."
   },
   "ssf.internalReceivers|restartReason": {
     "en": "75c18a7223a2e0a3",
     "text": "los dos flujos se siembran cuando se carga ssf/ssf.ts con require y de nuevo al construirse cada dominio, así que desactivar esto en caliente dejaría los flujos que ya existen y activarlo no crearía ninguno"
+  },
+  "ssf.internalPollMs|label": {
+    "en": "245d4495769ca599",
+    "text": "Intervalo de sondeo de la consola y el portal (milisegundos)"
+  },
+  "ssf.internalPollMs|description": {
+    "en": "b80cedcb611f2fd3",
+    "text": "Con qué frecuencia la consola de administración y el portal de usuario de este servicio recogen lo que contienen sus flujos, mediante sondeo de RFC 8936 en /ssf/poll (la tarea programada ssf.internal-poll), hasta ssf.pollMaxEvents SET por solicitud. Es lo máximo que un Security Event Token espera antes de que cualquiera de las dos superficies lo vea y actúe en consecuencia. 0 desactiva la tarea, y entonces los eventos se encolan en los dos flujos y no llegan a ninguna de las dos páginas."
   },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",
@@ -7462,6 +7494,14 @@
   "risk.minimumHistory|description": {
     "en": "8febb2273519b4ee",
     "text": "Cuántos inicios de sesión previos necesita una persona antes de que el modelo la puntúe. Con menos queda SIN PUNTUAR, como un primer inicio de sesión, y las señales new-device y new-tls-stack esperan al mismo historial: con uno o dos inicios de sesión el modelo es sobre todo la probabilidad previa de la población, y el segundo inicio de sesión de una persona nueva se leería como MEDIUM. Las señales de evidencia (listas, clientes automatizados, contraseñas rechazadas, una llave de seguridad comprometida) se aplican por nueva que sea la persona. 1 puntúa a partir del segundo inicio de sesión."
+  },
+  "risk.populationUsersCacheS|label": {
+    "en": "e30547f35344a4d6",
+    "text": "Segundos que se guarda el número de personas del dominio"
+  },
+  "risk.populationUsersCacheS|description": {
+    "en": "5e0a6cc869a4bab0",
+    "text": "Cuánto tiempo guarda la evaluación de riesgo el número de personas que han iniciado sesión en un dominio (el denominador del término de suavizado del modelo) antes de volver a contarlas. Contar recorre una fila por persona, así que preguntarlo en cada inicio de sesión cuesta más a medida que crece el dominio; un recuento de hace un minuto cambia una puntuación menos de lo que lo haría una persona más en el dominio. Un dominio de menos de 1000 personas se cuenta en cada inicio de sesión diga lo que diga este ajuste. 0 cuenta en cada inicio de sesión."
   },
   "risk.geoMinimumCount|label": {
     "en": "e636b2310a4df74f",

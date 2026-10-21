@@ -316,8 +316,12 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
 // `shellJson` with it, for `GET /admin-api/console`: the console's frame —
 // its sections, its labels, its banners — for the caller.
 // ---------------------------------------------------------------------------
-const MAY_STAY_ON_THE_CONSOLE = ['consoleJson', 'configJson',
-  'preparedSettingsJsonFor', 'listField', 'dashboardJson', 'shellJson'];
+// `consolePages` and `dashboardJsonAsync` since 2026-10-21: /me wanted only
+// the page list of `consoleJson()`, and /status the dashboard's totals asked
+// asynchronously — the same two pieces of the console's knowledge, without
+// the synchronous snapshot either one built.
+const MAY_STAY_ON_THE_CONSOLE = ['consolePages', 'configJson',
+  'preparedSettingsJsonFor', 'listField', 'dashboardJsonAsync', 'shellJson'];
 
 function checkOnlyTheConsolesOwnKnowledgeIsLeft(t) {
   log.debug("Entering checkOnlyTheConsolesOwnKnowledgeIsLeft().");

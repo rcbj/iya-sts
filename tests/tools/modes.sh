@@ -327,6 +327,14 @@ stsModeNeedsPostgres()
 # 130 MINUTES SINCE 2026-10-13: CI's cluster run on main 8fe81efa was stopped
 # by the 100-minute bound at job 734 of 774, nothing wedged — the suite had
 # simply grown past it (#591-#604 added jobs and the console's tabs).
+# 200 MINUTES SINCE 2026-10-20: CI's cluster run on main 1f01ce51 (run
+# 39464473145) was stopped by the 130-minute bound at job 841 of 871, nothing
+# wedged — 830 jobs had finished (93 minutes of job time, sts_admin_console
+# alone 26 of them), and the 30 not yet run included the three bulk loads,
+# which took 13.5 minutes between them in that run's single-node mode and
+# are the slowest thing a cluster does (above). On that pace the mode needs
+# about 170 minutes on a GitHub runner; 200 is that with room. The laptop
+# runs it in far less, which is why it passed there.
 #
 # `single-node` HAS ONE OF ITS OWN SINCE 2026-09-24, for the same reason one
 # step smaller: product mode on postgres with request workers, and the same
@@ -340,7 +348,7 @@ stsModeNeedsPostgres()
 stsModeTimeout()
 {
   case "$1" in
-    cluster) echo "${STS_CLUSTER_MODE_TIMEOUT:-7800}" ;;
+    cluster) echo "${STS_CLUSTER_MODE_TIMEOUT:-12000}" ;;
     single-node) echo "${STS_SINGLE_NODE_MODE_TIMEOUT:-4800}" ;;
     *)       echo "${STS_BASE_MODE_TIMEOUT:-3000}" ;;
   esac

@@ -203,6 +203,18 @@
     "en": "e773ade2b33e515a",
     "text": "Elle est refusée. Une clé principale est ajoutée sur /portal/keys derrière une session, par un lien d’activation ou par un opérateur."
   },
+  "mode.requirements.siop-did-web-pin.what": {
+    "en": "a8f5db1a7e30f55d",
+    "text": "Un sujet auto-émis did:web ne se connecte qu’avec une clé épinglée lors de son enrôlement"
+  },
+  "mode.requirements.siop-did-web-pin.development": {
+    "en": "df2d670db990d330",
+    "text": "Un did:web enrôlé avant l’épinglage des clés, sans clé épinglée, se connecte avec la clé que son document nomme lors de sa prochaine connexion, et cette clé est alors épinglée (confiance au premier usage), avec une ligne de journal et une ligne d’audit."
+  },
+  "mode.requirements.siop-did-web-pin.product": {
+    "en": "f2869db882e1f25d",
+    "text": "Cette connexion est refusée (STS-VC-0127), auditée, et la personne enrôle de nouveau le DID en le prouvant sur /portal/self-issued. Dans les deux modes, une clé que l’épinglage ne nomme pas est refusée (STS-VC-0126)."
+  },
   "mode.requirements.webauthn-attestation.what": {
     "en": "8c22563b2f23268b",
     "text": "La déclaration d’attestation d’une clé de sécurité est vérifiée avant l’enregistrement de la clé"
@@ -612,16 +624,16 @@
     "text": "Rien de tout cela. L’annuaire, la base de principaux et le registre contiennent ce qui a été configuré ou provisionné, et rien d’autre — les deux groupes de rôles XACML existent et sont vides, et le KDC refuse de construire krbtgt ou son compte de service sur les mots de passe publiés dans ce dépôt."
   },
   "mode.requirements.test-double.what": {
-    "en": "f06cf29c4a61e31d",
-    "text": "Le document de métadonnées du service indique que ce service est une doublure de test"
+    "en": "f037d7b70aacf864",
+    "text": "Le service se présente comme une doublure de test"
   },
   "mode.requirements.test-double.development": {
-    "en": "241755f4aaf4cb6b",
-    "text": "`testDouble` vaut true dans GET /admin-api/sts-metadata : ce service ne vérifie aucun mot de passe et ne valide aucun jeton d’accès, et une liste de points de terminaison ne doit pas se lire comme l’affirmation du contraire."
+    "en": "ffe468af90a49423",
+    "text": "`testDouble` vaut true dans GET /admin-api/sts-metadata : ce service ne vérifie aucun mot de passe et ne valide aucun jeton d’accès, et une liste de points de terminaison ne doit pas se lire comme l’affirmation qu’il le fait. L’index de la console affiche Ce qu’il ne fait délibérément pas."
   },
   "mode.requirements.test-double.product": {
-    "en": "252476cbd5f62e18",
-    "text": "`testDouble` vaut false : les mots de passe sont vérifiés et les jetons d’accès validés, et le document le dit."
+    "en": "2fef3ea99ceb768a",
+    "text": "`testDouble` vaut false : les mots de passe sont vérifiés et les jetons d’accès validés, et le document le dit. L’index de la console n’affiche pas cette liste."
   },
   "mode.requirements.claim-values.what": {
     "en": "3e4acbf9a020d8f8",

@@ -1001,7 +1001,7 @@ function cooledIndexCase(t) {
   t.equal(calls, after, 'those reads do not call the bridge');
   let sweepCalls = 0;
   queryFn = function (name) {
-    if (name === 'session.expired' || name === 'session.subjectRows') {
+    if (name === 'session.expired' || name === 'session.overCapRows') {
       sweepCalls += 1;
       return [];
     }
@@ -1022,11 +1022,20 @@ function shedErrorCase(t) {
   const older = 'digest-older';
   const newer = 'digest-newer';
   const reads = [];
+  // 2026-10-21: the shed asks the store for the over-cap subjects alone,
+  // with the cap and the sweep's budget, and pages nobody else.
+  let overCapArgs = null;
+  let pagedEverySession = false;
   queryFn = function (name, args) {
     if (name === 'session.expired') {
       return [];
     }
     if (name === 'session.subjectRows') {
+      pagedEverySession = true;
+      return [];
+    }
+    if (name === 'session.overCapRows') {
+      overCapArgs = args;
       if (!args || args[0] !== REALM) {
         return [];
       }
@@ -1054,6 +1063,11 @@ function shedErrorCase(t) {
     t.equal(reads.indexOf(newer), -1, 'the later live row is not read');
     t.equal(audits('session.end', 'shed-newer').length, 0,
             'the later row has no session.end');
+    t.check(!!overCapArgs && overCapArgs[1] === 1 && overCapArgs[2] >= 1 &&
+            !pagedEverySession,
+            'the shed asks for the over-cap subjects alone, with the cap ' +
+            'and its budget, and pages no other session (2026-10-21)',
+            JSON.stringify({ args: overCapArgs, paged: pagedEverySession }));
   } finally {
     config.clearOverride('authn.maxSessionsPerSubject');
   }

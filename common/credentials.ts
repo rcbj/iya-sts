@@ -2105,7 +2105,9 @@ class Credentials {
    * @param username - the person
    * @param password - the new password
    * @param opts - `current` and `history` from an entry the caller holds,
-   *   and `generated` for a password this service just made up
+   *   `generated` for a password this service just made up, and
+   *   `hashOfThisPassword`, a hash of exactly this password the caller
+   *   already made with `crypto.hashSecretAsync()` (#756)
    * @returns `{ ok: true, hash, history, … }`, or a refusal with its reason
    *   and code
    */
@@ -2235,7 +2237,15 @@ class Credentials {
     const history = next.concat(storedHistory).slice(0, profile.history);
     log.debug('Leaving Credentials.preparePassword(). Prepared; ' +
               history.length + ' remembered.');
-    return { ok: true, hash: crypto.hashSecret(password), history: history,
+    // A HASH THE CALLER ALREADY MADE OFF THE EVENT LOOP (#756): an LDAP
+    // write hashes its clear password on libuv's thread pool before this
+    // synchronous body runs. It is only ever a hash of this same plaintext
+    // (the caller looks it up by the value), and it must be one of ours;
+    // anything else is ignored and the hash is made here.
+    const given = options.hashOfThisPassword;
+    const hash = typeof given === 'string' && crypto.isHashedSecret(given)
+      ? given : crypto.hashSecret(password);
+    return { ok: true, hash: hash, history: history,
              profile: profile.name };
   }
 
@@ -5660,6 +5670,15 @@ class Credentials {
       try {
         raws = census(list);
       } catch (e) {
+        if (Credentials.storeRefused(errorCodes, e)) {
+          log.error(errorCodes.tag('STS-AUTHN-0293') +
+                    'credentials: the directory\'s credential census could ' +
+                    'not read the store, so ' + list.length + ' name(s) are ' +
+                    'answered unknown rather than one at a time: ' +
+                    e.message);
+          log.debug('Leaving Credentials.factorCensus(). Store refused.');
+          return new Map();
+        }
         log.error(errorCodes.tag('STS-AUTHN-0293') +
                   'credentials: the directory\'s credential census threw, so ' +
                   'each person is asked on their own: ' + e.message);
@@ -5709,6 +5728,14 @@ class Credentials {
     try {
       raws = await census(list);
     } catch (e) {
+      if (Credentials.storeRefused(errorCodes, e)) {
+        log.error(errorCodes.tag('STS-AUTHN-0293') +
+                  'credentials: the directory\'s credential census could not ' +
+                  'read the store, so ' + list.length + ' name(s) are ' +
+                  'answered unknown rather than one at a time: ' + e.message);
+        log.debug('Leaving Credentials.factorCensusAsync(). Store refused.');
+        return new Map();
+      }
       log.error(errorCodes.tag('STS-AUTHN-0293') +
                 'credentials: the directory\'s credential census threw, so ' +
                 'each person is asked on their own: ' + e.message);
@@ -5718,6 +5745,25 @@ class Credentials {
     log.debug('Leaving Credentials.factorCensusAsync(). ' + out.size +
               ' name(s).');
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A CENSUS THE STORE REFUSED IS NOT ASKED AGAIN ONE PERSON AT A TIME (#786).
+  // The census failing because the store could not be read — the directory
+  // unavailable (STS-LDAP-0130, -0131) or this request's directory budget
+  // spent (STS-LDAP-0175) — is a failure every one-person read would meet
+  // too: on 8081 the users list fell back to three reads per person for
+  // ~165,000 names, every one refused and logged, and a request worker was
+  // held for minutes. Those names are answered unknown instead (an empty
+  // Map: the list draws them with no factors, counted in no tile), and the
+  // census is logged once. Any other throw is still answered one at a time.
+  // ---------------------------------------------------------------------------
+  private static storeRefused(errorCodes, e) {
+    helpers.log.debug("Entering Credentials.storeRefused().");
+    const code = errorCodes.codeOf(e);
+    helpers.log.debug("Leaving Credentials.storeRefused(). " + code);
+    return code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131' ||
+           code === 'STS-LDAP-0175';
   }
 
   // The names a census is asked about, as both doors trim them.
@@ -5739,7 +5785,8 @@ class Credentials {
     const out = new Map();
     if (!Array.isArray(raws) || raws.length !== list.length) {
       list.forEach((name) => {
-        out.set(name, this.factsOf(this.mechanismsFor(name)));
+        out.set(name, this.factsOf(this.mechanismsFor(name,
+          { withoutRecoveryCodes: true })));
       });
       log.debug('Leaving Credentials.censusFacts(). ' + out.size +
                 ' name(s), one at a time.');
@@ -5799,38 +5846,101 @@ class Credentials {
    */
   directoryFactorCounts() {
     const { log, errorCodes } = this.deps;
-    const { PASSWORD_ATTRIBUTE, WEBAUTHN_ATTRIBUTE, TOTP_ATTRIBUTE } =
-      Credentials;
+    const { PASSWORD_ATTRIBUTE } = Credentials;
     log.debug('Entering Credentials.directoryFactorCounts().');
     const tallies = this.directoryHook('credentialTallies');
     if (!tallies) {
       log.debug('Leaving Credentials.directoryFactorCounts(). No tally.');
       return null;
     }
-    let mailFactor = null;
-    try {
-      mailFactor = require('./mail_factor');
-    } catch (e) {
-      log.debug('Caught in Credentials.directoryFactorCounts(): ' +
-                ((e && e.message) || e));
-      // Not held, for `mailFactorOf()`'s reason.
-      mailFactor = null;
-    }
-    const holding = [WEBAUTHN_ATTRIBUTE, TOTP_ATTRIBUTE];
-    if (mailFactor && mailFactor.OPT_IN_ATTRIBUTE) {
-      holding.push(mailFactor.OPT_IN_ATTRIBUTE);
-    }
+    const mailFactor = this.mailFactorModule();
     let tally = null;
     try {
-      tally = tallies({ password: PASSWORD_ATTRIBUTE, holding: holding });
+      tally = tallies({ password: PASSWORD_ATTRIBUTE,
+                        holding: this.holdingAttributes(mailFactor) });
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0335') +
                 'credentials: counting this realm\'s credential holders ' +
                 'threw: ' + ((e && e.message) || e));
       tally = null;
     }
+    const out = this.factorCountsOf(tally, mailFactor);
+    log.debug('Leaving Credentials.directoryFactorCounts().');
+    return out;
+  }
+
+  // `directoryFactorCounts()` FOR A CALLER THAT CAN WAIT (2026-10-21): the
+  // directory's tallies asked on the driver's read pool where it offers that
+  // (`credentialTalliesAsync`), and the same arithmetic over them. The
+  // synchronous door stood a request worker still for up to nine seconds on
+  // a realm of 280,000 people (8081), sign-ins and all.
+  /**
+   * `directoryFactorCounts()`, the directory asked asynchronously.
+   *
+   * @returns a promise of the counts, or of null
+   */
+  async directoryFactorCountsAsync() {
+    const { log, errorCodes } = this.deps;
+    const { PASSWORD_ATTRIBUTE } = Credentials;
+    log.debug('Entering Credentials.directoryFactorCountsAsync().');
+    const tallies = this.directoryHook('credentialTalliesAsync');
+    if (!tallies) {
+      log.debug('Leaving Credentials.directoryFactorCountsAsync(). No ' +
+                'asynchronous tally: the synchronous one.');
+      return this.directoryFactorCounts();
+    }
+    const mailFactor = this.mailFactorModule();
+    let tally = null;
+    try {
+      tally = await tallies({ password: PASSWORD_ATTRIBUTE,
+                              holding: this.holdingAttributes(mailFactor) });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0335') +
+                'credentials: counting this realm\'s credential holders ' +
+                'threw: ' + ((e && e.message) || e));
+      tally = null;
+    }
+    const out = this.factorCountsOf(tally, mailFactor);
+    log.debug('Leaving Credentials.directoryFactorCountsAsync().');
+    return out;
+  }
+
+  // The census's module for emailed codes, or null where it is not held.
+  private mailFactorModule() {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.mailFactorModule().');
+    let mailFactor = null;
+    try {
+      mailFactor = require('./mail_factor');
+    } catch (e) {
+      log.debug('Caught in Credentials.mailFactorModule(): ' +
+                ((e && e.message) || e));
+      // Not held, for `mailFactorOf()`'s reason.
+      mailFactor = null;
+    }
+    log.debug('Leaving Credentials.mailFactorModule().');
+    return mailFactor;
+  }
+
+  // The credential attributes whose holders the tallies read.
+  private holdingAttributes(mailFactor) {
+    const { log } = this.deps;
+    const { WEBAUTHN_ATTRIBUTE, TOTP_ATTRIBUTE } = Credentials;
+    log.debug('Entering Credentials.holdingAttributes().');
+    const holding = [WEBAUTHN_ATTRIBUTE, TOTP_ATTRIBUTE];
+    if (mailFactor && mailFactor.OPT_IN_ATTRIBUTE) {
+      holding.push(mailFactor.OPT_IN_ATTRIBUTE);
+    }
+    log.debug('Leaving Credentials.holdingAttributes().');
+    return holding;
+  }
+
+  // The tiles' counts from the directory's tallies; null for no answer.
+  private factorCountsOf(tally, mailFactor) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.factorCountsOf().');
     if (!tally) {
-      log.debug('Leaving Credentials.directoryFactorCounts(). No answer.');
+      log.debug('Leaving Credentials.factorCountsOf(). No answer.');
       return null;
     }
     const out = { people: Number(tally.people) || 0,
@@ -5855,7 +5965,7 @@ class Credentials {
     out.passwordOnly = Math.max(0, out.withPassword - passwordAndSecond);
     out.noWayIn = Math.max(0, out.people - out.withPassword -
                            keyWithoutPassword);
-    log.debug('Leaving Credentials.directoryFactorCounts(). ' + out.people +
+    log.debug('Leaving Credentials.factorCountsOf(). ' + out.people +
               ' people, ' + (tally.holders || []).length + ' read.');
     return out;
   }
@@ -5883,6 +5993,53 @@ class Credentials {
       }
     }
     log.debug('Leaving Credentials.directoryPeopleNamed(). ' + n);
+    return n;
+  }
+
+  // THE DIRECTORY'S VERSION OF ITS PEOPLE (2026-10-21): a number every write
+  // under `ou=users` moves, for a caller that keeps something built from
+  // them (`/admin/users`' population). Null where no directory offers one.
+  /**
+   * The ambient realm's people's version, as the directory counts it.
+   *
+   * @returns a number, or null
+   */
+  directoryPeopleVersion() {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.directoryPeopleVersion().');
+    const hook = this.directoryHook('peopleVersion');
+    const version = hook ? Number(hook()) : null;
+    log.debug('Leaving Credentials.directoryPeopleVersion().');
+    return version === null || Number.isFinite(version) ? version : null;
+  }
+
+  // `directoryPeopleNamed()` FOR A CALLER THAT CAN WAIT (2026-10-21), for
+  // `directoryFactorCountsAsync()`'s reason.
+  /**
+   * `directoryPeopleNamed()`, the directory asked asynchronously.
+   *
+   * @param names - the names
+   * @returns a promise of the count, or of null
+   */
+  async directoryPeopleNamedAsync(names) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.directoryPeopleNamedAsync().');
+    const hook = this.directoryHook('countPeopleNamedAsync');
+    if (!hook) {
+      log.debug('Leaving Credentials.directoryPeopleNamedAsync(). The ' +
+                'synchronous one.');
+      return this.directoryPeopleNamed(names);
+    }
+    let n = null;
+    try {
+      n = Number(await hook(names || [])) || 0;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0335') +
+                'credentials: counting which names are people here ' +
+                'threw: ' + ((e && e.message) || e));
+      n = null;
+    }
+    log.debug('Leaving Credentials.directoryPeopleNamedAsync(). ' + n);
     return n;
   }
 
@@ -8066,7 +8223,7 @@ class Credentials {
    * @param username - the person
    * @returns `{ username, password, primaryKeys, mfaKeys, keys, totp, … }`
    */
-  mechanismsFor(username) {
+  mechanismsFor(username, opts?) {
     const { log, totp, backupCodes } = this.deps;
     log.debug("Entering Credentials.mechanismsFor().");
     const name = String(username || '').trim();
@@ -8132,7 +8289,11 @@ class Credentials {
       // is generated when the person asks to see one and stored — hashed — only
       // once they confirm they have kept it. `recoveryAdvised` below is what
       // replaced the automatic issue.
-      backupCodes: this.backupCodeStatus(name),
+      // Not read for a caller that counts and filters a list (#786): no tile
+      // and no filter reads it, and on a large directory it was a third
+      // store read per person.
+      backupCodes: opts && opts.withoutRecoveryCodes ? null
+                                                     : this.backupCodeStatus(name),
       // Is a second factor required of them? A person holding an `mfa` key or
       // an enrolled authenticator is saying their password alone is not enough,
       // so the sign-in screen demands it as well — which is what makes the flag
@@ -9757,6 +9918,42 @@ class Credentials {
     return { ok: true, username: name, mayAct: dn };
   }
 
+  // THE PEOPLE A PERSON MAY FIND AS THEIR DELEGATE (2026-10-20,
+  // `/portal/delegate`): native people of this realm whose `uid` contains
+  // what they typed, the person themselves left out — `ldap_server.js`'s
+  // `delegateCandidates()` decides who, and this only says who is asking.
+  // What is chosen from the answer is still named through `setMayAct()`
+  // above, which checks the DN again.
+  /**
+   * Finds the native people of this realm a person may name as their
+   * delegate, by part of their `uid`.
+   *
+   * @param username - the person asking
+   * @param query - the text they typed
+   * @returns a promise of `{ ok: true, people, more }`, or a refusal where
+   *   no directory can answer
+   */
+  async findDelegateCandidates(username, query) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.findDelegateCandidates().");
+    const name = String(username || '').trim();
+    if (!name || !directory ||
+        typeof directory.delegateCandidates !== 'function') {
+      log.debug("Leaving Credentials.findDelegateCandidates(). No store.");
+      return coded('STS-AUTHN-0226', { ok: false, errors: ['No credential ' +
+                                   'store is installed.'] });
+    }
+    const self = this.delegationFactsFor(name) || {};
+    const found = await directory.delegateCandidates(String(query || ''),
+      { selfDn: String(self.dn || '') });
+    log.debug("Leaving Credentials.findDelegateCandidates(). " +
+              ((found && found.people) || []).length);
+    return { ok: true, people: (found && found.people) || [],
+             more: !!(found && found.more) };
+  }
+
   // #186: the semantics a person allows — `delegation`, `impersonation`, both,
   // or none (an empty set, which the exchange policy reads as both for a
   // subject and as delegation only for an actor) — and their default.
@@ -10204,6 +10401,9 @@ export = {
   factorHolderRow: slot.forward('factorHolderRow'),
   factorCensus: slot.forward('factorCensus'),
   factorCensusAsync: slot.forward('factorCensusAsync'),
+  directoryFactorCountsAsync: slot.forward('directoryFactorCountsAsync'),
+  directoryPeopleNamedAsync: slot.forward('directoryPeopleNamedAsync'),
+  directoryPeopleVersion: slot.forward('directoryPeopleVersion'),
   directoryFactorCounts: slot.forward('directoryFactorCounts'),
   directoryPeopleNamed: slot.forward('directoryPeopleNamed'),
   issueActivation: slot.forward('issueActivation'),
@@ -10315,6 +10515,7 @@ export = {
   delegationFlaggedPersons: slot.forward('delegationFlaggedPersons'),
   setNotDelegated: slot.forward('setNotDelegated'),
   setMayAct: slot.forward('setMayAct'),
+  findDelegateCandidates: slot.forward('findDelegateCandidates'),
   setDelegationSemantics: slot.forward('setDelegationSemantics'),
   removePrimaryKeys: slot.forward('removePrimaryKeys'),
   removeSecondFactors: slot.forward('removeSecondFactors'),

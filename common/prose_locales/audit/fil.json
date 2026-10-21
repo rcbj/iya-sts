@@ -1047,6 +1047,10 @@
     "en": "f6af7681f3d25fd7",
     "text": "May administrator na nag-alis ng self-issued (SIOPv2) subject ng isang tao"
   },
+  "audit.actions.admin.siop.preferred.label": {
+    "en": "3c3a62cf5e46c516",
+    "text": "Minarkahan ng isang administrator na gusto ang isang pinatunayang DID ng isang tao, o inalis ang marka"
+  },
   "audit.actions.ssf.signals.discover.label": {
     "en": "55d2d7d9682c339a",
     "text": "Natuklasan ang Shared Signals configuration ng isang federation partner"
@@ -1327,9 +1331,25 @@
     "en": "51cd295b713684de",
     "text": "May signing key form na tinanggihan dahil sa CSRF token nito"
   },
+  "audit.actions.portal.siop.enrol.label": {
+    "en": "9c4ac2b8893fae20",
+    "text": "Nag-enroll ang isang tao ng self-issued subject sa pamamagitan ng pagpapatunay nito gamit ang wallet"
+  },
   "audit.actions.portal.siop.remove.label": {
     "en": "b6f77328c0b99b89",
     "text": "May taong nag-alis ng self-issued subject"
+  },
+  "audit.actions.portal.siop.prefer.label": {
+    "en": "7e6377e63c113f97",
+    "text": "Minarkahan ng isang tao na gusto ang isang pinatunayang DID, o inalis ang marka"
+  },
+  "audit.actions.siop.key.pinned.label": {
+    "en": "a2cc99b16a4a406e",
+    "text": "Ang isang did:web na self-issued subject na na-enroll nang walang naka-pin na key ay na-pin sa key na ginamit nito sa pag-sign in (development lang)"
+  },
+  "audit.actions.siop.key.refused.label": {
+    "en": "ce5975b773d8c9d7",
+    "text": "Tinanggihan ang isang did:web na self-issued sign-in: hindi ang key ang na-pin noong enrollment, o walang na-pin"
   },
   "audit.actions.portal.vc.offer.label": {
     "en": "631dece03539cd4a",

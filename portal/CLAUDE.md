@@ -816,6 +816,15 @@ authorization request and the sign-out's address are the bytes they were.
   Sign out — `tests/portal_refresh.js` 6 holds Refresh and Sign out side by
   side — with a button per other signed-in account and *Sign in with
   another account*. Sign out goes to `/logout?login_hint=<username>`.
+  **Since #751 its summary reads *Switch user*** and its panel is drawn with
+  no other account signed in too (saying so, `portal.accounts.none`), ending
+  on the line that the account the tab leaves stays signed in
+  (`portal.accounts.kept`) — the console's group, for the console's reasons
+  (`admin-ui/CLAUDE.md` 8c-iv). Off, still not drawn — and off is no
+  longer the default: `authn.multipleAccounts` is on by default since
+  2026-10-20 (rcbj, #751; `authn/CLAUDE.md`).
+  `tests/vendored/sts_multi_account_tabs.js` 2a switches a real tab to bob
+  and back to alice from it, nothing typed.
 * **A SWITCH** asks over a form typed in, aborts what is in flight —
   `sendOnce()`, `ownerJson()` (the owner token's requests, #607) and the
   token requests — and discards `me`, the page for nobody's locale
@@ -991,7 +1000,7 @@ their sessions and their account, to this portal, over OpenID CAEP and RISC.
 `ssf/ssf_receivers.ts` holds the design, `ssf/CLAUDE.md` argues it, and the A01
 half is above. Three things belong here.
 
-**IT IS UNDER *Your account* AND NOT UNDER *How you sign in*.** That section
+**IT IS UNDER *Your account* AND NOT UNDER *How I sign in*.** That section
 holds the CREDENTIALS on this person's entry, one page each, and every page in
 it is a control — a password form, a key list, an authenticator enrolment. This
 is not a control and not about a credential: it is a RECORD, and a reader
@@ -1238,7 +1247,7 @@ from `/admin/pki` is unaffected, which is the point of having the switch.
 
 ### Where it is filed, and the argument that was refused
 
-Under **How you sign in**, whose own description is *the credentials on your own
+Under **How I sign in**, whose own description is *the credentials on your own
 entry, one page each*. The argument for *Your account* — that this key never
 signs anybody IN, since there is no browser session at the end of it — was
 considered and refused: it is an argument about the section's TITLE rather than
@@ -1503,6 +1512,34 @@ nobody and the person themselves (`STS-AUTHN-0227`); the page answers 400 with
 the person names moot. An administrator sets the same attribute from the
 person's `/admin/users` page and `POST /admin-api/users/set-may-act`.
 
+**A SEARCH FINDS A PERSON BY PART OF THEIR USERNAME (2026-10-20, rcbj).**
+Above the DN form, which stays because an application is named by its DN,
+a box asks `GET /account-api/delegate/candidates?q=` and lists at most ten
+people, each with a button that POSTs their DN to the same operation the DN
+form uses. That keeps `setMayAct()`'s checks the only checks. The rules:
+
+* **The match is a contains on the `uid`**, which is the entry's RDN value.
+  No other attribute is matched. A result is the uid, the `cn` (for display)
+  and the DN, and nothing else. rcbj first said cn and corrected it to uid:
+  the RDN value is the one name the store holds in the clear, so it can be
+  indexed while every attribute stays sealed.
+* **Only native people of this realm**: never an entry `stsProvisionedBy`
+  marks, never the person themselves, a disabled account, a service
+  account, a group or an application. `ldap/CLAUDE.md` (*Who created an
+  entry*) argues the stamp. A native person who LINKED a partner is still
+  native. `stsNotDelegated` on a CANDIDATE is not a reason to leave them
+  out: it says nobody may act for THEM, and the page already says when the
+  caller's own account carries it.
+* **The page asks after three seconds without a keystroke**, and only for
+  three characters or more (rcbj: "to avoid unnecessary searching"). Enter
+  asks at once, and the operation refuses a short text (`STS-PORTAL-0620`).
+  Every keystroke makes an answer still in flight stale, so it is never
+  drawn over a newer one (`web_delegate.ts`'s `DelegateSearch`). The timer
+  is the browser's own; the no-periodic-timers rule is about the server.
+* **The search form is the page's own**: it is wired by `DelegatePages.wire()`
+  from the runtime's `wire()`, and its submit is stopped at the form, so the
+  portal's form handling never sends it to a portal path.
+
 ## `/portal/self-issued`: THE WALLET KEYS THAT SIGN YOU IN (2026-09-23, #129)
 
 The SIOPv2 subjects enrolled on the person's own entry, each with a Remove,
@@ -1514,9 +1551,88 @@ for that session's person and sends them back here with `?enrolled=1`.
 Nothing is typed, because a DID pasted into a box could be somebody else's —
 the one person it would then let in. The removal form names the SUBJECT,
 never whose it is (`STS-PORTAL-0087` when it is not theirs).
+**The link names the tab's own account as `login_hint`** (2026-10-20, rcbj
+on 8081): with `authn.multipleAccounts` on and two people signed in in one
+browser, a request naming neither is answered nobody, so the enrolment was
+refused (`STS-VC-0093`) for everyone who had used Switch user. The hint
+only chooses among the sessions the browser already holds; one naming
+nobody here is still refused (`oid4vc/vc_signin.ts`, `startable()`).
 `portal_self_issued.ts` draws it the way `portal_delegate.ts` does. An
 administrator enrols by value from `/admin/users` and `/admin-api`
 (`oid4vc/CLAUDE.md`, 3ba).
+
+**Since #693 (2026-10-20) each row says HOW it was enrolled** — *Proved with
+your wallet* (`proof: wallet`) or *Added by an administrator* (`admin`, by
+value, unproven) — because a subject released to a relying party must be one
+the person proved, and the person is the one who can tell. **Proving a
+subject that is already theirs proves it again** rather than being refused:
+that is how an administrator's entry becomes a proved one, and how a did:web
+whose document now names another key is re-pinned — the one re-pin flow,
+chosen because it costs nothing new: the same link, the same transaction,
+the same `siop.enrol()`. The enrolment writes `portal.siop.enrol` (the
+removal's shape, `STS-VC-0094` on a refusal) from `oid4vc/vc_signin.ts`,
+where the enrolment happens. The pin itself is `oid4vc/CLAUDE.md`'s (3ba).
+
+**Since #693's phase 2 a proved DID can be marked PREFERRED** here (*Make
+preferred*, *Clear*: `action: prefer | unprefer` on the same POST, naming the
+subject, never the person — `STS-PORTAL-0615`, audited
+`portal.siop.prefer`). Only a row the person proved, and only a DID, offers
+it; the page says whether this realm releases the mark as the `did` claim
+(`didClaim` on the view). What it is and what releases it:
+`oid4vc/CLAUDE.md` and `oauth-oidc/CLAUDE.md` (*The `did` claim*).
+
+**EACH ROW IS ONE LINE, AND SAYS WHERE THE KEY CAME FROM** (2026-10-20,
+rcbj on 8081). The subject shows its START AND ITS END — 13 characters, `…`,
+the last 7 (`SelfIssuedPages.middle()`), because every thumbprint begins
+`urn:ietf:params:oauth:` and an end ellipsis drew rows nobody could tell
+apart — and its `title` is the whole value; `td .oneline`'s CSS ellipsis
+(`web_portal_kit.ts`, overriding `td code`'s break-anywhere) is only the
+guard on a phone. The **Location** column is the
+enrolment value's `location` (`oid4vc/CLAUDE.md`, 3ba), drawn the same way:
+one short line — a web wallet's host and port, an app's reported name, or
+*Browser (DC API)* / *Administrator* / *Not recorded* — and the full story
+in the `title`: the wallet's whole address, "Name reported by the wallet
+app: …", or a sentence. A wallet's name is its own say-so, so the page
+labels it as reported and escapes it like any other value. A row from
+before the column says *Not recorded*; proving it again records it. The
+table sits in `.scrollx`, so a phone too narrow for even the cut-down cells
+scrolls it inside the card. `tests/self_issued_location.js` holds all of
+it; the console's `/admin/users` block draws the same column
+(`admin-ui/web_users.ts`, `siopLocationCell()`).
+
+**A DID'S DOCUMENT IS ONE CLICK AWAY** (2026-10-20, rcbj: "a simple
+hyperlink with a mouseover that shows the full URL", opening "a new tab that
+displays the DID"; then "did:web + resolved view"). Under a DID subject, one
+short line: *DID document*, `target="_blank" rel="noopener noreferrer"`, its
+`title` the whole address. A did:web links to its PUBLISHED document, at the
+address the view names (`didDocumentUrl`, `siop.didWebUrl()` on the server,
+so the browser carries no method mapping). A did:jwk or did:key links to
+**`/portal/self-issued/did?subject=`**, this column's first SUB-PAGE: drawn
+from `GET /account-api/self-issued/did`, it shows the document RESOLVED FROM
+THE IDENTIFIER (`oid4vc/vc_did_resolver.ts`, required lazily) as JSON in a
+`<pre>` that wraps inside its card, and fetches nothing. A thumbprint is no
+DID and has no link. **The operation answers only for a subject enrolled for
+the token's person** — anything else is `STS-PORTAL-0618`, before anything
+about it is said — and an enrolled did:web or thumbprint is `STS-PORTAL-0619`,
+so it is not a resolver for anybody's input. With no subject it answers
+`{ subject: '', document: null }` and the page points back at the list (so a
+page drawn with an empty query, `tests/account_api.js` 2b, still draws).
+**A sub-page is headed and marked in the column as its parent**
+(`PortalShell.navPathFor()`: the deepest listed path it is under, never the
+overview's), and `subject` is kept by Refresh and the language chooser
+(`REFRESH_KEPT`). The new tab has no `sessionStorage` (`noopener`), so it
+signs in from the browser's session as any fresh portal tab does and lands
+back on the sub-page with its query; where the browser holds several
+accounts, that sign-in names none and may ask which. `tests/self_issued_location.js` (sections 6-8).
+
+**NO ENTRY IS A REFUSAL, NOT AN EMPTY LIST** (2026-10-20, rcbj after an
+investigation of empty portal lists on 8081). `siop.list()` answers null where
+the directory holds no entry for the token's person, and the view read that as
+`[]` — "none enrolled", indistinguishable from a person who enrolled nothing.
+`GET /account-api/self-issued` now refuses it (`STS-PORTAL-0616`, 404, audited
+`portal.siop.view`) and the page draws its heading and no list under the
+runtime's message; an entry with nothing enrolled is still the empty list.
+`tests/portal_list_refusals.js` holds both.
 
 ## `/portal/wallet`: A CREDENTIAL ABOUT YOURSELF, INTO YOUR OWN WALLET (2026-10-12, #589)
 
@@ -1540,6 +1656,24 @@ pre-authorized offer).
   /portal/wallet` as rule 7's twin asks.
 * **THE SUBJECT IS THE TOKEN'S**: the offer names `caller.username` and the
   token's `sub`, and a body naming anybody is ignored — the A01 rule above.
+* **AND THE TOKEN'S `sub` AND PERSON MUST NAME EACH OTHER** (2026-10-20,
+  rcbj). The history is read by `caller.sub` (`vc_issued.ts`'s subject
+  index) and the page is `caller.username`'s; where they disagree the
+  history was somebody else's, or — with no index entry — an empty list that
+  read as "nothing issued". The history, an offer and a Remove each refuse it
+  (`STS-PORTAL-0617`, 403, audited as the operation's own action or
+  `portal.vc.view`) before anything is read or written by that subject.
+  **EITHER DIRECTION TIES THEM**: `subjectForName(username)` is the subject
+  (it folds a name the way the directory files it — a certificate subject, a
+  namespaced federated uid), or `nameForSubject(sub)` is the username (which
+  also reads the legacy `urn:sts:user:` form). Every token this service
+  issues the portal passes: `sub` is the session user's and `username` that
+  user's name, in the realm the token is audienced to, one token per
+  multi-account tab; and a process with no directory compares nothing and
+  refuses nothing. The page, refused, draws no form and no history. Agreeing
+  with nothing indexed is still the empty history.
+  `tests/portal_list_refusals.js` holds the refusals; the wallet's own jobs
+  hold that a person signed in to the portal is never refused.
 * **IT IS MADE ON THE SIGN-ON SESSION THE TOKEN WAS ISSUED ON**
   (`caller.signOn`), which CAEP reports as `session-presented` naming
   OpenID4VCI. Where the token registry no longer says

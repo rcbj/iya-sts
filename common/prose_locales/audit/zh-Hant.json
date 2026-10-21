@@ -1047,6 +1047,10 @@
     "en": "f6af7681f3d25fd7",
     "text": "管理員移除了某人的自行簽發（SIOPv2）主體"
   },
+  "audit.actions.admin.siop.preferred.label": {
+    "en": "3c3a62cf5e46c516",
+    "text": "管理員將某人已證明的 DID 標記為偏好，或清除了該標記"
+  },
   "audit.actions.ssf.signals.discover.label": {
     "en": "55d2d7d9682c339a",
     "text": "探索了聯盟夥伴的 Shared Signals 組態"
@@ -1327,9 +1331,25 @@
     "en": "51cd295b713684de",
     "text": "簽署金鑰表單因其 CSRF 權杖而被拒絕"
   },
+  "audit.actions.portal.siop.enrol.label": {
+    "en": "9c4ac2b8893fae20",
+    "text": "某人以錢包證明並登記了一個自行簽發主體"
+  },
   "audit.actions.portal.siop.remove.label": {
     "en": "b6f77328c0b99b89",
     "text": "某人移除了自行簽發主體"
+  },
+  "audit.actions.portal.siop.prefer.label": {
+    "en": "7e6377e63c113f97",
+    "text": "某人將已證明的 DID 標記為偏好，或清除了該標記"
+  },
+  "audit.actions.siop.key.pinned.label": {
+    "en": "a2cc99b16a4a406e",
+    "text": "一個登記時未固定金鑰的 did:web 自行簽發主體被固定到其登入所用的金鑰（僅限開發模式）"
+  },
+  "audit.actions.siop.key.refused.label": {
+    "en": "ce5975b773d8c9d7",
+    "text": "一次 did:web 自行簽發登入被拒絕：金鑰不是登記時固定的金鑰，或沒有固定任何金鑰"
   },
   "audit.actions.portal.vc.offer.label": {
     "en": "631dece03539cd4a",

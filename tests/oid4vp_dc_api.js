@@ -358,7 +358,10 @@ function childMain() {
 
 async function run(t) {
   log.debug("Entering run().");
-  kit.inAChild(t, childMain, 'oid4vp-dc-api');
+  // THE OLD DEFAULT, SET EXPLICITLY (#751): 2b holds the redirect with no
+  // account ticket on it, a browser with one session.
+  kit.inAChild(t, childMain, 'oid4vp-dc-api',
+               { STS_AUTHN_MULTIPLE_ACCOUNTS: 'false' });
   log.debug("Leaving run().");
 }
 

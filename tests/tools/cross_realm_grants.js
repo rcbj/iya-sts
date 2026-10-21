@@ -24,11 +24,13 @@
 // service's entry requiring EVERYBODY or that role, so the realm's own
 // people are admitted exactly as before.
 //
-// A SERVICE IS NARROWED UNDER BOTH OF ITS NAMES. The issuance gate at the
-// TGS names the application by the bare SPN (`HTTP/web.beta.test`), and the
-// delegation policy by the SPN with its realm (`HTTP/web.beta.test@BETA.TEST`,
-// the seeded entries' identifier); an entry is made for whichever does not
-// exist. INVENTED FIXTURES: the role name, and the bare-named entries.
+// A SERVICE IS NARROWED ON ITS ONE ENTRY, `HTTP/web.beta.test@BETA.TEST`
+// (the seeded entries' identifier, and the name every door gives one), made
+// if it does not exist. Both the issuance gate at the TGS and the delegation
+// policy find it there. Until #747 the gate asked by the bare SPN and never
+// read this entry's requirement, so this wrote it under both names; it no
+// longer does, so the cross-realm jobs prove the gate finds it.
+// INVENTED FIXTURES: the role name.
 // ===========================================================================
 const realms = require('../../common/realms');
 const roles = require('../../common/roles');
@@ -69,27 +71,26 @@ function admitPartners(realm, partnerSids, services, krbRealm) {
       errors.push('role: ' + JSON.stringify((wrote && wrote.errors) || []));
     }
     services.forEach(function (spn) {
-      [spn, spn + '@' + krbRealm].forEach(function (id) {
-        if (!applications.get(id)) {
-          const made = applications.createApplication({
-            identifier: id, kind: 'kerberos-service', protocols: ['krb5'],
-            fields: { appRequiredRole: ['EVERYBODY', ROLE] },
-            actor: __filename });
-          if (!made || !made.ok) {
-            errors.push(id + ': ' +
-                        JSON.stringify((made && made.errors) || []));
-          }
-          return;
+      const id = spn + '@' + krbRealm;
+      if (!applications.get(id)) {
+        const made = applications.createApplication({
+          identifier: id, kind: 'kerberos-service', protocols: ['krb5'],
+          fields: { appRequiredRole: ['EVERYBODY', ROLE] },
+          actor: __filename });
+        if (!made || !made.ok) {
+          errors.push(id + ': ' +
+                      JSON.stringify((made && made.errors) || []));
         }
-        ['EVERYBODY', ROLE].forEach(function (value) {
-          const set = applications.updateApplication(id, {
-            attribute: 'appRequiredRole', mode: 'add', value: value,
-            actor: __filename });
-          if (!set || !set.ok) {
-            errors.push(id + ' ' + value + ': ' +
-                        JSON.stringify((set && set.errors) || []));
-          }
-        });
+        return;
+      }
+      ['EVERYBODY', ROLE].forEach(function (value) {
+        const set = applications.updateApplication(id, {
+          attribute: 'appRequiredRole', mode: 'add', value: value,
+          actor: __filename });
+        if (!set || !set.ok) {
+          errors.push(id + ' ' + value + ': ' +
+                      JSON.stringify((set && set.errors) || []));
+        }
       });
     });
   });

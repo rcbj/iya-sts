@@ -115,7 +115,7 @@
   "title.users": "Mga user",
   "title.users-new": "Bagong user",
   "title.vc": "Mga claim ng credential",
-  "title.vc-status": "Status ng credential",
+  "title.vc-monitor": "Verifiable Credentials (monitoring)",
   "title.xacml-editor": "Policy editor",
   "title.xacml": "XACML",
   "title.xacml-decide": "Subukan ang isang decision",

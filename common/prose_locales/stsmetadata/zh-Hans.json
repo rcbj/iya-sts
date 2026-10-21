@@ -1176,16 +1176,16 @@
     "text": "非规范。门户唯一的样式表（#568）。"
   },
   "stsmetadata.endpoints./portal/signals/receive.what": {
-    "en": "88962f04a48dd187",
-    "text": "RFC 8935 第 2.1 节推送投递，两端都是本服务（2026-09-10）。门户的流将此路径指定为其 `delivery.endpoint_url`，位于本服务自己的环回地址上，`ssf/ssf_http.ts` 将每个 SET 以 application/secevent+jwt 形式并携带流的 `authorization_header` POST 到这里。它刻意是一个真实的 HTTP 请求：在进程内把事件交给页面会跳过主体、媒体类型、授权头部和签名，而这些就是接收方所做的一切——这与 `common/oidc_rp.ts` 关于在进程内兑换授权码所作的论证相同，只是针对另一种协议再次提出。它不通过会话进行身份验证，但并非没有防护：它检查的是其自身流上的持有者令牌，该令牌按流、按启动生成，只交给本服务自己的发送方，并以恒定时间比较；然后检查 `aud`，对发给其他任何人的 SET 以 `invalid_audience` 拒绝；然后检查签名。格式错误或地址错误的令牌会被记录并拒绝，而不是被丢弃，因为收到了什么正是要问的问题。刻意不进行速率限制，而该文件中的每个凭据端点都有速率限制：限速器会在负载下悄悄丢弃某人的账户已禁用通知。"
+    "en": "b5f30a87646c3fed",
+    "text": "RFC 8935 第 2.1 节推送投递，两端都是本服务（2026-09-10）——适用于自 #771 起被改回推送的流：#771 使门户预置的流成为 RFC 8936 轮询流，由门户从 /ssf/poll 收取；在它是轮询流期间，推送到这里会被拒绝。改回推送后，该流将此路径指定为其 `delivery.endpoint_url`，位于本服务自己的环回地址上，`ssf/ssf_http.ts` 将每个 SET 以 application/secevent+jwt 形式并携带流的 `authorization_header` POST 到这里。它刻意是一个真实的 HTTP 请求：在进程内把事件交给页面会跳过主体、媒体类型、授权头部和签名，而这些就是接收方所做的一切——这与 `common/oidc_rp.ts` 关于在进程内兑换授权码所作的论证相同，只是针对另一种协议再次提出。它不通过会话进行身份验证，但并非没有防护：它检查的是其自身流上的持有者令牌，该令牌按流、按启动生成，只交给本服务自己的发送方，并以恒定时间比较；然后检查 `aud`，对发给其他任何人的 SET 以 `invalid_audience` 拒绝；然后检查签名。格式错误或地址错误的令牌会被记录并拒绝，而不是被丢弃，因为收到了什么正是要问的问题。刻意不进行速率限制，而该文件中的每个凭据端点都有速率限制：限速器会在负载下悄悄丢弃某人的账户已禁用通知。"
   },
   "stsmetadata.endpoints./portal/signals/receive.effect": {
     "en": "cae5ee202c7c115e",
     "text": "记录投递给用户门户的 Security Event Token"
   },
   "stsmetadata.endpoints./portal/signals/receive.coverage": {
-    "en": "ec6133bbe750c0f0",
-    "text": "full：针对 RFC 8935 第 2.1 节的接收：媒体类型、授权头部、带空主体的 202，以及第 2.4 节的 {err, description} 拒绝格式。这一端不实现 RFC 8936 轮询——此接收方是推送接收方——这里也没有任何重试，这是发送方一侧同样刻意的省略。"
+    "en": "e0809edeada1161b",
+    "text": "full：针对 RFC 8935 第 2.1 节的接收：媒体类型、授权头部、带空主体的 202，以及第 2.4 节的 {err, description} 拒绝格式。这只是推送这一半——门户的轮询那一半是 ssf.internal-poll 作业（#771）——这里也没有任何重试，这是发送方一侧同样刻意的省略。"
   },
   "stsmetadata.endpoints./portal/claim-sources/callback.what": {
     "en": "fe33bd3204e812ee",
@@ -1368,8 +1368,8 @@
     "text": "非规范（#62）。import、activate、rollback、delete 和 accept-terms：控制台的五个表单。"
   },
   "stsmetadata.endpoints./admin-api/vc-status.what": {
-    "en": "7f1665c0e218a80d",
-    "text": "非规范。以 JSON 形式提供的 GET /admin/vc-status。"
+    "en": "eec9bcadeeee15fa",
+    "text": "非规范。以 JSON 形式提供的 GET /admin/vc/monitor。"
   },
   "stsmetadata.endpoints./admin-api/vc-status/:action.what": {
     "en": "75977b65b4ede272",
@@ -1588,8 +1588,8 @@
     "text": "非规范（#218）。以 JSON 形式提供的 GET /admin/devices/monitor：注册、删除和逐出的计数以及逐日时间线（?days=）。"
   },
   "stsmetadata.endpoints./admin-api/users/self-issued-subjects.what": {
-    "en": "02ba0c938388e35a",
-    "text": "非规范（#129）。为某人注册的 DID 和 JWK 指纹，每项附带其标签和注册者，旁边显示 oid4vp.signInSelfIssued 是否打开。POST /admin-api/users/enrol-self-issued-subject 按值注册一个；/admin-api/users/remove-self-issued-subject 将其删除。对应此人 /admin/users 页面上的“自签发 ID”块。"
+    "en": "5992e8bdddc060a8",
+    "text": "非规范（#129）。为某人注册的 DID 和 JWK 指纹，每项附带其标签、注册者和注册方式（由此人的钱包证明，或按值），did:web 还附带其固定的密钥（#693），旁边显示 oid4vp.signInSelfIssued 是否打开。POST /admin-api/users/enrol-self-issued-subject 按值注册一个，并获取 did:web 的文档以固定其密钥；/admin-api/users/remove-self-issued-subject 将其删除。对应此人 /admin/users 页面上的“自签发 ID”块。"
   },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
@@ -2039,6 +2039,10 @@
     "en": "9d8cd20df8e552da",
     "text": "写入 LDAP 目录——即应用条目，经由 ldapadd 所到达的同一个函数"
   },
+  "stsmetadata.endpoints./admin-api/saml-idp-initiated.what": {
+    "en": "21744c52a0800ce5",
+    "text": "非规范（#749）。允许身份提供者发起登录的 SAML 2.0 服务提供者和 SAML 1.1 依赖方——领域设置或条目的覆盖，通过 /launch/{app} 所询问的同一函数询问——每个应用和协议族一行，每行带有其 /launch 链接和该协议自身的非请求端点，分页显示。对应 /admin/saml2 的 IdP-Initiated SSO 标签页。"
+  },
   "stsmetadata.endpoints./admin-api/saml-attributes.what": {
     "en": "e35e055c9faedc42",
     "text": "NON-SPEC。同一存储的两个 SAML 属性集、它们从中选择的 LDAP 属性类型目录，以及专属于它们的一条规则：调用未指定时 SAML 1.1 属性所获得的 AttributeNamespace。这里没有保留名称列表，而没有本身就是答案——那个列表是 JWT 的规则。对应 GET /admin/saml-attributes。"
@@ -2432,8 +2436,8 @@
     "text": "询问要在应用的哪个联合身份提供方处登录；需要 ?authn= id，因此不带参数访问时应答 400"
   },
   "stsmetadata.endpoints./authn/accounts.what": {
-    "en": "133e09e2d14aa686",
-    "text": "一个浏览器中登录多个账号（#561），在 authn.multipleAccounts 开启时（默认关闭）。来自持有多个已登录账号的浏览器、却未指明其中任何一个的请求——其流程中未选择账号，也没有指明账号的 login_hint 或 id_token_hint——会被发送到这里，OpenID Connect 的 prompt=select_account（Core 第 3.1.2.1 节）也是如此。每个已登录账号以其自身继续流程，其会话会被再次检查，对其不满足的双因素要求，以该账号重新登录来回应；浏览器记住的每个已退出账号都可以重新登录或忘记；“使用其他账号”即普通登录。一个静态页面，由 /authn-api/pending/{id}/accounts 绘制。"
+    "en": "879e6a76bfdaffce",
+    "text": "一个浏览器中登录多个账号（#561），在 authn.multipleAccounts 开启时（默认开启）。来自持有多个已登录账号的浏览器、却未指明其中任何一个的请求——其流程中未选择账号，也没有指明账号的 login_hint 或 id_token_hint——会被发送到这里，OpenID Connect 的 prompt=select_account（Core 第 3.1.2.1 节）也是如此。每个已登录账号以其自身继续流程，其会话会被再次检查，对其不满足的双因素要求，以该账号重新登录来回应；浏览器记住的每个已退出账号都可以重新登录或忘记；“使用其他账号”即普通登录。一个静态页面，由 /authn-api/pending/{id}/accounts 绘制。"
   },
   "stsmetadata.endpoints./authn/accounts.effect": {
     "en": "ac430d30ba3b9a6a",
@@ -3028,8 +3032,8 @@
     "text": "在本领域开启 vcApi.enabled 之前回答 501"
   },
   "stsmetadata.endpoints./vc-api/credentials/status.what": {
-    "en": "860c7bcc627e7889",
-    "text": "撤销、暂停或解除暂停本 VC API 带状态签发的凭证——即 /admin/vc-status 执行的操作，是否认凭证的三种操作之一。撤销是最终的。vc-api:issue。"
+    "en": "c602841e9954afe7",
+    "text": "撤销、暂停或解除暂停本 VC API 带状态签发的凭证——即 /admin/vc/monitor 执行的操作，是否认凭证的三种操作之一。撤销是最终的。vc-api:issue。"
   },
   "stsmetadata.endpoints./vc-api/credentials/status.effect": {
     "en": "d47c04a75b0029c4",

@@ -1176,16 +1176,16 @@
     "text": "ICKE-SPEC. Portalens enda stilmall (#568)."
   },
   "stsmetadata.endpoints./portal/signals/receive.what": {
-    "en": "88962f04a48dd187",
-    "text": "PUSH-LEVERANS ENLIGT RFC 8935 AVSNITT 2.1, MED DEN HÄR TJÄNSTEN I BÅDA ÄNDAR (2026-09-10). Portalens ström namnger den här sökvägen som sin `delivery.endpoint_url`, på den här tjänstens egen loopback-adress, och `ssf/ssf_http.ts` POSTar varje SET hit som application/secevent+jwt med strömmens `authorization_header`. DET ÄR EN RIKTIG HTTP-BEGÄRAN MED AVSIKT: att lämna händelsen till sidan inom processen skulle hoppa över kroppen, mediatypen, auktoriseringshuvudet och signaturen, vilket är allt en mottagare gör — samma argument som `common/oidc_rp.ts` för om att lösa in en auktoriseringskod inom processen, fört på nytt för ett annat protokoll. OAUTENTISERAD VIA SESSION MEN INTE OBEVAKAD: det den kontrollerar är bärartoken på dess egen ström, präglad per ström och per start och given till ingenting annat än den här tjänstens egen sändare, jämförd i konstant tid; därefter `aud`, med nekan `invalid_audience` för en SET adresserad till någon annan; därefter signaturen. En felformad eller feladresserad token REGISTRERAS OCH NEKAS snarare än kastas, eftersom det som kom fram är just frågan som ställs. Avsiktligt INTE hastighetsbegränsad, vilket varje slutpunkt för inloggningsuppgifter i den filen är: en begränsare skulle tyst kasta någons meddelande om inaktiverat konto under belastning."
+    "en": "b5f30a87646c3fed",
+    "text": "PUSH-LEVERANS ENLIGT RFC 8935 AVSNITT 2.1, MED DEN HÄR TJÄNSTEN I BÅDA ÄNDAR (2026-09-10) — FÖR EN STRÖM SOM SATTS TILLBAKA TILL PUSH sedan #771, som gjorde portalens förinställda ström till en RFC 8936-pollningsström som portalen hämtar från /ssf/poll; så länge den är det nekas en push hit. Satt till push namnger strömmen den här sökvägen som sin `delivery.endpoint_url`, på den här tjänstens egen loopback-adress, och `ssf/ssf_http.ts` POSTar varje SET hit som application/secevent+jwt med strömmens `authorization_header`. DET ÄR EN RIKTIG HTTP-BEGÄRAN MED AVSIKT: att lämna händelsen till sidan inom processen skulle hoppa över kroppen, mediatypen, auktoriseringshuvudet och signaturen, vilket är allt en mottagare gör — samma argument som `common/oidc_rp.ts` för om att lösa in en auktoriseringskod inom processen, fört på nytt för ett annat protokoll. OAUTENTISERAD VIA SESSION MEN INTE OBEVAKAD: det den kontrollerar är bärartoken på dess egen ström, präglad per ström och per start och given till ingenting annat än den här tjänstens egen sändare, jämförd i konstant tid; därefter `aud`, med nekan `invalid_audience` för en SET adresserad till någon annan; därefter signaturen. En felformad eller feladresserad token REGISTRERAS OCH NEKAS snarare än kastas, eftersom det som kom fram är just frågan som ställs. Avsiktligt INTE hastighetsbegränsad, vilket varje slutpunkt för inloggningsuppgifter i den filen är: en begränsare skulle tyst kasta någons meddelande om inaktiverat konto under belastning."
   },
   "stsmetadata.endpoints./portal/signals/receive.effect": {
     "en": "cae5ee202c7c115e",
     "text": "registrerar en Security Event Token som levererats till användarportalen"
   },
   "stsmetadata.endpoints./portal/signals/receive.coverage": {
-    "en": "ec6133bbe750c0f0",
-    "text": "full för mottagning enligt RFC 8935 avsnitt 2.1: mediatypen, auktoriseringshuvudet, 202 med tom kropp och nekandeformen {err, description} i avsnitt 2.4. Den implementerar inte RFC 8936-pollning i den här änden — den här mottagaren är en push-mottagare — och ingenting här gör omförsök, vilket är sändarens sida av samma avsiktliga utelämnande."
+    "en": "e0809edeada1161b",
+    "text": "full för mottagning enligt RFC 8935 avsnitt 2.1: mediatypen, auktoriseringshuvudet, 202 med tom kropp och nekandeformen {err, description} i avsnitt 2.4. Den är bara push-halvan — portalens pollningshalva är jobbet ssf.internal-poll (#771) — och ingenting här gör omförsök, vilket är sändarens sida av samma avsiktliga utelämnande."
   },
   "stsmetadata.endpoints./portal/claim-sources/callback.what": {
     "en": "fe33bd3204e812ee",
@@ -1368,8 +1368,8 @@
     "text": "ICKE-SPEC (#62). import, activate, rollback, delete och accept-terms: konsolens fem formulär."
   },
   "stsmetadata.endpoints./admin-api/vc-status.what": {
-    "en": "7f1665c0e218a80d",
-    "text": "ICKE-SPEC. GET /admin/vc-status som JSON."
+    "en": "eec9bcadeeee15fa",
+    "text": "ICKE-SPEC. GET /admin/vc/monitor som JSON."
   },
   "stsmetadata.endpoints./admin-api/vc-status/:action.what": {
     "en": "75977b65b4ede272",
@@ -1588,8 +1588,8 @@
     "text": "ICKE-SPEC (#218). GET /admin/devices/monitor som JSON: antalen och tidslinjen dag för dag över registreringar, borttagningar och utkastningar (?days=)."
   },
   "stsmetadata.endpoints./admin-api/users/self-issued-subjects.what": {
-    "en": "02ba0c938388e35a",
-    "text": "ICKE-SPEC (#129). De DID:er och JWK-tumavtryck som registrerats för en person, var och en med sin etikett och vem som registrerade den, bredvid om oid4vp.signInSelfIssued är på. POST /admin-api/users/enrol-self-issued-subject registrerar en efter värde; /admin-api/users/remove-self-issued-subject tar bort en. Speglar blocket Självutfärdade ID:n på personens /admin/users-sida."
+    "en": "5992e8bdddc060a8",
+    "text": "ICKE-SPEC (#129). De DID:er och JWK-tumavtryck som registrerats för en person, var och en med sin etikett, vem som registrerade den och hur (bevisad av personens plånbok, eller efter värde), och en did:web med sina fästa nycklar (#693), bredvid om oid4vp.signInSelfIssued är på. POST /admin-api/users/enrol-self-issued-subject registrerar en efter värde och hämtar en did:webs dokument för att fästa dess nycklar; /admin-api/users/remove-self-issued-subject tar bort en. Speglar blocket Självutfärdade ID:n på personens /admin/users-sida."
   },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
@@ -2039,6 +2039,10 @@
     "en": "9d8cd20df8e552da",
     "text": "skriver till LDAP-katalogen — applikationsposten, via samma funktion som en ldapadd når"
   },
+  "stsmetadata.endpoints./admin-api/saml-idp-initiated.what": {
+    "en": "21744c52a0800ce5",
+    "text": "ICKE-SPEC (#749). De SAML 2.0-tjänsteleverantörer och SAML 1.1-förlitande parter för vilka en inloggning initierad av identitetsleverantören är tillåten — sfärens inställning eller postens åsidosättning, frågade genom den funktion som /launch/{app} frågar — en rad per program och familj, var och en med sin /launch-länk och protokollets egen oombedda slutpunkt, sidindelade. Speglar fliken IdP-Initiated SSO på /admin/saml2."
+  },
   "stsmetadata.endpoints./admin-api/saml-attributes.what": {
     "en": "e35e055c9faedc42",
     "text": "NON-SPEC. De två SAML-attributuppsättningarna i samma lager, katalogen över LDAP-attributtyper de väljer bland, och den enda regel som är deras: det AttributeNamespace som ett SAML 1.1-attribut får när anropet inte namnger något. Det finns ingen lista över reserverade namn här och frånvaron är svaret — den listan är en JWT-regel. Speglar GET /admin/saml-attributes."
@@ -2432,8 +2436,8 @@
     "text": "frågar vid vilken av en applikations federerade identitetsleverantörer man ska logga in; kräver ett ?authn=-id, så att följa den utan det ger 400"
   },
   "stsmetadata.endpoints./authn/accounts.what": {
-    "en": "133e09e2d14aa686",
-    "text": "FLERA INLOGGADE KONTON I EN WEBBLÄSARE (#561), när authn.multipleAccounts är på (det är av som standard). En begäran från en webbläsare med fler än ett inloggat konto som inte namnger något av dem — inget konto valt i dess flöde, ingen login_hint eller id_token_hint som namnger ett — skickas hit, liksom OpenID Connects prompt=select_account (Core avsnitt 3.1.2.1). Varje inloggat konto fortsätter flödet som sig självt, med sin session kontrollerad igen, och ett krav på två faktorer som det inte uppfyller besvaras med en ny inloggning som det; varje utloggat konto som webbläsaren kommer ihåg kan loggas in igen eller glömmas; Använd ett annat konto är den vanliga inloggningen. En statisk sida, ritad från /authn-api/pending/{id}/accounts."
+    "en": "879e6a76bfdaffce",
+    "text": "FLERA INLOGGADE KONTON I EN WEBBLÄSARE (#561), när authn.multipleAccounts är på (det är på som standard). En begäran från en webbläsare med fler än ett inloggat konto som inte namnger något av dem — inget konto valt i dess flöde, ingen login_hint eller id_token_hint som namnger ett — skickas hit, liksom OpenID Connects prompt=select_account (Core avsnitt 3.1.2.1). Varje inloggat konto fortsätter flödet som sig självt, med sin session kontrollerad igen, och ett krav på två faktorer som det inte uppfyller besvaras med en ny inloggning som det; varje utloggat konto som webbläsaren kommer ihåg kan loggas in igen eller glömmas; Använd ett annat konto är den vanliga inloggningen. En statisk sida, ritad från /authn-api/pending/{id}/accounts."
   },
   "stsmetadata.endpoints./authn/accounts.effect": {
     "en": "ac430d30ba3b9a6a",
@@ -3028,8 +3032,8 @@
     "text": "svarar 501 tills vcApi.enabled är på i domänen"
   },
   "stsmetadata.endpoints./vc-api/credentials/status.what": {
-    "en": "860c7bcc627e7889",
-    "text": "Återkallar, spärrar eller häver en spärr av ett intyg som detta VC API utfärdade med en status — den handling /admin/vc-status utför, en av de tre som tar avstånd från ett intyg. En återkallelse är slutgiltig. vc-api:issue."
+    "en": "c602841e9954afe7",
+    "text": "Återkallar, spärrar eller häver en spärr av ett intyg som detta VC API utfärdade med en status — den handling /admin/vc/monitor utför, en av de tre som tar avstånd från ett intyg. En återkallelse är slutgiltig. vc-api:issue."
   },
   "stsmetadata.endpoints./vc-api/credentials/status.effect": {
     "en": "d47c04a75b0029c4",

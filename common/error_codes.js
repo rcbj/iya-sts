@@ -1764,6 +1764,23 @@ const CODES = [
       'not own the table to make it. Nothing is wrong without it, only ' +
       'slower: run postgres/schema.sql as the owner.',
     spec: 'none — the store opens without it' },
+  { code: 'STS-STORE-0084',
+    summary: 'An on-demand minted store (#820) could not read a row or an ' +
+      'index from the store through its bridge — a timeout, a refused ' +
+      'connection, a thread that failed. The row is answered as absent, ' +
+      'which every reader of these stores refuses: a refresh token not ' +
+      'found is not honoured.',
+    spec: 'none' },
+  { code: 'STS-STORE-0085',
+    summary: 'An on-demand minted store (#820) read a row whose sealed body ' +
+      'will not open under this process\'s keys. It is answered as absent.',
+    spec: 'none' },
+  { code: 'STS-STORE-0086',
+    summary: 'The front process could not complete the index of an indexed ' +
+      'on-demand minted store (#820): a write of its index rows or of the ' +
+      'completion mark failed. Nothing is lost — the store stays read back ' +
+      'whole at the next start, which tries again.',
+    spec: 'none' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
@@ -9917,6 +9934,39 @@ const CODES = [
       '(#723).',
     spec: 'RFC 9470 section 5 (unmet_authentication_requirements); EAP ACR ' +
       'Values 1.0 section 2' },
+  { code: 'STS-OAUTH-0972',
+    summary: 'The did claim was left out of an ID Token or UserInfo ' +
+      'response: the did scope was granted, but the client does not ' +
+      'declare it on oauthAllowedScope, which the claim needs in both ' +
+      'modes (#693).',
+    spec: 'none: the claim is absent (logged)' },
+  { code: 'STS-OAUTH-0973',
+    summary: 'The did claim was left out: the person has not consented to ' +
+      'the did scope for this client themselves. A global consent ' +
+      '(oauthGlobalConsent) and consent turned off do not count for it ' +
+      '(#693).',
+    spec: 'none: the claim is absent (logged)' },
+  { code: 'STS-OAUTH-0974',
+    summary: 'The did claim was left out: the client uses pairwise or ' +
+      'ephemeral subject identifiers, and a stable DID would let it ' +
+      'correlate the person anyway; it is released to such a client only ' +
+      'with oauthDidClaimWithPairwise TRUE (#693).',
+    spec: 'none: the claim is absent (logged)' },
+  { code: 'STS-OAUTH-0975',
+    summary: 'The did claim was left out: the person has no preferred DID ' +
+      'that they proved with their wallet (none is marked, or the only ' +
+      'DIDs are an administrator\'s by-value entries) (#693).',
+    spec: 'none: the claim is absent (logged)' },
+  { code: 'STS-OAUTH-0976',
+    summary: 'The did claim was left out: the person\'s account is disabled ' +
+      '(#693).',
+    spec: 'none: the claim is absent (logged)' },
+  { code: 'STS-OAUTH-0977',
+    summary: 'A claim named did from another layer — a configured or ' +
+      'typed claim, a claims request (OIDC Core 5.5) or a Claims Provider ' +
+      '— was removed from an ID Token or UserInfo response: the name is ' +
+      'the DID claim\'s, released only by its own rules (#693).',
+    spec: 'none: the claim is absent (logged)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -10616,8 +10666,8 @@ const CODES = [
   { code: 'STS-WSTRUST-0018',
     summary: 'An OnBehalfOf or ActAs request was refused by the issuance ' +
       'policy (#186): the subject may not be delegated, the requester may ' +
-      'not act for this subject, the subject token\'s may_act names ' +
-      'somebody else, or no delegation relationship allows the AppliesTo. ' +
+      'not act for this subject, or no delegation relationship allows the ' +
+      'AppliesTo (a may_act naming somebody else is STS-WSTRUST-0033). ' +
       'Product mode only; development records what would have been refused.',
     spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
   { code: 'STS-WSTRUST-0019',
@@ -10702,6 +10752,12 @@ const CODES = [
       '(#519).',
     spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
       'section 11' },
+  { code: 'STS-WSTRUST-0033',
+    summary: 'An OnBehalfOf or ActAs request was refused because the ' +
+      'verified JWT inside the element carries a may_act claim (RFC 8693 ' +
+      'section 4.4) naming a party other than the requester. Held in every ' +
+      'mode, as the token exchange holds it (STS-OAUTH-0620) (#747).',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -15900,6 +15956,106 @@ const CODES = [
     summary: 'The trusted list at /oid4vci/trusted-list could not be signed: ' +
       'the signer threw. The message is in the log.',
     spec: 'HTTP 500 text/plain' },
+  { code: 'STS-VC-0126',
+    summary: 'A self-issued ID Token for an enrolled did:web was signed by ' +
+      'a key its enrolment did not pin: the DID document now names another ' +
+      'key. Refused in both modes and audited (siop.key.refused); the ' +
+      'person enrols the DID again by proving it on /portal/self-issued ' +
+      '(#693).',
+    spec: 'HTTP 403 refusal at /authn-api/wallet (the sign-in signs nobody ' +
+      'in)' },
+  { code: 'STS-VC-0127',
+    summary: 'A self-issued ID Token for a did:web enrolled before key ' +
+      'pinning, with no key pinned, was refused in product mode and ' +
+      'audited (siop.key.refused): the person enrols it again by proving ' +
+      'it. Development pins the key on first use instead ' +
+      '(mode.pinsSelfIssuedKeysOnFirstUse(), #693).',
+    spec: 'HTTP 403 refusal at /authn-api/wallet (the sign-in signs nobody ' +
+      'in)' },
+  { code: 'STS-VC-0128',
+    summary: 'A SIOPv2 enrolment\'s did:web was not resolved: its DID ' +
+      'document could not be fetched (an internal address in product mode, ' +
+      'a redirect, a failure, too large), or this enrolment transaction had ' +
+      'already fetched one document, which is all it may (#693).',
+    spec: 'the enrolment signs nobody in: HTTP 403 refusal at ' +
+      '/authn-api/wallet' },
+  { code: 'STS-VC-0129',
+    summary: 'A did:web enrolled with no pinned key signed in in ' +
+      'development mode and its key could not be pinned: the directory did ' +
+      'not store the change. The sign-in stands; the pin is tried again at ' +
+      'the next (#693).',
+    spec: 'logged' },
+  // #693 phase 2b: the OpenID4VCI key proof by DID, and a credential bound
+  // to the person's proven DID. Numbered from 0140 so that the DID claim
+  // built beside it (#693 phase 2a) can take the numbers after 0129.
+  { code: 'STS-VC-0140',
+    summary: 'A Credential Request\'s jwt proof carried both a jwk and a ' +
+      'kid in its header; OpenID4VCI 1.0 Appendix F.1 says either MUST NOT ' +
+      'be present with the other (#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0141',
+    summary: 'A Credential Request\'s jwt proof named its key by a kid that ' +
+      'is not a DID URL naming a did:jwk or did:key verification method ' +
+      '(no fragment, not a DID, or a method this issuer does not resolve) ' +
+      '(#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0142',
+    summary: 'A Credential Request\'s jwt proof named its key by a did:web ' +
+      'kid. Holder binding to a did:web is not built: a remote host can ' +
+      'change its DID document between the proof and a relying party\'s ' +
+      'verification (#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0143',
+    summary: 'A Credential Request\'s jwt proof named a did:jwk or did:key ' +
+      'kid that did not resolve, or whose DID document has no ' +
+      'verification method with that id (#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0144',
+    summary: 'A Credential Request\'s jwt proof named a DID verification ' +
+      'method that the DID document does not list under authentication — ' +
+      'a did:jwk whose key says use "enc", for one (#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0145',
+    summary: 'A credential configuration that binds to the person\'s DID ' +
+      '(oid4vci.didHolderBinding) was asked for with a proof that names no ' +
+      'DID: a jwt proof carrying a jwk, or the attestation proof type ' +
+      '(#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0146',
+    summary: 'A credential configuration that binds to the person\'s DID ' +
+      'was asked for on an access token that names no person this realm ' +
+      'verified: not verified here, disowned by a sign-out, not granted for ' +
+      'credential issuance, or naming no directory entry (#693).',
+    spec: 'credential_request_denied (HTTP 400)' },
+  { code: 'STS-VC-0147',
+    summary: 'A credential configuration that binds to the person\'s DID ' +
+      'was asked for, or a deferred one collected, for a person whose ' +
+      'account is disabled (#693).',
+    spec: 'credential_request_denied (HTTP 400)' },
+  { code: 'STS-VC-0148',
+    summary: 'A credential bound to the person\'s DID was asked for, or a ' +
+      'deferred one collected, with a proof by a DID enrolled for nobody ' +
+      'here: never enrolled, or removed since the offer or the request ' +
+      '(#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0149',
+    summary: 'A credential bound to the person\'s DID was asked for, or a ' +
+      'deferred one collected, with a proof by a DID an administrator ' +
+      'enrolled for the person by value: it was never proved, and only a ' +
+      'proved DID is bound (#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0150',
+    summary: 'A credential bound to the person\'s DID was asked for, or a ' +
+      'deferred one collected, with a proof by a DID enrolled for somebody ' +
+      'else (#693).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0151',
+    summary: 'A row of the issued register that an index entry names (a ' +
+      'person\'s history on /portal/wallet, or a wallet\'s notification) ' +
+      'could not be read: the store threw. The row is left out of that ' +
+      'answer and the index entry is KEPT as it was, since a read that ' +
+      'failed says nothing about whether the row is gone (2026-10-20).',
+    spec: 'logged; the read answers the rows it could read' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -16471,6 +16627,31 @@ const CODES = [
       'be decided or announced, so no CAEP credential-change was sent for ' +
       'it (#221 P5). The write itself stands.',
     spec: 'none — logged; nothing is sent to a receiver' },
+  { code: 'STS-SSF-0142',
+    summary: 'This service\'s own receivers were asked to poll a URL that ' +
+      'is not this process\'s own loopback origin (#771). A programming ' +
+      'error: the internal poll dials nothing else.',
+    spec: 'none — the poll is not made' },
+  { code: 'STS-SSF-0143',
+    summary: 'This service\'s own RFC 8936 poll endpoint answered one of its ' +
+      'own two receivers with something other than a 200 and a JSON object ' +
+      '(#771): the credential, the stream or the family refused it.',
+    spec: 'none — logged by the internal poll; nothing was collected' },
+  { code: 'STS-SSF-0144',
+    summary: 'The internal poll (#771) could not collect a surface\'s ' +
+      'Security Event Tokens in a realm: the request failed or was refused. ' +
+      'They stay queued on the stream and the next run tries again.',
+    spec: 'none — logged once per change of outcome' },
+  { code: 'STS-SSF-0145',
+    summary: 'A poll for one of this service\'s own receiver streams ' +
+      'presented the wrong authorization header, or none (#771). Only this ' +
+      'service\'s own receivers hold the credential.',
+    spec: 'RFC 8935 section 2.4 shape, err access_denied (HTTP 401)' },
+  { code: 'STS-SSF-0146',
+    summary: 'A Security Event Token was pushed to one of this service\'s ' +
+      'own receive endpoints while its stream is delivered by poll (#771). ' +
+      'Nothing is agreed to be pushed there.',
+    spec: 'RFC 8935 section 2.4 shape, err invalid_request (HTTP 400)' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -20839,6 +21020,18 @@ const CODES = [
       'with no sign-out model installed, so no session it signed in was ' +
       'ended (#722). The removal stands.',
     spec: 'logged; the removal is answered as done' },
+  { code: 'STS-ADMIN-0871',
+    summary: 'enrol-self-issued-subject was refused for a did:web: its DID ' +
+      'document could not be fetched, names another id, or names no ' +
+      'authentication method with a publicKeyJwk, so there was no key to ' +
+      'pin (#693).',
+    spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0872',
+    summary: 'set-preferred-self-issued-subject was refused: the subject is ' +
+      'not enrolled for the person, was enrolled by value (unproven), is a ' +
+      'JWK thumbprint rather than a DID, or the directory did not store the ' +
+      'change (#693).',
+    spec: 'HTTP 400 (API)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -21247,6 +21440,11 @@ const CODES = [
     summary: 'A Kerberos trusts action through POST ' +
       '/admin-api/kerberos/trusts/{action} threw inside this service; the ' +
       'log says why (#430).',
+    spec: 'HTTP 500' },
+  { code: 'STS-API-0136',
+    summary: 'A management API users action that answers later (a by-value ' +
+      'did:web enrolment, which fetches the DID document) failed inside ' +
+      'this service; the log says why (#693).',
     spec: 'HTTP 500' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
@@ -21693,6 +21891,59 @@ const CODES = [
       'would lock the person out (#729). They are told to add another way ' +
       'first.',
     spec: 'HTTP 409 JSON' },
+  { code: 'STS-PORTAL-0615',
+    summary: 'Marking a preferred DID on /portal/self-issued was refused: ' +
+      'the subject is not enrolled for the signed-in person, was enrolled ' +
+      'by an administrator\'s value rather than proved with their wallet, ' +
+      'is a JWK thumbprint rather than a DID, or the directory did not ' +
+      'store the change (#693).',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0616',
+    summary: '/portal/self-issued (GET /account-api/self-issued) was ' +
+      'refused: the directory holds no entry for the person the token ' +
+      'names, so there is no list of their self-issued subjects to show — ' +
+      'answered as a refusal rather than as an empty list, which would ' +
+      'read as "none enrolled" (2026-10-20).',
+    spec: 'HTTP 404 JSON' },
+  { code: 'STS-PORTAL-0617',
+    summary: '/portal/wallet (its history, an offer or a Remove) was ' +
+      'refused: the token\'s `sub` and its person do not name one another ' +
+      '— the subject is not that person\'s entry, and the person\'s entry ' +
+      'has another subject or none — so the history the subject indexes ' +
+      'would be somebody else\'s or nobody\'s (2026-10-20). Sign in again.',
+    spec: 'HTTP 403 JSON' },
+  { code: 'STS-PORTAL-0618',
+    summary: '/portal/self-issued/did (GET /account-api/self-issued/did) ' +
+      'was refused: the subject named is not one enrolled for the person ' +
+      'the token names — somebody else\'s, nobody\'s, not a subject at ' +
+      'all, or the directory holds no entry for the person — so the ' +
+      'operation is not a resolver for anybody\'s input (2026-10-20).',
+    spec: 'HTTP 404 JSON' },
+  { code: 'STS-PORTAL-0619',
+    summary: '/portal/self-issued/did was refused: the person\'s enrolled ' +
+      'subject has no DID document resolved from the identifier — a ' +
+      'did:web (its document is the one published at its address, which ' +
+      'the list links to), a JWK thumbprint (not a DID), or a did:jwk or ' +
+      'did:key the resolver could not read (2026-10-20).',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0620',
+    summary: 'A search on /portal/delegate (GET /account-api/delegate/' +
+      'candidates) was refused: the text had fewer than three characters, ' +
+      'the fewest the search takes, so that a search is never a listing ' +
+      'of the directory (2026-10-20).',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0621',
+    summary: 'A search on /portal/delegate was refused: the person or ' +
+      'their address had asked more times in the rate-limit window than ' +
+      'the search allows (thirty a person, 120 an address). Where the ' +
+      'limiter names its own bucket, its code is recorded instead ' +
+      '(2026-10-20).',
+    spec: 'HTTP 429 JSON' },
+  { code: 'STS-PORTAL-0622',
+    summary: 'A search on /portal/delegate could not be answered: no ' +
+      'directory was installed, or the store could not be read. The page ' +
+      'says so and the DN form still works (2026-10-20).',
+    spec: 'HTTP 503 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },

@@ -203,6 +203,18 @@
     "en": "e773ade2b33e515a",
     "text": "會被拒絕。主要金鑰只能在有工作階段的情況下於 /portal/keys 新增、透過啟用連結新增，或由營運者新增。"
   },
+  "mode.requirements.siop-did-web-pin.what": {
+    "en": "a8f5db1a7e30f55d",
+    "text": "did:web 自行簽發主體只能使用登記時固定的金鑰登入"
+  },
+  "mode.requirements.siop-did-web-pin.development": {
+    "en": "df2d670db990d330",
+    "text": "在金鑰固定之前登記、沒有固定任何金鑰的 did:web，會在下一次登入時使用其文件所列的金鑰登入，該金鑰隨即被固定（首次使用即信任），並記錄一行日誌與一筆稽核紀錄。"
+  },
+  "mode.requirements.siop-did-web-pin.product": {
+    "en": "f2869db882e1f25d",
+    "text": "該登入會被拒絕（STS-VC-0127）並記入稽核，當事人須在 /portal/self-issued 上證明該 DID 以重新登記。在兩種模式下，固定紀錄未列出的金鑰都會被拒絕（STS-VC-0126）。"
+  },
   "mode.requirements.webauthn-attestation.what": {
     "en": "8c22563b2f23268b",
     "text": "安全金鑰的證明聲明會在金鑰註冊前驗證"
@@ -612,16 +624,16 @@
     "text": "以上皆無。目錄、主體資料庫與登錄只保存經設定或佈建的內容，別無其他——兩個 XACML 角色群組存在但為空，而 KDC 拒絕以本儲存庫中公開的密碼建立 krbtgt 或其服務帳戶。"
   },
   "mode.requirements.test-double.what": {
-    "en": "f06cf29c4a61e31d",
-    "text": "服務中繼資料文件表明本服務是測試替身"
+    "en": "f037d7b70aacf864",
+    "text": "服務將自己描述為測試替身"
   },
   "mode.requirements.test-double.development": {
-    "en": "241755f4aaf4cb6b",
-    "text": "GET /admin-api/sts-metadata 中的 `testDouble` 為 true：本服務不檢查任何密碼、不驗證任何存取權杖，而端點清單不得被解讀為聲稱它會這麼做。"
+    "en": "ffe468af90a49423",
+    "text": "在 GET /admin-api/sts-metadata 中 `testDouble` 為 true：本服務不檢查任何密碼，也不驗證任何存取權杖，端點清單不得被理解為它會這樣做。主控台首頁會顯示「它刻意不做的事」。"
   },
   "mode.requirements.test-double.product": {
-    "en": "252476cbd5f62e18",
-    "text": "`testDouble` 為 false：密碼會被驗證、存取權杖會被驗證，而文件也如此表明。"
+    "en": "2fef3ea99ceb768a",
+    "text": "`testDouble` 為 false：密碼會被驗證，存取權杖會被校驗，文件也如此說明。主控台首頁不顯示該清單。"
   },
   "mode.requirements.claim-values.what": {
     "en": "3e4acbf9a020d8f8",

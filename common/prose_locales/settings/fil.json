@@ -764,8 +764,8 @@
     "text": "Ilang naka-sign in na account sa iisang browser"
   },
   "authn.multipleAccounts|description": {
-    "en": "d0b4899bdae1c43d",
-    "text": "Hayaang maghawak ang isang browser ng mga sign-on session para sa ilang tao nang sabay, at pumili sa pagitan nila. Kapag naka-on, ang pag-sign in ng ibang tao ay NAGDARAGDAG ng session sa account set ng browser (ang cookie na `sts_accounts`) sa halip na tapusin ang dati nitong session; ang isang request na hindi nagsasabi kung para saang account ito — walang account na pinili sa flow na ito, walang login_hint, id_token_hint o SAML Subject na nagpapangalan ng isa — habang higit sa isa ang naka-sign in ay ipinapadala sa account picker sa /authn/accounts, at ipinapakita ito ng prompt=select_account. Pinapanatili ng bawat session ang sarili nitong lifetime, idle timeout, step-up state at sign-out. Kapag naka-off, ang default, iisa ang session ng browser at tinatapos ito ng pag-sign in ng ibang tao. Nagkakabisa sa susunod na request sa alinmang direksyon, at walang tinatapos: kapag in-on, ang kasalukuyang session ng browser ang nagiging unang account ng set nito; kapag in-off, mag-isang nagpapatuloy ang default na session ng browser at nag-e-expire ang iba gaya ng dati."
+    "en": "e0455f389b3cfb47",
+    "text": "Hayaang maghawak ang isang browser ng mga sign-on session para sa ilang tao nang sabay, at pumili sa pagitan nila. Kapag naka-on, ang pag-sign in ng ibang tao ay NAGDARAGDAG ng session sa account set ng browser (ang cookie na `sts_accounts`) sa halip na tapusin ang dati nitong session; ang isang request na hindi nagsasabi kung para saang account ito — walang account na pinili sa flow na ito, walang login_hint, id_token_hint o SAML Subject na nagpapangalan ng isa — habang higit sa isa ang naka-sign in ay ipinapadala sa account picker sa /authn/accounts, at ipinapakita ito ng prompt=select_account. Pinapanatili ng bawat session ang sarili nitong lifetime, idle timeout, step-up state at sign-out. Naka-on ito bilang default. Kapag naka-off, iisa ang session ng browser at tinatapos ito ng pag-sign in ng ibang tao. Nagkakabisa sa susunod na request sa alinmang direksyon, at walang tinatapos: kapag in-on, ang kasalukuyang session ng browser ang nagiging unang account ng set nito; kapag in-off, mag-isang nagpapatuloy ang default na session ng browser at nag-e-expire ang iba gaya ng dati."
   },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
@@ -3843,6 +3843,14 @@
     "en": "2394ee67a689920d",
     "text": "Isagawa ang OpenID Connect Key Binding 1.0 (#150). Kapag naka-on: nakalista sa discovery document ang scope na `bound_key`, maaari itong hingin ng client na walang idinedeklarang scope, at ang request para dito ay dapat magbigay ng `dpop_jkt` at gumamit ng code flow (tinatanggihan kung hindi, STS-OAUTH-0704 at 0705); pinangangalanan ng ID Token ang DPoP key (`cnf.jwk`, `typ: dpop+id_token`), dapat itong patunayan ng token request gamit ang `c_s256`, at bawat refresh ay dapat manggaling sa parehong key. **Kapag naka-off, wala ito, at ang serbisyo ay OpenID Connect Core lamang**: hindi ina-advertise ang `bound_key`, hindi tinatanggihan ang request na may dala nito — binabalewala ang scope at hindi ibinibigay, gaya ng pagtrato ng Core sa scope na hindi kinikilos ng OP — at walang ID Token na naka-bind. I-off ito kung saan humihingi ang mga relying party ng bawat ina-advertise na scope at walang alam sa Key Binding (#315). Ang grant na naka-bind na bago ito i-off ay patuloy na sinusuri ang key nito sa refresh."
   },
+  "oauth2.didClaim|label": {
+    "en": "d0b89f9c74f06728",
+    "text": "Ang claim na did"
+  },
+  "oauth2.didClaim|description": {
+    "en": "473d9916a85b21bb",
+    "text": "Ibinibigay ang gustong DID ng isang tao bilang claim na `did`, sa ID Token at sa sagot ng UserInfo, sa likod ng scope na `did` (#693). Kapag naka-on, ibinibigay lamang ang claim kapag idinedeklara ng client ang `did` sa oauthAllowedScope nito (sa parehong mode; wala ito sa anumang default na set), hiniling ng request ang scope, pumayag mismo ang tao rito para sa client na iyon (hindi binibilang ang global consent), minarkahan ng tao na gusto ang isang DID na PINATUNAYAN nila gamit ang kanilang wallet (hindi kailanman isang itinype ng administrator), at hindi naka-disable ang account. Ang client na gumagamit ng pairwise o ephemeral na subject identifier ay hindi kailanman sinasabihan nito maliban kung TRUE ang oauthDidClaimWithPairwise nito, dahil sinisira ng isang stable na DID ang unlinkability na dahilan ng pag-iral ng mga iyon. Inaalis ang claim na pinangalanang `did` mula sa anumang ibang layer. Naka-off: hindi ina-advertise ang scope at hindi kailanman ibinibigay ang claim."
+  },
   "oauth2.sessionManagement|label": {
     "en": "9b2a882aa3250c63",
     "text": "OpenID Connect Session Management"
@@ -5787,6 +5795,14 @@
     "en": "7f75db9b5f30bc72",
     "text": "Mga PEM certificate, pinagdugtong, ng mga Wallet Provider at key storage component na ang mga key attestation ay pinaniniwalaan ng issuer na ito: dapat mag-verify ang attestation laban sa isa sa mga key na ito, o pinirmahan ng certificate (ang x5c nito) na na-issue ng isa sa mga ito. Walang pinagkakatiwalaan kapag walang laman, at tinatanggihan ang key attestation."
   },
+  "oid4vci.didHolderBinding|label": {
+    "en": "03baba1fe888a560",
+    "text": "I-bind sa DID ng tao"
+  },
+  "oid4vci.didHolderBinding|description": {
+    "en": "89f8d541b4738289",
+    "text": "Ang mga credential configuration na ang mga credential ay naka-bind sa DID ng tao sa halip na sa isang key. Para sa bawat isang nakapangalan, dapat pangalanan ng proof ng wallet ang key nito sa pamamagitan ng kid na isang did:jwk o did:key URL na pinatunayan ng tao sa kanilang pahinang Self-issued IDs (hindi sapat ang entry ng administrator), at dala ng credential ang DID na iyon: cnf.kid sa isang dc+sd-jwt, credentialSubject.id, sub at cnf.kid sa isang jwt_vc_json, credentialSubject.id sa isang ldp_vc. Sinasabi ng metadata ang did:jwk at did:key para rito. Pareho ang DID na dala ng bawat kopya ng isang batch, kaya maiuugnay ang mga ito sa isa't isa — iyan ang kapalit. Kapag walang laman, naka-bind sa key ang bawat configuration, gaya ng dati. Hindi iniaalok ang did:web."
+  },
   "vcApi.enabled|label": {
     "en": "5c2f9e8aabdd4d3b",
     "text": "Ihain ang W3C VC API"
@@ -6066,6 +6082,14 @@
   "krb5.crossRealmClassicDelegation|description": {
     "en": "f95686ad2d2053e6",
     "text": "Kung ang CLASSIC na constrained delegation (appAllowedToDelegateTo sa front end) ay maaaring tumawid sa isang Kerberos trust. Naka-off bilang default: tinutukoy ito sa loob ng iisang realm, at ang resource-based na delegation (appAllowedToActOnBehalfOf sa target, na nagpapangalan ng SPN@REALM) ang tumatawid. Kapag naka-on, sinusuri ng realm ng front end ang sarili nitong listahan bago i-refer ang ebidensya, at itinuturing ito ng realm ng target na nasuri na; dapat itong i-on ng parehong realm."
+  },
+  "krb5.s4uRoleSubject|label": {
+    "en": "01c225dc88b80527",
+    "text": "Kaninong role ang hinihingi ng isang service sa ilalim ng S4U"
+  },
+  "krb5.s4uRoleSubject|description": {
+    "en": "497e1cff316db4ba",
+    "text": "Sa ilalim ng S4U2Self at S4U2Proxy (classic o resource-based), kaninong mga role ang sinusuri ng KDC laban sa role na hinihingi ng entry ng isang service (appRequiredRole). user (ang default): ang taong para sa kanya ang ticket — ang user na pinangalanan sa PA-FOR-USER, o ang client ng evidence ticket — tinatanong sa realm na ito ayon sa buo niyang pangalan, at ayon sa kanyang mga na-filter na SID, kapag dumating siya sa pamamagitan ng isang trust. service: ang service na humihiling, ang client ng TGT, na siyang sinusuri ng KDC bago umiral ang setting na ito. Ang pagtanggi ay KDC_ERR_POLICY alinman ang piliin. Ang karaniwang TGS request ay may iisang subject at hindi naaapektuhan. Iniiwang bukas ito ng mga specification: ang [MS-SFU] ay nagpapasya lamang kung maaaring mag-delegate ang service."
   },
   "krb5.requireSidFilteringInProduct|label": {
     "en": "f4bc0b8bb8e18123",
@@ -6968,12 +6992,20 @@
     "text": "I-register ang console at ang portal bilang mga receiver"
   },
   "ssf.internalReceivers|description": {
-    "en": "29e7cb1d4e0c30f3",
-    "text": "Kung gumagawa ang serbisyong ito ng Shared Signals stream para sa SARILI nitong admin console at user portal, para tumanggap ang bawat isa ng bawat CAEP at RISC event sa RFC 8935 push sa sarili nitong endpoint at ipakita ang dumating sa /admin/signals at /portal/signals. KARANIWANG stream ang mga ito — i-pause ang isa, limitahan o i-delete ito sa /admin/ssf at mananatili itong ganoon hanggang sa isang restart. Tandaan na pinamamahalaan ng ssf.pushDelivery ang delivery na ito gaya ng iba: kapag naka-off ito, naka-queue ang mga event sa dalawang stream at hindi umaabot sa alinmang page."
+    "en": "1a148e2b3a63a17d",
+    "text": "Kung gumagawa ang serbisyong ito ng Shared Signals stream para sa SARILI nitong admin console at user portal, para tumanggap ang bawat isa ng bawat CAEP at RISC event — kinokolekta ang mga ito sa RFC 8936 poll mula sa sariling /ssf/poll ng serbisyong ito bawat ssf.internalPollMs (#771) — at ipakita ang dumating sa /admin/signals at /portal/signals. KARANIWANG stream ang mga ito — i-pause ang isa, limitahan o i-delete ito sa /admin/ssf at mananatili itong ganoon hanggang sa isang restart."
   },
   "ssf.internalReceivers|restartReason": {
     "en": "75c18a7223a2e0a3",
     "text": "ginagawa ang dalawang stream habang nire-require ang ssf/ssf.ts at muli habang binubuo ang bawat realm, kaya ang pag-off dito habang tumatakbo ay mag-iiwan sa mga stream na umiiral na at ang pag-on dito ay walang gagawin"
+  },
+  "ssf.internalPollMs|label": {
+    "en": "245d4495769ca599",
+    "text": "Interval ng poll ng console at portal (millisecond)"
+  },
+  "ssf.internalPollMs|description": {
+    "en": "b80cedcb611f2fd3",
+    "text": "Gaano kadalas kinokolekta ng sariling admin console at user portal ng serbisyong ito ang laman ng kanilang mga stream, sa RFC 8936 poll mula sa /ssf/poll (ang ssf.internal-poll na scheduler job), hanggang ssf.pollMaxEvents na SET bawat request. Ito ang pinakamatagal na hinihintay ng isang Security Event Token bago ito makita at aksyunan ng alinmang surface. Pinapatay ng 0 ang job, at naka-queue na lang ang mga event sa dalawang stream at hindi umaabot sa alinmang page."
   },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",
@@ -7462,6 +7494,14 @@
   "risk.minimumHistory|description": {
     "en": "8febb2273519b4ee",
     "text": "Ilang naunang sign-in ang kailangan ng tao bago siya bigyan ng score ng modelo. Ang mas kaunti ay UNSCORED, gaya ng unang sign-in, at naghihintay sa parehong kasaysayan ang mga signal na new-device at new-tls-stack: sa isa o dalawang sign-in, ang modelo ay halos ang prior ng populasyon, at ang ikalawang sign-in ng bagong tao ay mababasa bilang MEDIUM. Nalalapat ang mga evidence signal (mga listahan, automated na client, tinanggihang password, kompromisadong security key) gaano man kabago ang tao. Ang 1 ay nagbibigay ng score mula sa ikalawang sign-in pataas."
+  },
+  "risk.populationUsersCacheS|label": {
+    "en": "e30547f35344a4d6",
+    "text": "Ilang segundo iniingatan ang bilang ng tao sa realm"
+  },
+  "risk.populationUsersCacheS|description": {
+    "en": "5e0a6cc869a4bab0",
+    "text": "Gaano katagal iniingatan ng risk scoring ang bilang ng taong nag-sign in sa isang realm — ang denominator ng smoothing term ng model — bago sila bilangin muli. Ang pagbilang ay pag-scan ng isang row bawat tao, kaya ang pagtatanong sa bawat sign-in ay lalong nagiging magastos habang lumalaki ang realm; ang bilang na isang minuto na ang tanda ay nagbabago ng score nang mas mababa kaysa sa magagawa ng isa pang tao sa realm. Ang realm na may kulang sa 1,000 tao ay binibilang sa bawat sign-in anuman ang sabihin nito. Ang 0 ay bumibilang sa bawat sign-in."
   },
   "risk.geoMinimumCount|label": {
     "en": "e636b2310a4df74f",

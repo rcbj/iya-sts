@@ -1103,6 +1103,10 @@
     "en": "f507cdd5e7327df3",
     "text": "Åtgärder för SAML 1.1-förlitande parter"
   },
+  "endpoints.route./admin-api/saml-idp-initiated.name": {
+    "en": "70297dbc6d423d65",
+    "text": "SAML-program som en inloggning får starta här för"
+  },
   "endpoints.route./admin-api/saml-attributes.name": {
     "en": "e9808df4bc485128",
     "text": "Anpassade SAML-attribut"

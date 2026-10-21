@@ -764,8 +764,8 @@
     "text": "Flera inloggade konton i en webbläsare"
   },
   "authn.multipleAccounts|description": {
-    "en": "d0b4899bdae1c43d",
-    "text": "Låt en webbläsare hålla inloggningssessioner för flera personer samtidigt och välja mellan dem. På: när en annan person loggar in LÄGGS en session TILL i webbläsarens kontouppsättning (cookien `sts_accounts`) i stället för att den gamla avslutas; en begäran som inte säger vilket konto den gäller — inget konto valt i detta flöde, ingen login_hint, id_token_hint eller SAML Subject som namnger ett — medan fler än ett är inloggat skickas till kontoväljaren på /authn/accounts, och prompt=select_account visar den. Varje session behåller sin egen livslängd, inaktivitetsgräns, step-up-status och utloggning. Av, standardvärdet: webbläsaren har en session och en annan persons inloggning avslutar den. Träder i kraft vid nästa begäran åt båda hållen och avslutar ingenting: påslagen blir webbläsarens befintliga session det första kontot i dess uppsättning; avslagen fortsätter webbläsarens standardsession ensam och de andra löper ut som vanligt."
+    "en": "e0455f389b3cfb47",
+    "text": "Låt en webbläsare hålla inloggningssessioner för flera personer samtidigt och välja mellan dem. På: när en annan person loggar in LÄGGS en session TILL i webbläsarens kontouppsättning (cookien `sts_accounts`) i stället för att den gamla avslutas; en begäran som inte säger vilket konto den gäller — inget konto valt i detta flöde, ingen login_hint, id_token_hint eller SAML Subject som namnger ett — medan fler än ett är inloggat skickas till kontoväljaren på /authn/accounts, och prompt=select_account visar den. Varje session behåller sin egen livslängd, inaktivitetsgräns, step-up-status och utloggning. På är standardvärdet. Av: webbläsaren har en session och en annan persons inloggning avslutar den. Träder i kraft vid nästa begäran åt båda hållen och avslutar ingenting: påslagen blir webbläsarens befintliga session det första kontot i dess uppsättning; avslagen fortsätter webbläsarens standardsession ensam och de andra löper ut som vanligt."
   },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
@@ -3843,6 +3843,14 @@
     "en": "2394ee67a689920d",
     "text": "Utför OpenID Connect Key Binding 1.0 (#150). På: discovery-dokumentet listar scopet `bound_key`, en klient som inte deklarerar några scopes får be om det, och en begäran om det måste ange `dpop_jkt` och använda kodflödet (avvisas annars, STS-OAUTH-0704 och 0705); ID-tokenet namnger då DPoP-nyckeln (`cnf.jwk`, `typ: dpop+id_token`), tokenbegäran måste bevisa den med `c_s256`, och varje förnyelse måste komma från samma nyckel. **Av finns det inte, och tjänsten är enbart OpenID Connect Core**: `bound_key` annonseras inte, en begäran som innehåller det avvisas inte — scopet ignoreras och beviljas inte, så som Core behandlar ett scope en OP inte agerar på — och inget ID-token binds. Stäng av det där förlitande parter begär varje annonserat scope och inte känner till Key Binding (#315). Ett beviljande som redan var bundet innan det stängdes av behåller sin nyckelkontroll vid förnyelse."
   },
+  "oauth2.didClaim|label": {
+    "en": "d0b89f9c74f06728",
+    "text": "Anspråket did"
+  },
+  "oauth2.didClaim|description": {
+    "en": "473d9916a85b21bb",
+    "text": "Lämnar ut en persons föredragna DID som anspråket `did`, i ID Token och i UserInfo-svaret, bakom scopet `did` (#693). När det är på lämnas anspråket ut endast när klienten deklarerar `did` i sitt oauthAllowedScope (i båda lägena; det finns i ingen standarduppsättning), begäran bad om scopet, personen själv samtyckte till det för den klienten (ett globalt samtycke räknas inte), personen markerade ett DID som hen BEVISADE med sin plånbok som föredraget (aldrig ett som en administratör skrev in) och kontot inte är inaktiverat. En klient som använder parvisa eller efemära subjektidentifierare får det aldrig om inte dess oauthDidClaimWithPairwise är TRUE, eftersom ett stabilt DID upphäver den olänkbarhet de finns för. Ett anspråk som heter `did` från något annat lager tas bort. Av: scopet annonseras inte och anspråket lämnas aldrig ut."
+  },
   "oauth2.sessionManagement|label": {
     "en": "9b2a882aa3250c63",
     "text": "OpenID Connect Session Management"
@@ -5787,6 +5795,14 @@
     "en": "7f75db9b5f30bc72",
     "text": "PEM-certifikat, sammanfogade, för de Wallet Providers och nyckellagringskomponenter vars nyckelattesteringar den här utfärdaren tror på: en attestering måste verifieras mot en av dessa nycklar, eller vara signerad av ett certifikat (dess x5c) som en av dem utfärdat. Tomt litar på ingen, och en nyckelattestering avvisas då."
   },
+  "oid4vci.didHolderBinding|label": {
+    "en": "03baba1fe888a560",
+    "text": "Bind till personens DID"
+  },
+  "oid4vci.didHolderBinding|description": {
+    "en": "89f8d541b4738289",
+    "text": "De credential-konfigurationer vars credentials binds till personens DID i stället för till en nyckel. För var och en som anges måste plånbokens bevis ange sin nyckel med ett kid som är en did:jwk- eller did:key-URL som personen har bevisat på sin sida Self-issued IDs (en administratörs post räcker inte), och credentialen bär det DID:et: cnf.kid i en dc+sd-jwt, credentialSubject.id, sub och cnf.kid i en jwt_vc_json, credentialSubject.id i en ldp_vc. Metadata anger did:jwk och did:key för den. Varje kopia i en batch bär samma DID, så de kan kopplas till varandra — det är priset. Tom binder varje konfiguration till en nyckel, som tidigare. did:web erbjuds inte."
+  },
   "vcApi.enabled|label": {
     "en": "5c2f9e8aabdd4d3b",
     "text": "Tillhandahåll W3C VC API"
@@ -6066,6 +6082,14 @@
   "krb5.crossRealmClassicDelegation|description": {
     "en": "f95686ad2d2053e6",
     "text": "Om KLASSISK begränsad delegering (appAllowedToDelegateTo på frontänden) får korsa ett Kerberos-förtroende. Av som standard: den är definierad inom en sfär, och resursbaserad delegering (appAllowedToActOnBehalfOf på målet, som namnger SPN@REALM) är den som korsar. På kontrollerar frontändens sfär sin egen lista innan den hänvisar beviset, och målets sfär tar det som kontrollerat; båda sfärerna måste slå på den."
+  },
+  "krb5.s4uRoleSubject|label": {
+    "en": "01c225dc88b80527",
+    "text": "Vems roll en tjänst kräver under S4U"
+  },
+  "krb5.s4uRoleSubject|description": {
+    "en": "497e1cff316db4ba",
+    "text": "Under S4U2Self och S4U2Proxy (klassisk eller resursbaserad), vems roller KDC:n jämför med den roll som en tjänsts post kräver (appRequiredRole). user (standardvärdet): personen som biljetten är till för — användaren som namnges i PA-FOR-USER, eller bevisbiljettens klient — tillfrågad i den här sfären med sitt fullständiga namn, och med sina filtrerade SID:er, när hen kom över ett förtroende. service: tjänsten som frågar, TGT:ns klient, vilket är vad KDC:n kontrollerade innan den här inställningen fanns. Ett avslag är KDC_ERR_POLICY i båda fallen. En vanlig TGS-begäran har ett enda subjekt och påverkas inte. Specifikationerna lämnar detta öppet: [MS-SFU] avgör bara om tjänsten får delegera."
   },
   "krb5.requireSidFilteringInProduct|label": {
     "en": "f4bc0b8bb8e18123",
@@ -6968,12 +6992,20 @@
     "text": "Registrera konsolen och portalen som mottagare"
   },
   "ssf.internalReceivers|description": {
-    "en": "29e7cb1d4e0c30f3",
-    "text": "Om den här tjänsten skapar en Shared Signals-ström för sin EGEN administratörskonsol och användarportal, så att var och en tar emot varje CAEP- och RISC-händelse över RFC 8935-push på en egen slutpunkt och visar det som kom fram på /admin/signals och /portal/signals. De är VANLIGA strömmar — pausa en, begränsa den eller ta bort den på /admin/ssf och den förblir så till en omstart. Observera att ssf.pushDelivery styr den här leveransen som vilken annan som helst: med den av köas händelserna på de två strömmarna och når ingen av sidorna."
+    "en": "1a148e2b3a63a17d",
+    "text": "Om den här tjänsten skapar en Shared Signals-ström för sin EGEN administratörskonsol och användarportal, så att var och en tar emot varje CAEP- och RISC-händelse — hämtade via RFC 8936-pollning från tjänstens egen /ssf/poll var ssf.internalPollMs (#771) — och visar det som kom fram på /admin/signals och /portal/signals. De är VANLIGA strömmar — pausa en, begränsa den eller ta bort den på /admin/ssf och den förblir så till en omstart."
   },
   "ssf.internalReceivers|restartReason": {
     "en": "75c18a7223a2e0a3",
     "text": "de två strömmarna skapas när ssf/ssf.ts laddas och igen när varje sfär byggs, så att stänga av detta i drift skulle lämna kvar de strömmar som redan finns och att slå på det skulle inte skapa några"
+  },
+  "ssf.internalPollMs|label": {
+    "en": "245d4495769ca599",
+    "text": "Pollningsintervall för konsolen och portalen (millisekunder)"
+  },
+  "ssf.internalPollMs|description": {
+    "en": "b80cedcb611f2fd3",
+    "text": "Hur ofta den här tjänstens egen administratörskonsol och användarportal hämtar det deras strömmar innehåller, via RFC 8936-pollning från /ssf/poll (schemaläggarjobbet ssf.internal-poll), upp till ssf.pollMaxEvents SET per begäran. Det är det längsta en Security Event Token väntar innan någon av ytorna ser den och agerar på den. 0 stänger av jobbet, och händelserna köas då på de två strömmarna och når ingen av sidorna."
   },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",
@@ -7462,6 +7494,14 @@
   "risk.minimumHistory|description": {
     "en": "8febb2273519b4ee",
     "text": "Hur många tidigare inloggningar en person behöver innan modellen poängsätter personen. Färre är OPOÄNGSATTA, som en första inloggning är, och signalerna new-device och new-tls-stack väntar på samma historik: med en eller två inloggningar är modellen mest populationens a priori-fördelning, och en ny persons andra inloggning skulle läsas som MEDIUM. Bevissignalerna (listor, automatiserade klienter, avvisade lösenord, en komprometterad säkerhetsnyckel) gäller hur ny personen än är. 1 poängsätter från den andra inloggningen och framåt."
+  },
+  "risk.populationUsersCacheS|label": {
+    "en": "e30547f35344a4d6",
+    "text": "Sekunder som sfärens antal personer sparas"
+  },
+  "risk.populationUsersCacheS|description": {
+    "en": "5e0a6cc869a4bab0",
+    "text": "Hur länge riskbedömningen sparar antalet personer som har loggat in i en sfär — nämnaren i modellens utjämningsterm — innan de räknas igen. Att räkna är en genomsökning av en rad per person, så att fråga vid varje inloggning kostar mer ju större sfären blir; ett antal som är en minut gammalt ändrar ett värde mindre än en person till i sfären skulle göra. En sfär med färre än 1 000 personer räknas vid varje inloggning oavsett vad detta säger. 0 räknar vid varje inloggning."
   },
   "risk.geoMinimumCount|label": {
     "en": "e636b2310a4df74f",

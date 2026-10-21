@@ -53,7 +53,8 @@
 // ---------------------------------------------------------------------------
 
 const { log, setJwtRecorder, userFor, nameForSubject, subjectForName,
-        namesForSubjects, LEGACY_SUBJECT_PREFIX } = require('./helpers');
+        namesForSubjects, namesForSubjectsAsync,
+        LEGACY_SUBJECT_PREFIX } = require('./helpers');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and the error-code table and nothing else here, so it cannot join a
 // cycle and it registers no route, so its position is not a position at all.
@@ -352,6 +353,21 @@ function recordCall(call) {
 // with no `exp` (0) never expires.
 const tokens = realms.map({
   persist: 'admin_stats.tokens',
+  // FILED BY PERSON (#766): `holdsLiveIssuance()` asks, before every CAEP
+  // token-claims-change, whether a person holds a live token, and walked the
+  // whole register to answer — 9% of a request worker under a password-write
+  // load. Both names a record can be found by, and neither changes on a
+  // record once written (`realms.map()`'s rule for an index).
+  indexBy: function (record) {
+    const out = [];
+    if (record && record.username) {
+      out.push('u:' + String(record.username));
+    }
+    if (record && record.sub) {
+      out.push('s:' + String(record.sub));
+    }
+    return out;
+  },
   // A hot path (every row a flush writes): no Entering/Leaving pair.
   expiresAt: function (record) {
     const exp = Number(record && record.exp);
@@ -2494,6 +2510,72 @@ function withSubjectsResolved(fn) {
   log.debug("Leaving withSubjectsResolved(). " + subjects.size +
             " subject(s).");
   return value;
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME, WITH THE SUBJECTS ASKED ASYNCHRONOUSLY (#790). The subjects are
+// gathered exactly as `withSubjectsResolved()` gathers them and resolved
+// through `namesForSubjectsAsync()`, which waits on the store without holding
+// the event loop; `fn` then runs synchronously against them, as it does
+// there. For the Users page, whose register on 8081 held ~228,000 subjects.
+// ---------------------------------------------------------------------------
+/**
+ * Runs `fn` with every subject of the register resolved, asked of the
+ * directory asynchronously.
+ *
+ * @param fn - what to run
+ * @returns a promise of what `fn` returns
+ */
+async function withSubjectsResolvedAsync(fn) {
+  log.debug("Entering withSubjectsResolvedAsync().");
+  if (resolvedSubjects) {
+    const inner = fn();
+    log.debug("Leaving withSubjectsResolvedAsync(). Nested.");
+    return inner;
+  }
+  const subjects = new Set();
+  const note = function (value) {
+    let text = String(value == null ? '' : value).trim();
+    if (text.indexOf(SUBJECT_PREFIX) === 0) {
+      text = text.slice(SUBJECT_PREFIX.length);
+    }
+    if (/^urn:uuid:/i.test(text)) {
+      subjects.add(text);
+    }
+  };
+  tokens.forEach(function (record) {
+    note(record.sub);
+  });
+  allArtifacts().forEach(function (record) {
+    note(record.subject);
+    note(record.person);
+  });
+  const resolved = subjects.size
+    ? await namesForSubjectsAsync(Array.from(subjects)) : null;
+  // Set only now, across a synchronous call: nothing else can run inside it.
+  resolvedSubjects = resolved;
+  let value;
+  try {
+    value = fn();
+  } finally {
+    resolvedSubjects = null;
+  }
+  log.debug("Leaving withSubjectsResolvedAsync(). " + subjects.size +
+            " subject(s).");
+  return value;
+}
+
+/**
+ * `userRows()`, with every subject resolved asynchronously (#790).
+ *
+ * @returns a promise of the rows `userRows()` answers
+ */
+function userRowsAsync() {
+  log.debug("Entering userRowsAsync().");
+  log.debug("Leaving userRowsAsync().");
+  return withSubjectsResolvedAsync(function () {
+    return buildUserRowsResolved(undefined);
+  });
 }
 
 // A presented identity, split into the part that identifies a person here and
@@ -4768,8 +4850,14 @@ function holdsLiveIssuance(username, sub) {
   }
   const nowMs = Date.now();
   let live = false;
-  tokens.forEach(function (record) {
-    if (live || CLAIM_BEARING_KINDS.indexOf(record.kind) < 0) {
+  // THE RECORDS FILED UNDER THE PERSON (#766), not the whole register: the
+  // index `tokens` declares holds every record by `username` and by `sub`,
+  // and the test below is the walk's, unchanged.
+  const candidates = new Set((name ? tokens.lookup('u:' + name) : [])
+    .concat(subject ? tokens.lookup('s:' + subject) : []));
+  candidates.forEach(function (key) {
+    const record = tokens.get(key);
+    if (!record || live || CLAIM_BEARING_KINDS.indexOf(record.kind) < 0) {
       return;
     }
     // An application's own token (#221 P5) is filed under its client_id,
@@ -6618,7 +6706,7 @@ function sessionsFromArtifacts() {
  *
  * @returns the snapshot
  */
-function snapshot() {
+function snapshot(opts) {
   log.debug("Entering snapshot().");
   const nowMs = Date.now();
 
@@ -6658,7 +6746,11 @@ function snapshot() {
     else row.expired++;
   });
 
-  const knownUsers = userRows();
+  // THE ROWS MAY BE HANDED IN (2026-10-21): built by `userRowsAsync()`, whose
+  // subjects are asked of the directory without holding the event loop. Built
+  // here they are every register subject asked synchronously — on 8081 the
+  // console's dashboard stood a request worker still for ten seconds.
+  const knownUsers = (opts && opts.knownUsers) || userRows();
 
   const callRows = Array.from(calls.values())
                         .sort(function (a, b) { return b.count - a.count; });
@@ -6904,6 +6996,8 @@ module.exports = {
   holderKeyOf: holderKeyOf,
   renameIdentity: renameIdentity,
   userRows: userRows,
+  userRowsAsync: userRowsAsync,
+  withSubjectsResolvedAsync: withSubjectsResolvedAsync,
   // #352: one row, and the keys alone, without building every row.
   userRow: userRow,
   userKeys: userKeys,

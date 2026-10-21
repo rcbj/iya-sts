@@ -97,6 +97,12 @@ class PortalPages {
    */
   static readonly shell = PortalShell;
   static readonly kit = PortalKit;
+  /**
+   * `/portal/delegate`'s renderers and its search's timing (2026-10-20), so
+   * a test draws the search's answers and drives its debounce as the
+   * runtime does.
+   */
+  static readonly delegate = DelegatePages;
 
   /**
    * The page a path names, or null.

@@ -134,8 +134,20 @@ request failed") — see *Every refusal names its section 11 fault code*, below,
 for how `soapFault()` places it. The codes by refusal kind:
 `intermediary` `STS-WSTRUST-0019`, a realm policy's `policy` `0020`,
 `semantics` `0022`, `authority` `0023`, the target kinds (`target`,
-`targets`, `unregistered-target`, `no-target`) `0024`, the rest (a protected
-subject, may_act) `0018`.
+`targets`, `unregistered-target`, `no-target`) `0024`, `may-act` `0033`, the
+rest (a protected subject) `0018`.
+
+**`may_act` ON A DELEGATED JWT (#747, 2026-10-20).** #477 accepted a JWT inside
+either element and handed the policy none of its `may_act`, so a token whose
+subject had named another delegate was not refused here while the token
+exchange refused it in every mode. `verifiedMayAct()` now reads the claim on
+the exchange's terms — only off a JWT that verifies with this realm's key, so
+development verifies it for this claim though it believes the JWT's subject
+unverified — and `mayActActor()` names the requester as the exchange names its
+actor (a client by its subject in the mode, client_id and `urn:sts:client:`
+form as aliases; `iss` that of the requester's own JWT credential, '' for any
+other). The two facts go to `decide()` and the policy's `may-act` rule does
+the rest; nothing about the rule is WS-Trust's own.
 
 **THE ROW SPEAKS WS-TRUST (#481).** `authorizedBy` on a WS-Trust act reads,
 for example, `the issuance policy allowed delegation by "esb" for "alice" to
@@ -165,11 +177,11 @@ the subject's directory entry (`ldap.autocreateUsers`), and those two checks
 read that entry. Product creates nobody there. The cost: in development, a
 subject this request is the first to name is decided before their entry
 exists — an unknown party, where it used to be a freshly invented entry with
-no delegation attributes. Development enforces only a `may_act` mismatch, and a
-subject with no entry yet has no `stsMayAct` to mismatch; and the decision is
-about who the directory says they are, not about an entry the request invented.
-Validate and Cancel return before the decision, so a delegated subject named in
-either is not recorded at all.
+no delegation attributes. Development enforces only a `may_act` mismatch,
+which is read off the verified delegated JWT and not off the subject's entry;
+and the decision is about who the directory says they are, not about an
+entry the request invented. Validate and Cancel return before the decision, so
+a delegated subject named in either is not recorded at all.
 
 ---
 

@@ -2724,6 +2724,76 @@ nobody, so **nothing is owed to the parent project**.
 
 ---
 
+## A ROLE A SERVICE REQUIRES: ITS ENTRY BY EITHER NAME, AT THE TGS AND THE AS (#747, 2026-10-20)
+
+**Until #747 a role required on a Kerberos service's entry was not
+enforced.** Every door that makes the entry names it `SPN@REALM` —
+`create-service` (`krb5_person_keys.ts`'s `normaliseSpn()`), the TGS's own
+sighting (`applications.seen()` at the end of `answerTgsReq()`), the
+delegation seeds — while `answerTgsReq()` asked the issuance gate about the
+bare SPN, and the PEP's reads of `appRequiredRole` (`requiredRolesOf()`,
+`requiresNarrowedRoles()`) have no realm fallback. Only `protocolFactsOf()`
+tried both names, so the protocol declaration was read off the entry and
+the role requirement never was. `tests/tools/cross_realm_grants.js` wrote
+every requirement under both names to get round it.
+
+* **The KDC names the service `SPN@<answering realm>`** and the gate
+  resolves it ONCE, in `issuance_gate.js`'s `kerberosEntryOf()`, before
+  `protocolFactsOf()` and the decider: the bare SPN's entry if there is
+  one, then `SPN@REALM`, else the name as asked. The bare entry being read
+  first is what keeps it deciding exactly as before, and it is the order
+  `protocolFactsOf()` already used. The registry is the ambient trust
+  realm's, so a per-realm KDC (#33) reads its own realm's entries only.
+  No require was added here or in the gate (the lazy `./applications`
+  require was already `protocolFactsOf()`'s), so the parent's COPY closure
+  is unchanged.
+* **The AS asks too, for a service ticket asked for there** (`kinit -S`),
+  beside the risk decision in `answerAsReq()`: the same question, the same
+  refusal (`KDC_ERR_POLICY`, `STS-KRB-0039`). Before, the AS asked nothing
+  about roles, on the claim that an AS-REQ is answered with a TGT — true of
+  nearly every one, and a way round any service's requirement for the
+  rest. A TGT is still not asked about in either exchange.
+* **S4U2Self and S4U2Proxy** follow the same resolution of the service's
+  name (the service being the requester itself, or the target); the
+  cross-realm paths that answer with a referral return before the gate, as
+  before. WHOSE role is asked is the next item.
+* **UNDER S4U THE SUBJECT IS A SETTING, `krb5.s4uRoleSubject`** (item 2,
+  rcbj: "Obey the spec above all else. Short of that, add a flag that can
+  check the service or the user."). **THE DEFAULT IS `user`, rcbj's choice
+  (2026-10-20), and it is a BEHAVIOUR CHANGE from d6ba88e1**, which asked
+  about the requesting service: a front end that held a target's role used
+  to get tickets for anybody; now the person must hold it. `service` asks
+  about the TGT's cname, the requesting service, as d6ba88e1 did; `user`
+  asks about the cname of the ticket being issued — the PA-FOR-USER user, or
+  the evidence ticket's client, classic or RBCD — once `resolveS4u()` has
+  established it, in a second `gate.check()` just after the S4U referral
+  return in `answerTgsReq()` (the first is skipped, `roleAskedOfUser`). A
+  user of another realm is asked as the presenter across a trust is
+  (`name@REALM`, `crossRealm`, the filtered SIDs, which `resolveS4u()` now
+  carries out as `subjectSids`): `s4uRoleSubjectOf()`. Same refusal (12,
+  `STS-KRB-0039`), and under `user` the delegation register's row for the
+  act records it refused. Per realm, runtime, Global settings tab. An
+  ordinary TGS request is untouched.
+  **Why a setting: the specifications do not settle it.** [MS-SFU] 3.2.5.1
+  and 3.2.5.2 govern only WHETHER the service may impersonate or delegate
+  (TrustedToAuthenticationForDelegation, ServicesAllowedToSendForwarded
+  TicketsTo; for RBCD an access check of Service 2's
+  ServicesAllowedToReceiveForwardedTicketsFrom with a token built "for
+  Service 1 from the PAC data in Service 1's TGT", 3.2.5.2.3); the issued
+  ticket names the user (3.2.5.1.2, 3.2.5.2.4). RFC 4120 section 1.3 leaves
+  authorization to the application server. The closest text, [MS-KILE]
+  3.3.5.7's Authentication Policy check ("the PAC of the user and the PAC
+  of the armor TGT ... against the AllowedToAuthenticateTo"), is AD's own
+  mechanism, and neither document says which "user" that is under S4U. If
+  a reader wants to argue a default from it, the words "the PAC of the
+  user" lean toward `user`, the default rcbj chose. No require was added (`config` was already
+  required), so the parent's COPY closure is unchanged.
+* `tests/kerberos_service_roles.js` holds all of it: the `SPN@REALM` entry
+  refused and issued, the bare entry unchanged and preferred, another
+  realm's entry not applying, the AS, and K5 — S4U2Self, classic and RBCD
+  S4U2Proxy under unset (= `user`), `user` and `service`, each with the
+  role held by only the service and by only the user.
+
 ## PORT 88 IS ANSWERED IN A REQUEST WORKER (2026-10-07, rcbj's decision)
 
 **THE RACE.** The KDC answered TCP and UDP 88 in the FRONT process, from the

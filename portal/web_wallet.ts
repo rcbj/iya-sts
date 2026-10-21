@@ -355,6 +355,14 @@ class WalletPages {
    */
   static render(view: Json, ctx: Json): string {
     const t = ctx.t;
+    // A REFUSAL (STS-PORTAL-0617, the token's subject and person disagree):
+    // the runtime says why above the page, and the page draws neither the
+    // offer form nor a history — an empty one would read as "nothing
+    // issued", which is what the refusal exists to avoid.
+    if (view.ok === false) {
+      return '<div class="card"><h2>' + t.html('portalWallet.heading') +
+        '</h2><p class="sub">' + t.html('portalWallet.sub') + '</p></div>';
+    }
     const rows: Json[] = view.configurations || [];
     const options = rows.map(function (one: Json, i: number): string {
       return '<label class="chk"><input type="radio" name="configuration" ' +

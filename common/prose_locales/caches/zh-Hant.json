@@ -27,6 +27,38 @@
     "en": "87a572725d5885db",
     "text": "已使用過的 nonce，因此請求被拒絕"
   },
+  "caches.store.admin.console-totals.title": {
+    "en": "148cb7460d633eb9",
+    "text": "主控台首頁統計（保留）"
+  },
+  "caches.store.admin.console-totals.description": {
+    "en": "21f463f4c0d3aa21",
+    "text": "主控台首頁的統計——呼叫、權杖、工件、工作階段、已知使用者以及在此登入過的使用者——即 /admin-api/status 的回答。統計使用者需要解析登記冊中的每個身分，因此這些統計會保留幾秒鐘。"
+  },
+  "caches.store.admin.console-totals.bound": {
+    "en": "00ddf9958d051363",
+    "text": "結構性：每個領域一組統計，同一時間最多建置一次。"
+  },
+  "caches.store.admin.console-totals.lifetime": {
+    "en": "1fd142ea1eba6ca9",
+    "text": "十五秒。"
+  },
+  "caches.store.admin.users-population.title": {
+    "en": "187dfb82048a5dde",
+    "text": "使用者頁面人群（保留）"
+  },
+  "caches.store.admin.users-population.description": {
+    "en": "19ff0e331d0cabdb",
+    "text": "登記冊中的每個身分和目錄中的每個人員，以及各自的憑證普查：即 /admin/users 和 /admin-api/users 分頁、篩選和計數的對象。建置它需要解析登記冊中的每個主體並讀取每個人員的項目，因此翻頁時會保留它，而不是為每一頁重新建置。"
+  },
+  "caches.store.admin.users-population.bound": {
+    "en": "63612b99f35238a3",
+    "text": "結構性：每個領域一份人群，同一時間最多建置一次。"
+  },
+  "caches.store.admin.users-population.lifetime": {
+    "en": "39fc3b3cca7a059f",
+    "text": "十五秒；當本領域的 ou=users 下有任何寫入（在此程序或從其他程序套用）時立即失效。"
+  },
   "caches.store.applications.listing.title": {
     "en": "eee968e6707b5423",
     "text": "應用程式登錄庫清單"
@@ -42,6 +74,22 @@
   "caches.store.applications.listing.lifetime": {
     "en": "0d7ef2a117733512",
     "text": "直到領域的 ou=applications 下有任何變更；下次讀取時會重新剖析。"
+  },
+  "caches.store.applications.load.title": {
+    "en": "87b6608598fd495b",
+    "text": "依識別碼讀取的應用程式項目"
+  },
+  "caches.store.applications.load.description": {
+    "en": "449808b7934fff9f",
+    "text": "依識別碼保存的單一應用程式項目及其剖析後的記錄，讓登入時的各項檢查不必每次都讀取並剖析該項目。"
+  },
+  "caches.store.applications.load.bound": {
+    "en": "2f0f2fdc2a335270",
+    "text": "強制：每個領域最多 MAX_LOAD_MEMO（256）個識別碼；超過後會捨棄已保存的回應。"
+  },
+  "caches.store.applications.load.lifetime": {
+    "en": "a1430f3b77ef4dc8",
+    "text": "直到領域的 ou=applications 下有任何變更；下次讀取時會重新查詢目錄。"
   },
   "caches.store.applications.ssf-allowed-events.title": {
     "en": "da62d279c1ec6d48",
@@ -351,6 +399,22 @@
     "en": "d0ae04f76208dec0",
     "text": "不會過期：階層在此處或其他節點上變更時被取代，並隨其領域一併捨棄。"
   },
+  "caches.store.keys.derived-digest-keys.title": {
+    "en": "f9fe85cae4c1d960",
+    "text": "衍生的摘要金鑰"
+  },
+  "caches.store.keys.derived-digest-keys.description": {
+    "en": "168b9cef8ba71a95",
+    "text": "每個帶金鑰摘要標籤所衍生的 HMAC 金鑰，讓計算摘要時不必每次都執行 HKDF。與衍生它的金鑰一起保存，並在每次使用時比對。"
+  },
+  "caches.store.keys.derived-digest-keys.bound": {
+    "en": "ddbdac124aa8d60a",
+    "text": "強制：MAX_DERIVED_DIGEST_KEYS（64）個標籤；超過後會捨棄所有衍生金鑰。"
+  },
+  "caches.store.keys.derived-digest-keys.lifetime": {
+    "en": "624f872facf2862c",
+    "text": "直到衍生它的金鑰變更（新的摘要金鑰或金鑰加密金鑰），每次使用時都會檢查。"
+  },
   "caches.store.keys.plaintext.title": {
     "en": "51cb646ea755ee9e",
     "text": "已解密的簽署金鑰"
@@ -527,6 +591,22 @@
     "en": "1c2c57f79cea4fb0",
     "text": "直到領域的 ou=users 下有任何寫入。"
   },
+  "caches.store.ldap.service-accounts.title": {
+    "en": "cf6e6b4822e4f795",
+    "text": "目錄服務帳戶"
+  },
+  "caches.store.ldap.service-accounts.description": {
+    "en": "c438b52f56cdcb94",
+    "text": "領域中服務帳戶的名稱，讓詢問某人是否擁有服務帳戶的範圍決策不必向目錄查詢全部服務帳戶。"
+  },
+  "caches.store.ldap.service-accounts.bound": {
+    "en": "3fab118dee48ec80",
+    "text": "結構性：每個領域一份清單，大小等於其服務帳戶數。"
+  },
+  "caches.store.ldap.service-accounts.lifetime": {
+    "en": "6d41d8c344106c1b",
+    "text": "直到某次寫入涉及一個現在是或曾經是服務帳戶的項目；下次讀取時會重新查詢目錄。"
+  },
   "caches.store.ldap.subtree-listings.title": {
     "en": "89d5ba5e5411f55d",
     "text": "目錄容器清單"
@@ -554,6 +634,22 @@
   "caches.store.ldap.username-index.lifetime": {
     "en": "b12dd09efefaa6bd",
     "text": "直到目錄以索引無法併入的方式被寫入；下次查詢時會重建。每個領域一個索引。"
+  },
+  "caches.store.ldap.windowed-entryuuids.title": {
+    "en": "1bcb1ccebd4c7781",
+    "text": "視窗中的 entryUUID"
+  },
+  "caches.store.ldap.windowed-entryuuids.description": {
+    "en": "4bbc3a85d38472cd",
+    "text": "在持有目錄視窗的程序中，每個人或裝置的 entryUUID 最近一次被找到時所在的鍵，使主體可以解析為視窗所持有的項目，而無需再次詢問儲存區（#773）。每次使用時都會與項目自身的 entryUUID 核對。"
+  },
+  "caches.store.ldap.windowed-entryuuids.bound": {
+    "en": "a4522667ab0d5562",
+    "text": "強制：每個領域 ldap.workerCacheEntries 個，最舊的先被移除。"
+  },
+  "caches.store.ldap.windowed-entryuuids.lifetime": {
+    "en": "317464bd9b5bd06a",
+    "text": "直到它所指的項目離開視窗、被重新命名或不再帶有該 entryUUID 為止，每次使用時都會檢查。"
   },
   "caches.store.mail.outbox.title": {
     "en": "d40abea9379f4e22",
@@ -683,6 +779,22 @@
     "en": "bfe4788c0fa5b7fe",
     "text": "強制：每個領域 256 個金鑰組，最舊者被捨棄，下次需要時再重新擷取。"
   },
+  "caches.store.oauth2.declared-authorization-details-types.title": {
+    "en": "3f4c1bef936a03c4",
+    "text": "已宣告的 authorization_details 類型"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.description": {
+    "en": "5eba0c7bb76a5960",
+    "text": "領域中各應用程式所宣告的 RFC 9396 類型，每個類型都附有負責回應它的資源，讓授權時不必為了找到它們而建立每個應用程式的檢視。"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.bound": {
+    "en": "d25b94e5d9062281",
+    "text": "結構性：每個領域一份回應，大小等於其應用程式所宣告的類型。"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.lifetime": {
+    "en": "3bfa4ec2d7a5b1f4",
+    "text": "直到領域的 ou=applications 下有任何變更；下次讀取時會重新建立。"
+  },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",
     "text": "已兌換的授權碼"
@@ -702,6 +814,22 @@
   "caches.store.oauth2.redeemed-codes.hitMeaning": {
     "en": "55156810371e3ec1",
     "text": "已兌換的授權碼再次被出示"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.title": {
+    "en": "c9c28d7d082aab14",
+    "text": "重新整理權杖輪替記錄"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.description": {
+    "en": "38d9cf25fa52b3ad",
+    "text": "每個重新整理權杖與每個權杖族各一筆記錄，讓重送的重新整理權杖會撤銷其整個權杖族（RFC 9700）；以及每次授權所簽發的內容，讓撤銷重新整理權杖時會一併撤銷與之同時簽發的存取權杖（RFC 7009）。"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.bound": {
+    "en": "945ea34a46306638",
+    "text": "強制：每個領域最多 oauth2.maxRefreshTokenFamilies 筆重新整理權杖記錄，授權簽發記錄為其兩倍；超過後先移除已輪替的，再移除最舊的，並發出警告。"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.lifetime": {
+    "en": "584ca21b64df4c69",
+    "text": "直到權杖簽發後的權杖族時間範圍過去；之後由 caches.eject-expired 工作移除該記錄。"
   },
   "caches.store.oauth2.request-uri.title": {
     "en": "3ae35b709a8c09f7",
@@ -1090,6 +1218,18 @@
   "caches.store.risk.dataset-lookups.lifetime": {
     "en": "cabefdef4e47cbf3",
     "text": "直到資料集版本被啟用，或因上限而被捨棄。"
+  },
+  "caches.store.risk.population-users.title": {
+    "en": "ee5f57710fdd1b70",
+    "text": "風險評分：每個領域的人數"
+  },
+  "caches.store.risk.population-users.description": {
+    "en": "cb24f916eda472c0",
+    "text": "每個領域中曾經登入過的人數，即風險模型平滑項的分母；保留下來，使一次登入不必計算每個曾經登入過的人。"
+  },
+  "caches.store.risk.population-users.bound": {
+    "en": "8154bb7a629a4263",
+    "text": "結構性：每個至少有 1000 人的領域一個計數（已密封或未密封），且除預設領域外最多有 realms.maxCount 個領域。"
   },
   "caches.store.risk.standings.title": {
     "en": "492e058d1adf8354",

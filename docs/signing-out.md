@@ -44,6 +44,8 @@ application's Front-Channel Logout page, a WS-Federation cleanup image, a
 SAML `LogoutRequest` link or a partner's sign-out — the page you land on is
 `/logout/signed-out`, drawn by the service with those in it, exactly as the
 sign-out page always drew them. Otherwise the result is drawn in place.
+Either way, the result tells you to close the browser tab when you are done:
+the sign-out ends what this service holds, not the pages the tab has shown.
 
 Signing out may mean signing in first. This service has no other way to know who
 is asking, and the session that creates is listed with everything else. **No

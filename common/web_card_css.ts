@@ -207,7 +207,17 @@ class WebCardCss {
     'order-top:1px solid #eee;font-size:.75em;color:#777;word-break:break-all' +
     '}.meta div{margin:2px 0}code{font-family:ui-monospace,SFMono-Regular,Men' +
     'lo,monospace}.fed{margin-top:18px;padding-top:14px;border-top:1px solid ' +
-    '#eee}.fed p{font-size:.78em;color:#666;margin:0 0 8px}a.fedbtn{display:b' +
+    '#eee}' +
+    // The account picker's rows (rcbj, 2026-10-20): the names on the left
+    // and a small button on the right of the same line, in place of a
+    // full-width button under each account (authn/web_authn_accounts.ts).
+    'form.account{display:flex;align-items:center;gap:10px;padding:10px 0;' +
+    'border-bottom:1px solid #eee}form.account .account-who{flex:1;' +
+    'min-width:0;overflow-wrap:anywhere}form.account div.sub{color:#666;' +
+    'font-size:.8em;margin-top:2px}form.account .account-acts{display:flex;' +
+    'gap:6px;flex:0 0 auto}form.account button{flex:0 0 auto;padding:5px ' +
+    '12px;font-size:.85em}' +
+    '.fed p{font-size:.78em;color:#666;margin:0 0 8px}a.fedbtn{display:b' +
     'lock;text-align:center;padding:9px 12px;margin:6px 0;border-radius:5px;b' +
     'order:1px solid #12107c;color:#12107c;background:#fff;text-decoration:no' +
     'ne;font-size:.9em}a.fedbtn span{display:block;font-size:.75em;color:#777' +

@@ -467,6 +467,7 @@ import keystore = require('../common/keystore');
 // no route, and is already loaded by helpers.js — so its position is not a
 // position at all.
 import realms = require('../common/realms');
+import cacheRegistry = require('../common/cache_registry');
 // A CREATE CLAIMS ITS NAME ACROSS NODES (2026-09-14, #46 follow-up) — the
 // console's own user and group forms, as `/admin-api` already did. A LIBRARY
 // (rule 3): it registers no route, and reaches the directory module through
@@ -842,8 +843,8 @@ void roles;
 // One for every page, with the nav in it, so a page cannot be added without
 // a way back — which held for the SECTIONS and did not hold for the pages under
 // them until `up` existed, because the nav's answer on a drill-down was the
-// section's own tab, drawn as text. See navBar(). The CSS is inline because
-// app.js sets `default-src 'none'` with `style-src 'unsafe-inline'`: a
+// section's own tab, drawn as text. See WebShell.navBar(). The CSS is inline
+// because app.js sets `default-src 'none'` with `style-src 'unsafe-inline'`: a
 // stylesheet as its own resource would need its own exception and would buy
 // nothing.
 //
@@ -1017,8 +1018,9 @@ const SECTIONS = [
                'its own tab.' },
       { path: '/admin/vc', label: 'Verifiable Credentials',
         blurb: 'Metadata and endpoints, separate OpenID4VCI and OpenID4VP ' +
-               'settings, credential claims and status, and the verifier ' +
-               'request, each on its own tab.' },
+               'settings, credential claims and the verifier request, each ' +
+               'on its own tab. What has been issued, and each ' +
+               'credential\'s status, is under Monitoring.' },
       // The decision and enforcement counts remain under Monitoring:
       // `/admin/xacml/monitor` reports what happened, not configuration.
       { path: '/admin/xacml', label: 'XACML',
@@ -1397,7 +1399,7 @@ const SECTIONS = [
       //
       //   * **It is drawn with `active` = `/admin/users` and an `up`**, so
       //     the Users tab is marked (as a LINK, which is what `up` means to
-      //     `navItem()`) and the trail reads
+      //     `WebShell.navItem()`) and the trail reads
       //     `Admin console › Users › New user`. All seven `respond()` calls
       //     in that handler pass it, including the two refusals and the
       //     success page — a page that lost its trail on the one response
@@ -2045,6 +2047,28 @@ const SECTIONS = [
                    'challenges created and redeemed, refusals by error code ' +
                    'and failInfo, and the most recent requests.' }
         ] },
+      // WHAT THIS REALM'S ISSUER HAS ISSUED, AND WHETHER EACH IS STILL GOOD
+      // (#752). It was the Credential status tab of Protocols → Verifiable
+      // Credentials, and moved here at rcbj's ask "for consistency": that
+      // page is what the issuer and verifier are CONFIGURED to do, and every
+      // other family whose results are read and acted on has its Monitoring
+      // page beside the Protocols one — the XACML, GNAP and SCIM rows here.
+      // After the certificate enrollments, because both answer "what has
+      // been issued". The suspend, reinstate and revoke controls came with
+      // it: an act on something already issued, which is what Tokens and
+      // Grants in this section carry too. Drawn by `admin-ui/web_vc_status.ts`
+      // from `GET /admin-api/vc-status`.
+      { path: '/admin/vc/monitor', label: 'Verifiable Credentials',
+        blurb: 'Every Verifiable Credential this realm has issued that ' +
+               'carries a status-list index, newest first, with its format, ' +
+               'its configuration and its status &mdash; VALID, SUSPENDED or ' +
+               'INVALID &mdash; and who set it; and where the Token Status ' +
+               'List and the two Bitstring Status Lists are served. Suspend, ' +
+               'Reinstate and Revoke act on one credential, in every list ' +
+               'at once, and a credential that is not VALID signs nobody in ' +
+               'at <code>/authn/wallet</code>. What the lists are built with ' +
+               'is on <a href="/admin/vc">Protocols &rarr; Verifiable ' +
+               'Credentials</a>.' },
       // THE AUTHORIZATION SERVER'S OWN TRAFFIC (2026-09-13), filed here and
       // not under Protocols beside `/admin/oauth2` for the XACML monitor's
       // reason: that page is what the server is CONFIGURED to do and this is
@@ -2806,10 +2830,26 @@ const CERT_SUB_TAB_IDS = ['cert-spiffe-overview', 'cert-spiffe-entries',
   'cert-scep-profiles', 'cert-scep-challenges', 'cert-scep-host-names',
   'cert-scep-certificates', 'cert-scep-exceptions', 'cert-scep-settings'];
 
+// realm -> `{ at, value, building }`: the console's totals kept, or their
+// build in flight (`AdminConsole.consoleJsonAsync()`). One per process, and
+// described to /admin/caches below the class (rule 3ap).
+const totalsHeld = new Map<string, any>();
+
 class AdminConsole {
   // What the Cluster page's `prepare` step last read from the other cells
   // (#361): `{ at, rows, error? }`, or null in single-cell mode.
   peerClustersNow: any = null;
+
+  /**
+   * How long the console's totals are kept (2026-10-21;
+   * `consoleJsonAsync()`).
+   */
+  static readonly TOTALS_HOLD_MS = 15000;
+  /**
+   * How old the kept totals may be and still answer while they are rebuilt
+   * (2026-10-21; `consoleJsonAsync()`).
+   */
+  static readonly TOTALS_STALE_MS = 120000;
 
   /**
    * Builds the console over the given modules.
@@ -3191,74 +3231,6 @@ class AdminConsole {
     return WebKit.listViewOf(section, query);
   }
 
-  // `up` is set on a drill-down — a page reached from a link on one of the
-  // sections below rather than one of the sections itself — and what it changes
-  // is the ACTIVE TAB.
-  //
-  // That tab was drawn as plain text on every page whose `active` matched, and
-  // `active` is the section's path on the list page and on every page
-  // underneath it alike. So on a drill-down the one control that pointed at the
-  // list was the one control this shell had turned off, and the only way back
-  // from /admin/applications?application=x was the browser's own Back button or
-  // a link at the foot of a long page. On a drill-down the tab is a LINK: still
-  // bold, because the reader is inside that section, and underlined so that
-  // "the section you are in" cannot be read as "not clickable".
-  //
-  // It is one `<nav>` holding one `<ul>` per section with a heading above it.
-  // The heading is plain text and NOT a link, for the reason the section is not
-  // a crumb: there is no page behind it. The section containing the page being
-  // drawn is marked, so a reader who arrived on a deep link can see where they
-  // are without reading every label.
-  //
-  // A GROUP inside a section is drawn as an `<li>` holding a heading and a
-  // `<ul>` of its own, rather than as a second `<ul>` beside the first: a group
-  // belongs INSIDE the section's list — it is three of that list's items said
-  // together — and a sibling list would tell a screen reader the section ended
-  // where the group began. Its heading is plain text for the same reason the
-  // section's is, and the marker on the group holding the current page is a
-  // rule down the left like the section's, one level in.
-  /**
-   * Draws the console's navigation: the realm chooser and every section.
-   *
-   * A realm administrator sees only the pages of their realm and no chooser.
-   *
-   * @param active - the path of the page being drawn
-   * @param up - upTo()'s answer on a drill-down, or nothing
-   * @param req - the request, or nothing
-   * @returns the `<nav>` as HTML
-   */
-  navBar(active, up, req) {
-    const { log, gateStateFor } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.navBar(). active=" + active);
-    // A REALM ADMINISTRATOR'S SIDEBAR (2026-09-14, #32) leaves out the pages
-    // that belong to the whole service, which the gate would refuse them, and
-    // the realm switcher, since their console is one realm. The service
-    // administrator's is unchanged.
-    const state = req ? gateStateFor(req) : null;
-    const realmOnly = !!(state && state.authority === 'realm');
-    const html = '<nav aria-label="Admin console sections">' +
-      // FIRST, inside this card rather than above it. It does not select a page
-      // — it selects which service the pages are about — but it is the first
-      // question a reader has about the column, so it is the first thing in it.
-      (realmOnly ? '' : this.realmChooser(req)) +
-      this.visibleSections(state).map(function (section) {
-        const inThisSection = self.sectionPages(section)
-          .filter(function (item) {
-          return item.path === active;
-        }).length > 0;
-        const links = section.items.map(function (item) {
-          return self.navItem(item, active, up);
-        }).join('');
-        return '<div class="navsec' + (inThisSection ? ' open' : '') + '">' +
-          '<p class="navhead" title="' + self.esc(section.what) + '">' +
-          self.esc(section.title) + '</p><ul>' + links + '</ul></div>';
-      }).join('') + '</nav>';
-    log.debug("Leaving AdminConsole.navBar(). " + SECTIONS.length +
-              " section(s).");
-    return html;
-  }
-
   // SECTIONS as one state may see it: service pages dropped for a realm
   // administrator, a group with nothing left dropped with them, and a section
   // with nothing left dropped too. The table itself is never edited.
@@ -3306,77 +3278,6 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.visibleSections(). " + out.length +
               " section(s).");
     return out;
-  }
-
-  // One row of a section's list: a page, or a group holding pages.
-  /**
-   * Draws one row of a section's list: a page, or a group holding pages.
-   *
-   * @param item - the row
-   * @param active - the path of the page being drawn
-   * @param up - upTo()'s answer on a drill-down, or nothing
-   * @returns the `<li>` as HTML
-   */
-  navItem(item, active, up) {
-    const { log } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.navItem(). " +
-              (this.isNavGroup(item) ? 'group ' + item.title
-                                                         : 'page ' +
-                                                             item.path));
-    if (!this.isNavGroup(item)) {
-      if (item.hidden) {
-        log.debug("Leaving AdminConsole.navItem(). A hidden page.");
-        return '';
-      }
-      log.debug("Leaving AdminConsole.navItem(). A page.");
-      return this.navLink(item, active, up);
-    }
-    const open = this.groupPages(item.items).filter(function (page) {
-      return page.path === active;
-    }).length > 0;
-    // A row of a group may itself be a group (none is since 2026-10-12), so
-    // each row is drawn by this method again rather than by navLink().
-    const html = '<li class="navgrp' + (open ? ' open' : '') + '">' +
-      '<p class="navsub" title="' + this.esc(item.what) + '">' +
-      this.esc(item.title) +
-      '</p><ul>' + item.items.map(function (row) {
-        return self.navItem(row, active, up);
-      }).join('') + '</ul></li>';
-    log.debug("Leaving AdminConsole.navItem(). A group of " +
-              item.items.length + " page(s).");
-    return html;
-  }
-
-  /**
-   * Draws one page's nav entry.
-   *
-   * The active page is plain text, or a link back up on a drill-down.
-   *
-   * @param item - the page's NAV row
-   * @param active - the path of the page being drawn
-   * @param up - upTo()'s answer on a drill-down, or nothing
-   * @returns the `<li>` as HTML
-   */
-  navLink(item, active, up) {
-    const { log } = this.deps;
-    log.debug("Entering AdminConsole.navLink(). path=" + item.path);
-    if (item.path === active) {
-      if (up) {
-        log.debug("Leaving AdminConsole.navLink(). Active, and a drill-down.");
-        return '<li><a class="here" href="' + this.esc(up.href) + '"' +
-               ' title="Back to ' + this.esc(up.label) + '"' +
-               // A drill-down's active item IS a link, so it is already in the
-               // tab order and must stay there — only the autofocus is added.
-               ' autofocus>' + this.esc(item.label) + '</a></li>';
-      }
-      log.debug("Leaving AdminConsole.navLink(). Active.");
-      return '<li><span class="here"' + ACTIVE_NAV_FOCUS +
-             ' aria-current="page">' + this.esc(item.label) + '</span></li>';
-    }
-    log.debug("Leaving AdminConsole.navLink().");
-    return '<li><a href="' + this.esc(item.path) + '">' + this.esc(item.label) +
-           '</a></li>';
   }
 
   /**
@@ -3447,39 +3348,6 @@ class AdminConsole {
     const here = String(req.originalUrl || '/admin');
     log.debug("Leaving AdminConsole.realmRelativePath().");
     return here.slice(realms.currentPrefix().length) || '/admin';
-  }
-
-  /**
-   * Draws the trust realm switcher, a GET form to the realm switch route.
-   *
-   * @param req - the request
-   * @returns the form as HTML; empty when no realm is defined
-   */
-  realmChooser(req) {
-    const { log, realms } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.realmChooser().");
-    if (!realms.active()) {
-      log.debug("Leaving AdminConsole.realmChooser(). No realms are defined.");
-      return '';
-    }
-    const currentId = realms.currentId();
-    const options = realms.list().map(function (realm) {
-      return '<option value="' + self.esc(realm.id) + '"' +
-        (realm.id === currentId ? ' selected' : '') + '>' +
-        self.esc(realm.name) + '</option>';
-    }).join('');
-    log.debug("Leaving AdminConsole.realmChooser(). " + realms.count() +
-              " realm(s).");
-    return '<form class="realmpick" method="get" action="' +
-      this.esc(this.realmRoot(req) + REALM_SWITCH_PATH) + '">' +
-      '<label for="realmpick">Trust realm</label>' +
-      '<input type="hidden" name="to" value="' +
-        this.esc(this.realmRelativePath(req)) + '">' +
-      '<div class="realmpickrow">' +
-        '<select id="realmpick" name="realm">' + options + '</select>' +
-        '<button class="secondary">Go</button>' +
-      '</div></form>';
   }
 
   // ---------------------------------------------------------------------------
@@ -3803,6 +3671,28 @@ class AdminConsole {
       '#d5d5dd;border-radius:10px;padding:14px 14px ' +
       '8px;font-size:.85em;box-shadow:0 6px 24px rgba(0,0,0,.06);flex:0 1 ' +
       'auto;min-height:0;overflow-y:auto}' +
+      // THE LIST'S SCROLLBAR IS ON ITS LEFT EDGE AND ALWAYS DRAWN (rcbj,
+      // 2026-10-20). `overflow-y:auto` above made the list scroll on its own,
+      // but nobody could see that it did: with every section collapsed (#750)
+      // it seldom overflows, and the overlay scrollbars Linux and macOS
+      // browsers draw stay hidden until the list is already moving. So the
+      // bar is `scroll`, reserved and visible whether or not there is
+      // anything to scroll, and given a width and colours of its own, which is
+      // what makes Chromium and Safari draw a classic bar instead of an
+      // overlay; Firefox reads `scrollbar-width` and `scrollbar-color`.
+      // `direction:rtl` on the box is what puts a vertical scrollbar on the
+      // left, and every child is set back to `ltr` so nothing inside reads
+      // right to left. Only the box is reversed, never the text.
+      // It is `.side>nav` and not `nav`: the pagers and tab bars are <nav>s
+      // too, and none of them is a list to scroll.
+      '.side>nav{overflow-y:scroll;scrollbar-gutter:stable;direction:rtl;' +
+      'scrollbar-width:thin;scrollbar-color:#a7a7c4 #f1f1f6}' +
+      '.side>nav>*{direction:ltr}' +
+      '.side>nav::-webkit-scrollbar{width:10px}' +
+      '.side>nav::-webkit-scrollbar-track{background:#f1f1f6;' +
+      'border-radius:10px}.side>nav::-webkit-scrollbar-thumb{' +
+      'background:#a7a7c4;border-radius:10px;border:2px solid #f1f1f6}' +
+      '.side>nav::-webkit-scrollbar-thumb:hover{background:#12107c}' +
       // THE REALM CHOOSER, first inside the nav card and separated from the
       // sections by a hairline rather than by a card of its own. Its label is
       // `.navhead`'s metrics on purpose: it sits above a list of choices in the
@@ -3821,17 +3711,31 @@ class AdminConsole {
       '4px;border:1px solid ' +
       '#c9c9d4;border-radius:5px;background:#fff;color:#222}.realmpick ' +
       'button{flex:0 0 auto;padding:3px 9px;font-size:.92em}.navsec{margin:0 ' +
-      '0 12px}.navsec:last-child{margin-bottom:4px}' +
-      // The section heading. Not a link and it must not look like one — there
-      // is no page behind a section, which is the same reason it is not a
-      // crumb.
-      '.navhead{margin:0 0 4px;font-size:.7em;text-transform:uppercase;' +
+      '0 4px}.navsec:last-child{margin-bottom:4px}' +
+      // The section heading, a `<summary>` since #750: it opens and closes the
+      // section, and nothing else. Not a link and it must not look like one —
+      // there is no page behind a section, which is the same reason it is not
+      // a crumb — so it keeps the small capitals and gains only a triangle
+      // and a pointer. `list-style:none` and the WebKit pseudo-element take
+      // the browser's own marker off, so the triangle is drawn once, here,
+      // and turns when the section opens. The padding is what makes a
+      // heading this small an easy thing to hit.
+      '.navhead{display:block;cursor:pointer;list-style:none;margin:0;' +
+      'padding:4px 0;font-size:.7em;text-transform:uppercase;' +
       'letter-spacing:.06em;color:#8a8a99;font-weight:700}' +
-      // The section the current page is in. A rule down its left rather than a
-      // background, so that the mark reads as "you are in here" and not as a
-      // second selected item beside the selected one.
-      '.navsec.open{border-left:3px solid ' +
-      '#12107c;margin-left:-14px;padding-left:11px}.navsec.open ' +
+      '.navhead::-webkit-details-marker{display:none}' +
+      '.navhead::before{content:"\\25B8";display:inline-block;width:1.1em;' +
+      'transition:transform .15s}.navsec[open]>.navhead::before{transform:' +
+      'rotate(90deg)}.navsec[open]>.navhead{margin-bottom:4px}' +
+      '.navsec[open]{margin-bottom:10px}.navhead:hover{color:#12107c}' +
+      '.navhead:focus-visible{outline:2px solid #12107c;outline-offset:2px;' +
+      'border-radius:3px}' +
+      // The section the current page is in, open or closed. A rule down its
+      // left rather than a background, so that the mark reads as "you are in
+      // here" and not as a second selected item beside the selected one —
+      // and, on a closed section, as the way back to the page you are on.
+      '.navsec.current{border-left:3px solid ' +
+      '#12107c;margin-left:-14px;padding-left:11px}.navsec.current>' +
       '.navhead{color:#12107c}' +
       // A GROUP INSIDE A SECTION. It is an <li>, so `nav li` has already given
       // it the item metrics; what these rules do is take the item LOOK back off
@@ -3939,6 +3843,12 @@ class AdminConsole {
       '.legend{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:.8em;' +
       'color:#333;margin:.3em 0 .9em}.legend span{display:inline-flex;' +
       'align-items:center;gap:6px}code.ec{white-space:nowrap}' +
+      // A VALUE ON ONE LINE, THE REST ON HOVER (2026-10-20, the self-issued
+      // IDs' Location): cut with an ellipsis at a width of its own, so a
+      // wallet's long reported name never makes a tall row.
+      'td .oneline{display:inline-block;max-width:12em;overflow:hidden;' +
+      'text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;' +
+      'cursor:help}' +
       'table{border-collapse:collapse;width:100%;' +
       'margin:.4rem 0 .9rem;font-size:.8em}th,td{border:1px solid ' +
       '#e2e2ea;padding:.3rem .5rem;text-align:left;vertical-align:top}' +
@@ -4365,8 +4275,9 @@ class AdminConsole {
       // sense of.
       '@media (max-width:56rem){.side{position:static;flex:1 1 100%;' +
       'max-height:none;display:block}nav{overflow-y:visible}' +
+      '.side>nav{overflow-y:visible;direction:ltr}' +
       '.navsec{display:inline-block;vertical-align:top;min-width:11rem;' +
-      'margin-right:1.2em}.navsec.open{margin-left:0;padding-left:0;' +
+      'margin-right:1.2em}.navsec.current{margin-left:0;padding-left:0;' +
       'border-left:0;border-top:3px solid #12107c;padding-top:6px}}' +
       // ---------------------------------------------------------------------
       // /admin/applications/new's CONDITIONAL FIELDS, and the reason this is
@@ -4571,9 +4482,10 @@ class AdminConsole {
        'oauth-tab-token-lifetimes', 'oauth-tab-claims',
        'oauth-tab-userinfo-claims', 'saml-tab-metadata',
        'saml-tab-global-settings', 'saml-tab-shared-settings',
-       'saml-tab-saml2', 'saml-tab-saml11', 'saml-tab-assertions',
+       'saml-tab-saml2', 'saml-tab-saml11', 'saml-tab-idp-initiated',
+       'saml-tab-assertions',
        'saml-tab-attributes', 'vc-tab-metadata', 'vc-tab-oid4vci',
-       'vc-tab-claims', 'vc-tab-status', 'vc-tab-oid4vp',
+       'vc-tab-claims', 'vc-tab-oid4vp',
        'vc-tab-verifier-request', 'xacml-tab-metadata',
        'xacml-tab-settings', 'xacml-tab-policies', 'xacml-tab-editor',
        'xacml-tab-peps', 'xacml-tab-decide', 'ssf-tab-metadata',
@@ -5419,10 +5331,24 @@ class AdminConsole {
    * @returns the issuer, uptime, counts of calls, tokens, artifacts,
    *   sessions and users, and the path of every page
    */
-  consoleJson() {
-    const { log, stats, config, sessions } = this.deps;
+  consoleJson(opts?) {
+    const { log, stats, config, sessions, credentials } = this.deps;
     log.debug("Entering AdminConsole.consoleJson().");
-    const snap = stats.snapshot();
+    // `opts` (2026-10-21): the snapshot's user rows and the directory's tally
+    // asked asynchronously, by `consoleJsonAsync()`.
+    const snap = stats.snapshot(opts && opts.knownUsers
+      ? { knownUsers: opts.knownUsers } : undefined);
+    // USERS KNOWN IS THE DIRECTORY'S COUNT (rcbj, 2026-10-20), the number
+    // Directory → Users draws as "In the directory": every person under
+    // `ou=users`, counted without listing them. It was the statistics
+    // register's, which holds only the identities this process has SEEN and
+    // at most `MAX_USERS` of them, so the index and the Users page disagreed
+    // on any realm with people nobody had signed in as, and on every
+    // bulk-loaded one. Where the directory offers no tally (no store, a
+    // test's stub) the register's count stands, as the Users page's tiles
+    // fall back to the list's.
+    const tally = opts && opts.knownUsers ? opts.tally
+      : credentials.directoryFactorCounts();
     // sessions.size is who this process has cached. While the window is
     // on, the index count is who holds a session. A failed count stays
     // null: the cache size would report a partial map as the whole store.
@@ -5436,13 +5362,99 @@ class AdminConsole {
       calls: snap.calls.total, tokensHeld: snap.tokens.held,
       tokensRevoked: snap.tokens.revoked,
       artifactsHeld: snap.artifacts.held, signOnSessions: signOnSessions,
-      usersKnown: snap.users.known,
+      usersKnown: tally ? tally.people : snap.users.known,
       usersAuthenticatedHere: snap.users.authenticatedHere,
-      pages: NAV.filter(function (n) { return !n.hidden; })
-        .map(function (n) { return n.path; })
+      pages: this.consolePages()
     };
     log.debug("Leaving AdminConsole.consoleJson().");
     return json;
+  }
+
+  // THE CONSOLE'S PAGES ALONE (2026-10-21), for `GET /admin-api/me`, which
+  // every console page asks and which wanted nothing else of
+  // `consoleJson()` — yet built its whole snapshot to get it: every register
+  // subject resolved and the directory's credential tally, synchronously.
+  // On 8081 each console page stood a request worker still for ten seconds.
+  /**
+   * Lists the console's visible pages, from `NAV`.
+   *
+   * @returns the paths
+   */
+  consolePages() {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.consolePages().");
+    log.debug("Leaving AdminConsole.consolePages().");
+    return NAV.filter(function (n) { return !n.hidden; })
+      .map(function (n) { return n.path; });
+  }
+
+  // `consoleJson()` FOR A CALLER THAT CAN WAIT (2026-10-21): the register's
+  // rows built by `userRowsAsync()` and the directory's tally by
+  // `directoryFactorCountsAsync()`, so the store is asked on its read pool.
+  /**
+   * `consoleJson()`, the store asked asynchronously.
+   *
+   * @returns a promise of the JSON
+   */
+  //
+  // **KEPT FOR A FEW SECONDS, ONE BUILD AT A TIME (2026-10-21)**: the
+  // register's rows are every identity it holds, resolved — 18 s of
+  // `/admin-api/status` on 8081 at 67,000 of them under a sign-in load — for
+  // two counts on the console's index. The totals are kept per realm for
+  // TOTALS_HOLD_MS, `/admin/users`' population hold, and askers in the
+  // meantime share one build.
+  async consoleJsonAsync() {
+    const { log, realms } = this.deps;
+    log.debug("Entering AdminConsole.consoleJsonAsync().");
+    const realmId = String(realms.currentId());
+    let entry = totalsHeld.get(realmId);
+    if (!entry) {
+      entry = { at: 0, value: null, building: null };
+      totalsHeld.set(realmId, entry);
+    }
+    const age = Date.now() - entry.at;
+    if (entry.value !== null && age <= AdminConsole.TOTALS_HOLD_MS) {
+      log.debug("Leaving AdminConsole.consoleJsonAsync(). Kept.");
+      return entry.value;
+    }
+    if (!entry.building) {
+      entry.building = this.buildConsoleTotalsAsync().then((value) => {
+        entry.value = value;
+        entry.at = Date.now();
+        entry.building = null;
+        return value;
+      }, (e) => {
+        log.debug("Caught in AdminConsole.consoleJsonAsync(): " +
+                  ((e && e.message) || e));
+        entry.building = null;
+        throw e;
+      });
+    }
+    // TOTALS UP TO TOTALS_STALE_MS OLD ANSWER AT ONCE while one rebuild runs
+    // behind them (2026-10-21): a build is 15–20 s on 8081 under the load,
+    // longer than the hold, so the index waited for one at almost every
+    // visit. A rebuild's refusal is logged where it is caught.
+    if (entry.value !== null && age <= AdminConsole.TOTALS_STALE_MS) {
+      entry.building.catch(function (e) {
+        log.debug("Caught in AdminConsole.consoleJsonAsync(), behind kept " +
+                  "totals: " + ((e && e.message) || e));
+      });
+      log.debug("Leaving AdminConsole.consoleJsonAsync(). Kept, " +
+                "rebuilding.");
+      return entry.value;
+    }
+    log.debug("Leaving AdminConsole.consoleJsonAsync(). Building.");
+    return entry.building;
+  }
+
+  // The build `consoleJsonAsync()` keeps.
+  private async buildConsoleTotalsAsync() {
+    const { log, stats, credentials } = this.deps;
+    log.debug("Entering AdminConsole.buildConsoleTotalsAsync().");
+    const knownUsers = await stats.userRowsAsync();
+    const tally = await credentials.directoryFactorCountsAsync();
+    log.debug("Leaving AdminConsole.buildConsoleTotalsAsync().");
+    return this.consoleJson({ knownUsers: knownUsers, tally: tally });
   }
   // THE DASHBOARD'S ANSWER (#446): `consoleJson()`'s totals, and what the
   // page draws beside them — the sections this reader may see (the guide is
@@ -5456,22 +5468,41 @@ class AdminConsole {
    * @param req - the express request, for the gate and the base URL
    * @returns the answer
    */
-  dashboardJson(req) {
+  dashboardJson(req, totals?) {
     const { log, gateStateFor, baseUrlOf } = this.deps;
     log.debug("Entering AdminConsole.dashboardJson().");
     const stored = persistence.status();
-    const json = Object.assign({}, this.consoleJson(), {
+    const json = Object.assign({}, totals || this.consoleJson(), {
       base: baseUrlOf(req),
       persistence: { enabled: !!stored.enabled,
                      mode: stored.enabled ? String(stored.mode || '') : '' },
-      // Which of the two sentences about the console's own door is true in
-      // this realm (#543 round 2): it said "It checks no password" in every
-      // mode.
-      verifiesCredentials: mode.verifiesCredentials(),
+      // Whether the page draws *What it deliberately does not do* (#753):
+      // almost every entry there is about what development mode does not
+      // check, so a realm in product mode is drawn none of it. The list
+      // describes this service as a test double, which is the question
+      // `sts_metadata.ts`'s `testDouble` asks too. It replaced
+      // `verifiesCredentials`, which chose between two sentences about the
+      // console's own door (#543 round 2).
+      testDouble: mode.describesItselfAsTestDouble(),
       sections: this.visibleSections(gateStateFor(req))
     });
     log.debug("Leaving AdminConsole.dashboardJson().");
     return json;
+  }
+
+  /**
+   * `dashboardJson()`, its totals asked asynchronously
+   * (`consoleJsonAsync()`).
+   *
+   * @param req - the express request
+   * @returns a promise of the answer
+   */
+  async dashboardJsonAsync(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.dashboardJsonAsync().");
+    const totals = await this.consoleJsonAsync();
+    log.debug("Leaving AdminConsole.dashboardJsonAsync().");
+    return this.dashboardJson(req, totals);
   }
 
 
@@ -8608,6 +8639,42 @@ class AdminConsole {
 // ---------------------------------------------------------------------------
 const WIRE_STEPS: Array<(instance: AdminConsole) => void> = [];
 
+// THE KEPT TOTALS, DESCRIBED (rule 3ap, 2026-10-21).
+cacheRegistry.register({
+  name: 'admin.console-totals',
+  title: 'Console index totals, kept',
+  description: 'The console index\'s totals — calls, tokens, artifacts, ' +
+    'sessions, users known and users signed in here — that ' +
+    '/admin-api/status answers. Counting the users is every register ' +
+    'identity resolved, so the totals are kept for a few seconds.',
+  owner: 'admin-ui/admin.ts',
+  scope: 'realm',
+  maxEntries: function (): number {
+    return 1;
+  },
+  bound: 'Structural: one set of totals per realm, built at most once at ' +
+    'a time.',
+  lifetime: function (): string {
+    return 'Fifteen seconds.';
+  },
+  entries: function (): any[] {
+    const out = [];
+    totalsHeld.forEach(function (held: any, realmId: string) {
+      if (!held.value) {
+        return;
+      }
+      out.push({
+        realm: realmId,
+        key: 'totals (' + held.value.usersKnown + ' users known)',
+        validUntil: held.at + AdminConsole.TOTALS_HOLD_MS,
+        valid: Date.now() - held.at <= AdminConsole.TOTALS_HOLD_MS,
+        basis: 'age'
+      });
+    });
+    return out;
+  }
+});
+
 const slot = new InstanceSlot<AdminConsole>(
   'admin-ui/admin',
   () => new AdminConsole(AdminConsole.defaultDeps()),
@@ -8925,9 +8992,6 @@ const ONE_LINE_CHARS = WebKit.ONE_LINE_CHARS;
 // browser carries the same names.
 const LIST_PARAMS = WebKit.LIST_PARAMS;
 
-// One page's link. Split out of navBar() when groups arrived so that a page
-// draws the same way at either depth — the active-tab-is-a-link rule above is
-// the kind that gets applied to one of two copies.
 // WHAT SCROLLS THE SIDEBAR TO THE PAGE YOU ARE ON (2026-09-05).
 //
 // `nav` is its own scroll container — `.side` is sticky and the card inside it
@@ -10118,14 +10182,21 @@ const PROTOCOL_SETTINGS_PAGES = [
            'Status List entry, served at <code>/oid4vci/status-lists</code> ' +
            'and signed with the credential key — which may be post-quantum. ' +
            '<code>oid4vci.statusListTtlS</code> is how long a verifier may ' +
-           'keep a list; <a href="/admin/vc#vc-tab-status">Credential status</a> ' +
-           'suspends and revokes.',
+           'keep a list; <a href="/admin/vc/monitor">Monitoring &rarr; ' +
+           'Verifiable Credentials</a> suspends and revokes.',
            '<strong>Key attestations.</strong> A wallet may say how its key ' +
            'is kept (OpenID4VCI Appendix D); one signed by a certificate in ' +
            '<code>oid4vci.keyAttestationTrustedCertificates</code> is ' +
            'recorded, and decides whether a wallet sign-in claims ' +
            '<code>hwk</code> and <code>acr "mfa"</code>. ' +
            '<code>oid4vci.keyAttestationRequired</code> requires one.',
+           '<strong>A configuration may bind to the person\'s DID.</strong> ' +
+           'One named in <code>oid4vci.didHolderBinding</code> takes only a ' +
+           'proof whose <code>kid</code> is a <code>did:jwk</code> or ' +
+           '<code>did:key</code> the person proved on their Self-issued IDs ' +
+           'page, and its credentials carry that DID — so every copy, a ' +
+           'batch\'s too, is linkable to the others. Off for every ' +
+           'configuration by default; <code>did:web</code> is not offered.',
            '<strong>The two DID settings change what a VERIFIER has to ' +
            'resolve, and they are restart-only.</strong> With ' +
            '<code>oid4vci.sdJwtIssuerDid</code> or ' +
@@ -10185,8 +10256,8 @@ const PROTOCOL_SETTINGS_PAGES = [
            'relay to a victim, which is why it is off.',
            '<strong>Every credential\'s status is consulted.</strong> One ' +
            'this realm issued is read from ' +
-           '<a href="/admin/vc#vc-tab-status">' +
-           'Credential status</a>; one a trusted foreign issuer signed has ' +
+           '<a href="/admin/vc/monitor">Monitoring &rarr; Verifiable ' +
+           'Credentials</a>; one a trusted foreign issuer signed has ' +
            'its status list fetched, kept for its ttl and at most <code>' +
            'oid4vp.statusListMaxCacheS</code>, and a credential whose status ' +
            'cannot be read is refused. <strong>So is one that names no ' +
@@ -10863,6 +10934,8 @@ const consoleExports = {
   // above consoleJson().
   consoleJson: slot.forward('consoleJson'),
   dashboardJson: slot.forward('dashboardJson'),
+  dashboardJsonAsync: slot.forward('dashboardJsonAsync'),
+  consolePages: slot.forward('consolePages'),
   shellJson: slot.forward('shellJson'),
   stylesheet: slot.forward('stylesheet'),
   // The audit log's view is the whole function rather than a JSON builder, for

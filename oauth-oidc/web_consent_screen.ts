@@ -57,12 +57,17 @@ class WebConsentScreen {
   /**
    * One scope's row: the scope, and what it means here.
    *
-   * @param one - `{ scope, permission }`
+   * @param one - `{ scope, permission, releasesDid }`
    * @param t - the translator
    * @returns the row
    */
   static scopeRow(one: Json, t: Json): string {
     const permission = one.permission;
+    // The `did` scope (#693): what it releases, in a sentence.
+    if (one.releasesDid) {
+      return '<li><code>' + esc(one.scope) + '</code><span>' +
+        t.html('consent.scope.did') + '</span></li>';
+    }
     return '<li><code>' + esc(one.scope) + '</code>' +
       (permission
         ? '<span>' + t.html('consent.scope.permission', {

@@ -168,6 +168,9 @@ import clusterClaims = require('../cluster/cluster_claims');
 import identityAssurance = require('../common/identity_assurance');
 // SIOPv2 (#129): an enrolment, when the browser collects one.
 import siop = require('./siop');
+// The audit row an enrolment writes (#693). `app.js` loads it first, so this
+// is a cache hit and moves nothing in the require order.
+import audit = require('../common/audit');
 
 const { log } = helpers;
 
@@ -200,7 +203,10 @@ const QUERY = validation.z.looseObject({
   // from a session somebody already holds — to enrol its key rather than to
   // sign in with it.
   siop: validation.types.opt(validation.types.oneOf(['1'])),
-  enrol: validation.types.opt(validation.types.oneOf(['1']))
+  enrol: validation.types.opt(validation.types.oneOf(['1'])),
+  // The portal's own account, on an enrolment (2026-10-20): which of this
+  // browser's sessions the enrolment is for (startable(), below).
+  login_hint: validation.types.opt(validation.types.opaque)
 });
 
 type RouteApp = typeof app;
@@ -220,6 +226,7 @@ interface VcSigninDeps {
   clusterClaims: typeof clusterClaims;
   identityAssurance: typeof identityAssurance;
   siop: typeof siop;
+  audit: typeof audit;
 }
 
 /**
@@ -284,7 +291,8 @@ class VcSignin {
       stsDid: vcDid.stsDid,
       clusterClaims: clusterClaims,
       identityAssurance: identityAssurance,
-      siop: siop
+      siop: siop,
+      audit: audit
     };
   }
 
@@ -603,13 +611,24 @@ class VcSignin {
   // `{ ctx, selfIssued, enrolFor }`, or null once it has sent a refusal.
   // ---------------------------------------------------------------------------
   private startable(req: any, res: any, query: Json): Json {
-    const { log, errorCodes } = this.deps;
+    const { log, authn, errorCodes } = this.deps;
     log.debug("Entering VcSignin.startable().");
     const selfIssued = query.siop === '1';
     // AN ENROLMENT STARTS HERE WITH NO RECORD: it is given one at the start,
     // and it is for the person this browser is signed in as, or for nobody.
     let enrolFor = '';
     if (query.enrol === '1') {
+      // WHICH OF THIS BROWSER'S ACCOUNTS (2026-10-20, rcbj on 8081): with
+      // `authn.multipleAccounts` on and two sessions live, sessionOf()
+      // answers nobody for a request that names none, so the portal's
+      // Enrol link was refused for every person who had used Switch user.
+      // The portal names its own account as `login_hint`, and a hint only
+      // CHOOSES among the sessions this browser already holds — one naming
+      // nobody here is not soft, so it answers nobody and is refused as
+      // before. It grants nothing a session in the set did not have.
+      if (query.login_hint) {
+        authn.hintAccount(req, { loginHint: String(query.login_hint) });
+      }
       enrolFor = this.personOf(req);
       if (!selfIssued || !enrolFor || query.mfa) {
         errorCodes.mark(res, 'STS-VC-0093');
@@ -854,6 +873,9 @@ class VcSignin {
     // AN ENROLMENT'S PERSON must still be the one signed in here: a sign-out,
     // or another person signing in on this browser, ends it.
     if (ctx.enrol) {
+      // The enrolment's own person is the hint (startable()'s reason): the
+      // check is that THEY are still signed in here, whoever else is too.
+      authn.hintAccount(req, { loginHint: String(tx.signIn.enrol.username) });
       if (this.personOf(req).toLowerCase() !==
           String(tx.signIn.enrol.username).toLowerCase()) {
         errorCodes.mark(res, 'STS-VC-0093');
@@ -924,6 +946,10 @@ class VcSignin {
     const { ctx, tx } = admitted;
     const selfIssued = tx.responseType === 'id_token';
     const query = verifier.vpRequestQuery(req, tx);
+    // The web wallet's links carry the request_uri's marker (2026-10-20):
+    // the Request Object endpoint records which link was followed, which is
+    // how an enrolment says the key came from that web wallet.
+    const webQuery = verifier.vpRequestQuery(req, tx, 'web');
     const scheme = verifier.walletScheme(tx);
     const dcRequest = verifier.dcApiRequestFor(tx);
     const record = ctx.record;
@@ -943,12 +969,13 @@ class VcSignin {
         // under the scheme a wallet APP registers for
         // (`oid4vp.walletInvocation`, `siopv2://` for an ID Token alone),
         // or the web wallet the start NAMED.
-        sameDevice: (tx.signIn.walletNamed && tx.signIn.walletUrl
-          ? String(tx.signIn.walletUrl) : scheme) + '?' + query,
+        sameDevice: tx.signIn.walletNamed && tx.signIn.walletUrl
+          ? String(tx.signIn.walletUrl) + '?' + webQuery
+          : scheme + '?' + query,
         // A configured WEB wallet's link beside it, or '' — none is
         // offered where none is configured.
         webWallet: !tx.signIn.walletNamed && tx.signIn.walletUrl
-          ? String(tx.signIn.walletUrl) + '?' + query : '',
+          ? String(tx.signIn.walletUrl) + '?' + webQuery : '',
         // The plain QR code's text, only where it is offered: the same
         // scheme, for a wallet app on another device.
         qr: tx.signIn.crossDevice ? scheme + '?' + query : '',
@@ -1112,6 +1139,61 @@ class VcSignin {
     });
   }
 
+  // THE AUDIT ROW OF A WALLET ENROLMENT (#693), the shape of the portal's
+  // removal (`portal.siop.remove`): who enrolled what, whether it was a
+  // subject proved again, and on failure the code it was refused under.
+  private auditEnrolment(username: string, subject: string, tx: any,
+                         code: string, why: string, again: boolean): void {
+    const { log, audit } = this.deps;
+    log.debug("Entering VcSignin.auditEnrolment(). " + (code || 'ok'));
+    audit.record({
+      category: 'authentication', action: 'portal.siop.enrol',
+      errorCode: code || undefined,
+      actor: username, target: username,
+      outcome: code ? 'failure' : 'success',
+      summary: (code ? 'could not enrol' : again ? 'proved again'
+                                                 : 'enrolled') +
+               ' the self-issued subject ' + (subject || '(none verified)') +
+               ' with a wallet, from /portal/self-issued',
+      detail: { subject: subject || undefined, proof: 'wallet',
+                again: again || undefined,
+                transaction: this.tagOf(tx.state),
+                errors: code ? [why] : undefined } });
+    log.debug("Leaving VcSignin.auditEnrolment().");
+  }
+
+  // WHERE A PROVED KEY CAME FROM (2026-10-20, rcbj on /portal/self-issued),
+  // read off the transaction it answered, as `siop.enrol()` stores it: the
+  // Digital Credentials API where the answer came that way (the origin it
+  // was asked for); the web wallet where the FIRST fetch of the request
+  // carried the web link's marker (`vc_verifier.ts`, `noteFetch()`) — named
+  // by its CONFIGURED address, never by anything the wallet said; and
+  // otherwise a wallet app, named by what its fetch's User-Agent reported,
+  // or by nothing. Never a refusal: a location is a note for the person.
+  /**
+   * Returns where the key that answered a transaction came from, as
+   * `{ kind, value }`: `dc_api`, `web` or `app`.
+   *
+   * @param tx - the transaction
+   * @returns the location
+   */
+  static locationOf(tx: any): Json {
+    helpers.log.debug("Entering VcSignin.locationOf().");
+    const signIn = (tx && tx.signIn) || {};
+    if (signIn.via === 'dc_api') {
+      helpers.log.debug("Leaving VcSignin.locationOf(). dc_api.");
+      return { kind: 'dc_api',
+               value: String((signIn.dcApi && signIn.dcApi.origin) || '') };
+    }
+    const fetched = signIn.fetchedBy || null;
+    if (fetched && fetched.via === 'web' && signIn.walletUrl) {
+      helpers.log.debug("Leaving VcSignin.locationOf(). web.");
+      return { kind: 'web', value: String(signIn.walletUrl) };
+    }
+    helpers.log.debug("Leaving VcSignin.locationOf(). app.");
+    return { kind: 'app', value: fetched ? String(fetched.agent || '') : '' };
+  }
+
   // ---------------------------------------------------------------------------
   // A DECIDED TRANSACTION, FINISHED: the refusal, or the session — after a
   // second factor where one is needed, or as the second factor itself. The
@@ -1132,6 +1214,12 @@ class VcSignin {
         : authn.WALLET_PATH + '?authn=' + encodeURIComponent(record.id) +
           (selfIssued ? '&siop=1' : '');
     if (!outcome.ok) {
+      if (ctx.enrol) {
+        this.auditEnrolment(String(tx.signIn.enrol.username),
+                            String(outcome.subject || ''), tx,
+                            outcome.errorCode || 'STS-VC-0061',
+                            String(outcome.reason || ''), false);
+      }
       errorCodes.mark(res, outcome.errorCode || 'STS-VC-0061');
       this.refuse(res, 403, String(outcome.reason || 'Nobody was signed in.'),
         this.refusedView('Nobody was signed in', ctx, {
@@ -1175,10 +1263,21 @@ class VcSignin {
 
     // AN ENROLMENT (#129): the proved key, for the person signed in here —
     // `siop.enrol()` refuses one enrolled for somebody else. No session is
-    // started: this browser already holds one.
+    // started: this browser already holds one. Since #693 it is recorded as
+    // PROVED (`proof: 'wallet'`), a did:web with the key that signed the
+    // proof pinned, a subject already theirs is proved again (re-pinned)
+    // rather than refused, and the outcome is AUDITED, as the removal and
+    // the administrator's enrolment always were.
     if (ctx.enrol) {
       const enrolled = siop.enrol(username, outcome.subject,
-                                  'enrolled with a wallet', 'self (SIOPv2)');
+                                  'enrolled with a wallet', 'self (SIOPv2)',
+                                  { proof: siop.PROOF_WALLET,
+                                    pinnedKeys: outcome.pinnedKeys || [],
+                                    location: VcSignin.locationOf(tx) });
+      this.auditEnrolment(username, String(outcome.subject), tx,
+                          enrolled.ok ? '' : 'STS-VC-0094',
+                          enrolled.ok ? '' : String(enrolled.error),
+                          !!enrolled.again);
       if (!enrolled.ok) {
         errorCodes.mark(res, 'STS-VC-0094');
         this.refuse(res, 400, String(enrolled.error),

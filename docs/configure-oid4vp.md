@@ -31,7 +31,7 @@ below, and the application attribute editor.
 |---|---|---|
 | `/admin/vc#vc-tab-oid4vp` | **Protocols → Verifiable Credentials**, tab **OpenID4VP** | Every `oid4vp.*` setting, the wallet sign-in's among them, saved with **Save OID4VP**. |
 | `/admin/vc#vc-tab-verifier-request` | the same page, tab **Verifier request** | What the Verifier asks for, in which format, and the **Start a verification** form with the **Open verifications** list. |
-| `/admin/vc#vc-tab-status` | tab **Credential status** | Suspend, reinstate or revoke a credential, which stops it signing in. |
+| `/admin/vc/monitor` | **Monitoring → Verifiable Credentials** | Suspend, reinstate or revoke a credential, which stops it signing in. |
 | `/admin/users` | **Directory → Users**, a person's page | Enrol or remove a person's self-issued IDs. |
 | `/admin/applications?application=<id>` | **Directory → Applications** | `appAuthnMechanism`, and an application's DID. |
 | `/portal/wallet`, `/portal/self-issued` | user portal | A person collects a credential, and enrols their own self-issued ID. |
@@ -286,7 +286,8 @@ api config/set-many '{"oid4vp.walletInvocation":"haip-vp",
 ```
 
 **Disowning a credential.** A credential stops signing in once it is
-suspended or revoked on the **Credential status** tab, revoked on **Tokens**
+suspended or revoked on **Monitoring → Verifiable Credentials**
+(`/admin/vc/monitor`), revoked on **Tokens**
 (`/admin/tokens`), or after an administrator's global sign-out. An ordinary
 sign-out of one application disowns nothing.
 
@@ -366,10 +367,19 @@ portal's `/portal/self-issued` page lets a person enrol a key.
 
 * **The person**, on `/portal/self-issued`: **Enrol a wallet**. The wallet
   answers a SIOPv2 request from the session the person already holds, and the
-  key that signed it is enrolled. Nothing is typed.
+  key that signed it is enrolled — a `did:web` too, whose document is fetched
+  once for that enrolment and whose key is pinned. Nothing is typed. The row
+  says **Proved with your wallet**, and the enrolment is audited
+  (`portal.siop.enrol`). Its **Location** says where the key came from: the
+  web wallet's host (its configured `oid4vp.walletUrl` on hover), the name a
+  wallet app reported in its `User-Agent`, or the browser's Digital
+  Credentials API. Each row is one line; hover over a value for all of it.
 * **An administrator**: on the person's page under **Directory → Users**,
-  section **Self-issued IDs**, enter the **Subject** (a `did:jwk`, or the JWK
-  thumbprint) and a **Label**, then click **Enrol**. Through the API:
+  section **Self-issued IDs**, enter the **Subject** (a `did:jwk`, a
+  `did:web`, or the JWK thumbprint) and a **Label**, then click **Enrol**.
+  The row's **How** says **By value, unproven**. A `did:web`'s document is
+  fetched as you enrol it and its authentication keys are pinned; if it
+  cannot be fetched the enrolment is refused. Through the API:
 
 ```bash
 api users/enrol-self-issued-subject '{"user":"<username>",
@@ -380,7 +390,15 @@ api users/remove-self-issued-subject '{"user":"<username>","subject":"<thumbprin
 ```
 
 Enrolling the same key twice is refused. A person may hold ten, and a subject
-belongs to one person per realm. A removed key signs nobody in.
+belongs to one person per realm. A removed key signs nobody in. Each listed
+subject carries `proof` (`wallet` or `admin`), and a `did:web` its
+`pinnedKeys`.
+
+**If a `did:web` wallet's key changed**, its sign-ins are refused
+(`STS-VC-0126`) until the person clicks **Enrol a wallet** again and proves
+the DID with the new key, which re-pins it. A `did:web` enrolled before
+pinning is pinned on its next sign-in in development mode and refused
+(`STS-VC-0127`) in product mode until it is enrolled again the same way.
 
 **3. Without signing anybody in**, a verification can exercise a Self-Issued
 OP:

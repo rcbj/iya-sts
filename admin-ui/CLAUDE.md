@@ -152,6 +152,32 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    same mistake the last crumb rule exists to prevent. The section is visible
    where it is useful, which is the sidebar heading above the page you are on.
 
+   **EVERY SIDEBAR SECTION IS COLLAPSED UNTIL THE READER OPENS IT, AND ONE IS
+   OPEN AT A TIME (#750, 2026-10-20).** rcbj: *"Have everything collapsed by
+   default and stay collapsed until the user opens a section. Only one section
+   of the list should be open at a time."* A section is a `<details
+   class="navsec" name="sts-console-nav" data-section="<slug of its title>">`
+   whose `<summary class="navhead">` is the heading (`WebShell.navBar()`).
+   * **Nothing opens itself**, not even the section holding the page being
+     drawn — that one carries `current` instead (the rule down its left and
+     the heading in the brand colour), and the page's own entry inside it
+     keeps `aria-current`. Opening it on its own would be the menu deciding
+     for the reader, which is what was asked against.
+   * **The one-open rule is the shared `name`** (an exclusive accordion, no
+     script). `ConsoleRuntime.onNavToggle()`, fed every `toggle` in the
+     capture phase (it does not bubble), closes the others itself for a
+     browser that predates `name`.
+   * **An opened section stays open from page to page** because the console
+     draws every page in place: the runtime holds the opened section's key
+     (`openSection`) and `draw()` hands it to the frame, so the next page's
+     sidebar is drawn with it open. It is held in the runtime and NOT in
+     storage on purpose: a reload, a new tab or a new sign-in starts with
+     everything closed, and the server-drawn `page()` names no section.
+   * `revealActiveNav()` does not centre a tab inside a closed section (it
+     has no box); it centres the open section's heading, or moves nothing.
+   * A GROUP inside a section (`navgrp`) is not collapsible; only the five
+     sections are.
+
    **PROTOCOLS HAS A THIRD LEVEL AND NOTHING ELSE DOES.** An item in a section's
    `items` is either a page (`path` + `label`) or a GROUP (`title` + `what` +
    `items`), and `isNavGroup()` is the single predicate that decides which.
@@ -160,8 +186,13 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    claims and UserInfo claims; Metadata is first and opens by default, with
    the explanatory notes and endpoint list, and Global settings holds the
    authorization server's forms. **SAML is one page** with Metadata first,
-   then Global settings, shared-profile    settings, **SAML 2.0 IdP**, **SAML 1.1 IdP**, assertion
-   settings and Custom SAML attributes. The profile notes and combined
+   then Global settings, shared-profile    settings, **SAML 2.0 IdP**, **SAML 1.1 IdP**,
+   **IdP-Initiated SSO** (#749), assertion
+   settings and Custom SAML attributes. IdP-Initiated SSO is composed from
+   `GET /admin-api/saml-idp-initiated` on every view (`composeAlways`), paged
+   on `idpInitiatedPage` so its pager does not move the SAML 2.0 tab's
+   `page`; which applications it lists is the `/launch` door's own question
+   (`launch/CLAUDE.md`). The profile notes and combined
    endpoint list are on Metadata; Global settings holds each profile's own
    defaults, while the shared `SAML` configuration group and assertion
    defaults have tabs of their own. The page is a direct Protocols item
@@ -170,8 +201,9 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    and forms return to the selected tab. **Verifiable Credentials is also one
    direct Protocols page**: Metadata holds the endpoint list formerly shown on
    the OpenID4VCI and OpenID4VP settings pages; OpenID4VCI settings, Credential
-   claims, Credential status, OpenID4VP settings and Verifier request each have
-   their own tab. Its issuer and verifier guidance on Metadata is in native
+   claims, OpenID4VP settings and Verifier request each have their own tab.
+   Credential status was a sixth until #752 and is **Monitoring → Verifiable
+   Credentials** now (*Monitoring → Verifiable Credentials*, below). Its issuer and verifier guidance on Metadata is in native
    disclosures, collapsed by default, while the endpoint list stays visible.
    The former leaves are not console destinations, while their distinct
    management API operations continue to feed those tabs. **XACML is one
@@ -620,8 +652,9 @@ Three things about them:
 `SECTIONS` beside the rows: the OAuth 2.0 / OIDC settings page is FIRST in its
 group, because the other four are about one aspect each and this one is the
 family's own configuration; Verifiable Credentials is one direct page with
-Metadata, separate OpenID4VCI and OpenID4VP settings, Credential claims,
-Credential status and Verifier request tabs. SAML and the other ungrouped
+Metadata, separate OpenID4VCI and OpenID4VP settings, Credential claims and
+Verifier request tabs, its status lists under Monitoring since #752. SAML and
+the other ungrouped
 pages appear directly under their protocol section.
 
 ### Rule 7 costs eight GETs and no POST
@@ -1246,12 +1279,36 @@ takes an access token instead" belongs on the page, because it is the thing a pe
 locked out of the console needs and the thing somebody about to expose the port
 must not miss.
 
-**One entry states the opposite of its own heading and must keep doing so.**
-*It DOES end a sign-on session now, and it used to say it did not* is kept in a
-list of non-goals rather than deleted, for the reason 8b keeps the qualified
-group sentence: the four places that said otherwise were read by people, and a
-reversal that leaves no trace is a reversal a reader cannot tell from a
-misremembering.
+**THE SECTION IS DRAWN IN DEVELOPMENT MODE ONLY (#753, 2026-10-20).** rcbj:
+almost everything on it is true only there. `dashboardJson()` answers
+`testDouble` — `mode.describesItselfAsTestDouble()`, the question
+`sts_metadata.ts`'s `testDouble` asks — and `web_dashboard.ts`'s `notDone()`
+draws nothing where it is false. That retired `verifiesCredentials` from the
+answer and `not.passwordProduct` from the catalogs: a product-mode sentence
+in a list product mode never sees is text nothing renders.
+
+**The same change reviewed every entry against the code**, and three had gone
+stale: *It runs no script* (the console is a static application on
+`script-src 'self'` since #446 — deleted, with its delegation-picture
+sentence), *It does not decide who may delegate to whom* (policy since #108
+and #186; it now says development ASKS the policy and records "would have
+been refused", and product enforces it) and *It does not attest a workload or
+a node* (reversed by #40; it now names what is still unattested, a TCP
+caller of the Workload API and an entry selecting on nothing). A verifiable
+credential left the invalidate entry (`/admin/vc-status` revokes one), the
+turnstiles stopped claiming they can be switched off, and the session entry
+lost its 2026-08-24 history: it is now a plain non-goal, *It does not deliver
+front-channel logout*, with the two doors that do end a session beside it.
+**An entry added here must be true in development mode**; one that holds in
+both modes still belongs only if an operator would look for the control.
+
+**The section below it, *Reading it from a test*, was stale too** and was
+fixed in the same change: it said every page answers `?format=json` and that
+`/admin-api` "is not gated at all". Every `/admin/*` path answers the
+console's one document since #446, so its examples are now `/admin-api`
+operations, and the note says what the API asks for (an access token for it,
+`admin:read` or `admin:write`, a 401 with a JSON body without one) and that
+`adminApi.authRequired` off opens it in development mode only.
 
 ---
 
@@ -3792,6 +3849,40 @@ they were (`tests/multi_account_tabs.js` 6).
   nobody in), and one answered after a switch is not kept
   (`tests/multi_account_concurrency_tabs.js` 2, 3). The portal's runtime
   is the same (`portal/CLAUDE.md`).
+* **SWITCH USER IS A GROUP OF ITS OWN (#751, 2026-10-20)** — rcbj: "an
+  option to switch users while keeping the current user signed in". Nothing
+  about the mechanism changed; what changed is that the menu SAYS it.
+  `accountItems()` draws the *Switch user* heading whether or not another
+  account is signed in (with none, `console.shell.menu.switch.none`), the
+  buttons, *Sign in with another account*, and a line that the account the
+  tab leaves stays signed in (`…switch.kept`). **Off it is still not
+  drawn, to the byte** (`tests/multi_account_tabs.js` 6): with the setting
+  off a sign-in as somebody else ENDS the browser's session, so an option
+  promising otherwise would be false. **rcbj answered the other half the
+  same day: the setting is ON BY DEFAULT since 2026-10-20**
+  (`authn/CLAUDE.md`), so the group is what a console shows unless a realm
+  turns the setting off.
+* **A SWITCH AND THE POPUP'S SIGN-IN AGAIN (#508, #731) CANNOT BE CONFUSED**,
+  and `tests/multi_account_tabs.js` 9 holds why: a switch is a whole-page
+  navigation whose record carries `expect` (the subject chosen), never the
+  popup's `popup.` state, and it is started only by a menu button; the popup
+  is started only by the session-ended bar and asks for the tab's KEPT
+  account by its hint. Once a switch lands the kept account is the one
+  switched to, so the popup then protects THAT one and refuses the account
+  left — which is still signed in, and a press away in the menu.
+* **AN ACCOUNT THE CONSOLE REFUSES (#751)**: a person holding no console role
+  gets the frame with no sections (#454) and so the menu as anybody does. But
+  `GET /admin-api/console` itself can refuse — product mode before the
+  bootstrap claim (`STS-ADMIN-0797`), a policy — and `route()` used to return
+  silently, leaving a tab just switched to such an account BLANK, with no
+  menu to switch back from. `ensureShell()` now keeps the refusal
+  (`shellRefusal`) and reads the account list anyway, and
+  `drawShellRefused()` draws a page saying what the API answered, the
+  Switch user group in `#sts-account-switch` (so another tab's change
+  redraws it) and Sign out; off, Sign out alone. Its words are
+  `consoleRuntime.accounts.refused.*`, English where no catalog is in hand
+  yet (`drawReauthBar()`'s rule) — which, the shell having failed, is a
+  first load's case.
 * **NONE OF IT IS A BOUNDARY.** `/admin-api` decides from the token's own
   subject and session; a tab that kept a stale view would still be refused
   what its account may not do.
@@ -6794,11 +6885,11 @@ Three decisions:
   second copy `mode.js`'s header refuses; the page's `?format=json` is
   `report()` itself, which is what `GET /admin-api/mode` answers (rule 7).
 
-## Credential status tab on `/admin/vc`: THIS REALM'S STATUS LISTS, AND THE ONE CONTROL THEY HAVE (#38's follow-ups, 2026-09-17)
+## Monitoring → Verifiable Credentials, `/admin/vc/monitor`: THIS REALM'S STATUS LISTS, AND THE ONE CONTROL THEY HAVE (#38's follow-ups, 2026-09-17; a Monitoring page since #752, 2026-10-20)
 
-The Credential status tab on the combined Verifiable Credentials page, drawn
-by `vc_status_admin.ts` from `oid4vc/vc_status.ts` (`oid4vc/CLAUDE.md`, rule
-3as). It shows where the Token Status List, its aggregation and the two
+Drawn by `web_vc_status.ts` from `GET /admin-api/vc-status`, which answers
+`vc_status_admin.ts`'s `statusView()` over `oid4vc/vc_status.ts`
+(`oid4vc/CLAUDE.md`, rule 3as). It shows where the Token Status List, its aggregation and the two
 Bitstring Status List credentials are served, the list size, `bits` and
 lifetimes, the counts, and — paged, newest first — every live credential's
 index, format, configuration, effective status, the explicit status beside it,
@@ -6819,7 +6910,34 @@ Four decisions:
   a page rather than to a family.
 * **RULE 7**: `GET /admin-api/vc-status` answers `statusView()` and
   `POST /admin-api/vc-status/{suspend|reinstate|revoke}` answers
-  `statusAction()`, the two functions the tab calls.
+  `statusAction()`, the two functions the page calls.
+
+**IT WAS THE CREDENTIAL STATUS TAB OF `/admin/vc` UNTIL #752**, and moved at
+rcbj's ask ("for consistency"). Three things follow, and each is the console's
+rule for a page rather than something new:
+
+* **WHERE IT IS FILED IS THE QUESTION IT ANSWERS.** "What has this realm
+  issued, and is each one still good" is Monitoring's; what the issuer and
+  verifier are CONFIGURED to do stays on Protocols → Verifiable Credentials,
+  the list settings (`oid4vci.statusListTtlS`, `oid4vci.statusListLifetimeS`)
+  with it on the OpenID4VCI tab. The path follows the family monitors'
+  (`/admin/xacml/monitor`, `/admin/gnap/monitor`, `/admin/scim/monitor`) and
+  the row sits after Cert issuance in `SECTIONS`, both answering "what has been
+  issued". It is cut into tabs as its neighbours are (`PROTOCOL_TABS`): the
+  tiles, the note and where the lists are served are Metadata, the credentials
+  the one `credentials` tab. Its controls came with it, as Tokens and Grants
+  carry theirs here.
+* **THE OPERATIONS DID NOT CHANGE**; their `mirrors` name the new page, which
+  is what the form table resolves the page's buttons by (`web_forms.ts`).
+* **THE TAB'S OLD ADDRESSES LAND HERE.** `/admin/vc#vc-tab-status`, and
+  `/admin/vc-status` (the page before the tabs), are rows of `web_pages.ts`'s
+  `MOVED`, and the runtime replaces such an address with the page's, query
+  kept, before a sign-in remembers it or anything is fetched
+  (`WebPages.movedTo()`, read by `route()` and by a click on a link). A
+  hidden `NAV` row could not have done it: that keeps a path a TAB took over
+  known to the trail and `SETTING_HOMES`, and a fragment is not a path. A
+  moved address is a row of `MOVED`; `tests/console_runtime.js` 9c–9d hold
+  both.
 **AND THE ACCOUNT ITSELF, SINCE 2026-09-17 (#36 follow-up).** The state table's
 first row is *Account: enabled / DISABLED*, and the controls above the reset are
 **Disable the account** and **Enable the account** — `usersAction()`'s
@@ -7753,7 +7871,7 @@ module always was, and imports the kit by its relative path.
 | `web_users.ts` | `/admin/users/new` (`newUserBody()`, from `GET /admin-api/users/new`, whose answer gained the `username`, each credential's `what`, every field the grid can draw — `fieldRows`, built by `admin_views.newUserFieldRows()`, each saying whether the simplified view offers it — the long-text attributes, `mailAvailable` and the persistence facts; a refused create's values ride on the page's view as `prefill`, never on the answer), and `/admin/users`, and its three cells (credential, second factor, source; `sourceCell()` given the registry's size rather than reading `stats`). The answer of `GET /admin-api/users` carries `paging`, `withActiveSession` and each row's `liveSessions` — counted in the view from the sign-on sessions by the rows' own identity key — and three facts the notes state: `personFieldCount`, `newUserContainer`, `registryKeeps`. |
 | `web_users.ts` (the person) | `/admin/users?user=` (`detail()`, the drill-down) and a name nothing knows (`unknown()`), with the page's thirteen sections moved beside it — the sessions and their tokens, the artifacts, how they authenticated, the directory entry, the second factors (`mfaSection()` with the e-mail factor, app passwords, verifications, devices and self-issued subjects), the key pairs, Kerberos, federation links, GNAP grants, the attribute grid and the controls. **The answer of `GET /admin-api/users?user=` gained `page`** (`admin_views.userPageData()`): the counts the tiles show, `back` and `params`, the credential store's report and three mechanisms' settings (`mfa`), the key-pair state without the private keys (`keyPairs`), the service-provider relationships a link may name, `person_editor.ts`'s field groups, who may act for them, and whether the risk standing was read (`riskAsked`). The unknown answer gained `registryKeeps`. **A credential leak closed with it**: the answer's `ldap` was the entry as stored — password hash, TOTP seed, recovery codes, private keys — and the directory reader slot now hands over `withoutSecrets()`'s copy (`tests/application_reveal_secret.js` 5). A refused form's values ride beside the answer as `state`, never in it. `WebKit.subTabbedPanels()` moved to the kit. |
 | `web_delegation.ts` | The delegation pages and the pieces they share (#446): a party, a row of the register, a box and a line of the picture, the two choosers, the policy and permission sections, and `drawing()` — the answer's `svg` with the two links under it. **The drawings stay laid out on the server**: dagre runs here, an answer carries `svg`, `drawing` and `looks`, and the key is markup drawn from `delegation_map.ts`'s glyphs (`AdminViews.delegationMapKey()`, the answer's `mapKey`). **`facts` is what `known` was**: the cells took the user keys the console had seen and asked `applications.get()` while drawing; an answer carries `facts` (`AdminViews.delegationFacts()`), `users` and `apps` for the names in it only. **The two choosers are searched and paged by the view** (`AdminViews.delegationChooser()`, `chooserPane()`'s `slice`), because the person catalogue is everybody this service has seen. **Every delegation page is drawn here, each from an operation of its own** (an `AdminViews.*Model()` the page and the operation share, each answering `format=svg` as the page does): `acts()` — `/admin/delegation` from `GET /admin-api/delegation`, whose answer is the page's model since #446 (the acts as before, `allowed`, `delegationPolicy`, the other six lists paged, the choosers and the two sections' views); `map()`; `chain()`, `application()`, `user()` (`/admin-api/delegation/chain`, `/application`, `/user`); `allowed()` and `cluster()` (`/delegation/allowed`, `/delegation/cluster`); `settings()` (`GET /admin-api/delegation-settings`, the register with `AdminViews.permissionsListStateOf()`); and `credential()` — `/admin/tokens/credential` from `GET /admin-api/tokens/credential` (`credentialLineageModel()`, each generation's `holder` and `originLabel`). The console's own copies of the shared pieces, thirty-four methods, were removed with the last of them. `tests/console_web_bundle.js` records one delegation act and draws the pages with example queries (`EXAMPLES`), so a chain, a person and a lineage are compared and not only the empty pages. |
-| `web_dashboard.ts` | `/admin`, the console index (#446): the totals, the guide — every page this reader may see, grouped as the sidebar is (`consoleGuide()`, `guideItem()`, `isNavGroup()`) — what the console deliberately does not do, and where the JSON is. Drawn from `GET /admin-api/status`, which answers `AdminConsole.dashboardJson()` since #446: `consoleJson()`'s totals and `sections` (`visibleSections()` for the caller's gate), `persistence` and `base`. `dashboardJson` is the fifth name `tests/admin_actions_layer.js` lets the API call on the console: the guide is the console describing its own pages. |
+| `web_dashboard.ts` | `/admin`, the console index (#446): the totals, the guide — every page this reader may see, grouped as the sidebar is (`consoleGuide()`, `guideItem()`, `isNavGroup()`) — what the console deliberately does not do (`notDone()`, in development mode only, #753), and where the JSON is. Drawn from `GET /admin-api/status`, which answers `AdminConsole.dashboardJson()` since #446: `consoleJson()`'s totals and `sections` (`visibleSections()` for the caller's gate), `persistence`, `testDouble` and `base`. `dashboardJson` is the fifth name `tests/admin_actions_layer.js` lets the API call on the console: the guide is the console describing its own pages. |
 | `web_sts_metadata.ts` | `/admin/sts-metadata` (#446): `sts_metadata.ts`'s `renderInner()` and its helpers, drawn from `GET /admin-api/sts-metadata` (`StsMetadata.pageJson()`: `metadataJson()` with the router's `rows`, `https`, `rfc9700`, the authorization servers served and the group order). The router is still read on the server — that is the page — and the operation requires `sts_metadata.ts` lazily, since it is built last. `tests/console_web_bundle.js` D-drift asks that answer for undocumented and stale paths in process, the check `tests/vendored/sts_metadata.js` makes over HTTP. |
 | `web_forms.ts` | Which `/admin-api` operation a console form is (#446, step 5). The static console has no server of its own, so a submitted form goes to the operation that mirrors it, read off `GET /admin-api`'s `operations` — every operation's `mirrors` (rule 7's declaration) and an action route's per-action path. A form resolves by its page and its `action` field, or by its page alone where one POST operation mirrors it, or by the action its page is named after (`POST /admin/keys/export`); anything else is null and the runtime refuses it rather than guess. `tests/console_web_bundle.js` F0 holds that every POST form a converted page draws resolves (378 form actions on 2026-10-05). |
 | `web_shell.ts` | The console's frame (#446, step 5): the sidebar (brand, realm chooser, the sections this reader may see), the head row (title, refresh, account menu), the trail, the gate's banner, a realm's removal banner, and the foot (persistence, the build, what the process runs as). `frame(shell, page)` draws it from the SHELL ANSWER, `AdminConsole.shellJson()` — `GET /admin-api/console` — and the page's own `title`, `active`, `up`, `inner` and realm-relative `path`. **`page()` draws through it** — no served page does since 2026-10-08, when the realm chooser became a page of its own (`RealmChooser.page()`); `tests/realm_retiring.js` still draws its banners through it; the frame it replaced (`pageLegacy()`) and the byte-for-byte parity test that held the two equal were deleted after the cutover (#446). The shell answer keeps the old frame's two gates apart: `gate` for the banners (what a caller handed `page()`), `navAuthority` and `sections` from the request. The constants the frame draws with (`MAX_CRUMB`, `SIGNOUT_PATH`, `REALM_SWITCH_PATH`, `ACTIVE_NAV_FOCUS`) and the open-gate banner live here. `shellJson` is the sixth name the layer test lets the API call on the console. **Since #454 the frame is reached with ADMIN_CONSOLE alone**, which the console's client confers on everybody signing in to it, so a person holding neither console role gets an answer rather than a 403 — and that answer carries no sections and no runtime facts (`holdsNoConsoleRole()`): the banner says what they hold, and nothing behind a link would let them in. |
@@ -7761,7 +7879,7 @@ module always was, and imports the kit by its relative path.
 | `web_answers.ts` | **What a form's answer draws where a notice is not enough** (#446, the cutover): the three kinds of answer the deleted console handlers answered with a page. A secret shown once — a generated or reset password, an activation or reset link, an app password, a realm's bootstrap password, a keytab, an EAB key, a SCEP challenge, a private key (DID, RFC 8705 client certificate, a person's assertion key, a remote PEP's listener) — drawn in place, never on a URL or in the history (`once()`). A round trip that writes nothing — the grids' "+" and bin, the view switch — drawn again from what the form holds and never sent, because those forms' hidden `action` is the write (`roundTrip()`). A redraw from an answer — a refused create or edit with its boxes, Fill (`GET /admin-api/users/new?invent=`), Generate secret and a loaded RFC 9728 document in the new-application form, the PKI workbench's next draft (`workbench` on a pane action's answer), an OpenID Federation resolution (`redraw()`). `tests/console_answers.js` holds it. |
 | `web_account_api.ts` | `/admin/account-api` (#568): the OpenAPI document of `/account-api`, the user portal's API, drawn by tag from `GET /admin-api/account-api` — each operation, the portal page or form it mirrors, who may call it, its parameters, request body and answers, and the document's own link. **It calls nothing**, unlike the explorer beside it: every account API operation acts on the signed-in person's own account with their token, which a console token is not. Filed under Service beside the explorer. |
 | `web_explorer.ts` | `/admin/api-explorer` for the static console (#446), from `GET /admin-api/console/api-explorer` (#454: the console's own operation; the page documents and calls the MANAGEMENT operations alone, `/admin-api/openapi.json`), whose answer gained `who` and `scope` (the token's subject and scopes, filled by the API's handler), `realmPrefix` and `script`. **No token is embedded**: the page carries `data-console-fetch` and `mgmt-api/admin_api_explorer.js` sends every call, the document included, through `window.stsConsoleFetch`, which the runtime answers with its DPoP-bound token and a proof by its key. The page names its script in `data-script` and the runtime loads it after drawing, since `innerHTML` runs none. The explorer's stylesheet lives here and `admin_api_docs.ts` reads it. |
-| `web_vc_status.ts` | The Credential status tab on `/admin/vc`; its Suspend, Reinstate and Revoke buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
+| `web_vc_status.ts` | Monitoring → Verifiable Credentials, `/admin/vc/monitor` (the Credential status tab on `/admin/vc` until #752): the lists on Metadata, the credentials on a `credentials` tab; its Suspend, Reinstate, Revoke and Publish now buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
 | `../attribute-sources/web_attribute_sources.ts` | The body of `/admin/attribute-sources`. Its operation answered the register WITHOUT the page's `settings` until #446; both now answer `attributeSourcesView()`. |
 | `web_secret_destinations.ts` | **Directory → Secret destinations** (#221 P3, 2026-10-06), from `GET /admin-api/secret-destinations` (`common/secret_destinations.ts`'s `view()`): where a service account's rotated password is pushed, each destination with its location, `credentialSet`, whether it is usable and why not, and — when `ctx.write` says so — Test push, an Edit fold and Remove, and the add form. **Born static**: no page module draws it, and its forms resolve through the operation's `mirrors`. In DIRECTORY, beside Attribute sources, because a destination IS a directory entry (an application entry declared for `secret-destination`); rotation's status is Monitoring's (#221 P4). **The write-credential box is a password input that is never filled**, because the view never carries the credential (`common/CLAUDE.md` 3ce). |
 | `../debugger/web_debugger.ts` | The body of `/admin/debugger` — **the first page whose Settings block comes out of its own view** (`SettingsForms.forms(json.settings, PAGE_PATH)`). |

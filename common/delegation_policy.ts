@@ -741,7 +741,12 @@ class DelegationPolicy {
       : question.protocol === 'Kerberos' ? 'no service'
         : 'neither audience nor resource';
     const sentences: Record<string, string> = {
-      'may-act': 'The subject token\'s may_act (RFC 8693 section 4.4) names ' +
+      // In WS-Trust's words (#481, #747): the token is the JWT inside the
+      // element, not a subject token.
+      'may-act': (question.protocol === 'WS-Trust'
+        ? 'The JWT inside ' + (question.requested === 'impersonation'
+          ? '<wst:OnBehalfOf>' : '<wst14:ActAs>') + ' carries a may_act'
+        : 'The subject token\'s may_act') + ' (RFC 8693 section 4.4) names ' +
         'somebody other than ' + actor + '.',
       'targets': 'The request names ' + facts.target.count + ' targets; a ' +
         'token is issued for exactly one.',

@@ -82,7 +82,7 @@
   "nav.oid4vci": "OpenID4VCI",
   "nav.vc": "Credenciales verificables",
   "nav.vc-claims": "Claims de credenciales",
-  "nav.vc-status": "Estado de credenciales",
+  "nav.vc-monitor": "Credenciales verificables",
   "nav.oid4vp": "OpenID4VP",
   "nav.vc-verifier-config": "Solicitud del verificador",
   "nav.xacml": "XACML",
@@ -193,8 +193,10 @@
   "nav.crypto-metadata": "Criptografía",
   "shell.language": "Idioma",
   "shell.browserLanguage": "Usar el idioma de mi navegador",
-  "shell.menu.switch": "Cambiar a otra cuenta",
+  "shell.menu.switch": "Cambiar de usuario",
   "shell.menu.switch.title": "Usar esta pestaña como {user}. Las demás pestañas conservan su cuenta.",
+  "shell.menu.switch.none": "Todavía no hay otra cuenta con la sesión iniciada en este navegador.",
+  "shell.menu.switch.kept": "La cuenta que deja esta pestaña conserva la sesión iniciada, así que puede volver a ella desde aquí.",
   "shell.menu.another": "Iniciar sesión con otra cuenta",
   "shell.menu.another.title": "Iniciar sesión como otra persona en esta pestaña. Las cuentas que ya tienen la sesión iniciada en este navegador la conservan, y las demás pestañas conservan la suya."
 }

@@ -469,7 +469,7 @@ jobs:
     needs: mirror
     runs-on: ubuntu-latest
     # The `tests` job's argument, for ONE mode: above the cluster mode's own
-    # bound (STS_CLUSTER_MODE_TIMEOUT, 130m — tests/tools/modes.sh) plus its
+    # bound (STS_CLUSTER_MODE_TIMEOUT, 200m — tests/tools/modes.sh) plus its
     # teardowns (STS_TEARDOWN_TIMEOUT, 5m each), so the bound that fires is the
     # one that can explain itself — tests/teardown_bounds.js asserts it. The
     # mode took 24.7 minutes on 2026-09-15 in development mode with one process
@@ -479,7 +479,12 @@ jobs:
     # cancelled at 527 jobs before the mode's own bound could fire; the test
     # now adds thirty minutes for it. 175 since 2026-10-13, with the mode's
     # bound raised to 130m (main 8fe81efa outgrew 100m at job 734 of 774).
-    timeout-minutes: 175
+    # 245 since 2026-10-20, with the mode's bound raised to 200m: main
+    # 1f01ce51 (run 39464473145) outgrew 130m at job 841 of 871, its
+    # bulk loads still to run, after a 23-minute build. Above the 180 the
+    # `tests` job keeps, and under GitHub's six hours; tests/teardown_bounds.js
+    # holds the cluster job to 300 for the reason it gives.
+    timeout-minutes: 245
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out

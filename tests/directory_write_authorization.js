@@ -58,20 +58,43 @@ const OTHER = 'authz-other-' + STAMP;
 const ADMIN = 'authz-admin-' + STAMP;
 const REALM = 'authz-' + STAMP;
 
+// A callback that answers a promise keeps the settings until it settles:
+// an LDAP write carrying a clear password answers a tick later since #756.
 function withSettings(pairs, fn) {
   log.debug("Entering withSettings().");
   const keys = Object.keys(pairs);
+  const clear = function () {
+    log.debug("Entering clear().");
+    keys.forEach(function (key) {
+      config.clearOverride(key);
+    });
+    log.debug("Leaving clear().");
+  };
+  let answer;
   try {
     keys.forEach(function (key) {
       config.setOverride(key, String(pairs[key]));
     });
-    log.debug("Leaving withSettings().");
-    return fn();
-  } finally {
-    keys.forEach(function (key) {
-      config.clearOverride(key);
+    answer = fn();
+  } catch (e) {
+    log.debug("Caught in withSettings(): " + ((e && e.message) || e));
+    clear();
+    throw e;
+  }
+  if (answer && typeof answer.then === 'function') {
+    log.debug("Leaving withSettings(). Settles later.");
+    return answer.then(function (value) {
+      clear();
+      return value;
+    }, function (e) {
+      log.debug("Caught in withSettings(): " + ((e && e.message) || e));
+      clear();
+      throw e;
     });
   }
+  clear();
+  log.debug("Leaving withSettings().");
+  return answer;
 }
 
 function product(fn) {
@@ -159,7 +182,7 @@ function refusedWith50(t, result, code, target, what) {
   log.debug("Leaving refusedWith50().");
 }
 
-function run(t) {
+async function run(t) {
   log.debug("Entering run().");
   const made = [];
   let granted = false;
@@ -183,7 +206,7 @@ function run(t) {
             'somebody else\'s entry',
             JSON.stringify(devWrite));
 
-    product(function () {
+    await product(async function () {
       // ---------------------------------------------------------------------
       t.log.info('=== 2. the empty-roster rule does not make anybody an ' +
                  'administrator here ===');
@@ -288,7 +311,9 @@ function run(t) {
         log.debug("Leaving passwordWritten().");
       };
       try {
-        const weak = modify(personDn, personDn,
+        // A clear password is hashed on the thread pool first and answers
+        // a tick later (#756).
+        const weak = await modify(personDn, personDn,
                             [['replace', 'userPassword', 'short']]);
         t.check(weak.ok === false &&
                 weak.errorName === 'ConstraintViolationError',
@@ -297,7 +322,7 @@ function run(t) {
                 'refusal', JSON.stringify(weak));
         t.equal(announced.length, 0, 'and a refused password is announced to ' +
                                      'nobody');
-        const strong = modify(personDn, personDn,
+        const strong = await modify(personDn, personDn,
           [['replace', 'userPassword', 'Self-Service-Passw0rd!' + STAMP]]);
         t.check(strong.ok === true, 'a person may set their own password ' +
                                     'over LDAP',

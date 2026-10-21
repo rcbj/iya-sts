@@ -320,7 +320,7 @@ function childMain() {
     // 7. THE SSF RECEIVERS' INBOX
     // ==================================================================
     // Delivered the way `tests/ssf_receivers.js` delivers one: a real signed
-    // SET handed to `accept()` with the stream's own authorization header —
+    // SET handed to `acceptPolled()`, as the console's poll hands one —
     // the loopback push itself is that file's to hold.
     const receivers = require(ROOT + '/ssf/ssf_receivers');
     const events = require(ROOT + '/ssf/ssf_events');
@@ -337,10 +337,8 @@ function childMain() {
         uri: events.CAEP_EVENT_URIS[0],
         payload: { event_timestamp: Math.floor(Date.now() / 1000) },
         subject: { format: 'opaque', id: 'dg-subject' } }));
-      return receivers.accept(receivers.ADMIN, {
-        headers: { authorization: stream.delivery.authorization_header,
-                   'content-type': 'application/secevent+jwt' },
-        body: set });
+      // The seeded stream is a poll stream since #771.
+      return receivers.acceptPolled(receivers.ADMIN, set);
     });
     const inbox = await w.inRealm(function () {
       return receivers.listFor(receivers.ADMIN, {});

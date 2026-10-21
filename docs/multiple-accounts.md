@@ -5,22 +5,29 @@ nav_order: 10
 
 # Several signed-in accounts in one browser
 
-By default a browser holds **one** sign-on session here (see
-[Sessions](sessions.md)): signing in as somebody else ends the session the
-browser had. With `authn.multipleAccounts` on, one browser may stay signed in
-as **several people at once** — a person with a work account and an
-administrator account, a support desk trying two test users side by side — and
-choose between them as it goes.
+One browser may stay signed in as **several people at once** — a person with
+a work account and an administrator account, a support desk trying two test
+users side by side — and choose between them as it goes. This is
+`authn.multipleAccounts`.
 
-The setting is **off by default in both modes**. Off, nothing on this page
-exists: no extra cookie, no account picker, no new prompt, and every protocol
-answers exactly as it does without it.
+The setting is **on by default in both modes since 2026-10-20** (it was off
+until then). Turned off, a browser holds **one** sign-on session (see
+[Sessions](sessions.md)) and signing in as somebody else ends the session the
+browser had; nothing else on this page exists — no extra cookie, no account
+picker, no new prompt — and every protocol answers exactly as it does without
+it.
 
-## Turning it on
+**What changed with the default.** On a service that had never set it, the
+account picker now appears whenever more than one account is signed in in a
+browser and a request does not say which it is for, and signing in as
+somebody else no longer ends the first person's session — it adds an account.
+Set `authn.multipleAccounts` to `false` in a realm for the old behaviour.
+
+## The settings
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `authn.multipleAccounts` | `STS_AUTHN_MULTIPLE_ACCOUNTS` | `false` | yes — at the next request | One browser may hold sign-on sessions for several people; a request that does not say which one it is for, while more than one is signed in, is sent to the account picker. |
+| `authn.multipleAccounts` | `STS_AUTHN_MULTIPLE_ACCOUNTS` | `true` | yes — at the next request | One browser may hold sign-on sessions for several people; a request that does not say which one it is for, while more than one is signed in, is sent to the account picker. |
 | `authn.maxBrowserAccounts` | `STS_AUTHN_MAX_BROWSER_ACCOUNTS` | `10` | yes | The most accounts one browser keeps, signed in and signed out together (1–50). |
 | `authn.rememberedAccountDays` | `STS_AUTHN_REMEMBERED_ACCOUNT_DAYS` | `30` | yes | How long a browser keeps offering an account that signed out there (1–365). |
 
@@ -29,7 +36,7 @@ settings in the console, or with `POST /admin-api/config/set` under the realm's
 prefix. This table is a copy of rows in `common/config.js`; the live source is
 the console page and `GET /admin-api/config` ([Configuration](configuration.md)).
 
-**Turning it on ends nothing.** A browser that was already signed in keeps its
+**Turning it on ends nothing**, nor did the change of default. A browser that was already signed in keeps its
 session, which becomes the first account of its list the next time it is
 needed. **Turning it off ends nothing either**: the browser's current account
 carries on alone, and the others run out on their own clocks or are signed out
@@ -69,12 +76,38 @@ sign-in.
 
 **The user portal and the admin console keep one account per browser tab.** A
 tab remembers which account it is for, so two tabs can show two different
-people side by side, and a reload keeps each tab's account. Each has an account
-menu to switch the tab to another signed-in account or to sign in with another
-one; a switch abandons what the tab was doing (it asks first where a form has
-unsaved changes). Signing out from a tab asks about that tab's account. The
-device sign-in page, `/portal/device`, says which account an approval will sign
-the device in as whenever more than one is signed in.
+people side by side, and a reload keeps each tab's account. Signing out from a
+tab asks about that tab's account. The device sign-in page, `/portal/device`,
+says which account an approval will sign the device in as whenever more than
+one is signed in.
+
+### Switch user, in the console and the portal
+
+Both have **Switch user** in their account menu (the console's under your
+name, the portal's beside Sign out):
+
+* **each other account signed in to this browser** — choosing one signs this
+  tab in as that person with nothing typed, and draws the page again for
+  them;
+* **Sign in with another account** — a fresh sign-in (`prompt=login`) that
+  adds an account to the browser, and this tab becomes it;
+* a line saying **the account this tab leaves stays signed in**, so switching
+  back is a press in the same menu, never a password. With no other account
+  signed in yet the menu says so.
+
+A switch abandons what the tab was doing (it asks first where a form has
+unsaved changes), and changes only this tab. The account switched to gets what
+its own session and roles give it and nothing the previous account had. In the
+console, a person holding no console role sees the console's usual answer for
+them; an account the console refuses outright gets a page that says so, with
+the same Switch user list and Sign out. Switching is a different act from the
+console's *Sign in again* window, which appears when a session ends: that
+window signs the tab's own account in again, and refuses a different person
+rather than switching to them.
+
+With `authn.multipleAccounts` off, the menus have no Switch user: signing in
+as somebody else there ends the browser's session, so there would be nobody
+to switch back to.
 
 ## How each protocol behaves
 

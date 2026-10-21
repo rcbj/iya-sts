@@ -1047,6 +1047,10 @@
     "en": "f6af7681f3d25fd7",
     "text": "管理员移除了某人的自签发（SIOPv2）主体"
   },
+  "audit.actions.admin.siop.preferred.label": {
+    "en": "3c3a62cf5e46c516",
+    "text": "管理员将某人已证明的 DID 标记为首选，或清除了该标记"
+  },
   "audit.actions.ssf.signals.discover.label": {
     "en": "55d2d7d9682c339a",
     "text": "发现了联合伙伴的共享信号配置"
@@ -1327,9 +1331,25 @@
     "en": "51cd295b713684de",
     "text": "签名密钥表单因其 CSRF 令牌被拒绝"
   },
+  "audit.actions.portal.siop.enrol.label": {
+    "en": "9c4ac2b8893fae20",
+    "text": "某人用钱包证明并登记了一个自签发主体"
+  },
   "audit.actions.portal.siop.remove.label": {
     "en": "b6f77328c0b99b89",
     "text": "某人移除了自签发主体"
+  },
+  "audit.actions.portal.siop.prefer.label": {
+    "en": "7e6377e63c113f97",
+    "text": "某人将已证明的 DID 标记为首选，或清除了该标记"
+  },
+  "audit.actions.siop.key.pinned.label": {
+    "en": "a2cc99b16a4a406e",
+    "text": "一个登记时未固定密钥的 did:web 自签发主体被固定到其登录所用的密钥（仅限开发模式）"
+  },
+  "audit.actions.siop.key.refused.label": {
+    "en": "ce5975b773d8c9d7",
+    "text": "一次 did:web 自签发登录被拒绝：密钥不是登记时固定的密钥，或没有固定任何密钥"
   },
   "audit.actions.portal.vc.offer.label": {
     "en": "631dece03539cd4a",

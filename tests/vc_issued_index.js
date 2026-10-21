@@ -11,10 +11,14 @@
 //      first read, and the mark keeps any later read from scanning again;
 //   2. a person's history, Remove and `rowsForSubject()`, and a wallet's
 //      notification, read the indexes and scan no table;
-//   3. a row gone from the register (the size bound evicts one without this
-//      module seeing it) is pruned from the index when next read, and one
-//      this module deletes (`forget()`) leaves it at once;
-//   4. one person's credential is still not another's to remove.
+//   3. a row this process does not hold, or cannot read, KEEPS its key
+//      (2026-10-20: "not here" is not "gone" in a persisted store, and a
+//      pruned entry was lost for good); a row the size bound evicts and one
+//      this module deletes (`forget()`) leave both indexes at once; a row
+//      that is here and names another subject is pruned; a read that throws
+//      is logged once with STS-VC-0151 and the entry is left as it was;
+//   4. one person's credential is still not another's to remove;
+//   5. an entry an older reader pruned is given back by the `-v2` backfill.
 // ===========================================================================
 'use strict';
 const VcIssued = require('../oid4vc/vc_issued').VcIssued;
@@ -34,13 +38,17 @@ function counted() {
   return m;
 }
 
-function register() {
+function register(max) {
   log.debug("Entering register().");
   const store = counted();
   const subjectIndex = counted();
   const notificationIndex = counted();
+  const errors = [];
   const quiet = { debug: function () {}, info: function () {},
-                  warn: function () {}, error: function () {} };
+                  warn: function () {},
+                  error: function (line) {
+                    errors.push(String(line));
+                  } };
   const issued = new VcIssued({
     log: quiet,
     nameForSubject: function () {
@@ -68,12 +76,12 @@ function register() {
     store: store, subjectIndex: subjectIndex,
     notificationIndex: notificationIndex,
     maxRows: function () {
-      return 1000;
+      return max || 1000;
     }
   });
   log.debug("Leaving register().");
   return { issued: issued, store: store, subjectIndex: subjectIndex,
-           notificationIndex: notificationIndex };
+           notificationIndex: notificationIndex, errors: errors };
 }
 
 function holderJwk() {
@@ -141,23 +149,100 @@ async function run(t) {
           'table', JSON.stringify({ scans: fresh.store.scans,
                                     told: told, removed: removed }));
 
-  t.log.info('=== 3. a row gone from the register ===');
-  const evictedKey = 'jws:' + fresh.issued.digestOf('cred-' + ALICE +
-                                                     '-2.payload.sig');
-  fresh.store.delete(evictedKey);
-  const pruned = fresh.issued.historyForSubject(ALICE);
-  const entry = fresh.subjectIndex.get(stsCrypto.digest('sha256', ALICE,
-                                                        'base64url'));
+  t.log.info('=== 3. a row not here, and a row gone ===');
+  const aliceKey = stsCrypto.digest('sha256', ALICE, 'base64url');
+  const bobKey = stsCrypto.digest('sha256', BOB, 'base64url');
+  const jwsKey = function (subject, n) {
+    return 'jws:' + fresh.issued.digestOf('cred-' + subject + '-' + n +
+                                          '.payload.sig');
+  };
+  // 3a. NOT HERE: as a row another process wrote that has not arrived, or
+  // one the restore could not open. Held aside, then put back.
+  const notHereKey = jwsKey(ALICE, '2');
+  const heldAside = fresh.store.get(notHereKey);
+  fresh.store.delete(notHereKey);
+  const without = fresh.issued.historyForSubject(ALICE);
+  const toldWithout = fresh.issued.noteWalletEvent('n-' + ALICE + '-2',
+                                                   'credential_accepted');
+  const keptEntry = fresh.subjectIndex.get(aliceKey);
+  const keptNote = fresh.notificationIndex.get('n-' + ALICE + '-2');
+  fresh.store.set(notHereKey, heldAside);
+  const back = fresh.issued.historyForSubject(ALICE);
+  t.check(without.length === 1 && toldWithout === 0 && keptEntry &&
+          keptEntry.keys.indexOf(notHereKey) >= 0 &&
+          keptEntry.keys.length === 2 && keptNote &&
+          keptNote.keys.indexOf(notHereKey) >= 0 && back.length === 2 &&
+          fresh.errors.length === 0,
+          '3a. a row this process does not hold is left out of the answer ' +
+          'and KEEPS its key in both indexes, so it is listed again once ' +
+          'it arrives', JSON.stringify({ without: without.length,
+                                         entry: keptEntry, note: keptNote,
+                                         back: back.length }));
+
+  // 3b. A READ THAT THROWS: the entry is left whole and the failure is
+  // logged once, with its code.
+  const realGet = fresh.store.get.bind(fresh.store);
+  fresh.store.get = function (key) {
+    if (key === notHereKey) {
+      throw new Error('the store could not answer');
+    }
+    return realGet(key);
+  };
+  const throwing = fresh.issued.historyForSubject(ALICE);
+  const toldThrowing = fresh.issued.noteWalletEvent('n-' + ALICE + '-2',
+                                                    'credential_accepted');
+  fresh.store.get = realGet;
+  const afterThrow = fresh.subjectIndex.get(aliceKey);
+  const coded = fresh.errors.filter(function (line) {
+    return line.indexOf('STS-VC-0151') >= 0;
+  });
+  t.check(throwing.length === 1 && toldThrowing === 0 && afterThrow &&
+          afterThrow.keys.length === 2 &&
+          afterThrow.keys.indexOf(notHereKey) >= 0 &&
+          fresh.notificationIndex.get('n-' + ALICE + '-2') &&
+          coded.length === 2 &&
+          fresh.issued.historyForSubject(ALICE).length === 2,
+          '3b. a read that throws leaves both index entries as they were, ' +
+          'logged once per read with STS-VC-0151',
+          JSON.stringify({ throwing: throwing.length, entry: afterThrow,
+                           errors: fresh.errors }));
+
+  // 3c. A ROW HERE THAT NAMES ANOTHER SUBJECT: a fact about the row, pruned.
+  const strayKey = jwsKey(BOB, '1');
+  const aliceEntry = fresh.subjectIndex.get(aliceKey);
+  fresh.subjectIndex.set(aliceKey, { keys: aliceEntry.keys.concat([strayKey]),
+                                     expiresAt: aliceEntry.expiresAt });
+  const stray = fresh.issued.historyForSubject(ALICE);
+  const strayEntry = fresh.subjectIndex.get(aliceKey);
+  t.check(stray.length === 2 && strayEntry.keys.indexOf(strayKey) < 0 &&
+          strayEntry.keys.length === 2,
+          '3c. a key whose row is here and names another subject is pruned',
+          JSON.stringify(strayEntry));
+
+  // 3d. FORGOTTEN: this module deleted it, so both indexes drop it at once.
   fresh.issued.forget('cred-' + BOB + '-1.payload.sig');
-  const bobEntry = fresh.subjectIndex.get(stsCrypto.digest('sha256', BOB,
-                                                           'base64url'));
-  t.check(pruned.length === 1 && entry && entry.keys.length === 1 &&
-          entry.keys.indexOf(evictedKey) < 0 && !bobEntry &&
+  t.check(!fresh.subjectIndex.get(bobKey) &&
           !fresh.notificationIndex.get('n-' + BOB + '-1'),
-          '3. an evicted row is pruned from the index on the next read, and ' +
-          'a forgotten one leaves both indexes at once',
-          JSON.stringify({ pruned: pruned.length, entry: entry,
-                           bob: bobEntry || null }));
+          '3d. a forgotten row leaves both indexes at once',
+          JSON.stringify(fresh.subjectIndex.get(bobKey) || null));
+
+  // 3e. EVICTED BY THE SIZE BOUND: record() reads the rows makeRoom() will
+  // take, and each one it took leaves both indexes.
+  const bounded = register(2);
+  record(bounded, ALICE, '1');
+  record(bounded, ALICE, '2');
+  const oldest = 'jws:' + bounded.issued.digestOf('cred-' + ALICE +
+                                                   '-1.payload.sig');
+  record(bounded, BOB, '1');
+  const boundedAlice = bounded.subjectIndex.get(aliceKey);
+  t.check(!bounded.store.has(oldest) && bounded.store.size === 2 &&
+          boundedAlice && boundedAlice.keys.length === 1 &&
+          boundedAlice.keys.indexOf(oldest) < 0 &&
+          !bounded.notificationIndex.get('n-' + ALICE + '-1') &&
+          bounded.notificationIndex.get('n-' + ALICE + '-2') &&
+          bounded.issued.historyForSubject(ALICE).length === 1,
+          '3e. a row the size bound evicts leaves both indexes as it goes',
+          JSON.stringify({ size: bounded.store.size, entry: boundedAlice }));
 
   t.log.info('=== 4. somebody else\'s ===');
   const theirs = register();
@@ -169,6 +254,26 @@ async function run(t) {
           theirs.issued.historyForSubject(BOB)[0].status === 'valid',
           '4. alice naming bob\'s credential is refused, and it stays valid',
           JSON.stringify(refused));
+
+  t.log.info('=== 5. the -v2 backfill gives back a pruned entry ===');
+  const pruned = register();
+  record(pruned, ALICE, '1');
+  record(pruned, ALICE, '2');
+  // As an older reader left it: one key pruned, and the realm marked as
+  // indexed by the -v1 scan.
+  const kept = pruned.subjectIndex.get(aliceKey);
+  pruned.subjectIndex.set(aliceKey, { keys: kept.keys.slice(0, 1),
+                                      expiresAt: kept.expiresAt });
+  pruned.subjectIndex.delete('#indexed-v2');
+  pruned.subjectIndex.set('#indexed-v1', { at: 1, expiresAt: 0 });
+  const restored = pruned.issued.historyForSubject(ALICE);
+  t.check(restored.length === 2 &&
+          pruned.subjectIndex.get(aliceKey).keys.length === 2 &&
+          !pruned.subjectIndex.get('#indexed-v1') &&
+          !!pruned.subjectIndex.get('#indexed-v2'),
+          '5. a realm marked by the -v1 scan is indexed once more, which ' +
+          'gives back a key an older reader pruned',
+          JSON.stringify(pruned.subjectIndex.get(aliceKey)));
   log.debug("Leaving run().");
 }
 
@@ -176,6 +281,7 @@ module.exports = {
   name: 'vc_issued_index',
   describe: 'The issued register\'s subject and notification indexes: one ' +
             'backfill per realm, no table scan for a person\'s history, ' +
-            'Remove or a wallet\'s notification, and stale keys pruned',
+            'Remove or a wallet\'s notification, a key kept for a row not ' +
+            'here or unreadable, and pruned for one verifiably gone',
   run: run
 };

@@ -1407,8 +1407,12 @@ function inAChild(t) {
   });
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
+      // THE OLD DEFAULT, SET EXPLICITLY (#751): parts 3 and 5 hold a
+      // redirect with no account ticket and a sign-in as another person
+      // REPLACING the browser's session — one session per browser.
       env: Object.assign(clean, { LOG_LEVEL: 'fatal', WSI_ROOT: ROOT,
-                                  WSI_OUT: out }),
+                                  WSI_OUT: out,
+                                  STS_AUTHN_MULTIPLE_ACCOUNTS: 'false' }),
       encoding: 'utf8', timeout: 240000, cwd: ROOT
     });
   let findings = null;

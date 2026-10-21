@@ -618,6 +618,10 @@ class ProtocolStack {
     this.build('oauth-oidc/pairwise_subjects',
                require('../oauth-oidc/pairwise_subjects'),
                'PairwiseSubjects');
+    // #693: the `did` claim — a library `oauth2` applies last to an ID
+    // Token and a UserInfo response; it reaches SIOPv2 only when it decides.
+    this.build('oauth-oidc/did_claim', require('../oauth-oidc/did_claim'),
+               'DidClaim');
     this.build('oauth-oidc/request_object',
                require('../oauth-oidc/request_object'),
                'RequestObject');

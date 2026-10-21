@@ -56,20 +56,43 @@ const adminRbac = require('../admin-ui/admin_rbac');
 const log = require('bunyan').createLogger({ name: 'password_policy',
   level: process.env.LOG_LEVEL || 'info' });
 
+// A callback that answers a promise keeps the settings until it settles:
+// an LDAP write carrying a clear password answers a tick later since #756.
 function withSettings(pairs, fn) {
   log.debug("Entering withSettings().");
   const keys = Object.keys(pairs);
+  const clear = function () {
+    log.debug("Entering clear().");
+    keys.forEach(function (key) {
+      config.clearOverride(key);
+    });
+    log.debug("Leaving clear().");
+  };
+  let answer;
   try {
     keys.forEach(function (key) {
       config.setOverride(key, String(pairs[key]));
     });
-    log.debug("Leaving withSettings().");
-    return fn();
-  } finally {
-    keys.forEach(function (key) {
-      config.clearOverride(key);
+    answer = fn();
+  } catch (e) {
+    log.debug("Caught in withSettings(): " + ((e && e.message) || e));
+    clear();
+    throw e;
+  }
+  if (answer && typeof answer.then === 'function') {
+    log.debug("Leaving withSettings(). Settles later.");
+    return answer.then(function (value) {
+      clear();
+      return value;
+    }, function (e) {
+      log.debug("Caught in withSettings(): " + ((e && e.message) || e));
+      clear();
+      throw e;
     });
   }
+  clear();
+  log.debug("Leaving withSettings().");
+  return answer;
 }
 
 // An attribute off the entry, whichever case the store handed it back in.
@@ -85,7 +108,10 @@ function attributeOf(username, name) {
 }
 
 // The LDAP modify handler, called the way the socket calls it — the realm
-// wrapper included, since that is what `localHandler()` hands back.
+// wrapper included, since that is what `localHandler()` hands back. It
+// answers a promise of the outcome, settled when the handler calls `next`:
+// a write carrying a clear password is hashed on the thread pool first and
+// answers a tick later (#756).
 //
 // `boundDn` is who is on the connection. Since 2026-09-12 product mode
 // AUTHORIZES a directory write against it (`directoryWriteRefusal()`), so an
@@ -108,17 +134,24 @@ function ldapModify(dn, changes, boundDn) {
     logId: 'password-policy-test'
   };
   const out = { ended: false, failure: null };
-  handler(req, { end: function () {
-    log.debug("Entering end().");
-    out.ended = true;
-    log.debug("Leaving end().");
-  } },
-          function (err) { if (err) { out.failure = err; } });
-  log.debug("Leaving ldapModify().");
-  return out;
+  return new Promise(function (resolve) {
+    handler(req, { end: function () {
+      log.debug("Entering end().");
+      out.ended = true;
+      log.debug("Leaving end().");
+    } }, function (err) {
+      log.debug("Entering the modify's next().");
+      if (err) {
+        out.failure = err;
+      }
+      log.debug("Leaving the modify's next().");
+      log.debug("Leaving ldapModify().");
+      resolve(out);
+    });
+  });
 }
 
-function checkThePolicy(t, who) {
+async function checkThePolicy(t, who) {
   log.debug("Entering checkThePolicy().");
   // -----------------------------------------------------------------------
   t.log.info('=== 1a. development records and does not refuse ===');
@@ -143,8 +176,8 @@ function checkThePolicy(t, who) {
 
   // The Pwned Passwords screen off: this file is about the policy, and the
   // screen is tests/breached_passwords.js's (#62 P6).
-  withSettings({ 'global.mode': 'product', 'risk.breachCheck': 'off' },
-               function () {
+  await withSettings({ 'global.mode': 'product', 'risk.breachCheck': 'off' },
+                     async function () {
     // ---------------------------------------------------------------------
     t.log.info('=== 1b. product mode: the composition rules ===');
     const short = credentials.setPassword(who, 'x');
@@ -291,7 +324,7 @@ function checkThePolicy(t, who) {
       return ldapModify(dn, changes, operator);
     };
     try {
-      const weak = asOperator(probe.dn, [['replace', 'userPassword', 'weak']]);
+      const weak = await asOperator(probe.dn, [['replace', 'userPassword', 'weak']]);
       t.equal(weak.failure && weak.failure.code, 19,
               'an ldapmodify of a userPassword that breaks the profile is a ' +
               'CONSTRAINT VIOLATION (19), which is what a ppolicy server ' +
@@ -300,7 +333,7 @@ function checkThePolicy(t, who) {
       t.equal(attributeOf('password-policy-ldap-probe', 'userPassword').length,
               0,
               'and the modify is atomic: nothing was written');
-      const strong = asOperator(probe.dn,
+      const strong = await asOperator(probe.dn,
                                 [['replace', 'userPassword',
                                   'Ldap-Passw0rd!']]);
       t.check(!strong.failure && strong.ended, 'a password that meets it is ' +
@@ -316,36 +349,36 @@ function checkThePolicy(t, who) {
                                  'Ldap-Passw0rd!').ok,
               'which the sign-in verifier accepts, so an LDAP-set password ' +
               'works');
-      const unchanged = asOperator(probe.dn,
+      const unchanged = await asOperator(probe.dn,
                                    [['replace', 'userPassword', hashed]]);
       t.check(!unchanged.failure,
               'writing the stored HASH back unchanged is not a password ' +
               'change, and is allowed even though a hash is otherwise refused',
               unchanged.failure && unchanged.failure.message);
-      const reuse = asOperator(probe.dn,
+      const reuse = await asOperator(probe.dn,
                                [['replace', 'userPassword', 'Ldap-Passw0rd!']]);
       t.equal(reuse.failure && reuse.failure.code, 19,
               'but the same password sent in the CLEAR is a change to the ' +
               'current password, and is refused as one');
-      const reused = asOperator(probe.dn,
+      const reused = await asOperator(probe.dn,
         [['replace', 'userPassword', 'Ldap-Passw0rd!2']]);
       t.check(!reused.failure, 'a second password is accepted');
-      const back = asOperator(probe.dn,
+      const back = await asOperator(probe.dn,
                               [['replace', 'userPassword', 'Ldap-Passw0rd!']]);
       t.equal(back.failure && back.failure.code, 19,
               'and the first one, sent in the clear again, meets its own ' +
               'HISTORY through the ' +
               'socket', back.failure && back.failure.message);
-      const history = asOperator(probe.dn, [['delete', 'pwdHistory']]);
+      const history = await asOperator(probe.dn, [['delete', 'pwdHistory']]);
       t.equal(history.failure && history.failure.code, 19,
               'pwdHistory cannot be deleted over LDAP in product mode — a ' +
               'history anybody can empty is not a history');
-      const prehashed = asOperator(probe.dn,
+      const prehashed = await asOperator(probe.dn,
         [['replace', 'userPassword', crypto.hashSecret('whatever')]]);
       t.equal(prehashed.failure && prehashed.failure.code, 19,
               'and a PRE-HASHED value is refused: a hash cannot be checked ' +
               'against a policy');
-      const two = asOperator(probe.dn,
+      const two = await asOperator(probe.dn,
                              [['add', 'userPassword', 'Another-Passw0rd!']]);
       t.equal(two.failure && two.failure.code, 19,
               'an ADD of a second userPassword is refused: two values would ' +
@@ -361,13 +394,13 @@ function checkThePolicy(t, who) {
   t.log.info('=== 1f. the LDAP door, in development ===');
   const devProbe = ldap.createUser('password-policy-ldap-dev', {});
   const kept = crypto.hashSecret('moved-between-instances');
-  t.check(!ldapModify(devProbe.dn,
-                      [['replace', 'userPassword', kept]]).failure &&
+  t.check(!(await ldapModify(devProbe.dn,
+                             [['replace', 'userPassword', kept]])).failure &&
           attributeOf('password-policy-ldap-dev', 'userPassword')[0] === kept,
           'development keeps a pre-hashed value as given, which is how a ' +
           'directory is moved between two instances of this service');
-  t.check(!ldapModify(devProbe.dn,
-                      [['replace', 'userPassword', 'x']]).failure &&
+  t.check(!(await ldapModify(devProbe.dn,
+                             [['replace', 'userPassword', 'x']])).failure &&
           /^\$scrypt\$/.test(
             attributeOf('password-policy-ldap-dev', 'userPassword')[0]),
           'and a clear value is still HASHED there — storing a password in ' +
@@ -397,11 +430,11 @@ function checkThePolicy(t, who) {
   log.debug("Leaving checkThePolicy().");
 }
 
-function run(t) {
+async function run(t) {
   log.debug("Entering run().");
   const who = 'password-policy-probe';
   ldap.createUser(who, {});
-  checkThePolicy(t, who);
+  await checkThePolicy(t, who);
 
   // -----------------------------------------------------------------------
   t.log.info('=== 2. the hash cost: new hashes only, and a floor ===');

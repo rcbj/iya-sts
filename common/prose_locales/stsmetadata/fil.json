@@ -1176,16 +1176,16 @@
     "text": "NON-SPEC. Ang nag-iisang stylesheet ng portal (#568)."
   },
   "stsmetadata.endpoints./portal/signals/receive.what": {
-    "en": "88962f04a48dd187",
-    "text": "RFC 8935 SECTION 2.1 PUSH DELIVERY, NA ANG SERBISYONG ITO ANG NASA MAGKABILANG DULO (2026-09-10). Pinangangalanan ng stream ng portal ang path na ito bilang `delivery.endpoint_url` nito, sa sariling loopback address ng serbisyong ito, at ipino-POST ng `ssf/ssf_http.ts` dito ang bawat SET bilang application/secevent+jwt kasama ang `authorization_header` ng stream. SADYANG TUNAY NA HTTP REQUEST ITO: ang pagbibigay ng event sa page sa loob ng process ay lalaktawan ang body, ang media type, ang authorization header at ang signature, na siyang lahat ng ginagawa ng receiver — ang argumentong ginagawa ng `common/oidc_rp.ts` tungkol sa pag-redeem ng authorization code sa loob ng process, ginawa muli para sa ibang protocol. HINDI AUTHENTICATED SA SESSION PERO HINDI WALANG BANTAY: ang sinusuri nito ay ang bearer token sa sarili nitong stream, ginawa bawat stream at bawat pag-start at ibinigay lang sa sariling transmitter ng serbisyong ito, inihahambing sa constant time; pagkatapos ay ang `aud`, tinatanggihan ng `invalid_audience` ang SET na naka-address sa iba; pagkatapos ay ang signature. Ang malformed o maling naka-address na token ay ITINATALA AT TINATANGGIHAN sa halip na itapon, dahil ang dumating ang siyang itinatanong. Sadyang WALANG rate limit, na mayroon ang bawat credential endpoint sa file na iyon: tahimik na itatapon ng limiter ang account-disabled notice ng isang tao kapag mabigat ang load."
+    "en": "b5f30a87646c3fed",
+    "text": "RFC 8935 SECTION 2.1 PUSH DELIVERY, NA ANG SERBISYONG ITO ANG NASA MAGKABILANG DULO (2026-09-10) — PARA SA STREAM NA IBINALIK SA PUSH mula #771, na ginawang RFC 8936 poll stream ang seeded stream ng portal na kinokolekta nito mula sa /ssf/poll; habang ganoon ito, tinatanggihan ang push dito. Kapag ibinalik sa push, pinangangalanan ng stream ang path na ito bilang `delivery.endpoint_url` nito, sa sariling loopback address ng serbisyong ito, at ipino-POST ng `ssf/ssf_http.ts` dito ang bawat SET bilang application/secevent+jwt kasama ang `authorization_header` ng stream. SADYANG TUNAY NA HTTP REQUEST ITO: ang pagbibigay ng event sa page sa loob ng process ay lalaktawan ang body, ang media type, ang authorization header at ang signature, na siyang lahat ng ginagawa ng receiver — ang argumentong ginagawa ng `common/oidc_rp.ts` tungkol sa pag-redeem ng authorization code sa loob ng process, ginawa muli para sa ibang protocol. HINDI AUTHENTICATED SA SESSION PERO HINDI WALANG BANTAY: ang sinusuri nito ay ang bearer token sa sarili nitong stream, ginawa bawat stream at bawat pag-start at ibinigay lang sa sariling transmitter ng serbisyong ito, inihahambing sa constant time; pagkatapos ay ang `aud`, tinatanggihan ng `invalid_audience` ang SET na naka-address sa iba; pagkatapos ay ang signature. Ang malformed o maling naka-address na token ay ITINATALA AT TINATANGGIHAN sa halip na itapon, dahil ang dumating ang siyang itinatanong. Sadyang WALANG rate limit, na mayroon ang bawat credential endpoint sa file na iyon: tahimik na itatapon ng limiter ang account-disabled notice ng isang tao kapag mabigat ang load."
   },
   "stsmetadata.endpoints./portal/signals/receive.effect": {
     "en": "cae5ee202c7c115e",
     "text": "nagtatala ng Security Event Token na idineliver sa user portal"
   },
   "stsmetadata.endpoints./portal/signals/receive.coverage": {
-    "en": "ec6133bbe750c0f0",
-    "text": "full para sa RFC 8935 section 2.1 receipt: ang media type, ang authorization header, ang 202 na walang lamang body, at ang {err, description} na hugis ng pagtanggi ng section 2.4. Hindi nito in-implement ang RFC 8936 poll sa dulong ito — push receiver ang receiver na ito — at walang nagre-retry dito, na siyang panig ng transmitter sa parehong sadyang pagkukulang."
+    "en": "e0809edeada1161b",
+    "text": "full para sa RFC 8935 section 2.1 receipt: ang media type, ang authorization header, ang 202 na walang lamang body, at ang {err, description} na hugis ng pagtanggi ng section 2.4. Ang push na kalahati lamang ito — ang poll na kalahati ng portal ay ang ssf.internal-poll job (#771) — at walang nagre-retry dito, na siyang panig ng transmitter sa parehong sadyang pagkukulang."
   },
   "stsmetadata.endpoints./portal/claim-sources/callback.what": {
     "en": "fe33bd3204e812ee",
@@ -1368,8 +1368,8 @@
     "text": "NON-SPEC (#62). import, activate, rollback, delete at accept-terms: ang limang form ng console."
   },
   "stsmetadata.endpoints./admin-api/vc-status.what": {
-    "en": "7f1665c0e218a80d",
-    "text": "NON-SPEC. GET /admin/vc-status sa JSON."
+    "en": "eec9bcadeeee15fa",
+    "text": "NON-SPEC. GET /admin/vc/monitor sa JSON."
   },
   "stsmetadata.endpoints./admin-api/vc-status/:action.what": {
     "en": "75977b65b4ede272",
@@ -1588,8 +1588,8 @@
     "text": "NON-SPEC (#218). GET /admin/devices/monitor sa JSON: ang mga bilang at ang araw-araw na timeline ng mga registration, pag-aalis at eviction (?days=)."
   },
   "stsmetadata.endpoints./admin-api/users/self-issued-subjects.what": {
-    "en": "02ba0c938388e35a",
-    "text": "NON-SPEC (#129). Ang mga DID at JWK thumbprint na naka-enroll para sa isang tao, bawat isa kasama ang label nito at kung sino ang nag-enroll nito, katabi ng kung naka-on ang oid4vp.signInSelfIssued. Nag-e-enroll ng isa ayon sa value ang POST /admin-api/users/enrol-self-issued-subject; inaalis ng /admin-api/users/remove-self-issued-subject ang isa. Sinasalamin ang Self-issued IDs block sa /admin/users page ng tao."
+    "en": "5992e8bdddc060a8",
+    "text": "NON-SPEC (#129). Ang mga DID at JWK thumbprint na naka-enroll para sa isang tao, bawat isa kasama ang label nito, kung sino ang nag-enroll nito at kung paano (pinatunayan ng wallet ng tao, o ayon sa value), at ang isang did:web kasama ang mga naka-pin na key nito (#693), katabi ng kung naka-on ang oid4vp.signInSelfIssued. Nag-e-enroll ng isa ayon sa value ang POST /admin-api/users/enrol-self-issued-subject, kinukuha ang dokumento ng isang did:web para i-pin ang mga key nito; inaalis ng /admin-api/users/remove-self-issued-subject ang isa. Sinasalamin ang Self-issued IDs block sa /admin/users page ng tao."
   },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
@@ -2039,6 +2039,10 @@
     "en": "9d8cd20df8e552da",
     "text": "sumusulat sa LDAP directory — ang application entry, sa pamamagitan ng parehong function na naaabot ng isang ldapadd"
   },
+  "stsmetadata.endpoints./admin-api/saml-idp-initiated.what": {
+    "en": "21744c52a0800ce5",
+    "text": "HINDI-SPEC (#749). Ang mga SAML 2.0 service provider at SAML 1.1 relying party na pinapayagan ang pag-sign in na sinimulan ng identity provider — ang setting ng realm o ang override ng entry, na itinatanong sa function na itinatanong ng /launch/{app} — isang hilera bawat application at pamilya, bawat isa ay may sariling /launch link at ang sariling unsolicited endpoint ng protocol, naka-page. Sinasalamin ang tab na IdP-Initiated SSO ng /admin/saml2."
+  },
   "stsmetadata.endpoints./admin-api/saml-attributes.what": {
     "en": "e35e055c9faedc42",
     "text": "NON-SPEC. Ang dalawang SAML attribute set ng parehong store, ang katalogo ng mga LDAP attribute type na pinagpipilian ng mga ito, at ang nag-iisang patakarang sa kanila: ang AttributeNamespace na nakukuha ng SAML 1.1 attribute kapag hindi ito pinangalanan ng tawag. Walang reserved-name list dito at ang kawalang iyon ang sagot — patakaran ng JWT ang listahang iyon. Kapareho ng GET /admin/saml-attributes."
@@ -2432,8 +2436,8 @@
     "text": "itinatanong kung saan sa mga federated identity provider ng isang application magsa-sign in; kailangan ng ?authn= id, kaya sumasagot ng 400 kapag sinundan nang walang laman"
   },
   "stsmetadata.endpoints./authn/accounts.what": {
-    "en": "133e09e2d14aa686",
-    "text": "ILANG NAKA-SIGN IN NA ACCOUNT SA ISANG BROWSER (#561), kapag naka-on ang authn.multipleAccounts (naka-off ito bilang default). Ang isang request mula sa browser na may hawak na higit sa isang naka-sign in na account na walang pinapangalanan sa mga ito — walang account na pinili sa flow nito, walang login_hint o id_token_hint na nagpapangalan ng isa — ay ipinapadala rito, gayundin ang prompt=select_account ng OpenID Connect (Core section 3.1.2.1). Ipinagpapatuloy ng bawat naka-sign in na account ang flow bilang sarili nito, muling sinusuri ang session nito, at ang hinihinging dalawang factor na hindi nito natutugunan ay sinasagot sa pag-sign in muli bilang ito; ang bawat naka-sign out na account na natatandaan ng browser ay maaaring ma-sign in muli o makalimutan; ang Gumamit ng ibang account ay ang karaniwang sign-in. Isang static na page, iginuguhit mula sa /authn-api/pending/{id}/accounts."
+    "en": "879e6a76bfdaffce",
+    "text": "ILANG NAKA-SIGN IN NA ACCOUNT SA ISANG BROWSER (#561), kapag naka-on ang authn.multipleAccounts (naka-on ito bilang default). Ang isang request mula sa browser na may hawak na higit sa isang naka-sign in na account na walang pinapangalanan sa mga ito — walang account na pinili sa flow nito, walang login_hint o id_token_hint na nagpapangalan ng isa — ay ipinapadala rito, gayundin ang prompt=select_account ng OpenID Connect (Core section 3.1.2.1). Ipinagpapatuloy ng bawat naka-sign in na account ang flow bilang sarili nito, muling sinusuri ang session nito, at ang hinihinging dalawang factor na hindi nito natutugunan ay sinasagot sa pag-sign in muli bilang ito; ang bawat naka-sign out na account na natatandaan ng browser ay maaaring ma-sign in muli o makalimutan; ang Gumamit ng ibang account ay ang karaniwang sign-in. Isang static na page, iginuguhit mula sa /authn-api/pending/{id}/accounts."
   },
   "stsmetadata.endpoints./authn/accounts.effect": {
     "en": "ac430d30ba3b9a6a",
@@ -3028,8 +3032,8 @@
     "text": "sumasagot ng 501 hangga't hindi naka-on ang vcApi.enabled sa realm"
   },
   "stsmetadata.endpoints./vc-api/credentials/status.what": {
-    "en": "860c7bcc627e7889",
-    "text": "Binabawi, sinususpinde o inaalis ang suspensiyon ng isang kredensyal na inilabas ng VC API na ito na may status — ang aksiyong ginagawa ng /admin/vc-status, isa sa tatlong nagtatakwil sa isang kredensyal. Pinal ang pagbawi. vc-api:issue."
+    "en": "c602841e9954afe7",
+    "text": "Binabawi, sinususpinde o inaalis ang suspensiyon ng isang kredensyal na inilabas ng VC API na ito na may status — ang aksiyong ginagawa ng /admin/vc/monitor, isa sa tatlong nagtatakwil sa isang kredensyal. Pinal ang pagbawi. vc-api:issue."
   },
   "stsmetadata.endpoints./vc-api/credentials/status.effect": {
     "en": "d47c04a75b0029c4",

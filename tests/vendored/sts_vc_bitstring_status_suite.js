@@ -23,7 +23,7 @@
 // endpoint (updateStatus()) is defined and called by no test, and its
 // verifier tests are all positive. Section 2 is therefore the rest of the
 // specification over the same endpoints — the status endpoint mapped onto
-// `vc_status.setStatus()`, the act /admin/vc-status performs and one of the
+// `vc_status.setStatus()`, the act /admin/vc/monitor performs and one of the
 // three that DISOWN a credential (oid4vc/CLAUDE.md 3ar): a revocation sets
 // the bit in the published list and the verifier then refuses the
 // credential, a suspension likewise and is lifted again, and a revocation

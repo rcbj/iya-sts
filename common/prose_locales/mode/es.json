@@ -203,6 +203,18 @@
     "en": "e773ade2b33e515a",
     "text": "Se rechaza. Una clave principal se añade en /portal/keys detrás de una sesión, mediante un enlace de activación o por un operador."
   },
+  "mode.requirements.siop-did-web-pin.what": {
+    "en": "a8f5db1a7e30f55d",
+    "text": "Un sujeto autoemitido did:web solo inicia sesión con una clave fijada cuando se inscribió"
+  },
+  "mode.requirements.siop-did-web-pin.development": {
+    "en": "df2d670db990d330",
+    "text": "Un did:web inscrito antes de fijar las claves, sin ninguna clave fijada, inicia sesión con la clave que su documento nombre en su próximo inicio de sesión, y esa clave queda fijada entonces (confianza en el primer uso), con una línea de registro y una fila de auditoría."
+  },
+  "mode.requirements.siop-did-web-pin.product": {
+    "en": "f2869db882e1f25d",
+    "text": "Ese inicio de sesión se rechaza (STS-VC-0127), se audita, y la persona vuelve a inscribir el DID demostrándolo en /portal/self-issued. En ambos modos se rechaza una clave que la fijación no nombra (STS-VC-0126)."
+  },
   "mode.requirements.webauthn-attestation.what": {
     "en": "8c22563b2f23268b",
     "text": "La declaración de atestación de una llave de seguridad se verifica antes de registrar la llave"
@@ -612,16 +624,16 @@
     "text": "Nada de eso. El directorio, la base de datos de principales y el registro contienen lo que se configuró o aprovisionó, y nada más — los dos grupos de roles de XACML existen y están vacíos, y el KDC se niega a construir krbtgt o su cuenta de servicio con las contraseñas publicadas en este repositorio."
   },
   "mode.requirements.test-double.what": {
-    "en": "f06cf29c4a61e31d",
-    "text": "El documento de metadatos del servicio indica que este servicio es un doble de pruebas"
+    "en": "f037d7b70aacf864",
+    "text": "El servicio se describe a sí mismo como un doble de prueba"
   },
   "mode.requirements.test-double.development": {
-    "en": "241755f4aaf4cb6b",
-    "text": "`testDouble` es true en GET /admin-api/sts-metadata: este servicio no comprueba ninguna contraseña ni valida ningún token de acceso, y una lista de endpoints no debe leerse como una afirmación de que lo hace."
+    "en": "ffe468af90a49423",
+    "text": "`testDouble` es true en GET /admin-api/sts-metadata: este servicio no comprueba ninguna contraseña ni valida ningún token de acceso, y una lista de endpoints no debe leerse como una afirmación de que lo hace. El índice de la consola muestra Lo que deliberadamente no hace."
   },
   "mode.requirements.test-double.product": {
-    "en": "252476cbd5f62e18",
-    "text": "`testDouble` es false: las contraseñas se verifican y los tokens de acceso se validan, y el documento lo indica."
+    "en": "2fef3ea99ceb768a",
+    "text": "`testDouble` es false: las contraseñas se verifican y los tokens de acceso se validan, y el documento lo dice. El índice de la consola no muestra esa lista."
   },
   "mode.requirements.claim-values.what": {
     "en": "3e4acbf9a020d8f8",

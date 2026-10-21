@@ -570,6 +570,15 @@ const sessions = realms.map({ persist: 'authn.sessions', tombstone: true,
                               // Not expiresAt: that column stays NULL so the
                               // generic purge cannot end a session (#350).
                               indexOf: sessionIndexOf,
+                              // A hosted surface's sessions, filed by the
+                              // surface (#767): `endRelyingPartySessions()`
+                              // visits those rather than every session held.
+                              // `rpSurface` is set when a session is made and
+                              // never changed on it (`realms.map()`'s rule).
+                              indexBy: function (session: any): string[] {
+                                return session && session.rpSurface
+                                  ? ['rp:' + String(session.rpSurface)] : [];
+                              },
                               // Late-bound to the instance in the slot at
                               // the bottom: a merge happens only once the
                               // store is open, after the root installed it.
@@ -1851,10 +1860,10 @@ class Authn {
     // -----------------------------------------------------------------------
     // SEVERAL ACCOUNTS IN ONE BROWSER (#561): WHICH SESSION, ASKED FIRST.
     //
-    // Off — `authn.multipleAccounts` is off by default — nothing below this
-    // block changes and the cookie alone decides, as it always did. On,
-    // `resolveAccount()` answers from the browser's account set in the
-    // order the plan's section 2 gives: a selection ticket spent on this
+    // Off — `authn.multipleAccounts` is ON by default since 2026-10-20 —
+    // nothing below this block changes and the cookie alone decides, as it
+    // always did. On, `resolveAccount()` answers from the browser's account
+    // set in the order the plan's section 2 gives: a selection ticket spent on this
     // request, then a protocol hint (`hintAccount()`), then the only live
     // session; with several live and nothing to choose by it answers
     // nobody, and `accountChoiceNeeded()` says why — so every protocol that
@@ -2980,6 +2989,48 @@ class Authn {
     }
     log.debug("Leaving Authn.sweepAccountSets().");
     return done;
+  }
+
+  /**
+   * One run of the account-set sweep: at most about a second of work, from
+   * where the last run stopped (#784). The scheduler job's body.
+   *
+   * @returns a promise of the run's counts and how far through the pass
+   */
+  sweepAccountSetsBudgeted(): Promise<any> {
+    const { log, stats } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.sweepAccountSetsBudgeted().");
+    log.debug("Leaving Authn.sweepAccountSetsBudgeted().");
+    return AccountSets.sweepBudgeted(function (sid) {
+      return self.accountSessionKept(sid);
+    }).then(function (done) {
+      if (done.expired) {
+        stats.recordAccountChoice('expired', done.expired);
+      }
+      return done;
+    });
+  }
+
+  /**
+   * `sweepAccountSets()`, a slice at a time, yielding the event loop between
+   * slices (#780).
+   *
+   * @returns a promise of `{ sets, ended, expired, deleted, slices }`
+   */
+  sweepAccountSetsInSlices(): Promise<any> {
+    const { log, stats } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.sweepAccountSetsInSlices().");
+    log.debug("Leaving Authn.sweepAccountSetsInSlices().");
+    return AccountSets.sweepInSlices(function (sid) {
+      return self.accountSessionKept(sid);
+    }).then(function (done) {
+      if (done.expired) {
+        stats.recordAccountChoice('expired', done.expired);
+      }
+      return done;
+    });
   }
 
   // Whether a signed-in session's person is disabled. The anonymous principal
@@ -5139,7 +5190,13 @@ class Authn {
         return 'error';
       }
       const cap = Math.floor(Number(config.value('authn.maxSessions')));
-      let size = sessionWindow.count(realmId);
+      if (cap < 1) {
+        // No cap: nothing to count (#754).
+        log.debug("Leaving Authn.makeRoomForSession(). " + ended +
+                  " ended, no cap.");
+        return true;
+      }
+      let size = sessionWindow.countForAdmission(realmId, cap);
       if (size === null) {
         log.debug("Leaving Authn.makeRoomForSession(). Unread.");
         return 'error';
@@ -5155,11 +5212,12 @@ class Authn {
           size -= 1;
         }
       }
-      if (cap >= 1 && size >= cap && ended === 0) {
+      if (size >= cap && ended === 0) {
         this.noteRealmRefusal();
         log.debug("Leaving Authn.makeRoomForSession(). Refused.");
         return false;
       }
+      sessionWindow.noteAdmitted(realmId);
       log.debug("Leaving Authn.makeRoomForSession(). " + ended + " ended.");
       return true;
     }
@@ -5258,7 +5316,12 @@ class Authn {
         // page skips the realm. A failed body ends nobody for that subject.
         // An absent row is not held, and the loop continues.
         if (self.windowOn()) {
-          const grouped = sessionWindow.chosenBySubject(realm.id);
+          // Only the subjects over the cap, in one question (2026-10-21):
+          // every chosen session paged synchronously was 634 questions a
+          // sweep on 8081. At most `budget` subjects can lose one this
+          // sweep, so no more are asked for.
+          const grouped = sessionWindow.overCapBySubject(realm.id, per,
+                                                         budget);
           if (grouped === null) {
             return;
           }
@@ -6446,18 +6509,24 @@ class Authn {
         seen[id] = true;
         doomed.push(id);
       });
+      // The held ones the index has not reached yet: only this surface's,
+      // by the store's own index (#767), where this walked every session
+      // the process held — once per signal a surface received, and each
+      // password write sends one.
       if (store) {
-        store.forEach(function (session, id) {
-          if (seen[id] || !matches(session, id)) {
+        self.heldSurfaceSessions(store, surfaceId)
+          .forEach(function (one: { id: string; session: any }): void {
+          if (seen[one.id] || !matches(one.session, one.id)) {
             return;
           }
-          doomed.push(id);
+          doomed.push(one.id);
         });
       }
     } else if (store) {
-      store.forEach(function (session, id) {
-        if (matches(session, id)) {
-          doomed.push(id);
+      self.heldSurfaceSessions(store, surfaceId)
+        .forEach(function (one: { id: string; session: any }): void {
+        if (matches(one.session, one.id)) {
+          doomed.push(one.id);
         }
       });
     }
@@ -6469,6 +6538,33 @@ class Authn {
     log.debug("Leaving Authn.endRelyingPartySessions(). " + doomed.length +
               " ended.");
     return doomed.length;
+  }
+
+  // The sessions a realm's store holds for one hosted surface, by the
+  // store's index (`sessions`' `indexBy`, #767). Each is read back, so a key
+  // the index names is answered only while a session is there.
+  private heldSurfaceSessions(store: any, surfaceId: string):
+    { id: string; session: any }[] {
+    const { log } = this.deps;
+    log.debug("Entering Authn.heldSurfaceSessions(). " + surfaceId);
+    const out: { id: string; session: any }[] = [];
+    if (typeof store.lookup !== 'function') {
+      // A store with no index (a test's stub): the walk, as before #767.
+      store.forEach(function (session: any, id: string): void {
+        out.push({ id: id, session: session });
+      });
+      log.debug("Leaving Authn.heldSurfaceSessions(). Walked.");
+      return out;
+    }
+    (store.lookup('rp:' + String(surfaceId)) || [])
+      .forEach(function (id: string): void {
+      const session = store.get(id);
+      if (session) {
+        out.push({ id: id, session: session });
+      }
+    });
+    log.debug("Leaving Authn.heldSurfaceSessions(). " + out.length);
+    return out;
   }
 
   // Whether this realm fingerprints the browser at the sign-in screen (#62
@@ -8623,6 +8719,104 @@ class Authn {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // ONE PERSON'S SESSIONS FROM THE TWO COLUMNS THAT NAME THEM (#774).
+  //
+  // `logout.ts`'s `sessionsByKey()` read EVERY session of the realm to find
+  // one person's, and resolved each one's subject through the directory; the
+  // risk engine asks it at every sign-in whose level changes, which is every
+  // person's first. With the session window on that is every sealed body
+  // loaded and every subject asked of the store, synchronously: on 8081 at
+  // 85,000 sessions, eighty seconds per sign-in after a restart, and the
+  // service did not come back. A session is filed under its username
+  // (`username_key`) and its subject (`subject_key`, the `urn:uuid:` sub
+  // where the person has one — `subjectIdOf()`), so the sessions a caller
+  // can mean are the union of two indexed reads, and the caller keeps its
+  // own rule for which of them are the person's.
+  //
+  // Unlike `sessionsOf()` it never falls back to the page: an empty answer
+  // is an answer. Null is a read that failed.
+  // ---------------------------------------------------------------------------
+  /**
+   * Lists the ambient realm's sessions filed under a username or a subject
+   * id, for a caller that applies its own rule to them (#774).
+   *
+   * @param username - the username, exactly as a session holds it
+   * @param subjectId - the subject id (`urn:uuid:`), or ''
+   * @returns the sessions, or null when an index could not be read
+   */
+  sessionsHeldUnder(username?, subjectId?) {
+    const { log, realms, errorCodes } = this.deps;
+    log.debug("Entering Authn.sessionsHeldUnder().");
+    const name = String(username || '');
+    const subject = String(subjectId || '');
+    const out = [];
+    const seen: Record<string, boolean> = {};
+    const take = function (session) {
+      if (!session || !session.id || seen[session.id]) {
+        return;
+      }
+      const held = (name && session.user && session.user.username === name) ||
+                   (subject && String(session.subjectId || '') === subject);
+      if (held) {
+        seen[session.id] = true;
+        out.push(session);
+      }
+    };
+    if (!this.windowOn()) {
+      sessions.forEach(function (session) {
+        take(session);
+      });
+      log.debug("Leaving Authn.sessionsHeldUnder(). " + out.length +
+                ", in memory.");
+      return out;
+    }
+    const realmId = realms.currentId();
+    const digests: string[] = [];
+    const asks: Array<[string, string, string]> = [];
+    if (name) {
+      asks.push(['session.username', 'session-username', name]);
+    }
+    if (subject) {
+      asks.push(['session.subject', 'session-subject', subject]);
+    }
+    for (const ask of asks) {
+      const digest = keystore.keyedDigest(ask[1], ask[2]);
+      const keys = digest ? sessionWindow.indexKeys(ask[0], [realmId, digest])
+                          : null;
+      if (keys === null) {
+        log.error(errorCodes.tag('STS-AUTHN-0338') +
+                  'authn: a session could not be read: ' + ask[0] + '.');
+        log.debug("Leaving Authn.sessionsHeldUnder(). Unread.");
+        return null;
+      }
+      keys.forEach(function (key) {
+        if (digests.indexOf(key) < 0) {
+          digests.push(key);
+        }
+      });
+    }
+    for (const key of digests) {
+      const loaded = sessionWindow.loadByDigest(realmId, key);
+      if (!loaded.ok && loaded.error) {
+        log.error(errorCodes.tag('STS-AUTHN-0338') +
+                  'authn: a session could not be read: one held under ' +
+                  name + ' would not open.');
+        log.debug("Leaving Authn.sessionsHeldUnder(). Unread.");
+        return null;
+      }
+      if (loaded.ok) {
+        take(loaded.session);
+      }
+    }
+    // Unflushed rows are not in the index yet; realmMap() is those rows.
+    sessions.realmMap().forEach(function (session) {
+      take(session);
+    });
+    log.debug("Leaving Authn.sessionsHeldUnder(). " + out.length + ".");
+    return out;
+  }
+
   // Sessions whose sealed fedPartnerSession names this relationship.
   // The column narrows the page; the body is still what the caller reads.
   // A second store of the partner object would be a second answer.
@@ -8774,6 +8968,58 @@ class Authn {
       fn.call(thisArg, row.session, row.id);
     });
     log.debug("Leaving Authn.forEachSession().");
+  }
+
+  // WHO HOLDS A LIVE SIGN-ON SESSION, ASKED OF THE INDEX (2026-10-21), for
+  // `/admin/users`: how many people hold one, and how many each of the named
+  // people hold. The page counted them with `sessionsMatching()`, which while
+  // the window is on reads and opens every session's sealed body — 67,000 on
+  // 8081, synchronously, on the worker that serves sign-ins. The index holds
+  // a digest of each session's username and subject, so the store counts
+  // without anything being opened, on the driver's read pool. Null while the
+  // window is off: the sessions are in memory, and the caller walks them.
+  /**
+   * Counts the ambient realm's live sign-on sessions in the index.
+   *
+   * @param usernames - the people whose own counts are wanted
+   * @returns a promise of `{ people, byUsername }` (a Map), or of null
+   */
+  async liveSessionCountsAsync(usernames) {
+    const { log, realms } = this.deps;
+    log.debug("Entering Authn.liveSessionCountsAsync().");
+    if (!this.windowOn()) {
+      log.debug("Leaving Authn.liveSessionCountsAsync(). Window off.");
+      return null;
+    }
+    const realmId = realms.currentId();
+    const nowMs = Date.now();
+    const people = await sessionWindow.askAsync('session.liveSubjects',
+                                                [realmId, nowMs]) as any;
+    if (!people) {
+      log.debug("Leaving Authn.liveSessionCountsAsync(). Unread.");
+      return null;
+    }
+    const byKey = new Map();
+    (usernames || []).forEach(function (username) {
+      const digest = keystore.keyedDigest('session-username',
+                                          String(username));
+      if (digest) {
+        byKey.set(digest, String(username));
+      }
+    });
+    const byUsername = new Map();
+    if (byKey.size) {
+      const counted = await sessionWindow.askAsync('session.liveByUsername',
+        [realmId, Array.from(byKey.keys()), nowMs]) as any;
+      Object.keys(counted || {}).forEach(function (digest) {
+        if (byKey.has(digest)) {
+          byUsername.set(byKey.get(digest), Number(counted[digest]) || 0);
+        }
+      });
+    }
+    log.debug("Leaving Authn.liveSessionCountsAsync(). " + people.n +
+              " people.");
+    return { people: Number(people.n) || 0, byUsername: byUsername };
   }
 
   // THE SESSIONS OF THIS REALM THAT `test` ACCEPTS (#189), without the cookie
@@ -15937,11 +16183,14 @@ class Authn {
       // factor right after, so the password-only-door refusal does not
       // apply. It passes no `door`, so an app password is NEVER accepted
       // here.
-      const credential = credentials.verify(username, String(body.password ||
-                                                             ''),
-                                            { via: 'the sign-in screen',
-                                              allowPasswordReset: true,
-                                              secondFactor: 'asked-next' });
+      // ON LIBUV'S THREAD POOL (#756): the synchronous door held a request
+      // worker for the whole scrypt (about 70 ms), a fifth of a worker under
+      // a sign-in load. The answer is `verify()`'s; the rate limit above was
+      // already awaited, so the await adds no interleaving that was not there.
+      const credential = await credentials.verifyAsync(username,
+        String(body.password || ''),
+        { via: 'the sign-in screen', allowPasswordReset: true,
+          secondFactor: 'asked-next' });
       if (!credential.ok) {
         log.info('authn: the sign-in for "' + username + '" was refused (' +
                  credential.reason + '): ' + credential.detail);
@@ -16343,7 +16592,8 @@ class Authn {
       log.debug('Leaving Authn.mfaPasswordAct(). Rate limited.');
       return;
     }
-    const credential = credentials.verify(step.username,
+    // On the thread pool, as the sign-in screen's check (#756).
+    const credential = await credentials.verifyAsync(step.username,
       String(body.password || ''),
       { via: 'the password-factor screen', secondFactor: 'asked-next' });
     if (!credential.ok) {
@@ -17597,9 +17847,10 @@ scheduler.register({
 // a session that ended moves to remembered, a remembered account older than
 // `authn.rememberedAccountDays` is dropped — and a set left empty is
 // deleted. A CLUSTER job run per realm, so the store it walks is the
-// realm's; hourly, because nothing waits on it: a set is pruned again
-// whenever its browser draws the picker, and a remembered account past its
-// days is only an extra row there until the next run.
+// realm's; a pass about hourly, spread over the hour since #784 (a run a
+// minute, a second's work each), because nothing waits on it: a set is
+// pruned again whenever its browser draws the picker, and a remembered
+// account past its days is only an extra row there until the next pass.
 // ---------------------------------------------------------------------------
 scheduler.register({
   id: ACCOUNT_SET_EXPIRY_JOB,
@@ -17610,11 +17861,13 @@ scheduler.register({
             'and an empty set is deleted.',
   owner: 'authn/authn.ts',
   scope: 'realm',
+  // EVERY MINUTE, A SECOND'S WORK EACH (#784): a pass over every set still
+  // takes about an hour, spread over it. See AccountSets.sweepBudgeted().
   everyMs: function (): number {
-    return 60 * 60 * 1000;
+    return 60 * 1000;
   },
   run: function (): any {
-    return slot.get().sweepAccountSets();
+    return slot.get().sweepAccountSetsBudgeted();
   }
 });
 
@@ -17752,6 +18005,8 @@ export = {
   accountsView: slot.forward('accountsView'),
   accountsAct: slot.forward('accountsAct'),
   sweepAccountSets: slot.forward('sweepAccountSets'),
+  sweepAccountSetsInSlices: slot.forward('sweepAccountSetsInSlices'),
+  sweepAccountSetsBudgeted: slot.forward('sweepAccountSetsBudgeted'),
   auditActorSessionOf: slot.forward('auditActorSessionOf'),
   ACCOUNTS_PATH: ACCOUNTS_PATH,
   multipleAccounts: AccountSets.enabled,
@@ -17802,6 +18057,8 @@ export = {
   // The SAML 2.0 attribute authority's question (#189): which live session
   // gave a service provider a NameID.
   sessionsMatching: slot.forward('sessionsMatching'),
+  liveSessionCountsAsync: slot.forward('liveSessionCountsAsync'),
+  sessionsHeldUnder: slot.forward('sessionsHeldUnder'),
   sessionById: slot.forward('sessionById'),
   // Who vouched for a session's latest sign-in — asked by the authorization
   // endpoint for the bootstrap administrator's claim at issuance (#446).

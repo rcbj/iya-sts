@@ -132,6 +132,11 @@ const EXEMPT = {
     'the whole directory\'s page, held in memory; a windowed process ' +
     'returns windowedDirectoryView() first — the store\'s counts and one ' +
     'page, asynchronously (#616)' },
+  'ldap/ldap_server.js|delegateCandidates|personRows': { memory:
+    '/portal/delegate\'s uid search (2026-10-20) over the realm\'s people ' +
+    'held in memory; a windowed process asks the store one indexed ' +
+    'statement first (`uidContains`, the trigram index) for an ' +
+    'over-fetch of 51 rows, asynchronously' },
   'ldap/ldap_server.js|peopleMissing|eachEntryInRealm': { memory:
     'the attribute policy\'s count of people lacking a required ' +
     'attribute (#396, /admin-api/policies?missing=count), held in memory; ' +

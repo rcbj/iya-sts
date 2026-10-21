@@ -764,8 +764,8 @@
     "text": "Plusieurs comptes connectés dans un même navigateur"
   },
   "authn.multipleAccounts|description": {
-    "en": "d0b4899bdae1c43d",
-    "text": "Permet à un navigateur de détenir des sessions d’authentification unique pour plusieurs personnes à la fois, et de choisir entre elles. Activé, la connexion d’une autre personne AJOUTE une session à l’ensemble de comptes du navigateur (le témoin `sts_accounts`) au lieu de mettre fin à celle qu’il avait ; une requête qui ne dit pas à quel compte elle est destinée — aucun compte choisi dans ce flux, aucun login_hint, id_token_hint ni Subject SAML n’en nommant un — alors que plusieurs comptes sont connectés est envoyée au sélecteur de comptes à /authn/accounts, et prompt=select_account l’affiche. Chaque session conserve sa propre durée de vie, son délai d’inactivité, son état d’authentification renforcée et sa déconnexion. Désactivé, par défaut, le navigateur a une seule session et la connexion d’une autre personne y met fin. Prend effet à la requête suivante dans les deux sens et ne met fin à rien : activé, la session existante d’un navigateur devient le premier compte de son ensemble ; désactivé, la session par défaut du navigateur continue seule et les autres expirent comme d’habitude."
+    "en": "e0455f389b3cfb47",
+    "text": "Permet à un navigateur de détenir des sessions d’authentification unique pour plusieurs personnes à la fois, et de choisir entre elles. Activé, la connexion d’une autre personne AJOUTE une session à l’ensemble de comptes du navigateur (le témoin `sts_accounts`) au lieu de mettre fin à celle qu’il avait ; une requête qui ne dit pas à quel compte elle est destinée — aucun compte choisi dans ce flux, aucun login_hint, id_token_hint ni Subject SAML n’en nommant un — alors que plusieurs comptes sont connectés est envoyée au sélecteur de comptes à /authn/accounts, et prompt=select_account l’affiche. Chaque session conserve sa propre durée de vie, son délai d’inactivité, son état d’authentification renforcée et sa déconnexion. Activé par défaut. Désactivé, le navigateur a une seule session et la connexion d’une autre personne y met fin. Prend effet à la requête suivante dans les deux sens et ne met fin à rien : activé, la session existante d’un navigateur devient le premier compte de son ensemble ; désactivé, la session par défaut du navigateur continue seule et les autres expirent comme d’habitude."
   },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
@@ -3843,6 +3843,14 @@
     "en": "2394ee67a689920d",
     "text": "Applique OpenID Connect Key Binding 1.0 (#150). Activé : le document de découverte liste la portée `bound_key`, un client qui ne déclare aucune portée peut la demander, et une requête qui la demande doit indiquer `dpop_jkt` et utiliser le flux par code (refusée sinon, STS-OAUTH-0704 et 0705) ; l’ID Token nomme alors la clé DPoP (`cnf.jwk`, `typ: dpop+id_token`), la requête de jeton doit la prouver avec `c_s256`, et chaque actualisation doit venir de la même clé. **Désactivé, il n’existe pas, et le service est OpenID Connect Core seul** : `bound_key` n’est pas annoncée, une requête qui la porte n’est pas refusée — la portée est ignorée et non accordée, comme Core traite une portée sur laquelle un OP n’agit pas — et aucun ID Token n’est lié. Désactivez-le là où des parties de confiance demandent toutes les portées annoncées et ignorent tout de Key Binding (#315). Une autorisation déjà liée avant la désactivation garde la vérification de sa clé à l’actualisation."
   },
+  "oauth2.didClaim|label": {
+    "en": "d0b89f9c74f06728",
+    "text": "La revendication did"
+  },
+  "oauth2.didClaim|description": {
+    "en": "473d9916a85b21bb",
+    "text": "Communique le DID préféré d’une personne comme la revendication `did`, dans l’ID Token et la réponse UserInfo, derrière la portée `did` (#693). Activé, la revendication n’est communiquée que lorsque le client déclare `did` dans son oauthAllowedScope (dans les deux modes ; elle n’est dans aucun ensemble par défaut), que la requête a demandé la portée, que la personne y a consenti pour ce client elle-même (un consentement global ne compte pas), que la personne a marqué comme préféré un DID qu’elle a PROUVÉ avec son portefeuille (jamais un DID saisi par un administrateur) et que le compte n’est pas désactivé. Un client qui utilise des identifiants de sujet par paire ou éphémères ne le reçoit jamais sauf si son oauthDidClaimWithPairwise vaut TRUE, car un DID stable annule la non-associabilité pour laquelle ils existent. Une revendication nommée `did` venant de toute autre couche est retirée. Désactivé : la portée n’est pas annoncée et la revendication n’est jamais communiquée."
+  },
   "oauth2.sessionManagement|label": {
     "en": "9b2a882aa3250c63",
     "text": "OpenID Connect Session Management"
@@ -5787,6 +5795,14 @@
     "en": "7f75db9b5f30bc72",
     "text": "Des certificats PEM, concaténés, des fournisseurs de portefeuille et des composants de stockage de clés dont cet émetteur croit les attestations de clé : une attestation doit se vérifier avec l’une de ces clés, ou être signée par un certificat (son x5c) émis par l’une d’elles. Vide ne fait confiance à aucun, et une attestation de clé est alors refusée."
   },
+  "oid4vci.didHolderBinding|label": {
+    "en": "03baba1fe888a560",
+    "text": "Lier au DID de la personne"
+  },
+  "oid4vci.didHolderBinding|description": {
+    "en": "89f8d541b4738289",
+    "text": "Les configurations de credential dont les credentials sont liés au DID de la personne plutôt qu'à une clé. Pour chacune d'elles, la preuve du wallet doit désigner sa clé par un kid qui est une URL did:jwk ou did:key que la personne a prouvée sur sa page Self-issued IDs (une entrée d'administrateur ne suffit pas), et le credential porte ce DID : cnf.kid dans un dc+sd-jwt, credentialSubject.id, sub et cnf.kid dans un jwt_vc_json, credentialSubject.id dans un ldp_vc. Les métadonnées indiquent did:jwk et did:key pour elle. Chaque copie d'un lot porte le même DID, elles sont donc corrélables — c'est le compromis accepté. Vide, toutes les configurations sont liées à une clé, comme avant. did:web n'est pas proposé."
+  },
   "vcApi.enabled|label": {
     "en": "5c2f9e8aabdd4d3b",
     "text": "Servir la W3C VC API"
@@ -6066,6 +6082,14 @@
   "krb5.crossRealmClassicDelegation|description": {
     "en": "f95686ad2d2053e6",
     "text": "Si la délégation contrainte CLASSIQUE (appAllowedToDelegateTo sur le frontal) peut traverser une confiance Kerberos. Désactivée par défaut : elle est définie au sein d’un seul royaume, et la délégation basée sur les ressources (appAllowedToActOnBehalfOf sur la cible, nommant SPN@REALM) est celle qui traverse. Activée, le royaume du frontal vérifie sa propre liste avant de référer la preuve, et le royaume de la cible la tient pour vérifiée ; les deux royaumes doivent l’activer."
+  },
+  "krb5.s4uRoleSubject|label": {
+    "en": "01c225dc88b80527",
+    "text": "Le rôle de qui un service exige sous S4U"
+  },
+  "krb5.s4uRoleSubject|description": {
+    "en": "497e1cff316db4ba",
+    "text": "Sous S4U2Self et S4U2Proxy (classique ou basée sur les ressources), les rôles de qui le KDC compare au rôle qu’exige l’entrée d’un service (appRequiredRole). user (la valeur par défaut) : la personne à qui le ticket est destiné — l’utilisateur nommé dans PA-FOR-USER, ou le client du ticket de preuve — interrogée dans ce royaume par son nom complet, et par ses SID filtrés, lorsqu’elle est arrivée par une confiance. service : le service qui demande, le client du TGT, ce que le KDC vérifiait avant l’existence de ce paramètre. Un refus est KDC_ERR_POLICY dans les deux cas. Une requête TGS ordinaire a un seul sujet et n’est pas concernée. Les spécifications laissent la question ouverte : [MS-SFU] décide seulement si le service peut déléguer."
   },
   "krb5.requireSidFilteringInProduct|label": {
     "en": "f4bc0b8bb8e18123",
@@ -6968,12 +6992,20 @@
     "text": "Enregistrer la console et le portail comme récepteurs"
   },
   "ssf.internalReceivers|description": {
-    "en": "29e7cb1d4e0c30f3",
-    "text": "Indique si ce service crée un flux Shared Signals pour sa PROPRE console d’administration et son portail utilisateur, afin que chacun reçoive chaque événement CAEP et RISC par push RFC 8935 sur un endpoint qui lui est propre et affiche ce qui est arrivé sur /admin/signals et /portal/signals. Ce sont des flux ORDINAIRES — mettez-en un en pause, restreignez-le ou supprimez-le sur /admin/ssf et il le reste jusqu’à un redémarrage. Notez que ssf.pushDelivery régit cette remise comme toute autre : s’il est désactivé, les événements s’accumulent sur les deux flux et n’atteignent aucune des deux pages."
+    "en": "1a148e2b3a63a17d",
+    "text": "Indique si ce service crée un flux Shared Signals pour sa PROPRE console d’administration et son portail utilisateur, afin que chacun reçoive chaque événement CAEP et RISC — en les collectant par interrogation RFC 8936 sur le /ssf/poll de ce service toutes les ssf.internalPollMs (#771) — et affiche ce qui est arrivé sur /admin/signals et /portal/signals. Ce sont des flux ORDINAIRES — mettez-en un en pause, restreignez-le ou supprimez-le sur /admin/ssf et il le reste jusqu’à un redémarrage."
   },
   "ssf.internalReceivers|restartReason": {
     "en": "75c18a7223a2e0a3",
     "text": "les deux flux sont créés au chargement de ssf/ssf.ts, puis de nouveau à la construction de chaque domaine ; le désactiver à chaud laisserait donc les flux déjà existants, et l’activer n’en créerait aucun"
+  },
+  "ssf.internalPollMs|label": {
+    "en": "245d4495769ca599",
+    "text": "Intervalle d’interrogation de la console et du portail (millisecondes)"
+  },
+  "ssf.internalPollMs|description": {
+    "en": "b80cedcb611f2fd3",
+    "text": "À quelle fréquence la console d’administration et le portail utilisateur de ce service collectent ce que contiennent leurs flux, par interrogation RFC 8936 sur /ssf/poll (la tâche planifiée ssf.internal-poll), jusqu’à ssf.pollMaxEvents SET par requête. C’est le plus long délai qu’un Security Event Token attend avant que l’une ou l’autre surface le voie et agisse en conséquence. 0 désactive la tâche ; les événements s’accumulent alors sur les deux flux et n’atteignent aucune des deux pages."
   },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",
@@ -7462,6 +7494,14 @@
   "risk.minimumHistory|description": {
     "en": "8febb2273519b4ee",
     "text": "Le nombre de connexions antérieures dont une personne a besoin avant que le modèle ne la note. En deçà, elle n’est PAS NOTÉE, comme pour une première connexion, et les signaux new-device et new-tls-stack attendent le même historique : avec une ou deux connexions, le modèle est surtout l’a priori de la population, et la deuxième connexion d’une nouvelle personne serait lue comme MEDIUM. Les signaux de preuve (listes, clients automatisés, mots de passe refusés, clé de sécurité compromise) s’appliquent quelle que soit l’ancienneté de la personne. 1 note à partir de la deuxième connexion."
+  },
+  "risk.populationUsersCacheS|label": {
+    "en": "e30547f35344a4d6",
+    "text": "Secondes pendant lesquelles le nombre de personnes du domaine est conservé"
+  },
+  "risk.populationUsersCacheS|description": {
+    "en": "5e0a6cc869a4bab0",
+    "text": "Pendant combien de temps l’évaluation des risques conserve le nombre de personnes qui se sont connectées à un domaine — le dénominateur du terme de lissage du modèle — avant de les compter à nouveau. Compter parcourt une ligne par personne, donc le demander à chaque connexion coûte davantage à mesure que le domaine grandit ; un compte vieux d’une minute modifie un score de moins qu’une personne de plus dans le domaine ne le ferait. Un domaine de moins de 1 000 personnes est compté à chaque connexion quoi que dise ce réglage. 0 compte à chaque connexion."
   },
   "risk.geoMinimumCount|label": {
     "en": "e636b2310a4df74f",

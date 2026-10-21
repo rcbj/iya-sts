@@ -714,6 +714,91 @@ class SamlPage {
     return inner;
   }
 
+  // THE IdP-INITIATED SSO TAB (#749): the SAML applications a sign-in may be
+  // started here for, drawn from `GET /admin-api/saml-idp-initiated`, which
+  // asks the door's own switch (`LaunchLinks.enabled()`). The link is the
+  // `/launch/{app}?protocol=` URL the portal's Sign in uses, opened in a new
+  // tab so the console stays where it was; the copy button is the one the
+  // launch card and the Endpoints tables already draw (`/admin/copy.js`). An
+  // empty list says WHY — the realm's two switches are drawn above the table
+  // every time, and with nothing listed and both off the tab says how to
+  // turn it on, rather than drawing an empty table that reads as "none
+  // registered".
+  /**
+   * Draws the IdP-Initiated SSO tab from its view.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of `GET /admin-api/saml-idp-initiated`
+   * @returns the tab as HTML
+   */
+  static idpInitiatedBody(ctx, json) {
+    const t = ctx.t;
+    const paging = json.idpInitiatedPaging;
+    const nav = kit.pageNavPair('/admin/saml2', kit.pageParamsOf(ctx.query),
+                                paging, t);
+    const switches = json.realmSwitches || [];
+    const realmOn = switches.some(function (one) {
+      return one.enabled;
+    });
+    const state = '<ul>' + switches.map(function (one) {
+      const params = { protocol: one.label, setting: one.setting,
+                       attribute: one.attribute };
+      return '<li>' + (one.enabled
+        ? t.html('consoleSaml.idpInitiated.realmOn', params)
+        : t.html('consoleSaml.idpInitiated.realmOff', params)) + '</li>';
+    }).join('') + '</ul>';
+    const howToTurnOn = kit.note(
+      t.html('consoleSaml.idpInitiated.howToTurnOn') + '<a ' +
+      'href="/admin/saml2#saml-tab-global-settings">' +
+      t.html('consoleProtocolSettings.globalSettings') + '</a>' +
+      t.html('consoleSaml.idpInitiated.howToTurnOnAfter'));
+    const rows = (json.idpInitiated || []).map(function (row) {
+      const href = '/admin/applications?application=' +
+        encodeURIComponent(row.identifier);
+      const missing = row.missing || [];
+      return '<tr><td>' + (row.name
+          ? kit.esc(row.name)
+          : '<span class="sub">' +
+            t.html('consoleSaml.idpInitiated.unnamed') + '</span>') +
+        '</td><td><a href="' + kit.esc(href) + '"><code>' +
+        kit.esc(row.identifier) + '</code></a>' +
+        (row.entityId && row.entityId !== row.identifier
+          ? '<div class="sub">' + t.html('consoleSaml.idpInitiated.entityId') +
+            '<code>' + kit.esc(row.entityId) + '</code></div>'
+          : '') +
+        '</td><td>' + kit.esc(row.label) + '</td><td><a href="' +
+        kit.esc(row.launchUrl) + '" target="_blank" rel="noopener ' +
+        'noreferrer" title="' +
+        kit.esc(t.text('consoleSaml.idpInitiated.opensTitle')) + '"><code>' +
+        kit.esc(row.launchUrl) + '</code></a>' +
+        kit.copyButton(row.launchUrl, t) +
+        (missing.length
+          ? kit.note(t.html('consoleSaml.idpInitiated.missing',
+                            { attributes: missing.join(', ') }))
+          : '') +
+        (row.endpoint
+          ? '<div class="sub">' + t.html('consoleSaml.idpInitiated.endpoint') +
+            ' <code>' + kit.esc(row.endpoint) + '</code></div>'
+          : '') +
+        '</td></tr>';
+    }).join('');
+    return '<h2>' + t.html('consoleSaml.idpInitiated.heading') + '</h2>' +
+      '<p class="sub">' + t.html('consoleSaml.idpInitiated.lead') + '</p>' +
+      state +
+      (rows
+        ? nav.head + '<table><thead><tr><th>' +
+          t.html('consoleSaml.idpInitiated.thName') + '</th><th>' +
+          t.html('consoleSaml.idpInitiated.thIdentifier') + '</th><th>' +
+          t.html('consoleSaml.idpInitiated.thProtocol') + '</th><th>' +
+          t.html('consoleSaml.idpInitiated.thLink') +
+          '</th></tr></thead><tbody>' + rows + '</tbody></table>' + nav.foot
+        : kit.note(realmOn
+          ? t.html('consoleSaml.idpInitiated.noneOn')
+          : t.html('consoleSaml.idpInitiated.offEverywhere')) +
+          (realmOn ? '' : howToTurnOn)) +
+      (rows && !realmOn ? howToTurnOn : '');
+  }
+
   /**
    * Draws the SAML profile notes collected on the Metadata tab.
    *

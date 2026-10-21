@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4536** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4578** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 94
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 50
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 83
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 86
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
@@ -64,9 +64,9 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 341
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 717
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 723
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 29
 * [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
@@ -78,8 +78,8 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 122
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 138
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 125
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 48
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
@@ -88,9 +88,9 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 240
-* [Management API (`STS-API`)](#sts-api) — 85
-* [User portal (`STS-PORTAL`)](#sts-portal) — 99
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 242
+* [Management API (`STS-API`)](#sts-api) — 86
+* [User portal (`STS-PORTAL`)](#sts-portal) — 107
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
@@ -396,6 +396,9 @@ Raised from: persistence/.
 | `STS-STORE-0081` | A request worker could not read, by key, the directory rows another worker had written that a dispatched LDAP write was handed in place of the read barrier's change-log pull (#626), so it pulled the whole change log instead, as every write did before. | none — the write waits for the pull and is answered as before |
 | `STS-STORE-0082` | The live readers of the change log could not be read, so no dead process was dropped from the fan-in of merge-own stores this time; nothing is dropped on a failed read, and the next change-log pull tries again a minute later (#618). | none — the fan-in keeps what it held |
 | `STS-STORE-0083` | The store is owed a tuning of schema version 19 (#630) — a table's storage parameters, or the retired btree on sts_minted.written_at — and the role this service dials with does not own the table to make it. Nothing is wrong without it, only slower: run postgres/schema.sql as the owner. | none — the store opens without it |
+| `STS-STORE-0084` | An on-demand minted store (#820) could not read a row or an index from the store through its bridge — a timeout, a refused connection, a thread that failed. The row is answered as absent, which every reader of these stores refuses: a refresh token not found is not honoured. | none |
+| `STS-STORE-0085` | An on-demand minted store (#820) read a row whose sealed body will not open under this process's keys. It is answered as absent. | none |
+| `STS-STORE-0086` | The front process could not complete the index of an indexed on-demand minted store (#820): a write of its index rows or of the completion mark failed. Nothing is lost — the store stays read back whole at the next start, which tries again. | none |
 
 ## STS-CLUSTER
 
@@ -2246,6 +2249,12 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0960` | An authorization request with prompt=none arrived from a browser holding more than one signed-in account, and nothing in it (an account chosen in this flow, login_hint, id_token_hint) says which; prompt=none forbids showing the account picker (#561). | account_selection_required (OpenID Connect Core 1.0 section 3.1.2.6) |
 | `STS-OAUTH-0970` | An authorization request asked for phr or phrh (OpenID Connect EAP ACR Values 1.0), and the authentication performed — after one sign-in for it — was not phishing-resistant: a password, a one-time code, an emailed code or link, a recovery code, or a key enrolled in the same sign-in (#723). | RFC 9470 section 5 (unmet_authentication_requirements); EAP ACR Values 1.0 section 2 |
 | `STS-OAUTH-0971` | An authorization request asked for phrh, and the authentication was phishing-resistant (phr) without evidence that its key is hardware-protected: a backup-eligible (synced) passkey, a key whose attestation is not trusted, or a client certificate (#723). | RFC 9470 section 5 (unmet_authentication_requirements); EAP ACR Values 1.0 section 2 |
+| `STS-OAUTH-0972` | The did claim was left out of an ID Token or UserInfo response: the did scope was granted, but the client does not declare it on oauthAllowedScope, which the claim needs in both modes (#693). | none: the claim is absent (logged) |
+| `STS-OAUTH-0973` | The did claim was left out: the person has not consented to the did scope for this client themselves. A global consent (oauthGlobalConsent) and consent turned off do not count for it (#693). | none: the claim is absent (logged) |
+| `STS-OAUTH-0974` | The did claim was left out: the client uses pairwise or ephemeral subject identifiers, and a stable DID would let it correlate the person anyway; it is released to such a client only with oauthDidClaimWithPairwise TRUE (#693). | none: the claim is absent (logged) |
+| `STS-OAUTH-0975` | The did claim was left out: the person has no preferred DID that they proved with their wallet (none is marked, or the only DIDs are an administrator's by-value entries) (#693). | none: the claim is absent (logged) |
+| `STS-OAUTH-0976` | The did claim was left out: the person's account is disabled (#693). | none: the claim is absent (logged) |
+| `STS-OAUTH-0977` | A claim named did from another layer — a configured or typed claim, a claims request (OIDC Core 5.5) or a Claims Provider — was removed from an ID Token or UserInfo response: the name is the DID claim's, released only by its own rules (#693). | none: the claim is absent (logged) |
 
 ## STS-SAML
 
@@ -2396,7 +2405,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0015` | The STS endpoint threw an unexpected exception while handling a RequestSecurityToken. | SOAP Fault soap:Receiver (SOAP 1.2) / soap:Server (SOAP 1.1), in the request's SOAP version (HTTP 500) |
 | `STS-WSTRUST-0016` | A token was issued but starting the browser sign-on session the exchange also starts threw; the RSTR is unaffected. | — |
 | `STS-WSTRUST-0017` | A JWT was refused because the directory holds no entry for the person, so there is no subject to issue it about. | SOAP Fault wst:RequestFailed (HTTP 400), WS-Trust 1.4 section 11 |
-| `STS-WSTRUST-0018` | An OnBehalfOf or ActAs request was refused by the issuance policy (#186): the subject may not be delegated, the requester may not act for this subject, the subject token's may_act names somebody else, or no delegation relationship allows the AppliesTo. Product mode only; development records what would have been refused. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0018` | An OnBehalfOf or ActAs request was refused by the issuance policy (#186): the subject may not be delegated, the requester may not act for this subject, or no delegation relationship allows the AppliesTo (a may_act naming somebody else is STS-WSTRUST-0033). Product mode only; development records what would have been refused. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0019` | An OnBehalfOf or ActAs request was refused because its requester may not act for anybody here: it has no entry in this realm, or it is a person who does not hold the role delegation.actorRole names (#186). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0020` | An OnBehalfOf or ActAs request was refused because no issuance policy gave a verdict on it, or a realm's policy refused it with no rule this service names (#186). Product mode only. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0021` | A Cancel request in the WS-Trust 2004/04 namespace, which defines no Cancel binding (no CancelTarget, no RequestedTokenCancelled); it was added in 2005/02 (#188). | SOAP Fault wst:InvalidRequest (HTTP 500), in the request's trust namespace |
@@ -2411,6 +2420,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0030` | Product mode: an RST asked for a token for an AppliesTo that resolves to no registered application (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before anything was issued or recorded (#496). | SOAP Fault wst:InvalidScope (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0031` | Product mode: an RST asked for a token and carried no AppliesTo, so it names no application a token could be for; refused before anything was issued or recorded (#496). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0032` | Product mode: a SAML assertion or JWT presented as the requester's credential is addressed neither to its holder (an audience the holder's application registers) nor to this IdP (its WS-Trust issuer name, SAML entityID, OAuth issuer or /sts address) (#519). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0033` | An OnBehalfOf or ActAs request was refused because the verified JWT inside the element carries a may_act claim (RFC 8693 section 4.4) naming a party other than the requester. Held in every mode, as the token exchange holds it (STS-OAUTH-0620) (#747). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 
 ## STS-WSFED
 
@@ -3624,6 +3634,22 @@ Raised from: oid4vc/.
 | `STS-VC-0123` | A verification start named a redirect_uri (#594) that is not an absolute http(s) URL without a fragment, or — where only registered addresses are accepted — not one of the calling client's registered redirect URIs. | HTTP 400 JSON { ok: false, errors } at /admin-api/verifications/start |
 | `STS-VC-0124` | The trusted list at /oid4vci/trusted-list (ETSI TS 119 602) was not served: the service has no Root certificate authority, or no ES256 or RS256 key whose certificate chain the list could carry in x5c (oid4vci.trustedListCertificateHeader set to x5u or none, or the key not yet certified). | HTTP 503 text/plain |
 | `STS-VC-0125` | The trusted list at /oid4vci/trusted-list could not be signed: the signer threw. The message is in the log. | HTTP 500 text/plain |
+| `STS-VC-0126` | A self-issued ID Token for an enrolled did:web was signed by a key its enrolment did not pin: the DID document now names another key. Refused in both modes and audited (siop.key.refused); the person enrols the DID again by proving it on /portal/self-issued (#693). | HTTP 403 refusal at /authn-api/wallet (the sign-in signs nobody in) |
+| `STS-VC-0127` | A self-issued ID Token for a did:web enrolled before key pinning, with no key pinned, was refused in product mode and audited (siop.key.refused): the person enrols it again by proving it. Development pins the key on first use instead (mode.pinsSelfIssuedKeysOnFirstUse(), #693). | HTTP 403 refusal at /authn-api/wallet (the sign-in signs nobody in) |
+| `STS-VC-0128` | A SIOPv2 enrolment's did:web was not resolved: its DID document could not be fetched (an internal address in product mode, a redirect, a failure, too large), or this enrolment transaction had already fetched one document, which is all it may (#693). | the enrolment signs nobody in: HTTP 403 refusal at /authn-api/wallet |
+| `STS-VC-0129` | A did:web enrolled with no pinned key signed in in development mode and its key could not be pinned: the directory did not store the change. The sign-in stands; the pin is tried again at the next (#693). | logged |
+| `STS-VC-0140` | A Credential Request's jwt proof carried both a jwk and a kid in its header; OpenID4VCI 1.0 Appendix F.1 says either MUST NOT be present with the other (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0141` | A Credential Request's jwt proof named its key by a kid that is not a DID URL naming a did:jwk or did:key verification method (no fragment, not a DID, or a method this issuer does not resolve) (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0142` | A Credential Request's jwt proof named its key by a did:web kid. Holder binding to a did:web is not built: a remote host can change its DID document between the proof and a relying party's verification (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0143` | A Credential Request's jwt proof named a did:jwk or did:key kid that did not resolve, or whose DID document has no verification method with that id (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0144` | A Credential Request's jwt proof named a DID verification method that the DID document does not list under authentication — a did:jwk whose key says use "enc", for one (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0145` | A credential configuration that binds to the person's DID (oid4vci.didHolderBinding) was asked for with a proof that names no DID: a jwt proof carrying a jwk, or the attestation proof type (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0146` | A credential configuration that binds to the person's DID was asked for on an access token that names no person this realm verified: not verified here, disowned by a sign-out, not granted for credential issuance, or naming no directory entry (#693). | credential_request_denied (HTTP 400) |
+| `STS-VC-0147` | A credential configuration that binds to the person's DID was asked for, or a deferred one collected, for a person whose account is disabled (#693). | credential_request_denied (HTTP 400) |
+| `STS-VC-0148` | A credential bound to the person's DID was asked for, or a deferred one collected, with a proof by a DID enrolled for nobody here: never enrolled, or removed since the offer or the request (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0149` | A credential bound to the person's DID was asked for, or a deferred one collected, with a proof by a DID an administrator enrolled for the person by value: it was never proved, and only a proved DID is bound (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0150` | A credential bound to the person's DID was asked for, or a deferred one collected, with a proof by a DID enrolled for somebody else (#693). | invalid_proof (HTTP 400) |
+| `STS-VC-0151` | A row of the issued register that an index entry names (a person's history on /portal/wallet, or a wallet's notification) could not be read: the store threw. The row is left out of that answer and the index entry is KEPT as it was, since a read that failed says nothing about whether the row is gone (2026-10-20). | logged; the read answers the rows it could read |
 
 ## STS-SSF
 
@@ -3753,6 +3779,11 @@ Raised from: ssf/.
 | `STS-SSF-0132` | A Shared Signals act on a federation relationship whose signals are off (fedSignalsEnabled), or an unblock of a person the relationship has not blocked (#373). | console / /admin-api refusal (HTTP 400) |
 | `STS-SSF-0140` | A Shared Signals event about a non-human principal (#221 P5) could not be decided or started: a token-claims-change about an application's own token or role, the RISC account-purged of a deleted application entry, or the credential-change of a removed SPIFFE registration entry. The act itself stands. | none — logged; nothing is sent to a receiver |
 | `STS-SSF-0141` | Whether an application entry's credentials (client secrets, registered keys, key pairs, certificates) moved on a write could not be decided or announced, so no CAEP credential-change was sent for it (#221 P5). The write itself stands. | none — logged; nothing is sent to a receiver |
+| `STS-SSF-0142` | This service's own receivers were asked to poll a URL that is not this process's own loopback origin (#771). A programming error: the internal poll dials nothing else. | none — the poll is not made |
+| `STS-SSF-0143` | This service's own RFC 8936 poll endpoint answered one of its own two receivers with something other than a 200 and a JSON object (#771): the credential, the stream or the family refused it. | none — logged by the internal poll; nothing was collected |
+| `STS-SSF-0144` | The internal poll (#771) could not collect a surface's Security Event Tokens in a realm: the request failed or was refused. They stay queued on the stream and the next run tries again. | none — logged once per change of outcome |
+| `STS-SSF-0145` | A poll for one of this service's own receiver streams presented the wrong authorization header, or none (#771). Only this service's own receivers hold the credential. | RFC 8935 section 2.4 shape, err access_denied (HTTP 401) |
+| `STS-SSF-0146` | A Security Event Token was pushed to one of this service's own receive endpoints while its stream is delivered by poll (#771). Nothing is agreed to be pushed there. | RFC 8935 section 2.4 shape, err invalid_request (HTTP 400) |
 
 ## STS-RISK
 
@@ -4742,6 +4773,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0859` | A Kerberos trusts action, on the Trusts tab of /admin/kerberos or through POST /admin-api/kerberos/trusts/{action}, was refused: an unknown action, or a trust this realm does not hold (#430). | HTTP 400 |
 | `STS-ADMIN-0860` | Removing a Kerberos trust was refused because confirm did not repeat the partner realm: the removal takes the trust's keys with it (#430). | HTTP 400 |
 | `STS-ADMIN-0870` | An administrator removed a credential (clear-key, clear-totp, clear-backup-codes or clear-email-factor) in a process with no sign-out model installed, so no session it signed in was ended (#722). The removal stands. | logged; the removal is answered as done |
+| `STS-ADMIN-0871` | enrol-self-issued-subject was refused for a did:web: its DID document could not be fetched, names another id, or names no authentication method with a publicKeyJwk, so there was no key to pin (#693). | HTTP 400 (API) |
+| `STS-ADMIN-0872` | set-preferred-self-issued-subject was refused: the subject is not enrolled for the person, was enrolled by value (unproven), is a JWK thumbprint rather than a DID, or the directory did not store the change (#693). | HTTP 400 (API) |
 
 ## STS-API
 
@@ -4836,6 +4869,7 @@ Raised from: mgmt-api/.
 | `STS-API-0133` | The access-control policy's owner rule refused a management API request made with an owner's token (#607): the caller does not own the object, the object is closed to its owners, the action is not one an owner may take on its kind, or it would remove the last owner. | HTTP 403 |
 | `STS-API-0134` | A request to close an object to its owners, or open it again, named no kind of the four or no object (#607). | HTTP 400 |
 | `STS-API-0135` | A Kerberos trusts action through POST /admin-api/kerberos/trusts/{action} threw inside this service; the log says why (#430). | HTTP 500 |
+| `STS-API-0136` | A management API users action that answers later (a by-value did:web enrolment, which fetches the DID document) failed inside this service; the log says why (#693). | HTTP 500 |
 
 ## STS-PORTAL
 
@@ -4944,6 +4978,14 @@ Raised from: portal/.
 | `STS-PORTAL-0611` | A connect on /portal/connected-accounts was refused (#565): the sign-on session's risk is MEDIUM or HIGH, and connecting a provider is never done from a session risk scoring doubts. | HTTP 403 JSON |
 | `STS-PORTAL-0613` | A disconnect on /portal/connected-accounts named a provider the person has no connection to (#565). | HTTP 400 JSON |
 | `STS-PORTAL-0614` | A disconnect on /portal/connected-accounts was refused: the consumer provider is the account's only way in — no password, no passkey that signs in, and no other connection — so removing it would lock the person out (#729). They are told to add another way first. | HTTP 409 JSON |
+| `STS-PORTAL-0615` | Marking a preferred DID on /portal/self-issued was refused: the subject is not enrolled for the signed-in person, was enrolled by an administrator's value rather than proved with their wallet, is a JWK thumbprint rather than a DID, or the directory did not store the change (#693). | HTTP 400 JSON |
+| `STS-PORTAL-0616` | /portal/self-issued (GET /account-api/self-issued) was refused: the directory holds no entry for the person the token names, so there is no list of their self-issued subjects to show — answered as a refusal rather than as an empty list, which would read as "none enrolled" (2026-10-20). | HTTP 404 JSON |
+| `STS-PORTAL-0617` | /portal/wallet (its history, an offer or a Remove) was refused: the token's `sub` and its person do not name one another — the subject is not that person's entry, and the person's entry has another subject or none — so the history the subject indexes would be somebody else's or nobody's (2026-10-20). Sign in again. | HTTP 403 JSON |
+| `STS-PORTAL-0618` | /portal/self-issued/did (GET /account-api/self-issued/did) was refused: the subject named is not one enrolled for the person the token names — somebody else's, nobody's, not a subject at all, or the directory holds no entry for the person — so the operation is not a resolver for anybody's input (2026-10-20). | HTTP 404 JSON |
+| `STS-PORTAL-0619` | /portal/self-issued/did was refused: the person's enrolled subject has no DID document resolved from the identifier — a did:web (its document is the one published at its address, which the list links to), a JWK thumbprint (not a DID), or a did:jwk or did:key the resolver could not read (2026-10-20). | HTTP 400 JSON |
+| `STS-PORTAL-0620` | A search on /portal/delegate (GET /account-api/delegate/candidates) was refused: the text had fewer than three characters, the fewest the search takes, so that a search is never a listing of the directory (2026-10-20). | HTTP 400 JSON |
+| `STS-PORTAL-0621` | A search on /portal/delegate was refused: the person or their address had asked more times in the rate-limit window than the search allows (thirty a person, 120 an address). Where the limiter names its own bucket, its code is recorded instead (2026-10-20). | HTTP 429 JSON |
+| `STS-PORTAL-0622` | A search on /portal/delegate could not be answered: no directory was installed, or the store could not be read. The page says so and the DN form still works (2026-10-20). | HTTP 503 JSON |
 
 ## STS-ACCOUNT
 

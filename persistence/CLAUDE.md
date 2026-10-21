@@ -1993,6 +1993,61 @@ to each log line:
 * **The realms' seed before the restore replaces it** (0.3 s at 23 realms):
   a realm with nothing stored keeps its seed, which is the restore's rule.
 
+## A STORE THAT GROWS WITH EVERY PERSON IS READ ON DEMAND (#820, 2026-10-21)
+
+**Every process used to read every live minted row back at every start** —
+2.1 million on 8081 at 300,000 signed-in people, about 30 s of opening sealed
+bodies per process, growing with the population. A store declared
+`realms.map({ onDemand: { maxEntries } })` is not read back at all: the
+restore leaves it out (`skipHandles`), and each process holds a **bounded
+cache** of its rows and reads one it does not hold from `sts_minted` by key
+when somebody asks (`persistence_minted.js`'s on-demand reader, through a
+synchronous bridge thread of its own and `minted_queries.js` — the session
+window's arrangement, generalised). Only while the reader is `active()`: a
+database driver that lends a bridge connection, minted state persisted, a
+key to open rows with. Otherwise it is an ordinary Map read back whole —
+memory mode, development, and every in-process test.
+
+**The rules that keep it correct**, each a way it was easy to get wrong:
+
+* **A key with a write not yet committed is never evicted, and never read
+  from the store.** The flush reads a journalled key's value from the Map,
+  so evicting it would turn a write into a delete; and until the commit
+  lands the store holds the OLD row, so a pending key that is not held is a
+  delete not yet written and reads as absent. `pendingWrite()` is the
+  journal **or a flush in flight** — the journal is cleared when a flush
+  TAKES it, long before its commit.
+* **Another process's change replaces a held row and is otherwise skipped,
+  unread** (`applyLocally()`, `applyChange()`, `prefetch()`): whoever asks
+  for that row next reads it as it then is.
+* **A walk sees only what is held.** `forEach`, `size`, `values` and the rest
+  are the cache; a store declared on demand is not walked for what it holds.
+  What a walk was for is an **index**: with `indexBy`, each row's index
+  values are written as keyed digests to `sts_minted_index` (schema version
+  24) in the same transaction as the body, and `lookup(value)` asks it — a
+  refresh token family's members, for instance, which `membersOf()` found by
+  walking every token. A bound kept by walking (`forgetStaleRefreshTokens()`'s
+  cap) is the cache's business on demand, and `onDemandLive()` says so.
+* **A read that fails answers absent** (STS-STORE-0084), and so does a body
+  that will not open (STS-STORE-0085): every reader of these stores refuses
+  what it cannot find, which is the safe side.
+* **An indexed store is not on demand until its index is COMPLETE.** A row
+  stored before schema version 24 has no index row, so a lookup would miss
+  it — a revoked family's older tokens among them. Until the store's
+  completion mark is in `sts_minted_index` (realm `''`, `index_key = key =
+  '$index-complete$'`) it is read back whole, as before, and `active(handle)`
+  says no; the front process then files every row it restored
+  (`backfillMintedIndexes()`, in batches, in the background) and commits the
+  mark, and the NEXT start reads it on demand. A row written meanwhile files
+  itself in the flush; one deleted meanwhile leaves an index row the
+  lookup's join does not answer. A failure is STS-STORE-0086 and the next
+  start tries again. The integrator found the gap on #823, before it ran
+  anywhere.
+
+The stores on demand: `oauth2_bcp.refreshTokens` and `oauth2_bcp.grantTokens`
+(filed by family), `oauth2_bcp.refreshFamilies`. `tests/on_demand_store.js`
+holds the map's rules; `tests/session_index.js` the index rows' writes.
+
 ## WHAT ONE ADD WRITES TO THE CHANGE LOG (#618 phase 2, 2026-10-14)
 
 **Every minted row a flush writes is a row of `sts_changes` too**: sealed,
@@ -2693,6 +2748,24 @@ it still reaches the index repair. SQL cannot
 open the bodies. Memory and LDIF are unchanged. Where the window is on,
 one process holds a bounded set and the walks read this index; the
 argument is in `authn/CLAUDE.md`.
+
+**Schema version 23 (2026-10-20) is `sts_ldap_entries_uid_trgm`**, a
+`pg_trgm` GIN over `rdn_value`, partial on the children of a realm's
+`ou=users`, for `/portal/delegate`'s search. It is the one index here with
+an extension behind it, which the driver creates first where it may. How a
+large store builds it without holding writes is in `postgres/CLAUDE.md`, and
+the search itself is in `ldap/CLAUDE.md`.
+
+**`sts_sessions_surface` is the seventh index (#754, schema version 22).**
+`session.surface` — a hosted surface's relying-party sessions, which
+`Authn.endRelyingPartySessions()` asks for every signal the surface
+receives — had none, so it scanned the realm's sessions. A password change
+sends CAEP `credential-change` and both hosted surfaces receive it, so a
+password load asked it twice per write: 0.6 ms at 4,500 sessions, about
+130 ms at a million. Partial (`rp_surface <> ''`), because a sign-on
+session has no surface. The upgrade is `schema.sql` run again as the owner
+before the version-22 image starts (`postgres/CLAUDE.md`); `sts_app`
+cannot build it and the driver refuses.
 
 ### The schema version moved to 2
 

@@ -148,7 +148,19 @@ const ALLOCATION_ATTEMPTS = 32;
 // PER TRUST REALM, persisted, and GLOBAL across cells
 // (`persistence/tiers.js`): one list per realm, which every cell publishes,
 // and a token revoked in one cell must read INVALID at every other.
-const entries = realms.map({ persist: 'access_token_status.entries' });
+//
+// **WITH ITS TOKEN'S EXPIRY (2026-10-21).** An entry is of no use after the
+// token it describes has expired — a relying party is not asked about an
+// expired token, and the index is free for the next one — but the store
+// declared none, so every entry ever allocated stayed in `sts_minted` and was
+// read back by every process at every start: 347,000 rows on 8081, a sixth
+// of each restore. `expiresAt` is the entry's own, in milliseconds, so the
+// expiry purge takes it and a restore skips it; `retain: 'age'` lets the
+// rows written before this, which carry no expiry column, go after
+// `persistence.mintedRetention` rather than never.
+const entries = realms.map({ persist: 'access_token_status.entries',
+                             retain: 'age',
+                             expiresAt: realms.expiryField('expiresAt', 1) });
 
 // realm|form -> { digest, token, signedAt, ttlMs }: the last list this
 // process signed, re-signed when the bits change or it is half-way to its

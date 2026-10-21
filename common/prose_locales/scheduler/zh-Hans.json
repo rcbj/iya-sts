@@ -479,6 +479,14 @@
     "en": "51871a2d4ac5a3aa",
     "text": "轮询其伙伴的 Shared Signals 流为轮询流（RFC 8936）的每个联合关系：对其持有的 Security Event Token 进行验证、处理和确认。"
   },
+  "sched.jobs.ssf.internal-poll.title": {
+    "en": "61d86947032a491a",
+    "text": "控制台和门户的 Shared Signals 轮询"
+  },
+  "sched.jobs.ssf.internal-poll.describe": {
+    "en": "e68a7ab4fba5e9f4",
+    "text": "本服务自己的管理控制台和用户门户在每个领域中通过 RFC 8936 轮询从 /ssf/poll 收取其流上等待的安全事件令牌（Security Event Token）——经过验证、记录、处理并确认（#771）。"
+  },
   "sched.jobs.ssf.stream-maintenance.title": {
     "en": "7b2875452b588faa",
     "text": "Shared Signals 流维护"

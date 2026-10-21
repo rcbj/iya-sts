@@ -3043,14 +3043,27 @@ function signJws(payload, key, opts) {
 // So the four call paths that can reach a post-quantum `alg` — the ID Token,
 // the signed UserInfo response, a client assertion and an OID4VCI proof —
 // call this instead, and `pq_jose.signAsync()` computes on libuv's thread
-// pool (#363; a pool of forked processes until then). **EVERY OTHER
-// ALGORITHM IS UNCHANGED AND IS NOT DEFERRED**: an RS256 signature is
-// microseconds. Those resolve with the value signJws() computed, which is
-// what lets a caller be written one way and not two.
+// pool (#363; a pool of forked processes until then).
+//
+// **AND SINCE #772 (2026-10-20) A CLASSICAL ONE TOO.** This said "an RS256
+// signature is microseconds" and signed every other algorithm in place. An
+// RSA-2048 private-key operation is closer to a millisecond, and on 8081
+// under a sign-in and password-write load the classical signatures were
+// about 6% of the two request workers — most of them the SETs the
+// transmitter signs, which come through here — while libuv's pool sat idle.
+// So an RSA, ECDSA or EdDSA signature is computed by node's asynchronous
+// `crypto.sign()`, on that pool, over EXACTLY the signing input the
+// synchronous door builds: `jsonwebtoken`'s framing for the rows it signs
+// (`classicalSigningInput()`), `signJws()`'s own for EdDSA and ES256K. Where
+// that framing could differ — a claim convenience `jsonwebtoken` computes,
+// an `alg` or `kid` in the caller's header, a key it would refuse — the
+// signature is made in place by `signJws()`, as before, so that nothing a
+// caller could see changes. HMAC is made in place always: it is a hash.
 // ---------------------------------------------------------------------------
 /**
- * Signs as `signJws()` does, with a post-quantum signature computed on
- * libuv's thread pool; every other algorithm is signed in place.
+ * Signs as `signJws()` does, with the signature computed on libuv's thread
+ * pool for a post-quantum, RSA, ECDSA or EdDSA algorithm (#772); HMAC, and a
+ * call whose framing only `jsonwebtoken` can reproduce, are signed in place.
  *
  * @param payload - the claims
  * @param key - the signing key
@@ -3072,6 +3085,23 @@ function signJwsAsync(payload, key, opts) {
     log.debug('Leaving signJwsAsync(). Refused.');
     return Promise.reject(e);
   }
+  const plan = spec.family === 'pq' ? null
+    : classicalSigningInput(payload, key, algorithm, spec, options);
+  if (plan) {
+    log.debug('Leaving signJwsAsync(). ' + algorithm + ', on libuv.');
+    return new Promise(function (resolve, reject) {
+      nodeCrypto.sign(spec.hash, Buffer.from(plan.input, 'ascii'),
+        nodeParamsFor(spec, plan.key), function (err, signature) {
+          if (err) {
+            log.debug('Caught in signJwsAsync(): ' + ((err && err.message) ||
+                                                     err));
+            reject(err);
+            return;
+          }
+          resolve(plan.input + '.' + b64u(signature));
+        });
+    });
+  }
   if (spec.family !== 'pq') {
     // Not deferred, and the throw is turned into a rejection so that a caller
     // never has to know which algorithms are computed off the thread.
@@ -3090,6 +3120,94 @@ function signJwsAsync(payload, key, opts) {
     .then(function (signature) {
       return input + '.' + b64u(signature);
     });
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGNING INPUT `signJws()` WOULD SIGN, FOR A CLASSICAL ALGORITHM, OR
+// NULL WHERE ONLY `signJws()` CAN SAY (#772).
+//
+// For EdDSA and ES256K it is `signJws()`'s own framing, the ownSigner branch.
+// For every other asymmetric row it is `jsonwebtoken` 9's, reproduced: the
+// header `Object.assign({ alg, typ: 'JWT', kid }, options.header)`, the
+// payload copied with `iat` set to its own value or, when that is falsy, the
+// time now, each JSON-stringified and base64url-encoded. The library's own
+// checks are made before it is trusted — a plain object, numeric `iat`,
+// `exp` and `nbf`, a key of the type and curve the algorithm needs, an RSA
+// modulus of at least 2048 bits — and a call that fails one, or that asks
+// for anything beyond `algorithm`, `keyid` and `header`, or names `alg` or
+// `kid` in that header, gets NULL: `signJws()` then signs it in place, and
+// refuses it in place, exactly as before.
+// ---------------------------------------------------------------------------
+function classicalSigningInput(payload, key, algorithm, spec, options) {
+  log.debug('Entering classicalSigningInput(). alg=' + algorithm);
+  if (spec.family === 'hmac') {
+    log.debug('Leaving classicalSigningInput(). HMAC, in place.');
+    return null;
+  }
+  const asked = options || {};
+  const header = asked.header;
+  const plain = function (value) {
+    const proto = value && typeof value === 'object' ?
+      Object.getPrototypeOf(value) : undefined;
+    return proto === Object.prototype || proto === null;
+  };
+  const extra = Object.keys(asked).some(function (name) {
+    return asked[name] !== undefined &&
+           ['algorithm', 'keyid', 'header'].indexOf(name) < 0;
+  });
+  if (extra || !plain(payload) ||
+      (header !== undefined && (!plain(header) || 'alg' in header ||
+                                'kid' in header)) ||
+      (asked.keyid !== undefined && typeof asked.keyid !== 'string') ||
+      ['iat', 'exp', 'nbf'].some(function (claim) {
+        return payload[claim] !== undefined &&
+               typeof payload[claim] !== 'number';
+      })) {
+    log.debug('Leaving classicalSigningInput(). Only signJws() can say.');
+    return null;
+  }
+  if (spec.ownSigner) {
+    const ownHeader = protectedHeaderFor(algorithm, asked);
+    const ownBody = Object.assign({}, payload);
+    if (ownBody.iat === undefined) {
+      ownBody.iat = Math.floor(Date.now() / 1000);
+    }
+    log.debug('Leaving classicalSigningInput(). ' + algorithm +
+              ', signJws()\'s own framing.');
+    return { key: key,
+             input: b64u(Buffer.from(JSON.stringify(ownHeader), 'utf8')) +
+                    '.' +
+                    b64u(Buffer.from(JSON.stringify(ownBody), 'utf8')) };
+  }
+  let keyObject;
+  try {
+    keyObject = privateKeyObject(key);
+  } catch (e) {
+    log.debug('Caught in classicalSigningInput(): ' + ((e && e.message) ||
+                                                      e));
+    log.debug('Leaving classicalSigningInput(). Not a private key here.');
+    return null;
+  }
+  const details = keyObject.asymmetricKeyDetails || {};
+  const wanted = spec.family === 'rsa' ? 'rsa' : 'ec';
+  const curves = { ES256: 'prime256v1', ES384: 'secp384r1',
+                   ES512: 'secp521r1' };
+  if (keyObject.asymmetricKeyType !== wanted ||
+      (wanted === 'rsa' && !(details.modulusLength >= 2048)) ||
+      (wanted === 'ec' && details.namedCurve !== curves[algorithm])) {
+    log.debug('Leaving classicalSigningInput(). A key jsonwebtoken would ' +
+              'judge.');
+    return null;
+  }
+  const jwtHeader = Object.assign({ alg: algorithm, typ: 'JWT',
+                                    kid: asked.keyid }, header);
+  const body = Object.assign({}, payload);
+  body.iat = body.iat || Math.floor(Date.now() / 1000);
+  log.debug('Leaving classicalSigningInput(). ' + algorithm +
+            ', jsonwebtoken\'s framing.');
+  return { key: keyObject,
+           input: b64u(Buffer.from(JSON.stringify(jwtHeader), 'utf8')) + '.' +
+                  b64u(Buffer.from(JSON.stringify(body), 'utf8')) };
 }
 
 // ---------------------------------------------------------------------------

@@ -479,6 +479,14 @@
     "en": "51871a2d4ac5a3aa",
     "text": "Sondea cada relación de federación cuyo flujo de Shared Signals del socio sea un flujo de sondeo (RFC 8936): los Security Event Tokens que contiene se verifican, se procesan y se confirman."
   },
+  "sched.jobs.ssf.internal-poll.title": {
+    "en": "61d86947032a491a",
+    "text": "Sondeo de Shared Signals de la consola y el portal"
+  },
+  "sched.jobs.ssf.internal-poll.describe": {
+    "en": "e68a7ab4fba5e9f4",
+    "text": "La consola de administración y el portal de usuario de este servicio recogen los Security Event Tokens que esperan en sus flujos, en cada dominio, mediante sondeo de RFC 8936 en /ssf/poll: verificados, registrados, procesados y confirmados (#771)."
+  },
   "sched.jobs.ssf.stream-maintenance.title": {
     "en": "7b2875452b588faa",
     "text": "Mantenimiento de flujos de Shared Signals"

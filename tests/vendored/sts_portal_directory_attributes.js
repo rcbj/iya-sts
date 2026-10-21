@@ -319,7 +319,7 @@ function sectionOf(text) {
     return "";
   }
   // The next card's heading. There is exactly one `<h2>` after this section
-  // (`How you sign in`), and it is outside the card this section is in.
+  // (`How I sign in`), and it is outside the card this section is in.
   const to = html.indexOf("<h2>", from);
   log.debug("Leaving sectionOf().");
   return to < 0 ? html.slice(from) : html.slice(from, to);

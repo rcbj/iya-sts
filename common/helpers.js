@@ -357,6 +357,11 @@ function subjectForName(name) {
     log.debug("Leaving subjectForName().");
     return sub;
   } catch (e) {
+    if (budgetSpent(e)) {
+      log.debug("Leaving subjectForName(). The request's directory budget " +
+                "is spent.");
+      return '';
+    }
     log.error(errorCodes.tag('STS-CORE-0091') +
               'helpers: the subject resolver threw for "' + name + '" and ' +
               'the person was given no subject: ' + ((e && e.message) || e));
@@ -391,12 +396,34 @@ function nameForSubject(sub) {
     log.debug("Leaving nameForSubject().");
     return name;
   } catch (e) {
+    if (budgetSpent(e)) {
+      log.debug("Leaving nameForSubject(). The request's directory budget " +
+                "is spent.");
+      return '';
+    }
     log.error(errorCodes.tag('STS-CORE-0091') +
               'helpers: the subject resolver threw looking up a subject and ' +
               'it was treated as naming nobody: ' + ((e && e.message) || e));
     log.debug("Leaving nameForSubject(). The resolver threw.");
     return '';
   }
+}
+
+// ---------------------------------------------------------------------------
+// A REQUEST WHOSE DIRECTORY BUDGET IS SPENT IS NOT LOGGED ONCE PER SUBJECT
+// (2026-10-21). `ldap.workerDirectoryBudgetMs` bounds how long one request
+// may wait on synchronous directory reads; past it every read throws
+// STS-LDAP-0175 at once, without asking the store, and the request itself
+// answers with that code (`common/sync_query.ts`). A console page that
+// resolves the subjects of a large register then met it once per subject
+// and logged each at error: 360,000 lines in six minutes on 8081, and the
+// page took minutes to draw. The request's own refusal is the record; the
+// subjects it could not resolve name nobody, as before, said at debug.
+// ---------------------------------------------------------------------------
+// Hot path (once per refused subject): no Entering/Leaving pair, the
+// exception the code style allows, stated as it requires.
+function budgetSpent(e) {
+  return errorCodes.codeOf(e) === 'STS-LDAP-0175';
 }
 
 // MANY SUBJECTS AT ONCE (2026-10-14): `nameForSubject()` for each, asked of
@@ -441,6 +468,16 @@ function namesForSubjects(subjects) {
                 " asked together.");
       return out;
     } catch (e) {
+      if (budgetSpent(e)) {
+        // Asking each alone would meet the same spent budget once per
+        // subject: they name nobody, as nameForSubject() would answer.
+        uuids.forEach(function (key) {
+          out.set(key, '');
+        });
+        log.debug("Leaving namesForSubjects(). The request's directory " +
+                  "budget is spent.");
+        return out;
+      }
       log.error(errorCodes.tag('STS-CORE-0091') +
                 'helpers: the subject resolver threw looking up ' +
                 uuids.length + ' subjects together, and each was asked ' +
@@ -453,6 +490,106 @@ function namesForSubjects(subjects) {
   log.debug("Leaving namesForSubjects(). " + uuids.length +
             " asked one at a time.");
   return out;
+}
+
+// `namesForSubjects()` with the directory asked asynchronously (#790), for a
+// page that names the holders of a large register: where the resolver offers
+// `namesForAsync()` the batches are awaited and hold no event loop; where it
+// does not, or it fails for any reason, this is `namesForSubjects()`.
+// ---------------------------------------------------------------------------
+// A LIST'S WORK, A FEW AT A TIME (2026-10-21): `fn` over every item, at most
+// `limit` running at once, for store questions that each wait on a round
+// trip — overlapped, and still bounded so they do not take the whole pool
+// from the requests beside them. Resolves once every item is done; rejects
+// with the first failure, after the ones running have finished.
+// ---------------------------------------------------------------------------
+/**
+ * Runs `fn` over `items` with at most `limit` running at once.
+ *
+ * @param items - the items
+ * @param limit - the most at once (at least 1)
+ * @param fn - an async function of one item
+ * @returns a promise that resolves when every item is done
+ */
+async function inParallel(items, limit, fn) {
+  log.debug("Entering inParallel(). " + (items || []).length + " item(s).");
+  const list = Array.isArray(items) ? items : [];
+  const width = Math.max(1, Math.min(Math.floor(Number(limit)) || 1,
+                                     list.length || 1));
+  let next = 0;
+  let failure = null;
+  const runner = async function () {
+    while (next < list.length && !failure) {
+      const item = list[next];
+      next += 1;
+      try {
+        await fn(item);
+      } catch (e) {
+        log.debug("Caught in inParallel(): " + ((e && e.message) || e));
+        failure = failure || e;
+      }
+    }
+  };
+  const runners = [];
+  for (let i = 0; i < width; i++) {
+    runners.push(runner());
+  }
+  await Promise.all(runners);
+  log.debug("Leaving inParallel().");
+  if (failure) {
+    throw failure;
+  }
+}
+
+/**
+ * `namesForSubjects()`, asking the directory asynchronously where it can.
+ *
+ * @param subjects - the subjects
+ * @returns a promise of the Map `namesForSubjects()` answers
+ */
+async function namesForSubjectsAsync(subjects) {
+  log.debug("Entering namesForSubjectsAsync().");
+  if (!subjectResolver || typeof subjectResolver.namesForAsync !==
+      'function') {
+    log.debug("Leaving namesForSubjectsAsync(). No asynchronous door.");
+    return namesForSubjects(subjects);
+  }
+  const out = new Map();
+  const uuids = [];
+  (subjects || []).forEach(function (one) {
+    const text = String(one == null ? '' : one).trim();
+    const key = text.toLowerCase();
+    if (out.has(key)) {
+      return;
+    }
+    if (text.indexOf(LEGACY_SUBJECT_PREFIX) === 0 ||
+        !/^urn:uuid:/i.test(text)) {
+      out.set(key, nameForSubject(text));
+      return;
+    }
+    out.set(key, '');
+    uuids.push(key);
+  });
+  if (!uuids.length) {
+    log.debug("Leaving namesForSubjectsAsync(). Nothing to ask.");
+    return out;
+  }
+  try {
+    const named = await subjectResolver.namesForAsync(uuids);
+    uuids.forEach(function (key) {
+      out.set(key, String((named && named.get(key)) || ''));
+    });
+    log.debug("Leaving namesForSubjectsAsync(). " + uuids.length +
+              " asked together.");
+    return out;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-CORE-0091') +
+              'helpers: the subject resolver threw looking up ' +
+              uuids.length + ' subjects asynchronously, so they are asked ' +
+              'synchronously: ' + ((e && e.message) || e));
+    log.debug("Leaving namesForSubjectsAsync(). Asked synchronously.");
+    return namesForSubjects(subjects);
+  }
 }
 
 // Read once, because the listener is bound with it before anything can ask
@@ -6429,7 +6566,19 @@ function certifySignerGroupsLater(realmId, members) {
       // No certificate authority in this process: the keys still sign.
       return;
     }
-    Promise.resolve(pki.certifySignerGroups(realmId, publicHalves))
+    // WHAT THE REALM HOLDS WHEN EACH CERTIFICATE IS ISSUED, rather than what
+    // this process generated (2026-10-20): on a cluster another node's
+    // members can win the store while the branch is awaited, and the
+    // certificates over the loser's keys displaced the winner's.
+    // pki.certifySignerGroups() argues it; the generated members stand in
+    // only while nothing is held yet.
+    const heldNow = function () {
+      log.debug("Entering heldNow().");
+      const held = keystore.signerGroupsHeldFor(realmId);
+      log.debug("Leaving heldNow().");
+      return (held && held.length) ? held : publicHalves;
+    };
+    Promise.resolve(pki.certifySignerGroups(realmId, heldNow))
       .then(function (done) {
         if (done && !done.ok && (done.errors || []).length) {
           log.debug('The "' + realmId + '" realm\'s signer groups were ' +
@@ -7943,6 +8092,7 @@ function capturedDescription(captured) {
  * @namespace
  */
 module.exports = {
+  inParallel: inParallel,
   // THE KEY GENERATIONS (2026-09-22, #42): the one lookup every "is this ours"
   // check asks, the RSA keys that may decrypt, and the three acts a rotation
   // is made of — see the KEY GENERATIONS block.
@@ -8046,6 +8196,7 @@ module.exports = {
   subjectForName: subjectForName,
   nameForSubject: nameForSubject,
   namesForSubjects: namesForSubjects,
+  namesForSubjectsAsync: namesForSubjectsAsync,
   LEGACY_SUBJECT_PREFIX: LEGACY_SUBJECT_PREFIX,
   hasScope: hasScope,
   escapeRdnValue: escapeRdnValue,

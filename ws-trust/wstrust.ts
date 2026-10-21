@@ -816,6 +816,26 @@ class WsTrust {
     return person || String(name);
   }
 
+  // The requester as `delegationPolicy.mayActNames()` compares it with a
+  // delegated JWT's `may_act` (#747): the identity the token exchange builds
+  // for its actor. A client by its subject in the mode (#471), its client_id
+  // and `urn:sts:client:` form as aliases; a person by their subject. `iss`
+  // is the issuer of the requester's own JWT, '' where it authenticated
+  // with anything else — the exchange's client with no actor_token.
+  private mayActActor(requester, issuer) {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.mayActActor().");
+    const clientId = this.clientIdOf(requester);
+    const sub = this.actorSubjectOf(requester,
+                                    this.clientSubjectsNamespaced());
+    const aliases = clientId
+      ? [clientId, 'urn:sts:client:' + clientId]
+        .filter(function (one) { return one !== sub; })
+      : [] as string[];
+    log.debug("Leaving WsTrust.mayActActor().");
+    return { sub: sub, iss: String(issuer || ''), aliases: aliases };
+  }
+
   // Whether a client's subject is `urn:sts:client:<id>` here: RFC 9700 mode
   // (`oauth2_bcp.enabled()`, which product implies), the predicate the
   // token endpoint asks for the same question (#471). Asked of the module
@@ -1452,6 +1472,8 @@ class WsTrust {
                 read.subject + ".");
       return { ok: true, subject: read.subject || 'jwt-subject',
                isClient: !!read.isClient,
+               // #747: the actor's issuer, for a may_act naming one.
+               issuer: String((read.claims && read.claims.iss) || ''),
                kind: 'assertion', method: 'a JWT as the credential',
                tokenId: String((read.claims && read.claims.jti) || ''),
                note: mode.verifiesCredentials()
@@ -1866,7 +1888,46 @@ class WsTrust {
     return { subject: read.subject || 'delegated-subject', element: element,
              tokenKind: 'JWT',
              tokenId: String(claims.jti || ''), audiences: audiences,
-             delegates: this.delegatesInAct(claims.act) };
+             delegates: this.delegatesInAct(claims.act),
+             mayAct: this.verifiedMayAct(String(jwtEl.textContent || '')
+               .trim(), claims) };
+  }
+
+  // ---------------------------------------------------------------------------
+  // RFC 8693 SECTION 4.4's `may_act` ON THE DELEGATED JWT (#747).
+  //
+  // The claim is the SUBJECT's statement of who may act for them, and the
+  // token exchange refuses, in every mode, a subject token whose `may_act`
+  // names somebody other than the actor (the policy's `may-act` rule).
+  // Until #747 WS-Trust read a JWT inside OnBehalfOf / ActAs (#477) and put
+  // neither fact to the policy, so the token's own "no" was not heard here.
+  // Read on the exchange's terms: ONLY off a token that VERIFIES with this
+  // realm's own key — a claim in a token nobody verified is not the
+  // subject's word. Product verified it in readOwnJwt(); development reads
+  // the JWT unverified for its subject, so it is verified here for this
+  // claim alone, as the token endpoint verifies a subject_token in either
+  // mode and believes `may_act` only when that succeeded. A SAML assertion
+  // carries no such claim and is decided as before. Null for none.
+  // ---------------------------------------------------------------------------
+  private verifiedMayAct(token, claims): any {
+    const { mode, log } = this.deps;
+    log.debug("Entering WsTrust.verifiedMayAct().");
+    let verified: any = mode.verifiesCredentials() ? claims : null;
+    if (!verified) {
+      try {
+        verified = helpers.verifyOwnJws(token);
+      } catch (e) {
+        log.debug("Caught in WsTrust.verifiedMayAct(): " +
+                  ((e && e.message) || e));
+        // Development's unverified JWT: its may_act is nobody's word.
+        verified = null;
+      }
+    }
+    const mayAct = verified && verified.may_act &&
+      typeof verified.may_act === 'object' ? verified.may_act : null;
+    log.debug("Leaving WsTrust.verifiedMayAct(). " +
+              (mayAct ? 'A claim.' : 'None.'));
+    return mayAct;
   }
 
   // A JWT presented to this STS, in either seat — the requester's credential
@@ -2153,7 +2214,13 @@ class WsTrust {
           // to, the application it was issued for.
           audiences: delegatedBy.audiences || [],
           // #186: the parties the delegated assertion says already acted.
-          delegates: delegatedBy.delegates || []
+          delegates: delegatedBy.delegates || [],
+          // #747: the verified delegated JWT's may_act, null for none; and
+          // the issuer of the requester's own JWT credential, '' for any
+          // other credential, which mayActNames() compares a claim's `iss`
+          // with.
+          mayAct: delegatedBy.mayAct || null,
+          requesterIssuer: credential ? String(credential.issuer || '') : ''
         }
       };
     }
@@ -2492,6 +2559,16 @@ class WsTrust {
     if (auth.delegation) {
       const via = auth.delegation.element;
       const requester = String(auth.delegation.requester || '');
+      // RFC 8693 SECTION 4.4's `may_act` on a delegated JWT (#747), the two
+      // facts the token exchange gives the same rule, the REQUESTER in the
+      // actor's seat — see verifiedMayAct(). Named as the exchange names
+      // its actor: a client by its subject in the mode, with its client_id
+      // and `urn:sts:client:` form as aliases (`mayActNames()` accepts
+      // either spelling), a person by their `urn:uuid:` subject.
+      const mayAct = auth.delegation.mayAct || null;
+      const mayActNamesActor = !!mayAct &&
+        delegationPolicy.mayActNames(mayAct, this.mayActActor(requester,
+          String(auth.delegation.requesterIssuer || '')));
       delegationDecision = delegationPolicy.decide({
         protocol: 'WS-Trust',
         requested: via === 'ActAs' ? 'delegation' : 'impersonation',
@@ -2499,10 +2576,12 @@ class WsTrust {
         subject: String(auth.subject || ''),
         source: auth.delegation.audiences || [],
         targets: audience ? [audience] : [],
-        targetKind: 'appliesTo'
+        targetKind: 'appliesTo',
+        mayActPresent: !!mayAct, mayActNamesActor: mayActNamesActor
       });
       if (!delegationDecision.allowed && delegationDecision.enforced) {
         const CODES = {
+          'may-act': 'STS-WSTRUST-0033',
           'intermediary': 'STS-WSTRUST-0019',
           'policy': 'STS-WSTRUST-0020',
           'semantics': 'STS-WSTRUST-0022',

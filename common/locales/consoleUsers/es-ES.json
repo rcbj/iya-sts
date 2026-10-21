@@ -15,5 +15,13 @@
   "personFieldsSection.lead": "Una pestaña por grupo, cada una con su propio Guardar, que escribe <code>{dn}</code> en su lugar como lo haría un <code>ldapmodify</code> — y el directorio informa del cambio a Shared Signals igual que de una escritura por SCIM o LDAP. <strong>Guardar</strong> escribe lo que cambió en esa pestaña y nada más: un valor único se establece, y uno vacío se borra; en una lista, los valores añadidos se añaden y los quitados se eliminan. Una lista muestra un cuadro por valor, con + para añadir uno y la papelera para eliminarlo; cada cuadro presente debe tener un valor. Una pestaña de seis campos o más se abre en su vista simplificada, con los atributos que suelen rellenarse; su vista avanzada los muestra todos, y un atributo que la vista simplificada oculta conserva su valor al guardar la pestaña. Una verificación de identidad cubre un valor solo mientras la entrada lo siga teniendo, así que cambiar un valor verificado hace que esa verificación caduque para él.",
   "userAttributesSection.explain": "Estos escriben <code>{dn}</code> en su lugar, un atributo a la vez, como lo haría un <code>ldapmodify</code> de la entrada — y el directorio informa del cambio a Shared Signals igual que de una escritura por SCIM o LDAP. <strong>Establecer</strong> reemplaza todos los valores por uno (vacío lo borra); <strong>Añadir a</strong> y <strong>Quitar de</strong> actúan sobre un valor de un atributo que tiene varios. Una verificación de identidad cubre un valor solo mientras la entrada lo siga teniendo, así que cambiar un valor verificado hace que esa verificación caduque para él.",
   "userAttributesSection.addTo": "Añadir a",
-  "userAttributesSection.addButton": "Añadir"
+  "userAttributesSection.addButton": "Añadir",
+  "mfaSection.siopProofWallet": "Demostrado por la cartera de la persona",
+  "mfaSection.siopLocationWeb": "Cartera web",
+  "mfaSection.siopLocationWebTip": "Cartera web: {url}",
+  "mfaSection.siopLocationAppUnnamed": "Aplicación de cartera",
+  "mfaSection.siopLocationAppTip": "Nombre que dio la aplicación de cartera: {name}",
+  "mfaSection.siopLocationAppUnnamedTip": "Una aplicación de cartera respondió a la solicitud; no indicó su nombre.",
+  "mfaSection.siopLocationAdminTip": "Registrado por valor por un administrador; no intervino ninguna cartera.",
+  "mfaSection.siopLocationNoneTip": "Se registró antes de que este servicio anotara de dónde procede una clave. Si la persona la demuestra de nuevo con su cartera, queda anotado."
 }

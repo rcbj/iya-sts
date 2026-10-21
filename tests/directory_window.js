@@ -909,6 +909,33 @@ function fakeDatabase() {
         return r.seq > Number(p[0]);
       }).slice(0, Number(p[1]) || 500));
     }
+    // THE FLUSH'S SET-BASED WRITES (2026-10-21): fourteen parallel arrays,
+    // the INSERT's fifteenth the ids of the blind rows it may update.
+    if (/^DELETE FROM sts_ldap_entries WHERE \(realm, dn_key\) IN/
+          .test(text)) {
+      p[0].forEach(function (r, i) {
+        db.entries.delete(eid(r, p[1][i]));
+      });
+      return rows([]);
+    }
+    if (/^(INSERT INTO|UPDATE) sts_ldap_entries/.test(text) &&
+        Array.isArray(p[0])) {
+      const inserting = /^INSERT/.test(text);
+      const blind = new Set(p[14] || []);
+      const written = [];
+      p[0].forEach(function (r, i) {
+        const k = eid(r, p[1][i]);
+        if (inserting ? db.entries.has(k) && !blind.has(r + '\n' + p[1][i])
+                      : !db.entries.has(k)) {
+          return;
+        }
+        db.entries.set(k, { realm: r, dn_key: p[1][i], dn: p[2][i],
+                            attrs: json(p[3][i]), origin: p[4][i],
+                            created_at: p[5][i], modified_at: p[6][i] });
+        written.push({ realm: r, dn_key: p[1][i] });
+      });
+      return Promise.resolve({ rows: written, rowCount: written.length });
+    }
     if (/FROM sts_ldap_entries ORDER BY realm, dn_key$/.test(text)) {
       return rows(Array.from(db.entries.values()));
     }
@@ -1038,7 +1065,32 @@ async function throughPersistence(t) {
           'F0b. a windowed worker reads back the RESIDENT entries at start ' +
           'and none of the people');
   w.attach(fakeBridge(db.entries));
-  await persistence.coordinate();
+  // F0c (2026-10-21): coordination follows from the change log's head as it
+  // was when the store was OPENED, not when coordination began — a change
+  // another process commits during the restore is applied, not marked as
+  // seen. One is committed here, after the restore, and must be above the
+  // mark coordination starts from.
+  const headAtOpen = db.log.length;
+  db.log.push({ seq: db.log.length + 1, origin: 'another-process',
+                kind: 'appconfig', realm: '', key: 'during-restore' });
+  const replicationModule = require('../persistence/persistence_replication');
+  const realStart = replicationModule.start;
+  let fromSeq;
+  replicationModule.start = function (driver, appliers, from) {
+    fromSeq = from;
+    return realStart.apply(this, arguments);
+  };
+  try {
+    await persistence.coordinate();
+  } finally {
+    replicationModule.start = realStart;
+  }
+  t.check(typeof fromSeq === 'number' && fromSeq <= headAtOpen &&
+          fromSeq < db.log.length,
+          'F0c. coordination starts from the change log\'s head when the ' +
+          'store was opened, below a change committed during the restore',
+          JSON.stringify({ fromSeq: fromSeq, headAtOpen: headAtOpen,
+                           head: db.log.length }));
 
   f.set('uid=jan,' + USERS, { dn: 'uid=jan,' + USERS,
                               attributes: person('jan') });

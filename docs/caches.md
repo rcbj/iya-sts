@@ -137,6 +137,7 @@ They need no setting because a changed certificate is a different entry.
 | Post-quantum keys | the realm's ML-DSA and SLH-DSA keys, generated when first needed | per realm | as for the key set; one per realm | — |
 | Certificate authorities | each realm's CA hierarchy, held decrypted | per process | replaced when the hierarchy changes; one per realm, plus the service Root and the process branch | — |
 | Thumbprint key IDs | the RFC 9278 URI for each key ID | per process | never needed again (512 entries) | — |
+| Derived digest keys | the HMAC key each kind of keyed digest is derived with | per process | until the digest key or key-encryption key it came from changes, checked on every use (64 entries) | — |
 
 The decrypted-key policy only applies where keys persist. In development mode
 there is no stored copy to fall back to, so keys stay in memory.
@@ -150,6 +151,8 @@ there is no stored copy to fall back to, so keys stay in memory.
 | Fetched client key sets | the JSON Web Key Set a client's registered `jwks_uri` answered (#120) | per realm | 256 entries per realm, the oldest dropped | `oauth2.clientJwksCacheS` (300), `oauth2.clientJwksRefetchS` (30) |
 | Request objects | JWT request objects fetched from a client's registered `request_uri` | per realm | the setting; 0 (the default) turns it off; at most 256 entries | `oauth2.requestUriCacheS` (0) |
 | Authorization details types | parsed RFC 9396 type definitions and their compiled JSON Schemas | per process | until the definition text changes (512 entries) | — |
+| Declared authorization details types | the RFC 9396 types the realm's applications declare, with the resource that answers for each | per realm | until any application entry changes | — |
+| Application entries by identifier | one application's entry and parsed record, for the checks a sign-in makes about its client | per realm | until any application entry changes; 256 identifiers | — |
 | SSF event permissions | which Shared Signals events each application may receive | per realm | until any application entry changes; 4,096 answers, oldest first | — |
 
 **After a signing key rotation**, a discovery document can carry `signed_metadata`
@@ -170,6 +173,7 @@ The embedded directory keeps indexes so that a lookup does not walk every entry.
 | Groups | member → groups | per realm | rebuilt after a change that affects groups |
 | entryUUIDs | UUID → entry | per realm | rebuilt when a lookup finds it stale |
 | Container listings | the entries under each container | per realm | rebuilt after a write under that container; 64 containers, oldest first |
+| Service accounts | the names of the realm's service accounts | per realm | rebuilt after a write to an entry that is, or was, a service account |
 
 These are exact. A write is visible to the next read whichever door made it: the
 console, `/admin-api`, SCIM or LDAP on port 389. Each index is one per realm and
@@ -246,6 +250,7 @@ something be used twice, which is why none of them has a control.
 |---|---|---|---|---|
 | Used assertions | every RFC 7523 JWT and RFC 7522 SAML assertion accepted, for a grant or client authentication, and the `jti` of every RFC 9101 request object an authorization response was issued on | per realm, persisted in every store mode | `oauth2.assertionReplayCacheSize` (1000); **refuses new assertions when full** | once the assertion itself expires; a request that fails releases its claim |
 | Kerberos authenticators | each authenticator the protected service accepted | per trust realm (the realm whose Kerberos realm issued the ticket), persisted | `krb5.replayCacheMaxEntries` (10000); **refuses when full** | after twice the clock skew |
+| Refresh token rotation records | under rotation, each refresh token and family, so a replayed refresh token revokes its family; and what each grant issued, for RFC 7009 | per realm, persisted | `oauth2.maxRefreshTokenFamilies` (2000), twice that for the grant records; past it the retired go first, then the oldest, with a warning | after the family window; dropped by the expiry job every minute |
 | DPoP proof IDs | each DPoP proof's `jti` | per realm, persisted | `oauth2.dpopReplayCacheSize` (10000); **refuses new proofs when full** | after twice `oauth2.dpopIatSkewS` (300) |
 | DPoP nonces | server-issued DPoP nonces | per realm, persisted | `oauth2.dpopNonceCacheSize` (10000), oldest first | after `oauth2.dpopNonceTtlS` (300) |
 | GNAP signatures | each signed GNAP request | per realm, persisted | `gnap.replayCacheSize` (10000); **refuses new signatures when full** | after twice `gnap.signatureMaxAgeS` (300) |
