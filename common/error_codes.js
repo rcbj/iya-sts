@@ -1376,6 +1376,13 @@ const CODES = [
       'hosted surfaces stay on the protocol workers.',
     spec: '' },
   // ===== STORE =============================================================
+  { code: 'STS-WORKER-0051',
+    summary: 'A request worker took longer than workers.startTimeoutMs to ' +
+      'start and is still starting (#820). The pool stops waiting for it ' +
+      'and does not replace it; it joins when it reports ready. Only after ' +
+      'four times the limit is it reported as failed (STS-WORKER-0017) and ' +
+      'replaced.',
+    spec: '' },
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',
     spec: '' },

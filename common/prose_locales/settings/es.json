@@ -1620,8 +1620,8 @@
     "text": "Límite de arranque de un worker de solicitudes (ms)"
   },
   "workers.startTimeoutMs|description": {
-    "en": "81d7608fc4c1da1f",
-    "text": "Cuánto puede tardar un worker de solicitudes o de superficies en poner en marcha su estado (el almacén, las claves, las filas emitidas y la coordinación) antes de informar de que no pudo arrancar. Con tres fallos seguidos, el pool deja de crear workers hasta workers.giveUpRetryMs y luego prueba uno; hasta que esté listo, las solicitudes se quedan en el proceso frontal. Auméntelo donde el arranque de un worker sea lento — un conjunto grande de claves de dominio que cada arranque vuelve a certificar, una base de datos en frío (#311)."
+    "en": "5d23a7adb4e81ee3",
+    "text": "Cuánto puede tardar un worker de peticiones o de superficies en poner en marcha su estado (el almacén, las claves, las filas emitidas y la coordinación) antes de que el pool deje de esperarlo. Un worker que lo supera es LENTO, no fallido: se le deja terminar y se une al pool cuando está listo (#820). Solo al cuádruple de este valor informa de que no pudo arrancar; tres fallos así seguidos y el pool deja de crear workers hasta workers.giveUpRetryMs, y luego prueba uno; hasta que esté listo, las peticiones se quedan en el proceso frontal. Auméntelo donde el arranque de un worker sea lento: un conjunto grande de claves de dominio que cada arranque vuelve a certificar, una base de datos fría (#311)."
   },
   "workers.startTimeoutMs|restartReason": {
     "en": "7ac1de67a7c566c0",
