@@ -367,6 +367,22 @@
     "en": "d0ae04f76208dec0",
     "text": "Sin caducidad: se reemplaza cuando la jerarquía cambia aquí o en otro nodo, y se descarta junto con su dominio."
   },
+  "caches.store.keys.derived-digest-keys.title": {
+    "en": "f9fe85cae4c1d960",
+    "text": "Claves de resumen derivadas"
+  },
+  "caches.store.keys.derived-digest-keys.description": {
+    "en": "168b9cef8ba71a95",
+    "text": "La clave HMAC con la que se deriva cada etiqueta de resumen con clave, para que un resumen no ejecute HKDF en cada llamada. Se conserva junto a la clave de la que se derivó, que se compara en cada uso."
+  },
+  "caches.store.keys.derived-digest-keys.bound": {
+    "en": "ddbdac124aa8d60a",
+    "text": "Aplicado: MAX_DERIVED_DIGEST_KEYS (64) etiquetas; por encima, se descartan todas las claves derivadas."
+  },
+  "caches.store.keys.derived-digest-keys.lifetime": {
+    "en": "624f872facf2862c",
+    "text": "Hasta que cambia la clave de la que se derivó (una nueva clave de resumen o clave de cifrado de claves), lo que se comprueba en cada uso."
+  },
   "caches.store.keys.plaintext.title": {
     "en": "51cb646ea755ee9e",
     "text": "Claves de firma descifradas"

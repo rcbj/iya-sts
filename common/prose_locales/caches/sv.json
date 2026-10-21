@@ -367,6 +367,22 @@
     "en": "d0ae04f76208dec0",
     "text": "Ingen utgång: ersätts när hierarkin ändras här eller på en annan nod, och släpps tillsammans med sin sfär."
   },
+  "caches.store.keys.derived-digest-keys.title": {
+    "en": "f9fe85cae4c1d960",
+    "text": "Härledda sammanfattningsnycklar"
+  },
+  "caches.store.keys.derived-digest-keys.description": {
+    "en": "168b9cef8ba71a95",
+    "text": "HMAC-nyckeln som varje etikett för nyckelbaserad sammanfattning härleds med, så att en sammanfattning inte kör HKDF vid varje anrop. Sparas bredvid nyckeln den härleddes ur, som jämförs vid varje användning."
+  },
+  "caches.store.keys.derived-digest-keys.bound": {
+    "en": "ddbdac124aa8d60a",
+    "text": "Upprätthållen: MAX_DERIVED_DIGEST_KEYS (64) etiketter; därutöver kastas alla härledda nycklar."
+  },
+  "caches.store.keys.derived-digest-keys.lifetime": {
+    "en": "624f872facf2862c",
+    "text": "Tills nyckeln den härleddes ur ändras (en ny sammanfattningsnyckel eller nyckelkrypteringsnyckel), vilket kontrolleras vid varje användning."
+  },
   "caches.store.keys.plaintext.title": {
     "en": "51cb646ea755ee9e",
     "text": "Dekrypterade signeringsnycklar"
