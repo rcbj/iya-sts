@@ -7495,6 +7495,14 @@
     "en": "8febb2273519b4ee",
     "text": "Ilang naunang sign-in ang kailangan ng tao bago siya bigyan ng score ng modelo. Ang mas kaunti ay UNSCORED, gaya ng unang sign-in, at naghihintay sa parehong kasaysayan ang mga signal na new-device at new-tls-stack: sa isa o dalawang sign-in, ang modelo ay halos ang prior ng populasyon, at ang ikalawang sign-in ng bagong tao ay mababasa bilang MEDIUM. Nalalapat ang mga evidence signal (mga listahan, automated na client, tinanggihang password, kompromisadong security key) gaano man kabago ang tao. Ang 1 ay nagbibigay ng score mula sa ikalawang sign-in pataas."
   },
+  "risk.populationUsersCacheS|label": {
+    "en": "e30547f35344a4d6",
+    "text": "Ilang segundo iniingatan ang bilang ng tao sa realm"
+  },
+  "risk.populationUsersCacheS|description": {
+    "en": "5e0a6cc869a4bab0",
+    "text": "Gaano katagal iniingatan ng risk scoring ang bilang ng taong nag-sign in sa isang realm — ang denominator ng smoothing term ng model — bago sila bilangin muli. Ang pagbilang ay pag-scan ng isang row bawat tao, kaya ang pagtatanong sa bawat sign-in ay lalong nagiging magastos habang lumalaki ang realm; ang bilang na isang minuto na ang tanda ay nagbabago ng score nang mas mababa kaysa sa magagawa ng isa pang tao sa realm. Ang realm na may kulang sa 1,000 tao ay binibilang sa bawat sign-in anuman ang sabihin nito. Ang 0 ay bumibilang sa bawat sign-in."
+  },
   "risk.geoMinimumCount|label": {
     "en": "e636b2310a4df74f",
     "text": "Pinakakaunting tao para bigyan ng numero ang lugar sa mapa"

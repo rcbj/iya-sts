@@ -1171,6 +1171,18 @@
     "en": "cabefdef4e47cbf3",
     "text": "Hanggang may ma-activate na dataset version, o tanggalin ito ng hangganan."
   },
+  "caches.store.risk.population-users.title": {
+    "en": "ee5f57710fdd1b70",
+    "text": "Risk scoring: bilang ng tao sa bawat realm"
+  },
+  "caches.store.risk.population-users.description": {
+    "en": "cb24f916eda472c0",
+    "text": "Kung ilang tao na ang nag-sign in sa bawat realm, ang denominator ng smoothing term ng risk model, iniingatan para hindi bilangin ng isang sign-in ang bawat taong kailanman ay nag-sign in."
+  },
+  "caches.store.risk.population-users.bound": {
+    "en": "8154bb7a629a4263",
+    "text": "Structural: isang bilang bawat realm na may hindi bababa sa 1000 tao (naka-seal man o hindi), at may hanggang realms.maxCount na realm bukod sa default."
+  },
   "caches.store.risk.standings.title": {
     "en": "492e058d1adf8354",
     "text": "Mga risk standing"

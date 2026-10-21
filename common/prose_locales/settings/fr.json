@@ -7495,6 +7495,14 @@
     "en": "8febb2273519b4ee",
     "text": "Le nombre de connexions antérieures dont une personne a besoin avant que le modèle ne la note. En deçà, elle n’est PAS NOTÉE, comme pour une première connexion, et les signaux new-device et new-tls-stack attendent le même historique : avec une ou deux connexions, le modèle est surtout l’a priori de la population, et la deuxième connexion d’une nouvelle personne serait lue comme MEDIUM. Les signaux de preuve (listes, clients automatisés, mots de passe refusés, clé de sécurité compromise) s’appliquent quelle que soit l’ancienneté de la personne. 1 note à partir de la deuxième connexion."
   },
+  "risk.populationUsersCacheS|label": {
+    "en": "e30547f35344a4d6",
+    "text": "Secondes pendant lesquelles le nombre de personnes du domaine est conservé"
+  },
+  "risk.populationUsersCacheS|description": {
+    "en": "5e0a6cc869a4bab0",
+    "text": "Pendant combien de temps l’évaluation des risques conserve le nombre de personnes qui se sont connectées à un domaine — le dénominateur du terme de lissage du modèle — avant de les compter à nouveau. Compter parcourt une ligne par personne, donc le demander à chaque connexion coûte davantage à mesure que le domaine grandit ; un compte vieux d’une minute modifie un score de moins qu’une personne de plus dans le domaine ne le ferait. Un domaine de moins de 1 000 personnes est compté à chaque connexion quoi que dise ce réglage. 0 compte à chaque connexion."
+  },
   "risk.geoMinimumCount|label": {
     "en": "e636b2310a4df74f",
     "text": "Nombre minimal de personnes pour chiffrer un lieu sur la carte"

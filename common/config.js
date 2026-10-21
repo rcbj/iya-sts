@@ -14054,6 +14054,22 @@ const SETTINGS = [
                  'compromised security key) apply however new the person ' +
                  'is. 1 scores from the second sign-in on.' },
 
+  // The realm's user count, kept (#779): see risk/risk_engine.ts's
+  // `populationUsers`.
+  { key: 'risk.populationUsersCacheS', group: 'Risk',
+    label: 'Seconds the realm\'s user count is kept',
+    env: 'STS_RISK_POPULATION_USERS_CACHE_S', type: 'int', dflt: 60, min: 0,
+    max: 86400, runtime: true,
+    description: 'How long risk scoring keeps the number of people who have ' +
+                 'signed in to a realm — the denominator of the model\'s ' +
+                 'smoothing term — before counting them again. Counting is ' +
+                 'a scan of one row per person, so asking at every sign-in ' +
+                 'costs more as the realm grows; a count a minute old ' +
+                 'changes a score by less than one person in the realm ' +
+                 'would. A realm of fewer than 1,000 people is counted at ' +
+                 'every sign-in whatever this says. 0 counts at every ' +
+                 'sign-in.' },
+
   // #255 (2026-09-26, rcbj's decision 4): Monitoring → Geolocation counts
   // people by place, and a place with one person in it names that person to
   // anybody who knows where they live. Below this, a count is shaded and not

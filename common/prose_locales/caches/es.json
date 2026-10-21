@@ -1171,6 +1171,18 @@
     "en": "cabefdef4e47cbf3",
     "text": "Hasta que se activa una versión de un conjunto de datos, o el límite la descarta."
   },
+  "caches.store.risk.population-users.title": {
+    "en": "ee5f57710fdd1b70",
+    "text": "Evaluación de riesgo: número de personas de cada dominio"
+  },
+  "caches.store.risk.population-users.description": {
+    "en": "cb24f916eda472c0",
+    "text": "Cuántas personas han iniciado sesión en cada dominio, el denominador del término de suavizado del modelo de riesgo, guardado para que un inicio de sesión no cuente a cada persona que alguna vez inició sesión."
+  },
+  "caches.store.risk.population-users.bound": {
+    "en": "8154bb7a629a4263",
+    "text": "Estructural: un recuento por dominio de al menos 1000 personas (sellado o no), y hay como máximo realms.maxCount dominios además del predeterminado."
+  },
   "caches.store.risk.standings.title": {
     "en": "492e058d1adf8354",
     "text": "Situaciones de riesgo"

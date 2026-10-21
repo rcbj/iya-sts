@@ -1171,6 +1171,18 @@
     "en": "cabefdef4e47cbf3",
     "text": "直到某个数据集版本被激活，或因达到上限而被丢弃。"
   },
+  "caches.store.risk.population-users.title": {
+    "en": "ee5f57710fdd1b70",
+    "text": "风险评分：每个领域的人数"
+  },
+  "caches.store.risk.population-users.description": {
+    "en": "cb24f916eda472c0",
+    "text": "每个领域中曾经登录过的人数，即风险模型平滑项的分母；保留下来，使一次登录不必统计每个曾经登录过的人。"
+  },
+  "caches.store.risk.population-users.bound": {
+    "en": "8154bb7a629a4263",
+    "text": "结构性：每个至少有 1000 人的领域一个计数（加密或未加密），且除默认领域外最多有 realms.maxCount 个领域。"
+  },
   "caches.store.risk.standings.title": {
     "en": "492e058d1adf8354",
     "text": "风险状况"
