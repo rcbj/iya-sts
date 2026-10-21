@@ -151,6 +151,12 @@ cluster (`security.rateLimit*`).
 
 ### WebAuthn
 
+> **A step-by-step guide** to every way passkeys can be used here — as a
+> second factor, without a password, without a username, required for
+> administrators, restricted to approved models, and a classical and a
+> post-quantum passkey side by side — is on
+> [Passkeys and WebAuthn](passkeys.md). This section is the reference.
+
 Passkeys — on a device, in a password manager, on a phone or on a security
 key — as a WebAuthn Level 3 relying party over FIDO CTAP2. A key is enrolled
 in one of two **roles**:
