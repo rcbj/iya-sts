@@ -74,6 +74,7 @@
 
 - section: Verifiable credentials
   items:
+    - { title: "Verifiable credentials and wallets (OID4VC)", url: /verifiable-credentials.html }
     - { title: OpenID4VCI and status lists, url: /oid4vci.html }
     - { title: "Configuring OpenID4VCI", url: /configure-oid4vci.html }
     - { title: OpenID4VP and wallet sign-in, url: /oid4vp.html }
