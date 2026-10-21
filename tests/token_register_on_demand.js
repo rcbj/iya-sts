@@ -206,6 +206,19 @@ function child() {
          'R7. the backfill notes every holder in the store once per realm, ' +
          'and its mark is no row of the list',
          JSON.stringify({ ran: ran, again: again, after: after }));
+    // The job itself, registered with the real scheduler: a malformed
+    // registration throws (STS-SCHED-0009) at every process's start.
+    const scheduler = require(ROOT + '/cluster/scheduler');
+    let registered = null;
+    try {
+      stats.ensureHoldersBackfillJob(scheduler);
+      registered = scheduler.job('oauth2.token-holders-backfill');
+    } catch (e) {
+      registered = String((e && e.message) || e);
+    }
+    note(registered && typeof registered === 'object',
+         'R7. the backfill job registers with the scheduler',
+         typeof registered === 'string' ? registered : '');
   })().catch(function (e) {
     note(false, 'the child threw', (e && e.stack) || e);
   }).then(function () {
