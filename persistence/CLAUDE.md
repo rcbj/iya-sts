@@ -2094,7 +2094,9 @@ The stores on demand: `oauth2_bcp.refreshTokens` and `oauth2_bcp.grantTokens`
 expiries; `authn/account_sets.ts` argues the expiry), and
 `admin_stats.tokens` (part 3, filed by name, subject, session, client and
 bound key; the console's lists and counts are of what a process holds —
-rcbj's hybrid — and `snapshot().tokens.heldOnly` says so), and key-resident
+rcbj's hybrid — and `snapshot().tokens.heldOnly` says so; every
+token's holder is kept apart, one small row each, in
+`admin_stats.tokenHolders`, so `/admin/users` still lists them all), and key-resident
 `access_token_status.entries` (part 3, filed by jti; the list is built from
 `access_token_status.invalid`, the revoked bits `admin_stats`'
 `setStatusMarker()` keeps, filled once from every entry by the store's

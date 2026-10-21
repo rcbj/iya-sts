@@ -24,7 +24,10 @@
 //   R4. the snapshot says its count is of what is held (`heldOnly`);
 //   R5. revokeWhereAsync() — /admin-api's revoke-all — walks the store a
 //       page at a time with the event loop given back between, and
-//       revokes what is not held.
+//       revokes what is not held;
+//   R6. every token holder is listed (`admin_stats.tokenHolders`), held
+//       tokens or not, and one person's row counts their tokens through the
+//       index; a JWT recorded notes its holder once, not once per token.
 //
 // In a child process: it installs a stand-in reader in `common/realms.js`.
 // ===========================================================================
@@ -153,6 +156,39 @@ function child() {
          'R5. revokeWhereAsync() walks the store a page at a time, giving ' +
          'the event loop back, and revokes what is not held',
          JSON.stringify({ later: later, turned: turned, asked: asked }));
+
+    const holders = realms.handleFor('admin_stats.tokenHolders');
+    holders.restore('default', 'erin', { firstAt: 1,
+                                         lastExp: future + 7200 });
+    const keys = Array.from(stats.userKeys());
+    const listed = stats.userRows().map(function (row) {
+      return row.key;
+    });
+    const bob = stats.userRow('bob');
+    note(keys.indexOf('erin') >= 0 && listed.indexOf('erin') >= 0 &&
+         bob && bob.tokens && bob.tokens.issued === 1,
+         'R6. every token holder is listed, and one person\'s row counts ' +
+         'their tokens through the index',
+         JSON.stringify({ erin: listed.indexOf('erin') >= 0,
+                          bob: bob && bob.tokens }));
+    const before = holders.dump('default').length;
+    const recordOne = function (jti) {
+      stats.recordJwt({ jti: jti, sub: '', username: 'frank', iat: 1,
+                        exp: Math.floor(future / 1000), typ: 'Bearer' },
+                      'x.y.z', { kind: 'access_token' });
+    };
+    recordOne('f-1');
+    const once = holders.dump('default').length;
+    let writes = 0;
+    realms.setPersistObserver(function (handle) {
+      if (handle === 'admin_stats.tokenHolders') {
+        writes++;
+      }
+    });
+    recordOne('f-2');
+    note(once === before + 1 && writes === 0,
+         'R6. a recorded JWT notes its holder once, not once per token',
+         JSON.stringify({ before: before, once: once, writes: writes }));
   })().catch(function (e) {
     note(false, 'the child threw', (e && e.stack) || e);
   }).then(function () {

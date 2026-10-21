@@ -351,6 +351,60 @@ function recordCall(call) {
 // `oauth2.expiredTokenRetentionS` past its `exp` (epoch seconds, plus the
 // clock skew) so /admin/tokens can show it expired, and then goes. A token
 // with no `exp` (0) never expires.
+// ---------------------------------------------------------------------------
+// EVERY IDENTITY A TOKEN WAS ISSUED TO, ONE SMALL ROW EACH (#820, rcbj's
+// choice): what `/admin/users` lists beside the register and the directory.
+// With the register on demand a process holds only the recent tokens, and
+// the people known only from older ones fell off the list — 130,000 rows
+// became 17,000 on 8081. This keeps them: keyed by the holder's identity
+// key, written when a token is recorded and only when that holder is new or
+// the token outlives the row by an hour, so a person signing in again and
+// again does not write a row each time. It expires with the holder's last
+// token, as the register's records do. A row's token COUNTS are the
+// index's, read for the rows a page shows (`userRow()`).
+// ---------------------------------------------------------------------------
+const tokenHolders = realms.map({
+  persist: 'admin_stats.tokenHolders',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (row) {
+    const exp = Number(row && row.lastExp);
+    const skewS = Number(config.value('oauth2.clockSkewS'));
+    const keepS = Number(config.value('oauth2.expiredTokenRetentionS'));
+    return exp > 0 && isFinite(skewS) && isFinite(keepS)
+      ? (exp + Math.max(0, skewS) + Math.max(0, keepS)) * 1000 : null;
+  }
+});
+
+// How much longer a token must live than its holder's row before the row
+// is written again (seconds).
+const HOLDER_REFRESH_S = 3600;
+
+/**
+ * Notes the holder of a token just recorded, when that holder is new or the
+ * token outlives their row by `HOLDER_REFRESH_S`. A hot path (every JWT
+ * signed): no Entering/Leaving pair.
+ *
+ * @param record - the token record
+ */
+function noteTokenHolder(record) {
+  const key = record.username ? identityKeyOf(record.username)
+    : holderKeyOf(record.username, record.sub);
+  if (!key) {
+    return;
+  }
+  const held = tokenHolders.get(key);
+  const exp = Number(record.exp) || 0;
+  const lastExp = held ? Number(held.lastExp) || 0 : 0;
+  const client = record.grant === 'client_credentials';
+  if (held && exp <= lastExp + HOLDER_REFRESH_S &&
+      (!client || held.isClient)) {
+    return;
+  }
+  tokenHolders.set(key, { firstAt: held ? held.firstAt : Date.now(),
+                          lastExp: Math.max(exp, lastExp),
+                          isClient: client || !!(held && held.isClient) });
+}
+
 // **ON DEMAND (#820 part 3)**: 546,000 records on 8081, read back by every
 // process at every start. A process holds the recent ones it was asked
 // about; a token is read by its jti when it is asked for; what has to find
@@ -611,6 +665,7 @@ function recordJwt(payload, signed, context) {
     nums.tokensForgotten++;
   }
   tokens.set(key, record);
+  noteTokenHolder(record);
   ensureTokenPurgeJob();
   log.debug("Leaving recordJwt(). " + tokens.size + " token(s) held, " +
       nums.tokensForgotten + " " +
@@ -6490,6 +6545,12 @@ function collectUserKeys() {
   tokens.forEach(function (record) {
     add(holderKeyOf(record.username, record.sub));
   });
+  // On demand (#820), every holder, not only those of the tokens held.
+  if (tokens.onDemandLive()) {
+    tokenHolders.forEach(function (row, key) {
+      add(key);
+    });
+  }
   allArtifacts().forEach(function (record) {
     add(record.subject);
   });
@@ -6586,6 +6647,16 @@ function buildUserRowsResolved(onlyKey) {
     if (record.issuedAt > row.lastActivityAt) row.lastActivityAt =
         record.issuedAt;
   });
+  // EVERY HOLDER ON DEMAND (#820): a row for each, its counts from the
+  // tokens held here; a page reads a shown row's own from the index.
+  if (wanted === null && tokens.onDemandLive()) {
+    tokenHolders.forEach(function (holder, key) {
+      const row = rowFor(key);
+      if (row && holder && holder.isClient) {
+        row.isClient = true;
+      }
+    });
+  }
 
   // EVERY PROCESS'S — see allArtifacts(). A per-user count built from this
   // process's segment alone under-reports every identity another worker served.
@@ -7298,6 +7369,9 @@ module.exports = {
   withSubjectsResolvedAsync: withSubjectsResolvedAsync,
   // #352: one row, and the keys alone, without building every row.
   userRow: userRow,
+  // What signing a JWT reports through `helpers.setJwtRecorder()`, for the
+  // tests that record one without signing it.
+  recordJwt: recordJwt,
   userKeys: userKeys,
   issuedArtifactsOfKind: issuedArtifactsOfKind,
   userDetail: userDetail,
