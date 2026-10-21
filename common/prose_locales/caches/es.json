@@ -603,6 +603,22 @@
     "en": "b12dd09efefaa6bd",
     "text": "Hasta que el directorio se escribe de una forma que el índice no puede incorporar; la siguiente búsqueda lo reconstruye entonces. Un índice por dominio."
   },
+  "caches.store.ldap.windowed-entryuuids.title": {
+    "en": "1bcb1ccebd4c7781",
+    "text": "entryUUID en ventana"
+  },
+  "caches.store.ldap.windowed-entryuuids.description": {
+    "en": "4bbc3a85d38472cd",
+    "text": "En un proceso que mantiene una ventana del directorio, la clave en la que se encontró por última vez el entryUUID de cada persona o dispositivo, para que un sujeto se resuelva en la entrada que mantiene la ventana sin volver a preguntar al almacén (#773). Se comprueba contra el entryUUID propio de la entrada en cada uso."
+  },
+  "caches.store.ldap.windowed-entryuuids.bound": {
+    "en": "a4522667ab0d5562",
+    "text": "Aplicado: ldap.workerCacheEntries por dominio; los más antiguos se eliminan primero."
+  },
+  "caches.store.ldap.windowed-entryuuids.lifetime": {
+    "en": "317464bd9b5bd06a",
+    "text": "Hasta que la entrada que nombra salga de la ventana, se renombre o deje de llevar ese entryUUID, lo que se comprueba en cada uso."
+  },
   "caches.store.mail.outbox.title": {
     "en": "d40abea9379f4e22",
     "text": "Bandeja de salida de correo"

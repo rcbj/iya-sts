@@ -603,6 +603,22 @@
     "en": "b12dd09efefaa6bd",
     "text": "Hanggang masulatan ang directory sa paraang hindi kayang isama ng index; pagkatapos ay bubuuin itong muli ng susunod na lookup. Isang index bawat realm."
   },
+  "caches.store.ldap.windowed-entryuuids.title": {
+    "en": "1bcb1ccebd4c7781",
+    "text": "Mga entryUUID na nasa window"
+  },
+  "caches.store.ldap.windowed-entryuuids.description": {
+    "en": "4bbc3a85d38472cd",
+    "text": "Sa prosesong may hawak na window ng directory, ang key kung saan huling natagpuan ang entryUUID ng bawat tao o device, para ma-resolve ang isang subject sa entry na hawak ng window nang hindi muling tinatanong ang store (#773). Sinusuri laban sa sariling entryUUID ng entry sa bawat paggamit."
+  },
+  "caches.store.ldap.windowed-entryuuids.bound": {
+    "en": "a4522667ab0d5562",
+    "text": "Ipinapatupad: ldap.workerCacheEntries bawat realm, inaalis muna ang pinakaluma."
+  },
+  "caches.store.ldap.windowed-entryuuids.lifetime": {
+    "en": "317464bd9b5bd06a",
+    "text": "Hanggang umalis sa window ang entry na pinangangalanan nito, mapalitan ng pangalan, o hindi na nagdadala ng entryUUID na iyon, na sinusuri sa bawat paggamit."
+  },
   "caches.store.mail.outbox.title": {
     "en": "d40abea9379f4e22",
     "text": "Mail outbox"

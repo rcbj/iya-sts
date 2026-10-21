@@ -603,6 +603,22 @@
     "en": "b12dd09efefaa6bd",
     "text": "直到目录以索引无法合并的方式被写入；之后的下一次查找会重建它。每个领域一个索引。"
   },
+  "caches.store.ldap.windowed-entryuuids.title": {
+    "en": "1bcb1ccebd4c7781",
+    "text": "窗口中的 entryUUID"
+  },
+  "caches.store.ldap.windowed-entryuuids.description": {
+    "en": "4bbc3a85d38472cd",
+    "text": "在持有目录窗口的进程中，每个人或设备的 entryUUID 最近一次被找到时所在的键，使主体可以解析为窗口所持有的条目，而无需再次询问存储（#773）。每次使用时都会与条目自身的 entryUUID 核对。"
+  },
+  "caches.store.ldap.windowed-entryuuids.bound": {
+    "en": "a4522667ab0d5562",
+    "text": "强制：每个领域 ldap.workerCacheEntries 个，最旧的先被移除。"
+  },
+  "caches.store.ldap.windowed-entryuuids.lifetime": {
+    "en": "317464bd9b5bd06a",
+    "text": "直到它所指的条目离开窗口、被重命名或不再带有该 entryUUID 为止，每次使用时都会检查。"
+  },
   "caches.store.mail.outbox.title": {
     "en": "d40abea9379f4e22",
     "text": "邮件发件箱"
