@@ -4194,6 +4194,83 @@ function entriesByUuids(uuids) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE SAME, ASKED ASYNCHRONOUSLY (#790). `entriesByUuids()` asks a windowed
+// store one SYNCHRONOUS statement per UUID_BATCH, and the console's Users
+// page asks it for every subject of the token register — about 228,000 on
+// 8081, 456 statements holding a request worker — so the request spent its
+// directory budget (STS-LDAP-0175) and answered 503. This asks the resident
+// index exactly as that does, then each batch of the rest through
+// `findWindowedAsync()`, which waits without holding the event loop and is
+// outside the request's synchronous budget. The same answers: a primary
+// value before an alias, and null for nobody.
+// ---------------------------------------------------------------------------
+/**
+ * `entriesByUuids()`, the store asked asynchronously a batch at a time.
+ *
+ * @param uuids - the UUIDs, bare or `urn:uuid:`
+ * @returns a promise of the Map `entriesByUuids()` answers
+ */
+async function entriesByUuidsAsync(uuids) {
+  log.debug("Entering entriesByUuidsAsync(). " + (uuids || []).length +
+            " value(s).");
+  if (!directoryWindow) {
+    log.debug("Leaving entriesByUuidsAsync(). No window: asked in place.");
+    return entriesByUuids(uuids);
+  }
+  // The resident index first, as entriesByUuids() asks it; no store.
+  const out = new Map();
+  (uuids || []).forEach(function (one) {
+    const wanted = String(one || '').trim().toLowerCase()
+      .replace(/^urn:uuid:/, '');
+    if (UUID_SHAPED.test(wanted)) {
+      out.set(wanted, null);
+    }
+  });
+  const cache = uuidIndexes();
+  if (cache.dirty || !cache.index) {
+    rebuildUuidIndex(cache);
+  }
+  out.forEach(function (unused, wanted) {
+    out.set(wanted, uuidIndexLookup(cache, wanted));
+  });
+  const asked = Array.from(out.keys()).filter(function (wanted) {
+    return out.get(wanted) === null;
+  });
+  const realmId = realms.currentId();
+  for (let at = 0; at < asked.length; at += UUID_BATCH) {
+    const batch = asked.slice(at, at + UUID_BATCH);
+    const wanted = new Set(batch);
+    const found = await directoryWindow.findWindowedAsync(realmId,
+      'withUuids', [realmId, batch], function (entry) {
+        return wanted.has(entryUuidOf(entry)) ||
+          entryUuidAliasesOf(entry).some(function (alias) {
+            return wanted.has(alias);
+          });
+      });
+    const hits = found.map(function (hit) {
+      return hit.entry;
+    });
+    // A primary value before an alias, as `entryByUuid()` ranks them.
+    hits.forEach(function (entry) {
+      const value = entryUuidOf(entry);
+      if (wanted.has(value) && out.get(value) === null) {
+        out.set(value, entry);
+      }
+    });
+    hits.forEach(function (entry) {
+      entryUuidAliasesOf(entry).forEach(function (alias) {
+        if (wanted.has(alias) && out.get(alias) === null) {
+          out.set(alias, entry);
+        }
+      });
+    });
+  }
+  log.debug("Leaving entriesByUuidsAsync(). " + asked.length + " asked of " +
+            "the store.");
+  return out;
+}
+
 // A NEW PERSON IS GIVEN A LANGUAGE (#539). rcbj: "add a policy default per
 // realm that automatically populates user locale parameter". Here, because
 // every door that creates a person — the console and `/admin-api` through
@@ -5595,9 +5672,25 @@ function namesForSubjects(subjects) {
   return out;
 }
 
+// `namesForSubjects()`, the store asked asynchronously (#790).
+async function namesForSubjectsAsync(subjects) {
+  log.debug('Entering namesForSubjectsAsync(). ' + (subjects || []).length +
+            ' subject(s).');
+  const out = new Map();
+  const found = await entriesByUuidsAsync(subjects || []);
+  (subjects || []).forEach(function (one) {
+    const text = String(one == null ? '' : one).trim().toLowerCase();
+    const stored = found.get(text.replace(/^urn:uuid:/, '')) || null;
+    out.set(text, stored && isPersonEntry(stored) ? personNameOf(stored) : '');
+  });
+  log.debug('Leaving namesForSubjectsAsync().');
+  return out;
+}
+
 helpers.setSubjectResolver({ subjectFor: subjectForName,
                              nameFor: nameForSubject,
-                             namesFor: namesForSubjects });
+                             namesFor: namesForSubjects,
+                             namesForAsync: namesForSubjectsAsync });
 
 // An RFC 4514 DN split into its RDNs, leaf first. The split is on commas that
 // are NOT escaped, because a value may legitimately contain one — `O=Example\,
@@ -26424,6 +26517,7 @@ module.exports = {
   // THE ENTRY UUID (2026-09-14): the lookups a person's `sub` and a SCIM id
   // go through, exported for SCIM and for the tests.
   entryByUuid: entryByUuid,
+  entriesByUuidsAsync: entriesByUuidsAsync,
   entriesByUuids: entriesByUuids,
   entryUuidOf: entryUuidOf,
   mergeCreateRace: mergeCreateRace,

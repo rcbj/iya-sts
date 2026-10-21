@@ -12836,7 +12836,9 @@ class AdminViews {
     const { log, credentials, stats } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.peopleRows().");
-    const seen = stats.userRows();
+    // `seen`: the register's rows already built (#790,
+    // `peopleAndCensusAsync()`), or built here.
+    const seen = (opts && opts.seen) || stats.userRows();
     const byKey = new Map();
     seen.forEach(function (row) {
       // `factors` is filled below. Declared here so that every row has the
@@ -13045,7 +13047,13 @@ class AdminViews {
     const { log } = this.deps;
     log.debug("Entering AdminViews.peopleAndCensusAsync().");
     const first = await this.directoryFirstNames();
-    const population = this.peopleRows({ directoryFirst: first });
+    // The register's subjects resolved asynchronously (#790): on 8081 they
+    // were ~228,000, asked synchronously, and the request spent its
+    // directory budget and answered 503.
+    const seen = typeof this.deps.stats.userRowsAsync === 'function'
+      ? await this.deps.stats.userRowsAsync() : null;
+    const population = this.peopleRows({ directoryFirst: first,
+                                         seen: seen });
     const census = await this.peopleCensusAsync(population, population.rows);
     log.debug("Leaving AdminViews.peopleAndCensusAsync().");
     return { population: population, census: census };

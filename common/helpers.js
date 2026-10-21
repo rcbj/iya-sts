@@ -492,6 +492,61 @@ function namesForSubjects(subjects) {
   return out;
 }
 
+// `namesForSubjects()` with the directory asked asynchronously (#790), for a
+// page that names the holders of a large register: where the resolver offers
+// `namesForAsync()` the batches are awaited and hold no event loop; where it
+// does not, or it fails for any reason, this is `namesForSubjects()`.
+/**
+ * `namesForSubjects()`, asking the directory asynchronously where it can.
+ *
+ * @param subjects - the subjects
+ * @returns a promise of the Map `namesForSubjects()` answers
+ */
+async function namesForSubjectsAsync(subjects) {
+  log.debug("Entering namesForSubjectsAsync().");
+  if (!subjectResolver || typeof subjectResolver.namesForAsync !==
+      'function') {
+    log.debug("Leaving namesForSubjectsAsync(). No asynchronous door.");
+    return namesForSubjects(subjects);
+  }
+  const out = new Map();
+  const uuids = [];
+  (subjects || []).forEach(function (one) {
+    const text = String(one == null ? '' : one).trim();
+    const key = text.toLowerCase();
+    if (out.has(key)) {
+      return;
+    }
+    if (text.indexOf(LEGACY_SUBJECT_PREFIX) === 0 ||
+        !/^urn:uuid:/i.test(text)) {
+      out.set(key, nameForSubject(text));
+      return;
+    }
+    out.set(key, '');
+    uuids.push(key);
+  });
+  if (!uuids.length) {
+    log.debug("Leaving namesForSubjectsAsync(). Nothing to ask.");
+    return out;
+  }
+  try {
+    const named = await subjectResolver.namesForAsync(uuids);
+    uuids.forEach(function (key) {
+      out.set(key, String((named && named.get(key)) || ''));
+    });
+    log.debug("Leaving namesForSubjectsAsync(). " + uuids.length +
+              " asked together.");
+    return out;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-CORE-0091') +
+              'helpers: the subject resolver threw looking up ' +
+              uuids.length + ' subjects asynchronously, so they are asked ' +
+              'synchronously: ' + ((e && e.message) || e));
+    log.debug("Leaving namesForSubjectsAsync(). Asked synchronously.");
+    return namesForSubjects(subjects);
+  }
+}
+
 // Read once, because the listener is bound with it before anything can ask
 // for it again; config.js marks it restart-only for that reason and refuses
 // to change it while this process runs.
@@ -8095,6 +8150,7 @@ module.exports = {
   subjectForName: subjectForName,
   nameForSubject: nameForSubject,
   namesForSubjects: namesForSubjects,
+  namesForSubjectsAsync: namesForSubjectsAsync,
   LEGACY_SUBJECT_PREFIX: LEGACY_SUBJECT_PREFIX,
   hasScope: hasScope,
   escapeRdnValue: escapeRdnValue,
