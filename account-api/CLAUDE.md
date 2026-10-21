@@ -37,6 +37,13 @@ device) is looked up among the CALLER's own, as it always was.
 link, and the single-use secret the link carries is the credential. They keep
 every rate limit the pages had.
 
+**An operation that answers about a value the caller names answers only
+for one of the CALLER's own** — `GET /account-api/self-issued/did`
+(2026-10-20) resolves a DID's document only where that DID is enrolled for
+the token's person, and refuses anything else (`STS-PORTAL-0618`) before
+saying anything about it, so the door is never a general resolver, or a
+way to learn whether somebody else holds a subject.
+
 ## THE GATE, IN ITS ORDER
 
 Each step is a credential that stopped being one, answered 401 with a

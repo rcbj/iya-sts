@@ -35,5 +35,10 @@
   "reprove": "Enrolling a key that is already here proves it again: do that if your wallet's did:web key changed, and an administrator's entry becomes one you proved.",
   "off": "Signing in with a self-issued ID is turned off here, so no wallet can be enrolled from this page. The keys above stay enrolled.",
   "doneEnrolled": "Your wallet's key is enrolled. It signs you in from now on.",
-  "doneRemoved": "That key no longer signs you in."
+  "doneRemoved": "That key no longer signs you in.",
+  "didLink": "DID document",
+  "didHeading": "DID document",
+  "didChoose": "Open a did:jwk or did:key from your self-issued IDs to see its document here.",
+  "didResolvedNote": "Resolved from the identifier itself: a did:jwk or did:key is its own document, so nothing is published and nothing was fetched.",
+  "didBack": "Back to your self-issued IDs"
 }

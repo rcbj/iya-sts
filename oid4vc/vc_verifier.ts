@@ -4388,13 +4388,6 @@ class VcVerifier {
     return true;
   }
 
-  // Writes a transaction back THROUGH THE STORE, for the reason the response
-  // endpoint gives: the journal sees `set()`, not a field on an object.
-  /**
-   * Writes a transaction back through the store.
-   *
-   * @param record - the transaction
-   */
   // WHO FETCHED A SIGN-IN'S REQUEST OBJECT (2026-10-20): `fetchedBy` on the
   // transaction — `via` `web` where the request_uri carried the web
   // wallet's marker (vpRequestQuery()) and `link` otherwise, and `agent`,
@@ -4404,6 +4397,13 @@ class VcVerifier {
   // a re-fetch cannot recolour a transaction somebody else opened, and the
   // usual case (one fetch) costs one write. Only a sign-in's transaction
   // records it; a failure here is logged and never reaches the answer.
+  /**
+   * Records who fetched a sign-in's Request Object, once.
+   *
+   * @param state - the transaction's state
+   * @param record - the transaction
+   * @param req - the fetch
+   */
   private noteFetch(state: string, record: any, req: any): void {
     const { log, vpTransactions, siop } = this.deps;
     log.debug("Entering VcVerifier.noteFetch().");
@@ -4426,6 +4426,13 @@ class VcVerifier {
     log.debug("Leaving VcVerifier.noteFetch().");
   }
 
+  // Writes a transaction back THROUGH THE STORE, for the reason the response
+  // endpoint gives: the journal sees `set()`, not a field on an object.
+  /**
+   * Writes a transaction back through the store.
+   *
+   * @param record - the transaction
+   */
   saveTransaction(record: any) {
     const { log, vpTransactions } = this.deps;
     log.debug("Entering VcVerifier.saveTransaction().");

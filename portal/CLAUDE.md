@@ -1554,9 +1554,12 @@ it; the page says whether this realm releases the mark as the `did` claim
 `oid4vc/CLAUDE.md` and `oauth-oidc/CLAUDE.md` (*The `did` claim*).
 
 **EACH ROW IS ONE LINE, AND SAYS WHERE THE KEY CAME FROM** (2026-10-20,
-rcbj on 8081). The subject is cut with an ellipsis (`td .oneline`, in
-`web_portal_kit.ts`; it overrides `td code`'s break-anywhere for that cell)
-and its `title` is the whole value. The **Location** column is the
+rcbj on 8081). The subject shows its START AND ITS END — 13 characters, `…`,
+the last 7 (`SelfIssuedPages.middle()`), because every thumbprint begins
+`urn:ietf:params:oauth:` and an end ellipsis drew rows nobody could tell
+apart — and its `title` is the whole value; `td .oneline`'s CSS ellipsis
+(`web_portal_kit.ts`, overriding `td code`'s break-anywhere) is only the
+guard on a phone. The **Location** column is the
 enrolment value's `location` (`oid4vc/CLAUDE.md`, 3ba), drawn the same way:
 one short line — a web wallet's host and port, an app's reported name, or
 *Browser (DC API)* / *Administrator* / *Not recorded* — and the full story
@@ -1568,6 +1571,31 @@ table sits in `.scrollx`, so a phone too narrow for even the cut-down cells
 scrolls it inside the card. `tests/self_issued_location.js` holds all of
 it; the console's `/admin/users` block draws the same column
 (`admin-ui/web_users.ts`, `siopLocationCell()`).
+
+**A DID'S DOCUMENT IS ONE CLICK AWAY** (2026-10-20, rcbj: "a simple
+hyperlink with a mouseover that shows the full URL", opening "a new tab that
+displays the DID"; then "did:web + resolved view"). Under a DID subject, one
+short line: *DID document*, `target="_blank" rel="noopener noreferrer"`, its
+`title` the whole address. A did:web links to its PUBLISHED document, at the
+address the view names (`didDocumentUrl`, `siop.didWebUrl()` on the server,
+so the browser carries no method mapping). A did:jwk or did:key links to
+**`/portal/self-issued/did?subject=`**, this column's first SUB-PAGE: drawn
+from `GET /account-api/self-issued/did`, it shows the document RESOLVED FROM
+THE IDENTIFIER (`oid4vc/vc_did_resolver.ts`, required lazily) as JSON in a
+`<pre>` that wraps inside its card, and fetches nothing. A thumbprint is no
+DID and has no link. **The operation answers only for a subject enrolled for
+the token's person** — anything else is `STS-PORTAL-0618`, before anything
+about it is said — and an enrolled did:web or thumbprint is `STS-PORTAL-0619`,
+so it is not a resolver for anybody's input. With no subject it answers
+`{ subject: '', document: null }` and the page points back at the list (so a
+page drawn with an empty query, `tests/account_api.js` 2b, still draws).
+**A sub-page is headed and marked in the column as its parent**
+(`PortalShell.navPathFor()`: the deepest listed path it is under, never the
+overview's), and `subject` is kept by Refresh and the language chooser
+(`REFRESH_KEPT`). The new tab has no `sessionStorage` (`noopener`), so it
+signs in from the browser's session as any fresh portal tab does and lands
+back on the sub-page with its query; where the browser holds several
+accounts, that sign-in names none and may ask which. `tests/self_issued_location.js` (sections 6-8).
 
 **NO ENTRY IS A REFUSAL, NOT AN EMPTY LIST** (2026-10-20, rcbj after an
 investigation of empty portal lists on 8081). `siop.list()` answers null where

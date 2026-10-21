@@ -340,14 +340,15 @@ function pageSections(t, siop) {
                                       { t: tr, query: {} });
   const subject = oneline(html, 'subject');
   t.check(!!subject && subject.title === longDid &&
-          subject.shown === longDid &&
+          subject.shown === longDid.slice(0, 13) + '\u2026' +
+            longDid.slice(-7) &&
           /<table class="grid">/.test(html) &&
           /<div class="scrollx"><table/.test(html) &&
           style.indexOf('td .oneline{display:inline-block;max-width:13em;' +
                         'overflow:hidden;text-overflow:ellipsis;' +
                         'white-space:nowrap;') >= 0 &&
           style.indexOf('.scrollx{overflow-x:auto') >= 0,
-          '4a. the subject is ONE line, cut with an ellipsis, and its whole ' +
+          '4a. the subject is ONE line, its start and its end, and its whole ' +
           'value is its title; the table cannot run past its card',
           subject && subject.title.slice(0, 40));
   t.check(html.indexOf('did:jwk:&lt;b&gt;admin&lt;/b&gt;') >= 0 &&
@@ -453,6 +454,443 @@ function consoleSections(t) {
   log.debug("Leaving consoleSections().");
 }
 
+// ---------------------------------------------------------------------------
+// 6. ROWS TOLD APART, AND THE LINK TO A DID'S DOCUMENT.
+// ---------------------------------------------------------------------------
+function linkSections(t, siop) {
+  log.debug("Entering linkSections().");
+  const SelfIssuedPages = require('../portal/web_self_issued');
+  const PortalSelfIssued =
+    require('../portal/portal_self_issued').PortalSelfIssued;
+  const tr = translator();
+  const PREFIX = 'urn:ietf:params:oauth:jwk-thumbprint:sha-256:';
+  const one = PREFIX + 'AAAAbbbbCCCCddddEEEEffffGGGGhhhhIIII-KbfXQ-A';
+  const two = PREFIX + 'AAAAbbbbCCCCddddEEEEffffGGGGhhhhIIII-ZzZz<9>';
+  const html = SelfIssuedPages.render({ enabled: true, subjects: [
+    { subject: one, proof: 'wallet' }, { subject: two, proof: 'wallet' }] },
+    { t: tr, query: {} });
+  const first = oneline(html, 'subject');
+  const second = oneline(html, 'subject', first ? first.at + 1 : 0);
+  t.check(!!first && !!second && first.shown !== second.shown &&
+          first.shown === 'urn:ietf:para…KbfXQ-A' &&
+          second.shown === 'urn:ietf:para…ZzZz&lt;9&gt;' &&
+          first.title === one &&
+          second.title === two.replace('<', '&lt;').replace('>', '&gt;') &&
+          SelfIssuedPages.middle('did:jwk:short') === 'did:jwk:short',
+          '6a. two subjects sharing a prefix show their start AND their ' +
+          'end, so they differ; the title is the whole value, escaped; a ' +
+          'short one is shown whole',
+          JSON.stringify([first, second]));
+  // THE VIEW says where each document is: a did:web's published address,
+  // computed by the server; a did:jwk or did:key resolved here; a
+  // thumbprint neither.
+  const page = new PortalSelfIssued({
+    log: { debug: function () {} },
+    config: { value: function () {
+      return false;
+    } },
+    siop: { PROOF_ADMIN: 'admin', locationOf: siop.locationOf,
+            didWebUrl: siop.didWebUrl,
+            list: function () {
+              return [{ subject: 'did:web:wallet.example:people:alice' },
+                      { subject: 'did:web:wallet.example' },
+                      { subject: 'did:jwk:eyJhIjoxfQ' },
+                      { subject: 'did:key:z6MkTest' },
+                      { subject: one }];
+            } }
+  });
+  const rows = page.view('someone').subjects;
+  t.check(rows[0].didDocumentUrl ===
+            'https://wallet.example/people/alice/did.json' &&
+          rows[1].didDocumentUrl ===
+            'https://wallet.example/.well-known/did.json' &&
+          !rows[0].didResolved && rows[2].didResolved === true &&
+          rows[2].didDocumentUrl === '' && rows[3].didResolved === true &&
+          rows[4].didDocumentUrl === '' && rows[4].didResolved === false,
+          '6b. the view names a did:web\'s published document, marks a ' +
+          'did:jwk and a did:key as resolved here, and a thumbprint as ' +
+          'neither', JSON.stringify(rows));
+  const drawn = SelfIssuedPages.render({ enabled: true, subjects: rows },
+    { t: tr, query: {}, origin: 'https://sts.test', prefix: '/realm/acme' });
+  const links = drawn.match(/<div class="didlink"><a [^>]*>/g) || [];
+  const attr = function (tag, name) {
+    const m = new RegExp(' ' + name + '="([^"]*)"').exec(tag || '');
+    return m ? m[1] : null;
+  };
+  const resolvedHref = '/portal/self-issued/did?subject=' +
+    encodeURIComponent('did:jwk:eyJhIjoxfQ');
+  t.check(links.length === 4 &&
+          attr(links[0], 'href') ===
+            'https://wallet.example/people/alice/did.json' &&
+          attr(links[0], 'title') ===
+            'https://wallet.example/people/alice/did.json' &&
+          attr(links[2], 'href') === resolvedHref &&
+          attr(links[2], 'title') ===
+            'https://sts.test/realm/acme' + resolvedHref &&
+          attr(links[3], 'href') === '/portal/self-issued/did?subject=' +
+            encodeURIComponent('did:key:z6MkTest') &&
+          links.every(function (tag) {
+            return attr(tag, 'target') === '_blank' &&
+              attr(tag, 'rel') === 'noopener noreferrer';
+          }) &&
+          (drawn.match(/\[portalSelfIssued\.didLink\]<\/a>/g) || [])
+            .length === 4,
+          '6c. a link on the did:web rows (the published document, title ' +
+          'the same URL), on the did:jwk and did:key rows (the resolved ' +
+          'page, title absolute and in the realm), none on the thumbprint; ' +
+          'each opens a new tab with noopener noreferrer',
+          JSON.stringify(links));
+  const shell = require('../portal/web_portal_shell');
+  const T = { text: function (k) {
+    return k;
+  }, html: function (k) {
+    return k;
+  } };
+  t.check(shell.navPathFor('/portal/self-issued/did') ===
+            '/portal/self-issued' &&
+          shell.navPathFor('/portal/self-issued') === '/portal/self-issued' &&
+          shell.navPathFor('/portal/nowhere/x') === '/portal/nowhere/x' &&
+          shell.headingFor('/portal/self-issued/did', T) ===
+            shell.headingFor('/portal/self-issued', T) &&
+          shell.keptParams({ subject: 'did:jwk:x', user: 'bob' })
+            .join('|') === 'subject,did:jwk:x',
+          '6d. the sub-page is headed and placed in the column as ' +
+          'Self-issued IDs, and Refresh keeps its subject (and nothing ' +
+          'else)');
+  const nav = shell.navBar('/portal/self-issued/did', T);
+  t.check(/<a href="\/portal\/self-issued">/.test(nav) &&
+          !/aria-current/.test(nav),
+          '6e. its column links back to the list', nav.slice(0, 120));
+  log.debug("Leaving linkSections().");
+}
+
+// ---------------------------------------------------------------------------
+// 7. THE OPERATION, in a child: the whole stack, a real portal sign-in.
+// ---------------------------------------------------------------------------
+function didChildMain() {
+  const ROOT = process.env.WSI_ROOT;
+  const OUT = process.env.WSI_OUT;
+  const fs = require('fs');
+  const findings = [];
+  const note = function (ok, what, detail) {
+    findings.push({ ok: !!ok, what: what,
+                    detail: detail === undefined ? '' : String(detail) });
+  };
+  (async function () {
+    try {
+      require(ROOT + '/common/protocol_stack');
+      const http = require('http');
+      const nodeCrypto = require('crypto');
+      const app = require(ROOT + '/common/app');
+      const ldap = require(ROOT + '/ldap/ldap_server');
+      const credentials = require(ROOT + '/common/credentials');
+      const errorCodes = require(ROOT + '/common/error_codes');
+      const siop = require(ROOT + '/oid4vc/siop');
+      const di = require(ROOT + '/oid4vc/vc_data_integrity');
+      const stsCrypto = require(ROOT + '/common/crypto');
+      const signin = require(ROOT + '/tests/vendored/portal_signin');
+      const stamp = String(process.pid);
+      const ALICE = 'sid-alice-' + stamp;
+      const BOB = 'sid-bob-' + stamp;
+      const PASSWORD = 'Did-Doc-' + stamp + '-Passw0rd!';
+      [ALICE, BOB].forEach(function (name) {
+        ldap.createUser(name, { invent: false });
+        credentials.setPassword(name, PASSWORD);
+      });
+      const jwkOf = function () {
+        const pair = nodeCrypto.generateKeyPairSync('ec',
+          { namedCurve: 'P-256' });
+        const j = pair.publicKey.export({ format: 'jwk' });
+        return { kty: j.kty, crv: j.crv, x: j.x, y: j.y };
+      };
+      const aliceJwk = di.didJwkOf(jwkOf());
+      const aliceKey = di.didKeyOf(jwkOf());
+      const aliceWeb = 'did:web:wallet.example:' + stamp;
+      const aliceThumb = 'urn:ietf:params:oauth:jwk-thumbprint:sha-256:' +
+        stsCrypto.jwkThumbprint(jwkOf());
+      const bobJwk = di.didJwkOf(jwkOf());
+      const strangerJwk = di.didJwkOf(jwkOf());
+      const proved = { proof: siop.PROOF_WALLET };
+      const enrolled = [
+        siop.enrol(ALICE, aliceJwk, 'a', 'self (SIOPv2)', proved),
+        siop.enrol(ALICE, aliceKey, 'b', 'self (SIOPv2)', proved),
+        siop.enrol(ALICE, aliceWeb, 'c', 'self (SIOPv2)',
+                   { proof: siop.PROOF_WALLET,
+                     pinnedKeys: ['A'.repeat(43)] }),
+        siop.enrol(ALICE, aliceThumb, 'd', 'self (SIOPv2)', proved),
+        siop.enrol(BOB, bobJwk, 'e', 'self (SIOPv2)', proved)];
+      note(enrolled.every(function (r) {
+        return r.ok;
+      }), 'precondition: alice holds a did:jwk, a did:key, a did:web and ' +
+          'a thumbprint, bob a did:jwk', JSON.stringify(enrolled.map(
+            function (r) {
+              return r.error || 'ok';
+            })));
+      const marks = [];
+      const server = http.createServer(function (req, res) {
+        res.on('finish', function () {
+          marks.push(errorCodes.codeOf(res));
+        });
+        app(req, res);
+      });
+      await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
+      const base = 'http://127.0.0.1:' + server.address().port;
+      const alice = await signin.signInToThePortal(base, ALICE, null,
+                                                   { password: PASSWORD });
+      note(!!alice.token, 'alice signs in as the static portal does');
+      const ask = async function (subject) {
+        const r = await alice.api('GET', '/account-api/self-issued/did' +
+          (subject === null ? '' : '?subject=' +
+                                   encodeURIComponent(subject)));
+        return { status: r.status, json: r.json || {},
+                 code: marks[marks.length - 1] || '', text: r.text };
+      };
+      const jwkDoc = await ask(aliceJwk);
+      note(jwkDoc.status === 200 && jwkDoc.json.subject === aliceJwk &&
+           jwkDoc.json.document && jwkDoc.json.document.id === aliceJwk &&
+           jwkDoc.json.document.verificationMethod[0].publicKeyJwk &&
+           !jwkDoc.code,
+           '7a. her own did:jwk: its document, resolved from the identifier',
+           jwkDoc.status + ' ' + jwkDoc.text.slice(0, 200));
+      const keyDoc = await ask(aliceKey);
+      note(keyDoc.status === 200 && keyDoc.json.document &&
+           keyDoc.json.document.id === aliceKey &&
+           keyDoc.json.document.verificationMethod[0].type === 'Multikey',
+           '7b. her own did:key: its document', keyDoc.status + ' ' +
+           keyDoc.text.slice(0, 200));
+      const bobs = await ask(bobJwk);
+      const nobodys = await ask(strangerJwk);
+      const junk = await ask('not a subject');
+      note(bobs.status === 404 && bobs.code === 'STS-PORTAL-0618' &&
+           !bobs.json.document && nobodys.status === 404 &&
+           nobodys.code === 'STS-PORTAL-0618' &&
+           junk.status === 404 && junk.code === 'STS-PORTAL-0618' &&
+           bobs.text.indexOf(BOB) < 0 &&
+           JSON.stringify(bobs.json.errors) ===
+             JSON.stringify(nobodys.json.errors),
+           '7c. another person\'s subject, an unenrolled one and a non-' +
+           'subject are refused alike, STS-PORTAL-0618, saying nothing ' +
+           'about whose it is', [bobs.status, bobs.code, nobodys.status,
+             nobodys.code, junk.code, bobs.text].join(' '));
+      const web = await ask(aliceWeb);
+      const thumb = await ask(aliceThumb);
+      note(web.status === 400 && web.code === 'STS-PORTAL-0619' &&
+           thumb.status === 400 && thumb.code === 'STS-PORTAL-0619' &&
+           !web.json.document && !thumb.json.document,
+           '7d. her own did:web and her own thumbprint are refused, ' +
+           'STS-PORTAL-0619: nothing is fetched, and a thumbprint is no DID',
+           [web.status, web.code, thumb.status, thumb.code].join(' '));
+      const none = await ask(null);
+      note(none.status === 200 && none.json.subject === '' &&
+           none.json.document === null,
+           '7e. naming no subject answers no document, for the page\'s ' +
+           'pointer back', none.status + ' ' + none.text.slice(0, 120));
+      const list = await alice.api('GET', '/account-api/self-issued');
+      const byId = {};
+      ((list.json && list.json.subjects) || []).forEach(function (row) {
+        byId[row.subject] = row;
+      });
+      note(byId[aliceWeb] && byId[aliceWeb].didDocumentUrl ===
+             'https://wallet.example/' + stamp + '/did.json' &&
+           byId[aliceJwk] && byId[aliceJwk].didResolved === true &&
+           byId[aliceKey] && byId[aliceKey].didResolved === true &&
+           byId[aliceThumb] && byId[aliceThumb].didDocumentUrl === '' &&
+           byId[aliceThumb].didResolved === false,
+           '7f. GET /account-api/self-issued names each row\'s document',
+           JSON.stringify(byId).slice(0, 400));
+      const index = await signin.nobody(base, 'GET', '/account-api');
+      const op = ((index.json && index.json.operations) || [])
+        .filter(function (one) {
+          return one.path === '/account-api/self-issued/did';
+        })[0];
+      const doc = await signin.nobody(base, 'GET',
+                                      '/account-api/openapi.json');
+      note(op && op.mirrors === 'GET /portal/self-issued/did' &&
+           doc.json && doc.json.paths &&
+           doc.json.paths['/account-api/self-issued/did'] &&
+           doc.json.paths['/account-api/self-issued/did'].get,
+           '7g. the index lists the operation as the sub-page\'s, and the ' +
+           'OpenAPI document documents it', JSON.stringify(op));
+      server.close();
+    } catch (e) {
+      note(false, 'the child ran to the end', e && (e.stack || e.message));
+    }
+    fs.writeFileSync(OUT, JSON.stringify(findings));
+    process.exit(0);
+  })();
+}
+
+// ---------------------------------------------------------------------------
+// 8. THE PAGE, AND A FRESH TAB OPENED ON IT.
+// ---------------------------------------------------------------------------
+async function didPageSections(t) {
+  log.debug("Entering didPageSections().");
+  const SelfIssuedPages = require('../portal/web_self_issued');
+  const tr = translator();
+  const view = { ok: true, subject: 'did:jwk:x<y>',
+                 document: { id: 'did:jwk:x<y>',
+                             note: '</pre><script>alert(1)</script>' } };
+  const html = SelfIssuedPages.renderDid(view, { t: tr, query: {} });
+  const pre = (/<pre class="diddoc" id="siop-did-document">([\s\S]*?)<\/pre>/
+    .exec(html) || [])[1] || '';
+  t.check(pre.indexOf('&lt;/pre&gt;&lt;script&gt;') >= 0 &&
+          html.indexOf('<script>') < 0 &&
+          pre.indexOf('\n  &quot;id&quot;: &quot;did:jwk:x&lt;y&gt;&quot;') >=
+            0 &&
+          /<code id="siop-did">did:jwk:x&lt;y&gt;<\/code>/.test(html) &&
+          html.indexOf('[portalSelfIssued.didResolvedNote]') >= 0 &&
+          html.indexOf('href="/portal/self-issued"') >= 0,
+          '8a. the page shows the DID, the line saying it is resolved from ' +
+          'the identifier, and the document as indented JSON, escaped',
+          pre.slice(0, 160));
+  const none = SelfIssuedPages.renderDid({ ok: true, subject: '',
+                                           document: null }, { t: tr });
+  const refused = SelfIssuedPages.renderDid({ ok: false, errors: ['x'] },
+                                            { t: tr });
+  t.check(/id="siop-did-none"/.test(none) && !/<pre/.test(none) &&
+          /id="siop-did-none"/.test(refused) && !/<pre/.test(refused),
+          '8b. with no subject, or refused, it points back and draws no ' +
+          'document');
+  const style = require('../portal/web_portal_kit').STYLE;
+  t.check(style.indexOf('pre.diddoc{white-space:pre-wrap;' +
+                        'overflow-wrap:anywhere;overflow-x:auto;' +
+                        'max-width:100%;') >= 0,
+          '8c. the JSON wraps inside its card');
+  const pages = require('../portal/web_portal_pages');
+  const row = pages.find('/portal/self-issued/did');
+  t.check(!!row && row.operation === '/account-api/self-issued/did' &&
+          (row.access || 'person') === 'person',
+          '8d. the sub-page is a signed-in page drawn from its operation');
+
+  // A FRESH TAB, as `target="_blank" rel="noopener"` opens it: nothing in
+  // its sessionStorage, so the runtime signs in, and the callback lands it
+  // back on the sub-page with its query, drawn from its operation.
+  const PortalRuntime = require('../portal/web_portal_runtime');
+  const nodeCrypto = require('crypto');
+  const ORIGIN = 'https://sts.example.com';
+  const DID = 'did:jwk:eyJmcmVzaCI6InRhYiJ9';
+  const store = {};
+  const calls = [];
+  const location = { pathname: '/portal/self-issued/did',
+                     search: '?subject=' + encodeURIComponent(DID), hash: '',
+                     href: ORIGIN + '/portal/self-issued/did', origin: ORIGIN,
+                     assigned: [],
+                     assign: function (u) {
+                       location.assigned.push(String(u));
+                     } };
+  const body = { innerHTML: '' };
+  const b64u = function (o) {
+    return Buffer.from(JSON.stringify(o)).toString('base64url');
+  };
+  const env = {
+    location: location,
+    history: { replaceState: function (s0, t0, u) {
+                 const at = new URL(String(u), ORIGIN);
+                 location.pathname = at.pathname;
+                 location.search = at.search;
+               },
+               pushState: function () {} },
+    crypto: globalThis.crypto,
+    sessionStorage: { getItem: function (k) {
+                        return k in store ? store[k] : null;
+                      },
+                      setItem: function (k, v) {
+                        store[k] = String(v);
+                      },
+                      removeItem: function (k) {
+                        delete store[k];
+                      } },
+    navigator: { languages: ['en'] },
+    document: { title: '', body: body,
+                documentElement: { getAttribute: function () {
+                                     return null;
+                                   },
+                                   setAttribute: function () {} },
+                createElement: function () {
+                  return { setAttribute: function () {}, innerHTML: '' };
+                },
+                getElementById: function () {
+                  return null;
+                },
+                querySelectorAll: function () {
+                  return [];
+                },
+                querySelector: function () {
+                  return null;
+                },
+                addEventListener: function () {} },
+    window: { BroadcastChannel: function () {
+                this.postMessage = function () {};
+                this.close = function () {};
+              },
+              AbortController: AbortController,
+              confirm: function () {
+                return true;
+              },
+              open: function () {
+                return {};
+              },
+              addEventListener: function () {} },
+    fetch: async function (url, init) {
+      const u = String(url);
+      calls.push(u);
+      const empty = { get: function () {
+        return '';
+      } };
+      const answer = function (status, json) {
+        return { status: status, headers: empty,
+                 json: async function () {
+                   return json;
+                 } };
+      };
+      if (/\/oauth2\/token$/.test(u)) {
+        const sent = new URLSearchParams(String((init && init.body) || ''));
+        const nonce = nodeCrypto.createHash('sha256')
+          .update('nonce:' + (sent.get('code_verifier') || ''))
+          .digest('base64url');
+        return answer(200, { access_token: 'at', expires_in: 300,
+          refresh_token: 'rt',
+          id_token: b64u({ alg: 'ES256' }) + '.' +
+            b64u({ sub: 'urn:uuid:alice', nonce: nonce }) + '.sig' });
+      }
+      if (/\/account-api\/me$/.test(u)) {
+        return answer(200, { user: { username: 'alice' },
+                             locale: { offered: [] }, version: {} });
+      }
+      if (u.indexOf('/account-api/self-issued/did?subject=' +
+                    encodeURIComponent(DID)) >= 0) {
+        return answer(200, { ok: true, subject: DID,
+                             document: { id: DID, fresh: 'tab' } });
+      }
+      return answer(404, {});
+    }
+  };
+  const rt = new PortalRuntime(env);
+  await rt.route();
+  const saved = JSON.parse(store['sts-portal-signin'] || '{}');
+  const authorize = location.assigned.filter(function (u) {
+    return /\/oauth2\/authorize\?/.test(u);
+  })[0];
+  t.check(!!authorize && saved.returnTo === '/portal/self-issued/did' +
+            '?subject=' + encodeURIComponent(DID),
+          '8e. a fresh tab on the sub-page signs in, to come back to it ' +
+          'with its subject', JSON.stringify(saved));
+  location.pathname = '/portal/callback';
+  location.search = '?code=c&state=' +
+    encodeURIComponent(new URL(authorize).searchParams.get('state'));
+  await rt.route();
+  t.check(location.pathname === '/portal/self-issued/did' &&
+          body.innerHTML.indexOf('id="siop-did-document"') >= 0 &&
+          body.innerHTML.indexOf('&quot;fresh&quot;: &quot;tab&quot;') >= 0 &&
+          calls.some(function (u) {
+            return u.indexOf('/account-api/self-issued/did?subject=') >= 0;
+          }),
+          '8f. and once signed in, the tab draws the DID page directly from ' +
+          'its operation', location.pathname + ' ' +
+          body.innerHTML.slice(0, 200) + ' ' + calls.join(' '));
+  log.debug("Leaving didPageSections().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const siop = require('../oid4vc/siop');
@@ -466,6 +904,12 @@ async function run(t) {
   pageSections(t, siop);
   t.log.info('=== 5. the console ===');
   consoleSections(t);
+  t.log.info('=== 6. rows told apart, and the DID document link ===');
+  linkSections(t, siop);
+  t.log.info('=== 7. GET /account-api/self-issued/did, in a child ===');
+  kit.inAChild(t, didChildMain, 'self-issued-did');
+  t.log.info('=== 8. the DID page, and a fresh tab ===');
+  await didPageSections(t);
   log.debug("Leaving run().");
 }
 

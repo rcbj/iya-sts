@@ -35,5 +35,10 @@
   "reprove": "Enregistrer une clé déjà présente ici la prouve à nouveau : faites-le si la clé did:web de votre portefeuille a changé, et une entrée d’un administrateur devient une entrée que vous avez prouvée.",
   "off": "La connexion avec un identifiant auto-émis est désactivée ici : aucun portefeuille ne peut donc être enregistré depuis cette page. Les clés ci-dessus restent enregistrées.",
   "doneEnrolled": "La clé de votre portefeuille est enregistrée. Elle vous connecte désormais.",
-  "doneRemoved": "Cette clé ne vous connecte plus."
+  "doneRemoved": "Cette clé ne vous connecte plus.",
+  "didLink": "Document DID",
+  "didHeading": "Document DID",
+  "didChoose": "Ouvrez un did:jwk ou un did:key de vos identifiants auto-émis pour voir ici son document.",
+  "didResolvedNote": "Résolu à partir de l'identifiant lui-même : un did:jwk ou un did:key est son propre document, donc rien n'est publié et rien n'a été récupéré.",
+  "didBack": "Retour à vos identifiants auto-émis"
 }

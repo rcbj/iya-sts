@@ -35,5 +35,10 @@
   "reprove": "注册一个已在此处的密钥会再次证明它：如果您钱包的 did:web 密钥已更改，请这样做；管理员添加的条目也会变为由您证明的条目。",
   "off": "此处已关闭使用自签发身份登录，因此无法从此页面注册钱包。上面的密钥仍保持注册。",
   "doneEnrolled": "您的钱包密钥已注册，今后可用它登录。",
-  "doneRemoved": "该密钥不再能让您登录。"
+  "doneRemoved": "该密钥不再能让您登录。",
+  "didLink": "DID 文档",
+  "didHeading": "DID 文档",
+  "didChoose": "从您的自签发身份中打开一个 did:jwk 或 did:key，即可在此查看其文档。",
+  "didResolvedNote": "由标识符本身解析：did:jwk 或 did:key 本身就是其文档，因此没有发布任何内容，也没有获取任何内容。",
+  "didBack": "返回您的自签发身份"
 }

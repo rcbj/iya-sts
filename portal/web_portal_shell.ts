@@ -46,7 +46,9 @@ type Json = any;
  * `<list>Page`.
  */
 const REFRESH_KEPT = ['page', 'per', 'stepup', 'gnapstepup', 'enrolled',
-                      'named'];
+                      'named',
+                      // The DID `/portal/self-issued/did` shows (2026-10-20).
+                      'subject'];
 
 /**
  * The portal's frame. A static utility class; it holds no state.
@@ -89,8 +91,9 @@ class PortalShell {
    * @returns the heading, as text
    */
   static headingFor(active: string, t: Json): string {
+    const parent = PortalShell.navPathFor(active);
     const row = kit.navPages().filter(function (one: Json): boolean {
-      return one.path === active;
+      return one.path === parent;
     })[0];
     // A COMPOSED KEY, built first: the catalog test's scan reads only a
     // literal key quoted in the call, and holds `NAV` to the catalog by its
@@ -98,6 +101,31 @@ class PortalShell {
     const key = 'portal.nav.' + kit.navSlug(row ? row.path : kit.BASE) +
       '.heading';
     return t.text(key);
+  }
+
+  // A SUB-PAGE'S PLACE IN THE COLUMN (2026-10-20, the first:
+  // `/portal/self-issued/did`): a page the column does not list is headed,
+  // and marked as open, as the deepest listed page whose path is a prefix
+  // of its own — never the overview's, which every path would match.
+  /**
+   * Returns the column's entry a page belongs under: its own path where the
+   * column lists it, else the deepest listed path it is under.
+   *
+   * @param active - the page's path
+   * @returns the column's path
+   */
+  static navPathFor(active: string): string {
+    const listed = kit.navPages().map(function (one: Json): string {
+      return String(one.path);
+    });
+    if (listed.indexOf(active) >= 0) {
+      return active;
+    }
+    return listed.filter(function (path: string): boolean {
+      return path !== kit.BASE && String(active).indexOf(path + '/') === 0;
+    }).sort(function (a: string, b: string): number {
+      return b.length - a.length;
+    })[0] || active;
   }
 
   /**
@@ -115,8 +143,9 @@ class PortalShell {
     };
     return '<nav aria-label="' + kit.esc(t.text('portal.shell.navAria')) +
       '">' + kit.NAV.map(function (section: Json): string {
+        const parent = PortalShell.navPathFor(active);
         const here = section.items.some(function (item: Json): boolean {
-          return item.path === active;
+          return item.path === parent;
         });
         const what = 'portal.section.' + section.key + '.what';
         const title = 'portal.section.' + section.key + '.title';
