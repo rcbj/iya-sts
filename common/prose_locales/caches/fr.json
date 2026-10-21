@@ -603,6 +603,22 @@
     "en": "b12dd09efefaa6bd",
     "text": "Jusqu’à ce que l’annuaire soit écrit d’une manière que l’index ne peut pas intégrer ; la recherche suivante le reconstruit alors. Un index par domaine."
   },
+  "caches.store.ldap.windowed-entryuuids.title": {
+    "en": "1bcb1ccebd4c7781",
+    "text": "entryUUID fenêtrés"
+  },
+  "caches.store.ldap.windowed-entryuuids.description": {
+    "en": "4bbc3a85d38472cd",
+    "text": "Dans un processus qui tient une fenêtre sur l’annuaire, la clé à laquelle l’entryUUID de chaque personne ou appareil a été trouvé en dernier, pour qu’un sujet se résolve vers l’entrée que tient la fenêtre sans interroger à nouveau le stockage (#773). Vérifié contre l’entryUUID propre de l’entrée à chaque utilisation."
+  },
+  "caches.store.ldap.windowed-entryuuids.bound": {
+    "en": "a4522667ab0d5562",
+    "text": "Appliqué : ldap.workerCacheEntries par domaine, les plus anciens retirés en premier."
+  },
+  "caches.store.ldap.windowed-entryuuids.lifetime": {
+    "en": "317464bd9b5bd06a",
+    "text": "Jusqu’à ce que l’entrée qu’il désigne quitte la fenêtre, soit renommée ou ne porte plus cet entryUUID, ce qui est vérifié à chaque utilisation."
+  },
   "caches.store.mail.outbox.title": {
     "en": "d40abea9379f4e22",
     "text": "Boîte d’envoi du courrier"

@@ -603,6 +603,22 @@
     "en": "b12dd09efefaa6bd",
     "text": "直到目錄以索引無法併入的方式被寫入；下次查詢時會重建。每個領域一個索引。"
   },
+  "caches.store.ldap.windowed-entryuuids.title": {
+    "en": "1bcb1ccebd4c7781",
+    "text": "視窗中的 entryUUID"
+  },
+  "caches.store.ldap.windowed-entryuuids.description": {
+    "en": "4bbc3a85d38472cd",
+    "text": "在持有目錄視窗的程序中，每個人或裝置的 entryUUID 最近一次被找到時所在的鍵，使主體可以解析為視窗所持有的項目，而無需再次詢問儲存區（#773）。每次使用時都會與項目自身的 entryUUID 核對。"
+  },
+  "caches.store.ldap.windowed-entryuuids.bound": {
+    "en": "a4522667ab0d5562",
+    "text": "強制：每個領域 ldap.workerCacheEntries 個，最舊的先被移除。"
+  },
+  "caches.store.ldap.windowed-entryuuids.lifetime": {
+    "en": "317464bd9b5bd06a",
+    "text": "直到它所指的項目離開視窗、被重新命名或不再帶有該 entryUUID 為止，每次使用時都會檢查。"
+  },
   "caches.store.mail.outbox.title": {
     "en": "d40abea9379f4e22",
     "text": "郵件寄件匣"

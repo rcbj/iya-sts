@@ -2056,6 +2056,7 @@ const usernameIndexes = realms.keyed(function () {
 const usernameIndexCount = cacheRegistry.counter('ldap.username-index');
 const groupIndexCount = cacheRegistry.counter('ldap.group-index');
 const uuidIndexCount = cacheRegistry.counter('ldap.entryuuid-index');
+const windowedUuidCount = cacheRegistry.counter('ldap.windowed-entryuuids');
 const listingCount = cacheRegistry.counter('ldap.subtree-listings');
 
 // Every name this entry answers to, lower-cased and without repeats: its `uid`
@@ -3911,13 +3912,72 @@ function entryByUuid(uuid) {
   }
   let found = residentEntryByUuid(wanted);
   if (!found && directoryWindow) {
+    found = windowHeldByUuid(wanted);
+  }
+  if (!found && directoryWindow) {
     // A PERSON OR A DEVICE, ASKED OF THE STORE (#349): a primary value
     // before an alias, as the index ranks them.
     found = uuidHolderOf(windowedFind('byUuid', [wanted],
                                       holdsUuid(wanted)) || [], wanted);
+    noteWindowedUuid(wanted, found);
   }
   log.debug("Leaving entryByUuid(). " + (found ? found.dn : 'None.'));
   return found;
+}
+
+// ---------------------------------------------------------------------------
+// A WINDOWED PERSON'S entryUUID, TO THE KEY THE STORE LAST ANSWERED WITH
+// (#773, 2026-10-21). In a windowed process every person's and every
+// device's UUID was a synchronous `byUuid` round trip, and a sign-in asks it
+// three times for the same person — `nameForSubject()`, the account-state
+// read and the delegation facts — while the entry itself is already in the
+// window from the password step. So the key a lookup found is kept, and the
+// next lookup takes the entry the window HOLDS at that key, without asking
+// the store, when it still carries that UUID as its own: a rename (a new
+// key), a delete, an entry the window has dropped, or a UUID that moved
+// all fall through to the store, as before. Only a PRIMARY value is kept —
+// an alias is ranked below a primary holder the store might also answer.
+// Bounded at `ldap.workerCacheEntries` per realm, the window's own size: a
+// key past it would name an entry the window no longer holds.
+// ---------------------------------------------------------------------------
+const windowedUuids = realms.keyed(function () {
+  return new Map();
+});
+
+// Hot path (every subject resolved in a windowed process): no Entering/
+// Leaving pair, the exception the code style allows, stated as it requires.
+function windowHeldByUuid(wanted) {
+  const memo = windowedUuids();
+  const key = memo.get(wanted);
+  if (!key) {
+    return null;
+  }
+  const held = directoryWindow.heldIn(realms.currentId(), key);
+  if (held.known && held.entry && entryUuidOf(held.entry) === wanted) {
+    windowedUuidCount.hit();
+    return held.entry;
+  }
+  if (held.known) {
+    // The window holds that key and it is not this UUID's any more.
+    memo.delete(wanted);
+  }
+  windowedUuidCount.miss();
+  return null;
+}
+
+// Hot path, as above.
+function noteWindowedUuid(wanted, found) {
+  if (!found || entryUuidOf(found) !== wanted) {
+    return;
+  }
+  const memo = windowedUuids();
+  const cap = Math.max(1, Number(config.value('ldap.workerCacheEntries')) ||
+                          1);
+  memo.delete(wanted);
+  memo.set(wanted, normalizeDn(found.dn));
+  while (memo.size > cap) {
+    memo.delete(memo.keys().next().value);
+  }
 }
 
 // The entry the UUID index names (the RESIDENT entries in a windowed
@@ -25800,6 +25860,35 @@ function describeDirectoryCaches() {
                    validUntil: null,
                    valid: cache.version === directoryVersion,
                    basis: 'directory version' });
+      });
+      return out;
+    }
+  });
+  cacheRegistry.register({
+    name: 'ldap.windowed-entryuuids',
+    title: 'Windowed entryUUIDs',
+    description: 'In a process holding a directory window, the key each ' +
+      'person\'s or device\'s entryUUID was last found at, so a subject ' +
+      'resolves to the entry the window holds without asking the store ' +
+      'again (#773). Checked against the entry\'s own entryUUID on every use.',
+    owner: 'ldap/ldap_server.js',
+    scope: 'realm',
+    maxEntries: function () {
+      return Math.max(1, Number(config.value('ldap.workerCacheEntries')) ||
+                         1);
+    },
+    bound: 'Enforced: ldap.workerCacheEntries per realm, the oldest dropped ' +
+      'first.',
+    settings: ['ldap.workerCacheEntries'],
+    lifetime: function () {
+      return 'Until the entry it names leaves the window, is renamed or no ' +
+        'longer carries that entryUUID, which is checked on every use.';
+    },
+    entries: function () {
+      const out = [];
+      windowedUuids.existing().forEach(function (memo, id) {
+        out.push({ realm: id, key: memo.size + ' UUID(s)', validUntil: null,
+                   basis: 'checked against the held entry on use' });
       });
       return out;
     }

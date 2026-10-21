@@ -603,6 +603,22 @@
     "en": "b12dd09efefaa6bd",
     "text": "Tills katalogen skrivs på ett sätt som indexet inte kan ta in; nästa uppslagning bygger då om det. Ett index per sfär."
   },
+  "caches.store.ldap.windowed-entryuuids.title": {
+    "en": "1bcb1ccebd4c7781",
+    "text": "entryUUID i fönstret"
+  },
+  "caches.store.ldap.windowed-entryuuids.description": {
+    "en": "4bbc3a85d38472cd",
+    "text": "I en process som håller ett fönster mot katalogen, nyckeln där varje persons eller enhets entryUUID senast hittades, så att ett subjekt slås upp till posten fönstret håller utan att fråga lagret igen (#773). Kontrolleras mot postens eget entryUUID vid varje användning."
+  },
+  "caches.store.ldap.windowed-entryuuids.bound": {
+    "en": "a4522667ab0d5562",
+    "text": "Tillämpas: ldap.workerCacheEntries per sfär, de äldsta tas bort först."
+  },
+  "caches.store.ldap.windowed-entryuuids.lifetime": {
+    "en": "317464bd9b5bd06a",
+    "text": "Tills posten den namnger lämnar fönstret, byter namn eller inte längre bär det entryUUID, vilket kontrolleras vid varje användning."
+  },
   "caches.store.mail.outbox.title": {
     "en": "d40abea9379f4e22",
     "text": "Utkorg för e-post"
