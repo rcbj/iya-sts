@@ -53,7 +53,8 @@
 // ---------------------------------------------------------------------------
 
 const { log, setJwtRecorder, userFor, nameForSubject, subjectForName,
-        namesForSubjects, LEGACY_SUBJECT_PREFIX } = require('./helpers');
+        namesForSubjects, namesForSubjectsAsync,
+        LEGACY_SUBJECT_PREFIX } = require('./helpers');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and the error-code table and nothing else here, so it cannot join a
 // cycle and it registers no route, so its position is not a position at all.
@@ -2509,6 +2510,72 @@ function withSubjectsResolved(fn) {
   log.debug("Leaving withSubjectsResolved(). " + subjects.size +
             " subject(s).");
   return value;
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME, WITH THE SUBJECTS ASKED ASYNCHRONOUSLY (#790). The subjects are
+// gathered exactly as `withSubjectsResolved()` gathers them and resolved
+// through `namesForSubjectsAsync()`, which waits on the store without holding
+// the event loop; `fn` then runs synchronously against them, as it does
+// there. For the Users page, whose register on 8081 held ~228,000 subjects.
+// ---------------------------------------------------------------------------
+/**
+ * Runs `fn` with every subject of the register resolved, asked of the
+ * directory asynchronously.
+ *
+ * @param fn - what to run
+ * @returns a promise of what `fn` returns
+ */
+async function withSubjectsResolvedAsync(fn) {
+  log.debug("Entering withSubjectsResolvedAsync().");
+  if (resolvedSubjects) {
+    const inner = fn();
+    log.debug("Leaving withSubjectsResolvedAsync(). Nested.");
+    return inner;
+  }
+  const subjects = new Set();
+  const note = function (value) {
+    let text = String(value == null ? '' : value).trim();
+    if (text.indexOf(SUBJECT_PREFIX) === 0) {
+      text = text.slice(SUBJECT_PREFIX.length);
+    }
+    if (/^urn:uuid:/i.test(text)) {
+      subjects.add(text);
+    }
+  };
+  tokens.forEach(function (record) {
+    note(record.sub);
+  });
+  allArtifacts().forEach(function (record) {
+    note(record.subject);
+    note(record.person);
+  });
+  const resolved = subjects.size
+    ? await namesForSubjectsAsync(Array.from(subjects)) : null;
+  // Set only now, across a synchronous call: nothing else can run inside it.
+  resolvedSubjects = resolved;
+  let value;
+  try {
+    value = fn();
+  } finally {
+    resolvedSubjects = null;
+  }
+  log.debug("Leaving withSubjectsResolvedAsync(). " + subjects.size +
+            " subject(s).");
+  return value;
+}
+
+/**
+ * `userRows()`, with every subject resolved asynchronously (#790).
+ *
+ * @returns a promise of the rows `userRows()` answers
+ */
+function userRowsAsync() {
+  log.debug("Entering userRowsAsync().");
+  log.debug("Leaving userRowsAsync().");
+  return withSubjectsResolvedAsync(function () {
+    return buildUserRowsResolved(undefined);
+  });
 }
 
 // A presented identity, split into the part that identifies a person here and
@@ -6925,6 +6992,7 @@ module.exports = {
   holderKeyOf: holderKeyOf,
   renameIdentity: renameIdentity,
   userRows: userRows,
+  userRowsAsync: userRowsAsync,
   // #352: one row, and the keys alone, without building every row.
   userRow: userRow,
   userKeys: userKeys,
