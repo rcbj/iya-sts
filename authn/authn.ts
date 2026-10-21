@@ -5316,7 +5316,12 @@ class Authn {
         // page skips the realm. A failed body ends nobody for that subject.
         // An absent row is not held, and the loop continues.
         if (self.windowOn()) {
-          const grouped = sessionWindow.chosenBySubject(realm.id);
+          // Only the subjects over the cap, in one question (2026-10-21):
+          // every chosen session paged synchronously was 634 questions a
+          // sweep on 8081. At most `budget` subjects can lose one this
+          // sweep, so no more are asked for.
+          const grouped = sessionWindow.overCapBySubject(realm.id, per,
+                                                         budget);
           if (grouped === null) {
             return;
           }
