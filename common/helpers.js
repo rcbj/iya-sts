@@ -7419,6 +7419,66 @@ function signJwt(payload, context, opts) {
   return signed;
 }
 
+// ---------------------------------------------------------------------------
+// `signJwt()` ON LIBUV'S THREAD POOL (2026-10-21, #820, rcbj's decision). The
+// same signer, the same header, the same recording; the signature is made by
+// `stsCrypto.signJwsAsync()`, which for an RSA or curve algorithm is node's
+// `crypto.sign()` with a callback — off the event loop. A refresh signed two
+// or three RS256 tokens on it, each holding every other request on the
+// worker. A caller that can wait uses this; `signJwt()` stays for the ones
+// that cannot.
+// ---------------------------------------------------------------------------
+/**
+ * Signs and records a token this service issues, as `signJwt()` does, with
+ * the signature made off the event loop.
+ *
+ * @param payload - the claims
+ * @param context - as `signJwt()`'s, for the token registry
+ * @param opts - as `signJwt()`'s
+ * @returns a promise of the compact JWS
+ */
+function signJwtAsync(payload, context, opts) {
+  log.debug("Entering signJwtAsync(). typ=" + (payload.typ || '(none)'));
+  const alg = String((opts && opts.algorithm) || 'RS256');
+  let signer;
+  try {
+    signer = pinnedJoseSigner(alg, false) ||
+             groupSignerFor(opts && opts.certificateHeader, alg, false) ||
+             ownSignerFor(alg);
+  } catch (e) {
+    log.debug("Leaving signJwtAsync(). No signer.");
+    return Promise.reject(e);
+  }
+  const certificateHeaderMembers = withCertificateHeader(
+    (opts && opts.header) || undefined,
+    opts && opts.certificateHeader, alg, signer.kid);
+  const kid = (opts && opts.kidDid) ? opts.kidDid + '#' + signer.kid :
+    publishedKidFor(signer.kid);
+  logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'before ' +
+      'signing',
+              { header: Object.assign({ alg: alg, kid: kid },
+                                      certificateHeaderMembers || {}),
+                payload: payload });
+  log.debug("Leaving signJwtAsync().");
+  return stsCrypto.signJwsAsync(payload, signer.key,
+                                { algorithm: alg, keyid: kid,
+                                  header: certificateHeaderMembers })
+    .then(function (signed) {
+      logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')',
+                  'after signing', signed);
+      if (jwtRecorder) {
+        try {
+          jwtRecorder(payload, signed, context || null);
+        } catch (e) {
+          log.error(errorCodes.tag('STS-CORE-0027') +
+                    'the JWT recorder threw and was ignored; the token ' +
+                    'itself is unaffected: ' + e.message);
+        }
+      }
+      return signed;
+    });
+}
+
 /**
  * Sends an OpenID4VCI error response: JSON `error` and `error_description`.
  *
@@ -8205,6 +8265,7 @@ module.exports = {
   oauthError: oauthError,
   vciError: vciError,
   signJwt: signJwt,
+  signJwtAsync: signJwtAsync,
   ownPublicKeyFor: ownPublicKeyFor,
   setJwtRecorder: setJwtRecorder,
   userFor: userFor,
