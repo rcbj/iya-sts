@@ -638,6 +638,8 @@ see [OpenID4VCI](oid4vci.md#configuration). See
 
 ## Related
 
+* [Verifiable credentials and wallets (OID4VC)](verifiable-credentials.md):
+  the overview, the recipes, and connecting a web or native wallet
 * [OpenID4VCI and status lists](oid4vci.md)
 * [Authentication](authentication.md), for the sign-in screen and second
   factors
