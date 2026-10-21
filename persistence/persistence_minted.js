@@ -1949,9 +1949,18 @@ function demandLiveFor(handle) {
   const declared = realms.handleFor(handle);
   log.debug("Leaving demandLiveFor().");
   return !!declared && declared.onDemand && onDemandActive() &&
-    (typeof declared.lookupsOf !== 'function' || indexComplete.has(handle)) &&
+    (!owesMark(declared) || indexComplete.has(handle)) &&
     // A key-resident store needs its keys loaded at a start (#820 part 2).
     (!declared.keysResident || typeof driver.loadMintedKeys === 'function');
+}
+
+// Whether an on-demand store waits for the completion mark before it reads
+// on demand: an index to fill (#820), or legacy rows' expiries (part 2).
+function owesMark(declared) {
+  log.debug("Entering owesMark().");
+  log.debug("Leaving owesMark().");
+  return typeof declared.lookupsOf === 'function' ||
+    typeof declared.expiryFromWrittenMs === 'function';
 }
 
 // The key column a key-resident store's key is filed under (#820 part 2):
@@ -2033,7 +2042,7 @@ function backfillOwed() {
   log.debug("Entering backfillOwed().");
   log.debug("Leaving backfillOwed().");
   return realms.handles().filter(function (declared) {
-    return declared.onDemand && typeof declared.lookupsOf === 'function' &&
+    return declared.onDemand && owesMark(declared) &&
       !indexComplete.has(declared.handle) &&
       !indexBackfilled.has(declared.handle);
   });
@@ -2064,6 +2073,26 @@ async function backfillMintedIndexes() {
     return id !== '';
   });
   for (const declared of backfillOwed()) {
+    // LEGACY EXPIRIES FIRST (#820 part 2), in the store, by statement.
+    if (typeof declared.expiryFromWrittenMs === 'function') {
+      if (typeof driver.backfillMintedExpiry !== 'function') {
+        continue;
+      }
+      const given = await driver.backfillMintedExpiry(declared.handle,
+        Number(declared.expiryFromWrittenMs()) || 0);
+      log.info('persistence: ' + given + ' row(s) of "' + declared.handle +
+               '" written before it declared an expiry were given one ' +
+               '(#820).');
+    }
+    if (typeof declared.lookupsOf !== 'function') {
+      await driver.markMintedIndexed(declared.handle);
+      indexBackfilled.add(declared.handle);
+      marked++;
+      log.info('persistence: the on-demand store "' + declared.handle +
+               '" has every row\'s expiry (#820): from the next start it is ' +
+               'read on demand rather than restored whole.');
+      continue;
+    }
     let batch = [];
     let inBatch = 0;
     const flushBatch = async function () {
@@ -2150,6 +2179,8 @@ function ensureIndexBackfillJob(schedulerInstance) {
               'marks the index complete, so the next start reads the store ' +
               'on demand (#820).',
     owner: 'persistence/persistence_minted.js',
+    onFront: 'it files the rows of stores the front process holds whole, ' +
+             'and only the front process registers it',
     everyMs: function () {
       return BACKFILL_EVERY_MS;
     },
@@ -2182,7 +2213,7 @@ function ensureIndexBackfillJob(schedulerInstance) {
 function indexesComplete() {
   log.debug("Entering indexesComplete().");
   const indexed = realms.handles().filter(function (declared) {
-    return declared.onDemand && typeof declared.lookupsOf === 'function';
+    return declared.onDemand && owesMark(declared);
   }).map(function (declared) {
     return declared.handle;
   });

@@ -2069,9 +2069,23 @@ memory mode, development, and every in-process test.
   verifier accepts anyway. Its cap and the hourly purge's walk are off on
   demand; its rows carry their token's `exp` as `expiresAt`.
 
+* **On demand, only the store's expiry purge deletes a dead row**, since a
+  sweep that walks the store sees only what is held. A store whose rows
+  were written before it declared an `expiresAt` declares
+  `onDemand.expiryFromWrittenMs` and waits for the same completion mark as
+  an indexed one: the backfill job gives those rows `written_at` plus that
+  much, by statement in the store (`backfillMintedExpiry()`, no body read,
+  no change written), then marks it.
+
 The stores on demand: `oauth2_bcp.refreshTokens` and `oauth2_bcp.grantTokens`
-(filed by family), `oauth2_bcp.refreshFamilies`, and key-resident
-`admin_stats.revokedJtis`. `tests/on_demand_store.js`
+(filed by family), `oauth2_bcp.refreshFamilies`, key-resident
+`admin_stats.revokedJtis`, and `authn.accountSets` (after its legacy
+expiries; `authn/account_sets.ts` argues the expiry).
+
+**Measured on 8081 (2026-10-21, part 1 only)**: rows restored per worker
+3.56M → 1.71M, front 3.76M → 1.91M; heap at ready 4.2–4.3 GB → 2.6–3.1 GB
+per worker, 4.6 → 1.3 GB in the front; listening 76 s → 42 s; all four
+workers 4 min → 80 s; the container 21.5 → 12.4 GB. `tests/on_demand_store.js`
 holds the map's rules; `tests/session_index.js` the index rows' writes.
 
 ## WHAT ONE ADD WRITES TO THE CHANGE LOG (#618 phase 2, 2026-10-14)

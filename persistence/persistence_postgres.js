@@ -6593,6 +6593,30 @@ function create(options) {
       });
     },
 
+    // A LEGACY ROW'S EXPIRY, FROM WHEN IT WAS WRITTEN (#820 part 2): every
+    // live row of one store with no `expires_at` is given `written_at` plus
+    // `addMs`, in batches, so the expiry purge can delete it once nothing
+    // restores the store whole. No body is read and no change is written:
+    // the column is the store's bookkeeping, not a row's content.
+    backfillMintedExpiry: async function (handle, addMs) {
+      log.debug("Entering backfillMintedExpiry(). " + handle);
+      let total = 0;
+      for (;;) {
+        const r = await pool.query(
+          'UPDATE sts_minted SET expires_at = (extract(epoch FROM ' +
+          'written_at) * 1000)::bigint + $2 WHERE ctid IN (SELECT ctid FROM ' +
+          'sts_minted WHERE handle = $1 AND expires_at IS NULL AND body <> ' +
+          '$3 LIMIT 5000)', [String(handle), Math.max(0, Number(addMs) || 0),
+                             TOMBSTONE]);
+        total += r.rowCount || 0;
+        if (!r.rowCount) {
+          break;
+        }
+      }
+      log.debug("Leaving backfillMintedExpiry(). " + total);
+      return total;
+    },
+
     markMintedIndexed: function (handle) {
       log.debug("Entering markMintedIndexed(). " + handle);
       log.debug("Leaving markMintedIndexed().");
