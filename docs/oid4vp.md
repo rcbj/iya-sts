@@ -542,7 +542,7 @@ check are the same in both modes. See
 | `oid4vp.statusOptionalIssuers` | `OID4VP_STATUS_OPTIONAL_ISSUERS` | *(empty)* | yes | SHA-256 thumbprints of trusted issuer certificates whose credentials may name no status. **Warning:** such a credential can never be shown revoked. |
 | `oid4vp.signIn` | `OID4VP_SIGN_IN` | `true` | yes | Offer *Sign in with a wallet* and answer `/authn/wallet`. |
 | `oid4vp.signInTtlS` | `OID4VP_SIGN_IN_TTL_S` | `300` | yes | How long a wallet sign-in waits for the wallet and for the browser to collect the session. |
-| `oid4vp.signInPollS` | `OID4VP_SIGN_IN_POLL_S` | `3` | yes | How often the QR-code page reloads itself. |
+| `oid4vp.signInPollS` | `OID4VP_SIGN_IN_POLL_S` | `3` | yes | How often the QR-code page's script asks `POST /authn-api/wallet/{state}/status` whether the wallet has answered; the page does not reload. |
 | `oid4vp.signInCrossDevice` | `OID4VP_SIGN_IN_CROSS_DEVICE` | `false` | yes | Offer a plain, relayable QR code for a wallet on another device. |
 | `oid4vp.signInFormats` | `OID4VP_SIGN_IN_FORMATS` | `dc+sd-jwt,jwt_vc_json,ldp_vc` | yes | The formats a sign-in asks for, in order of preference. |
 | `oid4vp.signInDcApiResponseMode` | `OID4VP_SIGN_IN_DC_API_RESPONSE_MODE` | `dc_api.jwt` | yes | Whether a Digital Credentials API answer is encrypted (`dc_api.jwt`) or in the clear (`dc_api`). |
@@ -638,6 +638,8 @@ see [OpenID4VCI](oid4vci.md#configuration). See
 
 ## Related
 
+* [Verifiable credentials and wallets (OID4VC)](verifiable-credentials.md):
+  the overview, the recipes, and connecting a web or native wallet
 * [OpenID4VCI and status lists](oid4vci.md)
 * [Authentication](authentication.md), for the sign-in screen and second
   factors
