@@ -87,10 +87,12 @@ function selfIssuedSections(t) {
     config: { value: function () {
       return false;
     } },
-    siop: { PROOF_ADMIN: 'admin', list: function (name) {
-      return Object.prototype.hasOwnProperty.call(held, name)
-        ? held[name] : null;
-    } }
+    siop: { PROOF_ADMIN: 'admin',
+            locationOf: require('../oid4vc/siop').locationOf,
+            list: function (name) {
+              return Object.prototype.hasOwnProperty.call(held, name)
+                ? held[name] : null;
+            } }
   });
   const ctx = context();
   const get = operation(page, ctx, 'getSelfIssued');
@@ -264,6 +266,8 @@ function walletSections(t) {
 function renderSections(t) {
   log.debug("Entering renderSections().");
   const tr = { html: function (key) {
+    return '[' + key + ']';
+  }, text: function (key) {
     return '[' + key + ']';
   }, date: function (x) {
     return String(x);

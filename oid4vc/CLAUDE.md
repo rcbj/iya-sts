@@ -691,6 +691,24 @@ signed request may use **all four Client Identifier prefixes** — six since
   held by somebody else) and goes back to the portal — no session is started.
   A pasted DID could be somebody else's; a proved one cannot. The admin door
   enrols by value (Admin Write), as it creates any other credential.
+* **An enrolment records WHERE THE KEY CAME FROM** (2026-10-20, rcbj on
+  `/portal/self-issued`): `location: { kind, value }` on the value.
+  `vc_signin.ts`'s `locationOf(tx)` reads it off the transaction the proof
+  answered — `dc_api` (the origin asked for) where the answer came that
+  way; `web` (the CONFIGURED `walletUrl`, never what a wallet said) where
+  the first fetch of the Request Object came by the web wallet's link;
+  otherwise `app`, named by the product tokens of that fetch's User-Agent
+  (`siop.reportedName()`: printable ASCII, no comments, at most 80
+  characters; `''` where nothing usable came). An administrator's value is
+  `admin`. **How the web link is told apart**: `waitView()`'s web-wallet
+  links carry `?via=web` on the `request_uri`, and the `GET
+  /oid4vp/request/:id` handler records `tx.signIn.fetchedBy` from it
+  (`noteFetch()`, first fetch wins, nothing written on a re-fetch) and
+  answers exactly what it answers without it — the id is the path's, the
+  Request Object carries no `request_uri`, and nothing compares one. The
+  scheme link and the QR code carry no marker. Proving a subject again
+  writes the location afresh; `enrol()` checks it (`siop.locationOf()`)
+  whoever passes it.
 * **`answerSelfIssued()` is one handler for `direct_post` and `form_post`**:
   the body is the same form either way; only the reply differs. A sign-in is
   always `direct_post`, because its binding cookie is SameSite=Lax and a form

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4570** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4572** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 242
 * [Management API (`STS-API`)](#sts-api) — 86
-* [User portal (`STS-PORTAL`)](#sts-portal) — 102
+* [User portal (`STS-PORTAL`)](#sts-portal) — 104
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
@@ -4978,6 +4978,8 @@ Raised from: portal/.
 | `STS-PORTAL-0615` | Marking a preferred DID on /portal/self-issued was refused: the subject is not enrolled for the signed-in person, was enrolled by an administrator's value rather than proved with their wallet, is a JWK thumbprint rather than a DID, or the directory did not store the change (#693). | HTTP 400 JSON |
 | `STS-PORTAL-0616` | /portal/self-issued (GET /account-api/self-issued) was refused: the directory holds no entry for the person the token names, so there is no list of their self-issued subjects to show — answered as a refusal rather than as an empty list, which would read as "none enrolled" (2026-10-20). | HTTP 404 JSON |
 | `STS-PORTAL-0617` | /portal/wallet (its history, an offer or a Remove) was refused: the token's `sub` and its person do not name one another — the subject is not that person's entry, and the person's entry has another subject or none — so the history the subject indexes would be somebody else's or nobody's (2026-10-20). Sign in again. | HTTP 403 JSON |
+| `STS-PORTAL-0618` | /portal/self-issued/did (GET /account-api/self-issued/did) was refused: the subject named is not one enrolled for the person the token names — somebody else's, nobody's, not a subject at all, or the directory holds no entry for the person — so the operation is not a resolver for anybody's input (2026-10-20). | HTTP 404 JSON |
+| `STS-PORTAL-0619` | /portal/self-issued/did was refused: the person's enrolled subject has no DID document resolved from the identifier — a did:web (its document is the one published at its address, which the list links to), a JWK thumbprint (not a DID), or a did:jwk or did:key the resolver could not read (2026-10-20). | HTTP 400 JSON |
 
 ## STS-ACCOUNT
 

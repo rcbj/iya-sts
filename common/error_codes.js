@@ -21895,6 +21895,20 @@ const CODES = [
       'has another subject or none — so the history the subject indexes ' +
       'would be somebody else\'s or nobody\'s (2026-10-20). Sign in again.',
     spec: 'HTTP 403 JSON' },
+  { code: 'STS-PORTAL-0618',
+    summary: '/portal/self-issued/did (GET /account-api/self-issued/did) ' +
+      'was refused: the subject named is not one enrolled for the person ' +
+      'the token names — somebody else\'s, nobody\'s, not a subject at ' +
+      'all, or the directory holds no entry for the person — so the ' +
+      'operation is not a resolver for anybody\'s input (2026-10-20).',
+    spec: 'HTTP 404 JSON' },
+  { code: 'STS-PORTAL-0619',
+    summary: '/portal/self-issued/did was refused: the person\'s enrolled ' +
+      'subject has no DID document resolved from the identifier — a ' +
+      'did:web (its document is the one published at its address, which ' +
+      'the list links to), a JWK thumbprint (not a DID), or a did:jwk or ' +
+      'did:key the resolver could not read (2026-10-20).',
+    spec: 'HTTP 400 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },

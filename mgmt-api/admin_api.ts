@@ -6566,7 +6566,13 @@ class AdminApi {
                      'and how (`proof`: `wallet`, proved by the person, or ' +
                      '`admin`, enrolled by value), with a did:web\'s ' +
                      '`pinnedKeys` and the one proved DID the person ' +
-                     'prefers (`preferred`) (#693). ' +
+                     'prefers (`preferred`) (#693), and where the key ' +
+                     'came from (`location`, `{ kind, value }`: `web` and ' +
+                     'the web wallet\'s configured address, `app` and the ' +
+                     'name the wallet app reported in its User-Agent or ' +
+                     '\'\', `dc_api` and the browser origin or \'\', ' +
+                     '`admin`; absent on an enrolment from before it was ' +
+                     'recorded). ' +
                      'Beside them, whether signing in that way is on ' +
                      '(`oid4vp.signInSelfIssued`), how many a person may ' +
                      'hold, and the subject syntaxes accepted.',
