@@ -204,6 +204,20 @@ function childMain() {
     note(pair.sync && pair.rowSync && pair.rowSync.idx === pair.sync.idx,
          '3b. with no shared claims table an index is claimed synchronously',
          JSON.stringify(pair.sync));
+    // 3f (2026-10-21): the store declares its rows' expiry, the entry's own
+    // `expiresAt`, so the expiry purge takes an entry and a restore skips
+    // it; it had none, and 347,000 entries were read back at every start
+    // on 8081.
+    const handle = m.realms.handleFor('access_token_status.entries');
+    const when = Date.now() + 60000;
+    note(handle && typeof handle.expiresAt === 'function' &&
+         handle.expiresAt({ jti: 'x', kind: 'oauth', expiresAt: when }) ===
+           when && handle.retain === 'age',
+         '3f. the entries carry their token\'s expiry, and the old rows ' +
+         'without one go by age', JSON.stringify(handle && {
+           retain: handle.retain,
+           expiry: typeof handle.expiresAt === 'function' ?
+             handle.expiresAt({ expiresAt: when }) : null }));
     const Cls = ats.AccessTokenStatus;
     const fullRows = { get: function () {
       return { jti: 'x', kind: 'oauth', expiresAt: Date.now() + 60000 };

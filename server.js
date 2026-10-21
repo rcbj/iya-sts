@@ -770,7 +770,29 @@ const clientHello = require('./tls/client_hello');
 // exactly the same steps in exactly the same order. Each step's argument is
 // in that file, where it has always been.
 // ---------------------------------------------------------------------------
-serviceState.start().then(function (both) {
+// THE REQUEST WORKERS START BESIDE THIS PROCESS'S RESTORE (2026-10-21),
+// when the store already holds the realms' keys and a certificate authority
+// — a restart. Each worker restores what it minted itself, as this process
+// does, and on 8081 the two restores were 34 s and then 32 s, one after the
+// other; side by side the start costs the longer one. On a FRESH store the
+// order is unchanged: this process makes the keys and the hierarchy first,
+// and a worker started beside it could make a second set. The pool's
+// coordination check, which needs this process coordinating, is asked by
+// `requestPool.confirmCoordination()` before anything binds.
+let earlyPool = null;
+serviceState.start({
+  beforeMinted: function (keys) {
+    if (keys && keys.persisting && keys.loaded > 0 && keys.pki > 0) {
+      earlyPool = requestPool.start({ early: true });
+      // Awaited below; held here so a refusal is not an unhandled rejection
+      // in the seconds before.
+      earlyPool.catch(function (e) {
+        log.debug("Caught in the early request pool: " +
+                  ((e && e.message) || e));
+      });
+    }
+  }
+}).then(function (both) {
   const started = both.started;
   // THE PROXY PROTOCOL WITH NOBODY TRUSTED (2026-09-14, #46): refused here,
   // after the store restored any runtime `global.trustedProxies` and before
@@ -986,7 +1008,12 @@ serviceState.start().then(function (both) {
       log.fatal(mailProblem + ' The service is NOT STARTING.');
       process.exit(1);
     }
-    return requestPool.start().then(function (pool) {
+    const pooled = earlyPool
+      ? requestPool.confirmCoordination().then(function () {
+        return earlyPool;
+      })
+      : requestPool.start();
+    return pooled.then(function (pool) {
       if (pool.wanted) {
         log.info('sts: ' + pool.started + ' of ' + pool.wanted + ' request ' +
                  'worker(s) are serving' +
