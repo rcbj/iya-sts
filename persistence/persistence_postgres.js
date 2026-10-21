@@ -393,6 +393,9 @@ const SESSION_INDEX_DELETE =
 const MINTED_INDEX_DELETE =
   'DELETE FROM sts_minted_index WHERE (handle, realm, key) IN (SELECT h, r, ' +
   'k FROM unnest($1::text[], $2::text[], $3::text[]) AS u(h, r, k))';
+// The row that says a store's index is complete (#820): realm '' and a key
+// no digest can be ('$' is not in base64url).
+const MINTED_INDEX_MARK = '$index-complete$';
 const MINTED_INDEX_INSERT =
   'INSERT INTO sts_minted_index (handle, realm, index_key, key) SELECT ' +
   'u.h, u.r, u.i, u.k FROM unnest($1::text[], $2::text[], $3::text[], ' +
@@ -6525,6 +6528,52 @@ function create(options) {
         return { handle: row.handle, realm: row.realm, key: row.key,
                  body: row.body, writtenAt: Number(row.written_ms || 0) };
       });
+    },
+
+    // -----------------------------------------------------------------------
+    // AN ON-DEMAND STORE'S INDEX, BACKFILLED (#820). Index rows are written
+    // beside a body write, so rows stored before schema version 24 have none,
+    // and a lookup by index would miss them — a revoked family's access
+    // tokens among them. An indexed store therefore stays read back whole
+    // until its index is COMPLETE: the front process files every row it
+    // restored (`writeMintedIndex()`), then commits the mark
+    // (`markMintedIndexed()`), and the next start reads it on demand.
+    // -----------------------------------------------------------------------
+    mintedIndexComplete: function (handles) {
+      log.debug("Entering mintedIndexComplete().");
+      log.debug("Leaving mintedIndexComplete().");
+      return pool.query(
+        'SELECT handle FROM sts_minted_index WHERE handle = ANY($1::text[]) ' +
+        'AND realm = $2 AND index_key = $3 AND key = $3',
+        [(handles || []).map(String), '', MINTED_INDEX_MARK]
+      ).then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return String(row.handle);
+        });
+      });
+    },
+
+    writeMintedIndex: function (rows) {
+      log.debug("Entering writeMintedIndex(). " + (rows || []).length);
+      log.debug("Leaving writeMintedIndex().");
+      if (!rows || !rows.length) {
+        return Promise.resolve(0);
+      }
+      return pool.query(MINTED_INDEX_INSERT,
+        [rows.map(function (one) { return String(one.handle); }),
+         rows.map(function (one) { return String(one.realm); }),
+         rows.map(function (one) { return String(one.indexKey); }),
+         rows.map(function (one) { return String(one.key); })]
+      ).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
+    markMintedIndexed: function (handle) {
+      log.debug("Entering markMintedIndexed(). " + handle);
+      log.debug("Leaving markMintedIndexed().");
+      return pool.query(MINTED_INDEX_INSERT,
+        [[String(handle)], [''], [MINTED_INDEX_MARK], [MINTED_INDEX_MARK]]);
     },
 
     // One `sts_sessions` row, in its own transaction. Apply repairs through

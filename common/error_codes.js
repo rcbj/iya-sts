@@ -1775,6 +1775,12 @@ const CODES = [
     summary: 'An on-demand minted store (#820) read a row whose sealed body ' +
       'will not open under this process\'s keys. It is answered as absent.',
     spec: 'none' },
+  { code: 'STS-STORE-0086',
+    summary: 'The front process could not complete the index of an indexed ' +
+      'on-demand minted store (#820): a write of its index rows or of the ' +
+      'completion mark failed. Nothing is lost — the store stays read back ' +
+      'whole at the next start, which tries again.',
+    spec: 'none' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
