@@ -33,7 +33,8 @@
 //      pending id, step, state and response_code in a query are redacted in
 //      every audit row and in the call log's path and query.
 //   7. THE ENROLMENT AND THE SECOND FACTOR: an enrolment with no session is
-//      refused, and a start naming a step nobody holds.
+//      refused, its start takes `login_hint`, and a start naming a step
+//      nobody holds is refused.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -305,6 +306,19 @@ function childMain() {
          '7a. an enrolment from a browser holding no sign-on session is ' +
          'refused, STS-VC-0093, back to the portal',
          enrol.status + ' ' + enrol.code);
+    // 7a-ii. THE START TAKES `login_hint` (2026-10-20, rcbj on 8081): the
+    // body is strict, and the portal's Enrol link names its account, so a
+    // start carrying it was refused as an unknown field (STS-VC-0069) before
+    // the enrolment was asked at all. Here it names nobody signed in, so the
+    // answer is the enrolment's own refusal.
+    await w.refreshCsrf(enrolWho);
+    const hinted = await w.act(enrolWho, '/authn-api/wallet',
+                               { siop: '1', enrol: '1',
+                                 login_hint: 'aw-nobody' });
+    note(hinted.status === 403 && hinted.code === 'STS-VC-0093',
+         '7a-ii. a start carrying login_hint is not refused for the field; ' +
+         'naming nobody signed in here it meets the enrolment\'s refusal, ' +
+         'STS-VC-0093', hinted.status + ' ' + hinted.code);
     await w.inRealm(function () {
       m.config.clearOverride('oid4vp.signInSelfIssued');
     });
