@@ -5704,8 +5704,8 @@
     "text": "Actualización de la página de inicio de sesión con billetera (s)"
   },
   "oid4vp.signInPollS|description": {
-    "en": "439aa4f77625ebb1",
-    "text": "Con qué frecuencia se recarga la página del código QR (oid4vp.signInCrossDevice) mientras responde una billetera en otro dispositivo. Es una actualización <meta> y no un script, así que cada recarga es una página completa. La página de la Digital Credentials API no se recarga: una recarga cerraría el diálogo de billetera del navegador."
+    "en": "b248261723e71249",
+    "text": "Con qué frecuencia la página del código QR (oid4vp.signInCrossDevice) pregunta si una cartera en otro dispositivo ha respondido: su script consulta POST /authn-api/wallet/{state}/status cada tantos segundos, sin recargar la página (#574; hasta entonces era una actualización <meta>). La página de la Digital Credentials API no consulta con este reloj: espera a que responda el diálogo de cartera del navegador."
   },
   "oid4vp.signInCrossDevice|label": {
     "en": "20ef4bd658348a2f",

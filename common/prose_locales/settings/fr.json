@@ -5704,8 +5704,8 @@
     "text": "Rafraîchissement de la page de connexion par portefeuille (s)"
   },
   "oid4vp.signInPollS|description": {
-    "en": "439aa4f77625ebb1",
-    "text": "La fréquence à laquelle la page du code QR (oid4vp.signInCrossDevice) se recharge pendant qu’un portefeuille sur un autre appareil répond. C’est un rafraîchissement <meta> et non un script ; chaque rechargement est donc une page entière. La page de la Digital Credentials API ne se recharge pas : un rechargement fermerait la boîte de dialogue du portefeuille du navigateur."
+    "en": "b248261723e71249",
+    "text": "La fréquence à laquelle la page du code QR (oid4vp.signInCrossDevice) demande si un portefeuille sur un autre appareil a répondu : son script interroge POST /authn-api/wallet/{state}/status toutes les tant de secondes, sans recharger la page (#574 ; c’était un rafraîchissement <meta> jusque-là). La page de la Digital Credentials API n’interroge pas à ce rythme : elle attend la réponse de la boîte de dialogue du portefeuille du navigateur."
   },
   "oid4vp.signInCrossDevice|label": {
     "en": "20ef4bd658348a2f",

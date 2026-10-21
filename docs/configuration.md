@@ -601,8 +601,8 @@ place that should be in the clear.
 
 `STS_HTTPS=false` is the way back to a plain listener, and it is a supported
 configuration rather than an escape hatch: a client that cannot be taught to
-trust a certificate regenerated on every start is exactly what this service
-exists to exercise.
+trust a certificate whose Root is rebuilt on every start (in development mode)
+is exactly what this service exists to exercise.
 
 When it is on there is **no plain HTTP listener in this process**, which costs
 one thing that is stated on the page rather than left to be met as a handshake
@@ -615,13 +615,14 @@ curl -k https://localhost:8081/tls/server-certificate > /tmp/sts.pem
 export NODE_EXTRA_CA_CERTS=/tmp/sts.pem      # node trusts it from here on
 ```
 
-It uses the same per-start certificate as LDAPS 636 and the embedded debugger's
-listener, so a caller trusts this service once per start rather than three
-times. `NODE_EXTRA_CA_CERTS`
-accepts it despite its `basicConstraints CA:FALSE` — OpenSSL takes a self-signed
-leaf found in the trust store as an anchor — and without it a node client fails
-with `DEPTH_ZERO_SELF_SIGNED_CERT`, or, through `fetch()`, with a bare
-`TypeError: fetch failed` that names nothing.
+It uses the same certificate as LDAPS 636 and the embedded debugger's
+listener, issued under this service's Root CA, so a caller trusts this service
+once rather than three times. The answer is the leaf, the chain and the Root
+(the Root last), so the file `NODE_EXTRA_CA_CERTS` names holds the anchor;
+without it a node client fails certificate verification, or, through
+`fetch()`, with a bare `TypeError: fetch failed` that names nothing. In
+development mode the Root is rebuilt at every start, so the file is fetched
+again after a restart ([TLS](tls.md#the-server-certificate)).
 
 ### `ldap.autocreateUsers`
 
@@ -932,27 +933,34 @@ service already makes about enrolling an authenticator app from the console.
 where a code is typed, what the session records, and why a spend that cannot be
 written refuses the sign-in.
 
-### The WebAuthn settings, and the one of thirteen this service enforces
+### The WebAuthn settings, and the one ceremony setting this service enforces
 
-Thirteen `webauthn.*` rows, drawn on `/admin/webauthn` under Protocols.
+The `webauthn.*` rows, drawn on `/admin/webauthn` under Protocols.
 The specification and the browser decide the cryptography, not the ceremony:
 the RP name, the algorithms offered, the user verification requirement, the
 attestation conveyance and the timeout are this service's choices, and these
 rows are how to ask for a ceremony shaped another way.
 
-They are three kinds of thing and the page says which each is, because the kind
+They are four kinds of thing and the page says which each is, because the kind
 decides what it means:
 
-* **THE CEREMONY** — `rpName`, `rpId`, `algorithms`, `userVerification`,
-  `attestation`, `timeoutMs`. Handed to the browser in the options and no more.
-* **CTAP2** — `authenticatorAttachment`, `residentKey`, `credProps`. Also handed
-  to the browser, and translated by it into what it asks the AUTHENTICATOR for:
-  which kind may answer, whether the credential is discoverable (a resident key,
-  which is what a passkey is), and whether the browser is asked to report back
-  which it made.
+* **THE CEREMONY** — `rpName`, `rpId`, `algorithms` (and the three flags that
+  widen or narrow it: `insecureAlgorithms`, `pqcOnly`,
+  `pqcAlongsideClassical`), `userVerification`, `attestation`, `timeoutMs`.
+  Handed to the browser in the options and no more.
+* **CTAP2** — `authenticatorAttachment`, `credProps`. Also handed to the
+  browser, and translated by it into what it asks the AUTHENTICATOR for: which
+  kind may answer, and whether the browser is asked to report back whether the
+  credential is discoverable. Whether it is asked for a discoverable credential
+  (a resident key, which is what a passkey is) is no longer a setting: the
+  `webauthn.residentKey` row was removed in #527 and replaced by the passkey
+  policy's `securityKeyResidentKey` (Directory → Policies).
 * **POLICY** — `enabled`, `primaryAllowed`, `mfaAllowed`, `maxKeysPerPerson`.
   Not WebAuthn at all: what THIS service will do with a key once the ceremony is
   over.
+* **THE ATTESTATION STATEMENT** — `attestationPolicy` and the six
+  `attestation*` rows beside it, below. Unlike the ceremony rows these do
+  refuse a registration.
 
 **`webauthn.userVerification` IS THE ONE THIS SERVICE CHECKS.** `required` is
 sent to the browser AND the UV flag in the signed authenticator data is verified
@@ -1397,7 +1405,7 @@ changed only while the default realm is ambient, by a service administrator.
 | `listeners.realm` | *(none — set on a realm)* | *(empty)* | yes, on a realm | A realm's own listeners, the same JSON; they answer that realm alone. What #99's realm listener became. |
 | `listeners.applications` | `STS_LISTENERS_APPLICATIONS` | *(empty)* | yes — per realm, a realm's own entries read before the service's | Which hosted application is on which listener: `{ "<application>": { "listeners": [...], "advertised": "..." } }`, `*` for every one not named. An application not named is on `main`. **Changing where `oauth-oidc` is advertised changes the issuer.** |
 | `listeners.adminOnMain` | `STS_LISTENERS_ADMIN_ON_MAIN` | `false` | **restart** — the way back in, which no write may turn off | Puts the admin console and the management API back on the main port, advertised there, whatever the mapping says. |
-| `global.https` *(derived)* | `STS_HTTPS` | `false`, but **`true` in every appconfig file shipped here** — see *Running it* | **restart** — the listener is bound when the process starts, and its scheme is decided there | Serve the main port over HTTPS, with the SAME certificate and key the LDAPS 636 listener and the embedded debugger's use — one self-signed pair generated per start, so a caller trusts this service once rather than three times. It is also what lets the main port ask for a client certificate, which is where mutual TLS happens. |
+| `global.https` *(derived)* | `STS_HTTPS` | `false`, but **`true` in every appconfig file shipped here** — see *Running it* | **restart** — the listener is bound when the process starts, and its scheme is decided there | Serve the main port over HTTPS, with the SAME certificate and key the LDAPS 636 listener and the embedded debugger's use — issued under this service's Root CA (rebuilt at every start in development mode), so a caller trusts this service once rather than three times. It is also what lets the main port ask for a client certificate, which is where mutual TLS happens. |
 | `global.domain` | `STS_DOMAIN` | `example.com` | **restart** — the default realm's directory tree is built under it at startup | The DNS domain of the DEFAULT trust realm. Its directory is rooted at the RFC 2247 mapping of it (`example.com` is `dc=example,dc=com`), and a realm created without a domain of its own is given `<id>.<this value>`. It names what the realm invents, never where it is reached. |
 | `global.trustProxy` | `STS_TRUST_PROXY` | `false` | yes | Believe X-Forwarded-Proto and X-Forwarded-Host — which is what a TLS-terminating reverse proxy sets to say what the CLIENT used. |
 | `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDR ranges this deployment's own proxies connect from. Read for forwarded headers only with `global.trustProxy` on, and for a PROXY protocol header whenever `global.proxyProtocol` is `v2` — where empty trusts nobody and the service does not start. **Empty keeps the old rule** — forwarded headers believed from any caller, the rate limiter taking the left-most `X-Forwarded-For` entry. Set, they are believed only from a peer in a range and the client is the right-most hop outside them, so a caller reaching a node directly cannot choose its own rate-limit address or this service's URL. `common/CLAUDE.md`, *Several nodes*, also says why mutual TLS needs L4 passthrough. |
@@ -1409,6 +1417,7 @@ changed only while the default realm is ambient, by a service administrator.
 | `http.http2MaxConcurrentStreams` | `STS_HTTP_HTTP2_MAX_CONCURRENT_STREAMS` | `100` | yes — the next connection, and an open one is sent the new value | How many requests one HTTP/2 connection may have open at once (`SETTINGS_MAX_CONCURRENT_STREAMS`, 1 to 1000); a stream past it is refused until one finishes. `100` is the smallest value RFC 9113 recommends; node's own is unbounded, which would let one connection carry the work of thousands. Per listener as `listener<Id>.http2MaxConcurrentStreams` (`-1` inherits) and a custom listener's `tls.http2MaxConcurrentStreams`. |
 | `global.proxyProtocol` | `STS_PROXY_PROTOCOL` | `off` | **restart** — installed on each listener when it binds | `v2` reads a HAProxy PROXY protocol version 2 header at the front of every connection to the main port, 389, 636, the KDC's TCP 88 (not UDP), the debugger and 8082 **before TLS**, so the client's address reaches the rate limiter, LDAP and the request workers while TLS and mutual TLS still terminate on the node. A connection from `global.trustedProxies` must carry a valid header (a `LOCAL` one — a health check — keeps the balancer's address); any other address is closed, except this host's own, which is served plain. Version 1 is refused; the SPIFFE gRPC listeners are not covered. See [Behind an L4 load balancer](#behind-an-l4-load-balancer--the-proxy-protocol) above. |
 | `global.proxyProtocolTimeoutMs` | `STS_PROXY_PROTOCOL_TIMEOUT_MS` | `5000` | yes | How long a trusted proxy may take to send its complete header before the connection is closed. |
+| `global.publicBaseUrl` | `STS_PUBLIC_BASE_URL` | *(empty)* | yes | The scheme, host and port this service is reached at, as a client should name it — `https://idp.example.com`, with no path. **Empty reads it off each request**, which lets one process answer correctly under every name it is reached by. Set, it is the base of every issuer, metadata URL, redirect and origin this service builds, whatever `Host` header a request carried — what a deployed identity provider wants — and it beats `global.trustProxy`. A trust realm's path prefix is still appended. |
 | `global.corsOrigins` | `STS_CORS_ORIGINS` | *(empty)* | yes | Origins CORS treats as this deployment's OWN, comma-separated — allowed on every path whichever client a request names, beside this service's listeners, `global.publicBaseUrl` and the embedded debugger. **Empty adds none**; every other origin must be listed in an application's `appCorsOrigin`. A value that is not an origin is ignored and logged. |
 | `global.logLevel` | `STS_LOG_LEVEL` | `info` | yes | debug is the useful level for a service whose job is to show what it did: every endpoint call, and every token and assertion both before and after it was signed. |
 | `workers.startTimeoutMs` | `STS_WORKERS_START_TIMEOUT_MS` | `60000` | no — a worker reads it when it starts | How long a request or surface worker may take to bring its state up (the store, the keys, the minted rows, coordination) before it reports it could not start. Three failures in a row and the pool stops forking until `workers.giveUpRetryMs`, then tries one worker; until it is up, the process holding the sockets answers everything, on one thread. Raise it where starts are slow — a realm key set every start re-certifies, a cold database (#311). |
@@ -2000,7 +2009,7 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `oid4vp.maxRequestedClaims` | `OID4VP_MAX_REQUESTED_CLAIMS` | `40` | yes | The most claims the Verifier request tab at `/admin/vc#vc-tab-verifier-request` lets the Verifier's request name. |
 | `oid4vp.signIn` | `OID4VP_SIGN_IN` | `true` | yes | Offer "Sign in with a wallet" on /authn/login and answer /authn/wallet: a verified presentation of a credential this realm issued — in any format `oid4vp.signInFormats` names, with a fresh holder proof — starts a session for the directory entry the credential was issued for. Any other credential still verifies and signs nobody in. See *Signing in with a wallet*. |
 | `oid4vp.signInTtlS` | `OID4VP_SIGN_IN_TTL_S` | `300` | yes | How long a wallet sign-in waits for the wallet, and for the browser that started it to collect the session. |
-| `oid4vp.signInPollS` | `OID4VP_SIGN_IN_POLL_S` | `3` | yes | How often the QR-code page reloads itself (a `<meta>` refresh, not a script). The Digital Credentials API page does not reload: a reload would close the browser's wallet dialog. |
+| `oid4vp.signInPollS` | `OID4VP_SIGN_IN_POLL_S` | `3` | yes | How often the QR-code page asks whether a wallet on another device has answered: its script polls `POST /authn-api/wallet/{state}/status` every this many seconds, without reloading the page (#574; it was a `<meta>` refresh until then). The Digital Credentials API page does not poll on this clock: it waits for the browser's wallet dialog to answer. |
 | `oid4vp.signInCrossDevice` | `OID4VP_SIGN_IN_CROSS_DEVICE` | `false` | yes | Offer a plain QR code on the wallet sign-in page, for a wallet the browser's Digital Credentials API cannot reach. **Off by default in both modes**: it is the one wallet path somebody can relay to a victim. |
 | `oid4vp.signInFormats` | `OID4VP_SIGN_IN_FORMATS` | `dc+sd-jwt,jwt_vc_json,ldp_vc` | yes | The credential formats a wallet sign-in asks for, in order of preference: one DCQL credential query each, and a credential set saying any one will do. |
 | `oid4vp.signInDcApiResponseMode` | `OID4VP_SIGN_IN_DC_API_RESPONSE_MODE` | `dc_api.jwt` | yes | How a wallet answers through the Digital Credentials API: encrypted to a key only that sign-in holds, or `dc_api` in the clear for a wallet that cannot encrypt. |
@@ -2282,7 +2291,7 @@ client author asks this service for a ceremony of a particular shape — with
 Which of these is enforced and which are only requests to the browser, why the
 four policy rows refuse an enrolment and never an authentication, and how far
 the RP ID may be widened are under
-[The WebAuthn settings](#the-webauthn-settings-and-the-one-of-thirteen-this-service-enforces)
+[The WebAuthn settings](#the-webauthn-settings-and-the-one-ceremony-setting-this-service-enforces)
 above.
 
 ### Group claim

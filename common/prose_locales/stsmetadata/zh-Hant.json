@@ -1472,8 +1472,8 @@
     "text": "非規格端點。八個 `totp.*` 設定，旁邊附上 RFC 6238 演算法表——從 common/totp.ts 讀出而非另外寫下，因此報告不可能描述本服務並未計算的摘要演算法。變更摘要演算法、位數或週期只影響「新的」註冊；時間偏差視窗則對所有人即時生效。旁邊沒有 POST，這並不是缺漏：頁面上的每個表單都以 set-many POST 至 /admin/config。對應 GET /admin/totp。"
   },
   "stsmetadata.endpoints./admin-api/webauthn.what": {
-    "en": "c0a4d8af96e060e0",
-    "text": "非規格端點。二十一個 `webauthn.*` 設定，分為四類——「儀式」（RP 名稱、RP ID 覆寫、演算法、使用者驗證、證明傳遞、逾時）、CTAP2（驗證器附接方式、常駐金鑰、credProps）以及「原則」（金鑰是否可作為主要因素、是否可作為第二因素、每人可有幾把）——旁邊附上 COSE 演算法表，從 authn/webauthn.js（檢查簽章的模組）讀出。**只有一項會被強制執行，其餘都是請求**：userVerification 會依驗證器所簽署位元組中的 UV 旗標檢查。證明原則（#105）與目前生效的 FIDO 中繼資料一併回報。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/webauthn。"
+    "en": "b48aa4041763958e",
+    "text": "非規格端點。各項 `webauthn.*` 設定，分為四類——「儀式」（RP 名稱、RP ID 覆寫、演算法、使用者驗證、證明傳遞、逾時）、CTAP2（驗證器附接方式、credProps）以及「原則」（金鑰是否可作為主要因素、是否可作為第二因素、每人可有幾把）——旁邊附上 COSE 演算法表，從 authn/webauthn.js（檢查簽章的模組）讀出。**只有一項會被強制執行，其餘都是請求**：userVerification 會依驗證器所簽署位元組中的 UV 旗標檢查。證明原則（#105）與目前生效的 FIDO 中繼資料一併回報。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/webauthn。"
   },
   "stsmetadata.endpoints./admin-api/mfa.what": {
     "en": "22620e663bd803a3",

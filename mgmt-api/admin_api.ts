@@ -2286,14 +2286,19 @@ class AdminApi {
         operationId: 'getWebauthnSettings',
         summary:
           'The security-key ceremony\'s settings, and what a key may be here',
-        description: 'The twenty-one `webauthn.*` settings, in four kinds. ' +
+        description: 'Every `webauthn.*` setting, in four kinds. ' +
                      '**THE CEREMONY**: the RP name, the RP ID override, the ' +
-                     'algorithms offered, the user verification requirement, ' +
-                     'the attestation conveyance and the timeout — handed to ' +
-                     'the browser in the `PublicKeyCredential` options. ' +
-                     '**CTAP2**: the authenticator attachment, whether the ' +
-                     'credential is discoverable (a resident key), and ' +
-                     'whether `credProps` is asked for. **POLICY**: whether ' +
+                     'algorithms offered (with the three flags that widen or ' +
+                     'narrow them: `insecureAlgorithms`, `pqcOnly` and ' +
+                     '`pqcAlongsideClassical`), the user verification ' +
+                     'requirement, the attestation conveyance and the ' +
+                     'timeout — handed to the browser in the ' +
+                     '`PublicKeyCredential` options. **CTAP2**: the ' +
+                     'authenticator attachment and whether `credProps` is ' +
+                     'asked for; whether the credential is discoverable (a ' +
+                     'resident key) is the passkey policy\'s ' +
+                     '`securityKeyResidentKey` since #527, not a setting ' +
+                     'here. **POLICY**: whether ' +
                      'a key may be a primary credential, whether it may be a ' +
                      'second factor, and how many one person may hold — ' +
                      'which are not WebAuthn at all but what THIS service ' +
