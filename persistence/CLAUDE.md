@@ -2031,6 +2031,18 @@ memory mode, development, and every in-process test.
 * **A read that fails answers absent** (STS-STORE-0084), and so does a body
   that will not open (STS-STORE-0085): every reader of these stores refuses
   what it cannot find, which is the safe side.
+* **An indexed store is not on demand until its index is COMPLETE.** A row
+  stored before schema version 24 has no index row, so a lookup would miss
+  it — a revoked family's older tokens among them. Until the store's
+  completion mark is in `sts_minted_index` (realm `''`, `index_key = key =
+  '$index-complete$'`) it is read back whole, as before, and `active(handle)`
+  says no; the front process then files every row it restored
+  (`backfillMintedIndexes()`, in batches, in the background) and commits the
+  mark, and the NEXT start reads it on demand. A row written meanwhile files
+  itself in the flush; one deleted meanwhile leaves an index row the
+  lookup's join does not answer. A failure is STS-STORE-0086 and the next
+  start tries again. The integrator found the gap on #823, before it ran
+  anywhere.
 
 The stores on demand: `oauth2_bcp.refreshTokens` and `oauth2_bcp.grantTokens`
 (filed by family), `oauth2_bcp.refreshFamilies`. `tests/on_demand_store.js`

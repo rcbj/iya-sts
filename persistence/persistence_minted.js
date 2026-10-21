@@ -707,7 +707,7 @@ function setDriver(theDriver, activeMode) {
   unsupportedReason = '';
   realms.setPersistObserver(note);
   // And the on-demand stores their reader (#820).
-  realms.setOnDemandReader({ active: onDemandActive, read: onDemandRead,
+  realms.setOnDemandReader({ active: demandLiveFor, read: onDemandRead,
                              byIndex: onDemandByIndex,
                              journalled: pendingWrite });
   log.debug('Leaving setDriver(). ' + realms.handles().length +
@@ -900,7 +900,7 @@ function prefetch(changes) {
     // Not an on-demand row this process does not hold (#820): applyChange()
     // reads none of those.
     const declared = realms.handleFor(parsed.handle);
-    if (declared && declared.onDemand && onDemandActive()) {
+    if (declared && declared.onDemand && demandLiveFor(parsed.handle)) {
       const local = declared.read(change.realm,
                                   splitKey(declared, parsed.storedName).key);
       if (!local || !local.present) {
@@ -1079,7 +1079,7 @@ function applyChange(change) {
   // only be skipped once read — `applyLocally()` admits nothing — and
   // whoever asks for it next reads it from the store as it then is. Only a
   // held row is read, to be replaced, or found gone.
-  if (store.onDemand && onDemandActive()) {
+  if (store.onDemand && demandLiveFor(handle)) {
     const local = store.read(change.realm, split.key);
     if (!local || !local.present) {
       log.debug("Leaving applyChange(). On demand, not held.");
@@ -1201,7 +1201,7 @@ function applyLocally(store, realmId, key, value, remove) {
     // AN ON-DEMAND STORE ADMITS NOTHING (#820): another process's row
     // replaces one this process holds, and is not taken otherwise — it is
     // read from the store when somebody asks for it.
-    if (store && store.onDemand && !remove && onDemandActive()) {
+    if (store && store.onDemand && !remove && demandLiveFor(store.handle)) {
       const held = store.read(realmId, key);
       decision = held && held.present ? 'restore' : 'skip';
     }
@@ -1894,6 +1894,122 @@ function onDemandActive() {
   log.debug("Leaving onDemandActive().");
   return !!driver && typeof driver.bridgeConnection === 'function' &&
     enabled() && keystore.sealed();
+}
+
+// The indexed on-demand stores whose index this store says is complete
+// (`mintedIndexComplete()`, asked at the restore). Until it is, such a
+// store is read back whole, as before: a lookup by its index would miss
+// every row written before schema version 24.
+const indexComplete = new Set();
+
+/**
+ * Whether one on-demand store reads on demand: the reader is active and,
+ * for an indexed store, its index is complete.
+ *
+ * @param handle - the store's handle
+ * @returns true when the store is a cache over the store
+ */
+function demandLiveFor(handle) {
+  log.debug("Entering demandLiveFor().");
+  const declared = realms.handleFor(handle);
+  log.debug("Leaving demandLiveFor().");
+  return !!declared && declared.onDemand && onDemandActive() &&
+    (typeof declared.lookupsOf !== 'function' || indexComplete.has(handle));
+}
+
+// ---------------------------------------------------------------------------
+// THE BACKFILL (#820): every row of an indexed on-demand store that is not
+// yet complete, filed under its index values from what the front process
+// restored — the store is held whole until then — in batches that give the
+// event loop back between them, then the mark. A row written meanwhile files
+// itself in the flush; a row deleted meanwhile leaves an index row that the
+// lookup's join with `sts_minted` does not answer. Once, after a start, in
+// the front process only; the next start reads the store on demand.
+// ---------------------------------------------------------------------------
+const BACKFILL_BATCH = 2000;
+
+async function backfillMintedIndexes() {
+  log.debug("Entering backfillMintedIndexes().");
+  if (process.env.STS_REQUEST_WORKER || !onDemandActive() || !driver ||
+      typeof driver.writeMintedIndex !== 'function' ||
+      typeof driver.markMintedIndexed !== 'function') {
+    log.debug("Leaving backfillMintedIndexes(). Not here.");
+    return 0;
+  }
+  let filed = 0;
+  for (const declared of realms.handles()) {
+    if (!declared.onDemand || typeof declared.lookupsOf !== 'function' ||
+        indexComplete.has(declared.handle)) {
+      continue;
+    }
+    let batch = [];
+    const flushBatch = async function () {
+      if (batch.length) {
+        filed += await driver.writeMintedIndex(batch);
+        batch = [];
+        await new Promise(function (resolve) {
+          setImmediate(resolve);
+        });
+      }
+    };
+    // The ids a write is journalled under (`realms.currentId()`): '' is the
+    // default realm's partition too, and is not filed twice.
+    const realmIds = restoreFilter(Date.now()).realms.filter(function (id) {
+      return id !== '';
+    });
+    for (const realmId of realmIds) {
+      const rows = declared.dump(realmId) || [];
+      for (const row of rows) {
+        const lookups = lookupsFor(declared, declared.handle, realmId, row.key,
+                                   row.value) || [];
+        const key = keyColumnOf(declared.handle, realmId,
+                                storedKey(declared, row.key));
+        lookups.forEach(function (indexKey) {
+          batch.push({ handle: declared.handle, realm: realmId,
+                       indexKey: indexKey, key: key });
+        });
+        if (batch.length >= BACKFILL_BATCH) {
+          await flushBatch();
+        }
+      }
+    }
+    await flushBatch();
+    await driver.markMintedIndexed(declared.handle);
+    log.info('persistence: the on-demand store "' + declared.handle +
+             '" has its index complete (#820): from the next start it is ' +
+             'read on demand rather than restored whole.');
+  }
+  log.debug("Leaving backfillMintedIndexes(). " + filed + " row(s) filed.");
+  return filed;
+}
+
+/**
+ * Asks the store which indexed on-demand stores have a complete index, into
+ * `indexComplete`. A store that cannot say is taken as incomplete: it is
+ * then read back whole, which is what it always was.
+ *
+ * @returns a promise settled when it is known
+ */
+function indexesComplete() {
+  log.debug("Entering indexesComplete().");
+  const indexed = realms.handles().filter(function (declared) {
+    return declared.onDemand && typeof declared.lookupsOf === 'function';
+  }).map(function (declared) {
+    return declared.handle;
+  });
+  if (!indexed.length || !driver ||
+      typeof driver.mintedIndexComplete !== 'function') {
+    log.debug("Leaving indexesComplete(). Nothing to ask.");
+    return Promise.resolve();
+  }
+  log.debug("Leaving indexesComplete().");
+  return driver.mintedIndexComplete(indexed).then(function (complete) {
+    (complete || []).forEach(function (handle) {
+      indexComplete.add(String(handle));
+    });
+  }, function (e) {
+    log.debug("Caught in indexesComplete(): " + ((e && e.message) || e));
+  });
 }
 
 // The bridge, made at its first question. Null where it cannot be.
@@ -2652,16 +2768,6 @@ function restore() {
   } catch (e) {
     log.debug("Caught in restore(): " + ((e && e.message) || e));
   }
-  // AN ON-DEMAND STORE IS NOT READ BACK AT ALL (#820): its rows are read by
-  // key when they are asked for, so a start restores none of them.
-  if (onDemandActive()) {
-    realms.handles().forEach(function (declared) {
-      if (declared.onDemand &&
-          filter.skipHandles.indexOf(declared.handle) < 0) {
-        filter.skipHandles.push(declared.handle);
-      }
-    });
-  }
   log.debug("Leaving restore().");
   // WHAT WAS MINTED BEFORE THE RESTORE (#357): journalled and not written —
   // before the keystore started a flush had nothing to seal with, and one
@@ -2677,7 +2783,18 @@ function restore() {
   // while the rows were being LOADED always were, and flushed after.
   let pending = null;
   const aside = [];
-  return driver.loadMinted(filter).then(function (rows) {
+  return indexesComplete().then(function () {
+    // AN ON-DEMAND STORE IS NOT READ BACK AT ALL (#820): its rows are read by
+    // key when they are asked for, so a start restores none of them — once
+    // its index, if it has one, is complete (see `demandLiveFor()`).
+    realms.handles().forEach(function (declared) {
+      if (demandLiveFor(declared.handle) &&
+          filter.skipHandles.indexOf(declared.handle) < 0) {
+        filter.skipHandles.push(declared.handle);
+      }
+    });
+    return driver.loadMinted(filter);
+  }).then(function (rows) {
     pending = takePendingJournal();
     let restored = 0;
     droppedUnreadable = 0;
@@ -2796,6 +2913,15 @@ function restore() {
                'caches and the audit log are as they were before the ' +
                'restart.');
 
+      // The index of every indexed on-demand store still read back whole,
+      // filed in the background: the start does not wait for it.
+      backfillMintedIndexes().catch(function (e) {
+        log.warn(errorCodes.tag('STS-STORE-0086') +
+                 'persistence: an on-demand store\'s index could not be ' +
+                 'completed (#820): ' + ((e && e.message) || e) + '. The ' +
+                 'store is read back whole at the next start as well, and ' +
+                 'that start tries again.');
+      });
       log.debug('Leaving restore(). ' + restored + ' row(s).');
       return { restored: restored };
     });
@@ -2896,6 +3022,7 @@ function reset() {
   // A write left in flight by the previous test must not make the next one's
   // first flush wait on a driver that is no longer installed.
   flushInFlight = null;
+  indexComplete.clear();
   generation = 0;
   observedGeneration = 0;
   observational.clear();
@@ -3059,6 +3186,7 @@ module.exports = {
   journalled: journalled,
   nameOfRow: nameOfRow,
   backfillSessionIndex: backfillSessionIndex,
+  backfillMintedIndexes: backfillMintedIndexes,
   sessionIndexChangeFloor: sessionIndexChangeFloor,
   ensureTombstoneJob: ensureTombstoneJob,
   ensureExpiryPurgeJob: ensureExpiryPurgeJob,
