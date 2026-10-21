@@ -848,6 +848,11 @@ COMPOSE_ENV=(
   "STS_BAO_CONTAINER_NAME=${STS_BAO_CONTAINER_NAME}"
   "STS_BAO_TLS_CONTAINER_NAME=${STS_BAO_TLS_CONTAINER_NAME}"
   "STS_BAO_SEED_CONTAINER_NAME=${STS_BAO_SEED_CONTAINER_NAME}"
+  # A test stack never restarts `sts` by itself: the compose file's default
+  # (`unless-stopped`) brings an exited service back within seconds, which
+  # would hide a crash the run must see and loop a start that fails on
+  # purpose.
+  "STS_RESTART=no"
   # The keystore, per mode — see tests/tools/modes.sh. `persisted` in the
   # production modes is what makes the key-encryption key come out of the store.
   "STS_KEYS_SOURCE=${STS_KEYS_SOURCE:-generated}"

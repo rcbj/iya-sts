@@ -213,6 +213,8 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 | `CONFIG_FILE` | `./env/local.js` | The appconfig file |
 | `STS_WORKERS_REQUEST_COUNT` | `2` | Request workers |
 | `STS_WORKERS_SURFACE_COUNT` | `0` | Workers for `/admin` and `/portal` only, so they never queue behind protocol traffic |
+| `UV_THREADPOOL_SIZE` | `32` | Threads in libuv's pool, where post-quantum signing, scrypt password hashing and node's file and DNS work run. Node's own default is 4, which queued sign-ins under load. |
+| `STS_RESTART` | `unless-stopped` | The `sts` service's restart policy. With it, an `sts` that exits (for example STS-CLUSTER-0011, a node fencing itself off) is back within seconds instead of staying down. `no` keeps an exited service down; the test launchers set it. |
 | `ADMIN_API_CLIENT_SECRET` | unset (generated) | Fixes the management API client's secret. It is given to the seeder, which stores it in OpenBao; the service never sees it in its environment. See [Management API](management-api.md). |
 | `ADMIN_API_AUDIENCE`, `ADMIN_API_AUTH_REQUIRED` | unset | Passed through to the service when set |
 | `PKI_DISTRIBUTION_BASE_URL` | empty | The base URL certificates name for CRL and OCSP, when the stack is reached by a host name rather than `localhost` ([PKI](pki.md)) |
