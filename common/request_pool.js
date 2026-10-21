@@ -4175,6 +4175,31 @@ function credentialKeyOf(req) {
     .slice(0, 22);
 }
 
+// THE READS WHOSE ANSWERS ARE KEPT PER PROCESS, by path, realm prefix and
+// all (`/realm/acme/admin-api/users` is that realm's own population).
+const KEPT_READ_PATHS = [/(?:^|\/)admin-api\/users$/,
+                         /(?:^|\/)admin-api\/mfa$/,
+                         /(?:^|\/)admin-api\/status$/];
+
+/**
+ * The affinity key of a read whose answer a worker keeps, or ''.
+ *
+ * @param path - the request path, without its query
+ * @returns `k:<path>`, or `''`
+ */
+function keptReadKeyOf(path) {
+  log.debug("Entering keptReadKeyOf().");
+  const text = String(path || '');
+  for (let i = 0; i < KEPT_READ_PATHS.length; i++) {
+    if (KEPT_READ_PATHS[i].test(text)) {
+      log.debug("Leaving keptReadKeyOf(). Kept.");
+      return 'k:' + text;
+    }
+  }
+  log.debug("Leaving keptReadKeyOf().");
+  return '';
+}
+
 /**
  * Returns the affinity key for a fanout request: the resource for a write
  * that names one, else a digest of the credential.
@@ -4185,11 +4210,21 @@ function credentialKeyOf(req) {
  */
 function mutationKeyOf(req, url) {
   log.debug("Entering mutationKeyOf().");
+  const path = String(url || '').split('?')[0];
   if (!mayWrite(req.method)) {
+    // A READ WHOSE ANSWER A WORKER KEEPS (2026-10-21) goes to the worker
+    // keeping it, whoever asks: `/admin-api/users`' population and
+    // `/admin-api/status`' totals are built per process (25 s and 20 s on
+    // 8081) and kept there, so a console whose token was renewed — a new
+    // credential key, maybe a new worker — waited for a second build.
+    const kept = keptReadKeyOf(path);
+    if (kept) {
+      log.debug("Leaving mutationKeyOf(). Kept answer.");
+      return kept;
+    }
     log.debug("Leaving mutationKeyOf().");
     return credentialKeyOf(req);
   }
-  const path = String(url || '').split('?')[0];
   for (let i = 0; i < RESOURCE_PATHS.length; i++) {
     const found = RESOURCE_PATHS[i].exec(path);
     if (found) {
