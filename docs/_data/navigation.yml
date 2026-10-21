@@ -57,6 +57,7 @@
 - section: Sign-in and sessions
   items:
     - { title: "Authentication: WebAuthn, TOTP, recovery codes", url: /authentication.html }
+    - { title: "Passkeys and WebAuthn", url: /passkeys.html }
     - { title: Kerberos and SPNEGO, url: /kerberos.html }
     - { title: "Configuring Kerberos and SPNEGO", url: /configure-kerberos.html }
     - { title: TLS and mutual TLS, url: /tls.html }
