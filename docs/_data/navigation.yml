@@ -57,6 +57,7 @@
 - section: Sign-in and sessions
   items:
     - { title: "Authentication: WebAuthn, TOTP, recovery codes", url: /authentication.html }
+    - { title: "Passkeys and WebAuthn", url: /passkeys.html }
     - { title: Kerberos and SPNEGO, url: /kerberos.html }
     - { title: "Configuring Kerberos and SPNEGO", url: /configure-kerberos.html }
     - { title: TLS and mutual TLS, url: /tls.html }
@@ -74,11 +75,12 @@
 
 - section: Verifiable credentials
   items:
+    - { title: "Verifiable credentials and wallets (OID4VC)", url: /verifiable-credentials.html }
     - { title: OpenID4VCI and status lists, url: /oid4vci.html }
     - { title: "Configuring OpenID4VCI", url: /configure-oid4vci.html }
     - { title: OpenID4VP and wallet sign-in, url: /oid4vp.html }
     - { title: "Configuring OpenID4VP and wallet sign-in", url: /configure-oid4vp.html }
-    - { title: W3C VC-API test endpoints, url: /vc-api.html }
+    - { title: W3C VC API, url: /vc-api.html }
 
 - section: Directory and provisioning
   items:
