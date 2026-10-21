@@ -20,7 +20,16 @@
 //   D4. `lookup()` answers the index's rows and the held keys filed under
 //       the index key, leaves out a pending delete, and holds what it read;
 //   D5. with no active reader the store is the plain Map it always was:
-//       nothing is asked, `onDemandLive()` is false, and nothing is dropped.
+//       nothing is asked, `onDemandLive()` is false, and nothing is dropped;
+//   D6. a key the store said is absent is remembered: asked once, not again
+//       (#820 part 2) — a read that FAILED is not remembered;
+//   D7. the handle's `forgetAbsent()` (what the appliers call for another
+//       process's write) and a local `set()` each forget it;
+//   D8. a KEY-RESIDENT store answers `has()` from its digests alone, with no
+//       read, and `get()` reads only a digest it holds;
+//   D9. its `size` is the count of digests; `set()` adds one, `delete()`
+//       removes one and says it was there;
+//   D10. a `get()` that finds a held digest's row gone takes the digest out.
 //
 // In a child process: it installs a stand-in reader in `common/realms.js`.
 // ===========================================================================
@@ -51,12 +60,16 @@ function child() {
     const pending = new Set();
     const asked = [];
     let active = true;
+    let failing = false;
     realms.setOnDemandReader({
       active: function () {
         return active;
       },
       read: function (handle, realmId, key) {
         asked.push('read:' + key);
+        if (failing) {
+          return null;
+        }
         return stored.has(key) ? { present: true, value: stored.get(key) }
           : { present: false };
       },
@@ -67,6 +80,9 @@ function child() {
         }).map(function (e) {
           return { key: e[0], value: e[1] };
         });
+      },
+      digestOf: function (handle, realmId, key) {
+        return 'd:' + key;
       },
       journalled: function (handle, realmId, key) {
         return pending.has(key);
@@ -109,6 +125,74 @@ function child() {
          asked.indexOf('index:f') >= 0 && store.realmMap().has('far-2'),
          'D4. lookup() answers the index\'s rows, leaves out a pending ' +
          'delete, and holds what it read', JSON.stringify(family));
+
+    asked.length = 0;
+    const first = store.get('never');
+    const second = store.has('never');
+    note(first === undefined && second === false &&
+         asked.filter(function (a) {
+           return a === 'read:never';
+         }).length === 1,
+         'D6. a key the store said is absent is asked for once, not again',
+         JSON.stringify(asked));
+    failing = true;
+    asked.length = 0;
+    store.get('flaky');
+    store.get('flaky');
+    failing = false;
+    note(asked.filter(function (a) {
+      return a === 'read:flaky';
+    }).length === 2,
+         'D6. a read that failed is not remembered as absent',
+         JSON.stringify(asked));
+
+    stored.set('never', { family: 'f', n: 9 });
+    realms.handleFor('ods.test').forgetAbsent('default', 'never');
+    asked.length = 0;
+    const now = store.get('never');
+    note(now && now.n === 9 && asked.indexOf('read:never') >= 0,
+         'D7. forgetAbsent() — another process wrote it — makes it read again',
+         JSON.stringify({ now: now, asked: asked }));
+    store.get('later');
+    store.set('later', { family: 'z', n: 1 });
+    store.realmMap().delete('later');
+    asked.length = 0;
+    store.get('later');
+    note(asked.indexOf('read:later') >= 0,
+         'D7. a local set() forgets that it was absent',
+         JSON.stringify(asked));
+
+    const resident = realms.map({ persist: 'ods.resident',
+      onDemand: { maxEntries: 3, keysResident: true } });
+    const rHandle = realms.handleFor('ods.resident');
+    rHandle.residentAdd('default', 'd:far-1');
+    rHandle.residentAdd('default', 'd:gone-row');
+    asked.length = 0;
+    note(resident.has('far-1') === true && resident.has('nobody') === false &&
+         !asked.length,
+         'D8. a key-resident store answers has() from its digests, unread',
+         JSON.stringify(asked));
+    const got = resident.get('far-1');
+    const none = resident.get('nobody');
+    note(got && got.n === 1 && none === undefined &&
+         asked.join(',') === 'read:far-1',
+         'D8. get() reads only a digest it holds', JSON.stringify(asked));
+    const before = resident.size;
+    resident.set('new-1', { n: 5 });
+    const afterSet = resident.size;
+    const said = resident.delete('gone-row');
+    note(before === 2 && afterSet === 3 && said === true &&
+         resident.size === 2 && resident.has('gone-row') === false,
+         'D9. size counts digests; set() adds one, delete() removes one',
+         JSON.stringify({ before: before, afterSet: afterSet, said: said,
+                          size: resident.size }));
+    rHandle.residentAdd('default', 'd:vanished');
+    asked.length = 0;
+    const vanished = resident.get('vanished');
+    note(vanished === undefined && asked.indexOf('read:vanished') >= 0 &&
+         resident.has('vanished') === false,
+         'D10. a get() that finds the row gone takes the digest out',
+         JSON.stringify(asked));
 
     active = false;
     const plain = realms.map({ persist: 'ods.plain', onDemand: { maxEntries: 1 } });

@@ -1328,6 +1328,66 @@ async function indexBackfillCases(t, realm) {
   log.debug("Leaving indexBackfillCases().");
 }
 
+// A KEY-RESIDENT on-demand store (#820 part 2) is not read back: a start
+// loads the key column of its live rows (`loadMintedKeys()`), and a change
+// from another process files or removes the digest by what the row says.
+async function residentCases(t, realm) {
+  log.debug("Entering residentCases().");
+  t.log.info('=== a key-resident store loads its keys, not its rows ===');
+  const handle = 'session-index.resident';
+  const store = realms.map({ persist: handle,
+                             onDemand: { maxEntries: 10, keysResident: true } });
+  const asked = [];
+  const filters = [];
+  const driver = indexDriver([], [], [], filters);
+  driver.loadMintedKeys = function (handles, realmIds) {
+    asked.push({ handles: handles.slice(), realms: realmIds.slice() });
+    return Promise.resolve([{ handle: handle, realm: realm.id,
+      key: minted.keyColumnOf(handle, realm.id, 'revoked-1') }]);
+  };
+  install(driver);
+  await minted.restore();
+  t.check(filters.length && filters[0].indexOf(handle) >= 0,
+          'a key-resident store is not read back', JSON.stringify(filters));
+  t.check(asked.length === 1 && asked[0].handles.indexOf(handle) >= 0 &&
+          asked[0].realms.indexOf(realm.id) >= 0,
+          'its keys are loaded, in every realm the restore reads',
+          JSON.stringify(asked));
+  t.equal(store.onDemandLive(), true, 'it is on demand');
+  t.equal(store.has('revoked-1'), true,
+          'a loaded key answers has() without a read');
+  t.equal(store.has('fresh-jti'), false, 'any other key is absent');
+  t.equal(store.size, 1, 'size is the count of keys');
+
+  // Another process's write, then its delete: the applier reads the row and
+  // files or removes the digest by what it says, holding no record.
+  const bodies = {};
+  const otherKey = minted.keyColumnOf(handle, realm.id, 'other-1');
+  bodies[otherKey] = { handle: handle, realm: realm.id, key: otherKey,
+    body: keystore.seal(JSON.stringify({ exp: 0 }), 'minted-rows',
+                        tiers.mintedTierOf('authn.sessions'),
+                        { realm: realm.id }) };
+  driver.readMinted = function (handleName, realmId, key) {
+    return Promise.resolve(bodies[key] || null);
+  };
+  const change = { key: Buffer.from(handle).toString('base64url') + '.' +
+                   Buffer.from('other-1').toString('base64url'),
+                   realm: realm.id };
+  await minted.applyChange(change);
+  t.equal(store.has('other-1'), true,
+          'another process\'s write files the digest');
+  t.equal(store.realmMap().has('other-1'), false, 'and holds no record');
+  delete bodies[otherKey];
+  await minted.applyChange(change);
+  t.equal(store.has('other-1'), false,
+          'and its delete removes it: a "no" is never a stale "yes"');
+  delete driver.loadMintedKeys;
+  install(driver);
+  t.equal(store.onDemandLive(), false,
+          'a driver that cannot load keys does not make it key-resident');
+  log.debug("Leaving residentCases().");
+}
+
 async function liveHalf(t, realm) {
   log.debug("Entering liveHalf().");
   const handle = realms.handleFor('authn.sessions');
@@ -1339,6 +1399,7 @@ async function liveHalf(t, realm) {
   await backfillCases(t, handle);
   await floorCase(t);
   await indexBackfillCases(t, realm);
+  await residentCases(t, realm);
   await applyCases(t, handle, realm);
   log.debug("Leaving liveHalf().");
 }

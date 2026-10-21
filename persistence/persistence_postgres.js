@@ -5642,6 +5642,30 @@ function create(options) {
       });
     },
 
+    // THE KEYS OF A KEY-RESIDENT ON-DEMAND STORE (#820 part 2): the key
+    // column of every live row, and nothing else — no body is read, so none
+    // is opened. A process holds these to answer "is it there?" without the
+    // store; see `realms.map()`'s `keysResident`.
+    loadMintedKeys: function (handles, realmIds, nowMs) {
+      log.debug("Entering loadMintedKeys().");
+      log.debug("Leaving loadMintedKeys().");
+      if (!handles || !handles.length) {
+        return Promise.resolve([]);
+      }
+      return readPool.query(
+        'SELECT handle, realm, key FROM sts_minted WHERE handle = ANY($1::' +
+        'text[]) AND realm = ANY($2::text[]) AND body <> $3 AND ' +
+        '(expires_at IS NULL OR expires_at > $4)',
+        [handles.map(String), (realmIds || []).map(String), TOMBSTONE,
+         Number(nowMs) || Date.now()]
+      ).then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return { handle: String(row.handle), realm: String(row.realm),
+                   key: String(row.key) };
+        });
+      });
+    },
+
     // ONE TRANSACTION FOR THE WHOLE BATCH, for `saveDirectory()`'s reason: a
     // request that ended a session and started another must not be able to
     // land half-written. It is a SEPARATE transaction from the directory's,
