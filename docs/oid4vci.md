@@ -578,6 +578,8 @@ See [Configuration](configuration.md) for how a value is resolved. Every
 
 ## Related
 
+* [Verifiable credentials and wallets (OID4VC)](verifiable-credentials.md):
+  the overview, the recipes, and connecting a web or native wallet
 * [OpenID4VP, wallet sign-in and DIDs](oid4vp.md)
 * [OAuth 2.0 and OpenID Connect](oauth-oidc.md), whose authorization and token
   endpoints issue the access token
