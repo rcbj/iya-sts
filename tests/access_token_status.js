@@ -258,6 +258,86 @@ function childMain() {
          '3e. the caches.eject-expired job frees an expired token\'s index',
          JSON.stringify(afterEject));
 
+    // 3g–3j (2026-10-21, #820): indexes come from a LEASED BLOCK, one claim
+    // for many tokens, never two live tokens on one index.
+    const clock = { t: Date.now() };
+    const blockClaims = [];
+    const rows = new Map();
+    const blocked = new Cls(Object.assign(Cls.defaultDeps(), {
+      now: function () {
+        return clock.t;
+      },
+      entries: { get: function (k) {
+        return rows.get(k);
+      }, set: function (k, v) {
+        rows.set(k, v);
+      }, forEach: function (fn) {
+        rows.forEach(fn);
+      } },
+      clusterClaims: { claim: function (opts) {
+        blockClaims.push(opts);
+        return Promise.resolve({ ok: true, handle: 'h' + blockClaims.length });
+      } } }));
+    const life = function (ms) {
+      return clock.t + ms;
+    };
+    const blockOf = function (ref) {
+      return Math.floor(ref.idx / 1024);
+    };
+    const refs = await w.inRealm(function () {
+      return Promise.all(Array.from({ length: 40 }, function (_, i) {
+        return blocked.allocate({ jti: 'b-' + i, kind: 'oauth',
+                                  expiresAt: life(60000), base: w.base });
+      }));
+    });
+    note(blockClaims.length === 1 &&
+         blockClaims[0].scope === 'oauth2.access-token-status-block' &&
+         new Set(refs.map(function (one) {
+           return one.idx;
+         })).size === 40 &&
+         refs.every(function (one) {
+           return blockOf(one) === blockOf(refs[0]);
+         }),
+         '3g. forty tokens, concurrent ones among them, take ONE block ' +
+         'claim and forty distinct indexes in that block',
+         JSON.stringify({ blockClaims: blockClaims.length, block: blockOf(refs[0]) }));
+    const base0 = blockOf(refs[0]) * 1024;
+    let busy = 0;
+    for (let i = 0; i < 1024; i++) {
+      if (!rows.has(String(base0 + i))) {
+        rows.set(String(base0 + i), { jti: 'live-' + i, kind: 'oauth',
+                                       expiresAt: life(600000) });
+        busy = base0 + i;
+        break;
+      }
+    }
+    const next = await w.inRealm(function () {
+      return blocked.allocate({ jti: 'b-next', kind: 'oauth',
+                                expiresAt: life(60000), base: w.base });
+    });
+    note(next.idx !== busy && blockOf(next) === blockOf(refs[0]),
+         '3h. an index whose entry is still live is skipped',
+         JSON.stringify({ busy: busy, got: next.idx }));
+    const before = blockClaims.length;
+    const longOne = await w.inRealm(function () {
+      return blocked.allocate({ jti: 'b-long', kind: 'oauth',
+                                expiresAt: life(400 * 24 * 3600000),
+                                base: w.base });
+    });
+    note(blockClaims.length === before + 1 && longOne &&
+         blockClaims[blockClaims.length - 1].ttlMs >= 400 * 24 * 3600000,
+         '3i. a token that would outlive the lease gets a block leased for it',
+         JSON.stringify({ blockClaims: blockClaims.length - before }));
+    const beforeWindow = blockClaims.length;
+    clock.t += 6 * 60 * 1000;
+    await w.inRealm(function () {
+      return blocked.allocate({ jti: 'b-later', kind: 'oauth',
+                                expiresAt: life(60000), base: w.base });
+    });
+    note(blockClaims.length === beforeWindow + 1,
+         '3j. past its use window a block is handed out from no more, and ' +
+         'another is leased', JSON.stringify(blockClaims.length - beforeWindow));
+
     // ==================================================================
     // 4. GNAP: BOTH JWT FORMATS, AND THE GRANT ENGINE'S REVOCATION
     // ==================================================================
