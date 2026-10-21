@@ -8672,6 +8672,104 @@ class Authn {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // ONE PERSON'S SESSIONS FROM THE TWO COLUMNS THAT NAME THEM (#774).
+  //
+  // `logout.ts`'s `sessionsByKey()` read EVERY session of the realm to find
+  // one person's, and resolved each one's subject through the directory; the
+  // risk engine asks it at every sign-in whose level changes, which is every
+  // person's first. With the session window on that is every sealed body
+  // loaded and every subject asked of the store, synchronously: on 8081 at
+  // 85,000 sessions, eighty seconds per sign-in after a restart, and the
+  // service did not come back. A session is filed under its username
+  // (`username_key`) and its subject (`subject_key`, the `urn:uuid:` sub
+  // where the person has one — `subjectIdOf()`), so the sessions a caller
+  // can mean are the union of two indexed reads, and the caller keeps its
+  // own rule for which of them are the person's.
+  //
+  // Unlike `sessionsOf()` it never falls back to the page: an empty answer
+  // is an answer. Null is a read that failed.
+  // ---------------------------------------------------------------------------
+  /**
+   * Lists the ambient realm's sessions filed under a username or a subject
+   * id, for a caller that applies its own rule to them (#774).
+   *
+   * @param username - the username, exactly as a session holds it
+   * @param subjectId - the subject id (`urn:uuid:`), or ''
+   * @returns the sessions, or null when an index could not be read
+   */
+  sessionsHeldUnder(username?, subjectId?) {
+    const { log, realms, errorCodes } = this.deps;
+    log.debug("Entering Authn.sessionsHeldUnder().");
+    const name = String(username || '');
+    const subject = String(subjectId || '');
+    const out = [];
+    const seen: Record<string, boolean> = {};
+    const take = function (session) {
+      if (!session || !session.id || seen[session.id]) {
+        return;
+      }
+      const held = (name && session.user && session.user.username === name) ||
+                   (subject && String(session.subjectId || '') === subject);
+      if (held) {
+        seen[session.id] = true;
+        out.push(session);
+      }
+    };
+    if (!this.windowOn()) {
+      sessions.forEach(function (session) {
+        take(session);
+      });
+      log.debug("Leaving Authn.sessionsHeldUnder(). " + out.length +
+                ", in memory.");
+      return out;
+    }
+    const realmId = realms.currentId();
+    const digests: string[] = [];
+    const asks: Array<[string, string, string]> = [];
+    if (name) {
+      asks.push(['session.username', 'session-username', name]);
+    }
+    if (subject) {
+      asks.push(['session.subject', 'session-subject', subject]);
+    }
+    for (const ask of asks) {
+      const digest = keystore.keyedDigest(ask[1], ask[2]);
+      const keys = digest ? sessionWindow.indexKeys(ask[0], [realmId, digest])
+                          : null;
+      if (keys === null) {
+        log.error(errorCodes.tag('STS-AUTHN-0338') +
+                  'authn: a session could not be read: ' + ask[0] + '.');
+        log.debug("Leaving Authn.sessionsHeldUnder(). Unread.");
+        return null;
+      }
+      keys.forEach(function (key) {
+        if (digests.indexOf(key) < 0) {
+          digests.push(key);
+        }
+      });
+    }
+    for (const key of digests) {
+      const loaded = sessionWindow.loadByDigest(realmId, key);
+      if (!loaded.ok && loaded.error) {
+        log.error(errorCodes.tag('STS-AUTHN-0338') +
+                  'authn: a session could not be read: one held under ' +
+                  name + ' would not open.');
+        log.debug("Leaving Authn.sessionsHeldUnder(). Unread.");
+        return null;
+      }
+      if (loaded.ok) {
+        take(loaded.session);
+      }
+    }
+    // Unflushed rows are not in the index yet; realmMap() is those rows.
+    sessions.realmMap().forEach(function (session) {
+      take(session);
+    });
+    log.debug("Leaving Authn.sessionsHeldUnder(). " + out.length + ".");
+    return out;
+  }
+
   // Sessions whose sealed fedPartnerSession names this relationship.
   // The column narrows the page; the body is still what the caller reads.
   // A second store of the partner object would be a second answer.
@@ -17855,6 +17953,7 @@ export = {
   // The SAML 2.0 attribute authority's question (#189): which live session
   // gave a service provider a NameID.
   sessionsMatching: slot.forward('sessionsMatching'),
+  sessionsHeldUnder: slot.forward('sessionsHeldUnder'),
   sessionById: slot.forward('sessionById'),
   // Who vouched for a session's latest sign-in — asked by the authorization
   // endpoint for the bootstrap administrator's claim at issuance (#446).
