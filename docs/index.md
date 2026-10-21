@@ -75,7 +75,8 @@ protocol's section of the sidebar:
 [GNAP](configure-gnap.md) ·
 [Shared Signals](configure-shared-signals.md) ·
 [Certificate enrollment: ACME, EST, SCEP](configure-enrollment.md) ·
-[SPIFFE](configure-spiffe.md).
+[SPIFFE](configure-spiffe.md) ·
+[Passkeys and WebAuthn](passkeys.md).
 
 **Sessions and signals** —
 [Sessions](sessions.md) ·
@@ -114,14 +115,14 @@ documents it.
 |---|---|---|---|
 | OAuth2 / OIDC | `/admin/oauth2`, `/admin/authorization-servers`, `/admin/token-lifetimes`, `/admin/claims`, `/admin/userinfo-claims` | [OAuth 2.0 and OpenID Connect](oauth-oidc.md), [Security profiles: RFC 9700, OAuth 2.1, DPoP, mTLS](oauth-security.md), [JWT assertions](jwt-assertions.md) | [OAuth 2.0 grants](configure-oauth2-grants.md), [OpenID Connect flows](configure-oidc-flows.md) |
 | SAML | `/admin/saml2`, `/admin/saml11`, `/admin/saml-assertions`, `/admin/saml-attributes` | [SAML 2.0 Web Browser SSO](saml2-sso.md), [SAML 1.1](saml11.md), [SAML assertions as grants (RFC 7522)](saml-assertions.md) | [SAML 2.0 and SAML 1.1](configure-saml.md) |
-| Verifiable Credentials | `/admin/vc` — Metadata, OpenID4VCI settings, Credential claims, OpenID4VP settings and Verifier request tabs; what was issued and each credential's status at `/admin/vc/monitor`, under Monitoring | [OpenID4VCI and status lists](oid4vci.md), [OpenID4VP and wallet sign-in](oid4vp.md) | [OpenID4VCI](configure-oid4vci.md), [OpenID4VP](configure-oid4vp.md) |
+| Verifiable Credentials | `/admin/vc` — Metadata, OpenID4VCI settings, Credential claims, OpenID4VP settings and Verifier request tabs; what was issued and each credential's status at `/admin/vc/monitor`, under Monitoring | [Verifiable credentials and wallets (OID4VC)](verifiable-credentials.md), [OpenID4VCI and status lists](oid4vci.md), [OpenID4VP and wallet sign-in](oid4vp.md) | [OpenID4VCI](configure-oid4vci.md), [OpenID4VP](configure-oid4vp.md) |
 | XACML | `/admin/xacml`, `/admin/xacml/policies`, `/admin/xacml/editor`, `/admin/xacml/peps`, `/admin/xacml/decide` | [XACML 3.0 and ALFA](xacml.md), [Remote PEP](remote-pep.md) | [XACML and ALFA](configure-xacml.md) |
 | SCIM | `/admin/scim` | [SCIM 2.0](scim.md) | [SCIM 2.0](configure-scim.md) |
 | Shared Signals, CAEP, RISC | `/admin/ssf`, `/admin/caep`, `/admin/risc` | [Shared Signals](shared-signals.md), [CAEP events](caep-events.md), [Signals received](signals-received.md) | [Shared Signals](configure-shared-signals.md) |
 | Federation | `/admin/federation` | [Federation](federation.md), [Consumer and social providers](federation-consumer-providers.md) | [Federation](configure-federation.md) |
 | OpenID Federation | `/admin/oidfed` | [OpenID Federation](oidfed.md) | [OpenID Federation](configure-oidfed.md) |
 | GNAP | `/admin/gnap` | [GNAP](gnap.md) | [GNAP](configure-gnap.md) |
-| TOTP MFA, Recovery codes, WebAuthn | `/admin/totp`, `/admin/backup-codes`, `/admin/webauthn` | [Authentication](authentication.md) | |
+| TOTP MFA, Recovery codes, WebAuthn | `/admin/totp`, `/admin/backup-codes`, `/admin/webauthn` | [Authentication](authentication.md), [Passkeys and WebAuthn](passkeys.md) | [Passkeys and WebAuthn](passkeys.md#recipes) |
 | Device registration | `/admin/device-registration` | [Devices](devices.md) | |
 | Kerberos | `/admin/kerberos`, `/admin/kerberos/principals` | [Kerberos and SPNEGO](kerberos.md) | [Kerberos and SPNEGO](configure-kerberos.md) |
 | LDAP / LDAPS | `/admin/ldap` | [LDAP](ldap.md) | [LDAP](configure-ldap.md) |
@@ -144,11 +145,13 @@ It runs from an image: part of the service is TypeScript, compiled while the
 image is built, and a checkout does not run on its own.
 
 **https, and your browser will warn you once.** Every appconfig file here sets
-`global.https`, so the main port is TLS on the same self-signed certificate the
-LDAPS 636 listener uses — one pair, regenerated on every start,
-so nothing can have trusted it in advance. Accept it, or fetch it with
-`curl -k https://localhost:8081/tls/server-certificate`; `STS_HTTPS=false` runs
-the plain port this used to be.
+`global.https`, so the main port is TLS on the same certificate the LDAPS 636
+listener uses, issued under this service's own Root CA — which, in development
+mode, is rebuilt on every start, so nothing can have trusted it in advance.
+Accept it, or fetch the certificate, its chain and the Root with
+`curl -k https://localhost:8081/tls/server-certificate` and trust the Root
+([TLS](tls.md#the-server-certificate)); `STS_HTTPS=false` runs the plain port
+this used to be.
 
 Then open <https://localhost:8081/> — a front page with the five things worth
 having on one: this repository, its issues, this site, and the two surfaces on
@@ -201,7 +204,7 @@ the diagram and a walk through each layer.
 | **JWT assertions (RFC 7521, RFC 7523)** — both halves: an assertion instead of a client secret, and an assertion instead of an authorization code | the token endpoint | [jwt-assertions](jwt-assertions.md) |
 | **SAML 2.0 assertions (RFC 7521, RFC 7522)** — the same framework's other profile: a signed `<saml:Assertion>` instead of a client secret, and instead of an authorization code. A **separate key pair per application** from the JWT one, and neither can sign for the other | the token endpoint | [saml-assertions](saml-assertions.md) |
 | **A certificate authority** — ONE Root for the service, an Intermediate per trust realm and per the process, an Issuing CA per use case, and **every key pair this service generates as a leaf of it** | `/admin/pki`, `/admin-api/pki` | [pki](pki.md) |
-| WebAuthn Level 3 over FIDO CTAP2, the relying party's half — a second factor or the only credential on an account | the login screen, `/portal/keys`, `/admin/webauthn` | [authentication](authentication.md) |
+| WebAuthn Level 3 over FIDO CTAP2, the relying party's half — **passkeys** as a second factor or the only credential on an account, with or without a username, classical and post-quantum (ML-DSA) side by side | the login screen, `/portal/keys`, `/admin/webauthn` | [passkeys](passkeys.md), [authentication](authentication.md#webauthn) |
 | **TOTP (RFC 6238)** — an authenticator app as a second factor, enrolled as a QR code and **genuinely verified** | `/portal/mfa`, `/authn/totp`, `/admin/totp` | [authentication](authentication.md) |
 | **Recovery codes** — the way back in when the second factor is not to hand, generated by the person, shown **once** and stored as a hash — NIST SP 800-63B-4's look-up secrets | `/portal/mfa`, `/authn/backup-code`, `/admin/backup-codes` | [authentication](authentication.md) |
 | **App passwords** — what a person with a second factor gives a client at the five doors that take only a password (LDAP, WS-Trust, SCIM, SSF and EST Basic), which in product refuse their own password; generated, shown **once**, hashed, scoped to the doors named and never accepted at a browser sign-in | `/portal/app-passwords`, `/admin/users`, `/admin-api/users/app-passwords` | [authentication](authentication.md#the-password-only-doors-and-app-passwords) |
@@ -211,8 +214,9 @@ the diagram and a walk through each layer.
 | SCIM 2.0 provisioning | `/scim/v2` | [scim](scim.md) |
 | TLS and mutual TLS — a client certificate asked for and never required, and a sign-in for a verified one | the main port, `/tls/sign-in`, `/admin/tls-connection` | [tls](tls.md) |
 | SPIFFE — bundle endpoint, Workload API, SPIRE Server API | `/spiffe`, four gRPC sockets | [spiffe](spiffe.md) |
-| OpenID4VCI 1.0 — a Credential Issuer | `/oid4vci/*` | [oid4vci](oid4vci.md) |
-| OpenID4VP 1.0 — a Verifier, and a sign-in with a wallet in any credential format, through the W3C Digital Credentials API | `/oid4vp/*`, `/authn/wallet`, `/admin-api/verifications` | [oid4vp](oid4vp.md) |
+| OpenID4VCI 1.0 — a Credential Issuer | `/oid4vci/*` | [oid4vci](oid4vci.md), [verifiable-credentials](verifiable-credentials.md) |
+| OpenID4VP 1.0 — a Verifier, and a sign-in with a wallet in any credential format, through the W3C Digital Credentials API | `/oid4vp/*`, `/authn/wallet`, `/admin-api/verifications` | [oid4vp](oid4vp.md), [verifiable-credentials](verifiable-credentials.md) |
+| SIOPv2 — the relying party of a Self-Issued OpenID Provider: a sign-in with an ID Token a wallet signs with an enrolled key, a preferred DID released as the `did` claim; off until a realm turns it on | `/authn/wallet`, `/portal/self-issued` | [verifiable-credentials](verifiable-credentials.md), [oid4vp](oid4vp.md#self-issued-id-tokens-siopv2) |
 | Token Status List and W3C Bitstring Status List — what this issuer publishes about what it issued | `/oid4vci/status-lists*`, `/admin/vc/monitor` | [oid4vci](oid4vci.md) |
 | W3C DID Core with DIF domain linkage | `/.well-known/did.json` | [oid4vp](oid4vp.md) |
 | The W3C VC API (VCALM) — an issuer, holder, verifier and status service over Data Integrity (RDFC, JCS, ecdsa-sd-2023) and VC-JOSE-COSE, and DID resolution; off until a realm turns it on | `/vc-api/*` | [vc-api](vc-api.md) |
