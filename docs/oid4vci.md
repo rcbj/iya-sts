@@ -461,7 +461,7 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.walletInvocation` | `OID4VCI_WALLET_INVOCATION` | `openid-credential-offer` | yes | The scheme an offer is handed to a wallet app under: `openid-credential-offer` or `haip-vci`. |
 | `oid4vci.walletIssuancePath` | `OID4VCI_WALLET_ISSUANCE_PATH` | *(empty)* | yes | The page under the web wallet's URL an offer is handed to (`/vc-issuance-1.html` for the embedded debugger's). |
 | `oid4vci.authorizationServer` | `OID4VCI_AUTHORIZATION_SERVER` | *(empty)* | yes | A separate authorization server to advertise; empty means this service. |
-| `oid4vci.offerUsername` | `OID4VCI_OFFER_USERNAME` | `diploma.student` | yes | Whom a pre-authorized offer is for when none is named (development). |
+| `oid4vci.offerUsername` | `OID4VCI_OFFER_USERNAME` | `diploma.student` | yes | Whom a pre-authorized offer names when whoever makes it names nobody. No door does since the demonstration issuer left the service (#594): the portal's offer names the person signed in. |
 | `oid4vci.offerTtlS` | `OID4VCI_OFFER_TTL_S` | `600` | yes | How long an offer, its `issuer_state`, its pre-authorized code and a `notification_id` stay usable. |
 | `oid4vci.txCodeLength` | `OID4VCI_TX_CODE_LENGTH` | `5` | yes | Digits in the Transaction Code. |
 | `oid4vci.txCodeMaxAttempts` | `OID4VCI_TX_CODE_MAX_ATTEMPTS` | `5` | yes | In product mode, how many wrong Transaction Codes a pre-authorized code survives. |
@@ -578,6 +578,8 @@ See [Configuration](configuration.md) for how a value is resolved. Every
 
 ## Related
 
+* [Verifiable credentials and wallets (OID4VC)](verifiable-credentials.md):
+  the overview, the recipes, and connecting a web or native wallet
 * [OpenID4VP, wallet sign-in and DIDs](oid4vp.md)
 * [OAuth 2.0 and OpenID Connect](oauth-oidc.md), whose authorization and token
   endpoints issue the access token
