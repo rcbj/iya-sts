@@ -431,6 +431,35 @@ function sessionIndexParams(realm, key, index) {
   ];
 }
 
+// One index row as it is held, for `writeSessionIndex()`'s comparison.
+const SESSION_INDEX_READ =
+  'SELECT expires_at, last_seen_at, started_at, subject_key, username_key, ' +
+  'chosen, authenticated, kind, rp_surface, parent_key, backs_console, ' +
+  'credential_key, partner_relationship FROM sts_sessions ' +
+  'WHERE realm = $1 AND key = $2';
+
+// Whether a held index row says what `sessionIndexParams()` would write: the
+// thirteen columns after realm and key, numbers compared as numbers (a
+// bigint arrives as a string). A repair's hot path: no Entering/Leaving pair.
+function sessionIndexRowMatches(held, wanted) {
+  const number = function (value) {
+    return value === null || value === undefined ? null : Number(value);
+  };
+  return number(held.expires_at) === number(wanted[2]) &&
+    number(held.last_seen_at) === number(wanted[3]) &&
+    number(held.started_at) === number(wanted[4]) &&
+    String(held.subject_key) === wanted[5] &&
+    String(held.username_key) === wanted[6] &&
+    !!held.chosen === wanted[7] &&
+    !!held.authenticated === wanted[8] &&
+    String(held.kind) === wanted[9] &&
+    String(held.rp_surface) === wanted[10] &&
+    String(held.parent_key) === wanted[11] &&
+    !!held.backs_console === wanted[12] &&
+    String(held.credential_key) === wanted[13] &&
+    String(held.partner_relationship) === wanted[14];
+}
+
 // One row of a minted flush. Entering/Leaving on upsertSessionIndex() would
 // drown the log.
 function upsertSessionIndex(client, realm, key, index) {
@@ -6429,21 +6458,46 @@ function create(options) {
 
     // One `sts_sessions` row, in its own transaction. Apply repairs through
     // this; the flush writes the index inside `saveMinted` instead.
+    //
+    // **WRITTEN ONLY WHERE IT DIFFERS (2026-10-21).** Every process that
+    // applies another's session change repairs its index row — and the
+    // writer already wrote that row in the same transaction as the body, so
+    // with a front process and four request workers each session change
+    // became one write and four repairs, every repair a transaction of its
+    // own: on 8081, 250 single-row upserts a second, the busiest statement
+    // in the database. The row is read first, on the read pool, and written
+    // only when a column the body implies is not what it holds — so a row
+    // an older writer left behind is still repaired.
     writeSessionIndex: function (realmId, key, index) {
       log.debug("Entering writeSessionIndex().");
+      const wanted = sessionIndexParams(realmId, key, index);
       log.debug("Leaving writeSessionIndex().");
-      return withTransaction(function (client) {
-        return upsertSessionIndex(client, realmId, key, index);
-      });
+      return readPool.query(SESSION_INDEX_READ, [String(realmId), String(key)])
+        .then(function (r) {
+          const held = (r.rows || [])[0];
+          if (held && sessionIndexRowMatches(held, wanted)) {
+            return null;
+          }
+          return withTransaction(function (client) {
+            return upsertSessionIndex(client, realmId, key, index);
+          });
+        });
     },
 
     // The index row for a session that is gone. Same key as `sts_minted`.
+    // Deleted only where there is one (2026-10-21), for the reason above.
     deleteSessionIndex: function (realmId, key) {
       log.debug("Entering deleteSessionIndex().");
       log.debug("Leaving deleteSessionIndex().");
-      return withTransaction(function (client) {
-        return deleteSessionIndexRow(client, realmId, key);
-      });
+      return readPool.query(SESSION_INDEX_READ, [String(realmId), String(key)])
+        .then(function (r) {
+          if (!(r.rows || []).length) {
+            return null;
+          }
+          return withTransaction(function (client) {
+            return deleteSessionIndexRow(client, realmId, key);
+          });
+        });
     },
 
     // True when the completion row has committed. A live index row is not
