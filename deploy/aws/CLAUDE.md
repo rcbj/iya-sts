@@ -401,6 +401,18 @@ re-applied); and **every node replaced on the first apply**, which is expected
 unconditional: the upload job runs against every environment the suite is
 pointed at.
 
+## A deployment replaces every task at once, and #820 needs it to (2026-10-21)
+
+The ECS services run with `deployment_minimum_healthy_percent = 0` and
+`deployment_maximum_percent = 100` (`environment/ecs.tf`), so a new image
+stops the old tasks before it starts the new ones: no two builds serve side
+by side. **Keep it that way across #820's status-list change**: from
+2026-10-21 a process leases blocks of access-token status indexes, and an
+older build claims single indexes that a block's owner cannot see — a mixed
+cluster could give two live tokens one index, and a revocation of one would
+then show the other INVALID in the status list. `docs/aws-cluster.md` tells
+an operator the same.
+
 ## The key-encryption key: a key in KMS that never leaves it (#391, 2026-10-01)
 
 **Since #391 every value the service seals is sealed under a data encryption
