@@ -224,6 +224,42 @@ function fakeDatabase() {
       return rows([]);
     }
     // ---- minted rows ------------------------------------------------------
+    // A flush's set-based statements since 2026-10-21: each parameter an
+    // array over the rows.
+    if (/^SELECT handle, realm, key, body FROM sts_minted WHERE \(handle/
+        .test(text)) {
+      const found = [];
+      p[0].forEach(function (h, i) {
+        const one = db.minted.get(eid(h, eid(p[1][i], p[2][i])));
+        if (one) {
+          found.push({ handle: h, realm: p[1][i], key: p[2][i],
+                       body: one.body });
+        }
+      });
+      return rows(found);
+    }
+    if (/^INSERT INTO sts_minted .* SELECT u\.h/.test(text)) {
+      const guarded = /WHERE sts_minted.body <> \$7/.test(text);
+      const written = [];
+      p[0].forEach(function (h, i) {
+        const k = eid(h, eid(p[1][i], p[2][i]));
+        const had = db.minted.get(k);
+        if (had && guarded && had.body === p[6]) {
+          return;
+        }
+        db.minted.set(k, { handle: h, realm: p[1][i], key: p[2][i],
+                           body: p[3][i], written_ms: Date.now() });
+        written.push({ handle: h, realm: p[1][i], key: p[2][i] });
+      });
+      return Promise.resolve({ rows: written, rowCount: written.length });
+    }
+    if (/^DELETE FROM sts_minted WHERE \(handle, realm, key\) IN/
+        .test(text)) {
+      p[0].forEach(function (h, i) {
+        db.minted.delete(eid(h, eid(p[1][i], p[2][i])));
+      });
+      return rows([]);
+    }
     if (/^SELECT body FROM sts_minted/.test(text)) {
       const one = db.minted.get(eid(p[0], eid(p[1], p[2])));
       return rows(one ? [{ body: one.body }] : []);

@@ -99,23 +99,48 @@ async function run(t) {
   ];
   await driver.saveMinted(upserts, deletes);
 
-  const order = mintedStatements(statements).map(function (one) {
-    return one.params.slice(0, 3).join('/');
-  });
-  t.equal(order.join(' '),
-          'admin_stats.calls/default/k authn.sessions/acme/sid-a ' +
-          'authn.sessions/default/sid-a authn.sessions/default/sid-b ' +
-          'oauth2.authzCodes/default/zz',
+  // SINCE 2026-10-21 A FLUSH IS SET-BASED: one SELECT … FOR UPDATE over
+  // every row it touches, in (handle, realm, key) order, takes every lock
+  // before any write — so the order two concurrent flushes take them in is
+  // still the one order — and each kind of write is one statement whose
+  // parameters are arrays over its rows.
+  const zip = function (one) {
+    return (one.params[0] || []).map(function (h, i) {
+      return [h, one.params[1][i], one.params[2][i]].join('/');
+    });
+  };
+  const lock = statements.filter(function (one) {
+    return /^SELECT handle, realm, key, body FROM sts_minted/.test(one.sql) &&
+      /FOR UPDATE/.test(one.sql);
+  })[0];
+  const sorted = 'admin_stats.calls/default/k authn.sessions/acme/sid-a ' +
+    'authn.sessions/default/sid-a authn.sessions/default/sid-b ' +
+    'oauth2.authzCodes/default/zz';
+  t.equal(lock ? zip(lock).join(' ') : '(no lock statement)', sorted,
           'every row lock is taken in (handle, realm, key) order, upserts ' +
-          'and deletes interleaved — the order two concurrent flushes must ' +
-          'agree on for a deadlock between them to be impossible rather than ' +
-          'rare');
-  const kinds = mintedStatements(statements).map(function (one) {
-    return /^\s*DELETE/i.test(one.sql) ? 'D' : 'U';
+          'and deletes interleaved, in ONE statement before any write — the ' +
+          'order two concurrent flushes must agree on for a deadlock between ' +
+          'them to be impossible rather than rare');
+  t.check(lock && statements.indexOf(lock) <
+          statements.findIndex(function (one) {
+            return /^(INSERT|DELETE)/.test(one.sql) && /sts_minted/.test(
+              one.sql);
+          }), 'and it comes before the first write');
+  const deleted = new Set();
+  mintedStatements(statements).forEach(function (one) {
+    if (/^\s*DELETE/i.test(one.sql)) {
+      zip(one).forEach(function (id) { deleted.add(id); });
+    }
+  });
+  const kinds = sorted.split(' ').map(function (id) {
+    return deleted.has(id) ? 'D' : 'U';
   }).join('');
   t.equal(kinds, 'DUDUU',
           'and each row still gets the statement it was handed: a delete ' +
           'stays a delete when it sorts between two upserts');
+  t.check(mintedStatements(statements).length <= 3,
+          'in a handful of statements rather than one per row',
+          mintedStatements(statements).length);
   t.check(/^BEGIN$/.test((statements[0] || {}).sql) &&
           statements.some(function (one) { return one.sql === 'COMMIT'; }),
           'inside one transaction, as before');

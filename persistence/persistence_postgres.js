@@ -444,6 +444,30 @@ function deleteSessionIndexRow(client, realm, key) {
   return client.query(SESSION_INDEX_DELETE, [realm, key]);
 }
 
+// The session index's rows of one minted flush in one statement: the
+// columns of SESSION_INDEX_UPSERT, each an array over the rows. Hot path (a
+// minted flush): no Entering/Leaving pair, the exception the code style
+// allows, stated as it requires.
+function upsertSessionIndexRows(client, rows) {
+  const columns = [];
+  rows.forEach(function (row) {
+    sessionIndexParams(row.realm, row.key, row.index)
+      .forEach(function (value, i) {
+        (columns[i] = columns[i] || []).push(value);
+      });
+  });
+  return client.query(
+    'INSERT INTO sts_sessions (realm, key, expires_at, last_seen_at, ' +
+    'started_at, subject_key, username_key, chosen, authenticated, kind, ' +
+    'rp_surface, parent_key, backs_console, credential_key, ' +
+    'partner_relationship) SELECT * FROM unnest($1::text[], $2::text[], ' +
+    '$3::bigint[], $4::bigint[], $5::bigint[], $6::text[], $7::text[], ' +
+    '$8::boolean[], $9::boolean[], $10::text[], $11::text[], $12::text[], ' +
+    '$13::boolean[], $14::text[], $15::text[]) ' +
+    SESSION_INDEX_UPSERT.slice(SESSION_INDEX_UPSERT.indexOf('ON CONFLICT')),
+    columns);
+}
+
 // How long a node row is kept after it expired, for `/admin/cluster` to show a
 // node that went away. A join purges older ones.
 const DEAD_NODE_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -5448,80 +5472,141 @@ function create(options) {
       const skip = new Set();
       log.debug("Leaving saveMinted().");
       return withTransaction(function (client) {
-        let chain = Promise.resolve();
-        const upsert = function (row, body, guarded) {
-          // `expires_at` (#333) is the store's own answer for the record,
-          // or NULL; see `expiresAt` in common/realms.js.
-          const expires = Number(row.expiresAt) > 0
-            ? Math.floor(Number(row.expiresAt)) : null;
+        // -------------------------------------------------------------------
+        // A FLUSH IS A FEW SET-BASED STATEMENTS, NOT ONE PER ROW (2026-10-21).
+        //
+        // Every row was its own statement, in sequence on one connection —
+        // a session row three (its lock, its guarded write, its index row)
+        // — and a process flushes one transaction at a time with every
+        // request's answer waiting for its commit. On 8081 under a sign-in
+        // load a flush averaged 36 ms for 17 rows and a worker had one in
+        // flight 64-74% of the time: that wait was the sign-in rate's cap.
+        // The same writes go as at most seven statements, whatever the
+        // number of rows:
+        //
+        //   1. EVERY ROW THE FLUSH TOUCHES, upserts and deletes alike, locked
+        //      in one SELECT … FOR UPDATE in (handle, realm, key) order — the
+        //      one order the per-row statements took their locks in, which is
+        //      what keeps two processes flushing overlapping rows from
+        //      deadlocking (`tests/postgres_minted_writes.js`). It reads the
+        //      merging rows' stored bodies on the way. A key no row holds yet
+        //      is locked by its INSERT, and each INSERT inserts in that order;
+        //   2. the guarded upserts (merged rows, and rows a tombstone may
+        //      refuse) in one INSERT … RETURNING — a row not returned is one
+        //      a tombstone refused, exactly as rowCount 0 was;
+        //   3. the plain upserts in one INSERT;
+        //   4. the tombstones written in one INSERT;
+        //   5. the plain deletes in one DELETE;
+        //   6. and 7. the session index's rows upserted and deleted, one
+        //      statement each, after the bodies as before.
+        // -------------------------------------------------------------------
+        const idOf = function (row) {
+          return String(row.handle) + '\n' + String(row.realm) + '\n' +
+            String(row.key);
+        };
+        const merging = [];
+        const guarded = [];
+        const plain = [];
+        const tombs = [];
+        const dels = [];
+        const seen = new Set();
+        statements.forEach(function (one) {
+          const row = one.row;
+          // One row per key in a statement: ON CONFLICT cannot touch a row
+          // twice. A journal names each key once; this is belt and braces.
+          if (seen.has(idOf(row))) {
+            return;
+          }
+          seen.add(idOf(row));
+          if (one.upsert && typeof row.merge === 'function') {
+            merging.push(row);
+          } else if (one.upsert && row.tombstone) {
+            guarded.push({ row: row, body: row.body });
+          } else if (one.upsert) {
+            plain.push({ row: row, body: row.body });
+          } else if (row.tombstone) {
+            tombs.push(row);
+          } else {
+            dels.push(row);
+          }
+        });
+        const byId = function (a, b) {
+          return idOf(a.row) < idOf(b.row) ? -1 : 1;
+        };
+        // `expires_at` (#333) is the store's own answer for the record, or
+        // NULL; see `expiresAt` in common/realms.js.
+        const expiresOf = function (row) {
+          return Number(row.expiresAt) > 0 ? Math.floor(Number(row.expiresAt))
+                                           : null;
+        };
+        const writeRows = function (list, isGuarded) {
+          if (!list.length) {
+            return Promise.resolve(null);
+          }
           return client.query(
-            'INSERT INTO sts_minted (handle, realm, key, body, ' +
-            'written_at, expires_at, key_sealed) VALUES ($1, $2, $3, $4, ' +
-            'now(), $5, $6) ' +
+            'INSERT INTO sts_minted (handle, realm, key, body, written_at, ' +
+            'expires_at, key_sealed) SELECT u.h, u.r, u.k, u.b, now(), u.e, ' +
+            'u.s FROM unnest($1::text[], $2::text[], $3::text[], ' +
+            '$4::text[], $5::bigint[], $6::text[]) AS u(h, r, k, b, e, s) ' +
+            'ORDER BY u.h, u.r, u.k ' +
             'ON CONFLICT (handle, realm, key) DO UPDATE SET ' +
             'body = EXCLUDED.body, written_at = now(), ' +
             'expires_at = EXCLUDED.expires_at, ' +
             'key_sealed = EXCLUDED.key_sealed' +
-            (guarded ? ' WHERE sts_minted.body <> $7' : ''),
-            guarded ? [row.handle, row.realm, row.key, body, expires,
-                       String(row.keySealed || ''), TOMBSTONE]
-                    : [row.handle, row.realm, row.key, body, expires,
-                       String(row.keySealed || '')]
+            (isGuarded ? ' WHERE sts_minted.body <> $7 ' +
+                         'RETURNING handle, realm, key' : ''),
+            [list.map(function (w) { return String(w.row.handle); }),
+             list.map(function (w) { return String(w.row.realm); }),
+             list.map(function (w) { return String(w.row.key); }),
+             list.map(function (w) { return w.body; }),
+             list.map(function (w) { return expiresOf(w.row); }),
+             list.map(function (w) { return String(w.row.keySealed || ''); })]
+              .concat(isGuarded ? [TOMBSTONE] : [])
           ).then(function (r) {
-            if (guarded && !(r && r.rowCount)) {
-              refused.push(row);
-              skip.add(row);
+            if (!isGuarded) {
+              return r;
             }
+            const written = new Set((r.rows || []).map(function (one) {
+              return idOf(one);
+            }));
+            list.forEach(function (w) {
+              if (!written.has(idOf(w.row))) {
+                refused.push(w.row);
+                skip.add(w.row);
+              }
+            });
             return r;
           });
         };
-        // One statement per minted row of a flush. Entering/Leaving on
-        // sessionSide() or afterBody() would drown the log. The index is
-        // written only after the body statement succeeded: a refused upsert
-        // does not put the body back and does not insert an index row.
-        const sessionSide = function (row, removing) {
-          if (row.handle !== 'authn.sessions') {
-            return null;
-          }
-          if (removing) {
-            return deleteSessionIndexRow(client, row.realm, row.key);
-          }
-          if (!row.index || typeof row.index !== 'object') {
-            return null;
-          }
-          return upsertSessionIndex(client, row.realm, row.key,
-                                    row.index);
-        };
-        const afterBody = function (row, removing, result) {
-          if (!removing && skip.has(row)) {
-            return result;
-          }
-          const side = sessionSide(row, removing);
-          if (!side) {
-            return result;
-          }
-          return side.then(function () {
-            return result;
-          });
-        };
-        statements.forEach(function (one) {
-          const row = one.row;
+        let chain = Promise.resolve();
+        const touched = statements.map(function (one) {
+          return one.row;
+        });
+        if (touched.length) {
           chain = chain.then(function () {
-            if (one.upsert && typeof row.merge === 'function') {
-              return client.query(
-                'SELECT body FROM sts_minted WHERE handle = $1 AND ' +
-                'realm = $2 AND key = $3 FOR UPDATE',
-                [row.handle, row.realm, row.key]
-              ).then(function (r) {
-                const found = (r.rows || [])[0];
-                if (found && found.body === TOMBSTONE) {
+            return client.query(
+              'SELECT handle, realm, key, body FROM sts_minted WHERE ' +
+              '(handle, realm, key) IN (SELECT h, r, k FROM ' +
+              'unnest($1::text[], $2::text[], $3::text[]) AS u(h, r, k)) ' +
+              'ORDER BY handle, realm, key FOR UPDATE',
+              [touched.map(function (row) { return String(row.handle); }),
+               touched.map(function (row) { return String(row.realm); }),
+               touched.map(function (row) { return String(row.key); })]
+            ).then(function (r) {
+              const stored = new Map();
+              (r.rows || []).forEach(function (found) {
+                stored.set(idOf(found), found.body);
+              });
+              merging.forEach(function (row) {
+                const found = stored.get(idOf(row));
+                if (found === TOMBSTONE) {
                   refused.push(row);
                   skip.add(row);
-                  return null;
+                  return;
                 }
                 let body = row.body;
-                if (found && found.body !== row.body) {
-                  const answer = row.merge(found.body);
+                if (found !== undefined && found !== row.body) {
+                  const answer = row.merge(found);
                   if (answer && answer !== row.body) {
                     body = answer;
                     merged.push({ handle: row.handle, realm: row.realm,
@@ -5529,41 +5614,63 @@ function create(options) {
                                   body: answer });
                   }
                 }
-                return upsert(row, body, true).then(function (written) {
-                  return afterBody(row, false, written);
-                });
+                guarded.push({ row: row, body: body });
               });
-            }
-            if (one.upsert) {
-              return upsert(row, row.body, !!row.tombstone)
-                .then(function (written) {
-                  return afterBody(row, false, written);
-                });
-            }
-            if (row.tombstone) {
-              // A TOMBSTONE HAS NO EXPIRY OF ITS OWN (#333): it lives for
-              // `persistence.mintedRetention` whatever the record it ended
-              // said, so the expiry purge never takes it early.
-              return client.query(
-                'INSERT INTO sts_minted (handle, realm, key, body, ' +
-                'written_at, expires_at, key_sealed) VALUES ($1, $2, $3, ' +
-                '$4, now(), NULL, $5) ON CONFLICT (handle, realm, key) DO ' +
-                'UPDATE SET body = EXCLUDED.body, written_at = now(), ' +
-                'expires_at = NULL, key_sealed = EXCLUDED.key_sealed',
-                [row.handle, row.realm, row.key, TOMBSTONE,
-                 String(row.keySealed || '')]
-              ).then(function (written) {
-                return afterBody(row, true, written);
-              });
-            }
-            return client.query(
-              'DELETE FROM sts_minted WHERE handle = $1 AND realm = $2 ' +
-              'AND key = $3',
-              [row.handle, row.realm, row.key]
-            ).then(function (written) {
-              return afterBody(row, true, written);
             });
           });
+        }
+        chain = chain.then(function () {
+          return writeRows(guarded.sort(byId), true);
+        }).then(function () {
+          return writeRows(plain.sort(byId), false);
+        }).then(function () {
+          return writeRows(tombs.map(function (row) {
+            return { row: { handle: row.handle, realm: row.realm,
+                            key: row.key, expiresAt: null,
+                            keySealed: row.keySealed },
+                     body: TOMBSTONE };
+          }).sort(byId), false);
+        }).then(function () {
+          if (!dels.length) {
+            return null;
+          }
+          return client.query(
+            'DELETE FROM sts_minted WHERE (handle, realm, key) IN (SELECT ' +
+            'h, r, k FROM unnest($1::text[], $2::text[], $3::text[]) AS ' +
+            'u(h, r, k))',
+            [dels.map(function (row) { return String(row.handle); }),
+             dels.map(function (row) { return String(row.realm); }),
+             dels.map(function (row) { return String(row.key); })]);
+        }).then(function () {
+          // THE SESSION INDEX, after the bodies, as each row's index write
+          // followed its body before: a body a tombstone refused writes none.
+          const indexed = guarded.concat(plain).map(function (w) {
+            return w.row;
+          }).filter(function (row) {
+            return row.handle === 'authn.sessions' && !skip.has(row) &&
+              row.index && typeof row.index === 'object';
+          }).sort(function (a, b) {
+            return idOf(a) < idOf(b) ? -1 : 1;
+          });
+          const gone = tombs.concat(dels).filter(function (row) {
+            return row.handle === 'authn.sessions';
+          });
+          let side = Promise.resolve(null);
+          if (indexed.length) {
+            side = side.then(function () {
+              return upsertSessionIndexRows(client, indexed);
+            });
+          }
+          if (gone.length) {
+            side = side.then(function () {
+              return client.query(
+                'DELETE FROM sts_sessions WHERE (realm, key) IN (SELECT r, ' +
+                'k FROM unnest($1::text[], $2::text[]) AS u(r, k))',
+                [gone.map(function (row) { return String(row.realm); }),
+                 gone.map(function (row) { return String(row.key); })]);
+            });
+          }
+          return side;
         });
         return chain.then(function () {
           // A LOG ROW PER MINTED KEY, upserts and deletes alike — the receiver
