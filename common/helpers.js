@@ -370,6 +370,23 @@ function subjectForName(name) {
   }
 }
 
+// People a request is about to read by name, put in the directory's window
+// first and off the event loop (#820): the resolver's optional `warmNames`.
+// Never rejects; where nothing can warm, nothing is done.
+function warmPeopleAsync(names) {
+  log.debug("Entering warmPeopleAsync().");
+  if (!subjectResolver || typeof subjectResolver.warmNames !== 'function') {
+    log.debug("Leaving warmPeopleAsync(). Nothing warms.");
+    return Promise.resolve(0);
+  }
+  log.debug("Leaving warmPeopleAsync().");
+  return Promise.resolve(subjectResolver.warmNames(names)).catch(
+    function (e) {
+      log.debug("Caught in warmPeopleAsync(): " + ((e && e.message) || e));
+      return 0;
+    });
+}
+
 // Who a subject names, as the name this service files a person under, or ''.
 // Both forms: `urn:uuid:` is looked up, `urn:sts:user:` is read, and anything
 // else is not a subject this service issued.
@@ -8195,6 +8212,7 @@ module.exports = {
   hasSubjectResolver: hasSubjectResolver,
   subjectForName: subjectForName,
   nameForSubject: nameForSubject,
+  warmPeopleAsync: warmPeopleAsync,
   namesForSubjects: namesForSubjects,
   namesForSubjectsAsync: namesForSubjectsAsync,
   LEGACY_SUBJECT_PREFIX: LEGACY_SUBJECT_PREFIX,

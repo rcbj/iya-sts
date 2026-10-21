@@ -15324,7 +15324,9 @@ class OAuth2Server {
       // home cell's answer, and awaited before the replay check.
       const warming = Promise.all([
         bcp.warmRefresh(claims),
-        stats.warmTokens([String(claims.jti || '')])
+        stats.warmTokens([String(claims.jti || '')]),
+        // And the person, at the place the consent check reads them.
+        helpers.warmPeopleAsync([String(claims.username || '')])
       ]).catch(function (e) {
         log.debug("Caught in OAuth2Server.tokenGrant(): " +
                   ((e && e.message) || e));
